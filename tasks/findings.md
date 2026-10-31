@@ -19475,7 +19475,7 @@ Correction to the close note: the implementation commit titled "Hide linked coll
 
 ### Vendored pgn-reader header decoding drops a literal backslash after an escaped backslash
 
-* **ID:** f-20261030-07 · **Status:** open · **Area:** pgn-import · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261030-07 · **Status:** handled · **Area:** pgn-import · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** data-loss
 * **Where:** src-tauri/vendor/pgn-reader/src/types.rs `RawHeader::decode` (used by `decode_utf8` / `decode_utf8_lossy`, which the database importer uses for White, Black and Round).
 * **Spotted outside diff:** found by a repair leaf of the new-game-to-database build (2026-10-30) while checking PGN header escaping round trips; the decoder itself is unchanged by that build.
@@ -19483,6 +19483,9 @@ Correction to the close note: the implementation commit titled "Hide linked coll
 * **Failure scenario:** Importing a PGN whose White, Black or Round tag contains two consecutive escaped backslashes (for example a player name exported from another tool with a literal `\\`) stores the name with one backslash too few; exporting it again writes a different name than the source.
 * **Fix:** Skip the escaped character after handling an escape (advance past `escape + 1` before considering the next backslash), keeping the borrowed fast path when nothing is escaped. Vendored crate: keep the change minimal and note it in the vendor patch notes if the repository keeps them.
 * **Proof:** Unit test in the vendored crate or in src-tauri/src/db for `\\\\`, `\\\"`, `a\\\\b` and a mixed value, asserting the decoded bytes; existing escaped-tag round-trip tests stay green.
+
+Fixed in 0a8392d7: `RawHeader::decode` in src-tauri/vendor/pgn-reader/src/types.rs skips the escaped byte after a handled `\\` or `\"` escape, so four raw backslash bytes decode to two; the borrowed path for unescaped values is unchanged. The crate's `test_raw_header` covers four, six, mixed quote and trailing lone-backslash values; CHESSFABLE.md records the patch. Push review (tests lens) found that the vendored crate's tests do not run under `cargo test --manifest-path src-tauri/Cargo.toml --all-targets`, so 18295cb3 adds `db::tests::imported_consecutive_escaped_backslashes_keep_every_backslash`, which imports White, Black and Round through the app importer. Proof: with the skip guard disabled both tests fail (one backslash instead of two); restored, both pass. Rejected: decoding in the app importer instead of the vendored crate, because every `decode_utf8`/`decode_utf8_lossy` caller (db/mod.rs, linked_collections.rs) shares the defect.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"7fc0eef7282d9b4df44114135e21496e8116a7d793245acf7ca109018ea959fe","header_sha256":"fed0c5c4529a2a2b458731d1d4bcf53f3d04c7962a55038e64e2c78be868ddfb","header_status":"handled","input_sha256":"4a8b78f88b108a14abc56b6e1fe54614a462b0ae9f27fc636dfc0c8dbd489f4c","kind":"mutation-receipt","operation":"69c5fb5f6fd2c31a7ad5ee61ad052b01fd51dc34636333cfe1676a1525fbade3","options":{"section":null},"request_id_sha256":null,"results":["f-20261030-07"],"target":"f-20261030-07","v":1} -->
 
 ---
 
