@@ -18,6 +18,122 @@ import { deserializeStorageValue } from "../src/state/store/debouncedStorage";
 import type { Locator, Page } from "@playwright/test";
 import type { TreeState } from "../src/utils/treeReducer";
 
+for (const mode of ["diff", "all"] as const) {
+    test(`board-material: ${mode} stays inside both player bars in both orientations`, async ({
+        page,
+        mockScenario,
+    }, testInfo) => {
+        await page.setViewportSize({ width: 1920, height: 900 });
+        await page.addInitScript((value) => {
+            localStorage.setItem("material-display", JSON.stringify(value));
+            // This fixture exercises layout, without writing back to the mock collection.
+            localStorage.setItem("auto-save", "false");
+        }, mode);
+        const headers = {
+            White: "White player",
+            Black: "Beck, Felix",
+            BlackElo: "2077",
+            Result: "0-1",
+            SetUp: "1",
+            FEN: "rnbqkbnr/1ppppppp/8/8/8/8/2PPPPPP/RNBQKBNR w KQkq - 0 1",
+        };
+        await mockScenario({
+            commands: filesWorkspaceCommands([[filesWorkspaceFixture.pgnFile]], {
+                ...pgnFileCommands,
+                lex_pgn: {
+                    result: [
+                        ...Object.entries(headers).map(([tag, value]) => ({
+                            type: "Header",
+                            value: { tag, value },
+                        })),
+                        { type: "Outcome", value: "0-1" },
+                    ],
+                },
+            }),
+        });
+        await page.goto("/library");
+        await page.getByRole("button", { name: /choose collection/i }).click();
+        await selectFilesTreeRow(page, filesWorkspaceFixture.pgnFile.name);
+        await page.getByRole("button", { name: "Open game", exact: true }).click();
+        await expect(page.getByRole("grid")).toBeVisible();
+        await expect(page.getByText("+1", { exact: true })).toBeVisible();
+        const measurements = [];
+        for (const orientation of ["white", "black"]) {
+            if (orientation === "black")
+                await page.getByRole("button", { name: /^Flip Board/ }).click();
+            await expect(page.getByRole("grid")).toHaveAccessibleName(
+                `Chessboard, ${orientation === "white" ? "White" : "Black"} orientation`,
+            );
+            await page.evaluate(() => document.fonts.ready);
+            const geometry = await page.locator("[data-board-surface]").evaluate((surface) => {
+                const column = surface.parentElement!;
+                const rect = (element: Element) => {
+                    const { x, y, width, height, top, bottom, left, right } =
+                        element.getBoundingClientRect();
+                    return { x, y, width, height, top, bottom, left, right };
+                };
+                const clips = [];
+                for (
+                    let ancestor: Element | null = column;
+                    ancestor;
+                    ancestor = ancestor.parentElement
+                ) {
+                    const style = getComputedStyle(ancestor);
+                    if (/hidden|clip/.test(style.overflowY)) clips.push(rect(ancestor));
+                }
+                return {
+                    column: rect(column),
+                    clips,
+                    board: rect(surface.querySelector("cg-board")!),
+                    bars: [column.firstElementChild!, column.lastElementChild!].map((bar) => ({
+                        bar: rect(bar),
+                        name: rect(bar.querySelector("button")!),
+                        indicators: Array.from(
+                            bar.lastElementChild!.querySelectorAll("svg, p"),
+                        ).map((el) => ({
+                            tag: el.tagName,
+                            text: el.textContent,
+                            box: rect(el),
+                        })),
+                    })),
+                };
+            });
+            measurements.push({ mode, orientation, ...geometry });
+            await testInfo.attach(`${mode}-${orientation}-geometry`, {
+                body: JSON.stringify(geometry, null, 2),
+                contentType: "application/json",
+            });
+            await page.screenshot({ path: testInfo.outputPath(`${mode}-${orientation}.png`) });
+            // The correction must recover spacing, without resizing the painted chessboard.
+            expect(geometry.board.width).toBe(720);
+            expect(geometry.board.height).toBe(720);
+            const indicators = geometry.bars.flatMap((bar) => bar.indicators);
+            expect(indicators.filter((indicator) => indicator.tag === "svg")).toHaveLength(
+                mode === "all" ? 3 : 1,
+            );
+            expect(indicators.filter((indicator) => indicator.text === "+1")).toHaveLength(1);
+            for (const bar of geometry.bars) {
+                for (const indicator of bar.indicators) {
+                    for (const clip of geometry.clips) {
+                        expect
+                            .soft(
+                                indicator.box.bottom,
+                                JSON.stringify({ mode, orientation, indicator, clip }),
+                            )
+                            .toBeLessThanOrEqual(clip.bottom);
+                        expect.soft(indicator.box.top).toBeGreaterThanOrEqual(clip.top);
+                        expect.soft(indicator.box.left).toBeGreaterThanOrEqual(clip.left);
+                        expect.soft(indicator.box.right).toBeLessThanOrEqual(clip.right);
+                    }
+                    expect.soft(indicator.box.bottom).toBeLessThanOrEqual(bar.bar.bottom);
+                    if (indicator.tag === "svg") expect(indicator.box.bottom).toBe(bar.name.bottom);
+                }
+            }
+        }
+        console.log("BOARD_MATERIAL_GEOMETRY", JSON.stringify(measurements));
+    });
+}
+
 async function importAnalysisFen(page: Page, initialFen: string) {
     await page.goto("/");
     await page.getByRole("button", { name: /^import$/i }).click();

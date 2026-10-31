@@ -434,7 +434,6 @@ function Board({
             flexDirection: "column",
             width: "100%",
             height: "100%",
-            gap: "0.5rem",
             flexWrap: "nowrap",
             overflow: "hidden",
             maxWidth:
@@ -468,6 +467,8 @@ function Board({
               />
             )}
           </BoardBar>
+          {/* Gutters can shrink when the square board leaves less than the bars' minimum height. */}
+          <Box h="0.5rem" />
           <Group
             data-board-surface
             style={{
@@ -672,6 +673,7 @@ function Board({
             </BoardFrame>
             <VisuallyHidden aria-live="polite">{keyboardAnnouncement}</VisuallyHidden>
           </Group>
+          <Box h="0.5rem" />
           <BoardBar
             name={bottomPlayer}
             rating={orientation === "white" ? headers.white_elo : headers.black_elo}
