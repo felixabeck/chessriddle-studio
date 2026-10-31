@@ -8145,6 +8145,27 @@ mod tests {
     }
 
     #[test]
+    fn imported_consecutive_escaped_backslashes_keep_every_backslash() {
+        let source = r#"[White "Two \\\\ Slashes"]
+[Black "Mix \\\\\" Q \\z"]
+[Round "\\\\\\"]
+[Result "*"]
+
+*
+"#;
+        let mut importer = Importer::new(None);
+        let imported = BufferedReader::new(source.as_bytes())
+            .into_iter(&mut importer)
+            .flatten()
+            .flatten()
+            .next()
+            .expect("import source game");
+        assert_eq!(imported.white_name.as_deref(), Some("Two \\\\ Slashes"));
+        assert_eq!(imported.black_name.as_deref(), Some("Mix \\\\\" Q \\z"));
+        assert_eq!(imported.round.as_deref(), Some("\\\\\\"));
+    }
+
+    #[test]
     fn export_rejects_malformed_fen_and_moves_without_replacing_destination() {
         for (column, value) in [("Fen", "'invalid fen'"), ("Moves", "X'ff'")] {
             let (dir, app, handle, database) = blocking_database_case();

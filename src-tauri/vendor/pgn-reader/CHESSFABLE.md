@@ -58,7 +58,8 @@ RawHeader::decode skips the escaped character after an escape, so consecutive
 escaped backslashes each keep their literal backslash. Upstream decoded four
 raw backslash bytes to one backslash. The borrowed path for unescaped values
 is unchanged. Future upgrades must keep this with the crate's raw-header
-decode test.
+decode test and the application's
+imported_consecutive_escaped_backslashes_keep_every_backslash regression.
 
 Gate scope: cargo fmt formats the app package only (no --all); backend LCOV
 exports only src-tauri/src/**/*.rs and ratchets that same scope; cargo-mutants

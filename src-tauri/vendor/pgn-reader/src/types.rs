@@ -223,6 +223,10 @@ mod tests {
     fn test_raw_header() {
         let header = RawHeader(b"Hello world");
         assert_eq!(header.decode().as_ref(), b"Hello world");
+        assert!(matches!(
+            RawHeader(b"Hello world").decode(),
+            Cow::Borrowed(_)
+        ));
 
         let header = RawHeader(b"Hello \\world\\");
         assert_eq!(header.decode().as_ref(), b"Hello \\world\\");
