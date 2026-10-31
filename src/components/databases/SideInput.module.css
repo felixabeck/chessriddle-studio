@@ -1,16 +1,72 @@
+.fields {
+  container: game-player-fields / inline-size;
+}
+
+.field {
+  container: game-player-field / inline-size;
+  min-width: min(100%, 128px);
+}
+
+.inputWrapper {
+  --input-left-section-width: 32px;
+  --input-right-section-width: calc(5rem + 48px);
+}
+
+@container game-player-fields (width < calc(256px + 1rem)) {
+  .field {
+    max-width: 100%;
+  }
+}
+
+@container game-player-field (width < calc(5rem + 160px)) {
+  .inputWrapper {
+    --input-right-section-width: 52px;
+  }
+
+  .label {
+    display: none;
+  }
+}
+
 .control {
   display: flex;
   align-items: center;
-  padding: 8px 15px 8px 15px;
-  border-radius: var(--mantine-radius-md);
-  transition: background-color 150ms ease;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: var(--cf-radius-full);
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--cf-foreground);
+  background-color: var(--cf-interactive);
+  border: 1px solid var(--cf-border);
 }
 
-[data-mantine-color-scheme] .control {
-  background-color: var(--cf-surface-inset);
-  border: 2px solid var(--cf-border);
+.control:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--cf-ring) 30%, transparent);
+  outline-offset: 1px;
 }
 
-[data-mantine-color-scheme] .control:hover {
-  background-color: var(--cf-surface-inset);
+@media (hover: hover) {
+  .control:hover {
+    background-color: var(--cf-interactive-hover);
+  }
+}
+
+.swatch {
+  display: inline-block;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--cf-border-strong);
+  border-radius: var(--cf-radius-full);
+  background: linear-gradient(to right, var(--cf-eval-bar-light) 50%, var(--cf-eval-bar-dark) 50%);
+}
+
+.swatch[data-side="white"] {
+  background: var(--cf-eval-bar-light);
+}
+
+.swatch[data-side="black"] {
+  background: var(--cf-eval-bar-dark);
 }

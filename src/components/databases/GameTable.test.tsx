@@ -42,7 +42,9 @@ vi.mock("swr", async (original) => ({
     mutate: vi.fn(),
   }),
 }));
-vi.mock("./PlayerSearchInput", () => ({ PlayerSearchInput: () => null }));
+vi.mock("./PlayerSearchInput", () => ({
+  PlayerSearchInput: ({ label }: { label: string }) => <input placeholder={label} />,
+}));
 vi.mock("./SideInput", () => ({ SideInput: () => null }));
 vi.mock("./GamePreview", () => ({ default: ({ pgn }: { pgn: string }) => <div>{pgn}</div> }));
 vi.mock("../common/GameInfo", () => ({ default: () => null }));
@@ -149,6 +151,12 @@ function openButton() {
 function row(index: number) {
   return host.querySelectorAll("tr")[index];
 }
+
+test("the Games searches distinguish the player and opponent", async () => {
+  await render();
+  expect(host.querySelector('input[placeholder="Board.Database.Local.Player"]')).not.toBeNull();
+  expect(host.querySelector('input[placeholder="Board.Database.Local.Opponent"]')).not.toBeNull();
+});
 async function doubleClick(index: number) {
   await act(async () => {
     row(index).dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));

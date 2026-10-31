@@ -1,7 +1,12 @@
-import { Box, Menu, UnstyledButton } from "@mantine/core";
+import { Menu, Tooltip, UnstyledButton } from "@mantine/core";
+import { ChevronDown } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { Sides } from "@/utils/db";
 import classes from "./SideInput.module.css";
+
+function SideSwatch({ color }: { color: string }) {
+  return <span aria-hidden="true" className={classes.swatch} data-side={color} />;
+}
 
 export function SideInput({
   role,
@@ -14,9 +19,9 @@ export function SideInput({
 }) {
   const { t } = useTranslation();
   const data = [
-    { label: t("Fen.White"), color: "white", fill: "var(--cf-eval-bar-light)" },
-    { label: t("Fen.Black"), color: "black", fill: "var(--cf-eval-bar-dark)" },
-    { label: t("Board.Database.Local.Result.Any"), color: "gray", fill: "var(--cf-muted)" },
+    { label: t("Fen.White"), color: "white" },
+    { label: t("Fen.Black"), color: "black" },
+    { label: t("Board.Database.Local.Result.Any"), color: "gray" },
   ];
   const selected =
     (sides === "WhiteBlack" && role === "player") || (sides === "BlackWhite" && role === "opponent")
@@ -38,38 +43,28 @@ export function SideInput({
   };
   const items = data.map((item) => (
     <Menu.Item
-      leftSection={
-        <Box
-          style={{
-            width: 18,
-            height: 18,
-            borderRadius: "50%",
-            display: "inline-block",
-            backgroundColor: item.fill,
-          }}
-        />
-      }
+      leftSection={<SideSwatch color={item.color} />}
       onClick={() => setSelected(item)}
       key={item.label}
     >
       {item.label}
     </Menu.Item>
   ));
+  const label =
+    role === "player"
+      ? t("Board.Database.Local.PlayerColour", { side: selected.label })
+      : t("Board.Database.Local.OpponentColour", { side: selected.label });
 
   return (
     <Menu>
       <Menu.Target>
-        <UnstyledButton className={classes.control}>
-          <Box
-            style={{
-              width: 18,
-              height: 18,
-              borderRadius: "50%",
-              display: "inline-block",
-              backgroundColor: selected.fill,
-            }}
-          />
-        </UnstyledButton>
+        <Tooltip label={label}>
+          <UnstyledButton className={classes.control} aria-label={label}>
+            <SideSwatch color={selected.color} />
+            <span className={classes.label}>{selected.label}</span>
+            <ChevronDown size={12} aria-hidden="true" />
+          </UnstyledButton>
+        </Tooltip>
       </Menu.Target>
       <Menu.Dropdown>{items}</Menu.Dropdown>
     </Menu>

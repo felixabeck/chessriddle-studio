@@ -6,6 +6,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type DatabaseHandle, type Player } from "@/bindings";
 import { query_players } from "@/utils/db";
+import classes from "./SideInput.module.css";
 
 export function PlayerSearchInput({
   label,
@@ -100,6 +101,7 @@ export function PlayerSearchInput({
       data={data.map((player) => player.name!)}
       onChange={handleChange}
       rightSection={rightSection}
+      classNames={rightSection ? { root: classes.field, wrapper: classes.inputWrapper } : undefined}
       leftSection={<Search size="1rem" />}
       placeholder={label}
     />

@@ -1738,7 +1738,7 @@ test("database-files: bounded drag and keyboard steps share a preference across 
     await expect(page.getByRole("tooltip")).toHaveCount(0);
     await waitForScrollAreaScrollbarsHidden(page);
     await capture("database-adaptive-wide");
-    await expect(page).toHaveScreenshot("database-adaptive-wide.png");
+    await expect.soft(page).toHaveScreenshot("database-adaptive-wide.png");
     await dragMosaicDivider(page, { root, split, percentage: 95, direction: "row" });
     await expect(layout).toHaveAttribute("data-percentage", "80");
     await expect(page.getByRole("button", { name: "Enlarge table", exact: true })).toBeDisabled();
@@ -1758,7 +1758,7 @@ test("database-files: bounded drag and keyboard steps share a preference across 
     await page.mouse.move(1999, 1199);
     await waitForScrollAreaScrollbarsHidden(page);
     await capture("database-adaptive-tall");
-    await expect(page).toHaveScreenshot("database-adaptive-tall.png");
+    await expect.soft(page).toHaveScreenshot("database-adaptive-tall.png");
     for (const name of ["Players", "Events", "Games"]) {
         await page.getByRole("tab", { name, exact: true }).first().click();
         await expect(page.locator("[data-database-layout]:visible")).toHaveAttribute(
@@ -1785,6 +1785,131 @@ test("database-files: bounded drag and keyboard steps share a preference across 
     await expect(layout).toHaveAttribute("data-percentage", "75");
     expect(await saved()).toBe("75");
     await assertNoHorizontalOverflow();
+});
+
+test.describe("database-files: labelled colour filters", () => {
+    test.use({ appLocale: "de-DE", colorScheme: "dark" });
+
+    for (const surface of [
+        { name: "desktop", width: 1440, scale: "100" },
+        { name: "320-200", width: 320, scale: "200" },
+    ]) {
+        test(`BlackWhite and Any remain legible at ${surface.name}`, async ({
+            page,
+            mockScenario,
+            assertNoHorizontalOverflow,
+        }) => {
+            await page.addInitScript((scale) => {
+                localStorage.setItem("font-size", scale);
+                localStorage.setItem("mantine-color-scheme", "dark");
+            }, surface.scale);
+            await page.setViewportSize({ width: surface.width, height: 900 });
+            await mockScenario({ commands: databaseLayoutCommands });
+            await page.goto(`/databases/${gameOpeningFixture.databaseId}`);
+            await expect(page.locator("html")).toHaveAttribute("data-mantine-color-scheme", "dark");
+            await expect(page.locator("html")).toHaveCSS(
+                "font-size",
+                surface.scale === "200" ? "32px" : "16px",
+            );
+            const player = page.getByPlaceholder("Spieler", { exact: true });
+            const opponent = page.getByPlaceholder("Gegner", { exact: true });
+            await expect(player).toBeVisible();
+            await expect(opponent).toBeVisible();
+            const playerBox = (await player.boundingBox())!;
+            const opponentBox = (await opponent.boundingBox())!;
+            if (surface.name === "desktop") {
+                expect(playerBox.y, "Usable fields retain one row").toBe(opponentBox.y);
+            } else {
+                expect(opponentBox.y, "Narrow search rows stack the fields").toBeGreaterThanOrEqual(
+                    playerBox.y + playerBox.height,
+                );
+            }
+
+            const assertTypingSpace = async () => {
+                for (const input of [player, opponent]) {
+                    const geometry = await input.evaluate((element) => {
+                        const box = element.getBoundingClientRect();
+                        const style = getComputedStyle(element);
+                        const chip = element
+                            .parentElement!.querySelector("button")!
+                            .getBoundingClientRect();
+                        const textLeft =
+                            box.left +
+                            Number.parseFloat(style.paddingLeft) +
+                            Number.parseFloat(style.borderLeftWidth);
+                        const textRight =
+                            box.right -
+                            Number.parseFloat(style.paddingRight) -
+                            Number.parseFloat(style.borderRightWidth);
+                        return {
+                            textLeft,
+                            textRight,
+                            chipLeft: chip.left,
+                            chipRight: chip.right,
+                            inputRight: box.right,
+                        };
+                    });
+                    expect(
+                        geometry.textRight - geometry.textLeft,
+                        "Each player field retains at least 40px for typing",
+                    ).toBeGreaterThanOrEqual(40);
+                    expect(
+                        geometry.chipLeft,
+                        "The chip starts after the input text area",
+                    ).toBeGreaterThanOrEqual(geometry.textRight);
+                    expect(geometry.chipRight).toBeLessThanOrEqual(geometry.inputRight);
+                    await input.fill("Test");
+                    await expect(input).toHaveValue("Test");
+                    await input.fill("");
+                    await input.press("Escape");
+                }
+            };
+
+            await page.getByRole("button", { name: /^Farbe des Spielers:/ }).click();
+            await page.getByRole("menuitem", { name: "Schwarz", exact: true }).click();
+            await expect(
+                page.getByRole("button", { name: "Farbe des Spielers: Schwarz", exact: true }),
+            ).toBeVisible();
+            await expect(
+                page.getByRole("button", { name: "Farbe des Gegners: Weiss", exact: true }),
+            ).toBeVisible();
+            const chipLabel = page
+                .getByRole("button", { name: "Farbe des Spielers: Schwarz", exact: true })
+                .getByText("Schwarz", { exact: true });
+            if (surface.name === "desktop") await expect(chipLabel).toBeVisible();
+            else await expect(chipLabel).toBeHidden();
+            await assertTypingSpace();
+            await page
+                .getByRole("button", { name: "Farbe des Gegners: Weiss", exact: true })
+                .click();
+            const menu = page.getByRole("menu");
+            await expect(menu).toBeVisible();
+            for (const side of ["white", "black", "gray"]) {
+                await expect(menu.locator(`[data-side="${side}"]`)).toBeVisible();
+            }
+            await page.mouse.move(surface.width - 1, 899);
+            await waitForScrollAreaScrollbarsHidden(page);
+            await expect
+                .soft(page)
+                .toHaveScreenshot(`database-side-blackwhite-menu-${surface.name}-de-dark.png`);
+
+            await page.getByRole("menuitem", { name: "Alle", exact: true }).click();
+            await expect(
+                page.getByRole("button", { name: "Farbe des Spielers: Alle", exact: true }),
+            ).toBeVisible();
+            await expect(
+                page.getByRole("button", { name: "Farbe des Gegners: Alle", exact: true }),
+            ).toBeVisible();
+            await expect(page.locator('button [data-side="gray"]')).toHaveCount(2);
+            await assertTypingSpace();
+            await page.mouse.move(surface.width - 1, 899);
+            await waitForScrollAreaScrollbarsHidden(page);
+            await expect
+                .soft(page)
+                .toHaveScreenshot(`database-side-any-${surface.name}-de-dark.png`);
+            await assertNoHorizontalOverflow();
+        });
+    }
 });
 
 for (const width of [320, 1250]) {

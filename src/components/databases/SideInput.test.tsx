@@ -1,14 +1,28 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import type { SupportedLocale } from "@/i18n";
+import { catalogueI18n, shippedCatalogues } from "@/tests/catalogues";
+import type { Sides } from "@/utils/db";
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: { side: string }) => (options ? `${key}: ${options.side}` : key),
+  }),
+}));
 
 vi.mock("@mantine/core", () => ({
-  Box: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-    <div {...props}>{children}</div>
-  ),
+  Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   Menu: Object.assign(({ children }: { children: React.ReactNode }) => <div>{children}</div>, {
-    Item: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
-      <button {...props}>{children}</button>
+    Item: ({
+      children,
+      leftSection,
+      ...props
+    }: React.ButtonHTMLAttributes<HTMLButtonElement> & { leftSection?: React.ReactNode }) => (
+      <button {...props}>
+        {leftSection}
+        {children}
+      </button>
     ),
     Target: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     Dropdown: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -36,29 +50,64 @@ afterEach(async () => {
   container.remove();
 });
 
-test("derives selection from the current side and label without an effect write", async () => {
+test.each([
+  ["player", "WhiteBlack", "Fen.White", "white"],
+  ["opponent", "WhiteBlack", "Fen.Black", "black"],
+  ["player", "BlackWhite", "Fen.Black", "black"],
+  ["opponent", "BlackWhite", "Fen.White", "white"],
+  ["player", "Any", "Board.Database.Local.Result.Any", "gray"],
+  ["opponent", "Any", "Board.Database.Local.Result.Any", "gray"],
+] as const)(
+  "%s with %s has a labelled, accessible chip and shared menu swatches",
+  async (role, sides, label, color) => {
+    const setSides = vi.fn();
+    await act(async () => {
+      root.render(<SideInput role={role} sides={sides} setSides={setSides} />);
+    });
+    expect(setSides).not.toHaveBeenCalled();
+    const trigger = container.querySelector("button")!;
+    expect(trigger.textContent).toBe(label);
+    expect(trigger.getAttribute("aria-label")).toBe(
+      `Board.Database.Local.${role === "player" ? "PlayerColour" : "OpponentColour"}: ${label}`,
+    );
+    expect(trigger.querySelector("[data-side]")?.getAttribute("data-side")).toBe(color);
+    const swatches = [...container.querySelectorAll("[data-side]")];
+    expect(swatches).toHaveLength(4);
+    expect(new Set(swatches.map((swatch) => swatch.className)).size).toBe(1);
+    expect(swatches.every((swatch) => swatch.getAttribute("aria-hidden") === "true")).toBe(true);
+  },
+);
+
+test.each([
+  ["player", ["WhiteBlack", "BlackWhite", "Any"]],
+  ["opponent", ["BlackWhite", "WhiteBlack", "Any"]],
+] as const)("%s menu preserves the side mapping", async (role, expected) => {
   const setSides = vi.fn();
-
-  await act(async () => {
-    root.render(<SideInput role="opponent" sides="WhiteBlack" setSides={setSides} />);
-  });
-  expect(setSides).not.toHaveBeenCalled();
-  expect(container.querySelector<HTMLElement>("button > div")?.style.backgroundColor).toBe(
-    "var(--cf-eval-bar-dark)",
-  );
-
-  await act(async () => {
-    root.render(<SideInput role="player" sides="WhiteBlack" setSides={setSides} />);
-  });
-  expect(setSides).not.toHaveBeenCalled();
-  expect(container.querySelector<HTMLElement>("button > div")?.style.backgroundColor).toBe(
-    "var(--cf-eval-bar-light)",
-  );
-
-  await act(async () => {
-    Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
-      .find((button) => button.textContent === "Board.Database.Local.Result.Any")
-      ?.click();
-  });
-  expect(setSides).toHaveBeenCalledWith("Any");
+  await act(async () => root.render(<SideInput role={role} sides="Any" setSides={setSides} />));
+  const items = [...container.querySelectorAll("button")].slice(1);
+  for (const [index, item] of items.entries()) {
+    await act(async () => item.click());
+    expect(setSides).toHaveBeenLastCalledWith(expected[index] as Sides);
+  }
 });
+
+test.each(shippedCatalogues())(
+  "$locale contains every colour-filter message without fallback",
+  async ({ locale }) => {
+    const i18n = await catalogueI18n(locale as SupportedLocale);
+    for (const key of [
+      "Board.Database.Local.Player",
+      "Board.Database.Local.Opponent",
+      "Board.Database.Local.PlayerColour",
+      "Board.Database.Local.OpponentColour",
+      "Fen.White",
+      "Fen.Black",
+      "Board.Database.Local.Result.Any",
+    ]) {
+      expect(i18n.exists(key)).toBe(true);
+      const value = i18n.t(key, { side: i18n.t("Fen.Black") });
+      expect(value).not.toBe(key);
+      expect(value).not.toContain("{{side}}");
+    }
+  },
+);

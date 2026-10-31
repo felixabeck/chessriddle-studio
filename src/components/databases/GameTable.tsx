@@ -35,6 +35,7 @@ import GridLayout from "./GridLayout";
 import layoutClasses from "./GridLayout.module.css";
 import { PlayerSearchInput } from "./PlayerSearchInput";
 import { SideInput } from "./SideInput";
+import sideInputClasses from "./SideInput.module.css";
 import classes from "./styles.module.css";
 
 function GameTable() {
@@ -111,7 +112,10 @@ function GameTable() {
     <GridLayout
       search={
         <Flex style={{ gap: 20 }} className={layoutClasses.searchRow}>
-          <Box style={{ flexGrow: 1 }} className={layoutClasses.searchFields}>
+          <Box
+            style={{ flexGrow: 1 }}
+            className={`${layoutClasses.searchFields} ${sideInputClasses.fields}`}
+          >
             <Group grow>
               <PlayerSearchInput
                 value={query?.player1 ?? undefined}
@@ -123,7 +127,7 @@ function GameTable() {
                     role="player"
                   />
                 }
-                label={t("Common.Search")}
+                label={t("Board.Database.Local.Player")}
                 file={file}
               />
               <PlayerSearchInput
@@ -136,7 +140,7 @@ function GameTable() {
                     role="opponent"
                   />
                 }
-                label={t("Common.Search")}
+                label={t("Board.Database.Local.Opponent")}
                 file={file}
               />
             </Group>
