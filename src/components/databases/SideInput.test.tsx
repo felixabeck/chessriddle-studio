@@ -12,7 +12,12 @@ vi.mock("react-i18next", () => ({
 }));
 
 vi.mock("@mantine/core", () => ({
-  Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  Tooltip: ({ children, label }: { children: React.ReactNode; label: React.ReactNode }) => (
+    <>
+      {children}
+      <div role="tooltip">{label}</div>
+    </>
+  ),
   Menu: Object.assign(({ children }: { children: React.ReactNode }) => <div>{children}</div>, {
     Item: ({
       children,
@@ -55,11 +60,11 @@ test.each([
   ["opponent", "WhiteBlack", "Fen.Black", "black"],
   ["player", "BlackWhite", "Fen.Black", "black"],
   ["opponent", "BlackWhite", "Fen.White", "white"],
-  ["player", "Any", "Board.Database.Local.Result.Any", "gray"],
-  ["opponent", "Any", "Board.Database.Local.Result.Any", "gray"],
+  ["player", "Any", "Board.Database.Local.Result.Any", "any"],
+  ["opponent", "Any", "Board.Database.Local.Result.Any", "any"],
 ] as const)(
   "%s with %s has a labelled, accessible chip and shared menu swatches",
-  async (role, sides, label, color) => {
+  async (role, sides, label, side) => {
     const setSides = vi.fn();
     await act(async () => {
       root.render(<SideInput role={role} sides={sides} setSides={setSides} />);
@@ -67,10 +72,10 @@ test.each([
     expect(setSides).not.toHaveBeenCalled();
     const trigger = container.querySelector("button")!;
     expect(trigger.textContent).toBe(label);
-    expect(trigger.getAttribute("aria-label")).toBe(
-      `Board.Database.Local.${role === "player" ? "PlayerColour" : "OpponentColour"}: ${label}`,
-    );
-    expect(trigger.querySelector("[data-side]")?.getAttribute("data-side")).toBe(color);
+    const accessibleLabel = `Board.Database.Local.${role === "player" ? "PlayerColour" : "OpponentColour"}: ${label}`;
+    expect(trigger.getAttribute("aria-label")).toBe(accessibleLabel);
+    expect(container.querySelector('[role="tooltip"]')?.textContent).toBe(accessibleLabel);
+    expect(trigger.querySelector("[data-side]")?.getAttribute("data-side")).toBe(side);
     const swatches = [...container.querySelectorAll("[data-side]")];
     expect(swatches).toHaveLength(4);
     expect(new Set(swatches.map((swatch) => swatch.className)).size).toBe(1);

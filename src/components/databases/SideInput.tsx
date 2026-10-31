@@ -4,8 +4,8 @@ import { useTranslation } from "react-i18next";
 import type { Sides } from "@/utils/db";
 import classes from "./SideInput.module.css";
 
-function SideSwatch({ color }: { color: string }) {
-  return <span aria-hidden="true" className={classes.swatch} data-side={color} />;
+function SideSwatch({ side }: { side: "white" | "black" | "any" }) {
+  return <span aria-hidden="true" className={classes.swatch} data-side={side} />;
 }
 
 export function SideInput({
@@ -19,10 +19,10 @@ export function SideInput({
 }) {
   const { t } = useTranslation();
   const data = [
-    { label: t("Fen.White"), color: "white" },
-    { label: t("Fen.Black"), color: "black" },
-    { label: t("Board.Database.Local.Result.Any"), color: "gray" },
-  ];
+    { label: t("Fen.White"), side: "white" },
+    { label: t("Fen.Black"), side: "black" },
+    { label: t("Board.Database.Local.Result.Any"), side: "any" },
+  ] as const;
   const selected =
     (sides === "WhiteBlack" && role === "player") || (sides === "BlackWhite" && role === "opponent")
       ? data[0]
@@ -31,11 +31,11 @@ export function SideInput({
         : data[1];
   const setSelected = (item: (typeof data)[number]) => {
     if (
-      (item.color === "white" && role === "player") ||
-      (item.color === "black" && role === "opponent")
+      (item.side === "white" && role === "player") ||
+      (item.side === "black" && role === "opponent")
     ) {
       setSides("WhiteBlack");
-    } else if (item.color === "gray") {
+    } else if (item.side === "any") {
       setSides("Any");
     } else {
       setSides("BlackWhite");
@@ -43,7 +43,7 @@ export function SideInput({
   };
   const items = data.map((item) => (
     <Menu.Item
-      leftSection={<SideSwatch color={item.color} />}
+      leftSection={<SideSwatch side={item.side} />}
       onClick={() => setSelected(item)}
       key={item.label}
     >
@@ -57,15 +57,15 @@ export function SideInput({
 
   return (
     <Menu>
-      <Menu.Target>
-        <Tooltip label={label}>
+      <Tooltip label={label}>
+        <Menu.Target>
           <UnstyledButton className={classes.control} aria-label={label}>
-            <SideSwatch color={selected.color} />
+            <SideSwatch side={selected.side} />
             <span className={classes.label}>{selected.label}</span>
             <ChevronDown size={12} aria-hidden="true" />
           </UnstyledButton>
-        </Tooltip>
-      </Menu.Target>
+        </Menu.Target>
+      </Tooltip>
       <Menu.Dropdown>{items}</Menu.Dropdown>
     </Menu>
   );

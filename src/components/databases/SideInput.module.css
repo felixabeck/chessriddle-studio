@@ -60,6 +60,9 @@
   height: 14px;
   border: 1px solid var(--cf-border-strong);
   border-radius: var(--cf-radius-full);
+}
+
+.swatch[data-side="any"] {
   background: linear-gradient(to right, var(--cf-eval-bar-light) 50%, var(--cf-eval-bar-dark) 50%);
 }
 

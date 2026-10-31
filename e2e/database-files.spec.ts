@@ -1865,7 +1865,26 @@ test.describe("database-files: labelled colour filters", () => {
                 }
             };
 
-            await page.getByRole("button", { name: /^Farbe des Spielers:/ }).click();
+            const playerTrigger = page.getByRole("button", { name: /^Farbe des Spielers:/ });
+            await expect(playerTrigger).toHaveAttribute("aria-haspopup", "menu");
+            await expect(playerTrigger).toHaveAttribute("aria-expanded", "false");
+            await player.focus();
+            await page.keyboard.press("Tab");
+            await expect(playerTrigger).toBeFocused();
+            expect(
+                await playerTrigger.evaluate((element) => element.matches(":focus-visible")),
+            ).toBe(true);
+            await expect(playerTrigger).not.toHaveCSS("outline-style", "none");
+            expect(
+                await playerTrigger.evaluate((element) =>
+                    Number.parseFloat(getComputedStyle(element).outlineWidth),
+                ),
+            ).toBeGreaterThan(0);
+            await playerTrigger.click();
+            await expect(playerTrigger).toHaveAttribute("aria-expanded", "true");
+            const triggerId = await playerTrigger.getAttribute("id");
+            expect(triggerId).toBeTruthy();
+            await expect(page.getByRole("menu")).toHaveAttribute("aria-labelledby", triggerId!);
             await page.getByRole("menuitem", { name: "Schwarz", exact: true }).click();
             await expect(
                 page.getByRole("button", { name: "Farbe des Spielers: Schwarz", exact: true }),
@@ -1877,14 +1896,21 @@ test.describe("database-files: labelled colour filters", () => {
                 .getByRole("button", { name: "Farbe des Spielers: Schwarz", exact: true })
                 .getByText("Schwarz", { exact: true });
             if (surface.name === "desktop") await expect(chipLabel).toBeVisible();
-            else await expect(chipLabel).toBeHidden();
+            else {
+                await expect(chipLabel).toBeHidden();
+                await playerTrigger.hover();
+                await expect(page.getByRole("tooltip")).toHaveText("Farbe des Spielers: Schwarz");
+                await expect(page.getByRole("tooltip")).toBeVisible();
+                await page.mouse.move(surface.width - 1, 899);
+                await expect(page.getByRole("tooltip")).toHaveCount(0);
+            }
             await assertTypingSpace();
             await page
                 .getByRole("button", { name: "Farbe des Gegners: Weiss", exact: true })
                 .click();
             const menu = page.getByRole("menu");
             await expect(menu).toBeVisible();
-            for (const side of ["white", "black", "gray"]) {
+            for (const side of ["white", "black", "any"]) {
                 await expect(menu.locator(`[data-side="${side}"]`)).toBeVisible();
             }
             await page.mouse.move(surface.width - 1, 899);
@@ -1900,7 +1926,7 @@ test.describe("database-files: labelled colour filters", () => {
             await expect(
                 page.getByRole("button", { name: "Farbe des Gegners: Alle", exact: true }),
             ).toBeVisible();
-            await expect(page.locator('button [data-side="gray"]')).toHaveCount(2);
+            await expect(page.locator('button [data-side="any"]')).toHaveCount(2);
             await assertTypingSpace();
             await page.mouse.move(surface.width - 1, 899);
             await waitForScrollAreaScrollbarsHidden(page);
