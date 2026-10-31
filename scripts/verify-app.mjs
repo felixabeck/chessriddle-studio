@@ -355,14 +355,16 @@ function registryHasId(registry, id) {
 }
 
 const STARTUP_LOG_ERROR_WARNING_LINE = /\[(?:ERROR|WARN(?:ING)?)\]/iu;
+const STARTUP_LOG_ERROR_LINE_CAP = 20;
+const STARTUP_LOG_TAIL_BYTES = 4096;
 
-function formatSinceOpenLog(text, lineCap, tailBytes) {
+function formatSinceOpenLog(text) {
   const slice = String(text);
   const lines = slice
     .split(/\r?\n/u)
     .filter((line) => STARTUP_LOG_ERROR_WARNING_LINE.test(line))
-    .slice(0, lineCap);
-  const tail = slice.length <= tailBytes ? slice : slice.slice(-tailBytes);
+    .slice(0, STARTUP_LOG_ERROR_LINE_CAP);
+  const tail = Buffer.from(slice, "utf8").subarray(-STARTUP_LOG_TAIL_BYTES).toString("utf8");
   return { lines, tail };
 }
 
@@ -424,10 +426,11 @@ function formatRegistryObservation({ registryResult, lastReadError, probeId, orp
 }
 
 /**
- * Production callers omit a timeout so waitFor's 45 s default applies. A throwing
- * registry read is an observation: polling continues and the last error is kept
- * for timeout evidence. Injected waiter, clock, session, log reader, renderer
- * deadline and driver diagnostics are test seams.
+ * Production callers pass `session` and the since-open log reader. This helper
+ * has no timeout parameter; it calls waitFor without a timeout option so the
+ * 45 s default applies. A throwing registry read is an observation: polling
+ * continues and the last error is kept for timeout evidence. Injected waiter,
+ * clock, renderer deadline and driver diagnostics are test seams.
  */
 export async function waitForStartupReconciliation({
   label,
@@ -440,8 +443,6 @@ export async function waitForStartupReconciliation({
   waitFor: waitForImpl = waitFor,
   now = Date.now,
   rendererTimeoutMs = 5_000,
-  logErrorLineCap = 20,
-  logTailBytes = 4096,
   driverDiagnostics: driverDiagnosticsImpl = driverDiagnostics,
 } = {}) {
   const startedAt = now();
@@ -471,24 +472,21 @@ export async function waitForStartupReconciliation({
     const driverResult = await collectIndependently(() =>
       driverDiagnosticsImpl ? driverDiagnosticsImpl() : "",
     );
-    const logEvidence = logResult.ok
-      ? formatSinceOpenLog(logResult.value ?? "", logErrorLineCap, logTailBytes)
-      : null;
+    const logEvidence = logResult.ok ? formatSinceOpenLog(logResult.value ?? "") : null;
     const logSection = logEvidence
       ? [
-          `application-log errors/warnings (capped at ${logErrorLineCap}):`,
+          `application-log errors/warnings (capped at ${STARTUP_LOG_ERROR_LINE_CAP}):`,
           logEvidence.lines.join("\n") || "(none)",
-          "application-log tail (last 4 KiB):",
+          `application-log tail (last ${STARTUP_LOG_TAIL_BYTES / 1024} KiB):`,
           logEvidence.tail || "(empty)",
         ].join("\n")
       : `application-log unavailable (${logResult.error})`;
-    const rendererSection = rendererResult.ok
-      ? `renderer: ${
-          typeof rendererResult.value === "string"
-            ? rendererResult.value
-            : JSON.stringify(rendererResult.value)
-        }`
-      : `renderer unavailable (${rendererResult.error})`;
+    const rendererEvidence = rendererResult.ok
+      ? rendererResult.value
+      : `unavailable (${rendererResult.error})`;
+    const rendererSection = `renderer: ${
+      typeof rendererEvidence === "string" ? rendererEvidence : JSON.stringify(rendererEvidence)
+    }`;
     const driverSection = driverResult.ok
       ? `driver:\n${driverResult.value || "(empty)"}`
       : `driver unavailable (${driverResult.error})`;
@@ -3935,11 +3933,8 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
     profileDirectory,
     ".local/share/com.chessriddle.encroissant/logs/en-croissant.log",
   );
-  const assertedLogStart = existsSync(logFile) ? (await stat(logFile)).size : 0;
-  const readLog = () =>
-    readFile(logFile)
-      .then((bytes) => bytes.subarray(assertedLogStart).toString("utf8"))
-      .catch(() => "");
+  const readLogSinceFirstOpen = await createSinceOpenLogReader(logFile);
+  const readLog = () => readLogSinceFirstOpen().catch(() => "");
 
   const createLogReader = () => createSinceOpenLogReader(logFile);
   const openCurrentAssertionSession = (label) => openAssertionSession({ label, createLogReader });
@@ -4002,7 +3997,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
     waitFor(
       label,
       async () => {
-        const registry = JSON.parse(await readFile(registryFile, "utf8"));
+        const registry = await readPathRegistry();
         return registry.entries.some(({ id }) => id.id === largePracticeId) &&
           registry.entries.some(({ id }) => id.id === legacyPracticeId)
           ? registry
@@ -4011,7 +4006,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
       { timeoutMs: IPC_PROBE_TIMEOUT_MS },
     );
   const armStartupReconciliationProbe = async () => {
-    const registry = JSON.parse(await readFile(registryFile, "utf8"));
+    const registry = await readPathRegistry();
     const probeId = "verify-unowned-book";
     registry.entries = registry.entries.filter(({ id }) => id.id !== probeId);
     registry.entries.push(
@@ -5037,7 +5032,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
     retireImageResult.rejected ?? retireImageResult.error,
   );
   const registryWithCleanup = await waitFor("the managed-image cleanup intent", async () => {
-    const registry = JSON.parse(await readFile(registryFile, "utf8"));
+    const registry = await readPathRegistry();
     return registry.image_cleanup?.some(({ id }) => id.id === retiredImageId) ? registry : false;
   });
   check(
@@ -5836,7 +5831,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
   );
   check(log.includes("Sound server shutdown signalled"), "the sound server shutdown was signalled");
 
-  const shutdownRegistry = JSON.parse(await readFile(registryFile, "utf8"));
+  const shutdownRegistry = await readPathRegistry();
   check(
     !existsSync(retiredImage) &&
       existsSync(retainedImage) &&

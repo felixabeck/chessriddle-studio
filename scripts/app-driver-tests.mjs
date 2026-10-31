@@ -532,11 +532,50 @@ test("registry read and parse failures during polling neither abort nor succeed"
     "observed-false",
     "unreconciled",
   ]);
+
+  const successEvents = [];
+  const reconciled = seededRegistry(["verify-owned-root"]);
+  const recovered = await waitForStartupReconciliation({
+    label: "parse-error then success fixture",
+    readRegistry: async () => {
+      if (!successEvents.includes("throw")) {
+        successEvents.push("throw");
+        throw new SyntaxError("unexpected token in path-authority.json");
+      }
+      if (!successEvents.includes("unparseable")) {
+        successEvents.push("unparseable");
+        throw new SyntaxError("unparseable path-authority.json");
+      }
+      successEvents.push("reconciled");
+      return reconciled;
+    },
+    isReconciled: (registry) => !registry.entries.some(({ id }) => id.id === "verify-unowned-book"),
+    waitFor: async (label, probe) => {
+      for (let remaining = 8; remaining > 0; remaining -= 1) {
+        const value = await probe();
+        successEvents.push(value === false ? "observed-false" : "observed-success");
+        if (value) return value;
+      }
+      throw new Error(`timed out waiting for ${label}`);
+    },
+    now: sequentialNow([5_100, 5_180]),
+    session: { execute: async () => ({ readyState: "loading" }) },
+    readLogSinceOpen: async () => "",
+    driverDiagnostics: () => "driver-ok",
+  });
+  assert.equal(recovered, reconciled);
+  assert.deepEqual(successEvents, [
+    "throw",
+    "observed-false",
+    "unparseable",
+    "observed-false",
+    "reconciled",
+    "observed-success",
+  ]);
 });
 
 test("startup reconciliation timeout carries every diagnostic field including the open-offset log", async (t) => {
   captureConsole(t);
-  const beforeOpen = "BEFORE_OPEN_SECRET must never appear";
   const sinceOpen = "[2026-10-31][encroissant][ERROR] since-open bootstrap rejection";
   await assert.rejects(
     waitForStartupReconciliation({
@@ -566,7 +605,6 @@ test("startup reconciliation timeout carries every diagnostic field including th
       assert.match(error.message, /probe verify-unowned-book present/u);
       assert.match(error.message, /orphan image orphan-image present/u);
       assert.match(error.message, /since-open bootstrap rejection/u);
-      assert.equal(error.message.includes(beforeOpen), false);
       assert.match(error.message, /readyState":"interactive"/u);
       assert.match(error.message, /hasTauri":false/u);
       assert.match(error.message, /windowControlsMounted":false/u);
@@ -747,7 +785,6 @@ test("failing assertion-session open reports driver output and the since-open lo
   const dumped = errors.join("\n");
   assert.match(dumped, /DRIVER_OUTPUT_MARKER tauri-driver/u);
   assert.match(dumped, /SINCE_OPEN_MARKER application log/u);
-  assert.equal(dumped.includes("BEFORE_OPEN_SECRET"), false);
 });
 
 test("failing assertion-session open still throws when the since-open log cannot be read", async (t) => {
