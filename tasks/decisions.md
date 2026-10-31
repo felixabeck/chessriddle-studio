@@ -11255,3 +11255,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Found by the push records lens for f-20261031-01 and verified against the locked crate source. Reversal path: if a test needs per-runtime capacity across worker threads, revisit with a registry that is cleaned up when the runtime drops.
 * **Decided by:** Claude (drain orchestrator) during the f-20261031-01 push review, under full auto · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"df8a9b0b18e1c0e9aad2372fbdb8424b3a072142df35c0bc7344c34abf58bf4c","input_sha256":"5b5ee2bb6227898e5229661e336cf6ced6d03af37b15437fb71af385422f81f2","kind":"mutation-receipt","operation":"f8efa2839ca3255ea2e8bd2e291f6ac18a750e68b34345cfae7542519547a9a9","options":{"section":null},"request_id_sha256":null,"results":["d-20261031-09"],"target":"decisions-ledger","v":1} -->
+
+### d-20261031-10 — How should the database Games colour filter show its state legibly?
+
+* **Question:** Felix reported the dot beside each player search as indistinguishable (black dot invisible on the dark inset, "Any" a faint grey, both fields labelled "Search"). Which control replaces it?
+* **Governs:** -
+* **Chosen:** Keep the one-click Menu but make the trigger a labelled chip: ringed swatch (split light/dark for Any), side text, chevron, tooltip and accessible name; placeholders Player / Opponent. In narrow fields a CSS container query collapses the chip to swatch + chevron and the two fields reflow to one per row; no JavaScript measurement.
+* **Rejected:** Recolouring the dot only (contrast fixed, meaning still hidden); an inline three-way SegmentedControl (does not fit two fields at 320 px / 200 %); JavaScript width measurement (forced two rows at desktop widths in phase 1).
+* **Reason:** Build search-side-toggle, plan review r1-r5 (tasks/handoffs/2026-10-31-search-side-toggle-review.md). Reversal path: revert 054455a7 and 66f103e2 and re-record the database-files snapshots.
+* **Decided by:** Claude Code (build orchestrator) under full auto · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"d3497a2f07b2738c0f82a2428d5deb99784ace4aa87819359ce210550a393931","input_sha256":"6d240ccc614f908a58abeabe8a04393cec520b296333f46a7bf60d32f9a8888f","kind":"mutation-receipt","operation":"5065204ddf98162fd4590cf979bf72a12a4a4311665bc4baea2ee965796936e6","options":{"section":null},"request_id_sha256":null,"results":["d-20261031-10"],"target":"decisions-ledger","v":1} -->
