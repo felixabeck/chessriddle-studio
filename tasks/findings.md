@@ -19929,3 +19929,19 @@ Fixed in 17d570d3: the board column's fixed 0.5rem gaps became two shrinkable 0.
 * **Spotted outside diff:** the colour-filter build reused the existing `Fen.White` key and did not change its value.
 * **Note:** changing `Fen.White` moves the two de-DE snapshots `database-side-blackwhite-menu-{desktop,320-200}-de-dark` in `e2e/database-files.spec.ts`; re-record them via `pnpm test:e2e:update` (container) and update the spec's `"Farbe des Gegners: Weiss"` assertion.
 * **Found by:** Claude Code build session e68b0001-fd41-489f-b2b2-93048631b46d, 2026-10-31.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### pathOwners "incomplete startup scan" test times out at 5 s in the frontend-coverage gate under load
+
+* **ID:** f-20261101-01 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Where:** `src/state/pathOwners.test.ts:610`, test "refuses clearing without retiring migrated keys after an incomplete startup scan" (`vi.resetModules()` then `await import("./practiceStorage")`).
+* **Defect:** in `pnpm gates:push -- --frontend` on 2026-10-31 23:42 (build search-side-toggle, HEAD c72e233d, a diff that touches no `src/state` file) the frontend-coverage lane failed only this test with "Test timed out in 5000ms" (5893 passed, 1 failed). Run alone it passes in 1.54 s. This is the cold-transform-under-load class of f-20260930-02, which is marked handled, so the earlier fix did not cover this test.
+* **Failure scenario:** any frontend push gate can go red on this test independent of the tree, costing a gate rerun.
+* **Follow-up of:** f-20260930-02
+* **Spotted outside diff:** the colour-filter build changes only `src/components/databases/**`, translations and the database e2e spec.
+* **Proof:** gate transcript `artifacts/gates/20261031T224221444Z-3061068/receipt-frontend-coverage.log` in the search-side-toggle worktree.
+* **Found by:** Claude Code build session e68b0001-fd41-489f-b2b2-93048631b46d, 2026-10-31.
