@@ -19893,3 +19893,15 @@ Fixed in 015cd709: playBoardMove and dragBoard poll the trial click and bounding
 
 * **Correction to the precedent-correction bullet above (2026-10-31, same push review):** Its claim that the f-20261026-02 repair "kept the outer timeout" is wrong. 3e92e0c3 removed the fixture's 2 s outer `tokio::time::timeout` around the server/client join and the 120 ms budget, and replaced them with the production `REVOCATION_TIMEOUT` under paused tokio time (`pause`/`advance`), per-stage `REVOCATION_TIMEOUT / 3` checkpoints and a `timeout_at` expiry probe. Production `REVOCATION_TIMEOUT` was unchanged and no wall-clock hang detector was widened. The relevant precedent for this entry is therefore the second option of its own Fix direction: assert the bound with paused tokio time where the code path supports it.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"0e99f7ed8eada568e04a0bfabd7709ae9a881d9488200181c8103b57ac43863e","input_sha256":"b9328543a1b65af0ed5efc234086973052c5983b9cf0031474e02a5bfbb8b9c0","kind":"mutation-receipt","operation":"26b8198108ea82b8024851f49d5cd01d5bc768e13f9a57dae32e488907f8f97b","options":{"section":null},"request_id_sha256":null,"results":["f-20261031-02"],"target":"f-20261031-02","v":1} -->
+
+---
+
+## 2026-10-31 — filed through the inbox spool
+
+### Analysis board clips the bottom player bar's material indicator
+
+* **ID:** f-20261031-03 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Report:** Felix reported a clipped ChessPawn and +1 in a finished analysis game with Black orientation and Black one pawn ahead.
+* **Where:** `src/components/boards/Board.tsx`, `src/components/boards/BoardBar.tsx`.
+* **Evidence:** The pinned Playwright probe at 1920×900 measures the column bottom at 883px, the bottom bar and pawn bottom at 885.1875px, and the +1 bottom at 883.390625px. Both diff and all regression cases fail against the original source. At 1440×900 neither case clips. The board is 720×720 in the failing case. Its hand-tuned viewport width budget overallocates vertical space and flex bars stop shrinking at their 26px name line boxes. The indicator fits inside its bar.
+* **Proof:** `artifacts/material-bar-clip/before/run.log` and retained screenshots in that directory. Native verification cannot start because this worktree has no release binary. The bounded task requests a correction preserving board size, bar layout and name alignment. Clarification is pending on the board-size constraint because accurate height reservation can cross an 8px Chessground sizing step.
