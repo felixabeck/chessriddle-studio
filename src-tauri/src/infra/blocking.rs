@@ -9,10 +9,18 @@ use tokio_util::sync::CancellationToken;
 /// Bounds the number of concurrently running production blocking tasks.
 const BLOCKING_GATEWAY_PERMITS: usize = 4;
 
+/// In the shipped app the gateway is one process-wide semaphore of `BLOCKING_GATEWAY_PERMITS`
+/// (4) permits, so four nested acquisitions hang the process with no error. Test builds admit
+/// against four permits owned by the OS thread that awaits admission, so a test saturates only
+/// its own thread's capacity.
 #[cfg(not(test))]
 pub static BLOCKING_GATEWAY: Lazy<BlockingGateway> =
     Lazy::new(|| BlockingGateway::new(BLOCKING_GATEWAY_PERMITS));
 
+/// In the shipped app the gateway is one process-wide semaphore of `BLOCKING_GATEWAY_PERMITS`
+/// (4) permits, so four nested acquisitions hang the process with no error. Test builds admit
+/// against four permits owned by the OS thread that awaits admission, so a test saturates only
+/// its own thread's capacity.
 #[cfg(test)]
 pub static BLOCKING_GATEWAY: Lazy<BlockingGateway> = Lazy::new(BlockingGateway::per_thread);
 
@@ -24,10 +32,7 @@ pub static BLOCKING_GATEWAY: Lazy<BlockingGateway> = Lazy::new(BlockingGateway::
 /// (`pgn.rs`), which takes a permit — that is a legal sequential acquisition and must not
 /// become a nested one.
 ///
-/// In the shipped app the gateway is one process-wide semaphore of `BLOCKING_GATEWAY_PERMITS`
-/// (4) permits, so four nested acquisitions hang the process with no error. Test builds admit
-/// against four permits owned by the OS thread that awaits admission, so a test saturates only
-/// its own thread's capacity.
+/// `BlockingGateway::new(n)` gateways always use one explicit semaphore of n permits.
 pub struct BlockingGateway {
     semaphore: GatewaySemaphore,
 }
@@ -660,21 +665,29 @@ mod tests {
 
         fn wait(&self) {
             let (lock, cvar) = &*self.0;
-            let mut holding = lock.lock().unwrap();
+            let Ok(mut holding) = lock.lock() else {
+                return;
+            };
             while *holding {
-                holding = cvar.wait(holding).unwrap();
+                match cvar.wait(holding) {
+                    Ok(guard) => holding = guard,
+                    Err(_) => return,
+                }
             }
         }
 
         fn release(&self) {
             let (lock, cvar) = &*self.0;
-            *lock.lock().unwrap() = false;
+            if let Ok(mut holding) = lock.lock() {
+                *holding = false;
+            }
             cvar.notify_all();
         }
     }
 
     struct ReleaseOnDrop(WorkerHold);
 
+    /// Panic-free in Drop so a failing assertion cannot abort the test process on Windows.
     impl Drop for ReleaseOnDrop {
         fn drop(&mut self) {
             self.0.release();
@@ -1345,48 +1358,9 @@ mod tests {
         });
     }
 
-    /// Panic-free in Drop (CR-1): ignore lock/wait poison so a failing assertion cannot abort
-    /// the test process on Windows.
-    #[derive(Clone)]
-    struct PermitHold(Arc<(Mutex<bool>, Condvar)>);
-
-    impl PermitHold {
-        fn new() -> Self {
-            Self(Arc::new((Mutex::new(true), Condvar::new())))
-        }
-
-        fn wait(&self) {
-            let (lock, cvar) = &*self.0;
-            let Ok(mut holding) = lock.lock() else {
-                return;
-            };
-            while *holding {
-                match cvar.wait(holding) {
-                    Ok(guard) => holding = guard,
-                    Err(_) => return,
-                }
-            }
-        }
-
-        fn release(&self) {
-            let (lock, cvar) = &*self.0;
-            if let Ok(mut holding) = lock.lock() {
-                *holding = false;
-            }
-            cvar.notify_all();
-        }
-    }
-
-    struct ReleasePermitHold(PermitHold);
-
-    impl Drop for ReleasePermitHold {
-        fn drop(&mut self) {
-            self.0.release();
-        }
-    }
-
     struct JoinThreadOnDrop(Option<std::thread::JoinHandle<()>>);
 
+    /// Panic-free in Drop so a failing assertion cannot abort the test process on Windows.
     impl Drop for JoinThreadOnDrop {
         fn drop(&mut self) {
             if let Some(handle) = self.0.take() {
@@ -1398,14 +1372,14 @@ mod tests {
     async fn park_global_gateway_holders(
         count: usize,
     ) -> (
-        Vec<ReleasePermitHold>,
+        Vec<ReleaseOnDrop>,
         Vec<tokio::task::JoinHandle<Result<(), Error>>>,
     ) {
         let mut releases = Vec::with_capacity(count);
         let mut workers = Vec::with_capacity(count);
         for _ in 0..count {
-            let hold = PermitHold::new();
-            releases.push(ReleasePermitHold(hold.clone()));
+            let hold = WorkerHold::new();
+            releases.push(ReleaseOnDrop(hold.clone()));
             let (entered_tx, mut entered_rx) = mpsc::unbounded_channel();
             workers.push(tokio::spawn(async move {
                 BLOCKING_GATEWAY
