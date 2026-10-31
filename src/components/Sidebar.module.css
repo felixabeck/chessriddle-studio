@@ -1,5 +1,8 @@
+/* The navbar's 3rem includes its 1px right border; a fixed 3rem tile overflowed
+   under that border and lost its right corners. Fill the content box with an
+   even inset instead. */
 .link {
-  width: 3rem;
+  margin-inline: 0.25rem;
   height: 3rem;
   display: flex;
   align-items: center;
