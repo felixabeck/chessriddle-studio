@@ -19865,3 +19865,18 @@ Fixed in 015cd709: playBoardMove and dragBoard poll the trial click and bounding
 * **Spotted outside diff:** f-20261017-04 changes only gate scripts.
 * **Related:** f-20261011-03 (handled, host-delay timeout class; its decision d-20261031-02 did not name these tests). Gate log: `artifacts/gates/20261031T100200785Z-3531499/receipt-backend-test.log` in the drain worktree.
 * **Found by:** Claude Code drain session 3ea5942c-b066-4f7d-93b9-81aa748b3081, 2026-10-31.
+
+---
+
+## 2026-10-31 — filed through the inbox spool
+
+### The OAuth listener-abort test's 100 ms watchdog elapses on the macOS runner
+
+* **ID:** f-20261031-02 · **Status:** open · **Area:** oauth-credentials · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 4eff03d3-7d21-483a-bdc2-87681fa98fe4
+* **Impact class:** tooling
+* **Where:** `src-tauri/src/oauth.rs`, test `oauth::tests::deadline_aborts_listener_that_ignores_shutdown` (the `tokio::time::timeout(Duration::from_millis(100), task)` and its `.expect("bounded listener shutdown")`).
+* **Defect:** The test starts an attempt with `short_config()` (20 ms transaction deadline) against a mock listener that ignores shutdown, then allows the whole task only 100 ms of wall time before panicking. On the hosted macOS runner the deadline, abort and join exceeded 100 ms: `thread 'oauth::tests::deadline_aborts_listener_that_ignores_shutdown' panicked at src/oauth.rs:2303:14: bounded listener shutdown: Elapsed(())`, `test result: FAILED. 2842 passed; 1 failed; 1 ignored`. Observed on Test run 41221324606, job 124596305763 (`rust-macos-test`), head `20000f39cab2ea2f1c56a55935e19c07f426dde2`, 2026-10-31T17:03:52Z. That head only adds a build-ledger line; the test and `oauth.rs` are unchanged from earlier green macOS runs, so this is a wall-clock margin failure on a loaded runner, the same class as handled f-20261026-03 (shared-deadline revocation test, also macOS-only).
+* **Spotted outside diff:** f-20261022-05 review range `c2d0cadb..4142ad47` does not change `src-tauri/src/oauth.rs`.
+* **Failure scenario:** A macOS `cargo test` run where the scheduler delays the 20 ms deadline plus the abort and join beyond 100 ms fails `rust-macos-test`. `pnpm ci:remote:check` then refuses later pushes from every session.
+* **Fix direction:** Keep the assertion that the listener is aborted and the lifecycle is idle, but make the outer watchdog a generous hang detector (as f-20261026-03 did) rather than a tight latency bound, or assert the bound with paused tokio time if the code path supports it. Do not weaken the abort or idle assertions.
