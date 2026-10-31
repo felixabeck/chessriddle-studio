@@ -19861,7 +19861,7 @@ Fixed in 015cd709: playBoardMove and dragBoard poll the trial click and bounding
 
 ### Two pgn read-revision retry tests time out waiting for the read-chunk hook in the rust-test lane
 
-* **ID:** f-20261031-01 · **Status:** open · **Area:** pgn-import · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261031-01 · **Status:** handled · **Area:** pgn-import · **Root:** - · **Entry:** build · **Blocked:** none
 * **Filed from:** 3ea5942c-b066-4f7d-93b9-81aa748b3081
 * **Impact class:** tooling
 * **Where:** `src-tauri/src/pgn.rs:2179-2182`, the shared read-revision retry fixture (`tokio::time::timeout(Duration::from_secs(5), entered)` → `expect("read hook timeout")`), used by `pgn::tests::read_revision_retry_binds_single_game_stamp` and `pgn::tests::read_revision_retry_discards_shortening_eof_error`.
@@ -19871,6 +19871,8 @@ Fixed in 015cd709: playBoardMove and dragBoard poll the trial click and bounding
 * **Spotted outside diff:** f-20261017-04 changes only gate scripts.
 * **Related:** f-20261011-03 (handled, host-delay timeout class; its decision d-20261031-02 did not name these tests). Gate log: `artifacts/gates/20261031T100200785Z-3531499/receipt-backend-test.log` in the drain worktree.
 * **Found by:** Claude Code drain session 3ea5942c-b066-4f7d-93b9-81aa748b3081, 2026-10-31.
+* **Closed (2026-10-31, drain session 17dbb7e1, adopted reviewed plan):** The open question is answered from the planner's trace: host delay amplified by cross-test admission queueing on the process-global four-permit `BLOCKING_GATEWAY`, not a missed hook route and not runtime starvation. Fix: in `cfg(test)` builds the global gateway admits against four permits owned by the OS thread awaiting admission, so tests no longer queue behind each other's permits; production keeps one process-wide four-permit semaphore; `ARCHIVE_GATEWAY_TEST_LOCK` in `fs.rs` tests is removed. The 5 s fixture ceiling is unchanged (d-20261031-02). Commits 590b0f0f, c15ecb91 (push-review repair), decisions d-20261031-08 and its rationale correction d-20261031-09, review history `tasks/handoffs/2026-10-31-f-20261031-01-review.md`. Proof: new tests `global_gateway_admits_on_another_thread_while_this_thread_holds_four` (red when per-thread selection is replaced by one shared semaphore) and `global_gateway_retains_four_permits_on_the_awaiting_thread`; full `pnpm gates:push -- --rust` green at c15ecb91; hosted rust-windows-test, rust-macos-test and rust-platform green. Rejected: raising the 5 s ceiling, lifting the global limit in tests, injecting a gateway into production APIs, a global test-serialisation lock, a runtime-id keyed registry (unbounded). Separately observed and filed: two oauth production-revocation loopback tests failed once together in a local full run (inbox entry from this session).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"dbd08641c9b55d26e4b9cf7f52f52de0dbdbba0b0d642bd48fc03b38d5cff94d","header_sha256":"a2e412b8375825419111d75fbc8c405434fae60668dcb46d25cddf362ee0e688","header_status":"handled","input_sha256":"e7f1f30b7b24ddf90cfc42deb9cd97b9f88a3add483de356d4509b0e98a97a28","kind":"mutation-receipt","operation":"7d24365fd9483510e9667b39766c033b9fa871b7d4e637734695a5f50851847f","options":{"section":null},"request_id_sha256":null,"results":["f-20261031-01"],"target":"f-20261031-01","v":1} -->
 
 ---
 
