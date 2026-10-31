@@ -2,13 +2,20 @@ import assert from "node:assert/strict";
 import childProcess from "node:child_process";
 import fs from "node:fs";
 import { createServer } from "node:http";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { appendFile, chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { syncBuiltinESMExports } from "node:module";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import { verifyConversionCancellationContract } from "./verify-app.mjs";
+import {
+  ASSERTION_SESSION_OPEN_PHRASE,
+  STARTUP_RECONCILIATION_LATENCY_PHRASE,
+  createSinceOpenLogReader,
+  openAssertionSession,
+  verifyConversionCancellationContract,
+  waitForStartupReconciliation,
+} from "./verify-app.mjs";
 import {
   Session,
   APP_BINARY,
@@ -391,4 +398,458 @@ test("cleanup aggregates the original failure and profile removal failures after
     },
   );
   assert.deepEqual(removed, ["/fixture/failing-profile", "/fixture/successful-profile"]);
+});
+
+function captureConsole(t) {
+  const logs = [];
+  const errors = [];
+  t.mock.method(console, "log", (message) => {
+    logs.push(String(message));
+  });
+  t.mock.method(console, "error", (message) => {
+    errors.push(String(message));
+  });
+  return { logs, errors };
+}
+
+function seededRegistry(ids) {
+  return { entries: ids.map((id) => ({ id: { id } })), image_cleanup: [] };
+}
+
+async function timeoutAfterProbes(label, probe, times = 2) {
+  for (let remaining = times; remaining > 0; remaining -= 1) await probe();
+  throw new Error(`timed out waiting for ${label}`);
+}
+
+function sequentialNow(values) {
+  let index = 0;
+  return () => {
+    const value = values[Math.min(index, values.length - 1)];
+    index += 1;
+    return value;
+  };
+}
+
+test("startup reconciliation wait omits a timeout so waitFor keeps its default bound", async (t) => {
+  captureConsole(t);
+  let captured;
+  const registry = seededRegistry(["verify-owned-root"]);
+  await waitForStartupReconciliation({
+    label: "bound fixture",
+    readRegistry: async () => registry,
+    isReconciled: () => true,
+    waitFor: async (...args) => {
+      captured = args;
+      return registry;
+    },
+    session: { execute: async () => ({}) },
+    readLogSinceOpen: async () => "",
+    driverDiagnostics: () => "",
+  });
+  assert.equal(captured.length, 2);
+  assert.equal(captured[0], "bound fixture");
+  assert.equal(typeof captured[1], "function");
+});
+
+test("late startup-probe removal resolves with the registry and emits the latency line", async (t) => {
+  const { logs } = captureConsole(t);
+  let reads = 0;
+  const result = await waitForStartupReconciliation({
+    label: "late removal fixture",
+    readRegistry: async () => {
+      reads += 1;
+      return reads >= 3
+        ? seededRegistry(["verify-owned-root"])
+        : seededRegistry(["verify-unowned-book"]);
+    },
+    isReconciled: (registry) => !registry.entries.some(({ id }) => id.id === "verify-unowned-book"),
+    waitFor: async (label, probe) => {
+      for (;;) {
+        const value = await probe();
+        if (value) return value;
+      }
+    },
+    now: sequentialNow([1_000, 1_337]),
+    session: { execute: async () => ({}) },
+    readLogSinceOpen: async () => "",
+    driverDiagnostics: () => "",
+  });
+  assert.equal(reads, 3);
+  assert.ok(result.entries.some(({ id }) => id.id === "verify-owned-root"));
+  assert.equal(
+    logs.some(
+      (line) =>
+        line.startsWith("  .. ") &&
+        line.includes(STARTUP_RECONCILIATION_LATENCY_PHRASE) &&
+        line.includes("late removal fixture") &&
+        line.includes("337 ms"),
+    ),
+    true,
+    logs.join("\n"),
+  );
+});
+
+test("registry read and parse failures during polling neither abort nor succeed", async (t) => {
+  captureConsole(t);
+  const events = [];
+  const result = await waitForStartupReconciliation({
+    label: "parse-error fixture",
+    readRegistry: async () => {
+      if (events.length === 0) {
+        events.push("throw");
+        throw new SyntaxError("unexpected token in path-authority.json");
+      }
+      events.push("unreconciled");
+      return seededRegistry(["verify-unowned-book"]);
+    },
+    isReconciled: (registry) => !registry.entries.some(({ id }) => id.id === "verify-unowned-book"),
+    waitFor: async (label, probe) => {
+      const first = await probe();
+      events.push(first === false ? "observed-false" : "observed-success");
+      const second = await probe();
+      events.push(second === false ? "observed-false" : "observed-success");
+      throw new Error(`timed out waiting for ${label}`);
+    },
+    now: sequentialNow([5_000, 5_040]),
+    session: { execute: async () => ({ readyState: "loading" }) },
+    readLogSinceOpen: async () => "",
+    driverDiagnostics: () => "driver-ok",
+  }).then(
+    (value) => ({ ok: true, value }),
+    (error) => ({ ok: false, error }),
+  );
+  assert.equal(result.ok, false);
+  assert.match(result.error.message, /timed out waiting for parse-error fixture after 40 ms/u);
+  assert.match(
+    result.error.message,
+    /last read\/parse error: unexpected token in path-authority.json/u,
+  );
+  assert.match(result.error.message, /probe verify-unowned-book present/u);
+  assert.deepEqual(events, [
+    "throw",
+    "observed-false",
+    "unreconciled",
+    "observed-false",
+    "unreconciled",
+  ]);
+});
+
+test("startup reconciliation timeout carries every diagnostic field including the open-offset log", async (t) => {
+  captureConsole(t);
+  const beforeOpen = "BEFORE_OPEN_SECRET must never appear";
+  const sinceOpen = "[2026-10-31][encroissant][ERROR] since-open bootstrap rejection";
+  await assert.rejects(
+    waitForStartupReconciliation({
+      label: "full evidence fixture",
+      probeId: "verify-unowned-book",
+      orphanImageId: "orphan-image",
+      readRegistry: async () => ({
+        entries: [{ id: { id: "verify-unowned-book" } }, { id: { id: "orphan-image" } }],
+        image_cleanup: [{ id: { id: "orphan-image" } }],
+      }),
+      isReconciled: () => false,
+      waitFor: timeoutAfterProbes,
+      now: sequentialNow([2_000, 2_321]),
+      session: {
+        execute: async () => ({
+          readyState: "interactive",
+          hasTauri: false,
+          windowControlsMounted: false,
+          bodyText: "renderer body text for the probe",
+        }),
+      },
+      readLogSinceOpen: async () => sinceOpen,
+      driverDiagnostics: () => "tauri-driver fixture output",
+    }),
+    (error) => {
+      assert.match(error.message, /timed out waiting for full evidence fixture after 321 ms/u);
+      assert.match(error.message, /probe verify-unowned-book present/u);
+      assert.match(error.message, /orphan image orphan-image present/u);
+      assert.match(error.message, /since-open bootstrap rejection/u);
+      assert.equal(error.message.includes(beforeOpen), false);
+      assert.match(error.message, /readyState":"interactive"/u);
+      assert.match(error.message, /hasTauri":false/u);
+      assert.match(error.message, /windowControlsMounted":false/u);
+      assert.match(error.message, /renderer body text for the probe/u);
+      assert.match(error.message, /tauri-driver fixture output/u);
+      return true;
+    },
+  );
+});
+
+test("startup reconciliation timeout keeps an early error line ahead of a 4 KiB info tail", async (t) => {
+  captureConsole(t);
+  const early = "[2026-10-31][encroissant][ERROR] StartupEngineCompletionError bootstrap rejection";
+  const info = `[2026-10-31][encroissant][INFO] ${"n".repeat(80)}\n`.repeat(70);
+  const logText = `${early}\n${info}`;
+  assert.ok(Buffer.byteLength(logText) > 4096);
+  await assert.rejects(
+    waitForStartupReconciliation({
+      label: "early-error log fixture",
+      readRegistry: async () => seededRegistry(["verify-unowned-book"]),
+      isReconciled: () => false,
+      waitFor: timeoutAfterProbes,
+      now: sequentialNow([8_000, 8_010]),
+      session: { execute: async () => ({ readyState: "loading" }) },
+      readLogSinceOpen: async () => logText,
+      driverDiagnostics: () => "",
+    }),
+    (error) => {
+      assert.match(error.message, /StartupEngineCompletionError bootstrap rejection/u);
+      assert.match(error.message, /application-log errors\/warnings/u);
+      assert.match(error.message, /application-log tail \(last 4 KiB\)/u);
+      return true;
+    },
+  );
+});
+
+test("log-read failure still yields the startup reconciliation timeout error", async (t) => {
+  captureConsole(t);
+  await assert.rejects(
+    waitForStartupReconciliation({
+      label: "log-read fixture",
+      readRegistry: async () => seededRegistry(["verify-unowned-book"]),
+      isReconciled: () => false,
+      waitFor: timeoutAfterProbes,
+      now: sequentialNow([3_000, 3_050]),
+      session: { execute: async () => ({ readyState: "complete" }) },
+      readLogSinceOpen: async () => {
+        throw new Error("log file unreadable");
+      },
+      driverDiagnostics: () => "driver still present",
+    }),
+    (error) => {
+      assert.match(error.message, /timed out waiting for log-read fixture after 50 ms/u);
+      assert.match(error.message, /application-log unavailable \(log file unreadable\)/u);
+      assert.match(error.message, /driver still present/u);
+      return true;
+    },
+  );
+});
+
+test("renderer reject still yields the startup reconciliation timeout error", async (t) => {
+  captureConsole(t);
+  await assert.rejects(
+    waitForStartupReconciliation({
+      label: "renderer-reject fixture",
+      readRegistry: async () => seededRegistry(["verify-unowned-book"]),
+      isReconciled: () => false,
+      waitFor: timeoutAfterProbes,
+      now: sequentialNow([4_000, 4_012]),
+      session: {
+        execute: async () => {
+          throw new Error("WebDriver execute failed");
+        },
+      },
+      readLogSinceOpen: async () => "",
+      driverDiagnostics: () => "driver-ok",
+    }),
+    (error) => {
+      assert.match(error.message, /timed out waiting for renderer-reject fixture after 12 ms/u);
+      assert.match(error.message, /renderer: unavailable \(WebDriver execute failed\)/u);
+      return true;
+    },
+  );
+});
+
+test("renderer hang still yields the startup reconciliation timeout error", async (t) => {
+  captureConsole(t);
+  await assert.rejects(
+    waitForStartupReconciliation({
+      label: "renderer-hang fixture",
+      readRegistry: async () => seededRegistry(["verify-unowned-book"]),
+      isReconciled: () => false,
+      waitFor: timeoutAfterProbes,
+      now: sequentialNow([6_000, 6_018]),
+      rendererTimeoutMs: 20,
+      session: { execute: () => new Promise(() => {}) },
+      readLogSinceOpen: async () => "",
+      driverDiagnostics: () => "driver-ok",
+    }),
+    (error) => {
+      assert.match(error.message, /timed out waiting for renderer-hang fixture after 18 ms/u);
+      assert.match(error.message, /renderer: unavailable \(renderer probe timed out\)/u);
+      return true;
+    },
+  );
+});
+
+test("unreadable registry still yields the startup reconciliation timeout error", async (t) => {
+  captureConsole(t);
+  await assert.rejects(
+    waitForStartupReconciliation({
+      label: "unreadable registry fixture",
+      readRegistry: async () => {
+        throw new Error("EACCES path-authority.json");
+      },
+      isReconciled: () => true,
+      waitFor: timeoutAfterProbes,
+      now: sequentialNow([7_000, 7_044]),
+      session: { execute: async () => ({ readyState: "loading" }) },
+      readLogSinceOpen: async () => "",
+      driverDiagnostics: () => "driver-ok",
+    }),
+    (error) => {
+      assert.match(error.message, /timed out waiting for unreadable registry fixture after 44 ms/u);
+      assert.match(error.message, /registry: unreadable \(EACCES path-authority.json\)/u);
+      assert.match(error.message, /last read\/parse error: EACCES path-authority.json/u);
+      return true;
+    },
+  );
+});
+
+test("assertion-session open prints the shared open line", async (t) => {
+  const { logs } = captureConsole(t);
+  const session = { id: "fixture-session" };
+  const opened = await openAssertionSession({
+    label: "fixture open",
+    openSession: async () => session,
+    createLogReader: async () => async () => "BEFORE_OPEN_SECRET",
+    driverDiagnostics: () => "unused driver",
+  });
+  assert.equal(opened.session, session);
+  assert.equal(typeof opened.readLogSinceOpen, "function");
+  assert.equal(
+    logs.some(
+      (line) =>
+        line.startsWith("  .. ") &&
+        line.includes(ASSERTION_SESSION_OPEN_PHRASE) &&
+        line.includes("fixture open"),
+    ),
+    true,
+    logs.join("\n"),
+  );
+});
+
+test("failing assertion-session open reports driver output and the since-open log", async (t) => {
+  const { logs, errors } = captureConsole(t);
+  await assert.rejects(
+    openAssertionSession({
+      label: "fixture reopen",
+      openSession: async () => {
+        throw new Error("session not created");
+      },
+      createLogReader: async () => async () => "SINCE_OPEN_MARKER application log",
+      driverDiagnostics: () => "DRIVER_OUTPUT_MARKER tauri-driver",
+    }),
+    (error) => {
+      assert.equal(error.message, "session not created");
+      return true;
+    },
+  );
+  assert.equal(
+    logs.some(
+      (line) => line.includes(ASSERTION_SESSION_OPEN_PHRASE) && line.includes("fixture reopen"),
+    ),
+    true,
+    logs.join("\n"),
+  );
+  const dumped = errors.join("\n");
+  assert.match(dumped, /DRIVER_OUTPUT_MARKER tauri-driver/u);
+  assert.match(dumped, /SINCE_OPEN_MARKER application log/u);
+  assert.equal(dumped.includes("BEFORE_OPEN_SECRET"), false);
+});
+
+test("failing assertion-session open still throws when the since-open log cannot be read", async (t) => {
+  const { errors } = captureConsole(t);
+  await assert.rejects(
+    openAssertionSession({
+      label: "log-fail reopen",
+      openSession: async () => {
+        throw new Error("open failed");
+      },
+      createLogReader: async () => async () => {
+        throw new Error("log unreadable");
+      },
+      driverDiagnostics: () => "driver-ok",
+    }),
+    (error) => error.message === "open failed",
+  );
+  const dumped = errors.join("\n");
+  assert.match(dumped, /driver-ok/u);
+  assert.match(dumped, /unavailable \(log unreadable\)/u);
+});
+
+test("reopen diagnostics exclude log bytes written before that open", async (t) => {
+  const { errors } = captureConsole(t);
+  const directory = await mkdtemp(join(tmpdir(), "verify-app-log-offset-"));
+  const logFile = join(directory, "en-croissant.log");
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(logFile, "BEFORE_FIRST_OPEN\n");
+  const first = await openAssertionSession({
+    label: "first",
+    createLogReader: () => createSinceOpenLogReader(logFile),
+    openSession: async () => {
+      await appendFile(logFile, "[ERROR] AFTER_FIRST_OPEN\n");
+      return { id: "first" };
+    },
+    driverDiagnostics: () => "",
+  });
+  await appendFile(logFile, "BEFORE_REOPEN_SECRET\n");
+  await assert.rejects(
+    openAssertionSession({
+      label: "reopen",
+      createLogReader: () => createSinceOpenLogReader(logFile),
+      openSession: async () => {
+        await appendFile(logFile, "[ERROR] AFTER_REOPEN_OPEN\n");
+        throw new Error("session not created");
+      },
+      driverDiagnostics: () => "driver-ok",
+    }),
+    (error) => error.message === "session not created",
+  );
+  const openDump = errors.join("\n");
+  assert.match(openDump, /AFTER_REOPEN_OPEN/u);
+  assert.equal(openDump.includes("BEFORE_REOPEN_SECRET"), false);
+  assert.equal(openDump.includes("BEFORE_FIRST_OPEN"), false);
+  assert.equal(openDump.includes("AFTER_FIRST_OPEN"), false);
+
+  await appendFile(logFile, "STILL_BEFORE_SECOND_REOPEN\n");
+  const second = await openAssertionSession({
+    label: "second reopen",
+    createLogReader: () => createSinceOpenLogReader(logFile),
+    openSession: async () => {
+      await appendFile(logFile, "[ERROR] AFTER_SECOND_REOPEN_OPEN\n");
+      return { id: "second" };
+    },
+    driverDiagnostics: () => "",
+  });
+  await appendFile(logFile, "[ERROR] AFTER_SECOND_REOPEN_WAIT\n");
+  await assert.rejects(
+    waitForStartupReconciliation({
+      label: "reopen wait fixture",
+      readRegistry: async () => seededRegistry(["verify-unowned-book"]),
+      isReconciled: () => false,
+      waitFor: timeoutAfterProbes,
+      now: sequentialNow([9_000, 9_025]),
+      session: { execute: async () => ({ readyState: "loading" }) },
+      readLogSinceOpen: second.readLogSinceOpen,
+      driverDiagnostics: () => "driver-ok",
+    }),
+    (error) => {
+      assert.match(error.message, /AFTER_SECOND_REOPEN_OPEN/u);
+      assert.match(error.message, /AFTER_SECOND_REOPEN_WAIT/u);
+      assert.equal(error.message.includes("STILL_BEFORE_SECOND_REOPEN"), false);
+      assert.equal(error.message.includes("BEFORE_REOPEN_SECRET"), false);
+      assert.equal(error.message.includes("AFTER_FIRST_OPEN"), false);
+      assert.equal(error.message.includes("BEFORE_FIRST_OPEN"), false);
+      return true;
+    },
+  );
+  assert.equal(typeof first.readLogSinceOpen, "function");
+});
+
+test("since-open log reader treats a missing file as empty and surfaces other read errors", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "verify-app-log-reader-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const missing = join(directory, "missing.log");
+  const missingReader = await createSinceOpenLogReader(missing);
+  assert.equal(await missingReader(), "");
+
+  const logFile = join(directory, "en-croissant.log");
+  await writeFile(logFile, "seed\n");
+  const reader = await createSinceOpenLogReader(logFile);
+  await rm(logFile);
+  await mkdir(logFile);
+  await assert.rejects(reader, (error) => error.code === "EISDIR");
 });

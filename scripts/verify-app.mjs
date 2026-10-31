@@ -340,6 +340,237 @@ const closeControlAction = `
   return 1;
 `;
 
+export const STARTUP_RECONCILIATION_LATENCY_PHRASE = "startup reconciliation latency";
+export const ASSERTION_SESSION_OPEN_PHRASE = "opening assertion session";
+
+function diagnosticText(value) {
+  return value instanceof Error ? value.message : String(value);
+}
+
+function registryHasId(registry, id) {
+  return Boolean(
+    registry?.entries?.some((entry) => entry.id?.id === id) ||
+    registry?.image_cleanup?.some((entry) => entry.id?.id === id),
+  );
+}
+
+const STARTUP_LOG_ERROR_WARNING_LINE = /\[(?:ERROR|WARN(?:ING)?)\]/iu;
+
+function formatSinceOpenLog(text, lineCap, tailBytes) {
+  const slice = String(text);
+  const lines = slice
+    .split(/\r?\n/u)
+    .filter((line) => STARTUP_LOG_ERROR_WARNING_LINE.test(line))
+    .slice(0, lineCap);
+  const tail = slice.length <= tailBytes ? slice : slice.slice(-tailBytes);
+  return { lines, tail };
+}
+
+async function collectIndependently(collect) {
+  try {
+    return { ok: true, value: await collect() };
+  } catch (error) {
+    return { ok: false, error: diagnosticText(error) };
+  }
+}
+
+async function probeRendererState(session, rendererTimeoutMs) {
+  if (!session || typeof session.execute !== "function") return "unavailable";
+  let timer;
+  try {
+    const result = await Promise.race([
+      session.execute(`
+        ${closeControlLookup}
+        return {
+          readyState: document.readyState,
+          hasTauri: typeof window.__TAURI_INTERNALS__ === "object",
+          windowControlsMounted: Boolean(labelled || fallback),
+          bodyText: (document.body && document.body.innerText ? document.body.innerText : "").slice(0, 500),
+        };
+      `),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error("renderer probe timed out")), rendererTimeoutMs);
+      }),
+    ]);
+    if (result && typeof result === "object" && typeof result.bodyText === "string") {
+      return { ...result, bodyText: result.bodyText.slice(0, 500) };
+    }
+    return result;
+  } catch (error) {
+    return `unavailable (${diagnosticText(error)})`;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function formatRegistryObservation({ registryResult, lastReadError, probeId, orphanImageId }) {
+  const parts = [];
+  if (registryResult.ok) {
+    parts.push(
+      `readable; probe ${probeId} ${registryHasId(registryResult.value, probeId) ? "present" : "absent"}`,
+    );
+    if (orphanImageId !== undefined) {
+      parts.push(
+        `orphan image ${orphanImageId} ${
+          registryHasId(registryResult.value, orphanImageId) ? "present" : "absent"
+        }`,
+      );
+    }
+  } else {
+    parts.push(`unreadable (${registryResult.error})`);
+  }
+  if (lastReadError) parts.push(`last read/parse error: ${diagnosticText(lastReadError)}`);
+  return parts.join("; ");
+}
+
+/**
+ * Production callers omit a timeout so waitFor's 45 s default applies. A throwing
+ * registry read is an observation: polling continues and the last error is kept
+ * for timeout evidence. Injected waiter, clock, session, log reader, renderer
+ * deadline and driver diagnostics are test seams.
+ */
+export async function waitForStartupReconciliation({
+  label,
+  readRegistry,
+  isReconciled,
+  probeId = "verify-unowned-book",
+  orphanImageId,
+  session,
+  readLogSinceOpen,
+  waitFor: waitForImpl = waitFor,
+  now = Date.now,
+  rendererTimeoutMs = 5_000,
+  logErrorLineCap = 20,
+  logTailBytes = 4096,
+  driverDiagnostics: driverDiagnosticsImpl = driverDiagnostics,
+} = {}) {
+  const startedAt = now();
+  let lastReadError;
+  const observe = async () => {
+    try {
+      const registry = await readRegistry();
+      return isReconciled(registry) ? registry : false;
+    } catch (error) {
+      lastReadError = error;
+      return false;
+    }
+  };
+
+  let registry;
+  try {
+    registry = await waitForImpl(label, observe);
+  } catch (waitError) {
+    const elapsedMs = now() - startedAt;
+    const registryResult = await collectIndependently(readRegistry);
+    const logResult = await collectIndependently(async () =>
+      readLogSinceOpen ? await readLogSinceOpen() : "",
+    );
+    const rendererResult = await collectIndependently(() =>
+      probeRendererState(session, rendererTimeoutMs),
+    );
+    const driverResult = await collectIndependently(() =>
+      driverDiagnosticsImpl ? driverDiagnosticsImpl() : "",
+    );
+    const logEvidence = logResult.ok
+      ? formatSinceOpenLog(logResult.value ?? "", logErrorLineCap, logTailBytes)
+      : null;
+    const logSection = logEvidence
+      ? [
+          `application-log errors/warnings (capped at ${logErrorLineCap}):`,
+          logEvidence.lines.join("\n") || "(none)",
+          "application-log tail (last 4 KiB):",
+          logEvidence.tail || "(empty)",
+        ].join("\n")
+      : `application-log unavailable (${logResult.error})`;
+    const rendererSection = rendererResult.ok
+      ? `renderer: ${
+          typeof rendererResult.value === "string"
+            ? rendererResult.value
+            : JSON.stringify(rendererResult.value)
+        }`
+      : `renderer unavailable (${rendererResult.error})`;
+    const driverSection = driverResult.ok
+      ? `driver:\n${driverResult.value || "(empty)"}`
+      : `driver unavailable (${driverResult.error})`;
+    throw new Error(
+      [
+        `timed out waiting for ${label} after ${elapsedMs} ms`,
+        `registry: ${formatRegistryObservation({
+          registryResult,
+          lastReadError,
+          probeId,
+          orphanImageId,
+        })}`,
+        logSection,
+        rendererSection,
+        driverSection,
+      ].join("\n"),
+      { cause: waitError },
+    );
+  }
+
+  console.log(`  .. ${STARTUP_RECONCILIATION_LATENCY_PHRASE} (${label}): ${now() - startedAt} ms`);
+  return registry;
+}
+
+/**
+ * Captures the log-file byte offset at call time. ENOENT is empty (the file is
+ * often created by the session that is about to open); any other read/stat
+ * error is thrown so diagnostics can record `unavailable (...)`.
+ */
+export async function createSinceOpenLogReader(logFile) {
+  let openOffset = 0;
+  try {
+    openOffset = (await stat(logFile)).size;
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  return async () => {
+    try {
+      const bytes = await readFile(logFile);
+      return bytes.subarray(Math.min(openOffset, bytes.length)).toString("utf8");
+    } catch (error) {
+      if (error?.code === "ENOENT") return "";
+      throw error;
+    }
+  };
+}
+
+export async function openAssertionSession({
+  label,
+  openSession = () => Session.open(APP_BINARY),
+  createLogReader,
+  driverDiagnostics: driverDiagnosticsImpl = driverDiagnostics,
+} = {}) {
+  console.log(`  .. ${ASSERTION_SESSION_OPEN_PHRASE} (${label})`);
+  if (typeof createLogReader !== "function") {
+    throw new Error("openAssertionSession requires createLogReader");
+  }
+  const readLogSinceOpen = await createLogReader();
+  try {
+    return { session: await openSession(), readLogSinceOpen };
+  } catch (error) {
+    console.error(`  .. assertion WebDriver session failed: ${diagnosticText(error)}`);
+    const driverResult = await collectIndependently(() =>
+      driverDiagnosticsImpl ? driverDiagnosticsImpl() : "",
+    );
+    console.error(
+      `  .. tauri-driver output:\n${
+        driverResult.ok ? driverResult.value || "(empty)" : `unavailable (${driverResult.error})`
+      }`,
+    );
+    const logResult = await collectIndependently(async () =>
+      typeof readLogSinceOpen === "function" ? await readLogSinceOpen() : "",
+    );
+    console.error(
+      `  .. preserved-profile application log:\n${
+        logResult.ok ? logResult.value || "(empty)" : `unavailable (${logResult.error})`
+      }`,
+    );
+    throw error;
+  }
+}
+
 const failures = [];
 const rootPermissionRestorations = new Map();
 function restoreRootPermissions() {
@@ -3710,29 +3941,26 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
       .then((bytes) => bytes.subarray(assertedLogStart).toString("utf8"))
       .catch(() => "");
 
-  console.log("  .. opening assertion WebDriver session with the preserved profile");
+  const createLogReader = () => createSinceOpenLogReader(logFile);
+  const openCurrentAssertionSession = (label) => openAssertionSession({ label, createLogReader });
   let session;
-  try {
-    session = await Session.open(APP_BINARY);
-  } catch (error) {
-    console.error(`  .. assertion WebDriver session failed: ${error.message}`);
-    console.error(`  .. tauri-driver output:\n${driverDiagnostics() || "(empty)"}`);
-    const startupLog = await readLog();
-    console.error(`  .. preserved-profile application log:\n${startupLog || "(empty)"}`);
-    throw error;
-  }
-  const reconciledRegistry = await waitFor(
-    "production startup to reconcile the seeded path registry",
-    async () => {
-      const registry = JSON.parse(await readFile(registryFile, "utf8"));
-      return registry.entries.some(
-        ({ id }) => id.id === "verify-unowned-book" || id.id === orphanImageId,
-      ) || registry.image_cleanup?.some(({ id }) => id.id === orphanImageId)
-        ? false
-        : registry;
-    },
-    { timeoutMs: IPC_PROBE_TIMEOUT_MS },
-  );
+  let readLogSinceOpen;
+  ({ session, readLogSinceOpen } = await openCurrentAssertionSession("preserved profile"));
+  const readPathRegistry = async () => JSON.parse(await readFile(registryFile, "utf8"));
+  const reconciledRegistry = await waitForStartupReconciliation({
+    label: "production startup to reconcile the seeded path registry",
+    readRegistry: readPathRegistry,
+    isReconciled: (registry) =>
+      !(
+        registry.entries.some(
+          ({ id }) => id.id === "verify-unowned-book" || id.id === orphanImageId,
+        ) || registry.image_cleanup?.some(({ id }) => id.id === orphanImageId)
+      ),
+    probeId: "verify-unowned-book",
+    orphanImageId,
+    session,
+    readLogSinceOpen,
+  });
   check(
     reconciledRegistry.entries.some(({ id }) => id.id === "verify-owned-root") &&
       !reconciledRegistry.entries.some(({ id }) => id.id === "verify-unowned-book"),
@@ -3798,17 +4026,16 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
     );
     await writeFile(registryFile, JSON.stringify(registry));
   };
-  const waitForCurrentStartupReconciliation = async (label) =>
-    waitFor(
+  const waitForCurrentStartupReconciliation = (label) =>
+    waitForStartupReconciliation({
       label,
-      async () => {
-        const registry = JSON.parse(await readFile(registryFile, "utf8"));
-        return registry.entries.some(({ id }) => id.id === "verify-unowned-book")
-          ? false
-          : registry;
-      },
-      { timeoutMs: IPC_PROBE_TIMEOUT_MS },
-    );
+      readRegistry: readPathRegistry,
+      isReconciled: (registry) =>
+        !registry.entries.some(({ id }) => id.id === "verify-unowned-book"),
+      probeId: "verify-unowned-book",
+      session,
+      readLogSinceOpen,
+    });
   const reopenAssertionSession = async (label) => {
     const closed = await closeApplicationThroughTitlebar(session, label);
     if (!closed.gone || closed.survivors.length > 0) {
@@ -3816,7 +4043,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
     }
     await session.quit().catch(() => undefined);
     await armStartupReconciliationProbe();
-    session = await Session.open(APP_BINARY);
+    ({ session, readLogSinceOpen } = await openCurrentAssertionSession(label));
     const reconciledRegistry = await waitForCurrentStartupReconciliation(
       `${label} startup reconciliation to remove the freshly seeded probe`,
     );
