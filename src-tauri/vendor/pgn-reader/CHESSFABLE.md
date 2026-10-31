@@ -5,7 +5,8 @@ retained except for Cargo.lock, including COPYING, Cargo.toml, Cargo.toml.orig,
 README.md, rustfmt.toml, src/, docs/, examples/, and upstream metadata. Dependency
 resolution uses the application's lockfile, no lockfile is kept in this crate.
 
-The parser patch is in src/reader.rs. Comments and headers that
+The parser patch is in src/reader.rs; the header-decode correction is in
+src/types.rs. Comments and headers that
 outgrow the buffered window shift their retained bytes, double the buffer when
 full, and read more before searching again. Header escapes crossing a read
 boundary retain their meaning. The initial header delimiter and comment delimiter
@@ -52,6 +53,12 @@ quote offsets, token caps and malformed-input recovery. Future upgrades must
 preserve this correction with the reader's raw Event/FEN callback separator
 regression and the application's pgn_scanner_pickup separator regression across
 both parser modes, LF/CRLF and BOM/no BOM variants.
+
+RawHeader::decode skips the escaped character after an escape, so consecutive
+escaped backslashes each keep their literal backslash. Upstream decoded four
+raw backslash bytes to one backslash. The borrowed path for unescaped values
+is unchanged. Future upgrades must keep this with the crate's raw-header
+decode test.
 
 Gate scope: cargo fmt formats the app package only (no --all); backend LCOV
 exports only src-tauri/src/**/*.rs and ratchets that same scope; cargo-mutants

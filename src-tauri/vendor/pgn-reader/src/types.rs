@@ -141,12 +141,17 @@ impl<'a> RawHeader<'a> {
     /// the value actually contains escape sequences.
     pub fn decode(&self) -> Cow<'a, [u8]> {
         let mut head = 0;
+        let mut skip_until = 0;
         let mut decoded: Vec<u8> = Vec::new();
         for escape in memchr::memchr_iter(b'\\', self.0) {
+            if escape < skip_until {
+                continue;
+            }
             match self.0.get(escape + 1).cloned() {
                 Some(ch) if ch == b'\\' || ch == b'"' => {
                     decoded.extend_from_slice(&self.0[head..escape]);
                     head = escape + 1;
+                    skip_until = escape + 2;
                 }
                 _ => (),
             }
@@ -224,5 +229,20 @@ mod tests {
 
         let header = RawHeader(b"\\Hello \\\"world\\\\");
         assert_eq!(header.decode().as_ref(), b"\\Hello \"world\\");
+
+        let header = RawHeader(b"\\\\\\\\");
+        assert_eq!(header.decode().as_ref(), b"\\\\");
+
+        let header = RawHeader(b"\\\\\\\"");
+        assert_eq!(header.decode().as_ref(), b"\\\"");
+
+        let header = RawHeader(b"a\\\\\\\\b");
+        assert_eq!(header.decode().as_ref(), b"a\\\\b");
+
+        let header = RawHeader(b"x\\\\\\\\\\\"y\\z");
+        assert_eq!(header.decode().as_ref(), b"x\\\\\"y\\z");
+
+        let header = RawHeader(b"\\\\\\\\\\\\");
+        assert_eq!(header.decode().as_ref(), b"\\\\\\");
     }
 }
