@@ -6729,10 +6729,6 @@ mod tests {
         }
     }
 
-    // These tests deliberately occupy every shared permit. Serialize their admission holds
-    // so separate test runtimes cannot each retain half the gateway while awaiting the rest.
-    static ARCHIVE_GATEWAY_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
     struct HeldArchiveTransport {
         started: tokio::sync::mpsc::UnboundedSender<()>,
         release: Arc<tokio::sync::Semaphore>,
@@ -6829,7 +6825,6 @@ mod tests {
 
     #[tokio::test]
     async fn archive_staging_authority_four_stalled_streams_leave_gateway_available() {
-        let _exclusive_gateway_test = ARCHIVE_GATEWAY_TEST_LOCK.lock().await;
         let dir = tempdir().unwrap();
         let (authority, destination, engine_root, _) = engine_destination(&dir);
         let payload = zip_payload();
@@ -7243,7 +7238,6 @@ mod tests {
     }
 
     async fn assert_archive_terminal_cleanup_waits_for_admission(network_failure: bool) {
-        let _exclusive_gateway_test = ARCHIVE_GATEWAY_TEST_LOCK.lock().await;
         let dir = tempdir().unwrap();
         let (authority, destination, engine_root, _) = engine_destination(&dir);
         let payload = zip_payload();
@@ -8140,7 +8134,6 @@ mod tests {
             .build()
             .unwrap();
         runtime.block_on(async {
-            let _exclusive_gateway_test = ARCHIVE_GATEWAY_TEST_LOCK.lock().await;
             let dir = tempdir().unwrap();
             let (authority, destination, engine_root, _) = engine_destination(&dir);
             let probe = ArchiveReplacementProbe::new(engine_root.clone());

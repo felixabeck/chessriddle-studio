@@ -9,8 +9,12 @@ use tokio_util::sync::CancellationToken;
 /// Bounds the number of concurrently running production blocking tasks.
 const BLOCKING_GATEWAY_PERMITS: usize = 4;
 
+#[cfg(not(test))]
 pub static BLOCKING_GATEWAY: Lazy<BlockingGateway> =
     Lazy::new(|| BlockingGateway::new(BLOCKING_GATEWAY_PERMITS));
+
+#[cfg(test)]
+pub static BLOCKING_GATEWAY: Lazy<BlockingGateway> = Lazy::new(BlockingGateway::per_thread);
 
 /// No closure passed to BLOCKING_GATEWAY may, directly or transitively, call BLOCKING_GATEWAY
 /// again. Acquiring several permits in sequence from an async body is fine; acquiring one inside
@@ -18,10 +22,25 @@ pub static BLOCKING_GATEWAY: Lazy<BlockingGateway> =
 ///
 /// `list_file_workspace_core` awaits `count_pgn_games_core`, which awaits `scan_current`
 /// (`pgn.rs`), which takes a permit — that is a legal sequential acquisition and must not
-/// become a nested one. The semaphore has `BLOCKING_GATEWAY_PERMITS` (4) permits, so four
-/// nested acquisitions hang the process with no error.
+/// become a nested one.
+///
+/// In the shipped app the gateway is one process-wide semaphore of `BLOCKING_GATEWAY_PERMITS`
+/// (4) permits, so four nested acquisitions hang the process with no error. Test builds admit
+/// against four permits owned by the OS thread that awaits admission, so a test saturates only
+/// its own thread's capacity.
 pub struct BlockingGateway {
-    semaphore: Arc<tokio::sync::Semaphore>,
+    semaphore: GatewaySemaphore,
+}
+
+enum GatewaySemaphore {
+    Explicit(Arc<Semaphore>),
+    #[cfg(test)]
+    PerThread,
+}
+
+#[cfg(test)]
+thread_local! {
+    static THREAD_GATEWAY: Arc<Semaphore> = Arc::new(Semaphore::new(BLOCKING_GATEWAY_PERMITS));
 }
 
 /// Source-text scanning shared by the blocking-offload invariant tests in `main.rs`, `chess.rs`,
@@ -547,14 +566,29 @@ where
 impl BlockingGateway {
     pub fn new(max_concurrent: usize) -> Self {
         Self {
-            semaphore: Arc::new(Semaphore::new(max_concurrent)),
+            semaphore: GatewaySemaphore::Explicit(Arc::new(Semaphore::new(max_concurrent))),
+        }
+    }
+
+    #[cfg(test)]
+    fn per_thread() -> Self {
+        Self {
+            semaphore: GatewaySemaphore::PerThread,
+        }
+    }
+
+    fn semaphore(&self) -> Arc<Semaphore> {
+        match &self.semaphore {
+            GatewaySemaphore::Explicit(semaphore) => semaphore.clone(),
+            #[cfg(test)]
+            GatewaySemaphore::PerThread => THREAD_GATEWAY.with(Arc::clone),
         }
     }
 
     #[cfg(all(test, unix))]
     /// Capacity for isolated-gateway tests in other modules, which cannot reach the private semaphore.
     pub(crate) fn available_permits(&self) -> usize {
-        self.semaphore.available_permits()
+        self.semaphore().available_permits()
     }
 
     /// Runs admitted work to completion even if the awaiting future is dropped. The blocking
@@ -565,8 +599,7 @@ impl BlockingGateway {
         R: Send + 'static,
     {
         let permit = self
-            .semaphore
-            .clone()
+            .semaphore()
             .acquire_owned()
             .await
             .map_err(|_| Error::Cancellation)?;
@@ -590,7 +623,7 @@ impl BlockingGateway {
         let permit = tokio::select! {
             biased;
             _ = worker_cancellation.cancelled() => return Err(Error::Cancellation),
-            permit = self.semaphore.clone().acquire_owned() => {
+            permit = self.semaphore().acquire_owned() => {
                 permit.map_err(|_| Error::Cancellation)?
             }
         };
@@ -697,7 +730,7 @@ mod tests {
         .await
         .expect("spawn panic must return");
         assert!(matches!(spawn_panic, Err(Error::Conflict(_))));
-        assert_eq!(gateway.semaphore.available_permits(), 1);
+        assert_eq!(gateway.semaphore().available_permits(), 1);
 
         let spawn_error = tokio::time::timeout(
             TEST_DEADLINE,
@@ -707,7 +740,7 @@ mod tests {
         .await
         .expect("spawn error must return");
         assert!(matches!(spawn_error, Err(Error::InvalidInput(_))));
-        assert_eq!(gateway.semaphore.available_permits(), 1);
+        assert_eq!(gateway.semaphore().available_permits(), 1);
 
         let cancellable_panic = tokio::time::timeout(
             TEST_DEADLINE,
@@ -718,7 +751,7 @@ mod tests {
         .await
         .expect("cancellable panic must return");
         assert!(matches!(cancellable_panic, Err(Error::Conflict(_))));
-        assert_eq!(gateway.semaphore.available_permits(), 1);
+        assert_eq!(gateway.semaphore().available_permits(), 1);
 
         let cancellable_error = tokio::time::timeout(
             TEST_DEADLINE,
@@ -732,13 +765,13 @@ mod tests {
             cancellable_error,
             Err(Error::InvalidInput(ref message)) if message == "cancellable error"
         ));
-        assert_eq!(gateway.semaphore.available_permits(), 1);
+        assert_eq!(gateway.semaphore().available_permits(), 1);
 
         tokio::time::timeout(TEST_DEADLINE, gateway.spawn(|| Ok(())))
             .await
             .expect("all panic and error paths must release capacity")
             .unwrap();
-        assert_eq!(gateway.semaphore.available_permits(), 1);
+        assert_eq!(gateway.semaphore().available_permits(), 1);
     }
 
     #[tokio::test]
@@ -785,7 +818,7 @@ mod tests {
         first.abort();
         let _ = first.await;
         assert_eq!(
-            gateway.semaphore.available_permits(),
+            gateway.semaphore().available_permits(),
             0,
             "abandoning spawn must not release the worker's permit"
         );
@@ -819,7 +852,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(second_ran.load(Ordering::SeqCst));
-        assert_eq!(gateway.semaphore.available_permits(), 1);
+        assert_eq!(gateway.semaphore().available_permits(), 1);
     }
 
     #[tokio::test]
@@ -915,7 +948,7 @@ mod tests {
                     .await
             });
             tokio::time::timeout(TEST_DEADLINE, async {
-                while gateway.semaphore.available_permits() != 0 {
+                while gateway.semaphore().available_permits() != 0 {
                     tokio::task::yield_now().await;
                 }
             })
@@ -977,7 +1010,7 @@ mod tests {
             .expect("worker must observe awaiter-drop cancellation")
             .expect("worker cancellation signal");
         assert_eq!(
-            gateway.semaphore.available_permits(),
+            gateway.semaphore().available_permits(),
             0,
             "cancelled worker must retain its permit until cooperative exit"
         );
@@ -1011,7 +1044,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(next_ran.load(Ordering::SeqCst));
-        assert_eq!(gateway.semaphore.available_permits(), 1);
+        assert_eq!(gateway.semaphore().available_permits(), 1);
         assert!(
             resource_dropped.load(Ordering::SeqCst),
             "cooperative worker exit must drop worker-owned resources"
@@ -1310,5 +1343,172 @@ mod tests {
                 "the guard must disarm the pooled thread even when the closure panicked"
             );
         });
+    }
+
+    /// Panic-free in Drop (CR-1): ignore lock/wait poison so a failing assertion cannot abort
+    /// the test process on Windows.
+    #[derive(Clone)]
+    struct PermitHold(Arc<(Mutex<bool>, Condvar)>);
+
+    impl PermitHold {
+        fn new() -> Self {
+            Self(Arc::new((Mutex::new(true), Condvar::new())))
+        }
+
+        fn wait(&self) {
+            let (lock, cvar) = &*self.0;
+            let Ok(mut holding) = lock.lock() else {
+                return;
+            };
+            while *holding {
+                match cvar.wait(holding) {
+                    Ok(guard) => holding = guard,
+                    Err(_) => return,
+                }
+            }
+        }
+
+        fn release(&self) {
+            let (lock, cvar) = &*self.0;
+            if let Ok(mut holding) = lock.lock() {
+                *holding = false;
+            }
+            cvar.notify_all();
+        }
+    }
+
+    struct ReleasePermitHold(PermitHold);
+
+    impl Drop for ReleasePermitHold {
+        fn drop(&mut self) {
+            self.0.release();
+        }
+    }
+
+    struct JoinThreadOnDrop(Option<std::thread::JoinHandle<()>>);
+
+    impl Drop for JoinThreadOnDrop {
+        fn drop(&mut self) {
+            if let Some(handle) = self.0.take() {
+                let _ = handle.join();
+            }
+        }
+    }
+
+    async fn park_global_gateway_holders(
+        count: usize,
+    ) -> (
+        Vec<ReleasePermitHold>,
+        Vec<tokio::task::JoinHandle<Result<(), Error>>>,
+    ) {
+        let mut releases = Vec::with_capacity(count);
+        let mut workers = Vec::with_capacity(count);
+        for _ in 0..count {
+            let hold = PermitHold::new();
+            releases.push(ReleasePermitHold(hold.clone()));
+            let (entered_tx, mut entered_rx) = mpsc::unbounded_channel();
+            workers.push(tokio::spawn(async move {
+                BLOCKING_GATEWAY
+                    .spawn(move || {
+                        let _ = entered_tx.send(());
+                        hold.wait();
+                        Ok(())
+                    })
+                    .await
+            }));
+            tokio::time::timeout(TEST_DEADLINE, entered_rx.recv())
+                .await
+                .expect("global gateway holder must enter")
+                .expect("global gateway holder entered");
+        }
+        (releases, workers)
+    }
+
+    #[tokio::test]
+    async fn global_gateway_admits_on_another_thread_while_this_thread_holds_four() {
+        let mut join_second = JoinThreadOnDrop(None);
+        let (releases, workers) = park_global_gateway_holders(BLOCKING_GATEWAY_PERMITS).await;
+
+        let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+        join_second.0 = Some(std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()
+                .expect("second-thread runtime");
+            runtime.block_on(async {
+                let mut admissions = Vec::with_capacity(BLOCKING_GATEWAY_PERMITS);
+                for _ in 0..BLOCKING_GATEWAY_PERMITS {
+                    admissions.push(tokio::spawn(async {
+                        BLOCKING_GATEWAY.spawn(|| Ok(())).await
+                    }));
+                }
+                for admission in admissions {
+                    tokio::time::timeout(TEST_DEADLINE, admission)
+                        .await
+                        .expect(
+                            "second-thread admission must complete while first thread holds four",
+                        )
+                        .expect("second-thread admission join")
+                        .expect("second-thread spawn");
+                }
+            });
+            let _ = done_tx.send(());
+        }));
+
+        tokio::time::timeout(TEST_DEADLINE, done_rx)
+            .await
+            .expect("second thread must finish four admissions while first thread holds four")
+            .expect("second thread result");
+
+        drop(releases);
+        for worker in workers {
+            tokio::time::timeout(TEST_DEADLINE, worker)
+                .await
+                .expect("holder must exit after release")
+                .expect("holder join")
+                .expect("holder spawn");
+        }
+    }
+
+    #[tokio::test]
+    async fn global_gateway_retains_four_permits_on_the_awaiting_thread() {
+        let (mut releases, workers) = park_global_gateway_holders(BLOCKING_GATEWAY_PERMITS).await;
+
+        let (fifth_tx, mut fifth_rx) = tokio::sync::oneshot::channel();
+        let fifth = tokio::spawn(async move {
+            BLOCKING_GATEWAY
+                .spawn(move || {
+                    let _ = fifth_tx.send(());
+                    Ok(())
+                })
+                .await
+        });
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), &mut fifth_rx)
+                .await
+                .is_err(),
+            "fifth BLOCKING_GATEWAY admission must not be granted while four holders are parked"
+        );
+
+        drop(releases.remove(0));
+        tokio::time::timeout(TEST_DEADLINE, fifth_rx)
+            .await
+            .expect("fifth must be granted after one holder is released")
+            .expect("fifth entered");
+        tokio::time::timeout(TEST_DEADLINE, fifth)
+            .await
+            .expect("fifth spawn must finish")
+            .expect("fifth join")
+            .expect("fifth result");
+
+        drop(releases);
+        for worker in workers {
+            tokio::time::timeout(TEST_DEADLINE, worker)
+                .await
+                .expect("holder must exit after release")
+                .expect("holder join")
+                .expect("holder spawn");
+        }
     }
 }
