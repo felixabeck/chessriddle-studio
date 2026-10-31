@@ -19914,3 +19914,18 @@ Fixed in 17d570d3: the board column's fixed 0.5rem gaps became two shrinkable 0.
 
 * **Supersedes the "Clarification is pending on the board-size constraint" sentence in the Proof bullet above (2026-10-31):** No clarification was needed. The fix in 17d570d3 makes the two 0.5rem gaps shrinkable instead of changing the board's height reservation, so it never crosses a Chessground 8px sizing step; the board measured 720×720 before and after (`artifacts/material-bar-clip/measurements.json`).
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"0e0f1280060932127aab7141e1ee9c12301cb24ada9f49716f30c023bcf25389","input_sha256":"d6403984cfd0c9d80022b6fbc3a85d68c650203c10040350153d15b9e9eca8be","kind":"mutation-receipt","operation":"4966baf68f73504e08a72433d62a082f7c37c37c6c1103e12b498843775b6333","options":{"section":null},"request_id_sha256":null,"results":["f-20261031-03"],"target":"f-20261031-03","v":1} -->
+
+---
+
+## 2026-10-31 — filed through the inbox spool
+
+### German catalogue spells "Weiss" instead of "Weiß" in four strings
+
+* **ID:** f-20261031-04 · **Status:** open · **Area:** i18n · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** ux
+* **Where:** `src/translation/de-DE.json` keys `Fen.White` ("Weiss"), `Fen.WhiteToMove` ("Weiss am Zug"), `Board.Analysis.Tablebase.WhiteWins` ("Weiss gewinnt"), `Board.Database.Local.Result.WhiteWon` ("Weiss hat gewonnen"); the same catalogue already uses "Weiß" in five other strings.
+* **Defect:** German users see the Swiss spelling "Weiss" mixed with "Weiß" in the same UI. `Fen.White` is now shown as text in the database Games colour-filter chip (build search-side-toggle, 2026-10-31), so the inconsistency is prominent there.
+* **Failure scenario:** German UI shows "Weiss" in the Games colour filter and its menu next to strings that write "Weiß".
+* **Spotted outside diff:** the colour-filter build reused the existing `Fen.White` key and did not change its value.
+* **Note:** changing `Fen.White` moves the two de-DE snapshots `database-side-blackwhite-menu-{desktop,320-200}-de-dark` in `e2e/database-files.spec.ts`; re-record them via `pnpm test:e2e:update` (container) and update the spec's `"Farbe des Gegners: Weiss"` assertion.
+* **Found by:** Claude Code build session e68b0001-fd41-489f-b2b2-93048631b46d, 2026-10-31.
