@@ -84,12 +84,8 @@ export async function waitForScrollAreaScrollbarsHidden(page: Page) {
     );
 }
 
-function describeFontFace(face: { family: string; source: string; unicodeRange: string }): string {
-    const details = [face.source, face.unicodeRange].filter(Boolean).join("; ");
-    return details ? `${face.family} (${details})` : face.family;
-}
-
 export async function waitForFontsSettled(page: Page) {
+    // One frame lets faces needed by just-rendered text enter loading before the first read, otherwise an empty set already reads as "loaded".
     await page.evaluate(
         () =>
             new Promise<void>((resolve) => {
@@ -97,63 +93,41 @@ export async function waitForFontsSettled(page: Page) {
             }),
     );
 
-    let failedFace: { family: string; source: string; unicodeRange: string } | undefined;
+    let last: { state: string; family?: string; unicodeRange?: string } = { state: "loading" };
     await expect
         .poll(
             async () => {
                 const snapshot = await page.evaluate(() => {
-                    const cssSource = (face: FontFace) => {
-                        for (const sheet of document.styleSheets) {
-                            let rules: CSSRuleList;
-                            try {
-                                rules = sheet.cssRules;
-                            } catch {
-                                continue;
-                            }
-                            for (const rule of rules) {
-                                if (!(rule instanceof CSSFontFaceRule)) continue;
-                                const family = rule.style.fontFamily.replace(/['"]/g, "");
-                                if (family !== face.family) continue;
-                                const unicodeRange =
-                                    rule.style.getPropertyValue("unicode-range") || "U+0-10FFFF";
-                                if (unicodeRange !== face.unicodeRange) continue;
-                                return rule.style.getPropertyValue("src");
-                            }
-                        }
-                        const record = face as FontFace & { source?: string };
-                        return record.source ?? "";
-                    };
-                    const faces = [...document.fonts].map((face) => ({
-                        family: face.family,
-                        status: face.status,
-                        source: cssSource(face),
-                        unicodeRange: face.unicodeRange,
-                    }));
-                    // local() metric fallbacks error when Arial is absent; they are not web fonts.
-                    const failedWebFont = faces.find(
-                        (face) =>
-                            face.status === "error" &&
-                            !(/local\(/i.test(face.source) && !/url\(/i.test(face.source)),
+                    // local(Arial) metric faces in src/styles/fonts.css that stay "error" where Arial is absent.
+                    const isMetricFallback = (family: string) => family.endsWith(" Fallback");
+                    const faces = [...document.fonts];
+                    const failed = faces.find(
+                        (face) => face.status === "error" && !isMetricFallback(face.family),
                     );
-                    return {
-                        failed: failedWebFont ?? null,
-                        settled:
-                            !faces.some((face) => face.status === "loading") &&
-                            document.fonts.status === "loaded",
-                    };
+                    if (failed) {
+                        return {
+                            state: "error" as const,
+                            family: failed.family,
+                            unicodeRange: failed.unicodeRange,
+                        };
+                    }
+                    if (
+                        faces.some((face) => face.status === "loading") ||
+                        document.fonts.status !== "loaded"
+                    ) {
+                        return { state: "loading" as const };
+                    }
+                    return { state: "settled" as const };
                 });
-                if (snapshot.failed) {
-                    failedFace = snapshot.failed;
-                    return true;
-                }
-                return snapshot.settled;
+                last = snapshot;
+                return snapshot.state;
             },
-            { message: "web fonts settle" },
+            { message: "web fonts settle or one fails" },
         )
-        .toBe(true);
+        .not.toBe("loading");
 
-    if (failedFace) {
-        throw new Error(`Font face failed to load: ${describeFontFace(failedFace)}`);
+    if (last.state === "error") {
+        throw new Error(`Font face failed to load: ${last.family} (${last.unicodeRange})`);
     }
 }
 
