@@ -2305,6 +2305,8 @@ mod tests {
 
     #[tokio::test]
     async fn deadline_aborts_listener_that_ignores_shutdown() {
+        // The 100 ms bound is in paused (virtual) time so scheduler latency on a loaded runner cannot trip it, while a shutdown that waited the full LISTENER_DRAIN_TIMEOUT (1 s) instead of the remaining deadline still would.
+        tokio::time::pause();
         let lifecycle = Arc::new(AuthLifecycle::default());
         let mut services = MockServices::new();
         services.listener_ignores_shutdown = true;
