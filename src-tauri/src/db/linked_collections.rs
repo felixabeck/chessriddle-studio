@@ -2374,13 +2374,15 @@ impl CollectionService {
                         let mut reader = BufferedReader::new(bytes.as_slice());
                         let game = match pgn::read_one_range_game(&mut reader, &mut importer) {
                             Ok(pgn::RangeGame::One(Some(game))) => game,
+                            // In-memory range bytes; cancellation is checked per range.
+                            // Fail the one malformed game, not the rebuild.
                             Ok(pgn::RangeGame::One(None)
                             | pgn::RangeGame::Empty
-                            | pgn::RangeGame::Remainder) => {
+                            | pgn::RangeGame::Remainder)
+                            | Err(_) => {
                                 omitted += 1;
                                 continue;
                             }
-                            Err(error) => return Err(error.into()),
                         };
                         game.insert_to_db(db)?;
                         let ordinal = i32::try_from(ordinal).map_err(|_| Error::ResourceLimit("collection has too many games".into()))?;

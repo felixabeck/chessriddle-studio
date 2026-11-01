@@ -7245,6 +7245,30 @@ mod native_tests {
     }
 
     #[test]
+    fn unreadable_range_is_omitted_from_linked_projection() {
+        // The vendored reader returns InvalidData when a header value has no
+        // closing quote and no newline before EOF. Scan still yields a range.
+        let unreadable = "[Event \"B\"]\n[Event \"no-close";
+        assert!(
+            BufferedReader::new(unreadable.as_bytes())
+                .read_game(&mut Importer::new(None))
+                .is_err(),
+            "fixture must make read_game return Err"
+        );
+        let fixture = Fixture::new();
+        let valid = game(None, "e4 e5", "kept");
+        fixture.create(
+            "games",
+            &format!("{valid}{unreadable}"),
+            WorkspaceFileType::Game,
+        );
+        let collection = fixture.list().pop().unwrap();
+        assert!(matches!(collection.status, CollectionStatus::Ready));
+        assert_eq!(collection.omitted, 1);
+        assert_eq!(fixture.rows(&collection).len(), 1);
+    }
+
+    #[test]
     fn cancellation_during_two_game_projection_fails_the_rebuild() {
         let fixture = Fixture::new();
         fixture.create("games", "1. e4 *\n\n1. d4 *\n", WorkspaceFileType::Game);
@@ -7310,7 +7334,7 @@ mod native_tests {
             .ensure_child(OsStr::new("batches"))
             .unwrap();
         let path = batches.path().join("two-game.pgn");
-        std::fs::write(&path, "1. e4 *\n\n1. d4 *\n").unwrap();
+        std::fs::write(&path, format!("{}1. d4 *\n", game(None, "e4 e5", "export"))).unwrap();
         let handle = FileWorkspaceHandle::new(
             fixture
                 .state
@@ -7338,8 +7362,11 @@ mod native_tests {
             )
             .unwrap_err();
         assert!(
-            matches!(error, Error::Conflict(_)),
-            "expected export conflict, got {error:?}"
+            matches!(
+                error,
+                Error::Conflict(ref message) if message == "provider export has an unindexable game"
+            ),
+            "expected unindexable-game conflict, got {error:?}"
         );
     }
 }

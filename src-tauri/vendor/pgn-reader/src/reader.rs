@@ -298,7 +298,7 @@ trait ReadPgn {
         }
     }
 
-    fn skip_movetext_resume(bytes: &[u8]) -> Option<usize> {
+    fn find_skip_movetext_byte(bytes: &[u8]) -> Option<usize> {
         bytes
             .iter()
             .position(|&ch| matches!(ch, b'\n' | b'{' | b';' | b'(' | b')' | b'*' | b'1' | b'0'))
@@ -360,7 +360,7 @@ trait ReadPgn {
                     }
                 }
                 _ => {
-                    if let Some(consumed) = Self::skip_movetext_resume(self.buffer()) {
+                    if let Some(consumed) = Self::find_skip_movetext_byte(self.buffer()) {
                         self.consume(consumed);
                     } else {
                         self.consume_all();

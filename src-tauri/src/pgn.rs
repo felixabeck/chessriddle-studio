@@ -1119,7 +1119,10 @@ fn trigger_remainder_check_hook() {
     }
 }
 
-/// Reads exactly one game from a scanner range's bytes, or a typed remainder refusal.
+/// Reads a scanner range's bytes as one of three outcomes: `One` when the range
+/// contains exactly one parser game, `Empty` when nothing but whitespace and `%`
+/// lines is present, or `Remainder` when a further `read_game` would return `Some`
+/// after the first game.
 ///
 /// After the caller's visitor consumes the first game, a further `read_game` with a
 /// skipping visitor decides the remainder: `Some` is refused, independent of visitor
@@ -1145,10 +1148,8 @@ where
 
 fn refuse_unless_one_range_game(bytes: &[u8]) -> Result<(), Error> {
     match read_one_range_game(&mut BufferedReader::new(bytes), &mut SkipRemainder)? {
-        RangeGame::One(()) => Ok(()),
-        RangeGame::Empty | RangeGame::Remainder => {
-            Err(Error::InvalidInput(MORE_THAN_ONE_GAME.into()))
-        }
+        RangeGame::One(()) | RangeGame::Empty => Ok(()),
+        RangeGame::Remainder => Err(Error::InvalidInput(MORE_THAN_ONE_GAME.into())),
     }
 }
 

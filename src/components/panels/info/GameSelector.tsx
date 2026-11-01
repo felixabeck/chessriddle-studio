@@ -83,7 +83,7 @@ export default function GameSelector({
                   },
                 ] as const;
               } catch (error) {
-                if (options?.signal?.aborted || errorUnlessCancelled(error) == null) {
+                if (options?.signal?.aborted || errorUnlessCancelled(error) === null) {
                   throw error;
                 }
                 return [next + index, { name: t("Files.GameUnreadable") }] as const;

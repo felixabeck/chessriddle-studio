@@ -160,29 +160,19 @@ pub fn lex_pgn_cancellable(
         cancellation: cancellation.cloned(),
         cancelled: false,
     };
-    match crate::pgn::read_one_range_game(&mut buffered, &mut lexer) {
+    let outcome = crate::pgn::read_one_range_game(&mut buffered, &mut lexer);
+    if !matches!(outcome, Ok(crate::pgn::RangeGame::One(_)))
+        && (cancellation.is_some_and(|c| c.is_cancelled()) || lexer.cancelled)
+    {
+        return Err(Error::Cancellation);
+    }
+    match outcome {
         Ok(crate::pgn::RangeGame::One(result)) => result,
-        Ok(crate::pgn::RangeGame::Empty) => {
-            if cancellation.is_some_and(|c| c.is_cancelled()) || lexer.cancelled {
-                Err(Error::Cancellation)
-            } else {
-                Ok(Vec::new())
-            }
-        }
+        Ok(crate::pgn::RangeGame::Empty) => Ok(Vec::new()),
         Ok(crate::pgn::RangeGame::Remainder) => {
-            if cancellation.is_some_and(|c| c.is_cancelled()) || lexer.cancelled {
-                Err(Error::Cancellation)
-            } else {
-                Err(Error::InvalidInput(crate::pgn::MORE_THAN_ONE_GAME.into()))
-            }
+            Err(Error::InvalidInput(crate::pgn::MORE_THAN_ONE_GAME.into()))
         }
-        Err(e) => {
-            if cancellation.is_some_and(|c| c.is_cancelled()) || lexer.cancelled {
-                Err(Error::Cancellation)
-            } else {
-                Err(Error::InvalidInput(format!("PGN parse error: {e:?}")))
-            }
-        }
+        Err(e) => Err(Error::InvalidInput(format!("PGN parse error: {e:?}"))),
     }
 }
 
