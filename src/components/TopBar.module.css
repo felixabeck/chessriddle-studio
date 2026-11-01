@@ -80,10 +80,6 @@
   transition: background-color 100ms ease;
 }
 
-.icon:hover {
-  background-color: var(--cf-interactive-hover);
-}
-
 .close {
   height: 2.25rem;
   width: auto;
@@ -91,9 +87,10 @@
   min-width: 2.25rem;
   border-radius: 0;
   transition: background-color 100ms ease;
+  --cf-action-hover: var(--cf-destructive);
 }
 
-.close:hover {
-  background-color: var(--cf-destructive);
+/* :not(:disabled) outranks the shared transparent-variant colour rule regardless of stylesheet order. */
+.close:hover:not(:disabled) {
   color: var(--cf-destructive-foreground);
 }

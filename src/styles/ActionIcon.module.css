@@ -11,6 +11,8 @@
 @media (hover: hover) {
   .root[data-variant="transparent"]:hover:not(:disabled, [data-disabled]),
   .root[data-variant="subtle"]:hover:not(:disabled, [data-disabled]) {
-    background: var(--cf-interactive-hover);
+    /* A component with its own hover surface sets --cf-action-hover; a plain class rule loses to
+       this selector's specificity. */
+    background: var(--cf-action-hover, var(--cf-interactive-hover));
   }
 }
