@@ -19889,7 +19889,7 @@ Fixed in 015cd709: playBoardMove and dragBoard poll the trial click and bounding
 
 ### The OAuth listener-abort test's 100 ms watchdog elapses on the macOS runner
 
-* **ID:** f-20261031-02 · **Status:** open · **Area:** oauth-credentials · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261031-02 · **Status:** handled · **Area:** oauth-credentials · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 4eff03d3-7d21-483a-bdc2-87681fa98fe4
 * **Impact class:** tooling
 * **Where:** `src-tauri/src/oauth.rs`, test `oauth::tests::deadline_aborts_listener_that_ignores_shutdown` (the `tokio::time::timeout(Duration::from_millis(100), task)` and its `.expect("bounded listener shutdown")`).
@@ -19902,6 +19902,9 @@ Fixed in 015cd709: playBoardMove and dragBoard poll the trial click and bounding
 
 * **Correction to the precedent-correction bullet above (2026-10-31, same push review):** Its claim that the f-20261026-02 repair "kept the outer timeout" is wrong. 3e92e0c3 removed the fixture's 2 s outer `tokio::time::timeout` around the server/client join and the 120 ms budget, and replaced them with the production `REVOCATION_TIMEOUT` under paused tokio time (`pause`/`advance`), per-stage `REVOCATION_TIMEOUT / 3` checkpoints and a `timeout_at` expiry probe. Production `REVOCATION_TIMEOUT` was unchanged and no wall-clock hang detector was widened. The relevant precedent for this entry is therefore the second option of its own Fix direction: assert the bound with paused tokio time where the code path supports it.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"0e99f7ed8eada568e04a0bfabd7709ae9a881d9488200181c8103b57ac43863e","input_sha256":"b9328543a1b65af0ed5efc234086973052c5983b9cf0031474e02a5bfbb8b9c0","kind":"mutation-receipt","operation":"26b8198108ea82b8024851f49d5cd01d5bc768e13f9a57dae32e488907f8f97b","options":{"section":null},"request_id_sha256":null,"results":["f-20261031-02"],"target":"f-20261031-02","v":1} -->
+
+Fixed in f58dfbe4, c6ef6566 and 95f85f85 as a co-located joiner of f-20261101-02. `deadline_aborts_listener_that_ignores_shutdown` now calls `tokio::time::pause()` first, so the 100 ms watchdog is a virtual-time bound: every timer on the path (`authenticate_internal`'s deadline, `shutdown_listener`'s remaining-deadline drain, abort and join) runs on the test's current-thread runtime. The watchdog is created before a 150 ms blocking sleep that stands in for a loaded runner, so removing `pause()` fails the test with `Elapsed` (revert check observed), and a shutdown that waited the full `LISTENER_DRAIN_TIMEOUT` instead of the remaining deadline still fails it (revert check observed). The abort, idle and OAuthFailure assertions are unchanged. Rejected: widening the wall-clock watchdog (loses the bound the test asserts).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"bcf3f66f016c24a05471a19b1eec268ba8627832580a7adc3a9efb1a97e0da5a","header_sha256":"a2ab7494fc7b75b02c4d80a906abee48cd5e4dec86a8fa9cae4e2938ad32f22a","header_status":"handled","input_sha256":"6bc547c5fa7ac55a3634eb39ac751a56636a8bd3bfd24587a07ea99bbb40c65c","kind":"mutation-receipt","operation":"f1e6743e45b5f5414e01d7757cfd2276742ffdf4055d5d9238fd3a5b533d0f45","options":{"section":null},"request_id_sha256":null,"results":["f-20261031-02"],"target":"f-20261031-02","v":1} -->
 
 ---
 
