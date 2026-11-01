@@ -104,6 +104,7 @@
     "Board.Analysis.Tablebase.WhiteWins": "白胜",
     "Board.Analysis.Time": "时间 (毫秒)",
     "Board.Analysis.Unpin": "从棋谱取消固定",
+    "Board.Annotate.NavigationHint": "{{next}}：下一步 · {{previous}}：上一步 · Esc：退出编辑器",
     "Board.Annotate.SaveFailed": "此批注未保存，因为保存会更改其文本或格式。原有评论保持不变。",
     "Board.Annotate.WriteHere": "请在此输入...",
     "Board.Aria.Color.black": "黑方",

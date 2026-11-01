@@ -104,6 +104,7 @@
     "Board.Analysis.Tablebase.WhiteWins": "白方勝",
     "Board.Analysis.Time": "時間 (ms)",
     "Board.Analysis.Unpin": "取消釘選棋譜",
+    "Board.Annotate.NavigationHint": "{{next}}：下一步 · {{previous}}：上一步 · Esc：離開編輯器",
     "Board.Annotate.SaveFailed": "此註解未儲存，因為儲存會變更其文字或格式。原有評論保持不變。",
     "Board.Annotate.WriteHere": "在此輸入...",
     "Board.Aria.Color.black": "黑方",

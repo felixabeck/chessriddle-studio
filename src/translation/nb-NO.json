@@ -104,6 +104,7 @@
     "Board.Analysis.Tablebase.WhiteWins": "Hvit vinner",
     "Board.Analysis.Time": "Tid (ms)",
     "Board.Analysis.Unpin": "Løsne fra notasjonen",
+    "Board.Annotate.NavigationHint": "{{next}}: neste trekk · {{previous}}: forrige trekk · Esc: forlat redigeringen",
     "Board.Annotate.SaveFailed": "Denne merknaden ble ikke lagret fordi lagring ville endre teksten eller formateringen. Den forrige kommentaren er uendret.",
     "Board.Annotate.WriteHere": "Skriv her...",
     "Board.Aria.Color.black": "Svart",

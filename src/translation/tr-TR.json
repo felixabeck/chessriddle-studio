@@ -104,6 +104,7 @@
     "Board.Analysis.Tablebase.WhiteWins": "Beyaz kazanır",
     "Board.Analysis.Time": "Süre (ms)",
     "Board.Analysis.Unpin": "Notasyondan ayır",
+    "Board.Annotate.NavigationHint": "{{next}}: sonraki hamle · {{previous}}: önceki hamle · Esc: düzenleyiciden çık",
     "Board.Annotate.SaveFailed": "Bu açıklama kaydedilmedi çünkü kaydetmek metnini veya biçimlendirmesini değiştirecekti. Önceki yorum değişmedi.",
     "Board.Annotate.WriteHere": "Buraya yazın...",
     "Board.Aria.Color.black": "Siyah",

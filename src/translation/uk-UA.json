@@ -104,6 +104,7 @@
     "Board.Analysis.Tablebase.WhiteWins": "Виграють білі",
     "Board.Analysis.Time": "Час (мс)",
     "Board.Analysis.Unpin": "Відкріпити",
+    "Board.Annotate.NavigationHint": "{{next}}: наступний хід · {{previous}}: попередній хід · Esc: вийти з редактора",
     "Board.Annotate.SaveFailed": "Цю анотацію не збережено, оскільки збереження змінило б її текст або форматування. Попередній коментар залишився без змін.",
     "Board.Annotate.WriteHere": "Пишіть тут...",
     "Board.Aria.Color.black": "Чорні",

@@ -104,6 +104,7 @@
     "Board.Analysis.Tablebase.WhiteWins": "Ganan las blancas",
     "Board.Analysis.Time": "Tiempo (ms)",
     "Board.Analysis.Unpin": "Desfijar de la notación",
+    "Board.Annotate.NavigationHint": "{{next}}: siguiente jugada · {{previous}}: jugada anterior · Esc: salir del editor",
     "Board.Annotate.SaveFailed": "Esta anotación no se ha guardado porque al guardarla cambiaría su texto o formato. El comentario anterior no ha cambiado.",
     "Board.Annotate.WriteHere": "Escribe aquí...",
     "Board.Aria.Color.black": "negras",

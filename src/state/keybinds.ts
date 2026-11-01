@@ -41,6 +41,8 @@ const keys: KeyMap = {
     ANALYSIS_TAB: { name: "Go to analysis tab", keys: "a" },
     DATABASE_TAB: { name: "Go to database tab", keys: "b" },
     ANNOTATE_TAB: { name: "Go to annotate tab", keys: "d" },
+    ANNOTATION_NEXT_MOVE: { name: "Annotation editor: next move", keys: "tab" },
+    ANNOTATION_PREVIOUS_MOVE: { name: "Annotation editor: previous move", keys: "shift+tab" },
     INFO_TAB: { name: "Go to info tab", keys: "i" },
     ANNOTATION_BRILLIANT: { name: "Toggle brilliant move annotation", keys: "1" },
     ANNOTATION_GOOD: { name: "Toggle good move annotation", keys: "2" },

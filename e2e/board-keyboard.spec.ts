@@ -147,6 +147,43 @@ async function importAnalysisFen(page: Page, initialFen: string) {
     return grid;
 }
 
+test("board-keyboard: annotation navigation keeps focus and comments on their moves", async ({
+    page,
+}) => {
+    const grid = await importAnalysisFen(
+        page,
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    );
+    const board = page.locator("cg-board").first();
+    await playBoardMove(page, board, "e2", "e4");
+    await playBoardMove(page, board, "e7", "e5");
+    await page.getByRole("tab", { name: "Annotate", exact: true }).click();
+    await page.getByRole("button", { name: /^Previous move/ }).click();
+    const editor = page.locator(".tiptap");
+    await editor.click();
+    await page.keyboard.type("first");
+    await page.keyboard.press("Tab");
+    await expect(editor).toBeFocused();
+    await expect(editor).toHaveText("");
+    await page.keyboard.type("second");
+    await page.keyboard.press("Shift+Tab");
+    await expect(editor).toBeFocused();
+    await expect(editor).toHaveText("first");
+    await page.keyboard.type(" more");
+    await expect(editor).toHaveText("first more");
+    await page.keyboard.press("Escape");
+    await expect(editor).not.toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect(editor).toHaveText("second");
+    await expect(editor).not.toBeFocused();
+    await grid.focus();
+    await page.keyboard.press("Tab");
+    await expect(grid.getByRole("gridcell", { name: "e5, Black Pawn", exact: true })).toHaveCount(
+        1,
+    );
+    await expect(editor).toHaveText("second");
+});
+
 async function expectEditorRoot(page: Page, expectedFen: string) {
     const tab = (await activeWorkspaceTab(page))!;
     await expect

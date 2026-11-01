@@ -104,6 +104,7 @@
     "Board.Analysis.Tablebase.WhiteWins": "Weiss gewinnt",
     "Board.Analysis.Time": "Zeit (ms)",
     "Board.Analysis.Unpin": "Von der Notation lösen",
+    "Board.Annotate.NavigationHint": "{{next}}: nächster Zug · {{previous}}: vorheriger Zug · Esc: Editor verlassen",
     "Board.Annotate.SaveFailed": "Diese Anmerkung wurde nicht gespeichert, da sich dabei ihr Text oder ihre Formatierung ändern würde. Der bisherige Kommentar bleibt unverändert.",
     "Board.Annotate.WriteHere": "Hier schreiben...",
     "Board.Aria.Color.black": "Schwarz",

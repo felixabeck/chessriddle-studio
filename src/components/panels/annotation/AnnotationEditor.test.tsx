@@ -6,7 +6,9 @@ import { marked } from "marked";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { TreeStateContext } from "@/components/common/TreeStateContext";
+import { TreeStateContext, VariationChooserContext } from "@/components/common/TreeStateContext";
+import MoveControls from "@/components/common/MoveControls";
+import { createVariationChooserStore } from "@/state/store/variationChooser";
 import Comment from "@/components/common/Comment";
 import {
   commentDialectCases,
@@ -16,14 +18,25 @@ import {
 } from "@/components/common/tests/commentDialectCases";
 import { assertCommentFormatting } from "@/components/common/tests/assertCommentFormatting";
 import { createTreeStore, type TreeStore } from "@/state/store/tree";
+import { keyMapAtom } from "@/state/keybinds";
+import { chooseVariationAtom } from "@/state/atoms";
+import { nextContinuation } from "@/state/store/tree";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { defaultTree } from "@/utils/treeReducer";
 import { createCommentMarkdown } from "@/utils/commentMarkdown";
 import { flattenCommentDocument } from "@/utils/commentSerializer";
 import AnnotationEditor, { includeHardBreakMarks, parseNotationComment } from "./AnnotationEditor";
 
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: { next: string; previous: string }) =>
+      options
+        ? `${options.next}: next move · ${options.previous}: previous move · Esc: leave editor`
+        : key,
+  }),
+}));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
+vi.mock("@/platform/native", () => ({ platform: () => "linux" }));
 vi.mock("@tiptap/react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tiptap/react")>();
   return { ...actual, useEditor: vi.fn(actual.useEditor) };
@@ -35,12 +48,17 @@ let host: HTMLDivElement;
 let root: Root;
 let store: TreeStore;
 let writeComment: ReturnType<typeof vi.fn<(comment: string) => void>>;
+let atoms: ReturnType<typeof createStore>;
+let chooser: ReturnType<typeof createVariationChooserStore>;
 
 beforeEach(() => {
   installMatchMediaStub();
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
+  atoms = createStore();
+  chooser = createVariationChooserStore();
+  localStorage.removeItem("keybinds");
 });
 
 afterEach(async () => {
@@ -50,7 +68,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-async function mount(comment: string) {
+async function mount(comment: string, controls = false) {
   const initial = defaultTree();
   initial.root.comment = comment;
   store = createTreeStore(undefined, initial);
@@ -60,9 +78,12 @@ async function mount(comment: string) {
   await act(async () => {
     root.render(
       <MantineProvider>
-        <Provider store={createStore()}>
+        <Provider store={atoms}>
           <TreeStateContext.Provider value={store}>
-            <AnnotationEditor />
+            <VariationChooserContext.Provider value={chooser}>
+              <AnnotationEditor />
+              {controls && <MoveControls />}
+            </VariationChooserContext.Provider>
           </TreeStateContext.Provider>
         </Provider>
       </MantineProvider>,
@@ -77,6 +98,174 @@ function editorElement() {
 function editor() {
   return editorElement().editor;
 }
+
+async function focusEditor() {
+  await act(async () => editor().view.focus());
+}
+
+async function press(
+  key: string,
+  code: string,
+  shiftKey = false,
+  target: HTMLElement = editorElement(),
+) {
+  const previousPosition = store.getState().position.join();
+  const event = new KeyboardEvent("keydown", {
+    key,
+    code,
+    shiftKey,
+    bubbles: true,
+    cancelable: true,
+  });
+  await act(async () => {
+    target.dispatchEvent(event);
+    target.dispatchEvent(new KeyboardEvent("keyup", { key, code, shiftKey, bubbles: true }));
+  });
+  if (store.getState().position.join() !== previousPosition) {
+    await act(async () => {
+      await vi.waitFor(() => {
+        if (!editor().isFocused) throw new Error("editor focus is still pending");
+      });
+    });
+  }
+  return event;
+}
+
+async function addLine() {
+  await act(async () => {
+    expect(store.getState().makeMoves({ payload: ["e4"] }).success).toBe(true);
+    store.getState().setComment("first");
+    expect(store.getState().makeMoves({ payload: ["e5"] }).success).toBe(true);
+    store.getState().setComment("second");
+    store.getState().goToPrevious();
+    expect(store.getState().makeMoves({ payload: ["c5"] }).success).toBe(true);
+    store.getState().setComment("side line");
+    store.getState().goToPrevious();
+  });
+}
+
+test("editor navigation follows child zero, retains focus, appends and isolates undo", async () => {
+  await mount("", true);
+  await addLine();
+  await act(async () => atoms.set(chooseVariationAtom, true));
+  await focusEditor();
+  await act(async () =>
+    editor().commands.insertContentAt(editor().state.doc.content.size - 1, " draft"),
+  );
+  expect((await press("Tab", "Tab")).defaultPrevented).toBe(true);
+  expect(store.getState().position).toEqual([0, 0]);
+  expect(chooser.getState().choice).toBeNull();
+  expect(document.activeElement).toBe(editorElement());
+  expect(editor().state.selection.from).toBe(editor().state.doc.content.size - 1);
+  expect(editor().commands.undo()).toBe(false);
+  await act(async () => editor().commands.insertContent(" appended"));
+  expect(store.getState().currentNode().comment).toBe("second appended");
+  await press("Tab", "Tab", true);
+  expect(store.getState().position).toEqual([0]);
+  expect(document.activeElement).toBe(editorElement());
+  expect(editor().getText()).toBe("first draft");
+  expect(editor().state.selection.from).toBe(editor().state.doc.content.size - 1);
+});
+
+test("editor navigation stays at root and at a transposed leaf with a continuation elsewhere", async () => {
+  await mount("");
+  await focusEditor();
+  await press("Tab", "Tab", true);
+  expect(store.getState().position).toEqual([]);
+  expect(document.activeElement).toBe(editorElement());
+  await act(async () => {
+    expect(store.getState().makeMoves({ payload: ["Nf3", "Nf6", "g3", "g6", "Bg2"] }).success).toBe(
+      true,
+    );
+    store.getState().goToStart();
+    expect(store.getState().makeMoves({ payload: ["g3", "g6", "Nf3", "Nf6"] }).success).toBe(true);
+  });
+  expect(store.getState().currentNode().children).toEqual([]);
+  expect(nextContinuation(store.getState())).not.toBeNull();
+  expect(nextContinuation(store.getState())?.path).toEqual([0, 0, 0, 0]);
+  await focusEditor();
+  await press("Tab", "Tab");
+  expect(store.getState().position).toEqual([1, 0, 0, 0]);
+  expect(document.activeElement).toBe(editorElement());
+});
+
+test("ordinary line-end navigation keeps focus", async () => {
+  await mount("");
+  expect(nextContinuation(store.getState())).toBeNull();
+  await focusEditor();
+  await press("Tab", "Tab");
+  expect(store.getState().position).toEqual([]);
+  expect(document.activeElement).toBe(editorElement());
+});
+
+test("live bindings and hint are scoped to the focused editor and Escape leaves it", async () => {
+  await mount("");
+  await addLine();
+  expect(host.textContent).not.toContain("Esc: leave editor");
+  await focusEditor();
+  expect(host.textContent).toContain(
+    "tab: next move · shift+tab: previous move · Esc: leave editor",
+  );
+  await act(async () =>
+    atoms.set(keyMapAtom, {
+      ...atoms.get(keyMapAtom),
+      ANNOTATION_NEXT_MOVE: { name: "Next", keys: "n" },
+      ANNOTATION_PREVIOUS_MOVE: { name: "Previous", keys: "p" },
+    }),
+  );
+  expect(host.textContent).toContain("n: next move · p: previous move");
+  await press("n", "KeyN");
+  expect(store.getState().position).toEqual([0, 0]);
+  await press("p", "KeyP");
+  expect(store.getState().position).toEqual([0]);
+  await press("Escape", "Escape");
+  expect(document.activeElement).not.toBe(editorElement());
+  expect(host.textContent).not.toContain("Esc: leave editor");
+});
+
+test("Escape enables the board hotkey on the very next key press", async () => {
+  await mount("", true);
+  await addLine();
+  await act(async () => atoms.set(chooseVariationAtom, false));
+  await focusEditor();
+  await act(async () => {
+    editorElement().dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Escape",
+        code: "Escape",
+        bubbles: true,
+      }),
+    );
+    document.activeElement!.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "ArrowRight",
+        code: "ArrowRight",
+        bubbles: true,
+      }),
+    );
+    document.dispatchEvent(
+      new KeyboardEvent("keyup", { key: "Escape", code: "Escape", bubbles: true }),
+    );
+    document.dispatchEvent(
+      new KeyboardEvent("keyup", { key: "ArrowRight", code: "ArrowRight", bubbles: true }),
+    );
+  });
+  expect(store.getState().position).toEqual([0, 0]);
+  expect(document.activeElement).not.toBe(editorElement());
+});
+
+test("navigation keys outside the editor are inert and external navigation does not steal focus", async () => {
+  await mount("");
+  await addLine();
+  const outside = host.querySelector("button")!;
+  outside.focus();
+  expect((await press("Tab", "Tab", false, outside)).defaultPrevented).toBe(false);
+  expect((await press("Tab", "Tab", true, outside)).defaultPrevented).toBe(false);
+  expect(store.getState().position).toEqual([0]);
+  await act(async () => store.getState().goToNext());
+  expect(document.activeElement).toBe(outside);
+  expect(editor().isFocused).toBe(false);
+});
 
 function observeSetContent() {
   // Tiptap creates a command facade on each getter call. Observe the same facade

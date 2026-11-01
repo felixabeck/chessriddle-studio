@@ -1,4 +1,5 @@
 import { RichTextEditor } from "@mantine/tiptap";
+import { Text } from "@mantine/core";
 import Placeholder from "@tiptap/extension-placeholder";
 import Underline from "@tiptap/extension-underline";
 import { Markdown } from "@tiptap/markdown";
@@ -13,11 +14,13 @@ import StarterKit from "@tiptap/starter-kit";
 import { useAtomValue } from "jotai";
 import equal from "fast-deep-equal";
 import type { marked } from "marked";
-import { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { spellCheckAtom } from "@/state/atoms";
+import { keyMapAtom } from "@/state/keybinds";
 import { createCommentMarkdown } from "@/utils/commentMarkdown";
 import { parseNotationComment } from "@/utils/commentNotation";
 import {
@@ -73,6 +76,9 @@ function AnnotationEditor() {
   // The React compiler would retain the mutable Marked instance across editor recreations.
   const { t } = useTranslation();
   const [saveFailed, setSaveFailed] = useState<boolean>();
+  const [focused, setFocused] = useState(false);
+  const focusDestination = useRef<string | null>(null);
+  const keyMap = useAtomValue(keyMapAtom);
 
   const store = useContext(TreeStateContext)!;
   const root = useStore(store, (s) => s.root);
@@ -121,6 +127,14 @@ function AnnotationEditor() {
       ],
       content: currentNode.comment || null,
       contentType: "markdown",
+      autofocus: false,
+      onCreate: ({ editor }) => {
+        if (focusDestination.current !== position.join()) return;
+        focusDestination.current = null;
+        editor.commands.focus("end", { scrollIntoView: false });
+      },
+      onFocus: () => setFocused(true),
+      onBlur: () => setFocused(false),
       onUpdate: ({ editor }) => {
         const result = compareCommentDocument(editor.getJSON(), [
           (source) => editor.markdown!.parse(source),
@@ -147,6 +161,38 @@ function AnnotationEditor() {
     }
     setSaveFailed(false);
   }, [currentNode.comment, editor, nodeIdentity]);
+
+  const navigate = (forward: boolean) => {
+    const state = store.getState();
+    if (forward && state.currentNode().children.length === 0) return;
+    if (!forward && state.position.length === 0) return;
+    const previous = state.position.join();
+    if (forward) state.goToNext();
+    else state.goToPrevious();
+    const destination = store.getState().position.join();
+    if (destination !== previous) focusDestination.current = destination;
+  };
+  const options = { enableOnContentEditable: true, preventDefault: true };
+  const nextRef = useHotkeys<HTMLDivElement>(
+    keyMap.ANNOTATION_NEXT_MOVE.keys,
+    () => navigate(true),
+    options,
+  );
+  const previousRef = useHotkeys<HTMLDivElement>(
+    keyMap.ANNOTATION_PREVIOUS_MOVE.keys,
+    () => navigate(false),
+    options,
+  );
+  const escapeRef = useHotkeys<HTMLDivElement>(
+    "escape",
+    () => {
+      const activeElement = document.activeElement;
+      if (activeElement instanceof HTMLElement && nextRef.current?.contains(activeElement)) {
+        activeElement.blur();
+      }
+    },
+    options,
+  );
 
   return (
     <RichTextEditor
@@ -177,7 +223,24 @@ function AnnotationEditor() {
         </RichTextEditor.ControlsGroup>
       </RichTextEditor.Toolbar>
 
-      <RichTextEditor.Content />
+      <div
+        ref={(element) => {
+          nextRef.current = element;
+          previousRef.current = element;
+          escapeRef.current = element;
+        }}
+      >
+        <RichTextEditor.Content />
+      </div>
+      {focused && (
+        <Text c="dimmed" size="xs">
+          {t("Board.Annotate.NavigationHint", {
+            defaultValue: "{{next}}: next move · {{previous}}: previous move · Esc: leave editor",
+            next: keyMap.ANNOTATION_NEXT_MOVE.keys,
+            previous: keyMap.ANNOTATION_PREVIOUS_MOVE.keys,
+          })}
+        </Text>
+      )}
       {saveFailed && <div role="alert">{t("Board.Annotate.SaveFailed")}</div>}
     </RichTextEditor>
   );
