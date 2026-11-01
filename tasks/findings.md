@@ -20293,3 +20293,19 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Failure scenario:** in a large database page forward to page 40, then pick a player with 300 games: offset 975 returns no rows and the table says "No games found" although 300 games match.
 * **Fix shape:** reset `options.page` to 1 in `setGamesQuery` whenever anything other than the page changes; optionally clamp once a count arrives.
 * **Found by:** cloud audit session session_01JbeKok45YnAvBbVKxMsko6 (puzzles/home/databases/board input audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### Deleting a database game is one unconfirmed click, and the preview then slides onto the next game
+
+* **ID:** f-20261101-22 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** data-loss
+* **Where:** `src/components/databases/GameCard.tsx:41-91` (Trash button calls `deleteGame` → `tauri.deleteDbGame` / `editLinkedCollection(... { kind: "delete" })` with no confirmation), `src/components/databases/GameTable.tsx` (preview is `games[selectedGame]`, an index), `src/components/databases/databaseMutation.ts` `refreshDatabaseGameQueries` (refetch without clearing the selection).
+* **Defect:** after a successful delete the selection index stays, so the preview shows the game that moved into that row with Delete enabled again; nothing asks before the permanent delete. Files and puzzle databases delete behind a confirm.
+* **Failure scenario:** select game 5 on a page, click Trash once: it is deleted immediately and the preview silently shows the next game; a second click (the user thinks the first did nothing) permanently deletes an unrelated game.
+* **Fix shape:** clear `games.selectedGame` (or reselect by id) after a successful delete; put the delete behind the existing `ConfirmModal` pattern naming players and date.
+* **Lens:** `review-correctness`
+* **Proof:** a GameCard/GameTable test: after delete the preview is empty, and the native delete runs only after confirmation.
+* **Found by:** cloud audit session session_01JbeKok45YnAvBbVKxMsko6 (puzzles/home/databases/board input audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
