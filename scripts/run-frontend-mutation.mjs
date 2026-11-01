@@ -52,7 +52,7 @@ const filesByPath = new Map(
 export async function frontendMutationInputs() {
   const { parseTsSource } = await import("./parse-ts-source.mjs");
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-  const inputs = new Set([...FRONTEND_INPUTS, ".github/workflows/test.yml"]);
+  const inputs = new Set([...FRONTEND_INPUTS, ".github/workflows/test.yml", ".github/actions/**"]);
   const pending = ["scripts/run-frontend-mutation.mjs", "stryker.config.mjs"];
   const visited = new Set();
   while (pending.length) {

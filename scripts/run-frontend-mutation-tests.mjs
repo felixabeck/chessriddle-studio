@@ -276,6 +276,8 @@ test("change skip uses the frontend superset and transitive runner/config import
     "scripts/import-path.mjs",
     "scripts/parse-ts-source.mjs",
     ".github/workflows/test.yml",
+    ".github/actions/setup-ci/action.yml",
+    ".github/actions/other/helper.sh",
   ]) {
     assert.equal(
       await canSkipFrontendMutation(changeBase, {

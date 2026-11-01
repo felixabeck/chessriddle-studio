@@ -1,7 +1,7 @@
-# Backend mutation testing — a periodic deep check, not a per-commit gate.
+# Mutation testing — daily full frontend sweeps and weekly backend checks.
 #
-# Only the BACKEND suite lives here. `mutation:frontend` remains a per-push gate in
-# `test.yml`; backend mutation runs periodically because its full package suite is much longer.
+# `test.yml` restores recent frontend sweep results but never publishes them.
+# Only successful forced sweeps here publish the dated incremental cache.
 #
 # The backend suite is different in kind. Measured on tuxedo-atlas 2026-08-29, the eight
 # packages take ~55 minutes together (`database-encoding` alone is 96 mutants in 10 minutes),
@@ -20,12 +20,15 @@ on:
   schedule:
     # Sundays, 03:17 UTC. Off-peak, and weekly matches how fast these suites change.
     - cron: "17 3 * * 0"
+    # Daily full frontend sweep, 02:17 UTC.
+    - cron: "17 2 * * *"
 
 permissions:
   contents: read
 
 jobs:
   packages:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 3 * * 0'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -44,6 +47,7 @@ jobs:
         run: echo "ids=$(node scripts/run-backend-mutation.mjs --list-packages)" >> "$GITHUB_OUTPUT"
 
   backend:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 3 * * 0'
     needs: packages
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -108,4 +112,71 @@ jobs:
           path: mutants.out/backend/${{ matrix.package }}/
           # `warn`, not `error`: this step runs on failure too, and when the run died before
           # producing a report an upload error only adds a second red step on top of the real one.
+          if-no-files-found: warn
+
+  frontend-mutation-packages:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 2 * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      ids: ${{ steps.list.outputs.ids }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Sync node version
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+
+      - name: List frontend mutation packages
+        id: list
+        run: echo "ids=$(node scripts/run-frontend-mutation.mjs --list-packages)" >> "$GITHUB_OUTPUT"
+
+  frontend-mutation:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 2 * * *'
+    needs: frontend-mutation-packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.frontend-mutation-packages.outputs.ids) }}
+    env:
+      FRONTEND_MUTATION_PACKAGE: ${{ matrix.package }}
+      FRONTEND_MUTATION_INCREMENTAL_DIR: .frontend-mutation-incremental
+      FRONTEND_MUTATION_FORCE: "1"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up repository dependencies
+        uses: ./.github/actions/setup-ci
+
+      - name: Compute UTC cache dates
+        id: dates
+        run: |
+          today=$(date -u +%Y%m%d)
+          echo "today=$today" >> "$GITHUB_OUTPUT"
+          echo "yesterday=$(date -u -d "$today -1 day" +%Y%m%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Run full frontend mutation sweep
+        run: pnpm mutation:frontend
+
+      - name: Save successful full mutation results
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: .frontend-mutation-incremental
+          key: frontend-mutation-full-${{ matrix.package }}-${{ steps.dates.outputs.today }}-${{ github.run_id }}
+
+      - name: Upload frontend mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-mutation-${{ matrix.package }}
+          path: artifacts/mutation/frontend/${{ matrix.package }}/
+          # A missing report on failure must not bury the original error.
           if-no-files-found: warn

@@ -1,0 +1,39 @@
+name: Set up CI dependencies
+description: Install the repository's Node tooling and optional Linux desktop dependencies
+inputs:
+  desktop:
+    description: Install Linux desktop build dependencies
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Install uv for repository scripts
+      uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      with:
+        enable-cache: false
+
+    - name: Install pnpm
+      # Version comes from package.json's `packageManager` field; naming it here as
+      # well is a second pin that can silently disagree with the first.
+      uses: pnpm/action-setup@v4
+
+    - name: Sync node version and setup cache
+      uses: actions/setup-node@v4
+      with:
+        node-version: "lts/*"
+        cache: "pnpm"
+
+    - name: Install app dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile
+
+    - name: Install Linux desktop build dependencies
+      if: inputs.desktop == 'true'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install --no-install-recommends -y \
+          libwebkit2gtk-4.1-dev \
+          libayatana-appindicator3-dev \
+          librsvg2-dev \
+          patchelf

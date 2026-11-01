@@ -77,7 +77,12 @@ async function fixture() {
         run: bash scripts/setup-rust.sh
       - name: Run Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
-  test:
+  frontend:
+    steps:
+      - name: Install Rust toolchain
+        shell: bash
+        run: bash scripts/setup-rust.sh
+  rust:
     steps:
       - name: Install Rust toolchain
         shell: bash
@@ -591,7 +596,7 @@ test("reports each rust-platform contract clause through the CLI", async (t) => 
           "      - name: Check and lint all Rust targets\n        run: |\n          cargo clippy",
           "      - name: Check and lint all Rust targets\n        run: |\n          cargo check --manifest-path src-tauri/Cargo.toml --all-targets --locked\n          cargo clippy",
         ),
-      "(5a) Linux test job must not contain a cargo check step",
+      "(5a) Linux Rust-compiling job must not contain a cargo check step",
     ),
   );
   await t.test("(5a) detects cargo check after a directory change", (subtest) =>
@@ -603,7 +608,7 @@ test("reports each rust-platform contract clause through the CLI", async (t) => 
           "      - name: Check and lint all Rust targets\n        run: |\n          cargo clippy",
           "      - name: Check and lint all Rust targets\n        run: |\n          cd src-tauri && cargo check --all-targets --locked\n          cargo clippy",
         ),
-      "(5a) Linux test job must not contain a cargo check step",
+      "(5a) Linux Rust-compiling job must not contain a cargo check step",
     ),
   );
   await t.test("(5a) detects cargo +stable check", (subtest) =>
@@ -615,7 +620,7 @@ test("reports each rust-platform contract clause through the CLI", async (t) => 
           "      - name: Check and lint all Rust targets\n        run: |\n          cargo clippy",
           "      - name: Check and lint all Rust targets\n        run: |\n          cargo +stable check --all-targets --locked\n          cargo clippy",
         ),
-      "(5a) Linux test job must not contain a cargo check step",
+      "(5a) Linux Rust-compiling job must not contain a cargo check step",
     ),
   );
   await t.test("(5a) detects bash -c cargo check in the Linux lint step", (subtest) =>
@@ -627,7 +632,7 @@ test("reports each rust-platform contract clause through the CLI", async (t) => 
           "      - name: Check and lint all Rust targets\n        run: |\n          cargo clippy",
           "      - name: Check and lint all Rust targets\n        run: |\n          bash -c 'cargo check --all-targets --locked'\n          cargo clippy",
         ),
-      "(5a) Linux test job must not contain a cargo check step",
+      "(5a) Linux Rust-compiling job must not contain a cargo check step",
     ),
   );
   await t.test("(5a) detects sh -c cargo +stable check in a rust-platform step", (subtest) =>
@@ -724,7 +729,13 @@ test("reports each Rust test-job contract clause through the CLI", async (t) => 
 });
 
 test("registers each new Rust job's setup step in the CLI contract", async (t) => {
-  for (const jobName of ["rust-platform", "rust-macos-test", "rust-windows-test"]) {
+  for (const jobName of [
+    "frontend",
+    "rust",
+    "rust-platform",
+    "rust-macos-test",
+    "rust-windows-test",
+  ]) {
     await t.test(jobName, (subtest) =>
       mutateCheckedInFileAndRunCli(
         subtest,
@@ -743,7 +754,7 @@ test("reports all pre-Phase-3 checker finding paths through CLI fixtures", async
     assertCliFailure(root, "rust-toolchain.toml: required Rust toolchain contract file is missing");
   });
 
-  for (const jobName of ["test", "rust-windows-test"]) {
+  for (const jobName of ["frontend", "rust", "rust-windows-test"]) {
     await t.test(`missing registered workflow job ${jobName}`, (subtest) =>
       mutateCheckedInFileAndRunCli(
         subtest,
@@ -830,15 +841,15 @@ test("reports all pre-Phase-3 checker finding paths through CLI fixtures", async
       subtest,
       ".github/workflows/test.yml",
       (text) => replaceNamedJobSetup(text, workflowJobName(".github/workflows/test.yml"), ""),
-      ".github/workflows/test.yml: job test must contain exactly one unconditional, failure-propagating bash scripts/setup-rust.sh step with shell bash",
+      ".github/workflows/test.yml: job rust must contain exactly one unconditional, failure-propagating bash scripts/setup-rust.sh step with shell bash",
     ),
   );
   await t.test("forbidden floating Rust action", (subtest) =>
     mutateCheckedInFileAndRunCli(
       subtest,
       ".github/workflows/test.yml",
-      (text) => text.replace("  test:\n", "  test:\n    uses: dtolnay/rust-toolchain@stable\n"),
-      ".github/workflows/test.yml: job test must not use dtolnay/rust-toolchain",
+      (text) => text.replace("  rust:\n", "  rust:\n    uses: dtolnay/rust-toolchain@stable\n"),
+      ".github/workflows/test.yml: job rust must not use dtolnay/rust-toolchain",
     ),
   );
   await t.test("release target setup contract", (subtest) =>
@@ -962,7 +973,7 @@ const sharedSetupBlock =
 
 function workflowJobName(path) {
   return path === ".github/workflows/test.yml"
-    ? "test"
+    ? "rust"
     : path === ".github/workflows/mutation.yml"
       ? "backend"
       : "release";
@@ -1080,7 +1091,7 @@ test("rejects RUSTUP_TOOLCHAIN declarations at workflow, job, step, and shell sc
     ["workflow env", (text) => `env:\n  RUSTUP_TOOLCHAIN: stable\n${text}`],
     [
       "job env",
-      (text) => text.replace("  test:\n", "  test:\n    env:\n      RUSTUP_TOOLCHAIN: stable\n"),
+      (text) => text.replace("  rust:\n", "  rust:\n    env:\n      RUSTUP_TOOLCHAIN: stable\n"),
     ],
     [
       "step env",

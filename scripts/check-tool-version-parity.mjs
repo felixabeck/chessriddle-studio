@@ -17,7 +17,7 @@ the named message and status 1 in the same run. The test names are the node:test
     setup install command, setup active-toolchain report;
   workflow RUSTUP_TOOLCHAIN -> ... / workflow RUSTUP_TOOLCHAIN declaration;
   workflow setup contract -> ... / registered workflow setup contract and
-    registers each new Rust job's setup step / rust-platform, rust-macos-test, rust-windows-test;
+    registers each new Rust job's setup step / frontend, rust, rust-platform, rust-macos-test, rust-windows-test;
   dtolnay action -> ... / forbidden floating Rust action;
   release target setup -> ... / release target setup contract;
   push-skill setup fence -> ... / push skill setup fence;
@@ -38,7 +38,7 @@ the named message and status 1 in the same run. The test names are the node:test
   rust-macos-test (6a)-(6b) and rust-windows-test (7a)-(7c) -> reports each Rust test-job
     contract clause / (6a) wrong runner, (6b) missing cargo test, (7a) wrong runner,
     (7b) missing cargo test, (7c) strategy declaration, (7c) matrix declaration;
-  requiredWorkflowJob -> ... / missing registered workflow job test,
+  requiredWorkflowJob -> ... / missing registered workflow jobs frontend and rust,
     missing registered workflow job rust-windows-test;
   main findings return 1 -> every status-1 fixture above;
   unexpected main error return 2 -> reports an unexpected checker error with status 2;
@@ -63,7 +63,8 @@ const RUST_TEST_JOBS = [
   { job: "rust-windows-test", runner: "windows-latest", clauses: ["7a", "7b", "7c"] },
 ];
 const RUST_WORKFLOW_JOBS = [
-  [".github/workflows/test.yml", "test"],
+  [".github/workflows/test.yml", "frontend"],
+  [".github/workflows/test.yml", "rust"],
   [".github/workflows/test.yml", "rust-platform"],
   ...RUST_TEST_JOBS.map(({ job }) => [".github/workflows/test.yml", job]),
   [".github/workflows/mutation.yml", "backend"],
@@ -414,12 +415,14 @@ function checkTargetCoverage(workflows, findings) {
     );
   }
 
-  const linuxJob = workflows
-    .get(".github/workflows/test.yml")
-    ?.jobs.find((job) => job.name === "test");
-  if (linuxJob && workflowSteps(linuxJob.body).some((step) => hasCargoCheck(step.run))) {
+  const linuxJob =
+    workflows
+      .get(".github/workflows/test.yml")
+      ?.jobs.filter((job) => ["frontend", "rust"].includes(job.name)) ?? [];
+  for (const job of linuxJob) {
+    if (!workflowSteps(job.body).some((step) => hasCargoCheck(step.run))) continue;
     findings.push(
-      ".github/workflows/test.yml: (5a) Linux test job must not contain a cargo check step; clippy covers every target",
+      ".github/workflows/test.yml: (5a) Linux Rust-compiling job must not contain a cargo check step; clippy covers every target",
     );
   }
 }

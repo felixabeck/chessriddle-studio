@@ -159,39 +159,16 @@ jobs:
             throw 'Failed to dismount measurement volumes'
           }
 
-  test:
+  frontend:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install uv for repository scripts
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - name: Set up repository dependencies
+        uses: ./.github/actions/setup-ci
         with:
-          enable-cache: false
-
-      - name: Install pnpm
-        # Version comes from package.json's `packageManager` field; naming it here as
-        # well is a second pin that can silently disagree with the first.
-        uses: pnpm/action-setup@v4
-
-      - name: Sync node version and setup cache
-        uses: actions/setup-node@v4
-        with:
-          node-version: "lts/*"
-          cache: "pnpm"
-
-      - name: Install app dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Install Linux desktop build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf
+          desktop: "true"
 
       - name: Install Rust toolchain
         shell: bash
@@ -224,6 +201,23 @@ jobs:
       - name: Enforce frontend bundle budgets
         run: pnpm bundle:check
 
+      - name: Upload frontend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: coverage/
+          if-no-files-found: warn
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up repository dependencies
+        uses: ./.github/actions/setup-ci
+
       - name: Run browser accessibility and visual contracts
         # Inside the pinned Playwright image, whose rendering the committed screenshots
         # match. Running this natively compares the runner's font rasterization against
@@ -240,32 +234,29 @@ jobs:
           # `warn`, not `error`: see the mutation report upload below.
           if-no-files-found: warn
 
-      - name: Upload frontend coverage
-        if: always()
-        uses: actions/upload-artifact@v4
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up repository dependencies
+        uses: ./.github/actions/setup-ci
         with:
-          name: frontend-coverage
-          path: coverage/
-          if-no-files-found: warn
+          desktop: "true"
 
-      - name: Run targeted frontend mutation tests
-        # Measured 323 seconds on 2026-09-04. All three packages have stayed at 0 survivors since
-        # 2026-08-30; f-20260829-08 is handled. The backend suite stays in `mutation.yml` because
-        # its runtime is too high for the per-push workflow.
-        run: pnpm mutation:frontend
+      - name: Install Rust toolchain
+        shell: bash
+        run: bash scripts/setup-rust.sh
 
-      - name: Upload frontend mutation report
-        if: always()
-        uses: actions/upload-artifact@v4
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
         with:
-          name: frontend-mutation
-          path: artifacts/mutation/frontend/
-          # `warn`, not `error`: this runs on failure too, and a missing report then adds a
-          # second red step that buries the actual cause.
-          if-no-files-found: warn
+          workspaces: src-tauri -> target
 
-      - name: Install pinned Rust coverage tool
-        run: cargo install cargo-llvm-cov --version 0.8.7 --locked
+      # Tauri embeds frontendDist at compile time, even in this independent Rust job.
+      - name: Prepare frontend distribution directory
+        run: mkdir -p dist
 
       - name: Check Rust formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
@@ -273,6 +264,9 @@ jobs:
       - name: Check and lint all Rust targets
         run: |
           cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings
+
+      - name: Install pinned Rust coverage tool
+        run: cargo install cargo-llvm-cov --version 0.8.7 --locked
 
       - name: Install pinned Rust coverage toolchain
         run: rustup toolchain install nightly-2025-06-01 --profile minimal --component llvm-tools-preview
@@ -292,4 +286,75 @@ jobs:
         with:
           name: backend-coverage
           path: backend-coverage/
+          if-no-files-found: warn
+
+  frontend-mutation-packages:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      ids: ${{ steps.list.outputs.ids }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Sync node version
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+
+      - name: List frontend mutation packages
+        id: list
+        run: echo "ids=$(node scripts/run-frontend-mutation.mjs --list-packages)" >> "$GITHUB_OUTPUT"
+
+  frontend-mutation:
+    needs: frontend-mutation-packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.frontend-mutation-packages.outputs.ids) }}
+    env:
+      FRONTEND_MUTATION_PACKAGE: ${{ matrix.package }}
+      FRONTEND_MUTATION_INCREMENTAL_DIR: .frontend-mutation-incremental
+      FRONTEND_MUTATION_CHANGED_SINCE: ${{ github.event_name == 'push' && github.event.before || github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up repository dependencies
+        uses: ./.github/actions/setup-ci
+
+      - name: Compute UTC cache dates
+        id: dates
+        run: |
+          today=$(date -u +%Y%m%d)
+          echo "today=$today" >> "$GITHUB_OUTPUT"
+          echo "yesterday=$(date -u -d "$today -1 day" +%Y%m%d)" >> "$GITHUB_OUTPUT"
+
+      # Only forced full sweeps publish caches. Today's and yesterday's prefixes bound
+      # reuse, and this deliberately unmatched key prevents an exact cache hit.
+      - name: Restore recent full mutation results
+        uses: actions/cache/restore@v4
+        with:
+          path: .frontend-mutation-incremental
+          key: frontend-mutation-restore-${{ matrix.package }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            frontend-mutation-full-${{ matrix.package }}-${{ steps.dates.outputs.today }}-
+            frontend-mutation-full-${{ matrix.package }}-${{ steps.dates.outputs.yesterday }}-
+
+      - name: Run targeted frontend mutation tests
+        # Each package gets its own runner. The runner skips only when the complete
+        # frontend input superset is unchanged, and otherwise enforces the same thresholds.
+        run: pnpm mutation:frontend
+
+      - name: Upload frontend mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-mutation-${{ matrix.package }}
+          path: artifacts/mutation/frontend/${{ matrix.package }}/
+          # A missing report on failure must not bury the original error.
           if-no-files-found: warn

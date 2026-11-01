@@ -11,6 +11,8 @@ import {
 } from "./check-gate-routing.mjs";
 import { gitInit } from "./test-git-init.mjs";
 import { testTempRoots } from "./test-temp-root.mjs";
+import { spawnSync } from "node:child_process";
+import { mutationPackages } from "./frontend-mutation-packages.mjs";
 
 const temporaryRoot = testTempRoots(after);
 
@@ -938,6 +940,216 @@ test("detects missing scripts used by both executable schedules", async (t) => {
         (await checkGateRouting(root, { paths })).join("\n"),
         new RegExp(`gate scheduler invokes missing package script ${name}`, "u"),
       );
+    });
+  }
+});
+
+// Keep these contracts in gates:routing:test, which gates:contract:check already runs.
+function phase2Contracts(texts) {
+  const jobs = (source) => new Map(workflowJobs(source).map((job) => [job.name, job.body]));
+  const testJobs = jobs(texts.test);
+  const sweepJobs = jobs(texts.sweep);
+  const contracts = [];
+  const requireText = (label, source, value) =>
+    contracts.push([label, () => assert.ok(source?.includes(value), label)]);
+  const forbid = (label, source, pattern) =>
+    contracts.push([label, () => assert.doesNotMatch(source, pattern, label)]);
+  for (const [label, collection] of [
+    ["test", testJobs],
+    ["sweep", sweepJobs],
+  ]) {
+    const listing = collection.get("frontend-mutation-packages");
+    const matrix = collection.get("frontend-mutation");
+    requireText(
+      `${label} listing command`,
+      listing,
+      'run: echo "ids=$(node scripts/run-frontend-mutation.mjs --list-packages)" >> "$GITHUB_OUTPUT"',
+    );
+    requireText(`${label} listing output`, listing, "ids: ${{ steps.list.outputs.ids }}");
+    requireText(`${label} listing id`, listing, "id: list");
+    for (const value of [
+      "needs: frontend-mutation-packages",
+      "fail-fast: false",
+      "package: ${{ fromJSON(needs.frontend-mutation-packages.outputs.ids) }}",
+      "FRONTEND_MUTATION_PACKAGE: ${{ matrix.package }}",
+      "FRONTEND_MUTATION_INCREMENTAL_DIR: .frontend-mutation-incremental",
+      "uses: actions/checkout@v4\n        with:\n          fetch-depth: 0",
+      "run: pnpm mutation:frontend",
+      "name: frontend-mutation-${{ matrix.package }}",
+      "path: artifacts/mutation/frontend/${{ matrix.package }}/",
+      "id: dates",
+      "today=$(date -u +%Y%m%d)",
+      'echo "today=$today" >> "$GITHUB_OUTPUT"',
+    ])
+      requireText(`${label} ${value}`, matrix, value);
+    contracts.push([
+      `${label} dates before cache`,
+      () => assert.ok(matrix.indexOf("id: dates") < matrix.indexOf("uses: actions/cache/")),
+    ]);
+  }
+  const matrix = testJobs.get("frontend-mutation");
+  requireText(
+    "change base",
+    matrix,
+    "FRONTEND_MUTATION_CHANGED_SINCE: ${{ github.event_name == 'push' && github.event.before || github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}",
+  );
+  requireText(
+    "yesterday UTC",
+    matrix,
+    'echo "yesterday=$(date -u -d "$today -1 day" +%Y%m%d)" >> "$GITHUB_OUTPUT"',
+  );
+  requireText("restore only", matrix, "uses: actions/cache/restore@v4");
+  forbid("no push save or combined cache", texts.test, /uses: actions\/cache(?:\/save)?@/u);
+  requireText(
+    "unmatched restore key",
+    matrix,
+    "key: frontend-mutation-restore-${{ matrix.package }}-${{ github.run_id }}-${{ github.run_attempt }}",
+  );
+  requireText(
+    "exact dated prefixes",
+    matrix,
+    "restore-keys: |\n            frontend-mutation-full-${{ matrix.package }}-${{ steps.dates.outputs.today }}-\n            frontend-mutation-full-${{ matrix.package }}-${{ steps.dates.outputs.yesterday }}-\n\n",
+  );
+  requireText("restore directory", matrix, "path: .frontend-mutation-incremental");
+  const sweep = sweepJobs.get("frontend-mutation");
+  requireText("force full sweep", sweep, 'FRONTEND_MUTATION_FORCE: "1"');
+  forbid("no sweep change base", sweep, /FRONTEND_MUTATION_CHANGED_SINCE/u);
+  forbid("no sweep restore", sweep, /uses: actions\/cache(?:\/restore)?@/u);
+  requireText("success-only save", sweep, "if: success()\n        uses: actions/cache/save@v4");
+  requireText(
+    "dated save key",
+    sweep,
+    "key: frontend-mutation-full-${{ matrix.package }}-${{ steps.dates.outputs.today }}-${{ github.run_id }}",
+  );
+  requireText("save directory", sweep, "path: .frontend-mutation-incremental");
+  contracts.push([
+    "save after mutation",
+    () =>
+      assert.ok(
+        sweep.indexOf("run: pnpm mutation:frontend") < sweep.indexOf("uses: actions/cache/save@v4"),
+      ),
+  ]);
+  requireText("daily cron", texts.sweep, '- cron: "17 2 * * *"');
+  for (const name of ["frontend-mutation-packages", "frontend-mutation"])
+    requireText(
+      `${name} daily guard`,
+      sweepJobs.get(name),
+      "if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 2 * * *'",
+    );
+  for (const name of ["packages", "backend"])
+    requireText(
+      `${name} weekly guard`,
+      sweepJobs.get(name),
+      "if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 3 * * 0'",
+    );
+  const rust = testJobs.get("rust");
+  contracts.push([
+    "dist before cargo",
+    () => {
+      const commands = workflowSteps(rust).map((step) => step.run);
+      const dist = commands.indexOf("mkdir -p dist");
+      assert.ok(dist >= 0 && dist < commands.findIndex((command) => command.startsWith("cargo ")));
+    },
+  ]);
+  const frontend = testJobs.get("frontend");
+  contracts.push([
+    "build before bindings and bundle",
+    () => {
+      const commands = workflowSteps(frontend).map((step) => step.run);
+      const build = commands.indexOf("pnpm build-vite");
+      assert.ok(
+        build >= 0 &&
+          build < commands.indexOf("pnpm bindings:check") &&
+          build < commands.indexOf("pnpm bundle:check"),
+      );
+    },
+  ]);
+  for (const name of ["frontend", "e2e", "rust", "frontend-mutation"]) {
+    const body = testJobs.get(name);
+    requireText(`${name} shared setup`, body, "uses: ./.github/actions/setup-ci");
+    contracts.push([
+      `${name} checkout before local action`,
+      () =>
+        assert.ok(
+          body.indexOf("uses: actions/checkout@v4") <
+            body.indexOf("uses: ./.github/actions/setup-ci"),
+        ),
+    ]);
+  }
+  forbid("composite has no checkout", texts.action, /actions\/checkout/u);
+  for (const value of [
+    "astral-sh/setup-uv@",
+    "pnpm/action-setup@v4",
+    "actions/setup-node@v4",
+    'cache: "pnpm"',
+    "pnpm install --frozen-lockfile",
+    "if: inputs.desktop == 'true'",
+  ])
+    requireText(`composite ${value}`, texts.action, value);
+  return contracts;
+}
+
+async function phase2Texts() {
+  const [test, sweep, action] = await Promise.all([
+    readFile(join(projectRoot, ".github/workflows/test.yml"), "utf8"),
+    readFile(join(projectRoot, ".github/workflows/mutation.yml"), "utf8"),
+    readFile(join(projectRoot, ".github/actions/setup-ci/action.yml"), "utf8"),
+  ]);
+  return { test, sweep, action };
+}
+
+test("Phase 2 workflow wiring preserves parallel gates and bounded incremental reuse", async () => {
+  const texts = await phase2Texts();
+  for (const [, check] of phase2Contracts(texts)) check();
+  const listed = spawnSync(
+    process.execPath,
+    ["scripts/run-frontend-mutation.mjs", "--list-packages"],
+    { cwd: projectRoot, encoding: "utf8" },
+  );
+  assert.equal(listed.status, 0, listed.stderr);
+  assert.deepEqual(JSON.parse(listed.stdout), Object.keys(mutationPackages));
+});
+
+test("Phase 2 wiring rejects removed selectors, checkout, freshness, publication and dist prerequisites", async (t) => {
+  const texts = await phase2Texts();
+  for (const [label, file, before, afterText = ""] of [
+    ["matrix package env", "test", "      FRONTEND_MUTATION_PACKAGE: ${{ matrix.package }}\n"],
+    ["fetch full history", "test", "          fetch-depth: 0"],
+    ["restore action", "test", "uses: actions/cache/restore@v4"],
+    [
+      "dated prefixes",
+      "test",
+      "frontend-mutation-full-${{ matrix.package }}-${{ steps.dates.outputs.yesterday }}-",
+    ],
+    ["forbid push save", "test", "uses: actions/cache/restore@v4", "uses: actions/cache/save@v4"],
+    ["forced sweep", "sweep", '      FRONTEND_MUTATION_FORCE: "1"\n'],
+    ["success-only publication", "sweep", "        if: success()\n"],
+    [
+      "dated publication",
+      "sweep",
+      "key: frontend-mutation-full-${{ matrix.package }}-${{ steps.dates.outputs.today }}-${{ github.run_id }}",
+    ],
+    ["dist missing", "test", "        run: mkdir -p dist\n"],
+    [
+      "dist too late",
+      "test",
+      "        run: mkdir -p dist",
+      "        run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check\n      - name: Late distribution directory\n        run: mkdir -p dist",
+    ],
+    [
+      "listing disconnected",
+      "test",
+      "package: ${{ fromJSON(needs.frontend-mutation-packages.outputs.ids) }}",
+    ],
+    ["change base removed", "test", "github.event.pull_request.base.sha", "''"],
+  ]) {
+    await t.test(label, () => {
+      // Disposable strings exercise the same assertions used above, without touching the checkout.
+      const changed = { ...texts, [file]: texts[file].replaceAll(before, afterText) };
+      assert.notEqual(changed[file], texts[file]);
+      assert.throws(() => {
+        for (const [, check] of phase2Contracts(changed)) check();
+      });
     });
   }
 });
