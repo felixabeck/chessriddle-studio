@@ -20411,3 +20411,17 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Failure scenario:** an account with roughly 40,000+ games (about 1.5-2.5 KB each with clocks) gets "Chess.com PGN export is too large" on every Download and never imports any history.
 * **Open question:** publish per month (or up to the last complete month under the cap) and let the cursor carry the rest; how does that interact with the pending-batch recovery contract?
 * **Found by:** cloud audit session session_01JbeKomYNAubvgDNCaEau2u (native security/accounts audit, base 301104da), verified against local HEAD by a Claude Code verifier subagent of session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### A Lichess token obtained by a sign-in that then fails is discarded without revocation
+
+* **ID:** f-20261101-30 · **Status:** open · **Area:** oauth-credentials · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** security
+* **Where:** `src-tauri/src/oauth.rs:847-863` (identity mismatch and verification error after a successful code exchange), `oauth.rs:598-613,624-631` (store failure after the exchange).
+* **Defect:** the freshly issued token is dropped without `services.revoke_token`.
+* **Failure scenario:** the user types `alice` and ticks Login while the browser is signed in to Lichess as `bob`; `bob` approves, the mismatch branch returns "Authentication failed", and `bob`'s token stays valid and listed in his authorised apps with no local record.
+* **Fix shape:** revoke on every failure branch after a successful exchange; optionally a distinct non-sensitive "signed in to a different Lichess account" message.
+* **Found by:** cloud audit session session_01JbeKomYNAubvgDNCaEau2u (native security/accounts audit, base 301104da), verified against local HEAD by a Claude Code verifier subagent of session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
