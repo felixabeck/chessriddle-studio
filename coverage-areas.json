@@ -145,7 +145,7 @@
       "id": "settings",
       "source": "frontend",
       "minimumCoverage": { "lines": 2, "functions": 3, "branches": 1 },
-      "paths": ["src/components/settings/**", "src/styles/**"]
+      "paths": ["src/components/settings/**", "src/utils/formatKeymap.ts", "src/styles/**"]
     },
     {
       "id": "shared-shell-ui",

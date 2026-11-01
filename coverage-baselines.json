@@ -122,7 +122,7 @@
       {
         "id": "settings",
         "source": "frontend",
-        "paths": ["src/components/settings/**", "src/styles/**"]
+        "paths": ["src/components/settings/**", "src/styles/**", "src/utils/formatKeymap.ts"]
       },
       {
         "id": "shared-shell-ui",
