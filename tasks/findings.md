@@ -20044,3 +20044,17 @@ Fixed in 11b199ab and 7e215628 (drain build adopting the reviewed plan; review h
 
 Already repaired by 55685b22 before this entry was merged: the redacts test's refusing probe expects `TimedOut` within a 1 s probe on macOS and `ConnectionRefused` elsewhere, the reservation stays (d-20261101-01's reversal path, as this entry's Fix direction names). Test run 41272918720 on 55685b22 had `rust-macos-test`, `rust-windows-test` and all three `rust-platform` jobs green (f-20261101-02's macOS follow-up annotation). Found stale by the records lens of the f-20261101-03 push review; closed without code change.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"92cf1d3f1e2af575c8a015ff65d264e25dbc4baf4e1db3b18a98cf390931b576","header_sha256":"bcf36222f79d220c4d2e3067585cbb9a923f9bd05bf9c24a483b669254c2d327","header_status":"handled","input_sha256":"6c3a77c8f4616b9ef5b748938c1ca37cfb8d104cfb2b9ec0d9a1e0c7325b3e10","kind":"mutation-receipt","operation":"0936e5853d4acd2310b4200ae1b03352027c6ad5025a475154d4dd0d3f16e53d","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-04"],"target":"f-20261101-04","v":1} -->
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### "Remove duplicates" deletes games that differ in start FEN, result, ratings or time control
+
+* **ID:** f-20261101-05 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** data-loss
+* **Where:** `src-tauri/src/db/mod.rs:3624-3644` (`delete_duplicated_games_transaction`), triggered by `src/components/databases/useDatabaseLibrary.tsx` `runCleanup(tauri.deleteDuplicatedGames)`.
+* **Defect:** the duplicate partition is `EventID, SiteID, Round, WhiteID, BlackID, Moves, Date, UTCTime`. It omits `FEN`, `Result`, `WhiteElo`, `BlackElo`, `TimeControl`. `Moves` stores legal-move indexes relative to the start position, so identical bytes from different start FENs are different games. Window partitions treat NULLs as equal.
+* **Failure scenario:** a puzzle or study database where every game has placeholder tags (`Event "Puzzles"`, `?` players, `????.??.??`), a different `[FEN]` and an empty or equal move list. "Remove duplicates" permanently deletes all but the lowest ID.
+* **Fix shape:** add at least `FEN`, `Result`, `WhiteElo`, `BlackElo`, `TimeControl` to the partition; one regression test pair per differing field. `BACKEND_AUDIT_PLAN.md:158` marks this done but the SQL is unchanged.
+* **Found by:** cloud audit session session_01JbeKomxzG32RyrZzRykRDV (PGN/database audit, base 301104da), verified against local HEAD 301104da by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
