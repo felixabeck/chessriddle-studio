@@ -16129,7 +16129,7 @@ Root corrected the initial frozen-phase disposition under push-review-policy sec
 
 ### File replacement result names conflate physical and logical identities
 
-* **ID:** f-20261010-14 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261010-14 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** e838b3a7-7402-4e53-a614-eb2da79f3765 · output /home/felixb/.claude/drain-state/chessfable-0a459a4f.d/attempt-e838b3a7-7402-4e53-a614-eb2da79f3765-1.jsonl
 * **Where:** src/utils/tabs.ts replaceFileGame return type.
 * **Defect:** replaceFileGame returns ReplaceNewTabResult and an id holding a physical tree key, while the other consumer returns a new logical tab ID. The shared API hides the newly important identity distinction.
@@ -16142,6 +16142,9 @@ Root corrected the initial frozen-phase disposition under push-review-policy sec
 * **Proof:** Root independently passed the exact eleven-suite 517-test command, separate 46-test parser suite, scoped checks/types/syntax, full pre-review and contract on the final R4 candidate. Workspace-storage and tree/path remain100%. Actual bundle1619967 is within unchanged1620000. Canonical completion0 is gate-root-r4-repair-proof-r2.1tnLMt, parent77ba474282f79d2bd1b17efcb64e6637cc83f6f1. Current source repairs are committed099bfa21, db6ac190 and4ee4ff12. Full source and fault history: tasks/handoffs/2026-10-10-game-opening-round4.md.
 * **Remaining:** Fresh cumulative source closure and root pixel/native verification remain pending. This finding stays open until those required stages complete. Plan authorship and arbitration shared one context. Detection ran on the code model family.
 <!-- ledger-meta {"command":"annotate","effect_lines":3,"effect_sha256":"30f0a34836031331c5a1fd11f699b5950c051c7c4e1357c77326c5fcec8365fb","input_sha256":"453f31be2e078fdaf3d0ab49c5736149c63534abc06abe9d6862d343086b806d","kind":"mutation-receipt","operation":"745f8c6f9f09b6048738bdedf0f6bccd0c4d3a0b379c7b58931f0b096f4fd04f","options":{"section":null},"request_id_sha256":"3103ee8f4e244f7959964ea9cf967fdbe5060b77f87af423617170d8ca60c881","results":["f-20261010-14"],"target":"f-20261010-14","v":1} -->
+
+* **Closed (pickup re-check, 2026-11-01):** The fix already landed in 4ee4ff12, which origin/master contains. `src/utils/tabs.ts` now exports a separate `ReplaceFileGameResult` whose committed variant carries `treeKey` (the physical key, line 388), while `ReplaceNewTabResult` keeps the logical `id`. Both callers (`saveToFile` in tabs.ts and `InfoPanel.tsx`) only branch on `kind`, so neither reads a mislabelled identity. The "Remaining" stages named the 2026-10-10 build run's cumulative closure and verification, and that run has since released to origin/master. Proof today: `vitest run src/utils/tabs.test.ts src/state/atoms.lifecycle.test.ts` passed 161/161. No code change in this session.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"a4c1c233a70023d2e0e9360b1ff084d5cbe83973b2a89cb83790f22276d0354b","header_sha256":"07532e60ab1361e2cc5131e1cae0f617789cca247cf6b0dd9290bbfca8c48a76","header_status":"handled","input_sha256":"949523efbe9f92815076bf72a14c3d55b003ada4d30cc961cbbe9c2063c0d4e2","kind":"mutation-receipt","operation":"d094f361074788c9bd719aa1d96ad3a41b27377e8a3be553b84d4f64576935a3","options":{"section":null},"request_id_sha256":null,"results":["f-20261010-14"],"target":"f-20261010-14","v":1} -->
 
 ### Generated analysis variation bound has no named policy constant
 
