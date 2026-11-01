@@ -446,6 +446,12 @@ function isVariationBlockRow(row: NotationRow) {
   return row.type === "variation" || (row.type === "moves" && row.depth >= 1);
 }
 
+function variationGuideDepth(row: NotationRow) {
+  if (row.type === "variation") return row.depth + 1;
+  if (row.type === "moves" && row.depth >= 1) return row.depth;
+  return null;
+}
+
 test.each([false, true])(
   "places the variation-block class on variation rows including a depth-0 toggle (tableView: %s)",
   async (tableView) => {
@@ -516,17 +522,35 @@ test.each([false, true])(
     expect(mounted.length).toBe(model.rows.length);
     for (const element of mounted) {
       const row = model.rows[Number(element.getAttribute("data-index"))];
-      expect(element.firstElementChild?.classList.contains(styles.variationBlock)).toBe(
-        isVariationBlockRow(row),
+      const surface = element.firstElementChild as HTMLElement | null;
+      expect(surface?.classList.contains(styles.variationBlock)).toBe(isVariationBlockRow(row));
+      const guideDepth = variationGuideDepth(row);
+      expect(surface?.style.getPropertyValue("--variation-depth")).toBe(
+        guideDepth === null ? "" : String(guideDepth),
       );
+      expect(isVariationBlockRow(row) ? surface?.style.marginLeft : "").toBe("");
     }
 
     const firstLevelIndex = model.rows.indexOf(firstLevelToggle!);
+    const depth1MovesIndex = model.rows.findIndex((row) => row.type === "moves" && row.depth === 1);
+    expect(depth1MovesIndex).toBeGreaterThanOrEqual(0);
     expect(
       host
         .querySelector(`[data-index="${firstLevelIndex}"]`)
         ?.firstElementChild?.classList.contains(styles.variationBlock),
     ).toBe(true);
+    expect(
+      (
+        host.querySelector(`[data-index="${firstLevelIndex}"]`)
+          ?.firstElementChild as HTMLElement | null
+      )?.style.getPropertyValue("--variation-depth"),
+    ).toBe("1");
+    expect(
+      (
+        host.querySelector(`[data-index="${depth1MovesIndex}"]`)
+          ?.firstElementChild as HTMLElement | null
+      )?.style.getPropertyValue("--variation-depth"),
+    ).toBe("1");
   },
 );
 

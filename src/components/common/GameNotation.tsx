@@ -417,6 +417,10 @@ function moveProps(
   };
 }
 
+function variationBlockStyle(guideDepth: number): React.CSSProperties {
+  return { "--variation-depth": guideDepth } as React.CSSProperties;
+}
+
 function InlineRow({
   row,
   index,
@@ -432,10 +436,11 @@ function InlineRow({
   startNode: TreeNode;
   showComments: boolean;
 }) {
+  const variation = row.depth >= 1;
   return (
     <Box
-      className={row.depth >= 1 ? styles.variationBlock : undefined}
-      style={{ marginLeft: row.depth * 12 }}
+      className={variation ? styles.variationBlock : undefined}
+      style={variation ? variationBlockStyle(row.depth) : { marginLeft: row.depth * 12 }}
     >
       {row.moves.map((move) => (
         <CompleteMoveCell
@@ -487,7 +492,7 @@ function VariationRow({
   return (
     <Box
       className={`${styles.variationBlock} ${styles.variationToggle}`}
-      style={{ marginLeft: row.depth * 12 }}
+      style={variationBlockStyle(row.depth + 1)}
     >
       <IconAction
         label={t("Notation.ToggleVariation")}
