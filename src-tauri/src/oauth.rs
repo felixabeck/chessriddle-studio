@@ -1757,13 +1757,30 @@ mod tests {
             );
         };
         assert_held();
-        // Generous hang detector for SYN retries against a non-listening port.
+        // Distinguishes a non-listening reservation (dial fails) from a
+        // listening-but-never-accepting one (loopback handshake completes in
+        // the backlog, so connect_timeout returns Ok).
+        //
+        // Linux and Windows RST a SYN to a bound, never-listened socket
+        // (ConnectionRefused). macOS tcp_input drops that SYN when the matching
+        // socket is bound but in TCPS_CLOSED, so the dial times out (observed
+        // on rust-macos-test run 41271269599). Production revocation on macOS
+        // therefore reaches Unreachable through the 2 s client timeout rather
+        // than a refusal. A listening reservation still completes the loopback
+        // handshake well inside the macOS probe timeout and would turn this red.
+        #[cfg(target_os = "macos")]
+        const RESERVATION_REFUSE_TIMEOUT: Duration = Duration::from_secs(1);
+        #[cfg(not(target_os = "macos"))]
         const RESERVATION_REFUSE_TIMEOUT: Duration = Duration::from_secs(10);
+        #[cfg(target_os = "macos")]
+        const RESERVATION_REFUSE_KIND: std::io::ErrorKind = std::io::ErrorKind::TimedOut;
+        #[cfg(not(target_os = "macos"))]
+        const RESERVATION_REFUSE_KIND: std::io::ErrorKind = std::io::ErrorKind::ConnectionRefused;
         assert_eq!(
             std::net::TcpStream::connect_timeout(&addr, RESERVATION_REFUSE_TIMEOUT)
                 .unwrap_err()
                 .kind(),
-            std::io::ErrorKind::ConnectionRefused,
+            RESERVATION_REFUSE_KIND,
         );
         let client = Arc::new(
             reqwest::Client::builder()
