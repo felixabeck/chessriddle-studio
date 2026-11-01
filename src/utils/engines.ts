@@ -17,6 +17,16 @@ import {
 
 export const requiredEngineSettings = ["MultiPV", "Threads", "Hash"];
 
+/**
+ * How many lines the engine is asked for (UCI `MultiPV`), read with `parseInt` semantics (a
+ * leading integer counts, a fraction truncates); 1 when unset or that integer is below 1.
+ */
+export function engineMultiPv(settings: EngineOption[]): number {
+    const option = settings.findLast((o) => o.name === "MultiPV");
+    const value = option?.type === "string" ? Number.parseInt(option.value, 10) : Number.NaN;
+    return Number.isInteger(value) && value >= 1 ? value : 1;
+}
+
 /** Defaults for the settings every local engine entry needs. */
 export function requiredEngineSettingsDefaults(config: EngineConfig): EngineOption[] {
     return config.options

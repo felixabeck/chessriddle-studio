@@ -1,18 +1,29 @@
 import { useOwnerTabId } from "@/state/tabScope";
-import { Group, Paper, Text, useMantineTheme } from "@mantine/core";
+import { Box, Group, Paper, Stack, Text, Tooltip, useMantineTheme } from "@mantine/core";
 import { PinOff, Pause, Play } from "lucide-react";
 import { useAtom, useAtomValue } from "jotai";
 import { memo, useContext } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { useShallow } from "zustand/react/shallow";
-import { currentDetachedEngineAtom, enginesAtom, tabEngineSettingsFamily } from "@/state/atoms";
+import {
+  currentDetachedEngineAtom,
+  detachedEngineLinesAtom,
+  enginesAtom,
+  tabEngineSettingsFamily,
+} from "@/state/atoms";
 import { getVariationLine } from "@/utils/chess";
-import type { Engine } from "@/utils/engines";
+import { engineMultiPv, type Engine } from "@/utils/engines";
+import EngineLineMove from "../panels/analysis/EngineLineMove";
+import LinesSlider, { LINE_COUNT_OPTIONS } from "../panels/analysis/LinesSlider";
 import { useDisplayedEngineLines } from "../panels/analysis/useDisplayedEngineLines";
 import ScoreBubble from "../panels/analysis/ScoreBubble";
+import classes from "./DetachedEval.module.css";
 import IconAction from "./IconAction";
 import { TreeStateContext } from "./TreeStateContext";
+
+/** Moves rendered per line; the row clips whatever does not fit its width. */
+const MOVES_PER_LINE = 12;
 
 function DetachedEval() {
   const [detachedEngineId, setDetachedEngineId] = useAtom(currentDetachedEngineAtom);
@@ -43,6 +54,8 @@ const DetachedEvalInner = memo(function DetachedEvalInner({
     store,
     useShallow((s) => getVariationLine(s.root, s.position)),
   );
+  const currentHalfMoves = useStore(store, (s) => s.currentNode().halfMoves);
+  const [lineCap, setLineCap] = useAtom(detachedEngineLinesAtom);
   const theme = useMantineTheme();
 
   const [settings, setSettings] = useAtom(
@@ -59,10 +72,13 @@ const DetachedEvalInner = memo(function DetachedEvalInner({
     dimmed,
     failure,
     isGameOver,
-  } = useDisplayedEngineLines(engine, rootFen, moves);
+    threat,
+    halfMoves,
+  } = useDisplayedEngineLines(engine, rootFen, moves, currentHalfMoves);
 
-  const hasData = engineVariations && engineVariations.length > 0 && !isGameOver;
-  const topLine = hasData ? engineVariations[0] : null;
+  const multiPv = engineMultiPv(settings.settings);
+  const shownLines =
+    engineVariations && !isGameOver ? engineVariations.slice(0, lineCap ?? undefined) : [];
 
   return (
     <Paper withBorder px="sm" py={6}>
@@ -86,42 +102,50 @@ const DetachedEvalInner = memo(function DetachedEvalInner({
               {t("Board.Analysis.EngineFailed")}
             </Text>
           )}
-          {topLine ? (
-            <>
-              <Group
-                gap="xs"
-                wrap="nowrap"
-                flex={1}
-                miw={0}
-                opacity={dimmed ? 0.5 : 1}
-                inert={dimmed}
-              >
-                <ScoreBubble size="sm" score={topLine.score} />
-                <Text
-                  fz="xs"
-                  c="dimmed"
-                  style={{
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    flex: 1,
-                    minWidth: 0,
-                  }}
-                >
-                  {topLine.sanMoves.slice(0, 8).join(" ")}
-                </Text>
-              </Group>
-            </>
-          ) : (
+          {shownLines.length === 0 && (
             <Text fz="xs" c="dimmed" lh={"1.6rem"}>
               {isGameOver ? t("Board.Analysis.GameOver") : "—"}
             </Text>
           )}
         </Group>
+        {multiPv > 1 && (
+          <Tooltip label={t("Engines.Settings.NumOfLines")}>
+            <Box>
+              <LinesSlider
+                aria-label={t("Engines.Settings.NumOfLines")}
+                value={Math.min(lineCap ?? multiPv, multiPv, LINE_COUNT_OPTIONS.length)}
+                setValue={setLineCap}
+                max={multiPv}
+              />
+            </Box>
+          </Tooltip>
+        )}
         <IconAction label={t("Engine.Unpin")} size="sm" variant="subtle" onClick={onClose}>
           <PinOff size="0.875rem" />
         </IconAction>
       </Group>
+      {shownLines.length > 0 && (
+        <Stack gap={0} mt={4} opacity={dimmed ? 0.5 : 1} inert={dimmed}>
+          {shownLines.map((line, lineIndex) => (
+            <Group key={lineIndex} gap="xs" wrap="nowrap">
+              <ScoreBubble size="sm" score={line.score} />
+              <Box className={classes.moves}>
+                {line.sanMoves.slice(0, MOVES_PER_LINE).map((san, index) => (
+                  <EngineLineMove
+                    key={index}
+                    san={san}
+                    index={index}
+                    moves={line.sanMoves}
+                    halfMoves={halfMoves}
+                    threat={threat}
+                    inert={dimmed}
+                  />
+                ))}
+              </Box>
+            </Group>
+          ))}
+        </Stack>
+      )}
     </Paper>
   );
 });

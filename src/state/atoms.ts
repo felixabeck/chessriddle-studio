@@ -1020,6 +1020,13 @@ export const currentDetachedEngineAtom = atomWithStorage<string | null>(
     createZodStorage(z.string().nullable(), localStorage),
 );
 
+/** How many lines the pinned engine bar shows at most; null shows every line the engine computes. */
+export const detachedEngineLinesAtom = atomWithStorage<number | null>(
+    "detached-engine-lines",
+    null,
+    createZodStorage(z.number().int().min(1).max(5).nullable(), localStorage),
+);
+
 export const pgnOptionsFamily = atomFamily((_tab: string) =>
     atom({
         comments: true,

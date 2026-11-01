@@ -41,7 +41,7 @@ import {
 } from "@/state/atoms";
 import { translateChessopsError } from "@/utils/chessops";
 import type { ChessDBLine } from "@/utils/chessdb/api";
-import type { Engine } from "@/utils/engines";
+import { engineMultiPv, type Engine } from "@/utils/engines";
 import { formatNodes } from "@/utils/format";
 import { formatScore } from "@/utils/score";
 import AnalysisRow from "./AnalysisRow";
@@ -325,17 +325,7 @@ function BestMovesComponent({
               !engineVariations &&
               (settings.enabled ? (
                 loading &&
-                [
-                  ...Array(
-                    Number(
-                      (
-                        settings.settings.find(
-                          (s) => s.name === "MultiPV" && s.type === "string",
-                        ) as { value: string } | undefined
-                      )?.value ?? 1,
-                    ),
-                  ),
-                ].map((_, i) => (
+                [...Array(engineMultiPv(settings.settings))].map((_, i) => (
                   <Table.Tr key={i}>
                     <Table.Td>
                       <Skeleton height={35} radius="xl" p={5} />

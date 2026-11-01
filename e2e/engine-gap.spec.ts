@@ -566,6 +566,62 @@ test("engine-gap: A lines stay dimmed and inert at B until explicitly emitted B 
     await expect(panel).not.toContainText("Loading");
 });
 
+/** The threat line d4 Nf3 as the pinned bar renders it after 1. e4 a6 2. e5 d5. */
+const PINNED_THREAT_LINE = "3...d44.♘f3";
+
+test("engine-gap: pinned engine shows up to its own line count above the notation", async ({
+    page,
+    emitTauriEvent,
+    assertAccessible,
+}) => {
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.addInitScript(() => localStorage.setItem("mantine-color-scheme", "dark"));
+    const { searches, panel } = await setupAnalysisEngine(page, 2);
+    await panel.getByRole("button", { name: "Pin above notation", exact: true }).click();
+    const detached = page.locator(".mantine-Paper-root").filter({
+        has: page.getByRole("button", { name: "Unpin engine", exact: true }),
+    });
+    const request = (await searches()).find(
+        ({ args }) => (args as AnalysisRequest).id === "e2e-engine",
+    )!.args as AnalysisRequest;
+    const payload = bestMovesPayload(request, ["e4", "e5", "Nf3"], ["e2e4", "e7e5", "g1f3"], 34);
+    payload.bestLines.push(
+        {
+            ...payload.bestLines[0],
+            multipv: 2,
+            score: { value: { type: "cp", value: 21 }, wdl: null },
+            sanMoves: ["d4", "d5", "c4"],
+            uciMoves: ["d2d4", "d7d5", "c2c4"],
+        },
+        {
+            ...payload.bestLines[0],
+            multipv: 3,
+            score: { value: { type: "cp", value: 0 }, wdl: null },
+            sanMoves: ["Nf3", "d5"],
+            uciMoves: ["g1f3", "d7d5"],
+        },
+    );
+    await emitTauriEvent({ event: "best-moves-payload", payload });
+    const scores = detached.locator("[data-size='sm']:has(> p)");
+    await expect(scores).toHaveText(["+0.34", "+0.21", "0.00"]);
+    await expect(detached).toContainText("1.e4e52.♘f3");
+    const lineCount = detached.getByRole("radiogroup", { name: "Number of lines", exact: true });
+    await expect(lineCount.getByRole("radio", { name: "3", exact: true })).toBeChecked();
+    await expect(lineCount.getByRole("radio", { name: "4", exact: true })).toBeDisabled();
+    await lineCount.getByText("2", { exact: true }).click();
+    await expect(scores).toHaveText(["+0.34", "+0.21"]);
+    await expect(panel.locator("tbody tr > td:first-child > [data-size='md']")).toHaveText([
+        "+0.34",
+        "+0.21",
+        "0.00",
+    ]);
+    await page.mouse.move(0, 0);
+    await assertAccessible();
+    await expect(detached).toHaveScreenshot("pinned-engine-two-lines-dark.png", {
+        animations: "disabled",
+    });
+});
+
 test("engine-gap: legal threat after a double push becomes unavailable in check and recovers", async ({
     page,
     emitTauriEvent,
@@ -601,7 +657,7 @@ test("engine-gap: legal threat after a double push becomes unavailable in check 
         });
     await emit(request);
     await expect(panel.getByRole("button", { name: "d4", exact: true })).toBeVisible();
-    await expect(detached).toContainText("d4 Nf3");
+    await expect(detached).toContainText(PINNED_THREAT_LINE);
     const preparations = () =>
         page.evaluate(
             () =>
@@ -616,7 +672,7 @@ test("engine-gap: legal threat after a double push becomes unavailable in check 
     await expect(detached).toContainText("—");
     await emit(request);
     await expect(panel.getByRole("button", { name: "d4", exact: true })).toHaveCount(0);
-    await expect(detached).not.toContainText("d4 Nf3");
+    await expect(detached).not.toContainText(PINNED_THREAT_LINE);
     await expect(panel).not.toContainText("Loading");
     await expect(panel).not.toContainText("n/s");
     await expect(panel.locator(".mantine-Skeleton-root, [data-animated], tr[inert]")).toHaveCount(
@@ -648,7 +704,7 @@ test("engine-gap: legal threat after a double push becomes unavailable in check 
     expect(recovered.generation).not.toBe(request.generation);
     await emit(recovered);
     await expect(panel.getByRole("button", { name: "d4", exact: true })).toBeVisible();
-    await expect(detached).toContainText("d4 Nf3");
+    await expect(detached).toContainText(PINNED_THREAT_LINE);
     await expect(panel.locator("tr[inert]")).toHaveCount(0);
     await expect(page.locator(".mantine-Notification-root")).toHaveCount(0);
     await page.mouse.move(1400, 850);

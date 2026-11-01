@@ -7,17 +7,15 @@ import { chessgroundMove } from "chessops/compat";
 import { makeFen } from "chessops/fen";
 import { parseSan } from "chessops/san";
 import { useAtom, useAtomValue } from "jotai";
-import { useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useStore } from "zustand";
 import type { Score } from "@/bindings";
 import { Chessground } from "@/chessground/Chessground";
-import MoveCell from "@/components/common/MoveCell";
-import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { moveHighlightAtom, previewBoardOnHoverAtom, scoreTypeFamily } from "@/state/atoms";
 import { positionFromFen } from "@/utils/chessops";
 import type { ChessDBLine } from "@/utils/chessdb/api";
 import { formatScore } from "@/utils/score";
+import EngineLineMove, { engineLineMoveNumber } from "./EngineLineMove";
 import ScoreBubble from "./ScoreBubble";
 import classes from "./BestMoves.module.css";
 
@@ -208,11 +206,7 @@ function BoardPopover({
   position: { left: number; top: number };
   inert: boolean;
 }) {
-  const total_moves = halfMoves + index + 1 + (threat ? 1 : 0);
-  const is_white = total_moves % 2 === 1;
-  const move_number = Math.ceil(total_moves / 2);
-  const store = useContext(TreeStateContext)!;
-  const makeMoves = useStore(store, (s) => s.makeMoves);
+  const { isWhite } = engineLineMoveNumber(halfMoves, index, threat);
   const preview = useAtomValue(previewBoardOnHoverAtom);
   const moveHighlight = useAtomValue(moveHighlightAtom);
 
@@ -226,22 +220,13 @@ function BoardPopover({
         }}
         onMouseLeave={() => setHovering(false)}
       >
-        {(index === 0 || is_white) && (
-          <span
-            className={classes.moveNumber}
-          >{`${move_number.toString()}${is_white ? "." : "..."}`}</span>
-        )}
-        <MoveCell
-          move={san}
-          isCurrentVariation={false}
-          annotations={[]}
-          onContextMenu={() => undefined}
-          isStart={false}
-          onClick={() => {
-            if (!inert && !threat) {
-              makeMoves({ payload: moves.slice(0, index + 1) });
-            }
-          }}
+        <EngineLineMove
+          san={san}
+          index={index}
+          moves={moves}
+          halfMoves={halfMoves}
+          threat={threat}
+          inert={inert}
         />
       </Box>
       {!inert && preview && hovering && (
@@ -260,7 +245,7 @@ function BoardPopover({
               viewOnly
               orientation={orientation}
               lastMove={moveHighlight ? lastMove : undefined}
-              turnColor={is_white ? "black" : "white"}
+              turnColor={isWhite ? "black" : "white"}
               check={moveHighlight && isCheck}
               drawable={{
                 enabled: true,

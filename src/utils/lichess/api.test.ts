@@ -147,6 +147,29 @@ describe("getBestMoves", () => {
             ],
         ]);
     });
+
+    test("requests one cloud PV when the MultiPV option is not a number", async () => {
+        // Cloud evaluations are cached per FEN and line count; use a position no other test caches.
+        const AFTER_E4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
+        mocks.getPublicLichessJson
+            .mockReset()
+            .mockResolvedValue(JSON.stringify({ fen: AFTER_E4, knodes: 123, depth: 24, pvs: [] }));
+
+        await getBestMoves(
+            "tab",
+            { t: "Infinite" },
+            {
+                fen: AFTER_E4,
+                moves: [],
+                extraOptions: [{ name: "MultiPV", type: "string", value: "abc" }],
+            },
+        );
+        expect(mocks.getPublicLichessJson).toHaveBeenCalledExactlyOnceWith({
+            kind: "cloud_eval",
+            fen: AFTER_E4,
+            multi_pv: 1,
+        });
+    });
 });
 
 describe("getLichessAccount", () => {

@@ -11,7 +11,7 @@ import GoModeInput from "@/components/common/GoModeInput";
 import { IconAction } from "@/components/common/IconAction";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { enginesAtom } from "@/state/atoms";
-import { type Engine, killEngine } from "@/utils/engines";
+import { type Engine, engineMultiPv, killEngine } from "@/utils/engines";
 import CoresSlider from "./CoresSlider";
 import HashSlider from "./HashSlider";
 import LinesSlider from "./LinesSlider";
@@ -66,7 +66,7 @@ function EngineSettingsForm({
             {t("Engines.Settings.NumOfLines")}
           </Text>
           <LinesSlider
-            value={Number(multipv.type === "string" ? multipv.value || 1 : 1)}
+            value={engineMultiPv(settings.settings)}
             setValue={(v) =>
               setSettings((prev) => {
                 return {

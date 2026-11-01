@@ -22,6 +22,7 @@ import {
 } from "@/utils/lichess/explorer";
 import { collectSequential, type SequentialFailure } from "@/utils/collectSequential";
 import { countMainPly } from "@/utils/treeReducer";
+import { engineMultiPv } from "@/utils/engines";
 
 export const MIN_DATE = new Date(1952, 0, 1);
 
@@ -281,13 +282,7 @@ export async function getBestMoves(
   }
   const data = await getCloudEvaluation(
     makeFen(pos.toSetup()),
-    Number.parseInt(
-      (
-        options.extraOptions.find((o) => o.name === "MultiPV" && o.type === "string") as
-          | { value: string }
-          | undefined
-      )?.value ?? "1",
-    ),
+    engineMultiPv(options.extraOptions),
   );
   return [
     100,

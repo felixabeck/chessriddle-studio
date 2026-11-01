@@ -43,6 +43,7 @@ import {
   parsePersistedEngineJson,
   type Engine,
   type LocalEngine,
+  engineMultiPv,
   engineOptionValue,
   retireEngine,
   requiredEngineSettings,
@@ -270,17 +271,7 @@ function CloudSettings({
         <Stack w={compact ? "100%" : "50%"} className={classes.cloudLines}>
           <Text fw="bold">{t("Engines.Settings.NumOfLines")}</Text>
           <LinesSlider
-            value={
-              Number(
-                engineOptionValue(
-                  displayed.settings?.find((setting) => setting.name === "MultiPV") ?? {
-                    type: "string",
-                    name: "MultiPV",
-                    value: "1",
-                  },
-                ),
-              ) || 1
-            }
+            value={engineMultiPv(displayed.settings ?? [])}
             setValue={(value) => submit({ kind: "option", name: "MultiPV", value: String(value) })}
           />
         </Stack>

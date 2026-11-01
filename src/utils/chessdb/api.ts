@@ -6,6 +6,7 @@ import { remoteHttp } from "@/platform/http";
 import { positionFromFen } from "../chessops";
 import { getBoardState } from "../treeReducer";
 import { replayUciMoves } from "../chess";
+import { engineMultiPv } from "../engines";
 
 const endpoint = "https://www.chessdb.cn/cdb.php";
 
@@ -132,16 +133,7 @@ export async function getBestMoves(
         return { type: "not-in-database" };
     }
     if (!("moves" in response)) throw new Error(`ChessDB lookup failed (${response.status})`);
-    const requested = Number.parseInt(
-        (
-            options.extraOptions.find((o) => o.name === "MultiPV" && o.type === "string") as
-                | { value: string }
-                | undefined
-        )?.value ?? "1",
-    );
-    const multipv = Number.isFinite(requested)
-        ? Math.max(1, Math.min(CHESSDB_MAX_MULTIPV, requested))
-        : 1;
+    const multipv = Math.min(CHESSDB_MAX_MULTIPV, engineMultiPv(options.extraOptions));
     const lines = await Promise.all(
         response.moves.slice(0, multipv).map(async (move, i): Promise<ChessDBLine> => {
             const child = pos.clone();

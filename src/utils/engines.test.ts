@@ -29,6 +29,7 @@ import {
     bundledEngineImagePath,
     defaultEngineManifestSchema,
     defaultEngineProgressId,
+    engineMultiPv,
     engineSchema,
     isEngineResourcePathOptionName,
     isManifestEngineInstalled,
@@ -444,5 +445,18 @@ describe("engine persistence", () => {
             { type: "string", name: "MultiPV", value: "4" },
             { type: "string", name: "Threads", value: "8" },
         ]);
+    });
+});
+
+describe("engineMultiPv", () => {
+    const multiPv = (value: string) => [{ type: "string" as const, name: "MultiPV", value }];
+
+    it("reads the last MultiPV option and falls back to one line", () => {
+        expect(engineMultiPv([])).toBe(1);
+        expect(engineMultiPv(multiPv("4"))).toBe(4);
+        expect(engineMultiPv([...multiPv("2"), ...multiPv("5")])).toBe(5);
+        for (const invalid of ["", "abc", "0", "-3"])
+            expect(engineMultiPv(multiPv(invalid))).toBe(1);
+        expect(engineMultiPv([{ type: "resource", name: "MultiPV", resources: [] }])).toBe(1);
     });
 });
