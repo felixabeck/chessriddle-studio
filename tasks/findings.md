@@ -20353,3 +20353,19 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Lens:** `review-tauri-security`
 * **Proof:** a native download test into an existing regular file returns `Conflict` and leaves the file byte-identical.
 * **Found by:** cloud audit session session_01JbeKomYNAubvgDNCaEau2u (native security/accounts audit, base 301104da), verified against local HEAD by a Claude Code verifier subagent of session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### Adding an already signed-in Lichess account without Login drops its handle, so logout no longer removes or revokes the token
+
+* **ID:** f-20261101-26 · **Status:** open · **Area:** oauth-credentials · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** security
+* **Where:** `src/utils/session.ts:309-322` (`upsertLichessSession` removes every session with the same username, case-sensitive, including the authenticated one), `src/components/home/Accounts.tsx:97-111,167-195` (`addLichessNoLogin` adds a handle-less session, no duplicate guard), `src/components/common/AccountCards.tsx:300-310` (logout without handle only filters the renderer list), `session.ts:275-305` (startup re-creates the card from native credentials).
+* **Defect:** the handle-less session replaces the signed-in one, so downloads fail with authentication required and logout never calls `removeLichessAccount`.
+* **Failure scenario:** signed in as `alice`, the user adds `alice` again under another player name without ticking Login, then logs out: the keyring token stays stored and valid at Lichess, and the signed-in card returns on the next launch.
+* **Fix shape:** keep an existing handle when the incoming session has none (case-insensitive username match), or refuse/merge an add without login for an already authenticated username.
+* **Lens:** `review-tauri-security`
+* **Proof:** session tests: upserting a handle-less `alice` over an authenticated `alice` keeps the handle; logout then calls `removeLichessAccount`.
+* **Found by:** cloud audit session session_01JbeKomYNAubvgDNCaEau2u (native security/accounts audit, base 301104da), verified against local HEAD by a Claude Code verifier subagent of session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
