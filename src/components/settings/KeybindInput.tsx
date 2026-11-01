@@ -1,12 +1,12 @@
 import { Button, Group, Kbd } from "@mantine/core";
 import { Check, X } from "lucide-react";
-import { platform } from "@/platform/native";
 import cx from "clsx";
 import { useAtom } from "jotai";
 import { useState } from "react";
 import { useRecordHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
 import { keyMapAtom } from "@/state/keybinds";
+import { formatKeymap } from "@/utils/formatKeymap";
 import { IconAction } from "../common/IconAction";
 import classes from "./KeybindInput.module.css";
 
@@ -44,31 +44,11 @@ function KeybindInput({
   );
 }
 
-const mapToOs = (key: string): string => {
-  const isMacos = platform() === "macos";
-
-  if (!isMacos) {
-    return key === "meta" ? "ctrl" : key;
-  }
-
-  if (key === "meta" || key === "cmd") {
-    return "⌘";
-  } else if (key === "ctrl") {
-    return "⌃";
-  } else if (key === "shift") {
-    return "⇧";
-  } else if (key === "alt") {
-    return "⌥";
-  }
-
-  return key;
-};
-
 function KbdDisplay({ keys, hovering }: { keys: string; hovering: boolean }) {
-  const splitted = keys.split("+");
+  const splitted = formatKeymap(keys).split("+");
   return (
     <Group>
-      {splitted.map(mapToOs).map((key, i) => (
+      {splitted.map((key, i) => (
         <Group key={key}>
           <Kbd className={cx({ [classes.kbd]: hovering })}>{key}</Kbd>
           {i !== splitted.length - 1 && "+"}

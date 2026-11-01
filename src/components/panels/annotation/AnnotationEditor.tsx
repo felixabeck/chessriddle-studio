@@ -29,6 +29,7 @@ import {
   normalizeCommentDocument,
 } from "@/utils/commentSerializer";
 import { getNodeAtPath } from "@/utils/treeReducer";
+import { formatKeymap } from "@/utils/formatKeymap";
 
 const CommentEscape = Extension.create({
   name: "commentEscape",
@@ -229,8 +230,8 @@ function AnnotationEditor() {
       {focused && (
         <Text c="dimmed" size="xs">
           {t("Board.Annotate.NavigationHint", {
-            next: keyMap.ANNOTATION_NEXT_MOVE.keys,
-            previous: keyMap.ANNOTATION_PREVIOUS_MOVE.keys,
+            next: formatKeymap(keyMap.ANNOTATION_NEXT_MOVE.keys),
+            previous: formatKeymap(keyMap.ANNOTATION_PREVIOUS_MOVE.keys),
           })}
         </Text>
       )}

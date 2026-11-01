@@ -6,6 +6,7 @@ import { marked } from "marked";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { platform } from "@/platform/native";
 import { TreeStateContext, VariationChooserContext } from "@/components/common/TreeStateContext";
 import MoveControls from "@/components/common/MoveControls";
 import { createVariationChooserStore } from "@/state/store/variationChooser";
@@ -36,7 +37,7 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
-vi.mock("@/platform/native", () => ({ platform: () => "linux" }));
+vi.mock("@/platform/native", () => ({ platform: vi.fn(() => "linux") }));
 vi.mock("@tiptap/react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tiptap/react")>();
   return { ...actual, useEditor: vi.fn(actual.useEditor) };
@@ -56,6 +57,7 @@ const contentEditableDescriptor = Object.getOwnPropertyDescriptor(
 );
 
 beforeEach(() => {
+  vi.mocked(platform).mockReturnValue("linux");
   Object.defineProperty(HTMLElement.prototype, "isContentEditable", {
     configurable: true,
     get(this: HTMLElement) {
@@ -244,6 +246,20 @@ test("live bindings and hint are scoped to the focused editor and Escape leaves 
   await press("Escape", "Escape");
   expect(document.activeElement).not.toBe(editorElement());
   expect(host.textContent).not.toContain("Esc: leave editor");
+});
+
+test("the focused hint formats live keymaps for macOS", async () => {
+  vi.mocked(platform).mockReturnValue("macos");
+  await mount("");
+  await act(async () =>
+    atoms.set(keyMapAtom, {
+      ...atoms.get(keyMapAtom),
+      ANNOTATION_NEXT_MOVE: { name: "Next", keys: "meta+alt+n" },
+      ANNOTATION_PREVIOUS_MOVE: { name: "Previous", keys: "ctrl+shift+p" },
+    }),
+  );
+  await focusEditor();
+  expect(host.textContent).toContain("⌘+⌥+n: next move · ⌃+⇧+p: previous move · Esc: leave editor");
 });
 
 test("Escape enables the board hotkey on the very next key press", async () => {

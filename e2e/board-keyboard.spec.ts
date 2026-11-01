@@ -162,6 +162,28 @@ test("board-keyboard: annotation navigation keeps focus and comments on their mo
     const editor = page.locator(".tiptap");
     await editor.click();
     await page.keyboard.type("first");
+    const hint = page.getByText("tab: next move · shift+tab: previous move · Esc: leave editor", {
+        exact: true,
+    });
+    await expect(hint).toBeVisible();
+    await expect
+        .poll(() =>
+            hint.evaluate((element) => {
+                const panel = element.closest<HTMLElement>(".mantine-ScrollArea-viewport")!;
+                const hintBox = element.getBoundingClientRect();
+                const panelBox = panel.getBoundingClientRect();
+                return {
+                    insideRight: hintBox.right <= panelBox.right,
+                    insideLeft: hintBox.left >= panelBox.left,
+                    noHorizontalOverflow: element.scrollWidth <= element.clientWidth,
+                };
+            }),
+        )
+        .toEqual({
+            insideRight: true,
+            insideLeft: true,
+            noHorizontalOverflow: true,
+        });
     await page.keyboard.press("Tab");
     await expect(editor).toBeFocused();
     await expect(editor).toHaveText("");
