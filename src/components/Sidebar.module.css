@@ -6,8 +6,6 @@
   height: 3rem;
   display: flex;
   align-items: center;
-  border-left: 3px solid transparent;
-  border-right: 3px solid transparent;
   justify-content: center;
   color: var(--mantine-color-dimmed);
   border-radius: var(--cf-radius-sm);
@@ -18,15 +16,19 @@
   outline-offset: -3px;
 }
 
+/* The accent is a 3px background layer, clipped by the tile's rounded corners.
+   A coloured border-left beside a transparent border-right made WebKitGTK paint
+   gold arcs into the right-hand corners. */
 .active {
-  border-left-color: var(--cf-primary);
-  background: color-mix(in srgb, var(--cf-primary) 10%, transparent);
+  background:
+    linear-gradient(var(--cf-primary) 0 0) 0 / 3px no-repeat,
+    color-mix(in srgb, var(--cf-primary) 10%, transparent);
   color: var(--cf-primary);
 }
 
 @media (hover: hover) {
   .link:hover {
-    background: var(--cf-interactive-hover);
+    background-color: var(--cf-interactive-hover);
     color: var(--cf-foreground);
   }
 }

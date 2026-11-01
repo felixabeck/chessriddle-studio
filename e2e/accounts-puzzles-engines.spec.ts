@@ -2925,7 +2925,7 @@ test("accounts-puzzles-engines: moves the active sidebar marker with navigation"
 
     const navbar = page.locator("nav.mantine-AppShell-navbar");
     const linkNames = ["User", "Library", "Engines", "Settings", "Board"];
-    const transparent = "rgba(0, 0, 0, 0)";
+    const noMarker = "none";
     await expect(navbar.getByRole("link")).toHaveCount(linkNames.length);
 
     for (const name of linkNames) {
@@ -2934,8 +2934,16 @@ test("accounts-puzzles-engines: moves the active sidebar marker with navigation"
         await expect(clickedLink).toHaveAttribute("aria-current", "page");
         await expect(navbar.locator('a[aria-current="page"]')).toHaveCount(1);
         await expect
-            .poll(() => clickedLink.evaluate((link) => getComputedStyle(link).borderLeftColor))
-            .not.toBe(transparent);
+            .poll(() => clickedLink.evaluate((link) => getComputedStyle(link).backgroundImage))
+            .not.toBe(noMarker);
+        // WebKitGTK paints a coloured side border's colour into the opposite rounded
+        // corners; Chromium does not, so guard the cause rather than the pixels.
+        expect(
+            await clickedLink.evaluate((link) => {
+                const style = getComputedStyle(link);
+                return [style.borderLeftWidth, style.borderRightWidth];
+            }),
+        ).toEqual(["0px", "0px"]);
 
         for (const otherName of linkNames) {
             if (otherName === name) continue;
@@ -2943,8 +2951,8 @@ test("accounts-puzzles-engines: moves the active sidebar marker with navigation"
             const otherLink = navbar.getByRole("link", { name: otherName, exact: true });
             await expect(otherLink).not.toHaveAttribute("aria-current", "page");
             await expect
-                .poll(() => otherLink.evaluate((link) => getComputedStyle(link).borderLeftColor))
-                .toBe(transparent);
+                .poll(() => otherLink.evaluate((link) => getComputedStyle(link).backgroundImage))
+                .toBe(noMarker);
         }
     }
 });
