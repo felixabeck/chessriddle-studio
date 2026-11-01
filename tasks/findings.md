@@ -20383,3 +20383,17 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Failure scenario:** root holds folder `Sicilian/` and `Sicilian.pgn` typed Repertoire with tags; moving the folder into `Archive/` moves `Sicilian.info` along, so `Sicilian.pgn` loses its type and tags and later `Archive/Sicilian.pgn` is refused as "name already used".
 * **Open question:** `d-20261022-25` rejected "skip every directory's sidecar boundary"; how should move treat a directory's sidecar so it never claims a sibling file's sidecar, consistent with trash/restore and that decision?
 * **Found by:** cloud audit session session_01JbeKomYNAubvgDNCaEau2u (native security/accounts audit, base 301104da), verified against local HEAD by a Claude Code verifier subagent of session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### Workspace trash keeps everything unbounded, and only the last trashed item can be restored from the app
+
+* **ID:** f-20261101-28 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** ux
+* **Where:** `src/components/files/useFileWorkspace.tsx:108,409,708` (single unpersisted `trashed` slot replaced on each trash), `src-tauri/src/file_workspace.rs:707,979` (listings skip `TRASH_DIRECTORY`), `src-tauri/src/infra/path_authority/mod.rs:5122-5133` (trashed authority records never pruned), `file_workspace.rs:1390-1393` (empty UUID buckets removed only on rollback), `MAX_AUTHORITY_IDS = 4_096` (`mod.rs:225`).
+* **Defect:** no UI or command lists, restores or purges earlier trashed items; trash disk use and authority records grow without bound (violates the bounded-retention rule).
+* **Failure scenario:** trash folder A, then file B or restart: A is hidden in `.en-croissant-trash/<uuid>/` with no way to restore or purge it in the app. The 4,096-id cap being reached this way is plausible but not observed.
+* **Open question:** what owns the trash: a native trash listing with restore and purge, auto-purge of older buckets (when), or both; plus pruning of authority records and empty buckets?
+* **Found by:** cloud audit session session_01JbeKomYNAubvgDNCaEau2u (native security/accounts audit, base 301104da), verified against local HEAD by a Claude Code verifier subagent of session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
