@@ -3,9 +3,10 @@
   border-right: 1px solid var(--cf-border);
 }
 
+/* Variable defaults keep main-line and engine-line text unchanged; only .variationBlock sets them. */
 .comment {
   color: var(--mantine-color-dimmed);
-  font-size: calc(var(--mantine-font-size-sm) * var(--cf-notation-variation-scale, 1));
+  font-size: calc(var(--mantine-font-size-sm) * var(--notation-scale, 1));
 }
 
 .moveNumber {
@@ -15,23 +16,23 @@
 
 /* Named variation scale: variation SAN/comment size = scale x main-line size. */
 .variationBlock {
-  --cf-notation-variation-scale: 0.9;
-  --cf-notation-move-font-weight: 400;
-  --cf-notation-move-color: var(--mantine-color-dimmed);
-  --cf-notation-variation-indent: 12px;
-  --variation-depth: 1;
+  --notation-scale: 0.9;
+  --notation-move-font-weight: 400;
+  --notation-unannotated-move-color: var(--mantine-color-dimmed);
+  --notation-variation-indent: 12px;
+  --notation-variation-depth: 1;
   background-color: var(--cf-surface-inset);
   background-image: repeating-linear-gradient(
     to right,
     var(--cf-border-strong) 0 2px,
-    transparent 2px var(--cf-notation-variation-indent)
+    transparent 2px var(--notation-variation-indent)
   );
   background-origin: border-box;
   background-clip: border-box;
   background-repeat: no-repeat;
-  background-size: calc(var(--variation-depth) * var(--cf-notation-variation-indent)) 100%;
+  background-size: calc(var(--notation-variation-depth) * var(--notation-variation-indent)) 100%;
   border-left: 2px solid var(--cf-border-strong);
-  padding-left: calc(var(--variation-depth) * var(--cf-notation-variation-indent) + 5px);
+  padding-left: calc(var(--notation-variation-depth) * var(--notation-variation-indent) + 5px);
 }
 
 .variationToggle {

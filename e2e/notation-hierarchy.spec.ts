@@ -96,7 +96,7 @@ const hierarchyNames: HierarchyNames = {
 async function mockHierarchyGame(
     page: Page,
     mockScenario: (scenario: MockScenario) => Promise<void>,
-    options: { colorScheme?: "light" | "dark"; tableView?: boolean } = {},
+    options: { colorScheme?: "light" | "dark" } = {},
 ) {
     await mockScenario({
         commands: filesWorkspaceCommands([[filesWorkspaceFixture.pgnFile]], {
@@ -115,10 +115,9 @@ async function mockHierarchyGame(
             options.colorScheme,
         );
     }
-    await page.addInitScript((tableView) => {
+    await page.addInitScript(() => {
         localStorage.setItem("letters", JSON.stringify("letters"));
-        if (tableView) localStorage.setItem("table-view", JSON.stringify(true));
-    }, options.tableView === true);
+    });
 }
 
 function notationViewport(page: Page) {
@@ -191,21 +190,6 @@ async function assertNotationNoOverflow(notation: Locator, view: "inline" | "tab
         box.scrollWidth,
         `${view} notation viewport overflow ${JSON.stringify(box)}`,
     ).toBeLessThanOrEqual(box.clientWidth);
-}
-
-async function openScaledNotation(
-    page: Page,
-    mockScenario: (scenario: MockScenario) => Promise<void>,
-) {
-    await mockHierarchyGame(page, mockScenario);
-    await openLibraryFile(page);
-    await page.getByRole("button", { name: "Open game", exact: true }).click();
-    await expect(page).toHaveURL("/");
-    await expect(page.getByRole("button", { name: "Table view", exact: true })).toBeVisible();
-    const notation = notationViewport(page);
-    await expect(notation).toHaveCount(1);
-    await waitForFontsSettled(page);
-    return notation;
 }
 
 async function showTableView(page: Page, notation: Locator) {
@@ -429,7 +413,7 @@ for (const colorScheme of ["light", "dark"] as const) {
 }
 
 test("notation-hierarchy: overflow-only in both views", async ({ page, mockScenario }) => {
-    const notation = await openScaledNotation(page, mockScenario);
+    const notation = await openHierarchyGame(page, mockScenario);
     await assertNotationNoOverflow(notation, "inline");
     await showTableView(page, notation);
     await assertNotationNoOverflow(notation, "table");

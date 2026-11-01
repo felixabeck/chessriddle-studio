@@ -1,3 +1,4 @@
+/* Variable defaults keep main-line and engine-line text unchanged; only .variationBlock sets them. */
 .cell {
   appearance: none;
   border: 0;
@@ -6,8 +7,8 @@
   color: inherit;
   font: inherit;
   line-height: inherit;
-  font-size: calc(0.9rem * var(--cf-notation-variation-scale, 1));
-  font-weight: var(--cf-notation-move-font-weight, 600);
+  font-size: calc(0.9rem * var(--notation-scale, 1));
+  font-weight: var(--notation-move-font-weight, 600);
   display: inline-block;
   padding: 6px;
   border-radius: 4px;

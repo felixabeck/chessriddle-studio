@@ -418,7 +418,7 @@ function moveProps(
 }
 
 function variationBlockStyle(guideDepth: number): React.CSSProperties {
-  return { "--variation-depth": guideDepth } as React.CSSProperties;
+  return { "--notation-variation-depth": guideDepth } as React.CSSProperties;
 }
 
 function InlineRow({
@@ -436,11 +436,11 @@ function InlineRow({
   startNode: TreeNode;
   showComments: boolean;
 }) {
-  const variation = row.depth >= 1;
+  const isVariationBlock = row.depth >= 1;
   return (
     <Box
-      className={variation ? styles.variationBlock : undefined}
-      style={variation ? variationBlockStyle(row.depth) : { marginLeft: row.depth * 12 }}
+      className={isVariationBlock ? styles.variationBlock : undefined}
+      style={isVariationBlock ? variationBlockStyle(row.depth) : undefined}
     >
       {row.moves.map((move) => (
         <CompleteMoveCell
@@ -475,7 +475,7 @@ function CommentRow({
     );
   }
   return (
-    <Box pl="sm" pt="xs" style={{ marginLeft: row.depth * 12 }}>
+    <Box pl="sm" pt="xs" style={row.depth ? { marginLeft: row.depth * 12 } : undefined}>
       <Comment comment={row.comment} />
     </Box>
   );
@@ -492,6 +492,8 @@ function VariationRow({
   return (
     <Box
       className={`${styles.variationBlock} ${styles.variationToggle}`}
+      // A toggle row carries its parent's depth while the alternatives it controls are at
+      // depth + 1, so the toggle shares their first guide line.
       style={variationBlockStyle(row.depth + 1)}
     >
       <IconAction

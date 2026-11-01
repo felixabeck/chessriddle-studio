@@ -76,9 +76,10 @@ function MoveCell(props: MoveCellProps) {
       className={`${classes.cell} ${props.fullWidth ? classes.cellFullWidth : ""}`}
       style={{
         "--light-color":
-          color === "gray" ? `var(--cf-notation-move-color, ${baseLight})` : baseLight,
+          color === "gray" ? `var(--notation-unannotated-move-color, ${baseLight})` : baseLight,
         "--light-hover-color": hoverLight,
-        "--dark-color": color === "gray" ? `var(--cf-notation-move-color, ${baseDark})` : baseDark,
+        "--dark-color":
+          color === "gray" ? `var(--notation-unannotated-move-color, ${baseDark})` : baseDark,
         "--dark-hover-color": hoverDark,
         "--dark-bg": darkBg,
         "--light-bg": lightBg,

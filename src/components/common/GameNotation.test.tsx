@@ -525,10 +525,10 @@ test.each([false, true])(
       const surface = element.firstElementChild as HTMLElement | null;
       expect(surface?.classList.contains(styles.variationBlock)).toBe(isVariationBlockRow(row));
       const guideDepth = variationGuideDepth(row);
-      expect(surface?.style.getPropertyValue("--variation-depth")).toBe(
+      expect(surface?.style.getPropertyValue("--notation-variation-depth")).toBe(
         guideDepth === null ? "" : String(guideDepth),
       );
-      expect(isVariationBlockRow(row) ? surface?.style.marginLeft : "").toBe("");
+      expect(surface?.style.marginLeft).toBe("");
     }
 
     const firstLevelIndex = model.rows.indexOf(firstLevelToggle!);
@@ -543,13 +543,13 @@ test.each([false, true])(
       (
         host.querySelector(`[data-index="${firstLevelIndex}"]`)
           ?.firstElementChild as HTMLElement | null
-      )?.style.getPropertyValue("--variation-depth"),
+      )?.style.getPropertyValue("--notation-variation-depth"),
     ).toBe("1");
     expect(
       (
         host.querySelector(`[data-index="${depth1MovesIndex}"]`)
           ?.firstElementChild as HTMLElement | null
-      )?.style.getPropertyValue("--variation-depth"),
+      )?.style.getPropertyValue("--notation-variation-depth"),
     ).toBe("1");
   },
 );
