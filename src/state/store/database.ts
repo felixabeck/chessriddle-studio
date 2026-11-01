@@ -1,8 +1,17 @@
 import { type Draft, produce } from "immer";
+import equal from "fast-deep-equal";
 import { z } from "zod";
 import { createStore, useStore } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import type { GameQuery, GameSort, PlayerQuery, QueryOptions, TournamentQuery } from "@/bindings";
+import type {
+    GameQuery,
+    GameSort,
+    PlayerQuery,
+    PlayerSort,
+    QueryOptions,
+    TournamentQuery,
+    TournamentSort,
+} from "@/bindings";
 import { reportPersistError } from "@/state/persistError";
 import { storageErrorCause } from "@/state/storageError";
 import { ELO_FILTER_MAX, type SuccessDatabaseInfo } from "@/utils/db";
@@ -62,6 +71,22 @@ const defaultGamesQueryOptions: QueryOptions<GameSort> = {
     skipCount: false,
 };
 
+const defaultPlayersQueryOptions: QueryOptions<PlayerSort> = {
+    page: 1,
+    pageSize: 25,
+    sort: "name",
+    direction: "desc",
+    skipCount: false,
+};
+
+const defaultTournamentsQueryOptions: QueryOptions<TournamentSort> = {
+    page: 1,
+    pageSize: 25,
+    sort: "name",
+    direction: "desc",
+    skipCount: false,
+};
+
 const defaultGamesState: DatabaseViewStore["games"] = {
     isFilterExpanded: false,
     selectedGame: undefined,
@@ -76,19 +101,35 @@ const defaultGamesState: DatabaseViewStore["games"] = {
     },
 };
 
-function gamesQueryExceptPage(query: GameQuery) {
-    const { options, ...rest } = query;
+/**
+ * Change detector for paginated database-view queries: every field except
+ * `options.page` counts. Returns `next` unchanged when the only difference is
+ * `options.page`; otherwise returns `next` with `options.page` set to 1.
+ * `defaultOptions` fills a missing `options` object on reset; without it a
+ * missing `options` is left as-is.
+ */
+function withPageResetUnlessOnlyPageChanged<
+    Q extends { options?: { page?: number | null } | null },
+>(previous: Q, next: Q, defaultOptions?: NonNullable<Q["options"]>): Q {
+    if (equal(queryWithoutPage(previous), queryWithoutPage(next))) {
+        return next;
+    }
+    const options = next.options ?? defaultOptions;
+    if (options == null) {
+        return next;
+    }
     return {
-        ...rest,
-        options: options
-            ? {
-                  skipCount: options.skipCount,
-                  pageSize: options.pageSize,
-                  sort: options.sort,
-                  direction: options.direction,
-              }
-            : options,
+        ...next,
+        options: { ...options, page: 1 },
     };
+}
+
+function queryWithoutPage<Q extends { options?: { page?: number | null } | null }>(query: Q): Q {
+    if (query.options == null) {
+        return query;
+    }
+    const { page: _page, ...optionsWithoutPage } = query.options;
+    return { ...query, options: optionsWithoutPage as Q["options"] };
 }
 
 const defaultPlayersState: DatabaseViewStore["players"] = {
@@ -96,13 +137,7 @@ const defaultPlayersState: DatabaseViewStore["players"] = {
     query: {
         name: undefined,
         range: undefined,
-        options: {
-            page: 1,
-            pageSize: 25,
-            sort: "name",
-            direction: "desc",
-            skipCount: false,
-        },
+        options: defaultPlayersQueryOptions,
     },
 };
 
@@ -110,13 +145,7 @@ const defaultTournamentState: DatabaseViewStore["tournaments"] = {
     activeTab: "games",
     query: {
         name: "",
-        options: {
-            page: 1,
-            pageSize: 25,
-            sort: "name",
-            direction: "desc",
-            skipCount: false,
-        },
+        options: defaultTournamentsQueryOptions,
     },
 };
 
@@ -274,18 +303,11 @@ const databaseViewStore = createStore<DatabaseViewStore>()<[["zustand/persist", 
             setGamesQuery: (query) => {
                 return admit(
                     produce((state: Draft<DatabaseViewStore>) => {
-                        const restChanged =
-                            JSON.stringify(gamesQueryExceptPage(state.games.query)) !==
-                            JSON.stringify(gamesQueryExceptPage(query));
-                        state.games.query = restChanged
-                            ? {
-                                  ...query,
-                                  options: {
-                                      ...(query.options ?? defaultGamesQueryOptions),
-                                      page: 1,
-                                  },
-                              }
-                            : query;
+                        state.games.query = withPageResetUnlessOnlyPageChanged(
+                            state.games.query,
+                            query,
+                            defaultGamesQueryOptions,
+                        );
                         // A filter/sort change can make the old row either absent or refer to
                         // a different page. Selection belongs to the result set, never to a
                         // bare game ID surviving an unrelated query.
@@ -311,7 +333,11 @@ const databaseViewStore = createStore<DatabaseViewStore>()<[["zustand/persist", 
             setPlayersQuery: (query: PlayerQuery) => {
                 return admit(
                     produce((state: Draft<DatabaseViewStore>) => {
-                        state.players.query = query;
+                        state.players.query = withPageResetUnlessOnlyPageChanged(
+                            state.players.query,
+                            query,
+                            defaultPlayersQueryOptions,
+                        );
                         state.players.selectedPlayer = undefined;
                     }),
                 );
@@ -334,7 +360,11 @@ const databaseViewStore = createStore<DatabaseViewStore>()<[["zustand/persist", 
             setTournamentsQuery: (query: TournamentQuery) => {
                 return admit(
                     produce((state: Draft<DatabaseViewStore>) => {
-                        state.tournaments.query = query;
+                        state.tournaments.query = withPageResetUnlessOnlyPageChanged(
+                            state.tournaments.query,
+                            query,
+                            defaultTournamentsQueryOptions,
+                        );
                         state.tournaments.selectedTournament = undefined;
                     }),
                 );

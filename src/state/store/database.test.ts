@@ -714,6 +714,98 @@ describe("database result-set state", () => {
         expect(store.getState().games.query.options?.page).toBe(3);
     });
 
+    it("resets the players page when a name filter changes", () => {
+        const store = activeDatabaseViewStore;
+        const options = store.getState().players.query.options;
+        store.getState().setPlayersQuery({
+            ...store.getState().players.query,
+            options: { ...options, page: 40 },
+        });
+        expect(store.getState().players.query.options.page).toBe(40);
+        store.getState().setPlayersQuery({
+            ...store.getState().players.query,
+            name: "Carlsen",
+        });
+        expect(store.getState().players.query.options.page).toBe(1);
+        expect(store.getState().players.query.name).toBe("Carlsen");
+    });
+
+    it("resets the players page when the page size changes", () => {
+        const store = activeDatabaseViewStore;
+        const options = store.getState().players.query.options;
+        store.getState().setPlayersQuery({
+            ...store.getState().players.query,
+            options: { ...options, page: 40 },
+        });
+        store.getState().setPlayersQuery({
+            ...store.getState().players.query,
+            options: { ...store.getState().players.query.options, pageSize: 50 },
+        });
+        expect(store.getState().players.query.options.page).toBe(1);
+        expect(store.getState().players.query.options.pageSize).toBe(50);
+    });
+
+    it("keeps the requested players page when only the page changes", () => {
+        const store = activeDatabaseViewStore;
+        const options = store.getState().players.query.options;
+        store.getState().setPlayersQuery({
+            ...store.getState().players.query,
+            options: { ...options, page: 40 },
+        });
+        expect(store.getState().players.query.options.page).toBe(40);
+        store.getState().setPlayersQuery({
+            ...store.getState().players.query,
+            options: { ...store.getState().players.query.options, page: 3 },
+        });
+        expect(store.getState().players.query.options.page).toBe(3);
+    });
+
+    it("resets the tournaments page when a name filter changes", () => {
+        const store = activeDatabaseViewStore;
+        const options = store.getState().tournaments.query.options;
+        store.getState().setTournamentsQuery({
+            ...store.getState().tournaments.query,
+            options: { ...options, page: 40 },
+        });
+        expect(store.getState().tournaments.query.options.page).toBe(40);
+        store.getState().setTournamentsQuery({
+            ...store.getState().tournaments.query,
+            name: "Candidates",
+        });
+        expect(store.getState().tournaments.query.options.page).toBe(1);
+        expect(store.getState().tournaments.query.name).toBe("Candidates");
+    });
+
+    it("resets the tournaments page when the page size changes", () => {
+        const store = activeDatabaseViewStore;
+        const options = store.getState().tournaments.query.options;
+        store.getState().setTournamentsQuery({
+            ...store.getState().tournaments.query,
+            options: { ...options, page: 40 },
+        });
+        store.getState().setTournamentsQuery({
+            ...store.getState().tournaments.query,
+            options: { ...store.getState().tournaments.query.options, pageSize: 50 },
+        });
+        expect(store.getState().tournaments.query.options.page).toBe(1);
+        expect(store.getState().tournaments.query.options.pageSize).toBe(50);
+    });
+
+    it("keeps the requested tournaments page when only the page changes", () => {
+        const store = activeDatabaseViewStore;
+        const options = store.getState().tournaments.query.options;
+        store.getState().setTournamentsQuery({
+            ...store.getState().tournaments.query,
+            options: { ...options, page: 40 },
+        });
+        expect(store.getState().tournaments.query.options.page).toBe(40);
+        store.getState().setTournamentsQuery({
+            ...store.getState().tournaments.query,
+            options: { ...store.getState().tournaments.query.options, page: 3 },
+        });
+        expect(store.getState().tournaments.query.options.page).toBe(3);
+    });
+
     it("clears player and tournament selections with their result set", () => {
         activeDatabaseViewStore.getState().setPlayersSelectedPlayer(12);
         activeDatabaseViewStore.getState().setTournamentsSelectedTournament(5);

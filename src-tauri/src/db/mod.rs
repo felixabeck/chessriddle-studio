@@ -58,7 +58,7 @@ use diesel::{
     expression::{BoxableExpression, SelectableExpression},
     prelude::*,
     sql_query,
-    sql_types::{Bool, Text},
+    sql_types::Text,
     sqlite::Sqlite,
 };
 use pgn_reader::{BufferedReader, Nag, RawHeader, SanPlus, Skip, Visitor};
@@ -1838,76 +1838,6 @@ fn pagination_limit_offset(
     Ok((limit, offset))
 }
 
-type SidesAnyEloExpr<QS> =
-    Box<dyn BoxableExpression<QS, Sqlite, SqlType = diesel::sql_types::Nullable<Bool>>>;
-
-macro_rules! sides_any_orientation_arm {
-    ($player1:expr, $range1:expr, $range2:expr, $player_id:expr, $player_elo:expr, $opponent_elo:expr) => {
-        match ($player1, $range1, $range2) {
-            (Some(id), Some((lo1, hi1)), Some((lo2, hi2))) => Box::new(
-                $player_id
-                    .eq(id)
-                    .and($player_elo.between(lo1, hi1))
-                    .and($opponent_elo.between(lo2, hi2)),
-            ) as SidesAnyEloExpr<QS>,
-            (Some(id), Some((lo1, hi1)), None) => {
-                Box::new($player_id.eq(id).and($player_elo.between(lo1, hi1)))
-                    as SidesAnyEloExpr<QS>
-            }
-            (Some(id), None, Some((lo2, hi2))) => {
-                Box::new($player_id.eq(id).and($opponent_elo.between(lo2, hi2)))
-                    as SidesAnyEloExpr<QS>
-            }
-            (None, Some((lo1, hi1)), Some((lo2, hi2))) => Box::new(
-                $player_elo
-                    .between(lo1, hi1)
-                    .and($opponent_elo.between(lo2, hi2)),
-            ) as SidesAnyEloExpr<QS>,
-            (None, Some((lo1, hi1)), None) => {
-                Box::new($player_elo.between(lo1, hi1)) as SidesAnyEloExpr<QS>
-            }
-            (None, None, Some((lo2, hi2))) => {
-                Box::new($opponent_elo.between(lo2, hi2)) as SidesAnyEloExpr<QS>
-            }
-            (Some(_), None, None) | (None, None, None) => Box::new(diesel::dsl::sql::<
-                diesel::sql_types::Nullable<Bool>,
-            >("1")) as SidesAnyEloExpr<QS>,
-        }
-    };
-}
-
-fn sides_any_elo_orientation<QS>(
-    player1: Option<i32>,
-    range1: Option<(i32, i32)>,
-    range2: Option<(i32, i32)>,
-) -> SidesAnyEloExpr<QS>
-where
-    QS: 'static,
-    games::white_id: SelectableExpression<QS>,
-    games::black_id: SelectableExpression<QS>,
-    games::white_elo: SelectableExpression<QS>,
-    games::black_elo: SelectableExpression<QS>,
-{
-    Box::new(
-        sides_any_orientation_arm!(
-            player1,
-            range1,
-            range2,
-            games::white_id,
-            games::white_elo,
-            games::black_elo
-        )
-        .or(sides_any_orientation_arm!(
-            player1,
-            range1,
-            range2,
-            games::black_id,
-            games::black_elo,
-            games::white_elo
-        )),
-    )
-}
-
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq, Hash, Type)]
 pub struct GameQuery {
     #[specta(optional)]
@@ -1975,6 +1905,65 @@ pub async fn get_games(
             .await
     })
     .await
+}
+
+type SidesAnyEloExpr<QS> = Box<
+    dyn BoxableExpression<
+        QS,
+        Sqlite,
+        SqlType = diesel::sql_types::Nullable<diesel::sql_types::Bool>,
+    >,
+>;
+
+fn sides_any_elo_band_predicate<QS>(
+    player1: Option<i32>,
+    range1: Option<(i32, i32)>,
+    range2: Option<(i32, i32)>,
+) -> Option<SidesAnyEloExpr<QS>>
+where
+    QS: 'static,
+    games::white_id: SelectableExpression<QS>,
+    games::black_id: SelectableExpression<QS>,
+    games::white_elo: SelectableExpression<QS>,
+    games::black_elo: SelectableExpression<QS>,
+{
+    if range1.is_none() && range2.is_none() {
+        return None;
+    }
+
+    let white_as_player = {
+        let mut terms: Vec<SidesAnyEloExpr<QS>> = Vec::new();
+        if let Some((lo, hi)) = range1 {
+            terms.push(Box::new(games::white_elo.between(lo, hi)));
+        }
+        if let Some((lo, hi)) = range2 {
+            terms.push(Box::new(games::black_elo.between(lo, hi)));
+        }
+        let band = terms
+            .into_iter()
+            .reduce(|acc, term| Box::new(acc.and(term)) as SidesAnyEloExpr<QS>)?;
+        match player1 {
+            Some(id) => Box::new(band.and(games::white_id.eq(id))) as SidesAnyEloExpr<QS>,
+            None => band,
+        }
+    };
+    let black_as_player = {
+        let mut terms: Vec<SidesAnyEloExpr<QS>> = Vec::new();
+        if let Some((lo, hi)) = range1 {
+            terms.push(Box::new(games::black_elo.between(lo, hi)));
+        }
+        if let Some((lo, hi)) = range2 {
+            terms.push(Box::new(games::white_elo.between(lo, hi)));
+        }
+        let band = terms
+            .into_iter()
+            .reduce(|acc, term| Box::new(acc.and(term)) as SidesAnyEloExpr<QS>)?;
+        match player1 {
+            Some(id) => Box::new(band.and(games::black_id.eq(id))) as SidesAnyEloExpr<QS>,
+            None => band,
+        }
+    };
+    Some(Box::new(white_as_player.or(black_as_player)))
 }
 
 fn get_games_blocking(
@@ -2092,17 +2081,15 @@ fn get_games_blocking(
                         .filter(games::white_id.eq(player2).or(games::black_id.eq(player2)));
                 }
 
-                if query.range1.is_some() || query.range2.is_some() {
-                    sql_query = sql_query.filter(sides_any_elo_orientation(
-                        query.player1,
-                        query.range1,
-                        query.range2,
-                    ));
-                    count_query = count_query.filter(sides_any_elo_orientation(
-                        query.player1,
-                        query.range1,
-                        query.range2,
-                    ));
+                if let Some(predicate) =
+                    sides_any_elo_band_predicate(query.player1, query.range1, query.range2)
+                {
+                    sql_query = sql_query.filter(predicate);
+                }
+                if let Some(predicate) =
+                    sides_any_elo_band_predicate(query.player1, query.range1, query.range2)
+                {
+                    count_query = count_query.filter(predicate);
                 }
             }
             None => {}
@@ -9962,6 +9949,16 @@ mod tests {
             .select(games::black_id)
             .first::<i32>(&mut *db)
             .unwrap();
+        let high_id = games::table
+            .find(high_vs_mid)
+            .select(games::white_id)
+            .first::<i32>(&mut *db)
+            .unwrap();
+        let low_id = games::table
+            .find(high_vs_low)
+            .select(games::black_id)
+            .first::<i32>(&mut *db)
+            .unwrap();
         drop(db);
 
         let oriented = get_games_blocking(
@@ -9985,7 +9982,7 @@ mod tests {
         let player_at_1500 = get_games_blocking(
             &state.pgn_path_authority,
             &state.database_repository,
-            handle,
+            handle.clone(),
             GameQuery {
                 player1: Some(mid_id),
                 sides: Some(Sides::Any),
@@ -9997,6 +9994,46 @@ mod tests {
         .unwrap();
         assert_eq!(player_at_1500.count, Some(0));
         assert!(player_at_1500.data.is_empty());
+
+        let player1_and_both_ranges = get_games_blocking(
+            &state.pgn_path_authority,
+            &state.database_repository,
+            handle.clone(),
+            GameQuery {
+                player1: Some(high_id),
+                sides: Some(Sides::Any),
+                range1: Some((2700, 3000)),
+                range2: Some((0, 1000)),
+                ..GameQuery::new()
+            },
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let mut player1_and_both_range_ids = player1_and_both_ranges
+            .data
+            .iter()
+            .map(|game| game.id)
+            .collect::<Vec<_>>();
+        player1_and_both_range_ids.sort_unstable();
+        assert_eq!(player1_and_both_ranges.count, Some(2));
+        assert_eq!(player1_and_both_range_ids, vec![high_vs_low, low_vs_high]);
+
+        let player1_at_800_vs_2750 = get_games_blocking(
+            &state.pgn_path_authority,
+            &state.database_repository,
+            handle,
+            GameQuery {
+                player1: Some(low_id),
+                sides: Some(Sides::Any),
+                range1: Some((2700, 3000)),
+                range2: Some((0, 1000)),
+                ..GameQuery::new()
+            },
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert_eq!(player1_at_800_vs_2750.count, Some(0));
+        assert!(player1_at_800_vs_2750.data.is_empty());
     }
 
     #[test]
