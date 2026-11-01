@@ -20191,3 +20191,17 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Lens:** `review-persisted-state`
 * **Proof:** a BoardsPage test closing a dirty origin-`none` tab opens the confirm modal; a clean one closes directly.
 * **Found by:** cloud audit session session_01JbeKojrqsAwVtq28QtrjsT (persisted state/tabs audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### Two tabs on the same database game silently overwrite each other's saves
+
+* **ID:** f-20261101-15 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** data-loss
+* **Where:** `src/utils/tabs.ts` `saveToFileNow` database branch (`tauri.writeDbGame(databaseOrigin.database, databaseOrigin.gameId, pgn)`, around line 1184, no stamp or revision), `src-tauri/src/db/mod.rs:4106-4220` (`write_db_game` / `write_parsed_db_game` update by id unconditionally), auto-save in `src/components/boards/BoardAnalysis.tsx` (default on), `src/utils/databaseGame.ts` (opening a game always builds a new tab), Duplicate tab in `BoardsPage.tsx` copying `gameOrigin`.
+* **Defect:** file-backed saves are compare-and-swap on a range stamp and go through `fileFreshness`; database saves have no revision at all, so a stale tab's whole tree overwrites newer content written by another tab.
+* **Failure scenario:** open game #812 in tab A and add a variation (auto-saved); open #812 again into tab B, add comments (auto-saved); return to A and play one move: A's older tree overwrites the row and B's comments are gone, with no conflict shown. Duplicate tab on a database game reproduces it immediately.
+* **Open question:** which row revision does a database tab carry (stored-content hash or an update counter column, which needs a migration), how is it returned on load and checked inside the write transaction, and how does a `stale-game` refusal reach the existing conflict panel for database tabs?
+* **Found by:** cloud audit session session_01JbeKojrqsAwVtq28QtrjsT (persisted state/tabs audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
