@@ -1146,7 +1146,7 @@ where
     }
 }
 
-fn refuse_unless_one_range_game(bytes: &[u8]) -> Result<(), Error> {
+fn refuse_multi_game_range(bytes: &[u8]) -> Result<(), Error> {
     match read_one_range_game(&mut BufferedReader::new(bytes), &mut SkipRemainder)? {
         RangeGame::One(()) | RangeGame::Empty => Ok(()),
         RangeGame::Remainder => Err(Error::InvalidInput(MORE_THAN_ONE_GAME.into())),
@@ -1821,7 +1821,7 @@ async fn commit_pgn_mutation(
                             return Err(Error::StaleGame);
                         }
                         if replacing && !bytes.is_empty() {
-                            refuse_unless_one_range_game(&bytes)?;
+                            refuse_multi_game_range(&bytes)?;
                         }
                         Ok(())
                     })
@@ -6394,6 +6394,23 @@ mod tests {
                 .collect();
             assert_eq!(sans, ["e4", "e5", "Nf3", "Nc6"], "data={data:?}");
         });
+    }
+
+    #[test]
+    fn refuse_multi_game_range_allows_empty_and_one_game() {
+        assert!(matches!(
+            refuse_multi_game_range(b"  \n% escape\n\n"),
+            Ok(())
+        ));
+        assert!(matches!(refuse_multi_game_range(b"1. e4 *\n"), Ok(())));
+        let error = refuse_multi_game_range(b"1. e4 *\n\n1. d4 *\n").unwrap_err();
+        assert!(
+            matches!(
+                error,
+                Error::InvalidInput(ref message) if message == MORE_THAN_ONE_GAME
+            ),
+            "expected more-than-one-game refusal, got {error:?}"
+        );
     }
 
     #[test]

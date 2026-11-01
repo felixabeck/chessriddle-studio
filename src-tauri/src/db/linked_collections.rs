@@ -2374,8 +2374,8 @@ impl CollectionService {
                         let mut reader = BufferedReader::new(bytes.as_slice());
                         let game = match pgn::read_one_range_game(&mut reader, &mut importer) {
                             Ok(pgn::RangeGame::One(Some(game))) => game,
-                            // In-memory range bytes; cancellation is checked per range.
-                            // Fail the one malformed game, not the rebuild.
+                            // No game, a refused multi-game range, or a parse error omits this
+                            // range only; the bytes are in memory and cancellation is checked per range.
                             Ok(pgn::RangeGame::One(None)
                             | pgn::RangeGame::Empty
                             | pgn::RangeGame::Remainder)
