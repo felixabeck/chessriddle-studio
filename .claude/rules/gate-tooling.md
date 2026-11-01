@@ -68,9 +68,14 @@ replaces only the concurrent Rust and Rust-related frontend-share clauses of `d-
 
 ## Mutation gate routing
 
-The backend suite stays in
-`.github/workflows/mutation.yml`, dispatchable and scheduled weekly, with the eight backend
-packages as a matrix over the runner's `BACKEND_MUTATION_PACKAGE` selector.
+Decision id: `d-20261101-06`. The local push gate runs the full frontend suite (receipt-backed,
+unchanged). Per-push CI (`test.yml` job `frontend-mutation`) runs one package per matrix job via
+`FRONTEND_MUTATION_PACKAGE`, skips when no path in the frontend mutation input superset changed
+since `FRONTEND_MUTATION_CHANGED_SINCE` (any doubt runs), and reuses Stryker incremental results
+only from a forced full sweep of today or yesterday (restore-only cache). `mutation.yml` runs that
+forced frontend sweep daily (02:17 UTC) and alone publishes the dated cache. The backend suite
+stays there weekly, with the eight packages as a matrix over `BACKEND_MUTATION_PACKAGE`.
+`gate-receipt.mjs` strips `FRONTEND_MUTATION_*` from gate children.
 
 ## Backend mutation snapshot and recovery
 
