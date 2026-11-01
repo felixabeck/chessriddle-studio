@@ -20160,3 +20160,18 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Open question:** should the scanner adopt the parser's movetext boundaries (blank line or `[` line ends a game), which changes game counts and indexes of existing files, or should the lexer consume the whole scanner range (one game spanning blank lines), and how must tagless multi-game files be split?
 * **Fix shape:** one boundary contract for scanner and parser (either the scanner ends a game where the parser does once movetext started, or the lexer reads the whole range); at minimum `lex_pgn` detects a second parser game in the range and returns a typed error so a partial tree is never saved over the range.
 * **Found by:** cloud audit session session_01JbeKomxzG32RyrZzRykRDV (PGN/database audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee with a probe subagent, 2026-11-01.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### Quitting the app discards every unsaved tab without a prompt
+
+* **ID:** f-20261101-13 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** data-loss
+* **Where:** `src/routes/__root.tsx` (menu Exit is `exit(0)`), `src/components/TopBar.tsx` (title-bar close calls `windowControls.close()`), `src-tauri/src/main.rs` `app.run` (handles only `WindowEvent::Destroyed` and `ExitRequested`, `ExitGuard` sequences teardown only); the tab list (`src/state/atoms.ts:106,144`) and every tree (`src/state/store/tabStorage.ts:470-569`) live in `sessionStorage`; the only dirty check is `closeTab` in `src/components/tabs/BoardsPage.tsx:133`.
+* **Defect:** no code listens for a close request (no `onCloseRequested` / `CloseRequested` anywhere in `src` or `src-tauri/src`). The ledger measured on 2026-09-22 (around line 12095) that this `sessionStorage` is cleared when the window closes, so the `beforeunload`/`pagehide` flush does not carry dirty trees across a quit.
+* **Failure scenario:** with auto-save off, or with a tab auto-save does not cover (a file tab parked in the conflict/unavailable panel, a database draft, an origin-`none` board from paste, URL or FEN import), the user annotates and then closes the window or picks File → Exit: the app quits at once and the edits are gone. The conflict panel's "Save my version as a new game" tree is lost too.
+* **Open question:** what does a single quit gate look like across window close, menu Exit and Cmd+Q (intercept `onCloseRequested` plus the menu path), which tab states count as needing a decision, and does it reuse `ConfirmChangesModal` per tab or one summary dialog? First confirm with a real-app probe (`pnpm verify:app`) that tab trees do not survive a restart.
+* **Related:** f-20260831-16 rejected a `beforeunload` confirm only as the answer to flush-failure reporting, not for dirty tabs on quit.
+* **Found by:** cloud audit session session_01JbeKojrqsAwVtq28QtrjsT (persisted state/tabs audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
