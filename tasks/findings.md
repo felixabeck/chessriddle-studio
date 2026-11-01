@@ -20058,3 +20058,18 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Failure scenario:** a puzzle or study database where every game has placeholder tags (`Event "Puzzles"`, `?` players, `????.??.??`), a different `[FEN]` and an empty or equal move list. "Remove duplicates" permanently deletes all but the lowest ID.
 * **Fix shape:** add at least `FEN`, `Result`, `WhiteElo`, `BlackElo`, `TimeControl` to the partition; one regression test pair per differing field. `BACKEND_AUDIT_PLAN.md:158` marks this done but the SQL is unchanged.
 * **Found by:** cloud audit session session_01JbeKomxzG32RyrZzRykRDV (PGN/database audit, base 301104da), verified against local HEAD 301104da by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### One game with a non-standard Result tag rolls back the whole database import as "database failure"
+
+* **ID:** f-20261101-06 · **Status:** open · **Area:** pgn-import · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Where:** `src-tauri/src/db/mod.rs:536-537` (`Importer::header` stores the raw `Result` value), `src-tauri/src/db/ops.rs:63-72` (`create_game` uses `insert_or_ignore_into(...).get_result`), `src-tauri/src/db/create.sql:35` and `migrations.rs:237,756` (`CHECK(Result IN ('1-0','0-1','1/2-1/2','*') OR Result IS NULL)`), the single import transaction in `convert_pgn_blocking`.
+* **Defect:** a Result value outside the CHECK set makes `INSERT OR IGNORE` skip the row, `RETURNING` yields no row, Diesel's `get_result` returns `NotFound`, and the `?` aborts the whole import transaction. Violates the pgn-scanning rule "fail the one malformed game, not the process".
+* **Failure scenario:** importing a large legacy PGN where one game has `[Result "1/2"]`, `"½-½"`, `"0-0"` or `"?"` fails after minutes with "database failure"; nothing is kept and no game is named. `insert_db_game` fails the same way for one game.
+* **Fix shape:** normalise Result in `Importer::header` (`1/2`, `½-½` to `1/2-1/2`, anything else to `*`, as the legacy migration does) and replace `insert_or_ignore_into` with a plain insert so other constraint failures surface as typed errors.
+* **Found by:** cloud audit session session_01JbeKomxzG32RyrZzRykRDV (PGN/database audit, base 301104da), verified against local HEAD 301104da by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+* **Proof:** an import test with one `[Result "1/2"]` game among valid games keeps the valid games and stores a normalised result; a plain-insert constraint failure surfaces as a typed error naming the game.
