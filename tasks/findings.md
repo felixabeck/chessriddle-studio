@@ -20144,3 +20144,19 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Failure scenario:** paste a repertoire PGN, tick "Save to collection", name it "Najdorf repertoire" and pick Repertoire: the file is saved as `import-<timestamp>.pgn` with type game, so the user cannot find it by name and repertoire features do not see it.
 * **Fix shape:** honour `filename`/`filetype` in the pasted branch with the same name-conflict handling as the file branch.
 * **Found by:** cloud audit session session_01JbeKomxzG32RyrZzRykRDV (PGN/database audit, base 301104da), verified against local HEAD 301104da by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### Files view: PGN scanner and parser split games differently, so a save deletes the unparsed rest of the range
+
+* **ID:** f-20261101-12 · **Status:** open · **Area:** pgn-import · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** data-loss
+* **Where:** `src-tauri/src/pgn.rs:816-880` (`scan_games_cancelled` opens a range only at a valid tag-pair line after the header block), `src-tauri/vendor/pgn-reader/src/reader.rs:237-252,316-321` (`movetext_line_boundary` ends movetext at a blank line or a line starting with `[`), `src-tauri/src/lexer.rs:146-180` (`lex_pgn_cancellable` calls `read_game` once, never checks leftover input), save path `src/utils/tabs.ts:1127-1145` → `write_game_core` / `commit_pgn_mutation` (`pgn.rs:1704-1739,1951-2008`) replacing the whole range.
+* **Defect:** the scanner range and the parser game disagree once movetext has started. The tab's tree covers only the first parser game, while the stamp covers the full range bytes, so the stamp check passes and the save replaces the whole range with the shorter tree.
+* **Failure scenario:** open `[Event "A"]\n\n1. e4 e5\n\n2. Nf3 Nc6 *` (blank line inside movetext, also with CRLF), or two tagless games `1. e4 *\n\n1. d4 *`, or a movetext line starting with `[%clk 0:01]`; the board shows only `1. e4 e5` / the first game. Any edit plus save permanently removes `2. Nf3 Nc6 *` / the second game from the user's file, with no error.
+* **Proof:** probe on 2026-11-01 running the real vendored pgn-reader against an extracted copy of the scanner (`scan_games_cancelled`, `tag_value_spans`, `update_brace_comment`): each case gives 1 scanner range and 2 parser games; control with two headed games gives 2 and 2. A fix needs a test per case asserting either one shared boundary or a typed refusal before save.
+* **Open question:** should the scanner adopt the parser's movetext boundaries (blank line or `[` line ends a game), which changes game counts and indexes of existing files, or should the lexer consume the whole scanner range (one game spanning blank lines), and how must tagless multi-game files be split?
+* **Fix shape:** one boundary contract for scanner and parser (either the scanner ends a game where the parser does once movetext started, or the lexer reads the whole range); at minimum `lex_pgn` detects a second parser game in the range and returns a typed error so a partial tree is never saved over the range.
+* **Found by:** cloud audit session session_01JbeKomxzG32RyrZzRykRDV (PGN/database audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee with a probe subagent, 2026-11-01.
