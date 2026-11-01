@@ -20098,13 +20098,15 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 
 ### Games-table Elo filter with colour "Any" ORs both bands across both players
 
-* **ID:** f-20261101-08 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261101-08 · **Status:** handled · **Area:** db-search · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** behaviour
 * **Where:** `src-tauri/src/db/mod.rs:2013-2056` (`get_games_blocking`, `Sides::Any` arm, both `sql_query` and `count_query`); UI sliders in `src/components/databases/GameTable.tsx` ("Player" and "Opponent" Elo).
 * **Defect:** with both bands set the filter is `W∈r1 ∨ B∈r1 ∨ W∈r2 ∨ B∈r2`, so one matching rating anywhere suffices. With one band, it applies to either player regardless of which side the selected player was on. The `WhiteBlack`/`BlackWhite` arms tie bands to colours correctly.
 * **Failure scenario:** Player X, colour Any, Player Elo 2700-3000 and Opponent 0-1000 lists a 1500 vs 2750 game; the list and its count contain non-matching games.
 * **Fix shape:** for `Any`, `(W∈r1 ∧ B∈r2) ∨ (B∈r1 ∧ W∈r2)` with a missing band as true; when `player1` is set, tie r1 to player1's side. Mirror in `count_query`.
 * **Found by:** cloud audit session session_01JbeKomxzG32RyrZzRykRDV (PGN/database audit, base 301104da), verified against local HEAD 301104da by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+* **Handled (2026-11-01, drain 88a10add):** commit 56125d43 replaces the Sides::Any Elo OR-chain with sides_any_elo_orientation, a typed Diesel predicate: (player1 on White and White in range1 and Black in range2) OR the mirror. A missing band or player contributes nothing. It is built once per query for both the list and count_query. Test: sides_any_elo_ranges_follow_player_orientation.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"f5ab43b8c96fc73838a4302e89f2a5357f719b20a90666fbc31170c9db8f1eda","header_sha256":"5e70cb776fcdceb968348cdc1f72b9bd1b4a820c33ef454399d86051de350b5c","header_status":"handled","input_sha256":"4260e82cdbec905492c4bab9d9aed014a08efad4bafdf03dcd63c512b523f0aa","kind":"mutation-receipt","operation":"92d2da0e0aaa554012e2706210b97171c783907dd711d8abc5a93f6335bd0137","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-08"],"target":"f-20261101-08","v":1} -->
 
 ---
 
