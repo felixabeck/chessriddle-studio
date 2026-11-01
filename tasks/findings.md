@@ -20175,3 +20175,19 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Open question:** what does a single quit gate look like across window close, menu Exit and Cmd+Q (intercept `onCloseRequested` plus the menu path), which tab states count as needing a decision, and does it reuse `ConfirmChangesModal` per tab or one summary dialog? First confirm with a real-app probe (`pnpm verify:app`) that tab trees do not survive a restart.
 * **Related:** f-20260831-16 rejected a `beforeunload` confirm only as the answer to flush-failure reporting, not for dirty tabs on quit.
 * **Found by:** cloud audit session session_01JbeKojrqsAwVtq28QtrjsT (persisted state/tabs audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### Closing a dirty board with origin none discards its edits without the unsaved-changes prompt
+
+* **ID:** f-20261101-14 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** data-loss
+* **Where:** `src/components/tabs/BoardsPage.tsx:133` (`if (isPersistentGameOrigin(closedTab) && store.getState().dirty && !discard)`), `src/utils/tabs.ts:65-68` (`isPersistentGameOrigin` is false for `kind: "none"`); origin `none` comes from `src/components/tabs/ImportModal.tsx` URL/FEN imports and `src/utils/tabs.ts` new-tab defaults.
+* **Defect:** for origin `none` the dirty flag is never consulted, so the tab closes and its tree key is removed, although `saveToFile` has a working origin-`none` branch. `d-20260924-01` rejected an origin-less copy precisely because it "closes without the unsaved-changes prompt".
+* **Failure scenario:** import a Lichess game by URL into a new tab, add variations and comments, press Ctrl+W or click ×: the analysis is deleted with no dialog.
+* **Fix shape:** prompt whenever the tree is dirty, whatever its origin; the modal's Save already routes origin `none` to the append-to-picked-file path. Base "untouched board, no prompt" on `dirty`.
+* **Lens:** `review-persisted-state`
+* **Proof:** a BoardsPage test closing a dirty origin-`none` tab opens the confirm modal; a clean one closes directly.
+* **Found by:** cloud audit session session_01JbeKojrqsAwVtq28QtrjsT (persisted state/tabs audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
