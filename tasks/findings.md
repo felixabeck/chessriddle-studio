@@ -20425,3 +20425,17 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Failure scenario:** the user types `alice` and ticks Login while the browser is signed in to Lichess as `bob`; `bob` approves, the mismatch branch returns "Authentication failed", and `bob`'s token stays valid and listed in his authorised apps with no local record.
 * **Fix shape:** revoke on every failure branch after a successful exchange; optionally a distinct non-sensitive "signed in to a different Lichess account" message.
 * **Found by:** cloud audit session session_01JbeKomYNAubvgDNCaEau2u (native security/accounts audit, base 301104da), verified against local HEAD by a Claude Code verifier subagent of session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### Restoring an item trashed from a subfolder puts it in the collection root
+
+* **ID:** f-20261101-31 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** ux
+* **Where:** `src-tauri/src/file_workspace.rs:2243` (bucket keeps only the leaf name), `:2335` (`let target = root.path().join(&source.leaf);`), `:2352-2358` (no-replace rename).
+* **Defect:** the original parent is never recorded; no decision records restore-to-root as intended.
+* **Failure scenario:** trash `Archive/Najdorf.pgn` and click Restore: it reappears as `<root>/Najdorf.pgn`; if the root already has `Najdorf.pgn`, restore fails with "name already used".
+* **Fix shape:** record the original parent locator at trash time and restore into it, falling back to the root only if it is gone.
+* **Found by:** cloud audit session session_01JbeKomYNAubvgDNCaEau2u (native security/accounts audit, base 301104da), verified against local HEAD by a Claude Code verifier subagent of session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
