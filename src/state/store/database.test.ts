@@ -668,6 +668,52 @@ describe("database result-set state", () => {
         expect(activeDatabaseViewStore.getState().games.selectedGame).toBeUndefined();
     });
 
+    it("resets the games page when a player filter changes", () => {
+        const store = activeDatabaseViewStore;
+        const options = store.getState().games.query.options!;
+        store.getState().setGamesQuery({
+            ...store.getState().games.query,
+            options: { ...options, page: 40 },
+        });
+        expect(store.getState().games.query.options?.page).toBe(40);
+        store.getState().setGamesQuery({
+            ...store.getState().games.query,
+            player1: 7,
+        });
+        expect(store.getState().games.query.options?.page).toBe(1);
+        expect(store.getState().games.query.player1).toBe(7);
+    });
+
+    it("resets the games page when the page size changes", () => {
+        const store = activeDatabaseViewStore;
+        const options = store.getState().games.query.options!;
+        store.getState().setGamesQuery({
+            ...store.getState().games.query,
+            options: { ...options, page: 40 },
+        });
+        store.getState().setGamesQuery({
+            ...store.getState().games.query,
+            options: { ...store.getState().games.query.options!, pageSize: 50 },
+        });
+        expect(store.getState().games.query.options?.page).toBe(1);
+        expect(store.getState().games.query.options?.pageSize).toBe(50);
+    });
+
+    it("keeps the requested games page when only the page changes", () => {
+        const store = activeDatabaseViewStore;
+        const options = store.getState().games.query.options!;
+        store.getState().setGamesQuery({
+            ...store.getState().games.query,
+            options: { ...options, page: 40 },
+        });
+        expect(store.getState().games.query.options?.page).toBe(40);
+        store.getState().setGamesQuery({
+            ...store.getState().games.query,
+            options: { ...store.getState().games.query.options!, page: 3 },
+        });
+        expect(store.getState().games.query.options?.page).toBe(3);
+    });
+
     it("clears player and tournament selections with their result set", () => {
         activeDatabaseViewStore.getState().setPlayersSelectedPlayer(12);
         activeDatabaseViewStore.getState().setTournamentsSelectedTournament(5);

@@ -55,9 +55,11 @@ use crate::infra::fs::{entry_identity_at, remove_entry_at};
 use chrono::{NaiveDate, NaiveTime};
 use diesel::{
     connection::{DefaultLoadingMode, SimpleConnection},
+    expression::{BoxableExpression, SelectableExpression},
     prelude::*,
     sql_query,
-    sql_types::Text,
+    sql_types::{Bool, Text},
+    sqlite::Sqlite,
 };
 use pgn_reader::{BufferedReader, Nag, RawHeader, SanPlus, Skip, Visitor};
 use rayon::prelude::*;
@@ -459,6 +461,15 @@ impl TempGame {
     }
 }
 
+fn normalize_pgn_result(value: &str) -> &'static str {
+    match value.trim() {
+        "1-0" => "1-0",
+        "0-1" => "0-1",
+        "1/2-1/2" | "1/2" | "½-½" => "1/2-1/2",
+        _ => "*",
+    }
+}
+
 struct Importer {
     game: TempGame,
     games_started: usize,
@@ -535,7 +546,8 @@ impl Visitor for Importer {
         } else if key == b"Event" {
             self.game.event_name = Some(String::from_utf8_lossy(value.as_bytes()).to_string());
         } else if key == b"Result" {
-            self.game.result = Some(String::from_utf8_lossy(value.as_bytes()).to_string());
+            self.game.result =
+                Some(normalize_pgn_result(&String::from_utf8_lossy(value.as_bytes())).to_string());
         } else if key == b"FEN" {
             if value.as_bytes() == b"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" {
                 self.game.fen = None;
@@ -1826,6 +1838,76 @@ fn pagination_limit_offset(
     Ok((limit, offset))
 }
 
+type SidesAnyEloExpr<QS> =
+    Box<dyn BoxableExpression<QS, Sqlite, SqlType = diesel::sql_types::Nullable<Bool>>>;
+
+macro_rules! sides_any_orientation_arm {
+    ($player1:expr, $range1:expr, $range2:expr, $player_id:expr, $player_elo:expr, $opponent_elo:expr) => {
+        match ($player1, $range1, $range2) {
+            (Some(id), Some((lo1, hi1)), Some((lo2, hi2))) => Box::new(
+                $player_id
+                    .eq(id)
+                    .and($player_elo.between(lo1, hi1))
+                    .and($opponent_elo.between(lo2, hi2)),
+            ) as SidesAnyEloExpr<QS>,
+            (Some(id), Some((lo1, hi1)), None) => {
+                Box::new($player_id.eq(id).and($player_elo.between(lo1, hi1)))
+                    as SidesAnyEloExpr<QS>
+            }
+            (Some(id), None, Some((lo2, hi2))) => {
+                Box::new($player_id.eq(id).and($opponent_elo.between(lo2, hi2)))
+                    as SidesAnyEloExpr<QS>
+            }
+            (None, Some((lo1, hi1)), Some((lo2, hi2))) => Box::new(
+                $player_elo
+                    .between(lo1, hi1)
+                    .and($opponent_elo.between(lo2, hi2)),
+            ) as SidesAnyEloExpr<QS>,
+            (None, Some((lo1, hi1)), None) => {
+                Box::new($player_elo.between(lo1, hi1)) as SidesAnyEloExpr<QS>
+            }
+            (None, None, Some((lo2, hi2))) => {
+                Box::new($opponent_elo.between(lo2, hi2)) as SidesAnyEloExpr<QS>
+            }
+            (Some(_), None, None) | (None, None, None) => Box::new(diesel::dsl::sql::<
+                diesel::sql_types::Nullable<Bool>,
+            >("1")) as SidesAnyEloExpr<QS>,
+        }
+    };
+}
+
+fn sides_any_elo_orientation<QS>(
+    player1: Option<i32>,
+    range1: Option<(i32, i32)>,
+    range2: Option<(i32, i32)>,
+) -> SidesAnyEloExpr<QS>
+where
+    QS: 'static,
+    games::white_id: SelectableExpression<QS>,
+    games::black_id: SelectableExpression<QS>,
+    games::white_elo: SelectableExpression<QS>,
+    games::black_elo: SelectableExpression<QS>,
+{
+    Box::new(
+        sides_any_orientation_arm!(
+            player1,
+            range1,
+            range2,
+            games::white_id,
+            games::white_elo,
+            games::black_elo
+        )
+        .or(sides_any_orientation_arm!(
+            player1,
+            range1,
+            range2,
+            games::black_id,
+            games::black_elo,
+            games::white_elo
+        )),
+    )
+}
+
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq, Hash, Type)]
 pub struct GameQuery {
     #[specta(optional)]
@@ -2010,49 +2092,17 @@ fn get_games_blocking(
                         .filter(games::white_id.eq(player2).or(games::black_id.eq(player2)));
                 }
 
-                if let (Some(range1), Some(range2)) = (query.range1, query.range2) {
-                    sql_query = sql_query.filter(
-                        games::white_elo
-                            .between(range1.0, range1.1)
-                            .or(games::black_elo.between(range1.0, range1.1))
-                            .or(games::white_elo
-                                .between(range2.0, range2.1)
-                                .or(games::black_elo.between(range2.0, range2.1))),
-                    );
-                    count_query = count_query.filter(
-                        games::white_elo
-                            .between(range1.0, range1.1)
-                            .or(games::black_elo.between(range1.0, range1.1))
-                            .or(games::white_elo
-                                .between(range2.0, range2.1)
-                                .or(games::black_elo.between(range2.0, range2.1))),
-                    );
-                } else {
-                    if let Some(range1) = query.range1 {
-                        sql_query = sql_query.filter(
-                            games::white_elo
-                                .between(range1.0, range1.1)
-                                .or(games::black_elo.between(range1.0, range1.1)),
-                        );
-                        count_query = count_query.filter(
-                            games::white_elo
-                                .between(range1.0, range1.1)
-                                .or(games::black_elo.between(range1.0, range1.1)),
-                        );
-                    }
-
-                    if let Some(range2) = query.range2 {
-                        sql_query = sql_query.filter(
-                            games::white_elo
-                                .between(range2.0, range2.1)
-                                .or(games::black_elo.between(range2.0, range2.1)),
-                        );
-                        count_query = count_query.filter(
-                            games::white_elo
-                                .between(range2.0, range2.1)
-                                .or(games::black_elo.between(range2.0, range2.1)),
-                        );
-                    }
+                if query.range1.is_some() || query.range2.is_some() {
+                    sql_query = sql_query.filter(sides_any_elo_orientation(
+                        query.player1,
+                        query.range1,
+                        query.range2,
+                    ));
+                    count_query = count_query.filter(sides_any_elo_orientation(
+                        query.player1,
+                        query.range1,
+                        query.range2,
+                    ));
                 }
             }
             None => {}
@@ -3630,7 +3680,7 @@ fn delete_duplicated_games_transaction(db: &mut SqliteConnection) -> Result<(), 
             SELECT ID
             FROM (
                 SELECT ID,
-                    ROW_NUMBER() OVER (PARTITION BY EventID, SiteID, Round, WhiteID, BlackID, Moves, Date, UTCTime ORDER BY ID) AS RowNum
+                    ROW_NUMBER() OVER (PARTITION BY EventID, SiteID, Round, WhiteID, BlackID, Moves, Date, UTCTime, FEN, Result, WhiteElo, BlackElo, TimeControl ORDER BY ID) AS RowNum
                 FROM Games
             ) AS Subquery
             WHERE RowNum > 1
@@ -5546,13 +5596,16 @@ mod tests {
     }
 
     fn parsed_game(pgn: &str) -> TempGame {
+        parsed_games(pgn).into_iter().next().unwrap()
+    }
+
+    fn parsed_games(pgn: &str) -> Vec<TempGame> {
         let mut importer = Importer::new(None);
         BufferedReader::new(pgn.as_bytes())
             .into_iter(&mut importer)
             .flatten()
             .flatten()
-            .next()
-            .unwrap()
+            .collect()
     }
 
     fn test_game_pgn(white: &str, black: &str, event: &str, site: &str) -> String {
@@ -5692,6 +5745,205 @@ mod tests {
 
         assert_eq!(games::table.count().get_result::<i64>(db).unwrap(), 1);
         assert_info_counts_match_tables(db);
+    }
+
+    #[test]
+    fn deleting_duplicate_games_keeps_games_that_differ_in_fen_result_ratings_or_time_control() {
+        fn remaining_after_duplicate_delete<F>(mutate: F) -> i64
+        where
+            F: FnOnce(&mut SqliteConnection, i32, i32),
+        {
+            let db = &mut setup_test_db();
+            let white = create_player(db, "White").unwrap();
+            let black = create_player(db, "Black").unwrap();
+            let event = create_event(db, "Event").unwrap();
+            let site = create_site(db, "Site").unwrap();
+            let first = insert_test_game(db, white.id, black.id, event.id, site.id);
+            let second = insert_test_game(db, white.id, black.id, event.id, site.id);
+            mutate(db, first.id, second.id);
+            db.transaction(delete_duplicated_games_transaction).unwrap();
+            games::table.count().get_result::<i64>(db).unwrap()
+        }
+
+        assert_eq!(
+            remaining_after_duplicate_delete(|db, first, second| {
+                diesel::update(games::table.find(first))
+                    .set(games::fen.eq("4k3/8/8/8/8/8/8/4K3 w - - 0 1"))
+                    .execute(db)
+                    .unwrap();
+                diesel::update(games::table.find(second))
+                    .set(games::fen.eq("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1"))
+                    .execute(db)
+                    .unwrap();
+            }),
+            2,
+            "FEN"
+        );
+        assert_eq!(
+            remaining_after_duplicate_delete(|db, first, second| {
+                diesel::update(games::table.find(first))
+                    .set(games::result.eq("1-0"))
+                    .execute(db)
+                    .unwrap();
+                diesel::update(games::table.find(second))
+                    .set(games::result.eq("0-1"))
+                    .execute(db)
+                    .unwrap();
+            }),
+            2,
+            "Result"
+        );
+        assert_eq!(
+            remaining_after_duplicate_delete(|db, first, second| {
+                diesel::update(games::table.find(first))
+                    .set(games::white_elo.eq(2750))
+                    .execute(db)
+                    .unwrap();
+                diesel::update(games::table.find(second))
+                    .set(games::white_elo.eq(1500))
+                    .execute(db)
+                    .unwrap();
+            }),
+            2,
+            "WhiteElo"
+        );
+        assert_eq!(
+            remaining_after_duplicate_delete(|db, first, second| {
+                diesel::update(games::table.find(first))
+                    .set(games::black_elo.eq(2750))
+                    .execute(db)
+                    .unwrap();
+                diesel::update(games::table.find(second))
+                    .set(games::black_elo.eq(1500))
+                    .execute(db)
+                    .unwrap();
+            }),
+            2,
+            "BlackElo"
+        );
+        assert_eq!(
+            remaining_after_duplicate_delete(|db, first, second| {
+                diesel::update(games::table.find(first))
+                    .set(games::time_control.eq("60+0"))
+                    .execute(db)
+                    .unwrap();
+                diesel::update(games::table.find(second))
+                    .set(games::time_control.eq("180+0"))
+                    .execute(db)
+                    .unwrap();
+            }),
+            2,
+            "TimeControl"
+        );
+    }
+
+    #[test]
+    fn normalize_pgn_result_maps_canonical_legacy_and_unknown_values() {
+        for (input, expected) in [
+            ("1-0", "1-0"),
+            ("0-1", "0-1"),
+            ("1/2-1/2", "1/2-1/2"),
+            ("*", "*"),
+            ("1/2", "1/2-1/2"),
+            ("½-½", "1/2-1/2"),
+            (" 1-0 ", "1-0"),
+            (" 1/2 ", "1/2-1/2"),
+            ("0-0", "*"),
+            ("?", "*"),
+            ("bogus", "*"),
+        ] {
+            assert_eq!(normalize_pgn_result(input), expected, "{input:?}");
+        }
+    }
+
+    #[test]
+    fn import_normalizes_half_point_result_and_keeps_sibling_games() {
+        let pgn = concat!(
+            "[Event \"A\"]\n[White \"W1\"]\n[Black \"B1\"]\n[Result \"1-0\"]\n\n1. e4 1-0\n\n",
+            "[Event \"B\"]\n[White \"W2\"]\n[Black \"B2\"]\n[Result \"1/2\"]\n\n1. d4 1/2-1/2\n\n",
+            "[Event \"C\"]\n[White \"W3\"]\n[Black \"B3\"]\n[Result \"0-1\"]\n\n1. c4 0-1\n",
+        );
+        let parsed = parsed_games(pgn);
+        assert_eq!(parsed.len(), 3);
+        assert_eq!(parsed[1].result.as_deref(), Some("1/2-1/2"));
+
+        let db = &mut setup_test_db();
+        for game in &parsed {
+            game.insert_to_db(db).unwrap();
+        }
+        let stored: Vec<Option<String>> = games::table
+            .select(games::result)
+            .order(games::id.asc())
+            .load(db)
+            .unwrap();
+        assert_eq!(
+            stored,
+            vec![
+                Some("1-0".into()),
+                Some("1/2-1/2".into()),
+                Some("0-1".into())
+            ]
+        );
+    }
+
+    #[test]
+    fn create_game_reports_invalid_result_as_database_error() {
+        let db = &mut setup_test_db();
+        let white = create_player(db, "White").unwrap();
+        let black = create_player(db, "Black").unwrap();
+        let event = create_event(db, "Event").unwrap();
+        let site = create_site(db, "Site").unwrap();
+        match create_game(
+            db,
+            NewGame {
+                event_id: event.id,
+                site_id: site.id,
+                white_id: white.id,
+                black_id: black.id,
+                white_elo: None,
+                black_elo: None,
+                white_material: 0,
+                black_material: 0,
+                date: None,
+                time: None,
+                round: None,
+                result: Some("bogus"),
+                time_control: None,
+                eco: None,
+                ply_count: 2,
+                fen: None,
+                moves: &[],
+                pawn_home: 0,
+            },
+        ) {
+            Err(diesel::result::Error::DatabaseError(_, _)) => {}
+            Err(error) => panic!("constraint failure must surface as DatabaseError, got {error:?}"),
+            Ok(_) => panic!("constraint failure must surface as DatabaseError, got Ok"),
+        }
+    }
+
+    #[test]
+    fn import_keeps_games_with_stale_castling_rights_and_roundtrips_moves() {
+        let fen = "4k3/8/8/8/8/8/8/4K3 w KQkq - 0 1";
+        let pgn = format!(
+            "[Event \"Study\"]\n[White \"White\"]\n[Black \"Black\"]\n[Result \"*\"]\n[FEN \"{fen}\"]\n[SetUp \"1\"]\n\n1. Ke2 *\n"
+        );
+        let parsed = parsed_game(&pgn);
+        assert_eq!(parsed.fen.as_deref(), Some(fen));
+
+        let db = &mut setup_test_db();
+        let id = parsed.insert_to_db(db).unwrap();
+        let stored: Game = games::table.find(id).first(db).unwrap();
+        let stored_fen: Fen = stored
+            .fen
+            .as_deref()
+            .expect("imported FEN")
+            .parse()
+            .unwrap();
+        assert_eq!(
+            decode_game_to_movetext(&stored.moves, stored_fen).unwrap(),
+            "1. Ke2"
+        );
     }
 
     #[test]
@@ -9680,6 +9932,71 @@ mod tests {
             .and_utc()
             .timestamp_millis() as f64;
         assert_eq!(timestamp, Some(expected));
+    }
+
+    #[test]
+    fn sides_any_elo_ranges_follow_player_orientation() {
+        let (_dir, app, handle, database) = blocking_database_case();
+        let high_vs_mid = insert_named_game(&app, &database, "High", "Mid", "Event", "Site");
+        let high_vs_low = insert_named_game(&app, &database, "High", "Low", "Event", "Site");
+        let low_vs_high = insert_named_game(&app, &database, "Low", "High", "Event", "Site");
+        let state = app.state::<AppState>();
+        let mut db = state
+            .database_repository
+            .connection(&test_target(&database), None)
+            .unwrap();
+        diesel::update(games::table.find(high_vs_mid))
+            .set((games::white_elo.eq(2750), games::black_elo.eq(1500)))
+            .execute(&mut *db)
+            .unwrap();
+        diesel::update(games::table.find(high_vs_low))
+            .set((games::white_elo.eq(2750), games::black_elo.eq(800)))
+            .execute(&mut *db)
+            .unwrap();
+        diesel::update(games::table.find(low_vs_high))
+            .set((games::white_elo.eq(800), games::black_elo.eq(2750)))
+            .execute(&mut *db)
+            .unwrap();
+        let mid_id = games::table
+            .find(high_vs_mid)
+            .select(games::black_id)
+            .first::<i32>(&mut *db)
+            .unwrap();
+        drop(db);
+
+        let oriented = get_games_blocking(
+            &state.pgn_path_authority,
+            &state.database_repository,
+            handle.clone(),
+            GameQuery {
+                sides: Some(Sides::Any),
+                range1: Some((2700, 3000)),
+                range2: Some((0, 1000)),
+                ..GameQuery::new()
+            },
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let mut oriented_ids = oriented.data.iter().map(|game| game.id).collect::<Vec<_>>();
+        oriented_ids.sort_unstable();
+        assert_eq!(oriented.count, Some(2));
+        assert_eq!(oriented_ids, vec![high_vs_low, low_vs_high]);
+
+        let player_at_1500 = get_games_blocking(
+            &state.pgn_path_authority,
+            &state.database_repository,
+            handle,
+            GameQuery {
+                player1: Some(mid_id),
+                sides: Some(Sides::Any),
+                range1: Some((2700, 3000)),
+                ..GameQuery::new()
+            },
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert_eq!(player_at_1500.count, Some(0));
+        assert!(player_at_1500.data.is_empty());
     }
 
     #[test]

@@ -16,6 +16,7 @@ pub(crate) fn database_setup_to_chess(setup: Setup) -> Result<Chess, Error> {
     let castling_mode = CastlingMode::detect(&setup);
     Chess::from_setup(setup, castling_mode)
         .or_else(PositionError::ignore_too_much_material)
+        .or_else(PositionError::ignore_invalid_castling_rights)
         .map_err(Error::from)
 }
 
@@ -811,6 +812,19 @@ mod tests {
         assert_eq!(error.to_string(), "I/O failure");
         let source = std::error::Error::source(&error).expect("Io keeps its cause");
         assert!(source.to_string().starts_with("Invalid initial FEN setup:"));
+    }
+
+    #[test]
+    fn invalid_castling_rights_setup_converts_and_roundtrips_a_legal_move() {
+        let fen: Fen = "4k3/8/8/8/8/8/8/4K3 w KQkq - 0 1".parse().unwrap();
+        let chess = database_setup_to_chess(fen.clone().into_setup()).unwrap();
+        let m = SanPlus::from_ascii(b"Ke2")
+            .unwrap()
+            .san
+            .to_move(&chess)
+            .unwrap();
+        let bytes = [encode_move(&m, &chess).unwrap()];
+        assert_eq!(decode_game_to_movetext(&bytes, fen).unwrap(), "1. Ke2");
     }
 
     #[test]

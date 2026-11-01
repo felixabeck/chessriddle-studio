@@ -67,7 +67,7 @@ pub fn create_game(
 ) -> Result<Game, diesel::result::Error> {
     use crate::db::schema::games;
 
-    diesel::insert_or_ignore_into(games::table)
+    diesel::insert_into(games::table)
         .values(&game)
         .get_result(conn)
 }

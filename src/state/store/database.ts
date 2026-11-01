@@ -2,7 +2,7 @@ import { type Draft, produce } from "immer";
 import { z } from "zod";
 import { createStore, useStore } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import type { GameQuery, PlayerQuery, TournamentQuery } from "@/bindings";
+import type { GameQuery, GameSort, PlayerQuery, QueryOptions, TournamentQuery } from "@/bindings";
 import { reportPersistError } from "@/state/persistError";
 import { storageErrorCause } from "@/state/storageError";
 import { ELO_FILTER_MAX, type SuccessDatabaseInfo } from "@/utils/db";
@@ -54,6 +54,14 @@ export interface DatabaseViewStore {
     setTournamentsActiveTab: (value: DatabaseViewStore["tournaments"]["activeTab"]) => boolean;
 }
 
+const defaultGamesQueryOptions: QueryOptions<GameSort> = {
+    sort: "date",
+    direction: "desc",
+    pageSize: 25,
+    page: 1,
+    skipCount: false,
+};
+
 const defaultGamesState: DatabaseViewStore["games"] = {
     isFilterExpanded: false,
     selectedGame: undefined,
@@ -64,15 +72,24 @@ const defaultGamesState: DatabaseViewStore["games"] = {
         range2: [0, ELO_FILTER_MAX],
         sides: "WhiteBlack",
         outcome: undefined,
-        options: {
-            sort: "date",
-            direction: "desc",
-            pageSize: 25,
-            page: 1,
-            skipCount: false,
-        },
+        options: defaultGamesQueryOptions,
     },
 };
+
+function gamesQueryExceptPage(query: GameQuery) {
+    const { options, ...rest } = query;
+    return {
+        ...rest,
+        options: options
+            ? {
+                  skipCount: options.skipCount,
+                  pageSize: options.pageSize,
+                  sort: options.sort,
+                  direction: options.direction,
+              }
+            : options,
+    };
+}
 
 const defaultPlayersState: DatabaseViewStore["players"] = {
     activeTab: "overview",
@@ -257,7 +274,18 @@ const databaseViewStore = createStore<DatabaseViewStore>()<[["zustand/persist", 
             setGamesQuery: (query) => {
                 return admit(
                     produce((state: Draft<DatabaseViewStore>) => {
-                        state.games.query = query;
+                        const restChanged =
+                            JSON.stringify(gamesQueryExceptPage(state.games.query)) !==
+                            JSON.stringify(gamesQueryExceptPage(query));
+                        state.games.query = restChanged
+                            ? {
+                                  ...query,
+                                  options: {
+                                      ...(query.options ?? defaultGamesQueryOptions),
+                                      page: 1,
+                                  },
+                              }
+                            : query;
                         // A filter/sort change can make the old row either absent or refer to
                         // a different page. Selection belongs to the result set, never to a
                         // bare game ID surviving an unrelated query.
