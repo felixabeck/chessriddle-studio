@@ -20337,3 +20337,19 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Failure scenario:** a Chess.com user who played one crazyhouse game with a drop (`N@f3`) clicks Download: indexing fails with a conflict and every later Download fails the same way; the only escape is deleting the account PGN and with it the collection.
 * **Open question:** filter unsupported variants at staging (`rules` not chess/chess960), or record unparsable games as omitted in the batch path; and what discard/recovery action does a stuck pending batch get?
 * **Found by:** cloud audit session session_01JbeKomYNAubvgDNCaEau2u (native security/accounts audit, base 301104da), verified against local HEAD by a Claude Code verifier subagent of session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### Installing a catalog database silently replaces a library database file with the same name
+
+* **ID:** f-20261101-25 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** data-loss
+* **Where:** `src/components/databases/AddDatabase.tsx:316-330` (target `${database.title}.db3`), `src/utils/db.ts:154-164` (`initInstalled` compares the editable `Info.Title`), `src-tauri/src/infra/path_authority/resolved.rs:930-1036` (download target resolves for a missing or an existing file), `src-tauri/src/fs.rs:1113-1130,1253-1263` and `resolved.rs:382-421` (unconditional rename-over).
+* **Defect:** the database/puzzle catalog download never refuses an existing leaf, unlike database create and engine install.
+* **Failure scenario:** install "Caissabase 2024", annotate games, rename its title in the Library: the card shows "Install" again and one click renames the fresh download over `Caissabase 2024.db3`, discarding all edits without a prompt. Same when the existing file failed to load.
+* **Fix shape:** refuse an existing leaf natively with a typed `Conflict` (or allow replace only when the existing file's SHA-256 equals the signed digest). `d-20260903-02` keeps the Installed check title-based and says nothing about overwriting.
+* **Lens:** `review-tauri-security`
+* **Proof:** a native download test into an existing regular file returns `Conflict` and leaves the file byte-identical.
+* **Found by:** cloud audit session session_01JbeKomYNAubvgDNCaEau2u (native security/accounts audit, base 301104da), verified against local HEAD by a Claude Code verifier subagent of session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
