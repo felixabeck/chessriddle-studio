@@ -19945,3 +19945,21 @@ Fixed in 17d570d3: the board column's fixed 0.5rem gaps became two shrinkable 0.
 * **Spotted outside diff:** the colour-filter build changes only `src/components/databases/**`, translations and the database e2e spec.
 * **Proof:** gate transcript `artifacts/gates/20261031T224221444Z-3061068/receipt-frontend-coverage.log` in the search-side-toggle worktree.
 * **Found by:** Claude Code build session e68b0001-fd41-489f-b2b2-93048631b46d, 2026-10-31.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### Two production-revocation loopback tests fail together under a full local test run
+
+* **ID:** f-20261101-02 · **Status:** open · **Area:** oauth-credentials · **Root:** - · **Entry:** build · **Blocked:** none
+* **Filed from:** 17dbb7e1-a1fc-4ffd-9797-7b34313e682a
+* **Impact class:** tooling
+* **Where:** `src-tauri/src/oauth.rs`, tests `oauth::tests::production_revocation_sends_delete_with_bearer_and_checks_status` (the 3 s `tokio::time::timeout` around the loopback server/revoke join, `.expect("revocation must reach and finish the loopback server")` at `oauth.rs:1460`) and `oauth::tests::production_revocation_redacts_connection_failure` (`assert_eq!(outcome, LichessRevocationOutcome::Unreachable)` at `oauth.rs:1760`, client timeout 2 s).
+* **Defect:** On 2026-10-31 ~22:10 a local `cargo test --manifest-path src-tauri/Cargo.toml --all-targets` in the drain worktree (f-20261031-01 Phase 1 tree, load average about 6) failed exactly these two tests, both in the same run: `test result: FAILED. 2833 passed; 2 failed; 2 ignored`. Three further full runs on the same tree and the filtered `oauth::tests::production_revocation` run (three times) were green. Neither test calls `BLOCKING_GATEWAY`. The redacts test dials a closed loopback port, so `Unreachable` should be immediate. `LichessRevocationOutcome` has no deadline or timeout variant: `revoke_token_before` maps every send or chunk error and the `timeout_at` expiry to `Unreachable` (`oauth.rs` around lines 368, 387, 418 and 434), so a stall alone would still satisfy that assert. A failed equality therefore means a non-`Unreachable` variant (`Revoked`, `AlreadyInvalid`, `RateLimited` or `Rejected`), for example a late listener bound to the dropped ephemeral port. The coincidence with the other test's 3 s join expiring does not by itself show that both current-thread runtimes stalled. Whether f-20261031-01's per-thread test gateway (more blocking work in parallel across tests) raises the frequency is unmeasured.
+* **Failure scenario:** a Rust push gate or CI test job goes red on these two tests independent of the tree, costing a release cycle and inviting reruns.
+* **Open question:** which outcome did the redacts test observe, and what made the bearer test's join exceed 3 s: host CPU pressure from the parallel suite, reqwest connector or resolver work on a blocking pool, a reused ephemeral port, or a shared resource? Capture the outcome and timing before choosing paused time or a different bound.
+* **Spotted outside diff:** f-20261031-01 changes only `src-tauri/src/infra/blocking.rs` and test code in `src-tauri/src/fs.rs`.
+* **Related:** f-20261031-02 (other oauth test, macOS watchdog margin), f-20261026-02 (revocation fixture coordinated under paused time).
+* **Found by:** Claude Code drain session 17dbb7e1-a1fc-4ffd-9797-7b34313e682a, 2026-10-31.
+* **Note:** first merged as f-20261031-03 in the unpushed drain commit 5d3e3069, which collided with the published f-20261031-03 (frontend-ui, material indicator). That commit was dropped in the rebase by drain session f29049a6-413d-4c07-be3f-e67ded939c0a and this entry re-filed, with the Defect's earlier "likely a deadline or timeout classification" inference corrected after records review.
