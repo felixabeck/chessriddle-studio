@@ -2162,6 +2162,73 @@ mod tests {
 
     #[tokio::test]
     #[cfg(unix)]
+    async fn trash_after_read_before_qualification_returns_not_found() {
+        use crate::{
+            db::linked_collections::tests::Fixture,
+            error::ErrorCategory,
+            file_workspace::{trash_entry, WorkspaceFileType},
+        };
+
+        for purpose in [WorkspaceFileType::Game, WorkspaceFileType::Repertoire] {
+            let fixture = Fixture::new();
+            let file = fixture.create("games", "1. e4 *", purpose.clone());
+            let collections = fixture.list();
+            assert_eq!(
+                collections.len(),
+                usize::from(purpose == WorkspaceFileType::Game)
+            );
+            let token = CancellationToken::new();
+            let original = read_workspace_game(&fixture.state, &file, 0, &token)
+                .await
+                .unwrap();
+            assert_eq!(
+                original.linked.is_some(),
+                purpose == WorkspaceFileType::Game
+            );
+
+            let authority = fixture.state.pgn_path_authority.clone();
+            let mutation = Arc::clone(&fixture.state.workspace_mutation);
+            let workspace = fixture.workspace.clone();
+            let hook_file = file.clone();
+            let attempts = Arc::new(AtomicUsize::new(0));
+            let hook_attempts = Arc::clone(&attempts);
+            fixture
+                .state
+                .pgn_repository
+                .set_read_attempt_action(Some(Arc::new(move || {
+                    // The bytes have been read and the entry guard has already passed.
+                    // Rename changes ctime, so let the snapshot retry after this one move.
+                    if hook_attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                        trash_entry(
+                            &authority,
+                            &mutation,
+                            &workspace,
+                            &hook_file,
+                            &CancellationToken::new(),
+                        )
+                        .unwrap();
+                    }
+                })))
+                .unwrap();
+
+            let result = read_workspace_game(&fixture.state, &file, 0, &token).await;
+            fixture
+                .state
+                .pgn_repository
+                .set_read_attempt_action(None)
+                .unwrap();
+            assert!(attempts.load(Ordering::SeqCst) > 0, "read hook did not run");
+            assert!(!fixture.path("games").exists());
+            let error = result.unwrap_err();
+            assert!(matches!(error, Error::FileTrashed), "{error:?}");
+            let payload = error.renderer_payload();
+            assert_eq!(payload.category, ErrorCategory::MissingResource);
+            assert_eq!(payload.message, "The file was moved to the trash");
+        }
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
     async fn trash_directory_descendant_reads_fail_then_restore() {
         use crate::{
             db::linked_collections::tests::Fixture,
