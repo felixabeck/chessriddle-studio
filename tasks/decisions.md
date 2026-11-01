@@ -11422,3 +11422,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** The range bytes are already read for the stamp check, so the guard costs one bounded parse and makes no-data-loss a property of save. Reversal path: remove the guard call in write_game_core.
 * **Decided by:** Claude Code (Opus 5.5) drain build run f-20261101-12 (session bb7003aa-47df-4197-96aa-dbd625081bf9), adopting the reviewed drain plan r1-r4, full auto, 2026-11-01 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"31cbf540b2ea3131e6e986668346ebe7d19d55e5afc3b56986d6864fd8430799","input_sha256":"49a71edb9330c6baa9c2d0d7803d268c8e78825cd592671beb863591f35d1a35","kind":"mutation-receipt","operation":"19d5c5ae4489a560dbe886fb63acf7b2643dc6083be84c5af853cec8039bd131","options":{"section":null},"request_id_sha256":null,"results":["d-20261101-12"],"target":"decisions-ledger","v":1} -->
+
+### d-20261101-13 — Which origin-less tabs prompt for unsaved changes on close?
+
+* **Question:** f-20261101-14 asks to prompt whenever the tree is dirty, whatever the origin. Play and puzzle tab trees also set `dirty` on every move. Which tab types get the prompt?
+* **Governs:** f-20261101-14
+* **Chosen:** A dirty tab prompts when its origin is persistent (unchanged) or when it is an `analysis` tab, including origin `none` (URL/FEN import, new analysis board). Play and puzzle tabs with origin `none` keep closing directly.
+* **Rejected:** Prompting for every dirty tab regardless of type: every finished engine game and every solved puzzle would then ask to save on close, which is new friction no precedent asks for. Keeping the old persistent-origin-only rule: it deletes imported analysis silently, which d-20260924-01 already treated as unacceptable.
+* **Reason:** The finding's data loss is imported or hand-built analysis. The modal's Save already routes origin `none` to the append-to-picked-file path. Reversal path: widen or narrow the type test at the close condition in `src/components/tabs/BoardsPage.tsx`.
+* **Decided by:** Claude Code (Opus 5.5) drain build run f-20261101-12 joiner (session bb7003aa-47df-4197-96aa-dbd625081bf9), full auto, 2026-11-01 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"f8c20c5c3dc1bce728e6c3c0662ea230e3d29af43dc5f2b92a6fe47e006a7d71","input_sha256":"78137526e302ea23c7d483bfb57e14b79ecf7b4d54d1072ad90d5742486888e9","kind":"mutation-receipt","operation":"1d792b6d2f4c77d3ee37565a8ad20e69753c9d30bfc124df5194ad518ee59c3f","options":{"section":null},"request_id_sha256":null,"results":["d-20261101-13"],"target":"decisions-ledger","v":1} -->
