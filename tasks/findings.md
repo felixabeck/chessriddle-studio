@@ -20221,3 +20221,17 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Lens:** `review-chess-semantics`
 * **Proof:** tree tests: a mating move in a variation leaves `headers.result` and `dirty` unchanged; the same move on the main line end still sets the result.
 * **Found by:** cloud audit session session_01JbeKojsWJ1pfK9zBEnfQvc (game tree/practice audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### Deleting a game from a repertoire file hands its practice deck and review history to the next game
+
+* **ID:** f-20261101-17 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** data-loss
+* **Where:** `src-tauri/src/practice.rs:308-314` (`hash_deck(file_id, game)` keys a deck by the game's ordinal), `practice.rs` `sync_practice_positions_in` (replaces the positions document), `src-tauri/src/pgn.rs` `delete_game_core` (no practice-store change), `src/components/panels/info/InfoPanel.tsx:518-545` (after delete, open tabs are renumbered `gameNumber > index → gameNumber - 1`, no practice call), `src/components/panels/practice/PracticePanel.tsx` (`deckIdentity = { file, game: getTabGameNumber(currentTab) }`, automatic `syncDeck`), `src/components/files/opening.ts` `syncDeck` (drops cards absent from the tree).
+* **Defect:** no native command or renderer path renumbers or retires decks when a game is deleted, so every later game's tab resolves to the previous ordinal's deck and the automatic sync rewrites it against the wrong tree.
+* **Failure scenario:** a repertoire file with game 0 "White" and game 1 "Black", both trained for weeks. Delete game 0: the Black tab becomes game 0, loads White's deck, the sync drops White's cards, keeps schedules only where board states coincide and adds the rest as unseen, and persists that under (file, 0). Black's real schedule and review log stay unreachable under (file, 1) until a newly appended game inherits and prunes them.
+* **Open question:** stable per-game identity independent of the ordinal (and how it survives external edits of the PGN), or a native delete that shifts later decks and retires the deleted one atomically with the PGN mutation? Plus a backstop: should an automatic sync that would drop most of a non-empty deck ask first?
+* **Found by:** cloud audit session session_01JbeKojsWJ1pfK9zBEnfQvc (game tree/practice audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
