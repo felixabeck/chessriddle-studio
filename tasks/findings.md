@@ -20455,3 +20455,19 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Failure scenario:** trash `Archive/Najdorf.pgn` and click Restore: it reappears as `<root>/Najdorf.pgn`; if the root already has `Najdorf.pgn`, restore fails with "name already used".
 * **Fix shape:** record the original parent locator at trash time and restore into it, falling back to the root only if it is gone.
 * **Found by:** cloud audit session session_01JbeKomYNAubvgDNCaEau2u (native security/accounts audit, base 301104da), verified against local HEAD by a Claude Code verifier subagent of session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### Game notation shows no moves at 200% app font size in a 1000x720 window: the wrapped notation header fills the card
+
+* **ID:** f-20261101-32 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** ux
+* **Where:** `src/components/common/GameNotation.tsx` (`NotationHeader` and the notation `ScrollArea` inside the `#bottomRight` card of the analysis layout).
+* **Defect:** At 200% app font size, in a 1000x720 and an 800x720 window, the notation card's header icons (hide moves, table view, comments, variations) wrap onto two lines and take the card's whole height. The notation scroll viewport gets about zero height, so the virtualizer mounts no move rows. Observed in the pinned Playwright container (master styling and the notation-hierarchy build alike), screenshot inspected.
+* **Failure scenario:** A user sets the app font size to 200% and opens a game in a 1000x720 window. The notation panel shows only header icons and no moves. Moves are reachable only by keyboard or the move buttons, without seeing the notation.
+* **Open question:** How should the analysis layout give the notation card a usable minimum height at large font scales (header icons on one compact row, a minimum notation height with outer scrolling, or a different card split), without changing the 100% desktop composition?
+* **Spotted outside diff:** the notation-hierarchy build (variation-block styling, 2026-11-01) changes only notation row styling; it does not change header or card layout.
+* **Proof:** `/tmp/build-notation-hierarchy/evidence-1000x720-200-notation.png` (container screenshot, 1000x720, font scale 200, game with 10+ moves loaded; card shows header icons only). Reproduced by a disposable Playwright project at 800x720 and 1000x720 with font scale 200: `locator('.mantine-ScrollArea-viewport').filter({ has: getByRole('button', { name: 'e4' }) })` count 0.
+* **Found by:** Claude Code build session 60051fea-9337-444c-8ec6-3b33ed3c1129, 2026-11-01.
