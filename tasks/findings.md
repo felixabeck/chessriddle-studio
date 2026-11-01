@@ -20279,3 +20279,17 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Lens:** `review-correctness`
 * **Proof:** a Board test entering a keyboard move while viewing history in a `disableVariations` game calls no `onMove`; a native `make_move` test refuses a stale expected ply.
 * **Found by:** cloud audit session session_01JbeKok45YnAvBbVKxMsko6 (puzzles/home/databases/board input audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### Database games filter keeps the old page number, so a matching search shows "No games found"
+
+* **ID:** f-20261101-21 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** behaviour
+* **Where:** `src/components/databases/GameTable.tsx` filter handlers (`setQuery({ ...query, player1: value })` and the side, Elo, result, date and rows-per-page handlers keep `options.page`), `src/state/store/database.ts:257-266` (`setGamesQuery` clears only `selectedGame`), `src-tauri/src/db/mod.rs` `pagination_limit_offset` (unclamped `OFFSET`). `PlayerTable.tsx` resets `page: 1` on search.
+* **Defect:** a filter change runs with the previous page, so the offset can lie past the new result count; the table gets `[]` with the real total.
+* **Failure scenario:** in a large database page forward to page 40, then pick a player with 300 games: offset 975 returns no rows and the table says "No games found" although 300 games match.
+* **Fix shape:** reset `options.page` to 1 in `setGamesQuery` whenever anything other than the page changes; optionally clamp once a count arrives.
+* **Found by:** cloud audit session session_01JbeKok45YnAvBbVKxMsko6 (puzzles/home/databases/board input audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
