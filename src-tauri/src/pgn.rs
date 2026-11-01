@@ -5206,10 +5206,7 @@ mod tests {
     #[test]
     fn pgn_scanner_pickup_headed_games_separated_by_blank_and_tag_stay_two() {
         assert_pickup_header_ranges_and_sans(
-            &[
-                "[Event \"A\"]\n\n1. e4 *\n",
-                "[Event \"B\"]\n\n1. d4 *",
-            ],
+            &["[Event \"A\"]\n\n1. e4 *\n", "[Event \"B\"]\n\n1. d4 *"],
             &[b"A", b"B"],
             Some(&[1, 1]),
         );
