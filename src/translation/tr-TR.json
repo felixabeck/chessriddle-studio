@@ -628,6 +628,7 @@
     "Files.GameCountSuffix_one": "{{number}} oyun",
     "Files.GameCountSuffix_other": "{{number}} oyun",
     "Files.GameTooLarge": "Açılamayacak kadar büyük.",
+    "Files.GameUnreadable": "Okunamıyor.",
     "Files.LoadFailed": "Dosyalar yüklenemedi. Lütfen tekrar deneyin.",
     "Files.LoadFailed.Changed": "Bu koleksiyon değişti. Başka birini seçin.",
     "Files.LoadFailed.Missing": "Bu koleksiyon artık kullanılamıyor. Başka birini seçin.",

@@ -620,6 +620,7 @@
     "Files.GameCountSuffix": "{{number}}게임",
     "Files.GameCountSuffix_other": "{{number}}게임",
     "Files.GameTooLarge": "크기가 너무 커서 열 수 없습니다.",
+    "Files.GameUnreadable": "읽을 수 없습니다.",
     "Files.LoadFailed": "파일을 불러올 수 없습니다. 다시 시도하세요.",
     "Files.LoadFailed.Changed": "이 컬렉션이 변경되었습니다. 다른 컬렉션을 선택하세요.",
     "Files.LoadFailed.Missing": "이 컬렉션을 더 이상 사용할 수 없습니다. 다른 컬렉션을 선택하세요.",

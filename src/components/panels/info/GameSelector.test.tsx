@@ -470,30 +470,117 @@ test.each([
   },
 );
 
-test("a header parse failure discards earlier pages and resolves without further reads", async () => {
-  const headers = deferred<{ headers: { event: string } }>();
-  const error = new Error("Headers failed");
+test("a header parse failure keeps sibling rows and marks the failed games unreadable", async () => {
   mocks.visibleIndices = [0, 1, 2];
-  mocks.parsePGN.mockResolvedValueOnce({ headers: { event: "First parsed" } });
-  mocks.parsePGN.mockReturnValueOnce(headers.promise);
+  const invalidInput = {
+    tag: "backend-error",
+    category: "invalid-input",
+    message: "PGN contains more than one game",
+  };
+  const generic = new Error("Headers failed");
+  mocks.readGames.mockResolvedValueOnce([firstGame, secondGame, firstGame]);
+  mocks.parsePGN
+    .mockResolvedValueOnce({ headers: { event: "Readable name" } })
+    .mockRejectedValueOnce(invalidInput)
+    .mockRejectedValueOnce(generic);
+  let observed!: ReturnType<typeof renderPageLoader>;
+  await act(async () => {
+    observed = renderPageLoader(vi.fn(), 3);
+  });
+
+  expect([...observed.games.keys()]).toEqual([0, 1, 2]);
+  expect(observed.games.get(0)).toEqual({
+    name: "Readable name",
+    identity: { stamp: "stamp-first", revision: "revision-first" },
+  });
+  expect(observed.games.get(1)).toEqual({ name: translation.t("Files.GameUnreadable") });
+  expect(observed.games.get(2)).toEqual({ name: translation.t("Files.GameUnreadable") });
+  expect(host.textContent).toContain("Readable name");
+  expect(host.textContent).toContain(translation.t("Files.GameUnreadable"));
+  expect(notifications.show).not.toHaveBeenCalled();
+});
+
+test("a header parse cancellation discards the page without an unreadable row", async () => {
+  mocks.visibleIndices = [0, 1];
+  mocks.readGames.mockResolvedValueOnce([firstGame, secondGame]);
+  mocks.parsePGN
+    .mockResolvedValueOnce({ headers: { event: "First parsed" } })
+    .mockRejectedValueOnce(cancellationError());
   const initial = new Map<number, GameSelectorRow>();
   let observed!: ReturnType<typeof renderPageLoader>;
   await act(async () => {
-    observed = renderPageLoader(vi.fn(), 3, initial);
-  });
-  const request = pendingRange(0, 2);
-  await act(async () => {
-    headers.reject(error);
-    await expect(request).resolves.toBeUndefined();
+    observed = renderPageLoader(vi.fn(), 2, initial);
   });
 
   expect(observed.games).toBe(initial);
-  expect(mocks.readGames).toHaveBeenCalledTimes(2);
-  expect(notifications.show).toHaveBeenCalledExactlyOnceWith({
-    color: "danger",
-    title: translation.t("Common.Error"),
-    message: error.message,
+  expect(host.textContent).not.toContain(translation.t("Files.GameUnreadable"));
+  expect(notifications.show).not.toHaveBeenCalled();
+});
+
+test("a header parse failure after abort is silent and returns no unreadable row", async () => {
+  const headers = deferred<{ headers: { event: string } }>();
+  mocks.visibleIndices = [0, 1];
+  mocks.readGames.mockResolvedValueOnce([firstGame, secondGame]);
+  mocks.parsePGN.mockReturnValueOnce(headers.promise).mockResolvedValue({
+    headers: { event: "Late headers" },
   });
+  const initial = new Map<number, GameSelectorRow>();
+  let observed!: ReturnType<typeof renderPageLoader>;
+  await act(async () => {
+    observed = renderPageLoader(vi.fn(), 2, initial);
+  });
+  const request = pendingRange(0, 1);
+  const signal = mocks.readGames.mock.calls[0][3].signal;
+  await act(async () => root.unmount());
+  expect(signal.aborted).toBe(true);
+
+  await act(async () => {
+    headers.reject(new Error("Headers failed"));
+    await expect(request).resolves.toBeUndefined();
+  });
+  expect(observed.games).toBe(initial);
+  expect(notifications.show).not.toHaveBeenCalled();
+});
+
+test("an unreadable row selects, activates, and cannot delete", async () => {
+  mocks.visibleIndices = [0, 1, 2];
+  mocks.readGames.mockResolvedValueOnce([firstGame, secondGame, firstGame]);
+  mocks.parsePGN
+    .mockResolvedValueOnce({ headers: { event: "Readable before" } })
+    .mockRejectedValueOnce({
+      tag: "backend-error",
+      category: "invalid-input",
+      message: "PGN contains more than one game",
+    })
+    .mockResolvedValueOnce({ headers: { event: "Readable after" } });
+  const setPage = vi.fn();
+  const onActivate = vi.fn();
+  const deleteGame = vi.fn();
+  let observed!: ReturnType<typeof renderPageLoader>;
+  await act(async () => {
+    observed = renderPageLoader(deleteGame, 3, new Map(), setPage, onActivate);
+  });
+
+  expect(observed.games.get(1)).toEqual({ name: translation.t("Files.GameUnreadable") });
+  const rows = host.querySelectorAll<HTMLElement>('[role="option"]');
+  expect(rows).toHaveLength(3);
+  const unreadable = rows[1];
+  expect(unreadable.textContent).toContain(translation.t("Files.GameUnreadable"));
+  expect(unreadable.querySelector("button")?.disabled).toBe(true);
+
+  await act(async () => unreadable.click());
+  expect(setPage).toHaveBeenCalledExactlyOnceWith(1);
+  expect(onActivate).not.toHaveBeenCalled();
+  await act(async () => {
+    unreadable.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+  });
+  expect(onActivate.mock.calls).toEqual([[1]]);
+  await act(async () => {
+    unreadable.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  });
+  expect(onActivate.mock.calls).toEqual([[1], [1]]);
+  expect(deleteGame).not.toHaveBeenCalled();
+  expect(notifications.show).not.toHaveBeenCalled();
 });
 
 test("both one-row call sites share a failed load with exactly one notification", async () => {

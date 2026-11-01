@@ -636,6 +636,7 @@
     "Files.GameCountSuffix_many": "{{number}} parties",
     "Files.GameCountSuffix_other": "{{number}} parties",
     "Files.GameTooLarge": "Trop volumineuse pour être ouverte.",
+    "Files.GameUnreadable": "Illisible.",
     "Files.LoadFailed": "Les fichiers n’ont pas pu être chargés. Réessayez.",
     "Files.LoadFailed.Changed": "Cette collection a changé. Choisissez-en une autre.",
     "Files.LoadFailed.Missing": "Cette collection n’est plus disponible. Choisissez-en une autre.",

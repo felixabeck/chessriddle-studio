@@ -644,6 +644,7 @@
     "Files.GameCountSuffix_many": "{{number}} партий",
     "Files.GameCountSuffix_other": "{{number}} партии",
     "Files.GameTooLarge": "Слишком большая, чтобы открыть.",
+    "Files.GameUnreadable": "Не удаётся прочитать.",
     "Files.LoadFailed": "Не удалось загрузить файлы. Попробуйте ещё раз.",
     "Files.LoadFailed.Changed": "Эта коллекция изменилась. Выберите другую.",
     "Files.LoadFailed.Missing": "Эта коллекция больше недоступна. Выберите другую.",

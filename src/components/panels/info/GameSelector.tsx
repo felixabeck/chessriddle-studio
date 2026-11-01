@@ -13,6 +13,7 @@ import { IconAction } from "@/components/common/IconAction";
 import { gameRowActivation } from "@/components/common/gameOpen";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useVirtualPageLoader } from "@/hooks/useVirtualPageLoader";
+import { errorUnlessCancelled } from "@/platform/errors";
 import { fontSizeAtom } from "@/state/atoms";
 import { parsePGN } from "@/utils/chess";
 import { formatNumber } from "@/utils/format";
@@ -70,16 +71,23 @@ export default function GameSelector({
                   { name: t("Files.GameTooLarge"), omission: game.omission },
                 ] as const;
               }
-              const { headers } = await parsePGN(game.pgn, undefined, options);
-              return [
-                next + index,
-                {
-                  name: getGameName(headers),
-                  identity: game.present
-                    ? { stamp: game.stamp, revision: game.revision }
-                    : undefined,
-                },
-              ] as const;
+              try {
+                const { headers } = await parsePGN(game.pgn, undefined, options);
+                return [
+                  next + index,
+                  {
+                    name: getGameName(headers),
+                    identity: game.present
+                      ? { stamp: game.stamp, revision: game.revision }
+                      : undefined,
+                  },
+                ] as const;
+              } catch (error) {
+                if (options?.signal?.aborted || errorUnlessCancelled(error) == null) {
+                  throw error;
+                }
+                return [next + index, { name: t("Files.GameUnreadable") }] as const;
+              }
             }),
           );
           entries.push(...page);

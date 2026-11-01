@@ -620,6 +620,7 @@
     "Files.GameCountSuffix": "{{number}} 局",
     "Files.GameCountSuffix_other": "{{number}} 场对局",
     "Files.GameTooLarge": "過大，無法開啟。",
+    "Files.GameUnreadable": "無法讀取。",
     "Files.LoadFailed": "無法載入檔案，請再試一次。",
     "Files.LoadFailed.Changed": "此收藏集已變更。請選擇其他收藏集。",
     "Files.LoadFailed.Missing": "此收藏集已無法使用。請選擇其他收藏集。",

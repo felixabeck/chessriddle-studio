@@ -644,6 +644,7 @@
     "Files.GameCountSuffix_many": "{{number}} гульняў",
     "Files.GameCountSuffix_other": "{{number}} гульняў",
     "Files.GameTooLarge": "Занадта вялікая, каб адкрыць.",
+    "Files.GameUnreadable": "Не ўдаецца прачытаць.",
     "Files.LoadFailed": "Не ўдалося загрузіць файлы. Паспрабуйце яшчэ раз.",
     "Files.LoadFailed.Changed": "Гэта калекцыя змянілася. Выберыце іншую.",
     "Files.LoadFailed.Missing": "Гэта калекцыя больш недаступная. Выберыце іншую.",
