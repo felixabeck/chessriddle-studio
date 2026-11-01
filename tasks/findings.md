@@ -19958,7 +19958,7 @@ Fixed in 17d570d3: the board column's fixed 0.5rem gaps became two shrinkable 0.
 
 ### Two production-revocation loopback tests fail together under a full local test run
 
-* **ID:** f-20261101-02 · **Status:** open · **Area:** oauth-credentials · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261101-02 · **Status:** handled · **Area:** oauth-credentials · **Root:** - · **Entry:** build · **Blocked:** none
 * **Filed from:** 17dbb7e1-a1fc-4ffd-9797-7b34313e682a
 * **Impact class:** tooling
 * **Where:** `src-tauri/src/oauth.rs`, tests `oauth::tests::production_revocation_sends_delete_with_bearer_and_checks_status` (the 3 s `tokio::time::timeout` around the loopback server/revoke join, `.expect("revocation must reach and finish the loopback server")` at `oauth.rs:1460`) and `oauth::tests::production_revocation_redacts_connection_failure` (`assert_eq!(outcome, LichessRevocationOutcome::Unreachable)` at `oauth.rs:1760`, client timeout 2 s).
@@ -19969,6 +19969,9 @@ Fixed in 17d570d3: the board column's fixed 0.5rem gaps became two shrinkable 0.
 * **Related:** f-20261031-02 (other oauth test, macOS watchdog margin), f-20261026-02 (revocation fixture coordinated under paused time).
 * **Found by:** Claude Code drain session 17dbb7e1-a1fc-4ffd-9797-7b34313e682a, 2026-10-31.
 * **Note:** first merged as f-20261031-03 in the unpushed drain commit 5d3e3069, which collided with the published f-20261031-03 (frontend-ui, material indicator). That commit was dropped in the rebase by drain session f29049a6-413d-4c07-be3f-e67ded939c0a and this entry re-filed, with the Defect's earlier "likely a deadline or timeout classification" inference corrected after records review.
+
+Fixed in f1cba40d and c6ef6566 (build adopting the reviewed plan `tasks/handoffs/2026-11-01-f-20261101-02-review.md`, decision d-20261101-01). Answer to the open question: ephemeral-port reuse, not CPU pressure, the blocking gateway or reqwest. The redacts test freed its port and dialled it later; a concurrent `loopback_revocation` fixture handed that port answered the foreign DELETE with its single scripted response (non-`Unreachable` outcome) and then left the bearer test's own request unanswered until its 3 s join expired, so one collision failed both tests. The planner measured 5 reuses in 20000 `bind(0)` calls after a close on Linux. The redacts test now holds a bound, non-listening `tokio::net::TcpSocket` without `SO_REUSEADDR` until after `revoke_token`, and asserts the reservation before the dial (rebind `AddrInUse`, direct dial `ConnectionRefused`) and again after it (rebind `AddrInUse`). Revert checks went red: dropping the reservation before the dial, and calling `listen()` on it. `loopback_revocation`, the bearer test and production code are unchanged. Rejected: paused time or a wider join (hides a foreign connection), a fixed or TEST-NET address, hardening the victim fixture. macOS and Windows behaviour is proven by `rust-macos-test` and `rust-windows-test` after push.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"a2d87b44a0dbd3344cd7973efd620dd40c5d525da83f7815e758d15300962b3f","header_sha256":"d1f95aa83d7fb79133ac1b7b7994750082908e466fb6888feee8e4c6359a39a8","header_status":"handled","input_sha256":"14609d470bb6b236a0e6eb46768709771a10c471eb124c2e0b98a4b40e5a99af","kind":"mutation-receipt","operation":"3580ea5969aff9360f63b77a86a12f2879517402eb66b6adabe55d90a4c0fa27","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-02"],"target":"f-20261101-02","v":1} -->
 
 ---
 
