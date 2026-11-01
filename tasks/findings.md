@@ -20397,3 +20397,17 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Failure scenario:** trash folder A, then file B or restart: A is hidden in `.en-croissant-trash/<uuid>/` with no way to restore or purge it in the app. The 4,096-id cap being reached this way is plausible but not observed.
 * **Open question:** what owns the trash: a native trash listing with restore and purge, auto-purge of older buckets (when), or both; plus pruning of authority records and empty buckets?
 * **Found by:** cloud audit session session_01JbeKomYNAubvgDNCaEau2u (native security/accounts audit, base 301104da), verified against local HEAD by a Claude Code verifier subagent of session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### First Chess.com sync of a very large account always fails and every retry starts over
+
+* **ID:** f-20261101-29 · **Status:** open · **Area:** pgn-import · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** behaviour
+* **Where:** `src-tauri/src/chesscom.rs:44,411-416` (100 MiB `MAX_PGN_BYTES` over the whole export), `chesscom.rs:40,43` (15-minute export deadline, 16 MiB per month), `db/linked_collections/batch.rs:509-531` (cursor saved only after a successful publish).
+* **Defect:** whole-run limits fail staging before anything is published, and without a cursor each retry refetches the full history.
+* **Failure scenario:** an account with roughly 40,000+ games (about 1.5-2.5 KB each with clocks) gets "Chess.com PGN export is too large" on every Download and never imports any history.
+* **Open question:** publish per month (or up to the last complete month under the cap) and let the cursor carry the rest; how does that interact with the pending-batch recovery contract?
+* **Found by:** cloud audit session session_01JbeKomYNAubvgDNCaEau2u (native security/accounts audit, base 301104da), verified against local HEAD by a Claude Code verifier subagent of session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
