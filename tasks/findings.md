@@ -20221,6 +20221,8 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Lens:** `review-chess-semantics`
 * **Proof:** tree tests: a mating move in a variation leaves `headers.result` and `dirty` unchanged; the same move on the main line end still sets the result.
 * **Found by:** cloud audit session session_01JbeKojsWJ1pfK9zBEnfQvc (game tree/practice audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+* **Correction (records review, 2026-11-01):** the Proof must not require `dirty` to stay unchanged, because inserting any new move marks the tree dirty (`src/state/store/tree.ts` around 901). The regression asserts that `headers.result` is preserved when a mating move is added in a variation, and still set when the mate extends the main line.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"6dc705f632e81a48846d3f6172f5137138f274c32024e3febf1a34aca41cbb9b","input_sha256":"a6651bf4c9fd4872cd65f01e3efc5859817fe12aac6eb1672f09de1b13a47378","kind":"mutation-receipt","operation":"11590a90328112b956523383f69322b8aa74ec3959bd06264bbdf22b58c5119d","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-16"],"target":"f-20261101-16","v":1} -->
 
 ---
 
