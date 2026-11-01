@@ -20087,3 +20087,17 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Failure scenario:** `1.d4 Nf6 2.c4 e6 3.Nc3 d5` shows "Indian Defense: Normal Variation" instead of "Queen's Gambit Declined: Normal Defense" (clock 0 vs 2 at move 4), per the audit's measurement with the embedded TSV.
 * **Fix shape:** normalise both table entries and queries to halfmoves 0, fullmoves 1 (keep board, turn, castling, legal en passant) and look up in a hash map; add the transpositions as tests. Check the database opening-statistics caller (`db/mod.rs` around 2940) too.
 * **Found by:** cloud audit session session_01JbeKomxzG32RyrZzRykRDV (PGN/database audit, base 301104da), verified against local HEAD 301104da by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### Games-table Elo filter with colour "Any" ORs both bands across both players
+
+* **ID:** f-20261101-08 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** behaviour
+* **Where:** `src-tauri/src/db/mod.rs:2013-2056` (`get_games_blocking`, `Sides::Any` arm, both `sql_query` and `count_query`); UI sliders in `src/components/databases/GameTable.tsx` ("Player" and "Opponent" Elo).
+* **Defect:** with both bands set the filter is `W∈r1 ∨ B∈r1 ∨ W∈r2 ∨ B∈r2`, so one matching rating anywhere suffices. With one band, it applies to either player regardless of which side the selected player was on. The `WhiteBlack`/`BlackWhite` arms tie bands to colours correctly.
+* **Failure scenario:** Player X, colour Any, Player Elo 2700-3000 and Opponent 0-1000 lists a 1500 vs 2750 game; the list and its count contain non-matching games.
+* **Fix shape:** for `Any`, `(W∈r1 ∧ B∈r2) ∨ (B∈r1 ∧ W∈r2)` with a missing band as true; when `player1` is set, tie r1 to player1's side. Mirror in `count_query`.
+* **Found by:** cloud audit session session_01JbeKomxzG32RyrZzRykRDV (PGN/database audit, base 301104da), verified against local HEAD 301104da by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
