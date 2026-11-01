@@ -398,4 +398,4 @@ REVIEWED_THROUGH: the fix-2 commit ("refactor(notation): drop the unreachable co
 
 Plan review adoptions: r1=10 r2=5 r3=1 r4=0. Diff review adoptions: d1=8 d2=2 d3=0.
 Findings filed: f-20261101-32 (200% font scale leaves the notation without rows), annotated with the
-deferred 320px overflow check. Decisions: d-20261102-01 (variation-block mechanism), d-20261102-02 (scaled overflow viewport).
+deferred 320px overflow check. Decisions: d-20261102-01 (variation-block mechanism, superseded by its corrected restatement d-20261102-03 after the records review), d-20261102-02 (scaled overflow viewport).
