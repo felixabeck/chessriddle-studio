@@ -11372,3 +11372,13 @@ Former private decision identifier: d-20261029-14
 * **Review:** `tasks/handoffs/2026-11-01-f-20261101-12-review.md`
 * **Decided by:** Claude Code (Opus 5.5) drain build run f-20261101-12 (session bb7003aa-47df-4197-96aa-dbd625081bf9), adopting the reviewed drain plan r1-r4, full auto, 2026-11-01 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"c2dc62b18a7c6add5310b9af27d3d43aa488b6dba7ddf4ee98aba3ec3757348c","input_sha256":"e191af238cf0c41066a283e659a9d8af56e58cad0b5d876ade902df0611dbdc7","kind":"mutation-receipt","operation":"f92ed534fb77f7c87ec78e001f1717ac5ccdae8a1f1d862c64baa9cc41622c3b","options":{"section":null},"request_id_sha256":null,"results":["d-20261101-07"],"target":"decisions-ledger","v":1} -->
+
+### d-20261101-08 — What happens to a `[%clk …]` line at the start of a movetext line?
+
+* **Question:** A movetext line starting with `[%clk 0:01]` ends the parser game but not the scanner range. Teach the parser, or refuse?
+* **Governs:** f-20261101-12
+* **Chosen:** It stays a parser boundary, and the scanner range is refused as more than one game.
+* **Rejected:** Teaching the parser the scanner's tag-pair grammar: the reader's movetext would then drop `[%clk 0:01]` as an unparseable token, so a save would still delete it, only more quietly.
+* **Reason:** Refusal loses nothing, and the shape is non-standard (clock annotations belong inside braces). Reversal path: extend the parser's line-boundary test once a lossless representation exists.
+* **Decided by:** Claude Code (Opus 5.5) drain build run f-20261101-12 (session bb7003aa-47df-4197-96aa-dbd625081bf9), adopting the reviewed drain plan r1-r4, full auto, 2026-11-01 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"10c21a939c658b50ebbe73542a7ac1777cacc9f66e2df89322a93157f3612660","input_sha256":"ffc13699f8474d56d661b8456177a6175bce90b2ce6ac91045e87859f28abc38","kind":"mutation-receipt","operation":"7a2673768c1de841aa87a2dde24e19dc9cbebf1c4fbc61acf2ee39da7eb3c6df","options":{"section":null},"request_id_sha256":null,"results":["d-20261101-08"],"target":"decisions-ledger","v":1} -->
