@@ -11412,3 +11412,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Valid games stay visible, opening the row shows the real refusal, and delete cannot remove a multi-game range shown as one entry. Reversal path: revert the GameSelector row state.
 * **Decided by:** Claude Code (Opus 5.5) drain build run f-20261101-12 (session bb7003aa-47df-4197-96aa-dbd625081bf9), adopting the reviewed drain plan r1-r4, full auto, 2026-11-01 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"2ae9ab8c9393e89162f38dc6498f9e39d3aaa7ab53a87ab41f6a9a87a62be958","input_sha256":"4856770854a356828301ae34ed529f5b4a279c96f124e00363b046bae3298f53","kind":"mutation-receipt","operation":"47743977aad23f4c73f921d97a066b22c255dd0672db2350bf28c261abfc5d04","options":{"section":null},"request_id_sha256":null,"results":["d-20261101-11"],"target":"decisions-ledger","v":1} -->
+
+### d-20261101-12 — Is the save of a file game guarded against replacing a multi-game range?
+
+* **Question:** Is the lexer refusal at open enough, or does the save itself refuse?
+* **Governs:** f-20261101-12
+* **Chosen:** write_game_core refuses to replace a range that is not exactly one game (Error::InvalidInput, file byte-identical). Appending a new game is unaffected.
+* **Rejected:** Relying only on the open-time lexer refusal: a tree from any other source would still delete the rest of the range on save.
+* **Reason:** The range bytes are already read for the stamp check, so the guard costs one bounded parse and makes no-data-loss a property of save. Reversal path: remove the guard call in write_game_core.
+* **Decided by:** Claude Code (Opus 5.5) drain build run f-20261101-12 (session bb7003aa-47df-4197-96aa-dbd625081bf9), adopting the reviewed drain plan r1-r4, full auto, 2026-11-01 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"31cbf540b2ea3131e6e986668346ebe7d19d55e5afc3b56986d6864fd8430799","input_sha256":"49a71edb9330c6baa9c2d0d7803d268c8e78825cd592671beb863591f35d1a35","kind":"mutation-receipt","operation":"19d5c5ae4489a560dbe886fb63acf7b2643dc6083be84c5af853cec8039bd131","options":{"section":null},"request_id_sha256":null,"results":["d-20261101-12"],"target":"decisions-ledger","v":1} -->
