@@ -20298,13 +20298,15 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 
 ### Database games filter keeps the old page number, so a matching search shows "No games found"
 
-* **ID:** f-20261101-21 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261101-21 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** behaviour
 * **Where:** `src/components/databases/GameTable.tsx` filter handlers (`setQuery({ ...query, player1: value })` and the side, Elo, result, date and rows-per-page handlers keep `options.page`), `src/state/store/database.ts:257-266` (`setGamesQuery` clears only `selectedGame`), `src-tauri/src/db/mod.rs` `pagination_limit_offset` (unclamped `OFFSET`). `PlayerTable.tsx` resets `page: 1` on search.
 * **Defect:** a filter change runs with the previous page, so the offset can lie past the new result count; the table gets `[]` with the real total.
 * **Failure scenario:** in a large database page forward to page 40, then pick a player with 300 games: offset 975 returns no rows and the table says "No games found" although 300 games match.
 * **Fix shape:** reset `options.page` to 1 in `setGamesQuery` whenever anything other than the page changes; optionally clamp once a count arrives.
 * **Found by:** cloud audit session session_01JbeKok45YnAvBbVKxMsko6 (puzzles/home/databases/board input audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+* **Handled (2026-11-01, drain 88a10add):** commit 56125d43 makes setGamesQuery reset options.page to 1 whenever anything other than the page changes, including pageSize and sort. A page-only change keeps the requested page. This lives in the store, so every GameTable handler is covered. Three vitest cases in database.test.ts. No offset clamp is added.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"482b750690ff6ec3a700f655d018b6482bc1efe41e6db164a2bc15963f96a26f","header_sha256":"63c3537d31191c45ee719515f644e22b05ce3d6c39278e64a75e56e9a0fab990","header_status":"handled","input_sha256":"e0446a25f0a155e506e3238208933975fa1f1260129c8f9cee71ca212caf78fc","kind":"mutation-receipt","operation":"1fc6600bf89a1606d51c7ece8ca2fa24fd207747f383b48afeb9049c3292dc17","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-21"],"target":"f-20261101-21","v":1} -->
 
 ---
 
