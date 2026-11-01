@@ -2,8 +2,9 @@
 
 Build run `annotate-tab-nav` (Claude Code orchestrator, Codex executor, session
 b88fc52e-ffd2-488e-b769-666bd9956a34), full auto. Decisions: d-20261101-02 (hint and fixed Esc),
-d-20261101-03 (bundle total ceiling). Commits on master: feature, mutation repair, bundle ceiling,
-decisions, measurement-source fix and this record.
+d-20261101-03 (bundle total ceiling). Commits made on branch `build/annotate-tab-nav-20261101` and
+released to `master` by rebase and fast-forward push: feature, mutation repair, decisions, bundle
+ceiling, measurement-source fix and this record.
 
 ## Plan review (verbatim plan record follows)
 
@@ -192,3 +193,12 @@ the published base sat 13 B under it (d-20261101-03 raised total to 1,690,000 B)
   premise relative to plan issue P7.
 - **CR-D3** [should-fix] decisions cite this handoff, which did not yet exist. Witness: records#1.
   Fix: this file.
+
+## Diff review, closure round (DIFF cd1f940d..HEAD)
+
+- code-quality: CR-D1 CLOSED (`bundle-budgets.json:10` names `pnpm build-vite`). APPROVED.
+- records: CR-D3 CLOSED (handoff committed, references resolve). REVISE with **CR-D4**
+  [should-fix] the handoff said the commits were on master while they were on the build branch.
+  Fix: wording corrected in this file; a factual-wording correction of this record only, closed by
+  the arbiter with unchanged semantics of every other entry.
+- Totals: diff findings 4 (CR-D1..CR-D4); Fix 3, Skip 1 (CR-D2); all Fix closed.
