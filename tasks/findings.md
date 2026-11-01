@@ -20130,3 +20130,17 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Fix shape:** treat a year containing `?` as unknown (excluded when any bound is set); for a known year with unknown month/day compare the earliest possible date against the start and the latest against the end. Mirror in SQL.
 * **Found by:** cloud audit session session_01JbeKomxzG32RyrZzRykRDV (PGN/database audit, base 301104da), verified against local HEAD 301104da by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
 * **Proof:** `matches_date` and the SQL filter tests for `????.??.??` with a start-only bound and for `2024.??.??` inside a 2024 range.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### Pasted PGN import ignores "Save to collection", the typed name and the chosen file type
+
+* **ID:** f-20261101-11 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** behaviour
+* **Where:** `src/components/tabs/ImportModal.tsx:185-197` (pasted-text branch hardcodes `filename: import-${Date.now()}`, `filetype: "game"`); the save checkbox, name field and type cards render for both input modes (`ImportModal.tsx:298` onward).
+* **Defect:** `save`, `filename` and `filetype` are read only in the picked-file branch.
+* **Failure scenario:** paste a repertoire PGN, tick "Save to collection", name it "Najdorf repertoire" and pick Repertoire: the file is saved as `import-<timestamp>.pgn` with type game, so the user cannot find it by name and repertoire features do not see it.
+* **Fix shape:** honour `filename`/`filetype` in the pasted branch with the same name-conflict handling as the file branch.
+* **Found by:** cloud audit session session_01JbeKomxzG32RyrZzRykRDV (PGN/database audit, base 301104da), verified against local HEAD 301104da by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
