@@ -7234,4 +7234,112 @@ mod native_tests {
             body.as_bytes()
         );
     }
+
+    #[test]
+    fn two_game_range_is_omitted_from_linked_projection() {
+        let fixture = Fixture::new();
+        fixture.create("games", "1. e4 *\n\n1. d4 *\n", WorkspaceFileType::Game);
+        let collection = fixture.list().pop().unwrap();
+        assert_eq!(collection.omitted, 1);
+        assert!(fixture.rows(&collection).is_empty());
+    }
+
+    #[test]
+    fn cancellation_during_two_game_projection_fails_the_rebuild() {
+        let fixture = Fixture::new();
+        fixture.create("games", "1. e4 *\n\n1. d4 *\n", WorkspaceFileType::Game);
+        let collection = fixture.list().pop().unwrap();
+        let id = Uuid::parse_str(&collection.id).unwrap();
+        std::fs::write(fixture.path("games"), "1. c4 *\n\n1. d5 *\n").unwrap();
+        let token = CancellationToken::new();
+        let cancel = token.clone();
+        *fixture.service.rebuild_hook.lock().unwrap() = Some(Box::new(move || {
+            cancel.cancel();
+            Ok(())
+        }));
+        assert!(matches!(
+            fixture
+                .service
+                .refresh(&fixture.state.pgn_path_authority, id, &token),
+            Err(Error::Cancellation)
+        ));
+        *fixture.service.rebuild_hook.lock().unwrap() = None;
+        let (generation, omitted) = fixture
+            .service
+            .refresh(
+                &fixture.state.pgn_path_authority,
+                id,
+                &CancellationToken::new(),
+            )
+            .unwrap();
+        assert_eq!(omitted, 1);
+        assert_eq!(fixture.list().pop().unwrap().generation, generation);
+    }
+
+    #[tokio::test]
+    async fn empty_cleanup_keeps_a_refused_range_byte_identical() {
+        use tauri::Manager;
+
+        let fixture = Fixture::new();
+        let body = "[Event \"A\"]\n\n*\n\n1. d4 *\n";
+        fixture.create("games", body, WorkspaceFileType::Game);
+        let collection = fixture.list().pop().unwrap();
+        edit_linked_collection(
+            collection.id,
+            collection.generation,
+            CollectionEdit::Cleanup {
+                empty: true,
+                duplicates: false,
+            },
+            fixture.app().state::<AppState>(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(fixture.path("games")).unwrap(),
+            body
+        );
+    }
+
+    #[test]
+    fn provider_export_returns_conflict_for_a_two_game_range() {
+        let fixture = Fixture::new();
+        let batches = fixture
+            .service
+            .root
+            .ensure_child(OsStr::new("batches"))
+            .unwrap();
+        let path = batches.path().join("two-game.pgn");
+        std::fs::write(&path, "1. e4 *\n\n1. d4 *\n").unwrap();
+        let handle = FileWorkspaceHandle::new(
+            fixture
+                .state
+                .pgn_path_authority
+                .with_mut(|authority| {
+                    authority.get_or_create_persistent_file(
+                        &path,
+                        "two-game",
+                        vec![PathOperation::ReadPgn],
+                    )
+                })
+                .unwrap()
+                .unwrap()
+                .id,
+        );
+        let error = fixture
+            .service
+            .record_download(
+                &fixture.state.pgn_path_authority,
+                handle,
+                "chesscom",
+                "player",
+                None,
+                &CancellationToken::new(),
+            )
+            .unwrap_err();
+        assert!(
+            matches!(error, Error::Conflict(_)),
+            "expected export conflict, got {error:?}"
+        );
+    }
 }

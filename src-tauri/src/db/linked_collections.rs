@@ -865,10 +865,17 @@ impl CollectionService {
         let mut through_ms = since_ms.unwrap_or(0);
         for range in ranges.iter() {
             let body = pgn::read_range_bytes(&mut bytes, *range, token)?;
-            let game = BufferedReader::new(body.as_slice())
-                .read_game(&mut Importer::new(None))?
-                .flatten()
-                .ok_or_else(|| Error::Conflict("provider export has an unindexable game".into()))?;
+            let game = match pgn::read_one_range_game(
+                &mut BufferedReader::new(body.as_slice()),
+                &mut Importer::new(None),
+            )? {
+                pgn::RangeGame::One(Some(game)) => game,
+                pgn::RangeGame::One(None) | pgn::RangeGame::Empty | pgn::RangeGame::Remainder => {
+                    return Err(Error::Conflict(
+                        "provider export has an unindexable game".into(),
+                    ));
+                }
+            };
             if let Some((date, time)) = game.date.as_deref().zip(game.time.as_deref()) {
                 let date = NaiveDate::parse_from_str(date, "%Y.%m.%d")
                     .map_err(|_| Error::Conflict("provider game has an invalid date".into()))?;
@@ -2365,9 +2372,15 @@ impl CollectionService {
                         };
                         let mut importer = Importer::new(None);
                         let mut reader = BufferedReader::new(bytes.as_slice());
-                        let game = match reader.read_game(&mut importer) {
-                            Ok(Some(Some(game))) => game,
-                            Ok(_) | Err(_) => { omitted += 1; continue; }
+                        let game = match pgn::read_one_range_game(&mut reader, &mut importer) {
+                            Ok(pgn::RangeGame::One(Some(game))) => game,
+                            Ok(pgn::RangeGame::One(None)
+                            | pgn::RangeGame::Empty
+                            | pgn::RangeGame::Remainder) => {
+                                omitted += 1;
+                                continue;
+                            }
+                            Err(error) => return Err(error.into()),
                         };
                         game.insert_to_db(db)?;
                         let ordinal = i32::try_from(ordinal).map_err(|_| Error::ResourceLimit("collection has too many games".into()))?;
@@ -2976,9 +2989,14 @@ pub(crate) async fn edit_linked_collection(
                                 .iter()
                                 .any(|game| usize::try_from(game.ordinal).ok() == Some(ordinal)),
                             CollectionEdit::Cleanup { empty, duplicates } => {
-                                let game = BufferedReader::new(bytes.as_slice())
-                                    .read_game(&mut Importer::new(None))?
-                                    .flatten();
+                                // A refused (Remainder) range is never judged empty and is copied unchanged.
+                                let game = match pgn::read_one_range_game(
+                                    &mut BufferedReader::new(bytes.as_slice()),
+                                    &mut Importer::new(None),
+                                )? {
+                                    pgn::RangeGame::One(game) => game,
+                                    pgn::RangeGame::Empty | pgn::RangeGame::Remainder => None,
+                                };
                                 if *empty
                                     && game.as_ref().is_some_and(|game| {
                                         iter_mainline_move_bytes(&game.moves).next().is_none()

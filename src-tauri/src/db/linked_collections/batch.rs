@@ -187,10 +187,12 @@ fn append_range(
 }
 
 fn parse_identity_game(bytes: &[u8]) -> Result<TempGame, Error> {
-    BufferedReader::new(bytes)
-        .read_game(&mut Importer::new(None))?
-        .flatten()
-        .ok_or_else(conflict)
+    match pgn::read_one_range_game(&mut BufferedReader::new(bytes), &mut Importer::new(None))? {
+        pgn::RangeGame::One(Some(game)) => Ok(game),
+        pgn::RangeGame::One(None) | pgn::RangeGame::Empty | pgn::RangeGame::Remainder => {
+            Err(conflict())
+        }
+    }
 }
 
 impl CollectionService {
@@ -817,5 +819,13 @@ mod tests {
         let (result, bytes) = append_fixture(&duplicates, &unrelated);
         assert_eq!(result.unwrap(), 1);
         assert!(bytes.starts_with(duplicates.as_bytes()));
+    }
+
+    #[test]
+    fn parse_identity_game_returns_conflict_for_a_two_game_range() {
+        assert!(matches!(
+            parse_identity_game(b"1. e4 *\n\n1. d4 *\n"),
+            Err(Error::Conflict(_))
+        ));
     }
 }

@@ -6,6 +6,7 @@ use std::{
     sync::Arc,
 };
 
+use pgn_reader::{BufferedReader, Skip, Visitor};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use specta::Type;
@@ -1066,6 +1067,91 @@ pub(crate) fn read_range_bytes(
     Ok(data)
 }
 
+/// Outcome of reading a scanner range as a single parser game.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum RangeGame<T> {
+    /// The range contained exactly one parser game.
+    One(T),
+    /// The range was empty after the reader's whitespace and `%`-line skipping.
+    Empty,
+    /// A further `read_game` would return `Some` after the first game.
+    Remainder,
+}
+
+pub(crate) const MORE_THAN_ONE_GAME: &str = "PGN text contains more than one game";
+
+struct SkipRemainder;
+
+impl Visitor for SkipRemainder {
+    type Result = ();
+
+    fn end_headers(&mut self) -> Skip {
+        Skip(true)
+    }
+
+    fn end_game(&mut self) {}
+}
+
+#[cfg(test)]
+pub(crate) struct RemainderCheckHook {
+    pub entered: std::sync::mpsc::SyncSender<()>,
+    pub release: std::sync::mpsc::Receiver<()>,
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static TEST_REMAINDER_HOOK: std::cell::RefCell<Option<RemainderCheckHook>> = const {
+        std::cell::RefCell::new(None)
+    };
+}
+
+#[cfg(test)]
+pub(crate) fn set_test_remainder_check_hook(hook: Option<RemainderCheckHook>) {
+    TEST_REMAINDER_HOOK.with(|current| *current.borrow_mut() = hook);
+}
+
+#[cfg(test)]
+fn trigger_remainder_check_hook() {
+    let hook = TEST_REMAINDER_HOOK.with(|current| current.borrow_mut().take());
+    if let Some(hook) = hook {
+        let _ = hook.entered.send(());
+        let _ = hook.release.recv_timeout(std::time::Duration::from_secs(5));
+    }
+}
+
+/// Reads exactly one game from a scanner range's bytes, or a typed remainder refusal.
+///
+/// After the caller's visitor consumes the first game, a further `read_game` with a
+/// skipping visitor decides the remainder: `Some` is refused, independent of visitor
+/// callbacks. Only whitespace and `%` escape lines may follow.
+pub(crate) fn read_one_range_game<R, V>(
+    reader: &mut BufferedReader<R>,
+    visitor: &mut V,
+) -> io::Result<RangeGame<V::Result>>
+where
+    R: Read,
+    V: Visitor,
+{
+    let Some(game) = reader.read_game(visitor)? else {
+        return Ok(RangeGame::Empty);
+    };
+    #[cfg(test)]
+    trigger_remainder_check_hook();
+    match reader.read_game(&mut SkipRemainder)? {
+        Some(_) => Ok(RangeGame::Remainder),
+        None => Ok(RangeGame::One(game)),
+    }
+}
+
+fn refuse_unless_one_range_game(bytes: &[u8]) -> Result<(), Error> {
+    match read_one_range_game(&mut BufferedReader::new(bytes), &mut SkipRemainder)? {
+        RangeGame::One(()) => Ok(()),
+        RangeGame::Empty | RangeGame::Remainder => {
+            Err(Error::InvalidInput(MORE_THAN_ONE_GAME.into()))
+        }
+    }
+}
+
 fn read_ranges(
     mut file: impl Read + Seek,
     ranges: Vec<GameRange>,
@@ -1726,13 +1812,20 @@ async fn commit_pgn_mutation(
             WriteExpectation::Game { stamp } | WriteExpectation::LinkedGame { stamp, .. } => {
                 let mut file = commit_snapshot.file.try_clone()?;
                 let range = target;
-                let actual = BLOCKING_GATEWAY
+                let replacing = replacement.is_some();
+                BLOCKING_GATEWAY
                     .spawn_cancellable(cancellation.clone(), move |token| {
                         let bytes = read_range_bytes(&mut file, range, token)?;
-                        Ok(game_stamp(&bytes))
+                        if game_stamp(&bytes) != stamp {
+                            return Err(Error::StaleGame);
+                        }
+                        if replacing && !bytes.is_empty() {
+                            refuse_unless_one_range_game(&bytes)?;
+                        }
+                        Ok(())
                     })
                     .await?;
-                actual == stamp
+                true
             }
         };
         if !matched {
@@ -6258,5 +6351,218 @@ mod tests {
             scan_games(FailingSeek).expect_err("seek error").kind(),
             io::ErrorKind::Other
         );
+    }
+
+    fn single_scan_range_bytes(data: &[u8]) -> Vec<u8> {
+        let ranges = scan_games(Cursor::new(data)).expect("scan range");
+        assert_eq!(ranges.len(), 1, "fixture must be one scanner range");
+        data[ranges[0].start as usize..ranges[0].end as usize].to_vec()
+    }
+
+    fn lex_scanned_range(data: &[u8]) -> Result<Vec<crate::lexer::Token>, Error> {
+        let range = single_scan_range_bytes(data);
+        let text = std::str::from_utf8(&range).expect("range is UTF-8");
+        crate::lexer::lex_pgn_cancellable(text, None)
+    }
+
+    fn for_each_line_ending(pgn: &str, mut body: impl FnMut(&[u8])) {
+        body(pgn.as_bytes());
+        body(pgn.replace('\n', "\r\n").as_bytes());
+    }
+
+    fn assert_more_than_one_game(result: Result<Vec<crate::lexer::Token>, Error>) {
+        assert!(
+            matches!(
+                result,
+                Err(Error::InvalidInput(ref message)) if message == MORE_THAN_ONE_GAME
+            ),
+            "expected more-than-one-game refusal, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn headed_blank_line_range_lexes_all_four_moves() {
+        for_each_line_ending("[Event \"A\"]\n\n1. e4 e5\n\n2. Nf3 Nc6 *\n", |data| {
+            let tokens = lex_scanned_range(data).expect("headed blank-line game");
+            let sans: Vec<_> = tokens
+                .iter()
+                .filter_map(|token| match token {
+                    crate::lexer::Token::San(san) => Some(san.as_str()),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(sans, ["e4", "e5", "Nf3", "Nc6"], "data={data:?}");
+        });
+    }
+
+    #[test]
+    fn tagless_two_game_range_is_refused() {
+        for_each_line_ending("1. e4 *\n\n1. d4 *\n", |data| {
+            assert_more_than_one_game(lex_scanned_range(data));
+        });
+    }
+
+    #[test]
+    fn clk_line_range_is_refused() {
+        for_each_line_ending(
+            "[Event \"A\"]\n\n1. e4 e5\n[%clk 0:01]\n2. Nf3 Nc6 *\n",
+            |data| {
+                assert_more_than_one_game(lex_scanned_range(data));
+            },
+        );
+    }
+
+    #[test]
+    fn comment_and_semicolon_remainders_are_refused() {
+        for remainder in ["{comment}", "; comment"] {
+            for_each_line_ending(&format!("1. e4 *\n\n{remainder}\n"), |data| {
+                assert_more_than_one_game(lex_scanned_range(data));
+            });
+        }
+    }
+
+    #[test]
+    fn percent_escape_and_whitespace_remainders_are_accepted() {
+        for remainder in ["% escape", "   \n\t"] {
+            for_each_line_ending(&format!("1. e4 *\n\n{remainder}\n"), |data| {
+                let tokens = lex_scanned_range(data)
+                    .unwrap_or_else(|error| panic!("accepted remainder {remainder:?}: {error}"));
+                let sans: Vec<_> = tokens
+                    .iter()
+                    .filter_map(|token| match token {
+                        crate::lexer::Token::San(san) => Some(san.as_str()),
+                        _ => None,
+                    })
+                    .collect();
+                assert_eq!(sans, ["e4"], "remainder {remainder:?} data={data:?}");
+            });
+        }
+    }
+
+    #[test]
+    fn cancelling_during_remainder_check_returns_cancellation() {
+        let pgn = "1. e4 *\n\n1. d4 *\n";
+        let token = CancellationToken::new();
+        let (entered_tx, entered_rx) = std::sync::mpsc::sync_channel(1);
+        let (release_tx, release_rx) = std::sync::mpsc::sync_channel(1);
+        let thread_token = token.clone();
+        let pgn_owned = pgn.to_string();
+        let worker = std::thread::spawn(move || {
+            set_test_remainder_check_hook(Some(RemainderCheckHook {
+                entered: entered_tx,
+                release: release_rx,
+            }));
+            struct Cleanup;
+            impl Drop for Cleanup {
+                fn drop(&mut self) {
+                    set_test_remainder_check_hook(None);
+                }
+            }
+            let _cleanup = Cleanup;
+            crate::lexer::lex_pgn_cancellable(&pgn_owned, Some(&thread_token))
+        });
+        entered_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("remainder check must start");
+        token.cancel();
+        let _ = release_tx.send(());
+        let result = worker.join().expect("worker thread must complete");
+        assert!(
+            matches!(result, Err(Error::Cancellation)),
+            "expected cancellation during remainder check, got {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn write_game_core_refuses_a_two_game_range_without_changing_bytes() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("two-game.pgn");
+        let original = b"1. e4 *\n\n1. d4 *\n";
+        std::fs::write(&path, original).expect("write two-game PGN");
+        let app = mock_app();
+        let state = app.state::<AppState>();
+        let current = read_game_core(
+            writable_for(&directory, &path),
+            0,
+            &CancellationToken::new(),
+            &state.pgn_repository,
+        )
+        .await
+        .expect("read original range");
+        let lease = state.operations.accept("write_game").expect("accept write");
+        let result = write_game_core(
+            lease,
+            writable_for(&directory, &path),
+            0,
+            "1. c4 *\n".into(),
+            WriteExpectation::Game {
+                stamp: current.stamp,
+            },
+            state.pgn_repository.clone(),
+            None,
+        )
+        .await;
+        assert!(
+            matches!(
+                result,
+                Err(Error::InvalidInput(ref message)) if message == MORE_THAN_ONE_GAME
+            ),
+            "expected save refusal, got {result:?}"
+        );
+        assert_eq!(std::fs::read(&path).expect("read unchanged PGN"), original);
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn write_game_core_replaces_a_one_game_range() {
+        use crate::infra::path_authority::PathAuthority;
+
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("one-game.pgn");
+        let registry = directory.path().join("registry.json");
+        std::fs::write(&path, b"[Event \"A\"]\n\n1. e4 *\n").expect("write one-game PGN");
+        let mut authority = PathAuthority::open(registry, vec![]).expect("open authority");
+        let handle = promote_pgn_file(&mut authority, &path);
+        let app = mock_app();
+        let state = app.state::<AppState>();
+        state
+            .pgn_path_authority
+            .install(authority)
+            .expect("path authority lock");
+        let submitted = "[Event \"B\"]\n\n1. d4 *\n";
+        write_through_capability(&app, &handle, 0, submitted.into())
+            .await
+            .expect("write over one-game range");
+        assert_eq!(
+            std::fs::read_to_string(&path)
+                .expect("read written PGN")
+                .trim(),
+            submitted.trim()
+        );
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn write_game_core_still_appends() {
+        use crate::infra::path_authority::PathAuthority;
+
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("append.pgn");
+        let registry = directory.path().join("registry.json");
+        std::fs::write(&path, b"[Event \"A\"]\n\n1. e4 *\n").expect("write one-game PGN");
+        let mut authority = PathAuthority::open(registry, vec![]).expect("open authority");
+        let handle = promote_pgn_file(&mut authority, &path);
+        let app = mock_app();
+        let state = app.state::<AppState>();
+        state
+            .pgn_path_authority
+            .install(authority)
+            .expect("path authority lock");
+        append_through_capability(&app, &handle, 1, "[Event \"B\"]\n\n1. d4 *\n".into())
+            .await
+            .expect("append after one-game range");
+        let body = std::fs::read_to_string(&path).expect("read appended PGN");
+        assert!(body.contains("[Event \"A\"]"));
+        assert!(body.contains("[Event \"B\"]"));
     }
 }
