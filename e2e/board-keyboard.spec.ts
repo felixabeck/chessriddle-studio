@@ -12,6 +12,7 @@ import {
     preserveStorageForReload,
     selectFilesTreeRow,
     test,
+    waitForFontsSettled,
 } from "./fixtures";
 import type { ErrorPayload } from "../src/bindings/generated";
 import { deserializeStorageValue } from "../src/state/store/debouncedStorage";
@@ -64,7 +65,7 @@ for (const mode of ["diff", "all"] as const) {
             await expect(page.getByRole("grid")).toHaveAccessibleName(
                 `Chessboard, ${orientation === "white" ? "White" : "Black"} orientation`,
             );
-            await page.evaluate(() => document.fonts.ready);
+            await waitForFontsSettled(page);
             const geometry = await page.locator("[data-board-surface]").evaluate((surface) => {
                 const column = surface.parentElement!;
                 const rect = (element: Element) => {

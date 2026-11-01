@@ -11,6 +11,7 @@ import {
     gameOpeningCommands,
     selectFilesTreeRow,
     whitePawnSquares,
+    waitForFontsSettled,
     waitForScrollAreaScrollbarsHidden,
 } from "./fixtures";
 
@@ -111,6 +112,7 @@ test("font-scaled-breakpoints: visible library open controls wrap at 320px and 2
     await page.goto("/library");
     const databaseOpen = page.getByRole("button", { name: "Open database", exact: true });
     await expect(databaseOpen).toBeEnabled();
+    await waitForFontsSettled(page);
     await databaseOpen.scrollIntoViewIfNeeded();
     await assertNothingClipped(databaseOpen);
     await capture("database-open-320-200");
