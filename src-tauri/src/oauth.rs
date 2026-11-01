@@ -1750,10 +1750,13 @@ mod tests {
         reservation.bind("127.0.0.1:0".parse().unwrap()).unwrap();
         let addr = reservation.local_addr().unwrap();
         let url = format!("http://{addr}/api/token");
-        assert_eq!(
-            std::net::TcpListener::bind(addr).unwrap_err().kind(),
-            std::io::ErrorKind::AddrInUse,
-        );
+        let assert_held = || {
+            assert_eq!(
+                std::net::TcpListener::bind(addr).unwrap_err().kind(),
+                std::io::ErrorKind::AddrInUse,
+            );
+        };
+        assert_held();
         // Generous hang detector for SYN retries against a non-listening port.
         const RESERVATION_REFUSE_TIMEOUT: Duration = Duration::from_secs(10);
         assert_eq!(
@@ -1774,6 +1777,7 @@ mod tests {
         let outcome = services.revoke_token(token).await;
         assert_eq!(outcome, LichessRevocationOutcome::Unreachable);
         assert_token_free_outcome(outcome, token);
+        assert_held();
         drop(reservation);
     }
 
@@ -2305,8 +2309,12 @@ mod tests {
 
     #[tokio::test]
     async fn deadline_aborts_listener_that_ignores_shutdown() {
-        // The 100 ms bound is in paused (virtual) time so scheduler latency on a loaded runner cannot trip it, while a shutdown that waited the full LISTENER_DRAIN_TIMEOUT (1 s) instead of the remaining deadline still would.
+        // The watchdog is measured in paused (virtual) time. The blocking sleep
+        // stands in for a loaded runner's stall; a shutdown that waited the full
+        // LISTENER_DRAIN_TIMEOUT (1 s) instead of the remaining 20 ms short_config
+        // deadline still overruns the 100 ms bound.
         tokio::time::pause();
+        const SIMULATED_RUNNER_STALL: Duration = Duration::from_millis(150);
         let lifecycle = Arc::new(AuthLifecycle::default());
         let mut services = MockServices::new();
         services.listener_ignores_shutdown = true;
@@ -2316,9 +2324,9 @@ mod tests {
             |_| Ok(()),
             short_config(),
         );
-        let result = tokio::time::timeout(Duration::from_millis(100), task)
-            .await
-            .expect("bounded listener shutdown");
+        let watchdog = tokio::time::timeout(Duration::from_millis(100), task);
+        std::thread::sleep(SIMULATED_RUNNER_STALL);
+        let result = watchdog.await.expect("bounded listener shutdown");
         assert!(
             matches!(result.expect("task join"), Err(Error::OAuthFailure(message)) if message == OAUTH_FAILURE)
         );
