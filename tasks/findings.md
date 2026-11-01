@@ -20235,3 +20235,17 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Failure scenario:** a repertoire file with game 0 "White" and game 1 "Black", both trained for weeks. Delete game 0: the Black tab becomes game 0, loads White's deck, the sync drops White's cards, keeps schedules only where board states coincide and adds the rest as unseen, and persists that under (file, 0). Black's real schedule and review log stay unreachable under (file, 1) until a newly appended game inherits and prunes them.
 * **Open question:** stable per-game identity independent of the ordinal (and how it survives external edits of the PGN), or a native delete that shifts later decks and retires the deleted one atomically with the PGN mutation? Plus a backstop: should an automatic sync that would drop most of a non-empty deck ask first?
 * **Found by:** cloud audit session session_01JbeKojsWJ1pfK9zBEnfQvc (game tree/practice audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### An unrated WhiteElo/BlackElo tag ("?") is saved back as "NaN"
+
+* **ID:** f-20261101-18 · **Status:** open · **Area:** chess-tree · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** data-loss
+* **Where:** `src/utils/chess.ts:564-565` (`getPgnHeaders`: `Number.parseInt(WhiteElo)` for any non-empty value other than `-`), `src/utils/chess.ts:196-201` (`headersToPGN` writes Elo whenever it is not undefined/null), save path `serializeStoreTree` → `getPGN`.
+* **Defect:** `Number.parseInt("?")` is `NaN`, which passes both checks and is written as `String(NaN)`; the raw tag is not kept in `other` because the Elo keys are destructured out.
+* **Failure scenario:** open a Lichess export with `[WhiteElo "?"]` (anonymous player), add a comment, save: the file now says `[WhiteElo "NaN"]`; after a renderer reload the JSON round-trip turns it to null and the tag is dropped instead.
+* **Fix shape:** keep an Elo as a number only when it parses to a finite integer, otherwise preserve the raw string and write it back verbatim; `headersToPGN` skips non-finite numbers. Unit test with `?` and an empty value.
+* **Found by:** cloud audit session session_01JbeKojsWJ1pfK9zBEnfQvc (game tree/practice audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
