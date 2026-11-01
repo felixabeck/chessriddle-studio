@@ -20369,3 +20369,17 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Lens:** `review-tauri-security`
 * **Proof:** session tests: upserting a handle-less `alice` over an authenticated `alice` keeps the handle; logout then calls `removeLichessAccount`.
 * **Found by:** cloud audit session session_01JbeKomYNAubvgDNCaEau2u (native security/accounts audit, base 301104da), verified against local HEAD by a Claude Code verifier subagent of session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### Moving a folder takes the metadata sidecar of a sibling PGN with the same stem
+
+* **ID:** f-20261101-27 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** behaviour
+* **Where:** `src-tauri/src/infra/path_authority/mod.rs:5065-5070` (`workspace_sidecar_leaf` uses `file_stem`: folder `Sicilian` and `Sicilian.pgn` both map to `Sicilian.info`), `src-tauri/src/file_workspace.rs:2030-2045` (move has no `is_dir` branch), `:1486-1503` (`paired_rename_inner` moves the regular file of that name), `:1525-1530` (a folder move without sibling creates `<folder>.info` at the target), `:1699-1701` (create refuses a name whose sidecar exists). Trash and restore already skip the sidecar for folders.
+* **Defect:** moving a folder moves or creates a sidecar that belongs to a PGN.
+* **Failure scenario:** root holds folder `Sicilian/` and `Sicilian.pgn` typed Repertoire with tags; moving the folder into `Archive/` moves `Sicilian.info` along, so `Sicilian.pgn` loses its type and tags and later `Archive/Sicilian.pgn` is refused as "name already used".
+* **Open question:** `d-20261022-25` rejected "skip every directory's sidecar boundary"; how should move treat a directory's sidecar so it never claims a sibling file's sidecar, consistent with trash/restore and that decision?
+* **Found by:** cloud audit session session_01JbeKomYNAubvgDNCaEau2u (native security/accounts audit, base 301104da), verified against local HEAD by a Claude Code verifier subagent of session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
