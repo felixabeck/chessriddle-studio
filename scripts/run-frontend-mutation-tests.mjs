@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { availableParallelism, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -26,6 +26,8 @@ import {
 import { currentIdentity, identityForPid } from "./process-identity.mjs";
 import {
   parseFrontendMutationArguments,
+  canSkipFrontendMutation,
+  frontendMutationInputs,
   recoveryIsSafe,
   selectFrontendMutationPackagesById,
 } from "./run-frontend-mutation.mjs";
@@ -99,6 +101,8 @@ async function fixture(t = undefined) {
       "  memory: process.env.STRYKER_MEMORY_BYTES,",
       "  cpuShare: process.env.GATE_CPU_SHARE,",
       "  files: process.env.STRYKER_FILES,",
+      "  incrementalFile: process.env.STRYKER_INCREMENTAL_FILE,",
+      "  force: process.env.STRYKER_FORCE,",
       '  gateMemoryPresent: Object.hasOwn(process.env, "GATE_MEMORY_BYTES"),',
       "}));",
       "console.log(`known stdout from ${name}`);",
@@ -223,6 +227,202 @@ test("--list-packages prints the shared package map without creating a fence", a
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), packageNames);
   assert.equal(existsSync(join(root, fence)), false);
+});
+
+test("CI package selection runs exactly one complete package and rejects unknown ids", async (t) => {
+  const { root, state } = await fixture(t);
+  const env = environment({ state, mode: "record", FRONTEND_MUTATION_PACKAGE: "game-practice" });
+  const result = run(root, env);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(await readFile(join(state, "packages"), "utf8"), "game-practice\n");
+  assert.equal(
+    JSON.parse(await readFile(join(state, "env-game-practice"), "utf8")).files,
+    undefined,
+  );
+  const invalid = run(root, { ...env, FRONTEND_MUTATION_PACKAGE: "unknown" });
+  assert.equal(invalid.status, 1);
+  assert.match(invalid.stderr, /Unknown FRONTEND_MUTATION_PACKAGE: unknown/u);
+  assert.equal(existsSync(join(root, fence)), false);
+});
+
+const changeBase = "a".repeat(40);
+
+function fakeChangeGit(paths, failure = undefined) {
+  return (_command, args) => {
+    if (failure) return failure;
+    return {
+      status: 0,
+      stdout:
+        args[0] === "rev-parse" ? `${changeBase}\n` : paths.map((path) => `${path}\0`).join(""),
+    };
+  };
+}
+
+test("change skip uses the frontend superset and transitive runner/config imports", async () => {
+  const inputs = await frontendMutationInputs();
+  for (const path of [
+    "src/other.test.ts",
+    "public/asset.png",
+    "vite.config.ts",
+    "pnpm-lock.yaml",
+    "stryker.config.mjs",
+    "scripts/run-frontend-mutation.mjs",
+    "scripts/run-push-gates.mjs",
+    "scripts/child-supervisor.mjs",
+    "scripts/fsync-directory.mjs",
+    "scripts/gate-parallelism.mjs",
+    "scripts/process-identity.mjs",
+    "scripts/mutation-package-selection.mjs",
+    "scripts/import-path.mjs",
+    "scripts/parse-ts-source.mjs",
+    ".github/workflows/test.yml",
+  ]) {
+    assert.equal(
+      await canSkipFrontendMutation(changeBase, {
+        runGit: fakeChangeGit([path]),
+        getInputs: () => inputs,
+      }),
+      false,
+      path,
+    );
+  }
+  for (const paths of [[], ["tasks/record.md", "src-tauri/src/main.rs"]]) {
+    assert.equal(
+      await canSkipFrontendMutation(changeBase, {
+        runGit: fakeChangeGit(paths),
+        getInputs: () => inputs,
+      }),
+      true,
+    );
+  }
+});
+
+test("change skip fails open on invalid bases, failed Git and uncertain input discovery", async () => {
+  for (const base of [undefined, "", "0".repeat(40), "garbage", "HEAD", "--help"]) {
+    assert.equal(
+      await canSkipFrontendMutation(base, {
+        runGit: () => {
+          throw new Error("must not query Git");
+        },
+      }),
+      false,
+    );
+  }
+  for (const failure of [
+    { status: 128, stderr: "unreachable" },
+    { status: null, error: new Error("git failed") },
+  ]) {
+    assert.equal(
+      await canSkipFrontendMutation(changeBase, { runGit: fakeChangeGit([], failure) }),
+      false,
+    );
+  }
+  for (const output of [{ status: 1 }, { status: 0, stdout: "unparseable" }]) {
+    assert.equal(
+      await canSkipFrontendMutation(changeBase, {
+        runGit: (command, args) => (args[0] === "diff" ? output : fakeChangeGit([])(command, args)),
+      }),
+      false,
+    );
+  }
+  assert.equal(
+    await canSkipFrontendMutation(changeBase, {
+      runGit: fakeChangeGit([]),
+      getInputs: () => {
+        throw new Error("unreadable module");
+      },
+    }),
+    false,
+  );
+});
+
+test("CLI change skip prints the base before touching an existing fence or sandbox", async (t) => {
+  const { root, state } = await fixture(t);
+  const bin = join(root, "bin");
+  await mkdir(bin);
+  await writeShim(
+    join(bin, "git"),
+    `#!/usr/bin/env node\nprocess.stdout.write(process.argv[2] === "rev-parse" ? ${JSON.stringify(`${changeBase}\n`)} : "tasks/record.md\\0");\n`,
+  );
+  await seedFence(root, deadOwner());
+  await mkdir(join(root, ".stryker-tmp"));
+  await writeFile(join(root, ".stryker-tmp", "keep"), "keep");
+  const result = run(
+    root,
+    environment({
+      state,
+      FRONTEND_MUTATION_CHANGED_SINCE: changeBase,
+      PATH: `${bin}:${process.env.PATH}`,
+    }),
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    result.stdout,
+    `Frontend mutation skipped: no mutation inputs changed since ${changeBase}\n`,
+  );
+  assert.equal(existsSync(join(root, fence)), true);
+  assert.equal(await readFile(join(root, ".stryker-tmp", "keep"), "utf8"), "keep");
+  assert.equal(existsSync(join(state, "packages")), false);
+});
+
+test("incremental files are per-package, force needs a directory and defaults clear inherited Stryker modes", async (t) => {
+  for (const mode of ["unset", "force-only", "incremental", "forced"]) {
+    const { root, state } = await fixture(t);
+    const directory = join(root, "cache");
+    const useIncremental = ["incremental", "forced"].includes(mode);
+    const result = run(
+      root,
+      environment({
+        state,
+        mode: "record",
+        STRYKER_INCREMENTAL_FILE: "inherited.json",
+        STRYKER_FORCE: "1",
+        ...(useIncremental ? { FRONTEND_MUTATION_INCREMENTAL_DIR: directory } : {}),
+        ...(["force-only", "forced"].includes(mode) ? { FRONTEND_MUTATION_FORCE: "1" } : {}),
+      }),
+    );
+    assert.equal(result.status, 0, result.stderr);
+    for (const name of packageNames) {
+      const childEnv = JSON.parse(await readFile(join(state, `env-${name}`), "utf8"));
+      assert.equal(
+        childEnv.incrementalFile,
+        useIncremental ? join(directory, `${name}.json`) : undefined,
+      );
+      assert.equal(childEnv.force, mode === "forced" ? "1" : undefined);
+      const config = runConfigImport({
+        ...process.env,
+        STRYKER_PACKAGE: name,
+        STRYKER_MEMORY_BYTES: String(STRYKER_PARENT_BYTES + STRYKER_RUNNER_BYTES),
+        PRINT_INCREMENTAL: "1",
+        STRYKER_INCREMENTAL_FILE: childEnv.incrementalFile ?? "",
+        STRYKER_FORCE: childEnv.force ?? "",
+      });
+      assert.equal(config.status, 0, config.stderr);
+      assert.deepEqual(
+        JSON.parse(config.stdout),
+        useIncremental
+          ? {
+              incremental: true,
+              incrementalFile: childEnv.incrementalFile,
+              force: mode === "forced",
+            }
+          : {},
+      );
+    }
+  }
+});
+
+test("incremental directories inside the purge root, including symlinks, are refused before the fence", async (t) => {
+  const { root, state } = await fixture(t);
+  await mkdir(join(root, ".stryker-tmp"));
+  await symlink(join(root, ".stryker-tmp"), join(root, "alias"));
+  for (const directory of [".stryker-tmp", ".stryker-tmp/cache", "alias/cache"]) {
+    const result = run(root, environment({ state, FRONTEND_MUTATION_INCREMENTAL_DIR: directory }));
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /must lie outside .stryker-tmp/u);
+    assert.equal(existsSync(join(root, fence)), false);
+    assert.equal(existsSync(join(state, "packages")), false);
+  }
 });
 
 test("explicit production files select only their package and narrow its Stryker mutate list", async (t) => {
@@ -1015,7 +1215,8 @@ test("the finaliser sweeps a surviving grandchild after its Stryker root exits",
 function runConfigImport(env, preloadPath = undefined) {
   const script = `
     const config = await import(${JSON.stringify(pathToFileURL(join(projectRoot, "stryker.config.mjs")).href)});
-    console.log(process.env.PRINT_MUTATE ? JSON.stringify(config.default.mutate) : String(config.default.concurrency));
+    const { incremental, incrementalFile, force } = config.default;
+    console.log(process.env.PRINT_INCREMENTAL ? JSON.stringify({ incremental, incrementalFile, force }) : process.env.PRINT_MUTATE ? JSON.stringify(config.default.mutate) : String(config.default.concurrency));
   `;
   return spawnSync(
     process.execPath,

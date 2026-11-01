@@ -183,7 +183,7 @@ export const PRE_REVIEW_GATE_SCHEDULE = Object.freeze({
   ]),
 });
 
-const FRONTEND_INPUTS = Object.freeze([
+export const FRONTEND_INPUTS = Object.freeze([
   "src/**",
   "public/**",
   "index.html",

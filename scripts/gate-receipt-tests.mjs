@@ -90,6 +90,31 @@ test("registry maps all seven gates to their exact command strings", () => {
   assert.deepEqual(GATES, EXPECTED_GATES);
 });
 
+test("every gate child strips all FRONTEND_MUTATION_ keys while preserving other environment", async () => {
+  const { root } = await fixture();
+  const env = {
+    ...process.env,
+    FRONTEND_MUTATION_PACKAGE: "game-practice",
+    FRONTEND_MUTATION_CHANGED_SINCE: "a".repeat(40),
+    FRONTEND_MUTATION_INCREMENTAL_DIR: "/tmp/cache",
+    FRONTEND_MUTATION_FORCE: "1",
+    FRONTEND_MUTATION_FUTURE: "also stripped",
+    RECEIPT_ENV_KEEP: "kept",
+  };
+  for (const gate of Object.keys(GATES)) {
+    const status = await record(root, {
+      gate,
+      env,
+      command: nodeCommand(
+        "if (Object.keys(process.env).some(key => key.startsWith('FRONTEND_MUTATION_')) || process.env.RECEIPT_ENV_KEEP !== 'kept') process.exit(9)",
+      ),
+    });
+    assert.equal(status, 0, gate);
+  }
+  assert.equal(env.FRONTEND_MUTATION_PACKAGE, "game-practice");
+  assert.equal(env.FRONTEND_MUTATION_FUTURE, "also stripped");
+});
+
 test("every gate fingerprints a pinned tool set, and every listed tool has a probe", () => {
   assert.deepEqual(Object.keys(REQUIRED_TOOLS).sort(), Object.keys(GATES).sort());
   assert.deepEqual(REQUIRED_TOOLS, {

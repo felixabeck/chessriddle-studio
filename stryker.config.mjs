@@ -29,6 +29,13 @@ const memoryBytes = positiveByteCountFromEnv("STRYKER_MEMORY_BYTES");
 
 /** @type {import("@stryker-mutator/api/core").PartialStrykerOptions} */
 const config = {
+  ...(process.env.STRYKER_INCREMENTAL_FILE
+    ? {
+        incremental: true,
+        incrementalFile: process.env.STRYKER_INCREMENTAL_FILE,
+        force: process.env.STRYKER_FORCE === "1",
+      }
+    : {}),
   plugins: ["@stryker-mutator/vitest-runner"],
   mutate,
   testRunner: "vitest",

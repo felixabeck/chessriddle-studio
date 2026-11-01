@@ -381,7 +381,9 @@ async function runGate({
     try {
       child = spawn(command, {
         cwd: repoRoot,
-        env,
+        env: Object.fromEntries(
+          Object.entries(env).filter(([key]) => !key.startsWith("FRONTEND_MUTATION_")),
+        ),
         shell: true,
         stdio: ["ignore", "pipe", "pipe"],
       });

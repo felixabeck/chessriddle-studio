@@ -1,5 +1,5 @@
 // `--files` takes one comma-separated list of repository-relative production paths.
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   closeSync,
   existsSync,
@@ -7,12 +7,14 @@ import {
   mkdtempSync,
   openSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   installMultiChildSignalForwarding,
   signalExitCode,
@@ -24,6 +26,8 @@ import { durableWrite } from "./durable-write.mjs";
 import { mutationPackages } from "./frontend-mutation-packages.mjs";
 import { isEntrypoint } from "./entrypoint.mjs";
 import { selectMutationPackages } from "./mutation-package-selection.mjs";
+import { FRONTEND_INPUTS } from "./run-push-gates.mjs";
+import { matches } from "./coverage-scope.mjs";
 import {
   currentIdentity,
   identityForPid,
@@ -43,6 +47,93 @@ const packageRecords = Object.freeze(
 const filesByPath = new Map(
   packageRecords.flatMap(({ id, files }) => files.map((path) => [path, id])),
 );
+
+/** Include the runner/config's complete repository module closure in the CI skip scope. */
+export async function frontendMutationInputs() {
+  const { parseTsSource } = await import("./parse-ts-source.mjs");
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+  const inputs = new Set([...FRONTEND_INPUTS, ".github/workflows/test.yml"]);
+  const pending = ["scripts/run-frontend-mutation.mjs", "stryker.config.mjs"];
+  const visited = new Set();
+  while (pending.length) {
+    const path = pending.pop();
+    if (visited.has(path)) continue;
+    visited.add(path);
+    inputs.add(path);
+    const ast = parseTsSource(readFileSync(resolve(root, path), "utf8"), path);
+    const visit = (node) => {
+      if (!node || typeof node !== "object") return;
+      let specifier;
+      if (
+        ["ImportDeclaration", "ExportNamedDeclaration", "ExportAllDeclaration"].includes(node.type)
+      ) {
+        specifier = node.source?.value;
+      } else if (node.type === "CallExpression" && node.callee?.type === "Import") {
+        specifier = node.arguments[0]?.value;
+        if (typeof specifier !== "string") throw new Error("Unresolved dynamic import");
+      }
+      if (specifier?.startsWith(".")) {
+        const dependency = relative(root, resolve(root, dirname(path), specifier))
+          .split(sep)
+          .join("/");
+        if (dependency.startsWith("scripts/")) pending.push(dependency);
+        else throw new Error(`Import outside scripts: ${specifier}`);
+      }
+      for (const value of Object.values(node)) {
+        if (Array.isArray(value)) value.forEach(visit);
+        else if (value && typeof value === "object") visit(value);
+      }
+    };
+    visit(ast);
+  }
+  return [...inputs];
+}
+
+/** Uncertain bases, Git failures and incomplete input discovery always retain the run. */
+export async function canSkipFrontendMutation(
+  base,
+  { runGit = spawnSync, getInputs = frontendMutationInputs } = {},
+) {
+  if (!base || !/^(?:[a-f\d]{40}|[a-f\d]{64})$/iu.test(base) || /^0+$/u.test(base)) return false;
+  try {
+    const options = { encoding: "utf8" };
+    const commit = runGit("git", ["rev-parse", "--verify", `${base}^{commit}`], options);
+    if (
+      commit.error ||
+      commit.status !== 0 ||
+      commit.stdout.trim().toLowerCase() !== base.toLowerCase()
+    )
+      return false;
+    const diff = runGit("git", ["diff", "--name-only", "-z", base, "HEAD"], options);
+    if (diff.error || diff.status !== 0 || typeof diff.stdout !== "string") return false;
+    if (diff.stdout && !diff.stdout.endsWith("\0")) return false;
+    const inputs = await getInputs();
+    return !diff.stdout
+      .split("\0")
+      .filter(Boolean)
+      .some((path) => matches(path, inputs));
+  } catch {
+    return false;
+  }
+}
+
+function incrementalDirectory(directory) {
+  if (!directory) return undefined;
+  const target = resolve(directory);
+  const temp = resolve(".stryker-tmp");
+  const outsideTemp = (path, sandbox) => path !== sandbox && !path.startsWith(`${sandbox}${sep}`);
+  if (!outsideTemp(target, temp))
+    throw new Error("FRONTEND_MUTATION_INCREMENTAL_DIR must lie outside .stryker-tmp");
+  // Resolve existing ancestors too, so a symlink cannot put the cache inside the purge root.
+  const physicalPath = (path) => {
+    if (existsSync(path)) return realpathSync(path);
+    const parent = dirname(path);
+    return parent === path ? path : join(physicalPath(parent), relative(parent, path));
+  };
+  if (!outsideTemp(physicalPath(target), physicalPath(temp)))
+    throw new Error("FRONTEND_MUTATION_INCREMENTAL_DIR must lie outside .stryker-tmp");
+  return target;
+}
 
 function errorMessage(error) {
   return error instanceof Error ? error.message : String(error);
@@ -235,7 +326,13 @@ function resolveStrykerEntry(cwd) {
   return entry;
 }
 
-function childEnvironment(mutationPackage, memoryBytes, cpuShare, files = undefined) {
+function childEnvironment(
+  mutationPackage,
+  memoryBytes,
+  cpuShare,
+  files = undefined,
+  incrementalDir = undefined,
+) {
   const env = {
     ...process.env,
     STRYKER_PACKAGE: mutationPackage,
@@ -244,6 +341,12 @@ function childEnvironment(mutationPackage, memoryBytes, cpuShare, files = undefi
   };
   if (files) env.STRYKER_FILES = files.join(",");
   else delete env.STRYKER_FILES;
+  delete env.STRYKER_INCREMENTAL_FILE;
+  delete env.STRYKER_FORCE;
+  if (incrementalDir) {
+    env.STRYKER_INCREMENTAL_FILE = join(incrementalDir, `${mutationPackage}.json`);
+    if (process.env.FRONTEND_MUTATION_FORCE === "1") env.STRYKER_FORCE = "1";
+  }
   delete env.GATE_MEMORY_BYTES;
   return env;
 }
@@ -294,6 +397,7 @@ async function runPackage(
     memoryBytes,
     cpuShare,
     files,
+    incrementalDir,
     spawnChild,
     signalForwarding,
     onSpawnError,
@@ -316,7 +420,7 @@ async function runPackage(
     try {
       child = spawnChild(process.execPath, [strykerEntry, "run"], {
         detached: true,
-        env: childEnvironment(mutationPackage, memoryBytes, cpuShare, files),
+        env: childEnvironment(mutationPackage, memoryBytes, cpuShare, files, incrementalDir),
         stdio: ["ignore", logFd, logFd],
       });
     } catch (error) {
@@ -401,8 +505,22 @@ export function selectFrontendMutationPackages(files = undefined) {
 
 /** Run frontend mutation packages; `spawnChild` is injectable for deterministic scheduler tests. */
 export async function runFrontendMutation(spawnChild = spawn, { files = undefined } = {}) {
-  const selectedPackages = selectFrontendMutationPackages(files);
+  const packageId = process.env.FRONTEND_MUTATION_PACKAGE;
+  const requested = selectMutationPackages(
+    packageRecords,
+    packageId ? [packageId] : undefined,
+    "FRONTEND_MUTATION_PACKAGE",
+  );
+  const selectedPackages = selectFrontendMutationPackages(files).filter((entry) =>
+    requested.some(({ id }) => id === entry.id),
+  );
   if (selectedPackages.length === 0) return 0;
+  const incrementalDir = incrementalDirectory(process.env.FRONTEND_MUTATION_INCREMENTAL_DIR);
+  const base = process.env.FRONTEND_MUTATION_CHANGED_SINCE;
+  if (await canSkipFrontendMutation(base)) {
+    console.log(`Frontend mutation skipped: no mutation inputs changed since ${base}`);
+    return 0;
+  }
   const runnerIdentity = currentIdentity();
   if (!acquireFence(runnerIdentity)) return 1;
 
@@ -427,6 +545,7 @@ export async function runFrontendMutation(spawnChild = spawn, { files = undefine
 
     // Stryker cannot clean a sandbox after SIGKILL; only the fence owner may purge it at start.
     rmSync(".stryker-tmp", { recursive: true, force: true });
+    if (incrementalDir) mkdirSync(incrementalDir, { recursive: true });
 
     let nextPackage = 0;
     let admissionOpen = true;
@@ -485,6 +604,7 @@ export async function runFrontendMutation(spawnChild = spawn, { files = undefine
             memoryBytes,
             cpuShare,
             files: filesForPackage,
+            incrementalDir,
             spawnChild,
             signalForwarding,
             onPendingSpawn,
