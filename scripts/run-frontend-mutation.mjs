@@ -92,11 +92,11 @@ export async function frontendMutationInputs() {
 /** Uncertain bases, Git failures and incomplete input discovery always retain the run. */
 export async function canSkipFrontendMutation(
   base,
-  { runGit = spawnSync, getInputs = frontendMutationInputs } = {},
+  { cwd = process.cwd(), runGit = spawnSync, getInputs = frontendMutationInputs } = {},
 ) {
   if (!base || !/^(?:[a-f\d]{40}|[a-f\d]{64})$/iu.test(base) || /^0+$/u.test(base)) return false;
   try {
-    const options = { encoding: "utf8" };
+    const options = { cwd, encoding: "utf8" };
     const commit = runGit("git", ["rev-parse", "--verify", `${base}^{commit}`], options);
     if (
       commit.error ||

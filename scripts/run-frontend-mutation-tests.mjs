@@ -264,6 +264,8 @@ test("change skip uses the frontend superset and transitive runner/config import
     "src/other.test.ts",
     "public/asset.png",
     "vite.config.ts",
+    "tsconfig.json",
+    "tsconfig.node.json",
     "pnpm-lock.yaml",
     "stryker.config.mjs",
     "scripts/run-frontend-mutation.mjs",
@@ -296,6 +298,37 @@ test("change skip uses the frontend superset and transitive runner/config import
       }),
       true,
     );
+  }
+});
+
+test("change skip compares the base commit with HEAD in a real Git repository", async (t) => {
+  for (const [path, expectedSkip] of [
+    ["src/x.ts", false],
+    ["tasks/notes.md", true],
+    ["tsconfig.json", false],
+  ]) {
+    await t.test(path, async (t) => {
+      const root = await mkdtemp(join(tmpdir(), "frontend-mutation-git-"));
+      t.after(() => rm(root, { recursive: true, force: true }));
+      const git = (args) => {
+        const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+        assert.equal(result.status, 0, result.stderr);
+        return result.stdout.trim();
+      };
+      git(["init", "--quiet"]);
+      git(["config", "user.name", "Mutation fixture"]);
+      git(["config", "user.email", "mutation-fixture@example.invalid"]);
+      await mkdir(dirname(join(root, path)), { recursive: true });
+      await writeFile(join(root, path), "base\n");
+      git(["add", "--", path]);
+      git(["commit", "--quiet", "-m", "base"]);
+      const base = git(["rev-parse", "HEAD"]);
+      await writeFile(join(root, path), "changed\n");
+      git(["add", "--", path]);
+      git(["commit", "--quiet", "-m", "change"]);
+
+      assert.equal(await canSkipFrontendMutation(base, { cwd: root }), expectedSkip);
+    });
   }
 });
 

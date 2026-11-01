@@ -160,7 +160,6 @@ jobs:
         run: |
           today=$(date -u +%Y%m%d)
           echo "today=$today" >> "$GITHUB_OUTPUT"
-          echo "yesterday=$(date -u -d "$today -1 day" +%Y%m%d)" >> "$GITHUB_OUTPUT"
 
       - name: Run full frontend mutation sweep
         run: pnpm mutation:frontend

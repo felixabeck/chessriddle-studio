@@ -191,6 +191,7 @@ export const FRONTEND_INPUTS = Object.freeze([
   "pnpm-lock.yaml",
   "pnpm-workspace.yaml",
   "vite.config.*",
+  "tsconfig*.json",
   "stryker.config.mjs",
   "scripts/run-frontend-mutation.mjs",
   "scripts/frontend-mutation-packages.mjs",

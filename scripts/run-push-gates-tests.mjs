@@ -505,6 +505,15 @@ test("pre-review changed-path selection covers every lane and excludes unrelated
   );
 });
 
+test("root TypeScript config changes select the frontend bundle lane", () => {
+  for (const path of ["tsconfig.json", "tsconfig.node.json"]) {
+    assert.ok(
+      selectPreReviewLanes([path], { root: repositoryRoot }).some(({ name }) => name === "bundle"),
+      path,
+    );
+  }
+});
+
 test("untracked-only production input selects its pre-review lanes (CR-6)", async (t) => {
   const root = await temporarySchedulerRoot(t);
   await initializeUpstream(root);

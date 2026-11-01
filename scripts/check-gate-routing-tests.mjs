@@ -945,7 +945,7 @@ test("detects missing scripts used by both executable schedules", async (t) => {
 });
 
 // Keep these contracts in gates:routing:test, which gates:contract:check already runs.
-function phase2Contracts(texts) {
+function ciWorkflowContracts(texts) {
   const jobs = (source) => new Map(workflowJobs(source).map((job) => [job.name, job.body]));
   const testJobs = jobs(texts.test);
   const sweepJobs = jobs(texts.sweep);
@@ -1089,7 +1089,7 @@ function phase2Contracts(texts) {
   return contracts;
 }
 
-async function phase2Texts() {
+async function readCiWorkflowTexts() {
   const [test, sweep, action] = await Promise.all([
     readFile(join(projectRoot, ".github/workflows/test.yml"), "utf8"),
     readFile(join(projectRoot, ".github/workflows/mutation.yml"), "utf8"),
@@ -1098,9 +1098,9 @@ async function phase2Texts() {
   return { test, sweep, action };
 }
 
-test("Phase 2 workflow wiring preserves parallel gates and bounded incremental reuse", async () => {
-  const texts = await phase2Texts();
-  for (const [, check] of phase2Contracts(texts)) check();
+test("CI workflow wiring preserves parallel gates and bounded incremental reuse", async () => {
+  const texts = await readCiWorkflowTexts();
+  for (const [, check] of ciWorkflowContracts(texts)) check();
   const listed = spawnSync(
     process.execPath,
     ["scripts/run-frontend-mutation.mjs", "--list-packages"],
@@ -1110,8 +1110,8 @@ test("Phase 2 workflow wiring preserves parallel gates and bounded incremental r
   assert.deepEqual(JSON.parse(listed.stdout), Object.keys(mutationPackages));
 });
 
-test("Phase 2 wiring rejects removed selectors, checkout, freshness, publication and dist prerequisites", async (t) => {
-  const texts = await phase2Texts();
+test("CI workflow wiring rejects removed selectors, checkout, freshness, publication and dist prerequisites", async (t) => {
+  const texts = await readCiWorkflowTexts();
   for (const [label, file, before, afterText = ""] of [
     ["matrix package env", "test", "      FRONTEND_MUTATION_PACKAGE: ${{ matrix.package }}\n"],
     ["fetch full history", "test", "          fetch-depth: 0"],
@@ -1148,7 +1148,7 @@ test("Phase 2 wiring rejects removed selectors, checkout, freshness, publication
       const changed = { ...texts, [file]: texts[file].replaceAll(before, afterText) };
       assert.notEqual(changed[file], texts[file]);
       assert.throws(() => {
-        for (const [, check] of phase2Contracts(changed)) check();
+        for (const [, check] of ciWorkflowContracts(changed)) check();
       });
     });
   }
