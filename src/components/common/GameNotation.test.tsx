@@ -6,7 +6,12 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import { TreeStateContext } from "./TreeStateContext";
 import { createNode, defaultTree, type TreeNode } from "@/utils/treeReducer";
-import { buildNotationRows, NOTATION_ROW_MAX_MOVES, pathForNotationNode } from "./notationRows";
+import {
+  buildNotationRows,
+  NOTATION_ROW_MAX_MOVES,
+  pathForNotationNode,
+  type NotationRow,
+} from "./notationRows";
 
 const atoms = vi.hoisted(() => ({
   invisible: Symbol("invisible"),
@@ -19,7 +24,7 @@ const virtualizerMock = vi.hoisted(() => ({
   current: null as null | { count: number; scrollToFn?: unknown },
   scrollCalls: [] as { index: number; options: unknown }[],
 }));
-const notationSettings = vi.hoisted(() => ({ showComments: false }));
+const notationSettings = vi.hoisted(() => ({ showComments: false, tableView: false }));
 
 vi.mock("@/state/atoms", () => ({
   invisibleFamily: () => atoms.invisible,
@@ -30,7 +35,7 @@ vi.mock("@/state/atoms", () => ({
 vi.mock("@/state/keybinds", () => ({ keyMapAtom: atoms.keyMap }));
 vi.mock("jotai", () => ({
   useAtom: (atom: symbol) => {
-    if (atom === atoms.table) return [false, vi.fn()];
+    if (atom === atoms.table) return [notationSettings.tableView, vi.fn()];
     return [false, vi.fn()];
   },
   useAtomValue: (atom: symbol) => {
@@ -135,6 +140,7 @@ import GameNotation, {
   scrollNotationElement,
   scrollNotationToOffset,
 } from "./GameNotation";
+import styles from "./GameNotation.module.css";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -150,6 +156,7 @@ beforeEach(() => {
   virtualizerMock.current = null;
   virtualizerMock.scrollCalls.length = 0;
   notationSettings.showComments = false;
+  notationSettings.tableView = false;
 });
 
 afterEach(async () => {
@@ -433,4 +440,139 @@ test("scrolls to the nearest listed ancestor inside a collapsed variation", asyn
     index: ancestorRow,
     options: { align: "center" },
   });
+});
+
+function isVariationBlockRow(row: NotationRow) {
+  return row.type === "variation" || (row.type === "moves" && row.depth >= 1);
+}
+
+test.each([false, true])(
+  "places the variation-block class on variation rows including a depth-0 toggle (tableView: %s)",
+  async (tableView) => {
+    notationSettings.showComments = true;
+    notationSettings.tableView = tableView;
+
+    const state = defaultTree();
+    state.root.comment = "root comment";
+    const move = parseUci("e2e4")!;
+    const e4 = createNode({
+      fen: "e4 b - - 0 1",
+      move,
+      san: "e4",
+      halfMoves: 1,
+    });
+    e4.comment = "main comment";
+    const e5 = createNode({
+      fen: "e5 w - - 0 1",
+      move,
+      san: "e5",
+      halfMoves: 2,
+    });
+    const d4 = createNode({
+      fen: "d4 b - - 0 1",
+      move,
+      san: "d4",
+      halfMoves: 1,
+    });
+    const d5 = createNode({
+      fen: "d5 w - - 0 1",
+      move,
+      san: "d5",
+      halfMoves: 2,
+    });
+    const nf6 = createNode({
+      fen: "nf6 b - - 0 1",
+      move,
+      san: "Nf6",
+      halfMoves: 2,
+    });
+    state.root.children = [e4, d4];
+    e4.children = [e5];
+    d4.children = [d5, nf6];
+    store.getState().setState(state);
+
+    await act(async () => {
+      root.render(
+        <TreeStateContext.Provider value={store}>
+          <WorkspaceTabScope tabId="notation-test">
+            <GameNotation />
+          </WorkspaceTabScope>
+        </TreeStateContext.Provider>,
+      );
+    });
+
+    const model = buildNotationRows(state.root, {
+      showVariations: true,
+      showComments: true,
+      tableView,
+    });
+    const firstLevelToggle = model.rows.find((row) => row.type === "variation" && row.depth === 0);
+    expect(firstLevelToggle).toBeDefined();
+    expect(model.rows.some((row) => row.type === "comment")).toBe(true);
+    expect(model.rows.some((row) => row.type === "table")).toBe(tableView);
+    expect(model.rows.some((row) => row.type === "moves" && row.depth === 0)).toBe(!tableView);
+
+    const mounted = [...host.querySelectorAll("[data-index]")];
+    expect(mounted.length).toBe(model.rows.length);
+    for (const element of mounted) {
+      const row = model.rows[Number(element.getAttribute("data-index"))];
+      expect(element.firstElementChild?.classList.contains(styles.variationBlock)).toBe(
+        isVariationBlockRow(row),
+      );
+    }
+
+    const firstLevelIndex = model.rows.indexOf(firstLevelToggle!);
+    expect(
+      host
+        .querySelector(`[data-index="${firstLevelIndex}"]`)
+        ?.firstElementChild?.classList.contains(styles.variationBlock),
+    ).toBe(true);
+  },
+);
+
+test("collapse still hides variation moves and keeps the toggle in the variation block", async () => {
+  const state = defaultTree();
+  const move = parseUci("e2e4")!;
+  const e4 = createNode({
+    fen: "e4 b - - 0 1",
+    move,
+    san: "e4",
+    halfMoves: 1,
+  });
+  const d4 = createNode({
+    fen: "d4 b - - 0 1",
+    move,
+    san: "d4",
+    halfMoves: 1,
+  });
+  state.root.children = [e4, d4];
+  store.getState().setState(state);
+
+  await act(async () => {
+    root.render(
+      <TreeStateContext.Provider value={store}>
+        <WorkspaceTabScope tabId="notation-test">
+          <GameNotation />
+        </WorkspaceTabScope>
+      </TreeStateContext.Provider>,
+    );
+  });
+
+  expect(host.querySelector('[data-node="d4"]')).not.toBeNull();
+  const toggle = host.querySelector<HTMLButtonElement>('[aria-label="Notation.ToggleVariation"]');
+  expect(toggle).not.toBeNull();
+  expect(
+    toggle!.closest("[data-index]")?.firstElementChild?.classList.contains(styles.variationBlock),
+  ).toBe(true);
+
+  await act(async () => toggle!.click());
+
+  expect(host.querySelector('[data-node="d4"]')).toBeNull();
+  expect(host.querySelector('[aria-label="Notation.ToggleVariation"]')).not.toBeNull();
+  expect(
+    host
+      .querySelector('[aria-label="Notation.ToggleVariation"]')
+      ?.closest("[data-index]")
+      ?.firstElementChild?.classList.contains(styles.variationBlock),
+  ).toBe(true);
 });

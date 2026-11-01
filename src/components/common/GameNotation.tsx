@@ -434,7 +434,7 @@ function InlineRow({
 }) {
   return (
     <Box
-      className={row.variationParent ? styles.variationBorder : undefined}
+      className={row.depth >= 1 ? styles.variationBlock : undefined}
       style={{ marginLeft: row.depth * 12 }}
     >
       {row.moves.map((move) => (
@@ -485,7 +485,10 @@ function VariationRow({
 }) {
   const { t } = useTranslation();
   return (
-    <Box className={styles.variationBorder} style={{ marginLeft: row.depth * 12 }}>
+    <Box
+      className={`${styles.variationBlock} ${styles.variationToggle}`}
+      style={{ marginLeft: row.depth * 12 }}
+    >
       <IconAction
         label={t("Notation.ToggleVariation")}
         size="xs"

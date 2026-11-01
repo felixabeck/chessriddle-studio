@@ -75,9 +75,10 @@ function MoveCell(props: MoveCellProps) {
       component="button"
       className={`${classes.cell} ${props.fullWidth ? classes.cellFullWidth : ""}`}
       style={{
-        "--light-color": baseLight,
+        "--light-color":
+          color === "gray" ? `var(--cf-notation-move-color, ${baseLight})` : baseLight,
         "--light-hover-color": hoverLight,
-        "--dark-color": baseDark,
+        "--dark-color": color === "gray" ? `var(--cf-notation-move-color, ${baseDark})` : baseDark,
         "--dark-hover-color": hoverDark,
         "--dark-bg": darkBg,
         "--light-bg": lightBg,
