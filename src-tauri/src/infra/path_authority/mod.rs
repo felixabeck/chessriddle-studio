@@ -9612,6 +9612,30 @@ impl PathAuthority {
         Ok(entry)
     }
 
+    /// Checks the current registry location without opening the file or consulting collections.
+    /// Workspace membership is path-based, as it is for workspace moves and descendant removal.
+    pub(crate) fn ensure_pgn_not_trashed(&self, handle: &FileWorkspaceHandle) -> Result<(), Error> {
+        let Some(entry) = self.persistent.get(&handle.path_ref().id) else {
+            return Ok(());
+        };
+        let path = entry.stored.path.to_path()?;
+        for root in self.persistent.values().filter(|entry| {
+            entry.stored.target_is_dir && entry.stored.operations.contains(&PathOperation::ReadPgn)
+        }) {
+            let root_path = root.stored.path.to_path()?;
+            if let Ok(relative) = path.strip_prefix(root_path) {
+                let locator: Vec<_> = relative
+                    .components()
+                    .map(|part| part.as_os_str().to_os_string())
+                    .collect();
+                if crate::file_workspace::is_trash_locator(&locator) {
+                    return Err(Error::FileTrashed);
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn workspace_entry_path(
         &mut self,
         handle: &FileWorkspaceHandle,

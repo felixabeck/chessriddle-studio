@@ -321,6 +321,9 @@ pub enum Error {
     #[error("The game changed on disk")]
     StaleGame,
 
+    #[error("The file was moved to the trash")]
+    FileTrashed,
+
     #[error("Conflict: {0}")]
     Conflict(String),
 
@@ -565,6 +568,7 @@ impl Error {
             | Self::NoOpeningFound
             | Self::NoPuzzles
             | Self::GameNotFound(_)
+            | Self::FileTrashed
             | Self::EngineNotInitialized
             | Self::EngineDisconnected => ErrorCategory::MissingResource,
             Self::NotDistinctPlayers

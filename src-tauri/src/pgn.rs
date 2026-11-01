@@ -31,6 +31,20 @@ fn resolve_pgn(
         .with_mut(|authority| authority.resolve(file.path_ref(), operation, &[]))?
 }
 
+fn resolve_readable_pgn(
+    state: &AppState,
+    file: &crate::infra::path_authority::FileWorkspaceHandle,
+) -> Result<crate::infra::path_authority::ResolvedPath, Error> {
+    state.pgn_path_authority.with_mut(|authority| {
+        authority.ensure_pgn_not_trashed(file)?;
+        authority.resolve(
+            file.path_ref(),
+            crate::infra::path_authority::PathOperation::ReadPgn,
+            &[],
+        )
+    })?
+}
+
 #[derive(Clone)]
 pub(crate) struct PgnCapabilityRebind {
     authority: crate::infra::path_authority::SharedPathAuthority,
@@ -1256,16 +1270,20 @@ pub async fn count_pgn_games(
 ) -> Result<i32, Error> {
     let operation = crate::native_read_operation(ticket, &window, &state, "count_pgn_games")?;
     let cancellation = operation.token();
-    let repository = state.pgn_repository.clone();
-    let resolved = resolve_pgn(
-        &state,
-        &file,
-        crate::infra::path_authority::PathOperation::ReadPgn,
-    )?;
+    let state = state.inner().clone();
     crate::infra::operations::run_native_operation(operation, "count_pgn_games", async move {
-        count_pgn_games_core(resolved, &cancellation, &repository).await
+        count_workspace_games(&state, &file, &cancellation).await
     })
     .await
+}
+
+async fn count_workspace_games(
+    state: &AppState,
+    file: &crate::infra::path_authority::FileWorkspaceHandle,
+    cancellation: &CancellationToken,
+) -> Result<i32, Error> {
+    let resolved = resolve_readable_pgn(state, file)?;
+    count_pgn_games_core(resolved, cancellation, &state.pgn_repository).await
 }
 
 fn observe_count_hook(repository: &PgnRepository) -> Result<(), Error> {
@@ -1450,32 +1468,39 @@ pub async fn read_game(
 ) -> Result<StampedGame, Error> {
     let operation = crate::native_read_operation(ticket, &window, &state, "read_game")?;
     let cancellation = operation.token();
-    let repository = state.pgn_repository.clone();
-    let resolved = resolve_pgn(
-        &state,
-        &file,
-        crate::infra::path_authority::PathOperation::ReadPgn,
-    )?;
-    let authority = state.pgn_path_authority.clone();
+    let state = state.inner().clone();
     crate::infra::operations::run_native_operation(operation, "read_game", async move {
-        let mut game = read_game_core(resolved, n, &cancellation, &repository).await?;
-        BLOCKING_GATEWAY
-            .spawn_cancellable(cancellation, move |token| {
-                if game.present {
-                    game.linked = crate::db::linked_collections::qualify_source(
-                        &authority,
-                        &file,
-                        n,
-                        &game.stamp,
-                        &game.revision,
-                        token,
-                    )?;
-                }
-                Ok(game)
-            })
-            .await
+        read_workspace_game(&state, &file, n, &cancellation).await
     })
     .await
+}
+
+async fn read_workspace_game(
+    state: &AppState,
+    file: &crate::infra::path_authority::FileWorkspaceHandle,
+    n: i32,
+    cancellation: &CancellationToken,
+) -> Result<StampedGame, Error> {
+    let resolved = resolve_readable_pgn(state, file)?;
+    let mut game = read_game_core(resolved, n, cancellation, &state.pgn_repository).await?;
+    let authority = state.pgn_path_authority.clone();
+    let file = file.clone();
+    BLOCKING_GATEWAY
+        .spawn_cancellable(cancellation.clone(), move |token| {
+            authority.with_mut(|authority| authority.ensure_pgn_not_trashed(&file))??;
+            if game.present {
+                game.linked = crate::db::linked_collections::qualify_source(
+                    &authority,
+                    &file,
+                    n,
+                    &game.stamp,
+                    &game.revision,
+                    token,
+                )?;
+            }
+            Ok(game)
+        })
+        .await
 }
 
 async fn read_game_core(
@@ -2049,6 +2074,206 @@ mod tests {
         time::Duration,
     };
     use tauri::Manager;
+
+    #[tokio::test]
+    async fn trash_count_and_read_refuse_linked_and_unlinked_files_then_restore() {
+        use crate::{
+            db::linked_collections::{tests::Fixture, CollectionStatus},
+            error::ErrorCategory,
+            file_workspace::{restore_entry, trash_entry, WorkspaceFileType},
+        };
+
+        for purpose in [WorkspaceFileType::Game, WorkspaceFileType::Repertoire] {
+            let fixture = Fixture::new();
+            let file = fixture.create("games", "*", purpose.clone());
+            let collections = fixture.list();
+            if purpose == WorkspaceFileType::Game {
+                assert_eq!(collections.len(), 1);
+                assert_eq!(collections[0].file, file);
+                assert_eq!(collections[0].status, CollectionStatus::Ready);
+            } else {
+                assert!(collections.is_empty());
+            }
+            let token = CancellationToken::new();
+            let state = &fixture.state;
+            assert_eq!(
+                count_workspace_games(state, &file, &token).await.unwrap(),
+                1
+            );
+            let original = read_workspace_game(state, &file, 0, &token).await.unwrap();
+            assert!(original.present);
+            assert_eq!(
+                original.linked.is_some(),
+                purpose == WorkspaceFileType::Game
+            );
+
+            trash_entry(
+                &state.pgn_path_authority,
+                &state.workspace_mutation,
+                &fixture.workspace,
+                &file,
+                &token,
+            )
+            .unwrap();
+            let collections = fixture.list();
+            if purpose == WorkspaceFileType::Game {
+                assert_eq!(collections[0].status, CollectionStatus::Trashed);
+            } else {
+                assert!(collections.is_empty());
+            }
+            let count_error = count_workspace_games(state, &file, &token)
+                .await
+                .unwrap_err();
+            let read_error = read_workspace_game(state, &file, 0, &token)
+                .await
+                .unwrap_err();
+            for error in [count_error, read_error] {
+                assert!(matches!(error, Error::FileTrashed), "{error:?}");
+                let payload = error.renderer_payload();
+                assert_eq!(payload.category, ErrorCategory::MissingResource);
+                assert_eq!(payload.message, "The file was moved to the trash");
+            }
+
+            restore_entry(
+                &state.pgn_path_authority,
+                &state.workspace_mutation,
+                &fixture.workspace,
+                &file,
+                &token,
+            )
+            .unwrap();
+            let collections = fixture.list();
+            if purpose == WorkspaceFileType::Game {
+                assert_eq!(collections[0].status, CollectionStatus::Ready);
+            } else {
+                assert!(collections.is_empty());
+            }
+            assert_eq!(
+                count_workspace_games(state, &file, &token).await.unwrap(),
+                1
+            );
+            let restored = read_workspace_game(state, &file, 0, &token).await.unwrap();
+            assert_eq!(restored.pgn, original.pgn);
+            assert_eq!(restored.stamp, original.stamp);
+            assert_eq!(restored.linked.is_some(), original.linked.is_some());
+        }
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn trash_directory_descendant_reads_fail_then_restore() {
+        use crate::{
+            db::linked_collections::tests::Fixture,
+            file_workspace::{restore_entry, trash_entry},
+            infra::path_authority::{opened_file_identity, PathOperation},
+        };
+
+        let fixture = Fixture::new();
+        let folder_path = fixture.directory.path().join("library/folder");
+        std::fs::create_dir(&folder_path).unwrap();
+        let file_path = folder_path.join("child.pgn");
+        std::fs::write(&file_path, "*").unwrap();
+        let (folder, file) = fixture
+            .state
+            .pgn_path_authority
+            .with_mut(|authority| {
+                let mut register = |parts: &[&str], path: &Path, is_dir| {
+                    authority.register_workspace_child_observed(
+                        &fixture.workspace,
+                        &parts
+                            .iter()
+                            .map(std::ffi::OsString::from)
+                            .collect::<Vec<_>>(),
+                        "fixture",
+                        opened_file_identity(&File::open(path)?)?,
+                        is_dir,
+                        PathOperation::ReadPgn,
+                    )
+                };
+                let folder = register(&["folder"], &folder_path, true)?;
+                let file = register(&["folder", "child.pgn"], &file_path, false)?;
+                Ok::<_, Error>((folder, file))
+            })
+            .unwrap()
+            .unwrap();
+        let state = &fixture.state;
+        let token = CancellationToken::new();
+        assert_eq!(
+            count_workspace_games(state, &file, &token).await.unwrap(),
+            1
+        );
+        trash_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &fixture.workspace,
+            &folder,
+            &token,
+        )
+        .unwrap();
+        assert!(matches!(
+            count_workspace_games(state, &file, &token).await,
+            Err(Error::FileTrashed)
+        ));
+        assert!(matches!(
+            read_workspace_game(state, &file, 0, &token).await,
+            Err(Error::FileTrashed)
+        ));
+        restore_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &fixture.workspace,
+            &folder,
+            &token,
+        )
+        .unwrap();
+        assert_eq!(
+            count_workspace_games(state, &file, &token).await.unwrap(),
+            1
+        );
+        assert!(
+            read_workspace_game(state, &file, 0, &token)
+                .await
+                .unwrap()
+                .present
+        );
+    }
+
+    #[tokio::test]
+    async fn trash_guard_preserves_genuine_stale_game_qualification() {
+        use crate::{
+            db::linked_collections::{qualify_source, tests::Fixture, CollectionStatus},
+            file_workspace::WorkspaceFileType,
+        };
+
+        let fixture = Fixture::new();
+        let file = fixture.create("games", "1. e4 *", WorkspaceFileType::Game);
+        let collections = fixture.list();
+        assert_eq!(collections.len(), 1);
+        assert_eq!(collections[0].file, file);
+        assert_eq!(collections[0].status, CollectionStatus::Ready);
+        let token = CancellationToken::new();
+        let original = read_workspace_game(&fixture.state, &file, 0, &token)
+            .await
+            .unwrap();
+        assert!(original.linked.is_some());
+        std::fs::write(fixture.path("games"), "1. d4 d5 2. c4 *").unwrap();
+        let error = qualify_source(
+            &fixture.state.pgn_path_authority,
+            &file,
+            0,
+            &original.stamp,
+            &original.revision,
+            &token,
+        )
+        .unwrap_err();
+        assert!(matches!(error, Error::StaleGame));
+        assert_eq!(error.category(), crate::error::ErrorCategory::StaleGame);
+        assert!(read_workspace_game(&fixture.state, &file, 0, &token)
+            .await
+            .unwrap()
+            .linked
+            .is_some());
+    }
 
     #[tokio::test]
     async fn bounded_hook_only_waits_for_its_first_invocation() {

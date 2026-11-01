@@ -554,6 +554,7 @@ describe("normalizeError", () => {
         ["stale-game", "The game changed on disk", "validation"],
         ["cancellation", "connection aborted", "cancelled"],
         ["missing-resource", "I/O failure", "not-found"],
+        ["missing-resource", "The file was moved to the trash", "not-found"],
         ["permission", "I/O failure", "permission"],
         ["parsing", "parsing failure", "validation"],
         ["chess-data", "chess data failure", "validation"],
