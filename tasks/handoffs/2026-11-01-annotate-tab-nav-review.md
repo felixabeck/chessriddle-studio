@@ -202,3 +202,23 @@ the published base sat 13 B under it (d-20261101-03 raised total to 1,690,000 B)
   Fix: wording corrected in this file; a factual-wording correction of this record only, closed by
   the arbiter with unchanged semantics of every other entry.
 - Totals: diff findings 4 (CR-D1..CR-D4); Fix 3, Skip 1 (CR-D2); all Fix closed.
+
+## Browser verification and its repairs
+
+- verify-ui leaf (Codex): container e2e of the new journey passed; trace frames extracted. The
+  orchestrator's inspection found the focus-only hint's second line below the fold of the
+  scrollable Annotate panel at 800x720 and raw keymap strings in the hint. Repair: shared
+  `src/utils/formatKeymap.ts` routes the settings keycaps and the hint through one OS mapping
+  (`c7f09aa4`); a scroll-into-view attempt for the hint failed in the browser and was dropped as
+  ordinary scroll content of a scrollable panel, not clipping (horizontal containment asserted in
+  e2e). Coverage scope re-recorded for the new module, counts unchanged (`cc2ab4c6`).
+- WebKit probe: the annotation-navigation e2e journey also passed in Playwright WebKit
+  (throwaway config, port 4199), since Felix's window is WebKitGTK and the suite runs Chromium.
+
+## Diff review, closure rounds d3 and d4 (DIFF ce067a98..HEAD, then cc2ab4c6..HEAD)
+
+- d3: correctness, root-cause, code-quality, minimalism APPROVED; tests APPROVED with **CR-D5**
+  [should-fix] no rendered test of the settings keycaps. Fix: `KeybindInput.test.tsx`
+  (`78a7295e`) with revert proof (both tests red without `formatKeymap`, green restored).
+- d4: tests: CR-D5 CLOSED. APPROVED.
+- Totals: diff findings 5 (CR-D1..CR-D5); Fix 4, Skip 1 (CR-D2); every Fix closed.
