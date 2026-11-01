@@ -11308,3 +11308,14 @@ Former private decision identifier: d-20261029-14
 * **Reversal path:** Tighten total against a future smaller production build with comparable measurements while preserving the required behaviour. No Entry or largest-lazy increase is authorized by this decision.
 * **Decided by:** Claude Code, interactive session 8a80683c-193e-477c-bc7a-69f32289bcfd, full auto at Felix's request · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"510136d4feb85394875950e971c14bc69cb6b2b6639f41acbb6bd27c2563f2e8","input_sha256":"bbf1e74f564be81f857a92cdb7035ac844616135be54a710c7eba620b8bb64b9","kind":"mutation-receipt","operation":"c9a070794451a665232af21ddaa12c727dfcc4471fe3c21d254d3f5a53463fa1","options":{"section":null},"request_id_sha256":null,"results":["d-20261101-04"],"target":"decisions-ledger","v":1} -->
+
+### d-20261101-05 — How does the Annotate editor show its navigation keys, and is Esc rebindable?
+
+* **Question:** The new editor-scoped Tab/Shift+Tab/Esc navigation needs a discoverable hint; when is it shown, and does Esc get a keymap entry?
+* **Governs:** -
+* **Chosen:** one dimmed hint line under the comment editor, rendered only while the editor has focus and built from the live keymap values; Tab and Shift+Tab are new keymap entries (`ANNOTATION_NEXT_MOVE`, `ANNOTATION_PREVIOUS_MOVE`), Esc stays fixed.
+* **Rejected:** an always-visible hint (clutters the panel and churns every e2e screenshot of it); a tooltip on a toolbar control (not visible while typing); a rebindable Esc (it is the universal leave key, one more setting with no use).
+* **Reason:** Felix accepted the recommendation that the hint mention Esc (2026-11-01); the focus-only form shows it exactly while it applies. Reversal path: render the hint unconditionally or add an Esc keymap entry in `src/state/keybinds.ts`.
+* **Review:** `tasks/handoffs/2026-11-01-annotate-tab-nav-review.md`
+* **Decided by:** Claude Code (Opus 5.5), `full auto` build run annotate-tab-nav (session b88fc52e-ffd2-488e-b769-666bd9956a34), 2026-11-01 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"b524e77145f2fc926ace9136811b072446a3ee7eac740ec822f84f6c2a2876e1","input_sha256":"7911192a40a9748fc8557199e4eb5ff4d776f098c1418074e5943325b94f72b2","kind":"mutation-receipt","operation":"7085aca07f97a9fd9d80065831c4c3112c1cff040adb881fb4c9dde27e2014fa","options":{"section":null},"request_id_sha256":null,"results":["d-20261101-05"],"target":"decisions-ledger","v":1} -->
