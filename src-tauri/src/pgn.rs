@@ -2076,6 +2076,7 @@ mod tests {
     use tauri::Manager;
 
     #[tokio::test]
+    #[cfg(unix)]
     async fn trash_count_and_read_refuse_linked_and_unlinked_files_then_restore() {
         use crate::{
             db::linked_collections::{tests::Fixture, CollectionStatus},
@@ -2239,6 +2240,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(unix)]
     async fn trash_guard_preserves_genuine_stale_game_qualification() {
         use crate::{
             db::linked_collections::{qualify_source, tests::Fixture, CollectionStatus},
