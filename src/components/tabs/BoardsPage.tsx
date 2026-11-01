@@ -130,7 +130,12 @@ export default function BoardsPage() {
           )
         )
           return;
-        if (isPersistentGameOrigin(closedTab) && store.getState().dirty && !discard) {
+        // An origin-less analysis tree is the user's unsaved work (the modal's Save routes origin "none" to append-to-picked-file); play and puzzle trees mark themselves dirty on every move and keep closing directly.
+        if (
+          (isPersistentGameOrigin(closedTab) || closedTab.type === "analysis") &&
+          store.getState().dirty &&
+          !discard
+        ) {
           setPendingClose({ tabId: value, store });
           return;
         }

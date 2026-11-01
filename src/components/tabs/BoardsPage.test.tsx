@@ -1110,6 +1110,66 @@ test("dirty confirmation leaves analysis eligible until discard establishes clos
   expect(store.get(tabsAtom).some((candidate) => candidate.value === "current")).toBe(false);
 });
 
+test("dirty origin-less analysis tab opens unsaved-changes confirm", async () => {
+  fixtures.persistent = false;
+  fixtures.dirty = true;
+  fixtures.tabs = [
+    { value: "current", name: "Current", type: "analysis", gameOrigin: { kind: "none" } },
+    { value: "next", name: "Next", type: "new", gameOrigin: { kind: "none" } },
+  ];
+  store.set(tabsAtom, fixtures.tabs);
+  await renderPage();
+
+  await act(async () => {
+    fixtures.closeHandler!();
+    await Promise.resolve();
+  });
+  expect(fixtures.confirm?.pendingClose?.tabId).toBe("current");
+  expect(store.get(tabsAtom).some((candidate) => candidate.value === "current")).toBe(true);
+  expect(fixtures.killEngines).not.toHaveBeenCalled();
+});
+
+test("clean origin-less analysis tab closes without confirm", async () => {
+  fixtures.persistent = false;
+  fixtures.dirty = false;
+  fixtures.tabs = [
+    { value: "current", name: "Current", type: "analysis", gameOrigin: { kind: "none" } },
+    { value: "next", name: "Next", type: "new", gameOrigin: { kind: "none" } },
+  ];
+  store.set(tabsAtom, fixtures.tabs);
+  await renderPage();
+
+  await act(async () => {
+    fixtures.closeHandler!();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(fixtures.confirm?.pendingClose).toBeNull();
+  expect(store.get(tabsAtom).some((candidate) => candidate.value === "current")).toBe(false);
+});
+
+test.each(["play", "puzzles"] as const)(
+  "dirty origin-less %s tab closes without confirm",
+  async (type) => {
+    fixtures.persistent = false;
+    fixtures.dirty = true;
+    fixtures.tabs = [
+      { value: "current", name: "Current", type, gameOrigin: { kind: "none" } },
+      { value: "next", name: "Next", type: "new", gameOrigin: { kind: "none" } },
+    ];
+    store.set(tabsAtom, fixtures.tabs);
+    await renderPage();
+
+    await act(async () => {
+      fixtures.closeHandler!();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(fixtures.confirm?.pendingClose).toBeNull();
+    expect(store.get(tabsAtom).some((candidate) => candidate.value === "current")).toBe(false);
+  },
+);
+
 const recoveryRoutes = [
   { type: "play", child: "board-game-child" },
   { type: "analysis", child: "board-analysis-child" },
