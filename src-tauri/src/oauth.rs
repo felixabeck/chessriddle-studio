@@ -1744,9 +1744,24 @@ mod tests {
 
     #[tokio::test]
     async fn production_revocation_redacts_connection_failure() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let url = format!("http://{}/api/token", listener.local_addr().unwrap());
-        drop(listener);
+        // Keep the port reserved for the whole dial: a freed ephemeral port can be
+        // handed to a concurrent loopback fixture (f-20261101-02).
+        let reservation = tokio::net::TcpSocket::new_v4().unwrap();
+        reservation.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+        let addr = reservation.local_addr().unwrap();
+        let url = format!("http://{addr}/api/token");
+        assert_eq!(
+            std::net::TcpListener::bind(addr).unwrap_err().kind(),
+            std::io::ErrorKind::AddrInUse,
+        );
+        // Generous hang detector for SYN retries against a non-listening port.
+        const RESERVATION_REFUSE_TIMEOUT: Duration = Duration::from_secs(10);
+        assert_eq!(
+            std::net::TcpStream::connect_timeout(&addr, RESERVATION_REFUSE_TIMEOUT)
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::ConnectionRefused,
+        );
         let client = Arc::new(
             reqwest::Client::builder()
                 .no_proxy()
@@ -1759,6 +1774,7 @@ mod tests {
         let outcome = services.revoke_token(token).await;
         assert_eq!(outcome, LichessRevocationOutcome::Unreachable);
         assert_token_free_outcome(outcome, token);
+        drop(reservation);
     }
 
     #[tokio::test]
