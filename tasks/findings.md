@@ -20101,3 +20101,17 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Failure scenario:** Player X, colour Any, Player Elo 2700-3000 and Opponent 0-1000 lists a 1500 vs 2750 game; the list and its count contain non-matching games.
 * **Fix shape:** for `Any`, `(W∈r1 ∧ B∈r2) ∨ (B∈r1 ∧ W∈r2)` with a missing band as true; when `player1` is set, tie r1 to player1's side. Mirror in `count_query`.
 * **Found by:** cloud audit session session_01JbeKomxzG32RyrZzRykRDV (PGN/database audit, base 301104da), verified against local HEAD 301104da by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### Database import silently drops games whose FEN header carries impossible castling rights
+
+* **ID:** f-20261101-09 · **Status:** open · **Area:** pgn-import · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** data-loss
+* **Where:** `src-tauri/src/db/encoding.rs:15-20` (`database_setup_to_chess` tolerates only too much material), `src-tauri/src/db/mod.rs:539-555` (FEN header sets `self.skip = true` on setup failure).
+* **Defect:** a FEN such as `4k3/8/8/8/8/8/8/4K3 w KQkq - 0 1` (stale rights, no rooks; written by older tools) fails `Chess::from_setup` with invalid castling rights, and the game is skipped without any report, while the Files view opens the same game because chessops drops impossible rights.
+* **Failure scenario:** importing a study with such headers into a database loses those games silently.
+* **Fix shape:** add `.or_else(PositionError::ignore_invalid_castling_rights)` in `database_setup_to_chess` (shared by encode, decode and search, so they stay symmetric) plus a round-trip test.
+* **Found by:** cloud audit session session_01JbeKomxzG32RyrZzRykRDV (PGN/database audit, base 301104da), verified against local HEAD 301104da by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
