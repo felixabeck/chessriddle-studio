@@ -16261,7 +16261,7 @@ Root corrected the initial frozen-phase disposition under push-review-policy sec
 
 ### Obsolete physical-generation reload rejection hides its replacement
 
-* **ID:** f-20261010-20 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261010-20 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** e838b3a7-7402-4e53-a614-eb2da79f3765 · output /home/felixb/.claude/drain-state/chessfable-0a459a4f.d/attempt-e838b3a7-7402-4e53-a614-eb2da79f3765-1.jsonl
 * **Where:** src/components/tabs/FileFreshnessGate.tsx:230.
 * **Defect:** reloadFromDisk fulfillment checks actionIsCurrent but rejection checks only signal.aborted. Physical-only replacement leaves the signal un-aborted, so missing-resource, invalid-input or conflict can mark the new logical owner unavailable.
@@ -16274,6 +16274,9 @@ Root corrected the initial frozen-phase disposition under push-review-policy sec
 * **Closure qualification:** All nine R6 lenses reached EOS and source-closed prior adopted obligations within their inspected classes. They separately found inherited count-publication refusal f-20261010-27, physical blank-tree/page durability f-20261010-29 and existing terminal-replay dirty publication f-20261010-30, plus the dead variation flag f-20261010-28. These new corrections and fresh cumulative closure remain pending. The lifetime/admission class of f26 is source-covered, while its complete failure contract is pending f27/f29. This checkpoint leaves the finding open. Pixels, real native product, fourteen standalone fault/restoration stages and final push gates are not established by source proof. Complete raw R6 reports and root dispositions are in tasks/handoffs/2026-10-10-game-opening-round6.md.
 * **Review disclosure:** Plan authorship and arbitration shared one context. Detection ran on the same model family as the code.
 <!-- ledger-meta {"command":"annotate","effect_lines":3,"effect_sha256":"f704023f2f98fc690134fd2021846027339f52832f275a445d814a5ffdc7a49c","input_sha256":"57ac78351ad89d319aab8a9c8ec14495e89fdef0398debc042803df609145917","kind":"mutation-receipt","operation":"28f38ba33c70403b5baaacf389ba9de04ee6113eebd07e223cf7718000d70a42","options":{"section":null},"request_id_sha256":null,"results":["f-20261010-20"],"target":"f-20261010-20","v":1} -->
+
+* **Closed, already fixed:** Pickup re-check on 2026-11-01 found the defect gone. Commit 7b363143 changed the reloadFromDisk rejection guard to the same `actionIsCurrent(signal)` predicate the fulfillment path uses (src/components/tabs/FileFreshnessGate.tsx, reloadFromDisk catch). Regression tests "obsolete physical-generation reload rejection with %s preserves its durable replacement" and "current-owner reload rejection with %s surfaces its error" in src/components/tabs/FileFreshnessGate.test.tsx cover missing-resource, invalid-input, conflict and io. Proof this session: the 8 tests pass at 301104da; reverting the guard to `!signal.aborted` makes all 4 obsolete-owner cases fail; exact restoration leaves the tree clean. No code change needed.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"88b869fc9d3799f22e819d7e0abec01bab84528236a44df6e96b01ee11448751","header_sha256":"a5da3ef3fcfd7285c98dc12ae85d35c65a99ca86f33f1ba6e80dae5f273a0cd6","header_status":"handled","input_sha256":"a0ffd58d0ec6048adc05f80e191708aa6fc8a9cc9b51714c0b7fcaf7b18b9c6b","kind":"mutation-receipt","operation":"080d849f194ae57b0af8f8af39a35d7996ffd9fb05f8c9935fd063fd2214a847","options":{"section":null},"request_id_sha256":null,"results":["f-20261010-20"],"target":"f-20261010-20","v":1} -->
 
 ### PGN Start path acceptance uses an unnamed repeated bound
 
