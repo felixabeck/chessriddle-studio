@@ -1,8 +1,8 @@
 # Review record: Annotate editor move navigation (2026-11-01)
 
 Build run `annotate-tab-nav` (Claude Code orchestrator, Codex executor, session
-b88fc52e-ffd2-488e-b769-666bd9956a34), full auto. Decision: d-20261101-05 (hint and fixed Esc). Commits made on branch `build/annotate-tab-nav-20261101` and
-released to `master` by rebase and fast-forward push: feature, mutation repair, key formatter, coverage
+b88fc52e-ffd2-488e-b769-666bd9956a34), full auto. Decision: d-20261101-05 (hint and fixed Esc). Commits made on branch `build/annotate-tab-nav-20261101`;
+their release to `master` (rebase and fast-forward push) happens after this record is committed: feature, mutation repair, key formatter, coverage
 scope, settings test, decision and this record.
 
 ## Plan review (verbatim plan record follows)
@@ -231,3 +231,5 @@ its bundle raise and CR-D1 measurement-source fix became redundant: those four c
 when the branch was rebuilt on master by cherry-pick. The hint decision was re-recorded as
 d-20261101-05; no separate bundle decision remains, because the feature's +1,135 B fits under
 master's ceiling. CR-D1 is therefore moot rather than closed on master.
+- Post-rebase records lens: **CR-D6** [should-fix] the preamble stated the release as done before
+  the push. Fix: preamble now records the release as following this record.
