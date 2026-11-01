@@ -20263,3 +20263,19 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Failure scenario:** a game whose move after some position is annotated by Generate Report (variations on, the default) where the engine's best move is `O-O` and `O-O` already exists as the main move or a sideline: the tree gets two identical `O-O` branches.
 * **Fix shape:** find the existing child by normalized move identity (`uciNormalize` on both sides, or SAN as `makeMove` does) and store the variation move normalized. Unit test with a castling best move.
 * **Found by:** cloud audit session session_01JbeKom4B2MLm9AFduSMH4Y (engine audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee (chessops castling encoding read in node_modules), 2026-11-01.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### Keyboard move input bypasses the board's history, view-only and editing guards, so a live game plays a move entered on a past position
+
+* **ID:** f-20261101-20 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Where:** `src/components/boards/Board.tsx:355-425` (`keyboardMove` checks only `dests.get(keyboardSource)` of the displayed node, then calls `makeMove`), `Board.tsx:596-603` (pointer `dests` are `undefined` when `editingMode || viewOnly` or `disableVariations && currentNode.children.length > 0`), `Board.tsx:201-215` (`makeMove` → `onMove(makeUci(move))` without position identity), `src/components/boards/BoardGame.tsx` `handleHumanMove` → `tauri.makeGameMove(gameId, session, uci)`, `src-tauri/src/game.rs` `make_move` (applies the UCI to the live position).
+* **Defect:** the keyboard path never consults `disableVariations`, `viewOnly`, `editingMode` or the movable colour, and the native game receives no expected ply or FEN.
+* **Failure scenario:** in a human-vs-engine game as White after 1.e4 e5 2.Nf3 Nc6, step back to the position after 1...e5 and enter f1 → c4 with the keyboard: `f1c4` is legal live too, so the game records 3.Bc4 although the mouse correctly refuses moves while viewing history.
+* **Fix shape:** derive the keyboard's legal targets from the same effective `dests`/movable colour as the Chessground props; send the expected ply or FEN with `make_game_move` and refuse a mismatch natively.
+* **Lens:** `review-correctness`
+* **Proof:** a Board test entering a keyboard move while viewing history in a `disableVariations` game calls no `onMove`; a native `make_move` test refuses a stale expected ply.
+* **Found by:** cloud audit session session_01JbeKok45YnAvBbVKxMsko6 (puzzles/home/databases/board input audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
