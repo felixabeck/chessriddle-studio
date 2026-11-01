@@ -1,3 +1,41 @@
 [data-mantine-color-scheme] .recentFileRow:hover {
   background-color: var(--cf-surface-inset);
 }
+.home {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.actions {
+  flex-shrink: 0;
+}
+
+.bottom {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--mantine-spacing-lg);
+  flex: 1 0 auto;
+}
+
+.bottomCard {
+  min-width: 0;
+  min-height: 16rem;
+}
+
+.list {
+  flex: 1;
+  min-height: 12rem;
+}
+
+@media (min-width: 75em) {
+  .bottom {
+    grid-template-columns: 3fr 2fr;
+    min-height: 20rem;
+    flex: 1 0 20rem;
+  }
+
+  .list {
+    height: 0;
+  }
+}

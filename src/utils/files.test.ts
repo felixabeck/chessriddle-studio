@@ -42,7 +42,12 @@ vi.mock("./tabs", () => ({ createTab: mocks.createTab }));
 import { TauriCommandError } from "@/platform/tauri";
 import type { FileWorkspaceHandle, WriteStamp } from "@/bindings";
 import { defaultGame, makePgn } from "chessops/pgn";
-import { fileWorkspaceAtom, fileWorkspaceDisplayNameAtom } from "@/state/atoms";
+import {
+    addRecentFileAtom,
+    tabFamily,
+    fileWorkspaceAtom,
+    fileWorkspaceDisplayNameAtom,
+} from "@/state/atoms";
 import {
     getFileFreshness,
     removeFileFreshness,
@@ -93,6 +98,8 @@ describe("openFile tab admission", () => {
         mocks.parsePGN.mockImplementation(async (pgn: string) => {
             const tree = (await import("@/utils/treeReducer")).defaultTree();
             tree.headers.event = pgn.match(/\[Event "([^"]+)"\]/)?.[1] ?? "";
+            tree.headers.white = pgn.match(/\[White "([^"]+)"\]/)?.[1] ?? "";
+            tree.headers.black = pgn.match(/\[Black "([^"]+)"\]/)?.[1] ?? "";
             return tree;
         });
         mocks.readGame.mockResolvedValue({
@@ -124,11 +131,33 @@ describe("openFile tab admission", () => {
             }),
         );
         expect(mocks.storeSet).toHaveBeenCalledTimes(2);
+        expect(mocks.storeSet).toHaveBeenCalledWith(tabFamily("tab-id"), "practice");
+    });
+
+    test.each([
+        { pgn: "*", name: "Example" },
+        { pgn: '[White "White"]\n[Black "Black"]\n\n*', name: "White - Black" },
+    ])("uses the informative name $name for the tab and recent entry", async ({ pgn, name }) => {
+        mocks.readGame.mockResolvedValueOnce({
+            pgn,
+            stamp: freshStamp,
+            revision: "r1",
+            present: true,
+        });
+        mocks.createTab.mockResolvedValueOnce("tab-id");
+        await openFile({ ...file, name: "Example.pgn" }, setTabs);
+        expect(mocks.createTab).toHaveBeenCalledWith(
+            expect.objectContaining({ tab: { name, type: "analysis" } }),
+        );
+        expect(mocks.storeSet).toHaveBeenCalledWith(
+            addRecentFileAtom,
+            expect.objectContaining({ name }),
+        );
     });
 
     test("loads current disk text rather than accepting a preview supplied by the caller", async () => {
         mocks.readGame.mockResolvedValueOnce({
-            pgn: freshPgn,
+            pgn: '[Event "Fresh from disk"]\n\n1. e4 e5 *',
             stamp: freshStamp,
             revision: "new-revision",
             present: true,

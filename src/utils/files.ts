@@ -137,7 +137,8 @@ export async function openFile(
     const loaded = await loadFileGame(file.handle, gameNumber);
     let tabName = options?.tabName ?? file.name ?? "Untitled";
     if (options?.tabName === undefined && loaded.pgn) {
-        tabName = getGameName(loaded.tree.headers);
+        const gameName = getGameName(loaded.tree.headers);
+        tabName = gameName === "Unknown" ? file.name.replace(/\.pgn$/i, "") : gameName;
     }
 
     const id = await createTab({

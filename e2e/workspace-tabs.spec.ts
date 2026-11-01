@@ -16,6 +16,90 @@ import {
 import { deserializeStorageValue } from "../src/state/store/debouncedStorage";
 import { createEmptyCard } from "ts-fsrs";
 
+test("workspace-tabs: home fills remaining height with reachable recent and due lists", async ({
+    page,
+    mockScenario,
+}, testInfo) => {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    const recents = Array.from({ length: 10 }, (_, i) => ({
+        name: `Recent ${i + 1}`,
+        handle: { id: { id: `home-${i}` }, kind: "fileWorkspace" },
+        type: i % 3 === 0 ? "repertoire" : "game",
+        lastOpened: Date.UTC(2026, 9, 31 - i),
+    }));
+    await page.addInitScript(
+        (stored) => localStorage.setItem("recent-files", stored),
+        JSON.stringify(recents),
+    );
+    await mockScenario({
+        commands: {
+            count_pgn_games: { result: 1 },
+            load_practice_deck: {
+                result: {
+                    positionsDocument: JSON.stringify({
+                        positions: [
+                            {
+                                fen: "start",
+                                answer: "e4",
+                                card: createEmptyCard(),
+                            },
+                        ],
+                    }),
+                    revision: 1,
+                    generation: 0,
+                    migrated: true,
+                    unappliedReviews: 0,
+                    orphansAcknowledged: true,
+                },
+            },
+        },
+    });
+    await page.goto("/");
+    const recent = page.locator("[data-home-recents]");
+    const due = page.locator("[data-home-due]");
+    const viewport = recent.locator(".mantine-ScrollArea-viewport");
+    const rows = recent.locator("[data-recent-file]");
+    await expect(rows).toHaveCount(10);
+    await expect(due.locator("[data-due-file]")).toHaveCount(4);
+    const card = (await recent.boundingBox())!;
+    const dueBox = (await due.boundingBox())!;
+    const list = (await viewport.boundingBox())!;
+    const title = (await recent.locator("[data-home-title]").boundingBox())!;
+    expect(list.height, "recent list exceeds the old 300px cap").toBeGreaterThan(300);
+    expect(Math.abs(list.y + list.height - (card.y + card.height - 17))).toBeLessThan(8);
+    expect(Math.abs(list.y - (title.y + title.height + 10))).toBeLessThan(8);
+    expect(Math.abs(card.y + card.height - 1000)).toBeLessThan(32);
+    expect(Math.abs(dueBox.y + dueBox.height - 1000)).toBeLessThan(32);
+    expect(Math.abs(card.y - dueBox.y)).toBeLessThan(2);
+    expect(dueBox.x).toBeGreaterThan(card.x + card.width);
+    for (let i = 0; i < 10; i++) {
+        await rows.nth(i).scrollIntoViewIfNeeded();
+        const box = (await rows.nth(i).boundingBox())!;
+        const visible = (await viewport.boundingBox())!;
+        expect(box.y).toBeGreaterThanOrEqual(visible.y - 1);
+        expect(box.y + box.height).toBeLessThanOrEqual(visible.y + visible.height + 1);
+    }
+    await testInfo.attach("home-desktop.png", {
+        body: await page.screenshot(),
+        contentType: "image/png",
+    });
+    await page.setViewportSize({ width: 600, height: 500 });
+    const narrowRecent = (await recent.boundingBox())!;
+    const narrowDue = (await due.boundingBox())!;
+    expect(narrowDue.y).toBeGreaterThan(narrowRecent.y + narrowRecent.height);
+    await rows.last().scrollIntoViewIfNeeded();
+    await expect(rows.last()).toBeInViewport();
+    await due.scrollIntoViewIfNeeded();
+    await expect(due).toBeInViewport();
+    await expect(
+        due.getByRole("button", { name: "Practice", exact: true }).last(),
+    ).toBeInViewport();
+    await testInfo.attach("home-narrow.png", {
+        body: await page.screenshot(),
+        contentType: "image/png",
+    });
+});
+
 for (const { count, linked } of [
     { count: 0, linked: false },
     { count: 3, linked: false },

@@ -1,6 +1,35 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { createInstance } from "i18next";
+
+const catalogues = import.meta.glob<{ translation: Record<string, string> }>(
+  "../../translation/*.json",
+  { eager: true, import: "default" },
+);
+
+test.each(Object.entries(catalogues))(
+  "new home labels resolve without fallback in %s",
+  async (path, catalogue) => {
+    const locale = path.split("/").at(-1)!.replace(".json", "");
+    const instance = createInstance();
+    await instance.init({ lng: locale, fallbackLng: false, resources: { [locale]: catalogue } });
+    for (const key of [
+      "Home.RecentFiles.UntitledGame",
+      "Home.DuePractice.Title",
+      "Home.DuePractice.Total",
+      "Home.DuePractice.Incomplete",
+      "Home.DuePractice.LoadFailed",
+      "Home.DuePractice.NothingDue",
+    ]) {
+      expect(instance.exists(key)).toBe(true);
+      expect(instance.t(key, { positions: 7, repertoires: 2 })).not.toBe(key);
+      expect(instance.t(key, { positions: 7, repertoires: 2 }).trim()).not.toBe("");
+    }
+    expect(instance.t("Home.DuePractice.Total", { positions: 7, repertoires: 2 })).toContain("7");
+    expect(instance.t("Home.DuePractice.Total", { positions: 7, repertoires: 2 })).toContain("2");
+  },
+);
 
 const fixtures = vi.hoisted(() => ({
   atoms: {
@@ -32,6 +61,10 @@ const fixtures = vi.hoisted(() => ({
   storeSet: vi.fn(),
   dueStats: { due: 0, unseen: 0 },
   deckStatus: "ready" as "loading" | "ready" | "read-failed" | "write-pending" | "write-blocked",
+  decks: {} as Record<
+    string,
+    { status: string; positions: Array<{ due: number; unseen: number }> }
+  >,
 }));
 
 import NewTabHome from "./NewTabHome";
@@ -46,13 +79,22 @@ vi.mock("@mantine/notifications", () => ({ notifications: { show: fixtures.notif
 vi.mock("@/state/atoms", () => ({
   activeTabAtom: fixtures.atoms.activeTab,
   addRecentFileAtom: fixtures.atoms.addRecentFile,
-  deckAtomFamily: () => fixtures.atoms.deckFamily,
+  deckAtomFamily: ({ file }: { file: string }) => ({ file }),
   recentFilesAtom: fixtures.atoms.recentFiles,
   tabFamily: () => fixtures.atoms.tabFamily,
   tabsAtom: fixtures.atoms.tabs,
 }));
 vi.mock("jotai", () => ({
-  useAtom: (atom: symbol) => {
+  atom: (read: unknown) => ({ read }),
+  useAtom: (atom: symbol | { read?: (get: (key: { file: string }) => unknown) => unknown }) => {
+    if (typeof atom === "object" && atom.read) {
+      return [
+        atom.read(
+          ({ file }) => fixtures.decks[file] ?? { positions: [], status: fixtures.deckStatus },
+        ),
+        vi.fn(),
+      ];
+    }
     if (atom === fixtures.atoms.recentFiles) {
       return [fixtures.recentFiles, fixtures.setRecentFiles];
     }
@@ -72,7 +114,8 @@ vi.mock("@/utils/pathCapabilities", () => ({
   fileWorkspaceKey: (handle: { id: { id: string } }) => handle.id.id,
 }));
 vi.mock("@/components/files/opening", () => ({
-  getStats: () => fixtures.dueStats,
+  getStats: (positions: Array<{ due: number; unseen: number }>) =>
+    positions[0] ?? fixtures.dueStats,
 }));
 vi.mock("@/utils/tabs", () => ({ createTab: fixtures.createTab }));
 vi.mock("@/utils/files", () => ({ openFile: fixtures.openFile }));
@@ -93,7 +136,12 @@ vi.mock("lucide-react", () => ({
   Target: () => null,
   Crosshair: () => null,
 }));
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    i18n: { language: "en-US" },
+    t: (key: string, values?: unknown) => (values ? key + JSON.stringify(values) : key),
+  }),
+}));
 vi.mock("@mantine/core", () => {
   const element = ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
     <div {...props}>{children}</div>
@@ -104,7 +152,7 @@ vi.mock("@mantine/core", () => {
     Button: element,
     Card: element,
     Group: element,
-    ScrollArea: { Autosize: element },
+    ScrollArea: element,
     SimpleGrid: element,
     Stack: element,
     Text: element,
@@ -118,6 +166,102 @@ vi.mock("@mantine/core", () => {
 });
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+test.each(["count", "open"] as const)(
+  "removes a missing recent on %s failure and still notifies",
+  async (stage) => {
+    await act(async () => root.render(<NewTabHome id="new-tab" />));
+    const failure = {
+      tag: "backend-error",
+      category: "missing-resource",
+      message: "The file was moved to the trash",
+    };
+    if (stage === "count") fixtures.countPgnGames.mockRejectedValueOnce(failure);
+    else fixtures.openFile.mockRejectedValueOnce(failure);
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("[data-recent-file]")!.click(),
+    );
+    const update = fixtures.setRecentFiles.mock.calls.at(-1)![0];
+    const newer = {
+      ...fixtures.recentFiles[0],
+      handle: { id: { id: "newer" }, kind: "fileWorkspace" },
+    };
+    expect(update([...fixtures.recentFiles, newer])).toEqual([newer]);
+    expect(fixtures.notify).toHaveBeenCalledWith(
+      expect.objectContaining({ message: failure.message }),
+    );
+  },
+);
+
+test("displays stored Unknown with a localized untitled label and date, keeping named rows", async () => {
+  fixtures.recentFiles.push({
+    ...fixtures.recentFiles[0],
+    name: "Unknown",
+    lastOpened: Date.UTC(2026, 9, 23),
+    handle: { id: { id: "unknown" }, kind: "fileWorkspace" },
+  });
+  await act(async () => root.render(<NewTabHome id="new-tab" />));
+  const rows = container.querySelectorAll("[data-recent-file]");
+  expect(rows[0].textContent).toContain("stale");
+  expect(rows[1].textContent).toContain("Home.RecentFiles.UntitledGame · Oct 23, 2026");
+  expect(rows[1].textContent).not.toContain("Unknown");
+  await act(async () => (rows[1] as HTMLButtonElement).click());
+  expect(fixtures.openFile).toHaveBeenCalledWith(expect.anything(), fixtures.setTabs, {
+    tabName: "Unknown",
+  });
+});
+
+test("orders due repertoires by due plus unseen and recency, totals them, and reuses recent-open", async () => {
+  fixtures.recentFiles = ["older", "highest", "newer", "hydrating", "failed", "done"].map(
+    (name, i) => ({
+      name,
+      type: "repertoire",
+      handle: { id: { id: name }, kind: "fileWorkspace" },
+      lastOpened: i,
+    }),
+  );
+  fixtures.decks = {
+    older: { status: "ready", positions: [{ due: 2, unseen: 1 }] },
+    highest: { status: "write-pending", positions: [{ due: 3, unseen: 2 }] },
+    newer: { status: "ready", positions: [{ due: 1, unseen: 2 }] },
+    hydrating: { status: "loading", positions: [] },
+    failed: { status: "read-failed", positions: [] },
+    done: { status: "ready", positions: [] },
+  };
+  await act(async () => root.render(<NewTabHome id="new-tab" />));
+  const panel = container.querySelector("[data-home-due]")!;
+  const rows = [...panel.querySelectorAll("[data-due-file]")];
+  expect(rows.map((row) => row.textContent?.split("Board.")[0])).toEqual([
+    "highest5 ",
+    "newer3 ",
+    "older3 ",
+    "failedHome.DuePractice.LoadFailed",
+  ]);
+  expect(panel.textContent).toContain('Home.DuePractice.Total{"positions":11,"repertoires":3}');
+  expect(panel.textContent).toContain("Home.DuePractice.Incomplete");
+  expect(panel.textContent).not.toContain("Home.DuePractice.NothingDue");
+  expect(panel.textContent).not.toContain("hydrating");
+  await act(async () => rows[0].querySelector<HTMLElement>(":scope > :last-child")!.click());
+  expect(fixtures.openFile).toHaveBeenCalledWith(
+    expect.objectContaining({ name: "highest", metadata: { type: "repertoire", tags: [] } }),
+    fixtures.setTabs,
+    { tabName: "highest" },
+  );
+});
+
+test.each(["ready", "loading", "read-failed"] as const)(
+  "shows nothing due only for fully loaded decks: %s",
+  async (status) => {
+    fixtures.deckStatus = status;
+    fixtures.recentFiles[0].type = "repertoire";
+    await act(async () => root.render(<NewTabHome id="new-tab" />));
+    const panel = container.querySelector("[data-home-due]")!;
+    expect(panel.textContent?.includes("Home.DuePractice.NothingDue")).toBe(status === "ready");
+    expect(panel.textContent?.includes("Home.DuePractice.LoadFailed")).toBe(
+      status === "read-failed",
+    );
+  },
+);
 
 let container: HTMLDivElement;
 let root: Root;
@@ -143,6 +287,7 @@ beforeEach(() => {
   ]);
   fixtures.dueStats = { due: 0, unseen: 0 };
   fixtures.deckStatus = "ready";
+  fixtures.decks = {};
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
