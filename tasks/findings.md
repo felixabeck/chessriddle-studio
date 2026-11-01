@@ -20051,13 +20051,15 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 
 ### "Remove duplicates" deletes games that differ in start FEN, result, ratings or time control
 
-* **ID:** f-20261101-05 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261101-05 · **Status:** handled · **Area:** db-search · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** data-loss
 * **Where:** `src-tauri/src/db/mod.rs:3624-3644` (`delete_duplicated_games_transaction`), triggered by `src/components/databases/useDatabaseLibrary.tsx` `runCleanup(tauri.deleteDuplicatedGames)`.
 * **Defect:** the duplicate partition is `EventID, SiteID, Round, WhiteID, BlackID, Moves, Date, UTCTime`. It omits `FEN`, `Result`, `WhiteElo`, `BlackElo`, `TimeControl`. `Moves` stores legal-move indexes relative to the start position, so identical bytes from different start FENs are different games. Window partitions treat NULLs as equal.
 * **Failure scenario:** a puzzle or study database where every game has placeholder tags (`Event "Puzzles"`, `?` players, `????.??.??`), a different `[FEN]` and an empty or equal move list. "Remove duplicates" permanently deletes all but the lowest ID.
 * **Fix shape:** add at least `FEN`, `Result`, `WhiteElo`, `BlackElo`, `TimeControl` to the partition; one regression test pair per differing field. `BACKEND_AUDIT_PLAN.md:158` marks this done but the SQL is unchanged.
 * **Found by:** cloud audit session session_01JbeKomxzG32RyrZzRykRDV (PGN/database audit, base 301104da), verified against local HEAD 301104da by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+* **Handled (2026-11-01, drain 88a10add):** commit 56125d43 adds FEN, Result, WhiteElo, BlackElo, TimeControl to the ROW_NUMBER partition in delete_duplicated_games_transaction. Test deleting_duplicate_games_keeps_games_that_differ_in_fen_result_ratings_or_time_control covers one differing pair per column; the true-duplicate test still deletes one. Implemented by a Grok write leaf.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"f0c888988bf0477e16d074e05aeff1ef9b3bd5322d89e05876f372970efdfb91","header_sha256":"ef38e828b36efe2533b234b8c50e510add6a0cd6247418523c6feef7c5dc7118","header_status":"handled","input_sha256":"9dee94226586d2686e617cd5ad5c36b2324c257683ebb79d911080d3cf053f92","kind":"mutation-receipt","operation":"4fb9f6f1c852c11ca6fa9542f4a2327dade51e3d87b4236f56409f1fdc63cfff","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-05"],"target":"f-20261101-05","v":1} -->
 
 ---
 
