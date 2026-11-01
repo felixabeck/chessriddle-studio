@@ -20004,7 +20004,7 @@ Fixed in f1cba40d and c6ef6566 (build adopting the reviewed plan `tasks/handoffs
 
 ### rust-macos-test fails the redacts revocation test's refusing probe: macOS drops a SYN to a bound, non-listening socket
 
-* **ID:** f-20261101-04 · **Status:** open · **Area:** oauth-credentials · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261101-04 · **Status:** handled · **Area:** oauth-credentials · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 6a447bd9-6a5b-4ef8-b4cc-58d0ef70d43b
 * **Impact class:** tooling
 * **Follow-up of:** f-20261101-02
@@ -20013,3 +20013,6 @@ Fixed in f1cba40d and c6ef6566 (build adopting the reviewed plan `tasks/handoffs
 * **Failure scenario:** every push turns `rust-macos-test` red on this assertion and `pnpm ci:remote:check` refuses later pushes from every session.
 * **Fix direction:** the plan's recorded reversal path (d-20261101-01): gate the expected kind per platform (macOS `TimedOut` with a short probe timeout, others `ConnectionRefused`), keep the reservation.
 * **Found by:** Claude Code drain session 6a447bd9-6a5b-4ef8-b4cc-58d0ef70d43b, 2026-11-01, post-push CI wait.
+
+Already repaired by 55685b22 before this entry was merged: the redacts test's refusing probe expects `TimedOut` within a 1 s probe on macOS and `ConnectionRefused` elsewhere, the reservation stays (d-20261101-01's reversal path, as this entry's Fix direction names). Test run 41272918720 on 55685b22 had `rust-macos-test`, `rust-windows-test` and all three `rust-platform` jobs green (f-20261101-02's macOS follow-up annotation). Found stale by the records lens of the f-20261101-03 push review; closed without code change.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"92cf1d3f1e2af575c8a015ff65d264e25dbc4baf4e1db3b18a98cf390931b576","header_sha256":"bcf36222f79d220c4d2e3067585cbb9a923f9bd05bf9c24a483b669254c2d327","header_status":"handled","input_sha256":"6c3a77c8f4616b9ef5b748938c1ca37cfb8d104cfb2b9ec0d9a1e0c7325b3e10","kind":"mutation-receipt","operation":"0936e5853d4acd2310b4200ae1b03352027c6ad5025a475154d4dd0d3f16e53d","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-04"],"target":"f-20261101-04","v":1} -->
