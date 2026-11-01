@@ -19969,3 +19969,19 @@ Fixed in 17d570d3: the board column's fixed 0.5rem gaps became two shrinkable 0.
 * **Related:** f-20261031-02 (other oauth test, macOS watchdog margin), f-20261026-02 (revocation fixture coordinated under paused time).
 * **Found by:** Claude Code drain session 17dbb7e1-a1fc-4ffd-9797-7b34313e682a, 2026-10-31.
 * **Note:** first merged as f-20261031-03 in the unpushed drain commit 5d3e3069, which collided with the published f-20261031-03 (frontend-ui, material indicator). That commit was dropped in the rebase by drain session f29049a6-413d-4c07-be3f-e67ded939c0a and this entry re-filed, with the Defect's earlier "likely a deadline or timeout classification" inference corrected after records review.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### font-scaled-breakpoints "database-open-320-200" snapshot captures the library card at a varying scroll offset on CI
+
+* **ID:** f-20261101-03 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** tooling
+* **Where:** `e2e/font-scaled-breakpoints.spec.ts:117`, `toHaveScreenshot("database-open-320-200.png", { fullPage: true })` in "visible library open controls wrap at 320px and 200%".
+* **Defect:** CI Test run 41254363314 (master da238faf, 2026-11-01) failed only this snapshot: 6925 px differ; the received image shows the Library database card about 14 px higher with its "Open database" button clipped at the card bottom. The same SHA passed the test locally in the pinned Playwright container (13/13) and the CI rerun of the failed job passed. The diff touches no library-card code (it changes only the Games search bar), so the capture is nondeterministic, most likely the inner scroll position or card height settling before the screenshot.
+* **Failure scenario:** any push can turn the required `test` job red on this snapshot independent of the tree, forcing a CI rerun.
+* **Open question:** which element's scroll/height is still moving at capture time, and what stable condition should the spec wait for before the screenshot?
+* **Spotted outside diff:** the colour-filter build (f-20261031-04 / d-20261031-10) changes `src/components/databases/{SideInput,PlayerSearchInput,GameTable}` only.
+* **Proof:** CI artifact `frontend-browser-audit` of run 41254363314 attempt 1, `test-results/font-scaled-breakpoints-fo-2df4e-*/database-open-320-200-{expected,actual,diff}.png`.
+* **Found by:** Claude Code build session e68b0001-fd41-489f-b2b2-93048631b46d, 2026-11-01 (refiled after its first local allocation collided with an upstream f-20261101-02 before push).
