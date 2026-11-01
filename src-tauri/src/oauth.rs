@@ -2309,10 +2309,12 @@ mod tests {
 
     #[tokio::test]
     async fn deadline_aborts_listener_that_ignores_shutdown() {
-        // The watchdog is measured in paused (virtual) time. The blocking sleep
-        // stands in for a loaded runner's stall; a shutdown that waited the full
-        // LISTENER_DRAIN_TIMEOUT (1 s) instead of the remaining 20 ms short_config
-        // deadline still overruns the 100 ms bound.
+        // The 100 ms watchdog runs in paused (virtual) time, so wall-clock delay
+        // cannot trip it: the blocking SIMULATED_RUNNER_STALL below stands in for a
+        // loaded runner and fails the test only if the clock is not paused.
+        // What still overruns the bound is virtual time: a shutdown that waited the
+        // full LISTENER_DRAIN_TIMEOUT (1 s) instead of the remaining 20 ms
+        // short_config deadline.
         tokio::time::pause();
         const SIMULATED_RUNNER_STALL: Duration = Duration::from_millis(150);
         let lifecycle = Arc::new(AuthLifecycle::default());
