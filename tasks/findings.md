@@ -20115,3 +20115,18 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Failure scenario:** importing a study with such headers into a database loses those games silently.
 * **Fix shape:** add `.or_else(PositionError::ignore_invalid_castling_rights)` in `database_setup_to_chess` (shared by encode, decode and search, so they stay symmetric) plus a round-trip test.
 * **Found by:** cloud audit session session_01JbeKomxzG32RyrZzRykRDV (PGN/database audit, base 301104da), verified against local HEAD 301104da by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### Date filters compare raw PGN date strings, so unknown and partial dates are misfiltered
+
+* **ID:** f-20261101-10 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Where:** `src-tauri/src/db/search.rs:418-426` (`matches_date`), the SQL `games::date.ge/le` filters in `get_games_blocking` (`db/mod.rs` around 1934), dates stored verbatim at import.
+* **Defect:** `?` sorts after every digit, so `"????.??.??" >= "2025.11.01"` is true and `"2024.??.??" <= "2024.12.31"` is false. Only a missing (`None`) date is treated as unknown.
+* **Failure scenario:** the local explorer's "1 year" preset (start bound only) counts every `????.??.??` game in its statistics; a game dated `2024.??.??` drops out of a 2024 range.
+* **Fix shape:** treat a year containing `?` as unknown (excluded when any bound is set); for a known year with unknown month/day compare the earliest possible date against the start and the latest against the end. Mirror in SQL.
+* **Found by:** cloud audit session session_01JbeKomxzG32RyrZzRykRDV (PGN/database audit, base 301104da), verified against local HEAD 301104da by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+* **Proof:** `matches_date` and the SQL filter tests for `????.??.??` with a start-only bound and for `2024.??.??` inside a 2024 range.
