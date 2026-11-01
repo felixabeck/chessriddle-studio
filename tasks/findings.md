@@ -20401,6 +20401,8 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Failure scenario:** trash folder A, then file B or restart: A is hidden in `.en-croissant-trash/<uuid>/` with no way to restore or purge it in the app. The 4,096-id cap being reached this way is plausible but not observed.
 * **Open question:** what owns the trash: a native trash listing with restore and purge, auto-purge of older buckets (when), or both; plus pruning of authority records and empty buckets?
 * **Found by:** cloud audit session session_01JbeKomYNAubvgDNCaEau2u (native security/accounts audit, base 301104da), verified against local HEAD by a Claude Code verifier subagent of session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+* **Correction (records review, 2026-11-01):** authority records are bounded by `check_registry_growth` (`src-tauri/src/infra/path_authority/mod.rs:10130-10149`), which refuses growth past the identifier and serialized-size limits. The defect is that unpruned trash records consume that fixed capacity until new grants are refused, not unbounded growth of the registry itself. Trash disk use remains unbounded.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"ae6e186ac1008cbba0a9d034c3a586ee6029a1299994ee2ed55a9b29fe791668","input_sha256":"68c9237e15cd519a33a68f3334d0a2efccdeec504ff46677afe40edd30bb4817","kind":"mutation-receipt","operation":"893b637aa5500c774c567b63393ab51f717cf3bddd1fc781f492fd6160d0cd4a","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-28"],"target":"f-20261101-28","v":1} -->
 
 ---
 
