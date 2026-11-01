@@ -20110,13 +20110,15 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 
 ### Database import silently drops games whose FEN header carries impossible castling rights
 
-* **ID:** f-20261101-09 · **Status:** open · **Area:** pgn-import · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261101-09 · **Status:** handled · **Area:** pgn-import · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** data-loss
 * **Where:** `src-tauri/src/db/encoding.rs:15-20` (`database_setup_to_chess` tolerates only too much material), `src-tauri/src/db/mod.rs:539-555` (FEN header sets `self.skip = true` on setup failure).
 * **Defect:** a FEN such as `4k3/8/8/8/8/8/8/4K3 w KQkq - 0 1` (stale rights, no rooks; written by older tools) fails `Chess::from_setup` with invalid castling rights, and the game is skipped without any report, while the Files view opens the same game because chessops drops impossible rights.
 * **Failure scenario:** importing a study with such headers into a database loses those games silently.
 * **Fix shape:** add `.or_else(PositionError::ignore_invalid_castling_rights)` in `database_setup_to_chess` (shared by encode, decode and search, so they stay symmetric) plus a round-trip test.
 * **Found by:** cloud audit session session_01JbeKomxzG32RyrZzRykRDV (PGN/database audit, base 301104da), verified against local HEAD 301104da by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+* **Handled (2026-11-01, drain 88a10add):** commit 56125d43 chains PositionError::ignore_invalid_castling_rights in database_setup_to_chess, which encode, decode, import and search share, so they stay symmetric. Tests: invalid_castling_rights_setup_converts_and_roundtrips_a_legal_move (encoding.rs) and import_keeps_games_with_stale_castling_rights_and_roundtrips_moves (mod.rs).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"ebcd453850f4cdc7b31e682f2b27dc3af842091575df0d362401014b0b206ef9","header_sha256":"b07033673c8d69c60bd3fa14efd670a3344a8e886eeac6ea4fca5d1263105074","header_status":"handled","input_sha256":"41a2e99cafff41d4949fa81765eaab9a32ad993aefe48a5b83d97d7df4dd4480","kind":"mutation-receipt","operation":"aaa65c51e7bfb6110f586da210dce24a57d73b440c6ee5a47cf2f75a839c26b8","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-09"],"target":"f-20261101-09","v":1} -->
 
 ---
 
