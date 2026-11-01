@@ -11392,3 +11392,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Fail closed with the smallest mechanism. Against it: a range whose result is followed by a blank line and a free comment can no longer be opened; that shape was previously truncated on save. Reversal path: relax the remainder predicate in the pgn.rs helper.
 * **Decided by:** Claude Code (Opus 5.5) drain build run f-20261101-12 (session bb7003aa-47df-4197-96aa-dbd625081bf9), adopting the reviewed drain plan r1-r4, full auto, 2026-11-01 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"1863e62b869fa8754811383e4ef974975ff58f15f8eea8bd9fd2f003bf43faf5","input_sha256":"b2ed4a44e7b18c2c7d43247656e4b461ad7c3bd95ad9ab2ca2125135e74c8dcc","kind":"mutation-receipt","operation":"625b081205b3204e9a4a771006d76fa42ddf99b5ab0878794449ab9936bc8ca2","options":{"section":null},"request_id_sha256":null,"results":["d-20261101-09"],"target":"decisions-ledger","v":1} -->
+
+### d-20261101-10 — How is the one-game-per-range refusal typed across IPC?
+
+* **Question:** Does the refusal get a new error variant or reuse an existing category?
+* **Governs:** f-20261101-12
+* **Chosen:** Error::InvalidInput with a specific message (the existing lexer parse-error category); natively a distinct helper result that callers match. Linked-collection callers map it to their existing Conflict.
+* **Rejected:** A new Error variant or category: the renderer consumers that branch on the category (FileFreshnessGate, the save mapping in src/utils/tabs.ts) already treat invalid-input as fail-closed, which is correct for a range that can no longer be represented; another category would route to a message-only path.
+* **Reason:** No bindings change and correct fail-closed handling. Known limit: the freshness gate shows the existing FileFreshness.GameNoLongerInFile text. Reversal path: add a typed category and a renderer branch.
+* **Decided by:** Claude Code (Opus 5.5) drain build run f-20261101-12 (session bb7003aa-47df-4197-96aa-dbd625081bf9), adopting the reviewed drain plan r1-r4, full auto, 2026-11-01 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"335e635c8245ce809e7097f47e0a8f480d819859e4a56c31c23baa1d725868e5","input_sha256":"2d21e2b2a27e3b2ffa0c967622125583605f8115bb4655c59935b06c7d8d1102","kind":"mutation-receipt","operation":"31b52da231b4aa77d9e6318c892bacbe08256d2cef93004c69af98d2ae876893","options":{"section":null},"request_id_sha256":null,"results":["d-20261101-10"],"target":"decisions-ledger","v":1} -->
