@@ -20159,7 +20159,7 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 
 ### Files view: PGN scanner and parser split games differently, so a save deletes the unparsed rest of the range
 
-* **ID:** f-20261101-12 · **Status:** open · **Area:** pgn-import · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261101-12 · **Status:** handled · **Area:** pgn-import · **Root:** - · **Entry:** build · **Blocked:** none
 * **Impact class:** data-loss
 * **Where:** `src-tauri/src/pgn.rs:816-880` (`scan_games_cancelled` opens a range only at a valid tag-pair line after the header block), `src-tauri/vendor/pgn-reader/src/reader.rs:237-252,316-321` (`movetext_line_boundary` ends movetext at a blank line or a line starting with `[`), `src-tauri/src/lexer.rs:146-180` (`lex_pgn_cancellable` calls `read_game` once, never checks leftover input), save path `src/utils/tabs.ts:1127-1145` → `write_game_core` / `commit_pgn_mutation` (`pgn.rs:1704-1739,1951-2008`) replacing the whole range.
 * **Defect:** the scanner range and the parser game disagree once movetext has started. The tab's tree covers only the first parser game, while the stamp covers the full range bytes, so the stamp check passes and the save replaces the whole range with the shorter tree.
@@ -20168,6 +20168,13 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Open question:** should the scanner adopt the parser's movetext boundaries (blank line or `[` line ends a game), which changes game counts and indexes of existing files, or should the lexer consume the whole scanner range (one game spanning blank lines), and how must tagless multi-game files be split?
 * **Fix shape:** one boundary contract for scanner and parser (either the scanner ends a game where the parser does once movetext started, or the lexer reads the whole range); at minimum `lex_pgn` detects a second parser game in the range and returns a typed error so a partial tree is never saved over the range.
 * **Found by:** cloud audit session session_01JbeKomxzG32RyrZzRykRDV (PGN/database audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee with a probe subagent, 2026-11-01.
+* **Handled 2026-11-02** (drain session bb7003aa-47df-4197-96aa-dbd625081bf9, build tier, adopted reviewed plan r1-r4): scanner and parser now share the blank-line boundary, and every remaining disagreement is refused before a save.
+  * Parser (`80fd6924`, `1e7d61eb`): a blank line inside movetext ends a game only after a termination marker read outside comments and variations. `read_movetext`, `skip_movetext` and `skip_variation` share one newline lookahead (`src-tauri/vendor/pgn-reader/src/reader.rs`, `CHESSFABLE.md`). `[Event "A"]\n\n1. e4 e5\n\n2. Nf3 Nc6 *` is one game with four moves in LF and CRLF.
+  * Range helper (`3e07c95d`, `2f558a40`, `751c649d`): `pgn::read_one_range_game` refuses any byte a further `read_game` would see. The lexer returns `InvalidInput("PGN text contains more than one game")`. `write_game` refuses to replace a multi-game range and leaves the file byte-identical. The linked projection omits the range. Cleanup copies it unchanged. Provider export and identity parsing return Conflict. Tagless `1. e4 *\n\n1. d4 *` and the `[%clk 0:01]` line case are refused in LF and CRLF.
+  * File list (`34ddba39`): one unreadable game shows `Files.GameUnreadable` instead of discarding its page.
+  * Decisions: d-20261101-07, -08, -09, -11, -12 and d-20261102-04 (supersedes d-20261101-10). Rejected: the scanner adopting the parser's boundaries (index churn), a scanner tokenizer (second grammar, d-20261023-09), and a lexer refusal alone (ordinary blank-line files would no longer open).
+  * Review record: `tasks/handoffs/2026-11-01-f-20261101-12-review.md`.
+<!-- ledger-meta {"command":"close","effect_lines":6,"effect_sha256":"4f5295c08d22dd98cc5642204738c7016fb9656ab12d2a30a27aed0b27974667","header_sha256":"afebe0f6f4bab20270c6d8493e5e308295696c1293afb4202b08eb7f9ae2a5a1","header_status":"handled","input_sha256":"0427de467876bc39e00d1345fffa040a021c4e6a2bfae7dea67414f1a736d2d5","kind":"mutation-receipt","operation":"ae013c79b1e07d42bb1dc25fc9d1a516d0412790ba42e625cfeefb74e01463a3","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-12"],"target":"f-20261101-12","v":1} -->
 
 ---
 
