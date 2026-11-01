@@ -475,7 +475,7 @@ function CommentRow({
     );
   }
   return (
-    <Box pl="sm" pt="xs" style={row.depth ? { marginLeft: row.depth * 12 } : undefined}>
+    <Box pl="sm" pt="xs">
       <Comment comment={row.comment} />
     </Box>
   );

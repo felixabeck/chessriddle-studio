@@ -3,7 +3,7 @@
   border-right: 1px solid var(--cf-border);
 }
 
-/* Variable defaults keep main-line and engine-line text unchanged; only .variationBlock sets them. */
+/* The --notation-scale default keeps main-line comments unchanged; only .variationBlock sets it. */
 .comment {
   color: var(--mantine-color-dimmed);
   font-size: calc(var(--mantine-font-size-sm) * var(--notation-scale, 1));
