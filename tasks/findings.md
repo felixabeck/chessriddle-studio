@@ -19997,3 +19997,19 @@ Fixed in f1cba40d and c6ef6566 (build adopting the reviewed plan `tasks/handoffs
 * **Spotted outside diff:** the colour-filter build (f-20261031-04 / d-20261031-10) changes `src/components/databases/{SideInput,PlayerSearchInput,GameTable}` only.
 * **Proof:** CI artifact `frontend-browser-audit` of run 41254363314 attempt 1, `test-results/font-scaled-breakpoints-fo-2df4e-*/database-open-320-200-{expected,actual,diff}.png`.
 * **Found by:** Claude Code build session e68b0001-fd41-489f-b2b2-93048631b46d, 2026-11-01 (refiled after its first local allocation collided with an upstream f-20261101-02 before push).
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### rust-macos-test fails the redacts revocation test's refusing probe: macOS drops a SYN to a bound, non-listening socket
+
+* **ID:** f-20261101-04 · **Status:** open · **Area:** oauth-credentials · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 6a447bd9-6a5b-4ef8-b4cc-58d0ef70d43b
+* **Impact class:** tooling
+* **Follow-up of:** f-20261101-02
+* **Where:** `src-tauri/src/oauth.rs`, test `oauth::tests::production_revocation_redacts_connection_failure`, the "Refusing" assertion (`TcpStream::connect_timeout` to the reserved address expected to fail with `ConnectionRefused`).
+* **Defect:** The f-20261101-02 repair (f1cba40d, c6ef6566, pushed as 5f398bd1) reserves the dialled port with a bound, never-listening socket and asserts a direct dial is refused. Hosted `rust-macos-test` (Test run 41271269599, job 124744367905, head 5f398bd1) failed it: `assertion left == right failed, left: TimedOut, right: ConnectionRefused` at `oauth.rs:1762`; the pre-dial AddrInUse check passed. BSD `tcp_input` drops a SYN whose matching socket is in TCPS_CLOSED instead of sending RST, so on macOS the dial is never answered. Linux and Windows (`rust-windows-test` green on the same head) refuse.
+* **Failure scenario:** every push turns `rust-macos-test` red on this assertion and `pnpm ci:remote:check` refuses later pushes from every session.
+* **Fix direction:** the plan's recorded reversal path (d-20261101-01): gate the expected kind per platform (macOS `TimedOut` with a short probe timeout, others `ConnectionRefused`), keep the reservation.
+* **Found by:** Claude Code drain session 6a447bd9-6a5b-4ef8-b4cc-58d0ef70d43b, 2026-11-01, post-push CI wait.
