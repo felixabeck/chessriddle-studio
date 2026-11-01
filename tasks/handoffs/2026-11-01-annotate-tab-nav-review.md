@@ -1,10 +1,9 @@
 # Review record: Annotate editor move navigation (2026-11-01)
 
 Build run `annotate-tab-nav` (Claude Code orchestrator, Codex executor, session
-b88fc52e-ffd2-488e-b769-666bd9956a34), full auto. Decisions: d-20261101-02 (hint and fixed Esc),
-d-20261101-03 (bundle total ceiling). Commits made on branch `build/annotate-tab-nav-20261101` and
-released to `master` by rebase and fast-forward push: feature, mutation repair, decisions, bundle
-ceiling, measurement-source fix and this record.
+b88fc52e-ffd2-488e-b769-666bd9956a34), full auto. Decision: d-20261101-05 (hint and fixed Esc). Commits made on branch `build/annotate-tab-nav-20261101` and
+released to `master` by rebase and fast-forward push: feature, mutation repair, key formatter, coverage
+scope, settings test, decision and this record.
 
 ## Plan review (verbatim plan record follows)
 
@@ -179,7 +178,7 @@ skill's two-round cap; each addressed a distinct, newly exposed and source-verif
 
 Pre-review: frontend mutation left 10 survivors in `AnnotationEditor.tsx` (fix-1 leaf removed
 redundant guards and strengthened tests, score 100); the bundle total exceeded the cap because
-the published base sat 13 B under it (d-20261101-03 raised total to 1,690,000 B).
+the published base sat 13 B under it (this run recorded a raise to 1,690,000 B).
 
 ## Diff review, round 1 (DIFF 99f20fd6..HEAD excluding tasks/decisions.md; records lens on tasks/decisions.md)
 
@@ -222,3 +221,13 @@ the published base sat 13 B under it (d-20261101-03 raised total to 1,690,000 B)
   (`78a7295e`) with revert proof (both tests red without `formatKeymap`, green restored).
 - d4: tests: CR-D5 CLOSED. APPROVED.
 - Totals: diff findings 5 (CR-D1..CR-D5); Fix 4, Skip 1 (CR-D2); every Fix closed.
+
+## Rebase onto master (supersedes the bundle and decision-id statements above)
+
+Before release, `origin/master` had gained d-20261101-02..-04 from other runs, including
+d-20261101-04, which already raised the total gzip ceiling to 1,690,000 B (measured 1,680,023 B).
+This run's own decisions (recorded locally as d-20261101-02 hint, -03 bundle) collided by id and
+its bundle raise and CR-D1 measurement-source fix became redundant: those four commits were dropped
+when the branch was rebuilt on master by cherry-pick. The hint decision was re-recorded as
+d-20261101-05; no separate bundle decision remains, because the feature's +1,135 B fits under
+master's ceiling. CR-D1 is therefore moot rather than closed on master.
