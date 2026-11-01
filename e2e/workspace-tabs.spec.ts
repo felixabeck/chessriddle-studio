@@ -65,9 +65,14 @@ test("workspace-tabs: home fills remaining height with reachable recent and due 
     const dueBox = (await due.boundingBox())!;
     const list = (await viewport.boundingBox())!;
     const title = (await recent.locator("[data-home-title]").boundingBox())!;
+    const cardBottomPadding = 17;
+    const titleGap = 10;
+    const layoutTolerance = 8;
     expect(list.height, "recent list exceeds the old 300px cap").toBeGreaterThan(300);
-    expect(Math.abs(list.y + list.height - (card.y + card.height - 17))).toBeLessThan(8);
-    expect(Math.abs(list.y - (title.y + title.height + 10))).toBeLessThan(8);
+    expect(
+        Math.abs(list.y + list.height - (card.y + card.height - cardBottomPadding)),
+    ).toBeLessThan(layoutTolerance);
+    expect(Math.abs(list.y - (title.y + title.height + titleGap))).toBeLessThan(layoutTolerance);
     expect(Math.abs(card.y + card.height - 1000)).toBeLessThan(32);
     expect(Math.abs(dueBox.y + dueBox.height - 1000)).toBeLessThan(32);
     expect(Math.abs(card.y - dueBox.y)).toBeLessThan(2);

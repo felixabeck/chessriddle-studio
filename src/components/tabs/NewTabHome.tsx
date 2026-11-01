@@ -131,7 +131,11 @@ export default function NewTabHome({ id }: { id: string }) {
           .filter((file) => file.type === "repertoire")
           .map((file) => {
             const deck = get(deckAtomFamily({ file: fileWorkspaceKey(file.handle), game: 0 }));
-            return { file, count: dueCount(deck), failed: deck.status === "read-failed" };
+            const failed =
+              deck.status === "read-failed" ||
+              deck.status === "write-blocked" ||
+              (deck.status !== "loading" && deck.status !== "write-pending" && !!deck.error);
+            return { file, count: failed ? null : dueCount(deck), failed };
           }),
       ),
     [recentFiles],
@@ -329,13 +333,15 @@ export default function NewTabHome({ id }: { id: string }) {
             <Text fw={600} size="lg" mb="xs">
               {t("Home.DuePractice.Title")}
             </Text>
-            <Text size="sm" c="dimmed" mb="xs">
-              {t("Home.DuePractice.Total", {
-                positions: dueRows.reduce((total, row) => total + (row.count ?? 0), 0),
-                repertoires: dueRows.filter((row) => row.count !== null).length,
-              })}
-              {incomplete && <> · {t("Home.DuePractice.Incomplete")}</>}
-            </Text>
+            {dueRows.length > 0 && (
+              <Text size="sm" c="dimmed" mb="xs">
+                {t("Home.DuePractice.Total", {
+                  positions: dueRows.reduce((total, row) => total + (row.count ?? 0), 0),
+                  repertoires: dueRows.filter((row) => row.count !== null).length,
+                })}
+                {incomplete && <> · {t("Home.DuePractice.Incomplete")}</>}
+              </Text>
+            )}
             <ScrollArea className={classes.list}>
               <Stack gap="sm">
                 {dueRows.map(({ file, count, failed }) => (

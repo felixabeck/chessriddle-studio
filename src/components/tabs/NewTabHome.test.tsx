@@ -1,19 +1,13 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { createInstance } from "i18next";
+import { catalogueI18n, shippedCatalogues } from "@/tests/catalogues";
+import type { SupportedLocale } from "@/i18n";
 
-const catalogues = import.meta.glob<{ translation: Record<string, string> }>(
-  "../../translation/*.json",
-  { eager: true, import: "default" },
-);
-
-test.each(Object.entries(catalogues))(
-  "new home labels resolve without fallback in %s",
-  async (path, catalogue) => {
-    const locale = path.split("/").at(-1)!.replace(".json", "");
-    const instance = createInstance();
-    await instance.init({ lng: locale, fallbackLng: false, resources: { [locale]: catalogue } });
+test.each(shippedCatalogues())(
+  "new home labels resolve without fallback in $locale",
+  async ({ locale }) => {
+    const instance = await catalogueI18n(locale as SupportedLocale);
     for (const key of [
       "Home.RecentFiles.UntitledGame",
       "Home.DuePractice.Title",
@@ -63,7 +57,7 @@ const fixtures = vi.hoisted(() => ({
   deckStatus: "ready" as "loading" | "ready" | "read-failed" | "write-pending" | "write-blocked",
   decks: {} as Record<
     string,
-    { status: string; positions: Array<{ due: number; unseen: number }> }
+    { status: string; positions: Array<{ due: number; unseen: number }>; error?: unknown }
   >,
 }));
 
@@ -212,20 +206,31 @@ test("displays stored Unknown with a localized untitled label and date, keeping 
 });
 
 test("orders due repertoires by due plus unseen and recency, totals them, and reuses recent-open", async () => {
-  fixtures.recentFiles = ["older", "highest", "newer", "hydrating", "failed", "done"].map(
-    (name, i) => ({
-      name,
-      type: "repertoire",
-      handle: { id: { id: name }, kind: "fileWorkspace" },
-      lastOpened: i,
-    }),
-  );
+  fixtures.recentFiles = [
+    "older",
+    "highest",
+    "newer",
+    "hydrating",
+    "failed",
+    "blocked",
+    "done",
+  ].map((name, i) => ({
+    name,
+    type: "repertoire",
+    handle: { id: { id: name }, kind: "fileWorkspace" },
+    lastOpened: i,
+  }));
   fixtures.decks = {
     older: { status: "ready", positions: [{ due: 2, unseen: 1 }] },
     highest: { status: "write-pending", positions: [{ due: 3, unseen: 2 }] },
     newer: { status: "ready", positions: [{ due: 1, unseen: 2 }] },
     hydrating: { status: "loading", positions: [] },
     failed: { status: "read-failed", positions: [] },
+    blocked: {
+      status: "write-blocked",
+      positions: [{ due: 9, unseen: 1 }],
+      error: new Error("write failed"),
+    },
     done: { status: "ready", positions: [] },
   };
   await act(async () => root.render(<NewTabHome id="new-tab" />));
@@ -235,6 +240,7 @@ test("orders due repertoires by due plus unseen and recency, totals them, and re
     "highest5 ",
     "newer3 ",
     "older3 ",
+    "blockedHome.DuePractice.LoadFailed",
     "failedHome.DuePractice.LoadFailed",
   ]);
   expect(panel.textContent).toContain('Home.DuePractice.Total{"positions":11,"repertoires":3}');
@@ -249,7 +255,7 @@ test("orders due repertoires by due plus unseen and recency, totals them, and re
   );
 });
 
-test.each(["ready", "loading", "read-failed"] as const)(
+test.each(["ready", "loading", "read-failed", "write-blocked"] as const)(
   "shows nothing due only for fully loaded decks: %s",
   async (status) => {
     fixtures.deckStatus = status;
@@ -258,13 +264,37 @@ test.each(["ready", "loading", "read-failed"] as const)(
     const panel = container.querySelector("[data-home-due]")!;
     expect(panel.textContent?.includes("Home.DuePractice.NothingDue")).toBe(status === "ready");
     expect(panel.textContent?.includes("Home.DuePractice.LoadFailed")).toBe(
-      status === "read-failed",
+      status === "read-failed" || status === "write-blocked",
+    );
+    expect(panel.textContent?.includes("Common.Loading")).toBe(status === "loading");
+    expect(panel.textContent?.includes("Home.DuePractice.Total")).toBe(
+      status === "read-failed" || status === "write-blocked",
+    );
+    expect(panel.textContent?.includes("Home.DuePractice.Incomplete")).toBe(
+      status === "read-failed" || status === "write-blocked",
     );
   },
 );
 
 let container: HTMLDivElement;
 let root: Root;
+
+test("treats an error-bearing terminal deck as failed even with retained positions", async () => {
+  fixtures.recentFiles[0].type = "repertoire";
+  fixtures.decks.stale = {
+    status: "ready",
+    positions: [{ due: 9, unseen: 1 }],
+    error: new Error("deck failed"),
+  };
+  await act(async () => root.render(<NewTabHome id="new-tab" />));
+  const panel = container.querySelector("[data-home-due]")!;
+  expect(panel.querySelectorAll("[data-due-file]")).toHaveLength(1);
+  expect(panel.textContent).toContain("Home.DuePractice.LoadFailed");
+  expect(panel.textContent).toContain('Home.DuePractice.Total{"positions":0,"repertoires":0}');
+  expect(panel.textContent).toContain("Home.DuePractice.Incomplete");
+  expect(panel.textContent).not.toContain("Common.Loading");
+  expect(panel.textContent).not.toContain("Board.Practice.Due");
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -349,6 +379,7 @@ test("notifies when opening a recent file is denied without creating a tab", asy
     message: "permission denied",
   });
   expect(fixtures.openFile).toHaveBeenCalledOnce();
+  expect(fixtures.setRecentFiles).not.toHaveBeenCalled();
 });
 
 test("notifies when counting games for a recent file is denied without creating a tab", async () => {
@@ -370,6 +401,7 @@ test("notifies when counting games for a recent file is denied without creating 
     message: "permission denied",
   });
   expect(fixtures.openFile).not.toHaveBeenCalled();
+  expect(fixtures.setRecentFiles).not.toHaveBeenCalled();
 });
 
 test("keeps recent-file cancellation silent without creating a tab", async () => {
@@ -388,6 +420,7 @@ test("keeps recent-file cancellation silent without creating a tab", async () =>
 
   expect(fixtures.notify).not.toHaveBeenCalled();
   expect(fixtures.openFile).toHaveBeenCalledOnce();
+  expect(fixtures.setRecentFiles).not.toHaveBeenCalled();
 });
 
 test("hides due practice counts when a repertoire is fully practiced", async () => {
@@ -408,7 +441,7 @@ test("hides due practice counts when a repertoire is fully practiced", async () 
   expect(container.textContent).not.toContain("Board.Practice.Due");
 });
 
-test.each(["loading", "read-failed"] as const)(
+test.each(["loading", "read-failed", "write-blocked"] as const)(
   "does not show a due badge while the practice deck is %s",
   async (status) => {
     fixtures.deckStatus = status;
@@ -555,6 +588,9 @@ test("shows an empty recent-files state", async () => {
     root.render(<NewTabHome id="new-tab" />);
   });
   expect(container.textContent).toContain("Home.RecentFiles.NoRecentFiles");
+  const panel = container.querySelector("[data-home-due]")!;
+  expect(panel.textContent).toContain("Home.DuePractice.NothingDue");
+  expect(panel.textContent).not.toContain("Home.DuePractice.Total");
 });
 
 test("keeps a recent file after a transient count failure", async () => {
