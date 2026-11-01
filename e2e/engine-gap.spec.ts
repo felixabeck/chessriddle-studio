@@ -154,6 +154,37 @@ for (const scope of ["workspace", "preview"] as const) {
     }
 }
 
+test("notation-focus: arrow keys after a pointer click leave no focus ring on the clicked move", async ({
+    page,
+    mockScenario,
+}, testInfo) => {
+    const notation = await setupNotationMenu(page, mockScenario, "workspace", false);
+    const move = (name: string) => notation.getByRole("button", { name, exact: true });
+    const current = notation.locator('[data-notation-current="true"] button');
+    const focusRings = notation.locator("button:focus-visible");
+
+    // e5 starts a line without branches, so Right steps instead of opening the chooser.
+    await move("e5").click();
+    await expect(current).toHaveText("e5");
+    await page.keyboard.press("ArrowRight");
+    await expect(current).toHaveText("Bc4");
+    await page.keyboard.press("ArrowRight");
+    await expect(current).toHaveText("Nc6");
+    // The browser treats focus as keyboard focus after a key press, so a move that kept
+    // focus from the click would now draw its ring while the highlight sits elsewhere.
+    await expect(focusRings).toHaveCount(0);
+    await expect(move("e5")).not.toBeFocused();
+    await page.screenshot({ path: testInfo.outputPath("notation-focus-after-arrows.png") });
+
+    // Keyboard activation keeps its focus ring on the activated move. This guards the
+    // pointer-only condition: a blur on every activation would turn this red.
+    await move("Bc4").focus();
+    await page.keyboard.press("Enter");
+    await expect(current).toHaveText("Bc4");
+    await expect(focusRings).toHaveCount(1);
+    await expect(move("Bc4")).toBeFocused();
+});
+
 test("engine-gap: warm actor contract preserves ownership and isolates searches", async ({
     page,
 }) => {

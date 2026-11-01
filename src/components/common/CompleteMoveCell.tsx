@@ -14,7 +14,7 @@ import { getTabFile } from "@/utils/tabs";
 import type { TreeNode } from "@/utils/treeReducer";
 import type { NotationNodeIndex } from "./notationRows";
 import { pathForNotationNode } from "./notationRows";
-import MoveCell from "./MoveCell";
+import MoveCell, { releasePointerFocus } from "./MoveCell";
 import { TreeStateContext } from "./TreeStateContext";
 import classes from "./GameNotation.module.css";
 
@@ -187,7 +187,10 @@ function TranspositionAction({ onClick }: { onClick: () => void }) {
     <IconAction
       label={t("Notation.Transposition", { defaultValue: "Transposition" })}
       size="xs"
-      onClick={onClick}
+      onClick={(event) => {
+        releasePointerFocus(event);
+        onClick();
+      }}
     >
       <Merge size="0.875rem" />
     </IconAction>

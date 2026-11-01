@@ -2,7 +2,7 @@ import { useTabAtom } from "@/state/tabScope";
 import { Box, rgba, useMantineTheme } from "@mantine/core";
 import { Flag } from "lucide-react";
 import { useAtom } from "jotai";
-import type { ReactNode, RefObject } from "react";
+import type { MouseEvent, ReactNode, RefObject } from "react";
 import { showCommentsFamily, moveNotationTypeAtom } from "@/state/atoms";
 import {
   ANNOTATION_INFO,
@@ -11,6 +11,17 @@ import {
   formatNagGlyphs,
 } from "@/utils/annotation";
 import classes from "./MoveCell.module.css";
+
+/**
+ * Drop DOM focus from a notation control after a pointer click that navigates the game.
+ *
+ * Arrow-key navigation moves the current position elsewhere, and the browser would then
+ * draw the keyboard focus ring on the clicked control, which no longer marks the current
+ * move. `detail` is 0 for Enter/Space activation, so keyboard focus is kept.
+ */
+export function releasePointerFocus(event: MouseEvent<HTMLElement>) {
+  if (event.detail > 0) event.currentTarget.blur();
+}
 
 interface MoveCellProps {
   annotations: Annotation[];
@@ -53,6 +64,11 @@ function MoveCell(props: MoveCellProps) {
     hoverDark = rgba(darkBg, 0.25);
   }
 
+  const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
+    releasePointerFocus(event);
+    props.onClick();
+  };
+
   return (
     <Box
       ref={props.ref}
@@ -66,7 +82,7 @@ function MoveCell(props: MoveCellProps) {
         "--dark-bg": darkBg,
         "--light-bg": lightBg,
       }}
-      onClick={props.onClick}
+      onClick={handleClick}
       onContextMenu={props.onContextMenu}
     >
       <Box component="span" className={classes.moveText}>

@@ -39,7 +39,8 @@ vi.mock("@/components/common/IconAction", () => ({
     </button>
   ),
 }));
-vi.mock("./MoveCell", () => ({
+vi.mock("./MoveCell", async (importOriginal) => ({
+  releasePointerFocus: (await importOriginal<typeof import("./MoveCell")>()).releasePointerFocus,
   default: ({ move, onClick, onContextMenu }: any) => (
     <button type="button" data-move={move} onClick={onClick} onContextMenu={onContextMenu}>
       {move}
@@ -320,11 +321,17 @@ test("navigates to the first transposition in tree order", async () => {
     );
   });
 
+  const transposition = host.querySelector<HTMLButtonElement>(
+    '[aria-label="Notation.Transposition"]',
+  )!;
+  transposition.focus();
   await act(async () => {
-    host.querySelector<HTMLButtonElement>('[aria-label="Notation.Transposition"]')!.click();
+    transposition.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
   });
 
   expect(store.getState().position).toEqual([0, 0, 0]);
+  // A pointer click releases focus, so arrow-key navigation leaves no stale focus ring here.
+  expect(document.activeElement).not.toBe(transposition);
 });
 
 test("updates transposition actions when another branch is added", async () => {
