@@ -20205,3 +20205,19 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Failure scenario:** open game #812 in tab A and add a variation (auto-saved); open #812 again into tab B, add comments (auto-saved); return to A and play one move: A's older tree overwrites the row and B's comments are gone, with no conflict shown. Duplicate tab on a database game reproduces it immediately.
 * **Open question:** which row revision does a database tab carry (stored-content hash or an update counter column, which needs a migration), how is it returned on load and checked inside the write transaction, and how does a `stale-game` refusal reach the existing conflict panel for database tabs?
 * **Found by:** cloud audit session session_01JbeKojrqsAwVtq28QtrjsT (persisted state/tabs audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### Playing a mate, stalemate or repetition in a side variation rewrites the game's Result header
+
+* **ID:** f-20261101-16 · **Status:** open · **Area:** chess-tree · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** data-loss
+* **Where:** `src/state/store/tree.ts:867-889` (`makeMove` result adjudication, guarded only by `changeHeaders`), store `makeMove` default `changeHeaders = true`; callers `src/components/boards/Board.tsx`, opening explorer, tablebase panel, move input and engine PV clicks; auto-save in `BoardAnalysis.tsx` (default on); `serializeStoreTree` writes `headers.result`.
+* **Defect:** the result is set from the position after any move, whatever its place in the tree; nothing checks that the new node is on the main line or extends the recorded end of the game. Only puzzle code passes `changeHeaders: false`.
+* **Failure scenario:** open a `[Result "1-0"]` game from a PGN, go back to the middlegame and play a sideline where Black mates (or stalemate, insufficient material, threefold): the header becomes `0-1`/`1/2-1/2`, the tree turns dirty and auto-save writes the wrong result into the file, with no visible indication.
+* **Fix shape:** adjudicate only when the new node lies on the main line (every index in the new path is 0), ideally only when it extends the main line's end; keep adjudication for games played out from scratch.
+* **Lens:** `review-chess-semantics`
+* **Proof:** tree tests: a mating move in a variation leaves `headers.result` and `dirty` unchanged; the same move on the main line end still sets the result.
+* **Found by:** cloud audit session session_01JbeKojsWJ1pfK9zBEnfQvc (game tree/practice audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
