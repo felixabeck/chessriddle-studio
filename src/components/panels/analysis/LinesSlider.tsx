@@ -8,14 +8,14 @@ export default function LinesSlider(props: {
   color?: string;
   /** Options above this count are disabled. */
   max?: number;
-  "aria-label"?: string;
+  ariaLabel?: string;
 }) {
   const theme = useMantineTheme();
 
   return (
     <SegmentedControl
       size="xs"
-      aria-label={props["aria-label"]}
+      aria-label={props.ariaLabel}
       color={props.color || theme.primaryColor}
       data={LINE_COUNT_OPTIONS.map((count) => ({
         value: count.toString(),

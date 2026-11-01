@@ -112,7 +112,7 @@ const DetachedEvalInner = memo(function DetachedEvalInner({
           <Tooltip label={t("Engines.Settings.NumOfLines")}>
             <Box>
               <LinesSlider
-                aria-label={t("Engines.Settings.NumOfLines")}
+                ariaLabel={t("Engines.Settings.NumOfLines")}
                 value={Math.min(lineCap ?? multiPv, multiPv, LINE_COUNT_OPTIONS.length)}
                 setValue={setLineCap}
                 max={multiPv}
