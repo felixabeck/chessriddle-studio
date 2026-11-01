@@ -11341,3 +11341,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Felix asked for a clearer main-line highlight like Lichess (2026-11-01). The e2e project `notation-hierarchy` pins the computed sizes, weights, colours, contrast >= 4.5:1, surfaces and current-move highlight and was seen to fail with the styling reverted. Reversal path: revert the notation-hierarchy commits (feat/fix/refactor notation and the e2e spec) and restore `variation-chooser-board-keyboard.png`.
 * **Decided by:** Claude Code (orchestrator), build run notation-mainline-hierarchy 2026-11-01, full auto, plan review r1-r4 and diff review d1-d2 (Grok lenses) · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"0cbff8d77a51a3d2f93db8cfc90b12e384b1d70b956a39efae03e3ce9f5c2dd8","input_sha256":"fcfc2bf1cfadf314ddf0eed33de37125905e54dd698368d055bd098b4bdf6f83","kind":"mutation-receipt","operation":"b4cd1a1f976d5e2ee440ba9c81011a0137d4382c5fb481d9d1f030b380882d44","options":{"section":null},"request_id_sha256":null,"results":["d-20261102-01"],"target":"decisions-ledger","v":1} -->
+
+### d-20261102-02 — Which window does the notation-hierarchy overflow check at 200% font scale use?
+
+* **Question:** Which viewport does the `notation-hierarchy-scaled` e2e project use for its 200% font-scale overflow check, given that the plan named 320px?
+* **Governs:** f-20261101-32
+* **Chosen:** 1000x1100 at font scale 200, measuring the app's own layout with a mounted-rows precondition, overflow only, no snapshots.
+* **Rejected:** 320x720 with injected layout CSS (measures a layout users never see; at that size the real notation has no rows); 800x720 and 1000x720 (no rows mount, f-20261101-32).
+* **Reason:** at 720px height and 200% font scale the wrapped notation header fills the card and the virtualizer mounts no rows, so any overflow check there is vacuous. Reversal path: when f-20261101-32 is fixed, move the project to 320x720 as annotated on that finding.
+* **Decided by:** Claude Code (orchestrator), build run notation-mainline-hierarchy 2026-11-01, full auto · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"8577ded54eafd3a0f8914586aa5a4ec21d7904b2f67e8ef39569210f117892a5","input_sha256":"509584ade8c4f18f0fa2e8ff27aa61bd20fb7bbbd7b665cf9b99176a4e1215a4","kind":"mutation-receipt","operation":"212d7c72c1fa893861eeca932551bd530878c7734de6c368bbe4e5401fbb0cc0","options":{"section":null},"request_id_sha256":null,"results":["d-20261102-02"],"target":"decisions-ledger","v":1} -->
