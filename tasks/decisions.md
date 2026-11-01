@@ -11382,3 +11382,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Refusal loses nothing, and the shape is non-standard (clock annotations belong inside braces). Reversal path: extend the parser's line-boundary test once a lossless representation exists.
 * **Decided by:** Claude Code (Opus 5.5) drain build run f-20261101-12 (session bb7003aa-47df-4197-96aa-dbd625081bf9), adopting the reviewed drain plan r1-r4, full auto, 2026-11-01 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"10c21a939c658b50ebbe73542a7ac1777cacc9f66e2df89322a93157f3612660","input_sha256":"ffc13699f8474d56d661b8456177a6175bce90b2ce6ac91045e87859f28abc38","kind":"mutation-receipt","operation":"7a2673768c1de841aa87a2dde24e19dc9cbebf1c4fbc61acf2ee39da7eb3c6df","options":{"section":null},"request_id_sha256":null,"results":["d-20261101-08"],"target":"decisions-ledger","v":1} -->
+
+### d-20261101-09 — How strict is the remainder check after reading one game from a scanner range?
+
+* **Question:** After reading one game from a range, which leftover bytes are acceptable?
+* **Governs:** f-20261101-12
+* **Chosen:** Any byte a further read_game would see is refused, including a comment-only or `;`-only remainder. Only whitespace and `%` escape lines may follow.
+* **Rejected:** Classifying the remainder by visitor callbacks (skip-mode reading emits no SAN or outcome callbacks, so a skipping probe would pass a second game) and an allowlist of harmless remainders (machinery without protection).
+* **Reason:** Fail closed with the smallest mechanism. Against it: a range whose result is followed by a blank line and a free comment can no longer be opened; that shape was previously truncated on save. Reversal path: relax the remainder predicate in the pgn.rs helper.
+* **Decided by:** Claude Code (Opus 5.5) drain build run f-20261101-12 (session bb7003aa-47df-4197-96aa-dbd625081bf9), adopting the reviewed drain plan r1-r4, full auto, 2026-11-01 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"1863e62b869fa8754811383e4ef974975ff58f15f8eea8bd9fd2f003bf43faf5","input_sha256":"b2ed4a44e7b18c2c7d43247656e4b461ad7c3bd95ad9ab2ca2125135e74c8dcc","kind":"mutation-receipt","operation":"625b081205b3204e9a4a771006d76fa42ddf99b5ab0878794449ab9936bc8ca2","options":{"section":null},"request_id_sha256":null,"results":["d-20261101-09"],"target":"decisions-ledger","v":1} -->
