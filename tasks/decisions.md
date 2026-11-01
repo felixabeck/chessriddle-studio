@@ -11402,3 +11402,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** No bindings change and correct fail-closed handling. Known limit: the freshness gate shows the existing FileFreshness.GameNoLongerInFile text. Reversal path: add a typed category and a renderer branch.
 * **Decided by:** Claude Code (Opus 5.5) drain build run f-20261101-12 (session bb7003aa-47df-4197-96aa-dbd625081bf9), adopting the reviewed drain plan r1-r4, full auto, 2026-11-01 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"335e635c8245ce809e7097f47e0a8f480d819859e4a56c31c23baa1d725868e5","input_sha256":"2d21e2b2a27e3b2ffa0c967622125583605f8115bb4655c59935b06c7d8d1102","kind":"mutation-receipt","operation":"31b52da231b4aa77d9e6318c892bacbe08256d2cef93004c69af98d2ae876893","options":{"section":null},"request_id_sha256":null,"results":["d-20261101-10"],"target":"decisions-ledger","v":1} -->
+
+### d-20261101-11 — How does the file game list show a game that cannot be lexed?
+
+* **Question:** One per-row parse failure today discards a whole GameSelector page. What does the row show instead?
+* **Governs:** f-20261101-12
+* **Chosen:** A renderer-only, activatable row labelled Files.GameUnreadable, without identity (delete disabled), for any non-cancellation per-row parse failure. Cancellation still aborts the page.
+* **Rejected:** Failing the whole page (hides valid games, far more frequent once ranges are refused); reusing the tooLarge omission (unclickable row, bindings change).
+* **Reason:** Valid games stay visible, opening the row shows the real refusal, and delete cannot remove a multi-game range shown as one entry. Reversal path: revert the GameSelector row state.
+* **Decided by:** Claude Code (Opus 5.5) drain build run f-20261101-12 (session bb7003aa-47df-4197-96aa-dbd625081bf9), adopting the reviewed drain plan r1-r4, full auto, 2026-11-01 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"2ae9ab8c9393e89162f38dc6498f9e39d3aaa7ab53a87ab41f6a9a87a62be958","input_sha256":"4856770854a356828301ae34ed529f5b4a279c96f124e00363b046bae3298f53","kind":"mutation-receipt","operation":"47743977aad23f4c73f921d97a066b22c255dd0672db2350bf28c261abfc5d04","options":{"section":null},"request_id_sha256":null,"results":["d-20261101-11"],"target":"decisions-ledger","v":1} -->
