@@ -688,6 +688,7 @@ const fontScaleByProject: Record<string, number> = {
     "file-freshness": 100,
     "files-preview": 100,
     "tree-recovery": 100,
+    "notation-hierarchy-scaled": 200,
 };
 
 const localeByProject: Record<string, string> = {

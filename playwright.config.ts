@@ -121,6 +121,19 @@ export default defineConfig({
             testMatch: /piece-size\.spec\.ts/,
             use: { ...chromium, viewport: { width: 1280, height: 900 }, colorScheme: "light" },
         },
+        {
+            name: "notation-hierarchy",
+            testMatch: /notation-hierarchy\.spec\.ts/,
+            grepInvert: /overflow-only/,
+            use: { ...chromium, viewport: { width: 1280, height: 900 }, colorScheme: "light" },
+        },
+        {
+            name: "notation-hierarchy-scaled",
+            testMatch: /notation-hierarchy\.spec\.ts/,
+            grep: /overflow-only/,
+            // 200% font at 720px height leaves the notation without rows (f-20261101-32), hence the taller window.
+            use: { ...chromium, viewport: { width: 1000, height: 1100 }, colorScheme: "light" },
+        },
     ],
     webServer: {
         // Invoked through node_modules/.bin rather than `pnpm exec`, so the suite runs
