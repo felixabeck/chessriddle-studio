@@ -36,14 +36,26 @@ lines, while leaving blank separators for movetext processing. Normal and skippe
 movetext share one newline boundary lookahead, which accepts indented next-game
 headers and leaves their opening bracket available to the next read_game. Percent
 escape lines retain their terminating newline so the following header boundary
-is recognized, including consecutive escape lines. These bounded transitions
+is recognized, including consecutive escape lines. A blank line ends a game only
+after a termination marker (`1-0`, `0-1`, `1/2-1/2`, `*`) already read outside
+comments and outside variations; a `[`-prefixed line still ends movetext. The
+same lookahead serves `read_movetext`, `skip_movetext` and `skip_variation`. On
+a boundary the newline stays so the enclosing loop and the next `read_game`
+still see it, including an unclosed variation followed by a tagged game.
+`skip_movetext` tracks variation depth and recognises the same termination
+tokens, with `\r` as a token delimiter. These bounded transitions
 preserve the scanner's established accepted boundaries without changing token
 caps, long-token recovery, public APIs or the application's editing grammar.
 A future upgrade must preserve these transitions or demonstrate an equivalent
 replacement with the reader's header/boundary tests and the application's
 pgn_scanner_pickup regressions. Those tests check real Event values in normal and
 Skip(true) modes, game counts and exact scanner byte ranges across LF/CRLF,
-BOM/no BOM, horizontal indentation and blank/whitespace separators. Retain the
+BOM/no BOM, horizontal indentation and blank/whitespace separators. They also
+require a blank line inside headed movetext to stay one game, a `*` or blank
+line inside a variation not to split, a top-level marker then a blank line to
+split tagless games, and an unclosed variation then `[Event "B"]` to keep Event
+B, in LF and CRLF, in Skip(false), `end_headers → Skip(true)` and
+`begin_variation → Skip(true)`. Retain the
 application's leading-percent and semicolon preface range regression as well.
 
 Header callback keys exclude all trailing ASCII spaces and tabs immediately

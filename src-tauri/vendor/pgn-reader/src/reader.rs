@@ -232,44 +232,135 @@ trait ReadPgn {
         Ok(())
     }
 
-    /// Inspect the line after a movetext newline in both visitor modes.
-    /// Keep the next header and percent line's terminal newline available.
-    fn movetext_line_boundary(&mut self) -> Result<bool, Self::Err> {
-        while let Some(ch) = self.fill_buffer_and_peek()? {
-            match ch {
-                b' ' | b'\t' | b'\r' => {
+    /// Inspect the line after a movetext newline. The newline is still in the
+    /// buffer. A `[` line always ends the game or skipped variation. A blank
+    /// line ends only when `end_on_blank` is set (a termination marker was
+    /// already read outside comments and outside variations). On a boundary
+    /// the newline stays so the enclosing movetext loop and the next
+    /// `read_game` still see it. Percent lines keep their terminating newline.
+    fn movetext_line_boundary(&mut self, end_on_blank: bool) -> Result<bool, Self::Err> {
+        self.fill_buffer_and_peek()?;
+        let mut i = 1;
+        loop {
+            while self.remaining() <= i {
+                if !self.fill_more()? {
                     self.bump();
+                    return Ok(false);
+                }
+            }
+            match self.buffer()[i] {
+                b' ' | b'\t' | b'\r' => {
+                    i += 1;
                 }
                 b'%' => {
+                    self.consume(i);
                     self.skip_until(b'\n')?;
                     return Ok(false);
                 }
-                b'[' | b'\n' => return Ok(true),
-                _ => return Ok(false),
+                b'[' => return Ok(true),
+                b'\n' => {
+                    if end_on_blank {
+                        return Ok(true);
+                    }
+                    self.consume(i);
+                    return Ok(false);
+                }
+                _ => {
+                    self.consume(i);
+                    return Ok(false);
+                }
             }
         }
-        Ok(false)
+    }
+
+    fn take_outcome_after_one(&mut self) -> Option<Outcome> {
+        if self.buffer().starts_with(b"-0") {
+            self.consume(2);
+            Some(Outcome::Decisive {
+                winner: Color::White,
+            })
+        } else if self.buffer().starts_with(b"/2-1/2") {
+            self.consume(6);
+            Some(Outcome::Draw)
+        } else {
+            None
+        }
+    }
+
+    fn take_outcome_after_zero(&mut self) -> Option<Outcome> {
+        if self.buffer().starts_with(b"-1") {
+            self.consume(2);
+            Some(Outcome::Decisive {
+                winner: Color::Black,
+            })
+        } else {
+            None
+        }
+    }
+
+    fn skip_movetext_resume(bytes: &[u8]) -> Option<usize> {
+        bytes
+            .iter()
+            .position(|&ch| matches!(ch, b'\n' | b'{' | b';' | b'(' | b')' | b'*' | b'1' | b'0'))
     }
 
     fn skip_movetext(&mut self) -> Result<(), Self::Err> {
+        let mut depth = 0usize;
+        let mut terminated = false;
         while let Some(ch) = self.fill_buffer_and_peek()? {
-            self.bump();
-
             match ch {
                 b'{' => {
+                    self.bump();
                     self.skip_until(b'}')?;
                     self.bump();
                 }
                 b';' => {
+                    self.bump();
                     self.skip_until(b'\n')?;
                 }
                 b'\n' => {
-                    if self.movetext_line_boundary()? {
+                    if self.movetext_line_boundary(terminated && depth == 0)? {
                         break;
                     }
                 }
+                b'(' => {
+                    self.bump();
+                    depth += 1;
+                }
+                b')' => {
+                    self.bump();
+                    depth = depth.saturating_sub(1);
+                }
+                b'*' => {
+                    self.bump();
+                    if depth == 0 {
+                        terminated = true;
+                    }
+                }
+                b'1' => {
+                    self.bump();
+                    if self.take_outcome_after_one().is_some() {
+                        if depth == 0 {
+                            terminated = true;
+                        }
+                    } else {
+                        let token_end = self.find_token_end(0);
+                        self.consume(token_end);
+                    }
+                }
+                b'0' => {
+                    self.bump();
+                    if self.take_outcome_after_zero().is_some() {
+                        if depth == 0 {
+                            terminated = true;
+                        }
+                    } else {
+                        let token_end = self.find_token_end(0);
+                        self.consume(token_end);
+                    }
+                }
                 _ => {
-                    if let Some(consumed) = memchr::memchr3(b'\n', b'{', b';', self.buffer()) {
+                    if let Some(consumed) = Self::skip_movetext_resume(self.buffer()) {
                         self.consume(consumed);
                     } else {
                         self.consume_all();
@@ -294,6 +385,8 @@ trait ReadPgn {
     }
 
     fn read_movetext<V: Visitor>(&mut self, visitor: &mut V) -> Result<(), Self::Err> {
+        let mut depth = 0usize;
+        let mut terminated = false;
         while let Some(ch) = self.fill_buffer_and_peek()? {
             match ch {
                 b'{' => {
@@ -314,9 +407,7 @@ trait ReadPgn {
                     self.consume(right_brace + 1);
                 }
                 b'\n' => {
-                    self.bump();
-
-                    if self.movetext_line_boundary()? {
+                    if self.movetext_line_boundary(terminated && depth == 0)? {
                         break;
                     }
                 }
@@ -326,14 +417,11 @@ trait ReadPgn {
                 }
                 b'1' => {
                     self.bump();
-                    if self.buffer().starts_with(b"-0") {
-                        self.consume(2);
-                        visitor.outcome(Some(Outcome::Decisive {
-                            winner: Color::White,
-                        }));
-                    } else if self.buffer().starts_with(b"/2-1/2") {
-                        self.consume(6);
-                        visitor.outcome(Some(Outcome::Draw));
+                    if let Some(outcome) = self.take_outcome_after_one() {
+                        if depth == 0 {
+                            terminated = true;
+                        }
+                        visitor.outcome(Some(outcome));
                     } else {
                         let token_end = self.find_token_end(0);
                         self.consume(token_end);
@@ -341,11 +429,11 @@ trait ReadPgn {
                 }
                 b'0' => {
                     self.bump();
-                    if self.buffer().starts_with(b"-1") {
-                        self.consume(2);
-                        visitor.outcome(Some(Outcome::Decisive {
-                            winner: Color::Black,
-                        }));
+                    if let Some(outcome) = self.take_outcome_after_zero() {
+                        if depth == 0 {
+                            terminated = true;
+                        }
+                        visitor.outcome(Some(outcome));
                     } else if self.buffer().starts_with(b"-0") {
                         // Castling notation with zeros.
                         self.consume(2);
@@ -371,12 +459,14 @@ trait ReadPgn {
                 }
                 b'(' => {
                     self.bump();
+                    depth += 1;
                     if let Skip(true) = visitor.begin_variation() {
                         self.skip_variation()?;
                     }
                 }
                 b')' => {
                     self.bump();
+                    depth = depth.saturating_sub(1);
                     visitor.end_variation();
                 }
                 b'$' => {
@@ -421,6 +511,9 @@ trait ReadPgn {
                 }
                 b'*' => {
                     visitor.outcome(None);
+                    if depth == 0 {
+                        terminated = true;
+                    }
                     self.bump();
                 }
                 b' ' | b'\t' | b'\r' | b'P' | b'.' => {
@@ -468,24 +561,8 @@ trait ReadPgn {
                     self.skip_until(b'\n')?;
                 }
                 b'\n' => {
-                    match self.buffer().get(1).cloned() {
-                        Some(b'%') => {
-                            self.consume(2);
-                            self.skip_until(b'\n')?;
-                        }
-                        Some(b'[') | Some(b'\n') => {
-                            // Do not consume the first or second line break.
-                            break;
-                        }
-                        Some(b'\r') => {
-                            // Do not consume the first or second line break.
-                            if self.buffer().get(2).cloned() == Some(b'\n') {
-                                break;
-                            }
-                        }
-                        _ => {
-                            self.bump();
-                        }
+                    if self.movetext_line_boundary(false)? {
+                        break;
                     }
                 }
                 _ => {
@@ -991,6 +1068,132 @@ mod tests {
         assert_eq!(collector.sans[3], San::Null);
         assert_eq!(collector.sans[4], San::Null);
         assert_ne!(collector.sans[5], San::Null);
+        Ok(())
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum MovetextMode {
+        Read,
+        SkipMovetext,
+        SkipVariation,
+    }
+
+    struct MovetextProbe {
+        mode: MovetextMode,
+        event: Vec<u8>,
+        sans: usize,
+    }
+
+    impl Visitor for MovetextProbe {
+        type Result = (Vec<u8>, usize);
+
+        fn header(&mut self, key: &[u8], value: RawHeader<'_>) {
+            if key == b"Event" {
+                self.event = value.as_bytes().to_vec();
+            }
+        }
+
+        fn end_headers(&mut self) -> Skip {
+            Skip(matches!(self.mode, MovetextMode::SkipMovetext))
+        }
+
+        fn begin_variation(&mut self) -> Skip {
+            Skip(matches!(self.mode, MovetextMode::SkipVariation))
+        }
+
+        fn san(&mut self, _san: SanPlus) {
+            self.sans += 1;
+        }
+
+        fn end_game(&mut self) -> Self::Result {
+            (
+                std::mem::take(&mut self.event),
+                std::mem::take(&mut self.sans),
+            )
+        }
+    }
+
+    fn parse_movetext_games(
+        pgn: &str,
+        mode: MovetextMode,
+    ) -> Result<Vec<(Vec<u8>, usize)>, io::Error> {
+        let mut reader = BufferedReader::new(io::Cursor::new(pgn.as_bytes()));
+        let mut visitor = MovetextProbe {
+            mode,
+            event: Vec::new(),
+            sans: 0,
+        };
+        let mut games = Vec::new();
+        while let Some(game) = reader.read_game(&mut visitor)? {
+            games.push(game);
+        }
+        Ok(games)
+    }
+
+    fn assert_movetext_games(
+        pgn: &str,
+        expected_events: &[&[u8]],
+        expected_sans: &[usize],
+    ) -> Result<(), io::Error> {
+        let crlf = pgn.replace('\n', "\r\n");
+        for text in [pgn, crlf.as_str()] {
+            for mode in [
+                MovetextMode::Read,
+                MovetextMode::SkipMovetext,
+                MovetextMode::SkipVariation,
+            ] {
+                let games = parse_movetext_games(text, mode)?;
+                let events: Vec<&[u8]> = games.iter().map(|(event, _)| event.as_slice()).collect();
+                assert_eq!(
+                    events, expected_events,
+                    "mode={mode:?}, pgn={text:?}, games={games:?}"
+                );
+                if matches!(mode, MovetextMode::Read) {
+                    let sans: Vec<usize> = games.iter().map(|(_, count)| *count).collect();
+                    assert_eq!(
+                        sans, expected_sans,
+                        "mode={mode:?}, pgn={text:?}, games={games:?}"
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_blank_line_before_termination_is_not_a_boundary() -> Result<(), io::Error> {
+        assert_movetext_games("[Event \"A\"]\n\n1. e4 e5\n\n2. Nf3 Nc6 *", &[b"A"], &[4])?;
+        assert_movetext_games("[Event \"A\"]\n\n{intro}\n\n1. e4 *", &[b"A"], &[1])?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_star_inside_variation_then_blank_is_not_a_boundary() -> Result<(), io::Error> {
+        assert_movetext_games("1. e4 (1. d4 *\n\n2. Nc3) 2. Nf3 *", &[b""], &[4])?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_blank_line_inside_variation_does_not_end_variation() -> Result<(), io::Error> {
+        assert_movetext_games("1. e4 (1. d4\n\n2. Nc3) *", &[b""], &[3])?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_top_level_termination_then_blank_is_a_boundary() -> Result<(), io::Error> {
+        for marker in ["1-0", "0-1", "1/2-1/2", "*"] {
+            assert_movetext_games(&format!("1. e4 {marker}\n\n1. d4 *"), &[b"", b""], &[1, 1])?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_unclosed_variation_leaves_next_tagged_game() -> Result<(), io::Error> {
+        assert_movetext_games(
+            "1. e4 (1. d4\n[Event \"B\"]\n\n1. d4 *",
+            &[b"", b"B"],
+            &[2, 1],
+        )?;
         Ok(())
     }
 }

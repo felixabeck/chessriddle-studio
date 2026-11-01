@@ -4978,7 +4978,47 @@ mod tests {
     }
 
     fn assert_pickup_header_ranges(expected_games: &[&str], expected_events: &[&[u8]]) {
+        assert_pickup_header_ranges_and_sans(expected_games, expected_events, None);
+    }
+
+    fn pickup_parser_sans(data: &[u8]) -> Vec<usize> {
+        struct Sans {
+            count: usize,
+        }
+
+        impl pgn_reader::Visitor for Sans {
+            type Result = usize;
+
+            fn san(&mut self, _san: pgn_reader::SanPlus) {
+                self.count += 1;
+            }
+
+            fn end_game(&mut self) -> Self::Result {
+                std::mem::take(&mut self.count)
+            }
+        }
+
+        let mut reader = pgn_reader::BufferedReader::new(Cursor::new(data));
+        let mut visitor = Sans { count: 0 };
+        let mut sans = Vec::new();
+        while let Some(count) = reader
+            .read_game(&mut visitor)
+            .expect("parse pickup SAN fixture")
+        {
+            sans.push(count);
+        }
+        sans
+    }
+
+    fn assert_pickup_header_ranges_and_sans(
+        expected_games: &[&str],
+        expected_events: &[&[u8]],
+        expected_sans: Option<&[usize]>,
+    ) {
         assert_eq!(expected_games.len(), expected_events.len());
+        if let Some(expected_sans) = expected_sans {
+            assert_eq!(expected_games.len(), expected_sans.len());
+        }
         let mut failures = Vec::new();
         assert_scan_fixture_variants("", expected_games, |data, ranges| {
             for skip in [false, true] {
@@ -4989,11 +5029,29 @@ mod tests {
                 if events != expected_events || events.len() != ranges.len() {
                     failures.push(format!("skip={skip}, data={data:?}, events={events:?}"));
                 }
-                for (range, expected_event) in ranges.iter().zip(expected_events) {
+                if !skip {
+                    if let Some(expected_sans) = expected_sans {
+                        let sans = pickup_parser_sans(data);
+                        if sans != expected_sans {
+                            failures.push(format!("sans data={data:?}, sans={sans:?}"));
+                        }
+                    }
+                }
+                for (index, (range, expected_event)) in
+                    ranges.iter().zip(expected_events).enumerate()
+                {
                     let bytes = &data[range.start as usize..range.end as usize];
                     let events = pickup_parser_events(bytes, skip);
                     if events != [*expected_event] {
                         failures.push(format!("skip={skip}, range={range:?}, events={events:?}"));
+                    }
+                    if !skip {
+                        if let Some(expected_sans) = expected_sans {
+                            let sans = pickup_parser_sans(bytes);
+                            if sans != [expected_sans[index]] {
+                                failures.push(format!("sans range={range:?}, sans={sans:?}"));
+                            }
+                        }
                     }
                 }
             }
@@ -5124,6 +5182,36 @@ mod tests {
                 "[Event \"B\"]\n\n1. e4 *",
             ],
             &[b"A", b"B"],
+        );
+    }
+
+    #[test]
+    fn pgn_scanner_pickup_blank_line_inside_headed_movetext_is_one_game() {
+        assert_pickup_header_ranges_and_sans(
+            &["[Event \"A\"]\n\n1. e4 e5\n\n2. Nf3 Nc6 *"],
+            &[b"A"],
+            Some(&[4]),
+        );
+    }
+
+    #[test]
+    fn pgn_scanner_pickup_blank_line_after_comment_line_is_one_game() {
+        assert_pickup_header_ranges_and_sans(
+            &["[Event \"A\"]\n\n{intro}\n\n1. e4 e5\n\n2. Nf3 Nc6 *"],
+            &[b"A"],
+            Some(&[4]),
+        );
+    }
+
+    #[test]
+    fn pgn_scanner_pickup_headed_games_separated_by_blank_and_tag_stay_two() {
+        assert_pickup_header_ranges_and_sans(
+            &[
+                "[Event \"A\"]\n\n1. e4 *\n",
+                "[Event \"B\"]\n\n1. d4 *",
+            ],
+            &[b"A", b"B"],
+            Some(&[1, 1]),
         );
     }
 
