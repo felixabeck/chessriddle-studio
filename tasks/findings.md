@@ -20249,3 +20249,17 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Failure scenario:** open a Lichess export with `[WhiteElo "?"]` (anonymous player), add a comment, save: the file now says `[WhiteElo "NaN"]`; after a renderer reload the JSON round-trip turns it to null and the tag is dropped instead.
 * **Fix shape:** keep an Elo as a number only when it parses to a finite integer, otherwise preserve the raw string and write it back verbatim; `headersToPGN` skips non-finite numbers. Unit test with `?` and an empty value.
 * **Found by:** cloud audit session session_01JbeKojsWJ1pfK9zBEnfQvc (game tree/practice audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### Game report adds a duplicate castling variation because engine UCI castling is compared with king-takes-rook tree moves
+
+* **ID:** f-20261101-19 · **Status:** open · **Area:** engine-uci · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** behaviour
+* **Where:** `src/state/store/tree.ts:1104-1117` (`addAnalysis` compares raw `from`/`to` of `parseUci(bestMoveUci)` against existing children) and the unconditional `parent.children.push(variationNode)` after it; `src-tauri/src/chess.rs` `parse_uci_attrs` keeps the engine's text (`e1g1`); tree moves from SAN use chessops `parseSan`, which returns king-to-rook for castling (`node_modules/chessops/dist/esm/san.js:114-119`); `uciNormalize` in `src/utils/chess.ts` exists and is unused here.
+* **Defect:** for castling `to` is `h1` in the tree and `g1` from the engine, so the existing `O-O` child is not found and a second `O-O` branch with the PV is added; `addAnalysis` sets `dirty`, so a save writes the duplicate into the user's game.
+* **Failure scenario:** a game whose move after some position is annotated by Generate Report (variations on, the default) where the engine's best move is `O-O` and `O-O` already exists as the main move or a sideline: the tree gets two identical `O-O` branches.
+* **Fix shape:** find the existing child by normalized move identity (`uciNormalize` on both sides, or SAN as `makeMove` does) and store the variation move normalized. Unit test with a castling best move.
+* **Found by:** cloud audit session session_01JbeKom4B2MLm9AFduSMH4Y (engine audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee (chessops castling encoding read in node_modules), 2026-11-01.
