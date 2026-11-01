@@ -165,7 +165,6 @@ function AnnotationEditor() {
   const navigate = (forward: boolean) => {
     const state = store.getState();
     if (forward && state.currentNode().children.length === 0) return;
-    if (!forward && state.position.length === 0) return;
     const previous = state.position.join();
     if (forward) state.goToNext();
     else state.goToPrevious();
@@ -185,12 +184,7 @@ function AnnotationEditor() {
   );
   const escapeRef = useHotkeys<HTMLDivElement>(
     "escape",
-    () => {
-      const activeElement = document.activeElement;
-      if (activeElement instanceof HTMLElement && nextRef.current?.contains(activeElement)) {
-        activeElement.blur();
-      }
-    },
+    (event) => (event.target as HTMLElement).blur(),
     options,
   );
 
@@ -235,7 +229,6 @@ function AnnotationEditor() {
       {focused && (
         <Text c="dimmed" size="xs">
           {t("Board.Annotate.NavigationHint", {
-            defaultValue: "{{next}}: next move · {{previous}}: previous move · Esc: leave editor",
             next: keyMap.ANNOTATION_NEXT_MOVE.keys,
             previous: keyMap.ANNOTATION_PREVIOUS_MOVE.keys,
           })}

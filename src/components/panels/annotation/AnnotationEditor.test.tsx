@@ -30,7 +30,7 @@ import AnnotationEditor, { includeHardBreakMarks, parseNotationComment } from ".
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, options?: { next: string; previous: string }) =>
-      options
+      key === "Board.Annotate.NavigationHint" && options
         ? `${options.next}: next move · ${options.previous}: previous move · Esc: leave editor`
         : key,
   }),
@@ -50,8 +50,18 @@ let store: TreeStore;
 let writeComment: ReturnType<typeof vi.fn<(comment: string) => void>>;
 let atoms: ReturnType<typeof createStore>;
 let chooser: ReturnType<typeof createVariationChooserStore>;
+const contentEditableDescriptor = Object.getOwnPropertyDescriptor(
+  HTMLElement.prototype,
+  "isContentEditable",
+);
 
 beforeEach(() => {
+  Object.defineProperty(HTMLElement.prototype, "isContentEditable", {
+    configurable: true,
+    get(this: HTMLElement) {
+      return this.closest("[contenteditable]")?.getAttribute("contenteditable") === "true";
+    },
+  });
   installMatchMediaStub();
   host = document.createElement("div");
   document.body.append(host);
@@ -66,6 +76,11 @@ afterEach(async () => {
   store?.dispose();
   host.remove();
   vi.restoreAllMocks();
+  if (contentEditableDescriptor) {
+    Object.defineProperty(HTMLElement.prototype, "isContentEditable", contentEditableDescriptor);
+  } else {
+    Reflect.deleteProperty(HTMLElement.prototype, "isContentEditable");
+  }
 });
 
 async function mount(comment: string, controls = false) {
@@ -101,6 +116,14 @@ function editor() {
 
 async function focusEditor() {
   await act(async () => editor().view.focus());
+}
+
+async function flushFocusFrames() {
+  await act(async () => {
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+  });
 }
 
 async function press(
@@ -261,8 +284,30 @@ test("navigation keys outside the editor are inert and external navigation does 
   outside.focus();
   expect((await press("Tab", "Tab", false, outside)).defaultPrevented).toBe(false);
   expect((await press("Tab", "Tab", true, outside)).defaultPrevented).toBe(false);
+  expect((await press("Escape", "Escape", false, outside)).defaultPrevented).toBe(false);
+  expect(document.activeElement).toBe(outside);
   expect(store.getState().position).toEqual([0]);
   await act(async () => store.getState().goToNext());
+  await flushFocusFrames();
+  expect(document.activeElement).toBe(outside);
+  expect(editor().isFocused).toBe(false);
+});
+
+test("refused practice navigation does not leave a pending editor focus", async () => {
+  await mount("");
+  await addLine();
+  await act(async () => store.getState().setPracticePath([0]));
+  await focusEditor();
+  await press("Tab", "Tab");
+  expect(store.getState().position).toEqual([0]);
+  const outside = host.querySelector("button")!;
+  outside.focus();
+  await act(async () => store.getState().goToPrevious());
+  await flushFocusFrames();
+  expect(document.activeElement).toBe(outside);
+  await act(async () => store.getState().goToNext());
+  await flushFocusFrames();
+  expect(store.getState().position).toEqual([0]);
   expect(document.activeElement).toBe(outside);
   expect(editor().isFocused).toBe(false);
 });
