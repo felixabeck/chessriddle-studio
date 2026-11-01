@@ -20309,3 +20309,17 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Lens:** `review-correctness`
 * **Proof:** a GameCard/GameTable test: after delete the preview is empty, and the native delete runs only after confirmation.
 * **Found by:** cloud audit session session_01JbeKok45YnAvBbVKxMsko6 (puzzles/home/databases/board input audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### Account sync never imports a correspondence or daily game that finishes after a newer game started
+
+* **ID:** f-20261101-23 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** data-loss
+* **Where:** Lichess linked path: `src-tauri/src/db/linked_collections.rs:865-877` (cursor = newest game start time), `db/linked_collections/batch.rs:521-531` (`coverage_cursor_ms`), `src/components/home/AccountCard.tsx:316-322` (`sinceMs`), `src-tauri/src/fs.rs:1398-1407` (Lichess `since=`). Unlinked path (Windows, both providers): `getLatestGameTimestamp` (`db/mod.rs:2109-2121`) and `end_headers` skipping start ≤ cursor (`db/mod.rs:571-573`).
+* **Defect:** the cursor is a game start time. Lichess `since` filters on creation time (lila master: `inCreatedAtRange`, `g.createdAt.isAfter`), and the unlinked importer drops games that started before the stored newest start. Chess.com on the linked path is not affected (archives by end month, dedup by provider id).
+* **Failure scenario:** a correspondence game starts 1 Oct, the user syncs after a 10 Oct blitz game, the correspondence game ends 20 Oct: every later sync sends `since=<10 Oct>` and the finished game is never imported. On Windows a Chess.com daily game started 5 Sep and ended 3 Oct is dropped because the newest stored game started 19 Sep.
+* **Open question:** how far back must the Lichess cursor reach (longest correspondence time control, or a separate query for games ongoing at the last sync), and should the unlinked path dedup by provider game id (Site/Link) instead of filtering by start time?
+* **Found by:** cloud audit session session_01JbeKomYNAubvgDNCaEau2u (native security/accounts audit, base 301104da), verified against local HEAD by a Claude Code verifier subagent of session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
