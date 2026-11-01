@@ -20323,3 +20323,17 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Failure scenario:** a correspondence game starts 1 Oct, the user syncs after a 10 Oct blitz game, the correspondence game ends 20 Oct: every later sync sends `since=<10 Oct>` and the finished game is never imported. On Windows a Chess.com daily game started 5 Sep and ended 3 Oct is dropped because the newest stored game started 19 Sep.
 * **Open question:** how far back must the Lichess cursor reach (longest correspondence time control, or a separate query for games ongoing at the last sync), and should the unlinked path dedup by provider game id (Site/Link) instead of filtering by start time?
 * **Found by:** cloud audit session session_01JbeKomYNAubvgDNCaEau2u (native security/accounts audit, base 301104da), verified against local HEAD by a Claude Code verifier subagent of session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+---
+
+## 2026-11-01 — filed through the inbox spool
+
+### One Chess.com variant game (crazyhouse, bughouse) permanently blocks syncing that account's linked collection
+
+* **ID:** f-20261101-24 · **Status:** open · **Area:** pgn-import · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** behaviour
+* **Where:** `src-tauri/src/chesscom.rs:401-420` (every archive game staged, no `rules`/`[Variant]` filter), `src-tauri/src/db/mod.rs:619-621,668-675` (a drop move skips the game, returns `None`), `db/linked_collections/batch.rs:189-194` (`parse_identity_game` turns `None` into a conflict), `batch.rs:262-278` (pending batch reused, other batches refused "another batch needs recovery"), `batch.rs:549` (`finish_pending` is the only clear), `src/components/library/LinkedCollection.tsx:116-125` (only Retry offered).
+* **Defect:** an unparsable game fails the whole batch, the batch can never be discarded, and the collection index elsewhere already treats unparsable games as omitted.
+* **Failure scenario:** a Chess.com user who played one crazyhouse game with a drop (`N@f3`) clicks Download: indexing fails with a conflict and every later Download fails the same way; the only escape is deleting the account PGN and with it the collection.
+* **Open question:** filter unsupported variants at staging (`rules` not chess/chess960), or record unparsable games as omitted in the batch path; and what discard/recovery action does a stuck pending batch get?
+* **Found by:** cloud audit session session_01JbeKomYNAubvgDNCaEau2u (native security/accounts audit, base 301104da), verified against local HEAD by a Claude Code verifier subagent of session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
