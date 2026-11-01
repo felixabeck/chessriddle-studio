@@ -16240,7 +16240,7 @@ Root corrected the initial frozen-phase disposition under push-review-policy sec
 
 ### Database save completion clears newer unsaved edits
 
-* **ID:** f-20261010-19 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261010-19 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** e838b3a7-7402-4e53-a614-eb2da79f3765 · output /home/felixb/.claude/drain-state/chessfable-0a459a4f.d/attempt-e838b3a7-7402-4e53-a614-eb2da79f3765-1.jsonl
 * **Where:** src/utils/tabs.ts:458.
 * **Defect:** After awaiting writeDbGame the database branch calls store.save unconditionally. Edits made during the write were not in captured serialized PGN but become clean.
@@ -16253,6 +16253,11 @@ Root corrected the initial frozen-phase disposition under push-review-policy sec
 * **Closure qualification:** All nine R6 lenses reached EOS and source-closed prior adopted obligations within their inspected classes. They separately found inherited count-publication refusal f-20261010-27, physical blank-tree/page durability f-20261010-29 and existing terminal-replay dirty publication f-20261010-30, plus the dead variation flag f-20261010-28. These new corrections and fresh cumulative closure remain pending. The lifetime/admission class of f26 is source-covered, while its complete failure contract is pending f27/f29. This checkpoint leaves the finding open. Pixels, real native product, fourteen standalone fault/restoration stages and final push gates are not established by source proof. Complete raw R6 reports and root dispositions are in tasks/handoffs/2026-10-10-game-opening-round6.md.
 * **Review disclosure:** Plan authorship and arbitration shared one context. Detection ran on the same model family as the code.
 <!-- ledger-meta {"command":"annotate","effect_lines":3,"effect_sha256":"f704023f2f98fc690134fd2021846027339f52832f275a445d814a5ffdc7a49c","input_sha256":"57ac78351ad89d319aab8a9c8ec14495e89fdef0398debc042803df609145917","kind":"mutation-receipt","operation":"068f2da2dca5b255e3615d5880e87c243e42705c0fd79b82e5679cadf8a5518e","options":{"section":null},"request_id_sha256":null,"results":["f-20261010-19"],"target":"f-20261010-19","v":1} -->
+
+* **Pickup re-check, 2026-11-01 (drain ae1f1c7c):** The defect no longer holds. The database branch in `saveToFile` (`src/utils/tabs.ts`, `databaseOrigin` block) now awaits `writeDbGame` and returns `finishWrite()`, which returns `superseded` when ownership was lost and calls `store.save` only when `serializeStoreTree(store) === pgn`; otherwise the newer edits stay dirty. Landed in 7b363143 (with 2f15d09b, ae63c2fa, af7129d1) as recorded in the R6 checkpoint.
+* **Proof:** `pnpm exec vitest run src/utils/tabs.test.ts -t "database completion preserves"` passes 4/4 (unchanged, comment, header, owner). A disposable mutation that replaces `return finishWrite()` with an unconditional `store.getState().save(); return "saved"` turns 3/4 red (comment, header, owner); source restored byte-identically.
+* **Scope:** The follow-on R6 defects named in the closure qualification are their own findings (f-20261010-27, -28, -29, -30) and are not obligations of this entry. No decision was made or reversed.
+<!-- ledger-meta {"command":"close","effect_lines":3,"effect_sha256":"862f815c2d4d7fc26009d1e660884de75f656ffd09d5bf930209efa669d8d95e","header_sha256":"9eadfddd1f5248ebb2399e1fc71159c9730b7dca04a235d1b1b262f9b2912739","header_status":"handled","input_sha256":"348659cac143f134297e8c82987267b17f8d654296a6964a9eb39576376cbb38","kind":"mutation-receipt","operation":"0a7d8dbfd99c6b7f81828d990a0736fa8330ddf0232b2caa9b2393d7071d39e3","options":{"section":null},"request_id_sha256":null,"results":["f-20261010-19"],"target":"f-20261010-19","v":1} -->
 
 ### Obsolete physical-generation reload rejection hides its replacement
 
