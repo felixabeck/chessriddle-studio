@@ -69,7 +69,7 @@ run on every invocation; the runner also runs the fenced commands below as their
 One complete Rust lane runs at a time in declaration order, alongside contract and bundle.
 Frontend coverage and mutation wait for every Rust lane to terminate, then retain their frontend
 budget, e2e reservation and CPU rules. Ordinary Rust failures do not skip later selected lanes.
-Known limitation: the scheduler does not yet follow the shared push policy §8 "Fail-fast gate order" (no further start after a red); tracked as f-20261102-05.
+Known limitation: the scheduler does not yet follow the shared push policy §8 "Fail-fast gate order" (no further start after a red). It is tracked as f-20261102-05.
 Signals or unconfirmed child cleanup stop queued starts. A failure
 returns to `repair`, commit, and the required affected final-gate rerun before push.
 
@@ -251,7 +251,7 @@ For build phase proofs (agent-kit build skill), append tests for the phase's cha
 - `src-tauri/src/**/*.rs`: run per changed module with `cargo test --manifest-path src-tauri/Cargo.toml --locked --bins -- <module path>::` (`src-tauri/src/a/b.rs` → `a::b`, `mod.rs` → its directory module, `main.rs` → no filter). The crate has only a binary target, so `--lib` does not apply. If `cargo` is missing, prefix with `PATH="$HOME/.cargo/bin:$PATH"`.
 - `scripts/<name>.mjs`: run `node --test` on every matching `scripts/*-tests.mjs` file (`git grep -l <name> -- 'scripts/*-tests.mjs'`), plus changed `*-tests.mjs` files themselves.
 
-Verified forms (2026-11-02): Vitest related ran 4171 tests for `src/utils/annotation.ts`; cargo filter `lexer::` ran 12 tests.
+Verified forms (2026-11-02): Vitest related ran 4171 tests for `src/utils/annotation.ts`. The cargo filter `lexer::` ran 12 tests.
 
 ## 2a. Pre-review checks
 
