@@ -12,6 +12,10 @@ import type { Page, Request } from "@playwright/test";
 
 const TEXTURE_URL = /^url\("[^"]*\/board\/wood4-square\.png"\)/;
 const BOARD_IMAGE_URL = /url\("[^"]*\/board\/chessriddle\.svg"\)$/;
+/** Releases a held tile response if the page never abandons it, so a regression fails, not hangs. */
+const HELD_RESPONSE_DEADLINE_MS = 10_000;
+/** Lets the held requests reach the network layer before the page cancels them. */
+const CANCEL_AFTER_MS = 200;
 
 async function openBoard(page: Page) {
     await page.goto("/");
@@ -182,7 +186,10 @@ test("board-wood-texture: arrows from PGN drawings keep finite coordinates when 
         });
     });
     await page.route("**/board/wood4-square.png", async (route) => {
-        await Promise.race([textureAborted, new Promise((resolve) => setTimeout(resolve, 10_000))]);
+        await Promise.race([
+            textureAborted,
+            new Promise((resolve) => setTimeout(resolve, HELD_RESPONSE_DEADLINE_MS)),
+        ]);
         await route.continue().catch(() => undefined);
     });
     await page.goto("/library");
@@ -213,37 +220,51 @@ test("board-wood-texture: the browser-failure check exempts only abandoned image
     browser,
     baseURL,
 }) => {
-    // The fixture's classifier, fed the real aborted requests Chromium reports. A separate context
-    // keeps these deliberate aborts away from the page fixture's own failure check.
+    // The fixture's classifier, fed the real failed requests Chromium reports. A separate context
+    // keeps these deliberate failures away from the page fixture's own failure check.
     const context = await browser.newContext({ baseURL });
     const page = await context.newPage();
     await page.route("**/board/held.*", () => undefined);
+    await page.route("**/board/refused.png", (route) => route.abort("connectionrefused"));
     await page.goto("/board/wood4.jpg");
     const failed: Request[] = [];
     page.on("requestfailed", (request) => failed.push(request));
-    await page.evaluate(() => {
+    await page.evaluate((cancelAfterMs) => {
         const controller = new AbortController();
         void fetch("/board/held.json", { signal: controller.signal }).catch(() => undefined);
-        const image = new Image();
-        image.src = "/board/held.png";
+        const held = new Image();
+        held.src = "/board/held.png";
+        const refused = new Image();
+        refused.src = "/board/refused.png";
         setTimeout(() => {
             controller.abort();
-            image.src = "";
-        }, 200);
-    });
-    await expect
-        .poll(() => failed.map((request) => request.resourceType()).sort())
-        .toEqual(["fetch", "image"]);
+            held.src = "";
+        }, cancelAfterMs);
+    }, CANCEL_AFTER_MS);
+    await expect.poll(() => failed.length).toBe(3);
     const origin = new URL(page.url()).origin;
-    for (const request of failed) {
-        expect(request.failure()?.errorText).toBe("net::ERR_ABORTED");
-    }
-    const byType = Object.fromEntries(
-        failed.map((request) => [request.resourceType(), localRequestFailure(request, origin)]),
+    const byPath = Object.fromEntries(
+        failed.map((request) => [
+            new URL(request.url()).pathname,
+            {
+                type: request.resourceType(),
+                error: request.failure()?.errorText,
+                failure: localRequestFailure(request, origin),
+            },
+        ]),
     );
-    expect(byType).toEqual({
-        fetch: `Failed local request: ${origin}/board/held.json`,
-        image: null,
+    expect(byPath).toEqual({
+        "/board/held.json": {
+            type: "fetch",
+            error: "net::ERR_ABORTED",
+            failure: `Failed local request: ${origin}/board/held.json`,
+        },
+        "/board/held.png": { type: "image", error: "net::ERR_ABORTED", failure: null },
+        "/board/refused.png": {
+            type: "image",
+            error: "net::ERR_CONNECTION_REFUSED",
+            failure: `Failed local request: ${origin}/board/refused.png`,
+        },
     });
     await context.close();
 });
