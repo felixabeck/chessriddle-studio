@@ -20593,3 +20593,5 @@ Closed by 5ea1ae3b, pushed to master as part of 4633e57f (database games in Rece
 * **Proof:** a scheduler test where an early lane fails shows no later lane started and the summary lists them as skipped.
 * **Found by:** agent-kit build for f-20261102-06, 2026-11-02.
 * **Impact class:** tooling
+* **Correction (2026-11-02):** the **Defect** line overstates the source. The agent-kit push policy does not yet require fail-fast order: agent-kit f-20261102-06 is still open and proposes it as its fix direction, and `references/push-review-policy.md` contains no ordering or stop-at-first-red rule. This finding follows that proposal; if f-20261102-06 settles a different order, follow the adopted policy.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"51e9a8782745e23d78809c9f0b9fd988e153282ad34e9b4ab3815d2809072204","input_sha256":"2c9a996cb45e1a0a25a4d124ad645805b70763dcd46aa2eee583a477a00e6cac","kind":"mutation-receipt","operation":"5b3c35e6f017d0fe6c1e07f6998ecc2045510b0486cbb1724b6f7ced01e736bc","options":{"section":null},"request_id_sha256":null,"results":["f-20261102-05"],"target":"f-20261102-05","v":1} -->
