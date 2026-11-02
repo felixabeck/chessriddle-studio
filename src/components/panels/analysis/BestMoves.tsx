@@ -45,6 +45,7 @@ import { engineMultiPv, type Engine } from "@/utils/engines";
 import { formatNodes } from "@/utils/format";
 import { formatScore } from "@/utils/score";
 import AnalysisRow from "./AnalysisRow";
+import AssessmentSymbol from "./AssessmentSymbol";
 import classes from "./BestMoves.module.css";
 import EngineSettingsForm, { type Settings } from "./EngineSettingsForm";
 import { engineFailureMessage, useDisplayedEngineLines } from "./useDisplayedEngineLines";
@@ -428,9 +429,12 @@ function EngineTop({
               <Text size="0.7rem" tt="uppercase" fw={700} className={classes.subtitle}>
                 {t("Board.Analysis.Evaluation")}
               </Text>
-              <Text fw="bold" fz="md">
-                {formatScore(engineVariations[0].score.value, 1) ?? 0}
-              </Text>
+              <Group gap={6} wrap="nowrap">
+                <Text fw="bold" fz="md">
+                  {formatScore(engineVariations[0].score.value, 1) ?? 0}
+                </Text>
+                <AssessmentSymbol score={engineVariations[0].score.value} fz="md" />
+              </Group>
             </Stack>
             <Stack align="center" gap={0}>
               <Text size="0.7rem" tt="uppercase" fw={700} className={classes.subtitle}>

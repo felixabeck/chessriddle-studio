@@ -31,6 +31,34 @@ export function formatScore(score: ScoreValue, precision = 2): string {
     return scoreText;
 }
 
+/** An engine score's position assessment, as the matching advantage annotation symbol. */
+export type PositionAssessment = Extract<Annotation, "+-" | "±" | "⩲" | "=" | "⩱" | "∓" | "-+">;
+
+/**
+ * Centipawn boundaries (White's view, inclusive lower bound) of a slight edge, a clear
+ * advantage and a winning position. There is no official standard; Felix chose
+ * 0.3 / 1 / 2 pawns on 2026-11-02.
+ */
+const ASSESSMENT_EDGE_CP = 30;
+const ASSESSMENT_ADVANTAGE_CP = 100;
+const ASSESSMENT_WINNING_CP = 200;
+
+/**
+ * Maps a White-relative engine score to an advantage symbol. Mate and tablebase scores
+ * are decisive for the side their sign favours. "Unclear" (∞) is never derived: a number
+ * cannot say that a position is unclear.
+ */
+export function positionAssessment(score: ScoreValue): PositionAssessment {
+    if (score.value === 0) return "=";
+    const white = score.value > 0;
+    if (score.type !== "cp") return white ? "+-" : "-+";
+    const cp = Math.abs(score.value);
+    if (cp >= ASSESSMENT_WINNING_CP) return white ? "+-" : "-+";
+    if (cp >= ASSESSMENT_ADVANTAGE_CP) return white ? "±" : "∓";
+    if (cp >= ASSESSMENT_EDGE_CP) return white ? "⩲" : "⩱";
+    return "=";
+}
+
 export function getWinChance(centipawns: number) {
     return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * centipawns)) - 1);
 }

@@ -7,3 +7,7 @@
   overflow: hidden;
   white-space: nowrap;
 }
+
+.stats {
+  font-variant-numeric: tabular-nums;
+}

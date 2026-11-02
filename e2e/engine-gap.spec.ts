@@ -620,6 +620,26 @@ test("engine-gap: pinned engine shows up to its own line count above the notatio
     await expect(detached).toHaveScreenshot("pinned-engine-two-lines-dark.png", {
         animations: "disabled",
     });
+
+    // Hovering a pinned move previews the position after it on a board inside the window,
+    // and the board stays while the pointer stays on the move (it never takes the pointer).
+    const move = detached.getByRole("button", { name: "e5", exact: true }).first();
+    await move.hover();
+    const preview = page.getByTestId("engine-line-preview");
+    await expect(preview.locator("cg-board")).toBeVisible();
+    const box = (await preview.boundingBox())!;
+    const viewport = page.viewportSize()!;
+    expect(box.width).toBeGreaterThan(150);
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+    const moveBox = (await move.boundingBox())!;
+    await page.mouse.move(moveBox.x + moveBox.width - 2, moveBox.y + moveBox.height / 2);
+    await expect(preview).toBeVisible();
+    await expect(page).toHaveScreenshot("pinned-engine-hover-preview-dark.png", {
+        animations: "disabled",
+    });
+    await page.mouse.move(0, 0);
+    await expect(preview).toHaveCount(0);
 });
 
 test("engine-gap: legal threat after a double push becomes unavailable in check and recovers", async ({

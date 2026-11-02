@@ -1,6 +1,13 @@
 import { expect, test } from "vitest";
 import type { BestMoves } from "@/bindings";
-import { formatScore, getAccuracy, getAnnotation, getCPLoss, getWinChance } from "../score";
+import {
+    formatScore,
+    getAccuracy,
+    getAnnotation,
+    getCPLoss,
+    getWinChance,
+    positionAssessment,
+} from "../score";
 
 test("should format a positive cp score correctly", () => {
     expect(formatScore({ type: "cp", value: 50 })).toBe("+0.50");
@@ -90,4 +97,19 @@ test("derives no ! without the previous-previous evaluation", () => {
     expect(
         getAnnotation(null, ZERO, { type: "cp", value: 300 }, "white", prevMoves, true, "e4"),
     ).toBe("!!");
+});
+
+test("positionAssessment uses the 0.3 / 1 / 2 pawn boundaries from White's view", () => {
+    const cp = (value: number) => positionAssessment({ type: "cp", value });
+    expect([0, 29, -29].map(cp)).toEqual(["=", "=", "="]);
+    expect([30, 99, -30, -99].map(cp)).toEqual(["⩲", "⩲", "⩱", "⩱"]);
+    expect([100, 199, -100, -199].map(cp)).toEqual(["±", "±", "∓", "∓"]);
+    expect([200, 900, -200, -900].map(cp)).toEqual(["+-", "+-", "-+", "-+"]);
+});
+
+test("positionAssessment treats mate and tablebase scores as decisive for their side", () => {
+    expect(positionAssessment({ type: "mate", value: 3 })).toBe("+-");
+    expect(positionAssessment({ type: "mate", value: -1 })).toBe("-+");
+    expect(positionAssessment({ type: "dtz", value: 12 })).toBe("+-");
+    expect(positionAssessment({ type: "dtz", value: -4 })).toBe("-+");
 });

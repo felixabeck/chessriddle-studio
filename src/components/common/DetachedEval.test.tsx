@@ -6,6 +6,7 @@ import {
   detachedEngineLinesAtom,
   enginesAtom,
   engineTerminalFamily,
+  previewBoardOnHoverAtom,
   threatFamily,
 } from "@/state/atoms";
 import { INITIAL_FEN } from "chessops/fen";
@@ -18,6 +19,9 @@ import { analysisSearch } from "../panels/analysis/analysisSearch";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
+vi.mock("@/chessground/Chessground", () => ({
+  Chessground: ({ fen }: { fen: string }) => <div data-preview-fen={fen} />,
+}));
 vi.mock("@/platform/tauri", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/platform/tauri")>();
   return {
@@ -25,9 +29,13 @@ vi.mock("@/platform/tauri", async (importOriginal) => {
     tauri: { ...actual.tauri, reconcileEngineAttachments: vi.fn().mockResolvedValue(undefined) },
   };
 });
-/** `displayLines[0]` (e4 e5 Nf3) as rendered from the start position, and as a threat line. */
+/** `displayLines[0]` (e4 e5 Nf3) as rendered from the start position. */
 const LINE = "1.e4e52.♘f3";
-const THREAT_LINE = "1...e42.e5♘f3";
+/** A threat search passes White's turn, so its line starts with a Black move. */
+const threatLines = [
+  { ...displayLines[0], sanMoves: ["e5", "Nf3", "Nc6"], uciMoves: ["e7e5", "g1f3", "b8c6"] },
+];
+const THREAT_LINE = "1...e52.♘f3♘c6";
 
 let h: ReturnType<typeof engineDisplayHarness>;
 afterEach(async () => h.close());
@@ -37,7 +45,7 @@ test("DetachedEval drops historical threat PV and score in check and restores le
   await h.store.set(enginesAtom, [displayEngine]);
   h.store.set(currentDetachedEngineAtom, displayEngine.id);
   h.store.set(threatFamily("display-tab"), true);
-  h.store.set(h.memoryAtom, new Map([[analysisSearch(INITIAL_FEN, [], true).key!, displayLines]]));
+  h.store.set(h.memoryAtom, new Map([[analysisSearch(INITIAL_FEN, [], true).key!, threatLines]]));
   await h.render(
     <TreeStateContext.Provider value={tree}>
       <DetachedEval />
@@ -190,5 +198,77 @@ test("DetachedEval numbers moves from the current position and plays a clicked l
   await act(async () => knight!.click());
   expect(tree.getState().currentNode().san).toBe("Nf3");
   expect(tree.getState().currentNode().halfMoves).toBe(3);
+  tree.dispose();
+});
+
+const hover = (element: Element) =>
+  act(async () => {
+    element.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+  });
+const unhover = (element: Element) =>
+  act(async () => {
+    element.dispatchEvent(new MouseEvent("mouseout", { bubbles: true }));
+  });
+const moveButton = (san: string, root: ParentNode = h.host) =>
+  [...root.querySelectorAll("button")].find((b) => b.textContent === san)!;
+const previewFen = () =>
+  document
+    .querySelector("[data-testid=engine-line-preview] [data-preview-fen]")
+    ?.getAttribute("data-preview-fen");
+
+test("DetachedEval header shows the best line's depth and advantage symbol", async () => {
+  const tree = await renderPinned("3");
+  expect(h.host.textContent).toContain("GoMode.Depth20");
+  const symbol = h.host.querySelector("[data-testid=assessment-symbol]");
+  expect(symbol?.textContent).toBe("⩲");
+  expect(symbol?.getAttribute("aria-label")).toBe("Annotate.WhiteEdge");
+  tree.dispose();
+});
+
+test("DetachedEval previews the position after a hovered move, and not on dimmed lines", async () => {
+  const tree = await renderPinned("3");
+  await hover(moveButton("e5"));
+  expect(previewFen()).toBe("rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2");
+  await unhover(moveButton("e5"));
+  expect(previewFen()).toBeUndefined();
+
+  await act(async () => tree.getState().makeMoves({ payload: ["d4"] }));
+  const dimmed = h.host.querySelector("[inert]")!;
+  await hover(moveButton("e5", dimmed));
+  expect(previewFen()).toBeUndefined();
+  tree.dispose();
+});
+
+test("DetachedEval shows no preview board when previews on hover are turned off", async () => {
+  const tree = await renderPinned("3");
+  await act(async () => h.store.set(previewBoardOnHoverAtom, false));
+  await hover(moveButton("e5"));
+  expect(previewFen()).toBeUndefined();
+  // The setting persists in localStorage; later tests expect the default.
+  await act(async () => h.store.set(previewBoardOnHoverAtom, true));
+  tree.dispose();
+});
+
+test("DetachedEval flips the preview above a line at the window bottom, without taking the pointer", async () => {
+  const tree = await renderPinned("3");
+  const line = moveButton("e5").closest(".mantine-Group-root")!;
+  vi.spyOn(line, "getBoundingClientRect").mockReturnValue(
+    DOMRect.fromRect({ x: 40, y: window.innerHeight - 40, width: 600, height: 40 }),
+  );
+  await hover(moveButton("e5"));
+  const preview = document.querySelector<HTMLElement>("[data-testid=engine-line-preview]")!;
+  expect(preview.style.top).toBe(`${window.innerHeight - 240}px`);
+  expect(preview.style.left).toBe("40px");
+  expect(preview.style.pointerEvents).toBe("none");
+  tree.dispose();
+});
+
+test("DetachedEval renders a line only up to its first illegal move", async () => {
+  const tree = await renderPinned(null, [
+    { ...displayLines[0], sanMoves: ["e4", "Ke7", "Nf3"], uciMoves: ["e2e4", "e8e7", "g1f3"] },
+  ]);
+  expect(h.host.textContent).toContain("1.e4");
+  expect(h.host.textContent).not.toContain("e7");
+  expect(h.host.textContent).not.toContain("f3");
   tree.dispose();
 });
