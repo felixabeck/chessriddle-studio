@@ -20265,7 +20265,7 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 
 ### An unrated WhiteElo/BlackElo tag ("?") is saved back as "NaN"
 
-* **ID:** f-20261101-18 · **Status:** open · **Area:** chess-tree · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261101-18 · **Status:** handled · **Area:** chess-tree · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** data-loss
 * **Where:** `src/utils/chess.ts:564-565` (`getPgnHeaders`: `Number.parseInt(WhiteElo)` for any non-empty value other than `-`), `src/utils/chess.ts:196-201` (`headersToPGN` writes Elo whenever it is not undefined/null), save path `serializeStoreTree` → `getPGN`.
 * **Defect:** `Number.parseInt("?")` is `NaN`, which passes both checks and is written as `String(NaN)`; the raw tag is not kept in `other` because the Elo keys are destructured out.
@@ -20274,6 +20274,9 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Found by:** cloud audit session session_01JbeKojsWJ1pfK9zBEnfQvc (game tree/practice audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
 * **Correction (records review, 2026-11-01):** the save scenario is blocked earlier at HEAD. `openFile` → `createTab` → `tabStorage.seed` validates the parsed tree, the Elo schema `z.number().int().nullable().optional()` (`src/state/store/tabStorage.ts:125-127`) rejects `NaN`, and `seed` throws "Cannot persist an invalid game tree." (`tabStorage.ts:557-558`). The observed failure is therefore that a game with `[WhiteElo "?"]` cannot be opened in a tab at all; the `"NaN"` write applies only to paths that bypass `seed` (e.g. Copy PGN). The fix shape is unchanged: parse Elo to a finite integer or keep the raw string.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"31101dbfcf4bc0c954fe84b25de862a1890f8ef32cd03dd337271fdda37f18d9","input_sha256":"cc6aaf2fc4c12854553573dc6eca876c7aa4c0a22fbb66104be1e08d4f4dad3c","kind":"mutation-receipt","operation":"2f9cd46cd21327fea9a55b2358101895a505fdcefc3550de7cc1d13176e768cd","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-18"],"target":"f-20261101-18","v":1} -->
+
+* **Closed (2026-11-02, drain build run joiner of f-20261101-13, session 5760d80b-dd1f-45c3-80d3-ecf9daae3008):** `getPgnHeaders` keeps an Elo as a number only for `-` (0) or an all-digit tag; any other non-empty value (e.g. `?`) stays in `other` under its original key and is written back verbatim, so the tree passes the tab-storage schema and the game opens. `headersToPGN` writes only finite Elo numbers and skips the raw `other` copy when a typed rating is emitted, so a rating entered later never produces two tags. Unit tests cover `?`, empty, `-`, `2100`, typed-wins and NaN. Commit fc8cb9c5 (rename nit in 57d4a322).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"ae33aca259c46c511c7ae23cffaefa5c32eb2524bca1ef59d9a7d94f71f1b3c1","header_sha256":"585343562ea904fbf3a0f2e0508f1d28148d5ba6f2cc3262ae8a5f357f443548","header_status":"handled","input_sha256":"186b05d8c38ad714332c0820117295c17390cd229d5e3a9083c6794a6346f502","kind":"mutation-receipt","operation":"666bc78dfff972d520efb6e5c233974dbcf4d8d9803ca79f0cd59ce171c0312f","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-18"],"target":"f-20261101-18","v":1} -->
 
 ---
 
