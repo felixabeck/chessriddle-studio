@@ -69,6 +69,7 @@ run on every invocation; the runner also runs the fenced commands below as their
 One complete Rust lane runs at a time in declaration order, alongside contract and bundle.
 Frontend coverage and mutation wait for every Rust lane to terminate, then retain their frontend
 budget, e2e reservation and CPU rules. Ordinary Rust failures do not skip later selected lanes.
+Known limitation: the scheduler does not yet follow the shared push policy §8 "Fail-fast gate order" (no further start after a red); tracked as f-20261102-05.
 Signals or unconfirmed child cleanup stop queued starts. A failure
 returns to `repair`, commit, and the required affected final-gate rerun before push.
 
@@ -241,6 +242,16 @@ Changes to workflows also run every gate whose toolchain they can affect. Change
 - The frontend mutation suite is a receipt-backed frontend push gate: run it through `pnpm gate:ensure frontend-mutation`. CI runs it per package with a change skip and bounded incremental reuse, and `.github/workflows/mutation.yml` runs the full sweep daily. Ordinary sizing charges each Stryker runner 2432 MiB (`STRYKER_RUNNER_BYTES`, re-measured 2026-10-31 for f-20261022-05; the measurement is recorded on the constant). In the laptop's 11596410880-byte `agent-gate` scope that schedules all four packages as three slots of one runner each and one changed package as one slot of three runners; both completed on 2026-10-31 with no OOM event or swap use. Historical: on 2026-10-02 the suite took 346.9 s as the last lane of an all-blocks `pnpm gates:push` with 21 runners per package under the former 1.2 GiB charge (`tasks/handoffs/2026-10-02-agent-gate-convergence-review.md`). The backend suite remains only in `.github/workflows/mutation.yml` (dispatchable, weekly, one job per package) because the eight packages take about an hour. **Never start `pnpm mutation:backend` as part of a push:** its eight-package schedule stays outside push gates. It runs `cargo-mutants --in-place` only in a verified external snapshot, uses `mutants.out/backend/cargo-target` instead of the live target, and requires Linux Python 3 descendant containment. The durable fence and first guard remain for incomplete cleanup and legacy interrupted live mutations (`f-20260829-09`).
 - Exercise changed shell/workflow mechanics against their refusal/error case where locally possible.
 - `$push` never tags, publishes a GitHub release, signs bundles, or deploys. Those require their own explicit workflow.
+
+## Related tests
+
+For build phase proofs (agent-kit build skill), append tests for the phase's changed and created paths:
+
+- `src/**` and other Vitest-covered TypeScript paths: `pnpm exec vitest related --run <paths>`.
+- `src-tauri/src/**/*.rs`: run per changed module with `cargo test --manifest-path src-tauri/Cargo.toml --locked --bins -- <module path>::` (`src-tauri/src/a/b.rs` → `a::b`, `mod.rs` → its directory module, `main.rs` → no filter). The crate has only a binary target, so `--lib` does not apply. If `cargo` is missing, prefix with `PATH="$HOME/.cargo/bin:$PATH"`.
+- `scripts/<name>.mjs`: run `node --test` on every matching `scripts/*-tests.mjs` file (`git grep -l <name> -- 'scripts/*-tests.mjs'`), plus changed `*-tests.mjs` files themselves.
+
+Verified forms (2026-11-02): Vitest related ran 4171 tests for `src/utils/annotation.ts`; cargo filter `lexer::` ran 12 tests.
 
 ## 2a. Pre-review checks
 
