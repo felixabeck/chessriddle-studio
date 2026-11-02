@@ -101,6 +101,7 @@ const label =
   "0-1 Beerdsen,T (2520)-Bluebaum,M (2651) Elllobregat op 3rd Sant Boi de Llobregat 2022 (3)";
 const database = { id: { id: "source" }, kind: "database" as const };
 const game: NormalizedGame = {
+  stamp: "b".repeat(64),
   id: 8,
   white: "Beerdsen, Thomas",
   black: "Bluebaum, Matthias",

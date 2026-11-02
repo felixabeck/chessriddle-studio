@@ -8,6 +8,7 @@ import { tabStorage } from "@/state/store/tabStorage";
 import { closeTreeStore, createTreeStore } from "@/state/store/tree";
 import { databaseGameSeed, normalizeGameSignature, openDatabaseGame } from "./databaseGame";
 import { createTab, serializeStoreTree } from "./tabs";
+import type { TreeState } from "./treeReducer";
 
 const native = vi.hoisted(() => ({ lexPgn: vi.fn(), resolveLinkedGame: vi.fn() }));
 vi.mock("@/platform/tauri", () => ({ tauri: native }));
@@ -129,6 +130,7 @@ test.each(["admitted", "refused", "online"] as const)(
     async (mode) => {
         const game: NormalizedGame = {
             id: 73,
+            stamp: "b".repeat(64),
             fen: INITIAL_FEN,
             white: "White",
             black: "Black",
@@ -169,6 +171,10 @@ test.each(["admitted", "refused", "online"] as const)(
             addRecentFile: add,
         });
         if (id) ids.push(id);
+        if (id)
+            expect(tabStorage.read<{ sourceStamp: string | null }>(id)?.state.sourceStamp).toBe(
+                mode === "online" ? null : game.stamp,
+            );
         const expectedEntry = expect.objectContaining({
             kind: "database",
             database,
@@ -187,5 +193,75 @@ test.each(["admitted", "refused", "online"] as const)(
         });
         expect(add.mock.calls).toEqual(mode === "admitted" ? [[expectedEntry]] : []);
         expect(workspace.get(recentFilesAtom)).toHaveLength(mode === "admitted" ? 1 : 0);
+    },
+);
+
+test.each([false, true])(
+    "opening a row seeds its own FEN and the final origin's stamp, linked=%s",
+    async (linked) => {
+        const fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
+        const row: NormalizedGame = {
+            id: 812,
+            stamp: "b".repeat(64),
+            fen,
+            white: "White",
+            black: "Black",
+            white_id: 1,
+            black_id: 2,
+            event: "Row event",
+            event_id: 1,
+            site: "Berlin",
+            site_id: 1,
+            result: "*",
+            moves: "1... c5 *",
+            linked: {
+                collection: "11111111-1111-4111-8111-111111111111",
+                generation: "linked",
+                ordinal: 2,
+                stamp: "a".repeat(64),
+            },
+        };
+        native.lexPgn.mockResolvedValue([
+            { type: "San", value: "c5" },
+            { type: "Outcome", value: "*" },
+        ] satisfies Token[]);
+        if (linked) {
+            native.lexPgn.mockResolvedValueOnce([
+                { type: "San", value: "d4" },
+                { type: "Outcome", value: "*" },
+            ] satisfies Token[]);
+            native.resolveLinkedGame.mockResolvedValueOnce({
+                locator: { ...row.linked, stamp: "c".repeat(64) },
+                file: { id: { id: "linked-file" }, kind: "fileWorkspace" },
+                name: "Linked",
+                ordinal: 2,
+                purpose: "game",
+                numGames: 3,
+                game: { pgn: "1. d4 *", stamp: "c".repeat(64), revision: "linked", present: true },
+            });
+        }
+        const workspace = createStore();
+        workspace.set(tabsAtom, []);
+        const id = await openDatabaseGame({
+            game: row,
+            database,
+            setTabs: (...args) => workspace.set(tabsAtom, ...args),
+            addRecentFile: vi.fn(),
+        });
+        expect(id).not.toBeNull();
+        ids.push(id!);
+        const persisted = tabStorage.read<TreeState>(id!)?.state;
+        expect(persisted?.sourceStamp).toBe((linked ? "c" : "b").repeat(64));
+        expect(workspace.get(tabsAtom)[0].gameOrigin.kind).toBe(linked ? "file" : "database");
+        if (!linked) {
+            expect(persisted?.root.fen).toBe(fen);
+            expect(persisted?.root.children[0].san).toBe("c5");
+            expect(persisted?.headers).toMatchObject({
+                event: "Row event",
+                site: "Berlin",
+                white: "White",
+                black: "Black",
+            });
+        }
     },
 );

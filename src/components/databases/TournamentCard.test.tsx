@@ -300,6 +300,7 @@ const locator = {
 
 function tournamentGame(linked?: NormalizedGame["linked"]): NormalizedGame {
   return {
+    stamp: "b".repeat(64),
     id: 11,
     white: "White 11",
     white_id: 11,

@@ -33,7 +33,8 @@ import { defaultPGN, getPGN, parsePGN } from "./chess";
 import { pickPgnFile, readFileGame, writeFileGame } from "./files";
 import type { GameHeaders, TreeState } from "./treeReducer";
 import { fileWorkspaceKey } from "./pathCapabilities";
-import type { DatabaseHandle } from "@/bindings";
+import type { DatabaseHandle, NormalizedGame } from "@/bindings";
+import { databaseGameToTree } from "./databaseGameTree";
 import { databaseHandleKey } from "./db";
 import { getFileFreshness, setFileFreshness } from "@/state/fileFreshness";
 import type { Workspace } from "@/state/workspace";
@@ -564,6 +565,7 @@ export async function createTab({
     gameOrigin,
     position,
     initialTree,
+    databaseGame,
     existingTabIds,
 }: {
     tab: Omit<Tab, "value" | "gameOrigin">;
@@ -573,6 +575,7 @@ export async function createTab({
     gameOrigin?: GameOrigin;
     position?: number[];
     initialTree?: TreeState;
+    databaseGame?: NormalizedGame;
     existingTabIds?: Iterable<string>;
 }): Promise<string | null> {
     let treeToSeed: TreeState | undefined = initialTree;
@@ -602,6 +605,12 @@ export async function createTab({
                 },
             };
         }
+    }
+
+    if (!treeToSeed && databaseGame) {
+        treeToSeed = await databaseGameToTree(databaseGame);
+        if (gameOrigin?.kind !== "database") treeToSeed.sourceStamp = null;
+        if (position) treeToSeed.position = position;
     }
 
     if (!treeToSeed && pgn !== undefined) {
@@ -848,24 +857,26 @@ async function storeToDatabase({
         }
         attempted = true;
         inserting = true;
-        const gameId = await tauri.insertDbGame(database, pgn);
+        const inserted = await tauri.insertDbGame(database, pgn);
         if (!owns()) return "superseded";
         const admitted = admitStoredGame({
             tab,
             getTab,
             updateTab,
-            origin: { kind: "database", database, gameId },
+            origin: { kind: "database", database, gameId: inserted.id },
             onAdmitted: (successor) => {
                 completionOwner = successor;
             },
             finish: (ownsSuccessor) => {
                 store.getState().setLinkedSource(null);
                 if (!ownsSuccessor()) return;
-                store.getState().setSourceStamp(null);
+                store.getState().setSourceStamp(inserted.stamp);
                 if (!ownsSuccessor()) return;
                 clearAttempt();
                 if (!ownsSuccessor()) return;
-                if (serializeStoreTree(store) === pgn) store.getState().save();
+                if (serializeStoreTree(store) === pgn) store.getState().save(inserted.stamp);
+                if (!ownsSuccessor()) return;
+                setFileFreshness(tab.value, "verified", { verifiedRevision: null });
             },
         });
         if (admitted !== "admitted") return admitted === "refused" ? uncertainStore() : admitted;
@@ -1186,8 +1197,20 @@ async function saveToFileNow({
                     }),
                 });
             }
-            await tauri.writeDbGame(databaseOrigin.database, databaseOrigin.gameId, pgn);
-            return finishWrite();
+            writingCurrentOrigin = true;
+            if (sourceStamp === null) return sourceChanged(tabId);
+            const stamp = await tauri.writeDbGame(
+                databaseOrigin.database,
+                databaseOrigin.gameId,
+                pgn,
+                sourceStamp,
+            );
+            if (!owns()) return "superseded";
+            const unchanged = serializeStoreTree(store) === pgn;
+            if (unchanged) store.getState().save(stamp);
+            else store.getState().setSourceStamp(stamp);
+            setFileFreshness(tabId, "verified", { verifiedRevision: null });
+            return unchanged ? "saved" : "superseded";
         }
 
         if (fileOrigin && !(isTempFile && isUserSave)) {

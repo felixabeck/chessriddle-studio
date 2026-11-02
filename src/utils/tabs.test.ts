@@ -1130,7 +1130,7 @@ test("a current standalone owner saves after the deferred collection lookup", as
     const { fixture, database } = databaseSaveFixture();
     const lookup = deferred<import("@/bindings").CollectionDescriptor | null>();
     vi.mocked(tauri.collectionForDatabase).mockReturnValueOnce(lookup.promise);
-    mocks.writeDbGame.mockResolvedValueOnce(undefined);
+    mocks.writeDbGame.mockResolvedValueOnce(stampB);
     const pgn = serializeStoreTree(fixture.store);
     const pending = saveToFile({
         tab: fixture.tabs[0],
@@ -1142,7 +1142,7 @@ test("a current standalone owner saves after the deferred collection lookup", as
     expect(mocks.writeDbGame).not.toHaveBeenCalled();
     lookup.resolve(null);
     await expect(pending).resolves.toBe("saved");
-    expect(mocks.writeDbGame).toHaveBeenCalledExactlyOnceWith(database, 42, pgn);
+    expect(mocks.writeDbGame).toHaveBeenCalledExactlyOnceWith(database, 42, pgn, stampA);
     expect(fixture.store.getState().dirty).toBe(false);
 });
 
@@ -2412,7 +2412,7 @@ test.each(["unchanged", "comment", "header", "owner"] as const)(
         const captured = serializeStoreTree(fixture.store);
         expect(captured).toContain("Captured comment");
         expect(captured).toContain("Unsaved version");
-        const write = deferred<void>();
+        const write = deferred<string>();
         mocks.writeDbGame.mockReturnValueOnce(write.promise);
         const pending = saveToFile({
             tab: fixture.tabs[0],
@@ -2421,7 +2421,7 @@ test.each(["unchanged", "comment", "header", "owner"] as const)(
             store: fixture.store,
         });
         await Promise.resolve();
-        expect(mocks.writeDbGame).toHaveBeenCalledWith(database, 42, captured);
+        expect(mocks.writeDbGame).toHaveBeenCalledWith(database, 42, captured, stampA);
         if (change === "comment") fixture.store.getState().setComment("Newer unsaved comment");
         if (change === "header")
             fixture.store
@@ -2431,13 +2431,18 @@ test.each(["unchanged", "comment", "header", "owner"] as const)(
             fixture.updateTab("save-test", (tab) => ({ ...tab, treeKey: crypto.randomUUID() }));
         const current = serializeStoreTree(fixture.store);
         const freshness = getFileFreshness("save-test");
-        write.resolve();
+        write.resolve(stampB);
         const result = await pending;
         expect(fixture.store.getState().dirty).toBe(change !== "unchanged");
         expect(result).toBe(change === "unchanged" ? "saved" : "superseded");
         expect(serializeStoreTree(fixture.store)).toBe(current);
-        expect(fixture.store.getState().sourceStamp).toBe(stampA);
-        expect(getFileFreshness("save-test")).toBe(freshness);
+        expect(fixture.store.getState().sourceStamp).toBe(change === "owner" ? stampA : stampB);
+        if (change === "owner") expect(getFileFreshness("save-test")).toBe(freshness);
+        else
+            expect(getFileFreshness("save-test")).toMatchObject({
+                state: "verified",
+                verifiedRevision: null,
+            });
         expect(mocks.writeDbGame).toHaveBeenCalledOnce();
     },
 );

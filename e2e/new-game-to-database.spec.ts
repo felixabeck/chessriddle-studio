@@ -42,8 +42,13 @@ test("New game inserts on explicit save, updates that row, and Save to database 
     await mockScenario({
         commands: filesWorkspaceCommands([[]], {
             ...gameOpeningCommands,
-            insert_db_game: { results: [501, 502] },
-            write_db_game: { result: null },
+            insert_db_game: {
+                results: [
+                    { id: 501, stamp: "a".repeat(64) },
+                    { id: 502, stamp: "b".repeat(64) },
+                ],
+            },
+            write_db_game: { result: "c".repeat(64) },
         }),
     });
     await page.goto("/library");

@@ -1828,6 +1828,7 @@ mod imported_search_tests {
                         handle.clone(),
                         game_id,
                         material_pgn(fen, movetext),
+                        super::super::test_game_stamp(&state, &handle, game_id),
                         &CancellationToken::new(),
                     )
                     .unwrap();

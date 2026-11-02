@@ -95,6 +95,7 @@ function BoardAnalysis() {
         isUserSave &&
         result === "conflict" &&
         currentTab &&
+        getTab(currentTab.value)?.gameOrigin.kind !== "database" &&
         !getTabFile(getTab(currentTab.value))
       ) {
         // A Save As whose read-back failed leaves the tab without a file, so no freshness panel

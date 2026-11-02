@@ -541,6 +541,7 @@ export const gameOpeningFixture = {
     games: [
         {
             id: 101,
+            stamp: "a".repeat(64),
             fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
             white: "First White",
             white_id: 1,
@@ -560,6 +561,7 @@ export const gameOpeningFixture = {
         },
         {
             id: 202,
+            stamp: "b".repeat(64),
             fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
             white: "Second White",
             white_id: 3,

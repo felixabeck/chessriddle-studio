@@ -868,15 +868,15 @@ async deleteDbGame(file: DatabaseHandle, gameId: number) : Promise<Result<null, 
     else return { status: "error", error: e  as any };
 }
 },
-async writeDbGame(file: DatabaseHandle, gameId: number, pgn: string) : Promise<Result<null, ErrorPayload>> {
+async writeDbGame(file: DatabaseHandle, gameId: number, pgn: string, expectedStamp: string) : Promise<Result<string, ErrorPayload>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("write_db_game", { file, gameId, pgn }) };
+    return { status: "ok", data: await TAURI_INVOKE("write_db_game", { file, gameId, pgn, expectedStamp }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async insertDbGame(file: DatabaseHandle, pgn: string) : Promise<Result<number, ErrorPayload>> {
+async insertDbGame(file: DatabaseHandle, pgn: string) : Promise<Result<InsertedDbGame, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("insert_db_game", { file, pgn }) };
 } catch (e) {
@@ -1442,6 +1442,7 @@ export type GameSort = "id" | "date" | "whiteElo" | "blackElo" | "ply_count"
 export type GameState = { gameId: string; session: bigint; revision: bigint; status: GameStatus; initialFen: string; moves: GameMove[]; currentFen: string; ply: number; turn: string; whiteTime: bigint | null; blackTime: bigint | null; whitePlayer: string; blackPlayer: string }
 export type GameStatus = "playing" | { finished: { result: GameResult } }
 export type GoMode = { t: "PlayersTime"; c: PlayersTime } | { t: "Depth"; c: number } | { t: "Time"; c: number } | { t: "Nodes"; c: number } | { t: "Infinite" }
+export type InsertedDbGame = { id: number; stamp: string }
 export type InstalledEngineResult = { handle: EngineHandle; config: EngineConfig; filename: string }
 export type LichessAccountHandle = string
 export type LichessAccountMetadata = { handle: LichessAccountHandle; username: string }
@@ -1453,7 +1454,7 @@ export type LinkedGameIdentity = { locator: LinkedGameLocator; signature: GameSi
 export type LinkedGameLocator = { collection: string; generation: string; ordinal: number; stamp: string }
 export type MigrationChoice = "pgn" | "database" | "decline"
 export type MoveAnalysis = { best: BestMoves[]; novelty: boolean; is_sacrifice: boolean }
-export type NormalizedGame = { linked?: LinkedGameLocator | null; id: number; fen: string; event: string; event_id: number; site: string; site_id: number; date?: string | null; time?: string | null; round?: string | null; white: string; white_id: number; white_elo?: number | null; black: string; black_id: number; black_elo?: number | null; result: Outcome; time_control?: string | null; eco?: string | null; ply_count?: number | null; moves: string }
+export type NormalizedGame = { stamp?: string | null; linked?: LinkedGameLocator | null; id: number; fen: string; event: string; event_id: number; site: string; site_id: number; date?: string | null; time?: string | null; round?: string | null; white: string; white_id: number; white_elo?: number | null; black: string; black_id: number; black_elo?: number | null; result: Outcome; time_control?: string | null; eco?: string | null; ply_count?: number | null; moves: string }
 export type OpenedLinkedGame = { locator: LinkedGameLocator; file: FileWorkspaceHandle; name: string; ordinal: number; game: StampedGame; purpose: WorkspaceFileType; numGames: number }
 export type OpeningBookConfig = { book: OpeningBookHandle; maxPly?: bigint }
 /**

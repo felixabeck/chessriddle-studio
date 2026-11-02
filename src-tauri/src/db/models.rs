@@ -146,6 +146,9 @@ impl FromStr for Outcome {
 pub struct NormalizedGame {
     #[specta(optional)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub stamp: Option<String>,
+    #[specta(optional)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub linked: Option<super::linked_collections::LinkedGameLocator>,
     pub id: i32,
     pub fen: String,
@@ -175,4 +178,10 @@ pub struct NormalizedGame {
     #[specta(optional)]
     pub ply_count: Option<i32>,
     pub moves: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Type)]
+pub struct InsertedDbGame {
+    pub id: i32,
+    pub stamp: String,
 }

@@ -8,7 +8,7 @@ fn insert(
     file: DatabaseHandle,
     pgn: &str,
     cancellation: &CancellationToken,
-) -> Result<i32, Error> {
+) -> Result<InsertedDbGame, Error> {
     let state = app.state::<AppState>();
     insert_db_game_from_reader(
         &state.pgn_path_authority,
@@ -25,7 +25,8 @@ fn insert_db_game_round_trip_then_update_keeps_one_row_and_updates_counts() {
     let (_dir, app, handle, path) = blocking_database_case();
     let cached = seed_search_cache_for_database(&app, &path);
     let token = CancellationToken::new();
-    let id = insert(&app, handle.clone(), PGN, &token).unwrap();
+    let inserted = insert(&app, handle.clone(), PGN, &token).unwrap();
+    let id = inserted.id;
     let state = app.state::<AppState>();
     assert!(state.search_cache.get_result(&cached).is_none());
     let read = || {
@@ -41,6 +42,7 @@ fn insert_db_game_round_trip_then_update_keeps_one_row_and_updates_counts() {
     let games = read();
     assert_eq!(games.count, Some(1));
     assert_eq!(games.data[0].id, id);
+    assert!(games.data[0].stamp.is_some());
     assert_eq!(games.data[0].white, "White");
     assert_eq!(games.data[0].black, "Black");
     assert_eq!(games.data[0].event, "New game");
@@ -53,6 +55,7 @@ fn insert_db_game_round_trip_then_update_keeps_one_row_and_updates_counts() {
         handle.clone(),
         id,
         PGN.replace("e4 e5", "d4 d5"),
+        test_game_stamp(&state, &handle, id),
         &token,
     )
     .unwrap();
@@ -113,7 +116,7 @@ async fn insert_db_game_escaped_headers_preserve_native_spelling_and_export_vali
     }
     let (_dir, app, handle, _) = blocking_database_case();
     let token = CancellationToken::new();
-    let id = insert(&app, handle.clone(), source, &token).unwrap();
+    let id = insert(&app, handle.clone(), source, &token).unwrap().id;
     let state = app.state::<AppState>();
     let read = || {
         get_games_blocking(
@@ -146,7 +149,7 @@ async fn insert_db_game_escaped_headers_preserve_native_spelling_and_export_vali
         for line in source.lines().take(4) {
             assert!(exported.contains(line), "{exported}");
         }
-        let next_id = insert(&app, handle.clone(), &exported, &token).unwrap();
+        let next_id = insert(&app, handle.clone(), &exported, &token).unwrap().id;
         assert_ne!(next_id, id);
         let roundtrip = read();
         assert_eq!(roundtrip.count, Some(2));
@@ -278,7 +281,9 @@ async fn insert_db_game_convert_pgn_uses_the_shared_insert() {
     )
     .await
     .unwrap();
-    let id = insert(&app, handle.clone(), PGN, &CancellationToken::new()).unwrap();
+    let id = insert(&app, handle.clone(), PGN, &CancellationToken::new())
+        .unwrap()
+        .id;
     let games = get_games_blocking(
         &state.pgn_path_authority,
         &state.database_repository,

@@ -73,6 +73,7 @@ vi.mock("mantine-datatable", () => ({
 const file = { id: { id: "captured-database" }, kind: "database" } as const;
 const games: NormalizedGame[] = [
   {
+    stamp: "a".repeat(64),
     id: 11,
     white: "First",
     white_id: 1,
@@ -88,6 +89,7 @@ const games: NormalizedGame[] = [
   },
   {
     id: 22,
+    stamp: "b".repeat(64),
     white: "Second",
     white_id: 3,
     black: "B",

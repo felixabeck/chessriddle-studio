@@ -50,6 +50,8 @@ const mocks = vi.hoisted(() => ({
   issuePgnWorkspace: vi.fn(),
   issuePgnExportDestination: vi.fn(),
   readGame: vi.fn(),
+  writeDbGame: vi.fn(),
+  collectionForDatabase: vi.fn(),
   showNotification: vi.fn(),
   translate: (key: string) => key,
   addGameActivation: undefined as (() => void) | undefined,
@@ -134,6 +136,8 @@ vi.mock("@/platform/tauri", async () => {
       issuePgnWorkspace: mocks.issuePgnWorkspace,
       issuePgnExportDestination: mocks.issuePgnExportDestination,
       readGame: mocks.readGame,
+      writeDbGame: mocks.writeDbGame,
+      collectionForDatabase: mocks.collectionForDatabase,
     },
   };
 });
@@ -966,6 +970,37 @@ describe("BoardAnalysis add game durability", () => {
       title: "Common.Error",
       message: "Tab.SaveMayHaveBeenWritten",
     });
+  });
+
+  test("a refused database user save preserves dirty edits without the uncertain-write toast", async () => {
+    mocks.collectionForDatabase.mockReset().mockResolvedValue(null);
+    mocks.writeDbGame.mockReset().mockRejectedValueOnce({
+      tag: "backend-error",
+      category: "stale-game",
+      message: "stale game",
+    });
+    await act(async () => {
+      updateTabById(
+        (...args) => jotaiStore.set(tabsAtom, ...args),
+        tabId,
+        (previous) => ({
+          ...previous,
+          gameOrigin: {
+            kind: "database",
+            database: { id: { id: "cas-database" }, kind: "database" },
+            gameId: 812,
+          },
+        }),
+      );
+    });
+    await act(async () => {
+      latestSaveHotkey()();
+      await vi.waitFor(() => expect(getFileFreshness(tabId).state).toBe("conflict"));
+    });
+    expect(mocks.writeDbGame).toHaveBeenCalledOnce();
+    expect(treeStore.getState().dirty).toBe(true);
+    expect(mocks.notifyUnlessCancelled).not.toHaveBeenCalled();
+    expect(mocks.showNotification).not.toHaveBeenCalled();
   });
 
   test("a fresh toolbar save with uncertain readback preserves dirty edits and durably refuses another append", async () => {

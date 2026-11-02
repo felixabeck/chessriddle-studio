@@ -16,6 +16,7 @@ const citation =
 const second =
     "0-1 Srinath,R (2255)-Deac,B (2690) Titled Tuesday intern op 19th Dec Late Chess.com INT blitz 2023 (6)";
 const game: NormalizedGame = {
+    stamp: "a".repeat(64),
     id: 1,
     white: "Beerdsen, Thomas",
     black: "Bluebaum, Matthias",

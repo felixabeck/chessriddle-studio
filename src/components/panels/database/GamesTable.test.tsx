@@ -50,6 +50,7 @@ const locator = {
   stamp: "a".repeat(64),
 };
 const game: NormalizedGame = {
+  stamp: "b".repeat(64),
   id: 7,
   white: "White",
   black: "Black",

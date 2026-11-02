@@ -2739,6 +2739,7 @@ mod native_tests {
             alias,
             1,
             game(None, "d4 d5", "forbidden"),
+            String::new(),
             &CancellationToken::new(),
         );
         assert!(
@@ -2761,9 +2762,10 @@ mod native_tests {
                 &state.pgn_path_authority,
                 &state.database_repository,
                 &state.search_cache,
-                handle,
+                handle.clone(),
                 1,
                 game(None, "d4 d5", "obsolete save"),
+                test_game_stamp(&state, &handle, 1),
                 &CancellationToken::new(),
             )
         });
@@ -2797,9 +2799,10 @@ mod native_tests {
                 &state.pgn_path_authority,
                 &state.database_repository,
                 &state.search_cache,
-                database,
+                database.clone(),
                 1,
                 game(None, "d4 d5", "winning save"),
+                test_game_stamp(&state, &database, 1),
                 &CancellationToken::new(),
             )
         });
@@ -3987,6 +3990,7 @@ mod native_tests {
             collection.database.clone().unwrap(),
             first.id,
             game(None, "d4 d5", "stale database writer"),
+            first.stamp.unwrap(),
             app.state::<AppState>()
         )
         .await
@@ -6670,6 +6674,7 @@ mod native_tests {
             database.clone(),
             rows.data[0].id,
             game(Some("123"), "c4 c5", "database remains editable"),
+            rows.data[0].stamp.clone().unwrap(),
             app.state::<AppState>(),
         )
         .await

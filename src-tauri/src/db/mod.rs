@@ -798,6 +798,10 @@ mod acquisition_cancellation_tests;
 #[cfg(test)]
 mod conversion_cancellation_tests;
 #[cfg(test)]
+mod game_cas_tests;
+#[cfg(test)]
+use game_cas_tests::test_game_stamp;
+#[cfg(test)]
 mod insert_db_game_tests;
 
 #[cfg(test)]
@@ -2400,6 +2404,64 @@ fn get_latest_game_timestamp_blocking(
     })
 }
 
+/// Hash the stored row, independently of joined names and decoded movetext.
+fn game_row_stamp(game: &Game) -> String {
+    use sha2::{Digest, Sha256};
+
+    fn field(hash: &mut Sha256, value: Option<&[u8]>) {
+        match value {
+            None => hash.update([0]),
+            Some(bytes) => {
+                hash.update([1]);
+                hash.update((bytes.len() as u64).to_be_bytes());
+                hash.update(bytes);
+            }
+        }
+    }
+    let mut hash = Sha256::new();
+    macro_rules! integer {
+        ($value:expr) => {
+            field(&mut hash, Some(&$value.to_be_bytes()))
+        };
+    }
+    macro_rules! optional_integer {
+        ($value:expr) => {
+            field(
+                &mut hash,
+                $value
+                    .map(i32::to_be_bytes)
+                    .as_ref()
+                    .map(|bytes| bytes.as_slice()),
+            )
+        };
+    }
+    macro_rules! text {
+        ($value:expr) => {
+            field(&mut hash, $value.as_deref().map(str::as_bytes))
+        };
+    }
+    integer!(game.id);
+    integer!(game.event_id);
+    integer!(game.site_id);
+    text!(game.date);
+    text!(game.time);
+    text!(game.round);
+    integer!(game.white_id);
+    optional_integer!(game.white_elo);
+    integer!(game.black_id);
+    optional_integer!(game.black_elo);
+    integer!(game.white_material);
+    integer!(game.black_material);
+    text!(game.result);
+    text!(game.time_control);
+    text!(game.eco);
+    optional_integer!(game.ply_count);
+    text!(game.fen);
+    field(&mut hash, Some(&game.moves));
+    integer!(game.pawn_home);
+    format!("{:x}", hash.finalize())
+}
+
 fn normalize_games(
     games: Vec<(Game, Player, Player, Event, Site)>,
     cancellation: &CancellationToken,
@@ -2408,6 +2470,7 @@ fn normalize_games(
         .into_iter()
         .map(|(game, white, black, event, site)| {
             cancellation_check(cancellation)?;
+            let stamp = game_row_stamp(&game);
             let fen: Fen = game
                 .fen
                 .map(|f| {
@@ -2425,6 +2488,7 @@ fn normalize_games(
             };
 
             Ok(NormalizedGame {
+                stamp: Some(stamp),
                 linked: None,
                 id: game.id,
                 event: event.name.unwrap_or_default(),
@@ -4284,7 +4348,7 @@ pub async fn insert_db_game(
     file: DatabaseHandle,
     pgn: String,
     state: tauri::State<'_, AppState>,
-) -> Result<i32, Error> {
+) -> Result<InsertedDbGame, Error> {
     let operation = state.operations.accept("insert_db_game")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();
@@ -4326,13 +4390,13 @@ fn insert_db_game_from_reader(
     file: DatabaseHandle,
     input: impl std::io::Read,
     cancellation: &CancellationToken,
-) -> Result<i32, Error> {
+) -> Result<InsertedDbGame, Error> {
     let target = resolve_database(authority, &file, PathOperation::DatabaseMutate)?;
     let game = parse_first_db_game(input, cancellation)?;
     if iter_mainline_move_bytes(&game.moves).next().is_none() {
         return Err(Error::NoMovesFound);
     }
-    let mut inserted_id = None;
+    let mut inserted = None;
     with_validated_mutation(
         repository,
         search_cache,
@@ -4341,11 +4405,17 @@ fn insert_db_game_from_reader(
         authority,
         &file,
         |db| {
-            inserted_id = Some(game.insert_to_db(db)?);
-            update_database_counts(db)
+            let id = game.insert_to_db(db)?;
+            update_database_counts(db)?;
+            let row = games::table.find(id).first::<Game>(db)?;
+            inserted = Some(InsertedDbGame {
+                id,
+                stamp: game_row_stamp(&row),
+            });
+            Ok(())
         },
     )?;
-    inserted_id.ok_or_else(|| Error::InvalidInput("Insert returned no game ID".into()))
+    inserted.ok_or_else(|| Error::InvalidInput("Insert returned no game ID".into()))
 }
 
 #[tauri::command]
@@ -4354,8 +4424,9 @@ pub async fn write_db_game(
     file: DatabaseHandle,
     game_id: i32,
     pgn: String,
+    expected_stamp: String,
     state: tauri::State<'_, AppState>,
-) -> Result<(), Error> {
+) -> Result<String, Error> {
     let operation = state.operations.accept("write_db_game")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();
@@ -4371,6 +4442,7 @@ pub async fn write_db_game(
                     file,
                     game_id,
                     pgn,
+                    expected_stamp,
                     token,
                 )
             })
@@ -4379,6 +4451,7 @@ pub async fn write_db_game(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 fn write_db_game_blocking(
     authority: &crate::infra::path_authority::SharedPathAuthority,
     repository: &DatabaseRepository,
@@ -4386,13 +4459,15 @@ fn write_db_game_blocking(
     file: DatabaseHandle,
     game_id: i32,
     pgn: String,
+    expected_stamp: String,
     cancellation: &CancellationToken,
-) -> Result<(), Error> {
+) -> Result<String, Error> {
     #[cfg(test)]
     database_command_checkpoint("write_db_game", &file);
     let target = resolve_database(authority, &file, PathOperation::DatabaseMutate)?;
 
     let temp_game = parse_first_db_game(pgn.as_bytes(), cancellation)?;
+    let mut written_stamp = None;
     with_validated_mutation(
         repository,
         search_cache,
@@ -4400,23 +4475,36 @@ fn write_db_game_blocking(
         cancellation,
         authority,
         &file,
-        |db| write_parsed_db_game(db, game_id, &temp_game, remove_orphans_and_update_counts),
-    )
+        |db| {
+            written_stamp = Some(write_parsed_db_game(
+                db,
+                game_id,
+                &temp_game,
+                &expected_stamp,
+                remove_orphans_and_update_counts,
+            )?);
+            Ok(())
+        },
+    )?;
+    written_stamp.ok_or_else(|| Error::InvalidInput("Write returned no game stamp".into()))
 }
 
 fn write_parsed_db_game(
     db: &mut SqliteConnection,
     game_id: i32,
     temp_game: &TempGame,
+    expected_stamp: &str,
     maintain_metadata: fn(&mut SqliteConnection) -> Result<(), Error>,
-) -> Result<(), Error> {
-    let existing_time = games::table
+) -> Result<String, Error> {
+    let existing = games::table
         .filter(games::id.eq(game_id))
-        .select(games::time)
-        .first::<Option<String>>(db)
+        .first::<Game>(db)
         .optional()?
         .ok_or_else(|| Error::GameNotFound(game_id.to_string()))?;
-    let game_time = temp_game.time.clone().or(existing_time);
+    if game_row_stamp(&existing) != expected_stamp {
+        return Err(Error::StaleGame);
+    }
+    let game_time = temp_game.time.clone().or(existing.time);
 
     let white_id = if let Some(name) = temp_game.white_name.as_deref() {
         create_player(db, name)?.id
@@ -4476,7 +4564,8 @@ fn write_parsed_db_game(
 
     maintain_metadata(db)?;
 
-    Ok(())
+    let written = games::table.find(game_id).first::<Game>(db)?;
+    Ok(game_row_stamp(&written))
 }
 
 #[tauri::command]
@@ -6328,7 +6417,13 @@ mod tests {
         ));
 
         let result = db.transaction(|db| {
-            write_parsed_db_game(db, 404, &replacement, remove_orphans_and_update_counts)
+            write_parsed_db_game(
+                db,
+                404,
+                &replacement,
+                "missing",
+                remove_orphans_and_update_counts,
+            )
         });
 
         assert!(matches!(result, Err(Error::GameNotFound(id)) if id == "404"));
@@ -6351,7 +6446,13 @@ mod tests {
         ));
 
         db.transaction(|db| {
-            write_parsed_db_game(db, game.id, &replacement, remove_orphans_and_update_counts)
+            write_parsed_db_game(
+                db,
+                game.id,
+                &replacement,
+                &game_row_stamp(&game),
+                remove_orphans_and_update_counts,
+            )
         })
         .unwrap();
 
@@ -6409,8 +6510,15 @@ mod tests {
             "New Site",
         ));
 
-        let result = db
-            .transaction(|db| write_parsed_db_game(db, game.id, &replacement, fail_final_metadata));
+        let result = db.transaction(|db| {
+            write_parsed_db_game(
+                db,
+                game.id,
+                &replacement,
+                &game_row_stamp(&game),
+                fail_final_metadata,
+            )
+        });
 
         assert!(
             matches!(result, Err(Error::InvalidInput(message)) if message == "injected metadata failure")
@@ -6870,6 +6978,7 @@ mod tests {
                     handle,
                     1,
                     "".into(),
+                    String::new(),
                     &CancellationToken::new(),
                 )
             }),
@@ -7245,6 +7354,7 @@ mod tests {
                     handle,
                     1,
                     "".into(),
+                    String::new(),
                     &CancellationToken::new(),
                 )
             },
@@ -7710,6 +7820,7 @@ mod tests {
         pgn: Option<FileWorkspaceHandle>,
         destination: Option<FileWorkspaceHandle>,
         game_id: i32,
+        expected_stamp: String,
         source_player: i32,
         target_player: i32,
     }
@@ -7770,6 +7881,16 @@ mod tests {
             DatabaseCommandCase::DeleteDbGame | DatabaseCommandCase::WriteDbGame => {
                 inputs.game_id =
                     insert_named_game(app, database, "White", "Black", "Event", "Site");
+                let state = app.state::<AppState>();
+                let mut db = state
+                    .database_repository
+                    .connection(&test_target(database), None)
+                    .unwrap();
+                let row = games::table
+                    .find(inputs.game_id)
+                    .first::<Game>(&mut *db)
+                    .unwrap();
+                inputs.expected_stamp = game_row_stamp(&row);
             }
             DatabaseCommandCase::MergePlayers => {
                 let state = app.state::<AppState>();
@@ -7830,9 +7951,15 @@ mod tests {
             DatabaseCommandCase::DeleteDbGame => {
                 delete_db_game(handle, inputs.game_id, state).await
             }
-            DatabaseCommandCase::WriteDbGame => {
-                write_db_game(handle, inputs.game_id, REPLACEMENT_PGN.into(), state).await
-            }
+            DatabaseCommandCase::WriteDbGame => write_db_game(
+                handle,
+                inputs.game_id,
+                REPLACEMENT_PGN.into(),
+                inputs.expected_stamp,
+                state,
+            )
+            .await
+            .map(|_| ()),
             DatabaseCommandCase::MergePlayers => {
                 merge_players(handle, inputs.source_player, inputs.target_player, state).await
             }
@@ -9411,6 +9538,7 @@ mod tests {
             handle.clone(),
             game_id,
             pgn,
+            test_game_stamp(&state, &handle, game_id),
             &CancellationToken::new(),
         )
         .unwrap();
@@ -10001,9 +10129,10 @@ mod tests {
                 &state.pgn_path_authority,
                 &state.database_repository,
                 &state.search_cache,
-                handle,
+                handle.clone(),
                 game_id,
                 format!("{skipped}\n{REPLACEMENT_PGN}"),
+                test_game_stamp(&state, &handle, game_id),
                 &CancellationToken::new(),
             ),
             Err(Error::NoMovesFound)
@@ -10048,6 +10177,7 @@ mod tests {
             handle.clone(),
             game_id,
             String::new(),
+            test_game_stamp(&state, &handle, game_id),
             &CancellationToken::new(),
         );
         assert!(
@@ -10062,6 +10192,7 @@ mod tests {
             handle.clone(),
             game_id,
             REPLACEMENT_PGN.to_string(),
+            test_game_stamp(&state, &handle, game_id),
             &CancellationToken::new(),
         )
         .unwrap();
@@ -12159,9 +12290,10 @@ mod tests {
             &state.pgn_path_authority,
             &state.database_repository,
             &state.search_cache,
-            handle,
+            handle.clone(),
             game_id,
             REPLACEMENT_PGN.into(),
+            test_game_stamp(&state, &handle, game_id),
             &CancellationToken::new(),
         )
         .unwrap();
@@ -12191,6 +12323,7 @@ mod tests {
             handle.clone(),
             game_id,
             REPLACEMENT_PGN.into(),
+            test_game_stamp(&state, &handle, game_id),
             &CancellationToken::new(),
         )
         .unwrap();
@@ -12233,6 +12366,7 @@ mod tests {
             handle.clone(),
             game_id,
             REPLACEMENT_PGN.into(),
+            test_game_stamp(&state, &handle, game_id),
             &CancellationToken::new(),
         )
         .unwrap();
@@ -12295,9 +12429,10 @@ mod tests {
             &state.pgn_path_authority,
             &state.database_repository,
             &state.search_cache,
-            handle,
+            handle.clone(),
             game_id,
             REPLACEMENT_PGN.into(),
+            test_game_stamp(&state, &handle, game_id),
             &cancellation,
         );
         assert!(matches!(result, Err(Error::Cancellation)));
@@ -12797,9 +12932,10 @@ mod tests {
             &state.pgn_path_authority,
             &state.database_repository,
             &state.search_cache,
-            handle,
+            handle.clone(),
             game_id,
             REPLACEMENT_PGN.into(),
+            test_game_stamp(&state, &handle, game_id),
             &CancellationToken::new(),
         );
         assert!(
@@ -12822,9 +12958,10 @@ mod tests {
             &state.pgn_path_authority,
             &state.database_repository,
             &state.search_cache,
-            handle,
+            handle.clone(),
             game_id,
             String::new(),
+            test_game_stamp(&state, &handle, game_id),
             &token,
         );
         assert!(matches!(result, Err(Error::Cancellation)), "{result:?}");
@@ -13074,11 +13211,13 @@ mod tests {
                     &state.pgn_path_authority,
                     &state.database_repository,
                     &state.search_cache,
-                    handle,
+                    handle.clone(),
                     game_id,
                     REPLACEMENT_PGN.into(),
+                    test_game_stamp(&state, &handle, game_id),
                     &CancellationToken::new(),
-                ),
+                )
+                .map(|_| ()),
                 "edit" => edit_db_info_blocking(
                     &state.pgn_path_authority,
                     &state.database_repository,

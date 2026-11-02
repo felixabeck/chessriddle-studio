@@ -1,5 +1,5 @@
 import type { DatabaseHandle, NormalizedGame } from "@/bindings";
-import { decodePgnTagValue } from "./chess";
+import { databaseGameHeaders } from "./databaseGameTree";
 import { createTab } from "./tabs";
 import type { RecentEntryInput } from "@/state/recentFiles";
 import { gameSignature } from "@/state/gameSignature";
@@ -44,12 +44,8 @@ export function databaseGameSeed(
     return {
         tab: { name: `${game.white} - ${game.black}`, type: "analysis" },
         pgn: game.moves,
-        // Event and Site retain PGN escapes in the database. Tree headers contain decoded text.
-        headers: {
-            ...game,
-            event: decodePgnTagValue(game.event),
-            site: decodePgnTagValue(game.site),
-        },
+        databaseGame: game,
+        headers: databaseGameHeaders(game),
         gameOrigin: database
             ? {
                   kind: "database",
