@@ -20616,3 +20616,18 @@ Closed by 5ea1ae3b, pushed to master as part of 4633e57f (database games in Rece
 * **Impact class:** tooling
 * **Correction (2026-11-02):** the **Side observation** claims more than its probe showed. The probe requested `/board/does-not-exist.png`, which the preview server's SPA fallback most likely answered with `index.html`, so it proves only that an image request answered by that fallback does not fail a test. A genuine HTTP 404 would normally reach the fixture's console-error check (`e2e/fixtures.ts`, the `console` listener) and was not probed. The fix also moved the request classification into the exported `localRequestFailure` in `e2e/fixtures.ts`, and `e2e/board-wood-texture.spec.ts` now holds the texture response so the abort happens on every run.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"e234530ad2790001af52aad1051f987608ba04c48b853f5fd432f6f5d9a78f80","input_sha256":"9854c032cdb6e01e01a3026016e0c9c0e1f51a79932542e89649a45c8cac6a54","kind":"mutation-receipt","operation":"3d94cdb68a9a1f970d564e33b707433ba88d7af9af7689a2268c7e0cbc80a2ab","options":{"section":null},"request_id_sha256":null,"results":["f-20261102-06"],"target":"f-20261102-06","v":1} -->
+
+---
+
+## 2026-11-02 — filed through the inbox spool
+
+### `rust-target-eviction-tests.mjs` "an in-use unit alone can keep the root over the cap" times out under machine load
+* **ID:** f-20261102-07 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
+
+* **Where:** `scripts/rust-target-eviction-tests.mjs`, `holdLock` (around line 165) waiting through `waitUntil` (line 80, default deadline 3000 ms) for the spawned `flock -n ... sleep 60` child to hold the lock. The failing case is the test at line 66 / call at line 741.
+* **Defect:** the 3 s deadline assumes the asynchronously spawned `flock` child acquires its lock promptly. `waitUntil` busy-spins on the event-loop thread while it polls, adding CPU pressure, and a loaded machine can delay the child past the deadline. The test then fails in the unconditional contract lane although the eviction code is unchanged.
+* **Failure scenario (observed 2026-11-02):** the contract lane of `pnpm gates:push --` on ChessFable HEAD 2700e00a (a push touching only `e2e/`, `tasks/` and the push skill, no `scripts/` file) failed with `AssertionError: timed out after 3000 ms` at `waitUntil` (line 90) ← `holdLock` (line 177) ← the test body (line 741). Machine load average was 18. 33 of 34 cases passed. Log: `artifacts/gates/20261102T154923690Z-2906991/contract.log`.
+* **Fix direction:** make the lock-holder signal readiness instead of racing a fixed deadline, for example a child that acquires the lock and then writes a ready byte on stdout, awaited asynchronously. Alternatively raise the deadline to a load-tolerant value and poll with a sleep instead of a spin.
+* **Proof:** the case passes 50 repetitions under a parallel CPU load (e.g. `stress-ng --cpu $(nproc)`), and a deliberately never-acquiring holder still fails with a clear message.
+* **Found by:** Claude Code push session, 2026-11-02, final contract gate.
+* **Impact class:** tooling
