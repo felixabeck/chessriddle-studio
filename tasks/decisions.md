@@ -11464,3 +11464,14 @@ Former private decision identifier: d-20261029-14
 * **Review:** `tasks/handoffs/2026-11-02-recent-database-games-review.md`
 * **Decided by:** Claude Code (Opus 5.5) build run 2026-11-02-recent-database-games, correcting the records-lens finding against d-20261102-05, full auto, 2026-11-02 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"66b945bfbd0d44c25bb4dcaecb4fc7f9a9de03f5c665d588b7521fb29d994ccd","input_sha256":"6918e10ec3a9718880c335927cdc8913298940ae87677f298eae42b3203c04a5","kind":"mutation-receipt","operation":"8ad839e3b7d2dec42932fafc67c8d30945956ac5a406912814658ad0990cebae","options":{"section":null},"request_id_sha256":null,"results":["d-20261102-06"],"target":"decisions-ledger","v":1} -->
+
+### d-20261102-07 — How is every quit gesture routed through one unsaved-tabs gate?
+
+* **Question:** Window close, File → Exit and macOS Quit each end the app differently; what single gate decides them?
+* **Governs:** f-20261101-13
+* **Chosen:** One renderer quit gate with two entry points: one `onCloseRequested` listener on the main window (prevents synchronously, the gate destroys the window when allowed) and direct calls from File → Exit and an app-defined macOS Quit item with `cmd+q`. Backend teardown stays the last-window `ExitRequested` path; no Rust change.
+* **Rejected:** Routing the menu actions through `window.close()` so the listener is the only entry: the menu would be ungated whenever listener registration failed. A Rust-side `CloseRequested`/`ExitRequested` prevent that asks the renderer over a new IPC event: a new event and round trip for a decision only the renderer can make.
+* **Reason:** Both entry points share one latch and one failure contract. Reversal path: route the menu actions back to `exit(0)` and keep the listener.
+* **Review:** `tasks/handoffs/2026-11-02-f-20261101-13-review.md`
+* **Decided by:** Claude Code (Opus 5.5) drain build run f-20261101-13 (session 5760d80b-dd1f-45c3-80d3-ecf9daae3008, plan adopted from drain-90a2aa88), full auto, 2026-11-02 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"4bdfdeba3ea7775c0648abdb7828d5024b84a0125f282f9ca9c9616cd7e82078","input_sha256":"a36baf7f475f4005526a750f93a2755f64e34423124c2e690975cb8b0d984ae5","kind":"mutation-receipt","operation":"e4b7bacbca0a12309b00ed939f8a3dd15f7e8a01d2bf6c56c5f16bc5d84f7a2e","options":{"section":null},"request_id_sha256":null,"results":["d-20261102-07"],"target":"decisions-ledger","v":1} -->
