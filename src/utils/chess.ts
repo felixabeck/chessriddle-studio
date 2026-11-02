@@ -195,12 +195,12 @@ export function headersToPGN(game: GameHeaders): string {
     }
     const whiteElo = game.white_elo;
     const blackElo = game.black_elo;
-    const wroteWhiteElo = typeof whiteElo === "number" && Number.isFinite(whiteElo);
-    const wroteBlackElo = typeof blackElo === "number" && Number.isFinite(blackElo);
-    if (wroteWhiteElo) {
+    const emitWhiteElo = typeof whiteElo === "number" && Number.isFinite(whiteElo);
+    const emitBlackElo = typeof blackElo === "number" && Number.isFinite(blackElo);
+    if (emitWhiteElo) {
         headers += pgnTag("WhiteElo", whiteElo === 0 ? "-" : whiteElo);
     }
-    if (wroteBlackElo) {
+    if (emitBlackElo) {
         headers += pgnTag("BlackElo", blackElo === 0 ? "-" : blackElo);
     }
     if (game.start && game.start.length > 0) {
@@ -225,7 +225,7 @@ export function headersToPGN(game: GameHeaders): string {
         headers += pgnTag("Variant", game.variant);
     }
     for (const [key, value] of Object.entries(game.other ?? {})) {
-        if ((key === "WhiteElo" && wroteWhiteElo) || (key === "BlackElo" && wroteBlackElo)) {
+        if ((key === "WhiteElo" && emitWhiteElo) || (key === "BlackElo" && emitBlackElo)) {
             continue;
         }
         headers += pgnTag(key, value);

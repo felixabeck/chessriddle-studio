@@ -33,7 +33,7 @@ import {
   createTab,
   commitNewTab,
   getTabTreeKey,
-  isUnsavedChangesCovered,
+  asksBeforeDiscardingChanges,
   runTabCreation,
   type Tab,
 } from "@/utils/tabs";
@@ -131,7 +131,7 @@ export default function BoardsPage() {
         )
           return;
         // An origin-less analysis tree is the user's unsaved work (the modal's Save routes origin "none" to append-to-picked-file); play and puzzle trees mark themselves dirty on every move and keep closing directly.
-        if (isUnsavedChangesCovered(closedTab) && store.getState().dirty && !discard) {
+        if (asksBeforeDiscardingChanges(closedTab) && store.getState().dirty && !discard) {
           setPendingClose({ tabId: value, store });
           return;
         }

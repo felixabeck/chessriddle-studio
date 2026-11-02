@@ -68,7 +68,7 @@ export function isPersistentGameOrigin(tab?: Tab | null): boolean {
 }
 
 /** Coverage only: persistent origin, or an analysis tab of any origin. Does not read dirty. */
-export function isUnsavedChangesCovered(tab?: Tab | null): boolean {
+export function asksBeforeDiscardingChanges(tab?: Tab | null): boolean {
     if (!tab) return false;
     return isPersistentGameOrigin(tab) || tab.type === "analysis";
 }

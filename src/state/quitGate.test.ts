@@ -364,8 +364,7 @@ test("an outer scan throw logs without another tab's id", async () => {
     const otherId = uuid();
     const warn = vi.fn((_message: string) => undefined);
     const gate = host({
-        getTabs: () => [tab({ value: otherId, type: "analysis" })],
-        scanTabs: () => {
+        getTabs: () => {
             throw new Error("scan exploded");
         },
         warn,
@@ -379,8 +378,7 @@ test("an outer scan throw logs without another tab's id", async () => {
 
 test("a scan throw opens a fail-closed dialog, holds the latch, and ignores File → Exit", async () => {
     const gate = host({
-        getTabs: () => [tab({ value: uuid(), type: "analysis" })],
-        scanTabs: () => {
+        getTabs: () => {
             throw new Error("scan exploded");
         },
     });
@@ -450,22 +448,65 @@ test("destroy rejection notifies, awaits the log, then exits", async () => {
     expect(isQuitGateInProgress()).toBe(false);
 });
 
+test("notify throwing on destroy rejection still logs and exits", async () => {
+    const gate = host({
+        getTabs: () => [tab({ value: uuid(), type: "new" })],
+        destroyWindow: vi.fn(async () => {
+            throw new Error("destroy refused");
+        }),
+        notify: vi.fn(() => {
+            throw new Error("notify refused");
+        }),
+    });
+    await runQuitGate(gate);
+    expect(gate.notify).toHaveBeenCalledOnce();
+    expect(gate.log).toHaveBeenCalledOnce();
+    expect(gate.exitProcess).toHaveBeenCalledExactlyOnceWith(0);
+    expect(isQuitGateInProgress()).toBe(false);
+});
+
+test("cancel while destroy is pending is a no-op; later rejection still exits once", async () => {
+    let rejectDestroy!: (error: Error) => void;
+    const pending = new Promise<void>((_, reject) => {
+        rejectDestroy = reject;
+    });
+    const id = uuid();
+    seedStoredTree(id, true);
+    const gate = host({
+        getTabs: () => [tab({ value: id, type: "analysis" })],
+        destroyWindow: vi.fn(() => pending),
+    });
+    await runQuitGate(gate);
+    expect(gate.openDialog).toHaveBeenCalledOnce();
+    const quitting = quitWithoutSaving();
+    expect(isQuitGateInProgress()).toBe(true);
+    cancelQuitGate();
+    expect(isQuitGateInProgress()).toBe(true);
+    await runQuitGate(gate);
+    expect(gate.openDialog).toHaveBeenCalledOnce();
+    expect(gate.destroyWindow).toHaveBeenCalledOnce();
+    rejectDestroy(new Error("destroy refused"));
+    await quitting;
+    expect(gate.exitProcess).toHaveBeenCalledExactlyOnceWith(0);
+    expect(isQuitGateInProgress()).toBe(false);
+});
+
 test("a second entry while running or open is a total no-op", async () => {
-    let release!: (tabs: []) => void;
-    const hung = new Promise<[]>((resolve) => {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
         release = resolve;
     });
     const gate = host({
         getTabs: () => [tab({ value: uuid(), type: "new" })],
-        scanTabs: () => hung,
+        destroyWindow: vi.fn(() => pending),
     });
     const first = runQuitGate(gate);
     await Promise.resolve();
     expect(isQuitGateInProgress()).toBe(true);
     await runQuitGate(gate);
     expect(gate.openDialog).not.toHaveBeenCalled();
-    expect(gate.destroyWindow).not.toHaveBeenCalled();
-    release([]);
+    expect(gate.destroyWindow).toHaveBeenCalledOnce();
+    release();
     await first;
     expect(gate.destroyWindow).toHaveBeenCalledOnce();
     expect(gate.exitProcess).not.toHaveBeenCalled();
@@ -503,8 +544,7 @@ test("every close-request delivery prevents default, including while open, on sc
     const handler = createCloseRequestedHandler(() =>
         runQuitGate(
             host({
-                getTabs: () => [tab({ value: uuid(), type: "analysis" })],
-                scanTabs: () => {
+                getTabs: () => {
                     throw new Error("scan exploded");
                 },
             }),

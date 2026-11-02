@@ -1,9 +1,14 @@
 import { warnSafely } from "@/platform/errors";
+import { createNativeListenerLifecycle } from "@/platform/listenerLifecycle";
 import { getFileFreshness } from "@/state/fileFreshness";
-import { tabStorage, type TabTreeReadResult } from "@/state/store/tabStorage";
+import {
+    tabStorage,
+    type TabTreeReadResult,
+    type TabTreeStorageStatus,
+} from "@/state/store/tabStorage";
 import { getCachedTreeStore } from "@/state/store/tree";
 import { getTabTreeKey, type Tab } from "@/state/workspaceTypes";
-import { isFileBackedTab, isUnsavedChangesCovered } from "@/utils/tabs";
+import { asksBeforeDiscardingChanges, isFileBackedTab } from "@/utils/tabs";
 
 export type BlockingTab = {
     value: string;
@@ -30,7 +35,6 @@ export type TabInspection = {
 
 export type QuitGateHost = {
     getTabs: () => readonly Tab[];
-    scanTabs?: (tabs: readonly Tab[]) => BlockingTab[] | Promise<BlockingTab[]>;
     openDialog: (state: QuitDialogState) => boolean;
     destroyWindow: () => Promise<void>;
     exitProcess: (code: number) => void | Promise<void>;
@@ -48,6 +52,7 @@ const defaultInspection: TabInspection = {
 };
 
 let inProgress = false;
+let proceeding = false;
 let activeHost: QuitGateHost | null = null;
 
 export function isQuitGateInProgress(): boolean {
@@ -56,6 +61,7 @@ export function isQuitGateInProgress(): boolean {
 
 export function resetQuitGateForTests(): void {
     inProgress = false;
+    proceeding = false;
     activeHost = null;
 }
 
@@ -68,7 +74,9 @@ function treeIsDirty(state: unknown): boolean {
     );
 }
 
-function inspectFailed(kind: TabTreeReadResult["kind"] | string): boolean {
+function isUninspectableStatus(
+    kind: TabTreeStorageStatus["kind"] | TabTreeReadResult["kind"],
+): boolean {
     return kind === "unreadable" || kind === "unavailable";
 }
 
@@ -90,10 +98,10 @@ export function scanBlockingTabs(
             if (cached) {
                 dirty = cached.getState().dirty === true;
                 const status = inspection.getStatus(treeKey);
-                uninspectable = inspectFailed(status.kind);
+                uninspectable = isUninspectableStatus(status.kind);
             } else {
                 const result = inspection.inspectTree(treeKey, requireExisting);
-                uninspectable = inspectFailed(result.kind);
+                uninspectable = isUninspectableStatus(result.kind);
                 if (result.kind === "available") dirty = treeIsDirty(result.value.state);
             }
         } catch (error) {
@@ -111,7 +119,7 @@ export function scanBlockingTabs(
             continue;
         }
 
-        if (!isUnsavedChangesCovered(tab)) continue;
+        if (!asksBeforeDiscardingChanges(tab)) continue;
 
         if (dirty) {
             blocking.push({ value: tab.value, name: tab.name, uninspectable: false });
@@ -130,16 +138,22 @@ export function scanBlockingTabs(
 
 function releaseLatch(): void {
     inProgress = false;
+    proceeding = false;
     activeHost = null;
 }
 
 async function proceedQuit(host: QuitGateHost): Promise<void> {
+    proceeding = true;
     activeHost = null;
     try {
         await host.destroyWindow();
         releaseLatch();
     } catch (error) {
-        host.notify(error);
+        try {
+            host.notify(error);
+        } catch {
+            // Notify is best-effort; the log and exit(0) fallback must still run.
+        }
         try {
             await host.log(
                 `Window destroy failed; falling back to process exit: ${
@@ -175,8 +189,7 @@ export async function runQuitGate(host: QuitGateHost): Promise<void> {
     activeHost = host;
     try {
         const tabs = host.getTabs();
-        const scan = host.scanTabs ?? ((current) => scanBlockingTabs(current));
-        const blocking = await scan(tabs);
+        const blocking = scanBlockingTabs(tabs);
         if (blocking.length === 0) {
             await proceedQuit(host);
             return;
@@ -191,7 +204,7 @@ export async function runQuitGate(host: QuitGateHost): Promise<void> {
 }
 
 export function cancelQuitGate(): void {
-    if (!inProgress) return;
+    if (!inProgress || proceeding) return;
     releaseLatch();
 }
 
@@ -223,41 +236,15 @@ export function registerQuitCloseListener(options: {
     warn: (message: string) => void;
     failureMessage: string;
 }): () => void {
-    let stopped = false;
-    let notified = false;
-    let unlisten: (() => void) | undefined;
     const handler = createCloseRequestedHandler(options.onCloseRequested);
-
-    const quietUnlisten = (fn: (() => void) | undefined) => {
-        if (!fn) return;
-        try {
-            void Promise.resolve(fn()).catch(() => undefined);
-        } catch {
-            // Unlisten is best-effort after stop or a failed registration.
-        }
-    };
-
-    void Promise.resolve(options.subscribe(handler))
-        .then((fn) => {
-            if (stopped) {
-                quietUnlisten(fn);
-                return;
-            }
-            unlisten = fn;
-        })
-        .catch((error: unknown) => {
-            if (stopped) return;
-            if (notified) return;
-            notified = true;
+    const lifecycle = createNativeListenerLifecycle({
+        onFailure: (error) => {
             options.warn(
                 `${options.failureMessage} (${error instanceof Error ? error.message : String(error)})`,
             );
             options.notify(new Error(options.failureMessage));
-        });
-
-    return () => {
-        stopped = true;
-        quietUnlisten(unlisten);
-        unlisten = undefined;
-    };
+        },
+    });
+    lifecycle.listen(() => options.subscribe(handler));
+    return () => lifecycle.stop();
 }

@@ -447,7 +447,11 @@ export class TabStorageRepository {
 
     /** Read the exact tab key while keeping unreadable and refused reads distinct from absence. */
     readTree(tabId: string, requireExisting = false): TabTreeReadResult {
-        return this.readTreeValue(tabId, requireExisting, true);
+        return this.readTreeValue(tabId, {
+            requireExisting,
+            migrate: true,
+            recordStatus: true,
+        });
     }
 
     /**
@@ -456,15 +460,22 @@ export class TabStorageRepository {
      * as unavailable.
      */
     inspectTree(tabId: string, requireExisting = false): TabTreeReadResult {
-        return this.readTreeValue(tabId, requireExisting, false, false);
+        return this.readTreeValue(tabId, {
+            requireExisting,
+            migrate: false,
+            recordStatus: false,
+        });
     }
 
     private readTreeValue(
         tabId: string,
-        requireExisting: boolean,
-        migrate: boolean,
-        recordStatus = true,
+        options: {
+            requireExisting: boolean;
+            migrate: boolean;
+            recordStatus?: boolean;
+        },
     ): TabTreeReadResult {
+        const { requireExisting, migrate, recordStatus = true } = options;
         const finish = (result: TabTreeReadResult): TabTreeReadResult => {
             if (recordStatus) {
                 this.setReadStatus(
@@ -505,8 +516,9 @@ export class TabStorageRepository {
             return finish({ kind: "unreadable", rawValue: raw });
         }
 
-        // Both an old uncompressed JSON payload and a former v0 envelope are
-        // rewritten immediately, before the next debounced store update.
+        // When migrating, both an old uncompressed JSON payload and a former v0
+        // envelope are rewritten immediately, before the next debounced store update.
+        // Non-migrating readers such as inspectTree leave the stored bytes unchanged.
         if (migrate && raw !== serializeStorageValue(decoded)) {
             try {
                 sessionStorage.setItem(tabId, serializeStorageValue(decoded));
@@ -656,7 +668,7 @@ export class TabStorageRepository {
         const source =
             status.kind === "unreadable" || status.kind === "unavailable"
                 ? status
-                : this.readTreeValue(sourceTabId, requireExisting, false);
+                : this.readTreeValue(sourceTabId, { requireExisting, migrate: false });
         if (source.kind === "absent") return null;
         if (source.kind === "unavailable") {
             throw new Error("Could not read the source tree for duplication.", {

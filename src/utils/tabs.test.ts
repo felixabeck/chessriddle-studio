@@ -79,7 +79,7 @@ import {
     getTabFile,
     getTabGameNumber,
     isPersistentGameOrigin,
-    isUnsavedChangesCovered,
+    asksBeforeDiscardingChanges,
     commitNewTab,
     createTab,
     runTabCreation,
@@ -314,24 +314,24 @@ test("unsaved-changes coverage is persistent origin or analysis, and ignores dir
         kind: "databaseDraft" as const,
         database: { id: { id: "db" }, kind: "database" as const },
     };
-    expect(isUnsavedChangesCovered(undefined)).toBe(false);
-    expect(isUnsavedChangesCovered(fileTab)).toBe(true);
-    expect(isUnsavedChangesCovered({ ...fileTab, type: "play", gameOrigin: database } as Tab)).toBe(
-        true,
-    );
-    expect(isUnsavedChangesCovered({ ...fileTab, type: "play", gameOrigin: draft } as Tab)).toBe(
-        true,
-    );
-    expect(isUnsavedChangesCovered({ ...fileTab, type: "analysis", gameOrigin: none } as Tab)).toBe(
-        true,
-    );
-    expect(isUnsavedChangesCovered({ ...fileTab, type: "play", gameOrigin: none } as Tab)).toBe(
+    expect(asksBeforeDiscardingChanges(undefined)).toBe(false);
+    expect(asksBeforeDiscardingChanges(fileTab)).toBe(true);
+    expect(
+        asksBeforeDiscardingChanges({ ...fileTab, type: "play", gameOrigin: database } as Tab),
+    ).toBe(true);
+    expect(
+        asksBeforeDiscardingChanges({ ...fileTab, type: "play", gameOrigin: draft } as Tab),
+    ).toBe(true);
+    expect(
+        asksBeforeDiscardingChanges({ ...fileTab, type: "analysis", gameOrigin: none } as Tab),
+    ).toBe(true);
+    expect(asksBeforeDiscardingChanges({ ...fileTab, type: "play", gameOrigin: none } as Tab)).toBe(
         false,
     );
-    expect(isUnsavedChangesCovered({ ...fileTab, type: "puzzles", gameOrigin: none } as Tab)).toBe(
-        false,
-    );
-    expect(isUnsavedChangesCovered({ ...fileTab, type: "new", gameOrigin: none } as Tab)).toBe(
+    expect(
+        asksBeforeDiscardingChanges({ ...fileTab, type: "puzzles", gameOrigin: none } as Tab),
+    ).toBe(false);
+    expect(asksBeforeDiscardingChanges({ ...fileTab, type: "new", gameOrigin: none } as Tab)).toBe(
         false,
     );
 });

@@ -1,4 +1,5 @@
 import { errorUnlessCancelled } from "@/platform/errors";
+import { createNativeListenerLifecycle } from "@/platform/listenerLifecycle";
 
 export type MenuTranslator = (key: string, options?: { defaultValue?: string }) => string;
 
@@ -456,66 +457,34 @@ export function watchMaximized(options: {
     setMaximized: (value: boolean) => void;
     notify: (error: unknown) => void;
 }): () => void {
-    let stopped = false;
-    let notified = false;
-    let unlisten: (() => void) | undefined;
-
-    const quietUnlisten = (fn: (() => void) | undefined) => {
-        if (!fn) return;
-        try {
-            void Promise.resolve(fn()).catch(() => undefined);
-        } catch {
-            // Unlisten is best-effort; a close rejection must not become an
-            // unhandled rejection after stop() or a failed isMaximized.
-        }
-    };
-
-    const fail = (error: unknown) => {
-        if (stopped) return;
-        if (!notified) {
-            notified = true;
+    const lifecycle = createNativeListenerLifecycle({
+        onFailure: (error) => {
             const visible = errorUnlessCancelled(error);
             if (visible) options.notify(error);
-        }
-        stopped = true;
-        quietUnlisten(unlisten);
-        unlisten = undefined;
-    };
+        },
+        stopOnFailure: true,
+    });
 
     let checkSeq = 0;
     const check = async () => {
         const seq = ++checkSeq;
-        if (stopped) return;
+        if (lifecycle.isStopped()) return;
         try {
             const maximized = await options.isMaximized();
-            if (stopped || seq !== checkSeq) return;
+            if (lifecycle.isStopped() || seq !== checkSeq) return;
             options.setMaximized(maximized);
         } catch (error) {
-            if (stopped || seq !== checkSeq) return;
-            fail(error);
+            if (lifecycle.isStopped() || seq !== checkSeq) return;
+            lifecycle.fail(error);
         }
     };
 
     void check();
-    void Promise.resolve(
+    lifecycle.listen(() =>
         options.onResized(() => {
             void check();
         }),
-    )
-        .then((fn) => {
-            if (stopped) {
-                quietUnlisten(fn);
-                return;
-            }
-            unlisten = fn;
-        })
-        .catch((error: unknown) => {
-            fail(error);
-        });
+    );
 
-    return () => {
-        stopped = true;
-        quietUnlisten(unlisten);
-        unlisten = undefined;
-    };
+    return () => lifecycle.stop();
 }
