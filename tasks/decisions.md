@@ -11475,3 +11475,14 @@ Former private decision identifier: d-20261029-14
 * **Review:** `tasks/handoffs/2026-11-02-f-20261101-13-review.md`
 * **Decided by:** Claude Code (Opus 5.5) drain build run f-20261101-13 (session 5760d80b-dd1f-45c3-80d3-ecf9daae3008, plan adopted from drain-90a2aa88), full auto, 2026-11-02 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"4bdfdeba3ea7775c0648abdb7828d5024b84a0125f282f9ca9c9616cd7e82078","input_sha256":"a36baf7f475f4005526a750f93a2755f64e34423124c2e690975cb8b0d984ae5","kind":"mutation-receipt","operation":"e4b7bacbca0a12309b00ed939f8a3dd15f7e8a01d2bf6c56c5f16bc5d84f7a2e","options":{"section":null},"request_id_sha256":null,"results":["d-20261102-07"],"target":"decisions-ledger","v":1} -->
+
+### d-20261102-08 — Which tabs block a quit?
+
+* **Question:** Which tab states count as unsaved work that a quit must confirm?
+* **Governs:** f-20261101-13
+* **Chosen:** Tabs covered by the tab-close rule of d-20261101-13 (persistent origin, or type `analysis` of any origin), through one shared coverage predicate in `src/utils/tabs.ts`, block when dirty or in file-freshness `conflict`/`unavailable`; any `play`, `analysis` or `puzzles` tab blocks while its tree is uninspectable (the set `closeTab` refuses to close). New tabs never block; a dirty origin-`none` play or puzzle tab does not block.
+* **Rejected:** Blocking on every dirty analysis/play tree: d-20261101-13 rejected prompting on every finished engine game, and a tab must not be unsaved on quit but not on close. A quit-only copy of the rule: a second implementation of the same concept. Ignoring uninspectable trees: "could not check" is not "saved".
+* **Reason:** Same promise as tab close, extended to quitting. Reversal path: the shared predicate in `src/utils/tabs.ts` and the quit-only arms in `src/state/quitGate.ts`.
+* **Review:** `tasks/handoffs/2026-11-02-f-20261101-13-review.md`
+* **Decided by:** Claude Code (Opus 5.5) drain build run f-20261101-13 (session 5760d80b-dd1f-45c3-80d3-ecf9daae3008, plan adopted from drain-90a2aa88), full auto, 2026-11-02 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"ba392a8dd800a1766bce7c190bd3082532b96018a17774e52028189bc8f0bb9c","input_sha256":"b2450d20b9f4dbb81071601859fd53875d228f98bdd0359df5ae13dfbc385720","kind":"mutation-receipt","operation":"aefa01be78edba0c8207d3b228f50dfcf7658a44df517d84473e3298ba6e017a","options":{"section":null},"request_id_sha256":null,"results":["d-20261102-08"],"target":"decisions-ledger","v":1} -->
