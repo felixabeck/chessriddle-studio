@@ -10,6 +10,9 @@ import { TreeStateContext } from "@/components/common/TreeStateContext";
 import type { TreeStore } from "@/state/store/tree";
 import { loadFileGame, pickPgnFile, readFileGame } from "@/utils/files";
 import { parsePGN } from "@/utils/chess";
+import { tauri } from "@/platform/tauri";
+import { databaseGameToTree } from "@/utils/databaseGameTree";
+import { databaseHandleKey } from "@/utils/db";
 import {
   AddGameContext,
   appendBlankGame,
@@ -20,6 +23,7 @@ import {
   matchesFileGameTab,
   serializeStoreTree,
   sameTabOwner,
+  saveToDatabase,
   useTabActions,
   type FileBackedTab,
 } from "@/utils/tabs";
@@ -62,7 +66,11 @@ export default function FileFreshnessGate({ tab, closeTab, children }: Props) {
   // Drafts have no stored game to poll or recover. Resolve their target only on explicit save.
   if (tab.gameOrigin.kind === "databaseDraft") return <>{children}</>;
   if (tab.gameOrigin.kind === "database")
-    return <DatabaseOriginGate tab={tab}>{children}</DatabaseOriginGate>;
+    return (
+      <DatabaseOriginGate tab={tab} closeTab={closeTab}>
+        {children}
+      </DatabaseOriginGate>
+    );
   if (!isFileBackedTab(tab)) return <>{children}</>;
   return (
     <LinkedFileOriginGate tab={tab} closeTab={closeTab}>
@@ -71,16 +79,175 @@ export default function FileFreshnessGate({ tab, closeTab, children }: Props) {
   );
 }
 
-function DatabaseOriginGate({ tab, children }: { tab: Tab; children: React.ReactNode }) {
+function DatabaseOriginGate({ tab, closeTab, children }: Props) {
   const currency = useCollectionCurrency(
     tab.gameOrigin.kind === "database" ? tab.gameOrigin.database : null,
   );
-  if (!currency.collection) return <>{children}</>;
+  if (!currency.collection)
+    return (
+      <DatabaseConflictGate tab={tab} closeTab={closeTab}>
+        {children}
+      </DatabaseConflictGate>
+    );
   return (
     <RetiredOriginRecovery
       tab={tab}
       preservedOriginal={currency.collection.status === "preservedOriginal"}
     />
+  );
+}
+
+function DatabaseConflictGate({ tab, closeTab, children }: Props) {
+  const { t } = useTranslation();
+  const store = useContext(TreeStateContext)!;
+  const { getTab, updateTab } = useTabActions();
+  const freshness = useFileFreshness(tab.value);
+  const [panelError, setPanelError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const [reloadCount, setReloadCount] = useState(0);
+  const flight = useRef<AbortController | null>(null);
+  const origin = tab.gameOrigin;
+  const databaseKey = origin.kind === "database" ? databaseHandleKey(origin.database) : null;
+  const gameId = origin.kind === "database" ? origin.gameId : null;
+  const identity = { tab, store, databaseKey, gameId };
+  const identityRef = useRef(identity);
+  identityRef.current = identity;
+
+  useEffect(() => {
+    setPending(false);
+    return () => {
+      flight.current?.abort();
+      flight.current = null;
+    };
+  }, [tab.value, databaseKey, gameId, store]);
+
+  const isCurrent = useCallback(
+    (signal: AbortSignal) => {
+      const current = getTab(tab.value);
+      const latest = identityRef.current;
+      return (
+        !signal.aborted &&
+        latest.store === store &&
+        latest.tab.value === tab.value &&
+        latest.databaseKey === databaseKey &&
+        latest.gameId === gameId &&
+        sameTabOwner(current, tab) &&
+        current.gameOrigin.kind === "database" &&
+        databaseHandleKey(current.gameOrigin.database) === databaseKey &&
+        current.gameOrigin.gameId === gameId
+      );
+    },
+    [getTab, tab, store, databaseKey, gameId],
+  );
+
+  const runAction = useCallback(async (run: (signal: AbortSignal) => Promise<boolean>) => {
+    if (flight.current) return false;
+    const controller = new AbortController();
+    flight.current = controller;
+    setPending(true);
+    setPanelError(null);
+    try {
+      return await run(controller.signal);
+    } finally {
+      if (flight.current === controller) {
+        flight.current = null;
+        if (!controller.signal.aborted) setPending(false);
+      }
+    }
+  }, []);
+
+  const reload = () =>
+    runAction(async (signal) => {
+      if (origin.kind !== "database" || !isCurrent(signal)) return false;
+      try {
+        const result = await tauri.getDbGame(origin.database, origin.gameId, null, { signal });
+        if (!isCurrent(signal)) return false;
+        if (result.kind === "missing") {
+          setFileFreshness(tab.value, "unavailable");
+          return false;
+        }
+        const tree = await databaseGameToTree(result.game);
+        if (!isCurrent(signal)) return false;
+        deferTreeView(store);
+        try {
+          store.getState().setState(tree);
+          flushSync(() => {
+            setReloadCount((count) => count + 1);
+            setFileFreshness(tab.value, "verified");
+          });
+        } finally {
+          releaseTreeView(store);
+        }
+        return true;
+      } catch (error) {
+        if (isCurrent(signal)) setPanelError(normalizeError(error).message);
+        return false;
+      }
+    });
+
+  const saveAsNew = useCallback(
+    (throwOnFailure = false) =>
+      runAction(async (signal) => {
+        if (origin.kind !== "database" || !isCurrent(signal)) return false;
+        const result = await saveToDatabase({
+          tab,
+          store,
+          database: origin.database,
+          getTab,
+          updateTab,
+        });
+        if (typeof result === "object" && result.status === "failed") {
+          if (!isCurrent(signal)) return false;
+          setPanelError(result.error.message);
+          if (throwOnFailure) throw result.error;
+        }
+        return result === "saved" && !store.getState().dirty;
+      }),
+    [runAction, origin, isCurrent, tab, store, getTab, updateTab],
+  );
+
+  useEffect(
+    () => registerFileConflictSave(tab.value, () => saveAsNew(true)),
+    [tab.value, saveAsNew],
+  );
+
+  const conflict = freshness.state === "conflict";
+  return (
+    <div
+      className={classes.gate}
+      data-file-freshness={`${freshness.state}:${reloadCount}`}
+      data-tab-id={tab.value}
+    >
+      {conflict || freshness.state === "unavailable" ? (
+        <Stack className={classes.panel} align="center" justify="center" h="100%" gap="sm">
+          <Text>
+            {conflict
+              ? t("FileFreshness.ChangedInDatabase")
+              : t("FileFreshness.GameNoLongerInDatabase")}
+          </Text>
+          {(panelError ?? freshness.errorMessage) && (
+            <Text className={classes.error}>{panelError ?? freshness.errorMessage}</Text>
+          )}
+          <Group>
+            {conflict && (
+              <Button color="gold" onClick={() => void reload()} disabled={pending}>
+                {t("FileFreshness.ReloadFromDatabase")}
+              </Button>
+            )}
+            <Button color="gold" onClick={() => void saveAsNew()} disabled={pending}>
+              {t("FileFreshness.SaveAsNewGame")}
+            </Button>
+            {!conflict && (
+              <Button variant="default" onClick={() => closeTab(tab.value)} disabled={pending}>
+                {t("Tab.Close")}
+              </Button>
+            )}
+          </Group>
+        </Stack>
+      ) : (
+        children
+      )}
+    </div>
   );
 }
 

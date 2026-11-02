@@ -23,6 +23,7 @@ import {
 import { defaultTree } from "@/utils/treeReducer";
 import { getTabTreeKey, saveToFile, serializeStoreTree } from "@/utils/tabs";
 import type { Tab } from "@/utils/tabs";
+import type { NormalizedGame } from "@/bindings";
 import FileFreshnessGate from "./FileFreshnessGate";
 import * as deferredView from "@/state/deferredTreeView";
 import TreeRecoveryGate from "./TreeRecoveryGate";
@@ -34,6 +35,9 @@ const mocks = vi.hoisted(() => ({
   readFileGame: vi.fn(),
   reportPersistError: vi.fn(),
   writeGame: vi.fn(),
+  getDbGame: vi.fn(),
+  lexPgn: vi.fn(),
+  insertDbGame: vi.fn(),
   showNotification: vi.fn(),
   translate: vi.fn((key: string) => key),
   collections: [] as import("@/bindings").CollectionDescriptor[],
@@ -69,6 +73,9 @@ vi.mock("@/platform/tauri", async (importOriginal) => {
     tauri: {
       ...actual.tauri,
       writeGame: mocks.writeGame,
+      getDbGame: mocks.getDbGame,
+      lexPgn: mocks.lexPgn,
+      insertDbGame: mocks.insertDbGame,
       qualifyFileGame: vi.fn(async () => null),
       collectionForDatabase: vi.fn(async () => null),
     },
@@ -266,7 +273,7 @@ async function setup({
   treeStamp?: string | null;
   dirty?: boolean;
   appendAttempted?: boolean;
-  freshness?: "unverified" | "overdue" | "appending" | "verified";
+  freshness?: "unverified" | "overdue" | "appending" | "verified" | "conflict" | "unavailable";
   persisted?: boolean;
   readError?: Error;
   readResult?: (store: TreeStore) => ReturnType<typeof stampedGame>;
@@ -319,6 +326,156 @@ beforeEach(() => {
     return tree;
   });
   removeFileFreshness(tabId);
+});
+
+const databaseTab: Tab = {
+  ...fileTab,
+  gameOrigin: {
+    kind: "database",
+    database: { id: { id: "database" }, kind: "database" },
+    gameId: 812,
+  },
+};
+const databaseRow: NormalizedGame = {
+  id: 812,
+  stamp: changedStamp,
+  fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+  event: "Row event",
+  event_id: 1,
+  site: "Berlin",
+  site_id: 1,
+  white: "White",
+  white_id: 1,
+  black: "Black",
+  black_id: 2,
+  result: "*",
+  moves: "1... c5 *",
+};
+
+test("an unverified database tab shows the board until a conflict unmounts it", async () => {
+  await setup({ tab: databaseTab });
+  expect(host.querySelector('[data-testid="board-and-panels"]')).not.toBeNull();
+  expect(mocks.getDbGame).not.toHaveBeenCalled();
+  await act(async () => setFileFreshness(tabId, "conflict"));
+  expect(host.querySelector('[data-testid="board-and-panels"]')).toBeNull();
+  expect(host.textContent).toContain("FileFreshness.ChangedInDatabase");
+});
+
+test("database reload installs the row's starting tree, headers and stamp", async () => {
+  await setup({ tab: databaseTab, freshness: "conflict", dirty: true });
+  const actual = await vi.importActual<typeof import("@/utils/chess")>("@/utils/chess");
+  mocks.parsePGN.mockImplementation(actual.parsePGN);
+  mocks.lexPgn.mockResolvedValue([
+    { type: "San", value: "c5" },
+    { type: "Outcome", value: "*" },
+  ]);
+  mocks.getDbGame.mockResolvedValue({ kind: "found", game: databaseRow });
+  await act(async () => button("FileFreshness.ReloadFromDatabase").click());
+  expect(mocks.getDbGame).toHaveBeenCalledWith(
+    databaseTab.gameOrigin.kind === "database" && databaseTab.gameOrigin.database,
+    812,
+    null,
+    { signal: expect.any(AbortSignal) },
+  );
+  expect(treeStore.getState().root.fen).toBe(databaseRow.fen);
+  expect(treeStore.getState().root.children[0].san).toBe("c5");
+  expect(treeStore.getState().headers).toMatchObject({
+    event: "Row event",
+    site: "Berlin",
+    white: "White",
+    black: "Black",
+  });
+  expect(treeStore.getState()).toMatchObject({ sourceStamp: changedStamp, dirty: false });
+  expect(getFileFreshness(tabId).state).toBe("verified");
+  expect(host.querySelector('[data-testid="board-and-panels"]')).not.toBeNull();
+});
+
+test("a missing database row keeps the tree and offers Close", async () => {
+  const closeTab = await setup({ tab: databaseTab, freshness: "conflict", dirty: true });
+  const before = serializeStoreTree(treeStore);
+  mocks.getDbGame.mockResolvedValue({ kind: "missing" });
+  await act(async () => button("FileFreshness.ReloadFromDatabase").click());
+  expect(getFileFreshness(tabId).state).toBe("unavailable");
+  expect(serializeStoreTree(treeStore)).toBe(before);
+  expect(treeStore.getState().dirty).toBe(true);
+  expect(host.textContent).toContain("FileFreshness.GameNoLongerInDatabase");
+  await act(async () => button("Tab.Close").click());
+  expect(closeTab).toHaveBeenCalledWith(tabId);
+});
+
+test.each(["unmount", "origin change", "database row change"])(
+  "database reload ignores completion after %s",
+  async (exit) => {
+    await setup({ tab: databaseTab, freshness: "conflict", dirty: true });
+    const before = serializeStoreTree(treeStore);
+    const read = deferred<{ kind: "found"; game: NormalizedGame }>();
+    mocks.getDbGame.mockReturnValue(read.promise);
+    await act(async () => button("FileFreshness.ReloadFromDatabase").click());
+    await act(async () => {
+      if (exit === "unmount") root.render(null);
+      else
+        updateTabById((...args) => jotaiStore.set(tabsAtom, ...args), tabId, {
+          ...databaseTab,
+          gameOrigin:
+            exit === "database row change" && databaseTab.gameOrigin.kind === "database"
+              ? { ...databaseTab.gameOrigin, gameId: 900 }
+              : { kind: "none" },
+        });
+    });
+    await act(async () => read.resolve({ kind: "found", game: databaseRow }));
+    expect(serializeStoreTree(treeStore)).toBe(before);
+    expect(getFileFreshness(tabId).state).toBe("conflict");
+    if (exit === "database row change")
+      expect(button("FileFreshness.ReloadFromDatabase").disabled).toBe(false);
+  },
+);
+
+test("database reload errors keep the edits and show their message", async () => {
+  await setup({ tab: databaseTab, freshness: "conflict", dirty: true });
+  const before = serializeStoreTree(treeStore);
+  mocks.getDbGame.mockRejectedValue(new Error("Read refused"));
+  await act(async () => button("FileFreshness.ReloadFromDatabase").click());
+  expect(host.textContent).toContain("Read refused");
+  expect(serializeStoreTree(treeStore)).toBe(before);
+});
+
+test.each([false, true])(
+  "database Save as new surfaces failure, registered=%s",
+  async (registered) => {
+    await setup({
+      tab: databaseTab,
+      freshness: registered ? "unavailable" : "conflict",
+      dirty: true,
+    });
+    await act(async () => treeStore.getState().makeMove({ payload: "e4" }));
+    mocks.insertDbGame.mockRejectedValue({
+      tag: "backend-error",
+      category: "permission",
+      message: "Insert refused",
+    });
+    const before = serializeStoreTree(treeStore);
+    await act(async () => {
+      if (registered)
+        await expect(saveFileConflictVersion(tabId)).rejects.toMatchObject({
+          message: "Insert refused",
+        });
+      else button("FileFreshness.SaveAsNewGame").click();
+    });
+    expect(host.textContent).toContain("Insert refused");
+    expect(serializeStoreTree(treeStore)).toBe(before);
+    expect(mocks.insertDbGame).toHaveBeenCalledTimes(1);
+  },
+);
+
+test("database Save as new admits the inserted id and stamp through the shared store path", async () => {
+  await setup({ tab: databaseTab, freshness: "unavailable", dirty: true });
+  await act(async () => treeStore.getState().makeMove({ payload: "e4" }));
+  mocks.insertDbGame.mockResolvedValue({ id: 900, stamp: changedStamp });
+  await act(async () => expect(await saveFileConflictVersion(tabId)).toBe(true));
+  expect(mocks.insertDbGame).toHaveBeenCalledTimes(1);
+  expect(jotaiStore.get(tabsAtom)[0].gameOrigin).toMatchObject({ kind: "database", gameId: 900 });
+  expect(treeStore.getState()).toMatchObject({ sourceStamp: changedStamp, dirty: false });
+  expect(getFileFreshness(tabId).state).toBe("verified");
 });
 
 afterEach(async () => {
