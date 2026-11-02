@@ -171,6 +171,7 @@
           "src/components/common/OpenFolderButton.tsx",
           "src/platform/errors.ts",
           "src/platform/http.ts",
+          "src/platform/listenerLifecycle.ts",
           "src/platform/native.ts",
           "src/platform/operation.ts",
           "src/platform/tauri.ts",
