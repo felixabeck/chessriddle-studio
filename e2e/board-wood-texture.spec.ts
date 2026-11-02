@@ -2,12 +2,13 @@ import {
     expect,
     filesWorkspaceCommands,
     filesWorkspaceFixture,
+    localRequestFailure,
     pgnFileCommands,
     preserveStorageForReload,
     selectFilesTreeRow,
     test,
 } from "./fixtures";
-import type { Page } from "@playwright/test";
+import type { Page, Request } from "@playwright/test";
 
 const TEXTURE_URL = /^url\("[^"]*\/board\/wood4-square\.png"\)/;
 const BOARD_IMAGE_URL = /url\("[^"]*\/board\/chessriddle\.svg"\)$/;
@@ -170,6 +171,20 @@ test("board-wood-texture: arrows from PGN drawings keep finite coordinates when 
             },
         }),
     });
+    // The first board renders the default texture before the stored "off" hydrates. Holding the
+    // tile response makes the page abandon that fetch on every run, which the fixture must not
+    // report as a browser failure (f-20261102-06).
+    const textureAborted = new Promise<string | undefined>((resolve) => {
+        page.on("requestfailed", (request) => {
+            if (request.url().endsWith("/board/wood4-square.png")) {
+                resolve(request.failure()?.errorText);
+            }
+        });
+    });
+    await page.route("**/board/wood4-square.png", async (route) => {
+        await Promise.race([textureAborted, new Promise((resolve) => setTimeout(resolve, 10_000))]);
+        await route.continue().catch(() => undefined);
+    });
     await page.goto("/library");
     await page.getByRole("button", { name: /choose collection/i }).click();
     await selectFilesTreeRow(page, filesWorkspaceFixture.pgnFile.name);
@@ -191,6 +206,46 @@ test("board-wood-texture: arrows from PGN drawings keep finite coordinates when 
     );
     expect(coordinates).toHaveLength(24);
     expect(coordinates.every(Number.isFinite)).toBe(true);
+    expect(await textureAborted).toBe("net::ERR_ABORTED");
+});
+
+test("board-wood-texture: the browser-failure check exempts only abandoned image fetches", async ({
+    browser,
+    baseURL,
+}) => {
+    // The fixture's classifier, fed the real aborted requests Chromium reports. A separate context
+    // keeps these deliberate aborts away from the page fixture's own failure check.
+    const context = await browser.newContext({ baseURL });
+    const page = await context.newPage();
+    await page.route("**/board/held.*", () => undefined);
+    await page.goto("/board/wood4.jpg");
+    const failed: Request[] = [];
+    page.on("requestfailed", (request) => failed.push(request));
+    await page.evaluate(() => {
+        const controller = new AbortController();
+        void fetch("/board/held.json", { signal: controller.signal }).catch(() => undefined);
+        const image = new Image();
+        image.src = "/board/held.png";
+        setTimeout(() => {
+            controller.abort();
+            image.src = "";
+        }, 200);
+    });
+    await expect
+        .poll(() => failed.map((request) => request.resourceType()).sort())
+        .toEqual(["fetch", "image"]);
+    const origin = new URL(page.url()).origin;
+    for (const request of failed) {
+        expect(request.failure()?.errorText).toBe("net::ERR_ABORTED");
+    }
+    const byType = Object.fromEntries(
+        failed.map((request) => [request.resourceType(), localRequestFailure(request, origin)]),
+    );
+    expect(byType).toEqual({
+        fetch: `Failed local request: ${origin}/board/held.json`,
+        image: null,
+    });
+    await context.close();
 });
 
 test("board-wood-texture: the default board shows the wood grain", async ({ page }) => {

@@ -1,6 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { KeyedNode } from "@lichess-org/chessground/types";
-import { expect, test as base, type Locator, type Page } from "@playwright/test";
+import { expect, test as base, type Locator, type Page, type Request } from "@playwright/test";
 import type {
     DatabaseInfo,
     ErrorPayload,
@@ -71,6 +71,21 @@ const stampedPgnGame = {
     revision: pgnGameRevision,
     present: true,
 };
+
+/**
+ * The browser failure a failed request contributes to the page fixture, or `null` when it is not
+ * one. An image fetch the page itself abandoned is not a broken request: a board that first renders
+ * the default texture and then hydrates a stored "off" can abandon the in-flight tile
+ * (f-20261102-06). Only that abort is exempt. Refused, reset and blocked requests, and aborts of
+ * any other resource type, stay failures.
+ */
+export function localRequestFailure(request: Request, allowedOrigin: string): string | null {
+    if (new URL(request.url()).origin !== allowedOrigin) return null;
+    if (request.resourceType() === "image" && request.failure()?.errorText === "net::ERR_ABORTED") {
+        return null;
+    }
+    return `Failed local request: ${request.url()}`;
+}
 
 export async function expectNotificationSettled(notification: Locator) {
     await expect(notification).toHaveCSS("opacity", "1");
@@ -1074,9 +1089,8 @@ export const test = base.extend<{
         });
         page.on("pageerror", (error) => failures.push(`Unhandled error: ${error.message}`));
         page.on("requestfailed", (request) => {
-            if (new URL(request.url()).origin === allowedOrigin) {
-                failures.push(`Failed local request: ${request.url()}`);
-            }
+            const failure = localRequestFailure(request, allowedOrigin);
+            if (failure !== null) failures.push(failure);
         });
 
         await use(page);
