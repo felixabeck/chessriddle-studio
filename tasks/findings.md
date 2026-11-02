@@ -20577,3 +20577,19 @@ Closed by 5ea1ae3b, pushed to master as part of 4633e57f (database games in Rece
 * **Found by:** Claude Code build session 2b654cd0-d842-401a-ac86-cf5e61d1e967 (database games in Recent Files), 2026-11-02.
 * **Correction (2026-11-02, records review):** the Node 26 `referenceCollection.test.ts` timeout is in `/tmp/build-recent-db-games/webstorage-proof/node26-full.log` (line 10), not `fix-5.txt` (which reports the later 6000/6000 Node 26 run with a temporary timeout increase that was reverted). And f-20260901-19 did not decide these two files: its seven dynamic-import exemptions predate them (`engineCompletions.test.ts` added 2026-10-23, `referenceCollection.test.ts` 2026-10-30); they only share its pattern of a dynamic import inside a timed test body, here required by `vi.resetModules()`.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"58de77f42f694944e02e4750229002dc291719990e66d4159d77b7457b0642f8","input_sha256":"575c2b034eeddafd868af460a2d4f9cf75abb40f23185b9253f03016825167e7","kind":"mutation-receipt","operation":"e9d2b1df9ee14cd0eff5145756adb551043d23197b93a15a441f1dc5e296b4eb","options":{"section":null},"request_id_sha256":null,"results":["f-20261102-04"],"target":"f-20261102-04","v":1} -->
+
+---
+
+## 2026-11-02 — filed through the inbox spool
+
+### `pnpm gates:push` keeps starting later lanes after a lane is already red
+* **ID:** f-20261102-05 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** build · **Blocked:** none
+
+* **Where:** the push gate scheduler behind `pnpm gates:push` (`scripts/run-push-gates.mjs`), documented in the push skill §2: "Ordinary Rust failures do not skip later selected lanes."
+* **Defect:** a red lane does not stop queued lane starts, so the remaining Rust, coverage and mutation lanes run to completion before repair. The agent-kit push policy now requires fail-fast order (agent-kit f-20261102-06): light gates, then the fastest-failing heavy gates, and no further start after the first red.
+* **Failure scenario:** a Rust lane fails early; the scheduler still starts every later Rust lane and the frontend coverage and mutation lanes, and every one of them has to run again after the repair because the repair changes the tree. The documented behaviour makes this certain on every red run.
+* **Open question:** which lanes may finish once a sibling is red (e.g. the contract lane already running), and does mutation stay last?
+* **Fix direction:** after the first red lane, start no queued lane (report them as skipped), keep running lanes' cleanup guarantees, and update the push skill §2 sentence.
+* **Proof:** a scheduler test where an early lane fails shows no later lane started and the summary lists them as skipped.
+* **Found by:** agent-kit build for f-20261102-06, 2026-11-02.
+* **Impact class:** tooling
