@@ -171,10 +171,9 @@ test.each(["admitted", "refused", "online"] as const)(
             addRecentFile: add,
         });
         if (id) ids.push(id);
-        if (id)
-            expect(tabStorage.read<{ sourceStamp: string | null }>(id)?.state.sourceStamp).toBe(
-                mode === "online" ? null : game.stamp,
-            );
+        expect(
+            id ? tabStorage.read<{ sourceStamp: string | null }>(id)?.state.sourceStamp : null,
+        ).toBe(id ? (mode === "online" ? null : game.stamp) : null);
         const expectedEntry = expect.objectContaining({
             kind: "database",
             database,
@@ -253,15 +252,17 @@ test.each([false, true])(
         const persisted = tabStorage.read<TreeState>(id!)?.state;
         expect(persisted?.sourceStamp).toBe((linked ? "c" : "b").repeat(64));
         expect(workspace.get(tabsAtom)[0].gameOrigin.kind).toBe(linked ? "file" : "database");
-        if (!linked) {
-            expect(persisted?.root.fen).toBe(fen);
-            expect(persisted?.root.children[0].san).toBe("c5");
-            expect(persisted?.headers).toMatchObject({
-                event: "Row event",
-                site: "Berlin",
-                white: "White",
-                black: "Black",
-            });
-        }
+        expect(linked ? null : persisted?.root.fen).toBe(linked ? null : fen);
+        expect(linked ? null : persisted?.root.children[0].san).toBe(linked ? null : "c5");
+        expect(linked ? {} : persisted?.headers).toMatchObject(
+            linked
+                ? {}
+                : {
+                      event: "Row event",
+                      site: "Berlin",
+                      white: "White",
+                      black: "Black",
+                  },
+        );
     },
 );

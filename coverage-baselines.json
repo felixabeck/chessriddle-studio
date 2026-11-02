@@ -84,6 +84,7 @@
           "src/components/library/**",
           "src/components/panels/database/**",
           "src/utils/databaseGame.ts",
+          "src/utils/databaseGameTree.ts",
           "src/utils/db.ts",
           "src/utils/directories.ts",
           "src/utils/files.ts",

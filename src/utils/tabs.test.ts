@@ -2437,12 +2437,12 @@ test.each(["unchanged", "comment", "header", "owner"] as const)(
         expect(result).toBe(change === "unchanged" ? "saved" : "superseded");
         expect(serializeStoreTree(fixture.store)).toBe(current);
         expect(fixture.store.getState().sourceStamp).toBe(change === "owner" ? stampA : stampB);
-        if (change === "owner") expect(getFileFreshness("save-test")).toBe(freshness);
-        else
-            expect(getFileFreshness("save-test")).toMatchObject({
-                state: "verified",
-                verifiedRevision: null,
-            });
+        const finalFreshness = getFileFreshness("save-test");
+        expect(
+            change === "owner"
+                ? finalFreshness === freshness
+                : finalFreshness.state === "verified" && finalFreshness.verifiedRevision === null,
+        ).toBe(true);
         expect(mocks.writeDbGame).toHaveBeenCalledOnce();
     },
 );

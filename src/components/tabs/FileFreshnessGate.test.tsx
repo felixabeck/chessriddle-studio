@@ -425,8 +425,9 @@ test.each(["unmount", "origin change", "database row change"])(
     await act(async () => read.resolve({ kind: "found", game: databaseRow }));
     expect(serializeStoreTree(treeStore)).toBe(before);
     expect(getFileFreshness(tabId).state).toBe("conflict");
-    if (exit === "database row change")
-      expect(button("FileFreshness.ReloadFromDatabase").disabled).toBe(false);
+    expect(
+      exit === "database row change" ? button("FileFreshness.ReloadFromDatabase").disabled : null,
+    ).toBe(exit === "database row change" ? false : null);
   },
 );
 
@@ -454,13 +455,19 @@ test.each([false, true])(
       message: "Insert refused",
     });
     const before = serializeStoreTree(treeStore);
+    let saveError: unknown;
     await act(async () => {
-      if (registered)
-        await expect(saveFileConflictVersion(tabId)).rejects.toMatchObject({
-          message: "Insert refused",
-        });
-      else button("FileFreshness.SaveAsNewGame").click();
+      if (registered) {
+        try {
+          await saveFileConflictVersion(tabId);
+        } catch (error) {
+          saveError = error;
+        }
+      } else button("FileFreshness.SaveAsNewGame").click();
     });
+    expect(registered ? saveError : {}).toMatchObject(
+      registered ? { message: "Insert refused" } : {},
+    );
     expect(host.textContent).toContain("Insert refused");
     expect(serializeStoreTree(treeStore)).toBe(before);
     expect(mocks.insertDbGame).toHaveBeenCalledTimes(1);
