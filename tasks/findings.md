@@ -20539,3 +20539,20 @@ Fixed in 7a00afaa (notation main-line hierarchy build). Cause: the table view's 
 
 * **macOS job (2026-11-02, filing session):** `rust-macos-test` in run 41404314781 did not fail on code: its check-run annotation reads "The hosted runner lost communication with the server" during "Run Rust tests" (07:08–08:01 UTC), and the job log blob is gone (BlobNotFound). It is a hosted-runner loss, not a Node 26 effect; the next run re-tests it.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"6ea4caa2b3ebf86f15cf036f4ff2f98a00a7ecb5e24d3294ddccec398c2f9b2b","input_sha256":"813eee5aa4934c4029b560a9a59c21b34034dad05863424c776eb26dd89dfc79","kind":"mutation-receipt","operation":"a5a5129ae5968412c1b409077a7d555174d96619e0e184a4c1fe1a5c250d4669","options":{"section":null},"request_id_sha256":null,"results":["f-20261102-03"],"target":"f-20261102-03","v":1} -->
+
+---
+
+## 2026-11-02 — filed through the inbox spool
+
+### Reload-simulating state tests exceed the 5000 ms default timeout under machine load
+
+* **ID:** f-20261102-04 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Where:** `src/state/referenceCollection.test.ts:7` and `src/state/engineCompletions.test.ts:158` (and other tests that call `vi.resetModules()` and re-import `./atoms`); default `testTimeout` 5000 ms (`vite.config.ts` sets none).
+* **Defect:** These tests evaluate the `atoms` module graph twice inside one test body (import, `vi.resetModules()`, re-import) to simulate a reload, so both evaluations count against the 5000 ms test timeout. On 2026-11-02 under shared-machine load average 41–65 (other agents' gates), the full frontend suite timed out on them repeatedly: `referenceCollection.test.ts` at 5150 ms in a `frontend-coverage` gate run and again in a full Node 26 run; `engineCompletions.test.ts` "reload completion Add replays…" at 5000 ms in a full Node 24 run (with a follow-on assertion failure in the next test of the file); in another coverage run three different tests (`EnginesPage.publication.test.tsx`, two in `DatabasePanel.test.tsx`) timed out at 5195–5943 ms. In isolation the two files pass in 1.6–4.5 s total. The final gate rerun at load ~22 passed.
+* **Failure scenario:** a push's `frontend-coverage` gate, or a hosted run on a busy runner, turns red on a timing test independent of the tree, forcing reruns.
+* **Open question:** give the reload-simulating tests an explicit per-test timeout sized for two module-graph evaluations (the f-20260901-19 remedy keeps these imports dynamic because they need `resetModules`), or reduce the per-test import cost (lighter `atoms` graph), or bound gate admission so a full suite is not run at load 60.
+* **Related:** f-20260901-19 (dynamic imports charged to the 5000 ms timeout; handled for 22 files, these reload files deliberately left dynamic).
+* **Spotted outside diff:** database games in Recent Files build, final gates and Node 26 verification.
+* **Proof:** `/tmp/build-recent-db-games/final-gates.log` (referenceCollection 5150 ms), `/tmp/build-recent-db-games/frontend-coverage-rerun.log` (three timeouts), `/tmp/build-recent-db-games/fix-5.txt` (Node 24 engineCompletions timeout, Node 26 referenceCollection timeout); `uptime` load 62–65 during the latter.
+* **Found by:** Claude Code build session 2b654cd0-d842-401a-ac86-cf5e61d1e967 (database games in Recent Files), 2026-11-02.
