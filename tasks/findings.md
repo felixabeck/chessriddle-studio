@@ -20491,3 +20491,20 @@ Verification hook for the fix (from the notation-hierarchy build review, 2026-11
 
 Fixed in 7a00afaa (notation main-line hierarchy build). Cause: the table view's model rebuild re-runs the scroll-to-current reveal, which shows Mantine's hover scrollbar (`data-state="visible"`) until its hide delay ends; the snapshots raced that fade. Each notation-hierarchy screenshot now waits on the existing `waitForScrollAreaScrollbarsHidden` state check first (same mechanism as the conversion snapshots). The table snapshots were re-recorded in the pinned container; they are pixel-identical to CI run 41363271938's actual images (PIL difference bbox none, both schemes). Before re-recording, the repaired spec reproduced CI's exact 1965/1964 px difference locally. notation-hierarchy plus notation-hierarchy-scaled passed 9/9 with --repeat-each=3. Closure lenses correctness, tests, root-cause and records approved.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"7b9f24b22a6e5ad2adf71f691bf2e25290f78728434c35510dfb54ede8e71bb7","header_sha256":"594ef35f2dd19b21d0db18db6f2fa0cb227003e2f5226d434e814f6e02f719d6","header_status":"handled","input_sha256":"e4e279ec4fbaf0c39d02009b48c0bf09a1698f41e34d82e9bd5a3a9f37e3c965","kind":"mutation-receipt","operation":"d9e4571ee3f4110c6b6c60c45481bd9e57b2df33d6b50fde6a9269d35269433a","options":{"section":null},"request_id_sha256":null,"results":["f-20261102-01"],"target":"f-20261102-01","v":1} -->
+
+---
+
+## 2026-11-02 — filed through the inbox spool
+
+### Linked-collection New game e2e: tab origin stays databaseDraft past the 8 s poll under full-suite load
+
+* **ID:** f-20261102-02 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Where:** `e2e/new-game-to-database.spec.ts:176-178`, "linked collection New game appends to its PGN without inserting into the index": `expect.poll(... activeWorkspaceTab(page))?.gameOrigin).toMatchObject({ kind: "file", gameNumber: 2, file: { handle: file.handle } })`.
+* **Defect:** In a full `pnpm gate:ensure e2e-container` run in the pinned container (2026-11-02, notation-hierarchy build tree, 316 passed, 1 failed), the poll timed out after 8000 ms with `gameOrigin` still `{ kind: "databaseDraft" }`, so the append-to-file transition had not been observed. The same project then passed 15/15 with `--repeat-each=5` in isolation, and the previous full gate run on the same spec bytes passed. The build changed only notation styling and its own e2e spec, nothing on this journey.
+* **Failure scenario:** a push's final e2e gate or the hosted `e2e` job turns red on this test independent of the tree, forcing a rerun.
+* **Open question:** which step of the linked append (save completion, origin rebinding, freshness poll) is slower than 8 s under parallel load, and should the spec wait on that step's own completion signal instead of the origin poll's default timeout?
+* **Related:** f-20261030-17 (missing read_game mock, handled) and the cg-board readiness fix in 015cd709 covered earlier failures in this journey; this is a different assertion and state.
+* **Spotted outside diff:** notation-hierarchy build (variation-block styling, e2e notation-hierarchy spec).
+* **Proof:** `/tmp/build-notation-hierarchy/flake-evidence/receipt-e2e-container.log` (failure at spec line 178, Expected file origin, Received databaseDraft).
+* **Found by:** Claude Code build session 60051fea-9337-444c-8ec6-3b33ed3c1129, 2026-11-02.
