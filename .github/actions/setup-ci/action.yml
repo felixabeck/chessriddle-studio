@@ -18,9 +18,10 @@ runs:
       uses: pnpm/action-setup@v4
 
     - name: Sync node version and setup cache
+      # .node-version is the one Node pin for every workflow (d-20261102-12).
       uses: actions/setup-node@v4
       with:
-        node-version: "lts/*"
+        node-version-file: .node-version
         cache: "pnpm"
 
     - name: Install app dependencies

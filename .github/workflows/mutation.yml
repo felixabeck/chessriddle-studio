@@ -40,7 +40,7 @@ jobs:
       - name: Sync node version
         uses: actions/setup-node@v4
         with:
-          node-version: "lts/*"
+          node-version-file: .node-version
 
       - name: List backend mutation packages
         id: list
@@ -65,7 +65,7 @@ jobs:
       - name: Sync node version and setup cache
         uses: actions/setup-node@v4
         with:
-          node-version: "lts/*"
+          node-version-file: .node-version
           cache: "pnpm"
 
       - name: Install app dependencies
@@ -127,7 +127,7 @@ jobs:
       - name: Sync node version
         uses: actions/setup-node@v4
         with:
-          node-version: "lts/*"
+          node-version-file: .node-version
 
       - name: List frontend mutation packages
         id: list

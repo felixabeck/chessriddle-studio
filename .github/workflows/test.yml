@@ -300,7 +300,7 @@ jobs:
       - name: Sync node version
         uses: actions/setup-node@v4
         with:
-          node-version: "lts/*"
+          node-version-file: .node-version
 
       - name: List frontend mutation packages
         id: list
