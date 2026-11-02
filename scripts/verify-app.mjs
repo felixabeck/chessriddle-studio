@@ -854,7 +854,7 @@ async function seedNativePracticeDeck(practiceDirectory, fileId, game, positions
   return { positions: positionValues, reviewIds: entries.map(({ id }) => id) };
 }
 
-async function closeApplicationThroughTitlebar(session, label) {
+async function requestCloseThroughTitlebar(session, label) {
   await waitFor(`${label} window controls`, () =>
     session.execute(closeControlProbe).catch(() => false),
   );
@@ -869,6 +869,12 @@ async function closeApplicationThroughTitlebar(session, label) {
     .map(({ pid }) => pid);
   const trackedPids = [application.pid, ...webkitServicePids];
   await session.execute(closeControlAction);
+  return { application, webkitServicePids, trackedPids, running };
+}
+
+async function closeApplicationThroughTitlebar(session, label) {
+  const { application, webkitServicePids, trackedPids, running } =
+    await requestCloseThroughTitlebar(session, label);
   const gone = await waitFor(
     `${label} application pid ${application.pid} and recorded WebKit service pids to exit`,
     () => trackedPids.every((pid) => !processExists(pid)),
@@ -881,6 +887,250 @@ async function closeApplicationThroughTitlebar(session, label) {
     gone,
     survivors: trackedPids.filter(processExists),
   };
+}
+
+const quitConfirmDialogProbe = `(() => {
+  const dialog = [...document.querySelectorAll('[role="dialog"]')].find((node) =>
+    node.innerText.includes("Unsaved changes"),
+  );
+  if (!dialog) return false;
+  const quit = [...dialog.querySelectorAll("button")].find(
+    (node) => node.textContent.trim() === "Quit without saving",
+  );
+  return quit ? dialog : false;
+})()`;
+
+async function readActiveTabTree(session) {
+  const observed = await session.execute(`return {
+    rawWorkspace: sessionStorage.getItem("workspace"),
+    keys: Object.keys(sessionStorage),
+  };`);
+  const workspace = observed.rawWorkspace && deserializeStorageValue(observed.rawWorkspace);
+  if (!workspace || !Array.isArray(workspace.tabs))
+    return { workspace: null, tab: null, tree: null };
+  const tab = workspace.tabs.find((entry) => entry.value === workspace.activeTab) ?? null;
+  const treeKey = tab && (tab.treeKey ?? tab.value);
+  const rawTree =
+    typeof treeKey === "string"
+      ? await session.execute("return sessionStorage.getItem(arguments[0])", [treeKey])
+      : null;
+  const tree = rawTree && deserializeStorageValue(rawTree)?.state;
+  return { workspace, tab, tree, treeKey, sessionKeys: observed.keys };
+}
+
+async function dirtActiveTreeEventHeader(session, dirtyEvent) {
+  const info = await reachableStableCoordinates(
+    session,
+    "Info tab",
+    `[...document.querySelectorAll('[role="tab"]')].find(node => node.textContent.trim() === 'Info')`,
+  );
+  await clickAt(session, info.x, info.y);
+  await reachableStableCoordinates(session, "PGN editor", `document.querySelector('#pgn-editor')`);
+  const originalPgn = await session.execute("return document.querySelector('#pgn-editor').value");
+  const eventHeader = /^\[Event "[^"\r\n]*"\]/m;
+  if (!eventHeader.test(originalPgn)) throw new Error("active tree has no Event header");
+  const editedPgn = originalPgn.replace(eventHeader, `[Event "${dirtyEvent}"]`);
+  const editor = await session.call("POST", "/element", {
+    using: "css selector",
+    value: "#pgn-editor",
+  });
+  const editorId = encodeURIComponent(editor["element-6066-11e4-a52e-4f735466cecf"]);
+  const editorPosition = await reachableStableCoordinates(
+    session,
+    "focused PGN editor",
+    `document.querySelector('#pgn-editor')`,
+  );
+  await clickAt(session, editorPosition.x, editorPosition.y);
+  await waitFor("real PGN editor focus", () =>
+    session.execute("return document.activeElement?.id === 'pgn-editor'"),
+  );
+  await session.call("POST", "/actions", {
+    actions: [
+      {
+        type: "key",
+        id: "quit-gate-keyboard",
+        actions: [
+          { type: "keyDown", value: "\uE009" },
+          { type: "keyDown", value: "a" },
+          { type: "keyUp", value: "a" },
+          { type: "keyUp", value: "\uE009" },
+          { type: "keyDown", value: "\uE003" },
+          { type: "keyUp", value: "\uE003" },
+        ],
+      },
+    ],
+  });
+  await waitFor("real PGN editor keyboard replacement clears the text", () =>
+    session.execute("return document.querySelector('#pgn-editor')?.value === ''"),
+  );
+  for (const [index, line] of editedPgn.split("\n").entries()) {
+    if (index > 0)
+      await session.call("POST", "/actions", {
+        actions: [
+          {
+            type: "key",
+            id: "quit-gate-keyboard",
+            actions: [
+              { type: "keyDown", value: "\uE007" },
+              { type: "keyUp", value: "\uE007" },
+            ],
+          },
+        ],
+      });
+    if (line) await session.call("POST", `/element/${editorId}/value`, { text: line });
+  }
+  await waitFor("real PGN editor Event edit", () =>
+    session.execute("return document.querySelector('#pgn-editor')?.value === arguments[0]", [
+      editedPgn,
+    ]),
+  );
+  const update = await reachableStableCoordinates(
+    session,
+    "PGN Update",
+    `[...document.querySelectorAll('button')].find(node => node.textContent.trim() === 'Update' && node.parentElement.querySelector('#pgn-editor'))`,
+  );
+  await clickAt(session, update.x, update.y);
+  return waitFor(
+    "real PGN Update publishes the unsaved Event edit",
+    async () => {
+      const snapshot = await readActiveTabTree(session);
+      return snapshot.tree?.dirty === true && snapshot.tree.headers?.event === dirtyEvent
+        ? snapshot
+        : false;
+    },
+    { timeoutMs: FILES_PROBE_TIMEOUT_MS },
+  );
+}
+
+async function verifyDirtyTabQuitAndRestart() {
+  const dirtyEvent = "verify:quit-gate-unsaved";
+  console.log("  .. opening dirty-quit WebDriver session");
+  const session = await Session.open(APP_BINARY);
+  await waitFor("the dirty-quit renderer to expose Tauri", () =>
+    session.execute("return typeof window.__TAURI_INTERNALS__ === 'object'").catch(() => false),
+  );
+  await waitFor("the dirty-quit renderer to mount its window controls", () =>
+    session.execute(closeControlProbe).catch(() => false),
+  );
+  const analysisOpen = await reachableStableCoordinates(
+    session,
+    "Analysis Board Open",
+    `[...document.querySelectorAll('button')].find((node) =>
+      node.textContent.trim() === 'Open' &&
+      node.closest('.mantine-Card-root')?.textContent.includes('Analysis Board'))`,
+  );
+  await clickAt(session, analysisOpen.x, analysisOpen.y);
+  await waitFor(
+    "origin-none analysis board",
+    async () => {
+      const snapshot = await readActiveTabTree(session);
+      return (
+        snapshot.tab?.type === "analysis" &&
+        snapshot.tab.gameOrigin?.kind === "none" &&
+        !!snapshot.tree
+      );
+    },
+    { timeoutMs: FILES_PROBE_TIMEOUT_MS },
+  );
+  const dirtySnapshot = await dirtActiveTreeEventHeader(session, dirtyEvent);
+  check(
+    dirtySnapshot.tree?.dirty === true && dirtySnapshot.tab?.type === "analysis",
+    "dirty-quit tree.dirty is true immediately before the title-bar close",
+    `tab: ${JSON.stringify(dirtySnapshot.tab)}, dirty: ${dirtySnapshot.tree?.dirty}, event: ${
+      dirtySnapshot.tree?.headers?.event
+    }`,
+  );
+  const requested = await requestCloseThroughTitlebar(session, "dirty-quit");
+  const dialog = await waitFor(
+    "the quit confirmation dialog while the process stays alive",
+    async () => {
+      if (!processExists(requested.application.pid))
+        throw new Error("dirty-quit process exited before the confirmation dialog appeared");
+      return session.execute(`return !!${quitConfirmDialogProbe}`).catch(() => false);
+    },
+    { timeoutMs: FILES_PROBE_TIMEOUT_MS },
+  );
+  check(
+    !!dialog && processExists(requested.application.pid),
+    "title-bar close with a dirty covered tab keeps the process alive and shows the quit dialog",
+  );
+  const quit = await reachableStableCoordinates(
+    session,
+    "Quit without saving",
+    `(() => {
+      const dialog = ${quitConfirmDialogProbe};
+      return dialog && [...dialog.querySelectorAll('button')].find(node => node.textContent.trim() === 'Quit without saving');
+    })()`,
+  );
+  await clickAt(session, quit.x, quit.y);
+  const gone = await waitFor(
+    `dirty-quit application pid ${requested.application.pid} and recorded WebKit service pids to exit`,
+    () => requested.trackedPids.every((pid) => !processExists(pid)),
+    { timeoutMs: 30_000 },
+  ).catch(() => false);
+  const survivors = requested.trackedPids.filter(processExists);
+  check(
+    gone && survivors.length === 0,
+    "Quit without saving exits the dirty-quit process with no child left",
+    survivors.length > 0 ? `surviving pids: ${survivors.join(", ")}` : undefined,
+  );
+  const released = await session.quit();
+  if (!released.released)
+    console.log(`  .. dirty-quit WebDriver session release returned: ${released.error}`);
+
+  console.log("  .. restarting under the same throwaway HOME for the dirty-tab probe");
+  const restart = await Session.open(APP_BINARY);
+  await waitFor("the restart renderer to expose Tauri", () =>
+    restart.execute("return typeof window.__TAURI_INTERNALS__ === 'object'").catch(() => false),
+  );
+  await waitFor("the restart renderer to mount its window controls", () =>
+    restart.execute(closeControlProbe).catch(() => false),
+  );
+  const restored = await restart.execute(
+    `return {
+      rawWorkspace: sessionStorage.getItem("workspace"),
+      body: document.body.innerText,
+      keys: Object.keys(sessionStorage),
+    }`,
+  );
+  const workspace = restored.rawWorkspace && deserializeStorageValue(restored.rawWorkspace);
+  let restoredDirty = false;
+  const restoredTabs = Array.isArray(workspace?.tabs) ? workspace.tabs : [];
+  for (const tab of restoredTabs) {
+    const treeKey = tab.treeKey ?? tab.value;
+    const rawTree =
+      typeof treeKey === "string"
+        ? await restart.execute("return sessionStorage.getItem(arguments[0])", [treeKey])
+        : null;
+    const tree = rawTree && deserializeStorageValue(rawTree)?.state;
+    if (
+      tab.type === "analysis" &&
+      (tree?.dirty === true || tree?.headers?.event === dirtyEvent || tab.name === "Analysis Board")
+    ) {
+      restoredDirty = true;
+    }
+  }
+  if (typeof restored.body === "string" && restored.body.includes(dirtyEvent)) restoredDirty = true;
+  check(
+    !restoredDirty,
+    "restart under the same HOME does not restore the dirty tab",
+    `workspace: ${JSON.stringify(workspace)}, keys: ${JSON.stringify(restored.keys)}`,
+  );
+  if (restoredDirty) {
+    throw new Error(
+      "restart probe: a dirty tab's tree survived a restart; stop rather than shipping quit-dialog copy that says the work is lost",
+    );
+  }
+  console.log("  .. restart probe: dirty tab was not restored");
+  const restartClose = await closeApplicationThroughTitlebar(restart, "dirty-quit-restart");
+  if (!restartClose.gone || restartClose.survivors.length > 0) {
+    throw new Error(
+      `dirty-quit-restart processes survived close: ${restartClose.survivors.join(", ")}`,
+    );
+  }
+  const restartQuit = await restart.quit();
+  if (!restartQuit.released)
+    console.log(`  .. dirty-quit-restart WebDriver session release returned: ${restartQuit.error}`);
 }
 
 async function showLibraryOverview(session) {
@@ -3718,6 +3968,8 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
     console.log(`  .. seed WebDriver session release returned: ${seedQuit.error}`);
   }
   console.log("  .. seed app and WebKit processes are gone; reusing WebDriver after session quit");
+
+  await verifyDirtyTabQuitAndRestart();
 
   const fixtureDirectory = join(profileDirectory, "path-owner-fixture");
   const ownedRoot = join(fixtureDirectory, "owned-database-root");

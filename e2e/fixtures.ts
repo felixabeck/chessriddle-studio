@@ -779,6 +779,10 @@ const tauriBootstrap = () => {
         "plugin:menu|set_as_app_menu": { result: null },
         "plugin:window|set_decorations": { result: null },
         "plugin:window|is_maximized": { result: false },
+        // Production pair: close emits `tauri://close-requested` when a JS listener exists;
+        // destroy is recorded and does not re-emit the close request.
+        "plugin:window|close": { result: null },
+        "plugin:window|destroy": { result: null },
     };
 
     const state = {
@@ -950,6 +954,7 @@ const tauriBootstrap = () => {
                 result,
             });
         }
+        if (command === "plugin:window|close") emit("tauri://close-requested", null);
         return result;
     };
 
