@@ -147,14 +147,17 @@ collection, `get_db_game` selects the games whose full signature matches; among 
 stored stamp, otherwise the nearest stored ordinal, ties to the lower ordinal; it never falls back
 outside the signature; no match → `missing`. The stored `game_id` is used only when no linked
 identity is supplied or the database is not linked. The returned game carries its current id and
-locator. Accepted consequences (decision d-20261102-05): editing one of the six
+locator. Accepted consequences (decisions d-20261102-05 and its correction d-20261102-06): editing one of the six
 tags of the remembered game drops its entry; if another game in the collection has the identical
 full signature, reopening may select that game, including after the remembered one was removed.
 
 `missing` is returned exactly when the target definitively no longer exists: no game row (no row with that id, or,
 for a linked identity, no game in the collection with the full signature); the database capability is no longer held by the path
 authority (deleted in the app, or swept at startup); or the database file is absent on disk. The
-lookup never creates a database file for an absent path. Every other failure (busy, cancelled, I/O
+lookup never creates a database file for an absent path. *(Superseded in implementation by D1-1
+below: the absent-file rule applies to ordinary databases; a linked collection's lost disposable
+cache is rebuilt by collection resolution, and its game is missing only when the source or the game
+is gone.)* Every other failure (busy, cancelled, I/O
 other than absence, corrupt database) stays an error. Registered
 in `collect_commands!`, bindings regenerated, exposed through `src/platform/tauri.ts` as a native
 read with arity 3 (`database`, `gameId`, `linked` — `linked` passed as `null` when absent, never
