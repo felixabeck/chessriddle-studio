@@ -2,7 +2,6 @@ import type { SetStateAction } from "react";
 import { atom } from "jotai";
 import { atomFamily, atomWithStorage, unwrap } from "jotai/utils";
 import { z } from "zod";
-import { databaseHandleKey } from "@/utils/db";
 import { normalizeGameSignature } from "./gameSignature";
 import { recentFileSchema, type RecentFile, type RecentEntryInput } from "./recentFiles";
 import type {
@@ -34,6 +33,7 @@ import {
     fileWorkspaceHandleSchema,
     databaseHandleSchema,
     fileWorkspaceKey,
+    capabilityKey,
     pathRefSchema,
 } from "../utils/pathCapabilities";
 import {
@@ -615,7 +615,7 @@ export function recentFileKey(file: RecentFile | RecentEntryInput): string {
     if (!("kind" in file)) return fileWorkspaceKey(file.handle);
     return JSON.stringify([
         "database",
-        databaseHandleKey(file.database),
+        capabilityKey(file.database),
         file.linked
             ? [file.linked.locator.collection, normalizeGameSignature(file.linked.signature)]
             : file.gameId,
