@@ -11497,3 +11497,14 @@ Former private decision identifier: d-20261029-14
 * **Review:** `tasks/handoffs/2026-11-02-f-20261101-13-review.md`
 * **Decided by:** Claude Code (Opus 5.5) drain build run f-20261101-13 (session 5760d80b-dd1f-45c3-80d3-ecf9daae3008, plan adopted from drain-90a2aa88), full auto, 2026-11-02 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"a546cf6a0279a0ad49f4f8220e856007074228f99a92d47cf7cb2fa18a4309f1","input_sha256":"73e70dde6fdffc7c068e0a17165db6ffee21f6683cb09cba679fd45839fbbf5d","kind":"mutation-receipt","operation":"6ee8507e21c7c4edec40741b8b0d330010f4cbce3d49e30b1d1a24ee36ffd055","options":{"section":null},"request_id_sha256":null,"results":["d-20261102-09"],"target":"decisions-ledger","v":1} -->
+
+### d-20261102-10 — How does the quit gate fail?
+
+* **Question:** What happens when the scan, the dialog or the window destroy fails?
+* **Governs:** f-20261101-13
+* **Chosen:** Fail closed with a way out: every keep-alive path prevents the close, a scan error still opens the dialog with both buttons, and a failed destroy is notified, logged and falls back to `exit(0)`.
+* **Rejected:** Fail open (silent data loss on a bug). Blocking quit entirely (an app that cannot be closed).
+* **Reason:** Data-loss impact demands closed failure; the user must always be able to quit. Reversal path: the failure branches in `src/state/quitGate.ts`.
+* **Review:** `tasks/handoffs/2026-11-02-f-20261101-13-review.md`
+* **Decided by:** Claude Code (Opus 5.5) drain build run f-20261101-13 (session 5760d80b-dd1f-45c3-80d3-ecf9daae3008, plan adopted from drain-90a2aa88), full auto, 2026-11-02 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"d7db47e351c0451334f9dc5d5842c3a1000014ffc4715606973b17cde88c6a5f","input_sha256":"160362ece46f412d208233f9a7194cea89bf63f9dc84465ab0b823a55159de6e","kind":"mutation-receipt","operation":"77dda62364b07c0a12499ae855815278e023da19d921b1abbe512f275c33aaf7","options":{"section":null},"request_id_sha256":null,"results":["d-20261102-10"],"target":"decisions-ledger","v":1} -->
