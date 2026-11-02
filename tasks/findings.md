@@ -20631,3 +20631,23 @@ Closed by 5ea1ae3b, pushed to master as part of 4633e57f (database games in Rece
 * **Proof:** the case passes 50 repetitions under a parallel CPU load (e.g. `stress-ng --cpu $(nproc)`), and a deliberately never-acquiring holder still fails with a clear message.
 * **Found by:** Claude Code push session, 2026-11-02, final contract gate.
 * **Impact class:** tooling
+
+---
+
+## 2026-11-02 — filed through the inbox spool
+
+### Opening a file game drops comments and moves the tree cannot hold, and the next save deletes them from the file
+
+* **ID:** f-20261102-08 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** build · **Blocked:** none
+* **Filed from:** 143bfcfe-a489-48d7-9db6-1c1e68832839
+* **Impact class:** data-loss
+* **Where:** `src/utils/chess.ts` `innerParsePGN` (the `token.type === "Outcome"` branch `break`s, and the `San` branch `continue`s silently when `parseSanOrUci` or `positionFromFen` fails); the save path `src/utils/tabs.ts` → `writeFileGame` replaces the whole game range with the serialised tree.
+* **Defect:** the lexer returns every token of the game, but `innerParsePGN` keeps only what precedes the first `Outcome` token and silently skips a SAN it cannot play. The tree is the only source the save serialises, so whatever it skipped is removed from the user's file on the next save, with no error or warning.
+* **Failure scenario:** a file game `[Event "A"]\n\n1. e4 e5 1-0 {White won on time}`, or `1. e4 * 1. d4 *` on one line, or a game with one mistyped move such as `1. e4 e5 2. Nf9 Nc6 3. Bb5`: the board shows the game without the trailing comment, without the moves after `*`, or without the mistyped move (and the moves after it that become illegal). Any edit followed by a save writes only the tree, so the comment, the later moves or the rest of the game disappear from the file.
+* **Proof:** source read on 2026-11-01 at 60db92f8: `src/utils/chess.ts` `innerParsePGN` ends the loop at `Outcome` and `continue`s on unplayable SAN; `lex_pgn_cancellable` in `src-tauri/src/lexer.rs` forwards all tokens of the parser game. Not yet reproduced in the running app.
+* **Open question:** should the tree represent this content (for example a trailing game comment after the result, which changes where it is serialised), or should opening refuse or warn before a save can drop it, and is the answer different for an unplayable move than for a trailing comment?
+* **Related:** f-20261101-12 (the scanner range and the parser game disagree; its plan refuses a second parser game in one range in the lexer, but leaves tokens inside the first parser game to this finding).
+* **Found by:** Claude Code PLAN-ONLY session 143bfcfe-a489-48d7-9db6-1c1e68832839 while planning f-20261101-12, 2026-11-01.
+* **Renumbered:** this entry was first merged locally as f-20261101-32 by the drain's between-cluster inbox merge (unpushed commit ccff53b9), while upstream had already published a different f-20261101-32 (notation at 200% font size). The published id keeps its owner, so this entry was re-filed on 2026-11-02 by drain session bb7003aa-47df-4197-96aa-dbd625081bf9. `tasks/handoffs/2026-11-01-f-20261101-12-review.md` calls it f-20261101-32 in its plan-review history.
+* **Renumbered again (2026-11-02):** this entry was merged locally as f-20261102-03 by the drain's between-cluster inbox merge (unpushed commit 7cea140f), while upstream had already published a different f-20261102-03 (CI Node 26 web storage). The published id keeps its owner, so this entry was re-filed by drain session 5760d80b-dd1f-45c3-80d3-ecf9daae3008. The same merge's f-20261102-04 (notation-hierarchy table snapshots red on CI) was not re-filed: it duplicates f-20261102-01, handled by 7a00afaa.
+* **Renumbered a third time (2026-11-02):** the drain's inbox merge d99df43f gave this entry f-20261102-07 locally while upstream published other entries as f-20261102-05 and -06; that merge was dropped before push (its other three entries duplicated published f-20261102-03 and f-20261102-06), and this entry was re-filed by drain session 5760d80b-dd1f-45c3-80d3-ecf9daae3008.
