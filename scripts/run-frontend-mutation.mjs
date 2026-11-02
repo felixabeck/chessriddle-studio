@@ -1,4 +1,3 @@
-// `--files` takes one comma-separated list of repository-relative production paths.
 import { spawn, spawnSync } from "node:child_process";
 import {
   closeSync,
@@ -44,10 +43,6 @@ const logTailBytes = 8 * 1024;
 const packageRecords = Object.freeze(
   Object.entries(mutationPackages).map(([id, files]) => Object.freeze({ id, files })),
 );
-const filesByPath = new Map(
-  packageRecords.flatMap(({ id, files }) => files.map((path) => [path, id])),
-);
-
 /** Include the runner/config's complete repository module closure in the CI skip scope. */
 export async function frontendMutationInputs() {
   const { parseTsSource } = await import("./parse-ts-source.mjs");
@@ -326,21 +321,13 @@ function resolveStrykerEntry(cwd) {
   return entry;
 }
 
-function childEnvironment(
-  mutationPackage,
-  memoryBytes,
-  cpuShare,
-  files = undefined,
-  incrementalDir = undefined,
-) {
+function childEnvironment(mutationPackage, memoryBytes, cpuShare, incrementalDir = undefined) {
   const env = {
     ...process.env,
     STRYKER_PACKAGE: mutationPackage,
     STRYKER_MEMORY_BYTES: String(memoryBytes),
     GATE_CPU_SHARE: String(cpuShare),
   };
-  if (files) env.STRYKER_FILES = files.join(",");
-  else delete env.STRYKER_FILES;
   delete env.STRYKER_INCREMENTAL_FILE;
   delete env.STRYKER_FORCE;
   if (incrementalDir) {
@@ -396,7 +383,6 @@ async function runPackage(
     children,
     memoryBytes,
     cpuShare,
-    files,
     incrementalDir,
     spawnChild,
     signalForwarding,
@@ -420,7 +406,7 @@ async function runPackage(
     try {
       child = spawnChild(process.execPath, [strykerEntry, "run"], {
         detached: true,
-        env: childEnvironment(mutationPackage, memoryBytes, cpuShare, files, incrementalDir),
+        env: childEnvironment(mutationPackage, memoryBytes, cpuShare, incrementalDir),
         stdio: ["ignore", logFd, logFd],
       });
     } catch (error) {
@@ -463,56 +449,13 @@ async function runPackage(
   }
 }
 
-export function parseFrontendMutationArguments(argumentsList) {
-  const args = [...argumentsList];
-  if (args[0] === "--") args.shift();
-  if (args.length === 0) return { files: undefined };
-  if (args.length !== 2 || args[0] !== "--files") {
-    throw new Error("Usage: run-frontend-mutation.mjs [--files <comma-separated-files>]");
-  }
-  const value = args[1];
-  if (!value || value.startsWith("--")) throw new Error("Missing value for --files");
-  const files = value.split(",");
-  if (files.some((file) => !file)) throw new Error("--files must be a comma-separated file list");
-  if (new Set(files).size !== files.length) throw new Error("--files contains a duplicate path");
-  for (const file of files) {
-    if (!filesByPath.has(file)) {
-      throw new Error(`Frontend mutation file is outside the mutation scope: ${file}`);
-    }
-  }
-  return { files };
-}
-
-export function selectFrontendMutationPackagesById(packageIds = undefined) {
-  return selectMutationPackages(packageRecords, packageIds, "frontend mutation package id");
-}
-
-export function selectFrontendMutationPackages(files = undefined) {
-  if (files !== undefined) {
-    const parsed = parseFrontendMutationArguments(["--files", files.join(",")]);
-    files = parsed.files;
-  }
-  const requestedIds =
-    files === undefined ? undefined : [...new Set(files.map((file) => filesByPath.get(file)))];
-  const selected = selectFrontendMutationPackagesById(requestedIds);
-  if (files === undefined) return selected;
-  const selectedFiles = new Set(files);
-  return selected.map((entry) => ({
-    ...entry,
-    files: entry.files.filter((file) => selectedFiles.has(file)),
-  }));
-}
-
 /** Run frontend mutation packages; `spawnChild` is injectable for deterministic scheduler tests. */
-export async function runFrontendMutation(spawnChild = spawn, { files = undefined } = {}) {
+export async function runFrontendMutation(spawnChild = spawn) {
   const packageId = process.env.FRONTEND_MUTATION_PACKAGE;
-  const requested = selectMutationPackages(
+  const selectedPackages = selectMutationPackages(
     packageRecords,
     packageId ? [packageId] : undefined,
     "FRONTEND_MUTATION_PACKAGE",
-  );
-  const selectedPackages = selectFrontendMutationPackages(files).filter((entry) =>
-    requested.some(({ id }) => id === entry.id),
   );
   if (selectedPackages.length === 0) return 0;
   const incrementalDir = incrementalDirectory(process.env.FRONTEND_MUTATION_INCREMENTAL_DIR);
@@ -597,13 +540,11 @@ export async function runFrontendMutation(spawnChild = spawn, { files = undefine
         nextPackage += 1;
         const mutationPackage = selectedPackages[packageIndex];
         try {
-          const filesForPackage = files === undefined ? undefined : mutationPackage.files;
           const runningPackage = runPackage(mutationPackage.id, {
             runnerIdentity,
             children,
             memoryBytes,
             cpuShare,
-            files: filesForPackage,
             incrementalDir,
             spawnChild,
             signalForwarding,
@@ -694,8 +635,7 @@ async function main() {
     console.log(JSON.stringify(Object.keys(mutationPackages)));
     return 0;
   }
-  const { files } = parseFrontendMutationArguments(process.argv.slice(2));
-  return runFrontendMutation(spawn, { files });
+  return runFrontendMutation();
 }
 
 if (isEntrypoint(import.meta.url)) {

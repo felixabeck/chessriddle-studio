@@ -145,7 +145,10 @@ function git(repoRoot, argumentsList, environment = gitEnvironment()) {
   return result.stdout.trim();
 }
 
-function treeFingerprint(repoRoot) {
+// Frontend coverage runs check-ipc-command-consumers.test.mjs, which parses real tasks/findings.md.
+const EXACT_TREE_GATES = ["frontend-coverage"];
+
+function treeFingerprint(repoRoot, gate) {
   const temporaryDirectory = mkdtempSync(join(tmpdir(), "gate-receipt-index-"));
   try {
     const indexName = git(repoRoot, ["rev-parse", "--git-path", "index"]);
@@ -155,6 +158,15 @@ function treeFingerprint(repoRoot) {
     copyFileSync(indexPath, temporaryIndex);
     const environment = gitEnvironment({ GIT_INDEX_FILE: temporaryIndex });
     if (git(repoRoot, ["add", "-A"], environment) === undefined) return undefined;
+    if (
+      !EXACT_TREE_GATES.includes(gate) &&
+      git(
+        repoRoot,
+        ["rm", "-r", "--cached", "-q", "--ignore-unmatch", "--", "tasks"],
+        environment,
+      ) === undefined
+    )
+      return undefined;
     return git(repoRoot, ["write-tree"], environment);
   } catch {
     return undefined;
@@ -163,11 +175,11 @@ function treeFingerprint(repoRoot) {
   }
 }
 
-function treeState(repoRoot) {
+function treeState(repoRoot, gate) {
   try {
     const statusBefore = git(repoRoot, ["status", "--porcelain=v1", "--untracked-files=all"]);
     if (statusBefore === undefined) return undefined;
-    const tree = treeFingerprint(repoRoot);
+    const tree = treeFingerprint(repoRoot, gate);
     if (!tree) return undefined;
     const statusAfter = git(repoRoot, ["status", "--porcelain=v1", "--untracked-files=all"]);
     if (statusAfter === undefined) return undefined;
@@ -249,7 +261,7 @@ function writeReceipt(repoRoot, gate, payload) {
 }
 
 function receiptStatus({ gate, repoRoot, now, ttlMs, fingerprintToolchain, command }) {
-  const state = treeState(repoRoot);
+  const state = treeState(repoRoot, gate);
   if (!state) return { hit: false, reason: "tree fingerprint unavailable" };
   if (!state.clean) return { hit: false, reason: "working tree is dirty" };
   const toolchain = fingerprintToolchain(gate, repoRoot);
@@ -269,13 +281,13 @@ function receiptStatus({ gate, repoRoot, now, ttlMs, fingerprintToolchain, comma
     age < 0 ||
     age > ttlMs
   ) {
-    return { hit: false, reason: "receipt does not match the exact current tree" };
+    return { hit: false, reason: "receipt does not match the current receipt tree" };
   }
-  const finalState = treeState(repoRoot);
+  const finalState = treeState(repoRoot, gate);
   if (!finalState?.clean || finalState.tree !== state.tree) {
     return { hit: false, reason: "tree changed while the receipt was checked" };
   }
-  return { hit: true, reason: `exact tree verified ${Math.floor(age / 60000)} minutes ago` };
+  return { hit: true, reason: `receipt tree verified ${Math.floor(age / 60000)} minutes ago` };
 }
 
 // A caller's closed pipe must never cancel the gate or its retained transcript. Keep the
@@ -356,7 +368,7 @@ async function runGate({
   const logCapture = createLogCapture(fd, writeCapturedOutput);
   const { capture } = logCapture;
   try {
-    const before = treeState(repoRoot);
+    const before = treeState(repoRoot, gate);
     const toolchain = fingerprintToolchain(gate, repoRoot);
     const metadataBefore = trackedFileMetadata(repoRoot);
     output.log(`gate running: ${gate}`);
@@ -471,7 +483,7 @@ async function runGate({
     };
     output.log(`gate passed: ${gate}`);
     output.log(`gate transcript: ${transcriptPath}`);
-    const after = treeState(repoRoot);
+    const after = treeState(repoRoot, gate);
     const metadataAfter = trackedFileMetadata(repoRoot);
     // Tree hashes detect persistent content changes; tracked-file size/mtime_ns snapshots also
     // detect a tracked file rewritten and restored when the filesystem records a new mtime.
@@ -492,7 +504,7 @@ async function runGate({
       return 0;
     }
 
-    const finalState = treeState(repoRoot);
+    const finalState = treeState(repoRoot, gate);
     if (!finalState?.clean || finalState.tree !== before.tree) {
       return await refuseReceipt("tree changed before receipt writing");
     }

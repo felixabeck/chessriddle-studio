@@ -67,7 +67,7 @@ async function fixture() {
   await write(
     root,
     ".claude/skills/push/SKILL.md",
-    "## 2. Gates\n\n```bash\npnpm gates:push -- <blocks>\n```\n\n### Unconditional contract gate\n\n```bash\npnpm gates:contract:check\n```\n\n### Rust/Tauri backend\n\n```bash\nbash scripts/setup-rust.sh\ncargo fmt --manifest-path src-tauri/Cargo.toml -- --check\ncargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings\npnpm rust:windows:check\npnpm gate:ensure backend-test\npnpm gate:ensure backend-coverage\n```\n\n### TypeScript/React frontend\n\n```bash\npnpm gate:ensure frontend-coverage\npnpm gate:ensure frontend-mutation\npnpm gate:run frontend-build\npnpm bundle:check\npnpm gate:ensure e2e-container\n```\n\n### Cross-layer contracts\n\n```bash\npnpm bindings:check\n```\n\n### Findings ledger\n\n```bash\nenv -u KIT_ROOT pnpm findings:kit:check\n```\n\n## 2a. Pre-review checks\n\n```bash\npnpm checks:pre-review\n```\n\n```bash\npnpm gate:run frontend-build\npnpm exec oxfmt --check <changed-format-files>\npnpm exec oxlint --deny-warnings <changed-js-ts-files>\npnpm exec tsgo --noEmit\ncargo fmt --manifest-path src-tauri/Cargo.toml -- --check\npnpm coverage:mapping:frontend\npnpm coverage:mapping:backend\npnpm mutation:frontend -- --files <comma-separated-production-files>\npnpm rust:windows:check\npnpm bundle:check\n```\n\n## 3. Review\n\n```text\nscripts/**\n```\n\n## 4. Finish\n",
+    "## 2. Gates\n\n```bash\npnpm gates:push -- <blocks>\n```\n\n### Unconditional contract gate\n\n```bash\npnpm gates:contract:check\n```\n\n### Rust/Tauri backend\n\n```bash\nbash scripts/setup-rust.sh\ncargo fmt --manifest-path src-tauri/Cargo.toml -- --check\ncargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings\npnpm rust:windows:check\npnpm gate:ensure backend-test\npnpm gate:ensure backend-coverage\n```\n\n### TypeScript/React frontend\n\n```bash\npnpm gate:ensure frontend-coverage\npnpm gate:ensure frontend-mutation\npnpm gate:run frontend-build\npnpm bundle:check\npnpm gate:ensure e2e-container\n```\n\n### Cross-layer contracts\n\n```bash\npnpm bindings:check\n```\n\n### Findings ledger\n\n```bash\nenv -u KIT_ROOT pnpm findings:kit:check\n```\n\n## 2a. Pre-review checks\n\n```bash\npnpm checks:pre-review\n```\n\n```bash\npnpm gate:run frontend-build\npnpm exec oxfmt --check <changed-format-files>\npnpm exec oxlint --deny-warnings <changed-js-ts-files>\npnpm exec tsgo --noEmit\ncargo fmt --manifest-path src-tauri/Cargo.toml -- --check\npnpm coverage:mapping:frontend\npnpm coverage:mapping:backend\npnpm rust:windows:check\npnpm bundle:check\n```\n\n## 3. Review\n\n```text\nscripts/**\n```\n\n## 4. Finish\n",
   );
   await write(
     root,
@@ -80,7 +80,7 @@ async function fixture() {
     skillPath,
     skill.replace(
       "## 3. Review",
-      "### Exact-tree gate receipts\n\n```bash\npnpm gate:check frontend-build\n```\n\n## 3. Review",
+      "### Gate receipts\n\n```bash\npnpm gate:check frontend-build\n```\n\n## 3. Review",
     ),
   );
   await write(root, "vite.config.ts", 'test: { include: ["scripts/**/*.test.mjs"] },\n');

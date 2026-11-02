@@ -25,7 +25,6 @@ import {
   PRE_REVIEW_GATE_SCHEDULE,
   PUSH_GATE_SCHEDULE,
   discoverPreReviewChanges,
-  mutationFilesForChanges,
   runPushGates,
   selectPreReviewLanes,
 } from "./run-push-gates.mjs";
@@ -476,7 +475,6 @@ test("pre-review changed-path selection covers every lane and excludes unrelated
       "format-lint",
       "coverage-mapping-frontend",
       "coverage-mapping-backend",
-      "frontend-mutation-changed-files",
       "windows-clippy",
       "bundle",
     ],
@@ -551,286 +549,30 @@ test("pre-review refuses a missing upstream and every failing git call", async (
   );
 });
 
-test("a changed Vitest file adds its exercised production file to the mutation list (CR-5)", async (t) => {
+test("pre-review selects no mutation lane for frontend tests or mutation production files", async (t) => {
   const root = await temporarySchedulerRoot(t);
-  const sourcePath = "src/state/workspace.ts";
-  const testPath = "src/state/workspace.test.ts";
+  const sourcePath = "src/utils/treeReducer.ts";
+  const testPath = "src/utils/treeReducer.test.ts";
   await mkdir(dirname(join(root, sourcePath)), { recursive: true });
-  await writeFile(join(root, sourcePath), "export const workspace = 1;\n");
-  await writeFile(join(root, testPath), 'import { workspace } from "@/state/workspace";\n');
-
-  const files = mutationFilesForChanges([testPath], { root });
-  assert.deepEqual(files, [sourcePath]);
-  const mutationLane = selectPreReviewLanes([testPath], { root }).find(
-    ({ name }) => name === "frontend-mutation-changed-files",
-  );
-  assert.ok(mutationLane.commands[0].args.includes(sourcePath));
-});
-
-test("pre-review scans merge-base test contents for deleted and removed imports (DC-03)", async (t) => {
-  const root = await temporarySchedulerRoot(t);
-  const sourcePath = "src/components/boards/gameSession.ts";
-  const barrelPath = "src/components/boards/index.ts";
-  const testPath = "src/components/boards/gameSession.test.ts";
-  await mkdir(dirname(join(root, sourcePath)), { recursive: true });
-  await writeFile(join(root, sourcePath), "export const gameSession = 1;\n");
-
-  const baseSources = new Map([
-    [testPath, 'import { gameSession } from "@/components/boards";\n'],
-    [barrelPath, 'export { gameSession } from "./gameSession";\n'],
-    [sourcePath, "export const gameSession = 1;\n"],
-  ]);
-  const runGit = (executable, args, options) => {
-    assert.equal(executable, "git");
-    assert.equal(options.cwd, root);
-    if (args[0] === "ls-tree") {
-      return {
-        status: 0,
-        stdout: [...baseSources.keys()].map((path) => `100644 blob fixture\t${path}\0`).join(""),
-      };
-    }
-    assert.equal(args[0], "show");
-    return { status: 0, stdout: baseSources.get(args[1].slice("merge-base:".length)) };
-  };
-
-  await t.test("deleted test", () => {
-    assert.deepEqual(
-      mutationFilesForChanges([testPath, barrelPath], { root, mergeBase: "merge-base", runGit }),
-      [sourcePath],
+  await writeFile(join(root, sourcePath), "export const reducer = 1;\n");
+  await writeFile(join(root, testPath), 'import { reducer } from "./treeReducer";\n');
+  for (const path of [testPath, sourcePath]) {
+    const lanes = selectPreReviewLanes([path], { root });
+    assert.ok(lanes.length > 0, path);
+    assert.ok(
+      lanes.every(({ name }) => !name.includes("mutation")),
+      path,
     );
-  });
-
-  await t.test("removed import", async () => {
-    await writeFile(join(root, testPath), "export {};\n");
-    assert.deepEqual(
-      mutationFilesForChanges([testPath, barrelPath], { root, mergeBase: "merge-base", runGit }),
-      [sourcePath],
+    assert.ok(
+      lanes
+        .flatMap(({ commands }) => commands)
+        .every(
+          (command) =>
+            !(typeof command === "string" ? command : command.display).includes("mutation"),
+        ),
+      path,
     );
-  });
-
-  await t.test("deleted production targets are not selected", async () => {
-    await rm(join(root, sourcePath), { force: true });
-    assert.deepEqual(
-      mutationFilesForChanges([testPath, barrelPath], { root, mergeBase: "merge-base", runGit }),
-      [],
-    );
-  });
-});
-
-test("pre-review mutation reads use the path-discovery git runner and merge base", async (t) => {
-  const root = await temporarySchedulerRoot(t);
-  const sourcePath = "src/state/workspace.ts";
-  const testPath = "src/state/workspace.test.ts";
-  await mkdir(dirname(join(root, sourcePath)), { recursive: true });
-  await writeFile(join(root, sourcePath), "export const workspace = 1;\n");
-  const calls = [];
-  const runGit = (executable, args) => {
-    calls.push(args);
-    if (args[0] === "merge-base") return { status: 0, stdout: "merge-base\n" };
-    if (args[0] === "diff") return { status: 0, stdout: `${testPath}\0` };
-    if (args[0] === "ls-tree") {
-      return {
-        status: 0,
-        stdout: `${[sourcePath, testPath].map((path) => `100644 blob fixture\t${path}\0`).join("")}`,
-      };
-    }
-    if (args[0] === "show") {
-      return { status: 0, stdout: 'import { workspace } from "@/state/workspace";\n' };
-    }
-    assert.fail(`Unexpected git invocation: ${executable} ${args.join(" ")}`);
-  };
-  const changes = discoverPreReviewChanges({
-    cwd: root,
-    runGit,
-    listUntracked: () => [],
-  });
-  assert.deepEqual(changes, { mergeBase: "merge-base", paths: [testPath] });
-  assert.deepEqual(
-    mutationFilesForChanges(changes.paths, {
-      root,
-      mergeBase: changes.mergeBase,
-      runGit,
-    }),
-    [sourcePath],
-  );
-  assert.deepEqual(
-    calls.map(([command]) => command),
-    ["merge-base", "diff", "ls-tree", "show", "show"],
-  );
-});
-
-test("pre-review stops when merge-base tree lookup fails", async (t) => {
-  const cwd = await temporarySchedulerRoot(t);
-  const sourcePath = "src/state/workspace.ts";
-  const testPath = "src/state/workspace.test.ts";
-  await mkdir(dirname(join(cwd, sourcePath)), { recursive: true });
-  await writeFile(join(cwd, sourcePath), "export const workspace = 1;\n");
-  await writeFile(join(cwd, testPath), 'import { workspace } from "@/state/workspace";\n');
-
-  const gitCalls = [];
-  const runGit = (executable, args) => {
-    assert.equal(executable, "git");
-    gitCalls.push(args);
-    if (args[0] === "ls-tree") {
-      return { status: 128, stdout: "", stderr: "injected base-tree failure" };
-    }
-    assert.fail(`Unexpected git invocation: ${args.join(" ")}`);
-  };
-  const spawnedCommands = [];
-  const result = await runPushGates(["--pre-review"], {
-    cwd,
-    env: { ...process.env },
-    runGit,
-    discoverChanges: () => ({ mergeBase: "merge-base", paths: [testPath] }),
-    spawnProcess(executable, args) {
-      spawnedCommands.push([executable, ...args]);
-      assert.fail("a gate must not start after merge-base tree lookup fails");
-    },
-  });
-
-  assert.equal(result.exitCode, 1);
-  assert.ok(gitCalls.some(([command]) => command === "ls-tree"));
-  assert.deepEqual(spawnedCommands, []);
-  const scheduler = result.results.find((task) => task.name === "scheduler");
-  assert.match(
-    scheduler.error.message,
-    /git ls-tree -r -z merge-base failed \(injected base-tree failure\)/u,
-  );
-});
-
-test("runPushGates passes discovered merge base into deleted-test mutation selection (DC-03)", async (t) => {
-  const cwd = await temporarySchedulerRoot(t);
-  const sourcePath = "src/components/boards/gameSession.ts";
-  const barrelPath = "src/components/boards/index.ts";
-  const testPath = "src/components/boards/gameSession.test.ts";
-  await initializeUpstream(cwd, {
-    files: {
-      [sourcePath]: "export const gameSession = 1;\n",
-      [barrelPath]: 'export { gameSession } from "./gameSession";\n',
-      [testPath]: 'import { gameSession } from "@/components/boards";\n',
-    },
-  });
-  await rm(join(cwd, barrelPath), { force: true });
-  await rm(join(cwd, testPath), { force: true });
-
-  const gitCalls = [];
-  const runGit = (executable, args, options) => {
-    gitCalls.push(args);
-    return spawnSync(executable, args, options);
-  };
-  const events = [];
-  const result = await runPushGates(["--pre-review"], {
-    cwd,
-    env: { ...process.env, GATE_MEMORY_BYTES: String(7 * GIB) },
-    runGit,
-    spawnProcess: makeMockSpawner({ events }),
-  });
-
-  assert.equal(result.exitCode, 0);
-  assert.ok(gitCalls.some(([command]) => command === "merge-base"));
-  assert.ok(gitCalls.some(([command]) => command === "ls-tree"));
-  const mutationCommand = events
-    .filter(({ type }) => type === "start")
-    .map(({ command }) => command)
-    .find((command) => command.startsWith("pnpm mutation:frontend -- --files "));
-  assert.ok(mutationCommand, JSON.stringify(events));
-  assert.ok(mutationCommand.includes(sourcePath), mutationCommand);
-});
-
-test("pre-review skips a test absent at merge-base and stops on other git show failures", async (t) => {
-  const root = await temporarySchedulerRoot(t);
-  const testPath = "src/state/new.test.ts";
-  await mkdir(dirname(join(root, testPath)), { recursive: true });
-  await writeFile(join(root, testPath), "export {};\n");
-  const absentRunGit = (_executable, args) => {
-    assert.deepEqual(args, ["ls-tree", "-r", "-z", "merge-base"]);
-    return { status: 0, stdout: "" };
-  };
-  assert.deepEqual(
-    mutationFilesForChanges([testPath], {
-      root,
-      mergeBase: "merge-base",
-      runGit: absentRunGit,
-    }),
-    [],
-  );
-
-  const gitError = new Error("injected git spawn failure");
-  assert.throws(
-    () =>
-      mutationFilesForChanges([testPath], {
-        root,
-        mergeBase: "merge-base",
-        runGit: (_executable, args) => {
-          if (args[0] === "ls-tree") {
-            return { status: 0, stdout: `100644 blob fixture\t${testPath}\0` };
-          }
-          return { error: gitError, status: null };
-        },
-      }),
-    (error) => {
-      assert.match(
-        error.message,
-        /Cannot read src\/state\/new\.test\.ts at merge-base for mutation selection: git show merge-base:src\/state\/new\.test\.ts failed/u,
-      );
-      assert.strictEqual(error.cause, gitError);
-      return true;
-    },
-  );
-});
-
-test("a changed test follows a directory import through its index file", async (t) => {
-  const root = await temporarySchedulerRoot(t);
-  const testPath = "src/state/directory-import.test.ts";
-  const directoryIndexPath = "src/dir/index.ts";
-  const mutationPath = "src/state/workspace.ts";
-  await mkdir(dirname(join(root, testPath)), { recursive: true });
-  await mkdir(dirname(join(root, directoryIndexPath)), { recursive: true });
-  await mkdir(dirname(join(root, mutationPath)), { recursive: true });
-  await writeFile(join(root, testPath), 'import { directoryValue } from "@/dir";\n');
-  await writeFile(
-    join(root, directoryIndexPath),
-    'import { workspace } from "@/state/workspace";\nexport const directoryValue = workspace;\n',
-  );
-  await writeFile(join(root, mutationPath), "export const workspace = 1;\n");
-
-  assert.deepEqual(mutationFilesForChanges([testPath], { root }), [mutationPath]);
-});
-
-test("a changed test skips a directory import without an index file", async (t) => {
-  const root = await temporarySchedulerRoot(t);
-  const testPath = "src/state/missing-directory-import.test.ts";
-  await mkdir(dirname(join(root, testPath)), { recursive: true });
-  await mkdir(join(root, "src/dir"), { recursive: true });
-  await writeFile(join(root, testPath), 'import { directoryValue } from "@/dir";\n');
-
-  assert.deepEqual(mutationFilesForChanges([testPath], { root }), []);
-});
-
-test("a changed test read failure still throws with its cause", async (t) => {
-  const root = await temporarySchedulerRoot(t);
-  const testPath = "src/state/unreadable.test.ts";
-  await mkdir(dirname(join(root, testPath)), { recursive: true });
-  await writeFile(join(root, testPath), "export {};\n");
-  const readError = new Error("injected read failure");
-
-  assert.throws(
-    () =>
-      mutationFilesForChanges([testPath], {
-        root,
-        readSource: () => {
-          throw readError;
-        },
-      }),
-    (error) => {
-      assert.equal(
-        error.message,
-        `Cannot read changed test ${testPath} for mutation selection: ${readError.message}`,
-      );
-      assert.strictEqual(error.cause, readError);
-      return true;
-    },
-  );
+  }
 });
 
 test("Rust-only pre-review waits for the frontend build before Windows clippy", async (t) => {
@@ -875,7 +617,6 @@ test("pre-review frontend-build failure skips Windows clippy and bundle (DC-06)"
   const commands = commandSet(events);
   assert.ok(commands.includes("pnpm gate:run frontend-build"));
   assert.ok(commands.includes("pnpm coverage:mapping:backend"));
-  assert.ok(commands.some((command) => command.startsWith("pnpm mutation:frontend -- --files ")));
   assert.ok(!commands.includes("pnpm rust:windows:check"));
   assert.ok(!commands.includes("pnpm bundle:check"));
   for (const laneName of ["windows-clippy", "bundle"]) {
@@ -2470,13 +2211,12 @@ test("unconfirmed process cleanup blocks queued Rust and heavyweight frontend st
   }
 });
 
-test("pre-review Windows compilation uses Rust allocation and excludes heavyweight mutation even above the one-wave threshold", async (t) => {
+test("pre-review Windows compilation uses Rust allocation at both budget sizes", async (t) => {
   for (const [budgetBytes, expectedJobs] of [
     [10 * GIB, "1"],
     [ONE_WAVE_BYTES + GIB, "5"],
   ]) {
     const windows = "pnpm rust:windows:check";
-    const mutation = "pnpm mutation:frontend -- --files src/state/workspace.ts";
     const harness = await makeHarness(t, { budgetBytes, commands: { [windows]: { delayMs: 50 } } });
     await mkdir(join(harness.root, "src/state"), { recursive: true });
     await writeFile(join(harness.root, "src/state/workspace.ts"), "export const workspace = 1;\n");
@@ -2491,7 +2231,6 @@ test("pre-review Windows compilation uses Rust allocation and excludes heavyweig
     assert.equal(result.exitCode, 0);
     const events = await readEvents(harness);
     assert.equal(cliCommandStart(events, windows).jobs, expectedJobs);
-    assert.ok(at(cliCommandFinish(events, windows)) < at(cliCommandStart(events, mutation)));
   }
 });
 

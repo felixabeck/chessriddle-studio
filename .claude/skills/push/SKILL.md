@@ -154,7 +154,7 @@ stage, after review repairs and before known coordination-record commits and fin
 `pnpm test:e2e:container` and the live Tauri-window check). Retain screenshots of every affected
 flow. Missing screenshots are not evidence that layout is correct.
 
-### Exact-tree gate receipts
+### Gate receipts
 
 The seven expensive gates are registered in `scripts/gate-receipt.mjs`. Use `ensure` for normal gate
 runs, `run` when fresh evidence is required, and `check` only to query the cache:
@@ -173,8 +173,9 @@ pnpm gate:check frontend-build
 
 `gate:check` only reads the cache and starts no scope; how `gate:ensure` and `gate:run` are placed is in `.claude/rules/gate-tooling.md`.
 
-Receipts are reusable only for a clean exact tree with the same command, platform, toolchain, and
-an unexpired timestamp. A miss runs the gate under `ensure`; `check` never starts one. Gate failures
+Receipts are reusable only for a clean tree with the same command, platform, toolchain, and
+an unexpired timestamp. Receipts except `frontend-coverage` ignore `tasks/**` in the tree key.
+Frontend coverage keeps the exact tree because its Vitest suite parses the real `tasks/findings.md`. A miss runs the gate under `ensure`; `check` never starts one. Gate failures
 propagate their own exit codes, and a tree change during a run refuses the receipt.
 
 That refusal keys on tracked-file size and mtime, not only bytes, so **receipt-backed gates may run
@@ -266,9 +267,7 @@ pnpm checks:pre-review
 
 The scheduler selects only lanes whose inputs changed. The frontend build runs first whenever the
 Windows clippy or bundle lane is selected, those lanes consume its `dist/` output. Windows clippy
-uses the same Rust allocation as push and completes before heavyweight mutation starts, including
-when the budget allows concurrent frontend work. Signals and unconfirmed cleanup prevent queued
-starts. Commands in the selected lanes are:
+uses the same Rust allocation as push. Signals and unconfirmed cleanup prevent queued starts. Commands in the selected lanes are:
 
 ```bash
 pnpm gate:run frontend-build
@@ -278,7 +277,6 @@ pnpm exec tsgo --noEmit
 cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 pnpm coverage:mapping:frontend
 pnpm coverage:mapping:backend
-pnpm mutation:frontend -- --files <comma-separated-production-files>
 pnpm rust:windows:check
 pnpm bundle:check
 ```

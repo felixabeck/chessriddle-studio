@@ -86,6 +86,82 @@ async function record(root, options = {}) {
   });
 }
 
+for (const gate of ["frontend-mutation", "e2e-container", "frontend-coverage"]) {
+  test(`${gate} receipt tree scope across committed records and other inputs`, async () => {
+    const { root } = await fixture();
+    const findings = join(root, "tasks/findings.md");
+    await mkdir(dirname(findings), { recursive: true });
+    await writeFile(findings, "initial records\n");
+    const commit = () => {
+      runGit(root, "add", "-A");
+      runGit(
+        root,
+        "-c",
+        "user.name=Gate Receipt Test",
+        "-c",
+        "user.email=gate-receipt@example.invalid",
+        "commit",
+        "--quiet",
+        "-m",
+        "inputs",
+      );
+    };
+    const check = () =>
+      executeAction({
+        action: "check",
+        gate,
+        repoRoot: root,
+        fingerprintToolchain: fakeToolchain(),
+        command: nodeCommand("process.exit(0)"),
+        output: silentOutput(),
+      });
+    commit();
+    assert.equal(await record(root, { gate }), 0);
+    assert.equal(await check(), 0);
+    await writeFile(findings, "updated records\n");
+    await mkdir(join(root, "tasks/handoffs"));
+    await writeFile(join(root, "tasks/handoffs/x.md"), "handoff\n");
+    commit();
+    assert.equal(await check(), gate === "frontend-coverage" ? 1 : 0);
+
+    for (const path of ["src/x.ts", "src-tauri/capabilities/main.json", "docs/x.md"]) {
+      assert.equal(await record(root, { gate }), 0);
+      await mkdir(dirname(join(root, path)), { recursive: true });
+      await writeFile(join(root, path), "changed input\n");
+      commit();
+      assert.equal(await check(), 1, path);
+    }
+
+    assert.equal(await record(root, { gate }), 0);
+    await writeFile(findings, "dirty records\n");
+    assert.equal(await check(), 1);
+  });
+
+  test(`${gate} refuses a receipt when tasks change during the run`, async () => {
+    const { root } = await fixture();
+    const findings = join(root, "tasks/findings.md");
+    await mkdir(dirname(findings));
+    await writeFile(findings, "initial records\n");
+    runGit(root, "add", "tasks");
+    runGit(
+      root,
+      "-c",
+      "user.name=Gate Receipt Test",
+      "-c",
+      "user.email=gate-receipt@example.invalid",
+      "commit",
+      "--quiet",
+      "-m",
+      "records",
+    );
+    const command = nodeCommand(
+      `const fs = require("node:fs"); const path = ${JSON.stringify(findings)}; fs.writeFileSync(path, "changed"); fs.writeFileSync(path, "initial records\\n");`,
+    );
+    assert.equal(await record(root, { gate, command }), 3);
+    assert.equal(existsSync(join(root, ".gate-receipts", `${gate}.json`)), false);
+  });
+}
+
 test("registry maps all seven gates to their exact command strings", () => {
   assert.deepEqual(GATES, EXPECTED_GATES);
 });
@@ -136,7 +212,7 @@ test("every gate fingerprints a pinned tool set, and every listed tool has a pro
 test("the push skill receipt fence names every registered gate", async () => {
   const skill = await readFile(join(projectRoot, ".claude", "skills", "push", "SKILL.md"), "utf8");
   const receiptsSection = skill.slice(
-    skill.indexOf("### Exact-tree gate receipts"),
+    skill.indexOf("### Gate receipts"),
     skill.indexOf("### Cross-layer contracts"),
   );
   const commands = fencedBlocks(receiptsSection)
@@ -151,7 +227,7 @@ test("the frontend push gate fence includes frontend mutation", async () => {
   const skill = await readFile(join(projectRoot, ".claude", "skills", "push", "SKILL.md"), "utf8");
   const frontendSection = skill.slice(
     skill.indexOf("### TypeScript/React frontend"),
-    skill.indexOf("### Exact-tree gate receipts"),
+    skill.indexOf("### Gate receipts"),
   );
   const commands = fencedBlocks(frontendSection)
     .map(({ contents }) => contents)

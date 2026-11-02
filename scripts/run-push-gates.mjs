@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from "node:child_process";
-import { closeSync, existsSync, openSync, readFileSync, statSync } from "node:fs";
+import { closeSync, existsSync, openSync } from "node:fs";
 import { availableParallelism as defaultAvailableParallelism } from "node:os";
-import { extname, join, relative, resolve, sep } from "node:path";
+import { extname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { isEntrypoint } from "./entrypoint.mjs";
 import {
@@ -28,10 +28,8 @@ import {
   writeLogChunk,
 } from "./gate-logs.mjs";
 import { E2E_CONTAINER_MEMORY_BYTES } from "./run-e2e-container.mjs";
-import { mutationPackages } from "./frontend-mutation-packages.mjs";
 import { matches } from "./coverage-scope.mjs";
 import { listWorkingTreeFiles } from "./working-tree-files.mjs";
-import { importSpecifierBasePath } from "./import-path.mjs";
 
 const GIB = 1024 ** 3;
 
@@ -162,12 +160,6 @@ export const PRE_REVIEW_GATE_SCHEDULE = Object.freeze({
     Object.freeze({
       name: "coverage-mapping-backend",
       commands: Object.freeze(["pnpm coverage:mapping:backend"]),
-    }),
-    Object.freeze({
-      name: "frontend-mutation-changed-files",
-      commands: Object.freeze([
-        "pnpm mutation:frontend -- --files <comma-separated-production-files>",
-      ]),
     }),
     Object.freeze({
       name: "windows-clippy",
@@ -384,165 +376,13 @@ function isTypeScriptChanged(path) {
   return hasExtension(path, TYPESCRIPT_EXTENSIONS) || /^tsconfig(?:\.[^/]*)?\.json$/u.test(path);
 }
 
-function importSpecifiers(source) {
-  const patterns = [
-    /\b(?:import|export)\s+(?:type\s+)?(?:[^'"`]*?\s+from\s*)?['"]([^'"`]+)['"]/gu,
-    /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/gu,
-    /\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/gu,
-  ];
-  return [
-    ...new Set(patterns.flatMap((pattern) => [...source.matchAll(pattern)].map((m) => m[1]))),
-  ];
-}
-
-function isRegularFile(path) {
-  try {
-    return statSync(path).isFile();
-  } catch (error) {
-    if (error.code === "ENOENT" || error.code === "ENOTDIR") return false;
-    throw error;
-  }
-}
-
-function resolveLocalImport(root, importer, specifier, isFile = isRegularFile) {
-  const basePath = importSpecifierBasePath(importer, specifier, { allowSourceRoot: true });
-  if (basePath === undefined) return undefined;
-  const base = resolve(root, basePath);
-
-  const candidates = extname(base)
-    ? [base]
-    : [
-        base,
-        ...[".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".json"].map(
-          (extension) => `${base}${extension}`,
-        ),
-        ...[".ts", ".tsx", ".js", ".jsx", ".json"].map((extension) =>
-          resolve(base, `index${extension}`),
-        ),
-      ];
-  for (const candidate of candidates) {
-    if (!isFile(candidate)) continue;
-    const path = relative(root, candidate).split(sep).join("/");
-    if (!path.startsWith("../")) return path;
-  }
-  return undefined;
-}
-
-export function mutationFilesForChanges(
-  changedPaths,
-  {
-    root = process.cwd(),
-    readSource = (path) => readFileSync(path, "utf8"),
-    exists = existsSync,
-    isFile = isRegularFile,
-    mergeBase = undefined,
-    runGit = spawnSync,
-  } = {},
-) {
-  const filesByPackage = new Map(
-    Object.entries(mutationPackages).flatMap(([packageId, files]) =>
-      files.map((path) => [path, packageId]),
-    ),
-  );
-  const changed = new Set(changedPaths);
-  const selectedFiles = new Set(
-    [...changed].filter((path) => filesByPackage.has(path) && exists(resolve(root, path))),
-  );
-
-  const changedTests = [...changed].filter((path) => /\.(?:test|spec)\.[cm]?[jt]sx?$/u.test(path));
-  const scanTests = ({ readTreeSource, treeIsFile, treeExists, wrapReadError }) => {
-    const scanQueue = changedTests
-      .filter((path) => treeExists(resolve(root, path)))
-      .map((importer) => ({ importer }));
-    const scanned = new Set();
-    while (scanQueue.length > 0) {
-      const { importer } = scanQueue.pop();
-      if (scanned.has(importer)) continue;
-      scanned.add(importer);
-      let source;
-      try {
-        source = readTreeSource(resolve(root, importer));
-      } catch (error) {
-        throw wrapReadError(importer, error);
-      }
-      for (const specifier of importSpecifiers(source)) {
-        const dependency = resolveLocalImport(root, importer, specifier, treeIsFile);
-        if (!dependency) continue;
-        if (filesByPackage.has(dependency)) selectedFiles.add(dependency);
-        if (dependency.startsWith("src/") && treeExists(resolve(root, dependency))) {
-          scanQueue.push({ importer: dependency });
-        }
-      }
-    }
-  };
-  const workingReadError = (importer, error) =>
-    new Error(`Cannot read changed test ${importer} for mutation selection: ${error.message}`, {
-      cause: error,
-    });
-
-  scanTests({
-    readTreeSource: readSource,
-    treeIsFile: isFile,
-    treeExists: exists,
-    wrapReadError: workingReadError,
-  });
-
-  if (mergeBase !== undefined) {
-    const treeArgs = ["ls-tree", "-r", "-z", mergeBase];
-    const treeResult = runGit("git", treeArgs, { cwd: root, encoding: "utf8" });
-    if (treeResult.error || treeResult.status !== 0) {
-      throw gitFailure(
-        treeArgs,
-        treeResult,
-        `Cannot inspect merge-base tree ${mergeBase} for mutation selection`,
-      );
-    }
-    const baseFiles = new Set(
-      String(treeResult.stdout ?? "")
-        .split("\0")
-        .flatMap((entry) => {
-          const [metadata, path] = entry.split("\t");
-          return metadata?.split(" ")[1] === "blob" && path ? [path] : [];
-        }),
-    );
-    const baseRelativePath = (absolutePath) => relative(root, absolutePath).split(sep).join("/");
-    const baseIsFile = (absolutePath) => {
-      const path = baseRelativePath(absolutePath);
-      return !path.startsWith("../") && baseFiles.has(path);
-    };
-    const readBaseSource = (absolutePath) => {
-      const path = baseRelativePath(absolutePath);
-      const args = ["show", `${mergeBase}:${path}`];
-      const result = runGit("git", args, { cwd: root, encoding: "utf8" });
-      if (result.error || result.status !== 0) {
-        throw gitFailure(
-          args,
-          result,
-          `Cannot read ${path} at ${mergeBase} for mutation selection`,
-        );
-      }
-      return String(result.stdout ?? "");
-    };
-    scanTests({
-      readTreeSource: readBaseSource,
-      treeIsFile: baseIsFile,
-      treeExists: baseIsFile,
-      wrapReadError: (_importer, error) => error,
-    });
-  }
-  return [...selectedFiles].filter((path) => exists(resolve(root, path))).sort();
-}
-
 function hasCoverageInputsChanged(changedPaths, { root, config, baseline }) {
   return changedPaths.some(
     (path) => path === config || path === baseline || path.startsWith(`${root}/`),
   );
 }
 
-export function selectPreReviewLanes(
-  changedPaths,
-  { root = process.cwd(), mergeBase = undefined, runGit = spawnSync } = {},
-) {
+export function selectPreReviewLanes(changedPaths, { root = process.cwd() } = {}) {
   const paths = [...new Set(changedPaths)];
   const existing = (path) => existsSync(resolve(root, path));
   const formatFiles = paths.filter((path) => isOxfmtOwned(path) && existing(path)).sort();
@@ -591,16 +431,6 @@ export function selectPreReviewLanes(
     addLane("coverage-mapping-backend");
   }
 
-  const mutationFiles = mutationFilesForChanges(paths, { root, mergeBase, runGit });
-  if (mutationFiles.length) {
-    addLane("frontend-mutation-changed-files", {
-      files: mutationFiles,
-      commands: [
-        commandSpec("pnpm", ["mutation:frontend", "--", "--files", mutationFiles.join(",")]),
-      ],
-      selfSizing: "mutation",
-    });
-  }
   if (rustChanged) {
     addLane("windows-clippy");
   }
@@ -1090,8 +920,8 @@ export async function runPushGates(
       const changes = discoverChangedPaths
         ? { paths: discoverChangedPaths({ cwd }), mergeBase: undefined }
         : discoverChanges({ cwd, runGit });
-      const { paths: changedPaths, mergeBase } = changes;
-      const lanes = selectPreReviewLanes(changedPaths, { root: cwd, mergeBase, runGit });
+      const { paths: changedPaths } = changes;
+      const lanes = selectPreReviewLanes(changedPaths, { root: cwd });
       for (const lane of lanes) selectedPreReviewLaneNames.add(lane.name);
       const laneNames = lanes.map(({ name }) => name);
       process.stdout.write(`Pre-review changed paths: ${changedPaths.length}\n`);
@@ -1116,42 +946,14 @@ export async function runPushGates(
         }
       }
 
-      const mutationLane = runnableLanes.find((lane) => lane.selfSizing === "mutation");
-      const baseLanes = runnableLanes.filter((lane) => lane !== mutationLane);
-      const rustLane = baseLanes.find((lane) => lane.rustCompilation);
-      const compilerEnv = rustLane ? getRustEnvironment() : env;
-      let concurrentMutation = false;
-      if (mutationLane) {
-        budgetBytes = getGateBudgetBytes();
-        cpuCount = availableParallelism();
-        concurrentMutation =
-          budgetBytes >= ONE_WAVE_BYTES && cpuCount >= MIN_CONCURRENT_SELF_SIZING_CPUS;
-      }
-      const basePromises = baseLanes.map((lane) =>
-        runLane(lane, lane.rustCompilation ? compilerEnv : env, context, resultsByName),
+      const compilerEnv = runnableLanes.some((lane) => lane.rustCompilation)
+        ? getRustEnvironment()
+        : env;
+      await Promise.all(
+        runnableLanes.map((lane) =>
+          runLane(lane, lane.rustCompilation ? compilerEnv : env, context, resultsByName),
+        ),
       );
-      let mutationPromise;
-      if (mutationLane && concurrentMutation) {
-        const rustPromise = rustLane
-          ? basePromises[baseLanes.indexOf(rustLane)]
-          : Promise.resolve();
-        mutationPromise = rustPromise.then(() => {
-          const laneEnv = makeLaneEnvironment(
-            env,
-            "frontend-mutation",
-            budgetBytes,
-            !rustLane,
-            false,
-          );
-          return runLane(mutationLane, laneEnv, context, resultsByName);
-        });
-      }
-      await Promise.all(basePromises);
-      if (mutationLane && !concurrentMutation) {
-        const laneEnv = makeLaneEnvironment(env, "frontend-mutation", budgetBytes, false, false);
-        mutationPromise = runLane(mutationLane, laneEnv, context, resultsByName);
-      }
-      if (mutationPromise) await mutationPromise;
 
       const failedStep = firstFailure(stepResults);
       if (failedStep) exitCode = failedStep.code;

@@ -55,7 +55,7 @@ detection uses a one-job Rust fallback assuming that minimum, which requires 10 
 reserve and does not establish that an unknown machine has sufficient memory. CPU sizing and
 lower valid inherited `CARGO_BUILD_JOBS` limits still apply, including Cargo's negative/default
 semantics. Ordinary Cargo configuration cannot raise the computed bound. Libtest concurrency is
-unchanged. Pre-review heavyweight mutation also waits for Windows compilation and its cleanup.
+unchanged.
 This removes observed cold compiler collisions at the cost of slower cold gates or explicit
 insufficient-budget refusal, without omitting proof. Replace the exclusive admission or sizing
 costs only after comparable cold measurements support the replacement with identical proof and

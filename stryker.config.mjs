@@ -10,21 +10,6 @@ const mutationPackage = process.env.STRYKER_PACKAGE;
 if (!mutationPackages[mutationPackage])
   throw new Error(`Unknown or missing STRYKER_PACKAGE: ${mutationPackage ?? "<missing>"}`);
 
-const listedFiles = process.env.STRYKER_FILES;
-let mutate = mutationPackages[mutationPackage];
-if (listedFiles !== undefined) {
-  const files = listedFiles.split(",");
-  if (files.some((file) => !file) || new Set(files).size !== files.length) {
-    throw new Error("STRYKER_FILES must be a comma-separated list of unique production files");
-  }
-  for (const file of files) {
-    if (!mutationPackages[mutationPackage].includes(file)) {
-      throw new Error(`STRYKER_FILES path is outside ${mutationPackage}: ${file}`);
-    }
-  }
-  mutate = files;
-}
-
 const memoryBytes = positiveByteCountFromEnv("STRYKER_MEMORY_BYTES");
 
 /** @type {import("@stryker-mutator/api/core").PartialStrykerOptions} */
@@ -37,7 +22,7 @@ const config = {
       }
     : {}),
   plugins: ["@stryker-mutator/vitest-runner"],
-  mutate,
+  mutate: mutationPackages[mutationPackage],
   testRunner: "vitest",
   vitest: {
     configFile: "vite.config.ts",
