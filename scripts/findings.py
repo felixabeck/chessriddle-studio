@@ -1,5 +1,5 @@
 #!/usr/bin/env -S uv run --script
-# agent-kit-sha256: 609bb68d3b1f6ea96c3cb29f133c79a205b4bcce0fb5febe79b62d4cf4af7811
+# agent-kit-sha256: 1ea6a910e2d4f2f1066d940eb1ab15b10e03878a7aac306b2f43d995c80e4819
 # /// script
 # requires-python = ">=3.14"
 # ///
@@ -6766,11 +6766,41 @@ def _allocation_blob_ids(root: Path, ref: str, relative: str, kind: str) -> set[
     return set(_ledger_content(text, kind, strict=False)[0])
 
 
+def _allocation_worktree_git_directory(worktree: Path) -> Path:
+    """Resolve a live checkout's own metadata, refusing an uninspectable rebase."""
+    marker = worktree / ".git"
+    try:
+        if marker.is_dir():
+            return marker.resolve(strict=True)
+        text = marker.read_text(encoding="utf-8").strip()
+        if not text.startswith("gitdir: ") or not text[8:]:
+            raise ValueError(f"invalid gitdir marker {marker}")
+        directory = Path(text[8:])
+        if not directory.is_absolute():
+            directory = worktree / directory
+        directory = directory.resolve(strict=True)
+        if not directory.is_dir():
+            raise ValueError(f"not a Git directory: {directory}")
+        return directory
+    except (OSError, UnicodeError, ValueError, RuntimeError) as exc:
+        raise LedgerError(f"could not resolve Git directory for worktree {worktree}: {exc}") from exc
+
+
+def _allocation_orig_head(path: Path) -> str | None:
+    """Snapshot rebase metadata, allowing only an absent file to mean no rebase."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeError) as exc:
+        raise LedgerError(f"could not read rebase original head {path}: {exc}") from exc
+
+
 def _clone_allocation_ids(
     root: Path | None, ledger: Path, *, retained: Collection[str] = (),
     own_claim: Path | None = None,
 ) -> set[str]:
-    """Collect working, committed, claimed and upstream ids under the clone lock.
+    """Collect working, committed, branch, rebase, claimed and upstream ids under the clone lock.
 
     Reads here deliberately bypass the own-ledger rollback guard: a sibling's
     temporarily shortened working file is covered by its committed HEAD blob.
@@ -6796,18 +6826,31 @@ def _clone_allocation_ids(
 def _clone_allocation_ids_once(
     root: Path, ledger: Path, *, retained: Collection[str], own_claim: Path | None,
 ) -> set[str] | None:
-    """Return None when reservation retirement invalidates this entire snapshot."""
+    """Return None when a source change invalidates this entire snapshot."""
     relative = next(
         relative for relative in MERGE_DRIVER_LEDGERS
         if _canonical_ledger_path(root / relative) == _canonical_ledger_path(ledger)
     )
     kind = MERGE_DRIVER_LEDGERS[relative]
     listing = _allocation_git(root, "worktree", "list", "--porcelain", "-z")
+    branch_arguments = ("for-each-ref", "--format=%(objectname) %(refname)", "refs/heads")
+    branches = _allocation_git(root, *branch_arguments).stdout
     taken: set[str] = set()
     offenders: list[Path] = []
     current_branch: str | None = None
     retained_ids = set(retained)
     working_ledgers: dict[Path, str | None] = {}
+    orig_heads: dict[Path, str | None] = {}
+    committed_ids: dict[str, set[str]] = {}
+    current_head: str | None = None
+
+    def commit_ids(commit: str, source: object) -> set[str]:
+        if commit not in committed_ids:
+            try:
+                committed_ids[commit] = _allocation_blob_ids(root, commit, relative, kind)
+            except LedgerError as exc:
+                raise LedgerError(f"could not read allocation source {source}: {exc}") from exc
+        return committed_ids[commit]
 
     def include(
         ids: Collection[str], worktree: Path, source: object, *, check: bool = True,
@@ -6836,6 +6879,7 @@ def _clone_allocation_ids_once(
             raise LedgerError(f"could not inspect worktree {worktree}: {exc}") from exc
         if worktree.resolve() == root.resolve():
             current_branch = fields.get("branch")
+            current_head = fields.get("HEAD")
         if "branch" in fields and worktree.resolve() != root.resolve():
             writer = worktree / CLONE_WIDE_WRITER_PATH
             try:
@@ -6859,9 +6903,34 @@ def _clone_allocation_ids_once(
             raise LedgerError(f"could not inspect worktree {worktree}: missing HEAD")
         if head.strip("0"):
             include(
-                _allocation_blob_ids(root, head, relative, kind), worktree, head,
+                commit_ids(head, head), worktree, head,
                 check=worktree.resolve() != root.resolve(),
             )
+        directory = _allocation_worktree_git_directory(worktree)
+        for backend in ("rebase-merge", "rebase-apply"):
+            path = directory / backend / "orig-head"
+            content = _allocation_orig_head(path)
+            orig_heads[path] = content
+            if content is None:
+                continue
+            commit = content.strip()
+            if not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", commit):
+                raise LedgerError(f"could not read rebase original head {path}: invalid commit id")
+            try:
+                if _allocation_git(root, "cat-file", "-t", commit).stdout.strip() != "commit":
+                    raise LedgerError("original head is not a commit")
+                include(commit_ids(commit, path), worktree, path)
+            except LedgerError as exc:
+                raise LedgerError(f"could not read rebase original head {path}: {exc}") from exc
+    for record in branches.splitlines():
+        fields = record.split(" ")
+        if (
+            len(fields) != 2 or not fields[1].startswith("refs/heads/")
+            or not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", fields[0])
+        ):
+            raise LedgerError(f"could not inspect local branches of {root}: malformed ref {record!r}")
+        commit, ref = fields
+        include(commit_ids(commit, ref), root, ref, check=commit != current_head)
     registry = _git_common_directory(
         root, "could not locate the shared Git directory for id reservations"
     ) / CLONE_WIDE_ID_RESERVATIONS_NAME
@@ -6891,12 +6960,17 @@ def _clone_allocation_ids_once(
         if upstream:
             include(_allocation_blob_ids(root, upstream, relative, kind), root, upstream)
     # A finalizer can retire a reservation before enumeration even starts.
-    # Accept the union only if both the HEAD inventory and every working ledger
-    # still match. This cannot detect a non-findings commit whose hook hides a
+    # Accept the union only if the HEAD and branch inventories, rebase metadata
+    # and every working ledger still match. This cannot detect a non-findings commit whose hook hides a
     # ledger for the WHOLE collection, then fails with HEAD unchanged and the
     # file restored. Findings commits instead hold the allocation fence.
     if _allocation_git(root, "worktree", "list", "--porcelain", "-z").stdout != listing.stdout:
         return None
+    if _allocation_git(root, *branch_arguments).stdout != branches:
+        return None
+    for path, content in orig_heads.items():
+        if _allocation_orig_head(path) != content:
+            return None
     for path, content in working_ledgers.items():
         if _allocation_working_ledger(path) != content:
             return None
@@ -13672,14 +13746,16 @@ def _git_for_ledger_env(
     environment: dict[str, str],
     *arguments: str,
     stdin: bytes | str | None = None,
+    start_new_session: bool = False,
 ) -> subprocess.CompletedProcess[str]:
-    """Run git with a private index without changing this process's environment."""
+    """Run git with an explicit child environment and optional session isolation."""
     git = shutil.which("git") or "/usr/bin/git"
     text_input = isinstance(stdin, str) or stdin is None
     return subprocess.run(
         [git, *arguments],
         cwd=root,
         env=environment,
+        start_new_session=start_new_session,
         input=stdin,
         capture_output=True,
         text=text_input,
@@ -14462,13 +14538,22 @@ def _attempt_ledger_commit(
         tree = _git_for_ledger_env(root, environment, "write-tree")
         if tree.returncode != 0:
             return failed(f"temporary index write-tree failed: {_git_failure_detail(tree)}")
-        commit = _git_for_ledger(
+        signing = _git_for_ledger(root, "config", "--type=bool", "--get", "commit.gpgsign")
+        if signing.returncode not in {0, 1}:
+            return failed(f"commit.gpgsign read failed: {_git_failure_detail(signing)}")
+        signing_args = ["-S"] if signing.stdout.strip() == "true" else []
+        commit_environment = dict(os.environ)
+        commit_environment["SSH_ASKPASS_REQUIRE"] = "never"
+        commit = _git_for_ledger_env(
             root,
+            commit_environment,
             "commit-tree",
             tree.stdout.strip(),
+            *signing_args,
             "-p",
             old_head,
             stdin=(intent.subject or "docs(findings): commit the verified ledger bytes") + "\n",
+            start_new_session=True,
         )
         if commit.returncode != 0:
             return failed(f"commit-tree failed: {_git_failure_detail(commit)}")
