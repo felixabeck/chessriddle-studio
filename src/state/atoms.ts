@@ -2,8 +2,8 @@ import type { SetStateAction } from "react";
 import { atom } from "jotai";
 import { atomFamily, atomWithStorage, unwrap } from "jotai/utils";
 import { z } from "zod";
-import { normalizeGameSignature } from "@/utils/gameSignature";
 import { databaseHandleKey } from "@/utils/db";
+import { normalizeGameSignature } from "./gameSignature";
 import { recentFileSchema, type RecentFile, type RecentEntryInput } from "./recentFiles";
 import type {
     BestMoves,

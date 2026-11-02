@@ -2,8 +2,8 @@ import type { DatabaseHandle, NormalizedGame } from "@/bindings";
 import { decodePgnTagValue } from "./chess";
 import { createTab } from "./tabs";
 import type { RecentEntryInput } from "@/state/recentFiles";
-import { gameSignature } from "./gameSignature";
-export { gameSignature, normalizeGameSignature } from "./gameSignature";
+import { gameSignature } from "@/state/gameSignature";
+export { gameSignature, normalizeGameSignature } from "@/state/gameSignature";
 
 /** Record only games whose tab has passed admission. Online games have no database owner. */
 export async function openDatabaseGame({
