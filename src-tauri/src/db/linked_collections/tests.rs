@@ -67,6 +67,76 @@ mod native_tests {
     }
 
     #[test]
+    fn recent_game_survives_lost_disposable_cache() {
+        let mut fixture = Fixture::new();
+        fixture.create(
+            "recent",
+            &game(None, "d4 d5", "remembered"),
+            WorkspaceFileType::Game,
+        );
+        let collection = fixture.list().remove(0);
+        let database = collection.database.as_ref().unwrap();
+        let row = fixture.rows(&collection).remove(0);
+        let identity = recent_identity(&row);
+        fixture.restart();
+        let cache = fixture
+            .directory
+            .path()
+            .join("app/collections")
+            .join(format!("{}.db3", collection.id));
+        for suffix in ["", "-wal", "-shm"] {
+            let path = PathBuf::from(format!("{}{suffix}", cache.display()));
+            if path.exists() {
+                std::fs::remove_file(path).unwrap();
+            }
+        }
+        assert!(!cache.exists());
+        let found = recent_found(&fixture, database, row.id, &identity);
+        assert_eq!(recent_identity(&found).signature, identity.signature);
+        assert_eq!(found.moves, row.moves);
+        assert!(cache.exists());
+    }
+
+    #[test]
+    fn recent_signature_requires_every_header_to_match() {
+        let fixture = Fixture::new();
+        fixture.create(
+            "recent",
+            &game(None, "e4 e5", "only candidate"),
+            WorkspaceFileType::Game,
+        );
+        let collection = fixture.list().remove(0);
+        let database = collection.database.as_ref().unwrap();
+        let row = fixture.rows(&collection).remove(0);
+        for field in [
+            SignatureField::Black,
+            SignatureField::Event,
+            SignatureField::Site,
+            SignatureField::Date,
+            SignatureField::Round,
+        ] {
+            let mut identity = recent_identity(&row);
+            let value = match field {
+                SignatureField::Black => &mut identity.signature.black,
+                SignatureField::Event => &mut identity.signature.event,
+                SignatureField::Site => &mut identity.signature.site,
+                SignatureField::Date => &mut identity.signature.date,
+                SignatureField::Round => &mut identity.signature.round,
+                SignatureField::White => unreachable!(),
+            };
+            *value = Some("Different".into());
+            assert!(
+                matches!(
+                    recent_lookup(&fixture, database, row.id, &identity),
+                    DbGameLookup::Missing
+                ),
+                "{} must match",
+                field.column().0
+            );
+        }
+    }
+
+    #[test]
     fn recent_game_survives_append_comment_move_save_and_earlier_removal() {
         let fixture = Fixture::new();
         let a = named_recent_game("A", "e4 e5", "earlier");

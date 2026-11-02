@@ -1917,41 +1917,85 @@ pub struct GameSignature {
     pub round: Option<String>,
 }
 
+#[derive(Clone, Copy)]
+enum SignatureNormalization {
+    Name,
+    Date,
+    Plain,
+}
+
+#[derive(Clone, Copy)]
+enum SignatureField {
+    White,
+    Black,
+    Event,
+    Site,
+    Date,
+    Round,
+}
+
+impl SignatureField {
+    const ALL: [Self; 6] = [
+        Self::White,
+        Self::Black,
+        Self::Event,
+        Self::Site,
+        Self::Date,
+        Self::Round,
+    ];
+
+    fn column(self) -> (&'static str, SignatureNormalization) {
+        match self {
+            Self::White => ("w.Name", SignatureNormalization::Name),
+            Self::Black => ("b.Name", SignatureNormalization::Name),
+            Self::Event => ("e.Name", SignatureNormalization::Name),
+            Self::Site => ("s.Name", SignatureNormalization::Name),
+            Self::Date => ("g.Date", SignatureNormalization::Date),
+            Self::Round => ("g.Round", SignatureNormalization::Plain),
+        }
+    }
+
+    fn normalize(self, value: &Option<String>) -> Option<String> {
+        let (_, kind) = self.column();
+        value
+            .as_ref()
+            .filter(|value| !kind.markers().any(|marker| marker == value.as_str()))
+            .cloned()
+    }
+
+    fn normalized_sql(self) -> String {
+        let (column, kind) = self.column();
+        kind.markers()
+            .fold(column.to_owned(), |expression, marker| {
+                format!("NULLIF({expression}, '{marker}')")
+            })
+    }
+}
+
+impl SignatureNormalization {
+    fn markers(self) -> impl Iterator<Item = &'static str> {
+        GameSignature::ABSENT_MARKERS.into_iter().chain(match self {
+            Self::Name => Some(GameSignature::ABSENT_NAME),
+            Self::Date => Some(GameSignature::ABSENT_DATE),
+            Self::Plain => None,
+        })
+    }
+}
+
 impl GameSignature {
     const ABSENT_MARKERS: [&'static str; 2] = ["", "?"];
     const ABSENT_DATE: &'static str = "????.??.??";
     const ABSENT_NAME: &'static str = "Unknown";
 
     fn normalized(&self) -> Self {
-        fn field(value: &Option<String>, date: bool, name: bool) -> Option<String> {
-            value
-                .as_ref()
-                .filter(|value| {
-                    !GameSignature::ABSENT_MARKERS.contains(&value.as_str())
-                        && !(date && *value == GameSignature::ABSENT_DATE)
-                        && !(name && *value == GameSignature::ABSENT_NAME)
-                })
-                .cloned()
-        }
         Self {
-            white: field(&self.white, false, true),
-            black: field(&self.black, false, true),
-            event: field(&self.event, false, true),
-            site: field(&self.site, false, true),
-            date: field(&self.date, true, false),
-            round: field(&self.round, false, false),
+            white: SignatureField::White.normalize(&self.white),
+            black: SignatureField::Black.normalize(&self.black),
+            event: SignatureField::Event.normalize(&self.event),
+            site: SignatureField::Site.normalize(&self.site),
+            date: SignatureField::Date.normalize(&self.date),
+            round: SignatureField::Round.normalize(&self.round),
         }
-    }
-
-    fn normalized_sql(column: &str, date: bool, name: bool) -> String {
-        Self::ABSENT_MARKERS
-            .iter()
-            .copied()
-            .chain(date.then_some(Self::ABSENT_DATE))
-            .chain(name.then_some(Self::ABSENT_NAME))
-            .fold(column.to_owned(), |expression, marker| {
-                format!("NULLIF({expression}, '{marker}')")
-            })
     }
 }
 
@@ -2011,14 +2055,8 @@ fn get_db_game_blocking(
     if !authority.with_mut(|authority| authority.has_persistent_id(&file.path_ref().id))? {
         return Ok(DbGameLookup::Missing);
     }
-    // Check the retained capability before collection resolution can rebuild a disposable cache.
-    match authority
-        .with_mut(|authority| authority.database_file_target(&file, PathOperation::DatabaseRead))?
-    {
-        Ok(_) => {}
-        Err(error) if error.is_missing_entry() => return Ok(DbGameLookup::Missing),
-        Err(error) => return Err(error),
-    }
+    // Resolve collections first so a lost disposable cache can be rebuilt. Ordinary databases
+    // still require an existing file target before opening a connection.
     let target = match resolve_database(authority, &file, PathOperation::DatabaseRead) {
         Ok(target) => target,
         Err(error) if error.is_missing_entry() => return Ok(DbGameLookup::Missing),

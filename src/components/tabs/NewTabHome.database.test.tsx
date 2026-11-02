@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { NormalizedGame } from "@/bindings";
+import { normalizeError } from "@/platform/errors";
 import { recentFilesAtom, tabsAtom, type RecentDatabaseGame } from "@/state/atoms";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { defaultTree } from "@/utils/treeReducer";
@@ -227,5 +228,25 @@ test("a game deleted after mount is removed and notified on click", async () => 
     "Common.Error",
     expect.objectContaining({ category: "not-found" }),
   );
+  expect(mocks.createTab).not.toHaveBeenCalled();
+});
+
+test("a not-found lookup rejection keeps the database entry during pruning and on click", async () => {
+  const stored = workspace.get(recentFilesAtom);
+  const error = new Error("Game not found: lookup unavailable");
+  expect(normalizeError(error).category).toBe("not-found");
+  mocks.getDbGame.mockRejectedValue(error);
+  await render();
+  expect(mocks.getDbGame).toHaveBeenCalledWith(database, 42, entry().linked, {
+    signal: expect.any(AbortSignal),
+  });
+  expect(workspace.get(recentFilesAtom)).toEqual(stored);
+  expect(host.querySelector("[data-recent-file]")).not.toBeNull();
+  mocks.getDbGame.mockClear();
+  await open();
+  expect(mocks.getDbGame).toHaveBeenCalledExactlyOnceWith(database, 42, entry().linked);
+  expect(workspace.get(recentFilesAtom)).toEqual(stored);
+  expect(host.querySelector("[data-recent-file]")).not.toBeNull();
+  expect(mocks.notify).toHaveBeenCalledWith("Common.Error", error);
   expect(mocks.createTab).not.toHaveBeenCalled();
 });

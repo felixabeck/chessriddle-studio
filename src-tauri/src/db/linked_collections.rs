@@ -3246,15 +3246,9 @@ pub(super) fn recent_game_id(
         id: i32,
     }
     let signature = identity.signature.normalized();
-    let predicate = ["w.Name", "b.Name", "e.Name", "s.Name", "g.Date", "g.Round"]
-        .iter()
-        .enumerate()
-        .map(|(i, column)| {
-            format!(
-                "{} IS ?",
-                GameSignature::normalized_sql(column, i == 4, i < 4)
-            )
-        })
+    let predicate = SignatureField::ALL
+        .into_iter()
+        .map(|field| format!("{} IS ?", field.normalized_sql()))
         .collect::<Vec<_>>()
         .join(" AND ");
     let query = format!(
