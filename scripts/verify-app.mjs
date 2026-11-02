@@ -918,37 +918,47 @@ async function readActiveTabTree(session) {
   return { workspace, tab, tree, treeKey, sessionKeys: observed.keys };
 }
 
-async function dirtActiveTreeEventHeader(session, dirtyEvent) {
-  const info = await reachableStableCoordinates(
-    session,
+/** Open the Info-tab PGN editor, replace the Event header, Update, and wait until the tree is dirty. */
+async function dirtyActiveTreeEventHeader(
+  session,
+  event,
+  {
+    locate = (label, script, args) => reachableStableCoordinates(session, label, script, args),
+    wait = (label, script, args = []) => waitFor(label, () => session.execute(script, args)),
+    keyboardId = "quit-gate-keyboard",
+    missingHeaderError = "active tree has no Event header",
+    beforeRead,
+    diagnoseEditorValue = false,
+    waitForDirty,
+  } = {},
+) {
+  const info = await locate(
     "Info tab",
     `[...document.querySelectorAll('[role="tab"]')].find(node => node.textContent.trim() === 'Info')`,
   );
   await clickAt(session, info.x, info.y);
-  await reachableStableCoordinates(session, "PGN editor", `document.querySelector('#pgn-editor')`);
+  await locate("PGN editor", `document.querySelector('#pgn-editor')`);
+  if (beforeRead) await beforeRead();
   const originalPgn = await session.execute("return document.querySelector('#pgn-editor').value");
   const eventHeader = /^\[Event "[^"\r\n]*"\]/m;
-  if (!eventHeader.test(originalPgn)) throw new Error("active tree has no Event header");
-  const editedPgn = originalPgn.replace(eventHeader, `[Event "${dirtyEvent}"]`);
+  if (!eventHeader.test(originalPgn)) throw new Error(missingHeaderError);
+  const editedPgn = originalPgn.replace(eventHeader, `[Event "${event}"]`);
   const editor = await session.call("POST", "/element", {
     using: "css selector",
     value: "#pgn-editor",
   });
   const editorId = encodeURIComponent(editor["element-6066-11e4-a52e-4f735466cecf"]);
-  const editorPosition = await reachableStableCoordinates(
-    session,
+  const editorPosition = await locate(
     "focused PGN editor",
     `document.querySelector('#pgn-editor')`,
   );
   await clickAt(session, editorPosition.x, editorPosition.y);
-  await waitFor("real PGN editor focus", () =>
-    session.execute("return document.activeElement?.id === 'pgn-editor'"),
-  );
+  await wait("real PGN editor focus", "return document.activeElement?.id === 'pgn-editor'");
   await session.call("POST", "/actions", {
     actions: [
       {
         type: "key",
-        id: "quit-gate-keyboard",
+        id: keyboardId,
         actions: [
           { type: "keyDown", value: "\uE009" },
           { type: "keyDown", value: "a" },
@@ -960,16 +970,18 @@ async function dirtActiveTreeEventHeader(session, dirtyEvent) {
       },
     ],
   });
-  await waitFor("real PGN editor keyboard replacement clears the text", () =>
-    session.execute("return document.querySelector('#pgn-editor')?.value === ''"),
+  await wait(
+    "real PGN editor keyboard replacement clears the text",
+    "return document.querySelector('#pgn-editor')?.value === ''",
   );
+  // WebKitGTK's element/value drops LF characters, so enter every line break as a key.
   for (const [index, line] of editedPgn.split("\n").entries()) {
     if (index > 0)
       await session.call("POST", "/actions", {
         actions: [
           {
             type: "key",
-            id: "quit-gate-keyboard",
+            id: keyboardId,
             actions: [
               { type: "keyDown", value: "\uE007" },
               { type: "keyUp", value: "\uE007" },
@@ -979,22 +991,33 @@ async function dirtActiveTreeEventHeader(session, dirtyEvent) {
       });
     if (line) await session.call("POST", `/element/${editorId}/value`, { text: line });
   }
-  await waitFor("real PGN editor Event edit", () =>
-    session.execute("return document.querySelector('#pgn-editor')?.value === arguments[0]", [
-      editedPgn,
-    ]),
+  const editorReady = wait(
+    "real PGN editor Event edit",
+    "return document.querySelector('#pgn-editor')?.value === arguments[0]",
+    [editedPgn],
   );
-  const update = await reachableStableCoordinates(
-    session,
+  await (diagnoseEditorValue
+    ? editorReady.catch(async (error) => {
+        const actual = await session
+          .execute("return document.querySelector('#pgn-editor')?.value ?? null")
+          .catch((diagnosticError) => `unavailable: ${diagnosticError.message}`);
+        throw new Error(
+          `${error.message}, actual value: ${JSON.stringify(actual)}, expected length: ${editedPgn.length}`,
+          { cause: error },
+        );
+      })
+    : editorReady);
+  const update = await locate(
     "PGN Update",
     `[...document.querySelectorAll('button')].find(node => node.textContent.trim() === 'Update' && node.parentElement.querySelector('#pgn-editor'))`,
   );
   await clickAt(session, update.x, update.y);
+  if (waitForDirty) return waitForDirty();
   return waitFor(
     "real PGN Update publishes the unsaved Event edit",
     async () => {
       const snapshot = await readActiveTabTree(session);
-      return snapshot.tree?.dirty === true && snapshot.tree.headers?.event === dirtyEvent
+      return snapshot.tree?.dirty === true && snapshot.tree.headers?.event === event
         ? snapshot
         : false;
     },
@@ -1032,7 +1055,7 @@ async function verifyDirtyTabQuitAndRestart() {
     },
     { timeoutMs: FILES_PROBE_TIMEOUT_MS },
   );
-  const dirtySnapshot = await dirtActiveTreeEventHeader(session, dirtyEvent);
+  const dirtySnapshot = await dirtyActiveTreeEventHeader(session, dirtyEvent);
   check(
     dirtySnapshot.tree?.dirty === true && dirtySnapshot.tab?.type === "analysis",
     "dirty-quit tree.dirty is true immediately before the title-bar close",
@@ -3474,102 +3497,40 @@ async function verifyGameOpening(session, ownedRoot, filesWorkspace) {
         "return location.pathname === '/' && document.body.innerText.replace(/\\s+/g, '').includes(arguments[0])",
         [openingGames[1].notation],
       );
-      const info = await coordinates(
-        `[...document.querySelectorAll('[role="tab"]')].find(node => node.textContent.trim() === 'Info')`,
-      );
-      await clickAt(session, info.x, info.y);
-      await coordinates(`document.querySelector('#pgn-editor')`);
-      const initialTree = await waitFor(
-        "discard owner's clean second game publication",
-        async () => {
-          const tree = await readTree();
-          return (
-            tree.dirty === false &&
-            tree.headers.event === "verify:opening-1" &&
-            tree.headers.white === openingGames[1].white &&
-            tree.headers.black === openingGames[1].black &&
-            tree
+      const dirtyEvent = "verify:GO14-unsaved-owner-discard";
+      let initialTree;
+      const dirtyTree = await dirtyActiveTreeEventHeader(session, dirtyEvent, {
+        locate: (_label, script, args) => coordinates(script, args),
+        wait,
+        keyboardId: "opening-keyboard",
+        missingHeaderError: "second game has no Event header",
+        diagnoseEditorValue: true,
+        beforeRead: async () => {
+          initialTree = await waitFor(
+            "discard owner's clean second game publication",
+            async () => {
+              const tree = await readTree();
+              return (
+                tree.dirty === false &&
+                tree.headers.event === "verify:opening-1" &&
+                tree.headers.white === openingGames[1].white &&
+                tree.headers.black === openingGames[1].black &&
+                tree
+              );
+            },
+            { timeoutMs: FILES_PROBE_TIMEOUT_MS },
           );
         },
-        { timeoutMs: FILES_PROBE_TIMEOUT_MS },
-      );
-      const originalPgn = await session.execute(
-        "return document.querySelector('#pgn-editor').value",
-      );
-      const dirtyEvent = "verify:GO14-unsaved-owner-discard";
-      const eventHeader = /^\[Event "[^"\r\n]*"\]/m;
-      if (!eventHeader.test(originalPgn)) throw new Error("second game has no Event header");
-      const editedPgn = originalPgn.replace(eventHeader, `[Event "${dirtyEvent}"]`);
-      const editor = await session.call("POST", "/element", {
-        using: "css selector",
-        value: "#pgn-editor",
+        waitForDirty: () =>
+          waitFor(
+            "real PGN Update publishes the owner's unsaved Event edit",
+            async () => {
+              const tree = await readTree();
+              return tree.dirty === true && tree.headers.event === dirtyEvent && tree;
+            },
+            { timeoutMs: FILES_PROBE_TIMEOUT_MS },
+          ),
       });
-      const editorId = encodeURIComponent(editor["element-6066-11e4-a52e-4f735466cecf"]);
-      const editorPosition = await coordinates(`document.querySelector('#pgn-editor')`);
-      await clickAt(session, editorPosition.x, editorPosition.y);
-      await wait("real PGN editor focus", "return document.activeElement?.id === 'pgn-editor'");
-      await session.call("POST", "/actions", {
-        actions: [
-          {
-            type: "key",
-            id: "opening-keyboard",
-            actions: [
-              { type: "keyDown", value: "\uE009" },
-              { type: "keyDown", value: "a" },
-              { type: "keyUp", value: "a" },
-              { type: "keyUp", value: "\uE009" },
-              { type: "keyDown", value: "\uE003" },
-              { type: "keyUp", value: "\uE003" },
-            ],
-          },
-        ],
-      });
-      await wait(
-        "real PGN editor keyboard replacement clears the text",
-        "return document.querySelector('#pgn-editor')?.value === ''",
-      );
-      // WebKitGTK's element/value drops LF characters, so enter every line break as a key.
-      for (const [index, line] of editedPgn.split("\n").entries()) {
-        if (index > 0)
-          await session.call("POST", "/actions", {
-            actions: [
-              {
-                type: "key",
-                id: "opening-keyboard",
-                actions: [
-                  { type: "keyDown", value: "\uE007" },
-                  { type: "keyUp", value: "\uE007" },
-                ],
-              },
-            ],
-          });
-        if (line) await session.call("POST", `/element/${editorId}/value`, { text: line });
-      }
-      await wait(
-        "real PGN editor Event edit",
-        "return document.querySelector('#pgn-editor')?.value === arguments[0]",
-        [editedPgn],
-      ).catch(async (error) => {
-        const actual = await session
-          .execute("return document.querySelector('#pgn-editor')?.value ?? null")
-          .catch((diagnosticError) => `unavailable: ${diagnosticError.message}`);
-        throw new Error(
-          `${error.message}, actual value: ${JSON.stringify(actual)}, expected length: ${editedPgn.length}`,
-          { cause: error },
-        );
-      });
-      const update = await coordinates(
-        `[...document.querySelectorAll('button')].find(node => node.textContent.trim() === 'Update' && node.parentElement.querySelector('#pgn-editor'))`,
-      );
-      await clickAt(session, update.x, update.y);
-      const dirtyTree = await waitFor(
-        "real PGN Update publishes the owner's unsaved Event edit",
-        async () => {
-          const tree = await readTree();
-          return tree.dirty === true && tree.headers.event === dirtyEvent && tree;
-        },
-        { timeoutMs: FILES_PROBE_TIMEOUT_MS },
-      );
       const accordionControl = `(() => {
         const info = [...document.querySelectorAll('[role="tab"]')].find(node => node.textContent.trim() === 'Info' && node.getAttribute('aria-selected') === 'true');
         const panel = info && document.getElementById(info.getAttribute('aria-controls'));
