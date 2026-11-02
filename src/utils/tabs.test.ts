@@ -1701,6 +1701,40 @@ test("fresh append queues a concurrent save and supersedes it after rebinding", 
     expect(mocks.writeGame).toHaveBeenCalledOnce();
 });
 
+test("fresh append queues a concurrent save and blocks it after an uncertain failure", async () => {
+    await initializeI18n();
+    const fixture = saveFixture({ kind: "none", stamp: null });
+    mocks.pickPgnFile.mockResolvedValue(targetFile());
+    const pending = deferred<{ stamp: string; revision: string }>();
+    mocks.writeGame.mockReturnValueOnce(pending.promise);
+    const first = saveFresh(fixture);
+    await vi.waitFor(() => expect(mocks.writeGame).toHaveBeenCalledOnce());
+    const second = saveFresh(fixture);
+    pending.reject({
+        tag: "backend-error",
+        category: "durability",
+        message: "Committed but durability uncertain: follow-up",
+    });
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    expect(mocks.writeGame).toHaveBeenCalledOnce();
+    expect(firstResult).toMatchObject({
+        status: "failed",
+        error: { category: "applied-despite-error", backendCategory: "durability" },
+    });
+    expect(secondResult).toMatchObject({
+        status: "failed",
+        error: {
+            category: "applied-despite-error",
+            message: i18n.t("FileFreshness.AppendMayHaveBeenAdded"),
+        },
+    });
+    expect(fixture.store.getState().appendAttempted).toBe(true);
+    tabStorage.flush();
+    expect(new TabStorageRepository().read("save-test")?.state).toMatchObject({
+        appendAttempted: true,
+    });
+});
+
 test("fresh stale-count refusal clears only its marker and permits a counted retry", async () => {
     const fixture = saveFixture({ kind: "none", stamp: null });
     mocks.pickPgnFile

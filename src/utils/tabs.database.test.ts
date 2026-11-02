@@ -41,10 +41,12 @@ const stampB = "b".repeat(64);
 const inserted = (id: number): InsertedDbGame => ({ id, stamp: stampA });
 function deferred<T>() {
     let resolve!: (value: T) => void;
-    const promise = new Promise<T>((done) => {
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((done, fail) => {
         resolve = done;
+        reject = fail;
     });
-    return { promise, resolve };
+    return { promise, resolve, reject };
 }
 function fixture(origin: GameOrigin = { kind: "databaseDraft", database }, moves = true) {
     const id = crypto.randomUUID();
@@ -399,6 +401,31 @@ test("autosave queued during a draft insert preserves later edits and updates th
         stampA,
     );
     expect(f.store.getState().dirty).toBe(false);
+});
+
+test("draft saves queued behind an uncertain insert retain its marker and never insert again", async () => {
+    const f = fixture();
+    const insertion = deferred<InsertedDbGame>();
+    native.insertDbGame.mockReturnValueOnce(insertion.promise);
+    const first = saveToFile(f.args());
+    await vi.waitFor(() => expect(native.insertDbGame).toHaveBeenCalledOnce());
+    const autoSave = saveToFile({ ...f.args(), isUserSave: false });
+    const second = saveToFile(f.args());
+    insertion.reject(new Error("IPC disconnected"));
+    const [firstResult, autoSaveResult, secondResult] = await Promise.all([
+        first,
+        autoSave,
+        second,
+    ]);
+    expect(native.insertDbGame).toHaveBeenCalledOnce();
+    expect(firstResult).toMatchObject({ status: "failed" });
+    expect(autoSaveResult).toBe("cancelled");
+    expect(secondResult).toEqual(firstResult);
+    expect(f.store.getState().storeAttempts).toEqual(["database:draft-database"]);
+    tabStorage.flush();
+    expect(tabStorage.read<{ storeAttempts: string[] }>(f.id)?.state.storeAttempts).toEqual([
+        "database:draft-database",
+    ]);
 });
 
 test("concurrent different destinations wait for one another and each rebinds to its own target", async () => {
