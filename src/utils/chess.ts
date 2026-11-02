@@ -193,11 +193,15 @@ export function headersToPGN(game: GameHeaders): string {
     if (game.time) {
         headers += pgnTag("UTCTime", game.time);
     }
-    if (game.white_elo !== undefined && game.white_elo !== null) {
-        headers += pgnTag("WhiteElo", game.white_elo === 0 ? "-" : game.white_elo);
+    const whiteElo = game.white_elo;
+    const blackElo = game.black_elo;
+    const wroteWhiteElo = typeof whiteElo === "number" && Number.isFinite(whiteElo);
+    const wroteBlackElo = typeof blackElo === "number" && Number.isFinite(blackElo);
+    if (wroteWhiteElo) {
+        headers += pgnTag("WhiteElo", whiteElo === 0 ? "-" : whiteElo);
     }
-    if (game.black_elo !== undefined && game.black_elo !== null) {
-        headers += pgnTag("BlackElo", game.black_elo === 0 ? "-" : game.black_elo);
+    if (wroteBlackElo) {
+        headers += pgnTag("BlackElo", blackElo === 0 ? "-" : blackElo);
     }
     if (game.start && game.start.length > 0) {
         headers += pgnTag("Start", JSON.stringify(game.start));
@@ -221,6 +225,9 @@ export function headersToPGN(game: GameHeaders): string {
         headers += pgnTag("Variant", game.variant);
     }
     for (const [key, value] of Object.entries(game.other ?? {})) {
+        if ((key === "WhiteElo" && wroteWhiteElo) || (key === "BlackElo" && wroteBlackElo)) {
+            continue;
+        }
         headers += pgnTag(key, value);
     }
     return headers;
@@ -516,6 +523,27 @@ export function parseStartHeader(start: unknown, root: TreeNode): number[] {
     return start.filter((value): value is number => typeof value === "number");
 }
 
+/**
+ * "-" is unrated (0). A trimmed all-digit tag becomes that integer. Any other
+ * non-empty tag is stored under its original key in `other` so it round-trips
+ * instead of becoming NaN.
+ */
+function parseEloTag(
+    raw: string | undefined,
+    key: "WhiteElo" | "BlackElo",
+    other: Record<string, string>,
+): number | undefined {
+    if (!raw) return undefined;
+    if (raw === "-") return 0;
+    const trimmed = raw.trim();
+    if (/^\d+$/.test(trimmed)) {
+        const parsed = Number.parseInt(trimmed, 10);
+        if (Number.isSafeInteger(parsed)) return parsed;
+    }
+    other[key] = raw;
+    return undefined;
+}
+
 function getPgnHeaders(tokens: Token[]): GameHeaders {
     const headersN = new Map<string, string>();
 
@@ -561,8 +589,8 @@ function getPgnHeaders(tokens: Token[]): GameHeaders {
         black: Black ?? "?",
         white: White ?? "?",
         round: Round ?? "?",
-        black_elo: BlackElo === "-" ? 0 : BlackElo ? Number.parseInt(BlackElo) : undefined,
-        white_elo: WhiteElo === "-" ? 0 : WhiteElo ? Number.parseInt(WhiteElo) : undefined,
+        black_elo: parseEloTag(BlackElo, "BlackElo", other),
+        white_elo: parseEloTag(WhiteElo, "WhiteElo", other),
         date: Date ?? "",
         site: Site ?? "",
         event: Event ?? "",

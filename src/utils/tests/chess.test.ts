@@ -897,6 +897,58 @@ test.each([
     }
 });
 
+test("unrated and empty Elo tags stay raw instead of becoming NaN", async () => {
+    mockCommentLexer();
+    const unrated = await parsePGN('[WhiteElo "?"]\n[BlackElo ""]\n\n*');
+    expect(unrated.headers.white_elo).toBeUndefined();
+    expect(unrated.headers.other?.WhiteElo).toBe("?");
+    expect(unrated.headers.black_elo).toBeUndefined();
+    expect(unrated.headers.other?.BlackElo).toBeUndefined();
+    const unratedPgn = headersToPGN(unrated.headers);
+    expect(unratedPgn.match(/\[WhiteElo "[^"]*"\]/g)).toEqual(['[WhiteElo "?"]']);
+    expect(unratedPgn).not.toContain("NaN");
+    expect(unratedPgn).not.toMatch(/BlackElo/);
+
+    const unratedDash = await parsePGN('[WhiteElo "-"]\n[BlackElo "-"]\n\n*');
+    expect(unratedDash.headers.white_elo).toBe(0);
+    expect(unratedDash.headers.black_elo).toBe(0);
+    expect(unratedDash.headers.other?.WhiteElo).toBeUndefined();
+    expect(headersToPGN(unratedDash.headers).match(/\[WhiteElo "[^"]*"\]/g)).toEqual([
+        '[WhiteElo "-"]',
+    ]);
+
+    const rated = await parsePGN('[WhiteElo "2100"]\n[BlackElo "1800"]\n\n*');
+    expect(rated.headers.white_elo).toBe(2100);
+    expect(rated.headers.black_elo).toBe(1800);
+    expect(rated.headers.other?.WhiteElo).toBeUndefined();
+    expect(headersToPGN(rated.headers)).toContain('[WhiteElo "2100"]');
+
+    const opaque = await parsePGN('[WhiteElo "1500?"]\n[BlackElo "abc"]\n\n*');
+    expect(opaque.headers.white_elo).toBeUndefined();
+    expect(opaque.headers.black_elo).toBeUndefined();
+    expect(opaque.headers.other).toEqual({ WhiteElo: "1500?", BlackElo: "abc" });
+    expect(headersToPGN(opaque.headers)).toContain('[WhiteElo "1500?"]');
+    expect(headersToPGN(opaque.headers)).toContain('[BlackElo "abc"]');
+});
+
+test("a typed Elo wins over a raw WhiteElo tag in other", () => {
+    const pgn = headersToPGN({
+        ...defaultTree().headers,
+        white_elo: 1800,
+        other: { WhiteElo: "?" },
+    });
+    expect(pgn.match(/\[WhiteElo "[^"]*"\]/g)).toEqual(['[WhiteElo "1800"]']);
+});
+
+test("headersToPGN skips a non-finite WhiteElo", () => {
+    const pgn = headersToPGN({
+        ...defaultTree().headers,
+        white_elo: Number.NaN,
+    });
+    expect(pgn).not.toMatch(/WhiteElo/);
+    expect(pgn).not.toContain("NaN");
+});
+
 const SIX_COLOR_SHAPES = [
     { orig: "a1", dest: "a3", brush: "green" },
     { orig: "b1", dest: "b3", brush: "red" },
