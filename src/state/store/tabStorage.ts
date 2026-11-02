@@ -459,7 +459,7 @@ export class TabStorageRepository {
      * Unreadable and unavailable stay distinct from absent; requireExisting treats a missing key
      * as unavailable.
      */
-    inspectTree(tabId: string, requireExisting = false): TabTreeReadResult {
+    inspectTree(tabId: string, requireExisting: boolean): TabTreeReadResult {
         return this.readTreeValue(tabId, {
             requireExisting,
             migrate: false,
