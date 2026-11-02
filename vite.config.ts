@@ -70,6 +70,12 @@ export default defineConfig({
     },
     test: {
         environment: "jsdom",
+        // Node 25+ enables its own Web Storage globals, which shadow jsdom's sessionStorage and
+        // localStorage (undefined without --localstorage-file, and not jsdom's Storage class).
+        // Keep jsdom's, on every Node version that knows the flag.
+        execArgv: process.allowedNodeEnvironmentFlags.has("--no-experimental-webstorage")
+            ? ["--no-experimental-webstorage"]
+            : [],
         setupFiles: ["./src/tests/setup.ts"],
         include: ["src/**/*.{test,spec}.{ts,tsx}", "scripts/**/*.test.mjs"],
         exclude: ["**/node_modules/**", ".stryker-tmp/**", "e2e/**"],
