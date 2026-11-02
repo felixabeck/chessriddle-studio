@@ -466,3 +466,30 @@ dashboard tests.
 Lenses: tests, correctness — both APPROVED. The fixture keeps ten recents with the database row and
 four repertoires (indices 0, 3, 6, 9); reverting the repair fails the four-due-row assertion. No
 open review issue remains.
+
+### Final-gate repairs after d3
+
+- **Import cycle (commit 76875fba).** The first full `gates:push` (all lanes green except
+  `frontend-coverage`, one 5150 ms timeout in `src/state/referenceCollection.test.ts`) led to
+  `atoms.ts` importing `databaseHandleKey` from `@/utils/db`, which imports `@/state/atoms` back
+  and pulls signed catalogs, SWR and i18n into every importer of atoms. The fix keys database
+  recents with the identical `capabilityKey` from `pathCapabilities` (a fix leaf also replaced an
+  existing type-only import with a duplicated alias; the orchestrator reverted that part).
+  Closure round d4: correctness, code-quality — both APPROVED. Second full `gates:push`: every lane
+  green, `frontend-coverage` 94 s (was 138 s).
+- **Red master CI, Node 26 (commit 5ea1ae3b, finding f-20261102-03).** `pnpm ci:remote:check`
+  refused the push: run 41404314781 on master `af981d98` ran Node 26 via `lts/*` and failed 1645
+  frontend tests and every frontend-mutation dry run; `rust-macos-test` was a hosted-runner loss.
+  Felix's question 2026-11-02 ("So what is the solution then? … nothing will go forward, right?")
+  led this run to repair it instead of waiting for another session's uncommitted fix. Reproduced
+  locally with a checksum-verified Node 26.13.0 (35/158 failures in two files); repaired by passing
+  `--no-experimental-webstorage` to the Vitest workers when Node knows the flag. Node 26 full suite
+  6000/6000; Node 24 previously failing files 207/207. Closure round d5: correctness, root-cause,
+  tests — all APPROVED; tests should-fix (no local Stryker thread-pool execution proof) **Skip**:
+  the hosted `frontend-mutation` jobs on the pushed SHA run that dry run on Node 26 and the push
+  waits for their conclusions.
+- **Load-sensitive reload tests (finding f-20261102-04).** Timeouts in reload-simulating tests
+  recurred at load average 41–65; a temporary per-test timeout was reverted to keep this push's
+  scope, and the class is filed.
+- Records lens d4 corrections applied as annotations to f-20261102-03 and f-20261102-04 and this
+  section.
