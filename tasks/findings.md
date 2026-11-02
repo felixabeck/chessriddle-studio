@@ -16892,6 +16892,9 @@ This recovery will repair only the observed classification-fixture budget confla
 * Review history: `tasks/handoffs/2026-10-31-f-20261011-03-review.md` (plan rounds 1–3); diff review round 4 (9 lenses, 1 Fix), closure round 5 APPROVED.
 <!-- ledger-meta {"command":"close","effect_lines":9,"effect_sha256":"a756817a079c584bed91125c9aba0e8c15b1c8fbcbef2f967aef221c59286c31","header_sha256":"9c034e5fdc27cb5916f96a0e23dd0e2639c562c70b3e6c28795e84aadf5a8f48","header_status":"handled","input_sha256":"b5da2093d6234c18c1f55a4b9bc85c4a12fe2218689c2aec499e5fdd4b360156","kind":"mutation-receipt","operation":"1f068ae983c03b89b9baf0850d70edc7015d1ad26c055caa00e3c40613d2fcce","options":{"section":null},"request_id_sha256":null,"results":["f-20261011-03"],"target":"f-20261011-03","v":1} -->
 
+* **Second hosted witness (2026-11-02):** Test run 41493276529 at c7bf1662 (a CI-only commit that pins Node through `.node-version`, d-20261102-12) failed the `rust` job with the same single failure as the 2026-10-29 witness: `db::repository::retirement_tests::multiple_predecessors_share_one_absolute_acquisition_deadline` at repository.rs:3196, "lifecycle boundary was not reached: Timeout" (2875 passed, 1 failed, 2 ignored). The commit changes no Rust or test input, and the preceding green run 41444651134 used the same Node 26.13.0. The failed job was rerun. No diagnosis is asserted.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"59a7d7755c55e92e07bb432eb9d8811dcf9e1617537fe7d1b0684f5aa08ed8c6","input_sha256":"5faf6bc40a81bd2ffdeedcfaad62478281c5dca1f57b8858888e938e37f81b10","kind":"mutation-receipt","operation":"15b298f484ccb1cd60603836002f0a992bb0ce3e6ae40f60641603b046b47f9a","options":{"section":null},"request_id_sha256":null,"results":["f-20261011-03"],"target":"f-20261011-03","v":1} -->
+
 ---
 
 ## 2026-10-11 — filed through the inbox spool
