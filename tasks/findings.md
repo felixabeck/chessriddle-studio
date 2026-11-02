@@ -20474,3 +20474,17 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 
 Verification hook for the fix (from the notation-hierarchy build review, 2026-11-01): `e2e/notation-hierarchy.spec.ts` project `notation-hierarchy-scaled` (playwright.config.ts) runs the notation overflow check at 200% font scale in a 1000x1100 window only, because at 720px height this defect leaves no rows to measure. When this is fixed, move that project to the 320x720 / 200% matrix cell so the variation-block indent and guide lines are also checked for horizontal overflow at the narrowest width (review-tests diff round 1 finding #1, deferred here).
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"21aeebc2277c7bd9c075e6db551e59785da596d1151849ad554d5642efef2d44","input_sha256":"d17fda10dac905f02ae1434b47c740b0f32fe04004d29bbc07fd4678ef90c182","kind":"mutation-receipt","operation":"f5a56945b3c1775acabd8d19be9859eb69fce2ff0c84396ce18267a7733f3301","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-32"],"target":"f-20261101-32","v":1} -->
+
+---
+
+## 2026-11-02 — filed through the inbox spool
+
+### notation-hierarchy table-view snapshots capture the notation ScrollArea scrollbar mid-fade, red on CI
+
+* **ID:** f-20261102-01 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **Where:** `e2e/notation-hierarchy.spec.ts`, the two `toHaveScreenshot("notation-hierarchy-table-{light,dark}.png")` calls after `showTableView`.
+* **Defect:** CI Test run 41363271938 (master ed45feff, 2026-11-02) failed job `e2e` only on these two snapshots (1965 and 1964 px). The diff is solely the notation ScrollArea's vertical scrollbar: the locally recorded expected image (pinned container) shows the thumb still visible after the scroll to the current move, the CI actual shows it already hidden. Mantine's scrollbar fades after scrolling, so the capture races the fade.
+* **Failure scenario:** every push can turn the required `e2e` job red on these snapshots independent of the tree.
+* **Proof:** CI artifact `frontend-browser-audit` of run 41363271938, `test-results/notation-hierarchy-notatio-*/notation-hierarchy-table-light-{expected,actual,diff}.png` (diff marks only the scrollbar column).
+* **Found by:** Claude Code build session 60051fea-9337-444c-8ec6-3b33ed3c1129 (notation main-line hierarchy build, own pushed defect), 2026-11-02.
