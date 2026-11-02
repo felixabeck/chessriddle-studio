@@ -79,6 +79,7 @@ import {
     getTabFile,
     getTabGameNumber,
     isPersistentGameOrigin,
+    isUnsavedChangesCovered,
     commitNewTab,
     createTab,
     runTabCreation,
@@ -300,6 +301,39 @@ test("getTabGameNumber and persistence follow the game origin kind", () => {
     expect(isPersistentGameOrigin(undefined)).toBe(false);
     expect(isPersistentGameOrigin(fileTab)).toBe(true);
     expect(isPersistentGameOrigin({ ...fileTab, gameOrigin: { kind: "none" } } as Tab)).toBe(false);
+});
+
+test("unsaved-changes coverage is persistent origin or analysis, and ignores dirty", () => {
+    const none = { kind: "none" } as const;
+    const database = {
+        kind: "database" as const,
+        database: { id: { id: "db" }, kind: "database" as const },
+        gameId: 1,
+    };
+    const draft = {
+        kind: "databaseDraft" as const,
+        database: { id: { id: "db" }, kind: "database" as const },
+    };
+    expect(isUnsavedChangesCovered(undefined)).toBe(false);
+    expect(isUnsavedChangesCovered(fileTab)).toBe(true);
+    expect(isUnsavedChangesCovered({ ...fileTab, type: "play", gameOrigin: database } as Tab)).toBe(
+        true,
+    );
+    expect(isUnsavedChangesCovered({ ...fileTab, type: "play", gameOrigin: draft } as Tab)).toBe(
+        true,
+    );
+    expect(isUnsavedChangesCovered({ ...fileTab, type: "analysis", gameOrigin: none } as Tab)).toBe(
+        true,
+    );
+    expect(isUnsavedChangesCovered({ ...fileTab, type: "play", gameOrigin: none } as Tab)).toBe(
+        false,
+    );
+    expect(isUnsavedChangesCovered({ ...fileTab, type: "puzzles", gameOrigin: none } as Tab)).toBe(
+        false,
+    );
+    expect(isUnsavedChangesCovered({ ...fileTab, type: "new", gameOrigin: none } as Tab)).toBe(
+        false,
+    );
 });
 
 test("runTabCreation waits, ignores refusal, reports rejection, and completes admitted tabs", async () => {

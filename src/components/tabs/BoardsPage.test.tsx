@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { getDefaultStore } from "jotai";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { TabTreeStorageStatus } from "@/state/store/tabStorage";
+import type { Tab } from "@/state/workspaceTypes";
 
 const fixtures = vi.hoisted(() => ({
   abortGame: vi.fn(),
@@ -58,7 +59,6 @@ const fixtures = vi.hoisted(() => ({
   nextPromise: null as Promise<void> | null,
   nextReady: false,
   resolveNext: null as (() => void) | null,
-  persistent: false,
   setReportInProgress: vi.fn(),
   setReportOperationId: vi.fn(),
   tabs: [
@@ -68,11 +68,17 @@ const fixtures = vi.hoisted(() => ({
 }));
 
 type TabFixture = {
-  gameOrigin: { kind: "none" };
+  gameOrigin: Tab["gameOrigin"];
   name: string;
   type: "new" | "play" | "analysis" | "puzzles";
   value: string;
   treeKey?: string;
+};
+
+const persistentGameOrigin: Tab["gameOrigin"] = {
+  kind: "database",
+  database: { id: { id: "db" }, kind: "database" },
+  gameId: 1,
 };
 
 function setTreeStatus(status: TabTreeStorageStatus) {
@@ -167,7 +173,6 @@ vi.mock("@/state/persistError", () => ({ reportPersistError: fixtures.reportPers
 vi.mock("@/utils/tabs", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/utils/tabs")>()),
   createTab: fixtures.createTab,
-  isPersistentGameOrigin: () => fixtures.persistent,
 }));
 vi.mock("../files/notifyError", () => ({ notifyUnlessCancelled: fixtures.notifyUnlessCancelled }));
 vi.mock("jotai/utils", async () => {
@@ -360,7 +365,6 @@ beforeEach(() => {
   }
   fixtures.confirm = null;
   fixtures.dirty = false;
-  fixtures.persistent = false;
   fixtures.nextReady = false;
   fixtures.closeHandler = null;
   fixtures.closeReceipt = true;
@@ -1075,8 +1079,17 @@ test("holds close intent through kill and game abort, then removes metadata befo
 });
 
 test("dirty confirmation leaves analysis eligible until discard establishes close intent", async () => {
-  fixtures.persistent = true;
   fixtures.dirty = true;
+  fixtures.tabs = [
+    {
+      value: "current",
+      name: "Current",
+      type: "analysis",
+      gameOrigin: persistentGameOrigin,
+    },
+    { value: "next", name: "Next", type: "new", gameOrigin: { kind: "none" } },
+  ];
+  store.set(tabsAtom, fixtures.tabs);
   await renderPage();
 
   await act(async () => {
@@ -1111,7 +1124,6 @@ test("dirty confirmation leaves analysis eligible until discard establishes clos
 });
 
 test("dirty origin-less analysis tab opens unsaved-changes confirm", async () => {
-  fixtures.persistent = false;
   fixtures.dirty = true;
   fixtures.tabs = [
     { value: "current", name: "Current", type: "analysis", gameOrigin: { kind: "none" } },
@@ -1130,7 +1142,6 @@ test("dirty origin-less analysis tab opens unsaved-changes confirm", async () =>
 });
 
 test("clean origin-less analysis tab closes without confirm", async () => {
-  fixtures.persistent = false;
   fixtures.dirty = false;
   fixtures.tabs = [
     { value: "current", name: "Current", type: "analysis", gameOrigin: { kind: "none" } },
@@ -1151,7 +1162,6 @@ test("clean origin-less analysis tab closes without confirm", async () => {
 test.each(["play", "puzzles"] as const)(
   "dirty origin-less %s tab closes without confirm",
   async (type) => {
-    fixtures.persistent = false;
     fixtures.dirty = true;
     fixtures.tabs = [
       { value: "current", name: "Current", type, gameOrigin: { kind: "none" } },

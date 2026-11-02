@@ -131,9 +131,15 @@ test("macOS tree has Application/Edit, no File Exit, no Help About", () => {
     expect(option(groups, "Menu.Help", "clear_saved_data").action).toBe(actions.clearSavedData);
     expect(option(groups, "Menu.Help", "logs").action).toBe(actions.openLogs);
     const hide = groups[0].options.find((item) => "item" in item && item.item === "Hide");
-    const quit = groups[0].options.find((item) => "item" in item && item.item === "Quit");
+    const quit = option(groups, "Menu.Application.Menu", "quit");
     expect(hide).toBeDefined();
-    expect(quit).toBeDefined();
+    expect(quit.shortcut).toBe("cmd+q");
+    expect(quit.action).toBe(actions.exit);
+    expect(
+        groups.some((group) =>
+            group.options.some((item) => "item" in item && item.item === "Quit"),
+        ),
+    ).toBe(false);
     expect(option(groups, "Menu.View", "toggle_fullscreen").shortcut).toBe("Ctrl+Cmd+F");
 });
 

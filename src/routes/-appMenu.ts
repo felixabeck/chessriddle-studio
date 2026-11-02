@@ -93,7 +93,9 @@ export function buildAppMenuTree(args: {
                 label: t("Menu.Application.Quit", {
                     defaultValue: t("Menu.File.Exit"),
                 }),
-                item: "Quit",
+                id: "quit",
+                shortcut: "cmd+q",
+                action: callbacks.exit,
             },
         ],
     };

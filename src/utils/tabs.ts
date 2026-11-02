@@ -67,6 +67,12 @@ export function isPersistentGameOrigin(tab?: Tab | null): boolean {
     return tab.gameOrigin.kind !== "none";
 }
 
+/** Coverage only: persistent origin, or an analysis tab of any origin. Does not read dirty. */
+export function isUnsavedChangesCovered(tab?: Tab | null): boolean {
+    if (!tab) return false;
+    return isPersistentGameOrigin(tab) || tab.type === "analysis";
+}
+
 export const genID = newWorkspaceId;
 
 export type SetTabs = (

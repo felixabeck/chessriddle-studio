@@ -450,45 +450,59 @@ export class TabStorageRepository {
         return this.readTreeValue(tabId, requireExisting, true);
     }
 
+    /**
+     * Read-only tree inspection: pending frame first, no migration write, getStatus unchanged.
+     * Unreadable and unavailable stay distinct from absent; requireExisting treats a missing key
+     * as unavailable.
+     */
+    inspectTree(tabId: string, requireExisting = false): TabTreeReadResult {
+        return this.readTreeValue(tabId, requireExisting, false, false);
+    }
+
     private readTreeValue(
         tabId: string,
         requireExisting: boolean,
         migrate: boolean,
+        recordStatus = true,
     ): TabTreeReadResult {
+        const finish = (result: TabTreeReadResult): TabTreeReadResult => {
+            if (recordStatus) {
+                this.setReadStatus(
+                    tabId,
+                    result.kind === "available" ? { kind: "available" } : result,
+                );
+            }
+            return result;
+        };
+
         const pending = this.pending.get(tabId);
         if (pending) {
-            this.setReadStatus(tabId, { kind: "available" });
-            return { kind: "available", value: pending };
+            return finish({ kind: "available", value: pending });
         }
         if (NON_TREE_SESSION_KEYS.has(tabId)) {
-            this.setReadStatus(tabId, { kind: "absent" });
-            return { kind: "absent" };
+            return finish({ kind: "absent" });
         }
 
         let raw: string | null;
         try {
             raw = sessionStorage.getItem(tabId);
         } catch (error) {
-            const result: TabTreeReadResult = { kind: "unavailable", error };
-            this.setReadStatus(tabId, result);
-            return result;
+            return finish({ kind: "unavailable", error });
         }
         if (raw === null) {
-            const result: TabTreeReadResult = requireExisting
-                ? {
-                      kind: "unavailable",
-                      error: new Error("The referenced game tree is missing."),
-                  }
-                : { kind: "absent" };
-            this.setReadStatus(tabId, result);
-            return result;
+            return finish(
+                requireExisting
+                    ? {
+                          kind: "unavailable",
+                          error: new Error("The referenced game tree is missing."),
+                      }
+                    : { kind: "absent" },
+            );
         }
 
         const decoded = decodeLegacyOrCompressed(raw);
         if (!decoded) {
-            const result: TabTreeReadResult = { kind: "unreadable", rawValue: raw };
-            this.setReadStatus(tabId, result);
-            return result;
+            return finish({ kind: "unreadable", rawValue: raw });
         }
 
         // Both an old uncompressed JSON payload and a former v0 envelope are
@@ -500,8 +514,7 @@ export class TabStorageRepository {
                 warnSafely(`Could not migrate tree storage ${tabId}: ${String(error)}`);
             }
         }
-        this.setReadStatus(tabId, { kind: "available" });
-        return { kind: "available", value: decoded };
+        return finish({ kind: "available", value: decoded });
     }
 
     getStatus(tabId: string): TabTreeStorageStatus {

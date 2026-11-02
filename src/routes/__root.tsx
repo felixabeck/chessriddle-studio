@@ -2,9 +2,8 @@ import { AppShell } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { createRootRouteWithContext, Outlet, useNavigate } from "@tanstack/react-router";
 import { ask, Menu, MenuItem, PredefinedMenuItem, Submenu } from "@/platform/native";
-import { getCurrentWindow } from "@/platform/native";
-import { platform } from "@/platform/native";
-import { exit } from "@/platform/native";
+import { exit, getCurrentWebviewWindow, getCurrentWindow, platform } from "@/platform/native";
+import { logFailureSafely, warnSafely } from "@/platform/errors";
 import { tauri, tauriSubscriptions } from "@/platform/tauri";
 import { useAtom, useAtomValue, useStore as useJotaiStore } from "jotai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -14,8 +13,17 @@ import AboutModal from "@/components/About";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { SideBar } from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
+import QuitConfirmModal from "@/components/tabs/QuitConfirmModal";
 import i18n from "@/i18n";
 import { nativeBarAtom, tabsAtom } from "@/state/atoms";
+import {
+  cancelQuitGate,
+  quitWithoutSaving,
+  registerQuitCloseListener,
+  runQuitGate,
+  type BlockingTab,
+  type QuitGateHost,
+} from "@/state/quitGate";
 import { startFileRevisionPoll } from "@/state/fileFreshness";
 import { keyMapAtom } from "@/state/keybinds";
 import { initializePathOwners, startupLegacyDeckScanComplete } from "@/state/pathOwners";
@@ -188,9 +196,56 @@ function RootLayout() {
 
   const [keyMap] = useAtom(keyMapAtom);
   const [opened, setOpened] = useState(false);
+  const [quitDialog, setQuitDialog] = useState<{
+    failClosed: boolean;
+    tabs: BlockingTab[];
+  } | null>(null);
   const isMacOS = platform() === "macos";
+  const quitHostRef = useRef<QuitGateHost | null>(null);
 
   useEffect(() => startRootFileFreshnessPoll(() => jotaiStore.get(tabsAtom)), [jotaiStore]);
+
+  const notifyQuitError = useCallback(
+    (error: unknown) => {
+      notifyUnlessCancelled(t("Common.Error"), error);
+    },
+    [t],
+  );
+
+  quitHostRef.current = {
+    getTabs: () => jotaiStore.get(tabsAtom),
+    openDialog: (state) => {
+      setQuitDialog(state);
+      return true;
+    },
+    destroyWindow: () => getCurrentWebviewWindow().destroy(),
+    exitProcess: (code) => exit(code),
+    notify: notifyQuitError,
+    log: (message) =>
+      logFailureSafely(
+        message,
+        { operation: "window-destroy", primaryFailure: { category: "unexpected", message } },
+        "window-destroy",
+      ),
+    warn: warnSafely,
+  };
+
+  const requestQuit = useCallback(() => {
+    const current = quitHostRef.current;
+    if (!current) return Promise.resolve();
+    return runQuitGate(current);
+  }, []);
+
+  useEffect(() => {
+    const appWindow = getCurrentWebviewWindow();
+    return registerQuitCloseListener({
+      subscribe: (handler) => appWindow.onCloseRequested(handler),
+      onCloseRequested: () => requestQuit(),
+      notify: notifyQuitError,
+      warn: warnSafely,
+      failureMessage: t("Common.QuitListenerFailed"),
+    });
+  }, [notifyQuitError, requestQuit, t]);
 
   const menuCallbacks: AppMenuCallbacks = useMemo(
     () =>
@@ -200,7 +255,7 @@ function RootLayout() {
         createNewTab,
         openNewFile,
         openSettings,
-        exit: () => exit(0),
+        exit: () => requestQuit(),
         reload: () => location.reload(),
         toggleFullscreen,
         documentation: () => tauri.openDocumentation(),
@@ -226,7 +281,7 @@ function RootLayout() {
         openLogs: () => tauri.openAppLog(),
         openLogsSuccessMessage: t("Menu.Help.OpenLogs"),
       }),
-    [createNewTab, openNewFile, openSettings, runMenu, t, toggleFullscreen],
+    [createNewTab, openNewFile, openSettings, requestQuit, runMenu, t, toggleFullscreen],
   );
 
   useHotkeys(keyMap.NEW_TAB.keys, () => {
@@ -299,6 +354,18 @@ function RootLayout() {
       }}
     >
       <AboutModal opened={opened} setOpened={setOpened} />
+      <QuitConfirmModal
+        opened={quitDialog !== null}
+        failClosed={quitDialog?.failClosed ?? false}
+        tabs={quitDialog?.tabs ?? []}
+        onCancel={() => {
+          setQuitDialog(null);
+          cancelQuitGate();
+        }}
+        onQuitWithoutSaving={() => {
+          void quitWithoutSaving();
+        }}
+      />
       {showTopBar && (
         <AppShell.Header>
           <TopBar menuActions={menuActions} showWindowControls={showWindowControls} />

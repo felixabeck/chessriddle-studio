@@ -28,7 +28,13 @@ vi.mock("@/platform/native", () => ({
   Submenu: {},
   ask: vi.fn(),
   exit: vi.fn(),
+  error: vi.fn().mockResolvedValue(undefined),
+  warn: vi.fn().mockResolvedValue(undefined),
   getCurrentWindow: vi.fn(),
+  getCurrentWebviewWindow: vi.fn(() => ({
+    destroy: vi.fn(),
+    onCloseRequested: async () => () => undefined,
+  })),
   platform: vi.fn(() => "linux"),
 }));
 vi.mock("@/platform/tauri", () => ({
@@ -42,6 +48,7 @@ vi.mock("@/platform/tauri", () => ({
 vi.mock("@/components/About", () => ({ default: () => null }));
 vi.mock("@/components/Sidebar", () => ({ SideBar: () => null }));
 vi.mock("@/components/TopBar", () => ({ default: () => null }));
+vi.mock("@/components/tabs/QuitConfirmModal", () => ({ default: () => null }));
 vi.mock("@/utils/files", () => ({ openFile: vi.fn(), pickPgnFile: vi.fn() }));
 vi.mock("@mantine/core", () => ({ AppShell: {} }));
 vi.mock("@mantine/notifications", () => ({ notifications: { show: vi.fn() } }));

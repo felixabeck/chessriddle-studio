@@ -675,7 +675,7 @@ test("compact title-bar: mouse actions and German popup geometry at 320px / 200%
 }) => {
     await mockScenario({
         commands: {
-            "plugin:process|exit": { result: null },
+            "plugin:window|destroy": { result: null },
             "plugin:window|is_fullscreen": { result: false },
             "plugin:window|set_fullscreen": { result: null },
         },
@@ -687,7 +687,7 @@ test("compact title-bar: mouse actions and German popup geometry at 320px / 200%
     await capture("compact-menu-root");
     await expect(page).toHaveScreenshot("compact-menu-root.png", { fullPage: true });
     for (const [group, action, command] of [
-        ["Datei", "Beenden", "plugin:process|exit"],
+        ["Datei", "Beenden", "plugin:window|destroy"],
         ["Ansicht", "Vollbild F11", "plugin:window|set_fullscreen"],
         ["Hilfe", "Über", null],
     ] as const) {
@@ -726,7 +726,7 @@ test("compact title-bar: all groups and actions by keyboard", async ({
 }) => {
     await mockScenario({
         commands: {
-            "plugin:process|exit": { result: null },
+            "plugin:window|destroy": { result: null },
             "plugin:window|is_fullscreen": { result: false },
             "plugin:window|set_fullscreen": { result: null },
         },
@@ -767,7 +767,7 @@ test("compact title-bar: all groups and actions by keyboard", async ({
             await dialog.getByRole("button", { name: "Dialog schließen" }).click();
         }
     }
-    for (const command of ["plugin:process|exit", "plugin:window|set_fullscreen"]) {
+    for (const command of ["plugin:window|destroy", "plugin:window|set_fullscreen"]) {
         expect(
             await page.evaluate(
                 (value) =>
