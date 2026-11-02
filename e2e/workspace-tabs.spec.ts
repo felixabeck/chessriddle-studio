@@ -21,12 +21,20 @@ test("workspace-tabs: home fills remaining height with reachable recent and due 
     mockScenario,
 }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 1000 });
-    const recents = Array.from({ length: 10 }, (_, i) => ({
+    const recents: unknown[] = Array.from({ length: 9 }, (_, i) => ({
         name: `Recent ${i + 1}`,
         handle: { id: { id: `home-${i}` }, kind: "fileWorkspace" },
         type: i % 3 === 0 ? "repertoire" : "game",
         lastOpened: Date.UTC(2026, 9, 31 - i),
     }));
+    recents.push({
+        kind: "database",
+        name: "White - Black",
+        database: { id: { id: "home-db" }, kind: "database" },
+        gameId: 42,
+        databaseTitle: "Meine Partien",
+        lastOpened: Date.UTC(2026, 9, 20),
+    });
     await page.addInitScript(
         (stored) => localStorage.setItem("recent-files", stored),
         JSON.stringify(recents),
@@ -34,6 +42,13 @@ test("workspace-tabs: home fills remaining height with reachable recent and due 
     await mockScenario({
         commands: {
             count_pgn_games: { result: 1 },
+            get_db_game: {
+                error: {
+                    tag: "backend-error",
+                    category: "database",
+                    message: "Database unavailable",
+                },
+            },
             load_practice_deck: {
                 result: {
                     positionsDocument: JSON.stringify({

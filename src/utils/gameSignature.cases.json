@@ -1,0 +1,15 @@
+[
+  { "value": null, "normal": null, "date": null, "round": null },
+  { "value": "", "normal": null, "date": null, "round": null },
+  { "value": "?", "normal": null, "date": null, "round": null },
+  { "value": "Unknown", "normal": null, "date": "Unknown", "round": "Unknown" },
+  { "value": "????.??.??", "normal": "????.??.??", "date": null, "round": "????.??.??" },
+  { "value": "2026.10.01", "normal": "2026.10.01", "date": "2026.10.01", "round": "2026.10.01" },
+  { "value": " ? ", "normal": " ? ", "date": " ? ", "round": " ? " },
+  {
+    "value": "Cup \\\"A\\\"",
+    "normal": "Cup \\\"A\\\"",
+    "date": "Cup \\\"A\\\"",
+    "round": "Cup \\\"A\\\""
+  }
+]

@@ -1,13 +1,13 @@
 import { Text } from "@mantine/core";
 import { useNavigate } from "@tanstack/react-router";
-import { useAtom } from "jotai";
+import { useAtom, useSetAtom } from "jotai";
 import { DataTable } from "mantine-datatable";
 import { memo, useEffect, useState } from "react";
 import type { DatabaseHandle, NormalizedGame } from "@/bindings";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
-import { tabsAtom } from "@/state/atoms";
-import { createTab, runTabCreation } from "@/utils/tabs";
-import { databaseGameSeed } from "@/utils/databaseGame";
+import { addRecentFileAtom, tabsAtom } from "@/state/atoms";
+import { runTabCreation } from "@/utils/tabs";
+import { openDatabaseGame } from "@/utils/databaseGame";
 import { useTranslation } from "react-i18next";
 
 function GamesTable({
@@ -20,6 +20,7 @@ function GamesTable({
   databasePath?: DatabaseHandle | null;
 }) {
   const [, setTabs] = useAtom(tabsAtom);
+  const addRecentFile = useSetAtom(addRecentFileAtom);
   const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const filteredGames = games.slice((page - 1) * 20, page * 20);
@@ -43,10 +44,7 @@ function GamesTable({
         const game = e.record;
         void runTabCreation({
           create: () =>
-            createTab({
-              ...databaseGameSeed(game, databasePath),
-              setTabs,
-            }),
+            openDatabaseGame({ game: game, database: databasePath, setTabs, addRecentFile }),
           onSuccess: () => navigate({ to: "/" }),
           onError: (error) => notifyUnlessCancelled(t("Common.Error"), error),
         });

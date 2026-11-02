@@ -5,7 +5,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { NormalizedGame } from "@/bindings";
-import { tabsAtom } from "@/state/atoms";
+import { tabsAtom, recentFilesAtom } from "@/state/atoms";
 import { activeDatabaseViewStore } from "@/state/store/database";
 import { tabStorage } from "@/state/store/tabStorage";
 import { defaultTree } from "@/utils/treeReducer";
@@ -222,6 +222,9 @@ test("single click previews, labelled button admits the selected content and dat
   expect(row(1).getAttribute("aria-selected")).toBe("true");
   expect(host.textContent).toContain(games[1].moves);
   await act(async () => openButton().click());
+  expect(jotai.get(recentFilesAtom)).toEqual([
+    expect.objectContaining({ kind: "database", database: file, gameId: 22, name: "Second - B" }),
+  ]);
   expect(mocks.parsePGN).toHaveBeenCalledWith(games[1].moves, games[1].fen);
   expect(seed).toHaveBeenCalledWith(
     expect.any(String),

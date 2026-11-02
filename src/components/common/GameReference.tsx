@@ -11,17 +11,17 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
-import { closingTabsAtom, tabsAtom } from "@/state/atoms";
+import { closingTabsAtom, addRecentFileAtom, tabsAtom } from "@/state/atoms";
 import { getCachedTreeStore } from "@/state/store/tree";
 import { useOwnerTab } from "@/state/tabScope";
-import { databaseGameSeed } from "@/utils/databaseGame";
+import { openDatabaseGame } from "@/utils/databaseGame";
 import {
   lookupGameReference,
   type GameReference,
   type ReferenceOccurrence,
   type ReferenceSearch,
 } from "@/utils/gameReferences";
-import { createTab, getTabTreeKey, runTabCreation, sameTabOwner } from "@/utils/tabs";
+import { getTabTreeKey, runTabCreation, sameTabOwner } from "@/utils/tabs";
 import { OpenGameButton, useGameOpen } from "./gameOpen";
 import { AppModal } from "./AppModal";
 import { TreeStateContext } from "./TreeStateContext";
@@ -35,6 +35,7 @@ export function GameReferenceProvider({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const setTabs = useSetAtom(tabsAtom);
+  const addRecentFile = useSetAtom(addRecentFileAtom);
   const workspace = useStore();
   const store = useContext(TreeStateContext)!;
   const [ownerTab] = useOwnerTab();
@@ -49,7 +50,12 @@ export function GameReferenceProvider({ children }: { children: ReactNode }) {
     (occurrence: ReferenceOccurrence) =>
       runTabCreation({
         create: () =>
-          createTab({ ...databaseGameSeed(occurrence.game, occurrence.database), setTabs }),
+          openDatabaseGame({
+            game: occurrence.game,
+            database: occurrence.database,
+            setTabs,
+            addRecentFile,
+          }),
         onSuccess: () => navigate({ to: "/" }),
         onError: reportError,
       }),

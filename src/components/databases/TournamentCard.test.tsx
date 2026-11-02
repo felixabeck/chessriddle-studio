@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getTournamentGames: vi.fn(),
   notify: vi.fn(),
   createTab: vi.fn(async (_args: { gameOrigin?: { linked?: unknown } }) => "opened"),
+  addRecentFile: vi.fn(),
   navigate: vi.fn(),
 }));
 vi.mock("@/utils/db", () => ({ getTournamentGames: mocks.getTournamentGames }));
@@ -16,16 +17,21 @@ vi.mock("@/components/files/notifyError", () => ({ notifyUnlessCancelled: mocks.
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("zustand", () => ({
   useStore: (_store: unknown, selector: (state: unknown) => unknown) =>
-    selector({ tournaments: { activeTab: "games" }, setTournamentsActiveTab: vi.fn() }),
+    selector({
+      database: { title: "Candidates database" },
+      tournaments: { activeTab: "games" },
+      setTournamentsActiveTab: vi.fn(),
+    }),
 }));
 vi.mock("jotai", () => ({
   useAtom: () => [[], vi.fn()],
-  useSetAtom: () => vi.fn(),
+  useSetAtom: () => mocks.addRecentFile,
   useStore: () => ({ get: vi.fn() }),
 }));
 vi.mock("@/state/atoms", () => ({
   activeTabAtom: {},
   tabsAtom: {},
+  addRecentFileAtom: {},
   closingTabsAtom: {},
   initializeWorkspace: vi.fn(),
   reclaimTabLocalState: vi.fn(),
@@ -329,6 +335,15 @@ async function openTournamentGame(game: NormalizedGame) {
 test("opening a linked tournament game carries the qualified locator through the shared seed", async () => {
   const game = tournamentGame(locator);
   const database = await openTournamentGame(game);
+  expect(mocks.addRecentFile).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({
+      kind: "database",
+      database,
+      gameId: game.id,
+      databaseTitle: "Candidates database",
+      linked: expect.objectContaining({ locator }),
+    }),
+  );
   expect(mocks.createTab).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({
       tab: { name: "White 11 - Black 111", type: "analysis" },

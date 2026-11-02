@@ -1,6 +1,40 @@
 import type { DatabaseHandle, NormalizedGame } from "@/bindings";
 import { decodePgnTagValue } from "./chess";
-import type { createTab } from "./tabs";
+import { createTab } from "./tabs";
+import type { RecentEntryInput } from "@/state/recentFiles";
+import { gameSignature } from "./gameSignature";
+export { gameSignature, normalizeGameSignature } from "./gameSignature";
+
+/** Record only games whose tab has passed admission. Online games have no database owner. */
+export async function openDatabaseGame({
+    game,
+    database,
+    databaseTitle,
+    setTabs,
+    addRecentFile,
+}: {
+    game: NormalizedGame;
+    database?: DatabaseHandle | null;
+    databaseTitle?: string;
+    setTabs: Parameters<typeof createTab>[0]["setTabs"];
+    addRecentFile: (entry: RecentEntryInput) => void;
+}) {
+    const seed = databaseGameSeed(game, database);
+    const id = await createTab({ ...seed, setTabs });
+    if (id !== null && database) {
+        addRecentFile({
+            kind: "database",
+            name: seed.tab.name,
+            database,
+            gameId: game.id,
+            ...(databaseTitle === undefined ? {} : { databaseTitle }),
+            ...(game.linked
+                ? { linked: { locator: game.linked, signature: gameSignature(game) } }
+                : {}),
+        });
+    }
+    return id;
+}
 
 /** Keep all headers and the qualified linked occurrence on every database opening path. */
 export function databaseGameSeed(

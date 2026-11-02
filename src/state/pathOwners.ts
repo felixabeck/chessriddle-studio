@@ -2,6 +2,7 @@ import equal from "fast-deep-equal";
 import { z } from "zod";
 import type { PathOwnerFamily, PathRef, StartupPathOwners } from "@/bindings";
 import { tauri } from "@/platform/tauri";
+import { isDatabaseRecent, recentFileSchema } from "./recentFiles";
 import { decodeCompressedOrJson } from "./store/debouncedStorage";
 import {
     EXPANDED_DIRECTORIES_STORAGE_KEY,
@@ -110,10 +111,10 @@ function collectOriginalSnapshots(local?: Storage, session?: Storage): OriginalO
     trust("fileWorkspace", fileWorkspaceReadable);
     trust(
         "recentFiles",
-        collectOne(
-            readJson(local, "recent-files"),
-            z.array(z.object({ handle: fileWorkspaceHandleSchema }).passthrough()),
-            (values) => values.forEach(({ handle }) => ids.add(pathRefKey(handle.id))),
+        collectOne(readJson(local, "recent-files"), z.array(recentFileSchema), (values) =>
+            values.forEach((entry) =>
+                ids.add(pathRefKey(isDatabaseRecent(entry) ? entry.database.id : entry.handle.id)),
+            ),
         ),
     );
     trust(

@@ -14,7 +14,7 @@ import { useHotkeys } from "@mantine/hooks";
 import { EllipsisVertical } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import dayjs from "dayjs";
-import { useAtom } from "jotai";
+import { useAtom, useSetAtom } from "jotai";
 import { DataTable } from "mantine-datatable";
 import { useContext } from "react";
 import { useTranslation } from "react-i18next";
@@ -25,10 +25,10 @@ import { IconAction } from "@/components/common/IconAction";
 import { gameRowActivation, useGameOpen } from "@/components/common/gameOpen";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
-import { tabsAtom } from "@/state/atoms";
+import { addRecentFileAtom, tabsAtom } from "@/state/atoms";
 import { ELO_FILTER_MAX, query_games } from "@/utils/db";
-import { createTab, runTabCreation } from "@/utils/tabs";
-import { databaseGameSeed } from "@/utils/databaseGame";
+import { runTabCreation } from "@/utils/tabs";
+import { openDatabaseGame } from "@/utils/databaseGame";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
 import GameCard from "./GameCard";
 import GridLayout from "./GridLayout";
@@ -41,6 +41,7 @@ import classes from "./styles.module.css";
 function GameTable() {
   const { t } = useTranslation();
   const store = useContext(DatabaseViewStateContext)!;
+  const databaseTitle = useStore(store, (s) => s.database?.title);
 
   const file = useStore(store, (s) => s.database?.file)!;
   const query = useStore(store, (s) => s.games.query);
@@ -55,6 +56,7 @@ function GameTable() {
   const navigate = useNavigate();
 
   const [, setTabs] = useAtom(tabsAtom);
+  const addRecentFile = useSetAtom(addRecentFileAtom);
 
   const requestKey = generation
     ? (["games", file, query, generation] as const)
@@ -71,9 +73,12 @@ function GameTable() {
     (record: NormalizedGame) =>
       runTabCreation({
         create: () =>
-          createTab({
-            ...databaseGameSeed(record, file),
+          openDatabaseGame({
+            game: record,
+            database: file,
             setTabs,
+            addRecentFile,
+            databaseTitle: databaseTitle,
           }),
         onSuccess: () => navigate({ to: "/" }),
         onError: reportOpenError,

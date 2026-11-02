@@ -120,6 +120,7 @@ type NativeReadCommandName =
     | "getPlayersGameInfo"
     | "preloadReferenceDb"
     | "getGames"
+    | "getDbGame"
     | "getPlayers"
     | "getTournaments"
     | "listWorkspaceDatabases"
@@ -163,6 +164,7 @@ const NATIVE_READ_ARITY: Readonly<Record<NativeReadCommandName, number>> = {
     getPlayersGameInfo: 3,
     preloadReferenceDb: 1,
     getGames: 2,
+    getDbGame: 3,
     getPlayers: 2,
     getTournaments: 2,
     listWorkspaceDatabases: 1,

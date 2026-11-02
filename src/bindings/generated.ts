@@ -1096,6 +1096,14 @@ async getGames(file: DatabaseHandle, query: GameQuery, ticket: string | null) : 
     else return { status: "error", error: e  as any };
 }
 },
+async getDbGame(file: DatabaseHandle, gameId: number, linked: LinkedGameIdentity | null, ticket: string | null) : Promise<Result<DbGameLookup, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_db_game", { file, gameId, linked, ticket }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getLatestGameTimestamp(file: DatabaseHandle) : Promise<Result<number | null, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_latest_game_timestamp", { file }) };
@@ -1348,6 +1356,7 @@ export type DatabaseListing = { entries: DatabaseDescriptor[]; unread: DatabaseU
 export type DatabaseRootHandle = { id: PathRef; kind: DatabaseRootHandleKind }
 export type DatabaseRootHandleKind = "databaseRoot"
 export type DatabaseUnread = { filename: string; category: ErrorCategory }
+export type DbGameLookup = { kind: "found"; game: NormalizedGame } | { kind: "missing" }
 export type DrawReason = "stalemate" | "insufficientMaterial" | "threefoldRepetition" | "fiftyMoveRule" | "agreement"
 export type DurabilityStage = "ArchiveCommitMarker" | "ArchiveReservationJournal" | "DatabasePgnReplacement" | "DirectoryInstall" | "DownloadTargetReplacement" | "NativeExport" | "OldDirectoryCleanup" | "OldDirectoryCleanupSync" | "PgnEdit" | "PgnCacheInvalidation" | "CollectionIndexRefresh" | "PgnCapabilityRebind" | "RegistryReplacement" | "SearchIndexReplacement" | "WorkspaceDirectoryCreation" | "WorkspacePgnCreation" | "WorkspaceRemoval" | "WorkspaceRename" | "WorkspaceSidecarCreation" | "WorkspaceSidecarReplacement" | "PracticePositions" | "PracticeReviewShard" | "PracticeState"
 /**
@@ -1428,6 +1437,7 @@ export type GameOmission = "tooLarge"
 export type GameOverEvent = { gameId: string; session: bigint; revision: bigint; result: GameResult; moves: GameMove[] }
 export type GameQuery = { options?: QueryOptions<GameSort> | null; player1?: number | null; player2?: number | null; tournament_id?: number | null; start_date?: string | null; end_date?: string | null; range1?: [number, number] | null; range2?: [number, number] | null; sides?: Sides | null; outcome?: string | null; position?: PositionQueryJs | null; wanted_result?: string | null; exclude_fast_events?: boolean | null }
 export type GameResult = { type: "whiteWins"; reason: GameEndReason } | { type: "blackWins"; reason: GameEndReason } | { type: "draw"; reason: DrawReason } | { type: "interrupted"; reason: GameInterruptionReason; snapshot?: EngineTerminalSnapshot | null }
+export type GameSignature = { white: string | null; black: string | null; event: string | null; site: string | null; date: string | null; round: string | null }
 export type GameSort = "id" | "date" | "whiteElo" | "blackElo" | "ply_count"
 export type GameState = { gameId: string; session: bigint; revision: bigint; status: GameStatus; initialFen: string; moves: GameMove[]; currentFen: string; ply: number; turn: string; whiteTime: bigint | null; blackTime: bigint | null; whitePlayer: string; blackPlayer: string }
 export type GameStatus = "playing" | { finished: { result: GameResult } }
@@ -1439,6 +1449,7 @@ export type LichessAccountRemoval = { state: "not_found" } | { state: "removed";
 export type LichessAccountStoreResult = { account: LichessAccountMetadata; durability_uncertain: boolean }
 export type LichessExplorerEndpoint = "lichess" | "masters" | "player"
 export type LichessRevocationOutcome = "revoked" | "already_invalid" | "unreachable" | "rate_limited" | "rejected"
+export type LinkedGameIdentity = { locator: LinkedGameLocator; signature: GameSignature }
 export type LinkedGameLocator = { collection: string; generation: string; ordinal: number; stamp: string }
 export type MigrationChoice = "pgn" | "database" | "decline"
 export type MoveAnalysis = { best: BestMoves[]; novelty: boolean; is_sacrifice: boolean }

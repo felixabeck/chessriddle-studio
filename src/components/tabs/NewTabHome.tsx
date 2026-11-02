@@ -14,10 +14,21 @@ import {
   Tooltip,
   UnstyledButton,
 } from "@mantine/core";
-import { atom, useAtom } from "jotai";
+import { atom, useAtom, useSetAtom } from "jotai";
+import equal from "fast-deep-equal";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PracticeDeckValue } from "@/state/practiceStorage";
-import { deckAtomFamily, type RecentFile, recentFilesAtom, tabsAtom } from "@/state/atoms";
+import {
+  addRecentFileAtom,
+  updateRecentFilesAtom,
+  isDatabaseRecent,
+  recentFileKey,
+  deckAtomFamily,
+  type RecentFile,
+  recentFilesAtom,
+  tabsAtom,
+} from "@/state/atoms";
+import { gameSignature, openDatabaseGame } from "@/utils/databaseGame";
 import type { Tab } from "@/utils/tabs";
 import { openFile } from "@/utils/files";
 import CreateRepertoireModal from "./CreateRepertoireModal";
@@ -94,12 +105,21 @@ function RecentFileRow({
       <Group justify="space-between" wrap="nowrap">
         <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
           <Box style={{ flexShrink: 0, color: "var(--mantine-color-dimmed)" }}>
-            <FileIcon type={file.type} size={20} />
+            <FileIcon type={isDatabaseRecent(file) ? "game" : file.type} size={20} />
           </Box>
-          <Text size="sm" truncate fw={500}>
-            {displayName}
-          </Text>
-          {file.type === "repertoire" && <RecentFileDuePositions count={count} />}
+          <Box style={{ minWidth: 0 }}>
+            <Text size="sm" truncate fw={500}>
+              {displayName}
+            </Text>
+            {isDatabaseRecent(file) && file.databaseTitle && (
+              <Text size="xs" c="dimmed" truncate>
+                {file.databaseTitle}
+              </Text>
+            )}
+          </Box>
+          {!isDatabaseRecent(file) && file.type === "repertoire" && (
+            <RecentFileDuePositions count={count} />
+          )}
         </Group>
         <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
           <Tooltip label={dayjs(file.lastOpened).format(recentFileDateFormat)}>
@@ -124,11 +144,16 @@ export default function NewTabHome({ id }: { id: string }) {
   const [, setTabs] = useAtom(tabsAtom);
 
   const [recentFiles, setRecentFiles] = useAtom(recentFilesAtom);
+  const addRecentFile = useSetAtom(addRecentFileAtom);
+  const updateRecentFiles = useSetAtom(updateRecentFilesAtom);
   const deckRowsAtom = useMemo(
     () =>
       atom((get) =>
         recentFiles
-          .filter((file) => file.type === "repertoire")
+          .filter(
+            (file): file is Extract<RecentFile, { handle: unknown }> =>
+              !isDatabaseRecent(file) && file.type === "repertoire",
+          )
           .map((file) => {
             const deck = get(deckAtomFamily({ file: fileWorkspaceKey(file.handle), game: 0 }));
             const failed =
@@ -155,16 +180,43 @@ export default function NewTabHome({ id }: { id: string }) {
       const checkedRecentFiles = await Promise.all(
         recentFiles.map(async (file) => {
           try {
+            if (isDatabaseRecent(file)) {
+              const result = await tauri.getDbGame(
+                file.database,
+                file.gameId,
+                file.linked ?? null,
+                { signal: controller.signal },
+              );
+              if (result.kind === "missing") return null;
+              const linked = result.game.linked
+                ? { locator: result.game.linked, signature: gameSignature(result.game) }
+                : undefined;
+              if (result.game.id !== file.gameId || !equal(linked, file.linked)) {
+                return { ...file, gameId: result.game.id, linked };
+              }
+              return file;
+            }
             await tauri.countPgnGames(file.handle, { signal: controller.signal });
             return file;
           } catch (cause) {
-            return normalizeError(cause).category === "not-found" ? null : file;
+            return !isDatabaseRecent(file) && normalizeError(cause).category === "not-found"
+              ? null
+              : file;
           }
         }),
       );
-      const filtered = checkedRecentFiles.filter((file): file is RecentFile => file !== null);
-      if (!cancelled && !controller.signal.aborted && filtered.length !== recentFiles.length) {
-        setRecentFiles(filtered);
+      if (
+        !cancelled &&
+        !controller.signal.aborted &&
+        checkedRecentFiles.some((file, i) => file !== recentFiles[i])
+      ) {
+        updateRecentFiles((current) =>
+          current.flatMap((file) => {
+            const index = recentFiles.indexOf(file);
+            const checked = index < 0 ? file : checkedRecentFiles[index];
+            return checked ? [checked] : [];
+          }),
+        );
       }
     };
     void checkFiles();
@@ -172,11 +224,33 @@ export default function NewTabHome({ id }: { id: string }) {
       cancelled = true;
       controller.abort();
     };
-  }, [recentFiles, setRecentFiles]);
+  }, [recentFiles, updateRecentFiles]);
 
   const openRecentFile = useCallback(
     async (file: RecentFile) => {
       try {
+        if (isDatabaseRecent(file)) {
+          const result = await tauri.getDbGame(file.database, file.gameId, file.linked ?? null);
+          if (result.kind === "missing") {
+            setRecentFiles((current) =>
+              current.filter((entry) => recentFileKey(entry) !== recentFileKey(file)),
+            );
+            notifyUnlessCancelled(t("Common.Error"), {
+              category: "not-found",
+              message: t("GameReferences.Missing"),
+            });
+            return;
+          }
+          const tabId = await openDatabaseGame({
+            game: result.game,
+            database: file.database,
+            databaseTitle: file.databaseTitle,
+            setTabs,
+            addRecentFile,
+          });
+          if (tabId !== null) navigate({ to: "/" });
+          return;
+        }
         const numGames = await tauri.countPgnGames(file.handle);
         const tabId = await openFile(
           {
@@ -193,17 +267,15 @@ export default function NewTabHome({ id }: { id: string }) {
         if (tabId === null) return;
         navigate({ to: "/" });
       } catch (cause) {
-        if (normalizeError(cause).category === "not-found") {
+        if (!isDatabaseRecent(file) && normalizeError(cause).category === "not-found") {
           setRecentFiles((current) =>
-            current.filter(
-              (entry) => fileWorkspaceKey(entry.handle) !== fileWorkspaceKey(file.handle),
-            ),
+            current.filter((entry) => recentFileKey(entry) !== recentFileKey(file)),
           );
         }
         notifyUnlessCancelled(t("Common.Error"), cause);
       }
     },
-    [setTabs, setRecentFiles, navigate, t],
+    [setTabs, setRecentFiles, addRecentFile, navigate, t],
   );
 
   const cards = [
@@ -314,13 +386,11 @@ export default function NewTabHome({ id }: { id: string }) {
                 <Stack gap={2}>
                   {recentFiles.map((file) => (
                     <RecentFileRow
-                      key={fileWorkspaceKey(file.handle)}
+                      key={recentFileKey(file)}
                       file={file}
                       count={
-                        deckRows.find(
-                          (row) =>
-                            fileWorkspaceKey(row.file.handle) === fileWorkspaceKey(file.handle),
-                        )?.count ?? null
+                        deckRows.find((row) => recentFileKey(row.file) === recentFileKey(file))
+                          ?.count ?? null
                       }
                       onOpen={openRecentFile}
                     />

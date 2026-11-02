@@ -63,6 +63,27 @@ beforeEach(() => {
 });
 
 describe("collectOriginalPathOwners", () => {
+    test("mixed recent entries retain database and file capabilities without losing trust", () => {
+        setJson(localStorage, "recent-files", [
+            { name: "File", handle: fileHandle("recent-file"), type: "game", lastOpened: 1 },
+            {
+                kind: "database",
+                name: "White - Black",
+                database: databaseHandle("recent-db"),
+                gameId: 42,
+                lastOpened: 2,
+            },
+        ]);
+        const owners = collectOriginalPathOwners();
+        expect(owners.retainedIds).toEqual(
+            expect.arrayContaining([path("recent-file"), path("recent-db")]),
+        );
+        expect(owners.trustedFamilies).toContain("recentFiles");
+        setJson(localStorage, "recent-files", [
+            { kind: "database", database: databaseHandle("recent-db"), gameId: "broken" },
+        ]);
+        expect(collectOriginalPathOwners().trustedFamilies).not.toContain("recentFiles");
+    });
     test.each(["plain", "compressed"])(
         "retains and trusts a %s database-view envelope",
         (encoding) => {
@@ -161,7 +182,9 @@ describe("collectOriginalPathOwners", () => {
         };
         setJson(localStorage, "download-destination-capability", path("download"));
         setJson(localStorage, "file-workspace", fileHandle("workspace"));
-        setJson(localStorage, "recent-files", [{ handle: fileHandle("recent") }]);
+        setJson(localStorage, "recent-files", [
+            { name: "Recent", handle: fileHandle("recent"), type: "game", lastOpened: 1 },
+        ]);
         setJson(localStorage, "reference-database", databaseHandle("reference"));
         setJson(localStorage, "puzzle-db", path("puzzle"));
         setJson(localStorage, "game-opening-book-handle", {

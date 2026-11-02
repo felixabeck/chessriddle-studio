@@ -3,7 +3,7 @@ import { act, startTransition } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { Token, NormalizedGame } from "@/bindings";
-import { tabsAtom, closingTabsAtom, closeWorkspaceTabAtom } from "@/state/atoms";
+import { tabsAtom, recentFilesAtom, closingTabsAtom, closeWorkspaceTabAtom } from "@/state/atoms";
 import { tabStorage } from "@/state/store/tabStorage";
 import {
   closeTreeStore,
@@ -317,6 +317,10 @@ test("a complete names-only citation retains automatic admission", async () => {
 test("a complete unique lookup opens replayable moves, the real FEN, every header and database origin", async () => {
   await render();
   await click();
+  expect(workspace.get(recentFilesAtom)).toEqual([
+    expect.objectContaining({ kind: "database", database, gameId: 8 }),
+  ]);
+  expect(workspace.get(recentFilesAtom)[0]).not.toHaveProperty("databaseTitle");
   expect(mocks.lookup).toHaveBeenCalledWith(
     recognizeGameReferences(label)[0],
     expect.any(AbortSignal),

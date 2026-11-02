@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
     prepareAnalysis: vi.fn(),
     cancelAnalysis: vi.fn(),
     getGames: vi.fn(),
+    getDbGame: vi.fn(),
     countPgnGames: vi.fn(),
     fileRevision: vi.fn(),
     readGame: vi.fn(),
@@ -40,6 +41,27 @@ const mocks = vi.hoisted(() => ({
     windowListen: vi.fn(),
     listeners: new Map<string, (event: any) => void>(),
 }));
+
+test("getDbGame forwards identity as the third argument and owns its abort ticket", async () => {
+    const { tauri } = await import("./tauri");
+    const database = { id: { id: "db" }, kind: "database" } as const;
+    const identity = {
+        locator: {
+            collection: "11111111-1111-4111-8111-111111111111",
+            generation: "old",
+            ordinal: 2,
+            stamp: "a".repeat(64),
+        },
+        signature: { white: "W", black: "B", event: "E", site: null, date: null, round: null },
+    };
+    mocks.getDbGame.mockResolvedValue({ status: "ok", data: { kind: "missing" } });
+    expect(await tauri.getDbGame(database, 42, identity)).toEqual({ kind: "missing" });
+    expect(mocks.getDbGame).toHaveBeenLastCalledWith(database, 42, identity, null);
+    mocks.prepareNativeRead.mockResolvedValue({ status: "ok", data: "recent-ticket" });
+    const controller = new AbortController();
+    await tauri.getDbGame(database, 42, null, { signal: controller.signal });
+    expect(mocks.getDbGame).toHaveBeenLastCalledWith(database, 42, null, "recent-ticket");
+});
 
 vi.mock("./native", () => ({ error: mocks.logError, getCurrentWindow: mocks.getCurrentWindow }));
 
@@ -72,6 +94,7 @@ vi.mock("@/bindings/generated", () => ({
         prepareAnalysis: mocks.prepareAnalysis,
         cancelAnalysis: mocks.cancelAnalysis,
         getGames: mocks.getGames,
+        getDbGame: mocks.getDbGame,
         countPgnGames: mocks.countPgnGames,
         fileRevision: mocks.fileRevision,
         readGame: mocks.readGame,

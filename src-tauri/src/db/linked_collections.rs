@@ -3219,6 +3219,67 @@ struct LocatorRow {
     stamp: String,
 }
 
+/// Match headers within this collection only. Rebuild ids and source positions are not identity.
+pub(super) fn recent_game_id(
+    db: &mut SqliteConnection,
+    file: &DatabaseHandle,
+    authority: &SharedPathAuthority,
+    identity: &LinkedGameIdentity,
+    game_id: i32,
+    cancellation: &CancellationToken,
+) -> Result<Option<i32>, Error> {
+    let Some(service) = authority.collections()? else {
+        return Ok(Some(game_id));
+    };
+    let records = CollectionService::state(&mut *service.lock(cancellation)?)?
+        .records
+        .clone();
+    if !records.iter().any(|record| {
+        record.database.as_ref() == Some(file)
+            && record.id.to_string() == identity.locator.collection
+    }) {
+        return Ok(Some(game_id));
+    }
+    #[derive(QueryableByName)]
+    struct IdRow {
+        #[diesel(sql_type = diesel::sql_types::Integer)]
+        id: i32,
+    }
+    let signature = identity.signature.normalized();
+    let predicate = ["w.Name", "b.Name", "e.Name", "s.Name", "g.Date", "g.Round"]
+        .iter()
+        .enumerate()
+        .map(|(i, column)| {
+            format!(
+                "{} IS ?",
+                GameSignature::normalized_sql(column, i == 4, i < 4)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" AND ");
+    let query = format!(
+        "SELECT g.ID AS id FROM Games g
+        JOIN Players w ON w.ID=g.WhiteID JOIN Players b ON b.ID=g.BlackID
+        JOIN Events e ON e.ID=g.EventID JOIN Sites s ON s.ID=g.SiteID
+        JOIN LinkedSource l ON l.GameID=g.ID WHERE {predicate}
+        ORDER BY (l.Stamp=?) DESC, ABS(CAST(l.Ordinal AS BIGINT)-?), l.Ordinal LIMIT 1"
+    );
+    sqlite_cancellation::with_sqlite_cancellation(cancellation, || {
+        sql_query(query)
+            .bind::<diesel::sql_types::Nullable<Text>, _>(signature.white)
+            .bind::<diesel::sql_types::Nullable<Text>, _>(signature.black)
+            .bind::<diesel::sql_types::Nullable<Text>, _>(signature.event)
+            .bind::<diesel::sql_types::Nullable<Text>, _>(signature.site)
+            .bind::<diesel::sql_types::Nullable<Text>, _>(signature.date)
+            .bind::<diesel::sql_types::Nullable<Text>, _>(signature.round)
+            .bind::<Text, _>(&identity.locator.stamp)
+            .bind::<diesel::sql_types::Integer, _>(identity.locator.ordinal)
+            .get_result::<IdRow>(db)
+            .optional()
+    })
+    .map(|row| row.map(|row| row.id))
+}
+
 pub(super) fn qualify_games(
     db: &mut SqliteConnection,
     file: &DatabaseHandle,

@@ -1,7 +1,7 @@
 import { Paper, Stack, Tabs, Text, useMantineTheme } from "@mantine/core";
 import { Eye } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
-import { useAtom } from "jotai";
+import { useAtom, useSetAtom } from "jotai";
 import { DataTable, type DataTableSortStatus } from "mantine-datatable";
 import { useContext, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -12,11 +12,11 @@ import type { DatabaseHandle, Event, NormalizedGame } from "@/bindings";
 import { IconAction } from "@/components/common/IconAction";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
-import { tabsAtom } from "@/state/atoms";
+import { addRecentFileAtom, tabsAtom } from "@/state/atoms";
 import type { DatabaseViewStore } from "@/state/store/database";
 import { getTournamentGames } from "@/utils/db";
-import { createTab, runTabCreation } from "@/utils/tabs";
-import { databaseGameSeed } from "@/utils/databaseGame";
+import { runTabCreation } from "@/utils/tabs";
+import { openDatabaseGame } from "@/utils/databaseGame";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
 
 const gamePoints = (game: NormalizedGame, player: string) => {
@@ -37,12 +37,14 @@ const gamePoints = (game: NormalizedGame, player: string) => {
 function TournamentCard({ tournament, file }: { tournament: Event; file: DatabaseHandle }) {
   const { t } = useTranslation();
   const store = useContext(DatabaseViewStateContext)!;
+  const databaseTitle = useStore(store, (s) => s.database?.title);
   const tournamentsActiveTab = useStore(store, (s) => s.tournaments.activeTab);
   const setTournamentsActiveTab = useStore(store, (s) => s.setTournamentsActiveTab);
 
   const theme = useMantineTheme();
   const navigate = useNavigate();
   const [, setTabs] = useAtom(tabsAtom);
+  const addRecentFile = useSetAtom(addRecentFileAtom);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const requestKey = ["tournament-games", file, tournament.id] as const;
@@ -163,9 +165,12 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
                       onClick={() => {
                         void runTabCreation({
                           create: () =>
-                            createTab({
-                              ...databaseGameSeed(game, file),
+                            openDatabaseGame({
+                              game: game,
+                              database: file,
                               setTabs,
+                              addRecentFile,
+                              databaseTitle: databaseTitle,
                             }),
                           onSuccess: () => navigate({ to: "/" }),
                           onError: (error) => notifyUnlessCancelled(t("Common.Error"), error),

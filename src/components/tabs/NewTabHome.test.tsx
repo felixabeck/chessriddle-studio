@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { catalogueI18n, shippedCatalogues } from "@/tests/catalogues";
 import type { SupportedLocale } from "@/i18n";
+import type { RecentFile } from "@/state/atoms";
 
 test.each(shippedCatalogues())(
   "new home labels resolve without fallback in $locale",
@@ -31,21 +32,19 @@ const fixtures = vi.hoisted(() => ({
     addRecentFile: Symbol("add-recent-file"),
     deckFamily: Symbol("deck-family"),
     recentFiles: Symbol("recent-files"),
+    updateRecentFiles: Symbol("update-recent-files"),
     tabFamily: Symbol("tab-family"),
     tabs: Symbol("tabs"),
   },
   countPgnGames: vi.fn(),
+  getDbGame: vi.fn(),
+  addRecentFile: vi.fn(),
   createTab: vi.fn(),
   importModal: vi.fn(),
   openFile: vi.fn(),
   notify: vi.fn(),
   readGames: vi.fn(),
-  recentFiles: [] as Array<{
-    name: string;
-    handle: { id: { id: string }; kind: "fileWorkspace" };
-    type: "game" | "repertoire";
-    lastOpened: number;
-  }>,
+  recentFiles: [] as RecentFile[],
   setRecentFiles: vi.fn(),
   setTabs: vi.fn((update) => {
     if (typeof update === "function") {
@@ -66,6 +65,7 @@ import NewTabHome from "./NewTabHome";
 vi.mock("@/platform/tauri", () => ({
   tauri: {
     countPgnGames: fixtures.countPgnGames,
+    getDbGame: fixtures.getDbGame,
     readGames: fixtures.readGames,
   },
 }));
@@ -75,6 +75,12 @@ vi.mock("@/state/atoms", () => ({
   addRecentFileAtom: fixtures.atoms.addRecentFile,
   deckAtomFamily: ({ file }: { file: string }) => ({ file }),
   recentFilesAtom: fixtures.atoms.recentFiles,
+  updateRecentFilesAtom: fixtures.atoms.updateRecentFiles,
+  isDatabaseRecent: (file: RecentFile) => "kind" in file,
+  recentFileKey: (file: RecentFile) =>
+    "kind" in file
+      ? JSON.stringify([file.database.id.id, file.linked?.signature ?? file.gameId])
+      : file.handle.id.id,
   tabFamily: () => fixtures.atoms.tabFamily,
   tabsAtom: fixtures.atoms.tabs,
 }));
@@ -100,7 +106,8 @@ vi.mock("jotai", () => ({
     }
     return [[], vi.fn()];
   },
-  useSetAtom: () => vi.fn(),
+  useSetAtom: (atom: symbol) =>
+    atom === fixtures.atoms.updateRecentFiles ? fixtures.setRecentFiles : fixtures.addRecentFile,
   useStore: () => ({ set: fixtures.storeSet }),
 }));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
@@ -259,7 +266,7 @@ test.each(["ready", "loading", "read-failed", "write-blocked"] as const)(
   "shows nothing due only for fully loaded decks: %s",
   async (status) => {
     fixtures.deckStatus = status;
-    fixtures.recentFiles[0].type = "repertoire";
+    (fixtures.recentFiles[0] as Extract<RecentFile, { handle: unknown }>).type = "repertoire";
     await act(async () => root.render(<NewTabHome id="new-tab" />));
     const panel = container.querySelector("[data-home-due]")!;
     expect(panel.textContent?.includes("Home.DuePractice.NothingDue")).toBe(status === "ready");
@@ -280,7 +287,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 test("treats an error-bearing terminal deck as failed even with retained positions", async () => {
-  fixtures.recentFiles[0].type = "repertoire";
+  (fixtures.recentFiles[0] as Extract<RecentFile, { handle: unknown }>).type = "repertoire";
   fixtures.decks.stale = {
     status: "ready",
     positions: [{ due: 9, unseen: 1 }],
@@ -614,7 +621,7 @@ test("drops a recent file that is gone", async () => {
   await act(async () => {
     await Promise.resolve();
   });
-  expect(fixtures.setRecentFiles).toHaveBeenCalledWith([]);
+  expect(fixtures.setRecentFiles.mock.calls.at(-1)![0](fixtures.recentFiles)).toEqual([]);
 });
 
 test("opens a recent file with an empty pgn as a blank analysis tab", async () => {

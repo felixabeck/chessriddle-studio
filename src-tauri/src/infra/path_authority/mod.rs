@@ -2790,6 +2790,7 @@ fn owner_families_for_purpose(purpose: EntryPurpose) -> Option<Vec<PathOwnerFami
         EntryPurpose::DownloadDestination => vec![Family::DownloadDestination],
         EntryPurpose::DatabaseRoot | EntryPurpose::PuzzleRoot | EntryPurpose::EngineRoot => vec![],
         EntryPurpose::DatabaseFile => vec![
+            Family::RecentFiles,
             Family::ReferenceDatabase,
             Family::SessionWorkspace,
             Family::DatabaseView,
@@ -5958,7 +5959,6 @@ impl PathAuthority {
     ) {
         self.activation_observer = observer;
     }
-    #[cfg(test)]
     pub(crate) fn has_persistent_id(&self, id: &str) -> bool {
         self.persistent.contains_key(id)
     }
@@ -25886,6 +25886,49 @@ mod tests {
         assert!(reloaded.persistent.contains_key("active-root"));
         assert!(reloaded.persistent.contains_key("pending-root"));
         assert!(reloaded.persistent.contains_key("resource"));
+    }
+
+    #[test]
+    fn startup_sweep_protects_database_capabilities_when_recent_files_are_unreadable() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("recent.db3");
+        fs::write(&path, b"database").unwrap();
+        let registry = dir.path().join("registry.json");
+        write_registry_with_entries(
+            &registry,
+            vec![stored_entry_for(
+                &path,
+                "recent-db",
+                Some(EntryPurpose::DatabaseFile),
+                canonical_operations(EntryPurpose::DatabaseFile),
+            )],
+        );
+        let mut authority = PathAuthority::open(registry, vec![]).unwrap();
+        require_durable(
+            authority
+                .reconcile_startup_owners(StartupPathOwners {
+                    retained_ids: vec![],
+                    trusted_families: vec![
+                        PathOwnerFamily::ReferenceDatabase,
+                        PathOwnerFamily::SessionWorkspace,
+                        PathOwnerFamily::DatabaseView,
+                    ],
+                })
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(authority.has_persistent_id("recent-db"));
+        require_durable(
+            authority
+                .reconcile_startup_owners(StartupPathOwners {
+                    retained_ids: vec![],
+                    trusted_families: vec![PathOwnerFamily::RecentFiles],
+                })
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(!authority.has_persistent_id("recent-db"));
+        assert!(path.exists());
     }
 
     #[test]

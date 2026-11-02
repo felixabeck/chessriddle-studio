@@ -2,10 +2,11 @@ import { INITIAL_FEN } from "chessops/fen";
 import { createStore } from "jotai";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { NormalizedGame, Token } from "@/bindings";
-import { tabsAtom } from "@/state/atoms";
+import { tabsAtom, recentFilesAtom, addRecentFileAtom } from "@/state/atoms";
+import signatureCases from "./gameSignature.cases.json";
 import { tabStorage } from "@/state/store/tabStorage";
 import { closeTreeStore, createTreeStore } from "@/state/store/tree";
-import { databaseGameSeed } from "./databaseGame";
+import { databaseGameSeed, normalizeGameSignature, openDatabaseGame } from "./databaseGame";
 import { createTab, serializeStoreTree } from "./tabs";
 
 const native = vi.hoisted(() => ({ lexPgn: vi.fn(), resolveLinkedGame: vi.fn() }));
@@ -97,5 +98,94 @@ test.each([
         expect(serialized).toContain("1. e4 e5 *");
         expect(native.lexPgn).toHaveBeenCalledWith(game.moves, undefined);
         expect(native.resolveLinkedGame).toHaveBeenCalledWith(database, game.id, null);
+    },
+);
+
+test.each(signatureCases)(
+    "normalizes signature marker $value with native semantics",
+    ({ value, normal, date, round }) => {
+        expect(
+            normalizeGameSignature({
+                white: value,
+                black: value,
+                event: value,
+                site: value,
+                date: value,
+                round: value,
+            }),
+        ).toEqual({
+            white: normal,
+            black: normal,
+            event: normal,
+            site: normal,
+            date,
+            round,
+        });
+    },
+);
+
+test.each(["admitted", "refused", "online"] as const)(
+    "opener records only admitted database games: %s",
+    async (mode) => {
+        const game: NormalizedGame = {
+            id: 73,
+            fen: INITIAL_FEN,
+            white: "White",
+            black: "Black",
+            white_id: 1,
+            black_id: 2,
+            event: String.raw`Cup \"A\"`,
+            site: String.raw`Hall \\ Wing`,
+            event_id: 1,
+            site_id: 1,
+            date: null,
+            round: null,
+            result: "*",
+            moves: "1. e4 e5 *",
+            linked: {
+                collection: "11111111-1111-4111-8111-111111111111",
+                generation: "old",
+                ordinal: 2,
+                stamp: "a".repeat(64),
+            },
+        };
+        const workspace = createStore();
+        workspace.set(tabsAtom, []);
+        workspace.set(recentFilesAtom, []);
+        const add = vi.fn(
+            (
+                entry: Parameters<typeof openDatabaseGame>[0]["addRecentFile"] extends (
+                    entry: infer T,
+                ) => void
+                    ? T
+                    : never,
+            ) => workspace.set(addRecentFileAtom, entry),
+        );
+        const id = await openDatabaseGame({
+            game,
+            database: mode === "online" ? null : database,
+            setTabs:
+                mode === "refused" ? () => false : (...args) => workspace.set(tabsAtom, ...args),
+            addRecentFile: add,
+        });
+        if (id) ids.push(id);
+        const expectedEntry = expect.objectContaining({
+            kind: "database",
+            database,
+            gameId: 73,
+            linked: {
+                locator: game.linked,
+                signature: {
+                    white: "White",
+                    black: "Black",
+                    event: game.event,
+                    site: game.site,
+                    date: null,
+                    round: null,
+                },
+            },
+        });
+        expect(add.mock.calls).toEqual(mode === "admitted" ? [[expectedEntry]] : []);
+        expect(workspace.get(recentFilesAtom)).toHaveLength(mode === "admitted" ? 1 : 0);
     },
 );

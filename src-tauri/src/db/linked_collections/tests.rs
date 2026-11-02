@@ -19,6 +19,193 @@ mod native_tests {
         format!("[Event \"Collection fixture\"]\n[Site \"https://www.chess.com\"]\n[Date \"2026.10.01\"]\n[UTCTime \"12:00:00\"]\n[White \"Player\"]\n[Black \"Opponent\"]\n[Result \"1-0\"]\n{}[Custom \"keep this tag\"]\n\n1. {moves} {{{note}}} 1-0\n\n", id.map(|id| format!("[Link \"https://www.chess.com/game/live/{id}\"]\n")).unwrap_or_default())
     }
 
+    fn recent_identity(game: &NormalizedGame) -> LinkedGameIdentity {
+        LinkedGameIdentity {
+            locator: game.linked.clone().unwrap(),
+            signature: GameSignature {
+                white: Some(game.white.clone()),
+                black: Some(game.black.clone()),
+                event: Some(game.event.clone()),
+                site: Some(game.site.clone()),
+                date: game.date.clone(),
+                round: game.round.clone(),
+            },
+        }
+    }
+
+    fn recent_lookup(
+        fixture: &Fixture,
+        database: &DatabaseHandle,
+        id: i32,
+        identity: &LinkedGameIdentity,
+    ) -> DbGameLookup {
+        get_db_game_blocking(
+            &fixture.state.pgn_path_authority,
+            &fixture.state.database_repository,
+            database.clone(),
+            id,
+            Some(identity),
+            &CancellationToken::new(),
+        )
+        .unwrap()
+    }
+
+    fn recent_found(
+        fixture: &Fixture,
+        database: &DatabaseHandle,
+        id: i32,
+        identity: &LinkedGameIdentity,
+    ) -> NormalizedGame {
+        match recent_lookup(fixture, database, id, identity) {
+            DbGameLookup::Found { game } => *game,
+            DbGameLookup::Missing => panic!("remembered linked game must be found"),
+        }
+    }
+
+    fn named_recent_game(name: &str, moves: &str, note: &str) -> String {
+        game(None, moves, note).replace("[White \"Player\"]", &format!("[White \"{name}\"]"))
+    }
+
+    #[test]
+    fn recent_game_survives_append_comment_move_save_and_earlier_removal() {
+        let fixture = Fixture::new();
+        let a = named_recent_game("A", "e4 e5", "earlier");
+        let b = named_recent_game("B", "d4 d5", "remembered");
+        fixture.create(
+            "recent",
+            &format!("{a}{}", b.trim_end()),
+            WorkspaceFileType::Game,
+        );
+        let collection = fixture.list().remove(0);
+        let database = collection.database.as_ref().unwrap();
+        let row = fixture
+            .rows(&collection)
+            .into_iter()
+            .find(|row| row.white == "B")
+            .unwrap();
+        let identity = recent_identity(&row);
+        let c = named_recent_game("C", "c4 e5", "appended");
+        std::fs::write(fixture.path("recent"), format!("{a}{b}{c}")).unwrap();
+        let appended = recent_found(&fixture, database, row.id, &identity);
+        assert_ne!(appended.id, row.id);
+        assert_ne!(appended.linked, row.linked);
+        assert_ne!(
+            appended.linked.as_ref().unwrap().stamp,
+            identity.locator.stamp
+        );
+        assert_eq!(appended.white, "B");
+        assert_eq!(appended.moves, row.moves);
+        let comment = named_recent_game("B", "d4 d5", "new comment");
+        std::fs::write(fixture.path("recent"), format!("{a}{comment}{c}")).unwrap();
+        let saved = recent_found(&fixture, database, row.id, &identity);
+        assert_eq!(
+            saved.moves,
+            row.moves.replace("{remembered}", "{new comment}")
+        );
+        assert_ne!(saved.linked, appended.linked);
+        let moved = named_recent_game("B", "Nf3 d5", "new move");
+        std::fs::write(fixture.path("recent"), format!("{a}{moved}{c}")).unwrap();
+        let saved = recent_found(&fixture, database, row.id, &identity);
+        assert_eq!(saved.moves, "1. Nf3 d5 {new move} 1-0");
+        std::fs::write(fixture.path("recent"), format!("{moved}{c}")).unwrap();
+        let shifted = recent_found(&fixture, database, row.id, &identity);
+        assert_eq!(shifted.white, "B");
+        assert_eq!(shifted.moves, saved.moves);
+        assert_eq!(shifted.linked.as_ref().unwrap().ordinal, 0);
+    }
+
+    #[test]
+    fn recent_removed_middle_game_never_falls_back_to_its_neighbor_and_tag_edits_drop_identity() {
+        let fixture = Fixture::new();
+        let a = named_recent_game("A", "e4 e5", "a");
+        let b = named_recent_game("B", "d4 d5", "b");
+        let c = named_recent_game("C", "c4 e5", "c");
+        fixture.create("recent", &format!("{a}{b}{c}"), WorkspaceFileType::Game);
+        let collection = fixture.list().remove(0);
+        let rows = fixture.rows(&collection);
+        let database = collection.database.as_ref().unwrap();
+        let remembered = rows.iter().find(|row| row.white == "B").unwrap();
+        let earlier = rows.iter().find(|row| row.white == "A").unwrap();
+        let identity = recent_identity(remembered);
+        std::fs::write(fixture.path("recent"), format!("{a}{c}")).unwrap();
+        assert!(matches!(
+            recent_lookup(&fixture, database, remembered.id, &identity),
+            DbGameLookup::Missing
+        ));
+        let a_identity = recent_identity(earlier);
+        std::fs::write(
+            fixture.path("recent"),
+            format!("{}{c}", a.replace("[White \"A\"]", "[White \"Edited\"]")),
+        )
+        .unwrap();
+        assert!(matches!(
+            recent_lookup(&fixture, database, earlier.id, &a_identity),
+            DbGameLookup::Missing
+        ));
+    }
+
+    #[test]
+    fn recent_tagless_game_survives_renderer_serializer_placeholders() {
+        let fixture = Fixture::new();
+        let body =
+            "[Event \"Tagless\"]\n[White \"A\"]\n[Black \"B\"]\n[Result \"*\"]\n\n1. e4 e5 *\n";
+        fixture.create("tagless", body, WorkspaceFileType::Game);
+        let collection = fixture.list().remove(0);
+        let database = collection.database.as_ref().unwrap();
+        let row = fixture.rows(&collection).remove(0);
+        let identity = recent_identity(&row);
+        assert_eq!(identity.signature.site.as_deref(), Some("Unknown"));
+        assert!(identity.signature.date.is_none());
+        assert!(identity.signature.round.is_none());
+        // This is the renderer serializer's seven-tag roster for absent source tags.
+        let saved = body.replace(
+            "[Result",
+            "[Site \"?\"]\n[Date \"????.??.??\"]\n[Round \"?\"]\n[Result",
+        );
+        std::fs::write(fixture.path("tagless"), saved).unwrap();
+        let found = recent_found(&fixture, database, row.id, &identity);
+        assert_eq!(found.white, "A");
+        assert_eq!(found.moves, row.moves);
+        assert_eq!(found.site, "?");
+        assert_eq!(found.date.as_deref(), Some("????.??.??"));
+    }
+
+    #[test]
+    fn recent_identical_signatures_prefer_stamp_then_nearest_ordinal_then_lower_ordinal() {
+        let fixture = Fixture::new();
+        let first = named_recent_game("A", "e4 e5", "first");
+        let middle = named_recent_game("B", "d4 d5", "middle");
+        let last = named_recent_game("A", "c4 e5", "last");
+        fixture.create(
+            "ties",
+            &format!("{first}{middle}{last}"),
+            WorkspaceFileType::Game,
+        );
+        let collection = fixture.list().remove(0);
+        let database = collection.database.as_ref().unwrap();
+        let rows = fixture.rows(&collection);
+        let first_row = rows.iter().find(|row| row.moves.contains("e4")).unwrap();
+        let middle_row = rows.iter().find(|row| row.white == "B").unwrap();
+        let last_row = rows.iter().find(|row| row.moves.contains("c4")).unwrap();
+        let mut identity = recent_identity(first_row);
+        identity.locator.stamp = last_row.linked.as_ref().unwrap().stamp.clone();
+        assert_eq!(
+            recent_found(&fixture, database, first_row.id, &identity).id,
+            last_row.id
+        );
+        identity.locator.stamp = "0".repeat(64);
+        identity.locator.ordinal = middle_row.linked.as_ref().unwrap().ordinal;
+        assert_eq!(
+            recent_found(&fixture, database, first_row.id, &identity).id,
+            first_row.id
+        );
+        identity.locator.ordinal = last_row.linked.as_ref().unwrap().ordinal + 1;
+        assert_eq!(
+            recent_found(&fixture, database, first_row.id, &identity).id,
+            last_row.id
+        );
+    }
+
     #[test]
     fn trashed_source_keeps_identity_across_same_name_recreation_restart_and_restore() {
         let mut fixture = Fixture::new();

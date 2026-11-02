@@ -2,6 +2,9 @@ import type { SetStateAction } from "react";
 import { atom } from "jotai";
 import { atomFamily, atomWithStorage, unwrap } from "jotai/utils";
 import { z } from "zod";
+import { normalizeGameSignature } from "@/utils/gameSignature";
+import { databaseHandleKey } from "@/utils/db";
+import { recentFileSchema, type RecentFile, type RecentEntryInput } from "./recentFiles";
 import type {
     BestMoves,
     EngineTerminalSnapshot,
@@ -598,20 +601,46 @@ export const telemetryEnabledAtom = documentPreferences.atomWithStorage<boolean>
 
 // Recent Files
 
-export type RecentFile = {
-    name: string;
-    handle: FileWorkspaceHandle;
-    type: "game" | "repertoire" | "tournament" | "puzzle" | "other";
-    lastOpened: number;
-};
-
 const MAX_RECENT_FILES = 10;
 
-const recentFileSchema = z.object({
-    name: z.string(),
-    handle: fileWorkspaceHandleSchema,
-    type: z.enum(["game", "repertoire", "tournament", "puzzle", "other"]),
-    lastOpened: z.number(),
+export {
+    recentFileSchema,
+    isDatabaseRecent,
+    type RecentFile,
+    type RecentDatabaseGame,
+    type RecentEntryInput,
+} from "./recentFiles";
+
+export function recentFileKey(file: RecentFile | RecentEntryInput): string {
+    if (!("kind" in file)) return fileWorkspaceKey(file.handle);
+    return JSON.stringify([
+        "database",
+        databaseHandleKey(file.database),
+        file.linked
+            ? [file.linked.locator.collection, normalizeGameSignature(file.linked.signature)]
+            : file.gameId,
+    ]);
+}
+
+export function dedupeRecentFiles(files: RecentFile[]): RecentFile[] {
+    const seen = new Set<string>();
+    return [...files]
+        .sort((a, b) => b.lastOpened - a.lastOpened)
+        .filter((file) => {
+            const key = recentFileKey(file);
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        })
+        .slice(0, MAX_RECENT_FILES);
+}
+
+/** Refresh native identities without changing the last-opened timestamp. */
+export const updateRecentFilesAtom = atom(null, (get, set, files: SetStateAction<RecentFile[]>) => {
+    set(
+        recentFilesAtom,
+        dedupeRecentFiles(typeof files === "function" ? files(get(recentFilesAtom)) : files),
+    );
 });
 
 export const recentFilesAtom = initializeBeforeUse(
@@ -623,13 +652,9 @@ export const recentFilesAtom = initializeBeforeUse(
     initializeRendererState,
 );
 
-export const addRecentFileAtom = atom(null, (get, set, file: Omit<RecentFile, "lastOpened">) => {
+export const addRecentFileAtom = atom(null, (get, set, file: RecentEntryInput) => {
     const current = get(recentFilesAtom);
-    const filtered = current.filter(
-        (f) => fileWorkspaceKey(f.handle) !== fileWorkspaceKey(file.handle),
-    );
-    const updated = [{ ...file, lastOpened: Date.now() }, ...filtered].slice(0, MAX_RECENT_FILES);
-    set(recentFilesAtom, updated);
+    set(recentFilesAtom, dedupeRecentFiles([{ ...file, lastOpened: Date.now() }, ...current]));
 });
 
 // Database

@@ -1907,6 +1907,162 @@ pub async fn get_games(
     .await
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct GameSignature {
+    pub white: Option<String>,
+    pub black: Option<String>,
+    pub event: Option<String>,
+    pub site: Option<String>,
+    pub date: Option<String>,
+    pub round: Option<String>,
+}
+
+impl GameSignature {
+    const ABSENT_MARKERS: [&'static str; 2] = ["", "?"];
+    const ABSENT_DATE: &'static str = "????.??.??";
+    const ABSENT_NAME: &'static str = "Unknown";
+
+    fn normalized(&self) -> Self {
+        fn field(value: &Option<String>, date: bool, name: bool) -> Option<String> {
+            value
+                .as_ref()
+                .filter(|value| {
+                    !GameSignature::ABSENT_MARKERS.contains(&value.as_str())
+                        && !(date && *value == GameSignature::ABSENT_DATE)
+                        && !(name && *value == GameSignature::ABSENT_NAME)
+                })
+                .cloned()
+        }
+        Self {
+            white: field(&self.white, false, true),
+            black: field(&self.black, false, true),
+            event: field(&self.event, false, true),
+            site: field(&self.site, false, true),
+            date: field(&self.date, true, false),
+            round: field(&self.round, false, false),
+        }
+    }
+
+    fn normalized_sql(column: &str, date: bool, name: bool) -> String {
+        Self::ABSENT_MARKERS
+            .iter()
+            .copied()
+            .chain(date.then_some(Self::ABSENT_DATE))
+            .chain(name.then_some(Self::ABSENT_NAME))
+            .fold(column.to_owned(), |expression, marker| {
+                format!("NULLIF({expression}, '{marker}')")
+            })
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+pub struct LinkedGameIdentity {
+    pub locator: linked_collections::LinkedGameLocator,
+    pub signature: GameSignature,
+}
+
+#[derive(Serialize, Type)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum DbGameLookup {
+    Found { game: Box<NormalizedGame> },
+    Missing,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_db_game(
+    file: DatabaseHandle,
+    game_id: i32,
+    linked: Option<LinkedGameIdentity>,
+    ticket: Option<String>,
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, AppState>,
+) -> Result<DbGameLookup, Error> {
+    let operation = crate::native_read_operation(ticket, &window, &state, "get_db_game")?;
+    let cancellation = operation.token();
+    let authority = state.pgn_path_authority.clone();
+    let repository = Arc::clone(&state.database_repository);
+    crate::infra::operations::run_native_operation(operation, "get_db_game", async move {
+        BLOCKING_GATEWAY
+            .spawn_cancellable(cancellation, move |token| {
+                get_db_game_blocking(
+                    &authority,
+                    &repository,
+                    file,
+                    game_id,
+                    linked.as_ref(),
+                    token,
+                )
+            })
+            .await
+    })
+    .await
+}
+
+fn get_db_game_blocking(
+    authority: &crate::infra::path_authority::SharedPathAuthority,
+    repository: &DatabaseRepository,
+    file: DatabaseHandle,
+    game_id: i32,
+    linked: Option<&LinkedGameIdentity>,
+    cancellation: &CancellationToken,
+) -> Result<DbGameLookup, Error> {
+    cancellation_check(cancellation)?;
+    if !authority.with_mut(|authority| authority.has_persistent_id(&file.path_ref().id))? {
+        return Ok(DbGameLookup::Missing);
+    }
+    // Check the retained capability before collection resolution can rebuild a disposable cache.
+    match authority
+        .with_mut(|authority| authority.database_file_target(&file, PathOperation::DatabaseRead))?
+    {
+        Ok(_) => {}
+        Err(error) if error.is_missing_entry() => return Ok(DbGameLookup::Missing),
+        Err(error) => return Err(error),
+    }
+    let target = match resolve_database(authority, &file, PathOperation::DatabaseRead) {
+        Ok(target) => target,
+        Err(error) if error.is_missing_entry() => return Ok(DbGameLookup::Missing),
+        Err(error) => return Err(error),
+    };
+    let mut connection =
+        match get_db_or_create(repository, &target, Some(cancellation), authority, &file) {
+            Ok(connection) => connection,
+            Err(error) if error.is_missing_entry() => return Ok(DbGameLookup::Missing),
+            Err(error) => return Err(error),
+        };
+    connection.transaction::<_, Error, _>(|db| {
+        let id = if let Some(identity) = linked {
+            match linked_collections::recent_game_id(
+                db,
+                &file,
+                authority,
+                identity,
+                game_id,
+                cancellation,
+            )? {
+                Some(id) => id,
+                None => return Ok(DbGameLookup::Missing),
+            }
+        } else {
+            game_id
+        };
+        let rows = load_games(
+            db,
+            authority,
+            &file,
+            GameQuery::new(),
+            Some(id),
+            cancellation,
+        )?;
+        Ok(match rows.data.into_iter().next() {
+            Some(game) => DbGameLookup::Found {
+                game: Box::new(game),
+            },
+            None => DbGameLookup::Missing,
+        })
+    })
+}
+
 type SidesAnyEloExpr<QS> = Box<
     dyn BoxableExpression<
         QS,
@@ -1979,6 +2135,17 @@ fn get_games_blocking(
     let mut database_connection =
         get_db_or_create(repository, &target, Some(cancellation), authority, &file)?;
     let db = &mut *database_connection;
+    load_games(db, authority, &file, query, None, cancellation)
+}
+
+fn load_games(
+    db: &mut SqliteConnection,
+    authority: &crate::infra::path_authority::SharedPathAuthority,
+    file: &DatabaseHandle,
+    query: GameQuery,
+    game_id: Option<i32>,
+    cancellation: &CancellationToken,
+) -> Result<QueryResponse<Vec<NormalizedGame>>, Error> {
     db.transaction::<_, Error, _>(|db| {
         let mut count: Option<i64> = None;
         let query_options = query.options.unwrap_or_default();
@@ -1991,6 +2158,11 @@ fn get_games_blocking(
             .inner_join(sites::table.on(games::site_id.eq(sites::id)))
             .into_boxed();
         let mut count_query = games::table.into_boxed();
+
+        if let Some(id) = game_id {
+            sql_query = sql_query.filter(games::id.eq(id));
+            count_query = count_query.filter(games::id.eq(id));
+        }
 
         // if let Some(speed) = query.speed {
         //     sql_query = sql_query.filter(games::speed.eq(speed as i32));
@@ -2134,7 +2306,7 @@ fn get_games_blocking(
             sqlite_cancellation::with_sqlite_cancellation(cancellation, || sql_query.load(db))?;
         cancellation_check(cancellation)?;
         let mut normalized_games = normalize_games(games, cancellation)?;
-        linked_collections::qualify_games(db, &file, authority, &mut normalized_games)?;
+        linked_collections::qualify_games(db, file, authority, &mut normalized_games)?;
 
         Ok(QueryResponse {
             data: normalized_games,
@@ -4473,6 +4645,151 @@ mod tests {
     use std::path::{Path, PathBuf};
     use tauri::Manager;
 
+    #[test]
+    fn recent_signature_normalization_matches_renderer_table() {
+        let cases: Vec<serde_json::Value> =
+            serde_json::from_str(include_str!("../../../src/utils/gameSignature.cases.json"))
+                .unwrap();
+        for case in cases {
+            let value: Option<String> = serde_json::from_value(case["value"].clone()).unwrap();
+            let normalized = GameSignature {
+                white: value.clone(),
+                black: value.clone(),
+                event: value.clone(),
+                site: value.clone(),
+                date: value.clone(),
+                round: value,
+            }
+            .normalized();
+            assert_eq!(
+                serde_json::to_value(normalized).unwrap(),
+                serde_json::json!({
+                "white": case["normal"], "black": case["normal"], "event": case["normal"], "site": case["normal"], "date": case["date"], "round": case["round"],
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn get_db_game_matches_joined_list_and_reports_definitive_absence() {
+        let (dir, app, handle, database) = blocking_database_case();
+        mount_convert_progress_events(&app);
+        let source = dir.path().join("recent.pgn");
+        std::fs::write(&source, REPLACEMENT_PGN).unwrap();
+        run_import(
+            &app,
+            handle.clone(),
+            vec![grant_import_file(&app, &source)],
+            None,
+        )
+        .unwrap();
+        let state = app.state::<AppState>();
+        let token = CancellationToken::new();
+        let row = get_games_blocking(
+            &state.pgn_path_authority,
+            &state.database_repository,
+            handle.clone(),
+            GameQuery::new(),
+            &token,
+        )
+        .unwrap()
+        .data
+        .remove(0);
+        let lookup = get_db_game_blocking(
+            &state.pgn_path_authority,
+            &state.database_repository,
+            handle.clone(),
+            row.id,
+            None,
+            &token,
+        )
+        .unwrap();
+        let DbGameLookup::Found { game } = lookup else {
+            panic!("existing game must be found")
+        };
+        assert_eq!(
+            serde_json::to_value(game).unwrap(),
+            serde_json::to_value(row).unwrap()
+        );
+        assert!(matches!(
+            get_db_game_blocking(
+                &state.pgn_path_authority,
+                &state.database_repository,
+                handle.clone(),
+                i32::MAX,
+                None,
+                &token
+            )
+            .unwrap(),
+            DbGameLookup::Missing
+        ));
+        delete_database_blocking(
+            &state.pgn_path_authority,
+            &state.database_repository,
+            &state.search_cache,
+            handle.clone(),
+            &token,
+        )
+        .unwrap();
+        assert!(matches!(
+            get_db_game_blocking(
+                &state.pgn_path_authority,
+                &state.database_repository,
+                handle,
+                1,
+                None,
+                &token
+            )
+            .unwrap(),
+            DbGameLookup::Missing
+        ));
+        assert!(!database.exists());
+    }
+
+    #[test]
+    fn get_db_game_absent_file_is_not_created_and_other_failures_stay_errors() {
+        let (_dir, app, handle, database) = blocking_database_case();
+        let state = app.state::<AppState>();
+        std::fs::remove_file(&database).unwrap();
+        assert!(matches!(
+            get_db_game_blocking(
+                &state.pgn_path_authority,
+                &state.database_repository,
+                handle.clone(),
+                1,
+                None,
+                &CancellationToken::new()
+            )
+            .unwrap(),
+            DbGameLookup::Missing
+        ));
+        assert!(!database.exists());
+        let token = CancellationToken::new();
+        token.cancel();
+        assert!(matches!(
+            get_db_game_blocking(
+                &state.pgn_path_authority,
+                &state.database_repository,
+                handle,
+                1,
+                None,
+                &token
+            ),
+            Err(Error::Cancellation)
+        ));
+        let (_dir, app, handle, _) = arbitrary_database_case(b"not sqlite");
+        let state = app.state::<AppState>();
+        assert!(get_db_game_blocking(
+            &state.pgn_path_authority,
+            &state.database_repository,
+            handle,
+            1,
+            None,
+            &CancellationToken::new()
+        )
+        .is_err());
+    }
+
     struct RemovalFaultSequence(
         std::sync::Mutex<std::collections::VecDeque<crate::infra::fs::RemovalFaultPoint>>,
     );
@@ -4977,8 +5294,9 @@ mod tests {
             .next()
             .unwrap();
         // Includes the two collection-service admission checks, the authority door,
-        // the insert command's mutation resolution, and the deletion recovery present-arm re-resolve.
-        assert_eq!(production.matches("resolve_database(").count(), 23);
+        // the insert command's mutation resolution, the deletion recovery present-arm re-resolve,
+        // and the single-game recent lookup's read resolution.
+        assert_eq!(production.matches("resolve_database(").count(), 24);
         let resolver = production
             .split("pub(crate) fn resolve_database(")
             .nth(1)

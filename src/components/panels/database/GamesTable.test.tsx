@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { NormalizedGame } from "@/bindings";
-import { tabsAtom } from "@/state/atoms";
+import { tabsAtom, recentFilesAtom } from "@/state/atoms";
 import { tabStorage } from "@/state/store/tabStorage";
 import { closeTreeStore } from "@/state/store/tree";
 import { defaultTree } from "@/utils/treeReducer";
@@ -110,6 +110,14 @@ test("board-panel linked results open original PGN bytes and persist the qualifi
   tree.headers.other = { Custom: "preserved" };
   mocks.parse.mockResolvedValueOnce(tree);
   await open();
+  expect(workspace.get(recentFilesAtom)).toEqual([
+    expect.objectContaining({
+      kind: "database",
+      database,
+      gameId: 7,
+      linked: expect.objectContaining({ locator }),
+    }),
+  ]);
   expect(mocks.resolve).toHaveBeenCalledExactlyOnceWith(database, 7, locator);
   expect(mocks.parse).toHaveBeenCalledExactlyOnceWith(pgn);
   const tab = workspace.get(tabsAtom)[0];
