@@ -21,20 +21,20 @@ test("workspace-tabs: home fills remaining height with reachable recent and due 
     mockScenario,
 }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 1000 });
-    const recents: unknown[] = Array.from({ length: 9 }, (_, i) => ({
+    const recents: unknown[] = Array.from({ length: 10 }, (_, i) => ({
         name: `Recent ${i + 1}`,
         handle: { id: { id: `home-${i}` }, kind: "fileWorkspace" },
         type: i % 3 === 0 ? "repertoire" : "game",
         lastOpened: Date.UTC(2026, 9, 31 - i),
     }));
-    recents.push({
+    recents[1] = {
         kind: "database",
         name: "White - Black",
         database: { id: { id: "home-db" }, kind: "database" },
         gameId: 42,
         databaseTitle: "Meine Partien",
-        lastOpened: Date.UTC(2026, 9, 20),
-    });
+        lastOpened: (recents[1] as { lastOpened: number }).lastOpened,
+    };
     await page.addInitScript(
         (stored) => localStorage.setItem("recent-files", stored),
         JSON.stringify(recents),
