@@ -20517,3 +20517,20 @@ Fixed in 7a00afaa (notation main-line hierarchy build). Cause: the table view's 
 * **Spotted outside diff:** notation-hierarchy build (variation-block styling, e2e notation-hierarchy spec).
 * **Proof:** `/tmp/build-notation-hierarchy/flake-evidence/receipt-e2e-container.log` (failure at spec line 178, Expected file origin, Received databaseDraft).
 * **Found by:** Claude Code build session 60051fea-9337-444c-8ec6-3b33ed3c1129, 2026-11-02.
+
+---
+
+## 2026-11-02 — filed through the inbox spool
+
+### CI's floating `node-version: "lts/*"` moved to Node 26, whose Web Storage globals break 1645 frontend tests
+
+* **ID:** f-20261102-03 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Where:** `.github/workflows/test.yml:303` (and `mutation.yml:43,68,130`, `release.yml:92`, `catalog-engines.yml:83`) set `node-version: "lts/*"`; `vite.config.ts` `test` block (jsdom environment).
+* **Defect:** Test run 41404314781 on master `af981d98` (2026-11-02 07:08 UTC) installed Node v26.13.0 (`Acquiring 26.13.0`), while the previous green run 41394… on `45172e57` (03:11 UTC) ran v24.22.1. Under Node 26, job `frontend` failed 1645 of 5957 tests in 78 files and every `frontend-mutation` package failed its Stryker dry run (`There were failed tests in the initial test run`); `rust-macos-test` also failed. The frontend failures are environmental: Node 25+ installs its own `localStorage`/`sessionStorage` globals, which shadow jsdom's (`TypeError: Cannot read properties of undefined (reading 'getItem')` in `src/i18n.runtime.test.ts`; `reportPersistError is not a function` from `src/state/utils.ts:74` via `createDatabaseSplitAtoms`; storage spies in `src/state/store/tabStorage.test.ts` never called). The same tree passes the complete local frontend coverage gate on Node v24.22.2 (6000 tests). The `rust-macos-test` log was not retrievable (BlobNotFound) and is not attributed here.
+* **Failure scenario:** every push to master is refused by `pnpm ci:remote:check` and every hosted run stays red, independent of the pushed tree, until the test environment handles Node 26 or the runner is pinned.
+* **Open question:** keep the floating LTS and make the suite Node-26-proof (the uncommitted `vite.config.ts` change in `/home/felixb/Projekte/chessfable.worktrees/pinned-engine-hover` passes `--no-experimental-webstorage` to the Vitest workers when the flag exists; that session reported 247 files / 5977 tests green on Node 26), or pin CI to the local toolchain's major as f-20260829-13 did for the Rust channel, or both; and what failed in `rust-macos-test`.
+* **Related:** f-20260829-13 (floating Rust channel reddened an unchanged tree; handled by pinning).
+* **Spotted outside diff:** database games in Recent Files build (push refused by `pnpm ci:remote:check`).
+* **Proof:** `gh api repos/felixabeck/en-croissant/actions/jobs/125142783526/logs` (frontend, Node 26 install at log line ~201, `Tests 1645 failed | 4312 passed`); job 125073600725 of the 03:11 run (`node: v24.22.1`); local `pnpm gates:push -- --rust --frontend --bindings` on the rebased tree including `af981d98`, all lanes passed.
+* **Found by:** Claude Code build session 2b654cd0-d842-401a-ac86-cf5e61d1e967 (database games in Recent Files), 2026-11-02.
