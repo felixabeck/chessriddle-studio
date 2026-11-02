@@ -11486,3 +11486,14 @@ Former private decision identifier: d-20261029-14
 * **Review:** `tasks/handoffs/2026-11-02-f-20261101-13-review.md`
 * **Decided by:** Claude Code (Opus 5.5) drain build run f-20261101-13 (session 5760d80b-dd1f-45c3-80d3-ecf9daae3008, plan adopted from drain-90a2aa88), full auto, 2026-11-02 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"ba392a8dd800a1766bce7c190bd3082532b96018a17774e52028189bc8f0bb9c","input_sha256":"b2450d20b9f4dbb81071601859fd53875d228f98bdd0359df5ae13dfbc385720","kind":"mutation-receipt","operation":"aefa01be78edba0c8207d3b228f50dfcf7658a44df517d84473e3298ba6e017a","options":{"section":null},"request_id_sha256":null,"results":["d-20261102-08"],"target":"decisions-ledger","v":1} -->
+
+### d-20261102-09 — Per-tab ConfirmChangesModal or one summary dialog on quit?
+
+* **Question:** When several tabs block a quit, how is the user asked?
+* **Governs:** f-20261101-13
+* **Chosen:** One summary dialog listing the blocking tabs, with Cancel (default; navigates to the boards route and activates the first listed tab) and Quit without saving.
+* **Rejected:** Chaining `ConfirmChangesModal` per tab: it is bound to closing one tab (its save closes the tab, its copy says "before closing"), n tabs means n dialogs, and origin-none or draft saves need their own picker flows mid-quit.
+* **Reason:** Precedent is the existing unsaved-changes prompt on tab close; saving stays on the per-tab save surfaces after Cancel. Reversal path: add a "Save all" action later without changing the gate.
+* **Review:** `tasks/handoffs/2026-11-02-f-20261101-13-review.md`
+* **Decided by:** Claude Code (Opus 5.5) drain build run f-20261101-13 (session 5760d80b-dd1f-45c3-80d3-ecf9daae3008, plan adopted from drain-90a2aa88), full auto, 2026-11-02 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"a546cf6a0279a0ad49f4f8220e856007074228f99a92d47cf7cb2fa18a4309f1","input_sha256":"73e70dde6fdffc7c068e0a17165db6ffee21f6683cb09cba679fd45839fbbf5d","kind":"mutation-receipt","operation":"6ee8507e21c7c4edec40741b8b0d330010f4cbce3d49e30b1d1a24ee36ffd055","options":{"section":null},"request_id_sha256":null,"results":["d-20261102-09"],"target":"decisions-ledger","v":1} -->
