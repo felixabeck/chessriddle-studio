@@ -20198,6 +20198,9 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Renumbered decisions (2026-11-02, drain session 5760d80b-dd1f-45c3-80d3-ecf9daae3008):** the quit-gate decisions were first recorded locally as d-20261102-05..08 in unpushed commits, while upstream had already published a different d-20261102-05 and -06 (Recent Files linked games). The published ids keep their owners; the quit-gate decisions were re-recorded as d-20261102-07 (one quit gate, two entry points), d-20261102-08 (which tabs block a quit), d-20261102-09 (summary dialog) and d-20261102-10 (fail closed). Every "d-20261102-05..08" in the closing note above and in commit 2647ff2a's message means d-20261102-07..10 in that order.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"65c6ad99fec449efaddcac181626dde14cd52ba677ae7a22033bba1ef14d922a","input_sha256":"ecc428c6ea8e95ec9b9a028e5c4626983a63811131580120a43dfade10d733ed","kind":"mutation-receipt","operation":"2937e750755c4a98f63348b9d49d73b8963acd42c3b56c1a9d30a52ce71ae62b","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-13"],"target":"f-20261101-13","v":1} -->
 
+* **Renumbering detail:** the closing note's "Rejected: … (d-20261102-05, -07)" means d-20261102-07 (one quit gate, two entry points) and d-20261102-09 (summary dialog). At HEAD d-20261102-05 and -06 are the Recent Files linked-game decisions and do not govern this finding.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"943d58d301e422b5d1ba56ba94e7aa87e0ac604c6ff3116b20150ec9f907f59f","input_sha256":"f04102828accfb9635e94296a90ad3c704c65782c38cc81063270afd44c486e7","kind":"mutation-receipt","operation":"53a414d6f0fb4173aad9806e5ac01e02c35aa1204db3fb83ce7645e507a3d89a","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-13"],"target":"f-20261101-13","v":1} -->
+
 ---
 
 ## 2026-11-01 — filed through the inbox spool
