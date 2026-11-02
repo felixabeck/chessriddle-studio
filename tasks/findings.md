@@ -20481,10 +20481,13 @@ Verification hook for the fix (from the notation-hierarchy build review, 2026-11
 
 ### notation-hierarchy table-view snapshots capture the notation ScrollArea scrollbar mid-fade, red on CI
 
-* **ID:** f-20261102-01 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261102-01 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **Where:** `e2e/notation-hierarchy.spec.ts`, the two `toHaveScreenshot("notation-hierarchy-table-{light,dark}.png")` calls after `showTableView`.
 * **Defect:** CI Test run 41363271938 (master ed45feff, 2026-11-02) failed job `e2e` only on these two snapshots (1965 and 1964 px). The diff is solely the notation ScrollArea's vertical scrollbar: the locally recorded expected image (pinned container) shows the thumb still visible after the scroll to the current move, the CI actual shows it already hidden. Mantine's scrollbar fades after scrolling, so the capture races the fade.
 * **Failure scenario:** every push can turn the required `e2e` job red on these snapshots independent of the tree.
 * **Proof:** CI artifact `frontend-browser-audit` of run 41363271938, `test-results/notation-hierarchy-notatio-*/notation-hierarchy-table-light-{expected,actual,diff}.png` (diff marks only the scrollbar column).
 * **Found by:** Claude Code build session 60051fea-9337-444c-8ec6-3b33ed3c1129 (notation main-line hierarchy build, own pushed defect), 2026-11-02.
+
+Fixed in 7a00afaa (notation main-line hierarchy build). Cause: the table view's model rebuild re-runs the scroll-to-current reveal, which shows Mantine's hover scrollbar (`data-state="visible"`) until its hide delay ends; the snapshots raced that fade. Each notation-hierarchy screenshot now waits on the existing `waitForScrollAreaScrollbarsHidden` state check first (same mechanism as the conversion snapshots). The table snapshots were re-recorded in the pinned container; they are pixel-identical to CI run 41363271938's actual images (PIL difference bbox none, both schemes). Before re-recording, the repaired spec reproduced CI's exact 1965/1964 px difference locally. notation-hierarchy plus notation-hierarchy-scaled passed 9/9 with --repeat-each=3. Closure lenses correctness, tests, root-cause and records approved.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"7b9f24b22a6e5ad2adf71f691bf2e25290f78728434c35510dfb54ede8e71bb7","header_sha256":"594ef35f2dd19b21d0db18db6f2fa0cb227003e2f5226d434e814f6e02f719d6","header_status":"handled","input_sha256":"e4e279ec4fbaf0c39d02009b48c0bf09a1698f41e34d82e9bd5a3a9f37e3c965","kind":"mutation-receipt","operation":"d9e4571ee3f4110c6b6c60c45481bd9e57b2df33d6b50fde6a9269d35269433a","options":{"section":null},"request_id_sha256":null,"results":["f-20261102-01"],"target":"f-20261102-01","v":1} -->
