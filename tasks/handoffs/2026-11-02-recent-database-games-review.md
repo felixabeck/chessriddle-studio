@@ -460,4 +460,6 @@ dashboard tests.
 
 ### Closure round d3 (delta `6fa48bdf..3ae53dbb`, fixture only)
 
-See the final report; recorded in the build-ledger row.
+Lenses: tests, correctness — both APPROVED. The fixture keeps ten recents with the database row and
+four repertoires (indices 0, 3, 6, 9); reverting the repair fails the four-due-row assertion. No
+open review issue remains.
