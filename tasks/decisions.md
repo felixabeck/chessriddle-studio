@@ -11558,3 +11558,51 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Rule 6d evidence check, read 2026-11-02. A records-only push here runs `pnpm gates:push` with no flags (push skill §2: "A Markdown/planning-only push uses no flags"). That runs only the mutation guard and the contract lane (`pnpm gates:contract:check`). In `scripts/run-push-gates.mjs`, every `gate:ensure`/`gate:run` lane belongs to the `rust`, `frontend` or `bindings` blocks, so a records-only push never looks at a receipt, and a shared copy has nothing to hit. Observed: the retained gate logs (`artifacts/gates/`, newest 100 runs) contain 13 records-only runs (only `mutation-guard.log` and `contract.log`) from 2026-10-21 to 2026-11-02, taking 71–133 s each (mtime of `contract.log` minus `mutation-guard.log`) with no receipt lane, including this decision's own push at 96 s. Of the 300 master commits since 2026-10-30, 146 were records commits (`docs(findings|decisions)`, `chore(findings)`). Korrigio's ~25-minute cost comes from its pre-push hook, which refuses a push unless a valid full-gate receipt matches the pushed tree or a predecessor tree it differs from only by records, so a receipt lost with its worktree forced a fresh full gate. ChessFable has no such hook (`core.hooksPath` unset) and no receipt requirement for a records-only push; gate selection depends on the changed paths. The same-checkout records rerun was already fixed by d-20261102-14. Reversal path: if a records-only push is later observed paying for a receipt-backed lane (for example, if the push skill makes records-only pushes select `--frontend`), port the Korrigio design: publish after verified push-time `gate:check`, then fall back to the shared copy under identical tree/toolchain/TTL rules.
 * **Decided by:** Claude Code (Opus 5.5), full auto, 2026-11-02 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"d68cc7b85319f060cc5aae9a2e44e46f88c0d719c590f3964ae569032a0eb945","input_sha256":"53b651bf6ca606449fd25e9dba69c52cc11b4faeccece391359f15725e0632b3","kind":"mutation-receipt","operation":"13e41da795e1e981cdb0a0ae6a5325539cc20025f710551a6b485b9c24e7e757","options":{"section":null},"request_id_sha256":null,"results":["d-20261102-15"],"target":"decisions-ledger","v":1} -->
+
+## 2026-11-03 — recorded through the decisions lock
+
+### d-20261103-01 — Which row revision does a database tab carry?
+
+* **Question:** Database-game saves have no revision, so a stale tab overwrites newer content (f-20261101-15). Which row revision does a database tab carry?
+* **Governs:** f-20261101-15
+* **Chosen:** A SHA-256 content stamp of the full stored `games` row (canonical, length-delimited encoding of every column, `None` distinct from `""`), computed natively, compared inside the existing `with_validated_mutation` write transaction.
+* **Rejected:** An update counter column (needs a schema migration of every user database and the strict existing-database validation, for no added protection inside one process). The per-file `data_revision` (any write to another game or an import would refuse every open tab's save).
+* **Reason:** Matches the file path's content stamp (`pgn.rs` `game_stamp`), needs no persisted-schema change (`sourceStamp` already persists 64-hex values), and is checked atomically under the existing write lock. Reversal path: replace the row-stamp function with a counter column read; the IPC and renderer contract (opaque stamp) stays.
+* **Decided by:** drain session d2081993 (planner run, 5 plan-review rounds, approved), 2026-11-02 · **Superseded-by:** -
+
+### d-20261103-02 — How is a database game's row stamp returned on load?
+
+* **Question:** How does a database tab learn the stamp of the row it displays?
+* **Governs:** f-20261101-15
+* **Chosen:** As an optional `stamp` field of `NormalizedGame`, filled by `normalize_games` from the same row read that produced the displayed content (`get_games`, position search, `get_db_game`).
+* **Rejected:** A separate stamp-fetch command at tab open, which can observe a newer row than the text the tab shows (same reasoning as `d-20260925-10`).
+* **Reason:** The stamp must describe exactly the content the tab was seeded with; one read guarantees that. Reversal path: none needed short of changing the stamp source.
+* **Decided by:** drain session d2081993 (planner run, 5 plan-review rounds, approved), 2026-11-02 · **Superseded-by:** -
+
+### d-20261103-03 — What does a database tab with no stamp do on save?
+
+* **Question:** A database tab persisted before the row stamp existed has `sourceStamp: null`. What does its save do?
+* **Governs:** f-20261101-15
+* **Chosen:** Refuse without writing, through `sourceChanged`, so the database conflict panel shows with the edits kept; Reload from database or Save my version as a new game resolve it.
+* **Rejected:** An unconditional legacy write, which keeps the data-loss path for every restored tab.
+* **Reason:** Same semantics as the file branch's null stamp. Reversal path: allow a stampless write in the database branch of `saveToFileNow`.
+* **Decided by:** drain session d2081993 (planner run, 5 plan-review rounds, approved), 2026-11-02 · **Superseded-by:** -
+
+### d-20261103-04 — Is NormalizedGame.stamp required?
+
+* **Question:** Does the new `NormalizedGame.stamp` field become required in the IPC type?
+* **Governs:** f-20261101-15
+* **Chosen:** Optional on the DTO (`#[specta(optional)]`), always filled natively.
+* **Rejected:** Required, which forces invented stamps on renderer-built Lichess explorer rows (`src/utils/lichess/api.tsx` `convertToNormalized`) that never reach `write_db_game`.
+* **Reason:** A missing stamp already fails safe (save refused). Reversal path: make the field required and give renderer-built rows an explicit non-database type.
+* **Decided by:** drain session d2081993 (planner run, 5 plan-review rounds, approved), 2026-11-02 · **Superseded-by:** -
+
+### d-20261103-05 — Which actions does the database conflict panel offer?
+
+* **Question:** When a database tab's save is refused as stale, which actions does its conflict panel offer?
+* **Governs:** f-20261101-15
+* **Chosen:** Reload from database (through the existing `getDbGame`) and Save my version as a new game in the same database (through the existing `storeToDatabase` insert-and-admit path); a missing row offers Save as new game and Close.
+* **Rejected:** Appending to a picked PGN file (the file panel's action), because the tab's home is the database. "Keep these edits as a new game" with origin `none`, because it drops the tab's persistent origin and auto-save.
+* **Reason:** Mirrors the file conflict panel's two choices on the tab's own store (precedent: the file conflict panel and `d-20261017-12`'s reuse of one append/admit path). Reversal path: change the buttons in `DatabaseOriginGate`.
+* **Decided by:** drain session d2081993 (planner run, 5 plan-review rounds, approved), 2026-11-02 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":44,"effect_sha256":"59e3c762b8df3f575792b73deeba382e4e7f699f01994c8b32b87b2887c216ae","input_sha256":"9358975029f6760139ace6c44c9efc3e9166f6c5b2481d22a1bc1e2ccf337237","kind":"mutation-receipt","operation":"7ae14839919d6d26defd02d0d6cc25c56155fe297054a77c01f4ff5f61c3ac17","options":{"section":null},"request_id_sha256":null,"results":["d-20261103-01","d-20261103-02","d-20261103-03","d-20261103-04","d-20261103-05"],"target":"decisions-ledger","v":1} -->
