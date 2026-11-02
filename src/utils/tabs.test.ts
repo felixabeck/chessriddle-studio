@@ -1687,17 +1687,18 @@ test("fresh picker failure leaves the board unchanged", async () => {
     expect(mocks.writeGame).not.toHaveBeenCalled();
 });
 
-test("fresh append refuses a concurrent submission before another native write", async () => {
+test("fresh append queues a concurrent save and supersedes it after rebinding", async () => {
     const fixture = saveFixture({ kind: "none", stamp: null });
     mocks.pickPgnFile.mockResolvedValue(targetFile());
     const pending = deferred<{ stamp: string; revision: string }>();
     mocks.writeGame.mockReturnValueOnce(pending.promise);
     const first = saveFresh(fixture);
     const second = saveFresh(fixture);
-    await expect(second).resolves.toMatchObject({ status: "failed" });
-    expect(mocks.writeGame).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(mocks.writeGame).toHaveBeenCalledOnce());
     pending.resolve({ stamp: stampB, revision: "fresh-write" });
     await expect(first).resolves.toBe("saved");
+    await expect(second).resolves.toBe("superseded");
+    expect(mocks.writeGame).toHaveBeenCalledOnce();
 });
 
 test("fresh stale-count refusal clears only its marker and permits a counted retry", async () => {

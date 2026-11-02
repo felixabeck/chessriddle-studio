@@ -48,6 +48,36 @@ function useAddGameLease(store: TreeStore) {
   );
 }
 
+function useInstallTree(store: TreeStore, tabId: string, onReload: () => void) {
+  return useCallback(
+    (
+      tree: Parameters<ReturnType<typeof store.getState>["setState"]>[0],
+      revision: string | null,
+    ) => {
+      deferTreeView(store);
+      try {
+        store.getState().setState(tree);
+        const hooks = globalThis as {
+          __verifyAppRecordTreeApplied?: () => void;
+          __verifyAppStallFreshnessApply?: () => void;
+        };
+        hooks.__verifyAppRecordTreeApplied?.();
+        hooks.__verifyAppStallFreshnessApply?.();
+        // Children render in this commit. Deferred readers keep the retained snapshot or skip
+        // a fresh walk, so the board can show the installed position without a tree walk.
+        // Release schedules the replacement walk after this commit.
+        flushSync(() => {
+          onReload();
+          setFileFreshness(tabId, "verified", { verifiedRevision: revision });
+        });
+      } finally {
+        releaseTreeView(store);
+      }
+    },
+    [store, tabId, onReload],
+  );
+}
+
 type Props = {
   tab: Tab;
   closeTab: (tabId: string) => void;
@@ -105,6 +135,8 @@ function DatabaseConflictGate({ tab, closeTab, children }: Props) {
   const [panelError, setPanelError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [reloadCount, setReloadCount] = useState(0);
+  const onReload = useCallback(() => setReloadCount((count) => count + 1), []);
+  const installTree = useInstallTree(store, tab.value, onReload);
   const flight = useRef<AbortController | null>(null);
   const origin = tab.gameOrigin;
   const databaseKey = origin.kind === "database" ? databaseHandleKey(origin.database) : null;
@@ -168,16 +200,7 @@ function DatabaseConflictGate({ tab, closeTab, children }: Props) {
         }
         const tree = await databaseGameToTree(result.game);
         if (!isCurrent(signal)) return false;
-        deferTreeView(store);
-        try {
-          store.getState().setState(tree);
-          flushSync(() => {
-            setReloadCount((count) => count + 1);
-            setFileFreshness(tab.value, "verified");
-          });
-        } finally {
-          releaseTreeView(store);
-        }
+        installTree(tree, null);
         return true;
       } catch (error) {
         if (isCurrent(signal)) setPanelError(normalizeError(error).message);
@@ -338,30 +361,8 @@ function FileBackedGate({
   const actionIdentityRef = useRef(actionIdentity);
   actionIdentityRef.current = actionIdentity;
 
-  const installDiskTree = useCallback(
-    (tree: Parameters<ReturnType<typeof store.getState>["setState"]>[0], revision: string) => {
-      deferTreeView(store);
-      try {
-        store.getState().setState(tree);
-        const hooks = globalThis as {
-          __verifyAppRecordTreeApplied?: () => void;
-          __verifyAppStallFreshnessApply?: () => void;
-        };
-        hooks.__verifyAppRecordTreeApplied?.();
-        hooks.__verifyAppStallFreshnessApply?.();
-        // Children render in this commit. Deferred readers keep the retained snapshot or skip
-        // a fresh walk, so the board can show the installed position without a tree walk.
-        // Release schedules the replacement walk after this commit.
-        flushSync(() => {
-          setReloadCount((count) => count + 1);
-          setFileFreshness(tabId, "verified", { verifiedRevision: revision });
-        });
-      } finally {
-        releaseTreeView(store);
-      }
-    },
-    [store, tabId],
-  );
+  const onReload = useCallback(() => setReloadCount((count) => count + 1), []);
+  const installDiskTree = useInstallTree(store, tabId, onReload);
 
   const actionIsCurrent = useCallback(
     (signal: AbortSignal) => {

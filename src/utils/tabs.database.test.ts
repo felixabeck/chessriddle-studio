@@ -571,3 +571,69 @@ test("database saves advance the persisted stamp and preserve edits made during 
         "c".repeat(64),
     );
 });
+
+test("an explicit database save waits for autosave and uses its returned stamp", async () => {
+    const f = fixture({ kind: "database", database, gameId: 812 });
+    const write = deferred<string>();
+    native.writeDbGame.mockReturnValueOnce(write.promise);
+    const autoSave = saveToFile({ ...f.args(), isUserSave: false });
+    const explicitSave = saveToFile(f.args());
+    await vi.waitFor(() => expect(native.writeDbGame).toHaveBeenCalledOnce());
+    expect(native.writeDbGame).toHaveBeenLastCalledWith(database, 812, expect.any(String), stampA);
+    write.resolve(stampB);
+    expect(await autoSave).toBe("saved");
+    expect(await explicitSave).toBe("saved");
+    expect(native.writeDbGame).toHaveBeenCalledTimes(2);
+    expect(native.writeDbGame).toHaveBeenLastCalledWith(database, 812, expect.any(String), stampB);
+    expect(getFileFreshness(f.id).state).toBe("verified");
+});
+
+test("an explicit file save waits for autosave and uses its returned stamp", async () => {
+    const f = fixture({
+        kind: "file",
+        gameNumber: 0,
+        file: {
+            type: "file",
+            handle: file,
+            name: "Games",
+            numGames: 1,
+            metadata: { type: "game", tags: [] },
+            lastModified: 0,
+        },
+    });
+    f.store.getState().setSourceStamp(stampA);
+    const write = deferred<{ stamp: string; revision: string }>();
+    native.writeGame.mockReturnValueOnce(write.promise);
+    const autoSave = saveToFile({ ...f.args(), isUserSave: false });
+    const explicitSave = saveToFile(f.args());
+    await vi.waitFor(() => expect(native.writeGame).toHaveBeenCalledOnce());
+    expect(native.writeGame).toHaveBeenLastCalledWith(file, 0, expect.any(String), {
+        kind: "game",
+        stamp: stampA,
+    });
+    write.resolve({ stamp: stampB, revision: "saved" });
+    expect(await autoSave).toBe("saved");
+    expect(await explicitSave).toBe("saved");
+    expect(native.writeGame).toHaveBeenCalledTimes(2);
+    expect(native.writeGame).toHaveBeenLastCalledWith(file, 0, expect.any(String), {
+        kind: "game",
+        stamp: stampB,
+    });
+    expect(getFileFreshness(f.id).state).toBe("verified");
+});
+
+test("a missing database game makes the tab unavailable and preserves dirty edits", async () => {
+    const f = fixture({ kind: "database", database, gameId: 812 });
+    const pgn = serializeStoreTree(f.store);
+    const root = f.store.getState().root;
+    native.writeDbGame.mockRejectedValueOnce({
+        tag: "backend-error",
+        category: "missing-resource",
+        message: "Game not found",
+    });
+    expect(await saveToFile(f.args())).toBe("conflict");
+    expect(getFileFreshness(f.id).state).toBe("unavailable");
+    expect(f.store.getState()).toMatchObject({ dirty: true, sourceStamp: stampA });
+    expect(f.store.getState().root).toBe(root);
+    expect(serializeStoreTree(f.store)).toBe(pgn);
+});

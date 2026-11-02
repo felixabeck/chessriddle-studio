@@ -4451,6 +4451,8 @@ pub async fn write_db_game(
     .await
 }
 
+// Keep the command's injected authority, repository and search cache, request fields (file, game id,
+// PGN, expected stamp) and cancellation token separate so tests can call this without Tauri state.
 #[allow(clippy::too_many_arguments)]
 fn write_db_game_blocking(
     authority: &crate::infra::path_authority::SharedPathAuthority,

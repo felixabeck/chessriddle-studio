@@ -1052,7 +1052,9 @@ export function saveToFile(args: SaveArguments): Promise<SaveResult> {
             return Promise.resolve<SaveResult>("superseded");
         return saveToFileNow({ ...args, tab: pendingStore ? current : owner });
     };
-    const result = pendingStore ? pendingStore.then(start, start) : start();
+    const earlierSaves = [...flight.saves];
+    if (pendingStore) earlierSaves.push(pendingStore);
+    const result = earlierSaves.length ? Promise.allSettled(earlierSaves).then(start) : start();
     flight.saves.add(result);
     const cleanup = () => {
         flight.saves.delete(result);
@@ -1261,6 +1263,14 @@ async function saveToFileNow({
         const normalized = failure.error;
         if (normalized.backendCategory === "stale-game") {
             return writingCurrentOrigin ? sourceChanged(tabId) : failure;
+        }
+        if (
+            writingCurrentOrigin &&
+            currentOrigin.kind === "database" &&
+            normalized.backendCategory === "missing-resource"
+        ) {
+            setFileFreshness(tabId, "unavailable");
+            return "conflict";
         }
         if (writingCurrentOrigin && normalized.category === "applied-despite-error") {
             // The game reached the file but its stamp is unknown: verify it by text, as after a
