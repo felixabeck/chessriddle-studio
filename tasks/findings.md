@@ -20197,7 +20197,7 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 
 ### Closing a dirty board with origin none discards its edits without the unsaved-changes prompt
 
-* **ID:** f-20261101-14 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261101-14 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** data-loss
 * **Where:** `src/components/tabs/BoardsPage.tsx:133` (`if (isPersistentGameOrigin(closedTab) && store.getState().dirty && !discard)`), `src/utils/tabs.ts:65-68` (`isPersistentGameOrigin` is false for `kind: "none"`); origin `none` comes from `src/components/tabs/ImportModal.tsx` URL/FEN imports and `src/utils/tabs.ts` new-tab defaults.
 * **Defect:** for origin `none` the dirty flag is never consulted, so the tab closes and its tree key is removed, although `saveToFile` has a working origin-`none` branch. `d-20260924-01` rejected an origin-less copy precisely because it "closes without the unsaved-changes prompt".
@@ -20206,6 +20206,8 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Lens:** `review-persisted-state`
 * **Proof:** a BoardsPage test closing a dirty origin-`none` tab opens the confirm modal; a clean one closes directly.
 * **Found by:** cloud audit session session_01JbeKojrqsAwVtq28QtrjsT (persisted state/tabs audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+* **Handled 2026-11-02** (drain session bb7003aa-47df-4197-96aa-dbd625081bf9, co-located joiner of f-20261101-12, lens tier): `680a3834`. Closing a dirty analysis tab now opens the unsaved-changes modal whatever its origin, including origin `none` (URL/FEN import, new analysis board). The modal's Save already routes origin `none` to append-to-picked-file. Play and puzzle tabs with origin `none` still close directly, because their trees set `dirty` on every move. Decision d-20261101-13 records this and rejects prompting on every dirty tab type. Proof: three new `BoardsPage.test.tsx` cases (dirty origin-less analysis prompts, clean closes, dirty play/puzzles close). Reverting the condition turns the first case red. `review-persisted-state` ran in the cumulative review and APPROVED.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"89a739ac2f3650a9ce32610b760206f0202fb89cc0e8de4ca4f00c05023a0d49","header_sha256":"9ba61d0a706e547b6f6a2ebb3aad5887dae7a2648ee37f801135101b956be031","header_status":"handled","input_sha256":"a592419e06bd1f897814bd4d09ad92c8b777196b221d969fb8e720b7426cd6b8","kind":"mutation-receipt","operation":"c5db31ee6cee96974c8e70b010343ebd054dc0abb1e73cd44a35f846359cadc0","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-14"],"target":"f-20261101-14","v":1} -->
 
 ---
 
