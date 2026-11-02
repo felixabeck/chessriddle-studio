@@ -20598,3 +20598,19 @@ Closed by 5ea1ae3b, pushed to master as part of 4633e57f (database games in Rece
 
 * **Update (2026-11-02, later):** agent-kit released the fail-fast rule in 3fd5a27a: `references/push-review-policy.md` §8 "Fail-fast gate order" now requires light gates first, then the fastest-failing heavy gates, and no further gate start after a red, with project runners stopping queued starts. The Correction above no longer applies; this finding implements that adopted policy. The push skill §2 names this finding as the scheduler's known limitation until it is fixed.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"8b8444a8a10eae0fdb23536323e454ccde991778154eb14ede5be6365ad2469c","input_sha256":"4dba9105e2d170b94aff2b5657023445ec6488f5964b96126c1c7913ad38b47b","kind":"mutation-receipt","operation":"56f9f01a6e62eab92f795b26d8c4e60198e87b9adc6c5d61eb05850ed09fff27","options":{"section":null},"request_id_sha256":null,"results":["f-20261102-05"],"target":"f-20261102-05","v":1} -->
+
+---
+
+## 2026-11-02 — filed through the inbox spool
+
+### The e2e browser-failure collector fails a test when the page abandons its own image fetch
+* **ID:** f-20261102-06 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+
+* **Where:** `e2e/fixtures.ts`, the `page` fixture's `requestfailed` listener, which records every failed same-origin request as `Failed local request`.
+* **Defect:** a request the page itself cancels (Chromium `net::ERR_ABORTED`) is treated as a broken request. `boardWoodTextureAtom` hydrates on mount, so a board first renders the default texture, starts fetching `/board/wood4-square.png`, then hydrates the stored "off" and can abandon the still-pending tile. Whether the fetch finishes first depends on runner load.
+* **Failure scenario (observed):** CI `Test` run 41448610582, job `e2e` on 5c753dc8 (a records-only commit after the green 4633e57f): `board-wood-texture.spec.ts:141` "arrows from PGN drawings keep finite coordinates when the stored preference is off" failed with `Failed local request: http://127.0.0.1:4173/board/wood4-square.png`. The uploaded trace shows the texture request starting on the library page, never receiving a response, and ending with `net::ERR_ABORTED`.
+* **Fix direction:** exempt only image requests that fail with `net::ERR_ABORTED`; refused, reset and blocked requests and aborts of other resource types stay fatal.
+* **Proof:** a container probe that holds the texture response for 4 s on the same path reproduces the exact CI error before the fix and passes after it; a probe whose image request is refused (`route.abort("connectionrefused")`) still fails the fixture.
+* **Side observation:** the fixture never inspects response status, so a missing same-origin image (served by the SPA fallback or as a 404) does not fail a test. A container probe confirmed this before and after the fix.
+* **Found by:** Claude Code push session, 2026-11-02, from the pre-push remote CI check.
+* **Impact class:** tooling
