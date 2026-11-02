@@ -2,7 +2,7 @@ export type NativeListenerLifecycle = {
     isStopped: () => boolean;
     fail: (error: unknown) => void;
     stop: () => void;
-    listen: (subscribe: () => Promise<() => void> | (() => void)) => void;
+    attach: (subscribe: () => Promise<() => void> | (() => void)) => void;
 };
 
 function quietUnlisten(fn: (() => void) | undefined): void {
@@ -46,7 +46,7 @@ export function createNativeListenerLifecycle(options: {
         isStopped: () => stopped,
         fail,
         stop,
-        listen: (subscribe) => {
+        attach: (subscribe) => {
             void Promise.resolve(subscribe())
                 .then((fn) => {
                     if (stopped) {

@@ -9,7 +9,7 @@ test("unlistens if stopped before the subscribe promise settles", async () => {
     });
     const onFailure = vi.fn();
     const lifecycle = createNativeListenerLifecycle({ onFailure });
-    lifecycle.listen(() => pending);
+    lifecycle.attach(() => pending);
     lifecycle.stop();
     resolve(unlisten);
     await pending;
@@ -21,7 +21,7 @@ test("unlistens if stopped before the subscribe promise settles", async () => {
 test("reports a subscribe failure once", async () => {
     const onFailure = vi.fn();
     const lifecycle = createNativeListenerLifecycle({ onFailure });
-    lifecycle.listen(async () => {
+    lifecycle.attach(async () => {
         throw new Error("native refused");
     });
     await Promise.resolve();
@@ -41,7 +41,7 @@ test("does not report a subscribe failure after stop", async () => {
         reject = done;
     });
     const lifecycle = createNativeListenerLifecycle({ onFailure });
-    lifecycle.listen(() => pending);
+    lifecycle.attach(() => pending);
     lifecycle.stop();
     reject(new Error("native refused"));
     await Promise.resolve();

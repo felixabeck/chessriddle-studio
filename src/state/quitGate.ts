@@ -245,6 +245,6 @@ export function registerQuitCloseListener(options: {
             options.notify(new Error(options.failureMessage));
         },
     });
-    lifecycle.listen(() => options.subscribe(handler));
+    lifecycle.attach(() => options.subscribe(handler));
     return () => lifecycle.stop();
 }

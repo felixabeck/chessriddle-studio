@@ -480,7 +480,7 @@ export function watchMaximized(options: {
     };
 
     void check();
-    lifecycle.listen(() =>
+    lifecycle.attach(() =>
         options.onResized(() => {
             void check();
         }),
