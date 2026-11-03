@@ -470,28 +470,20 @@ fn validate_download_request(
     Ok(parsed_url)
 }
 
-/// Writes the validated network body into the caller's open payload file and flushes it.
-#[allow(clippy::too_many_arguments)]
-async fn download_payload_network<F>(
-    op: OpClass,
-    parsed_url: reqwest::Url,
-    file: &mut std::fs::File,
+/// Applies the shared download request policy before returning an accepted response body.
+pub(crate) async fn request_download_response(
+    mut req_url: reqwest::Url,
+    mut headers: HeaderMap,
     transport: &dyn crate::infra::net::DownloadTransport,
     token: Option<&str>,
-    total_size: Option<u32>,
-    cancellation: CancellationToken,
-    expected_sha256: Option<&str>,
-    mut progress_updater: F,
-) -> Result<(), Error>
-where
-    F: FnMut(f32) -> Result<(), Error>,
-{
-    info!("Downloading file from {}", redact_url(&parsed_url));
-    let mut req_url = parsed_url;
+    cancellation: &CancellationToken,
+) -> Result<crate::infra::net::DownloadResponse, Error> {
+    validate_download_url(&req_url)?;
+    headers.remove(reqwest::header::AUTHORIZATION);
     let mut redirects = 0;
 
-    let mut res = loop {
-        let mut headers = HeaderMap::new();
+    loop {
+        let mut headers = headers.clone();
         if let Some(token) = token {
             if is_bearer_origin(&req_url) {
                 if let Ok(auth_value) = format!("Bearer {token}").parse() {
@@ -537,8 +529,35 @@ where
             ));
         }
 
-        break res;
-    };
+        return Ok(res);
+    }
+}
+
+/// Writes the validated network body into the caller's open payload file and flushes it.
+#[allow(clippy::too_many_arguments)]
+async fn download_payload_network<F>(
+    op: OpClass,
+    parsed_url: reqwest::Url,
+    file: &mut std::fs::File,
+    transport: &dyn crate::infra::net::DownloadTransport,
+    token: Option<&str>,
+    total_size: Option<u32>,
+    cancellation: CancellationToken,
+    expected_sha256: Option<&str>,
+    mut progress_updater: F,
+) -> Result<(), Error>
+where
+    F: FnMut(f32) -> Result<(), Error>,
+{
+    info!("Downloading file from {}", redact_url(&parsed_url));
+    let mut res = request_download_response(
+        parsed_url,
+        HeaderMap::new(),
+        transport,
+        token,
+        &cancellation,
+    )
+    .await?;
 
     let declared_size = res.content_length;
     let limits = op.limits();

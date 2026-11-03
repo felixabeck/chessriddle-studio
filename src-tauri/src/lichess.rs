@@ -88,25 +88,9 @@ pub(crate) async fn download_coverage_holds(
         reqwest::header::ACCEPT,
         reqwest::header::HeaderValue::from_static("application/x-ndjson"),
     );
-    headers.insert(
-        reqwest::header::AUTHORIZATION,
-        format!("Bearer {token}")
-            .parse()
-            .map_err(|_| Error::OAuthFailure("invalid Lichess credential".into()))?,
-    );
-    let mut response = tokio::select! {
-        _ = cancellation.cancelled() => return Err(Error::Cancellation),
-        response = tokio::time::timeout(std::time::Duration::from_secs(60), transport.request(url.as_str(), headers)) => response
-            .map_err(|_| Error::EngineTimeout("download request timed out".into()))??,
-    };
-    if !(200..300).contains(&response.status) {
-        return Err(Error::RemoteHttpRejection(
-            crate::error::RemoteHttpRejection {
-                status: response.status,
-                authorization_sent: true,
-            },
-        ));
-    }
+    let mut response =
+        crate::fs::request_download_response(url, headers, transport, Some(token), cancellation)
+            .await?;
     let mut holds = Vec::new();
     let mut line = Vec::new();
     let mut received = 0u64;
@@ -440,6 +424,69 @@ pub async fn get_authenticated_lichess_explorer(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn coverage_preserves_partial_lines_across_chunks_and_parses_unterminated_final_line(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        struct ChunkedCoverageTransport;
+
+        #[async_trait::async_trait]
+        impl crate::infra::net::DownloadTransport for ChunkedCoverageTransport {
+            async fn request(
+                &self,
+                _: &str,
+                headers: reqwest::header::HeaderMap,
+            ) -> Result<crate::infra::net::DownloadResponse, Error> {
+                assert_eq!(headers[reqwest::header::ACCEPT], "application/x-ndjson");
+                assert_eq!(
+                    headers[reqwest::header::AUTHORIZATION],
+                    "Bearer fixture-token"
+                );
+                let chunks: &[&[u8]] = &[
+                    br#"{"id":"Corr"#,
+                    br#"esp1","rated":true,"perf":"correspondence","status":"star"#,
+                    b"ted\",\"createdAt\":100}\n{\"id\":\"Blit",
+                    br#"z001","rated":true,"perf":"blitz","status":"mate","createdAt":"#,
+                    b"200}",
+                ];
+                Ok(crate::infra::net::DownloadResponse {
+                    status: 200,
+                    headers: reqwest::header::HeaderMap::new(),
+                    content_length: Some(chunks.iter().map(|chunk| chunk.len() as u64).sum()),
+                    stream: Box::pin(futures_util::stream::iter(
+                        chunks
+                            .iter()
+                            .map(|chunk| Ok(bytes::Bytes::copy_from_slice(chunk)))
+                            .collect::<Vec<_>>(),
+                    )),
+                })
+            }
+        }
+
+        let holds = download_coverage_holds(
+            Url::parse("https://lichess.org/api/games/user/player")?,
+            "fixture-token",
+            &ChunkedCoverageTransport,
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await?;
+        assert_eq!(
+            holds,
+            vec![
+                CoverageHold {
+                    id: "Corresp1".into(),
+                    created_at_ms: 100,
+                    ongoing: true,
+                },
+                CoverageHold {
+                    id: "Blitz001".into(),
+                    created_at_ms: 200,
+                    ongoing: false,
+                },
+            ]
+        );
+        Ok(())
+    }
 
     #[test]
     fn coverage_eligibility_uses_the_export_perf_set_and_status() {
