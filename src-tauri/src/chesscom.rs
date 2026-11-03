@@ -64,7 +64,11 @@ struct ArchiveGames {
 #[derive(Deserialize)]
 struct ArchiveGame {
     pgn: Option<String>,
+    rules: Option<String>,
 }
+
+// Keep only rule sets the importer models.
+const ACCOUNT_ARCHIVE_RULES: &[&str] = &["chess", "chess960"];
 
 fn valid_player(player: &str) -> bool {
     !player.is_empty()
@@ -401,6 +405,13 @@ async fn download_chess_com_games_core<R: tauri::Runtime>(
                 for game in games.games {
                     if cancellation.is_cancelled() {
                         return Err(Error::Cancellation);
+                    }
+                    if game
+                        .rules
+                        .as_deref()
+                        .is_some_and(|rules| !ACCOUNT_ARCHIVE_RULES.contains(&rules))
+                    {
+                        continue;
                     }
                     let pgn = game
                         .pgn
@@ -876,6 +887,81 @@ mod tests {
             ),
         )
         .await
+    }
+
+    #[tokio::test]
+    async fn staging_keeps_only_supported_rules_and_absent_rules() {
+        let archive = br#"{"games":[{"rules":"chess","pgn":"[Event \"standard\"]\n\n1. e4 e5 *\n"},{"rules":"chess960","pgn":"[Event \"chess960\"]\n\n1. d4 d5 *\n"},{"rules":"crazyhouse","pgn":"[Event \"crazyhouse\"]\n\n1. N@f3 *\n"},{"rules":"bughouse","pgn":"[Event \"bughouse\"]\n\n1. P@e4 *\n"},{"pgn":"[Event \"absent-rules\"]\n\n1. c4 c5 *\n"}]}"#;
+        let transport = Arc::new(ExportTransport {
+            responses: Mutex::new(VecDeque::from([response(INDEX), response(archive)])),
+        });
+        let (_dir, state, destination, root, app) = export_fixture(transport);
+        let job = state.operations.prepare_download("test").unwrap();
+        let downloaded = run_owned_export(
+            destination,
+            "filtered.pgn".into(),
+            job,
+            app.handle().clone(),
+            state,
+            Duration::from_secs(30),
+        )
+        .await
+        .unwrap();
+        assert!(downloaded.receipt_error.is_none());
+        let staged = std::fs::read_to_string(root.join("filtered.pgn")).unwrap();
+        for expected in [
+            "[Event \"standard\"]\n\n1. e4 e5 *\n",
+            "[Event \"chess960\"]\n\n1. d4 d5 *\n",
+            "[Event \"absent-rules\"]\n\n1. c4 c5 *\n",
+        ] {
+            assert!(staged.contains(expected), "missing staged game: {expected}");
+        }
+        for excluded in ["crazyhouse", "N@f3", "bughouse", "P@e4"] {
+            assert!(
+                !staged.contains(excluded),
+                "staged excluded game: {excluded}"
+            );
+        }
+        assert_eq!(staged.matches("[Event ").count(), 3);
+    }
+
+    #[tokio::test]
+    async fn staging_only_variant_games_publishes_readable_empty_pgn() {
+        for archive in [
+            br#"{"games":[{"rules":"crazyhouse","pgn":"[Event \"crazyhouse\"]\n\n1. N@f3 *\n"},{"rules":"bughouse","pgn":"[Event \"bughouse\"]\n\n1. P@e4 *\n"}]}"#.as_slice(),
+            br#"{"games":[{"rules":"crazyhouse"},{"rules":"bughouse","pgn":""}]}"#.as_slice(),
+        ] {
+            let transport = Arc::new(ExportTransport {
+                responses: Mutex::new(VecDeque::from([response(INDEX), response(archive)])),
+            });
+            let (_dir, state, destination, root, app) = export_fixture(transport);
+            let job = state.operations.prepare_download("test").unwrap();
+            let downloaded = run_owned_export(
+                destination,
+                "empty.pgn".into(),
+                job,
+                app.handle().clone(),
+                state.clone(),
+                Duration::from_secs(30),
+            )
+            .await
+            .unwrap();
+            assert!(downloaded.receipt_error.is_none());
+            assert!(state
+                .pgn_path_authority
+                .raw_for_test()
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .has_persistent_id(&downloaded.publication.handle.id.id));
+            let staged = std::fs::read(root.join("empty.pgn")).unwrap();
+            assert_eq!(
+                staged.len(),
+                0,
+                "variant-only publication must have zero bytes"
+            );
+        }
     }
 
     async fn wait_for_progress(state: &AppState, job_id: &str, expected: ProgressState) {
