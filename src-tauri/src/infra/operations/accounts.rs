@@ -108,15 +108,6 @@ pub(crate) struct AccountCompletion {
     coverage_holds: Option<Vec<crate::lichess::CoverageHold>>,
 }
 
-impl AccountCompletion {
-    fn needs_retry(&self) -> bool {
-        self.deletion_pending
-            || (matches!(self.request.target, AccountImportTarget::Unlinked { .. })
-                && self.publication.is_some()
-                && matches!(self.outcome, CompletionOutcome::Failed(_)))
-    }
-}
-
 type AccountAttempt = futures_util::future::Shared<
     futures_util::future::BoxFuture<'static, Result<AccountCompletion, Arc<Error>>>,
 >;
@@ -154,7 +145,8 @@ impl OperationRegistry {
             })
             .map(|(id, entry)| (id.clone(), entry.snapshot.clone(), entry.attempt.clone()));
         let mut snapshot = if let Some((_, snapshot, attempt)) = existing {
-            if !snapshot.needs_retry() || matches!(snapshot.outcome, CompletionOutcome::Running) {
+            if !snapshot.deletion_pending || matches!(snapshot.outcome, CompletionOutcome::Running)
+            {
                 return Ok((attempt, None));
             }
             snapshot
@@ -249,7 +241,7 @@ impl OperationRegistry {
                 "completion belongs to another webview".into(),
             ));
         }
-        if !entry.snapshot.needs_retry()
+        if !entry.snapshot.deletion_pending
             && !matches!(entry.snapshot.outcome, CompletionOutcome::Running)
         {
             state.accounts.remove(id);

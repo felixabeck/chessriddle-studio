@@ -181,14 +181,7 @@ beforeEach(() => {
   });
   mocks.pendingAccountCompletions.mockImplementation(async () => snapshot);
   mocks.acknowledgeAccountCompletion.mockImplementation(async (id: string) => {
-    snapshot = snapshot.filter(
-      (entry) =>
-        entry.id !== id ||
-        entry.deletionPending ||
-        (entry.request.target.kind === "unlinked" &&
-          entry.publication &&
-          entry.outcome.state === "failed"),
-    );
+    snapshot = snapshot.filter((entry) => entry.id !== id || entry.deletionPending);
   });
   mocks.getDatabases.mockResolvedValue({
     databases: [],
@@ -289,21 +282,24 @@ test("one retained success refreshes once across repeated events and two matchin
   expect(mocks.acknowledgeAccountCompletion).toHaveBeenCalledOnce();
   expect(mocks.notify).not.toHaveBeenCalled();
 });
-test("a retained failed conversion reports once and retries the native attempt", async () => {
+test("a failed conversion is acknowledged before the next download starts a fresh completion", async () => {
   snapshot = [completion("failed")];
   await renderCards();
   await emitChanged();
   await emitChanged();
   expect(mocks.getDatabases).toHaveBeenCalledOnce();
   expect(mocks.notify).toHaveBeenCalledOnce();
-  expect(store.get(accountCompletionsAtom).get("chesscom_felix")?.publication).toBeTruthy();
-  mocks.importAccountGames.mockImplementation(async () => {
-    const retried = completion("succeeded", { attempt: 2 });
-    snapshot = [retried];
-    return retried;
+  expect(snapshot).toEqual([]);
+  expect(store.get(accountCompletionsAtom).size).toBe(0);
+  expect(mocks.acknowledgeAccountCompletion).toHaveBeenCalledOnce();
+  mocks.importAccountGames.mockImplementation(async (accepted: AccountImportRequest) => {
+    const fresh = completion("succeeded", { id: "fresh-operation", request: accepted });
+    snapshot = [fresh];
+    return fresh;
   });
   await clickDownload();
   expect(mocks.importAccountGames).toHaveBeenCalledOnce();
+  expect(mocks.importAccountGames.mock.calls[0][0].pendingBatch).toBeNull();
   expect(mocks.getDatabases).toHaveBeenCalledTimes(2);
   expect(store.get(accountCompletionsAtom).size).toBe(0);
 });

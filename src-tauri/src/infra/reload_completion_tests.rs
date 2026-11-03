@@ -193,7 +193,8 @@ async fn unlinked_lichess_adopted_holds_persist_cursor_and_next_download_imports
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn unlinked_lichess_failed_conversion_retries_retained_publication_with_original_holds() {
+async fn unlinked_lichess_failed_conversion_downloads_again_with_fresh_publication_and_holds(
+) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::Manager as _;
     let (directory, app, path, mut request, publication) = reload_completion_account_fixture();
     let state = app.state::<crate::AppState>().inner().clone();
@@ -202,22 +203,25 @@ async fn unlinked_lichess_failed_conversion_retries_retained_publication_with_or
     std::fs::write(
         directory.path().join("account.pgn"),
         format!("{blitz}[White \"unterminated"),
-    )
-    .unwrap();
-    let hold_start = 1_790_856_000_000;
+    )?;
+    let first_hold_start = 1_790_856_000_000;
+    let downloads = Arc::new(AtomicUsize::new(0));
+    let first_downloads = downloads.clone();
+    let failed_publication = publication.clone();
     let first = accounts::import_account_games_with_download(
         request.clone(),
         app.clone(),
         "main".into(),
         state.clone(),
         move |_, _, _, _, _| async move {
+            first_downloads.fetch_add(1, Ordering::SeqCst);
             accounts::adopt_account_download(
                 Ok(super::operations::RuntimeDownload {
                     publication,
                     receipt_error: None,
                     coverage_holds: Some(vec![crate::lichess::CoverageHold {
                         id: "corresp1".into(),
-                        created_at_ms: hold_start,
+                        created_at_ms: first_hold_start,
                         ongoing: true,
                     }]),
                 }),
@@ -226,34 +230,64 @@ async fn unlinked_lichess_failed_conversion_retries_retained_publication_with_or
             )
         },
     )
-    .await
-    .unwrap();
+    .await?;
     assert!(matches!(first.outcome, CompletionOutcome::Failed(_)));
     assert_eq!(reload_completion_account_rows(&path), 0);
     assert_eq!(unlinked_cursor(&path), None);
     state
         .operations
-        .acknowledge_account_completion(&first.id, "main")
-        .unwrap();
-    assert_eq!(
-        state.operations.account_completions("main").unwrap().len(),
-        1
-    );
-    std::fs::write(directory.path().join("account.pgn"), blitz).unwrap();
-    let retry = accounts::import_account_games_with_download(
+        .acknowledge_account_completion(&first.id, "main")?;
+    assert!(state.operations.account_completions("main")?.is_empty());
+    let fresh_pgn = directory.path().join("fresh.pgn");
+    std::fs::write(&fresh_pgn, blitz)?;
+    let fresh_handle = state
+        .pgn_path_authority
+        .with_mut(|authority| {
+            authority.get_or_create_persistent_file(
+                &fresh_pgn,
+                "fresh.pgn",
+                vec![PathOperation::ReadPgn],
+            )
+        })
+        .map_err(|_| Error::Conflict("account path authority unavailable".into()))??;
+    let fresh_publication = ArtifactPublication {
+        handle: super::path_authority::FileWorkspaceHandle::new(fresh_handle.id),
+        durability: CommitDurability::Durable,
+    };
+    assert_ne!(fresh_publication.handle, failed_publication.handle);
+    let next_hold_start = first_hold_start + 86_400_000;
+    let next_downloads = downloads.clone();
+    let next = accounts::import_account_games_with_download(
         request,
         app,
         "main".into(),
         state.clone(),
-        |_, _, _, _, _| async { panic!("conversion retry must use the retained publication") },
+        move |download_request, _, _, _, _| async move {
+            next_downloads.fetch_add(1, Ordering::SeqCst);
+            assert_eq!(download_request.since_ms, None);
+            accounts::adopt_account_download(
+                Ok(super::operations::RuntimeDownload {
+                    publication: fresh_publication,
+                    receipt_error: None,
+                    coverage_holds: Some(vec![crate::lichess::CoverageHold {
+                        id: "fresh-correspondence".into(),
+                        created_at_ms: next_hold_start,
+                        ongoing: true,
+                    }]),
+                }),
+                "lichess",
+                "Player",
+            )
+        },
     )
-    .await
-    .unwrap();
-    assert!(matches!(retry.outcome, CompletionOutcome::Succeeded(_)));
-    assert_eq!(retry.id, first.id);
-    assert_eq!(retry.attempt, first.attempt + 1);
+    .await?;
+    assert!(matches!(next.outcome, CompletionOutcome::Succeeded(_)));
+    assert_ne!(next.id, first.id);
+    assert_eq!(next.attempt, 1);
+    assert_eq!(downloads.load(Ordering::SeqCst), 2);
     assert_eq!(reload_completion_account_rows(&path), 1);
-    assert_eq!(unlinked_cursor(&path), Some(hold_start - 1));
+    assert_eq!(unlinked_cursor(&path), Some(next_hold_start - 1));
+    Ok(())
 }
 
 async fn reload_completion_drain(registry: OperationRegistry) {
