@@ -20305,13 +20305,15 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 
 ### Game report adds a duplicate castling variation because engine UCI castling is compared with king-takes-rook tree moves
 
-* **ID:** f-20261101-19 · **Status:** open · **Area:** engine-uci · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261101-19 · **Status:** handled · **Area:** engine-uci · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** behaviour
 * **Where:** `src/state/store/tree.ts:1104-1117` (`addAnalysis` compares raw `from`/`to` of `parseUci(bestMoveUci)` against existing children) and the unconditional `parent.children.push(variationNode)` after it; `src-tauri/src/chess.rs` `parse_uci_attrs` keeps the engine's text (`e1g1`); tree moves from SAN use chessops `parseSan`, which returns king-to-rook for castling (`node_modules/chessops/dist/esm/san.js:114-119`); `uciNormalize` in `src/utils/chess.ts` exists and is unused here.
 * **Defect:** for castling `to` is `h1` in the tree and `g1` from the engine, so the existing `O-O` child is not found and a second `O-O` branch with the PV is added; `addAnalysis` sets `dirty`, so a save writes the duplicate into the user's game.
 * **Failure scenario:** a game whose move after some position is annotated by Generate Report (variations on, the default) where the engine's best move is `O-O` and `O-O` already exists as the main move or a sideline: the tree gets two identical `O-O` branches.
 * **Fix shape:** find the existing child by normalized move identity (`uciNormalize` on both sides, or SAN as `makeMove` does) and store the variation move normalized. Unit test with a castling best move.
 * **Found by:** cloud audit session session_01JbeKom4B2MLm9AFduSMH4Y (engine audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee (chessops castling encoding read in node_modules), 2026-11-01.
+* **Handled (2026-11-03, drain session 4c58ce9a, co-located joiner of f-20261102-08):** `addAnalysis` normalizes the engine best move and every later PV move against its position (chessops `normalizeMove`) before SAN, play and storage, and normalizes existing children too before the identity comparison, so an `O-O` child stored as SAN-derived `e1h1` or as raw UCI `e1g1` (keyboard input, live games) is found and no duplicate variation is added (447b1765, review repair ecadd32b). Regressions in `src/utils/tests/store.test.ts` go red without either normalization. Rejected: comparing by SAN (needs a SAN per child on every lookup; normalized move identity is the existing `uciNormalize` primitive).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"668c316155c0fe2d0c83140f35dc228d486e3cc6e4fc7acdf1bc2d6f8217b535","header_sha256":"dc404cc9b42ba4086c2c25c890bca2546459cd78e93b4e8fcbd8256fe7342b9f","header_status":"handled","input_sha256":"8afc11046c7c9dbd6d514964bee9fef82471ee52e6d4fb4e0d7b9826f34c4c48","kind":"mutation-receipt","operation":"867a8e1a06b687964c2a3bcbb00778fe9e64f7490fe6b29ee69861198e32af0f","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-19"],"target":"f-20261101-19","v":1} -->
 
 ---
 
