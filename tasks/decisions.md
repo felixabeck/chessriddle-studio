@@ -11614,7 +11614,7 @@ Former private decision identifier: d-20261029-14
 * **Chosen:** After the export, a Mongo-served coverage stream (`/api/games/user/<player>?since=<since>&ongoing=true`, no `perfType`/`rated`) for the same `since` yields holds for ongoing and finished eligible games; the cursor stops one millisecond before the oldest hold the downloaded file did not cover.
 * **Rejected:** A fixed lookback of the longest correspondence time control (a correspondence game has no maximum duration). An ongoing-only query (`finished=false`), which loses a game that finished seconds before the query while still missing from the export's search index. Replacing the export with the Mongo stream (the PGN cannot tell rated from casual for arena games). Re-exporting full history every sync (minutes per sync). Storing ongoing ids and fetching them by id next sync (needs a second download into the same staging artefact and misses a just-finished new game).
 * **Reason:** The only complete option at bounded cost; dedup by provider id makes the re-exported overlap harmless. Reversal path: the ids approach plus a delay, if the per-sync cost is observed to matter.
-* **Decided by:** drain session c5508216 (adopted planner plan, 5 plan-review rounds, approved), 2026-11-03 · **Superseded-by:** -
+* **Decided by:** drain session c5508216 (adopted planner plan, 5 plan-review rounds, approved), 2026-11-03 · **Superseded-by:** d-20261103-12
 
 ### d-20261103-07 — How does the unlinked (Windows) account import recognise a game it already has?
 
@@ -11660,7 +11660,7 @@ Former private decision identifier: d-20261029-14
 * **Rejected:** Rejecting the whole import (the linked receipt's behaviour), which would block every later sync of that account on one malformed provider game.
 * **Reason:** No game is dropped because of its headers. Reversal path: refuse such games in the unlinked importer.
 * **Decided by:** drain session c5508216 (adopted planner plan, 5 plan-review rounds, approved), 2026-11-03 · **Superseded-by:** -
-<!-- ledger-meta {"command":"record-decision","effect_lines":53,"effect_sha256":"db584da1011cf0c0d36e4410d6ad695f6433c62af0d0f4947e24c6396cf6ace0","input_sha256":"e761e4653948798dbc73ec2eb38f70d83f13b90deb0420559a38abdea2816db4","kind":"mutation-receipt","operation":"b0deb42d1507dcee0db3a9224c0c75abcaae9bc66802db7f1050f4fbe5bae4e7","options":{"section":null},"request_id_sha256":null,"results":["d-20261103-06","d-20261103-07","d-20261103-08","d-20261103-09","d-20261103-10","d-20261103-11"],"target":"decisions-ledger","v":1} -->
+<!-- ledger-meta {"command":"record-decision","effect_lines":53,"effect_sha256":"4e8e0274afee6eafcf3343e38cf9af695fd1ed69193a15ce0ae79ed6fe66312b","input_sha256":"e761e4653948798dbc73ec2eb38f70d83f13b90deb0420559a38abdea2816db4","kind":"mutation-receipt","operation":"b0deb42d1507dcee0db3a9224c0c75abcaae9bc66802db7f1050f4fbe5bae4e7","options":{"section":null},"request_id_sha256":null,"results":["d-20261103-06","d-20261103-07","d-20261103-08","d-20261103-09","d-20261103-10","d-20261103-11"],"target":"decisions-ledger","v":1} -->
 
 ### d-20261103-12 — How far back must the Lichess account-sync cursor reach? (corrected)
 
