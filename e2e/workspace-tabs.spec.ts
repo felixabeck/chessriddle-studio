@@ -157,6 +157,28 @@ for (const { count, linked } of [
                     },
                 },
                 file_revision: { result: revision },
+                ...(linked
+                    ? {
+                          read_game: {
+                              result: {
+                                  pgn: '[Result "*"]\n\n1. e4 e5 {First saved analysis comment} *',
+                                  stamp: "a".repeat(64),
+                                  revision,
+                                  present: true,
+                                  linked: locator,
+                              },
+                          },
+                          lex_pgn: {
+                              result: [
+                                  { type: "Header", value: { tag: "Result", value: "*" } },
+                                  { type: "San", value: "e4" },
+                                  { type: "San", value: "e5" },
+                                  { type: "Comment", value: "First saved analysis comment" },
+                                  { type: "Outcome", value: "*" },
+                              ],
+                          },
+                      }
+                    : {}),
             },
         });
         await page.goto("/");
@@ -246,6 +268,10 @@ for (const { count, linked } of [
             expect(later?.args).toMatchObject({
                 expected: { kind: "linkedGame", stamp: locator.stamp, revision },
             });
+            const laterReads = await page.evaluate(() =>
+                window.__E2E_TAURI__.invocations().filter(({ command }) => command === "read_game"),
+            );
+            expect(laterReads).toHaveLength(1);
         }
         await capture(`workspace-tabs-first-save-${count}${linked ? "-linked" : ""}`);
     });
