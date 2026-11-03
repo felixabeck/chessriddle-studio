@@ -20141,7 +20141,7 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 
 ### Date filters compare raw PGN date strings, so unknown and partial dates are misfiltered
 
-* **ID:** f-20261101-10 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261101-10 · **Status:** handled · **Area:** db-search · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Where:** `src-tauri/src/db/search.rs:418-426` (`matches_date`), the SQL `games::date.ge/le` filters in `get_games_blocking` (`db/mod.rs` around 1934), dates stored verbatim at import.
 * **Defect:** `?` sorts after every digit, so `"????.??.??" >= "2025.11.01"` is true and `"2024.??.??" <= "2024.12.31"` is false. Only a missing (`None`) date is treated as unknown.
@@ -20149,6 +20149,8 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Fix shape:** treat a year containing `?` as unknown (excluded when any bound is set); for a known year with unknown month/day compare the earliest possible date against the start and the latest against the end. Mirror in SQL.
 * **Found by:** cloud audit session session_01JbeKomxzG32RyrZzRykRDV (PGN/database audit, base 301104da), verified against local HEAD 301104da by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
 * **Proof:** `matches_date` and the SQL filter tests for `????.??.??` with a start-only bound and for `2024.??.??` inside a 2024 range.
+* **Handled (2026-11-03, drain c5508216, co-located joiner of f-20261101-23):** commits 5704cee4 and fdf35c64. A YYYY.MM.DD-shaped date with an unknown year fails any bound; unknown month/day components span their range (real month end, leap years included); a game matches when its earliest possible date is at or after the start and its latest at or before the end (containment, as the finding's fix shape states). `matches_date` and the SQL endpoint in `get_games_blocking` share one case table; a production-query test covers rows and counts and fails when the lexical filter is restored. Other date shapes keep the lexical comparison.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"175db9b48ec7d80eb13834f52d3600ebf4781dc92556408b88687903d344685c","header_sha256":"8530bed886fb2c93becdca37b2f2dbfc43ccf2507ca580b2a14b7abf76bd1c20","header_status":"handled","input_sha256":"ba5729f88cf2ed19b20c1f47dc94136b135fdfa4a4fbcd73f6de60d9a82745c6","kind":"mutation-receipt","operation":"b2fa4bd02b90644c36760d3b4b6f131ad8e0ca1c705bbd306ebfb3a004273a94","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-10"],"target":"f-20261101-10","v":1} -->
 
 ---
 
