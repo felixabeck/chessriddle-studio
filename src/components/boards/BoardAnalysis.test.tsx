@@ -47,6 +47,7 @@ const mocks = vi.hoisted(() => ({
   writeGame: vi.fn(),
   countPgnGames: vi.fn(),
   parsePGN: vi.fn(),
+  parsePGNWithLossReport: vi.fn(),
   issuePgnWorkspace: vi.fn(),
   issuePgnExportDestination: vi.fn(),
   readGame: vi.fn(),
@@ -145,6 +146,7 @@ vi.mock("@/platform/tauri", async () => {
 vi.mock("@/utils/chess", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/utils/chess")>()),
   parsePGN: mocks.parsePGN,
+  parsePGNWithLossReport: mocks.parsePGNWithLossReport,
 }));
 
 vi.mock("@/components/tabs/ConfirmChangesModal", () => ({
@@ -292,15 +294,22 @@ describe("BoardAnalysis add game durability", () => {
     mocks.notifyUnlessCancelled.mockImplementation(actualNotify.notifyUnlessCancelled);
     mocks.showNotification.mockReset();
     mocks.countPgnGames.mockReset().mockResolvedValue(4);
-    mocks.readGame.mockReset().mockImplementation(
-      (_handle, _page, options) =>
-        new Promise((_resolve, reject) => {
-          options?.signal.addEventListener(
-            "abort",
-            () => reject({ category: "cancellation", message: "Cancellation" }),
-            { once: true },
-          );
-        }),
+    mocks.parsePGNWithLossReport.mockReset().mockResolvedValue({ tree: defaultTree(), losses: [] });
+    // Save validation reads settle. Gate reconciliation stays pending until cancellation.
+    mocks.readGame.mockReset().mockImplementation((_handle, _page, options) =>
+      !options?.signal
+        ? Promise.resolve({
+            pgn: defaultPGN(),
+            stamp: treeStore.getState().sourceStamp,
+            present: true,
+          })
+        : new Promise((_resolve, reject) => {
+            options?.signal.addEventListener(
+              "abort",
+              () => reject({ category: "cancellation", message: "Cancellation" }),
+              { once: true },
+            );
+          }),
     );
     mocks.writeGame
       .mockReset()
@@ -1420,7 +1429,7 @@ describe("BoardAnalysis add game durability", () => {
         expect(normalizeError(cause).message).toBe(message);
         expect(mocks.showNotification.mock.calls[0]?.[0].message).toBe(message);
         expect(getAddGameLease(treeStore)).toBeNull();
-        expect(mocks.readGame.mock.calls.map(([, page]) => page)).toEqual([3]);
+        expect(mocks.readGame.mock.calls.map(([, page]) => page)).toEqual([1, 3]);
         await act(async () =>
           read.resolve({
             pgn: admittedPgn,
@@ -1567,7 +1576,7 @@ describe("BoardAnalysis add game durability", () => {
         });
         expect(mocks.showNotification).not.toHaveBeenCalled();
         expect(mocks.countPgnGames).not.toHaveBeenCalled();
-        expect(mocks.readGame).not.toHaveBeenCalled();
+        expect(mocks.readGame).toHaveBeenCalledExactlyOnceWith(fileHandle, 1, undefined);
         expect(tabStorage.flush()).toEqual([]);
         const durable = deserializeStorageValue<{ tabs: Tab[] }>(
           sessionStorage.getItem(WORKSPACE_STORAGE_KEY)!,
@@ -1816,10 +1825,12 @@ describe("BoardAnalysis add game durability", () => {
       mocks.parsePGN.mockReturnValueOnce(parse.promise);
       await composed();
       const saving = startOrdinarySave();
-      expect(mocks.writeGame).toHaveBeenCalledWith(fileHandle, 1, expect.any(String), {
-        kind: "game",
-        stamp: "a".repeat(64),
-      });
+      await vi.waitFor(() =>
+        expect(mocks.writeGame).toHaveBeenCalledWith(fileHandle, 1, expect.any(String), {
+          kind: "game",
+          stamp: "a".repeat(64),
+        }),
+      );
       await activate();
       await navigate(awayTab.value);
       let result: Awaited<ReturnType<typeof saveToFile>>;
@@ -1871,7 +1882,7 @@ describe("BoardAnalysis add game durability", () => {
       await activate();
       expect(mocks.parsePGN).toHaveBeenCalledOnce();
       expect(mocks.writeGame).toHaveBeenCalledOnce();
-      expect(mocks.readGame).not.toHaveBeenCalled();
+      expect(mocks.readGame).toHaveBeenCalledExactlyOnceWith(fileHandle, 1, undefined);
       expect(treeStore.getState().sourceStamp).toBe(savedTree.sourceStamp);
       await navigate(awayTab.value);
       await act(async () => parse.reject(new Error("Inactive parse failure")));

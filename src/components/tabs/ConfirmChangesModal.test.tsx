@@ -21,11 +21,15 @@ const mocks = vi.hoisted(() => ({
   pickPgnFile: vi.fn(),
   readFileGame: vi.fn(),
   writeGame: vi.fn(),
+  lexPgn: vi.fn(),
 }));
 
 vi.mock("@/platform/tauri", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/platform/tauri")>();
-  return { ...actual, tauri: { ...actual.tauri, writeGame: mocks.writeGame } };
+  return {
+    ...actual,
+    tauri: { ...actual.tauri, writeGame: mocks.writeGame, lexPgn: mocks.lexPgn },
+  };
 });
 vi.mock("@/utils/files", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/utils/files")>()),
@@ -65,6 +69,7 @@ let treeStore: TreeStore;
 beforeEach(() => {
   sessionStorage.clear();
   vi.clearAllMocks();
+  mocks.lexPgn.mockReset().mockResolvedValue([{ type: "Outcome", value: "*" }]);
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -79,13 +84,15 @@ beforeEach(() => {
     metadata: { type: "game", tags: [] },
     lastModified: 1,
   });
-  mocks.readFileGame.mockResolvedValue({
-    pgn: "existing game",
-    stamp: "a".repeat(64),
+  mocks.readFileGame.mockReset().mockImplementation(async () => ({
+    pgn: "*",
+    stamp: treeStore.getState().sourceStamp ?? "a".repeat(64),
     revision: "r1",
     present: true,
-  });
-  mocks.writeGame.mockResolvedValue({ stamp: "b".repeat(64), revision: "new-revision" });
+  }));
+  mocks.writeGame
+    .mockReset()
+    .mockResolvedValue({ stamp: "b".repeat(64), revision: "new-revision" });
 });
 
 afterEach(async () => {

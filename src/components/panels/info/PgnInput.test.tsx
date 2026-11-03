@@ -23,6 +23,8 @@ import PgnInput from "./PgnInput";
 const mocks = vi.hoisted(() => ({
   parsePGN: vi.fn(),
   writeGame: vi.fn(),
+  readGame: vi.fn(),
+  lexPgn: vi.fn(async () => [{ type: "Outcome", value: "*" }]),
   showNotification: vi.fn(),
 }));
 
@@ -33,7 +35,15 @@ vi.mock("@/utils/chess", async (importOriginal) => ({
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("@/platform/tauri", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/platform/tauri")>();
-  return { ...actual, tauri: { ...actual.tauri, writeGame: mocks.writeGame } };
+  return {
+    ...actual,
+    tauri: {
+      ...actual.tauri,
+      writeGame: mocks.writeGame,
+      readGame: mocks.readGame,
+      lexPgn: mocks.lexPgn,
+    },
+  };
 });
 vi.mock("@mantine/notifications", () => ({ notifications: { show: mocks.showNotification } }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
@@ -264,6 +274,10 @@ test.each([true, false])(
     closeTreeStore(fixture.id);
     const admitted = loadWorkspace(sessionStorage, WORKSPACE_STORAGE_KEY).tabs[0]!;
     const cold = createTreeStore(fixture.id, undefined, getTabTreeKey(admitted));
+    mocks.readGame
+      .mockReset()
+      .mockResolvedValueOnce({ pgn: "*", stamp: stampA, present: true })
+      .mockResolvedValueOnce({ pgn: "*", stamp: stampB, present: true });
     expect(cold.getState()).toMatchObject({
       linkedSource: expectedSource,
       sourceStamp: stampA,
@@ -322,6 +336,10 @@ test.each([true, false])(
         : { kind: "game", stamp: stampB },
     );
     expect(cold.getState()).toMatchObject({ dirty: false, sourceStamp: stampC });
+    expect(mocks.readGame.mock.calls).toEqual([
+      [fixture.owner.gameOrigin.file.handle, 2, undefined],
+      [fixture.owner.gameOrigin.file.handle, 2, undefined],
+    ]);
     expect(fixture.getTab(fixture.id)).toBeUndefined();
     expect(mocks.showNotification).not.toHaveBeenCalled();
   },

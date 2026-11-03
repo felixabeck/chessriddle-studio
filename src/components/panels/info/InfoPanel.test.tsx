@@ -29,6 +29,8 @@ const mocks = vi.hoisted(() => ({
   loadFileGame: vi.fn(),
   writeGame: vi.fn(),
   readGames: vi.fn(),
+  readGame: vi.fn(),
+  lexPgn: vi.fn(),
   countPgnGames: vi.fn(),
   parsePGN: vi.fn(),
   notify: vi.fn(),
@@ -68,6 +70,8 @@ vi.mock("@/platform/tauri", async () => {
       ...actual.tauri,
       deleteGame: mocks.deleteGame,
       readGames: mocks.readGames,
+      readGame: mocks.readGame,
+      lexPgn: mocks.lexPgn,
       countPgnGames: mocks.countPgnGames,
       writeGame: mocks.writeGame,
     },
@@ -273,6 +277,12 @@ describe("InfoPanel game loading and cancellation", () => {
     jotaiStore.set(activeTabAtom, tabAId);
 
     mocks.readGames.mockReset();
+    mocks.readGame.mockReset().mockImplementation(async () => ({
+      pgn: "*",
+      stamp: treeStore.getState().sourceStamp,
+      present: true,
+    }));
+    mocks.lexPgn.mockReset().mockResolvedValue([{ type: "Outcome", value: "*" }]);
     mocks.readGames.mockResolvedValue([]);
     mocks.countPgnGames.mockReset().mockResolvedValue(5);
     mocks.loadFileGame.mockReset();
@@ -809,6 +819,7 @@ describe("InfoPanel game loading and cancellation", () => {
     await act(async () => root.unmount());
     await act(async () => write.resolve({ stamp: "c".repeat(64), revision: "saved-revision" }));
     expect(mocks.loadFileGame).not.toHaveBeenCalled();
+    expect(mocks.readGame).toHaveBeenCalledTimes(1);
     expect(jotaiStore.get(tabsAtom)[0].gameOrigin).toEqual({ ...tabA.gameOrigin, gameNumber: 2 });
   });
 
@@ -820,6 +831,7 @@ describe("InfoPanel game loading and cancellation", () => {
     expect(mocks.writeGame).toHaveBeenCalledOnce();
     expect(mocks.loadFileGame).toHaveBeenCalledOnce();
     expect(treeStore.getState().dirty).toBe(false);
+    expect(mocks.readGame).toHaveBeenCalledTimes(1);
     await act(async () => treeStore.getState().setComment("Edited after saving"));
     const newer = treeStore.getState();
     await act(async () => read.resolve(diskGame()));

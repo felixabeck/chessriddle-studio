@@ -25,6 +25,8 @@ const native = vi.hoisted(() => ({
     insertDbGame: vi.fn(),
     writeDbGame: vi.fn(),
     writeGame: vi.fn(),
+    readGame: vi.fn(),
+    lexPgn: vi.fn(),
     countPgnGames: vi.fn(),
     resolveLinkedGame: vi.fn(),
 }));
@@ -629,6 +631,10 @@ test("an explicit file save waits for autosave and uses its returned stamp", asy
         },
     });
     f.store.getState().setSourceStamp(stampA);
+    native.readGame
+        .mockResolvedValueOnce({ pgn: "*", stamp: stampA, present: true })
+        .mockResolvedValueOnce({ pgn: "*", stamp: stampB, present: true });
+    native.lexPgn.mockResolvedValue([{ type: "Outcome", value: "*" }]);
     const write = deferred<{ stamp: string; revision: string }>();
     native.writeGame.mockReturnValueOnce(write.promise);
     const autoSave = saveToFile({ ...f.args(), isUserSave: false });
@@ -642,6 +648,11 @@ test("an explicit file save waits for autosave and uses its returned stamp", asy
     expect(await autoSave).toBe("saved");
     expect(await explicitSave).toBe("saved");
     expect(native.writeGame).toHaveBeenCalledTimes(2);
+    expect(native.readGame.mock.calls).toEqual([
+        [file, 0, undefined],
+        [file, 0, undefined],
+    ]);
+    expect(native.lexPgn).toHaveBeenCalledTimes(2);
     expect(native.writeGame).toHaveBeenLastCalledWith(file, 0, expect.any(String), {
         kind: "game",
         stamp: stampB,
