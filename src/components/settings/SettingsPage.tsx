@@ -39,6 +39,8 @@ import {
   enableBoardScrollAtom,
   eraseDrawablesOnClickAtom,
   materialDisplayAtom,
+  boardAnimationSpeedAtom,
+  type BoardAnimationSpeed,
   moveHighlightAtom,
   moveInputAtom,
   moveMethodAtom,
@@ -162,6 +164,7 @@ export default function Page() {
   const [moveMethod, setMoveMethod] = useAtom(moveMethodAtom);
   const [moveNotationType, setMoveNotationType] = useAtom(moveNotationTypeAtom);
   const [showCoordinates, setShowCoordinates] = useAtom(showCoordinatesAtom);
+  const [animationSpeed, setAnimationSpeed] = useAtom(boardAnimationSpeedAtom);
   const [materialDisplay, setMaterialDisplay] = useAtom(materialDisplayAtom);
   const [practiceAutoDifficulty, setPracticeAutoDifficulty] = useAtom(practiceAutoDifficultyAtom);
 
@@ -285,6 +288,27 @@ export default function Page() {
             allowDeselect={false}
             value={showCoordinates}
             onChange={(val) => setShowCoordinates(val as "no" | "edge" | "all")}
+          />
+        ),
+      },
+      {
+        id: "animation-speed",
+        category: "board",
+        title: t("Settings.AnimationSpeed"),
+        description: t("Settings.AnimationSpeed.Desc"),
+        keywords: ["animation", "speed", "duration", "move"],
+        render: () => (
+          <Select
+            aria-label={t("Settings.AnimationSpeed")}
+            data={[
+              { label: t("Settings.AnimationSpeed.Off"), value: "off" },
+              { label: t("Settings.AnimationSpeed.Fast"), value: "fast" },
+              { label: t("Settings.AnimationSpeed.Normal"), value: "normal" },
+              { label: t("Settings.AnimationSpeed.Slow"), value: "slow" },
+            ]}
+            allowDeselect={false}
+            value={animationSpeed}
+            onChange={(val) => setAnimationSpeed(val as BoardAnimationSpeed)}
           />
         ),
       },
@@ -632,6 +656,7 @@ export default function Page() {
       moveMethod,
       isNative,
       showCoordinates,
+      animationSpeed,
       materialDisplay,
       fileWorkspaceDisplayName,
       databasesDirectory,
@@ -646,6 +671,7 @@ export default function Page() {
       setEnginesDirectory,
       setPuzzleWorkspaceGeneration,
       setShowCoordinates,
+      setAnimationSpeed,
       setMaterialDisplay,
       practiceAutoDifficulty,
       setPracticeAutoDifficulty,

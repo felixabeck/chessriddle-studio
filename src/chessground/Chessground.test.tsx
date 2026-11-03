@@ -5,6 +5,8 @@ import type { Config } from "@lichess-org/chessground/config";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import { afterEach, expect, test, vi } from "vitest";
 import { installMatchMediaStub } from "@/tests/matchMedia";
+import { getDefaultStore } from "jotai";
+import { boardAnimationSpeedAtom } from "@/state/atoms";
 import { Chessground } from "./Chessground";
 
 const { api, createChessground } = vi.hoisted(() => {
@@ -55,6 +57,11 @@ class MockResizeObserver implements ResizeObserver {
 Object.assign(globalThis, { ResizeObserver: MockResizeObserver });
 
 vi.mock("@lichess-org/chessground", () => ({ Chessground: createChessground }));
+// An invalid stored preference logs through the native facade, which has no Tauri host here.
+vi.mock("@/platform/native", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/platform/native")>()),
+  warn: vi.fn(),
+}));
 
 afterEach(async () => {
   for (const root of mountedRoots) await act(async () => root.unmount());
@@ -323,4 +330,62 @@ test("a re-render after mount clears the bounds cache before set when the board 
   });
   expect(api.set).toHaveBeenCalledOnce();
   expect(api.state.dom.bounds.clear).not.toHaveBeenCalled();
+});
+
+test.each([
+  ["default", null, undefined, { enabled: true, duration: 200 }],
+  ["fast", '"fast"', undefined, { enabled: true, duration: 100 }],
+  ["slow", '"slow"', undefined, { enabled: true, duration: 400 }],
+  ["off", '"off"', undefined, { enabled: false }],
+  ["unknown preset", '"warp"', undefined, { enabled: true, duration: 200 }],
+  ["malformed JSON", "{", undefined, { enabled: true, duration: 200 }],
+  ["slow with caller-disabled animation", '"slow"', false, { enabled: false, duration: 400 }],
+])(
+  "animation preference %s reaches Chessground",
+  async (_name, stored, callerEnabled, expected) => {
+    localStorage.clear();
+    if (stored !== null) localStorage.setItem("board-animation-speed", stored);
+    const root = createRoot(document.createElement("div"));
+    mountedRoots.add(root);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(0, 0, 400, 400),
+    );
+    try {
+      await act(async () => {
+        root.render(
+          <MantineProvider>
+            <Chessground animation={{ enabled: callerEnabled ?? true }} />
+          </MantineProvider>,
+        );
+      });
+      // The stored preference is read when the atom mounts and applied through api.set.
+      expect(api.set.mock.lastCall?.[0].animation).toEqual(expected);
+    } finally {
+      localStorage.clear();
+    }
+  },
+);
+
+test("a mounted board without its own animation config resumes animating when Off changes to Slow", async () => {
+  localStorage.clear();
+  localStorage.setItem("board-animation-speed", '"off"');
+  const root = createRoot(document.createElement("div"));
+  mountedRoots.add(root);
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(0, 0, 400, 400),
+  );
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <Chessground />
+        </MantineProvider>,
+      );
+    });
+    expect(api.set.mock.lastCall?.[0].animation).toEqual({ enabled: false });
+    await act(async () => getDefaultStore().set(boardAnimationSpeedAtom, "slow"));
+    expect(api.set.mock.lastCall?.[0].animation).toEqual({ enabled: true, duration: 400 });
+  } finally {
+    localStorage.clear();
+  }
 });

@@ -5,7 +5,13 @@ import type { Key } from "@lichess-org/chessground/types";
 import { Box } from "@mantine/core";
 import { useAtomValue } from "jotai";
 import { type Ref, useEffect, useImperativeHandle, useRef } from "react";
-import { boardImageAtom, boardWoodTextureAtom, moveMethodAtom } from "@/state/atoms";
+import {
+  BOARD_ANIMATION_DURATION_MS,
+  boardAnimationSpeedAtom,
+  boardImageAtom,
+  boardWoodTextureAtom,
+  moveMethodAtom,
+} from "@/state/atoms";
 
 const BOARD_COORDINATE_COLORS: Record<string, { white: string; black: string }> = {
   chessriddle: { white: "#e8ceab", black: "#bc7944" },
@@ -84,6 +90,7 @@ export function Chessground({ ref, ...props }: ChessgroundProps) {
   const apiRef = useRef<Api | null>(null);
 
   const moveMethod = useAtomValue(moveMethodAtom);
+  const animationSpeed = useAtomValue(boardAnimationSpeedAtom);
   const configRef = useRef<Config>(props);
   configRef.current = {
     ...props,
@@ -126,6 +133,16 @@ export function Chessground({ ref, ...props }: ChessgroundProps) {
       ...props.selectable,
       enabled: moveMethod !== "drag",
     },
+    // Chessground merges config into its state, so `enabled` is always sent explicitly: a board
+    // that was switched off must turn back on, unless the caller disables animation itself.
+    animation:
+      animationSpeed === "off"
+        ? { ...props.animation, enabled: false }
+        : {
+            ...props.animation,
+            enabled: props.animation?.enabled !== false,
+            duration: BOARD_ANIMATION_DURATION_MS[animationSpeed],
+          },
   };
 
   useImperativeHandle(
@@ -187,7 +204,7 @@ export function Chessground({ ref, ...props }: ChessgroundProps) {
     // positive size may clear it: a hidden board must not re-cache a 0×0 box.
     if (bounds.width > 0 && bounds.height > 0) api.state.dom.bounds.clear();
     api.set(configForBounds(configRef.current, bounds));
-  }, [props, moveMethod]);
+  }, [props, moveMethod, animationSpeed]);
 
   const boardImage = useAtomValue(boardImageAtom);
   const woodTexture = useAtomValue(boardWoodTextureAtom);

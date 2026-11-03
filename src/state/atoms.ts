@@ -538,6 +538,19 @@ export const materialDisplayAtom = atomWithStorage<"diff" | "all">(
     "diff",
     createZodStorage(z.enum(["diff", "all"]), localStorage),
 );
+export const BOARD_ANIMATION_SPEEDS = ["off", "fast", "normal", "slow"] as const;
+export type BoardAnimationSpeed = (typeof BOARD_ANIMATION_SPEEDS)[number];
+/** Piece movement animation length in milliseconds; "off" disables animation. */
+export const BOARD_ANIMATION_DURATION_MS: Record<Exclude<BoardAnimationSpeed, "off">, number> = {
+    fast: 100,
+    normal: 200,
+    slow: 400,
+};
+export const boardAnimationSpeedAtom = atomWithStorage<BoardAnimationSpeed>(
+    "board-animation-speed",
+    "normal",
+    createZodStorage(z.enum(BOARD_ANIMATION_SPEEDS), localStorage),
+);
 export const showCoordinatesAtom = documentPreferences.atomWithStorage<"no" | "edge" | "all">(
     "show-coordinates-v2",
     "no",
