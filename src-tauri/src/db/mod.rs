@@ -2443,13 +2443,15 @@ fn load_games(
         }
 
         if let Some(start_date) = query.start_date {
-            sql_query = sql_query.filter(games::date.ge(start_date.clone()));
-            count_query = count_query.filter(games::date.ge(start_date));
+            let date_filter = search::date_interval_endpoint_sql(false).ge(start_date);
+            sql_query = sql_query.filter(date_filter.clone());
+            count_query = count_query.filter(date_filter);
         }
 
         if let Some(end_date) = query.end_date {
-            sql_query = sql_query.filter(games::date.le(end_date.clone()));
-            count_query = count_query.filter(games::date.le(end_date));
+            let date_filter = search::date_interval_endpoint_sql(true).le(end_date);
+            sql_query = sql_query.filter(date_filter.clone());
+            count_query = count_query.filter(date_filter);
         }
 
         if let Some(tournament_id) = query.tournament_id {

@@ -415,6 +415,9 @@ fn is_contained(container: Bitboard, subset: Bitboard) -> bool {
     container & subset == subset
 }
 
+// Date interval containment: a shaped PGN date with a known year matches when its earliest
+// possible date >= start and latest <= end. Unknown years fail bounded queries,
+// unknown month/day components span 01..12/31, and other shapes stay lexical.
 fn matches_date(date: Option<&str>, start: Option<&str>, end: Option<&str>) -> bool {
     if start.is_none() && end.is_none() {
         return true;
@@ -422,7 +425,62 @@ fn matches_date(date: Option<&str>, start: Option<&str>, end: Option<&str>) -> b
     let Some(date) = date else {
         return false;
     };
-    start.is_none_or(|bound| date >= bound) && end.is_none_or(|bound| date <= bound)
+    let bytes = date.as_bytes();
+    let is_pgn_date = bytes.len() == 10
+        && bytes.iter().enumerate().all(|(index, byte)| {
+            if index == 4 || index == 7 {
+                *byte == b'.'
+            } else {
+                byte.is_ascii_digit() || *byte == b'?'
+            }
+        });
+    if !is_pgn_date {
+        return start.is_none_or(|bound| date >= bound) && end.is_none_or(|bound| date <= bound);
+    }
+    if bytes[..4].contains(&b'?') {
+        return false;
+    }
+
+    let mut earliest = *b"0000.00.00";
+    earliest.copy_from_slice(bytes);
+    let mut latest = earliest;
+    for (range, last) in [(5..7, b"12"), (8..10, b"31")] {
+        if bytes[range.clone()].contains(&b'?') {
+            earliest[range.clone()].copy_from_slice(b"01");
+            latest[range].copy_from_slice(last);
+        }
+    }
+    start.is_none_or(|bound| earliest.as_slice() >= bound.as_bytes())
+        && end.is_none_or(|bound| latest.as_slice() <= bound.as_bytes())
+}
+
+pub(super) fn date_interval_endpoint_sql(
+    latest: bool,
+) -> diesel::expression::SqlLiteral<
+    diesel::sql_types::Nullable<diesel::sql_types::Text>,
+    impl diesel::query_builder::QueryFragment<diesel::sqlite::Sqlite> + Clone + Send,
+> {
+    let (month, day) = if latest { ("12", "31") } else { ("01", "01") };
+    diesel::dsl::sql(
+        r#"CASE WHEN length(CAST("Games"."Date" AS BLOB)) = 10
+            AND "Games"."Date" GLOB '[0-9?][0-9?][0-9?][0-9?].[0-9?][0-9?].[0-9?][0-9?]'
+        THEN CASE WHEN instr(substr("Games"."Date", 1, 4), '?') > 0 THEN NULL
+            ELSE substr("Games"."Date", 1, 4) || '.' ||
+                CASE WHEN instr(substr("Games"."Date", 6, 2), '?') > 0
+                    THEN "#,
+    )
+    .bind::<diesel::sql_types::Text, _>(month)
+    .sql(
+        r#" ELSE substr("Games"."Date", 6, 2) END || '.' ||
+                CASE WHEN instr(substr("Games"."Date", 9, 2), '?') > 0
+                    THEN "#,
+    )
+    .bind::<diesel::sql_types::Text, _>(day)
+    .sql(
+        r#" ELSE substr("Games"."Date", 9, 2) END
+            END
+        ELSE "Games"."Date" END"#,
+    )
 }
 
 /// Inclusive Elo bound. The index stores a missing rating as 0, so a band
@@ -2046,6 +2104,133 @@ mod imported_search_tests {
             assert!(
                 matches!(error, Error::InvalidInput(ref cause) if cause.starts_with(message)),
                 "{error}"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod date_filter_tests {
+    use super::*;
+    use diesel::connection::SimpleConnection;
+
+    const BOUNDS: [(Option<&str>, Option<&str>); 6] = [
+        (None, None),
+        (Some("2025.11.01"), None),
+        (Some("2024.01.01"), Some("2024.12.31")),
+        (Some("2024.06.15"), Some("2024.06.15")),
+        (None, Some("2024.06.15")),
+        (Some("2024.06.15"), None),
+    ];
+
+    const CASES: &[(Option<&str>, [bool; BOUNDS.len()])] = &[
+        (None, [true, false, false, false, false, false]),
+        (
+            Some("????.??.??"),
+            [true, false, false, false, false, false],
+        ),
+        (
+            Some("202?.01.01"),
+            [true, false, false, false, false, false],
+        ),
+        (
+            Some("?024.01.01"),
+            [true, false, false, false, false, false],
+        ),
+        (Some("2024.??.??"), [true, false, true, false, false, false]),
+        (Some("2024.06.??"), [true, false, true, false, false, false]),
+        (Some("2024.05.??"), [true, false, true, false, true, false]),
+        (Some("2024.07.??"), [true, false, true, false, false, true]),
+        (Some("2024.??.15"), [true, false, true, false, false, false]),
+        (Some("2024.0?.?5"), [true, false, true, false, false, false]),
+        (Some("2024.06.?5"), [true, false, true, false, false, false]),
+        (Some("2024.06.14"), [true, false, true, false, true, false]),
+        (Some("2024.06.15"), [true, false, true, true, true, true]),
+        (Some("2024.06.16"), [true, false, true, false, false, true]),
+        (Some("2024.01.01"), [true, false, true, false, true, false]),
+        (Some("2024.12.31"), [true, false, true, false, false, true]),
+        (Some("2023.??.??"), [true, false, false, false, true, false]),
+        (Some("2025.??.??"), [true, false, false, false, false, true]),
+        (Some("2025.10.??"), [true, false, false, false, false, true]),
+        (Some("2025.11.??"), [true, true, false, false, false, true]),
+        (Some("2025.11.01"), [true, true, false, false, false, true]),
+        (Some("2025.10.31"), [true, false, false, false, false, true]),
+        (Some(""), [true, false, false, false, true, false]),
+        (Some("2024"), [true, false, false, false, true, false]),
+        (Some("2024.??"), [true, false, false, false, false, true]),
+        (Some("????"), [true, true, false, false, false, true]),
+        (Some("2024-??-??"), [true, false, false, false, true, false]),
+        (Some("2024.xx.xx"), [true, false, false, false, false, true]),
+        (
+            Some("2024.??.??extra"),
+            [true, false, false, false, false, true],
+        ),
+        (
+            Some("2024.??.??\0extra"),
+            [true, false, false, false, false, true],
+        ),
+        (
+            Some("2024.０?.??"),
+            [true, false, false, false, false, true],
+        ),
+        (Some("2024.00.00"), [true, false, false, false, true, false]),
+        (Some("2024.99.99"), [true, false, false, false, false, true]),
+    ];
+
+    #[test]
+    fn index_date_filter_matches_shared_interval_cases() {
+        for &(date, expected) in CASES {
+            for ((start, end), expected) in BOUNDS.into_iter().zip(expected) {
+                assert_eq!(
+                    matches_date(date, start, end),
+                    expected,
+                    "date {date:?}, start {start:?}, end {end:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn sql_date_filter_matches_shared_interval_cases_for_rows_and_counts() {
+        let mut db = SqliteConnection::establish(":memory:").unwrap();
+        db.batch_execute("CREATE TABLE Games (ID INTEGER PRIMARY KEY, Date TEXT)")
+            .unwrap();
+        for (id, &(date, _)) in CASES.iter().enumerate() {
+            diesel::insert_into(games::table)
+                .values((
+                    games::id.eq(i32::try_from(id).unwrap()),
+                    games::date.eq(date),
+                ))
+                .execute(&mut db)
+                .unwrap();
+        }
+
+        for (bound_index, (start, end)) in BOUNDS.into_iter().enumerate() {
+            let mut rows = games::table.select(games::id).into_boxed();
+            let mut counts = games::table.into_boxed();
+            if let Some(start) = start {
+                let filter = date_interval_endpoint_sql(false).ge(start);
+                rows = rows.filter(filter.clone());
+                counts = counts.filter(filter);
+            }
+            if let Some(end) = end {
+                let filter = date_interval_endpoint_sql(true).le(end);
+                rows = rows.filter(filter.clone());
+                counts = counts.filter(filter);
+            }
+
+            let expected: Vec<i32> = CASES
+                .iter()
+                .enumerate()
+                .filter(|(_, (_, expected))| expected[bound_index])
+                .map(|(id, _)| i32::try_from(id).unwrap())
+                .collect();
+            let actual = rows.order(games::id).load::<i32>(&mut db).unwrap();
+            assert_eq!(actual, expected, "start {start:?}, end {end:?}");
+            assert_eq!(
+                counts.count().get_result::<i64>(&mut db).unwrap(),
+                i64::try_from(expected.len()).unwrap(),
+                "count for start {start:?}, end {end:?}"
             );
         }
     }
