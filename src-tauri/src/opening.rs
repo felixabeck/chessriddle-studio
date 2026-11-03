@@ -1,6 +1,8 @@
+use std::{collections::HashMap, num::NonZeroU32};
+
 use log::info;
 use serde::{Deserialize, Serialize};
-use shakmaty::{fen::Fen, san::San, Chess, EnPassantMode, Position, Setup};
+use shakmaty::{fen::Fen, san::San, CastlingMode, Chess, EnPassantMode, Position, Setup};
 
 use lazy_static::lazy_static;
 use specta::Type;
@@ -72,11 +74,34 @@ pub fn get_opening_from_fens(fens: Vec<String>) -> Result<String, Error> {
 }
 
 pub fn get_opening_from_setup(setup: Setup) -> Result<String, Error> {
-    OPENINGS
-        .iter()
-        .find(|o| o.setup == setup)
-        .map(|o| o.name.clone())
+    OPENING_INDEX
+        .get(&normalize_opening_setup(setup))
+        .map(|&index| OPENINGS[index].name.clone())
         .ok_or_else(|| Error::NoOpeningFound)
+}
+
+fn normalize_opening_setup(mut setup: Setup) -> Setup {
+    setup.halfmoves = 0;
+    setup.fullmoves = NonZeroU32::MIN;
+    if setup.ep_square.is_some() {
+        // Use the chess library for legal en passant without changing other setup fields.
+        setup.ep_square = setup
+            .clone()
+            .position::<Chess>(CastlingMode::Chess960)
+            .ok()
+            .and_then(|pos| pos.ep_square(EnPassantMode::Legal));
+    }
+    setup
+}
+
+fn build_opening_index(openings: &[Opening]) -> HashMap<Setup, usize> {
+    let mut index = HashMap::with_capacity(openings.len());
+    for (row, opening) in openings.iter().enumerate() {
+        index
+            .entry(normalize_opening_setup(opening.setup.clone()))
+            .or_insert(row);
+    }
+    index
 }
 
 #[tauri::command]
@@ -116,6 +141,7 @@ pub async fn search_opening_name(query: String) -> Result<Vec<OutOpening>, Error
 }
 
 lazy_static! {
+    static ref OPENING_INDEX: HashMap<Setup, usize> = build_opening_index(&OPENINGS);
     static ref OPENINGS: Vec<Opening> = {
         info!("Initializing openings table...");
 
@@ -176,6 +202,152 @@ lazy_static! {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn position_after_moves(moves: &str) -> Chess {
+        let mut pos = Chess::default();
+        for token in moves.split_whitespace() {
+            let san: San = token.parse().unwrap();
+            pos.play_unchecked(&san.to_move(&pos).unwrap());
+        }
+        pos
+    }
+
+    #[test]
+    fn transpositions_find_the_current_opening_independently_of_move_clocks() {
+        for moves in [
+            "d4 Nf6 c4 e6 Nc3 d5",
+            "d4 e6 c4 Nf6 Nc3 d5",
+            "Nf3 Nf6 Ng1 Ng8 d4 Nf6 c4 e6 Nc3 d5",
+        ] {
+            let setup = position_after_moves(moves).into_setup(EnPassantMode::Legal);
+            assert_eq!(
+                get_opening_from_setup(setup.clone()).unwrap(),
+                "Queen's Gambit Declined: Normal Defense",
+                "{moves}"
+            );
+            assert_eq!(
+                get_opening_from_fen(&Fen::from_setup(setup).to_string()).unwrap(),
+                "Queen's Gambit Declined: Normal Defense",
+                "{moves}"
+            );
+        }
+    }
+
+    #[test]
+    fn transposed_fens_do_not_fall_back_to_an_earlier_opening() {
+        let earlier = position_after_moves("d4 Nf6 c4");
+        let transposed = position_after_moves("d4 Nf6 c4 e6 Nc3 d5");
+        assert_eq!(
+            get_opening_from_fens(vec![
+                Fen::from_position(earlier, EnPassantMode::Always).to_string(),
+                Fen::from_position(transposed, EnPassantMode::Always).to_string(),
+            ])
+            .unwrap(),
+            "Queen's Gambit Declined: Normal Defense"
+        );
+    }
+
+    #[test]
+    fn duplicate_normalized_positions_keep_the_first_rows_name() {
+        let first = Opening {
+            _eco: "Extra".into(),
+            name: "First opening".into(),
+            setup: Setup::default(),
+            pgn: None,
+        };
+        let mut second = first.clone();
+        second.name = "Later opening".into();
+        second.setup.halfmoves = 8;
+        second.setup.fullmoves = NonZeroU32::new(5).unwrap();
+        let query = second.setup.clone();
+        let openings = [first, second];
+        let index = build_opening_index(&openings);
+        assert_eq!(index.len(), 1);
+        let row = index[&normalize_opening_setup(query)];
+        assert_eq!(openings[row].name, "First opening");
+    }
+
+    #[test]
+    fn non_legal_en_passant_squares_still_find_the_opening() {
+        for moves in ["e4", "d4 Nf6 c4 e6 Nc3 d5"] {
+            let mut without_ep = position_after_moves(moves).into_setup(EnPassantMode::Always);
+            assert!(without_ep.ep_square.is_some());
+            let fen = Fen::from_setup(without_ep.clone()).to_string();
+            without_ep.ep_square = None;
+            assert_eq!(
+                get_opening_from_fen(&fen).unwrap(),
+                get_opening_from_setup(without_ep).unwrap()
+            );
+        }
+        assert_eq!(
+            get_opening_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq e6 8 5")
+                .unwrap(),
+            "Starting Position"
+        );
+    }
+
+    #[test]
+    fn normalization_preserves_legal_en_passant_but_removes_pinned_captures() {
+        let legal = position_after_moves("e4 a6 e5 d5").into_setup(EnPassantMode::Always);
+        assert!(legal.ep_square.is_some());
+        let mut expected = legal.clone();
+        expected.halfmoves = 0;
+        expected.fullmoves = NonZeroU32::MIN;
+        assert_eq!(normalize_opening_setup(legal), expected);
+
+        let pinned = "k3r3/8/8/3pP3/8/8/8/4K3 w - d6 0 1"
+            .parse::<Fen>()
+            .unwrap()
+            .into_setup();
+        assert_eq!(normalize_opening_setup(pinned).ep_square, None);
+    }
+
+    #[test]
+    fn normalization_preserves_other_position_fields() {
+        let mut setup = position_after_moves("e4 a6 e5 d5").into_setup(EnPassantMode::Always);
+        setup.promoted = shakmaty::Bitboard::from(shakmaty::Square::B1);
+        let normalized = normalize_opening_setup(setup.clone());
+        assert_eq!(normalized.board, setup.board);
+        assert_eq!(normalized.promoted, setup.promoted);
+        assert_eq!(normalized.turn, setup.turn);
+        assert_eq!(normalized.castling_rights, setup.castling_rights);
+        assert_eq!(normalized.pockets, setup.pockets);
+        assert_eq!(normalized.remaining_checks, setup.remaining_checks);
+        assert_eq!(normalized.ep_square, setup.ep_square);
+    }
+
+    #[test]
+    fn every_fischer_random_opening_survives_clock_normalization() {
+        let mut rdr = csv::ReaderBuilder::new()
+            .delimiter(b'\t')
+            .from_reader(FISCHER_RANDOM_DATA);
+        for record in rdr.deserialize::<FischerRandomRecord>() {
+            let record = record.unwrap();
+            let mut setup = record.fen.parse::<Fen>().unwrap().into_setup();
+            setup.halfmoves = 12;
+            setup.fullmoves = NonZeroU32::new(7).unwrap();
+            let expected = if record.name == "Fischer Random 518" {
+                "Starting Position"
+            } else {
+                &record.name
+            };
+            assert_eq!(get_opening_from_setup(setup).unwrap(), expected);
+        }
+        assert_eq!(
+            get_opening_from_setup(Setup::empty()).unwrap(),
+            "Empty Board"
+        );
+    }
+
+    #[test]
+    fn invalid_fens_return_an_error() {
+        assert!(get_opening_from_fen("invalid fen").is_err());
+        assert!(matches!(
+            get_opening_from_fens(vec!["invalid fen".into()]),
+            Err(Error::NoOpeningFound)
+        ));
+    }
+
     #[test]
     fn test_get_opening_from_name_failures() {
         let res = get_opening_from_name("Nonexistent Opening");
