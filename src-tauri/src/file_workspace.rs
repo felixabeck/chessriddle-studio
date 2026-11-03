@@ -1225,7 +1225,6 @@ pub async fn list_file_workspace(
 #[cfg(test)]
 std::thread_local! {
     static PAIRED_RENAME_POST_PRIMARY_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
-    static PAIRED_RENAME_PRE_ALIAS_OBSERVATION_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
 }
 
 #[cfg(test)]
@@ -1240,7 +1239,6 @@ fn paired_rename(
 #[derive(Debug)]
 enum WorkspaceSidecarDisposition {
     Absent,
-    PrimaryAlias,
     Moved {
         identity: (u64, u64),
         saved_bytes: Option<Vec<u8>>,
@@ -1415,7 +1413,7 @@ fn compensate_workspace_rename(
     }
 }
 
-/// Forward Files mutations own the destination sidecar even when there was none to move.
+/// Forward file mutations own the destination sidecar even when there was none to move.
 /// Publication refusal belongs to the pair so only its retained primary object is reversed.
 fn paired_workspace_rename(
     source: &WorkspaceMutationTarget,
@@ -1455,32 +1453,40 @@ fn paired_rename_inner(
         rename_entry_at, rename_optional_regular_at, rename_workspace_entry_at,
         rename_workspace_sidecar_at, AtomicFileOutcome,
     };
-    let source_info = sidecar_leaf(&source.leaf)?;
-    let target_info = sidecar_leaf(target_leaf)?;
     let rename_entry_at = if forward_metadata.is_some() {
         rename_workspace_entry_at
     } else {
         rename_entry_at
     };
+    let rename_primary = || {
+        let primary = rename_entry_at(
+            &source.parent,
+            &source.leaf,
+            source.identity,
+            source.is_dir,
+            target_parent,
+            target_leaf,
+        )?;
+        #[cfg(test)]
+        PAIRED_RENAME_POST_PRIMARY_HOOK.with(|slot| {
+            if let Some(hook) = slot.borrow_mut().take() {
+                hook();
+            }
+        });
+        Ok::<_, Error>(primary)
+    };
+    // Directories never own metadata, including names shared with a sibling PGN.
+    if source.is_dir {
+        return Ok((rename_primary()?, WorkspaceSidecarDisposition::Absent));
+    }
+    let source_info = sidecar_leaf(&source.leaf)?;
+    let target_info = sidecar_leaf(target_leaf)?;
     let rename_optional_regular_at = if forward_metadata.is_some() {
         rename_workspace_sidecar_at
     } else {
         rename_optional_regular_at
     };
-    let primary = rename_entry_at(
-        &source.parent,
-        &source.leaf,
-        source.identity,
-        source.is_dir,
-        target_parent,
-        target_leaf,
-    )?;
-    #[cfg(test)]
-    PAIRED_RENAME_POST_PRIMARY_HOOK.with(|slot| {
-        if let Some(hook) = slot.borrow_mut().take() {
-            hook();
-        }
-    });
+    let primary = rename_primary()?;
     let mut disposition = WorkspaceSidecarDisposition::Absent;
     let sidecar_result: Result<Option<AtomicFileOutcome>, Error> = (|| {
         let identity = match entry_identity_at(&source.parent, &source_info, false) {
@@ -1513,22 +1519,6 @@ fn paired_rename_inner(
             }
             Ok(())
         };
-        if source.is_dir {
-            #[cfg(test)]
-            PAIRED_RENAME_PRE_ALIAS_OBSERVATION_HOOK.with(|slot| {
-                if let Some(hook) = slot.borrow_mut().take() {
-                    hook();
-                }
-            });
-            if matches!(
-                entry_identity_at(target_parent, &target_info, true),
-                Ok(identity) if identity == source.identity
-            ) {
-                precommit()?;
-                disposition = WorkspaceSidecarDisposition::PrimaryAlias;
-                return Ok(None);
-            }
-        }
         let installed =
             atomic_create_workspace_sidecar_at(target_parent, &target_info, precommit, |file| {
                 use std::io::Write;
@@ -2242,21 +2232,7 @@ pub(crate) fn trash_entry(
     let bucket_dir = crate::infra::fs::open_directory_at(&trash_dir, &bucket, true)?;
     let target = bucket_path.join(&source.leaf);
     let target_parent_identity = crate::infra::path_authority::opened_file_identity(&bucket_dir)?;
-    let (outcome, mut disposition) = if source.is_dir {
-        (
-            crate::infra::fs::rename_entry_at(
-                &source.parent,
-                &source.leaf,
-                source.identity,
-                true,
-                &bucket_dir,
-                &source.leaf,
-            )?,
-            WorkspaceSidecarDisposition::Absent,
-        )
-    } else {
-        paired_rename_inner(&source, &bucket_dir, &source.leaf, None)?
-    };
+    let (outcome, mut disposition) = paired_rename_inner(&source, &bucket_dir, &source.leaf, None)?;
     let result = finish_workspace_rename(outcome, || {
         if cancellation.is_cancelled() {
             return Err(Error::Cancellation);
@@ -2336,21 +2312,8 @@ pub(crate) fn restore_entry(
     if cancellation.is_cancelled() {
         return Err(Error::Cancellation);
     }
-    let (outcome, mut disposition) = if source.is_dir {
-        (
-            crate::infra::fs::rename_entry_at(
-                &source.parent,
-                &source.leaf,
-                source.identity,
-                true,
-                root.directory()?,
-                &source.leaf,
-            )?,
-            WorkspaceSidecarDisposition::Absent,
-        )
-    } else {
-        paired_rename_inner(&source, root.directory()?, &source.leaf, None)?
-    };
+    let (outcome, mut disposition) =
+        paired_rename_inner(&source, root.directory()?, &source.leaf, None)?;
     let result = finish_workspace_rename(outcome, || {
         if cancellation.is_cancelled() {
             return Err(Error::Cancellation);
@@ -6177,81 +6140,224 @@ mod tests {
     }
 
     #[test]
-    fn folder_move_absent_sidecar_collision_preserves_source_destination_and_registry() {
-        for point in [
-            None,
-            Some(AtomicFileFaultPoint::PreCommitRevalidate),
-            Some(AtomicFileFaultPoint::Rename),
-        ] {
-            let (temporary, state, workspace) = workspace_state();
+    fn folder_move_foreign_destination_sidecar_is_untouched() {
+        for directory in [false, true] {
+            let (_temporary, state, workspace) = workspace_state();
             let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
-            let (source_path, source) = registered_child_directory(&state, &workspace, "before");
-            let child_path = source_path.join("child.pgn");
-            fs::write(&child_path, b"*").unwrap();
-            let child = registered_child_file(&state, &workspace, &child_path);
-            let original = mutation_target(&state.pgn_path_authority, &source).unwrap();
-            let (destination, parent) =
-                registered_child_directory(&state, &workspace, "destination");
-            let sidecar = destination.join("before.info");
-            assert!(!root.join("before.info").exists());
-            if point.is_none() {
-                fs::write(&sidecar, b"unrelated destination metadata").unwrap();
+            fs::create_dir(root.join("X")).unwrap();
+            fs::write(root.join("X/child.pgn"), b"*").unwrap();
+            fs::create_dir(root.join("Archive")).unwrap();
+            let foreign = root.join("Archive/X.info");
+            if directory {
+                fs::create_dir(&foreign).unwrap();
+                fs::write(foreign.join("retained"), b"foreign bytes").unwrap();
+            } else {
+                fs::write(&foreign, b"foreign bytes").unwrap();
             }
-            let registry = fs::read(temporary.path().join("registry.json")).unwrap();
-            let _injector = point.map(|point| {
-                crate::infra::fs::install_test_atomic_file_injector(Arc::new(PlantRenameSidecar {
-                    point,
-                    path: sidecar.clone(),
-                }))
-            });
-            let result = move_workspace_entry_blocking(
+            let listing = listed_workspace(&state, &workspace);
+            let source = listed_directory(&listing, "X");
+            let target = listed_directory(&listing, "Archive");
+            move_workspace_entry_blocking(
                 workspace.clone(),
-                source.clone(),
-                parent,
+                source.handle.clone(),
+                target.handle.clone(),
                 &state.pgn_path_authority,
                 &state.workspace_mutation,
                 &CancellationToken::new(),
-            );
+            )
+            .unwrap();
             assert_eq!(
-                fs::read(&sidecar).unwrap(),
-                b"unrelated destination metadata"
+                fs::read(if directory {
+                    foreign.join("retained")
+                } else {
+                    foreign
+                })
+                .unwrap(),
+                b"foreign bytes"
             );
-            assert_name_taken(&result.unwrap_err());
-            assert_eq!(fs::read(source_path.join("removed")).unwrap(), b"content");
-            assert_eq!(fs::read(&child_path).unwrap(), b"*");
-            assert_eq!(fs::read(destination.join("removed")).unwrap(), b"content");
-            assert!(!destination.join("before").exists());
-            assert!(!root.join("before.info").exists());
-            let retained = mutation_target(&state.pgn_path_authority, &source).unwrap();
-            assert_eq!(retained.path(), source_path);
-            assert_eq!(retained.identity, original.identity);
+            assert_workspace_entry_names(&root.join("Archive"), &["X", "X.info"]);
+            assert!(!root.join("X").exists());
             assert_eq!(
-                mutation_target(&state.pgn_path_authority, &child)
+                mutation_target(&state.pgn_path_authority, &source.handle)
                     .unwrap()
                     .path(),
-                child_path,
+                root.join("Archive/X")
             );
-            assert_eq!(
-                fs::read(temporary.path().join("registry.json")).unwrap(),
-                registry
-            );
-            assert_workspace_entry_names(&destination, &["before.info", "removed"]);
         }
     }
 
+    fn listed_workspace(state: &AppState, workspace: &FileWorkspaceHandle) -> WorkspaceListing {
+        let (listing, _) = collect_tree_entries(
+            &state.pgn_path_authority,
+            workspace,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert!(listing.unread.is_empty());
+        listing
+    }
+
+    fn listed_directory<'a>(listing: &'a WorkspaceListing, name: &str) -> &'a WorkspaceEntry {
+        listing
+            .entries
+            .iter()
+            .find(|entry| entry.name == name && entry.kind == WorkspaceEntryKind::Directory)
+            .unwrap()
+    }
+
     #[test]
-    fn folder_sidecar_alias_move_preserves_listed_directory_and_child_handles() {
+    fn folder_move_keeps_sibling_pgn_metadata_and_allows_destination_create() {
+        let (_temporary, state, workspace) = workspace_state();
+        let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+        fs::create_dir(root.join("Sicilian")).unwrap();
+        fs::write(root.join("Sicilian/child.pgn"), b"1. e4 *").unwrap();
+        fs::create_dir(root.join("Archive")).unwrap();
+        let metadata = WorkspaceMetadata {
+            file_type: WorkspaceFileType::Repertoire,
+            tags: vec!["opening".into(), "black".into()],
+        };
+        create_workspace_file_blocking(
+            workspace.clone(),
+            workspace.clone(),
+            "Sicilian".into(),
+            metadata.clone(),
+            WorkspaceFileContent::Text {
+                pgn: "1. e4 c5 *".into(),
+            },
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &state.pgn_repository,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let original = fs::read(root.join("Sicilian.info")).unwrap();
+        let listing = listed_workspace(&state, &workspace);
+        let source = listed_directory(&listing, "Sicilian");
+        let target = listed_directory(&listing, "Archive");
+        move_workspace_entry_blocking(
+            workspace.clone(),
+            source.handle.clone(),
+            target.handle.clone(),
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert_eq!(fs::read(root.join("Sicilian.info")).unwrap(), original);
+        let listing = listed_workspace(&state, &workspace);
+        let sibling = listing
+            .entries
+            .iter()
+            .find(|entry| entry.name == "Sicilian" && entry.kind == WorkspaceEntryKind::File)
+            .unwrap();
+        assert_eq!(sibling.metadata.as_ref(), Some(&metadata));
+        assert_workspace_entry_names(&root.join("Archive"), &["Sicilian"]);
+        assert_eq!(
+            fs::read(root.join("Archive/Sicilian/child.pgn")).unwrap(),
+            b"1. e4 *"
+        );
+        create_workspace_file_blocking(
+            workspace.clone(),
+            target.handle.clone(),
+            "Sicilian".into(),
+            WorkspaceMetadata::default(),
+            WorkspaceFileContent::Text { pgn: "*".into() },
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &state.pgn_repository,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert!(root.join("Archive/Sicilian.pgn").is_file());
+        assert_eq!(fs::read(root.join("Sicilian.info")).unwrap(), original);
+    }
+
+    #[test]
+    fn folder_trash_restore_keeps_sibling_pgn_sidecar_in_place() {
+        let (_temporary, state, workspace) = workspace_state();
+        let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+        fs::create_dir(root.join("Sicilian")).unwrap();
+        fs::write(root.join("Sicilian/child.pgn"), b"*").unwrap();
+        let metadata = WorkspaceMetadata {
+            file_type: WorkspaceFileType::Repertoire,
+            tags: vec!["retained".into()],
+        };
+        create_workspace_file_blocking(
+            workspace.clone(),
+            workspace.clone(),
+            "Sicilian".into(),
+            metadata.clone(),
+            WorkspaceFileContent::Text { pgn: "*".into() },
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &state.pgn_repository,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let original = fs::read(root.join("Sicilian.info")).unwrap();
+        let listing = listed_workspace(&state, &workspace);
+        let folder = listed_directory(&listing, "Sicilian");
+        let child = folder.children[0].handle.clone();
+        let identity = mutation_target(&state.pgn_path_authority, &folder.handle)
+            .unwrap()
+            .identity;
+        trash_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &folder.handle,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let trashed = mutation_target(&state.pgn_path_authority, &folder.handle).unwrap();
+        assert_workspace_entry_names(trashed.path().parent().unwrap(), &["Sicilian"]);
+        assert_eq!(fs::read(root.join("Sicilian.info")).unwrap(), original);
+        restore_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &folder.handle,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let restored = mutation_target(&state.pgn_path_authority, &folder.handle).unwrap();
+        assert_eq!(restored.path(), root.join("Sicilian"));
+        assert_eq!(restored.identity, identity);
+        assert_eq!(
+            mutation_target(&state.pgn_path_authority, &child)
+                .unwrap()
+                .path(),
+            root.join("Sicilian/child.pgn")
+        );
+        assert_eq!(fs::read(root.join("Sicilian.info")).unwrap(), original);
+        let listing = listed_workspace(&state, &workspace);
+        assert_eq!(
+            listing
+                .entries
+                .iter()
+                .find(|entry| entry.kind == WorkspaceEntryKind::File && entry.name == "Sicilian")
+                .unwrap()
+                .metadata
+                .as_ref(),
+            Some(&metadata)
+        );
+    }
+
+    #[test]
+    fn folder_move_info_directory_preserves_listed_directory_and_child_handles() {
         for sync in [None, Some(0), Some(1)] {
-            assert_folder_sidecar_alias_move("games.info", sync);
+            assert_folder_move_info_directory("games.info", sync);
         }
     }
 
     #[test]
-    fn folder_sidecar_alias_move_uses_observed_case_equivalence() {
-        assert_folder_sidecar_alias_move("games.INFO", None);
+    fn folder_move_uppercase_info_directory_creates_no_sidecar() {
+        for sync in [None, Some(0), Some(1)] {
+            assert_folder_move_info_directory("games.INFO", sync);
+        }
     }
 
-    fn assert_folder_sidecar_alias_move(name: &str, sync: Option<usize>) {
+    fn assert_folder_move_info_directory(name: &str, sync: Option<usize>) {
         let (_temporary, state, workspace) = workspace_state();
         let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
         let source_path = root.join(name);
@@ -6268,10 +6374,6 @@ mod tests {
             &CancellationToken::new(),
         )
         .expect("list and register the existing games.info directory");
-        eprintln!(
-            "folder_sidecar_alias listing: {}",
-            serde_json::to_string(&listing).unwrap()
-        );
         assert!(listing.unread.is_empty());
         assert_eq!(missing.len(), 1);
         let source = listing
@@ -6305,17 +6407,6 @@ mod tests {
                 FailAtFaultPoint::fail_only(AtomicFileFaultPoint::ParentSync, sync),
             ))
         });
-        // Observe case equivalence in the actual target directory after the primary lands.
-        let alias_observation = Arc::new(StdMutex::new(None));
-        let observed_alias = Arc::clone(&alias_observation);
-        let observed_sidecar = destination.join("games.info");
-        PAIRED_RENAME_POST_PRIMARY_HOOK.with(|slot| {
-            assert!(slot
-                .replace(Some(Box::new(move || {
-                    *observed_alias.lock().unwrap() = Some(observed_sidecar.is_dir());
-                })))
-                .is_none());
-        });
         let result = move_workspace_entry_blocking(
             workspace.clone(),
             source_handle.clone(),
@@ -6324,11 +6415,6 @@ mod tests {
             &state.workspace_mutation,
             &CancellationToken::new(),
         );
-        let aliases_primary = alias_observation
-            .lock()
-            .unwrap()
-            .expect("observed moved primary");
-        eprintln!("folder_sidecar_alias {name}: aliases_primary={aliases_primary}, sync={sync:?}");
         let refusal = result
             .as_ref()
             .err()
@@ -6350,15 +6436,7 @@ mod tests {
             fs::read(moved_path.join("notes.txt")).unwrap(),
             b"retained directory bytes"
         );
-        if aliases_primary {
-            // The sidecar name denotes the primary, with no synthetic metadata object.
-            assert_workspace_entry_names(&destination, &[name]);
-        } else {
-            assert_workspace_entry_names(&destination, &[name, "games.info"]);
-            let metadata: WorkspaceMetadata =
-                serde_json::from_slice(&fs::read(destination.join("games.info")).unwrap()).unwrap();
-            assert_eq!(metadata, WorkspaceMetadata::default());
-        }
+        assert_workspace_entry_names(&destination, &[name]);
         assert_workspace_entry_names(&moved_path, &["child.pgn", "notes.txt"]);
         let rebound = mutation_target(&state.pgn_path_authority, &source_handle).unwrap();
         assert_eq!(rebound.path(), moved_path);
@@ -6378,7 +6456,7 @@ mod tests {
     }
 
     #[test]
-    fn folder_sidecar_alias_cancellation_after_primary_compensates_inside_the_pair() {
+    fn folder_move_cancellation_after_primary_compensates_with_retained_handles() {
         let (temporary, state, workspace) = workspace_state();
         let (source_path, source) = registered_child_directory(&state, &workspace, "games.info");
         let child_path = source_path.join("child.pgn");
@@ -6388,7 +6466,13 @@ mod tests {
         let child_identity = mutation_target(&state.pgn_path_authority, &child)
             .unwrap()
             .identity;
-        let (destination, parent) = registered_child_directory(&state, &workspace, "destination");
+        let (destination, _parent) = registered_child_directory(&state, &workspace, "destination");
+        let listing = listed_workspace(&state, &workspace);
+        let source = listed_directory(&listing, "games.info").handle.clone();
+        let child = listed_directory(&listing, "games.info").children[0]
+            .handle
+            .clone();
+        let parent = listed_directory(&listing, "destination").handle.clone();
         let registry = fs::read(temporary.path().join("registry.json")).unwrap();
         let cancellation = CancellationToken::new();
         let token = cancellation.clone();
@@ -6429,64 +6513,49 @@ mod tests {
     }
 
     #[test]
-    fn folder_sidecar_alias_probe_failure_and_foreign_identity_keep_exclusive_refusal() {
-        for failed_probe in [false, true] {
+    fn folder_move_primary_collision_is_typed_and_preserves_source() {
+        for directory in [false, true] {
             let (temporary, state, workspace) = workspace_state();
-            let name = if failed_probe { "games.info" } else { "before" };
-            let (source_path, source) = registered_child_directory(&state, &workspace, name);
-            let original = mutation_target(&state.pgn_path_authority, &source).unwrap();
-            let (destination, parent) =
-                registered_child_directory(&state, &workspace, "destination");
-            let foreign = destination.join("before.info");
-            if failed_probe {
-                PAIRED_RENAME_PRE_ALIAS_OBSERVATION_HOOK.with(|slot| {
-                    assert!(slot
-                        .replace(Some(Box::new(|| {
-                            crate::infra::fs::set_entry_observation_fault(Some(Error::Conflict(
-                                "injected alias observation failure".into(),
-                            )));
-                        })))
-                        .is_none());
-                });
+            let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+            fs::create_dir(root.join("X")).unwrap();
+            fs::write(root.join("X/child.pgn"), b"*").unwrap();
+            fs::create_dir(root.join("Archive")).unwrap();
+            if directory {
+                fs::create_dir(root.join("Archive/X")).unwrap();
             } else {
-                fs::create_dir(&foreign).unwrap();
-                fs::write(foreign.join("retained"), b"foreign bytes").unwrap();
+                fs::write(root.join("Archive/X"), b"foreign bytes").unwrap();
             }
+            let listing = listed_workspace(&state, &workspace);
+            let source = listed_directory(&listing, "X");
+            let target = listed_directory(&listing, "Archive");
+            let original = mutation_target(&state.pgn_path_authority, &source.handle).unwrap();
             let registry = fs::read(temporary.path().join("registry.json")).unwrap();
             let result = move_workspace_entry_blocking(
                 workspace.clone(),
-                source.clone(),
-                parent,
+                source.handle.clone(),
+                target.handle.clone(),
                 &state.pgn_path_authority,
                 &state.workspace_mutation,
                 &CancellationToken::new(),
             );
-            crate::infra::fs::set_entry_observation_fault(None);
             assert_name_taken(&result.unwrap_err());
-            assert_eq!(fs::read(source_path.join("removed")).unwrap(), b"content");
-            assert!(!destination.join(name).exists());
-            if failed_probe {
-                assert_workspace_entry_names(&destination, &["removed"]);
-            } else {
-                assert_eq!(
-                    fs::read(foreign.join("retained")).unwrap(),
-                    b"foreign bytes"
-                );
-                assert_workspace_entry_names(&destination, &["before.info", "removed"]);
-            }
-            let retained = mutation_target(&state.pgn_path_authority, &source).unwrap();
-            assert_eq!(retained.path(), source_path);
+            assert_eq!(fs::read(root.join("X/child.pgn")).unwrap(), b"*");
+            let retained = mutation_target(&state.pgn_path_authority, &source.handle).unwrap();
+            assert_eq!(retained.path(), original.path());
             assert_eq!(retained.identity, original.identity);
             assert_eq!(
                 fs::read(temporary.path().join("registry.json")).unwrap(),
                 registry
             );
+            if !directory {
+                assert_eq!(fs::read(root.join("Archive/X")).unwrap(), b"foreign bytes");
+            }
         }
     }
 
     #[cfg(unix)]
     #[test]
-    fn folder_sidecar_alias_revalidates_primary_after_alias_observation() {
+    fn folder_move_compensation_refuses_substituted_primary() {
         let (temporary, state, workspace) = workspace_state();
         let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
         let (source_path, source) = registered_child_directory(&state, &workspace, "games.info");
@@ -6494,21 +6563,17 @@ mod tests {
         let moved_path = destination.join("games.info");
         let parked = root.join("parked");
         let registry = fs::read(temporary.path().join("registry.json")).unwrap();
-        let substituted = Arc::new(AtomicUsize::new(0));
-        let substituted_hook = Arc::clone(&substituted);
+        let cancellation = CancellationToken::new();
+        let token = cancellation.clone();
         let moved_hook = moved_path.clone();
         let parked_hook = parked.clone();
         PAIRED_RENAME_POST_PRIMARY_HOOK.with(|slot| {
             assert!(slot
                 .replace(Some(Box::new(move || {
-                    crate::infra::fs::set_entry_observation_post_stat_hook(Some(Box::new(
-                        move || {
-                            fs::rename(&moved_hook, &parked_hook).unwrap();
-                            fs::create_dir(&moved_hook).unwrap();
-                            fs::write(moved_hook.join("foreign"), b"replacement bytes").unwrap();
-                            substituted_hook.fetch_add(1, Ordering::SeqCst);
-                        },
-                    )));
+                    fs::rename(&moved_hook, &parked_hook).unwrap();
+                    fs::create_dir(&moved_hook).unwrap();
+                    fs::write(moved_hook.join("foreign"), b"replacement bytes").unwrap();
+                    token.cancel();
                 })))
                 .is_none());
         });
@@ -6518,12 +6583,10 @@ mod tests {
             parent,
             &state.pgn_path_authority,
             &state.workspace_mutation,
-            &CancellationToken::new(),
+            &cancellation,
         )
         .unwrap_err();
-        crate::infra::fs::set_entry_observation_post_stat_hook(None);
-        assert_eq!(substituted.load(Ordering::SeqCst), 1);
-        // Revalidation refuses the replacement, and exact-object rollback cannot move it back.
+        // Exact-object compensation cannot move the replacement back.
         assert_eq!(error.category(), ErrorCategory::OperationAndCleanup);
         let payload = serde_json::to_value(&error).unwrap();
         assert!(payload.get("nameTaken").is_none(), "{payload}");
@@ -6543,7 +6606,7 @@ mod tests {
 
     #[test]
     fn folder_move_absent_sidecar_finishes_success_and_each_committed_uncertainty() {
-        for sync in [None, Some(0), Some(1), Some(2)] {
+        for sync in [None, Some(0), Some(1)] {
             let (_temporary, state, workspace) = workspace_state();
             let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
             let (source_path, source) = registered_child_directory(&state, &workspace, "before");
@@ -6554,8 +6617,11 @@ mod tests {
             let child_identity = mutation_target(&state.pgn_path_authority, &child)
                 .unwrap()
                 .identity;
-            let (destination, parent) =
+            let (destination, _parent) =
                 registered_child_directory(&state, &workspace, "destination");
+            let listing = listed_workspace(&state, &workspace);
+            let source = listed_directory(&listing, "before").handle.clone();
+            let parent = listed_directory(&listing, "destination").handle.clone();
             assert!(!root.join("before.info").exists());
             let _injector = sync.map(|sync| {
                 crate::infra::fs::install_test_atomic_file_injector(Arc::new(
@@ -6585,10 +6651,8 @@ mod tests {
                 fs::read(destination.join("before/child.pgn")).unwrap(),
                 b"*"
             );
-            let metadata: WorkspaceMetadata =
-                serde_json::from_slice(&fs::read(destination.join("before.info")).unwrap())
-                    .unwrap();
-            assert_eq!(metadata, WorkspaceMetadata::default());
+            assert!(!destination.join("before.info").exists());
+            assert_workspace_entry_names(&destination, &["before", "removed"]);
             let rebound = mutation_target(&state.pgn_path_authority, &source).unwrap();
             assert_eq!(rebound.path(), destination.join("before"));
             assert_eq!(rebound.identity, original.identity);
@@ -7243,7 +7307,7 @@ mod tests {
     }
 
     #[test]
-    fn directory_alias_compensation_reverses_only_primary() {
+    fn directory_compensation_reverses_only_primary() {
         let (temporary, state, workspace) = workspace_state();
         let (source_path, created) = registered_child_directory(&state, &workspace, "games.info");
         fs::write(source_path.join("child.pgn"), b"child bytes").unwrap();
