@@ -385,6 +385,7 @@ impl Default for MaterialColor {
 
 #[derive(Default, Debug)]
 pub struct TempGame {
+    provider_headers: Vec<u8>,
     pub event_name: Option<String>,
     pub site_name: Option<String>,
     pub date: Option<String>,
@@ -473,7 +474,7 @@ fn normalize_pgn_result(value: &str) -> &'static str {
 struct Importer {
     game: TempGame,
     games_started: usize,
-    timestamp: Option<i64>,
+    capture_provider_headers: bool,
     skip: bool,
     frames: Vec<ImportFrame>,
 }
@@ -493,11 +494,11 @@ impl ImportFrame {
 }
 
 impl Importer {
-    fn new(timestamp: Option<i64>) -> Importer {
+    fn new(account: Option<&linked_collections::AccountIdentity>) -> Importer {
         Importer {
             game: TempGame::default(),
             games_started: 0,
-            timestamp,
+            capture_provider_headers: account.is_some(),
             skip: false,
             frames: Vec::new(),
         }
@@ -515,6 +516,15 @@ impl Visitor for Importer {
     }
 
     fn header(&mut self, key: &[u8], value: RawHeader<'_>) {
+        if self.capture_provider_headers && matches!(key, b"Site" | b"Link") {
+            self.game.provider_headers.push(b'[');
+            self.game.provider_headers.extend_from_slice(key);
+            self.game.provider_headers.extend_from_slice(b" \"");
+            self.game
+                .provider_headers
+                .extend_from_slice(value.as_bytes());
+            self.game.provider_headers.extend_from_slice(b"\"]\n");
+        }
         if key == b"White" {
             self.game.white_name = Some(value.decode_utf8_lossy().into_owned());
         } else if key == b"Black" {
@@ -569,23 +579,6 @@ impl Visitor for Importer {
     }
 
     fn end_headers(&mut self) -> Skip {
-        // Skip games with timestamp before
-        let cur_timestamp = self.game.date.as_ref().and_then(|date| {
-            let date = NaiveDate::parse_from_str(date, "%Y.%m.%d").ok()?;
-            let time = self
-                .game
-                .time
-                .as_ref()
-                .and_then(|time| NaiveTime::parse_from_str(time, "%H:%M:%S").ok())?;
-            Some(date.and_time(time).and_utc().timestamp())
-        });
-
-        if let (Some(cur_timestamp), Some(timestamp)) = (cur_timestamp, self.timestamp) {
-            if cur_timestamp <= timestamp {
-                self.skip = true;
-            }
-        }
-
         // Skip games without ELO
         // self.skip |= self.current.white_elo.is_none() || self.current.black_elo.is_none();
 
@@ -603,7 +596,10 @@ impl Visitor for Importer {
         }
 
         let is_mainline = self.frames.len() == 1;
-        let frame = self.frames.last_mut().unwrap();
+        let Some(frame) = self.frames.last_mut() else {
+            self.skip = true;
+            return;
+        };
         let pre_move_position = frame.position.clone();
 
         let m = san.san.to_move(&frame.position).ok();
@@ -643,7 +639,10 @@ impl Visitor for Importer {
                 .push(ImportFrame::new(self.game.position.clone()));
         }
 
-        let parent = self.frames.last().unwrap();
+        let Some(parent) = self.frames.last() else {
+            self.skip = true;
+            return Skip(true);
+        };
         let variation_start = parent
             .pre_move_positions
             .last()
@@ -939,7 +938,6 @@ pub async fn convert_pgn(
     progress_id: String,
     files: Vec<FileWorkspaceHandle>,
     database: DatabaseHandle,
-    timestamp: Option<i32>,
     app: tauri::AppHandle,
     title: String,
     description: Option<String>,
@@ -951,7 +949,6 @@ pub async fn convert_pgn(
         progress_id,
         files,
         database,
-        timestamp,
         app,
         title,
         description,
@@ -967,7 +964,6 @@ async fn convert_pgn_command_core<R: tauri::Runtime>(
     progress_id: String,
     files: Vec<FileWorkspaceHandle>,
     database: DatabaseHandle,
-    timestamp: Option<i32>,
     app: tauri::AppHandle<R>,
     title: String,
     description: Option<String>,
@@ -992,7 +988,7 @@ async fn convert_pgn_command_core<R: tauri::Runtime>(
                     &search_cache,
                     files,
                     database,
-                    timestamp,
+                    None,
                     app,
                     title,
                     description,
@@ -1068,14 +1064,219 @@ impl ImportFileContext {
     }
 }
 
+pub(crate) struct AccountImportContext {
+    pub identity: linked_collections::AccountIdentity,
+    pub since_ms: Option<i64>,
+    pub coverage_holds: Option<Vec<crate::lichess::CoverageHold>>,
+}
+
+struct AccountImporter {
+    context: AccountImportContext,
+    newest_start_ms: Option<i64>,
+    provider_ids: std::collections::HashSet<String>,
+}
+
+#[derive(QueryableByName)]
+struct AccountGameId {
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    game_id: i32,
+}
+
+impl AccountImporter {
+    fn new(
+        db: &mut SqliteConnection,
+        context: AccountImportContext,
+        cancellation: &CancellationToken,
+    ) -> Result<Self, Error> {
+        db.batch_execute(
+            "CREATE TABLE IF NOT EXISTS AccountProviderGames (
+                Provider TEXT NOT NULL,
+                ProviderGameID TEXT NOT NULL,
+                GameID INTEGER NOT NULL UNIQUE REFERENCES Games(ID) ON DELETE CASCADE,
+                PRIMARY KEY (Provider, ProviderGameID)
+            );
+            CREATE TEMP TABLE IF NOT EXISTS AccountFingerprints (
+                GameID INTEGER PRIMARY KEY, Fingerprint TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS temp.AccountFingerprintLookup ON AccountFingerprints(Fingerprint);
+            DELETE FROM temp.AccountFingerprints;",
+        )?;
+        // Bound the decoded row batch. Membership stays in SQLite instead of retaining every
+        // stored game's moves in memory while replaying a full-history legacy sync.
+        let mut after = -1;
+        loop {
+            cancellation_check(cancellation)?;
+            let (white, black) = diesel::alias!(players as account_white, players as account_black);
+            let rows: Vec<(Game, Player, Player)> = games::table
+                .inner_join(white.on(games::white_id.eq(white.field(players::id))))
+                .inner_join(black.on(games::black_id.eq(black.field(players::id))))
+                .select((
+                    games::all_columns,
+                    white.fields(players::all_columns),
+                    black.fields(players::all_columns),
+                ))
+                .filter(games::id.gt(after))
+                .order(games::id.asc())
+                .limit(256)
+                .load(db)?;
+            if rows.is_empty() {
+                break;
+            }
+            for (game, white, black) in rows {
+                cancellation_check(cancellation)?;
+                after = game.id;
+                let stored = TempGame {
+                    white_name: (white.id != 0).then_some(white.name).flatten(),
+                    black_name: (black.id != 0).then_some(black.name).flatten(),
+                    date: game.date,
+                    time: game.time,
+                    fen: game.fen,
+                    moves: game.moves,
+                    ..Default::default()
+                };
+                Self::remember(
+                    db,
+                    game.id,
+                    &linked_collections::semantic_fingerprint(&stored, &context.identity),
+                )?;
+            }
+        }
+        Ok(Self {
+            context,
+            newest_start_ms: None,
+            provider_ids: Default::default(),
+        })
+    }
+
+    fn remember(db: &mut SqliteConnection, game_id: i32, fingerprint: &str) -> Result<(), Error> {
+        sql_query("INSERT INTO temp.AccountFingerprints (GameID, Fingerprint) VALUES (?, ?)")
+            .bind::<diesel::sql_types::Integer, _>(game_id)
+            .bind::<Text, _>(fingerprint)
+            .execute(db)?;
+        Ok(())
+    }
+
+    fn insert(&mut self, db: &mut SqliteConnection, game: &TempGame) -> Result<bool, Error> {
+        let start = game
+            .date
+            .as_ref()
+            .zip(game.time.as_ref())
+            .and_then(|(date, time)| {
+                Some(
+                    NaiveDate::parse_from_str(date, "%Y.%m.%d")
+                        .ok()?
+                        .and_time(NaiveTime::parse_from_str(time, "%H:%M:%S").ok()?)
+                        .and_utc()
+                        .timestamp_millis(),
+                )
+            });
+        self.newest_start_ms = self.newest_start_ms.into_iter().chain(start).max();
+        let identity = &self.context.identity;
+        let id = linked_collections::provider_game_id(&game.provider_headers, identity)?;
+        let fingerprint = linked_collections::semantic_fingerprint(game, identity);
+        let mut inserted = false;
+        if let Some(id) = id {
+            self.provider_ids.insert(id.clone());
+            let known = sql_query("SELECT GameID AS game_id FROM AccountProviderGames WHERE Provider = ? AND ProviderGameID = ?")
+                .bind::<Text, _>(&identity.provider)
+                .bind::<Text, _>(&id)
+                .get_result::<AccountGameId>(db).optional()?;
+            if known.is_some() {
+                return Ok(false);
+            }
+            let legacy = sql_query("SELECT f.GameID AS game_id FROM temp.AccountFingerprints f WHERE f.Fingerprint = ? AND NOT EXISTS (SELECT 1 FROM AccountProviderGames p WHERE p.GameID = f.GameID) ORDER BY f.GameID LIMIT 1")
+                .bind::<Text, _>(&fingerprint)
+                .get_result::<AccountGameId>(db).optional()?;
+            let game_id = match legacy {
+                Some(row) => row.game_id,
+                None => {
+                    let game_id = game.insert_to_db(db)?;
+                    Self::remember(db, game_id, &fingerprint)?;
+                    inserted = true;
+                    game_id
+                }
+            };
+            sql_query("INSERT INTO AccountProviderGames (Provider, ProviderGameID, GameID) VALUES (?, ?, ?)")
+                .bind::<Text, _>(&identity.provider)
+                .bind::<Text, _>(id)
+                .bind::<diesel::sql_types::Integer, _>(game_id)
+                .execute(db)?;
+        } else {
+            let known = sql_query("SELECT GameID AS game_id FROM temp.AccountFingerprints WHERE Fingerprint = ? LIMIT 1")
+                .bind::<Text, _>(&fingerprint)
+                .get_result::<AccountGameId>(db).optional()?;
+            if known.is_none() {
+                let game_id = game.insert_to_db(db)?;
+                Self::remember(db, game_id, &fingerprint)?;
+                inserted = true;
+            }
+        }
+        Ok(inserted)
+    }
+
+    fn finish(self, db: &mut SqliteConnection) -> Result<(), Error> {
+        let cursor = linked_collections::account_sync_cursor(
+            &self.context.identity.provider,
+            self.context.since_ms,
+            self.newest_start_ms,
+            &self.provider_ids,
+            self.context.coverage_holds.as_deref(),
+        );
+        update_info_count(db, "AccountSyncCursor", cursor)?;
+        db.batch_execute("DELETE FROM temp.AccountFingerprints;")?;
+        Ok(())
+    }
+}
+
+pub(crate) fn account_sync_cursor_blocking(
+    authority: &crate::infra::path_authority::SharedPathAuthority,
+    repository: &DatabaseRepository,
+    database: &DatabaseHandle,
+    cancellation: &CancellationToken,
+) -> Result<Option<i64>, Error> {
+    let target = resolve_database(authority, database, PathOperation::DatabaseCreate)?;
+    repository.with_write_lock_cancellable(&target, cancellation, || {
+        let mut connection = repository.initialization_connection(&target, Some(cancellation))?;
+        // New account targets are empty files. Reading their cursor must not initialize them
+        // outside the eventual import transaction.
+        #[derive(QueryableByName)]
+        struct Count {
+            #[diesel(sql_type = diesel::sql_types::BigInt)]
+            count: i64,
+        }
+        let tables = sql_query("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table'")
+            .get_result::<Count>(&mut *connection)?
+            .count;
+        if tables == 0 {
+            return Ok(None);
+        }
+        migrations::validate_existing_database(&mut connection)?;
+        let value = info::table
+            .filter(info::name.eq("AccountSyncCursor"))
+            .select(info::value)
+            .first::<Option<String>>(&mut *connection)
+            .optional()?
+            .flatten();
+        value
+            .map(|value| {
+                value
+                    .parse::<i64>()
+                    .ok()
+                    .filter(|value| *value >= 0)
+                    .ok_or_else(|| Error::InvalidInput("invalid account sync cursor".into()))
+            })
+            .transpose()
+    })
+}
+
 fn read_import_games(
     source: impl std::io::Read,
     context: &mut ImportFileContext,
-    timestamp: Option<i32>,
+    account: Option<&linked_collections::AccountIdentity>,
     cancellation: &CancellationToken,
     mut insert: impl FnMut(TempGame) -> Result<(), Error>,
 ) -> Result<(), Error> {
-    let mut importer = Importer::new(timestamp.map(i64::from));
+    let mut importer = Importer::new(account);
     let mut reader = BufferedReader::new(CancellableRead::new(
         SourceRead::new(source, &context.source),
         cancellation,
@@ -1119,7 +1320,7 @@ pub(crate) fn convert_pgn_blocking<R: tauri::Runtime>(
     search_cache: &SearchCache,
     files: Vec<FileWorkspaceHandle>,
     database: DatabaseHandle,
-    timestamp: Option<i32>,
+    account: Option<AccountImportContext>,
     app: tauri::AppHandle<R>,
     title: String,
     description: Option<String>,
@@ -1153,6 +1354,9 @@ pub(crate) fn convert_pgn_blocking<R: tauri::Runtime>(
                 let (database_was_created, validated) =
                     migrations::prepare_database_with_validation(db, &title, &description)?;
                 content_validated = validated;
+                let mut account_import = account
+                    .map(|account| AccountImporter::new(db, account, cancellation))
+                    .transpose()?;
 
                 for file_handle in files {
                     let mut context = ImportFileContext {
@@ -1185,21 +1389,43 @@ pub(crate) fn convert_pgn_blocking<R: tauri::Runtime>(
                                 Box::new(file)
                             };
 
-                        read_import_games(uncompressed, context, timestamp, cancellation, |game| {
-                            if imported_games.is_multiple_of(1000) {
-                                let _ = ConvertProgress {
-                                    id: progress_id.clone(),
-                                    imported_games: imported_games as u32,
-                                    elapsed_ms: start.elapsed().as_millis() as u32,
-                                    source_file_name: current_file_name.clone(),
+                        let identity = account_import
+                            .as_ref()
+                            .map(|importer| importer.context.identity.clone());
+                        read_import_games(
+                            uncompressed,
+                            context,
+                            identity.as_ref(),
+                            cancellation,
+                            |game| {
+                                let inserted = match account_import.as_mut() {
+                                    Some(importer) => importer.insert(db, &game)?,
+                                    None => {
+                                        game.insert_to_db(db)?;
+                                        true
+                                    }
+                                };
+                                if !inserted {
+                                    return Ok(());
                                 }
-                                .emit(&app);
-                            }
-                            game.insert_to_db(db)?;
-                            imported_games += 1;
-                            Ok(())
-                        })
+                                if imported_games.is_multiple_of(1000) {
+                                    let _ = ConvertProgress {
+                                        id: progress_id.clone(),
+                                        imported_games: imported_games as u32,
+                                        elapsed_ms: start.elapsed().as_millis() as u32,
+                                        source_file_name: current_file_name.clone(),
+                                    }
+                                    .emit(&app);
+                                }
+                                imported_games += 1;
+                                Ok(())
+                            },
+                        )
                     })?;
+                }
+
+                if let Some(importer) = account_import {
+                    importer.finish(db)?;
                 }
 
                 if database_was_created {
@@ -2354,53 +2580,6 @@ fn load_games(
             data: normalized_games,
             count: count.map(|c| c as i32),
         })
-    })
-}
-
-fn get_latest_game_timestamp_in_db(db: &mut SqliteConnection) -> Result<Option<i64>, Error> {
-    let timestamps = games::table
-        .select((games::date, games::time))
-        .filter(games::date.is_not_null())
-        .filter(games::time.is_not_null())
-        .load::<(Option<String>, Option<String>)>(db)?;
-
-    Ok(timestamps
-        .into_iter()
-        .filter_map(|(date, time)| {
-            let date = NaiveDate::parse_from_str(date?.as_str(), "%Y.%m.%d").ok()?;
-            let time = NaiveTime::parse_from_str(time?.as_str(), "%H:%M:%S").ok()?;
-            Some(date.and_time(time).and_utc().timestamp_millis())
-        })
-        .max())
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn get_latest_game_timestamp(
-    file: DatabaseHandle,
-    state: tauri::State<'_, AppState>,
-) -> Result<Option<f64>, Error> {
-    let authority = state.pgn_path_authority.clone();
-    let repository = Arc::clone(&state.database_repository);
-    crate::infra::operations::run_accepted_blocking(
-        &state.operations,
-        "get_latest_game_timestamp",
-        move || get_latest_game_timestamp_blocking(&authority, &repository, file),
-    )
-    .await
-}
-
-fn get_latest_game_timestamp_blocking(
-    authority: &crate::infra::path_authority::SharedPathAuthority,
-    repository: &DatabaseRepository,
-    file: DatabaseHandle,
-) -> Result<Option<f64>, Error> {
-    let target = resolve_database(authority, &file, PathOperation::DatabaseRead)?;
-
-    let mut database_connection = get_db_or_create(repository, &target, None, authority, &file)?;
-    let db = &mut *database_connection;
-    linked_collections::read_snapshot(db, authority, &file, |db| {
-        Ok(get_latest_game_timestamp_in_db(db)?.map(|timestamp| timestamp as f64))
     })
 }
 
@@ -6700,23 +6879,6 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn commands_resolve_with_their_own_operation_read_permits_get_latest_game_timestamp() {
-        let (_dir, app, handle, _database) =
-            schema_database_case("games", vec![PathOperation::DatabaseRead]);
-        let state = app.state::<AppState>();
-        assert!(recorded_result(PathOperation::DatabaseRead, || {
-            get_latest_game_timestamp_blocking(
-                &state.pgn_path_authority,
-                &state.database_repository,
-                handle.clone(),
-            )
-        })
-        .unwrap()
-        .is_none());
-    }
-
-    #[cfg(unix)]
-    #[test]
     fn commands_resolve_with_their_own_operation_read_permits_get_player() {
         let (_dir, app, handle, _database) =
             schema_database_case("games", vec![PathOperation::DatabaseRead]);
@@ -7130,23 +7292,6 @@ mod tests {
                     handle,
                     GameQuery::new(),
                     &CancellationToken::new(),
-                )
-                .map(|_| ())
-            },
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn commands_resolve_with_their_own_operation_create_refuses_get_latest_game_timestamp() {
-        assert_refused_operation(
-            PathOperation::DatabaseCreate,
-            PathOperation::DatabaseRead,
-            |_, app, handle| {
-                get_latest_game_timestamp_blocking(
-                    &app.state::<AppState>().pgn_path_authority,
-                    &app.state::<AppState>().database_repository,
-                    handle,
                 )
                 .map(|_| ())
             },
@@ -7927,7 +8072,6 @@ mod tests {
                     "matrix-convert".into(),
                     vec![inputs.pgn.unwrap()],
                     handle,
-                    None,
                     app.clone(),
                     "Imported".into(),
                     None,
@@ -9049,7 +9193,7 @@ mod tests {
         app: &tauri::AppHandle<tauri::test::MockRuntime>,
         database: DatabaseHandle,
         files: Vec<FileWorkspaceHandle>,
-        timestamp: Option<i32>,
+        account: Option<AccountImportContext>,
     ) -> Result<(), Error> {
         let state = app.state::<AppState>();
         convert_pgn_blocking(
@@ -9058,7 +9202,7 @@ mod tests {
             &state.search_cache,
             files,
             database,
-            timestamp,
+            account,
             app.clone(),
             "Test".into(),
             None,
@@ -9071,7 +9215,7 @@ mod tests {
         app: &tauri::AppHandle<tauri::test::MockRuntime>,
         database: DatabaseHandle,
         files: Vec<FileWorkspaceHandle>,
-        timestamp: Option<i32>,
+        account: Option<AccountImportContext>,
         cancellation: &CancellationToken,
     ) -> Result<(), Error> {
         let state = app.state::<AppState>();
@@ -9081,7 +9225,7 @@ mod tests {
             &state.search_cache,
             files,
             database,
-            timestamp,
+            account,
             app.clone(),
             "Test".into(),
             None,
@@ -9125,7 +9269,6 @@ mod tests {
             "import-failure-command".into(),
             vec![file],
             handle,
-            None,
             app.clone(),
             "Test".into(),
             None,
@@ -10090,7 +10233,7 @@ mod tests {
     }
 
     #[test]
-    fn timestamp_and_invalid_game_skip_policy_is_preserved() {
+    fn imports_old_starts_while_preserving_invalid_game_skip_policy() {
         let (dir, app, handle, database) = blocking_database_case();
         mount_convert_progress_events(&app);
         let source = dir.path().join("skips.pgn");
@@ -10098,23 +10241,11 @@ mod tests {
             "[White \"Carlsen\"]",
             "[White \"Skipped\"]\n[FEN \"invalid\"]",
         );
-        let pre_cutoff = REPLACEMENT_PGN.replace("Carlsen", "Too Old");
+        let older = REPLACEMENT_PGN.replace("Carlsen", "Older");
         let valid = REPLACEMENT_PGN.replace("2026.08.09", "2026.08.10");
-        std::fs::write(&source, format!("{pre_cutoff}\n{invalid}\n{valid}")).unwrap();
-        let cutoff = NaiveDate::from_ymd_opt(2026, 8, 9)
-            .unwrap()
-            .and_hms_opt(12, 0, 0)
-            .unwrap()
-            .and_utc()
-            .timestamp() as i32;
-        run_import(
-            &app,
-            handle,
-            vec![grant_import_file(&app, &source)],
-            Some(cutoff),
-        )
-        .unwrap();
-        assert_eq!(database_row_counts(&app, &database).games, 1);
+        std::fs::write(&source, format!("{older}\n{invalid}\n{valid}")).unwrap();
+        run_import(&app, handle, vec![grant_import_file(&app, &source)], None).unwrap();
+        assert_eq!(database_row_counts(&app, &database).games, 2);
     }
 
     #[test]
@@ -10395,19 +10526,6 @@ mod tests {
             .data
             .iter()
             .any(|event| event.name.as_deref() == Some("Candidates")));
-
-        let timestamp = get_latest_game_timestamp_blocking(
-            &state.pgn_path_authority,
-            &state.database_repository,
-            handle,
-        )
-        .unwrap();
-        let expected = NaiveDate::from_ymd_opt(2026, 8, 9)
-            .unwrap()
-            .and_time(NaiveTime::from_hms_opt(12, 0, 0).unwrap())
-            .and_utc()
-            .timestamp_millis() as f64;
-        assert_eq!(timestamp, Some(expected));
     }
 
     #[test]
@@ -13632,6 +13750,335 @@ mod exact_player_tests {
         let mut wire = original;
         wire["nameMatch"] = serde_json::json!("prefix");
         assert!(serde_json::from_value::<PlayerQuery>(wire).is_err());
+    }
+}
+
+#[cfg(test)]
+mod unlinked_account_tests {
+    use super::*;
+
+    struct Fixture {
+        directory: tempfile::TempDir,
+        app: tauri::AppHandle<tauri::test::MockRuntime>,
+        database: DatabaseHandle,
+        path: std::path::PathBuf,
+    }
+
+    impl Fixture {
+        fn new() -> Self {
+            let (directory, app, database, path) = blocking_database_case();
+            tauri_specta::Builder::<tauri::test::MockRuntime>::new()
+                .events(tauri_specta::collect_events!(ConvertProgress))
+                .mount_events(&app);
+            Self {
+                directory,
+                app,
+                database,
+                path,
+            }
+        }
+
+        fn cursor(&self) -> Option<i64> {
+            let state = self.app.state::<AppState>();
+            account_sync_cursor_blocking(
+                &state.pgn_path_authority,
+                &state.database_repository,
+                &self.database,
+                &CancellationToken::new(),
+            )
+            .unwrap()
+        }
+
+        fn context(
+            &self,
+            provider: &str,
+            holds: Option<Vec<crate::lichess::CoverageHold>>,
+        ) -> AccountImportContext {
+            AccountImportContext {
+                identity: linked_collections::AccountIdentity {
+                    provider: provider.into(),
+                    account: "Player".into(),
+                },
+                since_ms: self.cursor(),
+                coverage_holds: holds,
+            }
+        }
+
+        fn convert(
+            &self,
+            pgn: &str,
+            context: Option<AccountImportContext>,
+            cancellation: &CancellationToken,
+        ) -> Result<(), Error> {
+            let source = self.directory.path().join("account-import.pgn");
+            std::fs::write(&source, pgn).unwrap();
+            let file = grant_pgn_file(
+                &self.app,
+                &source,
+                "account-import.pgn",
+                vec![PathOperation::ReadPgn],
+            );
+            let state = self.app.state::<AppState>();
+            convert_pgn_blocking(
+                &state.pgn_path_authority,
+                &state.database_repository,
+                &state.search_cache,
+                vec![file],
+                self.database.clone(),
+                context,
+                self.app.clone(),
+                "Account".into(),
+                None,
+                self.database.path_ref().id.clone(),
+                cancellation,
+            )
+        }
+
+        fn count(&self, table: &str) -> i64 {
+            rusqlite::Connection::open(&self.path)
+                .unwrap()
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap()
+        }
+    }
+
+    fn game(provider: &str, id: &str, date: &str, time: Option<&str>) -> String {
+        let identity = match provider {
+            "lichess" => format!("[Site \"https://lichess.org/{id}\"]\n"),
+            "chesscom" => {
+                format!("[Site \"Chess.com\"]\n[Link \"https://www.chess.com/game/daily/{id}\"]\n")
+            }
+            _ => String::new(),
+        };
+        let time = time
+            .map(|time| format!("[UTCTime \"{time}\"]\n"))
+            .unwrap_or_default();
+        format!("[White \"Player\"]\n[Black \"Opponent\"]\n[Date \"{date}\"]\n{identity}{time}\n1. e4 e5 *\n\n")
+    }
+
+    #[test]
+    fn unlinked_chesscom_daily_replay_reconciles_legacy_and_imports_old_start_once() {
+        let fixture = Fixture::new();
+        let cancellation = CancellationToken::new();
+        let september = game("chesscom", "19", "2026.09.19", Some("12:00:00"));
+        fixture.convert(&september, None, &cancellation).unwrap();
+        assert_eq!(
+            fixture.cursor(),
+            None,
+            "legacy rows force a full-history sync"
+        );
+        let daily = game("chesscom", "5", "2026.09.05", Some("12:00:00"));
+        let archives = format!("{september}{daily}{september}{daily}");
+        for _ in 0..2 {
+            fixture
+                .convert(
+                    &archives,
+                    Some(fixture.context("chesscom", None)),
+                    &cancellation,
+                )
+                .unwrap();
+            assert_eq!(fixture.count("Games"), 2);
+            assert_eq!(fixture.count("AccountProviderGames"), 2);
+        }
+        assert!(fixture.cursor().is_some());
+        let mut db = SqliteConnection::establish(fixture.path.to_str().unwrap()).unwrap();
+        migrations::validate_existing_database(&mut db).unwrap();
+        let site: Option<String> = sites::table
+            .filter(sites::id.ne(0))
+            .select(sites::name)
+            .first(&mut db)
+            .unwrap();
+        assert_eq!(site.as_deref(), Some("Chess.com"));
+    }
+
+    #[test]
+    fn unlinked_distinct_ids_survive_equal_fingerprints_with_and_without_time() {
+        for time in [Some("12:00:00"), None] {
+            let fixture = Fixture::new();
+            let a = game("chesscom", "1", "2026.09.05", time);
+            let b = game("chesscom", "2", "2026.09.05", time);
+            let batch = format!("{a}{b}{a}{b}");
+            for _ in 0..2 {
+                fixture
+                    .convert(
+                        &batch,
+                        Some(fixture.context("chesscom", None)),
+                        &CancellationToken::new(),
+                    )
+                    .unwrap();
+                assert_eq!(fixture.count("Games"), 2);
+                assert_eq!(fixture.count("AccountProviderGames"), 2);
+            }
+        }
+    }
+
+    #[test]
+    fn unlinked_legacy_rows_are_claimed_once_even_when_fingerprints_are_equal() {
+        for legacy_count in [1, 2] {
+            let fixture = Fixture::new();
+            let legacy = game("", "", "2026.09.05", None);
+            fixture
+                .convert(
+                    &legacy.repeat(legacy_count),
+                    None,
+                    &CancellationToken::new(),
+                )
+                .unwrap();
+            let batch = format!(
+                "{}{}{}",
+                game("chesscom", "1", "2026.09.05", None),
+                game("chesscom", "2", "2026.09.05", None),
+                game("chesscom", "3", "2026.09.05", None)
+            );
+            for _ in 0..2 {
+                fixture
+                    .convert(
+                        &batch,
+                        Some(fixture.context("chesscom", None)),
+                        &CancellationToken::new(),
+                    )
+                    .unwrap();
+                assert_eq!(fixture.count("Games"), 3);
+                assert_eq!(fixture.count("AccountProviderGames"), 3);
+            }
+        }
+    }
+
+    #[test]
+    fn unlinked_missing_or_malformed_start_is_imported_without_moving_cursor() {
+        let fixture = Fixture::new();
+        let batch = format!(
+            "{}{}{}",
+            game("chesscom", "1", "2026.09.05", None),
+            game("chesscom", "2", "invalid", Some("12:00:00")),
+            game("chesscom", "3", "2026.09.05", Some("invalid"))
+        );
+        for _ in 0..2 {
+            fixture
+                .convert(
+                    &batch,
+                    Some(fixture.context("chesscom", None)),
+                    &CancellationToken::new(),
+                )
+                .unwrap();
+            assert_eq!(fixture.count("Games"), 3);
+            assert_eq!(fixture.cursor(), Some(0));
+        }
+        let absent_date = game("chesscom", "4", "2026.09.05", Some("12:00:00"))
+            .replace("[Date \"2026.09.05\"]\n", "");
+        fixture
+            .convert(
+                &absent_date,
+                Some(fixture.context("chesscom", None)),
+                &CancellationToken::new(),
+            )
+            .unwrap();
+        assert_eq!(fixture.count("Games"), 4);
+        assert_eq!(fixture.cursor(), Some(0));
+    }
+
+    #[test]
+    fn unlinked_idless_games_reconcile_stored_rows_and_duplicates_in_the_file() {
+        let fixture = Fixture::new();
+        let game = game("", "", "2026.09.05", None);
+        fixture
+            .convert(&game, None, &CancellationToken::new())
+            .unwrap();
+        fixture
+            .convert(
+                &game.repeat(2),
+                Some(fixture.context("chesscom", None)),
+                &CancellationToken::new(),
+            )
+            .unwrap();
+        assert_eq!(fixture.count("Games"), 1);
+        assert_eq!(fixture.count("AccountProviderGames"), 0);
+        let new_game = game.replace("e4 e5", "d4 d5");
+        fixture
+            .convert(
+                &new_game.repeat(2),
+                Some(fixture.context("chesscom", None)),
+                &CancellationToken::new(),
+            )
+            .unwrap();
+        assert_eq!(fixture.count("Games"), 2);
+    }
+
+    #[test]
+    fn unlinked_duplicate_games_still_cover_finished_holds_and_advance_cursor() {
+        let fixture = Fixture::new();
+        let pgn = game("lichess", "newgame1", "2026.10.10", Some("12:00:00"));
+        fixture
+            .convert(
+                &pgn,
+                Some(fixture.context("lichess", None)),
+                &CancellationToken::new(),
+            )
+            .unwrap();
+        assert_eq!(
+            fixture.cursor(),
+            Some(0),
+            "missing holds freeze Lichess coverage"
+        );
+        let hold = crate::lichess::CoverageHold {
+            id: "newgame1".into(),
+            created_at_ms: 1,
+            ongoing: false,
+        };
+        let frames = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let captured = frames.clone();
+        let listener = ConvertProgress::listen(&fixture.app, move |event| {
+            captured.lock().unwrap().push(event.payload);
+        });
+        fixture
+            .convert(
+                &pgn.repeat(3),
+                Some(fixture.context("lichess", Some(vec![hold]))),
+                &CancellationToken::new(),
+            )
+            .unwrap();
+        use tauri::Listener as _;
+        fixture.app.unlisten(listener);
+        let frames = frames.lock().unwrap();
+        assert_eq!(
+            frames.len(),
+            1,
+            "duplicate replay emits only its terminal frame"
+        );
+        assert_eq!(frames[0].imported_games, 0);
+        assert_eq!(frames[0].source_file_name, None);
+        assert_eq!(fixture.count("Games"), 1);
+        assert_eq!(fixture.cursor(), Some(1_791_633_600_000));
+    }
+
+    #[test]
+    fn unlinked_cancel_rolls_back_games_provider_table_and_cursor_together() {
+        let fixture = Fixture::new();
+        let cancellation = CancellationToken::new();
+        let token = cancellation.clone();
+        CONVERSION_BEFORE_REVISION.arm(
+            fixture.database.path_ref().id.clone(),
+            Box::new(move || token.cancel()),
+        );
+        let result = fixture.convert(
+            &game("chesscom", "1", "2026.09.05", None),
+            Some(fixture.context("chesscom", None)),
+            &cancellation,
+        );
+        assert!(matches!(result, Err(Error::Cancellation)));
+        assert_eq!(fixture.count("Games"), 0);
+        assert_eq!(fixture.cursor(), None);
+        let tables: i64 = rusqlite::Connection::open(&fixture.path)
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE name = 'AccountProviderGames'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(tables, 0);
     }
 }
 

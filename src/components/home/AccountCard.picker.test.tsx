@@ -18,7 +18,6 @@ import english from "@/translation/en-US.json";
 const mocks = vi.hoisted(() => ({
   issueDownloadDestination: vi.fn(),
   downloadDestinationIsKnown: vi.fn(),
-  getLatestGameTimestamp: vi.fn(),
   getDatabaseWorkspace: vi.fn(),
   listWorkspaceDatabases: vi.fn(),
   createWorkspaceDatabase: vi.fn(),
@@ -182,7 +181,14 @@ beforeEach(() => {
   });
   mocks.pendingAccountCompletions.mockImplementation(async () => snapshot);
   mocks.acknowledgeAccountCompletion.mockImplementation(async (id: string) => {
-    snapshot = snapshot.filter((entry) => entry.id !== id || entry.deletionPending);
+    snapshot = snapshot.filter(
+      (entry) =>
+        entry.id !== id ||
+        entry.deletionPending ||
+        (entry.request.target.kind === "unlinked" &&
+          entry.publication &&
+          entry.outcome.state === "failed"),
+    );
   });
   mocks.getDatabases.mockResolvedValue({
     databases: [],
@@ -197,7 +203,6 @@ beforeEach(() => {
   mocks.createWorkspaceDatabase.mockResolvedValue(database);
   mocks.issueDownloadDestination.mockResolvedValue(destination);
   mocks.downloadDestinationIsKnown.mockResolvedValue(true);
-  mocks.getLatestGameTimestamp.mockResolvedValue(null);
   mocks.linkedCollectionsSupported.mockResolvedValue(false);
   mocks.ensureFileWorkspace.mockResolvedValue(workspace);
   mocks.importAccountGames.mockImplementation(async (accepted: AccountImportRequest) => {
@@ -283,6 +288,24 @@ test("one retained success refreshes once across repeated events and two matchin
   expect(cache.get("databases")?.data).toMatchObject({ databases: [] });
   expect(mocks.acknowledgeAccountCompletion).toHaveBeenCalledOnce();
   expect(mocks.notify).not.toHaveBeenCalled();
+});
+test("a retained failed conversion reports once and retries the native attempt", async () => {
+  snapshot = [completion("failed")];
+  await renderCards();
+  await emitChanged();
+  await emitChanged();
+  expect(mocks.getDatabases).toHaveBeenCalledOnce();
+  expect(mocks.notify).toHaveBeenCalledOnce();
+  expect(store.get(accountCompletionsAtom).get("chesscom_felix")?.publication).toBeTruthy();
+  mocks.importAccountGames.mockImplementation(async () => {
+    const retried = completion("succeeded", { attempt: 2 });
+    snapshot = [retried];
+    return retried;
+  });
+  await clickDownload();
+  expect(mocks.importAccountGames).toHaveBeenCalledOnce();
+  expect(mocks.getDatabases).toHaveBeenCalledTimes(2);
+  expect(store.get(accountCompletionsAtom).size).toBe(0);
 });
 test("a retained uncertain failure shows both the do-not-retry notice and import error", async () => {
   snapshot = [

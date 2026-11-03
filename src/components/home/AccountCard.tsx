@@ -317,9 +317,7 @@ export function AccountCard({
                     ? preparation.collection?.fetchSinceMs
                       ? Number(preparation.collection.fetchSinceMs)
                       : null
-                    : database
-                      ? await tauri.getLatestGameTimestamp(database.file)
-                      : null;
+                    : null;
                   if (type === "lichess" && !accountHandle && !preparation?.pendingBatch)
                     throw new Error(t("Home.Accounts.AuthenticationRequired"));
                   const target = preparation?.collection

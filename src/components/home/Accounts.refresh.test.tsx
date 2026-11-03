@@ -182,7 +182,6 @@ beforeEach(() => {
     entries: [{ handle, filename: "Felix_chesscom.db3", availability: "available" }],
     unread: [],
   });
-  mocks.getLatestGameTimestamp.mockResolvedValue(null);
   mocks.issueDownloadDestination.mockResolvedValue({ id: "destination" });
   accountSnapshot = [];
   accountCompletionChanged = undefined;
@@ -726,10 +725,7 @@ test("real Accounts retain post-cleanup counts across remount and revalidation o
     },
   });
   expect(mocks.getDbInfo).toHaveBeenCalledTimes(1);
-  expect(mocks.getLatestGameTimestamp).toHaveBeenCalledWith({
-    id: { id: "database" },
-    kind: "database",
-  });
+  expect(mocks.getLatestGameTimestamp).not.toHaveBeenCalled();
 
   await renderAccounts(false);
   await renderAccounts();

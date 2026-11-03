@@ -83,6 +83,179 @@ fn reload_completion_account_rows(path: &std::path::Path) -> i64 {
         .unwrap()
 }
 
+fn unlinked_lichess_game(id: &str, date: &str) -> String {
+    format!("[White \"Player\"]\n[Black \"Opponent\"]\n[Site \"https://lichess.org/{id}\"]\n[UTCDate \"{date}\"]\n[UTCTime \"12:00:00\"]\n\n1. e4 e5 *\n\n")
+}
+
+fn unlinked_cursor(path: &std::path::Path) -> Option<i64> {
+    use rusqlite::OptionalExtension;
+    rusqlite::Connection::open(path)
+        .unwrap()
+        .query_row(
+            "SELECT CAST(Value AS INTEGER) FROM Info WHERE Name = 'AccountSyncCursor'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn unlinked_lichess_adopted_holds_persist_cursor_and_next_download_imports_correspondence_once(
+) {
+    use tauri::Manager as _;
+    // Both an ongoing game and a finished game missing from the export must hold coverage.
+    for ongoing in [true, false] {
+        let (directory, app, path, mut request, publication) = reload_completion_account_fixture();
+        let state = app.state::<crate::AppState>().inner().clone();
+        request.provider = "lichess".into();
+        request.since_ms = Some(9_999_999_999_999);
+        let blitz = unlinked_lichess_game("blitz001", "2026.10.10");
+        let correspondence = unlinked_lichess_game("corresp1", "2026.10.01");
+        std::fs::write(directory.path().join("account.pgn"), &blitz).unwrap();
+        let hold_start = 1_790_856_000_000;
+        let first_publication = publication.clone();
+        let first = accounts::import_account_games_with_download(
+            request.clone(),
+            app.clone(),
+            "main".into(),
+            state.clone(),
+            move |download_request, _, _, _, _| async move {
+                assert_eq!(
+                    download_request.since_ms, None,
+                    "native legacy cursor overrides renderer input"
+                );
+                accounts::adopt_account_download(
+                    Ok(super::operations::RuntimeDownload {
+                        publication: first_publication,
+                        receipt_error: Some(Error::Conflict("linked receipt unavailable".into())),
+                        coverage_holds: Some(vec![crate::lichess::CoverageHold {
+                            id: "corresp1".into(),
+                            created_at_ms: hold_start,
+                            ongoing,
+                        }]),
+                    }),
+                    "lichess",
+                    "Player",
+                )
+            },
+        )
+        .await
+        .unwrap();
+        assert!(matches!(first.outcome, CompletionOutcome::Succeeded(_)));
+        assert_eq!(unlinked_cursor(&path), Some(hold_start - 1));
+        assert_eq!(reload_completion_account_rows(&path), 1);
+        state
+            .operations
+            .acknowledge_account_completion(&first.id, "main")
+            .unwrap();
+        std::fs::write(
+            directory.path().join("account.pgn"),
+            format!("{blitz}{correspondence}"),
+        )
+        .unwrap();
+        for _ in 0..2 {
+            let expected = unlinked_cursor(&path);
+            let publication = publication.clone();
+            let next = accounts::import_account_games_with_download(
+                request.clone(),
+                app.clone(),
+                "main".into(),
+                state.clone(),
+                move |download_request, _, _, _, _| async move {
+                    assert_eq!(download_request.since_ms, expected);
+                    accounts::adopt_account_download(
+                        Ok(super::operations::RuntimeDownload {
+                            publication,
+                            receipt_error: None,
+                            coverage_holds: Some(vec![crate::lichess::CoverageHold {
+                                id: "corresp1".into(),
+                                created_at_ms: hold_start,
+                                ongoing: false,
+                            }]),
+                        }),
+                        "lichess",
+                        "Player",
+                    )
+                },
+            )
+            .await
+            .unwrap();
+            assert!(matches!(next.outcome, CompletionOutcome::Succeeded(_)));
+            assert_eq!(reload_completion_account_rows(&path), 2);
+            assert_eq!(unlinked_cursor(&path), Some(1_791_633_600_000));
+            state
+                .operations
+                .acknowledge_account_completion(&next.id, "main")
+                .unwrap();
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn unlinked_lichess_failed_conversion_retries_retained_publication_with_original_holds() {
+    use tauri::Manager as _;
+    let (directory, app, path, mut request, publication) = reload_completion_account_fixture();
+    let state = app.state::<crate::AppState>().inner().clone();
+    request.provider = "lichess".into();
+    let blitz = unlinked_lichess_game("blitz001", "2026.10.10");
+    std::fs::write(
+        directory.path().join("account.pgn"),
+        format!("{blitz}[White \"unterminated"),
+    )
+    .unwrap();
+    let hold_start = 1_790_856_000_000;
+    let first = accounts::import_account_games_with_download(
+        request.clone(),
+        app.clone(),
+        "main".into(),
+        state.clone(),
+        move |_, _, _, _, _| async move {
+            accounts::adopt_account_download(
+                Ok(super::operations::RuntimeDownload {
+                    publication,
+                    receipt_error: None,
+                    coverage_holds: Some(vec![crate::lichess::CoverageHold {
+                        id: "corresp1".into(),
+                        created_at_ms: hold_start,
+                        ongoing: true,
+                    }]),
+                }),
+                "lichess",
+                "Player",
+            )
+        },
+    )
+    .await
+    .unwrap();
+    assert!(matches!(first.outcome, CompletionOutcome::Failed(_)));
+    assert_eq!(reload_completion_account_rows(&path), 0);
+    assert_eq!(unlinked_cursor(&path), None);
+    state
+        .operations
+        .acknowledge_account_completion(&first.id, "main")
+        .unwrap();
+    assert_eq!(
+        state.operations.account_completions("main").unwrap().len(),
+        1
+    );
+    std::fs::write(directory.path().join("account.pgn"), blitz).unwrap();
+    let retry = accounts::import_account_games_with_download(
+        request,
+        app,
+        "main".into(),
+        state.clone(),
+        |_, _, _, _, _| async { panic!("conversion retry must use the retained publication") },
+    )
+    .await
+    .unwrap();
+    assert!(matches!(retry.outcome, CompletionOutcome::Succeeded(_)));
+    assert_eq!(retry.id, first.id);
+    assert_eq!(retry.attempt, first.attempt + 1);
+    assert_eq!(reload_completion_account_rows(&path), 1);
+    assert_eq!(unlinked_cursor(&path), Some(hold_start - 1));
+}
+
 async fn reload_completion_drain(registry: OperationRegistry) {
     assert!(
         tokio::task::spawn_blocking(move || registry.wait_for_drain(Duration::from_secs(10)))
@@ -125,7 +298,11 @@ async fn reload_completion_account_unlinked_commits_before_reconnect_and_retains
             native,
             move |_, _, _, _, _| async move {
                 observed_downloads.fetch_add(1, Ordering::SeqCst);
-                Ok(publication)
+                Ok(super::operations::RuntimeDownload {
+                    publication,
+                    receipt_error: None,
+                    coverage_holds: None,
+                })
             },
         )
         .await;
@@ -229,7 +406,11 @@ async fn reload_completion_account_deletion_checkpoint_survives_ack_and_retries_
         state.clone(),
         move |_, _, _, _, _| async move {
             count.fetch_add(1, Ordering::SeqCst);
-            Ok(publication)
+            Ok(super::operations::RuntimeDownload {
+                publication,
+                receipt_error: None,
+                coverage_holds: None,
+            })
         },
     )
     .await;

@@ -492,8 +492,7 @@ export function useDatabaseLibrary(
                     pickPgnFile,
                     convertPgn: async (progressId, files, destination, ticket) => {
                       await refreshAfterDatabaseConversion(
-                        () =>
-                          tauri.convertPgn(progressId, files, destination, null, "", null, ticket),
+                        () => tauri.convertPgn(progressId, files, destination, "", null, ticket),
                         async () => {
                           await refreshDatabaseList(databaseOwner!, mutateCache);
                         },

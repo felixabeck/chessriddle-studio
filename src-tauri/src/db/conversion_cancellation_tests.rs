@@ -44,7 +44,6 @@ async fn convert(
         id,
         vec![file],
         database,
-        None,
         app.clone(),
         "Fixture".into(),
         None,

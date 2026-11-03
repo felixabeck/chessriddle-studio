@@ -619,9 +619,9 @@ async mergePlayers(file: DatabaseHandle, player1: number, player2: number) : Pro
     else return { status: "error", error: e  as any };
 }
 },
-async convertPgn(progressId: string, files: FileWorkspaceHandle[], database: DatabaseHandle, timestamp: number | null, title: string, description: string | null, ticket: string | null) : Promise<Result<null, ErrorPayload>> {
+async convertPgn(progressId: string, files: FileWorkspaceHandle[], database: DatabaseHandle, title: string, description: string | null, ticket: string | null) : Promise<Result<null, ErrorPayload>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("convert_pgn", { progressId, files, database, timestamp, title, description, ticket }) };
+    return { status: "ok", data: await TAURI_INVOKE("convert_pgn", { progressId, files, database, title, description, ticket }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1099,14 +1099,6 @@ async getGames(file: DatabaseHandle, query: GameQuery, ticket: string | null) : 
 async getDbGame(file: DatabaseHandle, gameId: number, linked: LinkedGameIdentity | null, ticket: string | null) : Promise<Result<DbGameLookup, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_db_game", { file, gameId, linked, ticket }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async getLatestGameTimestamp(file: DatabaseHandle) : Promise<Result<number | null, ErrorPayload>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_latest_game_timestamp", { file }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

@@ -422,26 +422,24 @@ describe("tauri command facade", () => {
         expect(mocks.cancelConversion).toHaveBeenCalledWith("exact-ticket");
     });
 
-    test("convertPgn forwards all seven generated arguments including nullable ticket", async () => {
+    test("convertPgn forwards all six generated arguments including nullable ticket", async () => {
         const { tauri } = await import("./tauri");
         const database = { id: { id: "db" }, kind: "database" } as const;
         mocks.convertPgn.mockResolvedValue({ status: "ok", data: null });
-        await tauri.convertPgn("operation", [], database, null, "Title", null, "exact-ticket");
+        await tauri.convertPgn("operation", [], database, "Title", null, "exact-ticket");
         expect(mocks.convertPgn).toHaveBeenCalledWith(
             "operation",
             [],
             database,
-            null,
             "Title",
             null,
             "exact-ticket",
         );
-        await tauri.convertPgn("account", [], database, null, "Account", null, null);
+        await tauri.convertPgn("account", [], database, "Account", null, null);
         expect(mocks.convertPgn).toHaveBeenLastCalledWith(
             "account",
             [],
             database,
-            null,
             "Account",
             null,
             null,

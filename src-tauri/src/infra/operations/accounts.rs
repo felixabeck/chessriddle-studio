@@ -103,6 +103,18 @@ pub(crate) struct AccountCompletion {
     pub committed_database: Option<DatabaseHandle>,
     pub deletion_pending: bool,
     pub importing: bool,
+    #[serde(skip)]
+    #[specta(skip)]
+    coverage_holds: Option<Vec<crate::lichess::CoverageHold>>,
+}
+
+impl AccountCompletion {
+    fn needs_retry(&self) -> bool {
+        self.deletion_pending
+            || (matches!(self.request.target, AccountImportTarget::Unlinked { .. })
+                && self.publication.is_some()
+                && matches!(self.outcome, CompletionOutcome::Failed(_)))
+    }
 }
 
 type AccountAttempt = futures_util::future::Shared<
@@ -142,8 +154,7 @@ impl OperationRegistry {
             })
             .map(|(id, entry)| (id.clone(), entry.snapshot.clone(), entry.attempt.clone()));
         let mut snapshot = if let Some((_, snapshot, attempt)) = existing {
-            if !snapshot.deletion_pending || matches!(snapshot.outcome, CompletionOutcome::Running)
-            {
+            if !snapshot.needs_retry() || matches!(snapshot.outcome, CompletionOutcome::Running) {
                 return Ok((attempt, None));
             }
             snapshot
@@ -163,6 +174,7 @@ impl OperationRegistry {
                 committed_database: None,
                 deletion_pending: false,
                 importing: false,
+                coverage_holds: None,
             }
         };
         let lease = self.accept_in_state(
@@ -237,7 +249,7 @@ impl OperationRegistry {
                 "completion belongs to another webview".into(),
             ));
         }
-        if !entry.snapshot.deletion_pending
+        if !entry.snapshot.needs_retry()
             && !matches!(entry.snapshot.outcome, CompletionOutcome::Running)
         {
             state.accounts.remove(id);
@@ -305,7 +317,7 @@ where
     D: FnOnce(AccountImportRequest, String, String, tauri::AppHandle<R>, AppState) -> F
         + Send
         + 'static,
-    F: Future<Output = Result<ArtifactPublication, Error>> + Send + 'static,
+    F: Future<Output = Result<RuntimeDownload, Error>> + Send + 'static,
 {
     let (attempt, start) = state.operations.admit_account_completion(&owner, request)?;
     if let Some(start) = start {
@@ -322,7 +334,7 @@ async fn download_account<R: tauri::Runtime>(
     owner: String,
     app: tauri::AppHandle<R>,
     state: AppState,
-) -> Result<ArtifactPublication, Error> {
+) -> Result<RuntimeDownload, Error> {
     let filename = format!("{}_{}.pgn", request.account, request.provider);
     let downloaded = if request.provider == "lichess" {
         let handle = request.account_handle.ok_or_else(|| {
@@ -357,13 +369,13 @@ async fn download_account<R: tauri::Runtime>(
     adopt_account_download(downloaded, &request.provider, &request.account)
 }
 
-fn adopt_account_download(
+pub(crate) fn adopt_account_download(
     downloaded: Result<RuntimeDownload, Error>,
     provider: &str,
     account: &str,
-) -> Result<ArtifactPublication, Error> {
-    let downloaded = downloaded?;
-    if let Some(error) = downloaded.receipt_error {
+) -> Result<RuntimeDownload, Error> {
+    let mut downloaded = downloaded?;
+    if let Some(error) = downloaded.receipt_error.take() {
         log::warn!(
             "account download receipt failed for provider {} account {} publication {}: {}",
             provider,
@@ -372,7 +384,7 @@ fn adopt_account_download(
             error.diagnostic()
         );
     }
-    Ok(downloaded.publication)
+    Ok(downloaded)
 }
 
 pub(crate) async fn start_account_completion<R, D, F>(
@@ -386,7 +398,7 @@ pub(crate) async fn start_account_completion<R, D, F>(
     D: FnOnce(AccountImportRequest, String, String, tauri::AppHandle<R>, AppState) -> F
         + Send
         + 'static,
-    F: Future<Output = Result<ArtifactPublication, Error>> + Send + 'static,
+    F: Future<Output = Result<RuntimeDownload, Error>> + Send + 'static,
 {
     let AccountStart {
         mut snapshot,
@@ -399,12 +411,34 @@ pub(crate) async fn start_account_completion<R, D, F>(
         let terminal = run_native_operation(lease, "import_account_games", async move {
             let outcome = std::panic::AssertUnwindSafe(async {
                 if !snapshot.deletion_pending {
-                    let publication = match snapshot.request.pending_batch.clone() {
-                        Some(handle) => ArtifactPublication {
+                    if snapshot.publication.is_none() {
+                        if let AccountImportTarget::Unlinked { database, .. } =
+                            &snapshot.request.target
+                        {
+                            let database = database.clone();
+                            let native = state.clone();
+                            snapshot.request.since_ms = BLOCKING_GATEWAY
+                                .spawn_cancellable(cancellation.clone(), move |token| {
+                                    crate::db::account_sync_cursor_blocking(
+                                        &native.pgn_path_authority,
+                                        &native.database_repository,
+                                        &database,
+                                        token,
+                                    )
+                                })
+                                .await?;
+                        }
+                    }
+                    let publication = match (
+                        snapshot.publication.clone(),
+                        snapshot.request.pending_batch.clone(),
+                    ) {
+                        (Some(publication), _) => publication,
+                        (None, Some(handle)) => ArtifactPublication {
                             handle,
                             durability: CommitDurability::Durable,
                         },
-                        None => {
+                        (None, None) => {
                             // These reservations belong to the accepted native workflow, so the
                             // starting document cannot cancel them during its reload cleanup.
                             let native_owner = format!("account-workflow:{}", snapshot.id);
@@ -429,7 +463,9 @@ pub(crate) async fn start_account_completion<R, D, F>(
                             )
                             .await;
                             state.operations.release_download(&ticket, &native_owner)?;
-                            downloaded?
+                            let downloaded = downloaded?;
+                            snapshot.coverage_holds = downloaded.coverage_holds;
+                            downloaded.publication
                         }
                     };
                     snapshot.publication = Some(publication.clone());
@@ -471,15 +507,14 @@ pub(crate) async fn start_account_completion<R, D, F>(
                                 &app,
                                 snapshot.progress_id.clone(),
                             )?;
-                            let timestamp = snapshot
-                                .request
-                                .since_ms
-                                .map(|value| {
-                                    i32::try_from(value / 1000).map_err(|_| {
-                                        Error::InvalidInput("invalid account timestamp".into())
-                                    })
-                                })
-                                .transpose()?;
+                            let account = crate::db::AccountImportContext {
+                                identity: crate::db::linked_collections::AccountIdentity {
+                                    provider: snapshot.request.provider.clone(),
+                                    account: snapshot.request.account.clone(),
+                                },
+                                since_ms: snapshot.request.since_ms,
+                                coverage_holds: snapshot.coverage_holds.clone(),
+                            };
                             #[cfg(test)]
                             let completion_id = snapshot.id.clone();
                             let converted = BLOCKING_GATEWAY
@@ -492,7 +527,7 @@ pub(crate) async fn start_account_completion<R, D, F>(
                                         &native.search_cache,
                                         vec![publication.handle],
                                         database,
-                                        timestamp,
+                                        Some(account),
                                         conversion_app,
                                         title,
                                         None,
@@ -623,7 +658,7 @@ mod tests {
             "lichess",
             "receipt-failure-account",
         );
-        assert_eq!(adopted.unwrap(), publication);
+        assert_eq!(adopted.unwrap().publication, publication);
     }
 
     #[test]

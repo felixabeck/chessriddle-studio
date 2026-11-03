@@ -106,7 +106,6 @@ export async function convertLocalDatabase(
       progressId,
       paths,
       dbPath,
-      null,
       title,
       description ?? null,
       operation?.ticket ?? null,

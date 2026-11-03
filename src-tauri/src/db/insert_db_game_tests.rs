@@ -271,7 +271,6 @@ async fn insert_db_game_convert_pgn_uses_the_shared_insert() {
         "insert-shared".into(),
         vec![source],
         handle.clone(),
-        None,
         app.clone(),
         "Fixture".into(),
         None,

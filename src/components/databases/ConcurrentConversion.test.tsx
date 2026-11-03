@@ -461,7 +461,6 @@ beforeEach(() => {
         `conversion:${id}`,
         [{ id: { id: "account-pgn" }, kind: "fileWorkspace" }],
         accountHandle,
-        null,
         "Felix Chess.com",
         null,
         null,
@@ -650,7 +649,7 @@ test("row Cancel forwards its exact conversion ticket, deduplicates pending clic
   await vi.waitFor(() => expect(convertCalls).toHaveLength(2));
   const first = activeOperation(0);
   const second = activeOperation(1);
-  expect(convertCalls[0].args[6]).not.toBe(convertCalls[1].args[6]);
+  expect(convertCalls[0].args[5]).not.toBe(convertCalls[1].args[5]);
   const cancel = host.querySelector<HTMLButtonElement>(
     'button[aria-label="Common.Cancel: more.pgn"]',
   )!;
@@ -658,7 +657,7 @@ test("row Cancel forwards its exact conversion ticket, deduplicates pending clic
     cancel.click();
     cancel.click();
   });
-  expect(mocks.cancelConversion).toHaveBeenCalledExactlyOnceWith(convertCalls[0].args[6]);
+  expect(mocks.cancelConversion).toHaveBeenCalledExactlyOnceWith(convertCalls[0].args[5]);
   expect(cancel.disabled).toBe(true);
   expect(conversionState().find((entry) => entry.id === first.id)?.cancelPending).toBe(true);
   expect(conversionState().find((entry) => entry.id === second.id)?.cancelPending).toBe(false);
@@ -905,7 +904,6 @@ test.each(
       games.id,
       [addGamesPgn],
       handleB,
-      null,
       "",
       null,
       expect.stringMatching(/^conversion-ticket:/),

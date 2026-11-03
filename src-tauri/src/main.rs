@@ -108,8 +108,8 @@ use crate::sound::get_sound_server_port;
 use crate::{
     chess::get_best_moves,
     db::{
-        delete_duplicated_games, edit_db_info, get_db_game, get_db_info, get_games,
-        get_latest_game_timestamp, get_players, insert_db_game, merge_players, write_db_game,
+        delete_duplicated_games, edit_db_info, get_db_game, get_db_info, get_games, get_players,
+        insert_db_game, merge_players, write_db_game,
     },
     fs::{
         cancel_download, cancel_download_for_progress, download_file, download_lichess_games,
@@ -2213,7 +2213,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             get_db_info::<tauri::Wry>,
             get_games,
             get_db_game,
-            get_latest_game_timestamp,
             search_position,
             get_players,
             get_puzzle_themes,
@@ -5207,7 +5206,6 @@ mod blocking_offload_scans {
             "delete_indexes",
             "edit_db_info",
             "get_games",
-            "get_latest_game_timestamp",
             "get_player",
             "get_players",
             "get_tournaments",

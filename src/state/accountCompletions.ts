@@ -45,6 +45,11 @@ function createAccountObserver(store: Store) {
             completion.outcome.state === "failed"
                 ? new TauriCommandError(completion.outcome.result)
                 : undefined;
+        const retryPending =
+            completion.deletionPending ||
+            (completion.request.target.kind === "unlinked" &&
+                !!completion.publication &&
+                !!failure);
         const result = sequence
             .then(async () => {
                 if (!active) return;
@@ -80,7 +85,7 @@ function createAccountObserver(store: Store) {
                 if (!active) return;
                 await tauri.acknowledgeAccountCompletion(completion.id);
                 if (!active) return;
-                if (!completion.deletionPending) {
+                if (!retryPending) {
                     store.set(accountCompletionsAtom, (previous) => {
                         const next = new Map(previous);
                         next.delete(accountCompletionKey(completion.request));
@@ -93,8 +98,8 @@ function createAccountObserver(store: Store) {
                 throw failure ? report(failure) : error;
             })
             .finally(() => {
-                // Only unfinished deletion needs a local receipt. Other replays read native absence.
-                if (!completion.deletionPending) applications.delete(completion.id);
+                // Retained conversion and deletion retries keep their applied attempt receipt.
+                if (!retryPending) applications.delete(completion.id);
             });
         applications.set(completion.id, { attempt: completion.attempt, result });
         sequence = result.catch(() => undefined);
