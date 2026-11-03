@@ -38,6 +38,77 @@ const sanToken = (value: string): Token => ({ type: "San", value });
 const commentToken = (value: string): Token => ({ type: "Comment", value });
 const outcomeToken: Token = { type: "Outcome", value: "*" };
 
+const isolatedLosses: { source: string; tokens: Token[] }[] = [
+    {
+        source: "1. e4 $x e5 *",
+        tokens: [sanToken("e4"), { type: "Unparsed", value: "$x" }, sanToken("e5"), outcomeToken],
+    },
+    {
+        source: "1. e4 ({Keep this}) *",
+        tokens: [
+            sanToken("e4"),
+            { type: "ParenOpen" },
+            commentToken("Keep this"),
+            { type: "ParenClose" },
+            outcomeToken,
+        ],
+    },
+    {
+        source: "$1 1. e4 *",
+        tokens: [{ type: "Nag", value: "$1" }, sanToken("e4"), outcomeToken],
+    },
+    {
+        source: "1. e4 e5 ($1 1... c5) *",
+        tokens: [
+            sanToken("e4"),
+            sanToken("e5"),
+            { type: "ParenOpen" },
+            { type: "Nag", value: "$1" },
+            sanToken("c5"),
+            { type: "ParenClose" },
+            outcomeToken,
+        ],
+    },
+    {
+        source: "1. e4 ({outer} ({inner} 1. c4) 1. d4) *",
+        tokens: [
+            sanToken("e4"),
+            { type: "ParenOpen" },
+            commentToken("outer"),
+            { type: "ParenOpen" },
+            commentToken("inner"),
+            sanToken("c4"),
+            { type: "ParenClose" },
+            sanToken("d4"),
+            { type: "ParenClose" },
+            outcomeToken,
+        ],
+    },
+];
+
+test.each(isolatedLosses)("reports an isolated loss for $source", async ({ source, tokens }) => {
+    mocks.lexPgn.mockResolvedValue(tokens);
+    const { losses } = await parsePGNWithLossReport(source);
+    expect(losses.length).toBeGreaterThan(0);
+});
+
+test("ordinary move NAG and single variation starting comment remain lossless", async () => {
+    mocks.lexPgn.mockResolvedValue([
+        sanToken("e4"),
+        { type: "Nag", value: "$1" },
+        sanToken("e5"),
+        { type: "ParenOpen" },
+        commentToken("Sicilian"),
+        sanToken("c5"),
+        { type: "ParenClose" },
+        outcomeToken,
+    ] satisfies Token[]);
+    const { tree, losses } = await parsePGNWithLossReport("1. e4 $1 e5 ({Sicilian} 1... c5) *");
+    expect(losses).toEqual([]);
+    expect(tree.root.children[0].nags).toEqual([1]);
+    expect(tree.root.children[0].children[1].startingComment).toBe("Sicilian");
+});
+
 test.each(["brace", "semicolon", "root"])(
     "keeps trailing %s comments without loss",
     async (kind) => {

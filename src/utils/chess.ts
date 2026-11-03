@@ -374,6 +374,8 @@ function innerParsePGN(
     halfMoves?: number,
 ): TreeState {
     const tree = defaultTree(fen);
+    // Only the recursive variation call passes halfMoves.
+    const isVariation = halfMoves !== undefined;
     // The cursor: the node the next comment, NAG or move attaches to.
     let node = tree.root;
     let prevNode = node;
@@ -385,7 +387,7 @@ function innerParsePGN(
     for (let i = 0; i < tokens.length; i++) {
         const token = tokens[i];
 
-        if (ended && (token.type !== "Comment" || halfMoves !== undefined)) {
+        if (ended && (token.type !== "Comment" || isVariation)) {
             losses.push("Content after outcome");
             continue;
         }
@@ -398,7 +400,7 @@ function innerParsePGN(
                 if (field.clock !== undefined && ++clocks > 1) losses.push("Multiple clocks");
                 if (field.evaluation && ++evaluations > 1) losses.push("Multiple evaluations");
             }
-            if (halfMoves !== undefined && node === tree.root) {
+            if (isVariation && node === tree.root) {
                 losses.push("Comment on discarded variation root");
             }
             const comment = splitPgnComment(token.value);
@@ -471,6 +473,7 @@ function innerParsePGN(
             // alternative from `prevNode` — a variation nested at the variation's first move included.
             const [first] = newTree.root.children;
             if (first && startingComments.length > 0) {
+                if (first.startingComment) losses.push("Overwritten variation starting comment");
                 first.startingComment = startingComments.join(" ");
             } else if (startingComments.length > 0) {
                 losses.push("Starting comment without a variation move");
@@ -483,6 +486,7 @@ function innerParsePGN(
         } else if (token.type === "Nag") {
             const code = /^\$\d+$/.test(token.value) ? Number(token.value.slice(1)) : NaN;
             if (isNagCode(code)) {
+                if (node === tree.root) losses.push("NAG on parse root");
                 node.nags.push(code);
             } else {
                 losses.push("Invalid NAG");
@@ -514,7 +518,7 @@ function innerParsePGN(
             clocks = 0;
             evaluations = 0;
         } else if (token.type === "Outcome") {
-            if (halfMoves !== undefined) losses.push("Outcome inside variation");
+            if (isVariation) losses.push("Outcome inside variation");
             ended = true;
         }
     }
