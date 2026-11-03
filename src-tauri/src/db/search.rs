@@ -416,8 +416,9 @@ fn is_contained(container: Bitboard, subset: Bitboard) -> bool {
 }
 
 // Date interval containment: a shaped PGN date with a known year matches when its earliest
-// possible date >= start and latest <= end. Unknown years fail bounded queries,
-// unknown month/day components span 01..12/31, and other shapes stay lexical.
+// possible date >= start and latest <= end. Unknown years fail bounded queries.
+// Unknown months span 01..12. Unknown days end at the known month's last day,
+// or 31 for unknown/invalid months. Other shapes stay lexical.
 fn matches_date(date: Option<&str>, start: Option<&str>, end: Option<&str>) -> bool {
     if start.is_none() && end.is_none() {
         return true;
@@ -444,7 +445,16 @@ fn matches_date(date: Option<&str>, start: Option<&str>, end: Option<&str>) -> b
     let mut earliest = *b"0000.00.00";
     earliest.copy_from_slice(bytes);
     let mut latest = earliest;
-    for (range, last) in [(5..7, b"12"), (8..10, b"31")] {
+    let year = bytes[..4]
+        .iter()
+        .fold(0_u32, |year, digit| year * 10 + u32::from(digit - b'0'));
+    let last_day = match &bytes[5..7] {
+        b"04" | b"06" | b"09" | b"11" => b"30",
+        b"02" if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => b"29",
+        b"02" => b"28",
+        _ => b"31",
+    };
+    for (range, last) in [(5..7, b"12"), (8..10, last_day)] {
         if bytes[range.clone()].contains(&b'?') {
             earliest[range.clone()].copy_from_slice(b"01");
             latest[range].copy_from_slice(last);
@@ -473,11 +483,19 @@ pub(super) fn date_interval_endpoint_sql(
     .sql(
         r#" ELSE substr("Games"."Date", 6, 2) END || '.' ||
                 CASE WHEN instr(substr("Games"."Date", 9, 2), '?') > 0
-                    THEN "#,
+                    THEN CASE WHEN "#,
+    )
+    .bind::<diesel::sql_types::Bool, _>(latest)
+    .sql(
+        r#" AND substr("Games"."Date", 6, 2) BETWEEN '01' AND '12'
+                    THEN coalesce(strftime('%d', date(
+                        substr("Games"."Date", 1, 4) || '-' ||
+                        substr("Games"."Date", 6, 2) || '-01', '+1 month', '-1 day')), '31')
+                    ELSE "#,
     )
     .bind::<diesel::sql_types::Text, _>(day)
     .sql(
-        r#" ELSE substr("Games"."Date", 9, 2) END
+        r#" END ELSE substr("Games"."Date", 9, 2) END
             END
         ELSE "Games"."Date" END"#,
     )
@@ -2112,7 +2130,7 @@ mod imported_search_tests {
 #[cfg(test)]
 mod date_filter_tests {
     use super::*;
-    use diesel::connection::SimpleConnection;
+    use crate::db::{blocking_database_case, get_games_blocking, GameQuery, TempGame};
 
     const BOUNDS: [(Option<&str>, Option<&str>); 6] = [
         (None, None),
@@ -2177,6 +2195,24 @@ mod date_filter_tests {
         (Some("2024.99.99"), [true, false, false, false, false, true]),
     ];
 
+    const MONTH_CASES: &[(&str, &str, &str, bool)] = &[
+        ("2024.06.??", "2024.06.01", "2024.06.30", true),
+        ("2024.06.?5", "2024.06.01", "2024.06.30", true),
+        ("2024.02.??", "2024.02.01", "2024.02.29", true),
+        ("2024.02.??", "2024.02.01", "2024.02.28", false),
+        ("2023.02.??", "2023.02.01", "2023.02.28", true),
+        ("1900.02.??", "1900.02.01", "1900.02.28", true),
+        ("2000.02.??", "2000.02.01", "2000.02.29", true),
+        ("0000.02.??", "0000.02.01", "0000.02.29", true),
+        ("9999.12.??", "9999.12.01", "9999.12.31", true),
+        ("2024.??.??", "2024.01.01", "2024.12.30", false),
+        ("2024.00.??", "2024.00.01", "2024.00.31", true),
+        ("2024.00.??", "2024.00.01", "2024.00.30", false),
+        ("2024.13.??", "2024.13.01", "2024.13.31", true),
+        ("2024.13.??", "2024.13.01", "2024.13.30", false),
+        ("2024.99.??", "2024.99.01", "2024.99.31", true),
+    ];
+
     #[test]
     fn index_date_filter_matches_shared_interval_cases() {
         for &(date, expected) in CASES {
@@ -2188,51 +2224,70 @@ mod date_filter_tests {
                 );
             }
         }
+        for &(date, start, end, expected) in MONTH_CASES {
+            assert_eq!(
+                matches_date(Some(date), Some(start), Some(end)),
+                expected,
+                "date {date:?}, start {start:?}, end {end:?}"
+            );
+        }
     }
 
     #[test]
-    fn sql_date_filter_matches_shared_interval_cases_for_rows_and_counts() {
-        let mut db = SqliteConnection::establish(":memory:").unwrap();
-        db.batch_execute("CREATE TABLE Games (ID INTEGER PRIMARY KEY, Date TEXT)")
-            .unwrap();
-        for (id, &(date, _)) in CASES.iter().enumerate() {
-            diesel::insert_into(games::table)
-                .values((
-                    games::id.eq(i32::try_from(id).unwrap()),
-                    games::date.eq(date),
-                ))
-                .execute(&mut db)
-                .unwrap();
+    fn production_date_filter_matches_shared_interval_cases_for_rows_and_counts(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (_directory, app, file, path) = blocking_database_case();
+        let mut db = SqliteConnection::establish(&path.to_string_lossy())?;
+        let mut stored = Vec::new();
+        for date in CASES
+            .iter()
+            .map(|(date, _)| *date)
+            .chain(MONTH_CASES.iter().map(|(date, _, _, _)| Some(*date)))
+        {
+            let id = TempGame {
+                date: date.map(str::to_owned),
+                ..Default::default()
+            }
+            .insert_to_db(&mut db)?;
+            stored.push((id, date));
         }
+        drop(db);
 
-        for (bound_index, (start, end)) in BOUNDS.into_iter().enumerate() {
-            let mut rows = games::table.select(games::id).into_boxed();
-            let mut counts = games::table.into_boxed();
-            if let Some(start) = start {
-                let filter = date_interval_endpoint_sql(false).ge(start);
-                rows = rows.filter(filter.clone());
-                counts = counts.filter(filter);
-            }
-            if let Some(end) = end {
-                let filter = date_interval_endpoint_sql(true).le(end);
-                rows = rows.filter(filter.clone());
-                counts = counts.filter(filter);
-            }
-
-            let expected: Vec<i32> = CASES
+        let state = app.state::<crate::AppState>();
+        for (start, end) in BOUNDS.into_iter().chain(
+            MONTH_CASES
                 .iter()
-                .enumerate()
-                .filter(|(_, (_, expected))| expected[bound_index])
-                .map(|(id, _)| i32::try_from(id).unwrap())
+                .map(|(_, start, end, _)| (Some(*start), Some(*end))),
+        ) {
+            let expected: Vec<i32> = stored
+                .iter()
+                .filter(|(_, date)| matches_date(*date, start, end))
+                .map(|(id, _)| *id)
                 .collect();
-            let actual = rows.order(games::id).load::<i32>(&mut db).unwrap();
+            let response = get_games_blocking(
+                &state.pgn_path_authority,
+                &state.database_repository,
+                file.clone(),
+                GameQuery {
+                    start_date: start.map(str::to_owned),
+                    end_date: end.map(str::to_owned),
+                    options: Some(crate::db::QueryOptions {
+                        direction: crate::db::SortDirection::Asc,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                &CancellationToken::new(),
+            )?;
+            let actual: Vec<i32> = response.data.iter().map(|game| game.id).collect();
             assert_eq!(actual, expected, "start {start:?}, end {end:?}");
             assert_eq!(
-                counts.count().get_result::<i64>(&mut db).unwrap(),
-                i64::try_from(expected.len()).unwrap(),
+                response.count,
+                Some(i32::try_from(expected.len())?),
                 "count for start {start:?}, end {end:?}"
             );
         }
+        Ok(())
     }
 }
 

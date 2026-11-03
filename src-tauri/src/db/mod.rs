@@ -108,6 +108,7 @@ const DELETE_INDEXES_SQL: &str = include_str!("delete_indexes.sql");
 const OPENING_STATISTICS_PLY_LIMIT: usize = 55;
 const PLAYER_STATISTICS_BATCH_ROW_BYTE_BUDGET: usize = 1024 * 1024;
 const PLAYER_STATISTICS_BATCH_ROW_LIMIT: usize = 256;
+const ACCOUNT_IMPORT_BATCH_ROW_LIMIT: i64 = 256;
 /// Emit on kept rows 1, 1001 and subsequent intervals.
 const PLAYER_STATISTICS_PROGRESS_INTERVAL: usize = 1_000;
 
@@ -408,12 +409,12 @@ impl TempGame {
     pub fn insert_to_db(&self, db: &mut SqliteConnection) -> Result<i32, diesel::result::Error> {
         let pawn_home = get_pawn_home(self.position.board());
 
-        let white_id = if let Some(name) = &self.white_name {
+        let white_id = if let Some(name) = database_player_name(self.white_name.as_deref()) {
             create_player(db, name)?.id
         } else {
             0
         };
-        let black_id = if let Some(name) = &self.black_name {
+        let black_id = if let Some(name) = database_player_name(self.black_name.as_deref()) {
             create_player(db, name)?.id
         } else {
             0
@@ -460,6 +461,11 @@ impl TempGame {
 
         Ok(create_game(db, new_game)?.id)
     }
+}
+
+// The schema reserves player 0 for this exact, case-sensitive name.
+fn database_player_name(name: Option<&str>) -> Option<&str> {
+    name.filter(|name| *name != "Unknown")
 }
 
 fn normalize_pgn_result(value: &str) -> &'static str {
@@ -1117,7 +1123,7 @@ impl AccountImporter {
                 ))
                 .filter(games::id.gt(after))
                 .order(games::id.asc())
-                .limit(256)
+                .limit(ACCOUNT_IMPORT_BATCH_ROW_LIMIT)
                 .load(db)?;
             if rows.is_empty() {
                 break;
@@ -1156,7 +1162,13 @@ impl AccountImporter {
         Ok(())
     }
 
-    fn insert(&mut self, db: &mut SqliteConnection, game: &TempGame) -> Result<bool, Error> {
+    fn insert(&mut self, db: &mut SqliteConnection, mut game: TempGame) -> Result<bool, Error> {
+        if database_player_name(game.white_name.as_deref()).is_none() {
+            game.white_name = None;
+        }
+        if database_player_name(game.black_name.as_deref()).is_none() {
+            game.black_name = None;
+        }
         let start = game
             .date
             .as_ref()
@@ -1173,7 +1185,7 @@ impl AccountImporter {
         self.newest_start_ms = self.newest_start_ms.into_iter().chain(start).max();
         let identity = &self.context.identity;
         let id = linked_collections::provider_game_id(&game.provider_headers, identity)?;
-        let fingerprint = linked_collections::semantic_fingerprint(game, identity);
+        let fingerprint = linked_collections::semantic_fingerprint(&game, identity);
         let mut inserted = false;
         if let Some(id) = id {
             self.provider_ids.insert(id.clone());
@@ -1399,7 +1411,7 @@ pub(crate) fn convert_pgn_blocking<R: tauri::Runtime>(
                             cancellation,
                             |game| {
                                 let inserted = match account_import.as_mut() {
-                                    Some(importer) => importer.insert(db, &game)?,
+                                    Some(importer) => importer.insert(db, game)?,
                                     None => {
                                         game.insert_to_db(db)?;
                                         true
@@ -14006,6 +14018,96 @@ mod unlinked_account_tests {
             )
             .unwrap();
         assert_eq!(fixture.count("Games"), 2);
+    }
+
+    #[test]
+    fn unlinked_unknown_players_reconcile_legacy_and_idless_replays(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        for (white, black) in [
+            ("Unknown", "Opponent"),
+            ("Player", "Unknown"),
+            ("Unknown", "Unknown"),
+            ("unknown", "UNKNOWN"),
+        ] {
+            for provider_id in [false, true] {
+                for legacy in [false, true] {
+                    let fixture = Fixture::new();
+                    let idless = game("", "", "2026.09.05", Some("12:00:00"))
+                        .replace("[White \"Player\"]", &format!("[White \"{white}\"]"))
+                        .replace("[Black \"Opponent\"]", &format!("[Black \"{black}\"]"));
+                    let cancellation = CancellationToken::new();
+                    if legacy {
+                        fixture.convert(&idless, None, &cancellation)?;
+                    }
+                    let replay = if provider_id {
+                        idless.replace(
+                            "[Date",
+                            "[Link \"https://www.chess.com/game/daily/123\"]\n[Date",
+                        )
+                    } else {
+                        idless
+                    };
+                    for _ in 0..2 {
+                        fixture.convert(
+                            &replay.repeat(2),
+                            Some(fixture.context("chesscom", None)),
+                            &cancellation,
+                        )?;
+                        assert_eq!(fixture.count("Games"), 1);
+                        assert_eq!(
+                            fixture.count("AccountProviderGames"),
+                            i64::from(provider_id)
+                        );
+                    }
+                    let mut db = SqliteConnection::establish(&fixture.path.to_string_lossy())?;
+                    let (white_id, black_id): (i32, i32) = games::table
+                        .select((games::white_id, games::black_id))
+                        .first(&mut db)?;
+                    assert_eq!(white_id == 0, white == "Unknown");
+                    assert_eq!(black_id == 0, black == "Unknown");
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn unlinked_fingerprint_fields_survive_database_round_trip() -> Result<(), Error> {
+        // Date, time, FEN and encoded moves are stored verbatim by insert_to_db.
+        // Exercise missing/empty/malformed tags, explicit standard FEN, custom setup,
+        // and annotations/variations through the parser and a fresh importer each time.
+        for (headers, moves) in [
+            ("", "1. e4 e5 *"),
+            ("[Date \"\"]\n[UTCTime \"\"]\n", "1. e4 e5 *"),
+            (
+                "[Date \"2024.02.??\"]\n[UTCTime \"invalid\"]\n",
+                "1. e4 e5 *",
+            ),
+            ("[Date \"invalid\"]\n[UTCTime \"12:00:00\"]\n", "1. e4 e5 *"),
+            (
+                "[FEN \"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1\"]\n",
+                "1. e4 {comment} e5 (1... c5) 2. Nf3 $1 *",
+            ),
+            ("[FEN \"4k3/8/8/8/8/8/4P3/4K3 w - - 0 1\"]\n", "1. e4 Kd7 *"),
+        ] {
+            let fixture = Fixture::new();
+            let pgn = format!("[White \"Player\"]\n[Black \"Opponent\"]\n{headers}\n{moves}\n\n");
+            let cancellation = CancellationToken::new();
+            fixture.convert(&pgn, None, &cancellation)?;
+            for _ in 0..2 {
+                fixture.convert(
+                    &pgn.repeat(2),
+                    Some(fixture.context("chesscom", None)),
+                    &cancellation,
+                )?;
+                assert_eq!(
+                    fixture.count("Games"),
+                    1,
+                    "headers {headers:?}, moves {moves:?}"
+                );
+            }
+        }
+        Ok(())
     }
 
     #[test]
