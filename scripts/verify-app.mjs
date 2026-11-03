@@ -1395,6 +1395,191 @@ async function verifyWorkspaceDeletionOutcome(session, filesWorkspace) {
   await rm(sidecar, { recursive: true, force: true });
 }
 
+async function verifyLosslessFileGameSave(session, filesWorkspace) {
+  const workspace = { id: { id: filesWorkspaceId }, kind: "fileWorkspace" };
+  const sentence =
+    "The game in the file contains moves or comments ChessFable cannot keep. Saving over it would delete them. You can save your version as a new game.";
+  const fixtures = [
+    {
+      name: "verify-lossy-source",
+      event: "Lossy",
+      pgn: '[Event "Lossy"]\n\n1. e4 e5 2. Nf9 Nc6 3. Bb5 *\n',
+    },
+    {
+      name: "verify-trailing-comment",
+      event: "Trailing",
+      pgn: '[Event "Trailing"]\n\n1. e4 e5 1-0 {White won on time}\n',
+    },
+  ];
+  const locate = (label, expression, args = []) =>
+    reachableStableCoordinates(session, label, expression, args);
+  const button = (label) =>
+    locate(
+      label,
+      `[...document.querySelectorAll('[data-file-freshness] button')].find(node => node.textContent.trim() === arguments[0])`,
+      [label],
+    );
+  const save = () =>
+    session.call("POST", "/actions", {
+      actions: [
+        {
+          type: "key",
+          id: "lossless-file-save",
+          actions: [
+            { type: "keyDown", value: "\uE009" },
+            { type: "keyDown", value: "s" },
+            { type: "keyUp", value: "s" },
+            { type: "keyUp", value: "\uE009" },
+          ],
+        },
+      ],
+    });
+  const screenshot = async (name) => {
+    if (!screenshotPath) return;
+    const path = `${screenshotPath}.${name}.png`;
+    await writeFile(path, Buffer.from(await session.screenshot(), "base64"));
+    console.log(`  .. lossless-save screenshot: ${path}`);
+  };
+  const assertion = async (label, action) => {
+    try {
+      await action();
+      check(true, label);
+      return true;
+    } catch (error) {
+      check(false, label, error.message);
+      return false;
+    }
+  };
+  for (const [index, fixture] of fixtures.entries()) {
+    const path = join(filesWorkspace, `${fixture.name}.pgn`);
+    const editedEvent = `verify:edited-${fixture.event}`;
+    const before = Buffer.from(fixture.pgn);
+    let owner;
+    const opened = await assertion(
+      `${index === 0 ? "LS1" : "LS6"} ${fixture.event} fixture opens from its real registered PGN file`,
+      async () => {
+        await writeFile(path, before);
+        const listed = await invokeJsonAndWait(
+          session,
+          `${fixture.event} fixture registration`,
+          "__verifyLosslessSaveListing",
+          `window.__TAURI_INTERNALS__.invoke("list_file_workspace", { workspace: ${JSON.stringify(workspace)}, ticket: null })`,
+        );
+        const entry = listed.value?.entries?.find((candidate) => candidate.name === fixture.name);
+        if (!entry?.handle?.id?.id)
+          throw new Error(`fixture handle unavailable: ${JSON.stringify(listed)}`);
+        const row = await filesRowCoordinates(session, fixture.name);
+        await doubleClickAt(session, row.x, row.y);
+        owner = await waitFor(`${fixture.event} file tree`, async () => {
+          const snapshot = await readActiveTabTree(session);
+          return (
+            snapshot.tab?.gameOrigin.kind === "file" &&
+            snapshot.tab.gameOrigin.file.handle.id.id === entry.handle.id.id &&
+            snapshot.tab.gameOrigin.gameNumber === 0 &&
+            snapshot.tree?.headers.event === fixture.event &&
+            snapshot.tree.sourceStamp &&
+            snapshot
+          );
+        });
+      },
+    );
+    const edited = await assertion(
+      `${index === 0 ? "LS2" : "LS7"} ${fixture.event} tree is edited through the real PGN editor`,
+      async () => {
+        if (!opened) throw new Error("file opening failed");
+        await dirtyActiveTreeEventHeader(session, editedEvent, {
+          keyboardId: `lossless-edit-${index}`,
+        });
+      },
+    );
+    if (index === 0) {
+      const refused = await assertion(
+        "LS3 lossy in-place Save shows the exact loss explanation",
+        async () => {
+          if (!edited) throw new Error("tree editing failed");
+          await save();
+          const panel = await waitFor("lossy-source conflict panel", () =>
+            session.execute(
+              `const gate = document.querySelector('[data-tab-id=' + JSON.stringify(arguments[0]) + '][data-file-freshness^="conflict:"]');
+             return gate && { text: gate.innerText };`,
+              [owner.tab.value],
+            ),
+          );
+          await screenshot("lossy-conflict");
+          if (!panel.text.includes(sentence)) throw new Error(`observed panel: ${panel.text}`);
+        },
+      );
+      await assertion(
+        "LS4 lossy conflict offers Reload from disk and Save my version as a new game…",
+        async () => {
+          if (!refused) throw new Error("save refusal failed");
+          const reload = await button("Reload from disk");
+          const append = await button("Save my version as a new game…");
+          if (reload.disabled || append.disabled) throw new Error("a recovery action is disabled");
+        },
+      );
+      await assertion(
+        "LS5 refused in-place Save leaves the original file bytes unchanged",
+        async () => {
+          const after = await readFile(path);
+          console.log(`  .. LS5 SHA-256 before=${sha256(before)} after=${sha256(after)}`);
+          if (!edited || !refused || !before.equals(after))
+            throw new Error("save refusal or byte preservation failed");
+        },
+      );
+      // Append recovery calls pickPgnFile, which opens native GTK chrome outside WebDriver.
+      // Do not replace that picker or append through IPC and claim the user action was verified.
+      console.log(
+        "  .. LS append recovery BLOCKED: Save my version as a new game… requires the native GTK file picker",
+      );
+      if (refused) {
+        const reload = await button("Reload from disk");
+        await clickAt(session, reload.x, reload.y);
+        await waitFor("lossy fixture cleanup reload", () =>
+          session.execute(
+            `return Boolean(document.querySelector('[data-tab-id=' + JSON.stringify(arguments[0]) + '][data-file-freshness^="verified:"]'));`,
+            [owner.tab.value],
+          ),
+        );
+      }
+    } else {
+      await assertion(
+        "LS8 trailing-comment in-place Save succeeds without a conflict",
+        async () => {
+          if (!edited) throw new Error("tree editing failed");
+          await save();
+          await waitFor("trailing-comment saved tree and file", async () => {
+            const snapshot = await readActiveTabTree(session);
+            const text = await readFile(path, "utf8");
+            const verified = await session.execute(
+              `return Boolean(document.querySelector('[data-tab-id=' + JSON.stringify(arguments[0]) + '][data-file-freshness^="verified:"]'));`,
+              [owner.tab.value],
+            );
+            return (
+              snapshot.tab?.value === owner.tab.value &&
+              snapshot.tree?.dirty === false &&
+              snapshot.tree.headers.event === editedEvent &&
+              text.includes(`[Event "${editedEvent}"]`) &&
+              verified
+            );
+          });
+          await screenshot("trailing-saved");
+        },
+      );
+      await assertion(
+        "LS9 saved trailing-comment file retains White won on time and the edit",
+        async () => {
+          const after = await readFile(path);
+          console.log(`  .. LS9 SHA-256 before=${sha256(before)} after=${sha256(after)}`);
+          const text = after.toString("utf8");
+          if (!text.includes("White won on time") || !text.includes(`[Event "${editedEvent}"]`))
+            throw new Error(`saved PGN: ${text}`);
+        },
+      );
+    }
+  }
+}
+
 async function verifySelectedRootPermissions(session, puzzleRoot, engineRoot) {
   const puzzle = { id: { id: "verify-permission-puzzles" }, kind: "puzzleRoot" };
   const engine = { id: { id: "verify-permission-engines" }, kind: "engineRoot" };
@@ -5300,6 +5485,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
   // a URL load would replace the main webview document that line is about. Nothing after this
   // depends on the route the double-click leaves behind.
   await verifyWorkspaceDeletionOutcome(session, filesWorkspace);
+  await verifyLosslessFileGameSave(session, filesWorkspace);
   const filesRowCheck = "the seeded workspace file row renders on the Files page";
   const filesRouteCheck = "a real double-click on the unselected Files row navigates to /";
   const filesNotationCheck = "a real double-click on the unselected Files row shows its game";
