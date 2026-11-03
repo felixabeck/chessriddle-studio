@@ -11606,3 +11606,58 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Mirrors the file conflict panel's two choices on the tab's own store (precedent: the file conflict panel and `d-20261017-12`'s reuse of one append/admit path). Reversal path: change the buttons in `DatabaseOriginGate`.
 * **Decided by:** drain session d2081993 (planner run, 5 plan-review rounds, approved), 2026-11-02 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":44,"effect_sha256":"59e3c762b8df3f575792b73deeba382e4e7f699f01994c8b32b87b2887c216ae","input_sha256":"9358975029f6760139ace6c44c9efc3e9166f6c5b2481d22a1bc1e2ccf337237","kind":"mutation-receipt","operation":"7ae14839919d6d26defd02d0d6cc25c56155fe297054a77c01f4ff5f61c3ac17","options":{"section":null},"request_id_sha256":null,"results":["d-20261103-01","d-20261103-02","d-20261103-03","d-20261103-04","d-20261103-05"],"target":"decisions-ledger","v":1} -->
+
+### d-20261103-06 — How far back must the Lichess account-sync cursor reach?
+
+* **Question:** Lichess `since` filters on creation time; how does sync cover a correspondence game that finishes after a newer game started?
+* **Governs:** f-20261101-23
+* **Chosen:** After the export, a Mongo-served coverage stream (`/api/games/user/<player>?since=<since>&ongoing=true`, no `perfType`/`rated`) for the same `since` yields holds for ongoing and finished eligible games; the cursor stops one millisecond before the oldest hold the downloaded file did not cover.
+* **Rejected:** A fixed lookback of the longest correspondence time control (a correspondence game has no maximum duration). An ongoing-only query (`finished=false`), which loses a game that finished seconds before the query while still missing from the export's search index. Replacing the export with the Mongo stream (the PGN cannot tell rated from casual for arena games). Re-exporting full history every sync (minutes per sync). Storing ongoing ids and fetching them by id next sync (needs a second download into the same staging artefact and misses a just-finished new game).
+* **Reason:** The only complete option at bounded cost; dedup by provider id makes the re-exported overlap harmless. Reversal path: the ids approach plus a delay, if the per-sync cost is observed to matter.
+* **Decided by:** drain session c5508216 (adopted planner plan, 5 plan-review rounds, approved), 2026-11-03 · **Superseded-by:** -
+
+### d-20261103-07 — How does the unlinked (Windows) account import recognise a game it already has?
+
+* **Question:** Should the unlinked path dedup by provider game id instead of filtering by start time?
+* **Governs:** f-20261101-23
+* **Chosen:** The linked merge's identity rule: the provider game id (Lichess `Site`, Chess.com `Link`) decides and is recorded in a new account-database table in the import transaction; the shared semantic fingerprint only reconciles stored rows without a recorded id, each claimed at most once.
+* **Rejected:** Header identity without moves (collapses two daily games with the same players and start second). Fingerprint alone including moves (collapses distinct games with identical moves or absent UTCTime). Writing Chess.com's `Link` into `Site` (changes what the database shows). Keeping the start-time filter with a lookback (incomplete).
+* **Reason:** Same identity rule as the linked path, so two distinct provider games are never merged. Reversal path: drop the id table and return to the start-time filter.
+* **Decided by:** drain session c5508216 (adopted planner plan, 5 plan-review rounds, approved), 2026-11-03 · **Superseded-by:** -
+
+### d-20261103-08 — Do finished Lichess games absent from the export hold the cursor, and for how long?
+
+* **Question:** Does a finished eligible game that the coverage stream reports but the export omitted hold the cursor only within a recency window?
+* **Governs:** f-20261101-23
+* **Chosen:** Every eligible finished game absent from the downloaded file holds the cursor, with no time window.
+* **Rejected:** A `lastMoveAt` recency window, because lila leaves `lastMoveAt` unchanged when a game ends on time or by resignation, and the window would be measured after a possibly long export.
+* **Reason:** No window is provably complete. Reversal path: if a stuck hold is observed, fetch held finished games by id (`POST /api/games/export/_ids`) into the batch.
+* **Decided by:** drain session c5508216 (adopted planner plan, 5 plan-review rounds, approved), 2026-11-03 · **Superseded-by:** -
+
+### d-20261103-09 — What happens to account-sync cursors written by the old start-time semantics?
+
+* **Question:** How are games already lost by the old cursor recovered?
+* **Governs:** f-20261101-23
+* **Chosen:** One full-history sync for Lichess linked records (a new-semantics marker; records without it report no `fetch_since_ms` once) and for every unlinked account database (no stored cursor row), deduplicated by provider id.
+* **Rejected:** Trusting old cursors (keeps the lost games lost). A partial lookback (incomplete).
+* **Reason:** Recovers every lost game once at the cost of one longer sync per account. Reversal path: treat unmarked cursors as valid.
+* **Decided by:** drain session c5508216 (adopted planner plan, 5 plan-review rounds, approved), 2026-11-03 · **Superseded-by:** -
+
+### d-20261103-10 — What does a Lichess download do when its coverage request fails?
+
+* **Question:** The coverage request fails, is rejected, returns an unparseable line or exceeds the hold bound. Does the download proceed?
+* **Governs:** f-20261101-23
+* **Chosen:** Fail the download with the export's existing typed error mapping (no bearer token or raw body in the error).
+* **Rejected:** Proceeding without holds and freezing the cursor (silent; every later sync would re-export the same window without telling the user why).
+* **Reason:** A download never proceeds without its holds. Reversal path: proceed with `None` holds, which keeps the cursor at `since`.
+* **Decided by:** drain session c5508216 (adopted planner plan, 5 plan-review rounds, approved), 2026-11-03 · **Superseded-by:** -
+
+### d-20261103-11 — What does the unlinked import do with a game without a start time?
+
+* **Question:** An unlinked account import receives a game with a missing or unparseable Date/UTCTime. Is it imported?
+* **Governs:** f-20261101-23
+* **Chosen:** Import it as today and leave it out of the cursor; its identity follows the provider-id rule.
+* **Rejected:** Rejecting the whole import (the linked receipt's behaviour), which would block every later sync of that account on one malformed provider game.
+* **Reason:** No game is dropped because of its headers. Reversal path: refuse such games in the unlinked importer.
+* **Decided by:** drain session c5508216 (adopted planner plan, 5 plan-review rounds, approved), 2026-11-03 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":53,"effect_sha256":"db584da1011cf0c0d36e4410d6ad695f6433c62af0d0f4947e24c6396cf6ace0","input_sha256":"e761e4653948798dbc73ec2eb38f70d83f13b90deb0420559a38abdea2816db4","kind":"mutation-receipt","operation":"b0deb42d1507dcee0db3a9224c0c75abcaae9bc66802db7f1050f4fbe5bae4e7","options":{"section":null},"request_id_sha256":null,"results":["d-20261103-06","d-20261103-07","d-20261103-08","d-20261103-09","d-20261103-10","d-20261103-11"],"target":"decisions-ledger","v":1} -->
