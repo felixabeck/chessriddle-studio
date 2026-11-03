@@ -4976,6 +4976,7 @@ mod tests {
         pub requests_seen: std::sync::Mutex<Vec<(String, HeaderMap)>>,
     }
 
+    #[cfg(unix)]
     fn coverage_response(body: &str) -> DownloadResponse {
         DownloadResponse {
             status: 200,
