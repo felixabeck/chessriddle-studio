@@ -1,7 +1,9 @@
 import { parseUci } from "chessops";
+import { parseSan } from "chessops/san";
 import { beforeEach, expect, test } from "vitest";
 import { createTreeStore } from "@/state/store/tree";
 import { getPGN } from "../chess";
+import { positionFromFen } from "../chessops";
 import {
     defaultTree,
     getMemoizedBoardStateMap,
@@ -607,6 +609,49 @@ const line = (value: number, san: string, uci: string) => ({
 });
 // A ply whose UCI output was bound-only publishes no MultiPV set at all.
 const noLines = { best: [], novelty: false, is_sacrifice: false };
+
+const castlingFen = "r3k2r/ppp2ppp/8/8/8/8/PPP2PPP/R3K2R w KQkq - 0 1";
+
+test("addAnalysis does not duplicate an existing SAN castling child", () => {
+    store.getState().setFen(castlingFen);
+    store.getState().makeMove({ payload: "O-O" });
+    expect(store.getState().root.children[0].move).toEqual(parseUci("e1h1"));
+
+    store.getState().addAnalysis([line(0, "O-O", "e1g1"), line(-400, "a6", "a7a6")], {
+        showVariations: true,
+    });
+
+    const parent = store.getState().root;
+    expect(parent.children[0].nags).toContain(4);
+    expect(parent.children.filter((child) => child.san === "O-O")).toHaveLength(1);
+    expect(parent.children).toHaveLength(1);
+});
+
+test("addAnalysis stores SAN-normalized castling moves throughout a generated PV", () => {
+    store.getState().setFen(castlingFen);
+    store.getState().makeMove({ payload: "a3" });
+    const best = line(0, "O-O", "e1g1");
+    best.best[0].sanMoves.push("O-O");
+    best.best[0].uciMoves.push("e8g8");
+
+    store.getState().addAnalysis([best, line(-400, "a6", "a7a6")], {
+        showVariations: true,
+    });
+
+    const parent = store.getState().root;
+    expect(parent.children[0].nags).toContain(4);
+    expect(parent.children).toHaveLength(2);
+    const variation = parent.children[1];
+    const [parentPos] = positionFromFen(parent.fen);
+    expect(variation.san).toBe("O-O");
+    expect(variation.move).toEqual(parseSan(parentPos!, "O-O"));
+    expect(variation.move).toEqual(parseUci("e1h1"));
+    expect(variation.children).toHaveLength(1);
+    const [variationPos] = positionFromFen(variation.fen);
+    expect(variation.children[0].san).toBe("O-O");
+    expect(variation.children[0].move).toEqual(parseSan(variationPos!, "O-O"));
+    expect(variation.children[0].move).toEqual(parseUci("e8h8"));
+});
 
 test.each([
     { score: -70, code: 6 },

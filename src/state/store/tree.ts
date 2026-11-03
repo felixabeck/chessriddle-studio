@@ -1,5 +1,6 @@
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import { isNormal, type Move, parseUci } from "chessops";
+import { normalizeMove } from "chessops/chess";
 import { makeFen } from "chessops/fen";
 import { makeSan, parseSan } from "chessops/san";
 import { type Draft, freeze, produce } from "immer";
@@ -1104,8 +1105,9 @@ function addAnalysis(
                     const bestMoveUci = analysis[i - 1].best[0].uciMoves[0];
                     const [parentPos] = positionFromFen(parent.fen);
                     if (parentPos) {
-                        const bestMove = parseUci(bestMoveUci);
-                        if (bestMove) {
+                        const parsedBestMove = parseUci(bestMoveUci);
+                        if (parsedBestMove) {
+                            const bestMove = normalizeMove(parentPos, parsedBestMove);
                             const existingChild = parent.children.find(
                                 (c) =>
                                     c.move &&
@@ -1139,8 +1141,12 @@ function addAnalysis(
                                         j++
                                     ) {
                                         const nextMoveUci = pv[j];
-                                        const nextMove = parseUci(nextMoveUci);
-                                        if (nextMove) {
+                                        const parsedNextMove = parseUci(nextMoveUci);
+                                        if (parsedNextMove) {
+                                            const nextMove = normalizeMove(
+                                                currentVarPos,
+                                                parsedNextMove,
+                                            );
                                             const nextSan = makeSan(currentVarPos, nextMove);
                                             currentVarPos.play(nextMove);
                                             const nextFen = makeFen(currentVarPos.toSetup());
