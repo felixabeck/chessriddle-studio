@@ -8119,7 +8119,7 @@ mod native_tests {
     }
 
     #[tokio::test]
-    async fn omitted_source_id_suppresses_batch_before_legacy_revalidation() {
+    async fn omitted_source_id_suppresses_batch_before_affected_evidence_check() {
         let (fixture, id) = account_fixture(&game(None, "e4 e5", "legacy"));
         let known = game(Some("100"), "e4 e5", "known");
         let input = fixture.create("first", &known, WorkspaceFileType::Other);
