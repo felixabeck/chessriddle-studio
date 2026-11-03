@@ -20093,13 +20093,15 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 
 ### Opening name lookup compares move counters, so transposed move orders get a less specific opening name
 
-* **ID:** f-20261101-07 · **Status:** open · **Area:** chess-tree · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261101-07 · **Status:** handled · **Area:** chess-tree · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** behaviour
 * **Where:** `src-tauri/src/opening.rs:48-51` (`get_opening_from_fen` keeps the full `Setup`), `opening.rs:74-80` (`OPENINGS.iter().find(|o| o.setup == setup)`); caller `src/utils/chess.ts:348-361` `getOpening` sends raw node FENs.
 * **Defect:** shakmaty `Setup` equality includes `halfmoves` and `fullmoves`. Table entries are built from one fixed move order, so a transposition reaching the same position with a different halfmove clock misses and `get_opening_from_fens` falls back to an earlier position.
 * **Failure scenario:** `1.d4 Nf6 2.c4 e6 3.Nc3 d5` shows "Indian Defense: Normal Variation" instead of "Queen's Gambit Declined: Normal Defense" (clock 0 vs 2 at move 4), per the audit's measurement with the embedded TSV.
 * **Fix shape:** normalise both table entries and queries to halfmoves 0, fullmoves 1 (keep board, turn, castling, legal en passant) and look up in a hash map; add the transpositions as tests. Check the database opening-statistics caller (`db/mod.rs` around 2940) too.
 * **Found by:** cloud audit session session_01JbeKomxzG32RyrZzRykRDV (PGN/database audit, base 301104da), verified against local HEAD 301104da by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+* **Handled (2026-11-03, drain c5508216, co-located joiner of f-20261101-23):** commit 09d72d04 normalises table entries and queries to halfmoves 0, fullmoves 1 with legal en passant and looks them up in a map built once (first table row keeps precedence). `get_opening_from_setup` is the single query door, so the database opening-statistics caller in db/mod.rs is covered. Tests include `1.d4 Nf6 2.c4 e6 3.Nc3 d5` → "Queen's Gambit Declined: Normal Defense" via two transpositions; the old Setup equality fails it with NoOpeningFound.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"2ce81f52d320b272725935786cc1a6c6c994e852a1e5468a334fa9aa41d624e2","header_sha256":"80ccae63097eb8b4cfdd828c97ed2733a84481731cfa47fb60cf278f404cd678","header_status":"handled","input_sha256":"76b9744551a1ab9dc5bb44a5745b82774796513001141bae0a7bc4535aa38ff6","kind":"mutation-receipt","operation":"18a08e580bb2312e325e1b1a44dc9b97e38756a74f1c240356bcfc66905ea187","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-07"],"target":"f-20261101-07","v":1} -->
 
 ---
 
