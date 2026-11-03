@@ -11708,3 +11708,40 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Every other visitor keeps its results byte for byte. Reversal path: remove the callback and the token variant.
 * **Decided by:** drain session 4c58ce9a (adopted planner plan, 5 plan-review rounds, approved), 2026-11-03 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":35,"effect_sha256":"1955330e3bf8611f9a3af83fd7aee5b48688b11dbfca8e2347c5b3cfafcb988b","input_sha256":"228e59dd1c17dc097edddb3712ddbe3f80fd72762aceee44adb44ec4c735c80b","kind":"mutation-receipt","operation":"3d35eb83310ccc90afd75e2be39479f8d3e900493513d451a63f261eb562fee5","options":{"section":null},"request_id_sha256":null,"results":["d-20261103-13","d-20261103-14","d-20261103-15","d-20261103-16"],"target":"decisions-ledger","v":1} -->
+
+### d-20261103-17 — Where is an unsupported or unparsable Chess.com game stopped from blocking a linked collection's sync?
+
+* **Question:** Filter unsupported variants at Chess.com staging, or tolerate unparsable games in the batch identity path?
+* **Governs:** f-20261101-24
+* **Chosen:** Both. The batch identity path and the download receipt classify a range that cannot be read within the bounded read or does not parse to exactly one game exactly like the collection projection does (omitted, never a conflict), through one shared classifier; Chess.com staging additionally skips games whose `rules` is present and not an allowed rule set.
+* **Rejected:** Staging filter alone (a pending batch already holding a variant game is reused and stays stuck, and an unparsable game already inside the collection PGN still blocks). Batch tolerance alone (a crazyhouse game without drops parses as standard chess and would be appended mislabelled).
+* **Reason:** The tolerance removes the mechanism (one game fails the batch); the filter stops importing games the app cannot model. Reversal path: drop the staging filter if variant support is added.
+* **Decided by:** drain session b1f9179b (adopted planner plan, 4 plan-review rounds, approved), 2026-11-03 · **Superseded-by:** -
+
+### d-20261103-18 — Which Chess.com `rules` values does account sync stage?
+
+* **Question:** Which Chess.com rule sets are allowed into a staged account download?
+* **Governs:** f-20261101-24
+* **Chosen:** An allowlist of `chess` and `chess960`; a game with absent `rules` is staged as before.
+* **Rejected:** Standard only, like Lichess `ACCOUNT_EXPORT_PERFS` (Chess.com chess960 games are staged today and the importer supports Chess960, so users would lose games they receive now). A denylist of crazyhouse and bughouse (a new Chess.com variant would reopen the defect).
+* **Reason:** Keeps every game the app models and nothing else. Reversal path: extend the allowlist.
+* **Decided by:** drain session b1f9179b (adopted planner plan, 4 plan-review rounds, approved), 2026-11-03 · **Superseded-by:** -
+
+### d-20261103-19 — Does a stuck pending linked-collection batch get a new discard action?
+
+* **Question:** How does a collection already stuck on a pending batch with a variant game recover?
+* **Governs:** f-20261101-24
+* **Chosen:** No new action. With the tolerant batch path the pending batch's own staged file appends successfully, so the existing Retry completes and clears it.
+* **Rejected:** A Discard button (a new user-visible control whose only evidenced trigger, the unparsable game, the fix removes; genuine identity conflicts stay preserved for reconciliation).
+* **Reason:** Retry already re-runs the pending input. Reversal path: add a discard command if a non-parse stuck batch is observed.
+* **Decided by:** drain session b1f9179b (adopted planner plan, 4 plan-review rounds, approved), 2026-11-03 · **Superseded-by:** -
+
+### d-20261103-20 — Are skipped batch games surfaced to the renderer?
+
+* **Question:** Does `AppendOutcome` gain a skipped-game count?
+* **Governs:** f-20261101-24
+* **Chosen:** No. Skipped batch games are logged with the collection ID, the pending batch ID and the count, never PGN content; `AppendOutcome` and the generated bindings stay unchanged.
+* **Rejected:** An `AppendOutcome.skipped` field (changes Specta bindings and UI copy for a case the Lichess path already handles silently).
+* **Reason:** The projection already reports unparsable collection games as omitted. Reversal path: add the field and a `Collections.*` string.
+* **Decided by:** drain session b1f9179b (adopted planner plan, 4 plan-review rounds, approved), 2026-11-03 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":35,"effect_sha256":"3e58ed7148ea61596e3a12aa4fc6c12141e1f0ad451589e319d6bec82a3a42ff","input_sha256":"4ba954dfce5720666a8f11c11559226662ff247a6515fea947e3749a5a8fc37e","kind":"mutation-receipt","operation":"bf652e070703c2dffe13e6c78a26486ef3a487d286504e03bd4bcab3a92c3ae6","options":{"section":null},"request_id_sha256":null,"results":["d-20261103-17","d-20261103-18","d-20261103-19","d-20261103-20"],"target":"decisions-ledger","v":1} -->
