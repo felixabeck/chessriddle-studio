@@ -11671,3 +11671,40 @@ Former private decision identifier: d-20261029-14
 * **Reason:** The only complete option at bounded cost; dedup by provider id makes the re-exported overlap harmless. Reversal path: the ids approach plus a delay, if the per-sync cost is observed to matter.
 * **Decided by:** drain session c5508216 (adopted planner plan, 5 plan-review rounds, approved; wording corrected after diff review), 2026-11-03 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"ba5c300f6dac0a94a2e45147689d32d24f6cd607f9d508fe54f3fc85ebb970e8","input_sha256":"ef014d2d558b9c6e1b90ac133e0610c5d5f71b716b5ba07afd79ec933e3c224a","kind":"mutation-receipt","operation":"4b4cdb4689a80832b4c114907763ea01a849532a69c6422ed1c9332e9cfc633e","options":{"section":null},"request_id_sha256":null,"results":["d-20261103-12"],"target":"decisions-ledger","v":1} -->
+
+### d-20261103-13 — What happens to file-game content the game tree cannot hold?
+
+* **Question:** Should the tree represent content after the result or unplayable tokens, should opening refuse, or should the save be guarded?
+* **Governs:** f-20261102-08
+* **Chosen:** Represent what the tree can hold (a comment after the result attaches to the last mainline node and is saved before the result). Guard the in-place save for what it cannot hold: unplayable or malformed moves, tokens after the result other than comments, invalid NAGs, results inside variations, and more than one clock or evaluation on one node.
+* **Rejected:** Refusing to open (a game with one typo could no longer be viewed, although viewing loses nothing). Representing illegal moves in the tree (a node needs a legal position). A warning that still allows the overwrite (the overwrite is the data loss).
+* **Reason:** Precedents d-20261101-07 and d-20261102-04 (a range the tree cannot represent fails closed) and `Collections.RetiredTab` / `RetiredOriginRecovery` (refuse the in-place write, keep the edits for a new game). Reversal path: delete the in-place guard and its conflict reason; the parse stays a strict superset.
+* **Decided by:** drain session 4c58ce9a (adopted planner plan, 5 plan-review rounds, approved), 2026-11-03 · **Superseded-by:** -
+
+### d-20261103-14 — When is a file game's lossiness checked?
+
+* **Question:** Is the loss determined once at open and persisted on the tree, or at write time?
+* **Governs:** f-20261102-08
+* **Chosen:** Re-read and re-parse the origin range immediately before every in-place overwrite; the native stamp check binds the checked bytes to the overwritten bytes.
+* **Rejected:** A loss flag persisted on the tree at open (a new persisted field with set and clear points on every origin change; tabs restored from older sessions would carry no flag).
+* **Reason:** No new persisted state; the check covers exactly the bytes about to be replaced. Cost: one range read and one lex per in-place save. Reversal path: replace the check with a flag only together with equivalent restore-path proof.
+* **Decided by:** drain session 4c58ce9a (adopted planner plan, 5 plan-review rounds, approved), 2026-11-03 · **Superseded-by:** -
+
+### d-20261103-15 — Where does the user learn that an in-place save was refused for lossy source content?
+
+* **Question:** Which surface reports the refused in-place save?
+* **Governs:** f-20261102-08
+* **Chosen:** The existing file conflict panel with a new conflict reason and a reason-specific sentence; its "Reload from disk" and "Save my version as a new game…" actions stay.
+* **Rejected:** A toast at open (another surface, and the user is not yet at risk). A new modal.
+* **Reason:** The panel already offers both recovery actions. Reversal path: map the new reason back to the generic sentence.
+* **Decided by:** drain session 4c58ce9a (adopted planner plan, 5 plan-review rounds, approved), 2026-11-03 · **Superseded-by:** -
+
+### d-20261103-16 — How does the vendored PGN reader report movetext it consumes silently?
+
+* **Question:** How does the lexer learn about tokens `read_movetext` skips (failed SAN, bad NAG, `;` comments, `%` escape lines, stray low-character or digit-led tokens)?
+* **Governs:** f-20261102-08
+* **Chosen:** A new `Visitor` callback with a default no-op that receives each silently consumed non-layout byte run with its kind; zero-based castling now consumes its `+`/`#` suffix. The lexer turns `;` comments without `}` into `Comment` tokens and everything else into a new discarded-content token.
+* **Rejected:** Having the lexer re-tokenise movetext itself (a second movetext tokenizer, rejected by d-20261023-09). Making the reader fail the game (the importer would start rejecting games it imports today).
+* **Reason:** Every other visitor keeps its results byte for byte. Reversal path: remove the callback and the token variant.
+* **Decided by:** drain session 4c58ce9a (adopted planner plan, 5 plan-review rounds, approved), 2026-11-03 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":35,"effect_sha256":"1955330e3bf8611f9a3af83fd7aee5b48688b11dbfca8e2347c5b3cfafcb988b","input_sha256":"228e59dd1c17dc097edddb3712ddbe3f80fd72762aceee44adb44ec4c735c80b","kind":"mutation-receipt","operation":"3d35eb83310ccc90afd75e2be39479f8d3e900493513d451a63f261eb562fee5","options":{"section":null},"request_id_sha256":null,"results":["d-20261103-13","d-20261103-14","d-20261103-15","d-20261103-16"],"target":"decisions-ledger","v":1} -->
