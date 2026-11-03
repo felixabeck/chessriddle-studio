@@ -51,6 +51,7 @@ pub(crate) async fn record_download_receipt(
     provider: &str,
     account: &str,
     since_ms: Option<i64>,
+    coverage_holds: Option<Vec<crate::lichess::CoverageHold>>,
     cancellation: CancellationToken,
 ) -> Option<Error> {
     async {
@@ -60,7 +61,15 @@ pub(crate) async fn record_download_receipt(
             let account = account.to_owned();
             crate::infra::blocking::BLOCKING_GATEWAY
                 .spawn_cancellable(cancellation, move |token| {
-                    service.record_download(&authority, file, &provider, &account, since_ms, token)
+                    service.record_download(
+                        &authority,
+                        file,
+                        &provider,
+                        &account,
+                        since_ms,
+                        coverage_holds.as_deref(),
+                        token,
+                    )
                 })
                 .await?;
         }
@@ -136,6 +145,8 @@ struct Record {
     pending: Option<batch::PendingBatch>,
     #[serde(default)]
     coverage_cursor_ms: Option<i64>,
+    #[serde(default)]
+    coverage_cursor_current: bool,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -404,6 +415,8 @@ struct ProviderDownload {
     account: AccountIdentity,
     since_ms: Option<i64>,
     through_ms: i64,
+    #[serde(default)]
+    coverage_cursor_current: bool,
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -822,6 +835,7 @@ impl CollectionService {
         *done = true;
         Ok(())
     }
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn record_download(
         &self,
         authority: &SharedPathAuthority,
@@ -829,6 +843,7 @@ impl CollectionService {
         provider: &str,
         account: &str,
         since_ms: Option<i64>,
+        coverage_holds: Option<&[crate::lichess::CoverageHold]>,
         token: &CancellationToken,
     ) -> Result<(), Error> {
         #[cfg(test)]
@@ -862,9 +877,13 @@ impl CollectionService {
             .to_owned();
         let mut bytes = snapshot.file.try_clone()?;
         let (_, ranges) = pgn::scan_current_blocking(snapshot, &self.pgn_repository, token)?;
-        let mut through_ms = since_ms.unwrap_or(0);
+        let mut newest_start_ms = None;
+        let mut provider_ids = HashSet::new();
         for range in ranges.iter() {
             let body = pgn::read_range_bytes(&mut bytes, *range, token)?;
+            if let Some(id) = provider_game_id(&body, &account)? {
+                provider_ids.insert(id);
+            }
             let game = match pgn::read_one_range_game(
                 &mut BufferedReader::new(body.as_slice()),
                 &mut Importer::new(None),
@@ -881,13 +900,22 @@ impl CollectionService {
                     .map_err(|_| Error::Conflict("provider game has an invalid date".into()))?;
                 let time = NaiveTime::parse_from_str(time, "%H:%M:%S")
                     .map_err(|_| Error::Conflict("provider game has an invalid time".into()))?;
-                through_ms = through_ms.max(date.and_time(time).and_utc().timestamp_millis());
+                let start = date.and_time(time).and_utc().timestamp_millis();
+                newest_start_ms =
+                    Some(newest_start_ms.map_or(start, |prior: i64| prior.max(start)));
             } else {
                 return Err(Error::Conflict(
                     "provider export has incomplete time coverage".into(),
                 ));
             }
         }
+        let through_ms = account_sync_cursor(
+            &account.provider,
+            since_ms,
+            newest_start_ms,
+            &provider_ids,
+            coverage_holds,
+        );
         let current = authority.with_mut(|authority| {
             authority
                 .resolve(file.path_ref(), PathOperation::ReadPgn, &[])?
@@ -914,6 +942,7 @@ impl CollectionService {
             account,
             since_ms,
             through_ms,
+            coverage_cursor_current: true,
         });
         // Retain one completed private download per account for idempotent receipt retries.
         // Startup removes abandoned files outside these bounded receipt and pending owners.
@@ -1582,6 +1611,11 @@ impl CollectionService {
                 .iter()
                 .find(|prior| prior.id == collection)
                 .and_then(|prior| prior.coverage_cursor_ms),
+            coverage_cursor_current: registry
+                .records
+                .iter()
+                .find(|prior| prior.id == collection)
+                .is_some_and(|prior| prior.coverage_cursor_current),
         };
         self.ensure_cache(authority, &mut record)?;
         if intent.choice == MigrationChoice::Database {
@@ -1626,6 +1660,7 @@ impl CollectionService {
                         retired_database: None,
                         pending: None,
                         coverage_cursor_ms: None,
+                        coverage_cursor_current: false,
                     });
                     intent.original_collection = Some(id);
                 }
@@ -2078,6 +2113,7 @@ impl CollectionService {
                     retired_database: None,
                     pending: None,
                     coverage_cursor_ms: None,
+                    coverage_cursor_current: false,
                 });
                 Some(registry.records.len() - 1)
             }) else {
@@ -2121,7 +2157,16 @@ impl CollectionService {
             generation: String::new(),
             omitted: 0,
             retired_database: record.retired_database.clone(),
-            fetch_since_ms: record.coverage_cursor_ms.map(|value| value.to_string()),
+            fetch_since_ms: record
+                .coverage_cursor_ms
+                .filter(|_| {
+                    record.coverage_cursor_current
+                        || record
+                            .account
+                            .as_ref()
+                            .is_none_or(|account| account.provider != "lichess")
+                })
+                .map(|value| value.to_string()),
             pending_batch: record
                 .pending
                 .as_ref()
@@ -2493,6 +2538,7 @@ impl CollectionService {
                 retired_database: Some(file),
                 pending: None,
                 coverage_cursor_ms: None,
+                coverage_cursor_current: false,
             });
     }
 
@@ -3370,7 +3416,10 @@ impl Visitor for IdentityHeaders {
     }
 }
 
-fn provider_game_id(bytes: &[u8], account: &AccountIdentity) -> Result<Option<String>, Error> {
+pub(crate) fn provider_game_id(
+    bytes: &[u8],
+    account: &AccountIdentity,
+) -> Result<Option<String>, Error> {
     let mut headers = IdentityHeaders::default();
     let Some((site, link)) = BufferedReader::new(bytes).read_game(&mut headers)? else {
         return Ok(None);
@@ -3409,7 +3458,10 @@ fn provider_game_id(bytes: &[u8], account: &AccountIdentity) -> Result<Option<St
     Ok(found)
 }
 
-fn semantic_fingerprint(game: &TempGame, account: &AccountIdentity) -> Result<String, Error> {
+fn linked_semantic_fingerprint(
+    game: &TempGame,
+    account: &AccountIdentity,
+) -> Result<String, Error> {
     let fields = [&game.white_name, &game.black_name, &game.date, &game.time];
     if fields
         .iter()
@@ -3419,6 +3471,10 @@ fn semantic_fingerprint(game: &TempGame, account: &AccountIdentity) -> Result<St
             "game identity is incomplete and requires reconciliation".into(),
         ));
     }
+    Ok(semantic_fingerprint(game, account))
+}
+
+pub(crate) fn semantic_fingerprint(game: &TempGame, account: &AccountIdentity) -> String {
     let mut digest = Sha256::new();
     for field in [
         Some(&account.provider),
@@ -3428,11 +3484,13 @@ fn semantic_fingerprint(game: &TempGame, account: &AccountIdentity) -> Result<St
         game.date.as_ref(),
         game.time.as_ref(),
     ] {
-        let value = field
-            .map(|value| value.to_ascii_lowercase())
-            .unwrap_or_default();
-        digest.update((value.len() as u64).to_le_bytes());
-        digest.update(value.as_bytes());
+        if let Some(value) = field {
+            let value = value.to_ascii_lowercase();
+            digest.update((value.len() as u64).to_le_bytes());
+            digest.update(value.as_bytes());
+        } else {
+            digest.update(u64::MAX.to_le_bytes());
+        }
     }
     let fen = game
         .fen
@@ -3440,7 +3498,29 @@ fn semantic_fingerprint(game: &TempGame, account: &AccountIdentity) -> Result<St
         .unwrap_or("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     digest.update(fen.as_bytes());
     digest.update(iter_mainline_move_bytes(&game.moves).collect::<Vec<_>>());
-    Ok(format!("{:x}", digest.finalize()))
+    format!("{:x}", digest.finalize())
+}
+
+/// Computes coverage from every game in the export, including games a merge will deduplicate.
+pub(crate) fn account_sync_cursor(
+    provider: &str,
+    since_ms: Option<i64>,
+    newest_start_ms: Option<i64>,
+    provider_ids: &HashSet<String>,
+    holds: Option<&[crate::lichess::CoverageHold]>,
+) -> i64 {
+    let since = since_ms.unwrap_or(0);
+    let newest = newest_start_ms.unwrap_or(since).max(since);
+    if provider != "lichess" {
+        return newest;
+    }
+    let Some(holds) = holds else { return since };
+    holds
+        .iter()
+        .filter(|hold| hold.ongoing || !provider_ids.contains(&hold.id))
+        .map(|hold| hold.created_at_ms.saturating_sub(1).max(since))
+        .min()
+        .map_or(newest, |floor| newest.min(floor))
 }
 
 pub(crate) fn initialize<R: tauri::Runtime>(

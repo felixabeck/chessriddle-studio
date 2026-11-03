@@ -618,6 +618,7 @@ mod tests {
             Ok(RuntimeDownload {
                 publication: publication.clone(),
                 receipt_error: Some(Error::Conflict("receipt recording failed".into())),
+                coverage_holds: None,
             }),
             "lichess",
             "receipt-failure-account",

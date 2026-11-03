@@ -464,12 +464,14 @@ async fn download_chess_com_games_core<R: tauri::Runtime>(
             "chesscom",
             &lower_player,
             since_ms,
+            None,
             cancellation.clone(),
         )
         .await;
         Ok(RuntimeDownload {
             publication,
             receipt_error,
+            coverage_holds: None,
         })
     }
     .await;

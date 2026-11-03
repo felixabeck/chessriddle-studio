@@ -84,7 +84,7 @@ fn append_absent(
                     rusqlite::params![
                         ordinal as i64,
                         provider_game_id(&bytes, account)?,
-                        semantic_fingerprint(&game, account)?,
+                        linked_semantic_fingerprint(&game, account)?,
                         pgn::game_stamp(&bytes)
                     ],
                 )
@@ -100,7 +100,7 @@ fn append_absent(
                     rusqlite::params![
                         ordinal as i64,
                         provider_game_id(&bytes, account)?,
-                        semantic_fingerprint(&game, account)?
+                        linked_semantic_fingerprint(&game, account)?
                     ],
                 )
                 .map_err(batch_error)?;
@@ -525,12 +525,8 @@ impl CollectionService {
                     .coverage_cursor_ms
                     .is_some_and(|cursor| receipt.since_ms.is_some_and(|since| since <= cursor))
             {
-                record.coverage_cursor_ms = Some(
-                    record
-                        .coverage_cursor_ms
-                        .unwrap_or(0)
-                        .max(receipt.through_ms),
-                );
+                record.coverage_cursor_ms = Some(receipt.through_ms);
+                record.coverage_cursor_current = receipt.coverage_cursor_current;
             }
             self.save(&mut guard, registry)?;
         }

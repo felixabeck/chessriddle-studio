@@ -894,6 +894,7 @@ async fn download_file_runtime<R: tauri::Runtime>(
         false,
         integrity.as_ref(),
         Some(generation.clone()),
+        None,
     )
     .await
     .map(|_| ())
@@ -918,6 +919,11 @@ fn sanitized_download_io_error(source: &std::io::Error) -> Error {
     )))
 }
 
+type DownloadPublication = (
+    Option<crate::infra::path_authority::ArtifactPublication>,
+    Option<Vec<crate::lichess::CoverageHold>>,
+);
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn download_to_destination<R: tauri::Runtime>(
     id: &str,
@@ -932,7 +938,8 @@ pub(crate) async fn download_to_destination<R: tauri::Runtime>(
     lease: crate::infra::operations::OperationLease,
     register_pgn_artifact: bool,
     integrity: Option<&ArtifactIntegrity>,
-) -> Result<Option<crate::infra::path_authority::ArtifactPublication>, Error> {
+    lichess_coverage_url: Option<reqwest::Url>,
+) -> Result<DownloadPublication, Error> {
     download_to_destination_with_failure(
         id,
         url,
@@ -947,6 +954,7 @@ pub(crate) async fn download_to_destination<R: tauri::Runtime>(
         register_pgn_artifact,
         integrity,
         None,
+        lichess_coverage_url,
     )
     .await
 }
@@ -966,7 +974,8 @@ async fn download_to_destination_with_failure<R: tauri::Runtime>(
     register_pgn_artifact: bool,
     integrity: Option<&ArtifactIntegrity>,
     file_generation: Option<std::sync::Arc<std::sync::OnceLock<ProgressGeneration>>>,
-) -> Result<Option<crate::infra::path_authority::ArtifactPublication>, Error> {
+    lichess_coverage_url: Option<reqwest::Url>,
+) -> Result<DownloadPublication, Error> {
     let cancellation = lease.token();
     let commit_gate = lease.commit_gate();
     let id = id.to_owned();
@@ -991,6 +1000,7 @@ async fn download_to_destination_with_failure<R: tauri::Runtime>(
             cancellation.clone(),
             commit_gate,
             file_generation.as_deref(),
+            lichess_coverage_url,
         )
         .await
         .map_err(sanitize_download_error)
@@ -1109,7 +1119,8 @@ async fn download_to_destination_inner<R: tauri::Runtime>(
     cancellation: CancellationToken,
     commit_gate: crate::infra::operations::OperationCommitGate,
     file_generation: Option<&std::sync::OnceLock<ProgressGeneration>>,
-) -> Result<Option<crate::infra::path_authority::ArtifactPublication>, Error> {
+    lichess_coverage_url: Option<reqwest::Url>,
+) -> Result<DownloadPublication, Error> {
     // Validate and reserve all fallible producer prerequisites before starting
     // visible progress. No failed setup may leave a running progress entry.
     let filename = std::ffi::OsString::from(filename);
@@ -1175,19 +1186,35 @@ async fn download_to_destination_inner<R: tauri::Runtime>(
                 },
             )
             .await?;
+            let coverage_holds = if let Some(url) = lichess_coverage_url {
+                let token = bearer_token.ok_or_else(|| {
+                    Error::OAuthFailure("authenticated Lichess account unavailable".into())
+                })?;
+                Some(
+                    crate::lichess::download_coverage_holds(
+                        url,
+                        token,
+                        state.http_transport.as_ref(),
+                        &cancellation,
+                    )
+                    .await?,
+                )
+            } else {
+                None
+            };
             crate::infra::blocking::BLOCKING_GATEWAY
                 .spawn_cancellable(cancellation.clone(), move |worker_cancellation| {
                     if worker_cancellation.is_cancelled() {
                         return Err(Error::Cancellation);
                     }
                     accept_plain_download_payload(&mut staged_file)?;
-                    Ok(staged_file)
+                    Ok((staged_file, coverage_holds))
                 })
                 .await
         },
     )
     .await;
-    let mut staged_file = match result {
+    let (mut staged_file, coverage_holds) = match result {
         Ok(file) => file,
         Err(error) => {
             report_error(&error);
@@ -1312,7 +1339,7 @@ async fn download_to_destination_inner<R: tauri::Runtime>(
         None
     };
     report_download_success(state, app, &progress_lease, &job_id);
-    Ok(artifact)
+    Ok((artifact, coverage_holds))
 }
 
 /// Installs a fully validated native-provider PGN staging file as one atomic artifact.
@@ -1396,10 +1423,7 @@ fn lichess_games_url(player: &str, since_ms: Option<i64>) -> Result<(reqwest::Ur
         .push(&player);
     {
         let mut query = url.query_pairs_mut();
-        query.append_pair(
-            "perfType",
-            "ultraBullet,bullet,blitz,rapid,classical,correspondence",
-        );
+        query.append_pair("perfType", &crate::lichess::ACCOUNT_EXPORT_PERFS.join(","));
         query.append_pair("rated", "true");
         query.append_pair("sort", "dateAsc");
         if let Some(since_ms) = since_ms {
@@ -1485,13 +1509,25 @@ pub(crate) async fn download_lichess_games_runtime<R: tauri::Runtime>(
         ));
     }
     let (url, _) = lichess_games_url(&player, since_ms)?;
+    let mut coverage_url = url.clone();
+    coverage_url.set_query(None);
+    {
+        let mut query = coverage_url.query_pairs_mut();
+        if let Some(since) = since_ms {
+            query.append_pair("since", &since.to_string());
+        }
+        query.append_pair("ongoing", "true");
+        for key in ["moves", "tags", "clocks", "evals", "opening"] {
+            query.append_pair(key, "false");
+        }
+    }
     let token = state
         .credentials
         .token_async(handle)
         .await?
         .ok_or_else(|| Error::OAuthFailure("authenticated Lichess account unavailable".into()))?;
     let cancellation = lease.token();
-    let publication = download_to_destination(
+    let (publication, coverage_holds) = download_to_destination(
         &job_id,
         url.as_str(),
         destination,
@@ -1504,22 +1540,27 @@ pub(crate) async fn download_lichess_games_runtime<R: tauri::Runtime>(
         lease,
         true,
         None,
+        Some(coverage_url),
     )
-    .await?
-    .ok_or_else(|| Error::Conflict("Lichess download did not register an artifact".into()))?;
-    let receipt_error = crate::db::linked_collections::record_download_receipt(
+    .await?;
+    let publication = publication
+        .ok_or_else(|| Error::Conflict("Lichess download did not register an artifact".into()))?;
+    let mut downloaded = crate::infra::operations::RuntimeDownload {
+        publication,
+        receipt_error: None,
+        coverage_holds,
+    };
+    downloaded.receipt_error = crate::db::linked_collections::record_download_receipt(
         &state.pgn_path_authority,
-        publication.handle.clone(),
+        downloaded.publication.handle.clone(),
         "lichess",
         &player,
         since_ms,
+        downloaded.coverage_holds.clone(),
         cancellation,
     )
     .await;
-    Ok(crate::infra::operations::RuntimeDownload {
-        publication,
-        receipt_error,
-    })
+    Ok(downloaded)
 }
 
 #[cfg(test)]
@@ -3630,6 +3671,7 @@ mod tests {
             lease,
             false,
             None,
+            None,
         )
         .await
         .unwrap_err();
@@ -4934,6 +4976,204 @@ mod tests {
         pub requests_seen: std::sync::Mutex<Vec<(String, HeaderMap)>>,
     }
 
+    fn coverage_response(body: &str) -> DownloadResponse {
+        DownloadResponse {
+            status: 200,
+            headers: HeaderMap::new(),
+            content_length: Some(body.len() as u64),
+            stream: Box::pin(futures_util::stream::iter(vec![Ok(bytes::Bytes::from(
+                body.to_owned(),
+            ))])),
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn lichess_runtime_coverage_follows_export_and_holds_missing_finished_game() {
+        use crate::db::linked_collections::tests::{game, Fixture};
+        use crate::file_workspace::WorkspaceFileType;
+        let fixture = Fixture::new();
+        fixture.create("history", "", WorkspaceFileType::Game);
+        let collection = fixture.list().pop().unwrap();
+        fixture.account(&collection.id, "lichess");
+        let start = chrono::NaiveDate::from_ymd_opt(2026, 10, 1)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp_millis();
+        let since = start - 1000;
+        fixture.set_coverage_cursor(&collection.id, since);
+        let body = game(None, "e4 e5", "newer blitz")
+            .replace("https://www.chess.com", "https://lichess.org/Blitz001")
+            .replace("2026.10.01", "2026.10.10");
+        let (state, app, account, transport) =
+            authenticated_lichess_runtime_setup(&fixture, "player", coverage_response(&body));
+        let export_finished = Arc::new(AtomicBool::new(false));
+        let finished = export_finished.clone();
+        let observed_transport = transport.clone();
+        let mut body = Some(bytes::Bytes::from(body));
+        transport.responses.lock().unwrap()[0] = Ok(DownloadResponse {
+            status: 200,
+            headers: HeaderMap::new(),
+            content_length: None,
+            stream: Box::pin(futures_util::stream::poll_fn(move |_| {
+                if let Some(body) = body.take() {
+                    return Poll::Ready(Some(Ok(body)));
+                }
+                assert_eq!(
+                    observed_transport.requests_seen.lock().unwrap().len(),
+                    1,
+                    "coverage was requested before export EOF"
+                );
+                finished.store(true, Ordering::SeqCst);
+                Poll::Ready(None)
+            })),
+        });
+        // The old last move must never release a game which ended later by timeout.
+        let line = serde_json::json!({"id":"Corresp1", "rated":true, "perf":"correspondence", "status":"outoftime", "createdAt":start, "lastMoveAt":start});
+        transport.responses.lock().unwrap()[1] = Ok(coverage_response(&format!("{line}\n")));
+        let job = state.operations.prepare_download("fixture-window").unwrap();
+        let downloaded = download_lichess_games_runtime(
+            account.handle,
+            fixture.download_destination(),
+            "coverage.pgn".into(),
+            "player".into(),
+            Some(since),
+            job,
+            "fixture-window",
+            app.handle(),
+            &state,
+        )
+        .await
+        .unwrap();
+        assert!(export_finished.load(Ordering::SeqCst));
+        assert!(downloaded.receipt_error.is_none());
+        let holds = downloaded.coverage_holds.as_ref().unwrap();
+        assert_eq!(
+            holds,
+            &[crate::lichess::CoverageHold {
+                id: "Corresp1".into(),
+                created_at_ms: start,
+                ongoing: false
+            }]
+        );
+        {
+            let requests = transport.requests_seen.lock().unwrap();
+            assert_eq!(requests.len(), 2);
+            let export = reqwest::Url::parse(&requests[0].0).unwrap();
+            let coverage = reqwest::Url::parse(&requests[1].0).unwrap();
+            assert_eq!(export.path(), coverage.path());
+            let export_query: std::collections::HashMap<_, _> = export.query_pairs().collect();
+            let query: std::collections::HashMap<_, _> = coverage.query_pairs().collect();
+            assert_eq!(query.get("since"), export_query.get("since"));
+            assert_eq!(query.get("since").unwrap().as_ref(), since.to_string());
+            assert_eq!(query.get("ongoing").unwrap(), "true");
+            for key in ["perfType", "rated", "finished"] {
+                assert!(!query.contains_key(key));
+            }
+            for key in ["moves", "tags", "clocks", "evals", "opening"] {
+                assert_eq!(query.get(key).unwrap(), "false");
+            }
+            assert_eq!(
+                requests[1].1.get(reqwest::header::ACCEPT).unwrap(),
+                "application/x-ndjson"
+            );
+            assert_eq!(
+                requests[1].1.get(reqwest::header::AUTHORIZATION),
+                requests[0].1.get(reqwest::header::AUTHORIZATION)
+            );
+        }
+        fixture
+            .service
+            .clone()
+            .append_batch(
+                state.pgn_path_authority.clone(),
+                uuid::Uuid::parse_str(&collection.id).unwrap(),
+                downloaded.publication.handle,
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            fixture.list().pop().unwrap().fetch_since_ms,
+            Some((start - 1).to_string())
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn lichess_runtime_coverage_failures_fail_download_without_publication() {
+        use crate::db::linked_collections::tests::{game, Fixture};
+        let valid = serde_json::json!({"id":"Corresp1", "rated":true, "perf":"correspondence", "status":"started", "createdAt":100});
+        let mut failures = vec![
+            coverage_response("not-json disposable-fixture-token"),
+            DownloadResponse {
+                status: 429,
+                ..coverage_response("disposable-fixture-token")
+            },
+            DownloadResponse {
+                content_length: Some(100),
+                ..coverage_response("")
+            },
+            coverage_response(&"x".repeat(64 * 1024 + 1)),
+        ];
+        for field in ["id", "rated", "perf", "status", "createdAt"] {
+            let mut line = valid.clone();
+            line.as_object_mut().unwrap().remove(field);
+            failures.push(coverage_response(&line.to_string()));
+        }
+        for failure in failures {
+            let status = failure.status;
+            let oversized = failure
+                .content_length
+                .is_some_and(|length| length > 64 * 1024);
+            let fixture = Fixture::new();
+            let (state, app, account, transport) = authenticated_lichess_runtime_setup(
+                &fixture,
+                "player",
+                coverage_response(&game(None, "e4 e5", "export")),
+            );
+            transport.responses.lock().unwrap()[1] = Ok(failure);
+            let job = state.operations.prepare_download("fixture-window").unwrap();
+            let error = download_lichess_games_runtime(
+                account.handle,
+                fixture.download_destination(),
+                "failed.pgn".into(),
+                "player".into(),
+                None,
+                job.clone(),
+                "fixture-window",
+                app.handle(),
+                &state,
+            )
+            .await
+            .unwrap_err();
+            if status == 429 {
+                assert!(
+                    matches!(&error, Error::RemoteHttpRejection(rejection) if rejection.status == 429 && rejection.authorization_sent)
+                );
+            } else if oversized {
+                assert!(matches!(&error, Error::ResourceLimit(_)));
+            } else {
+                assert!(matches!(&error, Error::InvalidInput(_)));
+            }
+            assert!(!serde_json::to_string(&error)
+                .unwrap()
+                .contains("disposable-fixture-token"));
+            assert_eq!(
+                state.progress_state.get(&job).unwrap().unwrap().state,
+                ProgressState::Failed
+            );
+            assert!(!fixture
+                .directory
+                .path()
+                .join("app/collections/batches/failed.pgn")
+                .exists());
+            assert_eq!(transport.requests_seen.lock().unwrap().len(), 2);
+        }
+    }
+
     #[cfg(unix)]
     fn authenticated_lichess_runtime_setup(
         fixture: &crate::db::linked_collections::tests::Fixture,
@@ -4946,7 +5186,7 @@ mod tests {
         Arc<MockTransport>,
     ) {
         let transport = Arc::new(MockTransport {
-            responses: Mutex::new(vec![Ok(response)]),
+            responses: Mutex::new(vec![Ok(response), Ok(coverage_response(""))]),
             requests_seen: Mutex::new(vec![]),
         });
         let credentials = Arc::new(crate::credentials::CredentialManager::new(Arc::new(
@@ -5148,7 +5388,7 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(retry.appended, 0);
-            assert_eq!(transport.requests_seen.lock().unwrap().len(), 1);
+            assert_eq!(transport.requests_seen.lock().unwrap().len(), 2);
         }
     }
 
@@ -8824,6 +9064,7 @@ mod tests {
                 lease,
                 false,
                 None,
+                None,
             )
             .await
         });
@@ -8938,6 +9179,7 @@ mod tests {
                     lease,
                     false,
                     None,
+                    None,
                 )
                 .await
             });
@@ -8986,6 +9228,7 @@ mod tests {
                     job_id,
                     lease,
                     false,
+                    None,
                     None,
                 )
                 .await
@@ -9752,6 +9995,7 @@ mod tests {
             lease,
             true,
             None,
+            None,
         )
         .await
         .unwrap_err();
@@ -9822,6 +10066,7 @@ mod tests {
             lease,
             true,
             None,
+            None,
         )
         .await
         .unwrap_err();
@@ -9875,6 +10120,7 @@ mod tests {
             lease,
             false,
             None,
+            None,
         )
         .await
         .unwrap_err();
@@ -9919,9 +10165,11 @@ mod tests {
             lease,
             true,
             None,
+            None,
         )
         .await
         .unwrap()
+        .0
         .expect("artifact publication");
 
         assert!(matches!(
@@ -10013,6 +10261,7 @@ mod tests {
             job_id,
             lease,
             false,
+            None,
             None,
         )
         .await
@@ -10283,6 +10532,7 @@ mod tests {
             lease,
             true,
             None,
+            None,
         )
         .await
         .unwrap_err();
@@ -10359,6 +10609,7 @@ mod tests {
             lease,
             true,
             None,
+            None,
         )
         .await
         .unwrap_err();
@@ -10420,6 +10671,7 @@ mod tests {
             job_id,
             lease,
             true,
+            None,
             None,
         )
         .await
@@ -10494,6 +10746,7 @@ mod tests {
             lease,
             true,
             None,
+            None,
         )
         .await
         .unwrap_err();
@@ -10559,9 +10812,11 @@ mod tests {
             lease,
             true,
             None,
+            None,
         )
         .await
         .expect("download must succeed despite stale terminal progress")
+        .0
         .expect("registered pgn artifact publication must be present");
 
         {
@@ -10682,6 +10937,7 @@ mod tests {
             lease,
             true,
             None,
+            None,
         )
         .await
         .unwrap_err();
@@ -10785,6 +11041,7 @@ mod tests {
                     job_id,
                     lease,
                     true,
+                    None,
                     None,
                 )
                 .await

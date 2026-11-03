@@ -23,6 +23,7 @@ use crate::error::Error;
 pub(crate) struct RuntimeDownload {
     pub(crate) publication: crate::infra::path_authority::ArtifactPublication,
     pub(crate) receipt_error: Option<Error>,
+    pub(crate) coverage_holds: Option<Vec<crate::lichess::CoverageHold>>,
 }
 
 pub const READ_RESERVATION_TTL: Duration = Duration::from_secs(60);

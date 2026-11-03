@@ -8,6 +8,342 @@ mod native_tests {
     use crate::infra::path_authority::{PathAuthority, PathClass};
     use std::{path::PathBuf, time::Duration};
 
+    #[test]
+    fn account_cursor_covers_ongoing_and_unexported_finished_games() {
+        use crate::lichess::CoverageHold;
+        let present = HashSet::from(["Present1".into()]);
+        let hold = CoverageHold {
+            id: "Present1".into(),
+            created_at_ms: 101,
+            ongoing: true,
+        };
+        assert_eq!(
+            account_sync_cursor(
+                "lichess",
+                Some(50),
+                Some(500),
+                &present,
+                Some(std::slice::from_ref(&hold))
+            ),
+            100
+        );
+        let mut finished = hold.clone();
+        finished.ongoing = false;
+        assert_eq!(
+            account_sync_cursor(
+                "lichess",
+                Some(50),
+                Some(500),
+                &present,
+                Some(std::slice::from_ref(&finished))
+            ),
+            500
+        );
+        finished.id = "Missing1".into();
+        assert_eq!(
+            account_sync_cursor(
+                "lichess",
+                Some(50),
+                Some(500),
+                &present,
+                Some(std::slice::from_ref(&finished))
+            ),
+            100
+        );
+        assert_eq!(
+            account_sync_cursor("chesscom", Some(50), Some(500), &present, Some(&[hold])),
+            500
+        );
+        assert_eq!(
+            account_sync_cursor("lichess", Some(50), Some(500), &present, None),
+            50
+        );
+        assert_eq!(
+            account_sync_cursor("lichess", None, Some(500), &present, None),
+            0
+        );
+        assert_eq!(
+            account_sync_cursor("lichess", Some(500), Some(50), &present, Some(&[])),
+            500
+        );
+        assert_eq!(
+            account_sync_cursor("lichess", Some(50), None, &present, Some(&[finished])),
+            50
+        );
+    }
+
+    #[test]
+    fn shared_fingerprint_preserves_complete_identity_and_linked_validation() {
+        let account = AccountIdentity {
+            provider: "lichess".into(),
+            account: "player".into(),
+        };
+        let mut complete = TempGame {
+            white_name: Some("Player".into()),
+            black_name: Some("Opponent".into()),
+            date: Some("2026.10.01".into()),
+            time: Some("12:00:00".into()),
+            ..TempGame::default()
+        };
+        // Golden value from the original complete-game fingerprint field encoding.
+        let golden = "9089a005c0d8218b50f8e915604d126356419d98a96f67368e1d59bd877c2afa";
+        assert_eq!(semantic_fingerprint(&complete, &account), golden);
+        assert_eq!(
+            linked_semantic_fingerprint(&complete, &account).unwrap(),
+            golden
+        );
+        for field in ["white", "black", "date", "time"] {
+            let slot = match field {
+                "white" => &mut complete.white_name,
+                "black" => &mut complete.black_name,
+                "date" => &mut complete.date,
+                _ => &mut complete.time,
+            };
+            let saved = slot.take();
+            let absent = semantic_fingerprint(&complete, &account);
+            assert!(matches!(
+                linked_semantic_fingerprint(&complete, &account),
+                Err(Error::Conflict(_))
+            ));
+            match field {
+                "white" => complete.white_name = Some(String::new()),
+                "black" => complete.black_name = Some(String::new()),
+                "date" => complete.date = Some(String::new()),
+                _ => complete.time = Some(String::new()),
+            }
+            assert_ne!(absent, semantic_fingerprint(&complete, &account));
+            assert!(linked_semantic_fingerprint(&complete, &account).is_err());
+            match field {
+                "white" => complete.white_name = saved,
+                "black" => complete.black_name = saved,
+                "date" => complete.date = saved,
+                _ => complete.time = saved,
+            }
+        }
+    }
+
+    fn received_batch(
+        fixture: &Fixture,
+        name: &str,
+        body: &str,
+        since: Option<i64>,
+        holds: &[crate::lichess::CoverageHold],
+    ) -> FileWorkspaceHandle {
+        let root = fixture
+            .service
+            .root
+            .ensure_child(OsStr::new("batches"))
+            .unwrap();
+        let path = root.path().join(name);
+        std::fs::write(&path, body).unwrap();
+        let file = FileWorkspaceHandle::new(
+            fixture
+                .state
+                .pgn_path_authority
+                .with_mut(|authority| {
+                    authority.get_or_create_persistent_file(
+                        &path,
+                        name,
+                        vec![PathOperation::ReadPgn],
+                    )
+                })
+                .unwrap()
+                .unwrap()
+                .id,
+        );
+        fixture
+            .service
+            .record_download(
+                &fixture.state.pgn_path_authority,
+                file.clone(),
+                "lichess",
+                "player",
+                since,
+                Some(holds),
+                &CancellationToken::new(),
+            )
+            .unwrap();
+        file
+    }
+
+    #[tokio::test]
+    async fn linked_receipt_lowers_cursor_and_later_imports_correspondence_once() {
+        for ongoing in [true, false] {
+            let mut fixture = Fixture::new();
+            let blitz = game(None, "e4 e5", "blitz")
+                .replace("https://www.chess.com", "https://lichess.org/Blitz001")
+                .replace("2026.10.01", "2026.10.10");
+            let correspondence = game(None, "d4 d5", "correspondence")
+                .replace("https://www.chess.com", "https://lichess.org/Corresp1");
+            fixture.create("history", &blitz, WorkspaceFileType::Game);
+            let collection = fixture.list().pop().unwrap();
+            let id = Uuid::parse_str(&collection.id).unwrap();
+            fixture.account(&collection.id, "lichess");
+            let start = NaiveDate::from_ymd_opt(2026, 10, 1)
+                .unwrap()
+                .and_hms_opt(12, 0, 0)
+                .unwrap()
+                .and_utc()
+                .timestamp_millis();
+            let newest = start + 9 * 86_400_000;
+            {
+                let mut guard = fixture.service.lock(&CancellationToken::new()).unwrap();
+                let mut registry = CollectionService::state(&mut guard).unwrap().clone();
+                let record = registry
+                    .records
+                    .iter_mut()
+                    .find(|record| record.id == id)
+                    .unwrap();
+                record.coverage_cursor_ms = Some(newest);
+                fixture.service.save(&mut guard, registry).unwrap();
+            }
+            let hold = crate::lichess::CoverageHold {
+                id: "Corresp1".into(),
+                created_at_ms: start,
+                ongoing,
+            };
+            let batch = received_batch(&fixture, "first.pgn", &blitz, None, &[hold]);
+            let receipt = CollectionService::state(
+                &mut fixture.service.lock(&CancellationToken::new()).unwrap(),
+            )
+            .unwrap()
+            .downloads[0]
+                .clone();
+            assert_eq!(receipt.through_ms, start - 1);
+            let first = fixture
+                .service
+                .clone()
+                .append_batch(
+                    fixture.state.pgn_path_authority.clone(),
+                    id,
+                    batch,
+                    CancellationToken::new(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(first.appended, 0);
+            fixture.restart();
+            let current = fixture.list().pop().unwrap();
+            assert_eq!(current.fetch_since_ms, Some((start - 1).to_string()));
+            let covered = crate::lichess::CoverageHold {
+                id: "Corresp1".into(),
+                created_at_ms: start,
+                ongoing: false,
+            };
+            let batch = received_batch(
+                &fixture,
+                "second.pgn",
+                &format!("{correspondence}{blitz}"),
+                Some(start - 1),
+                &[covered],
+            );
+            let second = fixture
+                .service
+                .clone()
+                .append_batch(
+                    fixture.state.pgn_path_authority.clone(),
+                    id,
+                    batch.clone(),
+                    CancellationToken::new(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(second.appended, 1);
+            let retry = fixture
+                .service
+                .clone()
+                .append_batch(
+                    fixture.state.pgn_path_authority.clone(),
+                    id,
+                    batch,
+                    CancellationToken::new(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(retry.appended, 0);
+            let current = fixture.list().pop().unwrap();
+            assert_eq!(current.fetch_since_ms, Some(newest.to_string()));
+            assert_eq!(fixture.rows(&current).len(), 2);
+        }
+    }
+
+    #[test]
+    fn legacy_registry_resets_only_lichess_fetch_cursor() {
+        let mut fixture = Fixture::new();
+        for provider in ["lichess", "chesscom"] {
+            fixture.create(provider, "", WorkspaceFileType::Game);
+            let collection = fixture
+                .list()
+                .into_iter()
+                .find(|collection| collection.name == format!("{provider}.pgn"))
+                .unwrap();
+            fixture.account(&collection.id, provider);
+        }
+        {
+            let mut guard = fixture.service.lock(&CancellationToken::new()).unwrap();
+            let mut registry = CollectionService::state(&mut guard).unwrap().clone();
+            for record in &mut registry.records {
+                record.coverage_cursor_ms = Some(1234);
+            }
+            fixture.service.save(&mut guard, registry).unwrap();
+        }
+        let path = fixture.service.root.path().join(REGISTRY);
+        let mut registry: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        for record in registry["records"].as_array_mut().unwrap() {
+            record
+                .as_object_mut()
+                .unwrap()
+                .remove("coverage_cursor_current");
+        }
+        std::fs::write(&path, serde_json::to_vec(&registry).unwrap()).unwrap();
+        fixture.restart();
+        for collection in fixture.list() {
+            assert_eq!(
+                collection.fetch_since_ms,
+                if collection.account.as_ref().unwrap().provider == "lichess" {
+                    None
+                } else {
+                    Some("1234".into())
+                }
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn legacy_pending_receipt_does_not_certify_old_cursor_semantics() {
+        let fixture = Fixture::new();
+        fixture.create("history", "", WorkspaceFileType::Game);
+        let collection = fixture.list().pop().unwrap();
+        fixture.account(&collection.id, "lichess");
+        let body = game(None, "e4 e5", "legacy receipt")
+            .replace("https://www.chess.com", "https://lichess.org/Blitz001");
+        let file = received_batch(&fixture, "legacy.pgn", &body, None, &[]);
+        {
+            let mut guard = fixture.service.lock(&CancellationToken::new()).unwrap();
+            let mut registry = CollectionService::state(&mut guard).unwrap().clone();
+            let mut serialized = serde_json::to_value(&registry.downloads[0]).unwrap();
+            serialized
+                .as_object_mut()
+                .unwrap()
+                .remove("coverage_cursor_current");
+            registry.downloads[0] = serde_json::from_value(serialized).unwrap();
+            fixture.service.save(&mut guard, registry).unwrap();
+        }
+        fixture
+            .service
+            .clone()
+            .append_batch(
+                fixture.state.pgn_path_authority.clone(),
+                Uuid::parse_str(&collection.id).unwrap(),
+                file,
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(fixture.list().pop().unwrap().fetch_since_ms, None);
+    }
+
     pub(crate) struct Fixture {
         pub directory: tempfile::TempDir,
         pub state: AppState,
@@ -661,6 +997,18 @@ mod native_tests {
                 provider: provider.into(),
                 account: "player".into(),
             });
+            self.service.save(&mut guard, registry).unwrap();
+        }
+
+        pub fn set_coverage_cursor(&self, id: &str, cursor: i64) {
+            let mut guard = self.service.lock(&CancellationToken::new()).unwrap();
+            let mut registry = CollectionService::state(&mut guard).unwrap().clone();
+            registry
+                .records
+                .iter_mut()
+                .find(|record| record.id.to_string() == id)
+                .unwrap()
+                .coverage_cursor_ms = Some(cursor);
             self.service.save(&mut guard, registry).unwrap();
         }
 
@@ -6850,6 +7198,7 @@ mod native_tests {
             retired_database: None,
             pending: None,
             coverage_cursor_ms: None,
+            coverage_cursor_current: false,
         };
         fixture
             .service
@@ -7619,6 +7968,7 @@ mod native_tests {
                 handle,
                 "chesscom",
                 "player",
+                None,
                 None,
                 &CancellationToken::new(),
             )
