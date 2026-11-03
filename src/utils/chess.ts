@@ -7,7 +7,7 @@ import { makeSan } from "chessops/san";
 import { type Outcome, type Score, type Token } from "@/bindings";
 import { isBasicAnnotation, isNagCode, nagGlyph, sortedNags } from "./annotation";
 import { parseSanOrUci, positionFromFen } from "./chessops";
-import { makePgnDrawings, toDrawShape } from "./drawings";
+import { makePgnDrawings, PGN_COMMENT_COMMAND, toDrawShape } from "./drawings";
 import { harmonicMean, isPrefix, mean } from "./misc";
 import { splitPgnComment } from "./pgnComment";
 import { formatScore, getAccuracy, getCPLoss, INITIAL_SCORE } from "./score";
@@ -367,17 +367,40 @@ export async function getOpening(root: TreeNode, position: number[]): Promise<st
     return await tauri.getOpeningFromFens(fens);
 }
 
-function innerParsePGN(tokens: Token[], fen: string = INITIAL_FEN, halfMoves?: number): TreeState {
+function innerParsePGN(
+    tokens: Token[],
+    losses: string[],
+    fen: string = INITIAL_FEN,
+    halfMoves?: number,
+): TreeState {
     const tree = defaultTree(fen);
     // The cursor: the node the next comment, NAG or move attaches to.
     let node = tree.root;
     let prevNode = node;
+    let ended = false;
+    let clocks = 0;
+    let evaluations = 0;
     if (halfMoves !== undefined) node.halfMoves = halfMoves;
 
     for (let i = 0; i < tokens.length; i++) {
         const token = tokens[i];
 
+        if (ended && (token.type !== "Comment" || halfMoves !== undefined)) {
+            losses.push("Content after outcome");
+            continue;
+        }
+
         if (token.type === "Comment") {
+            for (const match of token.value.matchAll(PGN_COMMENT_COMMAND)) {
+                // Use the same command reduction as the comment branch, including its
+                // definition of a well-formed clock or evaluation.
+                const field = splitPgnComment(match[0]);
+                if (field.clock !== undefined && ++clocks > 1) losses.push("Multiple clocks");
+                if (field.evaluation && ++evaluations > 1) losses.push("Multiple evaluations");
+            }
+            if (halfMoves !== undefined && node === tree.root) {
+                losses.push("Comment on discarded variation root");
+            }
             const comment = splitPgnComment(token.value);
 
             if (comment.evaluation) {
@@ -443,27 +466,36 @@ function innerParsePGN(tokens: Token[], fen: string = INITIAL_FEN, halfMoves?: n
                 variation.shift();
                 leading = variation[0];
             }
-            const newTree = innerParsePGN(variation, prevNode.fen, prevNode.halfMoves);
+            const newTree = innerParsePGN(variation, losses, prevNode.fen, prevNode.halfMoves);
             // `newTree.root` stands for `prevNode` itself, so every child it has is an
             // alternative from `prevNode` — a variation nested at the variation's first move included.
             const [first] = newTree.root.children;
             if (first && startingComments.length > 0) {
                 first.startingComment = startingComments.join(" ");
+            } else if (startingComments.length > 0) {
+                losses.push("Starting comment without a variation move");
             }
             prevNode.children.push(...newTree.root.children);
         } else if (token.type === "ParenClose") {
+            losses.push("Unmatched variation close");
+        } else if (token.type === "Unparsed") {
+            losses.push("Unparsed content");
         } else if (token.type === "Nag") {
             const code = /^\$\d+$/.test(token.value) ? Number(token.value.slice(1)) : NaN;
             if (isNagCode(code)) {
                 node.nags.push(code);
+            } else {
+                losses.push("Invalid NAG");
             }
         } else if (token.type === "San") {
             const [pos, error] = positionFromFen(node.fen);
             if (error) {
+                losses.push("Invalid move position");
                 continue;
             }
             const move = parseSanOrUci(pos, token.value);
             if (!move) {
+                losses.push("Unplayable move");
                 continue;
             }
             const san = makeSan(pos, move);
@@ -479,8 +511,11 @@ function innerParsePGN(tokens: Token[], fen: string = INITIAL_FEN, halfMoves?: n
 
             prevNode = node;
             node = newTree;
+            clocks = 0;
+            evaluations = 0;
         } else if (token.type === "Outcome") {
-            break;
+            if (halfMoves !== undefined) losses.push("Outcome inside variation");
+            ended = true;
         }
     }
     return tree;
@@ -491,6 +526,15 @@ export async function parsePGN(
     initialFen?: string,
     options?: { signal?: AbortSignal },
 ): Promise<TreeState> {
+    return (await parsePGNWithLossReport(pgn, initialFen, options)).tree;
+}
+
+/** Parse once, reporting content the tree cannot preserve when saved. */
+export async function parsePGNWithLossReport(
+    pgn: string,
+    initialFen?: string,
+    options?: { signal?: AbortSignal },
+): Promise<{ tree: TreeState; losses: string[] }> {
     if (options?.signal?.aborted) {
         throw cancellationError();
     }
@@ -502,7 +546,8 @@ export async function parsePGN(
     const headers = getPgnHeaders(tokens);
     const fen = initialFen?.trim() || headers.fen.trim();
 
-    const tree = innerParsePGN(tokens, fen);
+    const losses: string[] = [];
+    const tree = innerParsePGN(tokens, losses, fen);
     // The validated path replaces the raw tag, so an unresolvable Start never reaches the store.
     const start = parseStartHeader(headers.start, tree.root);
     tree.headers = { ...headers, fen: tree.root.fen, start };
@@ -510,7 +555,7 @@ export async function parsePGN(
     if (options?.signal?.aborted) {
         throw cancellationError();
     }
-    return tree;
+    return { tree, losses };
 }
 
 /**

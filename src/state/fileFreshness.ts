@@ -156,7 +156,7 @@ export type FileFreshnessState =
     | "conflict"
     | "unavailable";
 
-export type FileConflictReason = "changed" | "save-refused";
+export type FileConflictReason = "changed" | "save-refused" | "lossy-source";
 
 export type FileFreshnessEntry = {
     state: FileFreshnessState;

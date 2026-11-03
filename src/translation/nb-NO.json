@@ -600,6 +600,7 @@
     "FileFreshness.FileNotResponding": "Filen svarer ikke. Partiet holdes skjult til det kan kontrolleres.",
     "FileFreshness.GameNoLongerInDatabase": "Dette partiet finnes ikke lenger i databasen.",
     "FileFreshness.GameNoLongerInFile": "Dette partiet finnes ikke lenger i filen.",
+    "FileFreshness.LossySource": "Partiet i filen inneholder trekk eller kommentarer som ChessFable ikke kan bevare. Hvis du lagrer over det, blir de slettet. Du kan lagre din versjon som et nytt parti.",
     "FileFreshness.ReloadFromDatabase": "Last inn på nytt fra databasen",
     "FileFreshness.ReloadFromDisk": "Last inn fra disken på nytt",
     "FileFreshness.Retry": "Prøv igjen",

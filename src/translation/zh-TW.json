@@ -593,6 +593,7 @@
     "FileFreshness.FileNotResponding": "檔案沒有回應。在能夠檢查之前，此棋局會保持隱藏。",
     "FileFreshness.GameNoLongerInDatabase": "此棋局已不在資料庫中。",
     "FileFreshness.GameNoLongerInFile": "此棋局已不在檔案中。",
+    "FileFreshness.LossySource": "檔案中的棋局包含 ChessFable 無法保留的著法或註解。覆寫儲存會將其刪除。您可以將自己的版本儲存為新棋局。",
     "FileFreshness.ReloadFromDatabase": "從資料庫重新載入",
     "FileFreshness.ReloadFromDisk": "從磁碟重新載入",
     "FileFreshness.Retry": "重試",

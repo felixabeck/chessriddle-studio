@@ -29,7 +29,7 @@ import {
     type TreeStore,
     type TreeStoreState,
 } from "@/state/store/tree";
-import { defaultPGN, getPGN, parsePGN } from "./chess";
+import { defaultPGN, getPGN, parsePGN, parsePGNWithLossReport } from "./chess";
 import { pickPgnFile, readFileGame, writeFileGame } from "./files";
 import type { GameHeaders, TreeState } from "./treeReducer";
 import { fileWorkspaceKey } from "./pathCapabilities";
@@ -1155,11 +1155,22 @@ async function saveToFileNow({
                     : { kind: "game", stamp },
             );
         };
-        const validateSource = async (origin: NonNullable<typeof fileOrigin>) => {
+        const validateSource = async (
+            origin: NonNullable<typeof fileOrigin>,
+            checkLoss = false,
+        ) => {
             currentFileOperation = true;
             const source = await readFileGame(origin.file.handle, origin.gameNumber);
             if (!owns()) return "superseded";
             if (source.stamp !== sourceStamp) return sourceChanged(tabId);
+            if (checkLoss) {
+                const parsed = await parsePGNWithLossReport(source.pgn);
+                if (!owns()) return "superseded";
+                if (parsed.losses.length > 0) {
+                    setFileFreshness(tabId, "conflict", { conflictReason: "lossy-source" });
+                    return "conflict";
+                }
+            }
             currentFileOperation = false;
         };
         const finishWrite = (
@@ -1219,6 +1230,9 @@ async function saveToFileNow({
             currentFileOperation = true;
             writingCurrentOrigin = true;
             if (sourceStamp === null) return sourceChanged(tabId);
+            const result = await validateSource(fileOrigin, true);
+            if (result) return result;
+            currentFileOperation = true;
             const written = await write(fileOrigin.file, sourceStamp);
             return finishWrite(written);
         }

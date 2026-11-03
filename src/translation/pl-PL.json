@@ -614,6 +614,7 @@
     "FileFreshness.FileNotResponding": "Plik nie odpowiada. Partia pozostanie ukryta, dopóki nie będzie można jej sprawdzić.",
     "FileFreshness.GameNoLongerInDatabase": "Tej partii nie ma już w bazie danych.",
     "FileFreshness.GameNoLongerInFile": "Tej partii nie ma już w pliku.",
+    "FileFreshness.LossySource": "Partia w pliku zawiera ruchy lub komentarze, których ChessFable nie może zachować. Nadpisanie spowoduje ich usunięcie. Możesz zapisać swoją wersję jako nową partię.",
     "FileFreshness.ReloadFromDatabase": "Wczytaj ponownie z bazy danych",
     "FileFreshness.ReloadFromDisk": "Wczytaj ponownie z dysku",
     "FileFreshness.Retry": "Ponów próbę",

@@ -607,6 +607,7 @@
     "FileFreshness.FileNotResponding": "Il file non risponde. Questa partita resta nascosta finché non sarà possibile controllarlo.",
     "FileFreshness.GameNoLongerInDatabase": "Questa partita non è più nel database.",
     "FileFreshness.GameNoLongerInFile": "Questa partita non è più nel file.",
+    "FileFreshness.LossySource": "La partita nel file contiene mosse o commenti che ChessFable non può conservare. Sovrascriverla li eliminerebbe. Puoi salvare la tua versione come una nuova partita.",
     "FileFreshness.ReloadFromDatabase": "Ricarica dal database",
     "FileFreshness.ReloadFromDisk": "Ricarica dal disco",
     "FileFreshness.Retry": "Riprova",

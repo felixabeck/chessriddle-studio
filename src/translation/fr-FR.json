@@ -607,6 +607,7 @@
     "FileFreshness.FileNotResponding": "Le fichier ne répond pas. Cette partie reste masquée jusqu’à ce qu’il puisse être vérifié.",
     "FileFreshness.GameNoLongerInDatabase": "Cette partie n’est plus dans la base de données.",
     "FileFreshness.GameNoLongerInFile": "Cette partie ne se trouve plus dans le fichier.",
+    "FileFreshness.LossySource": "La partie dans le fichier contient des coups ou des commentaires que ChessFable ne peut pas conserver. L’écraser les supprimerait. Vous pouvez enregistrer votre version comme une nouvelle partie.",
     "FileFreshness.ReloadFromDatabase": "Recharger depuis la base de données",
     "FileFreshness.ReloadFromDisk": "Recharger depuis le disque",
     "FileFreshness.Retry": "Réessayer",

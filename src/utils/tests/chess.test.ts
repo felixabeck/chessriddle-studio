@@ -17,6 +17,7 @@ import {
     hasMorePriority,
     headersToPGN,
     parsePGN,
+    parsePGNWithLossReport,
     parseStartHeader,
     replayUciMoves,
 } from "../chess";
@@ -32,6 +33,117 @@ import {
 } from "../treeReducer";
 
 const mocks = vi.hoisted(() => ({ lexPgn: vi.fn() }));
+
+const sanToken = (value: string): Token => ({ type: "San", value });
+const commentToken = (value: string): Token => ({ type: "Comment", value });
+const outcomeToken: Token = { type: "Outcome", value: "*" };
+
+test.each(["brace", "semicolon", "root"])(
+    "keeps trailing %s comments without loss",
+    async (kind) => {
+        const moves = kind === "root" ? [] : [sanToken("e4"), sanToken("e5")];
+        const source =
+            kind === "semicolon"
+                ? "1. e4 e5 1-0 ;White won on time"
+                : "1. e4 e5 1-0 {White won on time}";
+        mocks.lexPgn.mockResolvedValue([
+            ...moves,
+            { type: "Outcome", value: "1-0" },
+            commentToken("White won on time"),
+        ]);
+        const { tree, losses } = await parsePGNWithLossReport(source);
+        expect(losses).toEqual([]);
+        const node = kind === "root" ? tree.root : tree.root.children[0].children[0];
+        expect(node.comment).toBe("White won on time");
+        expect(getPGN(tree.root, { ...ALL_MARKUPS, headers: tree.headers })).toContain(
+            "White won on time",
+        );
+    },
+);
+
+test("moves after an outcome are reported and never added", async () => {
+    mocks.lexPgn.mockResolvedValue([sanToken("e4"), outcomeToken, sanToken("d4"), outcomeToken]);
+    const { tree, losses } = await parsePGNWithLossReport("1. e4 * 1. d4 *");
+    expect(losses.length).toBeGreaterThan(0);
+    expect(tree.root.children[0].san).toBe("e4");
+    expect(tree.root.children[0].children).toEqual([]);
+});
+
+const lossyTokens: { name: string; tokens: Token[] }[] = [
+    {
+        name: "malformed Nf9",
+        tokens: [
+            sanToken("e4"),
+            sanToken("e5"),
+            { type: "Unparsed", value: "Nf9" },
+            sanToken("Nc6"),
+            sanToken("Bb5"),
+        ],
+    },
+    { name: "illegal Nd5", tokens: [sanToken("e4"), sanToken("e5"), sanToken("Nd5")] },
+    {
+        name: "illegal variation",
+        tokens: [sanToken("e4"), { type: "ParenOpen" }, sanToken("Nd5"), { type: "ParenClose" }],
+    },
+    { name: "invalid NAG", tokens: [sanToken("e4"), { type: "Nag", value: "$9999" }] },
+    {
+        name: "variation outcome",
+        tokens: [
+            sanToken("e4"),
+            sanToken("e5"),
+            { type: "ParenOpen" },
+            sanToken("c5"),
+            outcomeToken,
+            { type: "ParenClose" },
+        ],
+    },
+    {
+        name: "unsafe semicolon comment",
+        tokens: [sanToken("e4"), outcomeToken, { type: "Unparsed", value: "use } to close" }],
+    },
+    ...["[%clk 0:05:00]", "[%eval 0.34]"].flatMap((first) => {
+        const second = first.includes("clk") ? "[%clk 0:04:59]" : "[%eval 0.50]";
+        return [
+            {
+                name: first + " across comments",
+                tokens: [sanToken("e4"), commentToken(first), outcomeToken, commentToken(second)],
+            },
+            {
+                name: first + " within comment",
+                tokens: [sanToken("e4"), commentToken(first + " " + second), outcomeToken],
+            },
+        ];
+    }),
+    ...([{ type: "Nag", value: "$1" }, { type: "ParenOpen" }, outcomeToken] satisfies Token[]).map(
+        (token) => ({
+            name: "after result " + token.type,
+            tokens: [sanToken("e4"), outcomeToken, token],
+        }),
+    ),
+];
+
+test.each(lossyTokens)("reports loss for $name", async ({ tokens }) => {
+    mocks.lexPgn.mockResolvedValue(tokens);
+    expect((await parsePGNWithLossReport("source")).losses.length).toBeGreaterThan(0);
+});
+
+test("clean variations, NAGs, comments and verbatim starting commands are lossless", async () => {
+    mocks.lexPgn.mockResolvedValue([
+        sanToken("e4"),
+        { type: "Nag", value: "$1" },
+        commentToken("Main line [%clk 0:05:00]"),
+        sanToken("e5"),
+        { type: "ParenOpen" },
+        commentToken("[%clk 0:05:00] [%clk 0:04:59] [%eval 0.34] [%eval 0.50]"),
+        sanToken("c5"),
+        commentToken("Sicilian [%eval 0.34]"),
+        { type: "ParenClose" },
+        outcomeToken,
+    ] satisfies Token[]);
+    const { tree, losses } = await parsePGNWithLossReport("source");
+    expect(losses).toEqual([]);
+    expect(tree.root.children[0].children[1].startingComment).toContain("[%clk 0:04:59]");
+});
 
 vi.mock("@/platform/tauri", () => ({
     cancellationError: () => new Error("cancelled"),

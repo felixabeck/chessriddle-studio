@@ -600,6 +600,7 @@
     "FileFreshness.FileNotResponding": "Die Datei reagiert nicht. Dieses Spiel bleibt ausgeblendet, bis sie geprüft werden kann.",
     "FileFreshness.GameNoLongerInDatabase": "Dieses Spiel ist nicht mehr in der Datenbank.",
     "FileFreshness.GameNoLongerInFile": "Dieses Spiel ist nicht mehr in der Datei.",
+    "FileFreshness.LossySource": "Die Partie in der Datei enthält Züge oder Kommentare, die ChessFable nicht erhalten kann. Beim Überschreiben würden sie gelöscht. Du kannst deine Version als neue Partie speichern.",
     "FileFreshness.ReloadFromDatabase": "Aus der Datenbank neu laden",
     "FileFreshness.ReloadFromDisk": "Von Festplatte neu laden",
     "FileFreshness.Retry": "Erneut versuchen",

@@ -600,6 +600,7 @@
     "FileFreshness.FileNotResponding": "Dosya yanıt vermiyor. Denetlenene kadar bu oyun gizli kalacak.",
     "FileFreshness.GameNoLongerInDatabase": "Bu oyun artık veritabanında değil.",
     "FileFreshness.GameNoLongerInFile": "Bu oyun artık dosyada yok.",
+    "FileFreshness.LossySource": "Dosyadaki oyun, ChessFable’ın koruyamadığı hamleler veya yorumlar içeriyor. Üzerine kaydetmek bunları siler. Kendi sürümünüzü yeni bir oyun olarak kaydedebilirsiniz.",
     "FileFreshness.ReloadFromDatabase": "Veritabanından yeniden yükle",
     "FileFreshness.ReloadFromDisk": "Diskten yeniden yükle",
     "FileFreshness.Retry": "Yeniden dene",

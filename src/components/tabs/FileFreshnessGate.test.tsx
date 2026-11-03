@@ -316,6 +316,7 @@ async function setup({
 }
 
 beforeEach(() => {
+  mocks.lexPgn.mockResolvedValue([]);
   mocks.collections = [];
   sessionStorage.clear();
   vi.clearAllMocks();
@@ -679,8 +680,21 @@ test("a save seeds the poll revision without unmounting the verified board", asy
   expect(getFileFreshness(tabId).epoch).toBe(afterSave.epoch);
   expect(host.querySelector('[data-testid="board-and-panels"]')).toBe(board);
   expect(host.textContent).not.toContain("loader");
-  expect(mocks.readFileGame).not.toHaveBeenCalled();
+  expect(mocks.readFileGame).toHaveBeenCalledExactlyOnceWith(
+    file.handle,
+    fileTab.gameOrigin.kind === "file" ? fileTab.gameOrigin.gameNumber : 0,
+  );
   stop();
+});
+
+test("lossy source conflict explains the refusal and keeps both recovery actions", async () => {
+  await setup({ dirty: true, freshness: "verified" });
+  await act(async () => setFileFreshness(tabId, "conflict", { conflictReason: "lossy-source" }));
+  expect(host.textContent).toContain("FileFreshness.LossySource");
+  expect(host.textContent).not.toContain("FileFreshness.Changed");
+  expect(button("FileFreshness.ReloadFromDisk").disabled).toBe(false);
+  expect(button("FileFreshness.SaveAsNewGame").disabled).toBe(false);
+  expect(treeStore.getState().headers.event).toBe("Unsaved edit");
 });
 
 test("dirty changed trees show conflict without mounting board or practice children", async () => {
@@ -886,6 +900,7 @@ test.each([
     expect(treeStore.getState().linkedSource).toBeNull();
     treeStore.getState().setComment("Edit after cold reload");
     const nextSnapshot = serializeStoreTree(treeStore);
+    mocks.readFileGame.mockResolvedValueOnce(stampedGame(changedStamp));
     mocks.writeGame.mockImplementationOnce(async (_handle, _page, _pgn, expectation) => {
       if (expectation.kind !== "game")
         throw { tag: "backend-error", category: "stale-game", message: "Plain file is not linked" };
@@ -982,6 +997,7 @@ test.each([false, true])(
     });
     await act(async () => treeStore.getState().setComment("Deliberate later recovery Save"));
     mocks.writeGame.mockResolvedValueOnce({ stamp: emptyStamp, revision: "later-recovery-cas" });
+    mocks.readFileGame.mockResolvedValueOnce(stampedGame(changedStamp));
     await act(async () =>
       expect(
         saveToFile({

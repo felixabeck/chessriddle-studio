@@ -614,6 +614,7 @@
     "FileFreshness.FileNotResponding": "Файл не отвечает. Партия скрыта, пока её не удастся проверить.",
     "FileFreshness.GameNoLongerInDatabase": "Этой партии больше нет в базе данных.",
     "FileFreshness.GameNoLongerInFile": "Этой партии больше нет в файле.",
+    "FileFreshness.LossySource": "Партия в файле содержит ходы или комментарии, которые ChessFable не может сохранить. Перезапись удалит их. Вы можете сохранить свою версию как новую партию.",
     "FileFreshness.ReloadFromDatabase": "Загрузить заново из базы данных",
     "FileFreshness.ReloadFromDisk": "Перезагрузить с диска",
     "FileFreshness.Retry": "Повторить",

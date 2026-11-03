@@ -657,7 +657,16 @@ function FileBackedGate({
   const uncertainMessage = appendAttempted ? t("FileFreshness.AppendMayHaveBeenAdded") : null;
   return wrapper(
     <Stack className={classes.panel} align="center" justify="center" h="100%" gap="sm">
-      <Text>{t(conflict ? "FileFreshness.Changed" : "FileFreshness.Unavailable")}</Text>
+      <Text>
+        {conflict
+          ? freshness.conflictReason === "lossy-source"
+            ? t("FileFreshness.LossySource", {
+                defaultValue:
+                  "The game in the file contains moves or comments ChessFable cannot keep. Saving over it would delete them. You can save your version as a new game.",
+              })
+            : t("FileFreshness.Changed")
+          : t("FileFreshness.Unavailable")}
+      </Text>
       {uncertainMessage && <Text c="dimmed">{uncertainMessage}</Text>}
       {errorMessage && <Text className={classes.error}>{errorMessage}</Text>}
       <Group>

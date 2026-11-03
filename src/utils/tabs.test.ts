@@ -20,6 +20,7 @@ import i18n, { initializeI18n } from "@/i18n";
 
 const mocks = vi.hoisted(() => ({
     parsePGN: vi.fn(),
+    lexPgn: vi.fn(async () => [] as import("@/bindings").Token[]),
     pickPgnFile: vi.fn(),
     reportPersistError: vi.fn(),
     readFileGame: vi.fn(),
@@ -47,6 +48,7 @@ function deferred<T>() {
 
 vi.mock("@/platform/tauri", () => ({
     tauri: {
+        lexPgn: mocks.lexPgn,
         writeGame: mocks.writeGame,
         readGame: mocks.readGame,
         writeDbGame: mocks.writeDbGame,
@@ -275,6 +277,7 @@ afterEach(() => {
     mocks.pickPgnFile.mockReset();
     mocks.readFileGame.mockReset();
     mocks.readGame.mockReset();
+    mocks.lexPgn.mockReset().mockResolvedValue([]);
     vi.useRealTimers();
 });
 
@@ -750,6 +753,82 @@ const stampA = "a".repeat(64);
 const stampB = "b".repeat(64);
 const stampC = "c".repeat(64);
 
+test.each(
+    [true, false].flatMap((linked) => [true, false].map((isUserSave) => ({ linked, isUserSave }))),
+)(
+    "in-place loss guard for linked=$linked user-save=$isUserSave",
+    async ({ linked, isUserSave }) => {
+        const fixture = saveFixture();
+        if (linked)
+            fixture.store.getState().setLinkedSource({
+                collection: "22222222-2222-4222-8222-222222222222",
+                generation: "source-generation",
+                ordinal: 2,
+                stamp: stampA,
+            });
+        mocks.readFileGame.mockResolvedValueOnce({ pgn: "1. e4 * ;use } to close", stamp: stampA });
+        mocks.lexPgn.mockResolvedValueOnce([
+            { type: "San", value: "e4" },
+            { type: "Outcome", value: "*" },
+            { type: "Unparsed", value: "use } to close" },
+        ]);
+        // A removed guard would execute a successful native overwrite.
+        mocks.writeGame.mockResolvedValueOnce({ stamp: stampB, revision: "written" });
+        await expect(
+            saveToFile({
+                tab: fixture.tabs[0],
+                updateTab: fixture.updateTab,
+                getTab: fixture.getTab,
+                store: fixture.store,
+                isUserSave,
+            }),
+        ).resolves.toBe("conflict");
+        expect(mocks.writeGame).not.toHaveBeenCalled();
+        expect(mocks.lexPgn).toHaveBeenCalledWith("1. e4 * ;use } to close", undefined);
+        expect(getFileFreshness("save-test")).toMatchObject({
+            state: "conflict",
+            conflictReason: "lossy-source",
+        });
+        expect(fixture.store.getState()).toMatchObject({ dirty: true, sourceStamp: stampA });
+    },
+);
+
+test("changed source stamp refuses before parsing or writing", async () => {
+    const fixture = saveFixture();
+    mocks.readFileGame.mockResolvedValueOnce({ pgn: "1. e4 *", stamp: stampB });
+    mocks.writeGame.mockResolvedValueOnce({ stamp: stampC, revision: "written" });
+    await expect(
+        saveToFile({
+            tab: fixture.tabs[0],
+            updateTab: fixture.updateTab,
+            getTab: fixture.getTab,
+            store: fixture.store,
+        }),
+    ).resolves.toBe("conflict");
+    expect(mocks.lexPgn).not.toHaveBeenCalled();
+    expect(mocks.writeGame).not.toHaveBeenCalled();
+    expect(getFileFreshness("save-test")).toMatchObject({
+        state: "conflict",
+        conflictReason: "save-refused",
+    });
+});
+
+test.each(["read", "parse"])("in-place %s failure never writes", async (boundary) => {
+    const fixture = saveFixture();
+    if (boundary === "read") mocks.readFileGame.mockRejectedValueOnce(new Error("read failed"));
+    else mocks.lexPgn.mockRejectedValueOnce(new Error("parse failed"));
+    mocks.writeGame.mockResolvedValueOnce({ stamp: stampB, revision: "written" });
+    await expect(
+        saveToFile({
+            tab: fixture.tabs[0],
+            updateTab: fixture.updateTab,
+            getTab: fixture.getTab,
+            store: fixture.store,
+        }),
+    ).resolves.toMatchObject({ status: "failed" });
+    expect(mocks.writeGame).not.toHaveBeenCalled();
+});
+
 function saveFixture({
     id = "save-test",
     kind = "file",
@@ -772,6 +851,12 @@ function saveFixture({
         });
     }
     const store = createTreeStore(kind === "none" ? id : undefined, tree);
+    if (kind !== "none")
+        mocks.readFileGame.mockImplementation(async () => ({
+            pgn: "1. e4 *",
+            stamp: store.getState().sourceStamp,
+            present: true,
+        }));
     let tabs: Tab[] = [
         {
             value: id,
@@ -999,6 +1084,11 @@ test.each(
             });
             trees.closeTreeStore(id);
             const cold = trees.createTreeStore(id, undefined, physical);
+            mocks.readFileGame.mockImplementation(async () => ({
+                pgn: "1. e4 *",
+                stamp: cold.getState().sourceStamp,
+                present: true,
+            }));
             expect(cold.getState().linkedSource).toEqual(linkedSource);
             cold.getState().setComment("Edit after replacement restart");
             expect(repository.flush()).toEqual([]);
@@ -1546,6 +1636,7 @@ test.each([
             verifiedRevision: "first-admitted",
         });
         store.getState().setComment("Deliberate later Save");
+        mocks.readFileGame.mockResolvedValueOnce({ pgn: "1. e4 *", stamp: stampB, present: true });
         mocks.writeGame.mockResolvedValueOnce({ stamp: stampC, revision: "later-cas" });
         await expect(
             saveToFile({ tab: actions.getTab(id), store, ...actions, isUserSave: true }),
@@ -1637,6 +1728,11 @@ test.each(["none", "file"] as const)(
                 sourceStamp: stampB,
                 appendAttempted: false,
                 root: { comment: "No-throw subscriber edit" },
+            });
+            mocks.readFileGame.mockResolvedValueOnce({
+                pgn: "1. e4 *",
+                stamp: stampB,
+                present: true,
             });
             mocks.writeGame.mockResolvedValueOnce({
                 stamp: stampC,
@@ -1837,6 +1933,7 @@ test("a newly appended linked game keeps its generation across tree restart and 
     closeTreeStore("save-test");
     const cold = createTreeStore("save-test");
     cold.getState().setComment("Edit after restart");
+    mocks.readFileGame.mockResolvedValueOnce({ pgn: "1. e4 *", stamp: stampB, present: true });
     mocks.writeGame.mockResolvedValueOnce({
         stamp: stampC,
         revision: "saved-generation",
@@ -1935,6 +2032,10 @@ test("fresh adoption retains edits made during its append and clears the admitte
 
 test("file saves send the source stamp as a required CAS and persist the returned stamp", async () => {
     const fixture = saveFixture();
+    mocks.lexPgn.mockResolvedValueOnce([
+        { type: "San", value: "e4" },
+        { type: "Outcome", value: "*" },
+    ]);
     mocks.writeGame.mockResolvedValueOnce({ stamp: stampB, revision: "r-new" });
 
     await expect(
@@ -1950,6 +2051,8 @@ test("file saves send the source stamp as a required CAS and persist the returne
         kind: "game",
         stamp: stampA,
     });
+    expect(mocks.readFileGame).toHaveBeenCalledWith(fileHandle, 2);
+    expect(mocks.lexPgn).toHaveBeenCalledWith("1. e4 *", undefined);
     expect(fixture.store.getState()).toMatchObject({ dirty: false, sourceStamp: stampB });
     expect(getFileFreshness("save-test")).toMatchObject({
         state: "verified",
@@ -2116,7 +2219,7 @@ test.each(["stale-game", "conflict", "missing-resource", "invalid-input", "durab
                 getTab: (id) => jotai.get(atoms.tabsAtom).find((tab) => tab.value === id),
                 store: treeStore,
             });
-            expect(mocks.writeGame).toHaveBeenCalledOnce();
+            await vi.waitFor(() => expect(mocks.writeGame).toHaveBeenCalledOnce());
             const candidate = defaultTree();
             candidate.headers.event = "Durable replacement";
             candidate.sourceStamp = stampC;

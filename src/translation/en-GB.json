@@ -600,6 +600,7 @@
     "FileFreshness.FileNotResponding": "The file is not responding. This game is hidden until it can be checked.",
     "FileFreshness.GameNoLongerInDatabase": "This game is no longer in the database.",
     "FileFreshness.GameNoLongerInFile": "This game is no longer in the file.",
+    "FileFreshness.LossySource": "The game in the file contains moves or comments ChessFable cannot keep. Saving over it would delete them. You can save your version as a new game.",
     "FileFreshness.ReloadFromDatabase": "Reload from database",
     "FileFreshness.ReloadFromDisk": "Reload from disk",
     "FileFreshness.Retry": "Retry",

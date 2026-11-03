@@ -593,6 +593,7 @@
     "FileFreshness.FileNotResponding": "文件无响应。在能够检查之前，此棋局将保持隐藏。",
     "FileFreshness.GameNoLongerInDatabase": "此棋局已不在数据库中。",
     "FileFreshness.GameNoLongerInFile": "此棋局已不在文件中。",
+    "FileFreshness.LossySource": "文件中的棋局包含 ChessFable 无法保留的着法或评论。覆盖保存会将其删除。您可以将自己的版本保存为新棋局。",
     "FileFreshness.ReloadFromDatabase": "从数据库重新加载",
     "FileFreshness.ReloadFromDisk": "从磁盘重新加载",
     "FileFreshness.Retry": "重试",
