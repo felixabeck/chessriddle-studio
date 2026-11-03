@@ -129,6 +129,17 @@ mod native_tests {
         since: Option<i64>,
         holds: &[crate::lichess::CoverageHold],
     ) -> FileWorkspaceHandle {
+        received_provider_batch(fixture, name, body, "lichess", since, Some(holds))
+    }
+
+    fn received_provider_batch(
+        fixture: &Fixture,
+        name: &str,
+        body: &str,
+        provider: &str,
+        since: Option<i64>,
+        holds: Option<&[crate::lichess::CoverageHold]>,
+    ) -> FileWorkspaceHandle {
         let root = fixture
             .service
             .root
@@ -156,10 +167,10 @@ mod native_tests {
             .record_download(
                 &fixture.state.pgn_path_authority,
                 file.clone(),
-                "lichess",
+                provider,
                 "player",
                 since,
-                Some(holds),
+                holds,
                 &CancellationToken::new(),
             )
             .unwrap();
@@ -7937,7 +7948,7 @@ mod native_tests {
     }
 
     #[test]
-    fn provider_export_returns_conflict_for_a_two_game_range() {
+    fn provider_export_records_receipt_for_a_two_game_range() {
         let fixture = Fixture::new();
         let batches = fixture
             .service
@@ -7961,7 +7972,7 @@ mod native_tests {
                 .unwrap()
                 .id,
         );
-        let error = fixture
+        fixture
             .service
             .record_download(
                 &fixture.state.pgn_path_authority,
@@ -7972,13 +7983,321 @@ mod native_tests {
                 None,
                 &CancellationToken::new(),
             )
-            .unwrap_err();
-        assert!(
-            matches!(
-                error,
-                Error::Conflict(ref message) if message == "provider export has an unindexable game"
-            ),
-            "expected unindexable-game conflict, got {error:?}"
+            .unwrap();
+        let mut guard = fixture.service.lock(&CancellationToken::new()).unwrap();
+        let receipt = CollectionService::state(&mut guard)
+            .unwrap()
+            .downloads
+            .last()
+            .unwrap();
+        assert_eq!(receipt.through_ms, 0);
+    }
+
+    async fn append_fixture_batch(
+        fixture: &Fixture,
+        id: Uuid,
+        input: FileWorkspaceHandle,
+    ) -> Result<batch::AppendOutcome, Error> {
+        Arc::clone(&fixture.service)
+            .append_batch(
+                fixture.state.pgn_path_authority.clone(),
+                id,
+                input,
+                CancellationToken::new(),
+            )
+            .await
+    }
+
+    fn account_fixture(body: &str) -> (Fixture, Uuid) {
+        let fixture = Fixture::new();
+        fixture.create("source", body, WorkspaceFileType::Game);
+        let collection = fixture.list().pop().unwrap();
+        fixture.account(&collection.id, "chesscom");
+        let id = Uuid::parse_str(&collection.id).unwrap();
+        (fixture, id)
+    }
+
+    fn assert_batch_complete(fixture: &Fixture, id: Uuid) {
+        assert!(fixture
+            .service
+            .record(id, &CancellationToken::new())
+            .unwrap()
+            .pending
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn account_batch_skips_drop_game_and_appends_normal_games() {
+        let (fixture, id) = account_fixture(&game(Some("100"), "e4 e5", "source"));
+        let body = format!(
+            "{}{}{}",
+            game(Some("101"), "d4 d5", "normal"),
+            game(Some("102"), "N@f3", "variant"),
+            game(Some("103"), "c4 c5", "normal")
+        );
+        let input = fixture.create("incoming", &body, WorkspaceFileType::Other);
+        let result = append_fixture_batch(&fixture, id, input).await.unwrap();
+        assert_eq!(result.appended, 2);
+        assert!(result.committed && result.index_ready);
+        let source = std::fs::read_to_string(fixture.path("source")).unwrap();
+        assert!(!source.contains("N@f3"));
+        assert_eq!(fixture.rows(&fixture.list().pop().unwrap()).len(), 3);
+        assert_batch_complete(&fixture, id);
+    }
+
+    #[tokio::test]
+    async fn account_source_preserves_omitted_game_verbatim() {
+        let original = format!(
+            "{}{}",
+            game(Some("100"), "N@f3", "variant"),
+            game(Some("101"), "e4 e5", "source")
+        );
+        let (fixture, id) = account_fixture(&original);
+        let input = fixture.create(
+            "incoming",
+            &game(Some("102"), "d4 d5", "new"),
+            WorkspaceFileType::Other,
+        );
+        assert_eq!(
+            append_fixture_batch(&fixture, id, input)
+                .await
+                .unwrap()
+                .appended,
+            1
+        );
+        assert!(std::fs::read(fixture.path("source"))
+            .unwrap()
+            .starts_with(original.as_bytes()));
+        let collection = fixture.list().pop().unwrap();
+        assert_eq!(collection.omitted, 1);
+        assert_eq!(fixture.rows(&collection).len(), 2);
+        assert_batch_complete(&fixture, id);
+    }
+
+    #[tokio::test]
+    async fn account_pending_variant_batch_recovers_through_own_input() {
+        let (mut fixture, id) = account_fixture(&game(Some("100"), "e4 e5", "source"));
+        let body = format!(
+            "{}{}",
+            game(Some("101"), "N@f3", "variant"),
+            game(Some("102"), "d4 d5", "new")
+        );
+        let input = fixture.create("incoming", &body, WorkspaceFileType::Other);
+        // Stage the durable state left by the old append failure, then restart and use Retry's input.
+        fixture
+            .service
+            .stage_batch(
+                &fixture.state.pgn_path_authority,
+                id,
+                input,
+                &CancellationToken::new(),
+            )
+            .unwrap();
+        fixture.restart();
+        let retry = fixture.list().pop().unwrap().pending_batch.unwrap();
+        assert_eq!(
+            append_fixture_batch(&fixture, id, retry)
+                .await
+                .unwrap()
+                .appended,
+            1
+        );
+        assert_batch_complete(&fixture, id);
+        let next = fixture.create(
+            "next",
+            &game(Some("103"), "c4 c5", "next"),
+            WorkspaceFileType::Other,
+        );
+        assert_eq!(
+            append_fixture_batch(&fixture, id, next)
+                .await
+                .unwrap()
+                .appended,
+            1
+        );
+        assert_batch_complete(&fixture, id);
+    }
+
+    #[tokio::test]
+    async fn omitted_source_id_suppresses_batch_before_legacy_revalidation() {
+        let (fixture, id) = account_fixture(&game(None, "e4 e5", "legacy"));
+        let known = game(Some("100"), "e4 e5", "known");
+        let input = fixture.create("first", &known, WorkspaceFileType::Other);
+        assert_eq!(
+            append_fixture_batch(&fixture, id, input)
+                .await
+                .unwrap()
+                .appended,
+            0
+        );
+        let evidence_row = || {
+            let record = fixture
+                .service
+                .record(id, &CancellationToken::new())
+                .unwrap();
+            let db = legacy::open(&fixture.service, &record).unwrap();
+            db.query_row("SELECT Provider,Account,ID,Binding,Generation,Ordinal,Stamp,Fingerprint FROM Evidence WHERE ID='100'", [], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, String>(3)?, row.get::<_, String>(4)?, row.get::<_, i64>(5)?, row.get::<_, String>(6)?, row.get::<_, String>(7)?))
+            }).unwrap()
+        };
+        let before = evidence_row();
+        let omitted = game(Some("100"), "N@f3", "now omitted");
+        std::fs::write(fixture.path("source"), &omitted).unwrap();
+        let body = format!("{}{}", known, game(Some("101"), "d4 d5", "new"));
+        let input = fixture.create("incoming", &body, WorkspaceFileType::Other);
+        assert_eq!(
+            append_fixture_batch(&fixture, id, input)
+                .await
+                .unwrap()
+                .appended,
+            1
+        );
+        assert_eq!(evidence_row(), before);
+        let result = std::fs::read_to_string(fixture.path("source")).unwrap();
+        assert!(result.starts_with(&omitted));
+        assert_eq!(result.matches("/live/100").count(), 1);
+        assert_eq!(fixture.list().pop().unwrap().omitted, 1);
+        assert_batch_complete(&fixture, id);
+    }
+
+    #[tokio::test]
+    async fn account_empty_receipt_batch_completes_and_advances_coverage() {
+        let (fixture, id) = account_fixture(&game(Some("100"), "e4 e5", "source"));
+        fixture.account(&id.to_string(), "lichess");
+        let original = std::fs::read(fixture.path("source")).unwrap();
+        let input = received_batch(&fixture, "empty.pgn", "", None, &[]);
+        let through_ms = {
+            let mut guard = fixture.service.lock(&CancellationToken::new()).unwrap();
+            CollectionService::state(&mut guard)
+                .unwrap()
+                .downloads
+                .iter()
+                .find(|receipt| receipt.file == input)
+                .unwrap()
+                .through_ms
+        };
+        let result = append_fixture_batch(&fixture, id, input).await.unwrap();
+        assert_eq!(result.appended, 0);
+        assert!(result.committed && result.index_ready);
+        assert_eq!(std::fs::read(fixture.path("source")).unwrap(), original);
+        assert_eq!(
+            fixture
+                .service
+                .record(id, &CancellationToken::new())
+                .unwrap()
+                .coverage_cursor_ms,
+            Some(through_ms)
+        );
+        assert_batch_complete(&fixture, id);
+    }
+
+    #[tokio::test]
+    async fn account_oversized_batch_range_completes_through_retry() {
+        let (fixture, id) = account_fixture(&game(Some("100"), "e4 e5", "source"));
+        // Keep lines below the scanner line limit while exceeding the bounded 10 MiB game read.
+        let oversized = game(Some("101"), "N@f3", &"padding\n".repeat(1_500_000));
+        let body = format!("{}{}", oversized, game(Some("102"), "d4 d5", "new"));
+        let input = fixture.create("incoming", &body, WorkspaceFileType::Other);
+        fixture
+            .service
+            .stage_batch(
+                &fixture.state.pgn_path_authority,
+                id,
+                input,
+                &CancellationToken::new(),
+            )
+            .unwrap();
+        let retry = fixture.list().pop().unwrap().pending_batch.unwrap();
+        assert_eq!(
+            append_fixture_batch(&fixture, id, retry)
+                .await
+                .unwrap()
+                .appended,
+            1
+        );
+        assert!(!std::fs::read_to_string(fixture.path("source"))
+            .unwrap()
+            .contains("padding"));
+        assert_batch_complete(&fixture, id);
+    }
+
+    #[tokio::test]
+    async fn unparsable_receipt_retains_ids_and_advances_coverage_after_append() {
+        let (fixture, id) = account_fixture("");
+        let variant = game(Some("100"), "N@f3", "variant").replace("2026.10.01", "2026.10.02");
+        let normal = game(Some("101"), "e4 e5", "normal");
+        let start = NaiveDate::from_ymd_opt(2026, 10, 1)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp_millis();
+        let input = received_provider_batch(
+            &fixture,
+            "mixed.pgn",
+            &format!("{variant}{normal}"),
+            "chesscom",
+            None,
+            None,
+        );
+        let result = append_fixture_batch(&fixture, id, input).await.unwrap();
+        assert_eq!(result.appended, 1);
+        assert_eq!(
+            fixture
+                .service
+                .record(id, &CancellationToken::new())
+                .unwrap()
+                .coverage_cursor_ms,
+            Some(start)
+        );
+        assert_batch_complete(&fixture, id);
+        let input = received_provider_batch(
+            &fixture,
+            "only-omitted.pgn",
+            &variant,
+            "chesscom",
+            Some(start),
+            None,
+        );
+        assert_eq!(
+            append_fixture_batch(&fixture, id, input)
+                .await
+                .unwrap()
+                .appended,
+            0
+        );
+        assert_eq!(
+            fixture
+                .service
+                .record(id, &CancellationToken::new())
+                .unwrap()
+                .coverage_cursor_ms,
+            Some(start)
+        );
+        assert_batch_complete(&fixture, id);
+    }
+
+    #[tokio::test]
+    async fn omitted_duplicate_id_does_not_hide_parsable_identity_conflict() {
+        let original = format!(
+            "{}{}",
+            game(Some("100"), "e4 e5", "valid"),
+            game(Some("100"), "N@f3", "variant")
+        );
+        let (fixture, id) = account_fixture(&original);
+        let body = game(Some("100"), "d4 d5", "conflicting");
+        let input = fixture.create("incoming", &body, WorkspaceFileType::Other);
+        assert!(matches!(
+            append_fixture_batch(&fixture, id, input).await,
+            Err(Error::Conflict(_))
+        ));
+        assert_eq!(
+            std::fs::read_to_string(fixture.path("source")).unwrap(),
+            original
+        );
+        assert_eq!(
+            std::fs::read_to_string(fixture.path("incoming")).unwrap(),
+            body
         );
     }
 }

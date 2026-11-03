@@ -1,4 +1,5 @@
 use super::*;
+use rusqlite::OptionalExtension;
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -74,36 +75,68 @@ fn append_absent(
     membership.execute_batch("CREATE TEMP TABLE Source(Ordinal INTEGER PRIMARY KEY,ID TEXT,Fingerprint TEXT NOT NULL,Stamp TEXT NOT NULL); CREATE INDEX SourceID ON Source(ID); CREATE INDEX SourceFingerprint ON Source(Fingerprint); CREATE TEMP TABLE Batch(Ordinal INTEGER PRIMARY KEY,ID TEXT,Fingerprint TEXT NOT NULL); CREATE INDEX BatchID ON Batch(ID); CREATE INDEX BatchFingerprint ON Batch(Fingerprint); CREATE TEMP TABLE Seen(ID TEXT PRIMARY KEY,Fingerprint TEXT NOT NULL);").map_err(batch_error)?;
     let transaction = membership.transaction().map_err(batch_error)?;
     if let Some(account) = account {
+        transaction
+            .execute_batch("CREATE TEMP TABLE Omitted(ID TEXT PRIMARY KEY);")
+            .map_err(batch_error)?;
         for (ordinal, range) in ranges.iter().enumerate() {
             cancellation_check(cancellation)?;
-            let bytes = pgn::read_range_bytes(source, *range, cancellation)?;
-            let game = parse_identity_game(&bytes)?;
+            let (bytes, game) = identity_range(source, *range, cancellation)?;
+            let id = readable_provider_game_id(&bytes, account)?;
+            let Some(game) = game else {
+                if let Some(id) = id {
+                    transaction
+                        .execute("INSERT OR IGNORE INTO Omitted VALUES(?)", [id])
+                        .map_err(batch_error)?;
+                }
+                continue;
+            };
             transaction
                 .execute(
                     "INSERT INTO Source VALUES(?,?,?,?)",
                     rusqlite::params![
                         ordinal as i64,
-                        provider_game_id(&bytes, account)?,
+                        id,
                         linked_semantic_fingerprint(&game, account)?,
                         pgn::game_stamp(&bytes)
                     ],
                 )
                 .map_err(batch_error)?;
         }
+        let mut skipped = 0usize;
         for (ordinal, range) in batch_ranges.iter().enumerate() {
             cancellation_check(cancellation)?;
-            let bytes = pgn::read_range_bytes(batch, *range, cancellation)?;
-            let game = parse_identity_game(&bytes)?;
+            let (bytes, game) = identity_range(batch, *range, cancellation)?;
+            let Some(game) = game else {
+                skipped += 1;
+                continue;
+            };
+            let id = provider_game_id(&bytes, account)?;
+            let suppressed: bool = transaction.query_row("SELECT EXISTS(SELECT 1 FROM Omitted WHERE ID=?1) AND NOT EXISTS(SELECT 1 FROM Source WHERE ID=?1)", [&id], |row| row.get(0)).map_err(batch_error)?;
+            if suppressed {
+                continue;
+            }
             transaction
                 .execute(
                     "INSERT INTO Batch VALUES(?,?,?)",
                     rusqlite::params![
                         ordinal as i64,
-                        provider_game_id(&bytes, account)?,
+                        id,
                         linked_semantic_fingerprint(&game, account)?
                     ],
                 )
                 .map_err(batch_error)?;
+        }
+        if skipped != 0 {
+            let pending = record
+                .pending
+                .as_ref()
+                .map_or_else(|| "none".to_owned(), |pending| pending.id.to_string());
+            log::info!(
+                "collection {} pending batch {} skipped {} unindexable batch games",
+                record.id,
+                pending,
+                skipped
+            );
         }
         // A legacy occurrence cannot be assigned between distinct known IDs, and conflicting
         // evidence for one known ID is never resolved by arrival order or timestamp.
@@ -120,13 +153,17 @@ fn append_absent(
         cancellation_check(cancellation)?;
         let mut absent = true;
         if account.is_some() {
-            let (id, fingerprint): (Option<String>, String) = transaction
+            let identity: Option<(Option<String>, String)> = transaction
                 .query_row(
                     "SELECT ID,Fingerprint FROM Batch WHERE Ordinal=?",
                     [ordinal as i64],
                     |row| Ok((row.get(0)?, row.get(1)?)),
                 )
+                .optional()
                 .map_err(batch_error)?;
+            let Some((id, fingerprint)) = identity else {
+                continue;
+            };
             if let Some(id) = &id {
                 let conflicts: i64 = transaction
                     .query_row(
@@ -184,15 +221,6 @@ fn append_range(
 ) -> Result<(), Error> {
     target.write_all(b"\n\n")?;
     pgn::copy_range(batch, target, range.start, range.end, cancellation)
-}
-
-fn parse_identity_game(bytes: &[u8]) -> Result<TempGame, Error> {
-    match pgn::read_one_range_game(&mut BufferedReader::new(bytes), &mut Importer::new(None))? {
-        pgn::RangeGame::One(Some(game)) => Ok(game),
-        pgn::RangeGame::One(None) | pgn::RangeGame::Empty | pgn::RangeGame::Remainder => {
-            Err(conflict())
-        }
-    }
 }
 
 impl CollectionService {
@@ -818,10 +846,22 @@ mod tests {
     }
 
     #[test]
-    fn parse_identity_game_returns_conflict_for_a_two_game_range() {
-        assert!(matches!(
-            parse_identity_game(b"1. e4 *\n\n1. d4 *\n"),
-            Err(Error::Conflict(_))
-        ));
+    fn identity_range_omits_two_games_and_accepts_one_game() {
+        for (bytes, usable) in [
+            (b"1. e4 *\n\n1. d4 *\n".as_slice(), false),
+            (b"1. e4 *\n".as_slice(), true),
+        ] {
+            let range = pgn::GameRange {
+                start: 0,
+                end: bytes.len() as u64,
+            };
+            let (_, game) = identity_range(
+                &mut std::io::Cursor::new(bytes),
+                range,
+                &CancellationToken::new(),
+            )
+            .unwrap();
+            assert_eq!(game.is_some(), usable);
+        }
     }
 }

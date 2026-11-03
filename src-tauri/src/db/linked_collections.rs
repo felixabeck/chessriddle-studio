@@ -880,21 +880,11 @@ impl CollectionService {
         let mut newest_start_ms = None;
         let mut provider_ids = HashSet::new();
         for range in ranges.iter() {
-            let body = pgn::read_range_bytes(&mut bytes, *range, token)?;
-            if let Some(id) = provider_game_id(&body, &account)? {
+            let (body, game) = identity_range(&mut bytes, *range, token)?;
+            if let Some(id) = readable_provider_game_id(&body, &account)? {
                 provider_ids.insert(id);
             }
-            let game = match pgn::read_one_range_game(
-                &mut BufferedReader::new(body.as_slice()),
-                &mut Importer::new(None),
-            )? {
-                pgn::RangeGame::One(Some(game)) => game,
-                pgn::RangeGame::One(None) | pgn::RangeGame::Empty | pgn::RangeGame::Remainder => {
-                    return Err(Error::Conflict(
-                        "provider export has an unindexable game".into(),
-                    ));
-                }
-            };
+            let Some(game) = game else { continue };
             if let Some((date, time)) = game.date.as_deref().zip(game.time.as_deref()) {
                 let date = NaiveDate::parse_from_str(date, "%Y.%m.%d")
                     .map_err(|_| Error::Conflict("provider game has an invalid date".into()))?;
@@ -2410,25 +2400,8 @@ impl CollectionService {
                     let mut omitted = 0;
                     for (ordinal, range) in ranges.iter().enumerate() {
                         cancellation_check(cancellation)?;
-                        let bytes = match pgn::read_range_bytes(&mut source, *range, cancellation) {
-                            Ok(bytes) => bytes,
-                            Err(Error::ResourceLimit(_)) => { omitted += 1; continue; }
-                            Err(error) => return Err(error),
-                        };
-                        let mut importer = Importer::new(None);
-                        let mut reader = BufferedReader::new(bytes.as_slice());
-                        let game = match pgn::read_one_range_game(&mut reader, &mut importer) {
-                            Ok(pgn::RangeGame::One(Some(game))) => game,
-                            // No game, a refused multi-game range, or a parse error omits this
-                            // range only; the bytes are in memory and cancellation is checked per range.
-                            Ok(pgn::RangeGame::One(None)
-                            | pgn::RangeGame::Empty
-                            | pgn::RangeGame::Remainder)
-                            | Err(_) => {
-                                omitted += 1;
-                                continue;
-                            }
-                        };
+                        let (bytes, game) = identity_range(&mut source, *range, cancellation)?;
+                        let Some(game) = game else { omitted += 1; continue; };
                         game.insert_to_db(db)?;
                         let ordinal = i32::try_from(ordinal).map_err(|_| Error::ResourceLimit("collection has too many games".into()))?;
                         sql_query("INSERT INTO LinkedSource(GameID,Ordinal,Stamp) VALUES(last_insert_rowid(),?,?)")
@@ -3413,6 +3386,41 @@ impl Visitor for IdentityHeaders {
     }
     fn end_game(&mut self) -> Self::Result {
         (self.site.take(), self.link.take())
+    }
+}
+
+/// Classify one bounded range for both identity processing and the search projection.
+/// Parser errors concern in-memory PGN bytes. File read errors remain fatal.
+fn identity_range(
+    source: &mut (impl Read + Seek),
+    range: pgn::GameRange,
+    cancellation: &CancellationToken,
+) -> Result<(Vec<u8>, Option<TempGame>), Error> {
+    cancellation_check(cancellation)?;
+    let bytes = match pgn::read_range_bytes(source, range, cancellation) {
+        Ok(bytes) => bytes,
+        Err(Error::ResourceLimit(_)) => return Ok((Vec::new(), None)),
+        Err(error) => return Err(error),
+    };
+    let game = match pgn::read_one_range_game(
+        &mut BufferedReader::new(bytes.as_slice()),
+        &mut Importer::new(None),
+    ) {
+        Ok(pgn::RangeGame::One(Some(game))) => Some(game),
+        _ => None,
+    };
+    cancellation_check(cancellation)?;
+    Ok((bytes, game))
+}
+
+// A malformed header can make the in-memory header reader fail too. It supplies no ID.
+fn readable_provider_game_id(
+    bytes: &[u8],
+    account: &AccountIdentity,
+) -> Result<Option<String>, Error> {
+    match provider_game_id(bytes, account) {
+        Err(Error::Io(_)) => Ok(None),
+        result => result,
     }
 }
 
