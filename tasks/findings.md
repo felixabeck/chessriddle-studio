@@ -20491,13 +20491,16 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 
 ### Restoring an item trashed from a subfolder puts it in the collection root
 
-* **ID:** f-20261101-31 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261101-31 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** build · **Blocked:** none
 * **Impact class:** ux
 * **Where:** `src-tauri/src/file_workspace.rs:2243` (bucket keeps only the leaf name), `:2335` (`let target = root.path().join(&source.leaf);`), `:2352-2358` (no-replace rename).
 * **Defect:** the original parent is never recorded; no decision records restore-to-root as intended.
 * **Failure scenario:** trash `Archive/Najdorf.pgn` and click Restore: it reappears as `<root>/Najdorf.pgn`; if the root already has `Najdorf.pgn`, restore fails with "name already used".
 * **Fix shape:** record the original parent locator at trash time and restore into it, falling back to the root only if it is gone.
 * **Found by:** cloud audit session session_01JbeKomYNAubvgDNCaEau2u (native security/accounts audit, base 301104da), verified against local HEAD by a Claude Code verifier subagent of session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+* **Tier revalidation (drain session a7d7a3cd, 2026-11-04):** inline → build. Confirmed against HEAD 188ec9a1: `restore_entry` (`src-tauri/src/file_workspace.rs:2311`) still targets `root.path().join(&source.leaf)` and `trash_entry` records only the leaf in a fresh UUID bucket, so the defect holds. The fix shape needs a design choice the entry does not settle: where the original parent lives (a native path-authority record field, a bucket-local origin record resolved descriptor-relatively under the root, or a renderer-supplied destination handle that changes the `restore_workspace_entry` signature and bindings), and how that interacts with f-20261101-28's open trash-ownership question (a native trash listing would need the same origin). Left out of the f-20261101-27 slice, whose plan named it as not part of the task.
+* **Open question:** where is a trashed entry's original parent recorded so restore can return it there (native authority record, bucket-local origin record, or a renderer-supplied parent handle), and should it be settled together with f-20261101-28's trash listing/purge design?
+<!-- ledger-meta {"command":"set-header","effect_lines":2,"effect_sha256":"63c63152dfe1d9757dcbb8c3972814a701ee95dd31a34a574ac8aa073411a805","header_sha256":"dfbb5c7ea49f7e0b681d106da19ac4022269668cddc583847f3633aa56206473","header_status":"open","input_sha256":"5b0be656aaa7948cc999ceab4e5e9559d1d3b027b21db2c6f0684e5422f8075f","kind":"mutation-receipt","operation":"5662056b843b21e4fda0fae1292ad033767f8ad173b2d48f0cb65950b606da27","options":{"headers":{"Entry":"build"},"section":null},"request_id_sha256":null,"results":["f-20261101-31"],"target":"f-20261101-31","v":1} -->
 
 ---
 
