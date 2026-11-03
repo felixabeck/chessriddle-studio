@@ -5670,6 +5670,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn request_download_response_preserves_headers_and_bearer_across_lichess_redirect() {
+        let mut caller_headers = HeaderMap::new();
+        caller_headers.insert(
+            reqwest::header::ACCEPT,
+            HeaderValue::from_static("application/x-ndjson"),
+        );
+        let mut redirect_headers = HeaderMap::new();
+        redirect_headers.insert(
+            reqwest::header::LOCATION,
+            HeaderValue::from_static("/api/coverage/next"),
+        );
+        let mock = MockTransport {
+            responses: Mutex::new(vec![
+                Ok(DownloadResponse {
+                    status: 302,
+                    headers: redirect_headers,
+                    content_length: None,
+                    stream: Box::pin(futures_util::stream::empty()),
+                }),
+                Ok(DownloadResponse {
+                    status: 200,
+                    headers: HeaderMap::new(),
+                    content_length: Some(0),
+                    stream: Box::pin(futures_util::stream::empty()),
+                }),
+            ]),
+            requests_seen: Mutex::new(vec![]),
+        };
+
+        let response = request_download_response(
+            reqwest::Url::parse("https://lichess.org/api/coverage").unwrap(),
+            caller_headers,
+            &mock,
+            Some("my_secret_token"),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(response.status, 200);
+        let requests = mock.requests_seen.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        for (_, headers) in requests.iter() {
+            assert_eq!(
+                headers.get(reqwest::header::ACCEPT).unwrap(),
+                "application/x-ndjson"
+            );
+            assert_eq!(
+                headers.get(reqwest::header::AUTHORIZATION).unwrap(),
+                "Bearer my_secret_token"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn test_download_file_cross_origin_token_stripping() {
         let mut file = tempfile::tempfile().unwrap();
         let cancellation = CancellationToken::new();
