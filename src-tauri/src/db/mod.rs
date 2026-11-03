@@ -694,6 +694,36 @@ impl Visitor for Importer {
 }
 
 #[cfg(test)]
+mod lexer {
+    use super::*;
+
+    #[test]
+    fn unvisited_default_callback_preserves_importer_result() {
+        let clean = "[Event \"Compatibility\"]\n\n1. e4 e5 2. Nf3 (2. Nc3) Nc6 *";
+        let reported = "[Event \"Compatibility\"]\n\n1. e4 e5 2. Nf9 $x + 12oops\n%escape\nNf3 (2. Nf9 Nc3) Nc6 * ;use } to close";
+        let parse = |pgn: &str| {
+            BufferedReader::new(pgn.as_bytes())
+                .read_game(&mut Importer::new(None))
+                .unwrap()
+                .unwrap()
+                .unwrap()
+        };
+        // The real importer inherits the new callback's no-op default. The
+        // malformed runs and line comments must not change its stored game.
+        let expected = parse(clean);
+        let actual = parse(reported);
+        assert_eq!(actual.event_name, expected.event_name);
+        assert_eq!(actual.moves, expected.moves);
+        assert_eq!(actual.position, expected.position);
+        assert_eq!(format!("{actual:?}"), format!("{expected:?}"));
+        assert!(crate::lexer::lex_pgn_sync(reported)
+            .unwrap()
+            .iter()
+            .any(|token| matches!(token, crate::lexer::Token::Unparsed(_))));
+    }
+}
+
+#[cfg(test)]
 struct DatabaseCommandCheckpoint {
     entered: std::sync::mpsc::SyncSender<()>,
     release: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,

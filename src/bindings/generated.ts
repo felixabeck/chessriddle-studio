@@ -1521,7 +1521,7 @@ export type SortDirection = "asc" | "desc"
 export type StampedGame = { pgn: string; stamp: string; revision: string; present: boolean; omission?: GameOmission | null; linked?: LinkedGameLocator | null }
 export type StartupPathOwners = { retainedIds: PathRef[]; trustedFamilies: PathOwnerFamily[] }
 export type TimeControl = { initialTime: bigint; increment: bigint }
-export type Token = { type: "ParenOpen" } | { type: "ParenClose" } | { type: "Comment"; value: string } | { type: "San"; value: string } | { type: "Header"; value: { tag: string; value: string } } | { type: "Nag"; value: string } | { type: "Outcome"; value: string }
+export type Token = { type: "ParenOpen" } | { type: "ParenClose" } | { type: "Comment"; value: string } | { type: "Unparsed"; value: string } | { type: "San"; value: string } | { type: "Header"; value: { tag: string; value: string } } | { type: "Nag"; value: string } | { type: "Outcome"; value: string }
 export type TournamentQuery = { options: QueryOptions<TournamentSort>; name: string | null }
 export type TournamentSort = "id" | "name"
 /**

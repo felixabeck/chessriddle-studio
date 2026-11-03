@@ -150,4 +150,4 @@ pub use shakmaty::{
     CastlingSide, Color, File, Outcome, Rank, Role, Square,
 };
 pub use types::{Nag, RawComment, RawHeader, Skip};
-pub use visitor::Visitor;
+pub use visitor::{UnvisitedKind, Visitor};

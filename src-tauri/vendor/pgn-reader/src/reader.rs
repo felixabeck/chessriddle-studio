@@ -11,7 +11,7 @@ use shakmaty::{
 // use slice_deque::SliceDeque;
 use crate::{
     types::{Nag, RawComment, RawHeader, Skip},
-    visitor::{SkipVisitor, Visitor},
+    visitor::{SkipVisitor, UnvisitedKind, Visitor},
 };
 
 const MIN_BUFFER_SIZE: usize = 8192;
@@ -239,6 +239,14 @@ trait ReadPgn {
     /// the newline stays so the enclosing movetext loop and the next
     /// `read_game` still see it. Percent lines keep their terminating newline.
     fn movetext_line_boundary(&mut self, end_on_blank: bool) -> Result<bool, Self::Err> {
+        self.movetext_line_boundary_with(end_on_blank, None::<&mut SkipVisitor>)
+    }
+
+    fn movetext_line_boundary_with<V: Visitor>(
+        &mut self,
+        end_on_blank: bool,
+        mut visitor: Option<&mut V>,
+    ) -> Result<bool, Self::Err> {
         self.fill_buffer_and_peek()?;
         let mut i = 1;
         loop {
@@ -254,7 +262,11 @@ trait ReadPgn {
                 }
                 b'%' => {
                     self.consume(i);
-                    self.skip_until(b'\n')?;
+                    if let Some(visitor) = visitor.as_deref_mut() {
+                        self.read_unvisited_line(visitor, UnvisitedKind::Discarded)?;
+                    } else {
+                        self.skip_until(b'\n')?;
+                    }
                     return Ok(false);
                 }
                 b'[' => return Ok(true),
@@ -274,13 +286,17 @@ trait ReadPgn {
     }
 
     fn take_outcome_after_one(&mut self) -> Option<Outcome> {
-        if self.buffer().starts_with(b"-0") {
-            self.consume(2);
+        self.take_outcome_after_one_at(0)
+    }
+
+    fn take_outcome_after_one_at(&mut self, start: usize) -> Option<Outcome> {
+        if self.buffer()[start..].starts_with(b"-0") {
+            self.consume(start + 2);
             Some(Outcome::Decisive {
                 winner: Color::White,
             })
-        } else if self.buffer().starts_with(b"/2-1/2") {
-            self.consume(6);
+        } else if self.buffer()[start..].starts_with(b"/2-1/2") {
+            self.consume(start + 6);
             Some(Outcome::Draw)
         } else {
             None
@@ -288,8 +304,12 @@ trait ReadPgn {
     }
 
     fn take_outcome_after_zero(&mut self) -> Option<Outcome> {
-        if self.buffer().starts_with(b"-1") {
-            self.consume(2);
+        self.take_outcome_after_zero_at(0)
+    }
+
+    fn take_outcome_after_zero_at(&mut self, start: usize) -> Option<Outcome> {
+        if self.buffer()[start..].starts_with(b"-1") {
+            self.consume(start + 2);
             Some(Outcome::Decisive {
                 winner: Color::Black,
             })
@@ -384,6 +404,31 @@ trait ReadPgn {
         end
     }
 
+    fn read_unvisited_line<V: Visitor>(
+        &mut self,
+        visitor: &mut V,
+        kind: UnvisitedKind,
+    ) -> Result<(), Self::Err> {
+        loop {
+            let newline = self.find_bounded(|bytes| memchr::memchr(b'\n', bytes))?;
+            let end = newline.unwrap_or(self.remaining());
+            let text = &self.buffer()[..end];
+            visitor.unvisited(kind, text.strip_suffix(b"\r").unwrap_or(text));
+            self.consume(end);
+            if newline.is_some() || self.fill_buffer_and_peek()?.is_none() {
+                return Ok(());
+            }
+        }
+    }
+
+    fn read_move_number_or_discarded<V: Visitor>(&mut self, visitor: &mut V) {
+        let end = self.find_token_end(1);
+        if !self.buffer()[..end].iter().all(u8::is_ascii_digit) {
+            visitor.unvisited(UnvisitedKind::Discarded, &self.buffer()[..end]);
+        }
+        self.consume(end);
+    }
+
     fn read_movetext<V: Visitor>(&mut self, visitor: &mut V) -> Result<(), Self::Err> {
         let mut depth = 0usize;
         let mut terminated = false;
@@ -407,36 +452,33 @@ trait ReadPgn {
                     self.consume(right_brace + 1);
                 }
                 b'\n' => {
-                    if self.movetext_line_boundary(terminated && depth == 0)? {
+                    if self.movetext_line_boundary_with(terminated && depth == 0, Some(visitor))? {
                         break;
                     }
                 }
                 b';' => {
                     self.bump();
-                    self.skip_until(b'\n')?;
+                    self.read_unvisited_line(visitor, UnvisitedKind::LineComment)?;
                 }
                 b'1' => {
-                    self.bump();
-                    if let Some(outcome) = self.take_outcome_after_one() {
+                    if let Some(outcome) = self.take_outcome_after_one_at(1) {
                         if depth == 0 {
                             terminated = true;
                         }
                         visitor.outcome(Some(outcome));
                     } else {
-                        let token_end = self.find_token_end(0);
-                        self.consume(token_end);
+                        self.read_move_number_or_discarded(visitor);
                     }
                 }
                 b'0' => {
-                    self.bump();
-                    if let Some(outcome) = self.take_outcome_after_zero() {
+                    if let Some(outcome) = self.take_outcome_after_zero_at(1) {
                         if depth == 0 {
                             terminated = true;
                         }
                         visitor.outcome(Some(outcome));
-                    } else if self.buffer().starts_with(b"-0") {
+                    } else if self.buffer().starts_with(b"0-0") {
                         // Castling notation with zeros.
-                        self.consume(2);
+                        self.consume(3);
                         let side = if self.buffer().starts_with(b"-0") {
                             self.consume(2);
                             CastlingSide::QueenSide
@@ -448,15 +490,18 @@ trait ReadPgn {
                             Some(b'#') => Some(Suffix::Checkmate),
                             _ => None,
                         };
+                        if suffix.is_some() {
+                            self.bump();
+                        }
                         visitor.san(SanPlus {
                             san: San::Castle(side),
                             suffix,
                         });
                     } else {
-                        let token_end = self.find_token_end(0);
-                        self.consume(token_end);
+                        self.read_move_number_or_discarded(visitor);
                     }
                 }
+                b'2'..=b'9' => self.read_move_number_or_discarded(visitor),
                 b'(' => {
                     self.bump();
                     depth += 1;
@@ -470,10 +515,11 @@ trait ReadPgn {
                     visitor.end_variation();
                 }
                 b'$' => {
-                    self.bump();
-                    let token_end = self.find_token_end(0);
-                    if let Ok(nag) = btoi::btou(&self.buffer()[..token_end]) {
+                    let token_end = self.find_token_end(1);
+                    if let Ok(nag) = btoi::btou(&self.buffer()[1..token_end]) {
                         visitor.nag(Nag(nag));
+                    } else {
+                        visitor.unvisited(UnvisitedKind::Discarded, &self.buffer()[..token_end]);
                     }
                     self.consume(token_end);
                 }
@@ -524,7 +570,11 @@ trait ReadPgn {
                     if ch > b'9' || ch == b'-' {
                         if let Ok(san) = SanPlus::from_ascii(&self.buffer()[..token_end]) {
                             visitor.san(san);
+                        } else {
+                            visitor.unvisited(UnvisitedKind::Discarded, &self.buffer()[..token_end]);
                         }
+                    } else {
+                        visitor.unvisited(UnvisitedKind::Discarded, &self.buffer()[..token_end]);
                     }
                     self.consume(token_end);
                 }

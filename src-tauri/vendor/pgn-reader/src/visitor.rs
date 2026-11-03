@@ -2,6 +2,15 @@ use shakmaty::{san::SanPlus, Outcome};
 
 use crate::types::{Nag, RawComment, RawHeader, Skip};
 
+/// Movetext consumed without a SAN, NAG, outcome or brace-comment callback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnvisitedKind {
+    /// A semicolon comment, excluding the semicolon and line ending.
+    LineComment,
+    /// Content that the reader could not otherwise interpret.
+    Discarded,
+}
+
 /// Consumes games from a reader.
 ///
 /// ![Flow](https://github.com/niklasf/rust-pgn-reader/blob/master/docs/visitor.png?raw=true)
@@ -29,6 +38,10 @@ pub trait Visitor {
     fn nag(&mut self, _nag: Nag) {}
     /// Called for each `{ comment }`.
     fn comment(&mut self, _comment: RawComment<'_>) {}
+    /// Called for non-layout movetext otherwise consumed silently. Skipped
+    /// games and variations are not reported. Lines longer than the token
+    /// buffer limit may be reported in successive runs.
+    fn unvisited(&mut self, _kind: UnvisitedKind, _text: &[u8]) {}
     /// Called for each `(`. May skip over the following variation directly
     /// to [`end_variation()`](trait.Visitor.html#method.end_variation) (or to
     /// [`end_game()`](trait.Visitor.html#tymethod.end_game) if no matching `)`

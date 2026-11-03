@@ -1,4 +1,4 @@
-use pgn_reader::{BufferedReader, Nag, RawHeader, SanPlus, Skip, Visitor};
+use pgn_reader::{BufferedReader, Nag, RawHeader, SanPlus, Skip, UnvisitedKind, Visitor};
 use serde::Serialize;
 use specta::Type;
 use tokio_util::sync::CancellationToken;
@@ -32,6 +32,7 @@ pub enum Token {
     ParenOpen,
     ParenClose,
     Comment(String),
+    Unparsed(String),
     San(String),
     Header { tag: String, value: String },
     Nag(String),
@@ -126,6 +127,17 @@ impl Visitor for Lexer {
         }
     }
 
+    fn unvisited(&mut self, kind: UnvisitedKind, text: &[u8]) {
+        if self.check_cancellation() {
+            return;
+        }
+        let value = String::from_utf8_lossy(text).into_owned();
+        self.tokens.push(match kind {
+            UnvisitedKind::LineComment if !text.contains(&b'}') => Token::Comment(value),
+            _ => Token::Unparsed(value),
+        });
+    }
+
     fn end_game(&mut self) -> Self::Result {
         if self.check_cancellation() {
             return Err(Error::Cancellation);
@@ -213,6 +225,148 @@ pub async fn lex_pgn(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn malformed_san_is_reported_in_order_also_inside_variations() {
+        for (pgn, variation) in [
+            ("1. e4 e5 2. Nf9 Nc6 *", false),
+            ("1. e4 (1. e4 e5 2. Nf9 Nc6) *", true),
+        ] {
+            let mut expected = vec![Token::San("e4".into())];
+            if variation {
+                expected.extend([Token::ParenOpen, Token::San("e4".into())]);
+            }
+            expected.extend([
+                Token::San("e5".into()),
+                Token::Unparsed("Nf9".into()),
+                Token::San("Nc6".into()),
+            ]);
+            if variation {
+                expected.push(Token::ParenClose);
+            }
+            expected.push(Token::Outcome("*".into()));
+            assert_eq!(lex_pgn_sync(pgn).unwrap(), expected, "{pgn}");
+        }
+    }
+
+    #[test]
+    fn discarded_movetext_runs_keep_their_text() {
+        for text in ["$x", "$256", "$", "+", "#", "12oops", "0oops", "2oops"] {
+            let pgn = format!("1. e4 {text} e5 *");
+            assert_eq!(
+                lex_pgn_sync(&pgn).unwrap(),
+                vec![
+                    Token::San("e4".into()),
+                    Token::Unparsed(text.into()),
+                    Token::San("e5".into()),
+                    Token::Outcome("*".into()),
+                ],
+                "{pgn}"
+            );
+        }
+    }
+
+    #[test]
+    fn percent_escape_line_inside_movetext_is_reported() {
+        for newline in ["\n", "\r\n"] {
+            let pgn = format!("1. e4{newline}  %unparsed text{newline}e5 *");
+            assert_eq!(
+                lex_pgn_sync(&pgn).unwrap(),
+                vec![
+                    Token::San("e4".into()),
+                    Token::Unparsed("%unparsed text".into()),
+                    Token::San("e5".into()),
+                    Token::Outcome("*".into()),
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn semicolon_comments_are_kept_unless_brace_serialization_would_lose_text() {
+        for newline in ["", "\n", "\r\n"] {
+            assert_eq!(
+                lex_pgn_sync(&format!("1. e4 e5 1-0 ;White won on time{newline}")).unwrap(),
+                vec![
+                    Token::San("e4".into()),
+                    Token::San("e5".into()),
+                    Token::Outcome("1-0".into()),
+                    Token::Comment("White won on time".into()),
+                ]
+            );
+            assert_eq!(
+                lex_pgn_sync(&format!("1. e4 * ;use }} to close{newline}")).unwrap(),
+                vec![
+                    Token::San("e4".into()),
+                    Token::Outcome("*".into()),
+                    Token::Unparsed("use } to close".into()),
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn zero_castling_consumes_its_suffix_without_unparsed_tokens() {
+        let fen = "5k2/8/8/8/8/8/8/4K2R w K - 0 1";
+        for (notation, san) in [("0-0+", "O-O+"), ("0-0-0#", "O-O-O#")] {
+            assert_eq!(
+                lex_pgn_sync(&format!("[FEN \"{fen}\"] 1. {notation} *")).unwrap(),
+                vec![
+                    Token::Header {
+                        tag: "FEN".into(),
+                        value: fen.into(),
+                    },
+                    Token::San(san.into()),
+                    Token::Outcome("*".into()),
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn ordinary_game_layout_does_not_change_the_token_stream() {
+        assert_eq!(
+            lex_pgn_sync("[Event \"Layout\"]\r\n\r\n1. Pe4 1... Pe5\r\n2. Nf3 Nc6 *").unwrap(),
+            vec![
+                Token::Header {
+                    tag: "Event".into(),
+                    value: "Layout".into(),
+                },
+                Token::San("e4".into()),
+                Token::San("e5".into()),
+                Token::San("Nf3".into()),
+                Token::San("Nc6".into()),
+                Token::Outcome("*".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn unvisited_callback_decodes_lossy_utf8_and_pushes_nothing_after_cancellation() {
+        let cancellation = CancellationToken::new();
+        let mut lexer = Lexer {
+            tokens: Vec::new(),
+            cancellation: Some(cancellation.clone()),
+            cancelled: false,
+        };
+        for kind in [UnvisitedKind::LineComment, UnvisitedKind::Discarded] {
+            lexer.unvisited(kind, b"text\xff");
+        }
+        assert_eq!(
+            lexer.tokens,
+            vec![
+                Token::Comment("text\u{fffd}".into()),
+                Token::Unparsed("text\u{fffd}".into())
+            ]
+        );
+        lexer.tokens.clear();
+        cancellation.cancel();
+        lexer.unvisited(UnvisitedKind::LineComment, b"comment");
+        lexer.unvisited(UnvisitedKind::LineComment, b"use } to close");
+        lexer.unvisited(UnvisitedKind::Discarded, b"Nf9");
+        assert!(lexer.tokens.is_empty());
+        assert!(matches!(lexer.end_game(), Err(Error::Cancellation)));
+    }
 
     #[test]
     fn long_token_lex_returns_full_comment() {

@@ -73,6 +73,20 @@ is unchanged. Future upgrades must keep this with the crate's raw-header
 decode test and the application's
 imported_consecutive_escaped_backslashes_keep_every_backslash regression.
 
+Movetext now calls Visitor::unvisited with UnvisitedKind::LineComment for
+semicolon comment text (excluding the semicolon and line ending), and
+UnvisitedKind::Discarded for failed SAN/NAG tokens, low-character tokens,
+digit-led non-move-numbers and percent escape lines inside movetext. Layout,
+including move numbers, dots and pawn prefixes, is not reported. The default
+callback is a no-op, preserving existing visitors. The kind is exported from
+lib.rs. The shared newline lookahead reports escape lines only for normal
+movetext, with skip_movetext and skip_variation unchanged. Line reporting retains
+bytes up to the existing token buffer cap and reports longer lines in successive
+runs without rejecting bytes previously accepted by the reader. Zero-based
+castling now consumes its check/checkmate suffix as part of the SAN callback.
+Future upgrades must preserve this reporting with the application's lexer
+regressions and the importer default-callback compatibility regression.
+
 Gate scope: cargo fmt formats the app package only (no --all); backend LCOV
 exports only src-tauri/src/**/*.rs and ratchets that same scope; cargo-mutants
 selects explicit application source files; rust:surface:check scans only
