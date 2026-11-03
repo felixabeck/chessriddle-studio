@@ -1108,15 +1108,17 @@ function addAnalysis(
                         const parsedBestMove = parseUci(bestMoveUci);
                         if (parsedBestMove) {
                             const bestMove = normalizeMove(parentPos, parsedBestMove);
-                            const existingChild = parent.children.find(
-                                (c) =>
-                                    c.move &&
-                                    isNormal(c.move) &&
+                            const existingChild = parent.children.find((c) => {
+                                if (!c.move) return false;
+                                const childMove = normalizeMove(parentPos, c.move);
+                                return (
+                                    isNormal(childMove) &&
                                     isNormal(bestMove) &&
-                                    c.move.from === bestMove.from &&
-                                    c.move.to === bestMove.to &&
-                                    c.move.promotion === bestMove.promotion,
-                            );
+                                    childMove.from === bestMove.from &&
+                                    childMove.to === bestMove.to &&
+                                    childMove.promotion === bestMove.promotion
+                                );
+                            });
 
                             if (!existingChild) {
                                 const san = makeSan(parentPos, bestMove);

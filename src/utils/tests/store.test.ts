@@ -627,6 +627,22 @@ test("addAnalysis does not duplicate an existing SAN castling child", () => {
     expect(parent.children).toHaveLength(1);
 });
 
+test("addAnalysis does not duplicate an existing raw UCI castling child", () => {
+    store.getState().setFen(castlingFen);
+    store.getState().makeMove({ payload: parseUci("e1g1")! });
+    expect(store.getState().root.children[0].move).toEqual(parseUci("e1g1"));
+
+    store.getState().addAnalysis([line(0, "O-O", "e1g1"), line(-400, "a6", "a7a6")], {
+        showVariations: true,
+    });
+
+    const parent = store.getState().root;
+    expect(parent.children[0].nags).toContain(4);
+    expect(parent.children.filter((child) => child.san === "O-O")).toHaveLength(1);
+    expect(parent.children).toHaveLength(1);
+    expect(parent.children[0].move).toEqual(parseUci("e1g1"));
+});
+
 test("addAnalysis stores SAN-normalized castling moves throughout a generated PV", () => {
     store.getState().setFen(castlingFen);
     store.getState().makeMove({ payload: "a3" });
