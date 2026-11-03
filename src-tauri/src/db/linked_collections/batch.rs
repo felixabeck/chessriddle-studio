@@ -102,6 +102,7 @@ fn append_absent(
                 )
                 .map_err(batch_error)?;
         }
+        legacy::revalidate_source(&transaction, account, &binding, generation)?;
         let mut skipped = 0usize;
         for (ordinal, range) in batch_ranges.iter().enumerate() {
             cancellation_check(cancellation)?;
@@ -111,8 +112,10 @@ fn append_absent(
                 continue;
             };
             let id = provider_game_id(&bytes, account)?;
-            let suppressed: bool = transaction.query_row("SELECT EXISTS(SELECT 1 FROM Omitted WHERE ID=?1) AND NOT EXISTS(SELECT 1 FROM Source WHERE ID=?1)", [&id], |row| row.get(0)).map_err(batch_error)?;
-            if suppressed {
+            // An ID carried only by omitted source games is already present. Check after
+            // restoration so a parsable occurrence restored from Evidence keeps its identity check.
+            let present_only_in_omitted_source: bool = transaction.query_row("SELECT EXISTS(SELECT 1 FROM Omitted WHERE ID=?1) AND NOT EXISTS(SELECT 1 FROM Source WHERE ID=?1)", [&id], |row| row.get(0)).map_err(batch_error)?;
+            if present_only_in_omitted_source {
                 continue;
             }
             transaction
@@ -140,7 +143,7 @@ fn append_absent(
         }
         // A legacy occurrence cannot be assigned between distinct known IDs, and conflicting
         // evidence for one known ID is never resolved by arrival order or timestamp.
-        legacy::revalidate(&transaction, account, &binding, generation)?;
+        legacy::check_affected_evidence(&transaction, account)?;
         let ambiguous: i64 = transaction.query_row("SELECT (SELECT count(*) FROM (SELECT ID FROM Batch WHERE ID IS NOT NULL GROUP BY ID HAVING count(DISTINCT Fingerprint)>1)) + (SELECT count(*) FROM (SELECT ID FROM Source WHERE ID IS NOT NULL GROUP BY ID HAVING count(DISTINCT Fingerprint)>1)) + (SELECT count(*) FROM (SELECT Fingerprint FROM Source WHERE ID IS NULL AND EXISTS (SELECT 1 FROM Batch WHERE Batch.Fingerprint=Source.Fingerprint) GROUP BY Fingerprint HAVING count(*)>1)) + (SELECT count(*) FROM (SELECT Batch.Fingerprint FROM Batch JOIN Source ON Batch.Fingerprint=Source.Fingerprint WHERE Source.ID IS NULL GROUP BY Batch.Fingerprint HAVING count(DISTINCT Batch.ID)>1)) + (SELECT count(*) FROM Batch WHERE ID IS NOT NULL AND NOT EXISTS (SELECT 1 FROM Source WHERE Source.ID=Batch.ID) AND EXISTS (SELECT 1 FROM Source WHERE Source.Fingerprint=Batch.Fingerprint AND Source.ID IS NULL) AND EXISTS (SELECT 1 FROM Source WHERE Source.Fingerprint=Batch.Fingerprint AND Source.ID IS NOT NULL))", [], |row| row.get(0)).map_err(batch_error)?;
         if ambiguous != 0 {
             return Err(conflict());

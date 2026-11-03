@@ -891,7 +891,7 @@ mod tests {
 
     #[tokio::test]
     async fn staging_keeps_only_supported_rules_and_absent_rules() {
-        let archive = br#"{"games":[{"rules":"chess","pgn":"[Event \"standard\"]\n\n1. e4 e5 *\n"},{"rules":"chess960","pgn":"[Event \"chess960\"]\n\n1. d4 d5 *\n"},{"rules":"crazyhouse","pgn":"[Event \"crazyhouse\"]\n\n1. N@f3 *\n"},{"rules":"bughouse","pgn":"[Event \"bughouse\"]\n\n1. P@e4 *\n"},{"pgn":"[Event \"absent-rules\"]\n\n1. c4 c5 *\n"}]}"#;
+        let archive = br#"{"games":[{"rules":"chess","pgn":"[Event \"standard\"]\n\n1. e4 e5 *\n"},{"rules":"chess960","pgn":"[Event \"chess960\"]\n\n1. d4 d5 *\n"},{"rules":"crazyhouse","pgn":"[Event \"crazyhouse\"]\n\n1. N@f3 *\n"},{"rules":"bughouse","pgn":"[Event \"bughouse\"]\n\n1. P@e4 *\n"},{"rules":"kingofthehill","pgn":"[Event \"kingofthehill\"]\n\n1. e4 e5 *\n"},{"pgn":"[Event \"absent-rules\"]\n\n1. c4 c5 *\n"}]}"#;
         let transport = Arc::new(ExportTransport {
             responses: Mutex::new(VecDeque::from([response(INDEX), response(archive)])),
         });
@@ -916,7 +916,7 @@ mod tests {
         ] {
             assert!(staged.contains(expected), "missing staged game: {expected}");
         }
-        for excluded in ["crazyhouse", "N@f3", "bughouse", "P@e4"] {
+        for excluded in ["crazyhouse", "N@f3", "bughouse", "P@e4", "kingofthehill"] {
             assert!(
                 !staged.contains(excluded),
                 "staged excluded game: {excluded}"

@@ -52,9 +52,9 @@ pub(super) fn binding(record: &Record) -> Result<String, Error> {
         .map_err(|_| Error::StaleGame)
 }
 
-/// Revalidate every assignment against this scan. Invalid evidence is retained and only blocks
-/// incoming identities it affects. Exact unique bytes or unique semantics survive annotations.
-pub(super) fn revalidate(
+/// Revalidate every assignment against Source and restore its IDs before loading Batch.
+/// Exact unique bytes or unique semantics survive annotations. Invalid evidence is retained.
+pub(super) fn revalidate_source(
     db: &rusqlite::Transaction<'_>,
     account: &AccountIdentity,
     binding: &str,
@@ -68,12 +68,20 @@ pub(super) fn revalidate(
     // agree with the stored semantics. ID-less occurrences still require the original binding.
     db.execute("INSERT INTO Valid SELECT e.ID,s.Ordinal FROM Evidence e JOIN Source s ON s.ID=e.ID AND s.Fingerprint=e.Fingerprint WHERE e.Provider=?1 AND e.Account=?2 AND (SELECT count(*) FROM Source x WHERE x.ID=e.ID)=1", rusqlite::params![account.provider, account.account]).map_err(batch::batch_error)?;
     db.execute("INSERT INTO Valid SELECT e.ID,s.Ordinal FROM Evidence e JOIN Source s ON s.Fingerprint=e.Fingerprint AND (s.ID IS NULL OR s.ID=e.ID) WHERE e.Provider=?1 AND e.Account=?2 AND e.Binding=?3 AND NOT EXISTS(SELECT 1 FROM Valid v WHERE v.ID=e.ID) AND ((s.Stamp=e.Stamp AND (SELECT count(*) FROM Source x WHERE x.Stamp=e.Stamp AND x.Fingerprint=e.Fingerprint AND (x.ID IS NULL OR x.ID=e.ID))=1) OR ((SELECT count(*) FROM Source x WHERE x.Stamp=e.Stamp AND x.Fingerprint=e.Fingerprint AND (x.ID IS NULL OR x.ID=e.ID))=0 AND (SELECT count(*) FROM Source x WHERE x.Fingerprint=e.Fingerprint AND (x.ID IS NULL OR x.ID=e.ID))=1))", rusqlite::params![account.provider, account.account, binding]).map_err(|error| { log::warn!("legacy identity revalidation conflict: {error}"); batch::conflict() })?;
+    db.execute("UPDATE Evidence SET Binding=?1,Generation=?2,Ordinal=(SELECT Ordinal FROM Valid WHERE Valid.ID=Evidence.ID),Stamp=(SELECT Source.Stamp FROM Source JOIN Valid ON Source.Ordinal=Valid.Ordinal WHERE Valid.ID=Evidence.ID) WHERE Provider=?3 AND Account=?4 AND ID IN (SELECT ID FROM Valid)", rusqlite::params![binding, generation, account.provider, account.account]).map_err(batch::batch_error)?;
+    db.execute_batch("UPDATE Source SET ID=(SELECT ID FROM Valid WHERE Valid.Ordinal=Source.Ordinal) WHERE Ordinal IN (SELECT Ordinal FROM Valid)").map_err(batch::batch_error)?;
+    Ok(())
+}
+
+/// Invalid evidence only blocks incoming identities it affects after Batch suppression.
+pub(super) fn check_affected_evidence(
+    db: &rusqlite::Transaction<'_>,
+    account: &AccountIdentity,
+) -> Result<(), Error> {
     let affected: i64 = db.query_row("SELECT count(*) FROM Evidence e JOIN Batch b ON (b.ID=e.ID OR b.Fingerprint=e.Fingerprint) WHERE e.Provider=? AND e.Account=? AND NOT EXISTS(SELECT 1 FROM Valid v WHERE v.ID=e.ID)", rusqlite::params![account.provider, account.account], |row| row.get(0)).map_err(batch::batch_error)?;
     if affected != 0 {
         return Err(batch::conflict());
     }
-    db.execute("UPDATE Evidence SET Binding=?1,Generation=?2,Ordinal=(SELECT Ordinal FROM Valid WHERE Valid.ID=Evidence.ID),Stamp=(SELECT Source.Stamp FROM Source JOIN Valid ON Source.Ordinal=Valid.Ordinal WHERE Valid.ID=Evidence.ID) WHERE Provider=?3 AND Account=?4 AND ID IN (SELECT ID FROM Valid)", rusqlite::params![binding, generation, account.provider, account.account]).map_err(batch::batch_error)?;
-    db.execute_batch("UPDATE Source SET ID=(SELECT ID FROM Valid WHERE Valid.Ordinal=Source.Ordinal) WHERE Ordinal IN (SELECT Ordinal FROM Valid)").map_err(batch::batch_error)?;
     Ok(())
 }
 

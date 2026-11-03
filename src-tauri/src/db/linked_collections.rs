@@ -3389,6 +3389,9 @@ impl Visitor for IdentityHeaders {
     }
 }
 
+// Oversized games still expose provider headers through a bounded 1 MiB prefix.
+const MAX_IDENTITY_PREFIX_BYTES: u64 = 1024 * 1024;
+
 /// Classify one bounded range for both identity processing and the search projection.
 /// Parser errors concern in-memory PGN bytes. File read errors remain fatal.
 fn identity_range(
@@ -3399,7 +3402,15 @@ fn identity_range(
     cancellation_check(cancellation)?;
     let bytes = match pgn::read_range_bytes(source, range, cancellation) {
         Ok(bytes) => bytes,
-        Err(Error::ResourceLimit(_)) => return Ok((Vec::new(), None)),
+        Err(Error::ResourceLimit(_)) => {
+            let prefix = pgn::GameRange {
+                start: range.start,
+                end: range
+                    .end
+                    .min(range.start.saturating_add(MAX_IDENTITY_PREFIX_BYTES)),
+            };
+            return Ok((pgn::read_range_bytes(source, prefix, cancellation)?, None));
+        }
         Err(error) => return Err(error),
     };
     let game = match pgn::read_one_range_game(

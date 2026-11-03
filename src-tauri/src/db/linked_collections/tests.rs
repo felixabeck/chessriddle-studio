@@ -8278,6 +8278,145 @@ mod native_tests {
     }
 
     #[tokio::test]
+    async fn omitted_duplicate_does_not_hide_restored_legacy_identity_conflict() -> Result<(), Error>
+    {
+        let legacy_game = game(None, "e4 e5", "legacy");
+        let (fixture, id) = account_fixture(&legacy_game);
+        let first = fixture.create(
+            "first",
+            &game(Some("100"), "e4 e5", "known"),
+            WorkspaceFileType::Other,
+        );
+        assert_eq!(append_fixture_batch(&fixture, id, first).await?.appended, 0);
+        let record = fixture.service.record(id, &CancellationToken::new())?;
+        let evidence = legacy::open(&fixture.service, &record)?;
+        let assigned: i64 = evidence
+            .query_row("SELECT count(*) FROM Evidence WHERE ID='100'", [], |row| {
+                row.get(0)
+            })
+            .map_err(batch::batch_error)?;
+        assert_eq!(assigned, 1);
+        drop(evidence);
+        let original = format!("{}{}", legacy_game, game(Some("100"), "N@f3", "variant"));
+        std::fs::write(fixture.path("source"), &original)?;
+        let body = game(Some("100"), "d4 d5", "conflicting");
+        let input = fixture.create("incoming", &body, WorkspaceFileType::Other);
+        let result = append_fixture_batch(&fixture, id, input).await;
+        assert!(
+            matches!(result, Err(Error::Conflict(ref message)) if message == "game identities require reconciliation, the collection and downloaded batch have been preserved")
+        );
+        assert_eq!(std::fs::read(fixture.path("source"))?, original.as_bytes());
+        assert_eq!(std::fs::read(fixture.path("incoming"))?, body.as_bytes());
+        Ok(())
+    }
+
+    async fn check_oversized_source_id_is_present(prior_evidence: bool) -> Result<(), Error> {
+        let original = game(Some("100"), "e4 e5", "known");
+        let source = if prior_evidence {
+            game(None, "e4 e5", "legacy")
+        } else {
+            original.clone()
+        };
+        let (fixture, id) = account_fixture(&source);
+        if prior_evidence {
+            let first = fixture.create("first", &original, WorkspaceFileType::Other);
+            assert_eq!(append_fixture_batch(&fixture, id, first).await?.appended, 0);
+            let record = fixture.service.record(id, &CancellationToken::new())?;
+            let evidence = legacy::open(&fixture.service, &record)?;
+            let assigned: i64 = evidence
+                .query_row("SELECT count(*) FROM Evidence WHERE ID='100'", [], |row| {
+                    row.get(0)
+                })
+                .map_err(batch::batch_error)?;
+            assert_eq!(assigned, 1);
+        }
+        // Short comment lines exceed the 10 MiB range limit without exceeding the line limit.
+        let oversized = game(Some("100"), "e4 e5", &"padding\n".repeat(1_500_000));
+        let source = format!("{}{}", oversized, game(Some("101"), "c4 c5", "normal"));
+        std::fs::write(fixture.path("source"), &source)?;
+        let body = format!("{}{}", original, game(Some("102"), "d4 d5", "new"));
+        let input = fixture.create("incoming", &body, WorkspaceFileType::Other);
+        let pending = fixture.service.stage_batch(
+            &fixture.state.pgn_path_authority,
+            id,
+            input,
+            &CancellationToken::new(),
+        )?;
+        let retry = pending.owned_source.ok_or_else(batch::conflict)?;
+        assert_eq!(append_fixture_batch(&fixture, id, retry).await?.appended, 1);
+        let result = std::fs::read_to_string(fixture.path("source"))?;
+        assert!(result.starts_with(&source));
+        assert_eq!(result.matches("/live/100").count(), 1);
+        assert_eq!(result.matches("/live/102").count(), 1);
+        let collection = fixture.list().pop().ok_or_else(batch::conflict)?;
+        assert_eq!(collection.omitted, 1);
+        assert_eq!(fixture.rows(&collection).len(), 2);
+        assert_batch_complete(&fixture, id);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn oversized_source_id_suppresses_batch_duplicate() -> Result<(), Error> {
+        check_oversized_source_id_is_present(false).await
+    }
+
+    #[tokio::test]
+    async fn oversized_source_id_with_prior_evidence_allows_retry() -> Result<(), Error> {
+        check_oversized_source_id_is_present(true).await
+    }
+
+    #[tokio::test]
+    async fn omitted_lichess_receipt_retains_finished_hold_id() -> Result<(), Error> {
+        for oversized in [false, true] {
+            let (fixture, id) = account_fixture("");
+            fixture.account(&id.to_string(), "lichess");
+            let variant = if oversized {
+                game(None, "e4 e5", &"padding\n".repeat(1_500_000))
+            } else {
+                game(None, "N@f3", "variant")
+            }
+            .replace("https://www.chess.com", "https://lichess.org/Omitted1");
+            let normal = game(None, "e4 e5", "normal")
+                .replace("https://www.chess.com", "https://lichess.org/Normal01");
+            let start = NaiveDate::from_ymd_opt(2026, 10, 1)
+                .and_then(|date| date.and_hms_opt(12, 0, 0))
+                .ok_or_else(batch::conflict)?
+                .and_utc()
+                .timestamp_millis();
+            let hold = crate::lichess::CoverageHold {
+                id: "Omitted1".into(),
+                created_at_ms: start - 86_400_000,
+                ongoing: false,
+            };
+            let input = received_batch(
+                &fixture,
+                "mixed.pgn",
+                &format!("{variant}{normal}"),
+                None,
+                &[hold],
+            );
+            {
+                let mut guard = fixture.service.lock(&CancellationToken::new())?;
+                let receipt = CollectionService::state(&mut guard)?
+                    .downloads
+                    .last()
+                    .ok_or_else(batch::conflict)?;
+                assert_eq!(receipt.through_ms, start, "oversized={oversized}");
+            }
+            assert_eq!(append_fixture_batch(&fixture, id, input).await?.appended, 1);
+            assert_eq!(
+                fixture
+                    .service
+                    .record(id, &CancellationToken::new())?
+                    .coverage_cursor_ms,
+                Some(start)
+            );
+            assert_batch_complete(&fixture, id);
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn omitted_duplicate_id_does_not_hide_parsable_identity_conflict() {
         let original = format!(
             "{}{}",
