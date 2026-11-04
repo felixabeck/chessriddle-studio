@@ -11869,3 +11869,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Only the map gives one atomic map write per delete with no migration of existing decks. Reversal path: drop the map leaf; with no map every file falls back to identity mapping.
 * **Decided by:** drain session 7e119598 (planner run, 5 plan-review rounds, approved; adopted by f35f888f), 2026-11-04 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"cdb19f9bffb1e27ece7f680b5c109cd8ca47489c85faea3c4e759327120c3287","input_sha256":"94c27f1fe20667247bd5c1a8de75ab0ba2ffb211848a6f6ab95daf99bd5bc26c","kind":"mutation-receipt","operation":"b3e9e5e28fbff3747731aa331d9be31b4f3acb584d1fbf41b6f553ed7f858b4d","options":{"section":null},"request_id_sha256":null,"results":["d-20261104-13"],"target":"decisions-ledger","v":1} -->
+
+### d-20261104-14 — Does an automatic practice sync that drops most of a deck ask first?
+
+* **Question:** Should an automatic sync that would drop most of a non-empty deck ask for confirmation (f-20261101-17 backstop question)?
+* **Governs:** f-20261101-17
+* **Chosen:** No prompt. syncDeck is unchanged.
+* **Rejected:** A confirmation when a sync would drop most of a non-empty deck.
+* **Reason:** The prompt interrupts legitimate large repertoire edits, and the deck map plus epoch remove the wrong-tree input from every in-app path; external reorders are a stated known limit. Reversal path: a ratio guard in PracticePanel's sync effect before setDeck.
+* **Decided by:** drain session 7e119598 (planner run, 5 plan-review rounds, approved; adopted by f35f888f), 2026-11-04 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"ee89ec64c5608c9bef7276e5b5cd68a17f7a86d49e08939be8096e60ccd98f5f","input_sha256":"6fbea6fba1020eb332b64dc58a853c73066fa7defa007653bfa496463af093c2","kind":"mutation-receipt","operation":"ebee4ed6052ccea5f5c95372fbdfb4e066df831f8623962ecf8b7489cc06b5bd","options":{"section":null},"request_id_sha256":null,"results":["d-20261104-14"],"target":"decisions-ledger","v":1} -->
