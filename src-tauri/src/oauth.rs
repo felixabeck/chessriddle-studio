@@ -776,6 +776,7 @@ where
         }
     };
 
+    let mut issued_token: Option<String> = None;
     let result = match tokio::time::timeout(
         deadline.saturating_duration_since(tokio::time::Instant::now()),
         authenticate_after_listener(
@@ -787,6 +788,7 @@ where
             emit_token,
             &config,
             &services,
+            &mut issued_token,
         ),
     )
     .await
@@ -803,6 +805,9 @@ where
     )
     .await;
     lifecycle.clear_generation(generation).await;
+    if let Some(token) = issued_token.take() {
+        revoke_failed_authentication_token(&services, &token).await;
+    }
     result
 }
 
@@ -816,6 +821,7 @@ async fn authenticate_after_listener<O, E, S>(
     emit_token: E,
     config: &AuthInternalConfig<'_>,
     services: &S,
+    issued_token: &mut Option<String>,
 ) -> Result<(), Error>
 where
     O: FnOnce(&str) -> Result<(), String>,
@@ -859,24 +865,25 @@ where
         }
         callback_result = &mut callback_rx => match callback_result {
             Ok(CallbackSignal::Code(code)) => match services.exchange_code(&client, code, pkce_verifier).await {
-                Ok(access_token) => match services.verify_identity(&access_token).await {
-                    Ok(verified_username) if verified_username.eq_ignore_ascii_case(&username) => if let Err(source) = emit_token(access_token.clone()) {
-                        error!("OAuth native credential persistence failed: {source}");
-                        revoke_failed_authentication_token(services, &access_token).await;
-                        Err(Error::OAuthFailure(OAUTH_FAILURE.into()))
-                    } else {
-                        info!("OAuth identity credential stored");
-                        Ok(())
-                    },
-                    Ok(_) => {
-                        warn!("OAuth verified identity did not match requested account");
-                        revoke_failed_authentication_token(services, &access_token).await;
-                        Err(Error::OAuthFailure(OAUTH_FAILURE.into()))
-                    }
-                    Err(source) => {
-                        error!("OAuth identity verification failed: {source}");
-                        revoke_failed_authentication_token(services, &access_token).await;
-                        Err(Error::OAuthFailure(OAUTH_FAILURE.into()))
+                Ok(access_token) => {
+                    *issued_token = Some(access_token.clone());
+                    match services.verify_identity(&access_token).await {
+                        Ok(verified_username) if verified_username.eq_ignore_ascii_case(&username) => if let Err(source) = emit_token(access_token) {
+                            error!("OAuth native credential persistence failed: {source}");
+                            Err(Error::OAuthFailure(OAUTH_FAILURE.into()))
+                        } else {
+                            issued_token.take();
+                            info!("OAuth identity credential stored");
+                            Ok(())
+                        },
+                        Ok(_) => {
+                            warn!("OAuth verified identity did not match requested account");
+                            Err(Error::OAuthFailure(OAUTH_FAILURE.into()))
+                        }
+                        Err(source) => {
+                            error!("OAuth identity verification failed: {source}");
+                            Err(Error::OAuthFailure(OAUTH_FAILURE.into()))
+                        }
                     }
                 },
                 Err(source) => {
@@ -1067,6 +1074,7 @@ mod tests {
         exchange_pending: bool,
         verified_username: String,
         verify_error: Option<String>,
+        verify_delay: Option<Duration>,
         revoke_outcome: LichessRevocationOutcome,
         server_error: bool,
         listener_ignores_shutdown: bool,
@@ -1086,6 +1094,7 @@ mod tests {
                 exchange_pending: false,
                 verified_username: "user".into(),
                 verify_error: None,
+                verify_delay: None,
                 revoke_outcome: LichessRevocationOutcome::Revoked,
                 server_error: false,
                 listener_ignores_shutdown: false,
@@ -1117,6 +1126,9 @@ mod tests {
         }
 
         async fn verify_identity(&self, _: &str) -> Result<String, Error> {
+            if let Some(delay) = self.verify_delay {
+                tokio::time::sleep(delay).await;
+            }
             match self.verify_error.clone() {
                 Some(source) => Err(Error::OAuthFailure(source)),
                 None => Ok(self.verified_username.clone()),
@@ -2420,6 +2432,27 @@ mod tests {
         );
         assert_eq!(services.revoke_calls.load(Ordering::Relaxed), 1);
         assert_eq!(*services.revoked_tokens.lock().await, vec!["token"]);
+    }
+
+    #[tokio::test]
+    async fn verification_timeout_revokes_token_and_returns_generic_error() {
+        tokio::time::pause();
+        let lifecycle = Arc::new(AuthLifecycle::default());
+        let mut services = MockServices::new();
+        services.verify_delay = Some(Duration::from_secs(2));
+        let task = start_attempt(lifecycle.clone(), services.clone(), |_| Ok(()));
+        tokio::task::yield_now().await;
+        assert_eq!(
+            send_valid(lifecycle.clone()).await,
+            CallbackResult::AcceptedCode
+        );
+        assert!(
+            matches!(task.await.expect("task join"), Err(Error::OAuthFailure(message)) if message == OAUTH_FAILURE)
+        );
+        assert!(services.exchange_started.load(Ordering::Relaxed));
+        assert_eq!(services.revoke_calls.load(Ordering::Relaxed), 1);
+        assert_eq!(*services.revoked_tokens.lock().await, vec!["token"]);
+        assert!(lifecycle.is_idle().await);
     }
 
     #[tokio::test]
