@@ -11812,3 +11812,40 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Keeps a work bound per export without refusing old accounts. Reversal path: restore the index check.
 * **Decided by:** Claude (Opus) planner under full auto, 4 plan-review rounds approved; adopted by drain session c6681a98, 2026-11-04. · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":53,"effect_sha256":"bcc6b267c32684fbdee3eb707c8dcea39221ddffa75b3a135f2423aee5f732e6","input_sha256":"8b8292bc2bbec00deffd7e34870be2c57bb7d0d8fb40fa00f3db5ddef536dfa4","kind":"mutation-receipt","operation":"1bd1fe88ea9fafd232379cd80b3e79389d7f7da2eeb314a56d8f58b219c7ee12","options":{"section":null},"request_id_sha256":null,"results":["d-20261104-02","d-20261104-03","d-20261104-04","d-20261104-05","d-20261104-06","d-20261104-07"],"target":"decisions-ledger","v":1} -->
+
+### d-20261104-08 — What owns the workspace trash?
+
+* **Question:** What owns the workspace trash: a native trash listing with restore and purge, auto-purge of older buckets, or both?
+* **Governs:** f-20261101-28
+* **Chosen:** A native trash listing with per-item restore and permanent delete, plus Empty trash.
+* **Rejected:** Auto-purge of older buckets by age or size, alone or combined with the listing.
+* **Reason:** The filed defect is that items cannot be reached. The listing and Empty trash give the user control over every item and bound disk use by the user's own action, as Delete permanently already does for one item. A timer deleting user files unannounced would be a new retention promise the defect does not need. Reversal path: add an age-based purge inside the Empty-trash removal core; origin records already carry the trash time.
+* **Decided by:** Claude (Opus) planner under full auto, 6 plan-review rounds approved; adopted by drain session 27871af7, 2026-11-04. · **Superseded-by:** -
+
+### d-20261104-09 — Where is a trashed entry's original parent recorded?
+
+* **Question:** Where is a trashed entry's original parent recorded so restore can return it there?
+* **Governs:** f-20261101-31, f-20261101-28
+* **Chosen:** A bucket-scoped origin record written at trash time, beside the bucket in the trash directory and named from the bucket UUID (`<uuid>.origin`), holding the parent locator as path components, the leaf and the trash time.
+* **Rejected:** A field on the path-authority record (changes the persisted registry schema and is lost when the record is released or the registry is reset). A renderer-supplied parent handle (changes the binding and the renderer has no such handle after a restart). A record inside the bucket under the trash directory name (collides case-insensitively with a trashed directory of that spelling).
+* **Reason:** The record lives and dies with the bucket, survives restarts and registry resets, and cannot collide with a trashed leaf. Reversal path: read the locator from another source in the restore core and keep the root fallback.
+* **Decided by:** Claude (Opus) planner under full auto, 6 plan-review rounds approved; adopted by drain session 27871af7, 2026-11-04. · **Superseded-by:** -
+
+### d-20261104-10 — Where does restore go when the original folder is gone?
+
+* **Question:** When a trashed entry's original folder no longer exists, is it recreated or does restore fall back to the collection root?
+* **Governs:** f-20261101-31
+* **Chosen:** Restore to the collection root, as before, when the origin record is missing or malformed or any folder component is gone or not a directory.
+* **Rejected:** Recreating the missing folder chain.
+* **Reason:** The finding's fix shape names the root fallback, and recreating would bring back folders the user deliberately removed. Reversal path: create missing components in the restore core before the rename.
+* **Decided by:** Claude (Opus) planner under full auto, 6 plan-review rounds approved; adopted by drain session 27871af7, 2026-11-04. · **Superseded-by:** -
+
+### d-20261104-11 — How are trashed items addressed across IPC?
+
+* **Question:** How does the renderer name a trashed item so listing, restore and delete work when the path-authority registry is full?
+* **Governs:** f-20261101-28
+* **Chosen:** An opaque `TrashItemId` (the bucket UUID), resolved natively as a direct no-follow child of the trash directory; `restore_workspace_entry` and `permanently_delete_workspace_entry` are replaced by `restore_workspace_trash_item` and `delete_workspace_trash_item`, plus `list_workspace_trash` (paged, newest first) and `empty_workspace_trash`.
+* **Rejected:** Admitting a path-authority handle per listed item (a full registry at `MAX_AUTHORITY_IDS` would block even the first page).
+* **Reason:** Listing, restore and delete never admit registry records, so every trashed item stays reachable at any trash and registry size. Reversal path: reintroduce handle-based commands beside the id ones.
+* **Decided by:** Claude (Opus) planner under full auto, 6 plan-review rounds approved; adopted by drain session 27871af7, 2026-11-04. · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":35,"effect_sha256":"9780677fa55dcf6196a26e7efacc351cb7af6d9f8c42a70285c2864bf06c5999","input_sha256":"a18d716980ff2b8e951f2d16a7960f96ad109336c2c74cb656b2da04b9483f1d","kind":"mutation-receipt","operation":"f499e4ace8e3c0926ef65280afac1177a4441653aada2e9a8882a661d64c4635","options":{"section":null},"request_id_sha256":null,"results":["d-20261104-08","d-20261104-09","d-20261104-10","d-20261104-11"],"target":"decisions-ledger","v":1} -->
