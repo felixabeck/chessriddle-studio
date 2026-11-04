@@ -20264,7 +20264,7 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 
 ### Playing a mate, stalemate or repetition in a side variation rewrites the game's Result header
 
-* **ID:** f-20261101-16 · **Status:** open · **Area:** chess-tree · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261101-16 · **Status:** handled · **Area:** chess-tree · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** data-loss
 * **Where:** `src/state/store/tree.ts:867-889` (`makeMove` result adjudication, guarded only by `changeHeaders`), store `makeMove` default `changeHeaders = true`; callers `src/components/boards/Board.tsx`, opening explorer, tablebase panel, move input and engine PV clicks; auto-save in `BoardAnalysis.tsx` (default on); `serializeStoreTree` writes `headers.result`.
 * **Defect:** the result is set from the position after any move, whatever its place in the tree; nothing checks that the new node is on the main line or extends the recorded end of the game. Only puzzle code passes `changeHeaders: false`.
@@ -20275,6 +20275,9 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Found by:** cloud audit session session_01JbeKojsWJ1pfK9zBEnfQvc (game tree/practice audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
 * **Correction (records review, 2026-11-01):** the Proof must not require `dirty` to stay unchanged, because inserting any new move marks the tree dirty (`src/state/store/tree.ts` around 901). The regression asserts that `headers.result` is preserved when a mating move is added in a variation, and still set when the mate extends the main line.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"6dc705f632e81a48846d3f6172f5137138f274c32024e3febf1a34aca41cbb9b","input_sha256":"a6651bf4c9fd4872cd65f01e3efc5859817fe12aac6eb1672f09de1b13a47378","kind":"mutation-receipt","operation":"11590a90328112b956523383f69322b8aa74ec3959bd06264bbdf22b58c5119d","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-16"],"target":"f-20261101-16","v":1} -->
+
+* **Handled (2026-11-04, drain 7e119598):** commit 7c3702e4 makes `makeMove` in `src/state/store/tree.ts` adjudicate the Result (checkmate, stalemate, insufficient material, threefold, fifty-move) only when the resulting node ends the main line: all-zero parent path, target child index 0, and no continuation below an existing child. A move in a variation no longer rewrites `headers.result`. Appending to the main line, inserting with `mainline: true`, and replaying an existing terminal main-line node still adjudicate. The sibling-repetition test that asserted a variation draw now expects `*` and proves the same cycle on the main line still draws. New vitest cases cover each terminal kind in a variation. Fix-revert: 10 tests red without the `tree.ts` hunk, 145 green with it. Rejected: adjudicating on any all-zero path, because a replayed mid-game main-line node with a continuation would rewrite the recorded result.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"2569a6b32924b31d26c61526f1d7be37022c8021ead25d3f1df7825d91fdbc5c","header_sha256":"ddcac3b4f908450cb1828e4339c151fee176f0d60fbff7f950e728d704cdf6c3","header_status":"handled","input_sha256":"d5857bfb1bbbf5bfb24ea8b6c4c856fff23108bdabad8840f91fbdb4dfe6f9b9","kind":"mutation-receipt","operation":"5181b351e23f30a01a61ff9f3493c053e86377243a15135aeb8bbeccc19f19c1","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-16"],"target":"f-20261101-16","v":1} -->
 
 ---
 
