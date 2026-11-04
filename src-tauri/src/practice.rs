@@ -499,11 +499,22 @@ fn file_deck_leaves(
     // Hash candidates are needed only for damaged envelopes. Never trust their claimed owner.
     if !unidentified.is_empty() {
         let limit = highest.max(MAP_MAX_ORDINALS as i32);
-        let candidates = (0..=limit)
-            .map(|number| (hash_deck(file_id, number), number))
-            .collect::<HashMap<_, _>>();
+        let mut unmatched = std::collections::HashSet::new();
+        let mut attributed = HashMap::new();
+        for (_, hash) in &unidentified {
+            unmatched.insert(hash.clone());
+        }
+        for number in 0..=limit {
+            let hash = hash_deck(file_id, number);
+            if unmatched.remove(&hash) {
+                attributed.insert(hash, number);
+                if unmatched.is_empty() {
+                    break;
+                }
+            }
+        }
         for (leaf, hash) in unidentified {
-            if let Some(number) = candidates.get(&hash) {
+            if let Some(number) = attributed.get(&hash) {
                 leaves.push((leaf, hash, *number));
             }
         }
