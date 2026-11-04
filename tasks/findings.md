@@ -20325,6 +20325,9 @@ Handled 2026-11-04 by drain session f35f888f (build tier, adopted the reviewed p
 * **Known limits (plan threat model):** reorders or deletes made by another program still follow the ordinal; decks misattributed by deletes made before this change cannot be reconstructed.
 <!-- ledger-meta {"command":"close","effect_lines":6,"effect_sha256":"274a6381e2e4c72445cdbe0faaec789f2569b0cde5bc660e184afe0b3faaa4b1","header_sha256":"de7ed628b6ee48fdb574c6147e2d00486cd60f141f9a50ad340c0576104831f1","header_status":"handled","input_sha256":"10319fa4c2b6d8ad5b6e45126d2e588f65976883d88751bda0f311d31cb20c1b","kind":"mutation-receipt","operation":"612e07518d8eacfd6f9217e2f9c794cf46580a3cfc1b650f363f1a58ca6601ee","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-17"],"target":"f-20261101-17","v":1} -->
 
+Provenance correction (2026-11-04, drain session f35f888f): the reviewed plan was written by PLAN-ONLY drain session 30cc2487-dc73-42fe-9cc5-2ee1e8d6b61c (see tasks/handoffs/2026-11-04-f-20261101-17-review.md). 7e119598-b94f-4499-9c28-3507824a83c5 is the drain's launch id of the adopting cluster session, not the planner. The closing note above and the **Decided by:** lines of d-20261104-13, d-20261104-14, d-20261104-15 and d-20261104-16 ("drain session 7e119598 (planner run …)") should be read with this correction; the decisions themselves are unchanged.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"43e9e388970c1767238c7d606e3f65c9a921d1fcf6e702e61c8785b7725b434f","input_sha256":"175e3e9743a855763ee10f86f308c679868933e3dd0349142238f53996b75914","kind":"mutation-receipt","operation":"7a78e766d31fc990610c84955773190457f4c9eeaa91d395c8072e0a0a0c33b9","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-17"],"target":"f-20261101-17","v":1} -->
+
 ---
 
 ## 2026-11-01 — filed through the inbox spool
