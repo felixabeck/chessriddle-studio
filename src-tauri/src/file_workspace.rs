@@ -10,8 +10,8 @@ use crate::{
     infra::cancellable_lock::lock_std_cancellable,
     infra::path_authority::{
         workspace_sidecar_leaf as sidecar_leaf, CommitDurability, FileWorkspaceDescriptor,
-        FileWorkspaceHandle, IdentityBinding, PathAuthority, PathClass, PathOperation, PathRef,
-        SharedPathAuthority, WorkspaceMutationTarget, WorkspaceRemovalStatus,
+        FileWorkspaceHandle, IdentityBinding, NativePath, PathAuthority, PathClass, PathOperation,
+        PathRef, SharedPathAuthority, WorkspaceMutationTarget, WorkspaceRemovalStatus,
         PICKER_DIALOG_GRANT_TTL,
     },
     pgn, AppState,
@@ -33,6 +33,159 @@ use crate::infra::path_authority::{CapabilityDirectory, PreparedEntry};
 use std::ffi::OsStr;
 
 const TRASH_DIRECTORY: &str = ".en-croissant-trash";
+const MAX_TRASH_ORIGIN_BYTES: usize = 64 * 1024;
+
+#[derive(Serialize, Deserialize)]
+struct TrashOrigin {
+    parents: Vec<NativePath>,
+    leaf: NativePath,
+    trashed_seconds: u64,
+}
+
+/// The retained trash parent owns both names. The record is always removed before the bucket.
+struct TrashBucket {
+    parent: fs::File,
+    leaf: std::ffi::OsString,
+    identity: (u64, u64),
+    origin_identity: Option<(u64, u64)>,
+}
+
+impl TrashBucket {
+    fn origin_leaf(&self) -> std::ffi::OsString {
+        let mut leaf = self.leaf.clone();
+        leaf.push(".origin");
+        leaf
+    }
+
+    fn cleanup(&self) -> Result<(), Error> {
+        let origin = self.origin_leaf();
+        let removal = match self.origin_identity {
+            Some(identity) => {
+                crate::infra::fs::remove_entry_at(&self.parent, &origin, identity, false)
+            }
+            None => match crate::infra::fs::entry_identity_at(&self.parent, &origin, false) {
+                Err(error) if error.is_missing_entry() => Ok(()),
+                _ => Err(Error::Conflict(
+                    "trash origin changed before cleanup".into(),
+                )),
+            },
+        };
+        let removal = match removal {
+            Err(error) if error.is_missing_entry() => Ok(()),
+            result => result,
+        };
+        finish_committed_workspace_step(removal, || {
+            crate::infra::fs::remove_empty_directory_at(&self.parent, &self.leaf, self.identity)
+        })
+    }
+
+    fn cleanup_committed(&self) {
+        if let Err(error) = self.cleanup() {
+            log::warn!(
+                "trash bucket cleanup after committed mutation failed: {}",
+                error.diagnostic()
+            );
+        }
+    }
+}
+
+fn source_trash_bucket(
+    root: &WorkspaceMutationTarget,
+    source: &WorkspaceMutationTarget,
+) -> Result<Option<TrashBucket>, Error> {
+    let trash_path = root.path().join(TRASH_DIRECTORY);
+    let Ok(relative) = source.path().strip_prefix(&trash_path) else {
+        return Ok(None);
+    };
+    let parts: Vec<_> = relative.components().collect();
+    if parts.len() != 2 || uuid::Uuid::parse_str(&parts[0].as_os_str().to_string_lossy()).is_err() {
+        return Ok(None);
+    }
+    let parent =
+        crate::infra::fs::open_directory_at(root.directory()?, OsStr::new(TRASH_DIRECTORY), true)?;
+    let leaf = parts[0].as_os_str().to_os_string();
+    let identity = crate::infra::path_authority::opened_file_identity(&source.parent)?;
+    crate::infra::fs::assert_entry_identity(&parent, &leaf, identity, true)?;
+    let mut bucket = TrashBucket {
+        parent,
+        leaf,
+        identity,
+        origin_identity: None,
+    };
+    bucket.origin_identity =
+        crate::infra::fs::entry_identity_at(&bucket.parent, &bucket.origin_leaf(), false).ok();
+    Ok(Some(bucket))
+}
+
+fn trash_restore_parent(
+    root: &WorkspaceMutationTarget,
+    source: &WorkspaceMutationTarget,
+    bucket: Option<&TrashBucket>,
+    cancellation: &CancellationToken,
+) -> Result<(fs::File, PathBuf, (u64, u64)), Error> {
+    let resolved = (|| {
+        let bucket = bucket.ok_or_else(|| Error::InvalidInput("legacy trash entry".into()))?;
+        let mut file = crate::infra::fs::open_regular_at(
+            &bucket.parent,
+            &bucket.origin_leaf(),
+            RegularFileAccess::ReadOnly,
+        )?;
+        if Some(crate::infra::path_authority::opened_file_identity(&file)?)
+            != bucket.origin_identity
+        {
+            return Err(Error::Conflict("trash origin changed before read".into()));
+        }
+        let declared = file.metadata()?.len();
+        let bytes = crate::infra::fs::read_bounded_bytes(
+            &mut file,
+            declared,
+            MAX_TRASH_ORIGIN_BYTES,
+            "trash origin exceeds the supported size limit",
+            || {
+                if cancellation.is_cancelled() {
+                    return Err(Error::Cancellation);
+                }
+                Ok(())
+            },
+        )?;
+        let origin: TrashOrigin = serde_json::from_slice(&bytes)
+            .map_err(|error| Error::InvalidInput(error.to_string()))?;
+        if origin.leaf.to_path()?.as_os_str() != source.leaf {
+            return Err(Error::InvalidInput(
+                "trash origin names another entry".into(),
+            ));
+        }
+        let mut directory = root.directory()?.try_clone()?;
+        let mut path = root.path().to_path_buf();
+        let trash_identity = crate::infra::path_authority::opened_file_identity(&bucket.parent)?;
+        for part in origin.parents {
+            if cancellation.is_cancelled() {
+                return Err(Error::Cancellation);
+            }
+            let component = part.to_path()?;
+            let leaf = component.as_os_str();
+            crate::infra::fs::single_leaf(leaf)?;
+            directory = crate::infra::fs::open_directory_at(&directory, leaf, true)?;
+            // Identity also catches case variants and Windows aliases of the trash directory.
+            if crate::infra::path_authority::opened_file_identity(&directory)? == trash_identity {
+                return Err(Error::InvalidInput("trash origin points into trash".into()));
+            }
+            // This path is only registry metadata. Filesystem access uses the retained descriptor.
+            path.push(leaf);
+        }
+        let identity = crate::infra::path_authority::opened_file_identity(&directory)?;
+        Ok::<_, Error>((directory, path, identity))
+    })();
+    match resolved {
+        Ok(parent) => Ok(parent),
+        Err(Error::Cancellation) => Err(Error::Cancellation),
+        Err(_) => Ok((
+            root.directory()?.try_clone()?,
+            root.path().to_path_buf(),
+            root.identity,
+        )),
+    }
+}
 
 pub(crate) fn is_trash_locator(locator: &[std::ffi::OsString]) -> bool {
     locator
@@ -1225,6 +1378,7 @@ pub async fn list_file_workspace(
 #[cfg(test)]
 std::thread_local! {
     static PAIRED_RENAME_POST_PRIMARY_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
+    static TRASH_POST_ORIGIN_HOOK: std::cell::RefCell<Option<WorkspaceRebindHook>> = const { std::cell::RefCell::new(None) };
 }
 
 #[cfg(test)]
@@ -1346,11 +1500,9 @@ fn reverse_workspace_rename(
     target_parent: &fs::File,
     target_leaf: &OsStr,
     disposition: &mut WorkspaceSidecarDisposition,
-    bucket: Option<(&fs::File, &OsStr, (u64, u64))>,
+    bucket: Option<&TrashBucket>,
 ) -> Result<(), Error> {
-    use crate::infra::fs::{
-        remove_empty_directory_at, remove_entry_at, rename_entry_at, require_durable,
-    };
+    use crate::infra::fs::{remove_entry_at, rename_entry_at, require_durable};
     let target_info = sidecar_leaf(target_leaf)?;
     let restoration =
         match disposition {
@@ -1387,7 +1539,7 @@ fn reverse_workspace_rename(
         finish_committed_workspace_step(sidecar, || {
             let primary = reverse_workspace_primary_rename(source, target_parent, target_leaf);
             finish_committed_workspace_step(primary, || match bucket {
-                Some((parent, leaf, identity)) => remove_empty_directory_at(parent, leaf, identity),
+                Some(bucket) => bucket.cleanup(),
                 None => Ok(()),
             })
         })
@@ -1400,7 +1552,7 @@ fn compensate_workspace_rename(
     target_parent: &fs::File,
     target_leaf: &OsStr,
     disposition: &mut WorkspaceSidecarDisposition,
-    bucket: Option<(&fs::File, &OsStr, (u64, u64))>,
+    bucket: Option<&TrashBucket>,
 ) -> Result<(), Error> {
     match result {
         Err(error) if !matches!(error, Error::CommittedDurabilityUncertain(_)) => {
@@ -2226,13 +2378,100 @@ pub(crate) fn trash_entry(
     let trash_dir = crate::infra::fs::ensure_directory_at(root_dir, &trash)?;
     let trash_path = root.path().join(TRASH_DIRECTORY);
     let bucket = std::ffi::OsString::from(uuid::Uuid::new_v4().to_string());
-    crate::infra::fs::create_dir_at(&trash_dir, &bucket)?;
+    let created = crate::infra::fs::create_dir_at_committed(&trash_dir, &bucket)?;
     let bucket_identity = crate::infra::fs::entry_identity_at(&trash_dir, &bucket, true)?;
     let bucket_path = trash_path.join(&bucket);
-    let bucket_dir = crate::infra::fs::open_directory_at(&trash_dir, &bucket, true)?;
+    let mut bucket = TrashBucket {
+        parent: trash_dir,
+        leaf: bucket,
+        identity: bucket_identity,
+        origin_identity: None,
+    };
     let target = bucket_path.join(&source.leaf);
-    let target_parent_identity = crate::infra::path_authority::opened_file_identity(&bucket_dir)?;
-    let (outcome, mut disposition) = paired_rename_inner(&source, &bucket_dir, &source.leaf, None)?;
+    let prepared = (|| {
+        if let crate::infra::fs::AtomicFileOutcome::CommittedDurabilityUncertain(error) = created {
+            return Err(Error::Io(Box::new(error)));
+        }
+        let bucket_dir = crate::infra::fs::open_directory_at(&bucket.parent, &bucket.leaf, true)?;
+        let target_parent_identity =
+            crate::infra::path_authority::opened_file_identity(&bucket_dir)?;
+        if target_parent_identity != bucket.identity {
+            return Err(Error::Conflict("trash bucket changed before move".into()));
+        }
+        crate::infra::fs::assert_entry_identity(
+            &bucket.parent,
+            &bucket.leaf,
+            bucket.identity,
+            true,
+        )?;
+        let relative = source
+            .path()
+            .strip_prefix(root.path())
+            .map_err(|_| Error::InvalidInput("entry is outside workspace".into()))?;
+        let parent = relative
+            .parent()
+            .ok_or_else(|| Error::InvalidInput("entry has no parent".into()))?;
+        let origin = TrashOrigin {
+            parents: parent
+                .components()
+                .map(|part| NativePath::from_path(Path::new(part.as_os_str())))
+                .collect(),
+            leaf: NativePath::from_path(Path::new(&source.leaf)),
+            trashed_seconds: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|error| Error::InvalidInput(error.to_string()))?
+                .as_secs(),
+        };
+        let bytes =
+            serde_json::to_vec(&origin).map_err(|error| Error::InvalidInput(error.to_string()))?;
+        if bytes.len() > MAX_TRASH_ORIGIN_BYTES {
+            return Err(Error::ResourceLimit(
+                "trash origin exceeds the supported size limit".into(),
+            ));
+        }
+        let installed = crate::infra::fs::atomic_create_at_identified(
+            &bucket.parent,
+            &bucket.origin_leaf(),
+            |file| {
+                use std::io::Write;
+                file.write_all(&bytes).map_err(Error::from)
+            },
+        )?;
+        bucket.origin_identity = Some(installed.identity);
+        if let crate::infra::fs::AtomicFileOutcome::CommittedDurabilityUncertain(error) =
+            installed.outcome
+        {
+            return Err(Error::Io(Box::new(error)));
+        }
+        #[cfg(test)]
+        TRASH_POST_ORIGIN_HOOK.with(|slot| {
+            if let Some(hook) = slot.borrow_mut().take() {
+                hook()?;
+            }
+            Ok::<(), Error>(())
+        })?;
+        if cancellation.is_cancelled() {
+            return Err(Error::Cancellation);
+        }
+        Ok::<_, Error>((bucket_dir, target_parent_identity))
+    })();
+    let (bucket_dir, target_parent_identity) = match prepared {
+        Ok(prepared) => prepared,
+        Err(error) => return Err(Error::with_cleanup(error, bucket.cleanup())),
+    };
+    let (outcome, mut disposition) =
+        match paired_rename_inner(&source, &bucket_dir, &source.leaf, None) {
+            Ok(renamed) => renamed,
+            Err(error) => {
+                // A failed internal reverse can leave the primary in the bucket. Keep its origin.
+                if crate::infra::fs::entry_identity_at(&bucket_dir, &source.leaf, source.is_dir)
+                    .is_ok()
+                {
+                    return Err(error);
+                }
+                return Err(Error::with_cleanup(error, bucket.cleanup()));
+            }
+        };
     let result = finish_workspace_rename(outcome, || {
         if cancellation.is_cancelled() {
             return Err(Error::Cancellation);
@@ -2251,7 +2490,7 @@ pub(crate) fn trash_entry(
         &bucket_dir,
         &source.leaf,
         &mut disposition,
-        Some((&trash_dir, &bucket, bucket_identity)),
+        Some(&bucket),
     )
 }
 
@@ -2308,26 +2547,38 @@ pub(crate) fn restore_entry(
         .path()
         .strip_prefix(&trash_root)
         .map_err(|_| Error::InvalidInput("workspace entry is not in trash".into()))?;
-    let target = root.path().join(&source.leaf);
+    let bucket = source_trash_bucket(&root, &source)?;
+    let (target_parent, parent_path, parent_identity) =
+        trash_restore_parent(&root, &source, bucket.as_ref(), cancellation)?;
+    let target = parent_path.join(&source.leaf);
     if cancellation.is_cancelled() {
         return Err(Error::Cancellation);
     }
     let (outcome, mut disposition) =
-        paired_rename_inner(&source, root.directory()?, &source.leaf, None)?;
+        paired_rename_inner(&source, &target_parent, &source.leaf, None)?;
     let result = finish_workspace_rename(outcome, || {
         if cancellation.is_cancelled() {
             return Err(Error::Cancellation);
         }
-        rebind_after_move(pgn_path_authority, entry, &source, &target, root.identity)
+        rebind_after_move(pgn_path_authority, entry, &source, &target, parent_identity)
     });
-    compensate_workspace_rename(
+    let result = compensate_workspace_rename(
         result,
         &source,
-        root.directory()?,
+        &target_parent,
         &source.leaf,
         &mut disposition,
         None,
-    )
+    );
+    if matches!(
+        &result,
+        Ok(()) | Err(Error::CommittedDurabilityUncertain(_))
+    ) {
+        if let Some(bucket) = bucket {
+            bucket.cleanup_committed();
+        }
+    }
+    result
 }
 
 #[tauri::command]
@@ -2418,6 +2669,7 @@ fn permanently_delete_entry_blocking(
         let root = mutation_target(pgn_path_authority, workspace)?;
         let source = mutation_target(pgn_path_authority, entry)?;
         ensure_registered_descendant(&root, &source)?;
+        let bucket = source_trash_bucket(&root, &source)?;
         if cancellation.is_cancelled() {
             return Err(Error::Cancellation);
         }
@@ -2484,6 +2736,9 @@ fn permanently_delete_entry_blocking(
             "workspace removal registry reconciliation",
             Path::new(&source.leaf),
         );
+        if let Some(bucket) = bucket {
+            bucket.cleanup_committed();
+        }
         Ok(removal)
     })();
     if result.is_ok() {
@@ -2500,6 +2755,345 @@ fn permanently_delete_entry_blocking(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn trash_subfolder_file(
+        state: &AppState,
+        workspace: &FileWorkspaceHandle,
+    ) -> (PathBuf, FileWorkspaceHandle, PathBuf, PathBuf) {
+        let root = workspace_root(&state.pgn_path_authority, workspace).unwrap();
+        let original = root.join("Archive/Najdorf.pgn");
+        fs::create_dir(original.parent().unwrap()).unwrap();
+        fs::write(&original, b"1. e4 *").unwrap();
+        fs::write(original.with_extension("info"), b"original sidecar").unwrap();
+        let entry = registered_child_file(state, workspace, &original);
+        trash_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            workspace,
+            &entry,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let source = mutation_target(&state.pgn_path_authority, &entry).unwrap();
+        let bucket = source.path().parent().unwrap().to_path_buf();
+        let origin = bucket.with_extension("origin");
+        assert!(bucket.is_dir());
+        assert!(origin.is_file());
+        (original, entry, bucket, origin)
+    }
+
+    #[test]
+    fn trash_restore_returns_to_subfolder_even_with_root_name_conflict_and_cleans_bucket() {
+        for root_conflict in [false, true] {
+            let (_directory, state, workspace) = workspace_state();
+            let (original, entry, bucket, origin) = trash_subfolder_file(&state, &workspace);
+            let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+            let record: TrashOrigin = serde_json::from_slice(&fs::read(&origin).unwrap()).unwrap();
+            assert_eq!(record.parents.len(), 1);
+            assert_eq!(record.parents[0].to_path().unwrap(), Path::new("Archive"));
+            assert_eq!(record.leaf.to_path().unwrap(), Path::new("Najdorf.pgn"));
+            assert!(record.trashed_seconds > 0);
+            if root_conflict {
+                fs::write(root.join("Najdorf.pgn"), b"root conflict").unwrap();
+            }
+            restore_entry(
+                &state.pgn_path_authority,
+                &state.workspace_mutation,
+                &workspace,
+                &entry,
+                &CancellationToken::new(),
+            )
+            .unwrap();
+            assert_eq!(fs::read(&original).unwrap(), b"1. e4 *");
+            assert_eq!(
+                fs::read(original.with_extension("info")).unwrap(),
+                b"original sidecar"
+            );
+            let rebound = mutation_target(&state.pgn_path_authority, &entry).unwrap();
+            assert_eq!(rebound.path(), original);
+            assert!(!bucket.exists());
+            assert!(!origin.exists());
+            assert_eq!(fs::read_dir(root.join(TRASH_DIRECTORY)).unwrap().count(), 0);
+            if root_conflict {
+                assert_eq!(
+                    fs::read(root.join("Najdorf.pgn")).unwrap(),
+                    b"root conflict"
+                );
+            } else {
+                assert!(!root.join("Najdorf.pgn").exists());
+            }
+        }
+    }
+
+    #[test]
+    fn trash_restore_falls_back_for_missing_renamed_file_legacy_or_malformed_origin() {
+        for change in [
+            "removed",
+            "renamed",
+            "file",
+            "legacy",
+            "malformed",
+            "oversized",
+            "parent",
+            "absolute",
+            "trash",
+            "leaf",
+        ] {
+            let (_directory, state, workspace) = workspace_state();
+            let (original, entry, bucket, origin) = trash_subfolder_file(&state, &workspace);
+            let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+            let folder = original.parent().unwrap();
+            match change {
+                "removed" => fs::remove_dir(folder).unwrap(),
+                "renamed" => fs::rename(folder, root.join("Renamed")).unwrap(),
+                "file" => {
+                    fs::remove_dir(folder).unwrap();
+                    fs::write(folder, b"replacement file").unwrap();
+                }
+                "legacy" => fs::remove_file(&origin).unwrap(),
+                "malformed" => fs::write(&origin, b"{truncated").unwrap(),
+                "oversized" => fs::write(&origin, vec![b' '; MAX_TRASH_ORIGIN_BYTES + 1]).unwrap(),
+                _ => {
+                    let mut record: TrashOrigin =
+                        serde_json::from_slice(&fs::read(&origin).unwrap()).unwrap();
+                    if change == "leaf" {
+                        record.leaf = NativePath::from_path(Path::new("another.pgn"));
+                    } else {
+                        let component = match change {
+                            "parent" => Path::new(".."),
+                            "absolute" => root.as_path(),
+                            _ => Path::new(TRASH_DIRECTORY),
+                        };
+                        record.parents = vec![NativePath::from_path(component)];
+                    }
+                    fs::write(&origin, serde_json::to_vec(&record).unwrap()).unwrap();
+                }
+            }
+            restore_entry(
+                &state.pgn_path_authority,
+                &state.workspace_mutation,
+                &workspace,
+                &entry,
+                &CancellationToken::new(),
+            )
+            .unwrap();
+            assert_eq!(
+                fs::read(root.join("Najdorf.pgn")).unwrap(),
+                b"1. e4 *",
+                "{change}"
+            );
+            assert_eq!(
+                mutation_target(&state.pgn_path_authority, &entry)
+                    .unwrap()
+                    .path(),
+                root.join("Najdorf.pgn")
+            );
+            assert!(!bucket.exists(), "{change}");
+            assert!(!origin.exists(), "{change}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn trash_restore_never_follows_origin_folder_or_record_symlinks() {
+        for record_symlink in [false, true] {
+            let (directory, state, workspace) = workspace_state();
+            let (original, entry, bucket, origin) = trash_subfolder_file(&state, &workspace);
+            let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+            let outside = directory.path().join("outside");
+            fs::create_dir(&outside).unwrap();
+            if record_symlink {
+                let saved = outside.join("origin");
+                fs::rename(&origin, &saved).unwrap();
+                std::os::unix::fs::symlink(&saved, &origin).unwrap();
+            } else {
+                fs::remove_dir(original.parent().unwrap()).unwrap();
+                std::os::unix::fs::symlink(&outside, original.parent().unwrap()).unwrap();
+            }
+            restore_entry(
+                &state.pgn_path_authority,
+                &state.workspace_mutation,
+                &workspace,
+                &entry,
+                &CancellationToken::new(),
+            )
+            .unwrap();
+            assert_eq!(fs::read(root.join("Najdorf.pgn")).unwrap(), b"1. e4 *");
+            assert!(!outside.join("Najdorf.pgn").exists());
+            if record_symlink {
+                // Unowned disk content refuses identity-checked cleanup after the commit.
+                assert!(fs::symlink_metadata(&origin)
+                    .unwrap()
+                    .file_type()
+                    .is_symlink());
+                assert!(outside.join("origin").is_file());
+            } else {
+                assert!(!bucket.exists());
+                assert!(!origin.exists());
+            }
+        }
+    }
+
+    #[test]
+    fn trash_restore_target_conflict_preserves_bucket_and_origin() {
+        let (_directory, state, workspace) = workspace_state();
+        let (original, entry, bucket, origin) = trash_subfolder_file(&state, &workspace);
+        fs::write(&original, b"new occupant").unwrap();
+        let error = restore_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &entry,
+            &CancellationToken::new(),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, Error::Io(ref cause) if cause.kind() == std::io::ErrorKind::AlreadyExists),
+            "{error:?}"
+        );
+        assert_eq!(fs::read(&original).unwrap(), b"new occupant");
+        assert!(bucket.join("Najdorf.pgn").is_file());
+        assert!(origin.is_file());
+    }
+
+    #[test]
+    fn permanent_delete_cleans_bucket_and_origin() {
+        let (_directory, state, workspace) = workspace_state();
+        let (_original, entry, bucket, origin) = trash_subfolder_file(&state, &workspace);
+        let (dropped, result) = permanently_delete_entry_blocking(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &entry,
+            &CancellationToken::new(),
+        );
+        assert!(dropped.is_empty());
+        result.unwrap().finish().unwrap();
+        assert!(!bucket.exists());
+        assert!(!origin.exists());
+        assert!(mutation_target(&state.pgn_path_authority, &entry).is_err());
+    }
+
+    #[test]
+    fn trash_failure_before_move_and_rolled_back_moves_clean_bucket_and_origin() {
+        for failure in ["origin", "rebind", "sidecar", "write", "sync"] {
+            let (_directory, state, workspace) = workspace_state();
+            let created = create_named_text(&state, &workspace, "before", "*").unwrap();
+            let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+            if failure == "origin" {
+                let observed = root.clone();
+                TRASH_POST_ORIGIN_HOOK.with(|slot| {
+                    *slot.borrow_mut() = Some(Box::new(move || {
+                        assert_eq!(
+                            fs::read_dir(observed.join(TRASH_DIRECTORY))
+                                .unwrap()
+                                .count(),
+                            2
+                        );
+                        assert!(observed.join("before.pgn").is_file());
+                        Err(Error::InvalidInput("injected failure after origin".into()))
+                    }));
+                });
+            } else if failure == "rebind" {
+                WORKSPACE_REBIND_PRE_REGISTER_HOOK.with(|slot| {
+                    *slot.borrow_mut() = Some(Box::new(|| {
+                        Err(Error::InvalidInput("injected rebind failure".into()))
+                    }));
+                });
+            } else if failure == "sidecar" {
+                fs::remove_file(root.join("before.info")).unwrap();
+                fs::create_dir(root.join("before.info")).unwrap();
+            }
+            let _fault = match failure {
+                "write" => Some(crate::infra::fs::install_test_atomic_file_injector(
+                    Arc::new(FailAtFaultPoint::fail_only(AtomicFileFaultPoint::Rename, 0)),
+                )),
+                "sync" => Some(crate::infra::fs::install_test_atomic_file_injector(
+                    Arc::new(FailAtFaultPoint::fail_only(
+                        AtomicFileFaultPoint::ParentSync,
+                        2,
+                    )),
+                )),
+                _ => None,
+            };
+            assert!(
+                trash_entry(
+                    &state.pgn_path_authority,
+                    &state.workspace_mutation,
+                    &workspace,
+                    &created.handle,
+                    &CancellationToken::new(),
+                )
+                .is_err(),
+                "{failure}"
+            );
+            assert_eq!(
+                fs::read(root.join("before.pgn")).unwrap(),
+                b"*",
+                "{failure}"
+            );
+            assert_eq!(
+                fs::read_dir(root.join(TRASH_DIRECTORY)).unwrap().count(),
+                0,
+                "{failure}"
+            );
+            assert_eq!(
+                mutation_target(&state.pgn_path_authority, &created.handle)
+                    .unwrap()
+                    .path(),
+                root.join("before.pgn")
+            );
+        }
+    }
+
+    #[test]
+    fn trash_restore_case_variant_reserved_directory_in_subfolder() {
+        let (_directory, state, workspace) = workspace_state();
+        let parent = create_named_directory(&state, &workspace, "Archive").unwrap();
+        let folder = create_workspace_directory_inner(
+            workspace.clone(),
+            parent.handle,
+            ".EN-CROISSANT-TRASH".into(),
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let original = mutation_target(&state.pgn_path_authority, &folder.handle)
+            .unwrap()
+            .path()
+            .to_path_buf();
+        trash_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &folder.handle,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let trashed = mutation_target(&state.pgn_path_authority, &folder.handle).unwrap();
+        let bucket = trashed.path().parent().unwrap().to_path_buf();
+        let origin = bucket.with_extension("origin");
+        assert!(trashed.directory().is_ok());
+        assert!(origin.is_file());
+        restore_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &folder.handle,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert!(original.is_dir());
+        assert_eq!(
+            mutation_target(&state.pgn_path_authority, &folder.handle)
+                .unwrap()
+                .path(),
+            original
+        );
+        assert!(!bucket.exists());
+        assert!(!origin.exists());
+    }
 
     #[cfg(unix)]
     #[test]
@@ -4607,7 +5201,7 @@ mod tests {
             &CancellationToken::new(),
         )
         .expect("trash reuses its existing directory");
-        assert_eq!(fs::read_dir(root.join(TRASH_DIRECTORY)).unwrap().count(), 2);
+        assert_eq!(fs::read_dir(root.join(TRASH_DIRECTORY)).unwrap().count(), 4);
 
         let outside = directory.path().join("outside");
         fs::create_dir(&outside).expect("outside directory");
@@ -7390,7 +7984,7 @@ mod tests {
             assert_eq!(
                 fs::read_dir(root.join(TRASH_DIRECTORY)).unwrap().count(),
                 if matches!(point, RemovalFaultPoint::BeforeTopOpen) {
-                    1
+                    2
                 } else {
                     0
                 }
@@ -7605,9 +8199,9 @@ mod tests {
             } else {
                 1
             };
-            // A fresh trash operation syncs its hidden directory and bucket first.
+            // A fresh trash operation syncs its hidden directory, bucket and origin first.
             let setup = if matches!(command, QueuedWorkspaceCommand::Trash) {
-                2
+                3
             } else {
                 0
             };
@@ -7625,13 +8219,12 @@ mod tests {
             );
             assert_eq!(fs::read(rebound.path()).unwrap(), b"1. e4 *");
             let expected = match self.command {
-                QueuedWorkspaceCommand::Move | QueuedWorkspaceCommand::Restore => {
-                    self.root.join(if self.directory {
-                        "source/before.pgn"
-                    } else {
-                        "before.pgn"
-                    })
-                }
+                QueuedWorkspaceCommand::Move => self.root.join(if self.directory {
+                    "source/before.pgn"
+                } else {
+                    "before.pgn"
+                }),
+                QueuedWorkspaceCommand::Restore => self.original_path.clone(),
                 QueuedWorkspaceCommand::Rename => self.original_path.with_file_name("after.pgn"),
                 QueuedWorkspaceCommand::Trash => {
                     assert!(rebound.path().starts_with(self.root.join(TRASH_DIRECTORY)));
