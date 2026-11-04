@@ -20814,7 +20814,7 @@ Fixed by d1882467 (drain session a7d7a3cd): `rename_information_buffer` floors t
 
 ### Required macOS jobs on e87df430 cancel before runner acquisition, so remote CI is red
 
-* **ID:** f-20261104-05 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** github-macos-runners-available
+* **ID:** f-20261104-05 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** f895315b-a040-4867-8b8a-cf3a1aca2cce
 * **Impact class:** tooling
 * **Where:** GitHub Test run 41855308635 on e87df430c12e7dad6b67690d0c9dff52d9fac7f9 (master), jobs rust-macos-test, rust-platform macos-26-intel aarch64-apple-darwin and x86_64-apple-darwin; `.github/workflows/test.yml`; `scripts/check-remote-ci.mjs`.
