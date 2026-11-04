@@ -3549,6 +3549,8 @@ mod win {
         // but carries the whole leaf, so it cannot be written as a plain value and the buffer is
         // laid out by hand. The offsets are taken from the crate's own struct rather than spelled
         // as literals, so the compiler derives them and a layout change cannot silently desync.
+        // NtSetInformationFile requires at least the padded struct size, even when a short leaf
+        // ends before its trailing padding.
         const ROOT_DIRECTORY_OFFSET: usize =
             std::mem::offset_of!(FILE_RENAME_INFORMATION, RootDirectory);
         const FILE_NAME_LENGTH_OFFSET: usize =
@@ -3557,7 +3559,8 @@ mod win {
 
         let wide: Vec<u16> = target.encode_wide().collect();
         let name_bytes = wide.len() * std::mem::size_of::<u16>();
-        let buffer_len = FILE_NAME_OFFSET + name_bytes;
+        let buffer_len =
+            (FILE_NAME_OFFSET + name_bytes).max(std::mem::size_of::<FILE_RENAME_INFORMATION>());
         let mut buffer = vec![0_u8; buffer_len];
         unsafe {
             std::ptr::write_unaligned(buffer.as_mut_ptr().cast::<u32>(), flags);
@@ -12056,6 +12059,68 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(std::fs::read(&target).expect("target"), b"old");
         assert_no_windows_temporary_files(dir.path());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_workspace_entry_rename_to_one_character_preserves_typed_collisions() {
+        for directory in [false, true] {
+            let root = tempfile::tempdir().expect("root");
+            let parent = windows_test_parent(root.path());
+            for name in ["source", "second"] {
+                let path = root.path().join(name);
+                if directory {
+                    std::fs::create_dir(&path).expect("directory");
+                    std::fs::write(path.join("child"), name).expect("child");
+                } else {
+                    std::fs::write(path, name).expect("file");
+                }
+            }
+            let identity = entry_identity_at(&parent, OsStr::new("source"), directory)
+                .expect("source identity");
+            let outcome = rename_workspace_entry_at(
+                &parent,
+                OsStr::new("source"),
+                identity,
+                directory,
+                &parent,
+                OsStr::new("X"),
+            )
+            .expect("rename to one-character leaf");
+            assert!(matches!(outcome, AtomicFileOutcome::DurableCommit));
+            assert!(!root.path().join("source").exists());
+            assert_eq!(
+                entry_identity_at(&parent, OsStr::new("X"), directory).expect("renamed identity"),
+                identity
+            );
+            let second_identity = entry_identity_at(&parent, OsStr::new("second"), directory)
+                .expect("second identity");
+            let error = rename_workspace_entry_at(
+                &parent,
+                OsStr::new("second"),
+                second_identity,
+                directory,
+                &parent,
+                OsStr::new("X"),
+            )
+            .expect_err("occupied one-character leaf");
+            let payload = serde_json::to_value(error).expect("collision payload");
+            assert_eq!(payload["category"], "conflict");
+            assert_eq!(payload["nameTaken"], true);
+            assert_eq!(
+                entry_identity_at(&parent, OsStr::new("second"), directory)
+                    .expect("preserved source identity"),
+                second_identity
+            );
+            for (name, contents) in [
+                ("X", b"source".as_slice()),
+                ("second", b"second".as_slice()),
+            ] {
+                let path = root.path().join(name);
+                let path = if directory { path.join("child") } else { path };
+                assert_eq!(std::fs::read(path).expect("preserved contents"), contents);
+            }
+        }
     }
 
     #[cfg(windows)]
