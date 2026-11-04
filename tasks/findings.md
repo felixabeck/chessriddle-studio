@@ -19966,7 +19966,7 @@ Fixed in 17d570d3: the board column's fixed 0.5rem gaps became two shrinkable 0.
 
 ### German catalogue spells "Weiss" instead of "Weiß" in four strings
 
-* **ID:** f-20261031-04 · **Status:** open · **Area:** i18n · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261031-04 · **Status:** handled · **Area:** i18n · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** ux
 * **Where:** `src/translation/de-DE.json` keys `Fen.White` ("Weiss"), `Fen.WhiteToMove` ("Weiss am Zug"), `Board.Analysis.Tablebase.WhiteWins` ("Weiss gewinnt"), `Board.Database.Local.Result.WhiteWon` ("Weiss hat gewonnen"); the same catalogue already uses "Weiß" in five other strings.
 * **Defect:** German users see the Swiss spelling "Weiss" mixed with "Weiß" in the same UI. `Fen.White` is now shown as text in the database Games colour-filter chip (build search-side-toggle, 2026-10-31), so the inconsistency is prominent there.
@@ -19974,6 +19974,10 @@ Fixed in 17d570d3: the board column's fixed 0.5rem gaps became two shrinkable 0.
 * **Spotted outside diff:** the colour-filter build reused the existing `Fen.White` key and did not change its value.
 * **Note:** changing `Fen.White` moves the two de-DE snapshots `database-side-blackwhite-menu-{desktop,320-200}-de-dark` in `e2e/database-files.spec.ts`; re-record them via `pnpm test:e2e:update` (container) and update the spec's `"Farbe des Gegners: Weiss"` assertion.
 * **Found by:** Claude Code build session e68b0001-fd41-489f-b2b2-93048631b46d, 2026-10-31.
+* **Handled 2026-11-04:** `fa84b5f5` changes the four de-DE values to "Weiß" (`Fen.White`, `Fen.WhiteToMove`, `Board.Analysis.Tablebase.WhiteWins`, `Board.Database.Local.Result.WhiteWon`), updates the `"Farbe des Gegners: Weiß"` assertions in `e2e/database-files.spec.ts`, and re-records `database-side-blackwhite-menu-{desktop,320-200}-de-dark` via the container. The remaining `"Weiss"` strings in `e2e/` are PGN player-name fixtures, not catalogue text, and stay.
+* **Proof:** `node scripts/run-e2e-container.mjs --update-snapshots=changed e2e/database-files.spec.ts` → 64 passed, only the two expected snapshots changed; the desktop snapshot was inspected and shows "Weiß" in the chip and menu.
+* **Filed while working:** f-20261104-03 (database tables show English column titles in non-English locales).
+<!-- ledger-meta {"command":"close","effect_lines":3,"effect_sha256":"d66bf1bef232c3f1ac67f92595b5f517a77009ba69b130f4bead08e2f79835e7","header_sha256":"94bcdf4645aca9ab7b375fd6c59b23007ed187dec7a86434d1ef22b6aca1a76a","header_status":"handled","input_sha256":"8e96a149d690599733b1a5d021b1da7587a5ff074439e03716746014d78f2b45","kind":"mutation-receipt","operation":"57b3b1f446c442a8f2b765812acb5797b85996c738981d9212afe802e164a627","options":{"section":null},"request_id_sha256":null,"results":["f-20261031-04"],"target":"f-20261031-04","v":1} -->
 
 ---
 
