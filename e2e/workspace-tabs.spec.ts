@@ -15,6 +15,7 @@ import {
 } from "./fixtures";
 import { deserializeStorageValue } from "../src/state/store/debouncedStorage";
 import { createEmptyCard } from "ts-fsrs";
+import type { PracticeReviewWrite } from "../src/bindings/generated";
 
 test("workspace-tabs: home fills remaining height with reachable recent and due lists", async ({
     page,
@@ -51,20 +52,23 @@ test("workspace-tabs: home fills remaining height with reachable recent and due 
             },
             load_practice_deck: {
                 result: {
-                    positionsDocument: JSON.stringify({
-                        positions: [
-                            {
-                                fen: "start",
-                                answer: "e4",
-                                card: createEmptyCard(),
-                            },
-                        ],
-                    }),
-                    revision: 1,
-                    generation: 0,
-                    migrated: true,
-                    unappliedReviews: 0,
-                    orphansAcknowledged: true,
+                    epoch: "e2e-practice-epoch",
+                    deck: {
+                        positionsDocument: JSON.stringify({
+                            positions: [
+                                {
+                                    fen: "start",
+                                    answer: "e4",
+                                    card: createEmptyCard(),
+                                },
+                            ],
+                        }),
+                        revision: 1,
+                        generation: 0,
+                        migrated: true,
+                        unappliedReviews: 0,
+                        orphansAcknowledged: true,
+                    },
                 },
             },
         },
@@ -606,14 +610,17 @@ function practiceFeedbackSetup(now: Date) {
         },
         load_practice_deck: {
             result: {
-                positionsDocument: JSON.stringify({
-                    positions: [{ fen: cardFen, answer: "Nf3", card: createEmptyCard(now) }],
-                }),
-                revision: 1,
-                generation: 0,
-                migrated: false,
-                unappliedReviews: 0,
-                orphansAcknowledged: true,
+                epoch: "e2e-practice-epoch",
+                deck: {
+                    positionsDocument: JSON.stringify({
+                        positions: [{ fen: cardFen, answer: "Nf3", card: createEmptyCard(now) }],
+                    }),
+                    revision: 1,
+                    generation: 0,
+                    migrated: false,
+                    unappliedReviews: 0,
+                    orphansAcknowledged: true,
+                },
             },
         },
         record_practice_review: { result: 2 },
@@ -837,19 +844,19 @@ test("workspace-tabs: incorrect practice reveals the existing answer and its rev
     expect(calls.filter(({ command }) => command === "write_game")).toHaveLength(0);
     const writes = calls.filter(({ command }) => command === "record_practice_review");
     expect(writes).toHaveLength(1);
-    const review = writes[0].args as {
+    const reviewArgs = writes[0].args as {
         fileId: string;
         game: number;
-        generation: number;
-        revision: number;
-        baseRevision: number;
-        entry: string;
-        entryId: string;
-        positionsDocument: string;
+        expectedEpoch: string;
+        write: PracticeReviewWrite;
     };
-    expect(review).toMatchObject({
+    expect(reviewArgs).toMatchObject({
         fileId: repertoireFile.handle.id.id,
         game: 0,
+        expectedEpoch: "e2e-practice-epoch",
+    });
+    const review = reviewArgs.write;
+    expect(review).toMatchObject({
         generation: 0,
         revision: 1,
         baseRevision: 1,
@@ -1137,6 +1144,13 @@ test("workspace-tabs: real transposed practice card selects and reveals the exis
     const calls = await page.evaluate(() => window.__E2E_TAURI__.invocations());
     const sync = calls.filter(({ command }) => command === "sync_practice_positions");
     expect(sync).toHaveLength(1);
+    expect(sync[0].args).toMatchObject({
+        fileId: repertoireFile.handle.id.id,
+        game: 0,
+        generation: 0,
+        revision: 0,
+        expectedEpoch: "e2e-practice-epoch",
+    });
     expect(
         JSON.parse((sync[0].args as { positionsDocument: string }).positionsDocument).positions.map(
             (position: { answer: string }) => position.answer,

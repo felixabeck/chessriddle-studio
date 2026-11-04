@@ -630,14 +630,16 @@ async function migrateLegacyDeckInline(identity: PracticeDeckKey): Promise<void>
     }
     if (healthyNativeIdentities(inventory).has(identityKey(identity))) {
         const outcome = await outcomeForHeldDeck(legacy);
-        if (outcome.status === "failed") throw outcome.error;
+        if (outcome.status === "failed") {
+            throw outcome.error ?? new Error(i18n.t("Board.Practice.MigrationFailed"));
+        }
         retireMigratedLegacyDeckKeysFromBrowser([outcome]);
         return;
     }
 
     const outcome = await migrateLegacyDeck(globalThis.localStorage, legacy);
     if (outcome.status === "failed") {
-        throw outcome.error;
+        throw outcome.error ?? new Error(i18n.t("Board.Practice.MigrationFailed"));
     }
     retireMigratedLegacyDeckKeysFromBrowser([outcome]);
     clearPracticeIdentityState(identity, false);
