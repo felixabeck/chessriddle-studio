@@ -20814,7 +20814,7 @@ Fixed by d1882467 (drain session a7d7a3cd): `rename_information_buffer` floors t
 
 ### Required macOS jobs on e87df430 cancel before runner acquisition, so remote CI is red
 
-* **ID:** f-20261104-05 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261104-05 · **Status:** handled · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** f895315b-a040-4867-8b8a-cf3a1aca2cce
 * **Impact class:** tooling
 * **Where:** GitHub Test run 41855308635 on e87df430c12e7dad6b67690d0c9dff52d9fac7f9 (master), jobs rust-macos-test, rust-platform macos-26-intel aarch64-apple-darwin and x86_64-apple-darwin; `.github/workflows/test.yml`; `scripts/check-remote-ci.mjs`.
@@ -20823,6 +20823,9 @@ Fixed by d1882467 (drain session a7d7a3cd): `rename_information_buffer` floors t
 * **Fix shape:** once hosted macos-26-intel runners are available, rerun the failed jobs of run 41855308635 (`gh run rerun 41855308635 --failed -R felixabeck/en-croissant`) and confirm all three succeed; close with the job ids. Same external cause as handled f-20261019-06; no workflow change is implied by this observation.
 * **Proof:** `pnpm ci:remote:check` exits 0 with the three macOS jobs of the newest master run concluded success.
 * **Found by:** drain session f895315b-a040-4867-8b8a-cf3a1aca2cce while confirming the f-20261101-16 push, 2026-11-04.
+* **Handled 2026-11-04:** the three cancelled macOS jobs of Test run 41855308635 on `e87df430` recovered on rerun (spool duplicate f-20261104-06 closed with the same evidence). The cause was external: hosted runners were never acquired ("The job was not acquired by Runner of type hosted even after multiple attempts"). No workflow or code change. Recovery: `gh run rerun 41855308635 --failed` in attempt 2 brought `rust-macos-test` 126717415920 to success, while both `macos-26-intel` rust-platform jobs were cancelled again with the same annotation. Attempt 3 brought `rust-platform (macos-26-intel, x86_64-apple-darwin)` 126733446394, `rust-platform (macos-26-intel, aarch64-apple-darwin)` 126733447093 and `rust-macos-test` 126733522811 to success. The run concluded success.
+* **Proof:** `pnpm ci:remote:check` printed "Remote CI check: OK (all newest completed Test jobs succeeded on master)", exit 0.
+<!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"151299e4d34989e68fb06f679955d11826ec31f3a17f60d3de646a6fc0f6f57a","header_sha256":"2afc9ec9877a5b3c6b86fa4a479cb4874fc625cba0809dcee5ddbfb3ea3e5565","header_status":"handled","input_sha256":"81027e439b42e3255f12422ca319b75f9dedbb3696392bdac44fd363164e9c4c","kind":"mutation-receipt","operation":"fd34dd92c11f044298e1e8d7bd0fc2b730e84ea67463bcbd814f9f8c457f1fda","options":{"section":null},"request_id_sha256":null,"results":["f-20261104-05"],"target":"f-20261104-05","v":1} -->
 
 ---
 
