@@ -11879,3 +11879,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** The prompt interrupts legitimate large repertoire edits, and the deck map plus epoch remove the wrong-tree input from every in-app path; external reorders are a stated known limit. Reversal path: a ratio guard in PracticePanel's sync effect before setDeck.
 * **Decided by:** drain session 7e119598 (planner run, 5 plan-review rounds, approved; adopted by f35f888f), 2026-11-04 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"ee89ec64c5608c9bef7276e5b5cd68a17f7a86d49e08939be8096e60ccd98f5f","input_sha256":"6fbea6fba1020eb332b64dc58a853c73066fa7defa007653bfa496463af093c2","kind":"mutation-receipt","operation":"ebee4ed6052ccea5f5c95372fbdfb4e066df831f8623962ecf8b7489cc06b5bd","options":{"section":null},"request_id_sha256":null,"results":["d-20261104-14"],"target":"decisions-ledger","v":1} -->
+
+### d-20261104-15 — What does Repair do when a file's practice deck map is damaged?
+
+* **Question:** A malformed or identity-mismatched per-file deck map makes no deck of that file attributable to a game. What does Repair do?
+* **Governs:** f-20261101-17
+* **Chosen:** File-wide repair without an epoch: under the map lock remove every deck leaf of that file and replace the damaged map with a fresh valid map (all ordinals without deck, next deck number above every existing one, fresh epoch, legacy-superseded marker set).
+* **Rejected:** Rebuilding an identity map (recreates the misattribution after any delete). Refusing practice for the file forever (no recovery path).
+* **Reason:** Follows d-20260923-02 (repair removes untrusted native data rather than guessing); the existing Repair copy already names the file. Reversal path: the damaged-map branch of repair in practice.rs.
+* **Decided by:** drain session 7e119598 (planner run, 5 plan-review rounds, approved; adopted by f35f888f), 2026-11-04 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"a259ce36ec3d308051ebd9d07ca97784ab537e3243695e9f7c37899f57a58909","input_sha256":"09f8a38b489e8df4664604f4f783ebe2b90c20dd8006e0548bb369c436580566","kind":"mutation-receipt","operation":"a0eb39e1da362c59775798daa66974aaa2e1ca9d40f192981b8dcc98ff1e95ea","options":{"section":null},"request_id_sha256":null,"results":["d-20261104-15"],"target":"decisions-ledger","v":1} -->
