@@ -11849,3 +11849,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Listing, restore and delete never admit registry records, so every trashed item stays reachable at any trash and registry size. Reversal path: reintroduce handle-based commands beside the id ones.
 * **Decided by:** Claude (Opus) planner under full auto, 6 plan-review rounds approved; adopted by drain session 27871af7, 2026-11-04. · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":35,"effect_sha256":"9780677fa55dcf6196a26e7efacc351cb7af6d9f8c42a70285c2864bf06c5999","input_sha256":"a18d716980ff2b8e951f2d16a7960f96ad109336c2c74cb656b2da04b9483f1d","kind":"mutation-receipt","operation":"f499e4ace8e3c0926ef65280afac1177a4441653aada2e9a8882a661d64c4635","options":{"section":null},"request_id_sha256":null,"results":["d-20261104-08","d-20261104-09","d-20261104-10","d-20261104-11"],"target":"decisions-ledger","v":1} -->
+
+### d-20261104-12 — Which value keys trash pagination when a bucket has no readable origin time?
+
+* **Question:** Which value keys trash pagination when a bucket has no readable origin time?
+* **Governs:** f-20261104-04
+* **Chosen:** `list_trash` takes the key's seconds only from the origin record; a bucket without a readable one keys as `(0, id)` and sorts as oldest, while the row still displays the enumerated directory modification time.
+* **Rejected:** keeping the directory modification time as the key (NTFS reports the enumerated value lazily, so it changes between page requests and a bucket skips the cursor — CI `rust-windows-test` on `43f00796` and `974bea0e`); a creation-time key (no portable birth time on Linux); writing an origin in the test fixture only (patches the symptom, origin-less buckets remain in real trash).
+* **Reason:** the key must not depend on mutable metadata. Origin-backed rows keep their exact order; only degraded origin-less rows move to the end. Reversal: restore `row.trashed_seconds` as the key in `list_trash` and delete `trash_listing_pages_are_stable_when_originless_bucket_times_change`.
+* **Decided by:** Claude Code session 46ce5990-66a7-487c-966f-970e814bd456 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"f5ec2647ce79773ffe9835f220eea92825759cdbb599b68692ee4713519c6b74","input_sha256":"ff4e6b03dcee02cd17c4c98ad37406db4f82e42d41a586bb23d9aa97382d056e","kind":"mutation-receipt","operation":"dcd31789b827a3ef071352873d5250f1dac302fd4aeabaa5325925f621bf6856","options":{"section":null},"request_id_sha256":null,"results":["d-20261104-12"],"target":"decisions-ledger","v":1} -->
