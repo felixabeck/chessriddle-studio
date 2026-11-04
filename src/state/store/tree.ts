@@ -865,8 +865,17 @@ export function makeMove({
     if (sound) {
         playSound(san.includes("x"), san.includes("+"));
     }
+    const existingIndex = moveNode.children.findIndex((n) => n.san === san);
+    const targetIndex =
+        existingIndex !== -1 ? existingIndex : mainline ? 0 : moveNode.children.length;
+    const endsMainLine =
+        position.every((index) => index === 0) &&
+        targetIndex === 0 &&
+        (existingIndex === -1 || moveNode.children[existingIndex].children.length === 0);
+    // Adjudication only applies when the move ends the main line, so a variation never rewrites the game's Result.
+    const adjudicate = changeHeaders && endsMainLine;
     const previousResult = state.headers.result;
-    if (changeHeaders && pos.isEnd()) {
+    if (adjudicate && pos.isEnd()) {
         if (pos.isCheckmate()) {
             state.headers.result = pos.turn === "white" ? "0-1" : "1-0";
         }
@@ -878,7 +887,7 @@ export function makeMove({
     const newFen = makeFen(pos.toSetup());
 
     if (
-        changeHeaders &&
+        adjudicate &&
         !pos.isCheckmate() &&
         (isThreeFoldRepetition(state, newFen, position) || is50MoveRule(newFen))
     ) {
@@ -889,7 +898,7 @@ export function makeMove({
         state.dirty = true;
     }
 
-    const i = moveNode.children.findIndex((n) => n.san === san);
+    const i = existingIndex;
     if (i !== -1) {
         if (changePosition) {
             if (state.position === position) {

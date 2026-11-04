@@ -483,12 +483,106 @@ test.each(["KQkq e3", "HAha -"])(
         expect(store.getState().headers.result).toBe("*");
         expect(store.getState().makeMoves({ payload: siblingCycle }).success).toBe(true);
         expect(store.getState().position).toEqual([1, 0, 0, 0, 0, 0, 0, 0]);
-        expect(store.getState().headers.result).toBe("1/2-1/2");
+        expect(store.getState().headers.result).toBe("*");
         expect(store.getState().root.fen).toBe(fen);
         expect(store.getState().headers.fen).toBe(fen);
         expect(getNodeAtPath(store.getState().root, [0, 0, 0, 0]).children).toEqual([]);
+
+        store.getState().goToMove([0, 0, 0, 0]);
+        expect(
+            store.getState().makeMoves({ payload: ["g8f6", "g1f3", "f6g8", "f3g1"] }).success,
+        ).toBe(true);
+        expect(store.getState().position).toEqual(Array(8).fill(0));
+        expect(store.getState().headers.result).toBe("1/2-1/2");
     },
 );
+
+test.each(
+    [
+        {
+            kind: "checkmate",
+            fen: "7k/5Q2/6K1/8/8/8/8/8 w - - 0 1",
+            mainlineMove: "f7e7",
+            move: "f7g7",
+        },
+        {
+            kind: "stalemate",
+            fen: "7k/5Q2/6K1/8/8/8/8/8 w - - 0 1",
+            mainlineMove: "f7e7",
+            move: "f7e6",
+        },
+        {
+            kind: "fifty-move",
+            fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 99 1",
+            mainlineMove: "e2e4",
+            move: "g1f3",
+        },
+        {
+            kind: "insufficient material",
+            fen: "7k/8/6K1/8/8/2n5/1B6/8 w - - 0 1",
+            mainlineMove: "b2a1",
+            move: "b2c3",
+        },
+    ].flatMap((testCase) => (["1-0", "0-1"] as const).map((result) => ({ ...testCase, result }))),
+)(
+    "makeMove preserves the loaded Result $result for $kind in a variation",
+    ({ kind, fen, mainlineMove, move, result }) => {
+        const tree = defaultTree(fen);
+        const mainlineChild = addMove(tree.root, mainlineMove);
+        const [mainlinePosition] = positionFromFen(mainlineChild.fen);
+        expect(mainlinePosition!.isEnd()).toBe(false);
+        tree.headers.result = result;
+        const store = createTreeStore(undefined, tree);
+        store.getState().goToEnd();
+        store.getState().goToStart();
+
+        const candidate = parseUci(move)!;
+        const [position, error] = positionFromFen(fen);
+        expect(error).toBeNull();
+        expect(position!.isLegal(candidate)).toBe(true);
+        position!.play(candidate);
+        expect(position!.isCheckmate()).toBe(kind === "checkmate");
+        expect(position!.isStalemate()).toBe(kind === "stalemate");
+        expect(position!.isInsufficientMaterial()).toBe(kind === "insufficient material");
+        expect(position!.halfmoves >= 100).toBe(kind === "fifty-move");
+
+        store.getState().makeMove({ payload: candidate });
+
+        expect(store.getState().position).toEqual([1]);
+        expect(store.getState().currentNode().fen).toBe(makeFen(position!.toSetup()));
+        expect(store.getState().root.children[0]).toBe(mainlineChild);
+        expect(store.getState().headers.result).toBe(result);
+    },
+);
+
+test("makeMove adjudicates checkmate when inserted as the new main line end", () => {
+    const tree = defaultTree("7k/5Q2/6K1/8/8/8/8/8 w - - 0 1");
+    const formerMainline = addMove(tree.root, "f7e7");
+    const store = createTreeStore(undefined, tree);
+
+    store.getState().makeMove({ payload: parseUci("f7g7")!, mainline: true });
+
+    expect(store.getState().position).toEqual([0]);
+    expect(store.getState().currentNode().san).toBe("Qg7#");
+    expect(store.getState().currentNode().children).toEqual([]);
+    expect(store.getState().root.children[1]).toBe(formerMainline);
+    expect(store.getState().headers.result).toBe("1-0");
+});
+
+test("makeMove preserves the loaded Result when replaying a main line node with a continuation", () => {
+    const tree = defaultTree("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 99 1");
+    const child = addMove(tree.root, "g1f3");
+    addMove(child, "a7a6");
+    tree.headers.result = "1-0";
+    const store = createTreeStore(undefined, tree);
+
+    store.getState().makeMove({ payload: parseUci("g1f3")! });
+
+    expect(store.getState().position).toEqual([0]);
+    expect(store.getState().currentNode()).toBe(child);
+    expect(store.getState().headers.result).toBe("1-0");
+    expect(store.getState().dirty).toBe(false);
+});
 
 test("makeMove does not apply the 50-move result when header changes are disabled", () => {
     const tree = defaultTree("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 99 1");
