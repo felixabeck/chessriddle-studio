@@ -20823,3 +20823,22 @@ Fixed by d1882467 (drain session a7d7a3cd): `rename_information_buffer` floors t
 * **Fix shape:** once hosted macos-26-intel runners are available, rerun the failed jobs of run 41855308635 (`gh run rerun 41855308635 --failed -R felixabeck/en-croissant`) and confirm all three succeed; close with the job ids. Same external cause as handled f-20261019-06; no workflow change is implied by this observation.
 * **Proof:** `pnpm ci:remote:check` exits 0 with the three macOS jobs of the newest master run concluded success.
 * **Found by:** drain session f895315b-a040-4867-8b8a-cf3a1aca2cce while confirming the f-20261101-16 push, 2026-11-04.
+
+---
+
+## 2026-11-04 — filed through the inbox spool
+
+### Remote CI repair: Test
+* **ID:** f-20261104-06 · **Status:** handled · **Area:** ci-workflows · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Filed from:** f895315b-a040-4867-8b8a-cf3a1aca2cce
+
+* **Impact class:** tooling
+* **Found by:** drain remote-CI check (Claude Code)
+* **Where:** workflow `Test`, jobs `rust-macos-test, rust-platform (macos-26-intel, aarch64-apple-darwin), rust-platform (macos-26-intel, x86_64-apple-darwin)`.
+* **Defect:** failed jobs on `e87df430c12e7dad6b67690d0c9dff52d9fac7f9`: `rust-macos-test, rust-platform (macos-26-intel, aarch64-apple-darwin), rust-platform (macos-26-intel, x86_64-apple-darwin)`.
+* **Run URL:** https://github.com/felixabeck/en-croissant/actions/runs/41855308635
+* **Proof:** `gh run view 41855308635 --log-failed`
+* **CI run:** 41855308635
+* **Handled 2026-11-04 (duplicate of f-20261104-05):** this spool entry names the same three cancelled macOS jobs of Test run 41855308635 on `e87df430` that f-20261104-05 already owns. The cause was external: hosted runners were never acquired ("The job was not acquired by Runner of type hosted even after multiple attempts"). No workflow or code change. Recovery: `gh run rerun 41855308635 --failed` in attempt 2 brought `rust-macos-test` 126717415920 to success, while both `macos-26-intel` rust-platform jobs were cancelled again with the same annotation. Attempt 3 brought `rust-platform (macos-26-intel, x86_64-apple-darwin)` 126733446394, `rust-platform (macos-26-intel, aarch64-apple-darwin)` 126733447093 and `rust-macos-test` 126733522811 to success. The run concluded success.
+* **Proof:** `pnpm ci:remote:check` printed "Remote CI check: OK (all newest completed Test jobs succeeded on master)", exit 0.
+<!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"5221831cf38a60e70099cc359222f5a1120764fc05f65c7192bc32258887c20f","header_sha256":"6df41c3a51326f13d28e183792cdc02b0b55b8f5cd0f54ac25cfde5c102c8e7e","header_status":"handled","input_sha256":"6a0badcbdb195a96413ba48bd8a4b6a512ed34408582c948a97f5b16dccfd6e1","kind":"mutation-receipt","operation":"a0d42ce6e4fbe498d6982d88b3030aa06c10e7e735ecc0eac9957be357b5ed04","options":{"section":null},"request_id_sha256":null,"results":["f-20261104-06"],"target":"f-20261104-06","v":1} -->
