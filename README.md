@@ -60,3 +60,5 @@ For contributing to this project please refer to the [Contributing guide](./CONT
 ## License
 
 This software is licensed under GPL-3.0 License.
+
+The Alpha chess piece set (`public/pieces/alpha.css`), designed by Eric Bentzen, is not covered by the GPL. Felix Beck holds a lifelong licence from the designer to use it in ChessFable. Reselling the design or images based on it is not permitted. Any other use needs the designer's own permission.
