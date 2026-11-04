@@ -311,10 +311,19 @@ export function upsertLichessSession(
     player: string,
     lichess: LichessSession,
 ): Session[] {
+    const username = lichess.username.toLocaleLowerCase();
+    const existingHandle = sessions.find(
+        (session) =>
+            session.lichess?.username.toLocaleLowerCase() === username &&
+            session.lichess.handle !== undefined,
+    )?.lichess?.handle;
     return [
-        ...sessions.filter((session) => session.lichess?.username !== lichess.username),
+        ...sessions.filter((session) => session.lichess?.username.toLocaleLowerCase() !== username),
         {
-            lichess,
+            lichess:
+                lichess.handle === undefined && existingHandle !== undefined
+                    ? { ...lichess, handle: existingHandle }
+                    : lichess,
             player: player || lichess.username,
             updatedAt: Date.now(),
         },

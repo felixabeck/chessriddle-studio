@@ -24,6 +24,7 @@ import {
     retrySessionPersistence,
     sessionPlayerName,
     SessionSanitizationError,
+    upsertLichessSession,
 } from "./session";
 
 beforeEach(() => {
@@ -49,6 +50,64 @@ test("session player names prefer the alias, then Lichess, then Chess.com, then 
         "chesscom",
     );
     expect(sessionPlayerName({ updatedAt: 1 })).toBe("");
+});
+
+describe("upsertLichessSession", () => {
+    const account = { id: "alice", username: "alice" };
+    const authenticated = {
+        player: "Original alias",
+        updatedAt: 1,
+        lichess: { username: "alice", account, handle: "existing-handle" },
+    };
+
+    test.each(["alice", "Alice"])(
+        "preserves the authenticated handle when upserting handle-less %s with a different alias",
+        (username) => {
+            vi.spyOn(Date, "now").mockReturnValue(123);
+            const sessions = upsertLichessSession([authenticated], "New alias", {
+                username,
+                account,
+            });
+
+            expect(sessions).toEqual([
+                {
+                    player: "New alias",
+                    updatedAt: 123,
+                    lichess: { username, account, handle: "existing-handle" },
+                },
+            ]);
+            expect(
+                sessions.filter(
+                    (session) => session.lichess?.username.toLocaleLowerCase() === "alice",
+                ),
+            ).toHaveLength(1);
+        },
+    );
+
+    test("an incoming defined handle replaces the existing handle", () => {
+        const sessions = upsertLichessSession([authenticated], "New alias", {
+            username: "alice",
+            account,
+            handle: "new-handle",
+        });
+
+        expect(sessions).toHaveLength(1);
+        expect(sessions[0].lichess?.handle).toBe("new-handle");
+    });
+
+    test("a handle-less upsert without a prior session stays handle-less", () => {
+        vi.spyOn(Date, "now").mockReturnValue(123);
+        const sessions = upsertLichessSession([], "", { username: "alice", account });
+
+        expect(sessions).toEqual([
+            {
+                player: "alice",
+                updatedAt: 123,
+                lichess: { username: "alice", account },
+            },
+        ]);
+        expect(sessions[0].lichess?.handle).toBeUndefined();
+    });
 });
 
 describe("initializePersistedSessions", () => {
