@@ -11889,3 +11889,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Follows d-20260923-02 (repair removes untrusted native data rather than guessing); the existing Repair copy already names the file. Reversal path: the damaged-map branch of repair in practice.rs.
 * **Decided by:** drain session 7e119598 (planner run, 5 plan-review rounds, approved; adopted by f35f888f), 2026-11-04 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"a259ce36ec3d308051ebd9d07ca97784ab537e3243695e9f7c37899f57a58909","input_sha256":"09f8a38b489e8df4664604f4f783ebe2b90c20dd8006e0548bb369c436580566","kind":"mutation-receipt","operation":"a0eb39e1da362c59775798daa66974aaa2e1ca9d40f192981b8dcc98ff1e95ea","options":{"section":null},"request_id_sha256":null,"results":["d-20261104-15"],"target":"decisions-ledger","v":1} -->
+
+### d-20261104-16 — What happens to a deleted game's practice deck?
+
+* **Question:** When a game is deleted in-app, is its practice deck kept unreachable or removed?
+* **Governs:** f-20261101-17
+* **Chosen:** Removed under its deck lock after the map finalization; a removal failure leaves an inert deck no ordinal maps to, logged, without failing the delete.
+* **Rejected:** Keeping it unreachable, which accumulates leaves and inventory entries nobody can open.
+* **Reason:** The user deleted the game, so its deck has no game to belong to. Reversal path: skip the removal in the delete finalization; the deck stays inert.
+* **Decided by:** drain session 7e119598 (planner run, 5 plan-review rounds, approved; adopted by f35f888f), 2026-11-04 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"9b8549ca35e175955f808d253731700244f2c001d01ba327dd2058fa3baf6d7c","input_sha256":"37d42e6101a8fa95081a032c87df351732693c45e38c1574df0d3e86ad3406e0","kind":"mutation-receipt","operation":"c998abd43eab7dd83e73e75eaeb76e519d4ae75de3135151c11eef98f538ecca","options":{"section":null},"request_id_sha256":null,"results":["d-20261104-16"],"target":"decisions-ledger","v":1} -->
