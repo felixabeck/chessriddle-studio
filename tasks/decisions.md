@@ -11349,8 +11349,8 @@ Former private decision identifier: d-20261029-14
 * **Chosen:** 1000x1100 at font scale 200, measuring the app's own layout with a mounted-rows precondition, overflow only, no snapshots.
 * **Rejected:** 320x720 with injected layout CSS (measures a layout users never see; at that size the real notation has no rows); 800x720 and 1000x720 (no rows mount, f-20261101-32).
 * **Reason:** at 720px height and 200% font scale the wrapped notation header fills the card and the virtualizer mounts no rows, so any overflow check there is vacuous. Reversal path: when f-20261101-32 is fixed, move the project to 320x720 as annotated on that finding.
-* **Decided by:** Claude Code (orchestrator), build run notation-mainline-hierarchy 2026-11-01, full auto · **Superseded-by:** -
-<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"8577ded54eafd3a0f8914586aa5a4ec21d7904b2f67e8ef39569210f117892a5","input_sha256":"509584ade8c4f18f0fa2e8ff27aa61bd20fb7bbbd7b665cf9b99176a4e1215a4","kind":"mutation-receipt","operation":"212d7c72c1fa893861eeca932551bd530878c7734de6c368bbe4e5401fbb0cc0","options":{"section":null},"request_id_sha256":null,"results":["d-20261102-02"],"target":"decisions-ledger","v":1} -->
+* **Decided by:** Claude Code (orchestrator), build run notation-mainline-hierarchy 2026-11-01, full auto · **Superseded-by:** d-20261104-19
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"ff7626c3f90cbad45c1ff3aed2df5d5de4c96d0f5b0e828837749e0edec8d311","input_sha256":"509584ade8c4f18f0fa2e8ff27aa61bd20fb7bbbd7b665cf9b99176a4e1215a4","kind":"mutation-receipt","operation":"212d7c72c1fa893861eeca932551bd530878c7734de6c368bbe4e5401fbb0cc0","options":{"section":null},"request_id_sha256":null,"results":["d-20261102-02"],"target":"decisions-ledger","v":1} -->
 
 ### d-20261102-03 — How does the game notation set variations apart from the main line? (corrected restatement of d-20261102-01)
 
