@@ -4534,6 +4534,11 @@ mod tests {
         let (_directory, state, workspace) = workspace_state();
         let (original, entry, bucket, origin) = trash_subfolder_file(&state, &workspace);
         fs::write(&original, b"new occupant").unwrap();
+        let trashed_pgn = bucket.join("Najdorf.pgn");
+        let trashed_pgn_bytes = fs::read(&trashed_pgn).unwrap();
+        let origin_bytes = fs::read(&origin).unwrap();
+        let sidecar = bucket.join("Najdorf.info");
+        let sidecar_bytes = fs::read(&sidecar).unwrap();
         let error = restore_entry(
             &state.pgn_path_authority,
             &state.workspace_mutation,
@@ -4555,6 +4560,10 @@ mod tests {
         assert_eq!(fs::read(&original).unwrap(), b"new occupant");
         assert!(bucket.join("Najdorf.pgn").is_file());
         assert!(origin.is_file());
+        assert_eq!(fs::read(&trashed_pgn).unwrap(), trashed_pgn_bytes);
+        assert_eq!(fs::read(&origin).unwrap(), origin_bytes);
+        assert!(sidecar.is_file());
+        assert_eq!(fs::read(&sidecar).unwrap(), sidecar_bytes);
     }
 
     #[test]
