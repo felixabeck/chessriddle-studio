@@ -381,7 +381,8 @@ pnpm ci:remote:check
 
   Exit 1 refuses the push unless this push's commits repair the finding that owns every listed red
   job. If any listed red job has no owning finding, file it first through `./scripts/findings.py file`;
-  filing a finding alone never licenses the push. Exit 2 refuses the push and reports its
+  filing a finding alone never licenses a code push (policy §8 names the one records-only
+  exception for that filing). Exit 2 refuses the push and reports its
   cause. Only `success` passes: `skipped`, `neutral` and every other non-success conclusion are red
   because no `Test` workflow job is skipped by design. Policy §8 is the source of this refusal
   rule. The §2 gate locally type-checks and lints the `x86_64-pc-windows-gnu` target; the jobs this
