@@ -352,10 +352,12 @@ pub(crate) type CreatePostRegisterHook = Box<dyn FnOnce() + Send>;
 pub(crate) enum EditOwner {
     File(crate::infra::path_authority::PgnSnapshotIdentity),
     Collection(uuid::Uuid),
+    PracticeFile(String),
 }
 
 #[derive(Default)]
 struct PgnRepositoryInner {
+    practice_directory: Option<Arc<crate::infra::path_authority::AuthorizedDir>>,
     cache: HashMap<CacheKey, CachedScan>,
     clock: u64,
     retained_bytes: usize,
@@ -403,6 +405,42 @@ impl Default for PgnRepository {
 }
 
 impl PgnRepository {
+    pub(crate) fn initialize_practice(
+        &self,
+        directory: crate::infra::path_authority::AuthorizedDir,
+    ) -> Result<(), Error> {
+        self.inner()?.practice_directory = Some(Arc::new(directory));
+        Ok(())
+    }
+
+    fn practice_file(
+        &self,
+        rebind: Option<&PgnCapabilityRebind>,
+    ) -> Result<Option<(Arc<crate::infra::path_authority::AuthorizedDir>, String)>, Error> {
+        Ok(self
+            .inner()?
+            .practice_directory
+            .clone()
+            .zip(rebind.map(|binding| binding.path_ref.id.clone())))
+    }
+
+    /// Atomic replacement changes the inode. Keep practice evidence serialized across that
+    /// change as well as across commands which resolved the previous inode before waiting.
+    /// The shared keyed registry retains only outstanding leases, bounded by distinct file ids
+    /// with active callers. The final lease's Drop removes its entry on completion, error,
+    /// cancellation, or an unused lease being dropped.
+    fn practice_edit_lock(&self, file_id: String) -> Result<KeyedLockLease<'_, EditOwner>, Error> {
+        self.edit_owner(EditOwner::PracticeFile(file_id))
+    }
+
+    fn practice_mutation_lock(
+        &self,
+        rebind: Option<&PgnCapabilityRebind>,
+    ) -> Result<Option<KeyedLockLease<'_, EditOwner>>, Error> {
+        self.practice_file(rebind)?
+            .map(|(_, file_id)| self.practice_edit_lock(file_id))
+            .transpose()
+    }
     #[cfg(test)]
     fn set_scan_attempt_action(&self, action: Option<RevisionAttemptAction>) -> Result<(), Error> {
         self.inner()?.scan_attempt_action = action;
@@ -1626,6 +1664,100 @@ async fn read_game_core(
     })
 }
 
+async fn resolve_practice_before_mutation(
+    resolved: &crate::infra::path_authority::ResolvedPath,
+    repository: &PgnRepository,
+    rebind: Option<&PgnCapabilityRebind>,
+    cancellation: &CancellationToken,
+) -> Result<(), Error> {
+    let Some((directory, file_id)) = repository.practice_file(rebind)? else {
+        return Ok(());
+    };
+    let check_directory = directory.clone();
+    let check_id = file_id.clone();
+    if !BLOCKING_GATEWAY
+        .spawn(move || crate::practice::has_pending_delete(&check_directory, &check_id))
+        .await?
+    {
+        return Ok(());
+    }
+    // The mutation's retained descriptor can predate a previous replacement. Recovery must
+    // count the current authorized file even when that stale mutation will itself be refused.
+    if let Some(binding) = rebind.cloned() {
+        let current = BLOCKING_GATEWAY
+            .spawn(move || binding.resolve_read())
+            .await?;
+        resolve_practice_pending_locked(&current, repository, directory, file_id, cancellation)
+            .await
+    } else {
+        resolve_practice_pending_locked(resolved, repository, directory, file_id, cancellation)
+            .await
+    }
+}
+
+async fn resolve_practice_pending_locked(
+    resolved: &crate::infra::path_authority::ResolvedPath,
+    repository: &PgnRepository,
+    directory: Arc<crate::infra::path_authority::AuthorizedDir>,
+    file_id: String,
+    cancellation: &CancellationToken,
+) -> Result<(), Error> {
+    let check_directory = directory.clone();
+    let check_id = file_id.clone();
+    let pending = BLOCKING_GATEWAY
+        .spawn(move || crate::practice::has_pending_delete(&check_directory, &check_id))
+        .await?;
+    if !pending {
+        return Ok(());
+    }
+    let (_, games) = scan_current(resolved.pgn_snapshot()?, repository, cancellation).await?;
+    let count = games.len();
+    let sync = resolved.pgn_publication_sync()?;
+    BLOCKING_GATEWAY
+        .spawn(move || {
+            crate::practice::resolve_pending_delete_in(&directory, &file_id, count, sync)
+        })
+        .await
+}
+
+/// Practice recovery takes the same edit lock as content writers, before the map lock.
+pub(crate) async fn resolve_practice_pending(
+    authority: crate::infra::path_authority::SharedPathAuthority,
+    file_id: String,
+    repository: PgnRepository,
+    directory: Arc<crate::infra::path_authority::AuthorizedDir>,
+) -> Result<(), Error> {
+    let practice_lock = repository.practice_edit_lock(file_id.clone())?;
+    let _practice_guard = practice_lock.lock().await;
+    let handle = crate::infra::path_authority::FileWorkspaceHandle::new(
+        crate::infra::path_authority::PathRef {
+            id: file_id.clone(),
+        },
+    );
+    let mut rebind = PgnCapabilityRebind::new(authority.clone(), &handle);
+    let (resolved, prepared) = BLOCKING_GATEWAY
+        .spawn(move || {
+            rebind.capture_binding()?;
+            let resolved = rebind.resolve_read()?;
+            Ok((resolved, rebind))
+        })
+        .await?;
+    let identity = resolved.pgn_snapshot()?.identity;
+    let lock = prepared.edit_lock(&repository, identity)?;
+    let _guard = lock.lock().await;
+    let resolved = BLOCKING_GATEWAY
+        .spawn(move || prepared.resolve_read())
+        .await?;
+    resolve_practice_pending_locked(
+        &resolved,
+        &repository,
+        directory,
+        file_id,
+        &CancellationToken::new(),
+    )
+    .await
+}
+
 struct PgnMutation {
     target: GameRange,
     replacement: Option<PgnReplacement>,
@@ -1699,6 +1831,14 @@ pub(crate) async fn transform_file_core<T: Send + 'static>(
         + 'static,
 ) -> Result<T, Error> {
     rebind.capture_binding()?;
+    let practice_lock = repository.practice_mutation_lock(Some(&rebind))?;
+    let _practice_guard = match &practice_lock {
+        Some(lock) => Some(tokio::select! {
+            guard = lock.lock() => guard,
+            _ = cancellation.cancelled() => return Err(Error::Cancellation),
+        }),
+        None => None,
+    };
     let snapshot = resolved.pgn_snapshot()?;
     let lock = rebind.edit_lock(&repository, snapshot.identity.clone())?;
     #[cfg(test)]
@@ -1708,6 +1848,7 @@ pub(crate) async fn transform_file_core<T: Send + 'static>(
         _ = cancellation.cancelled() => return Err(Error::Cancellation),
     };
     rebind.validate_binding()?;
+    resolve_practice_before_mutation(&resolved, &repository, Some(&rebind), &cancellation).await?;
     let scan_repository = repository.clone();
     let (key, replacement, value, unchanged) = BLOCKING_GATEWAY
         .spawn_cancellable(cancellation.clone(), move |token| {
@@ -1969,6 +2110,14 @@ pub async fn delete_game_core(
         if let Some(rebind) = &mut rebind {
             rebind.capture_binding()?;
         }
+        let practice_lock = repository.practice_mutation_lock(rebind.as_ref())?;
+        let _practice_guard = match &practice_lock {
+            Some(lock) => Some(tokio::select! {
+                guard = lock.lock() => guard,
+                _ = cancellation.cancelled() => return Err(Error::Cancellation),
+            }),
+            None => None,
+        };
         let n = checked_index(n)?;
         let scan_snapshot = resolved.pgn_snapshot()?;
         let identity = scan_snapshot.identity.clone();
@@ -1986,12 +2135,29 @@ pub async fn delete_game_core(
         if cancellation.is_cancelled() {
             return Err(Error::Cancellation);
         }
+        resolve_practice_before_mutation(&resolved, &repository, rebind.as_ref(), &cancellation)
+            .await?;
         let (key, games) = scan_current(scan_snapshot, &repository, &cancellation).await?;
         if revision_string_for_key(&key) != expected_revision {
             return Err(Error::StaleGame);
         }
         let range = games.get(n).cloned().ok_or(Error::StaleGame)?;
-        commit_pgn_mutation(
+        let practice = repository.practice_file(rebind.as_ref())?;
+        let pending_id = if let Some((directory, file_id)) = &practice {
+            let directory = directory.clone();
+            let file_id = file_id.clone();
+            let count = games.len();
+            Some(
+                BLOCKING_GATEWAY
+                    .spawn(move || {
+                        crate::practice::prepare_delete_in(&directory, &file_id, n, count)
+                    })
+                    .await?,
+            )
+        } else {
+            None
+        };
+        let result = commit_pgn_mutation(
             resolved,
             key,
             PgnMutation {
@@ -2007,7 +2173,37 @@ pub async fn delete_game_core(
             &repository,
             &cancellation,
         )
-        .await
+        .await;
+        if let (Some((directory, file_id)), Some(pending_id)) = (practice, pending_id) {
+            let landed = match &result {
+                Ok(()) => Some(true),
+                Err(Error::CommittedDurabilityUncertain(
+                    crate::error::DurabilityStage::PgnEdit,
+                )) => None,
+                Err(Error::CommittedDurabilityUncertain(_)) => Some(true),
+                Err(_) => Some(false),
+            };
+            if let Some(landed) = landed {
+                if let Err(error) = BLOCKING_GATEWAY
+                    .spawn(move || {
+                        crate::practice::finish_delete_in(&directory, &file_id, &pending_id, landed)
+                    })
+                    .await
+                {
+                    if landed {
+                        log::warn!(
+                            "practice delete finalization failed: {}",
+                            error.diagnostic()
+                        );
+                        return Err(Error::CommittedDurabilityUncertain(
+                            crate::error::DurabilityStage::PracticeState,
+                        ));
+                    }
+                    return Err(error);
+                }
+            }
+        }
+        result
     })
     .await
 }
@@ -2057,6 +2253,14 @@ pub async fn write_game_core(
         if let Some(rebind) = &mut rebind {
             rebind.capture_binding()?;
         }
+        let practice_lock = repository.practice_mutation_lock(rebind.as_ref())?;
+        let _practice_guard = match &practice_lock {
+            Some(lock) => Some(tokio::select! {
+                guard = lock.lock() => guard,
+                _ = cancellation.cancelled() => return Err(Error::Cancellation),
+            }),
+            None => None,
+        };
         let game_number = n;
         let n = checked_index(n)?;
         if pgn.len() > MAX_PGN_BYTES {
@@ -2082,6 +2286,8 @@ pub async fn write_game_core(
         if cancellation.is_cancelled() {
             return Err(Error::Cancellation);
         }
+        resolve_practice_before_mutation(&resolved, &repository, rebind.as_ref(), &cancellation)
+            .await?;
         let (key, games) = scan_current(scan_snapshot, &repository, &cancellation).await?;
         let target = if let Some(range) = games.get(n).cloned() {
             range
@@ -2160,6 +2366,322 @@ pub async fn write_game_core(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn practice_decks_follow_native_delete_and_recover_uncertain_publication() {
+        use crate::infra::path_authority::{
+            ensure_app_owned_default_dir, AppDataDir, AppOwnedDefaultRoot, PathAuthority,
+            PathOperation,
+        };
+        for uncertain in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("practice.pgn");
+            std::fs::write(
+                &path,
+                "[Event \"White\"]\n\n1. e4 *\n\n[Event \"Black\"]\n\n1. d4 *\n",
+            )
+            .unwrap();
+            let mut authority =
+                PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap();
+            let handle = promote_pgn_file(&mut authority, &path);
+            let app = mock_app();
+            let state = app.state::<AppState>();
+            state.pgn_path_authority.install(authority).unwrap();
+            let practice = ensure_app_owned_default_dir(
+                &AppDataDir::for_test(directory.path()),
+                AppOwnedDefaultRoot::Practice,
+            )
+            .unwrap();
+            let file_id = handle.path_ref().id.clone();
+            for number in [0, 1] {
+                crate::practice::sync_practice_positions_in(
+                    &practice,
+                    &file_id,
+                    number,
+                    0,
+                    0,
+                    r#"{"positions":[{"fen":"start"}]}"#,
+                )
+                .unwrap();
+                crate::practice::record_practice_review_in(
+                    &practice,
+                    &file_id,
+                    number,
+                    0,
+                    1,
+                    1,
+                    r#"{"positions":[{"fen":"start"}]}"#,
+                    r#"{"fen":"start","rating":3}"#,
+                    "review",
+                )
+                .unwrap();
+            }
+            let expected = crate::practice::load_practice_deck_in(&practice, &file_id, 1)
+                .unwrap()
+                .unwrap();
+            let reviews =
+                crate::practice::load_practice_reviews_in(&practice, &file_id, 1, None, 100)
+                    .unwrap();
+            state.pgn_repository.initialize_practice(practice).unwrap();
+            let practice = state
+                .pgn_repository
+                .inner()
+                .unwrap()
+                .practice_directory
+                .clone()
+                .unwrap();
+            let selected = read_game_core(
+                resolve_pgn(&state, &handle, PathOperation::ReadPgn).unwrap(),
+                0,
+                &CancellationToken::new(),
+                &state.pgn_repository,
+            )
+            .await
+            .unwrap();
+            let refused = delete_through_capability(
+                &app,
+                &handle,
+                0,
+                "wrong stamp".into(),
+                selected.revision.clone(),
+            )
+            .await;
+            assert!(matches!(refused, Err(Error::StaleGame)));
+            assert_eq!(
+                crate::practice::practice_epoch_in(&practice, &file_id, 0)
+                    .unwrap()
+                    .epoch,
+                "no-map"
+            );
+            if uncertain {
+                state
+                    .pgn_repository
+                    .set_atomic_file_injector(Some(Arc::new(crate::infra::fs::ParentSyncFault(
+                        "practice delete",
+                    ))))
+                    .unwrap();
+            }
+            let result =
+                delete_through_capability(&app, &handle, 0, selected.stamp, selected.revision)
+                    .await;
+            if uncertain {
+                assert!(
+                    matches!(
+                        result,
+                        Err(Error::CommittedDurabilityUncertain(
+                            crate::error::DurabilityStage::PgnEdit
+                        ))
+                    ),
+                    "{result:?}"
+                );
+                assert!(crate::practice::has_pending_delete(&practice, &file_id).unwrap());
+                state.pgn_repository.set_atomic_file_injector(None).unwrap();
+                resolve_practice_pending(
+                    state.pgn_path_authority.clone(),
+                    file_id.clone(),
+                    state.pgn_repository.clone(),
+                    practice.clone(),
+                )
+                .await
+                .unwrap();
+            } else {
+                result.unwrap();
+            }
+            let loaded =
+                crate::practice::load_mapped_practice_deck_in(&practice, &file_id, 0).unwrap();
+            assert_eq!(loaded.deck.unwrap(), expected);
+            assert_ne!(loaded.epoch, "no-map");
+            assert_eq!(
+                crate::practice::load_practice_reviews_in(&practice, &file_id, 1, None, 100)
+                    .unwrap(),
+                reviews
+            );
+            assert!(
+                crate::practice::load_practice_deck_in(&practice, &file_id, 0)
+                    .unwrap()
+                    .is_none()
+            );
+            let inventory = crate::practice::list_practice_decks_in(&practice).unwrap();
+            assert_eq!(
+                inventory.decks,
+                vec![crate::practice::PracticeDeckIdentity { file_id, game: 0 }]
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn every_content_mutation_resolves_pending_before_it_can_change_count() {
+        use crate::infra::path_authority::{
+            ensure_app_owned_default_dir, AppDataDir, AppOwnedDefaultRoot, PathAuthority,
+            PathOperation,
+        };
+        for append_expectation in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("practice.pgn");
+            std::fs::write(&path, "[Event \"White\"]\n\n1. e4 *\n").unwrap();
+            let mut authority =
+                PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap();
+            let handle = promote_pgn_file(&mut authority, &path);
+            let app = mock_app();
+            let state = app.state::<AppState>();
+            state.pgn_path_authority.install(authority).unwrap();
+            let practice = ensure_app_owned_default_dir(
+                &AppDataDir::for_test(directory.path()),
+                AppOwnedDefaultRoot::Practice,
+            )
+            .unwrap();
+            let file_id = handle.path_ref().id.clone();
+            crate::practice::prepare_delete_in(&practice, &file_id, 0, 1).unwrap();
+            state.pgn_repository.initialize_practice(practice).unwrap();
+            let practice = state
+                .pgn_repository
+                .inner()
+                .unwrap()
+                .practice_directory
+                .clone()
+                .unwrap();
+            // A rename and an in-place edit change the revision while keeping count evidence.
+            let renamed = directory.path().join("renamed.pgn");
+            std::fs::rename(&path, &renamed).unwrap();
+            std::fs::rename(&renamed, &path).unwrap();
+            std::fs::write(&path, "[Event \"Edited\"]\n\n1. d4 *\n").unwrap();
+            write_through_capability(&app, &handle, 0, "[Event \"Saved\"]\n\n1. e4 *\n".into())
+                .await
+                .unwrap();
+            assert!(!crate::practice::has_pending_delete(&practice, &file_id).unwrap());
+            assert_eq!(
+                crate::practice::practice_epoch_in(&practice, &file_id, 0)
+                    .unwrap()
+                    .epoch,
+                "no-map"
+            );
+            crate::practice::prepare_delete_in(&practice, &file_id, 0, 1).unwrap();
+            if append_expectation {
+                append_through_capability(
+                    &app,
+                    &handle,
+                    1,
+                    "[Event \"Append\"]\n\n1. c4 *\n".into(),
+                )
+                .await
+                .unwrap();
+            } else {
+                write_through_capability(
+                    &app,
+                    &handle,
+                    1,
+                    "[Event \"End save\"]\n\n1. c4 *\n".into(),
+                )
+                .await
+                .unwrap();
+            }
+            assert!(!crate::practice::has_pending_delete(&practice, &file_id).unwrap());
+            assert_eq!(
+                crate::practice::practice_epoch_in(&practice, &file_id, 0)
+                    .unwrap()
+                    .epoch,
+                "no-map"
+            );
+            let saved = read_game_core(
+                resolve_pgn(&state, &handle, PathOperation::ReadPgn).unwrap(),
+                0,
+                &CancellationToken::new(),
+                &state.pgn_repository,
+            )
+            .await
+            .unwrap();
+            // A present but malformed map fails closed, including for ordinary saves.
+            for entry in std::fs::read_dir(practice.path()).unwrap() {
+                let entry = entry.unwrap();
+                if entry
+                    .file_name()
+                    .to_string_lossy()
+                    .ends_with("-deck-map.json")
+                {
+                    std::fs::write(entry.path(), b"{damaged").unwrap();
+                }
+            }
+            let before = std::fs::read(&path).unwrap();
+            assert!(matches!(
+                write_through_capability(&app, &handle, 0, saved.pgn.clone()).await,
+                Err(Error::InvalidInput(_))
+            ));
+            assert!(matches!(
+                append_through_capability(&app, &handle, 2, saved.pgn.clone()).await,
+                Err(Error::InvalidInput(_))
+            ));
+            let resolved = resolve_pgn(&state, &handle, PathOperation::WritePgn).unwrap();
+            let transformed = transform_file_core(
+                resolved,
+                saved.revision.clone(),
+                state.pgn_repository.clone(),
+                PgnCapabilityRebind::new(state.pgn_path_authority.clone(), &handle),
+                CancellationToken::new(),
+                |_, _, _, _| -> Result<(), Error> {
+                    panic!("damaged map must refuse before transform")
+                },
+            )
+            .await;
+            assert!(matches!(transformed, Err(Error::InvalidInput(_))));
+            assert!(matches!(
+                delete_through_capability(&app, &handle, 0, saved.stamp, saved.revision).await,
+                Err(Error::InvalidInput(_))
+            ));
+            assert_eq!(std::fs::read(&path).unwrap(), before);
+        }
+    }
+
+    #[cfg(not(unix))]
+    #[tokio::test]
+    async fn delete_command_platform_refusal_preserves_practice_state() {
+        use crate::infra::path_authority::{
+            ensure_app_owned_default_dir, AppDataDir, AppOwnedDefaultRoot, FileWorkspaceHandle,
+            PathRef,
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let practice = ensure_app_owned_default_dir(
+            &AppDataDir::for_test(directory.path()),
+            AppOwnedDefaultRoot::Practice,
+        )
+        .unwrap();
+        crate::practice::sync_practice_positions_in(
+            &practice,
+            "file",
+            0,
+            0,
+            0,
+            r#"{"positions":[]}"#,
+        )
+        .unwrap();
+        let pending = crate::practice::prepare_delete_in(&practice, "file", 0, 1).unwrap();
+        crate::practice::finish_delete_in(&practice, "file", &pending, false).unwrap();
+        let before = std::fs::read_dir(practice.path())
+            .unwrap()
+            .map(|entry| {
+                let entry = entry.unwrap();
+                (entry.file_name(), std::fs::read(entry.path()).unwrap())
+            })
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let app = mock_app();
+        let result = delete_game(
+            FileWorkspaceHandle::new(PathRef { id: "file".into() }),
+            0,
+            "stamp".into(),
+            "revision".into(),
+            app.state::<AppState>(),
+        )
+        .await;
+        assert!(matches!(result, Err(Error::Conflict(_))));
+        let after = std::fs::read_dir(practice.path())
+            .unwrap()
+            .map(|entry| {
+                let entry = entry.unwrap();
+                (entry.file_name(), std::fs::read(entry.path()).unwrap())
+            })
+            .collect::<std::collections::BTreeMap<_, _>>();
+        assert_eq!(before, after);
+    }
     use super::*;
     use std::{
         io::{BufWriter, Cursor},
@@ -3175,6 +3697,46 @@ mod tests {
             cloned.retained_edit_lock_count().expect("final lock count"),
             0
         );
+    }
+
+    #[tokio::test]
+    async fn practice_file_lock_leases_reclaim_holders_waiters_errors_and_unused_keys() {
+        let repository = PgnRepository::default();
+        let held_lease = repository.practice_edit_lock("file".into()).unwrap();
+        let held = held_lease.lock().await;
+        let waiter = repository.practice_edit_lock("file".into()).unwrap();
+        let mut waiting = Box::pin(waiter.lock());
+        assert!(futures_util::poll!(&mut waiting).is_pending());
+        assert_eq!(repository.retained_edit_lock_count().unwrap(), 1);
+        // Dropping a cancelled wait releases its lease without disturbing the holder.
+        drop(waiting);
+        drop(waiter);
+        let unused = repository.practice_edit_lock("unused".into()).unwrap();
+        assert_eq!(repository.retained_edit_lock_count().unwrap(), 2);
+        drop(unused);
+        assert_eq!(repository.retained_edit_lock_count().unwrap(), 1);
+        drop(held);
+        drop(held_lease);
+        assert_eq!(repository.retained_edit_lock_count().unwrap(), 0);
+
+        let failed = async {
+            let lease = repository.practice_edit_lock("error".into())?;
+            let _guard = lease.lock().await;
+            Err::<(), Error>(Error::Cancellation)
+        }
+        .await;
+        assert!(failed.is_err());
+        assert_eq!(repository.retained_edit_lock_count().unwrap(), 0);
+        let burst = (0..32)
+            .map(|index| {
+                repository
+                    .practice_edit_lock(format!("file-{index}"))
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(repository.retained_edit_lock_count().unwrap(), burst.len());
+        drop(burst);
+        assert_eq!(repository.retained_edit_lock_count().unwrap(), 0);
     }
 
     async fn delete_with_snapshot(

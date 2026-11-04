@@ -560,6 +560,23 @@ impl ResolvedPath {
         Self::pgn_snapshot_file(file)
     }
 
+    /// Re-establish publication durability before resolving a pending practice remap.
+    pub(crate) fn pgn_publication_sync(
+        &self,
+    ) -> Result<impl FnOnce() -> Result<(), Error> + Send + 'static, Error> {
+        self.pgn_allowed()?;
+        let parent = self
+            .parent
+            .as_ref()
+            .ok_or_else(|| Error::Conflict("PGN parent descriptor is unavailable".into()))?
+            .try_clone()?;
+        Ok(move || {
+            parent.sync_all().map_err(|_| {
+                Error::CommittedDurabilityUncertain(crate::error::DurabilityStage::PgnEdit)
+            })
+        })
+    }
+
     /// Returns the backend-only location for an already-opened puzzle database.
     /// The retained file handle pins the exact identity through the SQLite
     /// operation, so the renderer never gains a native path or sibling handle.

@@ -17,6 +17,7 @@ vi.mock("@/platform/tauri", () => ({
     tauri: {
         listPracticeDecks: mocks.list,
         migratePracticeDeck: mocks.migrate,
+        practiceEpoch: vi.fn(async () => ({ epoch: "no-map", legacySuperseded: false })),
         reconcileStartupPathOwners: mocks.reconcile,
         reconcileEngineAttachments: mocks.reconcileAttachments,
     },

@@ -15,6 +15,7 @@ const native = vi.hoisted(() => ({
     reset: vi.fn(),
     sync: vi.fn(),
     list: vi.fn(),
+    epoch: vi.fn(),
 }));
 const persistError = vi.hoisted(() => ({ report: vi.fn() }));
 
@@ -23,6 +24,7 @@ vi.mock("@/platform/tauri", () => ({
         acknowledgePracticeOrphans: native.acknowledge,
         listPracticeDecks: native.list,
         loadPracticeDeck: native.load,
+        practiceEpoch: native.epoch,
         loadPracticeReviews: native.loadReviews,
         migratePracticeDeck: native.migrate,
         recordPracticeReview: native.record,
@@ -46,6 +48,7 @@ import {
     PRACTICE_MAX_CONFLICT_RETRIES,
     PRACTICE_SYNC_DEBOUNCE_MS,
     resetPracticeMigrationForTests,
+    recordPracticeReview,
     retireMigratedLegacyDeckKeys,
     retireMigratedLegacyDeckKeysFromBrowser,
     runPracticeMigrationPass,
@@ -76,12 +79,15 @@ function position(fen = firstFen, card = { due: "2026-09-22T00:00:00.000Z", reps
 
 function snapshot(positions: Position[], overrides: Partial<PracticeDeckValue> = {}) {
     return {
-        positionsDocument: JSON.stringify({ positions }),
-        revision: overrides.revision ?? 4,
-        generation: overrides.generation ?? 2,
-        migrated: true,
-        unappliedReviews: overrides.unappliedReviews ?? 0,
-        orphansAcknowledged: overrides.orphansAcknowledged ?? true,
+        epoch: overrides.epoch ?? "no-map",
+        deck: {
+            positionsDocument: JSON.stringify({ positions }),
+            revision: overrides.revision ?? 4,
+            generation: overrides.generation ?? 2,
+            migrated: true,
+            unappliedReviews: overrides.unappliedReviews ?? 0,
+            orphansAcknowledged: overrides.orphansAcknowledged ?? true,
+        },
     };
 }
 
@@ -143,7 +149,8 @@ beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
     native.acknowledge.mockReset().mockResolvedValue(null);
-    native.load.mockReset();
+    native.load.mockReset().mockResolvedValue({ epoch: "no-map", deck: null });
+    native.epoch.mockReset().mockResolvedValue({ epoch: "no-map", legacySuperseded: false });
     native.loadReviews.mockReset();
     native.migrate.mockReset().mockResolvedValue({});
     native.record.mockReset().mockResolvedValue(5);
@@ -157,6 +164,117 @@ beforeEach(() => {
 
 afterEach(() => {
     vi.useRealTimers();
+});
+
+describe("practice epoch authority", () => {
+    test("sends the rating snapshot as one write argument alongside its epoch", async () => {
+        const document = JSON.stringify({ positions: [position()] });
+        const entry = JSON.stringify({ fen: firstFen, rating: 3 });
+        await recordPracticeReview("file-a", 2, 4, 9, 7, document, entry, "rating-id", "epoch-a");
+        expect(native.record).toHaveBeenCalledExactlyOnceWith("file-a", 2, "epoch-a", {
+            generation: 4,
+            revision: 9,
+            baseRevision: 7,
+            positionsDocument: document,
+            entry,
+            entryId: "rating-id",
+        });
+    });
+
+    test("drops the first sync when its reload observes a new epoch", async () => {
+        native.load
+            .mockResolvedValueOnce({ epoch: "no-map", deck: null })
+            .mockResolvedValueOnce({ epoch: "after-delete", deck: null });
+        const mounted = mountDeck();
+        await waitForReady(mounted.store, mounted.atom);
+        vi.useFakeTimers();
+        const write = mounted.store.set(mounted.atom, { type: "sync", positions: [position()] });
+        await vi.advanceTimersByTimeAsync(PRACTICE_SYNC_DEBOUNCE_MS);
+        await write;
+        expect(native.sync).not.toHaveBeenCalled();
+        expect(mounted.store.get(mounted.atom)).toMatchObject({
+            epoch: "after-delete",
+            status: "ready",
+            positions: [],
+        });
+        expect(persistError.report).toHaveBeenCalledOnce();
+        mounted.unsubscribe();
+    });
+
+    test("rehydrates an epoch-conflicted rating without resubmitting it or a queued rating", async () => {
+        const source = position();
+        native.load
+            .mockResolvedValueOnce(snapshot([source], { epoch: "old" }))
+            .mockResolvedValueOnce(snapshot([source], { epoch: "new" }));
+        const first = deferred<number>();
+        native.record.mockImplementationOnce(() => first.promise);
+        const mounted = mountDeck();
+        await waitForReady(mounted.store, mounted.atom);
+        const one = mounted.store.set(mounted.atom, ratingMutation([source]));
+        const two = mounted.store.set(mounted.atom, {
+            ...ratingMutation([source]),
+            entryId: "queued",
+        });
+        first.reject({ tag: "backend-error", category: "conflict", message: "epoch changed" });
+        await Promise.all([one, two]);
+        expect(native.record).toHaveBeenCalledOnce();
+        expect(native.record.mock.calls[0][2]).toBe("old");
+        expect(mounted.store.get(mounted.atom)).toMatchObject({ epoch: "new", status: "ready" });
+        mounted.unsubscribe();
+    });
+
+    test("uses the independent epoch read to repair a damaged map without an epoch", async () => {
+        native.load
+            .mockRejectedValueOnce({
+                tag: "backend-error",
+                category: "invalid-input",
+                rootFailure: "unusable",
+                message: "damaged map",
+            })
+            .mockResolvedValue({ epoch: "repaired", deck: null });
+        native.epoch.mockRejectedValueOnce({
+            tag: "backend-error",
+            category: "invalid-input",
+            rootFailure: "unusable",
+            message: "damaged map",
+        });
+        const mounted = mountDeck();
+        await vi.waitFor(() => expect(mounted.store.get(mounted.atom).repairable).toBe(true));
+        await mounted.store.set(mounted.atom, { type: "repair" });
+        expect(native.repair).toHaveBeenCalledExactlyOnceWith("file-a", 0, null);
+        expect(mounted.store.get(mounted.atom)).toMatchObject({
+            epoch: "repaired",
+            status: "ready",
+        });
+        mounted.unsubscribe();
+    });
+
+    test("retains superseded legacy values without importing or blocking practice", async () => {
+        const legacy = JSON.stringify(legacyData());
+        localStorage.setItem("deck-file-a-0", legacy);
+        native.epoch.mockResolvedValue({ epoch: "after-delete", legacySuperseded: true });
+        native.load.mockResolvedValue({ epoch: "after-delete", deck: null });
+        const result = await runPracticeMigrationPass();
+        expect(result.outcomes[0]?.status).toBe("superseded");
+        retireMigratedLegacyDeckKeysFromBrowser(result.outcomes);
+        expect(native.migrate).not.toHaveBeenCalled();
+        expect(localStorage.getItem("deck-file-a-0")).toBe(legacy);
+        expect(persistError.report).not.toHaveBeenCalled();
+        const mounted = mountDeck();
+        await waitForReady(mounted.store, mounted.atom);
+        mounted.unsubscribe();
+    });
+
+    test("does not retire a superseded legacy value when native inventory already has its ordinal", async () => {
+        localStorage.setItem("deck-file-a-0", JSON.stringify(legacyData()));
+        native.list.mockResolvedValue({ decks: [{ fileId: "file-a", game: 0 }], anomalies: [] });
+        native.epoch.mockResolvedValue({ epoch: "after-delete", legacySuperseded: true });
+        const result = await runPracticeMigrationPass();
+        retireMigratedLegacyDeckKeysFromBrowser(result.outcomes);
+        expect(result.outcomes[0]?.status).toBe("superseded");
+        expect(localStorage.getItem("deck-file-a-0")).not.toBeNull();
+        expect(native.migrate).not.toHaveBeenCalled();
+    });
 });
 
 describe("retiring migrated legacy deck keys", () => {
@@ -278,7 +396,7 @@ describe("the real practice deck atom", () => {
     });
 
     test("creates a missing deck through sync at revision and generation zero", async () => {
-        native.load.mockResolvedValue(null);
+        native.load.mockResolvedValue({ epoch: "no-map", deck: null });
         const { atom, store, unsubscribe } = mountDeck();
         await waitForReady(store, atom);
         vi.useFakeTimers();
@@ -293,6 +411,7 @@ describe("the real practice deck atom", () => {
             0,
             0,
             expect.stringContaining('"positions"'),
+            "no-map",
         );
         expect(Object.keys(JSON.parse(native.sync.mock.calls[0][4]))).toEqual(["positions"]);
         unsubscribe();
@@ -363,7 +482,7 @@ describe("the real practice deck atom", () => {
         const { atom, store, unsubscribe } = mountDeck();
         await vi.waitFor(() => expect(store.get(atom).status).toBe("read-failed"));
         expect(store.get(atom).repairable).toBe(true);
-        native.load.mockResolvedValue(null);
+        native.load.mockResolvedValue({ epoch: "no-map", deck: null });
 
         await store.set(atom, { type: "repair" });
         expect(native.repair).toHaveBeenCalledOnce();
@@ -414,6 +533,7 @@ describe("the real practice deck atom", () => {
             "repaired",
             0,
             JSON.stringify(legacyData()),
+            "no-map",
         );
         expect(native.list).toHaveBeenCalledTimes(2);
         expect(result.inventory?.anomalies).toEqual([]);
@@ -651,8 +771,8 @@ describe("the real practice deck atom", () => {
             expect(JSON.parse(native.sync.mock.calls[0][4]).positions).toEqual([
                 { ...rated, fen: refreshed },
             ]);
-            expect(JSON.parse(native.record.mock.calls[0][6]).fen).toBe(raw);
-            expect(native.record.mock.calls[0][7]).toBe("before-sync");
+            expect(JSON.parse(native.record.mock.calls[0][3].entry).fen).toBe(raw);
+            expect(native.record.mock.calls[0][3].entryId).toBe("before-sync");
             unsubscribe();
         },
     );
@@ -726,9 +846,9 @@ describe("the real practice deck atom", () => {
         await Promise.all([syncWrite, ratingWrite]);
 
         expect(native.record).toHaveBeenCalledOnce();
-        expect(native.record.mock.calls[0][3]).toBe(5);
-        expect(native.record.mock.calls[0][4]).toBe(5);
-        expect(native.record.mock.calls[0][7]).toBe("after-sync");
+        expect(native.record.mock.calls[0][3].revision).toBe(5);
+        expect(native.record.mock.calls[0][3].baseRevision).toBe(5);
+        expect(native.record.mock.calls[0][3].entryId).toBe("after-sync");
         unsubscribe();
     });
 
@@ -756,8 +876,8 @@ describe("the real practice deck atom", () => {
         await vi.waitFor(() => expect(native.record).toHaveBeenCalledOnce());
         firstResult.resolve(5);
         await vi.waitFor(() => expect(native.record).toHaveBeenCalledTimes(2));
-        expect(native.record.mock.calls[1][3]).toBe(5);
-        expect(native.record.mock.calls[1][7]).toBe("second-rating");
+        expect(native.record.mock.calls[1][3].revision).toBe(5);
+        expect(native.record.mock.calls[1][3].entryId).toBe("second-rating");
         secondResult.resolve(6);
         await Promise.all([firstWrite, secondWrite]);
         unsubscribe();
@@ -860,15 +980,15 @@ describe("the real practice deck atom", () => {
             });
 
             expect(native.record).toHaveBeenCalledTimes(2);
-            expect(native.record.mock.calls[0][4]).toBe(4);
-            expect(native.record.mock.calls[1][4]).toBe(4);
-            expect(native.record.mock.calls[0][7]).toBe("entry-fixed");
-            expect(native.record.mock.calls[1][7]).toBe("entry-fixed");
-            expect(JSON.parse(native.record.mock.calls[1][5]).positions).toEqual([
+            expect(native.record.mock.calls[0][3].baseRevision).toBe(4);
+            expect(native.record.mock.calls[1][3].baseRevision).toBe(4);
+            expect(native.record.mock.calls[0][3].entryId).toBe("entry-fixed");
+            expect(native.record.mock.calls[1][3].entryId).toBe("entry-fixed");
+            expect(JSON.parse(native.record.mock.calls[1][3].positionsDocument).positions).toEqual([
                 { ...changed, fen: refreshed },
                 second,
             ]);
-            expect(JSON.parse(native.record.mock.calls[1][6]).fen).toBe(raw);
+            expect(JSON.parse(native.record.mock.calls[1][3].entry).fen).toBe(raw);
             expect(store.get(atom).status).toBe("ready");
             unsubscribe();
         },
@@ -1007,7 +1127,12 @@ describe("the eager legacy migration pass", () => {
 
         await runPracticeMigrationPass();
 
-        expect(native.migrate).toHaveBeenCalledWith("damaged", 4, JSON.stringify(legacyData()));
+        expect(native.migrate).toHaveBeenCalledWith(
+            "damaged",
+            4,
+            JSON.stringify(legacyData()),
+            "no-map",
+        );
     });
 
     test("isolates a failed first deck and still migrates later decks", async () => {
@@ -1047,7 +1172,12 @@ describe("the eager legacy migration pass", () => {
 
         await runPracticeMigrationPass();
 
-        expect(native.migrate).toHaveBeenCalledWith("real", 0, JSON.stringify(legacyData()));
+        expect(native.migrate).toHaveBeenCalledWith(
+            "real",
+            0,
+            JSON.stringify(legacyData()),
+            "no-map",
+        );
     });
 
     test("continues past malformed keys while retaining valid keys and distrusting the family", async () => {
@@ -1062,7 +1192,12 @@ describe("the eager legacy migration pass", () => {
 
         const result = await runPracticeMigrationPass();
 
-        expect(native.migrate).toHaveBeenCalledWith("before", 0, JSON.stringify(legacyData()));
+        expect(native.migrate).toHaveBeenCalledWith(
+            "before",
+            0,
+            JSON.stringify(legacyData()),
+            "no-map",
+        );
         expect(native.migrate).toHaveBeenCalledTimes(1);
         expect(result.outcomes).toEqual([
             expect.objectContaining({ identity: { file: "before", game: 0 }, status: "migrated" }),
@@ -1130,7 +1265,7 @@ describe("the eager legacy migration pass", () => {
 
     test("rechecks and migrates a legacy key immediately before native creation", async () => {
         native.load
-            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce({ epoch: "no-map", deck: null })
             .mockResolvedValueOnce(snapshot([position()], { revision: 9, generation: 2 }));
         native.list.mockResolvedValue({ decks: [], anomalies: [] });
         native.migrate.mockResolvedValue(migrationOutcome());
@@ -1143,7 +1278,12 @@ describe("the eager legacy migration pass", () => {
         await vi.advanceTimersByTimeAsync(PRACTICE_SYNC_DEBOUNCE_MS);
         await write;
 
-        expect(native.migrate).toHaveBeenCalledWith("appeared", 0, JSON.stringify(legacyData()));
+        expect(native.migrate).toHaveBeenCalledWith(
+            "appeared",
+            0,
+            JSON.stringify(legacyData()),
+            "no-map",
+        );
         expect(localStorage.getItem("deck-appeared-0")).toBeNull();
         expect(native.sync).toHaveBeenCalledOnce();
         expect(native.sync.mock.calls[0][2]).toBe(2);
@@ -1153,7 +1293,7 @@ describe("the eager legacy migration pass", () => {
 
     test("retires the legacy key and syncs when inline inventory already contains the deck", async () => {
         native.load
-            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce({ epoch: "no-map", deck: null })
             .mockResolvedValueOnce(snapshot([position()], { revision: 9, generation: 2 }));
         const mounted = mountDeck("held", 0);
         await waitForReady(mounted.store, mounted.atom);
@@ -1182,7 +1322,7 @@ describe("the eager legacy migration pass", () => {
 
     test("syncs after successful inline migration when removing the legacy key fails", async () => {
         native.load
-            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce({ epoch: "no-map", deck: null })
             .mockResolvedValueOnce(snapshot([position()], { revision: 9, generation: 2 }));
         native.migrate.mockResolvedValue(migrationOutcome());
         const mounted = mountDeck("appeared", 0);
@@ -1211,6 +1351,7 @@ describe("the eager legacy migration pass", () => {
                 "appeared",
                 0,
                 JSON.stringify(legacyData()),
+                "no-map",
             );
             expect(native.sync).toHaveBeenCalledOnce();
             expect(localStorage.getItem("deck-appeared-0")).toBe(JSON.stringify(legacyData()));

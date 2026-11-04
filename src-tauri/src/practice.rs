@@ -34,6 +34,44 @@ const STATE_SUFFIX: &str = "-state.json";
 const SHARD_MARKER: &str = "-g";
 const SHARD_SUFFIX: &str = "-reviews-";
 const LOCK_SUFFIX: &str = ".lock";
+const MAP_SUFFIX: &str = "-deck-map.json";
+const NO_MAP_EPOCH: &str = "no-map";
+const MAP_MAX_BYTES: usize = 8 * 1024 * 1024;
+const MAP_MAX_ORDINALS: usize = 1_000_000;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FileDeckMap {
+    version: u32,
+    file_id: String,
+    epoch: String,
+    ordinals: Vec<Option<i32>>,
+    next_deck: i32,
+    legacy_superseded: bool,
+    pending: Option<PendingDelete>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PendingDelete {
+    id: String,
+    ordinal: usize,
+    game_count: usize,
+}
+
+#[derive(Clone, Debug, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PracticeDeckLoad {
+    pub epoch: String,
+    pub deck: Option<PracticeDeckSnapshot>,
+}
+
+#[derive(Clone, Debug, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PracticeEpoch {
+    pub epoch: String,
+    pub legacy_superseded: bool,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -60,11 +98,30 @@ pub(crate) struct PracticeReviewEntry {
     pub entry: String,
 }
 
+/// One rating's optimistic snapshot and review entry, authorized by the command's epoch.
+#[derive(Clone, Debug, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PracticeReviewWrite {
+    /// Reset generation of the deck used to compute this rating.
+    pub generation: u32,
+    /// Latest committed revision the write expects to replace.
+    pub revision: u32,
+    /// Revision from which the original rating was computed, retained across conflict retries.
+    pub base_revision: u32,
+    /// Positions document containing the rating's updated scheduling state.
+    pub positions_document: String,
+    /// Serialized review log entry paired with the positions document.
+    pub entry: String,
+    /// Stable id used to recognize retries of the same review entry.
+    pub entry_id: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum PracticeMigrationStatus {
     Migrated,
     AlreadyMigrated,
+    Superseded,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -295,13 +352,23 @@ fn with_deck_lock<T>(
     hash: &str,
     operation: impl FnOnce() -> Result<T, Error>,
 ) -> Result<T, Error> {
+    with_store_lock(directory, hash, || {
+        #[cfg(test)]
+        run_critical_section_hook();
+        operation()
+    })
+}
+
+fn with_store_lock<T>(
+    directory: &AuthorizedDir,
+    hash: &str,
+    operation: impl FnOnce() -> Result<T, Error>,
+) -> Result<T, Error> {
     let mutex = PracticeMutexLease::new(hash);
     let _guard = mutex
         .lock()
         .ok_or_else(|| Error::Conflict("practice mutex could not be acquired".into()))?;
     let _advisory = AdvisoryDeckLock::acquire(directory, hash)?;
-    #[cfg(test)]
-    run_critical_section_hook();
     operation()
 }
 
@@ -311,6 +378,330 @@ fn hash_deck(file_id: &str, game: i32) -> String {
     hasher.update([0]);
     hasher.update(game.to_string().as_bytes());
     format!("{:x}", hasher.finalize())
+}
+
+fn hash_file(file_id: &str) -> String {
+    format!("{:x}", Sha256::digest(file_id.as_bytes()))
+}
+
+fn map_leaf(file_id: &str) -> String {
+    format!("{}{MAP_SUFFIX}", hash_file(file_id))
+}
+
+fn with_map_lock<T>(
+    directory: &AuthorizedDir,
+    file_id: &str,
+    operation: impl FnOnce() -> Result<T, Error>,
+) -> Result<T, Error> {
+    let key = format!("{}-map", hash_file(file_id));
+    with_store_lock(directory, &key, operation)
+}
+
+fn read_map(directory: &AuthorizedDir, file_id: &str) -> Result<Option<FileDeckMap>, Error> {
+    let leaf = map_leaf(file_id);
+    let Some(map) = read_json::<FileDeckMap>(directory, &leaf, MAP_MAX_BYTES, "read deck map")?
+    else {
+        return Ok(None);
+    };
+    let mut seen = std::collections::HashSet::new();
+    if map.version != PRACTICE_STORAGE_VERSION
+        || map.file_id != file_id
+        || (map.epoch != NO_MAP_EPOCH && uuid::Uuid::parse_str(&map.epoch).is_err())
+        || (map.legacy_superseded && map.epoch == NO_MAP_EPOCH)
+        || map.next_deck < 0
+        || map.ordinals.len() > MAP_MAX_ORDINALS
+        || map
+            .ordinals
+            .iter()
+            .flatten()
+            .any(|number| *number < 0 || *number >= map.next_deck || !seen.insert(*number))
+        || map.pending.as_ref().is_some_and(|pending| {
+            pending.game_count > MAP_MAX_ORDINALS
+                || pending.ordinal >= pending.game_count
+                || uuid::Uuid::parse_str(&pending.id).is_err()
+        })
+    {
+        return Err(invalid_leaf(&leaf, "deck map is invalid"));
+    }
+    Ok(Some(map))
+}
+
+fn write_map(directory: &AuthorizedDir, map: &FileDeckMap) -> Result<(), Error> {
+    if map.ordinals.len() > MAP_MAX_ORDINALS
+        || serde_json::to_vec(map)
+            .map_err(|_| invalid_leaf(&map_leaf(&map.file_id), "deck map cannot be serialized"))?
+            .len()
+            > MAP_MAX_BYTES
+    {
+        return Err(invalid_leaf(
+            &map_leaf(&map.file_id),
+            "deck map exceeds its size limit",
+        ));
+    }
+    write_json(
+        directory,
+        &map_leaf(&map.file_id),
+        map,
+        DurabilityStage::PracticeState,
+        "write deck map",
+    )
+}
+
+fn map_epoch(map: Option<&FileDeckMap>) -> &str {
+    map.map_or(NO_MAP_EPOCH, |map| map.epoch.as_str())
+}
+
+/// Envelopes retain stable deck numbers. Inventory and repair discover even stranded numbers.
+fn file_deck_leaves(
+    directory: &AuthorizedDir,
+    file_id: &str,
+) -> Result<Vec<(String, String, i32)>, Error> {
+    let mut leaves = Vec::new();
+    for entry in directory.entries(&mut |_| true)? {
+        let leaf = entry.name.to_string_lossy().into_owned();
+        let hash = match parse_owned_leaf(&leaf) {
+            Some(
+                OwnedLeaf::Positions(hash) | OwnedLeaf::State(hash) | OwnedLeaf::Shard { hash, .. },
+            ) => hash,
+            _ => continue,
+        };
+        if entry.kind != DirectoryEntryKind::RegularFile {
+            continue;
+        }
+        // A damaged sibling does not conceal the identities of readable envelopes.
+        let Ok(Some(value)) = read_json::<Value>(
+            directory,
+            &leaf,
+            PRACTICE_POSITIONS_MAX_BYTES + PRACTICE_LEGACY_MAX_BYTES,
+            "inspect deck identity",
+        ) else {
+            continue;
+        };
+        if value.get("fileId").and_then(Value::as_str) == Some(file_id) {
+            if let Some(number) = value
+                .get("game")
+                .and_then(Value::as_i64)
+                .and_then(|n| i32::try_from(n).ok())
+                .filter(|n| *n >= 0)
+            {
+                leaves.push((leaf, hash, number));
+            }
+        }
+    }
+    Ok(leaves)
+}
+
+fn fresh_map(
+    directory: &AuthorizedDir,
+    file_id: &str,
+    count: usize,
+    identities: bool,
+) -> Result<FileDeckMap, Error> {
+    if count > MAP_MAX_ORDINALS {
+        return Err(Error::ResourceLimit(
+            "practice ordinal limit exceeded".into(),
+        ));
+    }
+    let highest = file_deck_leaves(directory, file_id)?
+        .iter()
+        .map(|(_, _, number)| *number)
+        .max()
+        .unwrap_or(-1);
+    let next_deck = highest
+        .checked_add(1)
+        .ok_or_else(|| Error::ResourceLimit("practice deck numbers exhausted".into()))?
+        .max(
+            i32::try_from(count)
+                .map_err(|_| Error::ResourceLimit("practice ordinal limit exceeded".into()))?,
+        );
+    Ok(FileDeckMap {
+        version: PRACTICE_STORAGE_VERSION,
+        file_id: file_id.to_owned(),
+        epoch: if identities {
+            NO_MAP_EPOCH.to_owned()
+        } else {
+            uuid::Uuid::new_v4().to_string()
+        },
+        ordinals: (0..count)
+            .map(|n| {
+                if identities {
+                    i32::try_from(n).ok()
+                } else {
+                    None
+                }
+            })
+            .collect(),
+        next_deck,
+        legacy_superseded: !identities,
+        pending: None,
+    })
+}
+
+fn retire_deck(directory: &AuthorizedDir, file_id: &str, number: i32) -> Result<(), Error> {
+    let hash = hash_deck(file_id, number);
+    with_deck_lock(directory, &hash, || {
+        remove_leaf_if_present(directory, &positions_leaf(&hash))?;
+        remove_leaf_if_present(directory, &state_leaf(&hash))?;
+        for (leaf, _, _, _, _) in all_shard_leaves(directory, &hash)? {
+            remove_leaf_if_present(directory, &leaf)?;
+        }
+        Ok(())
+    })
+}
+
+fn apply_pending(
+    directory: &AuthorizedDir,
+    map: &mut FileDeckMap,
+    landed: bool,
+) -> Result<(), Error> {
+    let Some(pending) = map.pending.take() else {
+        return Ok(());
+    };
+    let retired = if landed {
+        let retired = if pending.ordinal < map.ordinals.len() {
+            map.ordinals.remove(pending.ordinal)
+        } else {
+            None
+        };
+        map.epoch = uuid::Uuid::new_v4().to_string();
+        map.legacy_superseded = true;
+        retired
+    } else {
+        None
+    };
+    write_map(directory, map)?;
+    if let Some(number) = retired {
+        if let Err(error) = retire_deck(directory, &map.file_id, number) {
+            log::warn!(
+                "retired practice deck could not be removed: {}",
+                error.diagnostic()
+            );
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn has_pending_delete(directory: &AuthorizedDir, file_id: &str) -> Result<bool, Error> {
+    with_map_lock(directory, file_id, || {
+        Ok(read_map(directory, file_id)?.is_some_and(|map| map.pending.is_some()))
+    })
+}
+
+/// The caller owns the PGN edit lock. Count acquisition happens outside a blocking closure.
+pub(crate) fn resolve_pending_delete_in(
+    directory: &AuthorizedDir,
+    file_id: &str,
+    count: usize,
+    establish_durability: impl FnOnce() -> Result<(), Error>,
+) -> Result<(), Error> {
+    with_map_lock(directory, file_id, || {
+        let Some(mut map) = read_map(directory, file_id)? else {
+            return Ok(());
+        };
+        let Some(pending) = &map.pending else {
+            return Ok(());
+        };
+        let landed = pending.game_count.checked_sub(1) == Some(count);
+        if landed {
+            establish_durability()?;
+        }
+        apply_pending(directory, &mut map, landed)
+    })
+}
+
+pub(crate) fn prepare_delete_in(
+    directory: &AuthorizedDir,
+    file_id: &str,
+    ordinal: usize,
+    count: usize,
+) -> Result<String, Error> {
+    with_map_lock(directory, file_id, || {
+        let mut map = match read_map(directory, file_id)? {
+            Some(map) => map,
+            None => fresh_map(directory, file_id, count, true)?,
+        };
+        if map.pending.is_some() {
+            return Err(Error::Conflict("practice delete is pending".into()));
+        }
+        let id = uuid::Uuid::new_v4().to_string();
+        map.pending = Some(PendingDelete {
+            id: id.clone(),
+            ordinal,
+            game_count: count,
+        });
+        write_map(directory, &map)?;
+        Ok(id)
+    })
+}
+
+pub(crate) fn finish_delete_in(
+    directory: &AuthorizedDir,
+    file_id: &str,
+    id: &str,
+    landed: bool,
+) -> Result<(), Error> {
+    with_map_lock(directory, file_id, || {
+        let mut map = read_map(directory, file_id)?
+            .ok_or_else(|| Error::Conflict("practice delete map disappeared".into()))?;
+        if !map.pending.as_ref().is_some_and(|pending| pending.id == id) {
+            return Ok(());
+        }
+        apply_pending(directory, &mut map, landed)
+    })
+}
+
+fn with_mapped_deck<T>(
+    directory: &AuthorizedDir,
+    file_id: &str,
+    ordinal: i32,
+    expected_epoch: Option<&str>,
+    create: bool,
+    operation: impl FnOnce(Option<i32>, &str, bool) -> Result<T, Error>,
+) -> Result<T, Error> {
+    let index = usize::try_from(ordinal)
+        .map_err(|_| Error::InvalidInput("negative practice ordinal".into()))?;
+    if index >= MAP_MAX_ORDINALS {
+        return Err(Error::ResourceLimit(
+            "practice ordinal limit exceeded".into(),
+        ));
+    }
+    with_map_lock(directory, file_id, || {
+        let mut map = read_map(directory, file_id).map_err(|error| {
+            if matches!(error, Error::InvalidInput(_)) {
+                error.with_root_failure(crate::error::RootFailure::Unusable)
+            } else {
+                error
+            }
+        })?;
+        let epoch = map_epoch(map.as_ref()).to_owned();
+        if expected_epoch.is_some_and(|expected| expected != epoch) {
+            return Err(Error::Conflict("practice epoch changed".into()));
+        }
+        if map.as_ref().is_some_and(|map| map.pending.is_some()) {
+            return Err(Error::Conflict(
+                "practice delete requires resolution".into(),
+            ));
+        }
+        let number = if let Some(map) = &mut map {
+            if create && map.ordinals.get(index).copied().flatten().is_none() {
+                let number = map.next_deck;
+                map.next_deck = number.checked_add(1).ok_or_else(|| {
+                    Error::ResourceLimit("practice deck numbers exhausted".into())
+                })?;
+                map.ordinals.resize(map.ordinals.len().max(index + 1), None);
+                map.ordinals[index] = Some(number);
+                write_map(directory, map)?;
+            }
+            map.ordinals.get(index).copied().flatten()
+        } else {
+            Some(ordinal)
+        };
+        operation(
+            number,
+            &epoch,
+            map.as_ref().is_some_and(|map| map.legacy_superseded),
+        )
+    })
 }
 
 fn hash_migration_entry(
@@ -814,6 +1205,97 @@ fn snapshot_from(
         migrated: envelope.legacy_source == LegacySource::LocalStorage,
         unapplied_reviews: orphan_entries,
         orphans_acknowledged: orphan_entries <= envelope.orphan_acknowledged_count,
+    })
+}
+
+pub(crate) fn load_mapped_practice_deck_in(
+    directory: &AuthorizedDir,
+    file_id: &str,
+    ordinal: i32,
+) -> Result<PracticeDeckLoad, Error> {
+    with_mapped_deck(
+        directory,
+        file_id,
+        ordinal,
+        None,
+        false,
+        |number, epoch, _| {
+            Ok(PracticeDeckLoad {
+                epoch: epoch.to_owned(),
+                deck: number
+                    .map(|number| load_practice_deck_in(directory, file_id, number))
+                    .transpose()?
+                    .flatten(),
+            })
+        },
+    )
+}
+
+pub(crate) fn practice_epoch_in(
+    directory: &AuthorizedDir,
+    file_id: &str,
+    ordinal: i32,
+) -> Result<PracticeEpoch, Error> {
+    with_mapped_deck(
+        directory,
+        file_id,
+        ordinal,
+        None,
+        false,
+        |_, epoch, legacy_superseded| {
+            Ok(PracticeEpoch {
+                epoch: epoch.to_owned(),
+                legacy_superseded,
+            })
+        },
+    )
+}
+
+fn repair_mapped_practice_deck_in(
+    directory: &AuthorizedDir,
+    file_id: &str,
+    ordinal: i32,
+    expected_epoch: Option<&str>,
+) -> Result<(), Error> {
+    with_map_lock(directory, file_id, || match read_map(directory, file_id) {
+        Err(Error::InvalidInput(_)) => {
+            let map = fresh_map(directory, file_id, 0, false)?;
+            let leaves = file_deck_leaves(directory, file_id)?;
+            let hashes = leaves
+                .iter()
+                .map(|(_, hash, _)| hash.clone())
+                .collect::<std::collections::BTreeSet<_>>();
+            for hash in hashes {
+                with_deck_lock(directory, &hash, || {
+                    remove_leaf_if_present(directory, &positions_leaf(&hash))?;
+                    remove_leaf_if_present(directory, &state_leaf(&hash))?;
+                    for (leaf, _, _, _, _) in all_shard_leaves(directory, &hash)? {
+                        remove_leaf_if_present(directory, &leaf)?;
+                    }
+                    Ok(())
+                })?;
+            }
+            write_map(directory, &map)
+        }
+        Err(error) => Err(error),
+        Ok(map) => {
+            if expected_epoch != Some(map_epoch(map.as_ref()))
+                || map.as_ref().is_some_and(|map| map.pending.is_some())
+            {
+                return Err(Error::Conflict(
+                    "practice epoch changed or delete is pending".into(),
+                ));
+            }
+            let number = map.as_ref().map_or(Some(ordinal), |map| {
+                usize::try_from(ordinal)
+                    .ok()
+                    .and_then(|ordinal| map.ordinals.get(ordinal).copied().flatten())
+            });
+            if let Some(number) = number {
+                repair_practice_deck_in(directory, file_id, number)?;
+            }
+            Ok(())
+        }
     })
 }
 
@@ -1461,6 +1943,35 @@ fn migration_outcome(
     })
 }
 
+fn migrate_mapped_practice_deck_in(
+    directory: &AuthorizedDir,
+    file_id: &str,
+    ordinal: i32,
+    expected_epoch: &str,
+    legacy_document: &str,
+) -> Result<PracticeMigrationOutcome, Error> {
+    with_mapped_deck(
+        directory,
+        file_id,
+        ordinal,
+        Some(expected_epoch),
+        false,
+        |number, _, superseded| {
+            if superseded {
+                return Ok(PracticeMigrationOutcome {
+                    status: PracticeMigrationStatus::Superseded,
+                    entries: 0,
+                    positions: 0,
+                    positions_digest: String::new(),
+                    entries_digest: String::new(),
+                });
+            }
+            let number = number.ok_or_else(|| Error::Conflict("practice deck is absent".into()))?;
+            migrate_practice_deck_in(directory, file_id, number, legacy_document)
+        },
+    )
+}
+
 pub(crate) fn migrate_practice_deck_in(
     directory: &AuthorizedDir,
     file_id: &str,
@@ -1736,6 +2247,82 @@ fn validation_failure_kind(failure: &DeckValidationFailure) -> PracticeStoreAnom
 pub(crate) fn list_practice_decks_in(
     directory: &AuthorizedDir,
 ) -> Result<PracticeDeckInventory, Error> {
+    let mut inventory = list_practice_decks_raw(directory)?;
+    let mut maps = HashMap::new();
+    for entry in directory.entries(&mut |name| name.to_string_lossy().ends_with(MAP_SUFFIX))? {
+        let leaf = entry.name.to_string_lossy().into_owned();
+        let identity = read_json::<Value>(directory, &leaf, MAP_MAX_BYTES, "inventory deck map")
+            .ok()
+            .flatten()
+            .and_then(|value| {
+                value
+                    .get("fileId")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            });
+        if let Some(file_id) = identity {
+            let map = with_map_lock(directory, &file_id, || {
+                if map_leaf(&file_id) != leaf {
+                    return Err(invalid_leaf(&leaf, "map identity mismatch"));
+                }
+                read_map(directory, &file_id)
+            });
+            match map {
+                Ok(Some(map)) => {
+                    maps.insert(file_id, Some(map));
+                }
+                _ => {
+                    inventory.anomalies.push(PracticeStoreAnomaly {
+                        kind: PracticeStoreAnomalyKind::DamagedDeck,
+                        leaf,
+                        file_id: Some(file_id.clone()),
+                        game: None,
+                    });
+                    maps.insert(file_id, None);
+                }
+            }
+        } else {
+            inventory.anomalies.push(PracticeStoreAnomaly {
+                kind: PracticeStoreAnomalyKind::DamagedDeck,
+                leaf,
+                file_id: None,
+                game: None,
+            });
+        }
+    }
+    let ordinal = |file_id: &str, number: i32| -> Option<i32> {
+        match maps.get(file_id) {
+            Some(Some(map)) => map
+                .ordinals
+                .iter()
+                .position(|value| *value == Some(number))
+                .and_then(|index| i32::try_from(index).ok()),
+            Some(None) => None,
+            None => Some(number),
+        }
+    };
+    inventory.decks.retain_mut(|deck| {
+        if let Some(game) = ordinal(&deck.file_id, deck.game) {
+            deck.game = game;
+            true
+        } else {
+            false
+        }
+    });
+    inventory.anomalies.retain_mut(|anomaly| {
+        if let (Some(file_id), Some(number)) = (&anomaly.file_id, anomaly.game) {
+            if let Some(game) = ordinal(file_id, number) {
+                anomaly.game = Some(game);
+            } else {
+                return false;
+            }
+        }
+        true
+    });
+    Ok(inventory)
+}
+
+fn list_practice_decks_raw(directory: &AuthorizedDir) -> Result<PracticeDeckInventory, Error> {
     let entries = directory.entries(&mut |_| true)?;
     let mut decks = BTreeMap::<String, PracticeDeckIdentity>::new();
     let mut anomalies = Vec::new();
@@ -1917,29 +2504,17 @@ pub(crate) fn authorize_practice_command(
     })?
 }
 
-fn run_practice_command_blocking<T, F>(
-    app: &tauri::AppHandle,
-    authority: &crate::infra::path_authority::SharedPathAuthority,
-    file_id: Option<&str>,
-    requires_read_pgn: bool,
-    operation: F,
-) -> Result<T, Error>
-where
-    F: FnOnce(&AuthorizedDir) -> Result<T, Error>,
-{
-    if let Some(file_id) = file_id {
-        authorize_practice_command(authority, file_id, requires_read_pgn)?;
-    }
-    let directory = crate::infra::path_authority::ensure_app_owned_default_dir(
+fn practice_directory(app: &tauri::AppHandle) -> Result<AuthorizedDir, Error> {
+    crate::infra::path_authority::ensure_app_owned_default_dir(
         &crate::infra::path_authority::AppDataDir::for_app(app)?,
         crate::infra::path_authority::AppOwnedDefaultRoot::Practice,
-    )?;
-    operation(&directory)
+    )
 }
 
 async fn run_practice_command<T, F>(
     app: tauri::AppHandle,
     authority: crate::infra::path_authority::SharedPathAuthority,
+    repository: crate::pgn::PgnRepository,
     file_id: String,
     requires_read_pgn: bool,
     operation: F,
@@ -1948,23 +2523,33 @@ where
     T: Send + 'static,
     F: FnOnce(&AuthorizedDir) -> Result<T, Error> + Send + 'static,
 {
-    BLOCKING_GATEWAY
+    let preparation_authority = authority.clone();
+    let preparation_id = file_id.clone();
+    let directory = BLOCKING_GATEWAY
         .spawn(move || {
-            run_practice_command_blocking(
-                &app,
-                &authority,
-                Some(&file_id),
-                requires_read_pgn,
-                operation,
-            )
+            authorize_practice_command(&preparation_authority, &preparation_id, requires_read_pgn)?;
+            practice_directory(&app).map(Arc::new)
         })
-        .await
+        .await?;
+    let check_directory = directory.clone();
+    let check_id = file_id.clone();
+    let pending = BLOCKING_GATEWAY
+        .spawn(move || has_pending_delete(&check_directory, &check_id))
+        .await;
+    match pending {
+        Ok(true) => {
+            crate::pgn::resolve_practice_pending(authority, file_id, repository, directory.clone())
+                .await?
+        }
+        Ok(false) | Err(Error::InvalidInput(_)) => {}
+        Err(error) => return Err(error),
+    }
+    BLOCKING_GATEWAY.spawn(move || operation(&directory)).await
 }
 
 async fn run_accepted_practice_command<T, F>(
     app: tauri::AppHandle,
-    authority: crate::infra::path_authority::SharedPathAuthority,
-    operations: &crate::infra::operations::OperationRegistry,
+    state: &crate::AppState,
     operation_name: &'static str,
     file_id: Option<String>,
     requires_read_pgn: bool,
@@ -1974,14 +2559,70 @@ where
     T: Send + 'static,
     F: FnOnce(&AuthorizedDir) -> Result<T, Error> + Send + 'static,
 {
-    crate::infra::operations::run_accepted_blocking(operations, operation_name, move || {
-        run_practice_command_blocking(
-            &app,
-            &authority,
-            file_id.as_deref(),
-            requires_read_pgn,
-            operation,
+    let authority = state.pgn_path_authority.clone();
+    let repository = state.pgn_repository.clone();
+    let operations = &state.operations;
+    if let Some(file_id) = file_id {
+        let lease = operations.accept(operation_name)?;
+        return crate::infra::operations::run_native_operation(
+            lease,
+            operation_name,
+            run_practice_command(
+                app,
+                authority,
+                repository,
+                file_id,
+                requires_read_pgn,
+                operation,
+            ),
         )
+        .await;
+    }
+    let lease = operations.accept(operation_name)?;
+    crate::infra::operations::run_native_operation(lease, operation_name, async move {
+        let directory = BLOCKING_GATEWAY
+            .spawn(move || practice_directory(&app).map(Arc::new))
+            .await?;
+        let scan_directory = directory.clone();
+        let pending_files = BLOCKING_GATEWAY
+            .spawn(move || {
+                let mut pending = Vec::new();
+                for entry in scan_directory
+                    .entries(&mut |name| name.to_string_lossy().ends_with(MAP_SUFFIX))?
+                {
+                    let leaf = entry.name.to_string_lossy().into_owned();
+                    let Ok(Some(map)) = read_json::<FileDeckMap>(
+                        &scan_directory,
+                        &leaf,
+                        MAP_MAX_BYTES,
+                        "inventory pending map",
+                    ) else {
+                        continue;
+                    };
+                    if map_leaf(&map.file_id) == leaf
+                        && has_pending_delete(&scan_directory, &map.file_id).unwrap_or(false)
+                    {
+                        pending.push(map.file_id);
+                    }
+                }
+                Ok(pending)
+            })
+            .await?;
+        for file_id in pending_files {
+            let check_authority = authority.clone();
+            let check_id = file_id.clone();
+            BLOCKING_GATEWAY
+                .spawn(move || authorize_practice_command(&check_authority, &check_id, false))
+                .await?;
+            crate::pgn::resolve_practice_pending(
+                authority.clone(),
+                file_id,
+                repository.clone(),
+                directory.clone(),
+            )
+            .await?;
+        }
+        BLOCKING_GATEWAY.spawn(move || operation(&directory)).await
     })
     .await
 }
@@ -1993,32 +2634,46 @@ pub async fn load_practice_deck(
     game: i32,
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::AppState>,
-) -> Result<Option<PracticeDeckSnapshot>, Error> {
+) -> Result<PracticeDeckLoad, Error> {
     let authority = state.pgn_path_authority.clone();
     let authorization_file_id = file_id.clone();
     run_practice_command(
         app,
         authority,
+        state.pgn_repository.clone(),
         authorization_file_id,
         true,
-        move |directory| load_practice_deck_in(directory, &file_id, game),
+        move |directory| load_mapped_practice_deck_in(directory, &file_id, game),
     )
     .await
 }
 
 #[tauri::command]
 #[specta::specta]
-// The command mirrors the stable IPC wire shape: one rating carries its optimistic snapshot and entry.
-#[allow(clippy::too_many_arguments)]
+pub async fn practice_epoch(
+    file_id: String,
+    game: i32,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<PracticeEpoch, Error> {
+    run_practice_command(
+        app,
+        state.pgn_path_authority.clone(),
+        state.pgn_repository.clone(),
+        file_id.clone(),
+        false,
+        move |directory| practice_epoch_in(directory, &file_id, game),
+    )
+    .await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn record_practice_review(
     file_id: String,
     game: i32,
-    generation: u32,
-    revision: u32,
-    base_revision: u32,
-    positions_document: String,
-    entry: String,
-    entry_id: String,
+    expected_epoch: String,
+    write: PracticeReviewWrite,
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<u32, Error> {
@@ -2027,19 +2682,31 @@ pub async fn record_practice_review(
     run_practice_command(
         app,
         authority,
+        state.pgn_repository.clone(),
         authorization_file_id,
         true,
         move |directory| {
-            record_practice_review_in(
+            with_mapped_deck(
                 directory,
                 &file_id,
                 game,
-                generation,
-                revision,
-                base_revision,
-                &positions_document,
-                &entry,
-                &entry_id,
+                Some(&expected_epoch),
+                false,
+                |number, _, _| {
+                    let number =
+                        number.ok_or_else(|| Error::Conflict("practice deck is absent".into()))?;
+                    record_practice_review_in(
+                        directory,
+                        &file_id,
+                        number,
+                        write.generation,
+                        write.revision,
+                        write.base_revision,
+                        &write.positions_document,
+                        &write.entry,
+                        &write.entry_id,
+                    )
+                },
             )
         },
     )
@@ -2048,12 +2715,16 @@ pub async fn record_practice_review(
 
 #[tauri::command]
 #[specta::specta]
+// Tauri injects app and state. The remaining Specta arguments stay a flat list
+// because grouping them would change the generated invoke contract.
+#[allow(clippy::too_many_arguments)]
 pub async fn sync_practice_positions(
     file_id: String,
     game: i32,
     generation: u32,
     revision: u32,
     positions_document: String,
+    expected_epoch: String,
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<u32, Error> {
@@ -2062,16 +2733,28 @@ pub async fn sync_practice_positions(
     run_practice_command(
         app,
         authority,
+        state.pgn_repository.clone(),
         authorization_file_id,
         true,
         move |directory| {
-            sync_practice_positions_in(
+            with_mapped_deck(
                 directory,
                 &file_id,
                 game,
-                generation,
-                revision,
-                &positions_document,
+                Some(&expected_epoch),
+                true,
+                |number, _, _| {
+                    let number =
+                        number.ok_or_else(|| Error::Conflict("practice deck is absent".into()))?;
+                    sync_practice_positions_in(
+                        directory,
+                        &file_id,
+                        number,
+                        generation,
+                        revision,
+                        &positions_document,
+                    )
+                },
             )
         },
     )
@@ -2080,12 +2763,16 @@ pub async fn sync_practice_positions(
 
 #[tauri::command]
 #[specta::specta]
+// Tauri injects app and state. The remaining Specta arguments stay a flat list
+// because grouping them would change the generated invoke contract.
+#[allow(clippy::too_many_arguments)]
 pub async fn reset_practice_deck(
     file_id: String,
     game: i32,
     generation: u32,
     revision: u32,
     positions_document: String,
+    expected_epoch: String,
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<u32, Error> {
@@ -2094,16 +2781,28 @@ pub async fn reset_practice_deck(
     run_practice_command(
         app,
         authority,
+        state.pgn_repository.clone(),
         authorization_file_id,
         true,
         move |directory| {
-            reset_practice_deck_in(
+            with_mapped_deck(
                 directory,
                 &file_id,
                 game,
-                generation,
-                revision,
-                &positions_document,
+                Some(&expected_epoch),
+                true,
+                |number, _, _| {
+                    let number =
+                        number.ok_or_else(|| Error::Conflict("practice deck is absent".into()))?;
+                    reset_practice_deck_in(
+                        directory,
+                        &file_id,
+                        number,
+                        generation,
+                        revision,
+                        &positions_document,
+                    )
+                },
             )
         },
     )
@@ -2117,6 +2816,7 @@ pub async fn load_practice_reviews(
     game: i32,
     cursor: Option<String>,
     limit: u32,
+    expected_epoch: String,
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<PracticeReviewPage, Error> {
@@ -2125,9 +2825,27 @@ pub async fn load_practice_reviews(
     run_practice_command(
         app,
         authority,
+        state.pgn_repository.clone(),
         authorization_file_id,
         true,
-        move |directory| load_practice_reviews_in(directory, &file_id, game, cursor, limit),
+        move |directory| {
+            with_mapped_deck(
+                directory,
+                &file_id,
+                game,
+                Some(&expected_epoch),
+                false,
+                |number, _, _| match number {
+                    Some(number) => {
+                        load_practice_reviews_in(directory, &file_id, number, cursor, limit)
+                    }
+                    None => Ok(PracticeReviewPage {
+                        entries: Vec::new(),
+                        next_cursor: None,
+                    }),
+                },
+            )
+        },
     )
     .await
 }
@@ -2138,19 +2856,26 @@ pub async fn migrate_practice_deck(
     file_id: String,
     game: i32,
     legacy_document: String,
+    expected_epoch: String,
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<PracticeMigrationOutcome, Error> {
-    let authority = state.pgn_path_authority.clone();
     let authorization_file_id = file_id.clone();
     run_accepted_practice_command(
         app,
-        authority,
-        &state.operations,
+        &state,
         "migrate_practice_deck",
         Some(authorization_file_id),
         false,
-        move |directory| migrate_practice_deck_in(directory, &file_id, game, &legacy_document),
+        move |directory| {
+            migrate_mapped_practice_deck_in(
+                directory,
+                &file_id,
+                game,
+                &expected_epoch,
+                &legacy_document,
+            )
+        },
     )
     .await
 }
@@ -2162,6 +2887,7 @@ pub async fn acknowledge_practice_orphans(
     game: i32,
     generation: u32,
     acknowledged_count: u32,
+    expected_epoch: String,
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<(), Error> {
@@ -2170,15 +2896,27 @@ pub async fn acknowledge_practice_orphans(
     run_practice_command(
         app,
         authority,
+        state.pgn_repository.clone(),
         authorization_file_id,
         true,
         move |directory| {
-            acknowledge_practice_orphans_in(
+            with_mapped_deck(
                 directory,
                 &file_id,
                 game,
-                generation,
-                acknowledged_count,
+                Some(&expected_epoch),
+                false,
+                |number, _, _| {
+                    let number =
+                        number.ok_or_else(|| Error::Conflict("practice deck is absent".into()))?;
+                    acknowledge_practice_orphans_in(
+                        directory,
+                        &file_id,
+                        number,
+                        generation,
+                        acknowledged_count,
+                    )
+                },
             )
         },
     )
@@ -2190,6 +2928,7 @@ pub async fn acknowledge_practice_orphans(
 pub async fn repair_practice_deck(
     file_id: String,
     game: i32,
+    expected_epoch: Option<String>,
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<(), Error> {
@@ -2198,9 +2937,12 @@ pub async fn repair_practice_deck(
     run_practice_command(
         app,
         authority,
+        state.pgn_repository.clone(),
         authorization_file_id,
         false,
-        move |directory| repair_practice_deck_in(directory, &file_id, game),
+        move |directory| {
+            repair_mapped_practice_deck_in(directory, &file_id, game, expected_epoch.as_deref())
+        },
     )
     .await
 }
@@ -2211,11 +2953,9 @@ pub async fn list_practice_decks(
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<PracticeDeckInventory, Error> {
-    let authority = state.pgn_path_authority.clone();
     run_accepted_practice_command(
         app,
-        authority,
-        &state.operations,
+        &state,
         "list_practice_decks",
         None,
         false,
@@ -2279,6 +3019,259 @@ mod tests {
         sync::{atomic::AtomicUsize, Arc, Barrier},
         thread,
     };
+
+    fn mapped_sync(
+        directory: &AuthorizedDir,
+        file_id: &str,
+        ordinal: i32,
+        epoch: &str,
+        document: &str,
+    ) -> Result<u32, Error> {
+        with_mapped_deck(
+            directory,
+            file_id,
+            ordinal,
+            Some(epoch),
+            true,
+            |number, _, _| {
+                sync_practice_positions_in(
+                    directory,
+                    file_id,
+                    number.ok_or_else(|| Error::Conflict("missing test deck".into()))?,
+                    0,
+                    0,
+                    document,
+                )
+            },
+        )
+    }
+
+    #[test]
+    fn deck_map_preserves_identity_and_allocates_gaps_without_reusing_numbers() {
+        let (_temp, directory) = directory();
+        sync_practice_positions_in(&directory, "file", 0, 0, 0, &positions()).unwrap();
+        sync_practice_positions_in(&directory, "file", 1, 0, 0, &positions()).unwrap();
+        let before = load_practice_deck_in(&directory, "file", 1)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            practice_epoch_in(&directory, "file", 0).unwrap().epoch,
+            NO_MAP_EPOCH
+        );
+        let id = prepare_delete_in(&directory, "file", 0, 2).unwrap();
+        finish_delete_in(&directory, "file", &id, true).unwrap();
+        let loaded = load_mapped_practice_deck_in(&directory, "file", 0).unwrap();
+        assert_eq!(loaded.deck.unwrap(), before);
+        assert_ne!(loaded.epoch, NO_MAP_EPOCH);
+        assert!(load_practice_deck_in(&directory, "file", 0)
+            .unwrap()
+            .is_none());
+        // Two appended games are first trained in reverse order.
+        mapped_sync(
+            &directory,
+            "file",
+            2,
+            &loaded.epoch,
+            r#"{"positions":[{"fen":"later"}]}"#,
+        )
+        .unwrap();
+        assert!(load_mapped_practice_deck_in(&directory, "file", 1)
+            .unwrap()
+            .deck
+            .is_none());
+        mapped_sync(
+            &directory,
+            "file",
+            1,
+            &loaded.epoch,
+            r#"{"positions":[{"fen":"earlier"}]}"#,
+        )
+        .unwrap();
+        let map = read_map(&directory, "file").unwrap().unwrap();
+        assert_eq!(map.ordinals, vec![Some(1), Some(3), Some(2)]);
+        let id = prepare_delete_in(&directory, "file", 3, 4).unwrap();
+        finish_delete_in(&directory, "file", &id, true).unwrap();
+        assert_eq!(
+            read_map(&directory, "file").unwrap().unwrap().ordinals,
+            map.ordinals
+        );
+        let inventory = list_practice_decks_in(&directory).unwrap();
+        assert_eq!(inventory.decks.len(), 3);
+        assert!(inventory.decks.contains(&PracticeDeckIdentity {
+            file_id: "file".into(),
+            game: 2
+        }));
+    }
+
+    #[test]
+    fn pending_delete_resolution_uses_count_and_preserves_authority_on_abort() {
+        let (_temp, directory) = directory();
+        prepare_delete_in(&directory, "file", 0, 2).unwrap();
+        resolve_pending_delete_in(&directory, "file", 2, || {
+            panic!("abort needs no durability sync")
+        })
+        .unwrap();
+        let map = read_map(&directory, "file").unwrap().unwrap();
+        assert_eq!(map_epoch(Some(&map)), NO_MAP_EPOCH);
+        assert!(!map.legacy_superseded);
+        repair_mapped_practice_deck_in(&directory, "file", 0, Some(NO_MAP_EPOCH)).unwrap();
+        let outcome = with_mapped_deck(
+            &directory,
+            "file",
+            0,
+            Some(NO_MAP_EPOCH),
+            false,
+            |number, _, superseded| {
+                assert!(!superseded);
+                migrate_practice_deck_in(&directory, "file", number.unwrap(), &legacy(&[], &[]))
+            },
+        )
+        .unwrap();
+        assert_eq!(outcome.status, PracticeMigrationStatus::Migrated);
+        prepare_delete_in(&directory, "file", 0, 2).unwrap();
+        assert!(resolve_pending_delete_in(&directory, "file", 1, || Err(
+            Error::CommittedDurabilityUncertain(DurabilityStage::PgnEdit)
+        ))
+        .is_err());
+        assert!(has_pending_delete(&directory, "file").unwrap());
+        resolve_pending_delete_in(&directory, "file", 1, || Ok(())).unwrap();
+        assert!(!has_pending_delete(&directory, "file").unwrap());
+        assert_ne!(
+            practice_epoch_in(&directory, "file", 0).unwrap().epoch,
+            NO_MAP_EPOCH
+        );
+        assert!(
+            practice_epoch_in(&directory, "file", 0)
+                .unwrap()
+                .legacy_superseded
+        );
+    }
+
+    #[test]
+    fn damaged_map_repair_is_file_wide_and_keeps_legacy_superseded() {
+        let (_temp, directory) = directory();
+        for file in ["file", "other"] {
+            for number in [0, 7] {
+                sync_practice_positions_in(&directory, file, number, 0, 0, &positions()).unwrap();
+            }
+        }
+        let id = prepare_delete_in(&directory, "file", 0, 2).unwrap();
+        finish_delete_in(&directory, "file", &id, false).unwrap();
+        fs::write(directory.path().join(map_leaf("file")), b"{damaged").unwrap();
+        for ordinal in [0, 1, 7] {
+            let error = load_mapped_practice_deck_in(&directory, "file", ordinal).unwrap_err();
+            assert_eq!(error.category(), ErrorCategory::InvalidInput);
+            assert_eq!(error.root_failure(), Some(RootFailure::Unusable));
+        }
+        repair_mapped_practice_deck_in(&directory, "file", 0, None).unwrap();
+        let map = read_map(&directory, "file").unwrap().unwrap();
+        assert_eq!(map.next_deck, 8);
+        assert!(map.legacy_superseded);
+        assert_ne!(map.epoch, NO_MAP_EPOCH);
+        assert!(file_deck_leaves(&directory, "file").unwrap().is_empty());
+        assert_eq!(file_deck_leaves(&directory, "other").unwrap().len(), 2);
+        assert_eq!(
+            migrate_mapped_practice_deck_in(&directory, "file", 0, &map.epoch, &legacy(&[], &[]))
+                .unwrap()
+                .status,
+            PracticeMigrationStatus::Superseded
+        );
+        assert!(load_mapped_practice_deck_in(&directory, "file", 7)
+            .unwrap()
+            .deck
+            .is_none());
+        assert!(matches!(
+            repair_mapped_practice_deck_in(&directory, "file", 0, Some(NO_MAP_EPOCH)),
+            Err(Error::Conflict(_))
+        ));
+    }
+
+    #[test]
+    fn stale_epoch_guards_every_deck_operation_before_access_and_epoch_ignores_deck_damage() {
+        let (_temp, directory) = directory();
+        let id = prepare_delete_in(&directory, "file", 0, 2).unwrap();
+        finish_delete_in(&directory, "file", &id, true).unwrap();
+        let epoch = practice_epoch_in(&directory, "file", 0).unwrap().epoch;
+        let before = all_leaf_bytes(&directory);
+        for operation in [
+            "sync",
+            "record",
+            "reset",
+            "reviews",
+            "acknowledge",
+            "migrate",
+        ] {
+            let result: Result<(), Error> = with_mapped_deck(
+                &directory,
+                "file",
+                0,
+                Some(NO_MAP_EPOCH),
+                true,
+                |_, _, _| panic!("{operation} must not reach its deck"),
+            );
+            assert!(matches!(result, Err(Error::Conflict(_))), "{operation}");
+        }
+        assert!(matches!(
+            repair_mapped_practice_deck_in(&directory, "file", 0, Some(NO_MAP_EPOCH)),
+            Err(Error::Conflict(_))
+        ));
+        assert_eq!(all_leaf_bytes(&directory), before);
+        fs::write(
+            directory.path().join(positions_leaf(&hash_deck("file", 1))),
+            b"damaged",
+        )
+        .unwrap();
+        assert!(load_mapped_practice_deck_in(&directory, "file", 0).is_err());
+        assert_eq!(
+            practice_epoch_in(&directory, "file", 0).unwrap().epoch,
+            epoch
+        );
+    }
+
+    #[test]
+    fn checked_practice_write_holds_map_lock_until_its_deck_write_finishes() {
+        let (_temp, directory) = directory();
+        let directory = Arc::new(directory);
+        let entered = Arc::new(Barrier::new(2));
+        let release = Arc::new(Barrier::new(2));
+        let worker_directory = directory.clone();
+        let worker_entered = entered.clone();
+        let worker_release = release.clone();
+        let writer = thread::spawn(move || {
+            CRITICAL_SECTION_HOOK.with(|slot| {
+                *slot.borrow_mut() = Some(Box::new(move || {
+                    worker_entered.wait();
+                    worker_release.wait();
+                }))
+            });
+            mapped_sync(&worker_directory, "file", 1, NO_MAP_EPOCH, &positions()).unwrap();
+        });
+        entered.wait();
+        let delete_directory = directory.clone();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (finished_tx, finished_rx) = std::sync::mpsc::channel();
+        let deletion = thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            let id = prepare_delete_in(&delete_directory, "file", 0, 2).unwrap();
+            finish_delete_in(&delete_directory, "file", &id, true).unwrap();
+            finished_tx.send(()).unwrap();
+        });
+        started_rx.recv().unwrap();
+        assert!(finished_rx
+            .recv_timeout(std::time::Duration::from_millis(50))
+            .is_err());
+        release.wait();
+        writer.join().unwrap();
+        deletion.join().unwrap();
+        assert!(load_mapped_practice_deck_in(&directory, "file", 0)
+            .unwrap()
+            .deck
+            .is_some());
+        assert!(matches!(
+            mapped_sync(&directory, "file", 0, NO_MAP_EPOCH, &positions()),
+            Err(Error::Conflict(_))
+        ));
+    }
     // Only the Unix cross-process lock test spawns a child of this test binary.
     #[cfg(unix)]
     use std::{

@@ -116,12 +116,10 @@ beforeEach(() => {
   mocks.native.syncPracticePositions.mockImplementation(
     async (_file, _game, _generation, revision) => revision + 1,
   );
-  mocks.native.recordPracticeReview.mockImplementation(
-    async (_file, _game, _generation, revision, _base, _document, entry, id) => {
-      reviews.push({ id, entry });
-      return revision + 1;
-    },
-  );
+  mocks.native.recordPracticeReview.mockImplementation(async (_file, _game, _epoch, write) => {
+    reviews.push({ id: write.entryId, entry: write.entry });
+    return write.revision + 1;
+  });
   mocks.native.loadPracticeReviews.mockImplementation(async () => ({
     entries: reviews,
     nextCursor: null,
@@ -152,12 +150,15 @@ async function mountStudy(spec = cases[0], variation?: string[], full = false) {
   const cards = buildFromTree(tree.getState().root, spec.orientation, []);
   expect(cards).toHaveLength(variation ? 3 : 1);
   mocks.native.loadPracticeDeck.mockResolvedValue({
-    positionsDocument: JSON.stringify({ positions: cards }),
-    revision: 1,
-    generation: 0,
-    migrated: false,
-    unappliedReviews: 0,
-    orphansAcknowledged: true,
+    epoch: "no-map",
+    deck: {
+      positionsDocument: JSON.stringify({ positions: cards }),
+      revision: 1,
+      generation: 0,
+      migrated: false,
+      unappliedReviews: 0,
+      orphansAcknowledged: true,
+    },
   });
   atoms = createStore();
   owner = {

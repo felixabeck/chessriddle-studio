@@ -1160,6 +1160,7 @@ function PracticePanel() {
         setOpen={setLogsOpen}
         identity={deckIdentity}
         generation={deck.generation}
+        epoch={deck.epoch}
       />
     </>
   );
@@ -1358,11 +1359,13 @@ function LogsModal({
   setOpen,
   identity,
   generation,
+  epoch,
 }: {
   open: boolean;
   setOpen: (open: boolean) => void;
   identity: PracticeDeckKey;
   generation: number;
+  epoch?: string;
 }) {
   const { t } = useTranslation();
   const store = useContext(TreeStateContext)!;
@@ -1376,7 +1379,7 @@ function LogsModal({
 
   const loadPage = useCallback(
     async (cursor: string | null, replace: boolean) => {
-      if (identity.file === "") return;
+      if (identity.file === "" || !epoch) return;
       const sequence = ++requestSequence.current;
       setLoading(true);
       setPageError(null);
@@ -1386,6 +1389,7 @@ function LogsModal({
           identity.game,
           cursor,
           PRACTICE_LOG_PAGE_SIZE,
+          epoch,
         );
         if (sequence !== requestSequence.current) return;
         const parsed = page.entries.map((entry) => ({
@@ -1400,7 +1404,7 @@ function LogsModal({
         if (sequence === requestSequence.current) setLoading(false);
       }
     },
-    [identity.file, identity.game],
+    [identity.file, identity.game, epoch],
   );
 
   useEffect(() => {

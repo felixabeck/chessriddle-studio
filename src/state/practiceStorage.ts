@@ -3,6 +3,8 @@ import equal from "fast-deep-equal";
 import type {
     PracticeDeckInventory,
     PracticeDeckSnapshot,
+    PracticeDeckLoad,
+    PracticeEpoch,
     PracticeMigrationOutcome,
     PracticeReviewPage,
 } from "@/bindings";
@@ -47,6 +49,7 @@ export type PracticeDeckStatus =
     | "write-pending";
 
 export type PracticeDeckValue = {
+    epoch?: string;
     positions: Position[];
     revision: number;
     generation: number;
@@ -191,8 +194,8 @@ export function reportPracticeInventoryAnomalies(inventory: PracticeDeckInventor
     // Every inventory re-records each deck's classification, because a retry clears it; only the
     // user notification is deduplicated.
     for (const anomaly of inventory.anomalies) {
-        if (anomaly.fileId !== null && anomaly.game !== null) {
-            const identity = { file: anomaly.fileId, game: anomaly.game };
+        if (anomaly.fileId !== null) {
+            const identity = { file: anomaly.fileId, game: anomaly.game ?? -1 };
             const error: AppError = {
                 ...errorAsAppError(
                     new Error(
@@ -273,6 +276,7 @@ function removeIdentityFailuresAndAnomaliesFromResult(
 
 function clearPracticeIdentityState(identity: PracticeDeckKey, rerunMigration: boolean): void {
     practiceMigrationFailures.delete(identityKey(identity));
+    practiceMigrationFailures.delete(identityKey({ file: identity.file, game: -1 }));
     const previous = practiceMigrationPromise;
     if (!previous) return;
     const cleaned = previous.then((result) =>
@@ -317,8 +321,15 @@ function legacyDocument(
     return { raw, data: result.data as unknown as PracticeData };
 }
 
-function outcomeForHeldDeck(legacy: PracticeLegacyDeckKey): PracticeMigrationDeckOutcome {
-    return { key: legacy.key, identity: legacy.identity, status: "alreadyMigrated" };
+async function outcomeForHeldDeck(
+    legacy: PracticeLegacyDeckKey,
+): Promise<PracticeMigrationDeckOutcome> {
+    const authority = await readPracticeEpoch(legacy.identity.file, legacy.identity.game);
+    return {
+        key: legacy.key,
+        identity: legacy.identity,
+        status: authority.legacySuperseded ? "superseded" : "alreadyMigrated",
+    };
 }
 
 async function migrateLegacyDeck(
@@ -326,11 +337,17 @@ async function migrateLegacyDeck(
     legacy: PracticeLegacyDeckKey,
 ): Promise<PracticeMigrationDeckOutcome> {
     try {
+        const authority = await readPracticeEpoch(legacy.identity.file, legacy.identity.game);
+        if (authority.legacySuperseded) {
+            practiceMigrationFailures.delete(identityKey(legacy.identity));
+            return { key: legacy.key, identity: legacy.identity, status: "superseded" };
+        }
         const document = legacyDocument(storage, legacy);
         const outcome = await migratePracticeDeck(
             legacy.identity.file,
             legacy.identity.game,
             document.raw,
+            authority.epoch,
         );
         if (
             outcome.status === "migrated" &&
@@ -349,6 +366,13 @@ async function migrateLegacyDeck(
         };
     } catch (error) {
         const appError = errorAsAppError(error);
+        if (appError.backendCategory === "conflict") {
+            const authority = await readPracticeEpoch(legacy.identity.file, legacy.identity.game);
+            if (authority.legacySuperseded) {
+                practiceMigrationFailures.delete(identityKey(legacy.identity));
+                return { key: legacy.key, identity: legacy.identity, status: "superseded" };
+            }
+        }
         // A failed migration is fixed by repair only when the inventory already found this deck's
         // native data damaged; repair cannot change the legacy value the migration read.
         const known = practiceMigrationFailures.get(identityKey(legacy.identity));
@@ -395,7 +419,7 @@ async function migrationPass(): Promise<PracticeMigrationPassResult> {
         } else {
             for (const legacy of scan.keys) {
                 const outcome = held.has(identityKey(legacy.identity))
-                    ? outcomeForHeldDeck(legacy)
+                    ? await outcomeForHeldDeck(legacy)
                     : await migrateLegacyDeck(storage, legacy);
                 outcomes.push(outcome);
             }
@@ -507,7 +531,9 @@ export function retireMigratedLegacyDeckKeysFromBrowser(
 
 function migrationBlock(identity: PracticeDeckKey): Error | null {
     if (practiceWritesBlocked) return new Error(i18n.t("Board.Practice.MigrationScanFailed"));
-    const failure = practiceMigrationFailures.get(identityKey(identity));
+    const failure =
+        practiceMigrationFailures.get(identityKey(identity)) ??
+        practiceMigrationFailures.get(identityKey({ file: identity.file, game: -1 }));
     return failure ? new PracticeMigrationBlockedError(failure.error, failure.repairable) : null;
 }
 
@@ -530,7 +556,7 @@ async function migrateLegacyDeckInline(identity: PracticeDeckKey): Promise<void>
         throw error;
     }
     if (healthyNativeIdentities(inventory).has(identityKey(identity))) {
-        retireMigratedLegacyDeckKeysFromBrowser([outcomeForHeldDeck(legacy)]);
+        retireMigratedLegacyDeckKeysFromBrowser([await outcomeForHeldDeck(legacy)]);
         return;
     }
 
@@ -566,10 +592,7 @@ function invokePractice<T>(call: () => Promise<T>): Promise<T> {
     });
 }
 
-export async function loadPracticeDeck(
-    fileId: string,
-    game: number,
-): Promise<PracticeDeckSnapshot | null> {
+export async function loadPracticeDeck(fileId: string, game: number): Promise<PracticeDeckLoad> {
     return invokePractice(() => tauri.loadPracticeDeck(fileId, game));
 }
 
@@ -582,18 +605,17 @@ export async function recordPracticeReview(
     positionsDocument: string,
     entry: string,
     entryId: string,
+    expectedEpoch: string,
 ): Promise<number> {
     return invokePractice(() =>
-        tauri.recordPracticeReview(
-            fileId,
-            game,
+        tauri.recordPracticeReview(fileId, game, expectedEpoch, {
             generation,
             revision,
             baseRevision,
             positionsDocument,
             entry,
             entryId,
-        ),
+        }),
     );
 }
 
@@ -603,9 +625,17 @@ export async function syncPracticePositions(
     generation: number,
     revision: number,
     positionsDocument: string,
+    expectedEpoch: string,
 ): Promise<number> {
     return invokePractice(() =>
-        tauri.syncPracticePositions(fileId, game, generation, revision, positionsDocument),
+        tauri.syncPracticePositions(
+            fileId,
+            game,
+            generation,
+            revision,
+            positionsDocument,
+            expectedEpoch,
+        ),
     );
 }
 
@@ -615,9 +645,17 @@ export async function resetPracticeDeck(
     generation: number,
     revision: number,
     positionsDocument: string,
+    expectedEpoch: string,
 ): Promise<number> {
     return invokePractice(() =>
-        tauri.resetPracticeDeck(fileId, game, generation, revision, positionsDocument),
+        tauri.resetPracticeDeck(
+            fileId,
+            game,
+            generation,
+            revision,
+            positionsDocument,
+            expectedEpoch,
+        ),
     );
 }
 
@@ -626,16 +664,22 @@ export async function loadPracticeReviews(
     game: number,
     cursor: string | null,
     limit: number,
+    expectedEpoch: string,
 ): Promise<PracticeReviewPage> {
-    return invokePractice(() => tauri.loadPracticeReviews(fileId, game, cursor, limit));
+    return invokePractice(() =>
+        tauri.loadPracticeReviews(fileId, game, cursor, limit, expectedEpoch),
+    );
 }
 
 export async function migratePracticeDeck(
     fileId: string,
     game: number,
     legacyDocument: string,
+    expectedEpoch: string,
 ): Promise<PracticeMigrationOutcome> {
-    return invokePractice(() => tauri.migratePracticeDeck(fileId, game, legacyDocument));
+    return invokePractice(() =>
+        tauri.migratePracticeDeck(fileId, game, legacyDocument, expectedEpoch),
+    );
 }
 
 export async function acknowledgePracticeOrphans(
@@ -643,14 +687,32 @@ export async function acknowledgePracticeOrphans(
     game: number,
     generation: number,
     acknowledgedCount: number,
+    expectedEpoch: string,
 ): Promise<null> {
     return invokePractice(() =>
-        tauri.acknowledgePracticeOrphans(fileId, game, generation, acknowledgedCount),
+        tauri.acknowledgePracticeOrphans(
+            fileId,
+            game,
+            generation,
+            acknowledgedCount,
+            expectedEpoch,
+        ),
     );
 }
 
+export async function readPracticeEpoch(fileId: string, game: number): Promise<PracticeEpoch> {
+    return invokePractice(() => tauri.practiceEpoch(fileId, game));
+}
+
 export async function repairPracticeDeck(fileId: string, game: number): Promise<null> {
-    return invokePractice(() => tauri.repairPracticeDeck(fileId, game));
+    let epoch: string | null;
+    try {
+        epoch = (await readPracticeEpoch(fileId, game)).epoch;
+    } catch (error) {
+        if (normalizeError(error).backendCategory !== "invalid-input") throw error;
+        epoch = null;
+    }
+    return invokePractice(() => tauri.repairPracticeDeck(fileId, game, epoch));
 }
 
 export async function listPracticeDecks(): Promise<PracticeDeckInventory> {
@@ -677,13 +739,25 @@ function deckFromSnapshot(snapshot: PracticeDeckSnapshot): PracticeDeckValue {
     };
 }
 
+function deckFromLoad(load: PracticeDeckLoad): PracticeDeckValue {
+    return { ...(load.deck ? deckFromSnapshot(load.deck) : emptyDeck("ready")), epoch: load.epoch };
+}
+
+function payloadEpoch(deck: PracticeDeckValue): string {
+    if (!deck.epoch) throw queuedWriteNotSaved();
+    return deck.epoch;
+}
+
 function failureState(current: PracticeDeckValue, error: unknown): PracticeDeckValue {
     const practiceError = error instanceof PracticeMigrationBlockedError ? error : null;
     const normalized = normalizeError(practiceError?.appError ?? error);
     return {
         ...current,
         status: "read-failed",
-        repairable: practiceError?.repairable ?? false,
+        repairable:
+            practiceError?.repairable ??
+            (normalized.backendCategory === "invalid-input" &&
+                normalized.rootFailure === "unusable"),
         error: normalized,
     };
 }
@@ -736,8 +810,12 @@ class PracticeRatingDroppedError extends Error {
     constructor(
         readonly deck: PracticeDeckValue,
         cause: unknown,
+        rating = true,
     ) {
-        super(i18n.t("Board.Practice.RatingDropped"), { cause });
+        super(
+            i18n.t(rating ? "Board.Practice.RatingDropped" : "Board.Practice.QueuedWriteNotSaved"),
+            { cause },
+        );
     }
 }
 
@@ -747,7 +825,7 @@ async function hydrate(identity: PracticeDeckKey): Promise<PracticeDeckValue> {
     const blocked = migrationBlock(identity);
     if (blocked) throw blocked;
     const snapshot = await loadPracticeDeck(identity.file, identity.game);
-    return snapshot ? deckFromSnapshot(snapshot) : emptyDeck("ready");
+    return deckFromLoad(snapshot);
 }
 
 async function persistRating(
@@ -771,6 +849,7 @@ async function persistRating(
                 positionsDocument(positions),
                 JSON.stringify(mutation.entry),
                 mutation.entryId,
+                payloadEpoch(committed),
             );
             return readyState(
                 {
@@ -790,12 +869,15 @@ async function persistRating(
             }
 
             const reloaded = await loadPracticeDeck(identity.file, identity.game);
-            if (!reloaded) {
+            const reloadedDeck = deckFromLoad(reloaded);
+            if (reloadedDeck.epoch !== committed.epoch) {
+                throw new PracticeRatingDroppedError(reloadedDeck, error);
+            }
+            if (!reloaded.deck) {
                 throw new Error(i18n.t("Board.Practice.DeckDisappeared"), {
                     cause: error,
                 });
             }
-            const reloadedDeck = deckFromSnapshot(reloaded);
             if (reloadedDeck.generation !== committed.generation) {
                 throw new PracticeRatingDroppedError(reloadedDeck, error);
             }
@@ -838,7 +920,11 @@ async function persistSync(
         await ensurePracticeMigration();
         await migrateLegacyDeckInline(identity);
         const snapshot = await loadPracticeDeck(identity.file, identity.game);
-        if (snapshot) effectiveCommitted = deckFromSnapshot(snapshot);
+        const reloadedDeck = deckFromLoad(snapshot);
+        if (reloadedDeck.epoch !== committed.epoch) {
+            throw new PracticeRatingDroppedError(reloadedDeck, queuedWriteNotSaved(), false);
+        }
+        effectiveCommitted = reloadedDeck;
     }
     const committedCards = new Map(
         effectiveCommitted.positions.map((position) => [
@@ -856,6 +942,7 @@ async function persistSync(
         effectiveCommitted.generation,
         effectiveCommitted.revision,
         positionsDocument(mergedPositions),
+        payloadEpoch(committed),
     );
     return readyState({ ...effectiveCommitted, revision }, mergedPositions);
 }
@@ -871,6 +958,7 @@ async function persistReset(
         committed.generation,
         committed.revision,
         positionsDocument(positions),
+        payloadEpoch(committed),
     );
     clearPracticeIdentityState(identity, false);
     return readyState(
@@ -902,7 +990,17 @@ function enqueueWrite(controller: DeckController, write: QueuedWrite): Promise<P
             const next = await write.task(controller.committed);
             controller.committed = next;
             return next;
-        } catch (error) {
+        } catch (cause) {
+            let error = cause;
+            if (
+                !(cause instanceof PracticeRatingDroppedError) &&
+                normalizeError(cause).backendCategory === "conflict"
+            ) {
+                const reloaded = await hydrate(controller.identity);
+                if (reloaded.epoch !== controller.committed?.epoch) {
+                    error = new PracticeRatingDroppedError(reloaded, cause, false);
+                }
+            }
             if (error instanceof PracticeRatingDroppedError) {
                 controller.committed = error.deck;
             } else {
@@ -1087,7 +1185,7 @@ export function createPracticeDeckAtom(
                         await repairPracticeDeck(identity.file, identity.game);
                         controller.writeBlocked = false;
                         clearPracticeIdentityState(identity, true);
-                        return emptyDeck("ready");
+                        return hydrate(identity);
                     },
                 });
                 return observeWrite(run, sequence, pending);
@@ -1117,6 +1215,7 @@ export function createPracticeDeckAtom(
                             identity.game,
                             committed.generation,
                             committed.unappliedReviews,
+                            payloadEpoch(current),
                         );
                         return readyState(
                             { ...committed, orphansAcknowledged: true },
@@ -1129,6 +1228,7 @@ export function createPracticeDeckAtom(
 
             const sequence = ++controller.requestSequence;
             const syncGeneration = current.generation;
+            const computedEpoch = current.epoch;
             const pending = {
                 ...current,
                 positions: mutation.positions,
@@ -1141,6 +1241,13 @@ export function createPracticeDeckAtom(
                 enqueueWrite(controller, {
                     task: async (committed) => {
                         if (!committed) throw queuedWriteNotSaved();
+                        if (committed.epoch !== computedEpoch) {
+                            throw new PracticeRatingDroppedError(
+                                committed,
+                                queuedWriteNotSaved(),
+                                mutation.type === "rating",
+                            );
+                        }
                         if (mutation.type === "rating") {
                             return persistRating(controller.identity, committed, mutation);
                         }

@@ -96,8 +96,8 @@ use crate::oauth::{
 use crate::pgn::{count_pgn_games, delete_game, file_revision, read_game, read_games, write_game};
 use crate::practice::{
     acknowledge_practice_orphans, list_practice_decks, load_practice_deck, load_practice_reviews,
-    migrate_practice_deck, record_practice_review, repair_practice_deck, reset_practice_deck,
-    sync_practice_positions,
+    migrate_practice_deck, practice_epoch, record_practice_review, repair_practice_deck,
+    reset_practice_deck, sync_practice_positions,
 };
 use crate::puzzle::{
     delete_puzzle_database, get_puzzle, get_puzzle_themes, get_puzzle_workspace,
@@ -2139,6 +2139,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             get_puzzle_workspace,
             list_puzzle_databases,
             load_practice_deck,
+            practice_epoch,
             record_practice_review,
             sync_practice_positions,
             reset_practice_deck,
@@ -2340,6 +2341,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "native credential storage could not be initialized"
                 })?;
             let authority_registry = app.path().app_config_dir()?.join("path-authority.json");
+            app.state::<AppState>().pgn_repository.initialize_practice(
+                crate::infra::path_authority::ensure_app_owned_default_dir(
+                    &app_data,
+                    crate::infra::path_authority::AppOwnedDefaultRoot::Practice,
+                )?,
+            )?;
             #[cfg(target_os = "macos")]
             let mut authority = {
                 let launch_root =
