@@ -20698,3 +20698,17 @@ Closed by 5ea1ae3b, pushed to master as part of 4633e57f (database games in Rece
 * **Open question:** is the native port refusal a reuse race in the driver after the seed session's quit (WebKitWebDriver not yet restarted / port not released), or an environment change on this machine (webkit2gtk-driver / tauri-driver version), and should the dirty-quit probe own a fresh driver?
 * **Follow-up:** once fixed, run `pnpm verify:app` and confirm LS1–LS9 (`verifyLosslessFileGameSave`, added for f-20261102-08), which have never executed.
 * **Found by:** drain session 4c58ce9a-e1cf-4546-976b-650038c07731 (build of f-20261102-08), 2026-11-03.
+
+---
+
+## 2026-11-04 — filed through the inbox spool
+
+### Windows renames and moves to a one-character name fail with ERROR_BAD_LENGTH
+
+* **ID:** f-20261104-01 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Filed from:** a7d7a3cd-8433-4bdd-a55f-398e678ee12f
+* **Impact class:** behaviour
+* **Where:** `src-tauri/src/infra/fs.rs` `mod win` `rename_information_buffer` (buffer length `offset_of!(FILE_RENAME_INFORMATION, FileName) + name_bytes`), used by `rename_child_with_mode` (Ex and classic) and `rename_classic`.
+* **Defect:** for a one-UTF-16-unit leaf the buffer is 22 bytes on x64, below the padded 24-byte `FILE_RENAME_INFORMATION`, so `NtSetInformationFile` returns STATUS_INFO_LENGTH_MISMATCH. Every rename or move to such a name fails, and a collision there surfaces as `io` instead of the typed name-taken conflict.
+* **Failure scenario:** on Windows, moving or renaming a folder to `X` (or `1`, `A`, …) in the Files workspace fails with "The program issued a command but the command length is incorrect." Observed in CI run 41742886307, job `rust-windows-test`, on 144fe1b7: `folder_move_foreign_destination_sidecar_is_untouched` (Io code 24) and `folder_move_primary_collision_is_typed_and_preserves_source` (category `io`, expected `conflict`).
+* **Found by:** drain session a7d7a3cd-8433-4bdd-a55f-398e678ee12f, f-20261101-27 push CI, 2026-11-04.
