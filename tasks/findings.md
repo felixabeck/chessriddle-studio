@@ -20750,3 +20750,18 @@ Fixed by d1882467 (drain session a7d7a3cd): `rename_information_buffer` floors t
 * **Failure scenario:** a push to master shows the Test job red at random and holds the post-push install until the job is rerun.
 * **Open question:** is this a test race (the origin poll starts before the append's origin switch is observable under hosted load) or a real renderer race where the database-draft-to-file origin transition can be lost?
 * **Found by:** drain session c6681a98-3b9c-44b5-be19-f49bb7c17761 while waiting on hosted CI for the f-20261101-29 push, 2026-11-04.
+
+---
+
+## 2026-11-04 — filed through the inbox spool
+
+### Database tables show English column titles and labels in every non-English locale
+
+* **ID:** f-20261104-03 · **Status:** open · **Area:** i18n · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** ux
+* **Where:** `src/components/databases/GameTable.tsx` columns `white`, `black`, `date`, `result`, `event`, `site` (no `title`, so mantine-datatable shows the humanised accessor), plus the literals `"Unrated"` and `"No games found"` and the default "Records per page" label (no `recordsPerPageLabel`). The same pattern likely exists in `PlayerTable.tsx`, `TournamentTable.tsx` and `TournamentCard.tsx`; confirm each at pickup.
+* **Defect:** A German user sees "White / Black / Date / Result / Event / Site" next to the translated "Halbzüge" column, and English "Unrated", "No games found" and "Records per page".
+* **Failure scenario:** German UI, open any database's Games tab: the header row mixes English and German (visible in the committed snapshot `e2e/database-files.spec.ts-snapshots/database-side-blackwhite-menu-desktop-de-dark-database-files.png`).
+* **Spotted outside diff:** while re-recording that snapshot for f-20261031-04 (Weiß spelling), 2026-11-04.
+* **Note:** `pnpm i18n:jsx` scans JSX text only, so string-prop literals and missing `title` props slip past it. Existing keys can be reused where they fit (`Fen.White`, `Board.Database.Local.Result`, etc.); run `pnpm i18n:extract` after adding keys and re-record the affected de/other-locale snapshots.
+* **Found by:** Claude Code session 46ce5990-66a7-487c-966f-970e814bd456, 2026-11-04.
