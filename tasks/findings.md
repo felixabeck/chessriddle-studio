@@ -20772,3 +20772,19 @@ Fixed by d1882467 (drain session a7d7a3cd): `rename_information_buffer` floors t
 * **Correction 2026-11-04 (push records lens):** the Note's "`pnpm i18n:jsx` scans JSX text only" is wrong. `scripts/check-untranslated-jsx.mjs:6-31` also checks literal user-facing props, object properties (including `title` and `noRecordsText`) and calls. What it cannot see here: a column with no `title` at all (mantine-datatable falls back to the humanised accessor), the `"Unrated"` literal inside a JSX-expression ternary, the `"No games found"` literal inside the `noRecordsText` ternary (the gate passes on this file today), and the library's built-in "Records per page" default.
 * **Proof:** a `GameTable` Vitest render under the `de-DE` catalogue that asserts the six column headers, the unrated label, the empty-state text and the records-per-page label are German. It fails on the current tree (English headers) and passes after the fix; the de-DE database snapshots re-recorded via `pnpm test:e2e:update` show the translated header row.
 <!-- ledger-meta {"command":"annotate","effect_lines":2,"effect_sha256":"ebcc1a42050eaac79cc6100f0dce9d903488cefbd85f7ce47a31e753403ecb72","input_sha256":"c365d89b296210404426b3f78a22cc48bad4788d621ce9b95b9178250e638f04","kind":"mutation-receipt","operation":"59a7477f7d76e80faf09c8e6ac612575c2a98878b123cdccc8ebd5a24e856f9d","options":{"section":null},"request_id_sha256":null,"results":["f-20261104-03"],"target":"f-20261104-03","v":1} -->
+
+---
+
+## 2026-11-04 — filed through the inbox spool
+
+### Trash listing pagination test fails intermittently on Windows CI (older_count off by one)
+
+* **ID:** f-20261104-04 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** behaviour
+* **Where:** `src-tauri/src/file_workspace.rs` `list_trash` (sort/cursor key `(trashed_seconds, item)` at lines ~272-296) and test `trash_listing_pages_beyond_directory_listing_bound_without_admitting_handles` (assert at line 4184).
+* **Defect:** `rust-windows-test` failed on master `43f00796` (run 41802441505, job 126481229376): `assertion left == right failed, left: 3970, right: 3971` at `src\file_workspace.rs:4184`, i.e. one page reported `older_count` one lower than `count - seen.len()`. The same test passed in the `d29abafa` run (41797235683) on identical Rust code apart from two later test-only commits (`727e5bef`, `232aae5e`), so it is intermittent. Every push is refused by `pnpm ci:remote:check` while it is red (blocked work).
+* **Failure scenario:** Windows, a trash directory with more than one page of buckets whose `.origin` record is absent or unreadable: the row key falls back to `entry.modified_seconds` of the bucket directory as reported by enumeration. Hypothesis, unverified: NTFS updates a child directory's last-write time in the parent index lazily, so a bucket's key can change between page requests and one bucket lands on the wrong side of the cursor — skipped or counted twice. Users would see a trash item missing from, or duplicated across, pages; the test fixture writes no `.origin`, so it exercises exactly that fallback.
+* **Open question:** which stable value keys trash pagination when a bucket has no readable origin time, so that the cursor never depends on mutable directory metadata?
+* **Note:** Random UUID bucket names make the order and hence the failure nondeterministic. Spotted while releasing f-20261031-04 (i18n only, no Rust change); the laptop drain had just repaired a different Windows trash test (`727e5bef`).
+* **Proof:** a Linux-runnable test that changes a bucket's modified time between two `list_trash` page calls and asserts every bucket appears exactly once with consistent `older_count`; then `rust-windows-test` green on three consecutive CI runs.
+* **Found by:** Claude Code session 46ce5990-66a7-487c-966f-970e814bd456, 2026-11-04.
