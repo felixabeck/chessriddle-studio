@@ -61,6 +61,7 @@ import FileInput from "../common/FileInput";
 import GameInfo from "../common/GameInfo";
 import GameNotation from "../common/GameNotation";
 import MoveControls from "../common/MoveControls";
+import NotationColumn from "../common/NotationColumn";
 import { TreeStateContext } from "../common/TreeStateContext";
 import Board from "./Board";
 import IconAction from "../common/IconAction";
@@ -1502,7 +1503,7 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
             setSelectedPiece={setSelectedPiece}
           />
         ) : (
-          <Stack h="100%" gap="xs">
+          <NotationColumn>
             <GameNotation
               topBar
               controls={
@@ -1519,7 +1520,7 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
               }
             />
             <MoveControls />
-          </Stack>
+          </NotationColumn>
         )}
       </Portal>
     </>

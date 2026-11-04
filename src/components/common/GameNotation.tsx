@@ -44,6 +44,9 @@ import styles from "./GameNotation.module.css";
 import OpeningName from "./OpeningName";
 import { GameReferenceProvider } from "./GameReference";
 
+// Room for three inline move rows, including their padding and line boxes.
+const NOTATION_MIN_HEIGHT_REM = "9rem";
+
 // Bound the frames spent waiting for React to mount a row after its offset scroll.
 const NOTATION_REVEAL_MAX_ATTEMPTS = 10;
 const notationOffsetScrolls = new WeakMap<
@@ -208,18 +211,33 @@ function GameNotation({ topBar, controls }: { topBar?: boolean; controls?: React
   useHotkeys(keyMap.COPY_PGN.keys, () => copyPgn());
 
   const content = (
-    <Paper withBorder flex={1} style={{ position: "relative", overflow: "hidden" }}>
+    <Paper
+      withBorder
+      flex={1}
+      style={{
+        position: "relative",
+        overflow: "hidden",
+        minHeight: topBar ? "min-content" : undefined,
+        flexShrink: topBar ? 0 : undefined,
+      }}
+    >
       <Group h="100%" wrap="nowrap" align="stretch" gap={0}>
         {controls && (
-          <Box className={styles.toolbar} style={{ flexShrink: 0 }}>
-            <ScrollArea type="never" h="100%" py="md" px="xs">
+          <Box className={styles.toolbar}>
+            <ScrollArea type="never" flex={1} mih={0} py="md" px="xs">
               {controls}
             </ScrollArea>
           </Box>
         )}
         <Stack h="100%" gap={0} style={{ flex: 1, minWidth: 0 }}>
           {topBar && <NotationHeader />}
-          <ScrollArea flex={1} offsetScrollbars scrollbars="y" viewportRef={viewport}>
+          <ScrollArea
+            flex={topBar ? "1 1 0px" : 1}
+            mih={topBar ? NOTATION_MIN_HEIGHT_REM : undefined}
+            offsetScrollbars
+            scrollbars="y"
+            viewportRef={viewport}
+          >
             <Stack gap="xs">
               <Box>
                 {invisible && (

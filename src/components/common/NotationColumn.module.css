@@ -1,0 +1,7 @@
+.column {
+  overflow-y: auto;
+}
+
+.column > * {
+  flex-shrink: 0;
+}

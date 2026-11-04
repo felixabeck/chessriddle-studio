@@ -5,6 +5,8 @@ import {
     databaseCommands,
     expect,
     filesWorkspaceCommands,
+    filesWorkspaceFixture,
+    pgnFileCommands,
     test,
     type MockScenario,
     gameOpeningFixture,
@@ -16,6 +18,131 @@ import {
 } from "./fixtures";
 
 const databaseTitle = "Breakpoint database";
+
+async function wheelColumnToButton(page: Page, column: Locator, button: Locator) {
+    const columnBox = (await column.boundingBox())!;
+    const buttonBox = (await button.boundingBox())!;
+    // The left edge is outside the nested notation scroller, so the wheel targets the column.
+    await page.mouse.move(columnBox.x + 2, columnBox.y + columnBox.height / 2);
+    await page.mouse.wheel(
+        0,
+        buttonBox.y + buttonBox.height / 2 - (columnBox.y + columnBox.height / 2),
+    );
+    await expect
+        .poll(
+            () =>
+                button.evaluate((element) => {
+                    const box = element.getBoundingClientRect();
+                    const hit = document.elementFromPoint(
+                        box.left + box.width / 2,
+                        box.top + box.height / 2,
+                    );
+                    return hit !== null && element.contains(hit);
+                }),
+            { message: "button centre is hit-testable after user wheel scrolling" },
+        )
+        .toBe(true);
+}
+
+async function assertNotationColumn(page: Page, hasMoves: boolean) {
+    const end = page.getByRole("button", { name: "Go to end", exact: true });
+    const column = end.locator("../..");
+    const card = page.locator("#bottomRight .mantine-Paper-root").filter({
+        has: page.getByRole("button", { name: "Table view", exact: true }),
+    });
+    const viewport = card.locator(".mantine-ScrollArea-viewport").last();
+    const san = viewport.getByRole("button", { name: "e4", exact: true });
+    if (hasMoves) {
+        await expect(san, "notation has mounted main-line move rows").toBeVisible();
+        await expect(viewport.locator("[data-index]")).not.toHaveCount(0);
+    }
+    await expect
+        .poll(() =>
+            viewport.evaluate((element) => {
+                const box = element.getBoundingClientRect();
+                const paper = element.closest(".mantine-Paper-root")!.getBoundingClientRect();
+                const floor = 9 * parseFloat(getComputedStyle(document.documentElement).fontSize);
+                return {
+                    floor,
+                    hasFloor: element.clientHeight >= floor,
+                    insideCard:
+                        box.top >= paper.top &&
+                        box.bottom <= paper.bottom &&
+                        box.left >= paper.left &&
+                        box.right <= paper.right,
+                };
+            }),
+        )
+        .toEqual({ floor: 288, hasFloor: true, insideCard: true });
+    await expect
+        .poll(() => column.evaluate((element) => element.scrollHeight > element.clientHeight))
+        .toBe(true);
+    if (hasMoves) {
+        await expect
+            .poll(() =>
+                san.evaluate((element) => {
+                    const rowHeight = element.parentElement!.getBoundingClientRect().height;
+                    const floor =
+                        9 * parseFloat(getComputedStyle(document.documentElement).fontSize);
+                    return floor >= 3 * rowHeight;
+                }),
+            )
+            .toBe(true);
+        await wheelColumnToButton(page, column, san);
+    }
+    await wheelColumnToButton(page, column, end);
+    await expect.poll(() => column.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+}
+
+for (const host of ["analysis", "play"] as const) {
+    for (const width of [1000, 800]) {
+        test(`font-scaled-breakpoints: ${host} notation floor and column scrolling at ${width}px and 200%`, async ({
+            page,
+            mockScenario,
+        }) => {
+            await page.setViewportSize({ width, height: 720 });
+            if (host === "analysis") {
+                await mockScenario({
+                    commands: filesWorkspaceCommands([[filesWorkspaceFixture.pgnFile]], {
+                        ...pgnFileCommands,
+                        lex_pgn: {
+                            result: [
+                                ...[
+                                    "e4",
+                                    "c5",
+                                    "Nf3",
+                                    "d6",
+                                    "d4",
+                                    "cxd4",
+                                    "Nxd4",
+                                    "Nf6",
+                                    "Nc3",
+                                    "a6",
+                                    "Be3",
+                                    "e5",
+                                ].map((value) => ({ type: "San", value })),
+                                { type: "Outcome", value: "*" },
+                            ],
+                        },
+                    }),
+                });
+                await page.goto("/library");
+                await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+                await selectFilesTreeRow(page, filesWorkspaceFixture.pgnFile.name);
+                await page.getByRole("button", { name: "Open game", exact: true }).click();
+                await expect(page).toHaveURL("/");
+            } else {
+                await page.goto("/");
+                await page.getByRole("button", { name: "Play", exact: true }).click();
+                await expect(
+                    page.getByRole("button", { name: "Start game", exact: true }),
+                ).toBeVisible();
+            }
+            await waitForFontsSettled(page);
+            await assertNotationColumn(page, host === "analysis");
+        });
+    }
+}
 
 test("font-scaled-breakpoints: conversion Cancel remains reachable at 320px and 200%", async ({
     page,

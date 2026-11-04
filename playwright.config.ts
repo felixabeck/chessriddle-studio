@@ -146,8 +146,7 @@ export default defineConfig({
             name: "notation-hierarchy-scaled",
             testMatch: /notation-hierarchy\.spec\.ts/,
             grep: /overflow-only/,
-            // 200% font at 720px height leaves the notation without rows (f-20261101-32), hence the taller window.
-            use: { ...chromium, viewport: { width: 1000, height: 1100 }, colorScheme: "light" },
+            use: { ...chromium, viewport: { width: 1000, height: 720 }, colorScheme: "light" },
         },
     ],
     webServer: {

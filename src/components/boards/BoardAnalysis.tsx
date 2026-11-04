@@ -1,6 +1,6 @@
 import { useTabAtom, useOwnerTab, useOwnerTabId } from "@/state/tabScope";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
-import { Paper, Portal, Stack, Tabs } from "@mantine/core";
+import { Paper, Portal, Tabs } from "@mantine/core";
 import { useHotkeys, useToggle, type HotkeyItem } from "@mantine/hooks";
 import { Database, Info, NotebookPen, Crosshair, ScanSearch } from "lucide-react";
 import type { Piece } from "chessops";
@@ -32,6 +32,7 @@ import SaveToDatabaseModal from "./SaveToDatabaseModal";
 import DetachedEval from "../common/DetachedEval";
 import GameNotation from "../common/GameNotation";
 import MoveControls from "../common/MoveControls";
+import NotationColumn from "../common/NotationColumn";
 import { TreeStateContext } from "../common/TreeStateContext";
 import AnalysisPanel from "../panels/analysis/AnalysisPanel";
 import AnnotationPanel from "../panels/annotation/AnnotationPanel";
@@ -314,7 +315,7 @@ function BoardAnalysis() {
             setSelectedPiece={setSelectedPiece}
           />
         ) : (
-          <Stack h="100%" gap="xs">
+          <NotationColumn>
             <DetachedEval />
             <GameNotation
               topBar
@@ -329,7 +330,7 @@ function BoardAnalysis() {
               }
             />
             <MoveControls />
-          </Stack>
+          </NotationColumn>
         )}
       </Portal>
     </>
