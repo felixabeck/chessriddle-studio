@@ -22,6 +22,8 @@ import { afterFileStructureChange } from "./fileStructureChange";
 export const PRACTICE_SYNC_DEBOUNCE_MS = 250;
 export const PRACTICE_MAX_CONFLICT_RETRIES = 2;
 export const PRACTICE_LOG_PAGE_SIZE = 100;
+/** Failure identity covering every deck in one file. */
+export const PRACTICE_FILE_WIDE_FAILURE_GAME = -1;
 /** Mirrors the native u32::MAX refusal for optimistic practice revisions. */
 const PRACTICE_REVISION_MAX = 0xffffffff;
 
@@ -51,6 +53,7 @@ export type PracticeDeckStatus =
 
 export type PracticeDeckValue = {
     epoch?: string;
+    repairEpoch?: string | null;
     positions: Position[];
     revision: number;
     generation: number;
@@ -196,7 +199,10 @@ export function reportPracticeInventoryAnomalies(inventory: PracticeDeckInventor
     // user notification is deduplicated.
     for (const anomaly of inventory.anomalies) {
         if (anomaly.fileId !== null) {
-            const identity = { file: anomaly.fileId, game: anomaly.game ?? -1 };
+            const identity = {
+                file: anomaly.fileId,
+                game: anomaly.game ?? PRACTICE_FILE_WIDE_FAILURE_GAME,
+            };
             const error: AppError = {
                 ...errorAsAppError(
                     new Error(
@@ -277,7 +283,9 @@ function removeIdentityFailuresAndAnomaliesFromResult(
 
 function clearPracticeIdentityState(identity: PracticeDeckKey, rerunMigration: boolean): void {
     practiceMigrationFailures.delete(identityKey(identity));
-    practiceMigrationFailures.delete(identityKey({ file: identity.file, game: -1 }));
+    practiceMigrationFailures.delete(
+        identityKey({ file: identity.file, game: PRACTICE_FILE_WIDE_FAILURE_GAME }),
+    );
     const previous = practiceMigrationPromise;
     if (!previous) return;
     const cleaned = previous.then((result) =>
@@ -325,12 +333,50 @@ function legacyDocument(
 async function outcomeForHeldDeck(
     legacy: PracticeLegacyDeckKey,
 ): Promise<PracticeMigrationDeckOutcome> {
-    const authority = await readPracticeEpoch(legacy.identity.file, legacy.identity.game);
-    return {
-        key: legacy.key,
-        identity: legacy.identity,
-        status: authority.legacySuperseded ? "superseded" : "alreadyMigrated",
-    };
+    try {
+        const authority = await readMigrationEpoch(legacy.identity);
+        return {
+            key: legacy.key,
+            identity: legacy.identity,
+            status: authority.legacySuperseded ? "superseded" : "alreadyMigrated",
+        };
+    } catch (error) {
+        return failedMigrationOutcome(legacy, error);
+    }
+}
+
+async function readMigrationEpoch(identity: PracticeDeckKey): Promise<PracticeEpoch> {
+    try {
+        return await readPracticeEpoch(identity.file, identity.game);
+    } catch (error) {
+        const appError = errorAsAppError(error);
+        if (appError.backendCategory === "invalid-input") {
+            practiceMigrationFailures.set(
+                identityKey({ file: identity.file, game: PRACTICE_FILE_WIDE_FAILURE_GAME }),
+                { error: appError, repairable: true },
+            );
+        }
+        throw error;
+    }
+}
+
+function failedMigrationOutcome(
+    legacy: PracticeLegacyDeckKey,
+    error: unknown,
+): PracticeMigrationDeckOutcome {
+    const appError = errorAsAppError(error);
+    const fileFailure = practiceMigrationFailures.get(
+        identityKey({ file: legacy.identity.file, game: PRACTICE_FILE_WIDE_FAILURE_GAME }),
+    );
+    if (!fileFailure) {
+        // Repair cannot change a bad legacy value, but preserves an inventory damage finding.
+        const known = practiceMigrationFailures.get(identityKey(legacy.identity));
+        practiceMigrationFailures.set(identityKey(legacy.identity), {
+            error: appError,
+            repairable: known?.repairable ?? false,
+        });
+    }
+    return { key: legacy.key, identity: legacy.identity, status: "failed", error: appError };
 }
 
 async function migrateLegacyDeck(
@@ -338,7 +384,7 @@ async function migrateLegacyDeck(
     legacy: PracticeLegacyDeckKey,
 ): Promise<PracticeMigrationDeckOutcome> {
     try {
-        const authority = await readPracticeEpoch(legacy.identity.file, legacy.identity.game);
+        const authority = await readMigrationEpoch(legacy.identity);
         if (authority.legacySuperseded) {
             practiceMigrationFailures.delete(identityKey(legacy.identity));
             return { key: legacy.key, identity: legacy.identity, status: "superseded" };
@@ -368,20 +414,17 @@ async function migrateLegacyDeck(
     } catch (error) {
         const appError = errorAsAppError(error);
         if (appError.backendCategory === "conflict") {
-            const authority = await readPracticeEpoch(legacy.identity.file, legacy.identity.game);
-            if (authority.legacySuperseded) {
-                practiceMigrationFailures.delete(identityKey(legacy.identity));
-                return { key: legacy.key, identity: legacy.identity, status: "superseded" };
+            try {
+                const authority = await readMigrationEpoch(legacy.identity);
+                if (authority.legacySuperseded) {
+                    practiceMigrationFailures.delete(identityKey(legacy.identity));
+                    return { key: legacy.key, identity: legacy.identity, status: "superseded" };
+                }
+            } catch (epochError) {
+                return failedMigrationOutcome(legacy, epochError);
             }
         }
-        // A failed migration is fixed by repair only when the inventory already found this deck's
-        // native data damaged; repair cannot change the legacy value the migration read.
-        const known = practiceMigrationFailures.get(identityKey(legacy.identity));
-        practiceMigrationFailures.set(identityKey(legacy.identity), {
-            error: appError,
-            repairable: known?.repairable ?? false,
-        });
-        return { key: legacy.key, identity: legacy.identity, status: "failed", error: appError };
+        return failedMigrationOutcome(legacy, error);
     }
 }
 
@@ -533,8 +576,9 @@ export function retireMigratedLegacyDeckKeysFromBrowser(
 function migrationBlock(identity: PracticeDeckKey): Error | null {
     if (practiceWritesBlocked) return new Error(i18n.t("Board.Practice.MigrationScanFailed"));
     const failure =
-        practiceMigrationFailures.get(identityKey(identity)) ??
-        practiceMigrationFailures.get(identityKey({ file: identity.file, game: -1 }));
+        practiceMigrationFailures.get(
+            identityKey({ file: identity.file, game: PRACTICE_FILE_WIDE_FAILURE_GAME }),
+        ) ?? practiceMigrationFailures.get(identityKey(identity));
     return failure ? new PracticeMigrationBlockedError(failure.error, failure.repairable) : null;
 }
 
@@ -706,14 +750,11 @@ export async function readPracticeEpoch(fileId: string, game: number): Promise<P
     return invokePractice(fileId, () => tauri.practiceEpoch(fileId, game));
 }
 
-export async function repairPracticeDeck(fileId: string, game: number): Promise<null> {
-    let epoch: string | null;
-    try {
-        epoch = (await readPracticeEpoch(fileId, game)).epoch;
-    } catch (error) {
-        if (normalizeError(error).backendCategory !== "invalid-input") throw error;
-        epoch = null;
-    }
+export async function repairPracticeDeck(
+    fileId: string,
+    game: number,
+    epoch: string | null,
+): Promise<null> {
     return invokePractice(fileId, () => tauri.repairPracticeDeck(fileId, game, epoch));
 }
 
@@ -808,14 +849,20 @@ function queuedWriteNotSaved(): Error {
     return new Error(i18n.t("Board.Practice.QueuedWriteNotSaved"));
 }
 
-class PracticeRatingDroppedError extends Error {
+type PracticeWriteDroppedNotice = "rating" | "queued-write";
+
+class PracticeWriteDroppedError extends Error {
     constructor(
         readonly deck: PracticeDeckValue,
         cause: unknown,
-        rating = true,
+        readonly noticeKind: PracticeWriteDroppedNotice,
     ) {
         super(
-            i18n.t(rating ? "Board.Practice.RatingDropped" : "Board.Practice.QueuedWriteNotSaved"),
+            i18n.t(
+                noticeKind === "rating"
+                    ? "Board.Practice.RatingDropped"
+                    : "Board.Practice.QueuedWriteNotSaved",
+            ),
             { cause },
         );
     }
@@ -823,11 +870,28 @@ class PracticeRatingDroppedError extends Error {
 
 async function hydrate(identity: PracticeDeckKey): Promise<PracticeDeckValue> {
     if (identity.file === "") return emptyDeck("ready");
-    await ensurePracticeMigration();
-    const blocked = migrationBlock(identity);
-    if (blocked) throw blocked;
-    const snapshot = await loadPracticeDeck(identity.file, identity.game);
-    return deckFromLoad(snapshot);
+    try {
+        await ensurePracticeMigration();
+        const blocked = migrationBlock(identity);
+        if (blocked) throw blocked;
+        const snapshot = await loadPracticeDeck(identity.file, identity.game);
+        return deckFromLoad(snapshot);
+    } catch (error) {
+        const failed = failureState(emptyDeck(), error);
+        if (!failed.repairable) return failed;
+        // Bind Repair to the damaged state now, before a later delete can move its ordinal.
+        try {
+            return {
+                ...failed,
+                repairEpoch: (await readPracticeEpoch(identity.file, identity.game)).epoch,
+            };
+        } catch (epochError) {
+            if (normalizeError(epochError).backendCategory === "invalid-input") {
+                return { ...failed, repairEpoch: null };
+            }
+            return { ...failureState(emptyDeck(), epochError), repairable: false };
+        }
+    }
 }
 
 async function persistRating(
@@ -873,7 +937,7 @@ async function persistRating(
             const reloaded = await loadPracticeDeck(identity.file, identity.game);
             const reloadedDeck = deckFromLoad(reloaded);
             if (reloadedDeck.epoch !== committed.epoch) {
-                throw new PracticeRatingDroppedError(reloadedDeck, error);
+                throw new PracticeWriteDroppedError(reloadedDeck, error, "rating");
             }
             if (!reloaded.deck) {
                 throw new Error(i18n.t("Board.Practice.DeckDisappeared"), {
@@ -881,7 +945,7 @@ async function persistRating(
                 });
             }
             if (reloadedDeck.generation !== committed.generation) {
-                throw new PracticeRatingDroppedError(reloadedDeck, error);
+                throw new PracticeWriteDroppedError(reloadedDeck, error, "rating");
             }
             const boardState = getBoardState(mutation.sourcePosition.fen);
             const reloadedIndex = reloadedDeck.positions.findIndex(
@@ -897,7 +961,7 @@ async function persistRating(
                 !updatedPosition ||
                 !sameCard(reloadedPosition.card, mutation.sourcePosition.card)
             ) {
-                throw new PracticeRatingDroppedError(reloadedDeck, error);
+                throw new PracticeWriteDroppedError(reloadedDeck, error, "rating");
             }
             positions = reloadedDeck.positions.map((position, index) =>
                 index === reloadedIndex ? { ...position, card: updatedPosition.card } : position,
@@ -924,7 +988,11 @@ async function persistSync(
         const snapshot = await loadPracticeDeck(identity.file, identity.game);
         const reloadedDeck = deckFromLoad(snapshot);
         if (reloadedDeck.epoch !== committed.epoch) {
-            throw new PracticeRatingDroppedError(reloadedDeck, queuedWriteNotSaved(), false);
+            throw new PracticeWriteDroppedError(
+                reloadedDeck,
+                queuedWriteNotSaved(),
+                "queued-write",
+            );
         }
         effectiveCommitted = reloadedDeck;
     }
@@ -991,20 +1059,22 @@ function enqueueWrite(controller: DeckController, write: QueuedWrite): Promise<P
         try {
             const next = await write.task(controller.committed);
             controller.committed = next;
+            controller.writeBlocked = next.status !== "ready";
             return next;
         } catch (cause) {
             let error = cause;
             if (
-                !(cause instanceof PracticeRatingDroppedError) &&
+                !(cause instanceof PracticeWriteDroppedError) &&
                 normalizeError(cause).backendCategory === "conflict"
             ) {
                 const reloaded = await hydrate(controller.identity);
                 if (reloaded.epoch !== controller.committed?.epoch) {
-                    error = new PracticeRatingDroppedError(reloaded, cause, false);
+                    error = new PracticeWriteDroppedError(reloaded, cause, "queued-write");
                 }
             }
-            if (error instanceof PracticeRatingDroppedError) {
+            if (error instanceof PracticeWriteDroppedError) {
                 controller.committed = error.deck;
+                controller.writeBlocked = error.deck.status !== "ready";
             } else {
                 controller.writeBlocked = true;
             }
@@ -1047,8 +1117,8 @@ export function createPracticeDeckAtom(
             (next) => {
                 // A superseded hydration must not touch the controller a newer one owns.
                 if (sequence !== controller.requestSequence) return;
-                controller.committed = next;
-                controller.writeBlocked = false;
+                controller.committed = next.status === "ready" ? next : null;
+                controller.writeBlocked = next.status !== "ready";
                 if (controller.mounted) setState(next);
             },
             (error) => {
@@ -1145,7 +1215,7 @@ export function createPracticeDeckAtom(
                             normalizeError(error).category === "applied-despite-error";
                         if (resetApplied) clearPracticeIdentityState(identity, false);
                         if (!controller.mounted || sequence !== controller.requestSequence) return;
-                        if (error instanceof PracticeRatingDroppedError) {
+                        if (error instanceof PracticeWriteDroppedError) {
                             set(stateAtom, error.deck);
                             return;
                         }
@@ -1184,7 +1254,22 @@ export function createPracticeDeckAtom(
                 const run = enqueueWrite(controller, {
                     allowWhenBlocked: true,
                     task: async () => {
-                        await repairPracticeDeck(identity.file, identity.game);
+                        if (current.repairEpoch === undefined) throw queuedWriteNotSaved();
+                        try {
+                            await repairPracticeDeck(
+                                identity.file,
+                                identity.game,
+                                current.repairEpoch,
+                            );
+                        } catch (error) {
+                            if (normalizeError(error).backendCategory !== "conflict") throw error;
+                            clearPracticeIdentityState(identity, true);
+                            throw new PracticeWriteDroppedError(
+                                await hydrate(identity),
+                                error,
+                                "queued-write",
+                            );
+                        }
                         controller.writeBlocked = false;
                         clearPracticeIdentityState(identity, true);
                         return hydrate(identity);
@@ -1244,10 +1329,10 @@ export function createPracticeDeckAtom(
                     task: async (committed) => {
                         if (!committed) throw queuedWriteNotSaved();
                         if (committed.epoch !== computedEpoch) {
-                            throw new PracticeRatingDroppedError(
+                            throw new PracticeWriteDroppedError(
                                 committed,
                                 queuedWriteNotSaved(),
-                                mutation.type === "rating",
+                                mutation.type === "rating" ? "rating" : "queued-write",
                             );
                         }
                         if (mutation.type === "rating") {

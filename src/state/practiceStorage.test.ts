@@ -48,6 +48,7 @@ import {
     ensurePracticeMigration,
     practiceDataSchema,
     PRACTICE_MAX_CONFLICT_RETRIES,
+    PRACTICE_FILE_WIDE_FAILURE_GAME,
     PRACTICE_SYNC_DEBOUNCE_MS,
     resetPracticeMigrationForTests,
     loadPracticeDeck,
@@ -185,7 +186,7 @@ describe("practice epoch authority", () => {
         ["reset", () => resetPracticeDeck("file-a", 0, 1, 2, "{}", "old")],
         ["acknowledge", () => acknowledgePracticeOrphans("file-a", 0, 1, 2, "old")],
         ["record", () => recordPracticeReview("file-a", 0, 1, 2, 2, "{}", "{}", "id", "old")],
-        ["repair", () => repairPracticeDeck("file-a", 0)],
+        ["repair", () => repairPracticeDeck("file-a", 0, "old")],
     ] as const)("%s waits for an in-progress file delete", async (method, call) => {
         const end = beginFileStructureChange("file-a");
         const waiting = call();
@@ -202,14 +203,12 @@ describe("practice epoch authority", () => {
         expect(native[method].mock.calls.some(([file]) => file === "file-a")).toBe(true);
     });
 
-    test("repair also waits when a delete starts during its epoch read", async () => {
-        const authority = deferred<{ epoch: string; legacySuperseded: boolean }>();
-        native.epoch.mockReturnValueOnce(authority.promise);
-        const repair = repairPracticeDeck("file-a", 0);
+    test("repair waits with its supplied epoch without reading a new one", async () => {
         const end = beginFileStructureChange("file-a");
+        const repair = repairPracticeDeck("file-a", 0, "old");
         try {
-            authority.resolve({ epoch: "old", legacySuperseded: false });
-            await vi.waitFor(() => expect(native.epoch).toHaveBeenCalledOnce());
+            await Promise.resolve();
+            expect(native.epoch).not.toHaveBeenCalled();
             expect(native.repair).not.toHaveBeenCalled();
         } finally {
             end();
@@ -217,6 +216,106 @@ describe("practice epoch authority", () => {
         await repair;
         expect(native.repair).toHaveBeenCalledExactlyOnceWith("file-a", 0, "old");
     });
+
+    test.each([
+        { legacy: false, unmount: false },
+        { legacy: false, unmount: true },
+        { legacy: true, unmount: false },
+        { legacy: true, unmount: true },
+    ])(
+        "stale Repair preserves C after deleting A with damaged B (legacy=$legacy, unmount=$unmount)",
+        async ({ legacy, unmount }) => {
+            const damaged = {
+                tag: "backend-error",
+                category: "invalid-input",
+                rootFailure: "unusable",
+                message: "damaged B",
+            };
+            if (legacy) {
+                localStorage.setItem("deck-file-a-1", JSON.stringify(legacyData()));
+                native.list.mockResolvedValueOnce({
+                    decks: [{ fileId: "file-a", game: 1 }],
+                    anomalies: [
+                        { kind: "DamagedDeck", leaf: "B-state.json", fileId: "file-a", game: 1 },
+                    ],
+                });
+                native.migrate.mockRejectedValueOnce(damaged);
+            } else {
+                native.load.mockRejectedValueOnce(damaged);
+            }
+            native.epoch.mockResolvedValue({ epoch: "before-delete", legacySuperseded: false });
+            const mounted = mountDeck("file-a", 1);
+            await vi.waitFor(() =>
+                expect(mounted.store.get(mounted.atom)).toMatchObject({
+                    status: "read-failed",
+                    repairable: true,
+                    repairEpoch: "before-delete",
+                }),
+            );
+            const epochReads = native.epoch.mock.calls.length;
+            let cDeleted = false;
+            native.repair.mockImplementation(async (_file, _game, epoch) => {
+                if (epoch !== "before-delete") {
+                    cDeleted = true;
+                    return null;
+                }
+                throw { tag: "backend-error", category: "conflict", message: "epoch changed" };
+            });
+            const end = beginFileStructureChange("file-a");
+            const repair = mounted.store.set(mounted.atom, { type: "repair" });
+            try {
+                if (unmount) mounted.unsubscribe();
+                await Promise.resolve();
+                expect(native.repair).not.toHaveBeenCalled();
+                native.epoch.mockResolvedValue({ epoch: "after-delete", legacySuperseded: true });
+                native.load.mockResolvedValue(snapshot([position()], { epoch: "after-delete" }));
+            } finally {
+                end();
+            }
+            await repair;
+            expect(native.repair).toHaveBeenCalledExactlyOnceWith("file-a", 1, "before-delete");
+            expect(cDeleted).toBe(false);
+            // A legacy re-scan may read authority, but Repair itself never obtains fresh authority.
+            expect(native.epoch).toHaveBeenCalledTimes(epochReads + (legacy ? 1 : 0));
+            expect(native.load).toHaveBeenLastCalledWith("file-a", 1);
+            const expected = unmount
+                ? { status: "write-pending", repairEpoch: "before-delete" }
+                : { status: "ready", epoch: "after-delete" };
+            expect(mounted.store.get(mounted.atom)).toMatchObject(expected);
+            if (!unmount) mounted.unsubscribe();
+        },
+    );
+
+    test.each(["sync", "reset"] as const)(
+        "a dropped %s explicitly selects the existing queued-write notice",
+        async (type) => {
+            native.load
+                .mockResolvedValueOnce(snapshot([position()], { epoch: "old" }))
+                .mockResolvedValueOnce(snapshot([position()], { epoch: "new" }));
+            native[type].mockRejectedValueOnce({
+                tag: "backend-error",
+                category: "conflict",
+                message: "epoch changed",
+            });
+            const mounted = mountDeck();
+            await waitForReady(mounted.store, mounted.atom);
+            vi.useFakeTimers();
+            const write = mounted.store.set(mounted.atom, { type, positions: [position()] });
+            await vi.advanceTimersByTimeAsync(PRACTICE_SYNC_DEBOUNCE_MS);
+            await write;
+            expect(persistError.report).toHaveBeenCalledExactlyOnceWith(
+                expect.objectContaining({
+                    noticeKind: "queued-write",
+                    message: "practice change not saved",
+                }),
+            );
+            expect(mounted.store.get(mounted.atom)).toMatchObject({
+                status: "ready",
+                epoch: "new",
+            });
+            mounted.unsubscribe();
+        },
+    );
 
     test("sends the rating snapshot as one write argument alongside its epoch", async () => {
         const document = JSON.stringify({ positions: [position()] });
@@ -249,6 +348,10 @@ describe("practice epoch authority", () => {
             positions: [],
         });
         expect(persistError.report).toHaveBeenCalledOnce();
+        expect(persistError.report.mock.calls[0][0]).toMatchObject({
+            noticeKind: "queued-write",
+            message: "practice change not saved",
+        });
         mounted.unsubscribe();
     });
 
@@ -271,6 +374,10 @@ describe("practice epoch authority", () => {
         expect(native.record).toHaveBeenCalledOnce();
         expect(native.record.mock.calls[0][2]).toBe("old");
         expect(mounted.store.get(mounted.atom)).toMatchObject({ epoch: "new", status: "ready" });
+        expect(persistError.report.mock.calls[0][0]).toMatchObject({
+            noticeKind: "rating",
+            message: "Board.Practice.RatingDropped",
+        });
         mounted.unsubscribe();
     });
 
@@ -291,13 +398,192 @@ describe("practice epoch authority", () => {
         });
         const mounted = mountDeck();
         await vi.waitFor(() => expect(mounted.store.get(mounted.atom).repairable).toBe(true));
+        expect(mounted.store.get(mounted.atom).repairEpoch).toBeNull();
+        expect(native.epoch).toHaveBeenCalledOnce();
         await mounted.store.set(mounted.atom, { type: "repair" });
         expect(native.repair).toHaveBeenCalledExactlyOnceWith("file-a", 0, null);
+        expect(native.epoch).toHaveBeenCalledOnce();
         expect(mounted.store.get(mounted.atom)).toMatchObject({
             epoch: "repaired",
             status: "ready",
         });
         mounted.unsubscribe();
+    });
+
+    test.each([
+        { held: false, reported: false },
+        { held: false, reported: true },
+        { held: true, reported: false },
+        { held: true, reported: true },
+    ])(
+        "a damaged-map epoch failure keeps Repair and other files usable (held=$held, reported=$reported)",
+        async ({ held, reported }) => {
+            const raw = JSON.stringify(legacyData());
+            localStorage.setItem("deck-file-a-0", raw);
+            native.list.mockResolvedValue({
+                decks: held ? [{ fileId: "file-a", game: 0 }] : [],
+                anomalies: reported
+                    ? [
+                          {
+                              kind: "DamagedDeck",
+                              leaf: "file-a-map.json",
+                              fileId: "file-a",
+                              game: null,
+                          },
+                      ]
+                    : [],
+            });
+            native.epoch.mockImplementation(async (file) => {
+                if (file === "file-a") {
+                    throw {
+                        tag: "backend-error",
+                        category: "invalid-input",
+                        message: "damaged map",
+                    };
+                }
+                return { epoch: "other", legacySuperseded: false };
+            });
+            const result = await runPracticeMigrationPass();
+            expect(result).toMatchObject({ scanTrusted: true, inventoryTrusted: true });
+            expect(result.outcomes).toEqual([
+                expect.objectContaining({
+                    identity: { file: "file-a", game: 0 },
+                    status: "failed",
+                }),
+            ]);
+            const damaged = mountDeck();
+            const later = mountDeck("file-a", 2);
+            const other = mountDeck("file-b", 0);
+            await waitForReady(other.store, other.atom);
+            for (const mounted of [damaged, later]) {
+                await vi.waitFor(() =>
+                    expect(mounted.store.get(mounted.atom)).toMatchObject({
+                        status: "read-failed",
+                        repairable: true,
+                        repairEpoch: null,
+                    }),
+                );
+            }
+            expect(native.migrate).not.toHaveBeenCalled();
+            expect(localStorage.getItem("deck-file-a-0")).toBe(raw);
+            await damaged.store.set(damaged.atom, { type: "retry" });
+            expect(damaged.store.get(damaged.atom)).toMatchObject({
+                status: "read-failed",
+                repairable: true,
+                repairEpoch: null,
+            });
+            native.list.mockResolvedValue({ decks: [], anomalies: [] });
+            native.epoch.mockResolvedValue({ epoch: "repaired", legacySuperseded: true });
+            native.load.mockResolvedValue({ epoch: "repaired", deck: null });
+            await damaged.store.set(damaged.atom, { type: "repair" });
+            expect(native.repair).toHaveBeenCalledExactlyOnceWith("file-a", 0, null);
+            await waitForReady(damaged.store, damaged.atom);
+            expect(localStorage.getItem("deck-file-a-0")).toBe(raw);
+            for (const mounted of [damaged, later, other]) mounted.unsubscribe();
+        },
+    );
+
+    test.each([false, true])(
+        "an epoch I/O failure stays local to its legacy file (held legacy=%s)",
+        async (held) => {
+            localStorage.setItem("deck-file-a-0", JSON.stringify(legacyData()));
+            native.list.mockResolvedValue({
+                decks: held ? [{ fileId: "file-a", game: 0 }] : [],
+                anomalies: [],
+            });
+            native.epoch.mockRejectedValue({
+                tag: "backend-error",
+                category: "io",
+                message: "I/O failed",
+            });
+            const result = await runPracticeMigrationPass();
+            expect(result.outcomes[0]).toMatchObject({ status: "failed" });
+            const failed = mountDeck();
+            const other = mountDeck("file-b", 0);
+            await waitForReady(other.store, other.atom);
+            await vi.waitFor(() =>
+                expect(failed.store.get(failed.atom)).toMatchObject({
+                    status: "read-failed",
+                    repairable: false,
+                    error: { backendCategory: "io" },
+                }),
+            );
+            expect(native.repair).not.toHaveBeenCalled();
+            failed.unsubscribe();
+            other.unsubscribe();
+        },
+    );
+
+    test("a file-wide map failure takes precedence over an earlier per-deck migration failure", async () => {
+        localStorage.setItem("deck-file-a-0", "invalid legacy JSON");
+        await runPracticeMigrationPass();
+        native.epoch.mockRejectedValue({
+            tag: "backend-error",
+            category: "invalid-input",
+            message: "damaged map",
+        });
+        await runPracticeMigrationPass();
+        const mounted = mountDeck();
+        await vi.waitFor(() =>
+            expect(mounted.store.get(mounted.atom)).toMatchObject({
+                status: "read-failed",
+                repairable: true,
+                repairEpoch: null,
+            }),
+        );
+        mounted.unsubscribe();
+    });
+
+    test("a damaged deck whose hydration epoch read fails I/O stays retryable only in its file", async () => {
+        native.load.mockRejectedValueOnce({
+            tag: "backend-error",
+            category: "invalid-input",
+            rootFailure: "unusable",
+            message: "damaged deck",
+        });
+        native.epoch.mockRejectedValue({
+            tag: "backend-error",
+            category: "io",
+            message: "I/O failed",
+        });
+        const damaged = mountDeck();
+        await vi.waitFor(() => expect(damaged.store.get(damaged.atom).status).toBe("read-failed"));
+        expect(damaged.store.get(damaged.atom)).toMatchObject({
+            repairable: false,
+            error: { backendCategory: "io" },
+        });
+        expect(damaged.store.get(damaged.atom).repairEpoch).toBeUndefined();
+        await damaged.store.set(damaged.atom, { type: "repair" });
+        expect(native.repair).not.toHaveBeenCalled();
+        const other = mountDeck("file-b", 0);
+        await waitForReady(other.store, other.atom);
+        await damaged.store.set(damaged.atom, { type: "retry" });
+        await waitForReady(damaged.store, damaged.atom);
+        damaged.unsubscribe();
+        other.unsubscribe();
+    });
+
+    test("the named file-wide failure identity blocks every ordinal only in that file", async () => {
+        expect(PRACTICE_FILE_WIDE_FAILURE_GAME).toBe(-1);
+        native.list.mockResolvedValue({
+            decks: [],
+            anomalies: [
+                {
+                    kind: "DamagedDeck",
+                    leaf: "file-a-map.json",
+                    fileId: "file-a",
+                    game: PRACTICE_FILE_WIDE_FAILURE_GAME,
+                },
+            ],
+        });
+        const damaged = mountDeck("file-a", 9);
+        const other = mountDeck("file-b", 9);
+        await vi.waitFor(() => expect(damaged.store.get(damaged.atom).repairable).toBe(true));
+        await waitForReady(other.store, other.atom);
+        await damaged.store.set(damaged.atom, { type: "repair" });
+        expect(native.repair).toHaveBeenCalledExactlyOnceWith("file-a", 9, "no-map");
+        damaged.unsubscribe();
+        other.unsubscribe();
     });
 
     test("retains superseded legacy values without importing or blocking practice", async () => {
