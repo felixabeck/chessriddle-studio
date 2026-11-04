@@ -19138,7 +19138,7 @@ This closure supersedes earlier open-review and open-cold-acceptance checkpoints
 
 ### WDL evaluation bar has unnamed progress bars and reports per-mille values as percentages
 
-* **ID:** f-20261029-08 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261029-08 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** ux
 * **Where:** src/components/panels/analysis/ScoreBubble.tsx:17-48, the WDL branch rendering three `Progress.Section`s with `value={w}`, `value={d}`, `value={l}`.
 * **Defect:** The three sections render as ARIA progressbars without an accessible name, and their values are the engine's per-mille WDL numbers passed as percentages, so assistive technology announces for example "450%". Both properties predate the ChessRiddle design build, whose diff only restyled the sections (base 9b76350b, `git show 9b76350b:src/components/panels/analysis/ScoreBubble.tsx`).
@@ -19148,6 +19148,8 @@ This closure supersedes earlier open-review and open-cold-acceptance checkpoints
 * **Open question:** none; name each section (win/draw/loss, translated) and pass percentages (per-mille / 10) or set an explicit value text.
 * **Proof:** give one line of the two-engine e2e scenario in e2e/engine-gap.spec.ts a WDL payload, click the chip, and let the existing `assertAccessible` pass; record its snapshot through `pnpm test:e2e:update` after inspecting the diff. Unit coverage already exists in src/components/panels/analysis/ScoreBubble.test.tsx.
 * **Found by:** Codex fix leaf during the ChessRiddle design build review, 2026-10-29.
+* **Handled (2026-11-04, interactive tower session c366c7c8-1be3-4412-a28c-a22aa1bf3fea):** commit 6c0257dc. `ScoreBubble.tsx` now passes per-mille / 10 to each `Progress.Section` (Mantine announces `aria-valuetext` "45%" instead of "450%") and names the sections with the existing catalogue keys `Board.Analysis.Tablebase.WhiteWins` / `Draw` / `BlackWins`, already used as generic result labels in `GameNotation.tsx` and `GameTable.tsx` and translated in every locale. WDL is White-perspective (`src-tauri/src/chess.rs:455`), so the labels match the white/equal/black segments. Section widths are unchanged: measured 27.9/18.6/15.5 px (45/30/25 %) in the e2e browser, since flex shrink already normalised the old 450/300/250 % bases. Proof: `ScoreBubble.test.tsx` asserts valuenow, valuetext and names; `e2e/engine-gap.spec.ts` gives one line a WDL payload, toggles the chip and runs `assertAccessible` on the WDL view (17/17 green; the new assertions fail with the component change reverted). No snapshot changed. Rejected: new dedicated WDL translation keys (would duplicate identical existing strings across 16 catalogues).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"9a555c7ac321eaf8f1b755e86488ade707e8a57947b20ed993d05e4c258f3170","header_sha256":"c63190182d995002384a09b325bd29b1ed10fd6e597cbe354bb0bf9d99850611","header_status":"handled","input_sha256":"3a5a3362aa2cab6ddb76bfe92269f103b19a128c200148444bc7b80198c1754a","kind":"mutation-receipt","operation":"8e34e51bf17cea561c2f8bfd37b939c301a4c5275ee8233adbd73b9ec9a07af7","options":{"section":null},"request_id_sha256":null,"results":["f-20261029-08"],"target":"f-20261029-08","v":1} -->
 
 ---
 
