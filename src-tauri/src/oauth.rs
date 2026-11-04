@@ -592,7 +592,7 @@ pub async fn authenticate(
                 Ok(())
             },
             auth_internal_config(app.config()),
-            ProdOAuthServices::new(http_client),
+            ProdOAuthServices::new(http_client.clone()),
         )
         .await;
         let status = match result {
@@ -600,6 +600,7 @@ pub async fn authenticate(
                 username_for_store,
                 credentials_for_store,
                 stashed_token,
+                &ProdOAuthServices::new(http_client),
             )
             .await
             {
@@ -616,23 +617,36 @@ pub async fn authenticate(
     Ok(job)
 }
 
-async fn persist_stashed_lichess_token(
+async fn persist_stashed_lichess_token<S: OAuthServices>(
     username: String,
     credentials: Arc<crate::credentials::CredentialManager>,
     stashed_token: Arc<std::sync::Mutex<Option<String>>>,
+    services: &S,
 ) -> Result<AuthenticationStatus, Error> {
     let token = stashed_token
         .lock()
         .map_err(|_| Error::Conflict("OAuth token stash was unavailable".into()))?
         .take()
         .ok_or_else(|| Error::OAuthFailure(OAUTH_FAILURE.into()))?;
-    let result = credentials
-        .store_lichess_token_async(username, token)
-        .await?;
+    let result = match credentials
+        .store_lichess_token_async(username, token.clone())
+        .await
+    {
+        Ok(result) => result,
+        Err(source) => {
+            revoke_failed_authentication_token(services, &token).await;
+            return Err(source);
+        }
+    };
     Ok(AuthenticationStatus::Succeeded {
         account: result.account,
         durability_uncertain: result.durability_uncertain,
     })
+}
+
+async fn revoke_failed_authentication_token<S: OAuthServices>(services: &S, token: &str) {
+    let outcome = services.revoke_token(token).await;
+    warn!("OAuth failed authentication token revocation outcome: {outcome:?}");
 }
 
 #[tauri::command]
@@ -846,8 +860,9 @@ where
         callback_result = &mut callback_rx => match callback_result {
             Ok(CallbackSignal::Code(code)) => match services.exchange_code(&client, code, pkce_verifier).await {
                 Ok(access_token) => match services.verify_identity(&access_token).await {
-                    Ok(verified_username) if verified_username.eq_ignore_ascii_case(&username) => if let Err(source) = emit_token(access_token) {
+                    Ok(verified_username) if verified_username.eq_ignore_ascii_case(&username) => if let Err(source) = emit_token(access_token.clone()) {
                         error!("OAuth native credential persistence failed: {source}");
+                        revoke_failed_authentication_token(services, &access_token).await;
                         Err(Error::OAuthFailure(OAUTH_FAILURE.into()))
                     } else {
                         info!("OAuth identity credential stored");
@@ -855,10 +870,12 @@ where
                     },
                     Ok(_) => {
                         warn!("OAuth verified identity did not match requested account");
+                        revoke_failed_authentication_token(services, &access_token).await;
                         Err(Error::OAuthFailure(OAUTH_FAILURE.into()))
                     }
                     Err(source) => {
                         error!("OAuth identity verification failed: {source}");
+                        revoke_failed_authentication_token(services, &access_token).await;
                         Err(Error::OAuthFailure(OAUTH_FAILURE.into()))
                     }
                 },
@@ -1835,10 +1852,12 @@ mod tests {
             crate::credentials::MemoryCredentialStore::default(),
         )));
         let stash = Arc::new(std::sync::Mutex::new(Some("token".into())));
+        let services = MockServices::new();
 
-        let status = persist_stashed_lichess_token("user".into(), credentials.clone(), stash)
-            .await
-            .unwrap();
+        let status =
+            persist_stashed_lichess_token("user".into(), credentials.clone(), stash, &services)
+                .await
+                .unwrap();
 
         let AuthenticationStatus::Succeeded {
             account,
@@ -1850,6 +1869,8 @@ mod tests {
         assert_eq!(account.username, "user");
         assert!(!durability_uncertain);
         assert_eq!(credentials.list().unwrap(), vec![account]);
+        assert_eq!(services.revoke_calls.load(Ordering::Relaxed), 0);
+        assert!(services.revoked_tokens.lock().await.is_empty());
     }
 
     #[tokio::test]
@@ -1866,7 +1887,7 @@ mod tests {
         assert!(result.is_err());
 
         assert!(matches!(
-            persist_stashed_lichess_token("user".into(), credentials, stash).await,
+            persist_stashed_lichess_token("user".into(), credentials, stash, &MockServices::new()).await,
             Err(Error::Conflict(message)) if message == "OAuth token stash was unavailable"
         ));
     }
@@ -1886,9 +1907,11 @@ mod tests {
             .unwrap();
         let stash = Arc::new(std::sync::Mutex::new(Some("token".into())));
 
-        let status = persist_stashed_lichess_token("user".into(), credentials.clone(), stash)
-            .await
-            .unwrap();
+        let services = MockServices::new();
+        let status =
+            persist_stashed_lichess_token("user".into(), credentials.clone(), stash, &services)
+                .await
+                .unwrap();
 
         let AuthenticationStatus::Succeeded {
             account,
@@ -1899,20 +1922,30 @@ mod tests {
         };
         assert!(durability_uncertain);
         assert_eq!(credentials.list().unwrap(), vec![account]);
+        assert_eq!(services.revoke_calls.load(Ordering::Relaxed), 0);
+        assert!(services.revoked_tokens.lock().await.is_empty());
     }
 
     #[tokio::test]
-    async fn persist_stashed_token_returns_a_store_error() {
-        let credentials = Arc::new(crate::credentials::CredentialManager::new(Arc::new(
-            RejectingCredentialStore,
-        )));
-        let stash = Arc::new(std::sync::Mutex::new(Some("token".into())));
+    async fn persist_stashed_token_revokes_on_store_error_and_preserves_the_error() {
+        use LichessRevocationOutcome::*;
+        for outcome in [Revoked, AlreadyInvalid, Unreachable, RateLimited, Rejected] {
+            let credentials = Arc::new(crate::credentials::CredentialManager::new(Arc::new(
+                RejectingCredentialStore,
+            )));
+            let stash = Arc::new(std::sync::Mutex::new(Some("token".into())));
+            let mut services = MockServices::new();
+            services.revoke_outcome = outcome;
 
-        assert!(
-            persist_stashed_lichess_token("user".into(), credentials, stash)
-                .await
-                .is_err()
-        );
+            assert!(matches!(
+                persist_stashed_lichess_token("user".into(), credentials, stash.clone(), &services)
+                    .await,
+                Err(Error::CredentialRecoveryRequired)
+            ));
+            assert!(stash.lock().unwrap().is_none());
+            assert_eq!(services.revoke_calls.load(Ordering::Relaxed), 1);
+            assert_eq!(*services.revoked_tokens.lock().await, vec!["token"]);
+        }
     }
 
     #[tokio::test]
@@ -2372,11 +2405,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn identity_mismatch_and_verification_failure_return_generic_error() {
+    async fn identity_mismatch_revokes_token_and_returns_generic_error() {
         let lifecycle = Arc::new(AuthLifecycle::default());
         let mut services = MockServices::new();
         services.verified_username = "different-user".into();
-        let task = start_attempt(lifecycle.clone(), services, |_| Ok(()));
+        let task = start_attempt(lifecycle.clone(), services.clone(), |_| Ok(()));
         tokio::task::yield_now().await;
         assert_eq!(
             send_valid(lifecycle.clone()).await,
@@ -2385,16 +2418,24 @@ mod tests {
         assert!(
             matches!(task.await.expect("task join"), Err(Error::OAuthFailure(message)) if message == OAUTH_FAILURE)
         );
+        assert_eq!(services.revoke_calls.load(Ordering::Relaxed), 1);
+        assert_eq!(*services.revoked_tokens.lock().await, vec!["token"]);
+    }
 
+    #[tokio::test]
+    async fn verification_failure_revokes_token_and_returns_generic_error() {
         let lifecycle = Arc::new(AuthLifecycle::default());
         let mut services = MockServices::new();
         services.verify_error = Some("identity endpoint unavailable".into());
-        let task = start_attempt(lifecycle.clone(), services, |_| Ok(()));
+        services.revoke_outcome = LichessRevocationOutcome::Unreachable;
+        let task = start_attempt(lifecycle.clone(), services.clone(), |_| Ok(()));
         tokio::task::yield_now().await;
         assert_eq!(send_valid(lifecycle).await, CallbackResult::AcceptedCode);
         assert!(
             matches!(task.await.expect("task join"), Err(Error::OAuthFailure(message)) if message == OAUTH_FAILURE)
         );
+        assert_eq!(services.revoke_calls.load(Ordering::Relaxed), 1);
+        assert_eq!(*services.revoked_tokens.lock().await, vec!["token"]);
     }
 
     #[tokio::test]
@@ -2414,6 +2455,8 @@ mod tests {
         );
         assert!(lifecycle.is_idle().await);
         assert!(services.listener_stopped.load(Ordering::Relaxed));
+        assert_eq!(services.revoke_calls.load(Ordering::Relaxed), 1);
+        assert_eq!(*services.revoked_tokens.lock().await, vec!["token"]);
     }
 
     #[tokio::test]
@@ -2434,6 +2477,8 @@ mod tests {
         );
         assert!(task.await.expect("task join").is_ok());
         assert_eq!(deliveries.load(Ordering::Relaxed), 1);
+        assert_eq!(services.revoke_calls.load(Ordering::Relaxed), 0);
+        assert!(services.revoked_tokens.lock().await.is_empty());
         assert!(lifecycle.is_idle().await);
         assert!(services.listener_stopped.load(Ordering::Relaxed));
     }
