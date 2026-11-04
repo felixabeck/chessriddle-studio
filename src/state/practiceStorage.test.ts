@@ -4,6 +4,7 @@ import type { ReviewLog } from "ts-fsrs";
 import type { PracticeMigrationOutcome } from "@/bindings";
 import type { Position } from "@/components/files/opening";
 import { createZodStorage } from "./utils";
+import { beginFileStructureChange } from "./fileStructureChange";
 
 const native = vi.hoisted(() => ({
     acknowledge: vi.fn(),
@@ -42,16 +43,24 @@ vi.mock("@/i18n", () => ({
 }));
 
 import {
+    acknowledgePracticeOrphans,
     createPracticeDeckAtom,
     ensurePracticeMigration,
     practiceDataSchema,
     PRACTICE_MAX_CONFLICT_RETRIES,
     PRACTICE_SYNC_DEBOUNCE_MS,
     resetPracticeMigrationForTests,
+    loadPracticeDeck,
+    loadPracticeReviews,
+    migratePracticeDeck,
+    readPracticeEpoch,
     recordPracticeReview,
+    repairPracticeDeck,
+    resetPracticeDeck,
     retireMigratedLegacyDeckKeys,
     retireMigratedLegacyDeckKeysFromBrowser,
     runPracticeMigrationPass,
+    syncPracticePositions,
     type PracticeDeckValue,
     type PracticeMigrationDeckOutcome,
     type PracticeRatingMutation,
@@ -167,6 +176,48 @@ afterEach(() => {
 });
 
 describe("practice epoch authority", () => {
+    test.each([
+        ["load", () => loadPracticeDeck("file-a", 0)],
+        ["loadReviews", () => loadPracticeReviews("file-a", 0, null, 10, "old")],
+        ["epoch", () => readPracticeEpoch("file-a", 0)],
+        ["migrate", () => migratePracticeDeck("file-a", 0, "{}", "old")],
+        ["sync", () => syncPracticePositions("file-a", 0, 1, 2, "{}", "old")],
+        ["reset", () => resetPracticeDeck("file-a", 0, 1, 2, "{}", "old")],
+        ["acknowledge", () => acknowledgePracticeOrphans("file-a", 0, 1, 2, "old")],
+        ["record", () => recordPracticeReview("file-a", 0, 1, 2, 2, "{}", "{}", "id", "old")],
+        ["repair", () => repairPracticeDeck("file-a", 0)],
+    ] as const)("%s waits for an in-progress file delete", async (method, call) => {
+        const end = beginFileStructureChange("file-a");
+        const waiting = call();
+        try {
+            await Promise.resolve();
+            expect(native[method]).not.toHaveBeenCalled();
+            expect(native.epoch).not.toHaveBeenCalled();
+            await loadPracticeDeck("file-b", 0);
+            expect(native.load).toHaveBeenCalledWith("file-b", 0);
+        } finally {
+            end();
+        }
+        await waiting;
+        expect(native[method].mock.calls.some(([file]) => file === "file-a")).toBe(true);
+    });
+
+    test("repair also waits when a delete starts during its epoch read", async () => {
+        const authority = deferred<{ epoch: string; legacySuperseded: boolean }>();
+        native.epoch.mockReturnValueOnce(authority.promise);
+        const repair = repairPracticeDeck("file-a", 0);
+        const end = beginFileStructureChange("file-a");
+        try {
+            authority.resolve({ epoch: "old", legacySuperseded: false });
+            await vi.waitFor(() => expect(native.epoch).toHaveBeenCalledOnce());
+            expect(native.repair).not.toHaveBeenCalled();
+        } finally {
+            end();
+        }
+        await repair;
+        expect(native.repair).toHaveBeenCalledExactlyOnceWith("file-a", 0, "old");
+    });
+
     test("sends the rating snapshot as one write argument alongside its epoch", async () => {
         const document = JSON.stringify({ positions: [position()] });
         const entry = JSON.stringify({ fen: firstFen, rating: 3 });

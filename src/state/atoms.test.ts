@@ -37,6 +37,21 @@ async function importAtoms() {
     return { atoms, load };
 }
 
+test("file deck invalidation evicts every cached ordinal and preserves other files", async () => {
+    const { atoms } = await importAtoms();
+    const first = atoms.deckAtomFamily({ file: "file-a", game: 0 });
+    const later = atoms.deckAtomFamily({ file: "file-a", game: 8 });
+    const other = atoms.deckAtomFamily({ file: "file-b", game: 0 });
+
+    atoms.invalidateFileDeckAtoms("file-a");
+
+    expect(atoms.deckAtomFamily({ file: "file-a", game: 0 })).not.toBe(first);
+    expect(atoms.deckAtomFamily({ file: "file-a", game: 8 })).not.toBe(later);
+    expect(atoms.deckAtomFamily({ file: "file-b", game: 0 })).toBe(other);
+    atoms.invalidateFileDeckAtoms("uncached-file");
+    expect(atoms.deckAtomFamily({ file: "file-b", game: 0 })).toBe(other);
+});
+
 test("the eight eager preferences share declaration-ordered synchronous document initial values", async () => {
     const values = [
         ["download-destination-capability", { id: "download" }],

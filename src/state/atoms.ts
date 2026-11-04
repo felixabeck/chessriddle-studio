@@ -1101,6 +1101,13 @@ export const deckAtomFamily = atomFamily(
     (a, b) => a.file === b.file && a.game === b.game,
 );
 
+/** A delete changes ordinal resolution for the whole file, including decks without open tabs. */
+export function invalidateFileDeckAtoms(file: string): void {
+    for (const identity of Array.from(deckAtomFamily.getParams())) {
+        if (identity.file === file) deckAtomFamily.remove(identity);
+    }
+}
+
 export type PracticePhase =
     | "idle" // Not practicing
     | "waiting" // Waiting for user to make a move

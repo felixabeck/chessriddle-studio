@@ -12,7 +12,8 @@ import { tabStorage } from "@/state/store/tabStorage";
 import { deserializeStorageValue } from "@/state/store/debouncedStorage";
 import { getTabTreeKey } from "@/state/workspaceTypes";
 import { loadWorkspace, WORKSPACE_STORAGE_KEY } from "@/state/workspace";
-import { activeTabAtom, currentTabAtom, tabsAtom } from "@/state/atoms";
+import { activeTabAtom, currentTabAtom, deckAtomFamily, tabsAtom } from "@/state/atoms";
+import { afterFileStructureChange } from "@/state/fileStructureChange";
 import { cancellationError, TauriCommandError } from "@/platform/tauri";
 import type { Tab } from "@/state/workspaceTypes";
 import { defaultTree } from "@/utils/treeReducer";
@@ -1424,6 +1425,132 @@ describe("InfoPanel game loading and cancellation", () => {
     });
     expect(container.querySelector('[data-testid="game-cache-size"]')?.textContent).toBe("0");
     expect(mocks.deleteRejected).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ["success", undefined, true, false],
+    ["native error", new Error("delete failed"), false, false],
+    [
+      "stale refusal",
+      new TauriCommandError({ tag: "backend-error", category: "stale-game", message: "stale" }),
+      false,
+      false,
+    ],
+    [
+      "committed uncertainty",
+      new TauriCommandError({ tag: "backend-error", category: "durability", message: "uncertain" }),
+      true,
+      false,
+    ],
+    [
+      "applied-despite-error",
+      { category: "applied-despite-error", message: "installed" },
+      true,
+      false,
+    ],
+    ["post-delete metadata refusal", undefined, true, true],
+    ["rollback metadata refusal", new Error("delete failed"), false, true],
+  ] as const)(
+    "%s releases practice waiters after reconciling tabs and invalidating installed outcomes",
+    async (_name, error, installed, refuseMetadata) => {
+      const deletion = deferred<void>();
+      mocks.deleteGame.mockReturnValueOnce(deletion.promise);
+      await act(async () => root.render(renderPanel()));
+      const before = [0, 1, 9].map((game) => deckAtomFamily({ file: "workspace-token-a", game }));
+      const other = deckAtomFamily({ file: "workspace-token-b", game: 0 });
+      const initialFreshness = getFileFreshness(tabAId).state;
+      if (refuseMetadata) refuseSecondWorkspaceWrite();
+      await primeAndDelete();
+      expect(mocks.deleteGame).toHaveBeenCalledOnce();
+      const resumed = vi.fn(async () => ({
+        decks: [0, 1, 9].map((game) => deckAtomFamily({ file: "workspace-token-a", game })),
+        freshness: getFileFreshness(tabAId).state,
+        origin: jotaiStore.get(currentTabAtom)?.gameOrigin,
+      }));
+      const waiting = afterFileStructureChange("workspace-token-a", resumed);
+      await Promise.resolve();
+      expect(resumed).not.toHaveBeenCalled();
+
+      await act(async () => {
+        if (error) deletion.reject(error);
+        else deletion.resolve();
+        await waiting;
+      });
+
+      expect(resumed).toHaveBeenCalledOnce();
+      const observed = await waiting;
+      observed.decks.forEach((deck, index) => {
+        expect(deck === before[index]).toBe(!installed);
+      });
+      expect(deckAtomFamily({ file: "workspace-token-b", game: 0 })).toBe(other);
+      const expectedFreshness = installed
+        ? error || refuseMetadata
+          ? "conflict"
+          : "unverified"
+        : initialFreshness;
+      const expectedCount = error && !refuseMetadata ? 5 : 4;
+      expect(observed.freshness).toBe(expectedFreshness);
+      expect(observed.origin).toMatchObject({ file: { numGames: expectedCount } });
+      await expect(
+        afterFileStructureChange("workspace-token-a", async () => "released"),
+      ).resolves.toBe("released");
+    },
+  );
+
+  test("a renderer exception after native success invalidates decks and releases the barrier", async () => {
+    const deletion = deferred<void>();
+    mocks.deleteGame.mockReturnValueOnce(deletion.promise);
+    await act(async () => root.render(renderPanel()));
+    const before = deckAtomFamily({ file: "workspace-token-a", game: 0 });
+    await primeAndDelete();
+    const resumed = vi.fn(async () => ({
+      deck: deckAtomFamily({ file: "workspace-token-a", game: 0 }),
+      freshness: getFileFreshness(tabAId).state,
+    }));
+    const waiting = afterFileStructureChange("workspace-token-a", resumed);
+    const unsubscribe = jotaiStore.sub(tabsAtom, () => {
+      throw new Error("post-delete workspace observer failed");
+    });
+    try {
+      await act(async () => {
+        deletion.resolve();
+        await waiting;
+      });
+      expect(resumed).toHaveBeenCalledOnce();
+      expect((await waiting).deck).not.toBe(before);
+      expect((await waiting).freshness).toBe("conflict");
+      expect(mocks.deleteRejected).toHaveBeenCalledOnce();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  test("an applied-error barrier spans the count refresh even when that refresh fails", async () => {
+    const deletion = deferred<void>();
+    const count = deferred<number>();
+    mocks.deleteGame.mockReturnValueOnce(deletion.promise);
+    mocks.countPgnGames.mockReturnValueOnce(count.promise);
+    await act(async () => root.render(renderPanel()));
+    const before = deckAtomFamily({ file: "workspace-token-a", game: 0 });
+    await primeAndDelete();
+    const resumed = vi.fn().mockResolvedValue(null);
+    const waiting = afterFileStructureChange("workspace-token-a", resumed);
+    await act(async () => {
+      deletion.reject({ category: "applied-despite-error", message: "installed" });
+    });
+    expect(mocks.countPgnGames).toHaveBeenCalledOnce();
+    expect(getFileFreshness(tabAId).state).toBe("conflict");
+    expect(resumed).not.toHaveBeenCalled();
+    await act(async () => {
+      count.reject(new Error("count refresh failed"));
+      await waiting;
+    });
+    expect(resumed).toHaveBeenCalledOnce();
+    expect(deckAtomFamily({ file: "workspace-token-a", game: 0 })).not.toBe(before);
+    expect(mocks.deleteRejected).toHaveBeenCalledWith({
+      category: "applied-despite-error",
+      message: "installed",
+    });
   });
 
   test("successful delete updates same-file tabs and shifts only later game numbers", async () => {

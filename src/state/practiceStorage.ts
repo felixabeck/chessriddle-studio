@@ -17,6 +17,7 @@ import { type Position, positionSchema } from "@/components/files/opening";
 import { pathRefSchema } from "@/utils/pathCapabilities";
 import { getBoardState } from "@/utils/treeReducer";
 import { reportPersistError } from "./persistError";
+import { afterFileStructureChange } from "./fileStructureChange";
 
 export const PRACTICE_SYNC_DEBOUNCE_MS = 250;
 export const PRACTICE_MAX_CONFLICT_RETRIES = 2;
@@ -584,8 +585,9 @@ const emptyDeck = (status: PracticeDeckStatus = "loading"): PracticeDeckValue =>
     status,
 });
 
-function invokePractice<T>(call: () => Promise<T>): Promise<T> {
-    return call().catch((error) => {
+function invokePractice<T>(fileId: string | null, call: () => Promise<T>): Promise<T> {
+    const run = fileId === null ? call() : afterFileStructureChange(fileId, call);
+    return run.catch((error) => {
         // Keep the backend category attached: conflict retry must not branch on the renderer's
         // coarser `validation` category or on a localized message.
         throw normalizeError(error);
@@ -593,7 +595,7 @@ function invokePractice<T>(call: () => Promise<T>): Promise<T> {
 }
 
 export async function loadPracticeDeck(fileId: string, game: number): Promise<PracticeDeckLoad> {
-    return invokePractice(() => tauri.loadPracticeDeck(fileId, game));
+    return invokePractice(fileId, () => tauri.loadPracticeDeck(fileId, game));
 }
 
 export async function recordPracticeReview(
@@ -607,7 +609,7 @@ export async function recordPracticeReview(
     entryId: string,
     expectedEpoch: string,
 ): Promise<number> {
-    return invokePractice(() =>
+    return invokePractice(fileId, () =>
         tauri.recordPracticeReview(fileId, game, expectedEpoch, {
             generation,
             revision,
@@ -627,7 +629,7 @@ export async function syncPracticePositions(
     positionsDocument: string,
     expectedEpoch: string,
 ): Promise<number> {
-    return invokePractice(() =>
+    return invokePractice(fileId, () =>
         tauri.syncPracticePositions(
             fileId,
             game,
@@ -647,7 +649,7 @@ export async function resetPracticeDeck(
     positionsDocument: string,
     expectedEpoch: string,
 ): Promise<number> {
-    return invokePractice(() =>
+    return invokePractice(fileId, () =>
         tauri.resetPracticeDeck(
             fileId,
             game,
@@ -666,7 +668,7 @@ export async function loadPracticeReviews(
     limit: number,
     expectedEpoch: string,
 ): Promise<PracticeReviewPage> {
-    return invokePractice(() =>
+    return invokePractice(fileId, () =>
         tauri.loadPracticeReviews(fileId, game, cursor, limit, expectedEpoch),
     );
 }
@@ -677,7 +679,7 @@ export async function migratePracticeDeck(
     legacyDocument: string,
     expectedEpoch: string,
 ): Promise<PracticeMigrationOutcome> {
-    return invokePractice(() =>
+    return invokePractice(fileId, () =>
         tauri.migratePracticeDeck(fileId, game, legacyDocument, expectedEpoch),
     );
 }
@@ -689,7 +691,7 @@ export async function acknowledgePracticeOrphans(
     acknowledgedCount: number,
     expectedEpoch: string,
 ): Promise<null> {
-    return invokePractice(() =>
+    return invokePractice(fileId, () =>
         tauri.acknowledgePracticeOrphans(
             fileId,
             game,
@@ -701,7 +703,7 @@ export async function acknowledgePracticeOrphans(
 }
 
 export async function readPracticeEpoch(fileId: string, game: number): Promise<PracticeEpoch> {
-    return invokePractice(() => tauri.practiceEpoch(fileId, game));
+    return invokePractice(fileId, () => tauri.practiceEpoch(fileId, game));
 }
 
 export async function repairPracticeDeck(fileId: string, game: number): Promise<null> {
@@ -712,11 +714,11 @@ export async function repairPracticeDeck(fileId: string, game: number): Promise<
         if (normalizeError(error).backendCategory !== "invalid-input") throw error;
         epoch = null;
     }
-    return invokePractice(() => tauri.repairPracticeDeck(fileId, game, epoch));
+    return invokePractice(fileId, () => tauri.repairPracticeDeck(fileId, game, epoch));
 }
 
 export async function listPracticeDecks(): Promise<PracticeDeckInventory> {
-    return invokePractice(() => tauri.listPracticeDecks());
+    return invokePractice(null, () => tauri.listPracticeDecks());
 }
 
 function parsePositionsDocument(document: string): Position[] {
