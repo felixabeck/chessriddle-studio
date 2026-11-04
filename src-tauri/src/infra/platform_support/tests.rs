@@ -1720,10 +1720,11 @@ fn windows_listing_identity_is_composed_not_a_raw_file_id() {
     // type-checks and then fails every listing with `workspace entry changed concurrently`,
     // because the listing confirms each kept entry against a freshly opened handle.
     let source = source_for("infra/fs.rs");
-    let enumerate = compact(&source[braced_body(source, "pub(super) fn enumerate_directory(")]);
+    let visit = compact(&source[braced_body(source, "pub(super) fn visit_directory(")]);
     assert!(
-        enumerate.contains("letvolume=opened_file_identity(dir)?.0"),
-        "the volume serial must come from the retained directory handle: {enumerate}"
+        visit.contains("letvolume=opened_file_identity(dir)?.0")
+            && visit.contains("parse_directory_page(&buffer,used,volume,&mutpage,None)?"),
+        "the volume serial must come from the retained directory handle and reach the parser: {visit}"
     );
     let page = compact(&source[braced_body(source, "fn parse_directory_page(")]);
     assert!(
@@ -1761,6 +1762,13 @@ fn windows_listing_classifies_reparse_entries_as_other_and_stays_cancellable() {
         entry_kind.contains("kind:DirectoryEntryKind,"),
         "the enumerator must carry the one kind enum: {entry_kind}"
     );
+    let page = compact(&source[braced_body(source, "fn parse_directory_page(")]);
+    assert!(page.contains("kind:enumerated_kind(header.FileAttributes),"));
+    let kind = compact(&source[braced_body(source, "fn enumerated_kind(")]);
+    assert!(
+        kind.contains("ifattributes&FILE_ATTRIBUTE_REPARSE_POINT!=0{DirectoryEntryKind::Other}elseifattributes&FILE_ATTRIBUTE_DIRECTORY!=0{"),
+        "reparse entries must be classified as Other before the directory bit: {kind}"
+    );
     assert_eq!(
         read.matches("ifcancellation.is_cancelled(){returnErr(Error::Cancellation);}")
             .count(),
@@ -1777,11 +1785,16 @@ fn windows_listing_classifies_reparse_entries_as_other_and_stays_cancellable() {
         "the enumerator must take the caller's cancellation token"
     );
     let enumerate = compact(&source[braced_body(source, "pub(super) fn enumerate_directory(")]);
-    let loop_start = enumerate.find("loop{").expect("the page loop must exist");
     assert!(
-        enumerate[loop_start..]
+        enumerate.contains("visit_directory(dir,cancellation,&mut|entry|{"),
+        "the wrapper must forward the caller's cancellation token: {enumerate}"
+    );
+    let visit = compact(&source[braced_body(source, "pub(super) fn visit_directory(")]);
+    let loop_start = visit.find("loop{").expect("the page loop must exist");
+    assert!(
+        visit[loop_start..]
             .starts_with("loop{ifcancellation.is_cancelled(){returnErr(Error::Cancellation);}"),
-        "cancellation must be observed once per NtQueryDirectoryFile page: {enumerate}"
+        "cancellation must be observed once per NtQueryDirectoryFile page: {visit}"
     );
 }
 
@@ -1820,7 +1833,17 @@ fn directory_listing_bound_options_survive_platform_wrappers() {
         "ifletSome(limit)=limit{super::check_directory_listing_bound(entries.len(),limit)?;}"
     ));
     let enumerate = compact(&source[braced_body(source, "pub(super) fn enumerate_directory(")]);
-    assert!(enumerate.contains("parse_directory_page(&buffer,used,volume,&mutentries,limit)?"));
+    // The streaming visitor parses one page at a time; the wrapper owns the total-entry
+    // bound and must propagate its callback's failure before retaining another entry.
+    assert!(
+        enumerate.contains("visit_directory(dir,cancellation,&mut|entry|{ifletSome(limit)=limit{super::check_directory_listing_bound(entries.len(),limit)?;}entries.push(entry);Ok(())})?;Ok(entries)"),
+        "bounded enumeration must check every visited entry before retaining it: {enumerate}"
+    );
+    let visit = compact(&source[braced_body(source, "pub(super) fn visit_directory(")]);
+    assert!(
+        visit.contains("parse_directory_page(&buffer,used,volume,&mutpage,None)?;forentryinpage{ifcancellation.is_cancelled(){returnErr(Error::Cancellation);}visit(entry)?;}"),
+        "every parsed entry must pass through the wrapper's fallible bound check: {visit}"
+    );
     let removal = compact(&source[braced_body(source, "fn remove_windows_tree_at(")]);
     assert!(removal.contains("enumerate_directory(&child,&CancellationToken::new(),None)?"));
     let sync = compact(&source[braced_body(source, "fn sync_windows_tree(")]);
@@ -1923,17 +1946,23 @@ fn windows_enumeration_restart_terminal_and_exhaustion_are_handled() {
     // retry. Returning `Ok` with a prefix when the retry bound is hit would be a truncated
     // listing reported as a complete tree, so the bound fails closed.
     let source = source_for("infra/fs.rs");
-    let body = compact(&source[braced_body(source, "pub(super) fn enumerate_directory(")]);
+    let body = compact(&source[braced_body(source, "pub(super) fn visit_directory(")]);
     assert!(
         body.contains("ifstatus==STATUS_NO_MORE_FILES{break;}"),
         "end of stream must be success, not an error: {body}"
+    );
+    assert!(
+        body.find("ifstatus==STATUS_NO_MORE_FILES") < body.find("ifstatus!=0")
+            && body.ends_with("}Ok(())}"),
+        "end of stream must bypass status errors and complete successfully: {body}"
     );
     assert!(
         body.contains("letmutrestart_scan=true;"),
         "the first call must restart the scan: {body}"
     );
     assert!(
-        body.contains("restart_scan=false;"),
+        body.contains("nt_query_directory_file(dir,&mutstatus_block,&mutbuffer,restart_scan)")
+            && body.contains("visit(entry)?;}restart_scan=false;"),
         "later calls must not restart the scan: {body}"
     );
     let overflow_start = body
