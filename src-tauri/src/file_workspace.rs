@@ -67,6 +67,11 @@ pub struct WorkspaceTrashPage {
     pub cursor: Option<TrashCursor>,
 }
 
+fn open_trash_directory(parent: &fs::File, leaf: &OsStr) -> Result<fs::File, Error> {
+    let identity = crate::infra::fs::entry_identity_at(parent, leaf, true)?;
+    crate::infra::fs::open_removal_directory_at(parent, leaf, identity).map(|dir| dir.into_file())
+}
+
 fn trash_item_target(
     root: &WorkspaceMutationTarget,
     item: &TrashItemId,
@@ -77,13 +82,13 @@ fn trash_item_target(
     if uuid.to_string() != item.0 {
         return Err(Error::InvalidInput("invalid trash item id".into()));
     }
-    let trash =
-        crate::infra::fs::open_directory_at(root.directory()?, OsStr::new(TRASH_DIRECTORY), true)?;
-    let bucket = crate::infra::fs::open_directory_at(&trash, OsStr::new(&item.0), true)?;
+    let trash = open_trash_directory(root.directory()?, OsStr::new(TRASH_DIRECTORY))?;
+    let bucket = open_trash_directory(&trash, OsStr::new(&item.0))?;
     let mut primary = None;
     crate::infra::fs::visit_directory_entries_at(&bucket, cancellation, &mut |entry| {
         if entry.kind == DirectoryEntryKind::Other
-            || entry.name.to_string_lossy().ends_with(".info")
+            || (entry.kind == DirectoryEntryKind::RegularFile
+                && entry.name.to_string_lossy().ends_with(".info"))
         {
             return Ok(());
         }
@@ -163,11 +168,7 @@ fn list_trash(
         older_count: 0,
         cursor: None,
     };
-    let trash = match crate::infra::fs::open_directory_at(
-        root.directory()?,
-        OsStr::new(TRASH_DIRECTORY),
-        false,
-    ) {
+    let trash = match open_trash_directory(root.directory()?, OsStr::new(TRASH_DIRECTORY)) {
         Ok(trash) => Some(trash),
         Err(error) if error.is_missing_entry() => None,
         Err(error) => return Err(error),
@@ -196,37 +197,25 @@ fn list_trash(
                     } else {
                         WorkspaceEntryKind::File
                     });
-                    if let Ok(mut origin) = crate::infra::fs::open_regular_at(
+                    match read_trash_origin(
                         &trash,
                         OsStr::new(&format!("{id}.origin")),
-                        RegularFileAccess::ReadOnly,
+                        None,
+                        cancellation,
                     ) {
-                        let declared = origin.metadata()?.len();
-                        if let Ok(bytes) = crate::infra::fs::read_bounded_bytes(
-                            &mut origin,
-                            declared,
-                            MAX_TRASH_ORIGIN_BYTES,
-                            "trash origin exceeds the supported size limit",
-                            || {
-                                if cancellation.is_cancelled() {
-                                    Err(Error::Cancellation)
-                                } else {
-                                    Ok(())
-                                }
-                            },
-                        ) {
-                            if let Ok(origin) = serde_json::from_slice::<TrashOrigin>(&bytes) {
-                                row.trashed_seconds =
-                                    i64::try_from(origin.trashed_seconds).unwrap_or(i64::MAX);
-                                row.original_folder = origin
-                                    .parents
-                                    .iter()
-                                    .filter_map(|part| part.to_path().ok())
-                                    .map(|part| part.to_string_lossy().into_owned())
-                                    .collect::<Vec<_>>()
-                                    .join("/");
-                            }
+                        Ok(origin) => {
+                            row.trashed_seconds =
+                                i64::try_from(origin.trashed_seconds).unwrap_or(i64::MAX);
+                            row.original_folder = origin
+                                .parents
+                                .iter()
+                                .filter_map(|part| part.to_path().ok())
+                                .map(|part| part.to_string_lossy().into_owned())
+                                .collect::<Vec<_>>()
+                                .join("/");
                         }
+                        Err(Error::Cancellation) => return Err(Error::Cancellation),
+                        Err(_) => {}
                     }
                 }
                 Err(Error::InvalidInput(message)) if message == "trash bucket is empty" => {
@@ -331,8 +320,7 @@ fn source_trash_bucket(
     if parts.len() != 2 || uuid::Uuid::parse_str(&parts[0].as_os_str().to_string_lossy()).is_err() {
         return Ok(None);
     }
-    let parent =
-        crate::infra::fs::open_directory_at(root.directory()?, OsStr::new(TRASH_DIRECTORY), true)?;
+    let parent = open_trash_directory(root.directory()?, OsStr::new(TRASH_DIRECTORY))?;
     let leaf = parts[0].as_os_str().to_os_string();
     let identity = crate::infra::path_authority::opened_file_identity(&source.parent)?;
     crate::infra::fs::assert_entry_identity(&parent, &leaf, identity, true)?;
@@ -347,6 +335,53 @@ fn source_trash_bucket(
     Ok(Some(bucket))
 }
 
+fn read_trash_origin(
+    parent: &fs::File,
+    leaf: &OsStr,
+    expected: Option<Option<(u64, u64)>>,
+    cancellation: &CancellationToken,
+) -> Result<TrashOrigin, Error> {
+    let mut file = crate::infra::fs::open_regular_at(parent, leaf, RegularFileAccess::ReadOnly)?;
+    let identity = crate::infra::path_authority::opened_file_identity(&file)?;
+    if expected.is_some_and(|expected| expected != Some(identity)) {
+        return Err(Error::Conflict("trash origin changed before read".into()));
+    }
+    let declared = file.metadata()?.len();
+    let bytes = crate::infra::fs::read_bounded_bytes(
+        &mut file,
+        declared,
+        MAX_TRASH_ORIGIN_BYTES,
+        "trash origin exceeds the supported size limit",
+        || {
+            if cancellation.is_cancelled() {
+                return Err(Error::Cancellation);
+            }
+            Ok(())
+        },
+    )?;
+    serde_json::from_slice(&bytes).map_err(|error| Error::InvalidInput(error.to_string()))
+}
+
+fn restore_parent_unavailable(error: &Error) -> bool {
+    if error.is_missing_entry() {
+        return true;
+    }
+    match error {
+        Error::InvalidInput(_) => true,
+        Error::Io(error) => {
+            if error.kind() == std::io::ErrorKind::NotADirectory {
+                return true;
+            }
+            #[cfg(unix)]
+            if error.raw_os_error() == Some(libc::ELOOP) {
+                return true;
+            }
+            false
+        }
+        _ => false,
+    }
+}
+
 fn trash_restore_parent(
     root: &WorkspaceMutationTarget,
     source: &WorkspaceMutationTarget,
@@ -354,36 +389,23 @@ fn trash_restore_parent(
     cancellation: &CancellationToken,
 ) -> Result<(fs::File, PathBuf, (u64, u64)), Error> {
     let resolved = (|| {
-        let bucket = bucket.ok_or_else(|| Error::InvalidInput("legacy trash entry".into()))?;
-        let mut file = crate::infra::fs::open_regular_at(
+        let Some(bucket) = bucket else {
+            return Ok(None);
+        };
+        let origin = match read_trash_origin(
             &bucket.parent,
             &bucket.origin_leaf(),
-            RegularFileAccess::ReadOnly,
-        )?;
-        if Some(crate::infra::path_authority::opened_file_identity(&file)?)
-            != bucket.origin_identity
+            Some(bucket.origin_identity),
+            cancellation,
+        ) {
+            Ok(origin) => origin,
+            Err(Error::Cancellation) => return Err(Error::Cancellation),
+            Err(_) => return Ok(None),
+        };
+        if origin.leaf.to_path().ok().as_deref().map(Path::as_os_str)
+            != Some(source.leaf.as_os_str())
         {
-            return Err(Error::Conflict("trash origin changed before read".into()));
-        }
-        let declared = file.metadata()?.len();
-        let bytes = crate::infra::fs::read_bounded_bytes(
-            &mut file,
-            declared,
-            MAX_TRASH_ORIGIN_BYTES,
-            "trash origin exceeds the supported size limit",
-            || {
-                if cancellation.is_cancelled() {
-                    return Err(Error::Cancellation);
-                }
-                Ok(())
-            },
-        )?;
-        let origin: TrashOrigin = serde_json::from_slice(&bytes)
-            .map_err(|error| Error::InvalidInput(error.to_string()))?;
-        if origin.leaf.to_path()?.as_os_str() != source.leaf {
-            return Err(Error::InvalidInput(
-                "trash origin names another entry".into(),
-            ));
+            return Ok(None);
         }
         let mut directory = root.directory()?.try_clone()?;
         let mut path = root.path().to_path_buf();
@@ -392,24 +414,32 @@ fn trash_restore_parent(
             if cancellation.is_cancelled() {
                 return Err(Error::Cancellation);
             }
-            let component = part.to_path()?;
+            let component = match part.to_path() {
+                Ok(part) => part,
+                Err(_) => return Ok(None),
+            };
             let leaf = component.as_os_str();
-            crate::infra::fs::single_leaf(leaf)?;
-            directory = crate::infra::fs::open_directory_at(&directory, leaf, true)?;
+            if crate::infra::fs::single_leaf(leaf).is_err() {
+                return Ok(None);
+            }
+            directory = match crate::infra::fs::open_directory_at(&directory, leaf, true) {
+                Ok(directory) => directory,
+                Err(error) if restore_parent_unavailable(&error) => return Ok(None),
+                Err(error) => return Err(error),
+            };
             // Identity also catches case variants and Windows aliases of the trash directory.
             if crate::infra::path_authority::opened_file_identity(&directory)? == trash_identity {
-                return Err(Error::InvalidInput("trash origin points into trash".into()));
+                return Ok(None);
             }
             // This path is only registry metadata. Filesystem access uses the retained descriptor.
             path.push(leaf);
         }
         let identity = crate::infra::path_authority::opened_file_identity(&directory)?;
-        Ok::<_, Error>((directory, path, identity))
+        Ok::<_, Error>(Some((directory, path, identity)))
     })();
-    match resolved {
-        Ok(parent) => Ok(parent),
-        Err(Error::Cancellation) => Err(Error::Cancellation),
-        Err(_) => Ok((
+    match resolved? {
+        Some(parent) => Ok(parent),
+        None => Ok((
             root.directory()?.try_clone()?,
             root.path().to_path_buf(),
             root.identity,
@@ -2932,11 +2962,7 @@ fn remove_trash_blocking(
             "workspace mutation lock was poisoned",
         )?;
         let root = mutation_target(authority, workspace)?;
-        let trash = match crate::infra::fs::open_directory_at(
-            root.directory()?,
-            OsStr::new(TRASH_DIRECTORY),
-            true,
-        ) {
+        let trash = match open_trash_directory(root.directory()?, OsStr::new(TRASH_DIRECTORY)) {
             Ok(trash) => trash,
             Err(error) if error.is_missing_entry() && item.is_none() => {
                 let registry = authority
@@ -3091,7 +3117,9 @@ fn remove_trash_bucket(
         let (_, failure) = removal.into_parts();
         return Ok(CommittedRemoval::new(0, failure));
     }
-    let directory = crate::infra::fs::open_directory_at(trash, &entry.name, true)?;
+    let directory =
+        crate::infra::fs::open_removal_directory_at(trash, &entry.name, entry.identity)?
+            .into_file();
     crate::infra::fs::assert_entry_identity(trash, &entry.name, entry.identity, true)?;
     let mut bucket = TrashBucket {
         parent: trash.try_clone()?,
@@ -3108,18 +3136,18 @@ fn remove_trash_bucket(
             if child.kind == DirectoryEntryKind::Other {
                 return Ok(());
             }
-            if child.name.to_string_lossy().ends_with(".info") {
-                if child.kind == DirectoryEntryKind::RegularFile {
-                    let result = crate::infra::fs::remove_entry_at(
-                        &directory,
-                        &child.name,
-                        child.identity,
-                        false,
-                    );
-                    if let Err(error) = result {
-                        if !error.is_missing_entry() && failure.is_none() {
-                            failure = Some(error);
-                        }
+            if child.kind == DirectoryEntryKind::RegularFile
+                && child.name.to_string_lossy().ends_with(".info")
+            {
+                let result = crate::infra::fs::remove_entry_at(
+                    &directory,
+                    &child.name,
+                    child.identity,
+                    false,
+                );
+                if let Err(error) = result {
+                    if !error.is_missing_entry() && failure.is_none() {
+                        failure = Some(error);
                     }
                 }
                 return Ok(());
@@ -3169,9 +3197,14 @@ fn remove_trash_bucket(
                 failure = Some(error);
             }
         } else {
+            let cause = match failure {
+                Some(Error::PartialRemoval { cause, .. }) => cause,
+                Some(error) => Box::new(error),
+                None => Box::new(error),
+            };
             return Err(Error::PartialRemoval {
                 removed_entries: count,
-                cause: Box::new(error),
+                cause,
             });
         }
     }
@@ -3260,100 +3293,217 @@ fn remove_workspace_target(
 }
 
 #[cfg(test)]
-async fn permanently_delete_entry(
-    state: &AppState,
-    workspace: &FileWorkspaceHandle,
-    entry: &FileWorkspaceHandle,
-    cancellation: tokio_util::sync::CancellationToken,
-) -> Result<(), Error> {
-    let pgn_path_authority = state.pgn_path_authority.clone();
-    let workspace_mutation = Arc::clone(&state.workspace_mutation);
-    let workspace = workspace.clone();
-    let entry = entry.clone();
-    let (dropped_engine_executables, result) = BLOCKING_GATEWAY
-        .spawn_cancellable(cancellation, move |token| {
-            Ok(remove_test_workspace_entry_blocking(
-                &pgn_path_authority,
-                &workspace_mutation,
-                &workspace,
-                &entry,
-                token,
-            ))
-        })
-        .await?;
-    let retirement_result = state
-        .engine_supervisor
-        .retire_executables(dropped_engine_executables)
-        .await;
-    match (result, retirement_result) {
-        (Ok(mut removal), retirement) => {
-            removal.record(
-                retirement,
-                "workspace removal engine retirement",
-                Path::new("workspace entry"),
-            );
-            removal.finish()
-        }
-        (Err(kept), Err(error)) => {
-            log::warn!(
-                "workspace removal engine retirement failed: {}",
-                error.diagnostic()
-            );
-            Err(kept)
-        }
-        (Err(kept), Ok(())) => Err(kept),
-    }
-}
-
-// Dropped executables must reach `retire_executables` on the error path as well
-// as the success path, so they cannot travel through the `Result`. A plain
-// `spawn(..).await?` would drop them on `Err` and leave a running engine holding
-// an unlinked inode.
-// A completed removal carries its physical target count and first failure through retirement.
-// An incomplete walk retains its original error instead of entering the completed policy.
-#[cfg(test)]
-fn remove_test_workspace_entry_blocking(
-    pgn_path_authority: &SharedPathAuthority,
-    workspace_mutation: &Mutex<()>,
-    workspace: &FileWorkspaceHandle,
-    entry: &FileWorkspaceHandle,
-    cancellation: &CancellationToken,
-) -> (Vec<PathRef>, Result<CommittedRemoval, Error>) {
-    let mut dropped_engine_executables = Vec::<PathRef>::new();
-    let result = (|| {
-        let _guard = lock_std_cancellable(
-            workspace_mutation,
-            cancellation,
-            "workspace mutation lock was poisoned",
-        )?;
-        let root = mutation_target(pgn_path_authority, workspace)?;
-        let source = mutation_target(pgn_path_authority, entry)?;
-        ensure_registered_descendant(&root, &source)?;
-        let bucket = source_trash_bucket(&root, &source)?;
-        if cancellation.is_cancelled() {
-            return Err(Error::Cancellation);
-        }
-        let removal =
-            remove_workspace_target(pgn_path_authority, &source, &mut dropped_engine_executables)?;
-        if let Some(bucket) = bucket {
-            bucket.cleanup_committed();
-        }
-        Ok(removal)
-    })();
-    if result.is_ok() {
-        if let Err(error) = reconcile_workspace_collections(pgn_path_authority, workspace) {
-            log::warn!(
-                "collection cleanup after permanent delete will retry: {}",
-                error.diagnostic()
-            );
-        }
-    }
-    (dropped_engine_executables, result)
-}
-
-#[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn info_named_directories_can_be_listed_restored_deleted_and_emptied() {
+        for action in ["restore", "delete", "empty"] {
+            let (_directory, state, workspace) = workspace_state();
+            let (path, entry) = registered_child_directory(&state, &workspace, "Analysis.info");
+            fs::write(path.join("keep.pgn"), b"*").unwrap();
+            trash_entry(
+                &state.pgn_path_authority,
+                &state.workspace_mutation,
+                &workspace,
+                &entry,
+                &CancellationToken::new(),
+            )
+            .unwrap();
+            let page = list_trash(
+                &state.pgn_path_authority,
+                &state.workspace_mutation,
+                &workspace,
+                None,
+                &CancellationToken::new(),
+            )
+            .unwrap();
+            assert_eq!(page.items.len(), 1);
+            assert_eq!(page.items[0].name, "Analysis.info");
+            let item = page.items[0].item.clone();
+            if action == "restore" {
+                restore_trash_item(
+                    &state.pgn_path_authority,
+                    &state.workspace_mutation,
+                    &workspace,
+                    &item,
+                    &CancellationToken::new(),
+                )
+                .unwrap();
+                assert_eq!(fs::read(path.join("keep.pgn")).unwrap(), b"*");
+            } else {
+                remove_trash_blocking(
+                    &state.pgn_path_authority,
+                    &state.workspace_mutation,
+                    &workspace,
+                    if action == "delete" { Some(item) } else { None },
+                    &CancellationToken::new(),
+                )
+                .1
+                .unwrap()
+                .finish()
+                .unwrap();
+            }
+            let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+            assert_eq!(fs::read_dir(root.join(TRASH_DIRECTORY)).unwrap().count(), 0);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn restore_propagates_permission_denied_for_existing_origin_folder() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_directory, state, workspace) = workspace_state();
+        let (original, entry, bucket, origin) = trash_subfolder_file(&state, &workspace);
+        let parent = original.parent().unwrap();
+        fs::set_permissions(parent, fs::Permissions::from_mode(0o0)).unwrap();
+        let result = restore_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &entry,
+            &CancellationToken::new(),
+        );
+        fs::set_permissions(parent, fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(
+            matches!(result, Err(Error::Io(ref error)) if error.kind() == std::io::ErrorKind::PermissionDenied),
+            "{result:?}"
+        );
+        assert!(bucket.join("Najdorf.pgn").exists());
+        assert!(origin.exists());
+        for kind in [
+            std::io::ErrorKind::PermissionDenied,
+            std::io::ErrorKind::Other,
+        ] {
+            assert!(!restore_parent_unavailable(&Error::from(
+                std::io::Error::from(kind)
+            )));
+        }
+    }
+
+    #[test]
+    fn shared_origin_reader_checks_identity_size_and_cancellation() {
+        let (_directory, state, workspace) = workspace_state();
+        let (_, entry, _, origin) = trash_subfolder_file(&state, &workspace);
+        let root = mutation_target(&state.pgn_path_authority, &workspace).unwrap();
+        let source = mutation_target(&state.pgn_path_authority, &entry).unwrap();
+        let bucket = source_trash_bucket(&root, &source).unwrap().unwrap();
+        let token = CancellationToken::new();
+        assert!(read_trash_origin(
+            &bucket.parent,
+            &bucket.origin_leaf(),
+            Some(bucket.origin_identity),
+            &token
+        )
+        .is_ok());
+        assert!(matches!(
+            read_trash_origin(
+                &bucket.parent,
+                &bucket.origin_leaf(),
+                Some(Some((0, 0))),
+                &token
+            ),
+            Err(Error::Conflict(_))
+        ));
+        token.cancel();
+        assert!(matches!(
+            read_trash_origin(
+                &bucket.parent,
+                &bucket.origin_leaf(),
+                Some(bucket.origin_identity),
+                &token
+            ),
+            Err(Error::Cancellation)
+        ));
+        fs::write(origin, vec![b' '; MAX_TRASH_ORIGIN_BYTES + 1]).unwrap();
+        assert!(read_trash_origin(
+            &bucket.parent,
+            &bucket.origin_leaf(),
+            None,
+            &CancellationToken::new()
+        )
+        .is_err());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn trash_mount_boundaries_refuse_listing_restore_delete_and_empty_before_content_access() {
+        use std::os::{
+            fd::{BorrowedFd, RawFd},
+            unix::fs::MetadataExt,
+        };
+        struct MountedDirectory(u64);
+        impl crate::infra::fs::RemovalInjector for MountedDirectory {
+            fn statx_mount_attributes(&self, fd: RawFd) -> Option<std::io::Result<(u64, u64)>> {
+                // The descriptor stays owned by the production opener throughout this hook.
+                let file = fs::File::from(
+                    unsafe { BorrowedFd::borrow_raw(fd) }
+                        .try_clone_to_owned()
+                        .unwrap(),
+                );
+                let mounted = file.metadata().unwrap().ino() == self.0;
+                let bit = rustix::fs::StatxAttributes::MOUNT_ROOT.bits();
+                Some(Ok((bit, if mounted { bit } else { 0 })))
+            }
+        }
+        for boundary in ["trash", "bucket"] {
+            for action in ["list", "restore", "delete", "empty"] {
+                let (_directory, state, workspace) = workspace_state();
+                let (_, entry, bucket, origin) = trash_subfolder_file(&state, &workspace);
+                let item = test_trash_item(&state.pgn_path_authority, &entry);
+                let mounted = if boundary == "trash" {
+                    bucket.parent().unwrap()
+                } else {
+                    &bucket
+                };
+                let _fault = crate::infra::fs::scoped_test_removal_injector(Arc::new(
+                    MountedDirectory(fs::metadata(mounted).unwrap().ino()),
+                ));
+                match action {
+                    "list" => {
+                        let result = list_trash(
+                            &state.pgn_path_authority,
+                            &state.workspace_mutation,
+                            &workspace,
+                            None,
+                            &CancellationToken::new(),
+                        );
+                        if boundary == "trash" {
+                            assert!(result.is_err());
+                        } else {
+                            assert!(result.unwrap().items[0].category.is_some());
+                        }
+                    }
+                    "restore" => {
+                        assert!(restore_trash_item(
+                            &state.pgn_path_authority,
+                            &state.workspace_mutation,
+                            &workspace,
+                            &item,
+                            &CancellationToken::new()
+                        )
+                        .is_err());
+                    }
+                    _ => {
+                        assert!(remove_trash_blocking(
+                            &state.pgn_path_authority,
+                            &state.workspace_mutation,
+                            &workspace,
+                            if action == "delete" { Some(item) } else { None },
+                            &CancellationToken::new()
+                        )
+                        .1
+                        .is_err());
+                    }
+                }
+                assert_eq!(fs::read(bucket.join("Najdorf.pgn")).unwrap(), b"1. e4 *");
+                // Empty trash can remove an origin independently, but never mounted content.
+                if action != "empty" {
+                    assert!(origin.exists());
+                }
+            }
+        }
+    }
 
     #[test]
     fn empty_trash_removes_orphan_regular_sidecar_and_its_bucket() {
@@ -3461,6 +3611,14 @@ mod tests {
         .unwrap()
         .finish()
         .unwrap();
+        assert_eq!(
+            fresh
+                .pgn_path_authority
+                .with_mut(|authority| authority.fill_trash_registry_for_test(&workspace))
+                .unwrap()
+                .unwrap(),
+            size
+        );
         remove_trash_blocking(
             &fresh.pgn_path_authority,
             &fresh.workspace_mutation,
@@ -3527,7 +3685,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let (directory, state, workspace) = workspace_state();
         let (_, _, bucket, _) = trash_subfolder_file(&state, &workspace);
-        fs::set_permissions(&bucket, fs::Permissions::from_mode(0)).unwrap();
+        fs::set_permissions(&bucket, fs::Permissions::from_mode(0o0)).unwrap();
         let page = list_trash(
             &state.pgn_path_authority,
             &state.workspace_mutation,
@@ -3578,7 +3736,7 @@ mod tests {
             }
             let refused_source = mutation_target(&state.pgn_path_authority, &refused).unwrap();
             let refused_bucket = refused_source.path().parent().unwrap().to_path_buf();
-            fs::set_permissions(&refused_bucket, fs::Permissions::from_mode(0)).unwrap();
+            fs::set_permissions(&refused_bucket, fs::Permissions::from_mode(0o0)).unwrap();
             let fault = uncertain.then(|| {
                 crate::infra::fs::scoped_test_removal_injector(Arc::new(RemovalFault(
                     RemovalFaultPoint::ParentSync,
@@ -3722,9 +3880,30 @@ mod tests {
         assert!(outside.join("game.pgn").is_file());
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn empty_trash_retires_engine_executables_and_removes_records_and_origins() {
-        let (_directory, state, workspace) = workspace_state();
+        let fixture = crate::db::linked_collections::tests::Fixture::new();
+        let linked = fixture.create(
+            "linked",
+            "[Event \"Game\"]\n\n1. e4 e5 *",
+            WorkspaceFileType::Game,
+        );
+        assert_eq!(fixture.list().len(), 1);
+        let state = fixture.state.clone();
+        let workspace = fixture.workspace.clone();
+        trash_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &linked,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert_eq!(
+            fixture.list()[0].status,
+            crate::db::linked_collections::CollectionStatus::Trashed
+        );
         let (child, entry, executable) = registered_engine_directory(&state, &workspace);
         #[cfg(unix)]
         let key = EngineKey::new("empty-trash".into(), "engine".into()).unwrap();
@@ -3747,6 +3926,7 @@ mod tests {
         remove_trash(&state, &workspace, None, CancellationToken::new())
             .await
             .unwrap();
+        assert!(fixture.registered_ids().is_empty());
         assert_eq!(fs::read_dir(root.join(TRASH_DIRECTORY)).unwrap().count(), 0);
         assert!(!child.exists());
         assert!(mutation_target(&state.pgn_path_authority, &entry).is_err());
@@ -3959,11 +4139,11 @@ mod tests {
     fn permanent_delete_cleans_bucket_and_origin() {
         let (_directory, state, workspace) = workspace_state();
         let (_original, entry, bucket, origin) = trash_subfolder_file(&state, &workspace);
-        let (dropped, result) = remove_test_workspace_entry_blocking(
+        let (dropped, result) = remove_trash_blocking(
             &state.pgn_path_authority,
             &state.workspace_mutation,
             &workspace,
-            &entry,
+            Some(test_trash_item(&state.pgn_path_authority, &entry)),
             &CancellationToken::new(),
         );
         assert!(dropped.is_empty());
@@ -4169,6 +4349,7 @@ mod tests {
             &CancellationToken::new(),
         );
         result.unwrap().finish().unwrap();
+        assert!(fixture.registered_ids().is_empty());
         assert!(fixture.list().is_empty());
     }
 
@@ -4176,24 +4357,14 @@ mod tests {
     #[test]
     fn linked_collections_permanent_delete_retries_cache_failure_without_failing_delete() {
         use crate::db::linked_collections::{tests::Fixture, CollectionStatus};
-        #[derive(Default)]
         struct FailCache {
-            source_removed: std::sync::atomic::AtomicBool,
+            bucket: PathBuf,
             cleanup_failures: std::sync::atomic::AtomicUsize,
         }
         impl crate::infra::fs::RemovalInjector for FailCache {
             fn inject(&self, point: RemovalFaultPoint) -> std::io::Result<Option<u64>> {
-                // The PGN's counted unlink syncs before collection cleanup starts. Sidecar
-                // removal and SQLite retirement do not have a fixed number of unlink hooks.
-                if point == RemovalFaultPoint::ParentSync {
-                    self.source_removed
-                        .store(true, std::sync::atomic::Ordering::SeqCst);
-                }
-                if point == RemovalFaultPoint::BeforeTopOpen
-                    && self
-                        .source_removed
-                        .load(std::sync::atomic::Ordering::SeqCst)
-                {
+                // Bucket cleanup completes before linked collection cache retirement begins.
+                if point == RemovalFaultPoint::BeforeTopOpen && !self.bucket.exists() {
                     self.cleanup_failures
                         .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     return Err(std::io::Error::other("cache cleanup fault"));
@@ -4217,13 +4388,21 @@ mod tests {
         )
         .unwrap();
         assert_eq!(fixture.list()[0].status, CollectionStatus::Trashed);
-        let injector = Arc::new(FailCache::default());
+        let injector = Arc::new(FailCache {
+            bucket: mutation_target(&fixture.state.pgn_path_authority, &file)
+                .unwrap()
+                .path()
+                .parent()
+                .unwrap()
+                .to_path_buf(),
+            cleanup_failures: std::sync::atomic::AtomicUsize::new(0),
+        });
         let fault = crate::infra::fs::scoped_test_removal_injector(injector.clone());
-        let (_, result) = remove_test_workspace_entry_blocking(
+        let (_, result) = remove_trash_blocking(
             &fixture.state.pgn_path_authority,
             &fixture.state.workspace_mutation,
             &fixture.workspace,
-            &file,
+            Some(test_trash_item(&fixture.state.pgn_path_authority, &file)),
             &CancellationToken::new(),
         );
         result.unwrap().finish().unwrap();
@@ -5510,10 +5689,10 @@ mod tests {
         point: RemovalFaultPoint,
     ) -> Result<(), Error> {
         set_test_removal_injector(Some(Arc::new(RemovalFault(point))));
-        let result = permanently_delete_entry(
+        let result = remove_trash(
             state,
             workspace,
-            entry,
+            Some(test_trash_item(&state.pgn_path_authority, entry)),
             tokio_util::sync::CancellationToken::new(),
         )
         .await;
@@ -5530,6 +5709,18 @@ mod tests {
         fs::write(&descendant, b"*").expect("descendant");
         let descendant_entry = registered_child_file(&state, &workspace, &descendant);
 
+        trash_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &entry,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let child = mutation_target(&state.pgn_path_authority, &entry)
+            .unwrap()
+            .path()
+            .to_path_buf();
         let error =
             delete_entry_with_fault(&state, &workspace, &entry, RemovalFaultPoint::ParentSync)
                 .await
@@ -5557,6 +5748,18 @@ mod tests {
         let removed_entry = registered_child_file(&state, &workspace, &child.join("removed"));
         let survivor_entry = registered_child_file(&state, &workspace, &survivor);
 
+        trash_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &entry,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let child = mutation_target(&state.pgn_path_authority, &entry)
+            .unwrap()
+            .path()
+            .to_path_buf();
         let error = delete_entry_with_fault(
             &state,
             &workspace,
@@ -5571,7 +5774,7 @@ mod tests {
         mutation_target(&state.pgn_path_authority, &entry).expect("authority record remains");
         for (path, handle) in [
             (child.join("removed"), removed_entry),
-            (survivor, survivor_entry),
+            (child.join("survivor.pgn"), survivor_entry),
         ] {
             if path.exists() {
                 mutation_target(&state.pgn_path_authority, &handle)
@@ -5606,11 +5809,23 @@ mod tests {
         let (child, entry) = registered_child_directory(&state, &workspace, "victim");
         fs::create_dir(child.join("unregistered")).expect("unregistered directory");
         fs::write(child.join("unregistered/extra"), b"extra").expect("unregistered file");
-        set_test_atomic_file_injector(Some(Arc::new(RegistryWriteFailure)));
-        let error = permanently_delete_entry(
-            &state,
+        trash_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
             &workspace,
             &entry,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let child = mutation_target(&state.pgn_path_authority, &entry)
+            .unwrap()
+            .path()
+            .to_path_buf();
+        set_test_atomic_file_injector(Some(Arc::new(RegistryWriteFailure)));
+        let error = remove_trash(
+            &state,
+            &workspace,
+            Some(test_trash_item(&state.pgn_path_authority, &entry)),
             tokio_util::sync::CancellationToken::new(),
         )
         .await
@@ -5659,13 +5874,12 @@ mod tests {
         let entry = registered_child_file(&state, &workspace, &file);
         fs::create_dir(root.join("victim.info")).expect("invalid sidecar directory");
 
-        let error = permanently_delete_entry(
-            &state,
-            &workspace,
-            &entry,
-            tokio_util::sync::CancellationToken::new(),
+        let error = remove_workspace_target(
+            &state.pgn_path_authority,
+            &mutation_target(&state.pgn_path_authority, &entry).unwrap(),
+            &mut Vec::new(),
         )
-        .await
+        .and_then(CommittedRemoval::finish)
         .expect_err("sidecar cleanup failure must be applied-despite-error");
 
         assert!(!file.exists());
@@ -5696,6 +5910,14 @@ mod tests {
         let (_directory, state, workspace) = workspace_state();
         let (child, entry) = registered_child_directory(&state, &workspace, "victim");
         let removed_entry = registered_child_file(&state, &workspace, &child.join("removed"));
+        trash_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &entry,
+            &CancellationToken::new(),
+        )
+        .unwrap();
         set_test_atomic_file_injector(Some(Arc::new(RegistryWriteFailure)));
         let error = delete_entry_with_fault(
             &state,
@@ -5753,9 +5975,12 @@ mod tests {
                 Arc::new(RegistryWriteFailure)
             };
             set_test_atomic_file_injector(Some(injector));
-            let result =
-                permanently_delete_entry(&state, &workspace, &entry, CancellationToken::new())
-                    .await;
+            let result = remove_workspace_target(
+                &state.pgn_path_authority,
+                &mutation_target(&state.pgn_path_authority, &entry).unwrap(),
+                &mut Vec::new(),
+            )
+            .and_then(CommittedRemoval::finish);
             set_test_atomic_file_injector(None);
             let error = result.expect_err("sidecar failure must remain first");
             assert!(
@@ -5777,12 +6002,11 @@ mod tests {
         fs::write(&file, b"*").expect("file");
         let entry = registered_child_file(&state, &workspace, &file);
         fs::write(root.join("victim.info"), b"{}").expect("sidecar");
-        let (dropped, result) = remove_test_workspace_entry_blocking(
+        let mut dropped = Vec::new();
+        let result = remove_workspace_target(
             &state.pgn_path_authority,
-            &state.workspace_mutation,
-            &workspace,
-            &entry,
-            &CancellationToken::new(),
+            &mutation_target(&state.pgn_path_authority, &entry).unwrap(),
+            &mut dropped,
         );
         let (count, failure) = result.expect("completed removal").into_parts();
         assert_eq!(count, 1);
@@ -5797,7 +6021,7 @@ mod tests {
     #[tokio::test]
     async fn removal_sync_uncertainty_wins_over_registry_and_retirement_failures() {
         let (_directory, state, workspace) = workspace_state();
-        let (child, entry, executable) = registered_engine_directory(&state, &workspace);
+        let (_child, entry, executable) = registered_engine_directory(&state, &workspace);
         supervise_test_actor(
             &state,
             &EngineKey::new("tab".into(), "operation".into()).expect("key"),
@@ -5806,6 +6030,18 @@ mod tests {
             crate::engine::EngineActor::failing_terminate_test_actor("later retirement failure"),
         )
         .await;
+        trash_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &entry,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let child = mutation_target(&state.pgn_path_authority, &entry)
+            .unwrap()
+            .path()
+            .to_path_buf();
         set_test_atomic_file_injector(Some(Arc::new(RegistryWriteFailure)));
         let result =
             delete_entry_with_fault(&state, &workspace, &entry, RemovalFaultPoint::ParentSync)
@@ -5837,9 +6073,26 @@ mod tests {
         )
         .await;
 
-        let error = permanently_delete_entry(&state, &workspace, &entry, CancellationToken::new())
-            .await
-            .expect_err("retirement failure after committed delete must be reported");
+        trash_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &entry,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let child = mutation_target(&state.pgn_path_authority, &entry)
+            .unwrap()
+            .path()
+            .to_path_buf();
+        let error = remove_trash(
+            &state,
+            &workspace,
+            Some(test_trash_item(&state.pgn_path_authority, &entry)),
+            CancellationToken::new(),
+        )
+        .await
+        .expect_err("retirement failure after committed delete must be reported");
 
         assert_eq!(
             error.category(),
@@ -5863,7 +6116,7 @@ mod tests {
     #[tokio::test]
     async fn registry_sync_uncertainty_survives_retirement_failure() {
         let (_directory, state, workspace) = workspace_state();
-        let (child, entry, executable) = registered_engine_directory(&state, &workspace);
+        let (_child, entry, executable) = registered_engine_directory(&state, &workspace);
         supervise_test_actor(
             &state,
             &EngineKey::new("tab".into(), "operation".into()).expect("key"),
@@ -5872,11 +6125,28 @@ mod tests {
             crate::engine::EngineActor::failing_terminate_test_actor("later retirement failure"),
         )
         .await;
+        trash_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &entry,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let child = mutation_target(&state.pgn_path_authority, &entry)
+            .unwrap()
+            .path()
+            .to_path_buf();
         set_test_atomic_file_injector(Some(Arc::new(crate::infra::fs::ParentSyncFault(
             "registry uncertainty",
         ))));
-        let result =
-            permanently_delete_entry(&state, &workspace, &entry, CancellationToken::new()).await;
+        let result = remove_trash(
+            &state,
+            &workspace,
+            Some(test_trash_item(&state.pgn_path_authority, &entry)),
+            CancellationToken::new(),
+        )
+        .await;
         set_test_atomic_file_injector(None);
         assert!(matches!(
             result,
@@ -5892,7 +6162,7 @@ mod tests {
     #[tokio::test]
     async fn registry_and_retirement_failure_keeps_first_typed_cause() {
         let (_directory, state, workspace) = workspace_state();
-        let (child, entry, executable) = registered_engine_directory(&state, &workspace);
+        let (_child, entry, executable) = registered_engine_directory(&state, &workspace);
         supervise_test_actor(
             &state,
             &EngineKey::new("tab".into(), "operation".into()).expect("engine key"),
@@ -5901,9 +6171,26 @@ mod tests {
             crate::engine::EngineActor::failing_terminate_test_actor("retirement failure"),
         )
         .await;
+        trash_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &entry,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let child = mutation_target(&state.pgn_path_authority, &entry)
+            .unwrap()
+            .path()
+            .to_path_buf();
         set_test_atomic_file_injector(Some(Arc::new(RegistryWriteFailure)));
-        let result =
-            permanently_delete_entry(&state, &workspace, &entry, CancellationToken::new()).await;
+        let result = remove_trash(
+            &state,
+            &workspace,
+            Some(test_trash_item(&state.pgn_path_authority, &entry)),
+            CancellationToken::new(),
+        )
+        .await;
         set_test_atomic_file_injector(None);
 
         let error = result.expect_err("registry failure wins over retirement");
@@ -5926,7 +6213,7 @@ mod tests {
         let mut counts = Vec::new();
         for fail_retirement in [false, true] {
             let (_directory, state, workspace) = workspace_state();
-            let (child, entry, executable) = registered_engine_directory(&state, &workspace);
+            let (_child, entry, executable) = registered_engine_directory(&state, &workspace);
             let actor = if fail_retirement {
                 crate::engine::EngineActor::failing_terminate_test_actor("retirement failure")
             } else {
@@ -5941,6 +6228,18 @@ mod tests {
             )
             .await;
 
+            trash_entry(
+                &state.pgn_path_authority,
+                &state.workspace_mutation,
+                &workspace,
+                &entry,
+                &CancellationToken::new(),
+            )
+            .unwrap();
+            let child = mutation_target(&state.pgn_path_authority, &entry)
+                .unwrap()
+                .path()
+                .to_path_buf();
             let error = delete_entry_with_fault(
                 &state,
                 &workspace,
@@ -5978,10 +6277,18 @@ mod tests {
         let key = EngineKey::new("tab".into(), "operation".into()).expect("engine key");
         supervise_test_engine(&state, &key, "application-engine", executable.clone()).await;
 
-        permanently_delete_entry(
-            &state,
+        trash_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
             &workspace,
             &entry,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        remove_trash(
+            &state,
+            &workspace,
+            Some(test_trash_item(&state.pgn_path_authority, &entry)),
             tokio_util::sync::CancellationToken::new(),
         )
         .await
@@ -6190,12 +6497,20 @@ mod tests {
         let executable = registered_engine_file(&state, &executable_path);
         let key = EngineKey::new("tab".into(), "operation".into()).expect("engine key");
         supervise_test_engine(&state, &key, "application-engine", executable).await;
-        set_test_atomic_file_injector(Some(Arc::new(RegistryWriteFailure)));
-
-        let result = permanently_delete_entry(
-            &state,
+        trash_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
             &workspace,
             &entry,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        set_test_atomic_file_injector(Some(Arc::new(RegistryWriteFailure)));
+
+        let result = remove_trash(
+            &state,
+            &workspace,
+            Some(test_trash_item(&state.pgn_path_authority, &entry)),
             tokio_util::sync::CancellationToken::new(),
         )
         .await;
@@ -7424,9 +7739,22 @@ mod tests {
         // The rename writes the sidecar the caller supplied; remove it again so the delete also
         // runs against a PGN with no `.info` beside it.
         fs::remove_file(root.join("renamed.info")).expect("drop the written sidecar");
-        permanently_delete_entry(&state, &workspace, &bare, CancellationToken::new())
-            .await
-            .expect("delete a PGN that has no sidecar");
+        trash_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &bare,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        remove_trash(
+            &state,
+            &workspace,
+            Some(test_trash_item(&state.pgn_path_authority, &bare)),
+            CancellationToken::new(),
+        )
+        .await
+        .expect("delete a PGN that has no sidecar");
         assert!(!root.join("renamed.pgn").exists());
         assert!(mutation_target(&state.pgn_path_authority, &bare).is_err());
     }
@@ -9386,7 +9714,7 @@ mod tests {
                         QueuedWorkspaceCommand::Restore => {
                             restore_workspace_trash_item(
                                 workspace.clone(),
-                                test_trash_item(&state.pgn_path_authority, &entry),
+                                test_trash_item(&state.pgn_path_authority, entry),
                                 app.state::<AppState>(),
                             )
                             .await

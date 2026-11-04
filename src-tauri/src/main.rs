@@ -5632,7 +5632,7 @@ mod blocking_offload_scans {
                 "pub(crate) async fn list_file_workspace_core(",
                 "count_pgn_games_core",
             ),
-            ("async fn permanently_delete_entry(", "retire_executables"),
+            ("async fn remove_trash(", "retire_executables"),
         ] {
             let body = body_at_indent(source, signature);
             assert!(

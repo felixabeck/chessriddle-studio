@@ -209,7 +209,17 @@ vi.mock("@mantine/core", async (importOriginal) => {
       </select>
     ),
     SimpleGrid: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-    Stack: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+    Badge: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+    Stack: ({
+      children,
+      role,
+      "aria-label": label,
+      "data-section": section,
+    }: React.HTMLAttributes<HTMLDivElement> & { "data-section"?: string }) => (
+      <div role={role} aria-label={label} data-section={section}>
+        {children}
+      </div>
+    ),
     Text: ({ children, ...props }: React.HTMLAttributes<HTMLParagraphElement>) => (
       <p {...props}>{children}</p>
     ),
@@ -358,6 +368,7 @@ function FilesPage() {
       {source.data && source.failure === "silent" && (
         <DirectoryTree {...source.listProps} search={search} filter={filter} />
       )}
+      {source.trashView}
       {source.detail}
       {source.dialogs}
     </>
@@ -1269,7 +1280,27 @@ describe("native trash view", () => {
     await act(async () => root.render(<FilesPage />));
   }
 
-  test("native paging forwards the cursor and replaces the current page", async () => {
+  test("empty trash has no view or Empty trash action", () => {
+    expect(container.querySelector('[data-section="trash"]')).toBeNull();
+    expect(container.textContent).not.toContain("Empty trash");
+  });
+
+  test("non-empty trash is below the file listing", async () => {
+    await showTrash();
+    const tree = container.querySelector('[data-testid="tree"]')!;
+    const trash = container.querySelector('[data-section="trash"]')!;
+    expect(tree.compareDocumentPosition(trash) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(trash.textContent).toContain("older.pgn");
+  });
+
+  test("a failure renders the view even without trash rows", async () => {
+    mocks.trashError = commandError("permission", "private diagnostic");
+    await act(async () => root.render(<FilesPage />));
+    expect(container.querySelector('[data-section="trash"] [role="alert"]')).not.toBeNull();
+    expect(button("Common.Retry")).toBeDefined();
+  });
+
+  test("native paging appends older rows and mutation refresh resets to newest", async () => {
     const cursor = { seconds: 1700000000, item };
     const row = {
       item,
@@ -1282,7 +1313,16 @@ describe("native trash view", () => {
     mocks.listFileWorkspace.mockResolvedValue({ entries: [], unread: [] });
     mocks.listWorkspaceTrash
       .mockResolvedValueOnce({ items: [row], olderCount: 1, cursor })
-      .mockResolvedValue({ items: [{ ...row, name: "oldest.pgn" }], olderCount: 0, cursor: null });
+      .mockResolvedValueOnce({
+        items: [{ ...row, item: "33333333-3333-4333-8333-333333333333", name: "oldest.pgn" }],
+        olderCount: 0,
+        cursor: null,
+      })
+      .mockResolvedValue({
+        items: [{ ...row, name: "refreshed.pgn" }],
+        olderCount: 0,
+        cursor: null,
+      });
     await realWorkspace();
     await settle();
     expect(container.textContent).toContain("older.pgn");
@@ -1296,7 +1336,81 @@ describe("native trash view", () => {
       signal: expect.any(AbortSignal),
     });
     expect(container.textContent).toContain("oldest.pgn");
+    expect(container.textContent).toContain("older.pgn");
+    const text = container.textContent!;
+    expect(text.indexOf("older.pgn")).toBeLessThan(text.indexOf("oldest.pgn"));
+    click("Empty trash");
+    await act(async () => dialogButton("Common.Delete").click());
+    await settle();
+    expect(mocks.listWorkspaceTrash).toHaveBeenLastCalledWith(workspace, null, {
+      signal: expect.any(AbortSignal),
+    });
+    expect(container.textContent).toContain("refreshed.pgn");
+    expect(container.textContent).not.toContain("oldest.pgn");
     expect(container.textContent).not.toContain("older.pgn");
+  });
+
+  async function pendingOlderPage() {
+    const cursor = { seconds: 1700000000, item };
+    const row = {
+      item,
+      name: "newer.pgn",
+      kind: "file",
+      originalFolder: "Archive",
+      trashedSeconds: 1700000000,
+      category: null,
+    };
+    let resolveOlder!: (page: unknown) => void;
+    let rejectOlder!: (cause: unknown) => void;
+    const pending = new Promise((resolve, reject) => {
+      resolveOlder = resolve;
+      rejectOlder = reject;
+    });
+    mocks.listFileWorkspace.mockResolvedValue({ entries: [], unread: [] });
+    mocks.listWorkspaceTrash
+      .mockResolvedValueOnce({ items: [row], olderCount: 1, cursor })
+      .mockReturnValueOnce(pending)
+      .mockResolvedValue({ items: [row], olderCount: 0, cursor: null });
+    await realWorkspace();
+    await settle();
+    const load = [...container.querySelectorAll("button")].find((node) =>
+      node.textContent?.startsWith("Load older items"),
+    )!;
+    act(() => {
+      load.click();
+      load.click();
+    });
+    await settle();
+    expect(mocks.listWorkspaceTrash).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toContain("newer.pgn");
+    return { cursor, row, resolveOlder, rejectOlder };
+  }
+
+  test("refresh cancels an older request and ignores its late result", async () => {
+    const { row, resolveOlder } = await pendingOlderPage();
+    const signal = mocks.listWorkspaceTrash.mock.calls[1][2].signal as AbortSignal;
+    click("Empty trash");
+    await act(async () => dialogButton("Common.Delete").click());
+    expect(signal.aborted).toBe(true);
+    await act(async () =>
+      resolveOlder({ items: [{ ...row, name: "stale.pgn" }], olderCount: 0, cursor: null }),
+    );
+    expect(container.textContent).not.toContain("stale.pgn");
+    expect(container.textContent).not.toContain("Load older items");
+  });
+
+  test("older request failure keeps newer rows and offers retry", async () => {
+    const { cursor, rejectOlder } = await pendingOlderPage();
+    await act(async () => rejectOlder(commandError("permission", "private diagnostic")));
+    expect(container.textContent).toContain("newer.pgn");
+    expect(container.querySelector('[data-section="trash"] [role="alert"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("private diagnostic");
+    click("Common.Retry");
+    await settle();
+    expect(mocks.listWorkspaceTrash).toHaveBeenLastCalledWith(workspace, cursor, {
+      signal: expect.any(AbortSignal),
+    });
+    expect(container.querySelector('[data-section="trash"] [role="alert"]')).toBeNull();
   });
 
   test.each(["restore", "delete"] as const)(

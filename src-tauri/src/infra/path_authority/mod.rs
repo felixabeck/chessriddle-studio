@@ -9934,10 +9934,15 @@ impl PathAuthority {
             .get(&workspace.path_ref().id)
             .cloned()
             .ok_or_else(|| Error::InvalidInput("test workspace missing".into()))?;
-        for index in self.persistent.len()..MAX_AUTHORITY_IDS {
+        for index in 0..MAX_AUTHORITY_IDS {
+            if self.persistent.len() == MAX_AUTHORITY_IDS {
+                break;
+            }
             let mut entry = template.clone();
             entry.stored.id.id = format!("trash-capacity-{index}");
-            self.persistent.insert(entry.stored.id.id.clone(), entry);
+            self.persistent
+                .entry(entry.stored.id.id.clone())
+                .or_insert(entry);
         }
         require_durable(self.save()?)?;
         Ok(self.persistent.len())

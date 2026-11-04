@@ -341,6 +341,7 @@ export default function LibraryPage() {
                       })}
                 </Text>
               )}
+              {files.trashView}
             </Box>
           </Stack>
         </Paper>
