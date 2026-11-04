@@ -1665,7 +1665,6 @@ async fn read_game_core(
 }
 
 async fn resolve_practice_before_mutation(
-    resolved: &crate::infra::path_authority::ResolvedPath,
     repository: &PgnRepository,
     rebind: Option<&PgnCapabilityRebind>,
     cancellation: &CancellationToken,
@@ -1683,16 +1682,13 @@ async fn resolve_practice_before_mutation(
     }
     // The mutation's retained descriptor can predate a previous replacement. Recovery must
     // count the current authorized file even when that stale mutation will itself be refused.
-    if let Some(binding) = rebind.cloned() {
-        let current = BLOCKING_GATEWAY
-            .spawn(move || binding.resolve_read())
-            .await?;
-        resolve_practice_pending_locked(&current, repository, directory, file_id, cancellation)
-            .await
-    } else {
-        resolve_practice_pending_locked(resolved, repository, directory, file_id, cancellation)
-            .await
-    }
+    let binding = rebind
+        .cloned()
+        .ok_or_else(|| Error::Conflict("practice recovery requires a capability binding".into()))?;
+    let current = BLOCKING_GATEWAY
+        .spawn(move || binding.resolve_read())
+        .await?;
+    resolve_practice_pending_locked(&current, repository, directory, file_id, cancellation).await
 }
 
 async fn resolve_practice_pending_locked(
@@ -1848,7 +1844,7 @@ pub(crate) async fn transform_file_core<T: Send + 'static>(
         _ = cancellation.cancelled() => return Err(Error::Cancellation),
     };
     rebind.validate_binding()?;
-    resolve_practice_before_mutation(&resolved, &repository, Some(&rebind), &cancellation).await?;
+    resolve_practice_before_mutation(&repository, Some(&rebind), &cancellation).await?;
     let scan_repository = repository.clone();
     let (key, replacement, value, unchanged) = BLOCKING_GATEWAY
         .spawn_cancellable(cancellation.clone(), move |token| {
@@ -2135,8 +2131,7 @@ pub async fn delete_game_core(
         if cancellation.is_cancelled() {
             return Err(Error::Cancellation);
         }
-        resolve_practice_before_mutation(&resolved, &repository, rebind.as_ref(), &cancellation)
-            .await?;
+        resolve_practice_before_mutation(&repository, rebind.as_ref(), &cancellation).await?;
         let (key, games) = scan_current(scan_snapshot, &repository, &cancellation).await?;
         if revision_string_for_key(&key) != expected_revision {
             return Err(Error::StaleGame);
@@ -2286,8 +2281,7 @@ pub async fn write_game_core(
         if cancellation.is_cancelled() {
             return Err(Error::Cancellation);
         }
-        resolve_practice_before_mutation(&resolved, &repository, rebind.as_ref(), &cancellation)
-            .await?;
+        resolve_practice_before_mutation(&repository, rebind.as_ref(), &cancellation).await?;
         let (key, games) = scan_current(scan_snapshot, &repository, &cancellation).await?;
         let target = if let Some(range) = games.get(n).cloned() {
             range
@@ -2492,8 +2486,15 @@ mod tests {
             assert_eq!(loaded.deck.unwrap(), expected);
             assert_ne!(loaded.epoch, "no-map");
             assert_eq!(
-                crate::practice::load_practice_reviews_in(&practice, &file_id, 1, None, 100)
-                    .unwrap(),
+                crate::practice::load_mapped_practice_reviews_in(
+                    &practice,
+                    &file_id,
+                    0,
+                    &loaded.epoch,
+                    None,
+                    100
+                )
+                .unwrap(),
                 reviews
             );
             assert!(
@@ -2636,10 +2637,28 @@ mod tests {
     #[tokio::test]
     async fn delete_command_platform_refusal_preserves_practice_state() {
         use crate::infra::path_authority::{
-            ensure_app_owned_default_dir, AppDataDir, AppOwnedDefaultRoot, FileWorkspaceHandle,
-            PathRef,
+            ensure_app_owned_default_dir, AppDataDir, AppOwnedDefaultRoot, PathAuthority,
+            PathOperation,
         };
         let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("practice.pgn");
+        std::fs::write(&path, "[Event \"White\"]\n\n1. e4 *\n").unwrap();
+        let mut authority =
+            PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap();
+        let handle = promote_pgn_file(&mut authority, &path);
+        let file_id = handle.path_ref().id.clone();
+        let app = mock_app();
+        let state = app.state::<AppState>();
+        state.pgn_path_authority.install(authority).unwrap();
+        let resolved = resolve_pgn(&state, &handle, PathOperation::WritePgn).unwrap();
+        let selected = read_game_core(
+            resolved,
+            0,
+            &CancellationToken::new(),
+            &state.pgn_repository,
+        )
+        .await
+        .unwrap();
         let practice = ensure_app_owned_default_dir(
             &AppDataDir::for_test(directory.path()),
             AppOwnedDefaultRoot::Practice,
@@ -2647,15 +2666,24 @@ mod tests {
         .unwrap();
         crate::practice::sync_practice_positions_in(
             &practice,
-            "file",
+            &file_id,
             0,
             0,
             0,
             r#"{"positions":[]}"#,
         )
         .unwrap();
-        let pending = crate::practice::prepare_delete_in(&practice, "file", 0, 1).unwrap();
-        crate::practice::finish_delete_in(&practice, "file", &pending, false).unwrap();
+        let pending = crate::practice::prepare_delete_in(&practice, &file_id, 0, 1).unwrap();
+        crate::practice::finish_delete_in(&practice, &file_id, &pending, false).unwrap();
+        let epoch = crate::practice::practice_epoch_in(&practice, &file_id, 0).unwrap();
+        state.pgn_repository.initialize_practice(practice).unwrap();
+        let practice = state
+            .pgn_repository
+            .inner()
+            .unwrap()
+            .practice_directory
+            .clone()
+            .unwrap();
         let before = std::fs::read_dir(practice.path())
             .unwrap()
             .map(|entry| {
@@ -2663,16 +2691,20 @@ mod tests {
                 (entry.file_name(), std::fs::read(entry.path()).unwrap())
             })
             .collect::<std::collections::BTreeMap<_, _>>();
-        let app = mock_app();
         let result = delete_game(
-            FileWorkspaceHandle::new(PathRef { id: "file".into() }),
+            handle,
             0,
-            "stamp".into(),
-            "revision".into(),
+            selected.stamp,
+            selected.revision,
             app.state::<AppState>(),
         )
         .await;
-        assert!(matches!(result, Err(Error::Conflict(_))));
+        assert!(
+            matches!(result, Err(Error::Conflict(message)) if message == "PGN atomic replacement is unsupported on this platform")
+        );
+        let after_epoch = crate::practice::practice_epoch_in(&practice, &file_id, 0).unwrap();
+        assert_eq!(after_epoch.epoch, epoch.epoch);
+        assert_eq!(after_epoch.legacy_superseded, epoch.legacy_superseded);
         let after = std::fs::read_dir(practice.path())
             .unwrap()
             .map(|entry| {
@@ -3760,7 +3792,6 @@ mod tests {
         .await
     }
 
-    #[cfg(unix)]
     fn promote_pgn_file(
         authority: &mut crate::infra::path_authority::PathAuthority,
         path: &Path,

@@ -457,6 +457,8 @@ fn file_deck_leaves(
     file_id: &str,
 ) -> Result<Vec<(String, String, i32)>, Error> {
     let mut leaves = Vec::new();
+    let mut unidentified = Vec::new();
+    let mut highest = -1;
     for entry in directory.entries(&mut |_| true)? {
         let leaf = entry.name.to_string_lossy().into_owned();
         let hash = match parse_owned_leaf(&leaf) {
@@ -465,26 +467,44 @@ fn file_deck_leaves(
             ) => hash,
             _ => continue,
         };
-        if entry.kind != DirectoryEntryKind::RegularFile {
-            continue;
-        }
-        // A damaged sibling does not conceal the identities of readable envelopes.
-        let Ok(Some(value)) = read_json::<Value>(
+        let value = match read_json::<Value>(
             directory,
             &leaf,
             PRACTICE_POSITIONS_MAX_BYTES + PRACTICE_LEGACY_MAX_BYTES,
             "inspect deck identity",
-        ) else {
-            continue;
+        ) {
+            Ok(None) => continue,
+            Ok(Some(value)) => Some(value),
+            Err(Error::InvalidInput(_)) => None,
+            Err(error) => return Err(error),
         };
-        if value.get("fileId").and_then(Value::as_str) == Some(file_id) {
-            if let Some(number) = value
+        let identity = value.as_ref().and_then(|value| {
+            let owner = value.get("fileId")?.as_str()?;
+            let number = value
                 .get("game")
                 .and_then(Value::as_i64)
                 .and_then(|n| i32::try_from(n).ok())
-                .filter(|n| *n >= 0)
-            {
+                .filter(|n| *n >= 0)?;
+            (hash_deck(owner, number) == hash).then_some((owner, number))
+        });
+        if let Some((owner, number)) = identity {
+            if owner == file_id {
+                highest = highest.max(number);
                 leaves.push((leaf, hash, number));
+            }
+        } else {
+            unidentified.push((leaf, hash));
+        }
+    }
+    // Hash candidates are needed only for damaged envelopes. Never trust their claimed owner.
+    if !unidentified.is_empty() {
+        let limit = highest.max(MAP_MAX_ORDINALS as i32);
+        let candidates = (0..=limit)
+            .map(|number| (hash_deck(file_id, number), number))
+            .collect::<HashMap<_, _>>();
+        for (leaf, hash) in unidentified {
+            if let Some(number) = candidates.get(&hash) {
+                leaves.push((leaf, hash, *number));
             }
         }
     }
@@ -539,10 +559,14 @@ fn fresh_map(
 
 fn retire_deck(directory: &AuthorizedDir, file_id: &str, number: i32) -> Result<(), Error> {
     let hash = hash_deck(file_id, number);
-    with_deck_lock(directory, &hash, || {
-        remove_leaf_if_present(directory, &positions_leaf(&hash))?;
-        remove_leaf_if_present(directory, &state_leaf(&hash))?;
-        for (leaf, _, _, _, _) in all_shard_leaves(directory, &hash)? {
+    remove_deck_by_hash(directory, &hash)
+}
+
+fn remove_deck_by_hash(directory: &AuthorizedDir, hash: &str) -> Result<(), Error> {
+    with_deck_lock(directory, hash, || {
+        remove_leaf_if_present(directory, &positions_leaf(hash))?;
+        remove_leaf_if_present(directory, &state_leaf(hash))?;
+        for (leaf, _, _, _, _) in all_shard_leaves(directory, hash)? {
             remove_leaf_if_present(directory, &leaf)?;
         }
         Ok(())
@@ -778,6 +802,22 @@ fn read_leaf_bytes(
     max_bytes: usize,
     operation: &str,
 ) -> Result<Option<Vec<u8>>, Error> {
+    #[cfg(test)]
+    if PRACTICE_POSITIONS_READ_IO_FAILURE_HOOK.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        if slot
+            .as_ref()
+            .is_some_and(|hash| positions_leaf(hash) == leaf)
+        {
+            slot.take().is_some()
+        } else {
+            false
+        }
+    }) {
+        return Err(Error::Io(Box::new(std::io::Error::other(
+            "injected positions read failure",
+        ))));
+    }
     let mut file = match directory.open_regular_relative(Path::new(leaf)) {
         Ok(file) => file,
         Err(error) if error.is_missing_entry() => return Ok(None),
@@ -936,21 +976,6 @@ fn read_positions(
     hash: &str,
 ) -> Result<Option<PositionsEnvelope>, Error> {
     let leaf = positions_leaf(hash);
-    #[cfg(test)]
-    let inject_io_failure = PRACTICE_POSITIONS_READ_IO_FAILURE_HOOK.with(|slot| {
-        let mut slot = slot.borrow_mut();
-        if slot.as_deref() == Some(hash) {
-            slot.take().is_some()
-        } else {
-            false
-        }
-    });
-    #[cfg(test)]
-    if inject_io_failure {
-        return Err(Error::Io(Box::new(std::io::Error::other(
-            "injected positions read failure",
-        ))));
-    }
     let Some(mut envelope) = read_json::<PositionsEnvelope>(
         directory,
         &leaf,
@@ -1266,14 +1291,7 @@ fn repair_mapped_practice_deck_in(
                 .map(|(_, hash, _)| hash.clone())
                 .collect::<std::collections::BTreeSet<_>>();
             for hash in hashes {
-                with_deck_lock(directory, &hash, || {
-                    remove_leaf_if_present(directory, &positions_leaf(&hash))?;
-                    remove_leaf_if_present(directory, &state_leaf(&hash))?;
-                    for (leaf, _, _, _, _) in all_shard_leaves(directory, &hash)? {
-                        remove_leaf_if_present(directory, &leaf)?;
-                    }
-                    Ok(())
-                })?;
+                remove_deck_by_hash(directory, &hash)?;
             }
             write_map(directory, &map)
         }
@@ -2268,7 +2286,7 @@ pub(crate) fn list_practice_decks_in(
                 read_map(directory, &file_id)
             });
             match map {
-                Ok(Some(map)) => {
+                Ok(Some(map)) if map.pending.is_none() => {
                     maps.insert(file_id, Some(map));
                 }
                 _ => {
@@ -2583,48 +2601,205 @@ where
         let directory = BLOCKING_GATEWAY
             .spawn(move || practice_directory(&app).map(Arc::new))
             .await?;
-        let scan_directory = directory.clone();
-        let pending_files = BLOCKING_GATEWAY
-            .spawn(move || {
-                let mut pending = Vec::new();
-                for entry in scan_directory
-                    .entries(&mut |name| name.to_string_lossy().ends_with(MAP_SUFFIX))?
+        recover_inventory_pending(directory.clone(), authority, repository).await?;
+        BLOCKING_GATEWAY.spawn(move || operation(&directory)).await
+    })
+    .await
+}
+
+async fn recover_inventory_pending(
+    directory: Arc<AuthorizedDir>,
+    authority: crate::infra::path_authority::SharedPathAuthority,
+    repository: crate::pgn::PgnRepository,
+) -> Result<(), Error> {
+    let scan_directory = directory.clone();
+    let pending_files = BLOCKING_GATEWAY
+        .spawn(move || {
+            let mut pending = Vec::new();
+            for entry in
+                scan_directory.entries(&mut |name| name.to_string_lossy().ends_with(MAP_SUFFIX))?
+            {
+                let leaf = entry.name.to_string_lossy().into_owned();
+                let Ok(Some(map)) = read_json::<FileDeckMap>(
+                    &scan_directory,
+                    &leaf,
+                    MAP_MAX_BYTES,
+                    "inventory pending map",
+                ) else {
+                    continue;
+                };
+                if map_leaf(&map.file_id) == leaf
+                    && has_pending_delete(&scan_directory, &map.file_id).unwrap_or(false)
                 {
-                    let leaf = entry.name.to_string_lossy().into_owned();
-                    let Ok(Some(map)) = read_json::<FileDeckMap>(
-                        &scan_directory,
-                        &leaf,
-                        MAP_MAX_BYTES,
-                        "inventory pending map",
-                    ) else {
-                        continue;
-                    };
-                    if map_leaf(&map.file_id) == leaf
-                        && has_pending_delete(&scan_directory, &map.file_id).unwrap_or(false)
-                    {
-                        pending.push(map.file_id);
-                    }
+                    pending.push(map.file_id);
                 }
-                Ok(pending)
-            })
-            .await?;
-        for file_id in pending_files {
-            let check_authority = authority.clone();
-            let check_id = file_id.clone();
+            }
+            Ok(pending)
+        })
+        .await?;
+    for file_id in pending_files {
+        let check_authority = authority.clone();
+        let check_id = file_id.clone();
+        let recovery = async {
             BLOCKING_GATEWAY
                 .spawn(move || authorize_practice_command(&check_authority, &check_id, false))
                 .await?;
             crate::pgn::resolve_practice_pending(
                 authority.clone(),
-                file_id,
+                file_id.clone(),
                 repository.clone(),
                 directory.clone(),
             )
-            .await?;
+            .await
         }
-        BLOCKING_GATEWAY.spawn(move || operation(&directory)).await
-    })
-    .await
+        .await;
+        if let Err(error) = recovery {
+            log::warn!(
+                "practice inventory pending recovery failed: {}",
+                error.diagnostic()
+            );
+        }
+    }
+    Ok(())
+}
+
+fn record_mapped_practice_review_in(
+    directory: &AuthorizedDir,
+    file_id: &str,
+    game: i32,
+    expected_epoch: &str,
+    write: PracticeReviewWrite,
+) -> Result<u32, Error> {
+    with_mapped_deck(
+        directory,
+        file_id,
+        game,
+        Some(expected_epoch),
+        false,
+        |number, _, _| {
+            let number = number.ok_or_else(|| Error::Conflict("practice deck is absent".into()))?;
+            record_practice_review_in(
+                directory,
+                file_id,
+                number,
+                write.generation,
+                write.revision,
+                write.base_revision,
+                &write.positions_document,
+                &write.entry,
+                &write.entry_id,
+            )
+        },
+    )
+}
+
+fn sync_mapped_practice_positions_in(
+    directory: &AuthorizedDir,
+    file_id: &str,
+    game: i32,
+    expected_epoch: &str,
+    generation: u32,
+    revision: u32,
+    positions_document: &str,
+) -> Result<u32, Error> {
+    with_mapped_deck(
+        directory,
+        file_id,
+        game,
+        Some(expected_epoch),
+        true,
+        |number, _, _| {
+            let number = number.ok_or_else(|| Error::Conflict("practice deck is absent".into()))?;
+            sync_practice_positions_in(
+                directory,
+                file_id,
+                number,
+                generation,
+                revision,
+                positions_document,
+            )
+        },
+    )
+}
+
+fn reset_mapped_practice_deck_in(
+    directory: &AuthorizedDir,
+    file_id: &str,
+    game: i32,
+    expected_epoch: &str,
+    generation: u32,
+    revision: u32,
+    positions_document: &str,
+) -> Result<u32, Error> {
+    with_mapped_deck(
+        directory,
+        file_id,
+        game,
+        Some(expected_epoch),
+        true,
+        |number, _, _| {
+            let number = number.ok_or_else(|| Error::Conflict("practice deck is absent".into()))?;
+            reset_practice_deck_in(
+                directory,
+                file_id,
+                number,
+                generation,
+                revision,
+                positions_document,
+            )
+        },
+    )
+}
+
+pub(crate) fn load_mapped_practice_reviews_in(
+    directory: &AuthorizedDir,
+    file_id: &str,
+    game: i32,
+    expected_epoch: &str,
+    cursor: Option<String>,
+    limit: u32,
+) -> Result<PracticeReviewPage, Error> {
+    with_mapped_deck(
+        directory,
+        file_id,
+        game,
+        Some(expected_epoch),
+        false,
+        |number, _, _| match number {
+            Some(number) => load_practice_reviews_in(directory, file_id, number, cursor, limit),
+            None => Ok(PracticeReviewPage {
+                entries: Vec::new(),
+                next_cursor: None,
+            }),
+        },
+    )
+}
+
+fn acknowledge_mapped_practice_orphans_in(
+    directory: &AuthorizedDir,
+    file_id: &str,
+    game: i32,
+    expected_epoch: &str,
+    generation: u32,
+    acknowledged_count: u32,
+) -> Result<(), Error> {
+    with_mapped_deck(
+        directory,
+        file_id,
+        game,
+        Some(expected_epoch),
+        false,
+        |number, _, _| {
+            let number = number.ok_or_else(|| Error::Conflict("practice deck is absent".into()))?;
+            acknowledge_practice_orphans_in(
+                directory,
+                file_id,
+                number,
+                generation,
+                acknowledged_count,
+            )
+        },
+    )
 }
 
 #[tauri::command]
@@ -2686,28 +2861,7 @@ pub async fn record_practice_review(
         authorization_file_id,
         true,
         move |directory| {
-            with_mapped_deck(
-                directory,
-                &file_id,
-                game,
-                Some(&expected_epoch),
-                false,
-                |number, _, _| {
-                    let number =
-                        number.ok_or_else(|| Error::Conflict("practice deck is absent".into()))?;
-                    record_practice_review_in(
-                        directory,
-                        &file_id,
-                        number,
-                        write.generation,
-                        write.revision,
-                        write.base_revision,
-                        &write.positions_document,
-                        &write.entry,
-                        &write.entry_id,
-                    )
-                },
-            )
+            record_mapped_practice_review_in(directory, &file_id, game, &expected_epoch, write)
         },
     )
     .await
@@ -2737,24 +2891,14 @@ pub async fn sync_practice_positions(
         authorization_file_id,
         true,
         move |directory| {
-            with_mapped_deck(
+            sync_mapped_practice_positions_in(
                 directory,
                 &file_id,
                 game,
-                Some(&expected_epoch),
-                true,
-                |number, _, _| {
-                    let number =
-                        number.ok_or_else(|| Error::Conflict("practice deck is absent".into()))?;
-                    sync_practice_positions_in(
-                        directory,
-                        &file_id,
-                        number,
-                        generation,
-                        revision,
-                        &positions_document,
-                    )
-                },
+                &expected_epoch,
+                generation,
+                revision,
+                &positions_document,
             )
         },
     )
@@ -2785,24 +2929,14 @@ pub async fn reset_practice_deck(
         authorization_file_id,
         true,
         move |directory| {
-            with_mapped_deck(
+            reset_mapped_practice_deck_in(
                 directory,
                 &file_id,
                 game,
-                Some(&expected_epoch),
-                true,
-                |number, _, _| {
-                    let number =
-                        number.ok_or_else(|| Error::Conflict("practice deck is absent".into()))?;
-                    reset_practice_deck_in(
-                        directory,
-                        &file_id,
-                        number,
-                        generation,
-                        revision,
-                        &positions_document,
-                    )
-                },
+                &expected_epoch,
+                generation,
+                revision,
+                &positions_document,
             )
         },
     )
@@ -2829,21 +2963,13 @@ pub async fn load_practice_reviews(
         authorization_file_id,
         true,
         move |directory| {
-            with_mapped_deck(
+            load_mapped_practice_reviews_in(
                 directory,
                 &file_id,
                 game,
-                Some(&expected_epoch),
-                false,
-                |number, _, _| match number {
-                    Some(number) => {
-                        load_practice_reviews_in(directory, &file_id, number, cursor, limit)
-                    }
-                    None => Ok(PracticeReviewPage {
-                        entries: Vec::new(),
-                        next_cursor: None,
-                    }),
-                },
+                &expected_epoch,
+                cursor,
+                limit,
             )
         },
     )
@@ -2900,23 +3026,13 @@ pub async fn acknowledge_practice_orphans(
         authorization_file_id,
         true,
         move |directory| {
-            with_mapped_deck(
+            acknowledge_mapped_practice_orphans_in(
                 directory,
                 &file_id,
                 game,
-                Some(&expected_epoch),
-                false,
-                |number, _, _| {
-                    let number =
-                        number.ok_or_else(|| Error::Conflict("practice deck is absent".into()))?;
-                    acknowledge_practice_orphans_in(
-                        directory,
-                        &file_id,
-                        number,
-                        generation,
-                        acknowledged_count,
-                    )
-                },
+                &expected_epoch,
+                generation,
+                acknowledged_count,
             )
         },
     )
@@ -3187,34 +3303,233 @@ mod tests {
     }
 
     #[test]
+    fn damaged_map_repair_attributes_mismatched_envelopes_by_filename_only() {
+        let (_temp, directory) = directory();
+        sync_practice_positions_in(&directory, "file", 3, 0, 0, &positions()).unwrap();
+        sync_practice_positions_in(&directory, "other", 7, 0, 0, &positions()).unwrap();
+        let foreign_leaf = positions_leaf(&hash_deck("other", 7));
+        let mut foreign: Value =
+            serde_json::from_slice(&fs::read(directory.path().join(&foreign_leaf)).unwrap())
+                .unwrap();
+        foreign["fileId"] = Value::String("file".into());
+        fs::write(
+            directory.path().join(&foreign_leaf),
+            serde_json::to_vec(&foreign).unwrap(),
+        )
+        .unwrap();
+        let foreign_before = fs::read(directory.path().join(&foreign_leaf)).unwrap();
+        fs::write(directory.path().join(map_leaf("file")), b"{damaged").unwrap();
+        repair_mapped_practice_deck_in(&directory, "file", 0, None).unwrap();
+        assert_eq!(
+            fs::read(directory.path().join(&foreign_leaf)).unwrap(),
+            foreign_before
+        );
+        assert_eq!(read_map(&directory, "file").unwrap().unwrap().next_deck, 4);
+        assert!(load_practice_deck_in(&directory, "file", 3)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn damaged_leaves_are_removed_and_reserve_numbers_in_every_fresh_map() {
+        let (_temp, directory) = directory();
+        let leaves = [
+            positions_leaf(&hash_deck("file", 37)),
+            state_leaf(&hash_deck("file", 41)),
+            shard_leaf(&hash_deck("file", 51), 0, 0),
+        ];
+        for leaf in &leaves {
+            fs::write(directory.path().join(leaf), b"{damaged").unwrap();
+        }
+        // A parseable but invalid identity must also be attributed by its filename.
+        let mismatched = positions_leaf(&hash_deck("file", 61));
+        fs::write(
+            directory.path().join(&mismatched),
+            br#"{"fileId":"other","game":0}"#,
+        )
+        .unwrap();
+        let pending = prepare_delete_in(&directory, "file", 0, 1).unwrap();
+        assert_eq!(read_map(&directory, "file").unwrap().unwrap().next_deck, 62);
+        finish_delete_in(&directory, "file", &pending, false).unwrap();
+        fs::write(directory.path().join(map_leaf("file")), b"{damaged").unwrap();
+        repair_mapped_practice_deck_in(&directory, "file", 0, None).unwrap();
+        let map = read_map(&directory, "file").unwrap().unwrap();
+        assert_eq!(map.next_deck, 62);
+        for leaf in leaves.iter().chain(std::iter::once(&mismatched)) {
+            assert!(!directory.path().join(leaf).exists(), "{leaf}");
+        }
+        sync_mapped_practice_positions_in(&directory, "file", 0, &map.epoch, 0, 0, &positions())
+            .unwrap();
+        assert_eq!(
+            read_map(&directory, "file").unwrap().unwrap().ordinals,
+            vec![Some(62)]
+        );
+    }
+
+    #[test]
+    fn damaged_map_repair_propagates_leaf_io_failure_without_changing_data() {
+        let (_temp, directory) = directory();
+        sync_practice_positions_in(&directory, "file", 7, 0, 0, &positions()).unwrap();
+        fs::write(directory.path().join(map_leaf("file")), b"{damaged").unwrap();
+        with_map_lock(&directory, "file", || Ok(())).unwrap();
+        let before = all_leaf_bytes(&directory);
+        PRACTICE_POSITIONS_READ_IO_FAILURE_HOOK
+            .with(|slot| *slot.borrow_mut() = Some(hash_deck("file", 7)));
+        let error = repair_mapped_practice_deck_in(&directory, "file", 0, None).unwrap_err();
+        assert_eq!(error.category(), ErrorCategory::Io);
+        assert_eq!(all_leaf_bytes(&directory), before);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn inventory_isolates_unauthorized_and_unresolvable_pending_files() {
+        use crate::infra::path_authority::{
+            PathAuthority, PathClass, PathOperation, SharedPathAuthority,
+        };
+        let (temp, directory) = directory();
+        let directory = Arc::new(directory);
+        let mut authority = PathAuthority::open(temp.path().join("registry.json"), vec![]).unwrap();
+        let mut files = Vec::new();
+        for name in ["moved", "recoverable"] {
+            let path = temp.path().join(format!("{name}.pgn"));
+            fs::write(&path, "[Event \"White\"]\n\n1. e4 *\n").unwrap();
+            let operations = vec![PathOperation::ReadPgn, PathOperation::WritePgn];
+            let grant = authority
+                .grant_dialog_operations(
+                    &path,
+                    "picked PGN",
+                    PathClass::BoundedDialogGrant,
+                    operations.clone(),
+                    std::time::Duration::from_secs(60),
+                    1,
+                )
+                .unwrap();
+            let handle = authority
+                .promote_dialog(&grant, PathClass::PersistentFile, "picked PGN", operations)
+                .unwrap();
+            files.push(handle.id.id);
+            if name == "moved" {
+                fs::rename(&path, temp.path().join("relocated.pgn")).unwrap();
+            }
+        }
+        let shared_authority = SharedPathAuthority::installed(authority);
+        let moved = &files[0];
+        let recoverable = &files[1];
+        for file in [
+            "unauthorized",
+            moved.as_str(),
+            recoverable.as_str(),
+            "healthy",
+        ] {
+            sync_practice_positions_in(&directory, file, 0, 0, 0, &positions()).unwrap();
+            if file != "healthy" {
+                prepare_delete_in(&directory, file, 0, 1).unwrap();
+            }
+        }
+        recover_inventory_pending(
+            directory.clone(),
+            shared_authority,
+            crate::pgn::PgnRepository::default(),
+        )
+        .await
+        .unwrap();
+        let inventory = list_practice_decks_in(&directory).unwrap();
+        for file in ["unauthorized", moved.as_str()] {
+            assert!(has_pending_delete(&directory, file).unwrap());
+            assert!(!inventory.decks.iter().any(|deck| deck.file_id == file));
+            assert!(inventory
+                .anomalies
+                .iter()
+                .any(|anomaly| anomaly.file_id.as_deref() == Some(file) && anomaly.game.is_none()));
+        }
+        assert!(!has_pending_delete(&directory, recoverable).unwrap());
+        for file in ["healthy", recoverable.as_str()] {
+            assert!(inventory.decks.contains(&PracticeDeckIdentity {
+                file_id: file.into(),
+                game: 0
+            }));
+        }
+    }
+
+    #[test]
     fn stale_epoch_guards_every_deck_operation_before_access_and_epoch_ignores_deck_damage() {
         let (_temp, directory) = directory();
+        sync_practice_positions_in(&directory, "file", 1, 0, 0, &positions()).unwrap();
         let id = prepare_delete_in(&directory, "file", 0, 2).unwrap();
         finish_delete_in(&directory, "file", &id, true).unwrap();
         let epoch = practice_epoch_in(&directory, "file", 0).unwrap().epoch;
         let before = all_leaf_bytes(&directory);
-        for operation in [
-            "sync",
-            "record",
-            "reset",
-            "reviews",
-            "acknowledge",
-            "migrate",
+        // These are the exact bodies invoked by the seven deck-addressed commands.
+        let write = PracticeReviewWrite {
+            generation: 0,
+            revision: 1,
+            base_revision: 1,
+            positions_document: positions(),
+            entry: r#"{"rating":3}"#.into(),
+            entry_id: "stale-review".into(),
+        };
+        for (operation, result) in [
+            (
+                "sync",
+                sync_mapped_practice_positions_in(
+                    &directory,
+                    "file",
+                    0,
+                    NO_MAP_EPOCH,
+                    0,
+                    1,
+                    &positions(),
+                )
+                .map(|_| ()),
+            ),
+            (
+                "record",
+                record_mapped_practice_review_in(&directory, "file", 0, NO_MAP_EPOCH, write)
+                    .map(|_| ()),
+            ),
+            (
+                "reset",
+                reset_mapped_practice_deck_in(
+                    &directory,
+                    "file",
+                    0,
+                    NO_MAP_EPOCH,
+                    0,
+                    1,
+                    &positions(),
+                )
+                .map(|_| ()),
+            ),
+            (
+                "reviews",
+                load_mapped_practice_reviews_in(&directory, "file", 0, NO_MAP_EPOCH, None, 100)
+                    .map(|_| ()),
+            ),
+            (
+                "acknowledge",
+                acknowledge_mapped_practice_orphans_in(&directory, "file", 0, NO_MAP_EPOCH, 0, 0),
+            ),
+            (
+                "repair",
+                repair_mapped_practice_deck_in(&directory, "file", 0, Some(NO_MAP_EPOCH)),
+            ),
+            (
+                "migrate",
+                migrate_mapped_practice_deck_in(
+                    &directory,
+                    "file",
+                    0,
+                    NO_MAP_EPOCH,
+                    &legacy(&[], &[]),
+                )
+                .map(|_| ()),
+            ),
         ] {
-            let result: Result<(), Error> = with_mapped_deck(
-                &directory,
-                "file",
-                0,
-                Some(NO_MAP_EPOCH),
-                true,
-                |_, _, _| panic!("{operation} must not reach its deck"),
+            assert!(
+                matches!(result, Err(Error::Conflict(_))),
+                "{operation}: {result:?}"
             );
-            assert!(matches!(result, Err(Error::Conflict(_))), "{operation}");
         }
-        assert!(matches!(
-            repair_mapped_practice_deck_in(&directory, "file", 0, Some(NO_MAP_EPOCH)),
-            Err(Error::Conflict(_))
-        ));
         assert_eq!(all_leaf_bytes(&directory), before);
         fs::write(
             directory.path().join(positions_leaf(&hash_deck("file", 1))),
