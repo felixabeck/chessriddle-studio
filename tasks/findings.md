@@ -20708,10 +20708,13 @@ Closed by 5ea1ae3b, pushed to master as part of 4633e57f (database games in Rece
 
 ### Windows renames and moves to a one-character name fail with ERROR_BAD_LENGTH
 
-* **ID:** f-20261104-01 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261104-01 · **Status:** handled · **Area:** native-fs · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** a7d7a3cd-8433-4bdd-a55f-398e678ee12f
 * **Impact class:** behaviour
 * **Where:** `src-tauri/src/infra/fs.rs` `mod win` `rename_information_buffer` (buffer length `offset_of!(FILE_RENAME_INFORMATION, FileName) + name_bytes`), used by `rename_child_with_mode` (Ex and classic) and `rename_classic`.
 * **Defect:** for a one-UTF-16-unit leaf the buffer is 22 bytes on x64, below the padded 24-byte `FILE_RENAME_INFORMATION`, so `NtSetInformationFile` returns STATUS_INFO_LENGTH_MISMATCH. Every rename or move to such a name fails, and a collision there surfaces as `io` instead of the typed name-taken conflict.
 * **Failure scenario:** on Windows, moving or renaming a folder to `X` (or `1`, `A`, …) in the Files workspace fails with "The program issued a command but the command length is incorrect." Observed in CI run 41742886307, job `rust-windows-test`, on 144fe1b7: `folder_move_foreign_destination_sidecar_is_untouched` (Io code 24) and `folder_move_primary_collision_is_typed_and_preserves_source` (category `io`, expected `conflict`).
 * **Found by:** drain session a7d7a3cd-8433-4bdd-a55f-398e678ee12f, f-20261101-27 push CI, 2026-11-04.
+
+Fixed by d1882467 (drain session a7d7a3cd): `rename_information_buffer` floors the buffer at `size_of::<FILE_RENAME_INFORMATION>()` (src-tauri/src/infra/fs.rs), with rename and typed-collision regression coverage. Verified on Windows: CI run 41748669714 on 177fa697 (which contains d1882467), job `rust-windows-test`, conclusion success. The entry reached the ledger through the inbox merge d54be161 after the fix had landed; closed by drain session c6681a98 from the records-lens review of that merge.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"ffabc46efd27788df8e44cd45275faf2ef37d5886e60443511393859bec63798","header_sha256":"7d9f67499e2f5425afbe5a7ec7a49cf5dd96e0a916ab7ffbde1bd0c38f0b40e7","header_status":"handled","input_sha256":"71f4c7105197cfdd25154af0377cc35f2b12432baa5f54e7712cb76caee756f2","kind":"mutation-receipt","operation":"29b5805029b74328a9a1bd058e92043281f9b6fa1db85db3f6bcea9c40d71cbc","options":{"section":null},"request_id_sha256":null,"results":["f-20261104-01"],"target":"f-20261104-01","v":1} -->
