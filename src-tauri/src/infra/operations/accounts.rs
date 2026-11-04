@@ -687,6 +687,7 @@ mod tests {
         for required in [
             "download_lichess_games_runtime(",
             "download_chess_com_games_runtime(",
+            "crate::chesscom::ExportScope::Resumable",
             "since_ms",
             "adopt_account_download(downloaded, &request.provider, &request.account)",
         ] {
