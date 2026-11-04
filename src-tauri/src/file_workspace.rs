@@ -67,14 +67,20 @@ pub struct WorkspaceTrashPage {
     pub cursor: Option<TrashCursor>,
 }
 
-fn open_trash_directory(parent: &fs::File, leaf: &OsStr) -> Result<fs::File, Error> {
+fn open_trash_directory(
+    parent: &fs::File,
+    leaf: &OsStr,
+    writable: bool,
+) -> Result<fs::File, Error> {
     let identity = crate::infra::fs::entry_identity_at(parent, leaf, true)?;
-    crate::infra::fs::open_removal_directory_at(parent, leaf, identity).map(|dir| dir.into_file())
+    crate::infra::fs::open_removal_directory_at_with_access(parent, leaf, identity, writable)
+        .map(|dir| dir.into_file())
 }
 
 fn trash_item_target(
     root: &WorkspaceMutationTarget,
     item: &TrashItemId,
+    writable: bool,
     cancellation: &CancellationToken,
 ) -> Result<WorkspaceMutationTarget, Error> {
     let uuid = uuid::Uuid::parse_str(&item.0)
@@ -82,8 +88,8 @@ fn trash_item_target(
     if uuid.to_string() != item.0 {
         return Err(Error::InvalidInput("invalid trash item id".into()));
     }
-    let trash = open_trash_directory(root.directory()?, OsStr::new(TRASH_DIRECTORY))?;
-    let bucket = open_trash_directory(&trash, OsStr::new(&item.0))?;
+    let trash = open_trash_directory(root.directory()?, OsStr::new(TRASH_DIRECTORY), writable)?;
+    let bucket = open_trash_directory(&trash, OsStr::new(&item.0), writable)?;
     let mut primary = None;
     crate::infra::fs::visit_directory_entries_at(&bucket, cancellation, &mut |entry| {
         if entry.kind == DirectoryEntryKind::Other
@@ -105,7 +111,7 @@ fn trash_item_target(
         Some(crate::infra::fs::open_directory_at(
             &bucket,
             &entry.name,
-            true,
+            writable,
         )?)
     } else {
         None
@@ -168,7 +174,7 @@ fn list_trash(
         older_count: 0,
         cursor: None,
     };
-    let trash = match open_trash_directory(root.directory()?, OsStr::new(TRASH_DIRECTORY)) {
+    let trash = match open_trash_directory(root.directory()?, OsStr::new(TRASH_DIRECTORY), false) {
         Ok(trash) => Some(trash),
         Err(error) if error.is_missing_entry() => None,
         Err(error) => return Err(error),
@@ -189,7 +195,7 @@ fn list_trash(
                 trashed_seconds: entry.modified_seconds,
                 category: None,
             };
-            match trash_item_target(&root, &item, cancellation) {
+            match trash_item_target(&root, &item, false, cancellation) {
                 Ok(source) => {
                     row.name = source.leaf.to_string_lossy().into_owned();
                     row.kind = Some(if source.is_dir {
@@ -200,7 +206,7 @@ fn list_trash(
                     match read_trash_origin(
                         &trash,
                         OsStr::new(&format!("{id}.origin")),
-                        None,
+                        OriginIdentity::Unchecked,
                         cancellation,
                     ) {
                         Ok(origin) => {
@@ -320,7 +326,7 @@ fn source_trash_bucket(
     if parts.len() != 2 || uuid::Uuid::parse_str(&parts[0].as_os_str().to_string_lossy()).is_err() {
         return Ok(None);
     }
-    let parent = open_trash_directory(root.directory()?, OsStr::new(TRASH_DIRECTORY))?;
+    let parent = open_trash_directory(root.directory()?, OsStr::new(TRASH_DIRECTORY), true)?;
     let leaf = parts[0].as_os_str().to_os_string();
     let identity = crate::infra::path_authority::opened_file_identity(&source.parent)?;
     crate::infra::fs::assert_entry_identity(&parent, &leaf, identity, true)?;
@@ -335,15 +341,31 @@ fn source_trash_bucket(
     Ok(Some(bucket))
 }
 
+enum OriginIdentity {
+    Unchecked,
+    Absent,
+    Expected((u64, u64)),
+}
+
+impl From<Option<(u64, u64)>> for OriginIdentity {
+    fn from(identity: Option<(u64, u64)>) -> Self {
+        identity.map_or(Self::Absent, Self::Expected)
+    }
+}
+
 fn read_trash_origin(
     parent: &fs::File,
     leaf: &OsStr,
-    expected: Option<Option<(u64, u64)>>,
+    expected: OriginIdentity,
     cancellation: &CancellationToken,
 ) -> Result<TrashOrigin, Error> {
     let mut file = crate::infra::fs::open_regular_at(parent, leaf, RegularFileAccess::ReadOnly)?;
     let identity = crate::infra::path_authority::opened_file_identity(&file)?;
-    if expected.is_some_and(|expected| expected != Some(identity)) {
+    if match expected {
+        OriginIdentity::Unchecked => false,
+        OriginIdentity::Absent => true,
+        OriginIdentity::Expected(expected) => expected != identity,
+    } {
         return Err(Error::Conflict("trash origin changed before read".into()));
     }
     let declared = file.metadata()?.len();
@@ -395,7 +417,7 @@ fn trash_restore_parent(
         let origin = match read_trash_origin(
             &bucket.parent,
             &bucket.origin_leaf(),
-            Some(bucket.origin_identity),
+            bucket.origin_identity.into(),
             cancellation,
         ) {
             Ok(origin) => origin,
@@ -2828,7 +2850,7 @@ fn restore_trash_item(
         "workspace mutation lock was poisoned",
     )?;
     let root = mutation_target(pgn_path_authority, workspace)?;
-    let source = trash_item_target(&root, item, cancellation)?;
+    let source = trash_item_target(&root, item, true, cancellation)?;
     let trash_root = root.path().join(TRASH_DIRECTORY);
     source
         .path()
@@ -2962,7 +2984,8 @@ fn remove_trash_blocking(
             "workspace mutation lock was poisoned",
         )?;
         let root = mutation_target(authority, workspace)?;
-        let trash = match open_trash_directory(root.directory()?, OsStr::new(TRASH_DIRECTORY)) {
+        let trash = match open_trash_directory(root.directory()?, OsStr::new(TRASH_DIRECTORY), true)
+        {
             Ok(trash) => trash,
             Err(error) if error.is_missing_entry() && item.is_none() => {
                 let registry = authority
@@ -3039,7 +3062,7 @@ fn remove_trash_blocking(
         };
         if let Some(item) = &item {
             // Resolving the primary first refuses malformed ids, symlinks and ambiguous buckets.
-            let _source = trash_item_target(&root, item, cancellation)?;
+            let _source = trash_item_target(&root, item, true, cancellation)?;
             let identity = crate::infra::fs::entry_identity_at(&trash, OsStr::new(&item.0), true)?;
             remove(DirectoryEntry {
                 name: item.0.clone().into(),
@@ -3117,9 +3140,13 @@ fn remove_trash_bucket(
         let (_, failure) = removal.into_parts();
         return Ok(CommittedRemoval::new(0, failure));
     }
-    let directory =
-        crate::infra::fs::open_removal_directory_at(trash, &entry.name, entry.identity)?
-            .into_file();
+    let directory = crate::infra::fs::open_removal_directory_at_with_access(
+        trash,
+        &entry.name,
+        entry.identity,
+        true,
+    )?
+    .into_file();
     crate::infra::fs::assert_entry_identity(trash, &entry.name, entry.identity, true)?;
     let mut bucket = TrashBucket {
         parent: trash.try_clone()?,
@@ -3392,7 +3419,7 @@ mod tests {
         assert!(read_trash_origin(
             &bucket.parent,
             &bucket.origin_leaf(),
-            Some(bucket.origin_identity),
+            bucket.origin_identity.into(),
             &token
         )
         .is_ok());
@@ -3400,7 +3427,16 @@ mod tests {
             read_trash_origin(
                 &bucket.parent,
                 &bucket.origin_leaf(),
-                Some(Some((0, 0))),
+                OriginIdentity::Absent,
+                &token
+            ),
+            Err(Error::Conflict(_))
+        ));
+        assert!(matches!(
+            read_trash_origin(
+                &bucket.parent,
+                &bucket.origin_leaf(),
+                OriginIdentity::Expected((0, 0)),
                 &token
             ),
             Err(Error::Conflict(_))
@@ -3410,7 +3446,7 @@ mod tests {
             read_trash_origin(
                 &bucket.parent,
                 &bucket.origin_leaf(),
-                Some(bucket.origin_identity),
+                bucket.origin_identity.into(),
                 &token
             ),
             Err(Error::Cancellation)
@@ -3419,7 +3455,7 @@ mod tests {
         assert!(read_trash_origin(
             &bucket.parent,
             &bucket.origin_leaf(),
-            None,
+            OriginIdentity::Unchecked,
             &CancellationToken::new()
         )
         .is_err());
@@ -3528,6 +3564,26 @@ mod tests {
         assert!(!bucket.exists());
         assert!(!origin.exists());
         assert!(mutation_target(&state.pgn_path_authority, &entry).is_err());
+    }
+
+    fn trash_test_entry(
+        state: &AppState,
+        workspace: &FileWorkspaceHandle,
+        entry: &FileWorkspaceHandle,
+    ) -> (PathBuf, TrashItemId) {
+        let item = trash_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            workspace,
+            entry,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let path = mutation_target(&state.pgn_path_authority, entry)
+            .unwrap()
+            .path()
+            .to_path_buf();
+        (path, item)
     }
 
     fn test_trash_item(
@@ -3847,10 +3903,13 @@ mod tests {
         let (directory, state, workspace) = workspace_state();
         let root = mutation_target(&state.pgn_path_authority, &workspace).unwrap();
         for id in ["not-a-uuid", "..", "../outside"] {
-            assert!(
-                trash_item_target(&root, &TrashItemId(id.into()), &CancellationToken::new())
-                    .is_err()
-            );
+            assert!(trash_item_target(
+                &root,
+                &TrashItemId(id.into()),
+                true,
+                &CancellationToken::new()
+            )
+            .is_err());
         }
         let trash = root.path().join(TRASH_DIRECTORY);
         fs::create_dir(&trash).unwrap();
@@ -3859,7 +3918,9 @@ mod tests {
         fs::write(outside.join("game.pgn"), b"*").unwrap();
         let id = uuid::Uuid::new_v4().to_string();
         std::os::unix::fs::symlink(&outside, trash.join(&id)).unwrap();
-        assert!(trash_item_target(&root, &TrashItemId(id), &CancellationToken::new()).is_err());
+        assert!(
+            trash_item_target(&root, &TrashItemId(id), true, &CancellationToken::new()).is_err()
+        );
         let page = list_trash(
             &state.pgn_path_authority,
             &state.workspace_mutation,
@@ -3882,7 +3943,7 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn empty_trash_retires_engine_executables_and_removes_records_and_origins() {
+    async fn empty_trash_removes_linked_collection_records() {
         let fixture = crate::db::linked_collections::tests::Fixture::new();
         let linked = fixture.create(
             "linked",
@@ -3904,6 +3965,15 @@ mod tests {
             fixture.list()[0].status,
             crate::db::linked_collections::CollectionStatus::Trashed
         );
+        remove_trash(&state, &workspace, None, CancellationToken::new())
+            .await
+            .unwrap();
+        assert!(fixture.registered_ids().is_empty());
+    }
+
+    #[tokio::test]
+    async fn empty_trash_retires_engine_executables_and_removes_records_and_origins() {
+        let (_directory, state, workspace) = workspace_state();
         let (child, entry, executable) = registered_engine_directory(&state, &workspace);
         #[cfg(unix)]
         let key = EngineKey::new("empty-trash".into(), "engine".into()).unwrap();
@@ -3926,10 +3996,14 @@ mod tests {
         remove_trash(&state, &workspace, None, CancellationToken::new())
             .await
             .unwrap();
-        assert!(fixture.registered_ids().is_empty());
         assert_eq!(fs::read_dir(root.join(TRASH_DIRECTORY)).unwrap().count(), 0);
         assert!(!child.exists());
         assert!(mutation_target(&state.pgn_path_authority, &entry).is_err());
+        let records = state
+            .pgn_path_authority
+            .with_mut(|authority| authority.descriptors())
+            .unwrap();
+        assert!(!records.iter().any(|record| record.id == executable));
         #[cfg(unix)]
         assert!(state.engine_supervisor.get_exact(&key).is_none());
         assert_executable_retired(&state, executable).await;
@@ -5709,18 +5783,7 @@ mod tests {
         fs::write(&descendant, b"*").expect("descendant");
         let descendant_entry = registered_child_file(&state, &workspace, &descendant);
 
-        trash_entry(
-            &state.pgn_path_authority,
-            &state.workspace_mutation,
-            &workspace,
-            &entry,
-            &CancellationToken::new(),
-        )
-        .unwrap();
-        let child = mutation_target(&state.pgn_path_authority, &entry)
-            .unwrap()
-            .path()
-            .to_path_buf();
+        let (child, _) = trash_test_entry(&state, &workspace, &entry);
         let error =
             delete_entry_with_fault(&state, &workspace, &entry, RemovalFaultPoint::ParentSync)
                 .await
@@ -5748,18 +5811,7 @@ mod tests {
         let removed_entry = registered_child_file(&state, &workspace, &child.join("removed"));
         let survivor_entry = registered_child_file(&state, &workspace, &survivor);
 
-        trash_entry(
-            &state.pgn_path_authority,
-            &state.workspace_mutation,
-            &workspace,
-            &entry,
-            &CancellationToken::new(),
-        )
-        .unwrap();
-        let child = mutation_target(&state.pgn_path_authority, &entry)
-            .unwrap()
-            .path()
-            .to_path_buf();
+        let (child, _) = trash_test_entry(&state, &workspace, &entry);
         let error = delete_entry_with_fault(
             &state,
             &workspace,
@@ -5809,18 +5861,7 @@ mod tests {
         let (child, entry) = registered_child_directory(&state, &workspace, "victim");
         fs::create_dir(child.join("unregistered")).expect("unregistered directory");
         fs::write(child.join("unregistered/extra"), b"extra").expect("unregistered file");
-        trash_entry(
-            &state.pgn_path_authority,
-            &state.workspace_mutation,
-            &workspace,
-            &entry,
-            &CancellationToken::new(),
-        )
-        .unwrap();
-        let child = mutation_target(&state.pgn_path_authority, &entry)
-            .unwrap()
-            .path()
-            .to_path_buf();
+        let (child, _) = trash_test_entry(&state, &workspace, &entry);
         set_test_atomic_file_injector(Some(Arc::new(RegistryWriteFailure)));
         let error = remove_trash(
             &state,
@@ -6030,18 +6071,7 @@ mod tests {
             crate::engine::EngineActor::failing_terminate_test_actor("later retirement failure"),
         )
         .await;
-        trash_entry(
-            &state.pgn_path_authority,
-            &state.workspace_mutation,
-            &workspace,
-            &entry,
-            &CancellationToken::new(),
-        )
-        .unwrap();
-        let child = mutation_target(&state.pgn_path_authority, &entry)
-            .unwrap()
-            .path()
-            .to_path_buf();
+        let (child, _) = trash_test_entry(&state, &workspace, &entry);
         set_test_atomic_file_injector(Some(Arc::new(RegistryWriteFailure)));
         let result =
             delete_entry_with_fault(&state, &workspace, &entry, RemovalFaultPoint::ParentSync)
@@ -6073,18 +6103,7 @@ mod tests {
         )
         .await;
 
-        trash_entry(
-            &state.pgn_path_authority,
-            &state.workspace_mutation,
-            &workspace,
-            &entry,
-            &CancellationToken::new(),
-        )
-        .unwrap();
-        let child = mutation_target(&state.pgn_path_authority, &entry)
-            .unwrap()
-            .path()
-            .to_path_buf();
+        let (child, _) = trash_test_entry(&state, &workspace, &entry);
         let error = remove_trash(
             &state,
             &workspace,
@@ -6125,18 +6144,7 @@ mod tests {
             crate::engine::EngineActor::failing_terminate_test_actor("later retirement failure"),
         )
         .await;
-        trash_entry(
-            &state.pgn_path_authority,
-            &state.workspace_mutation,
-            &workspace,
-            &entry,
-            &CancellationToken::new(),
-        )
-        .unwrap();
-        let child = mutation_target(&state.pgn_path_authority, &entry)
-            .unwrap()
-            .path()
-            .to_path_buf();
+        let (child, _) = trash_test_entry(&state, &workspace, &entry);
         set_test_atomic_file_injector(Some(Arc::new(crate::infra::fs::ParentSyncFault(
             "registry uncertainty",
         ))));
@@ -6171,18 +6179,7 @@ mod tests {
             crate::engine::EngineActor::failing_terminate_test_actor("retirement failure"),
         )
         .await;
-        trash_entry(
-            &state.pgn_path_authority,
-            &state.workspace_mutation,
-            &workspace,
-            &entry,
-            &CancellationToken::new(),
-        )
-        .unwrap();
-        let child = mutation_target(&state.pgn_path_authority, &entry)
-            .unwrap()
-            .path()
-            .to_path_buf();
+        let (child, _) = trash_test_entry(&state, &workspace, &entry);
         set_test_atomic_file_injector(Some(Arc::new(RegistryWriteFailure)));
         let result = remove_trash(
             &state,
@@ -6228,18 +6225,7 @@ mod tests {
             )
             .await;
 
-            trash_entry(
-                &state.pgn_path_authority,
-                &state.workspace_mutation,
-                &workspace,
-                &entry,
-                &CancellationToken::new(),
-            )
-            .unwrap();
-            let child = mutation_target(&state.pgn_path_authority, &entry)
-                .unwrap()
-                .path()
-                .to_path_buf();
+            let (child, _) = trash_test_entry(&state, &workspace, &entry);
             let error = delete_entry_with_fault(
                 &state,
                 &workspace,
@@ -6325,15 +6311,7 @@ mod tests {
         let executable = registered_engine_file(&state, &executable_path);
         let key = EngineKey::new("tab".into(), "caller-drop".into()).unwrap();
         supervise_test_engine(&state, &key, "application-engine", executable.clone()).await;
-        trash_entry(
-            &state.pgn_path_authority,
-            &state.workspace_mutation,
-            &workspace,
-            &entry,
-            &CancellationToken::new(),
-        )
-        .unwrap();
-        let item = test_trash_item(&state.pgn_path_authority, &entry);
+        let (_, item) = trash_test_entry(&state, &workspace, &entry);
         let mutation = Arc::clone(&state.workspace_mutation);
         let (entered_tx, entered_rx) = std::sync::mpsc::sync_channel(1);
         let (release_tx, release_rx) = std::sync::mpsc::sync_channel(1);
@@ -6397,15 +6375,7 @@ mod tests {
         let executable = registered_engine_file(&state, &executable_path);
         let key = EngineKey::new("tab".into(), "caller-drop-error".into()).unwrap();
         supervise_test_engine(&state, &key, "application-engine", executable.clone()).await;
-        trash_entry(
-            &state.pgn_path_authority,
-            &state.workspace_mutation,
-            &workspace,
-            &entry,
-            &CancellationToken::new(),
-        )
-        .unwrap();
-        let item = test_trash_item(&state.pgn_path_authority, &entry);
+        let (_, item) = trash_test_entry(&state, &workspace, &entry);
         let mutation = Arc::clone(&state.workspace_mutation);
         let (entered_tx, entered_rx) = std::sync::mpsc::sync_channel(1);
         let (release_tx, release_rx) = std::sync::mpsc::sync_channel(1);

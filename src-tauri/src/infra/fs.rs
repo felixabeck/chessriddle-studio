@@ -6259,7 +6259,17 @@ pub(crate) fn open_removal_directory_at(
     name: &OsStr,
     expected: (u64, u64),
 ) -> Result<VerifiedDir, Error> {
-    let child = VerifiedDir::new(open_directory_at(parent, name, false)?, expected)?;
+    open_removal_directory_at_with_access(parent, name, expected, false)
+}
+
+/// Mutation parents need write access on Windows for namespace changes and parent sync.
+pub(crate) fn open_removal_directory_at_with_access(
+    parent: &File,
+    name: &OsStr,
+    expected: (u64, u64),
+    writable: bool,
+) -> Result<VerifiedDir, Error> {
+    let child = VerifiedDir::new(open_directory_at(parent, name, writable)?, expected)?;
     #[cfg(unix)]
     if unix::mount_crossing(parent, child.as_file())? {
         return Err(Error::InvalidInput(
