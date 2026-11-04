@@ -8,10 +8,15 @@ import englishCatalogue from "@/translation/en-US.json";
 
 const mocks = vi.hoisted(() => ({
   mutate: vi.fn(),
+  mutateTrash: vi.fn(),
+  trashData: { items: [] as Array<unknown>, olderCount: 0, cursor: null as unknown },
+  trashError: undefined as unknown,
   listFileWorkspace: vi.fn(),
+  listWorkspaceTrash: vi.fn(),
+  emptyWorkspaceTrash: vi.fn(),
   trashWorkspaceEntry: vi.fn(),
-  restoreWorkspaceEntry: vi.fn(),
-  permanentlyDeleteWorkspaceEntry: vi.fn(),
+  restoreWorkspaceTrashItem: vi.fn(),
+  deleteWorkspaceTrashItem: vi.fn(),
   moveWorkspaceEntry: vi.fn(),
   createWorkspaceFile: vi.fn(),
   createWorkspaceDirectory: vi.fn(),
@@ -39,9 +44,11 @@ vi.mock("@/platform/tauri", async () => {
     ...actual,
     tauri: {
       listFileWorkspace: mocks.listFileWorkspace,
+      listWorkspaceTrash: mocks.listWorkspaceTrash,
+      emptyWorkspaceTrash: mocks.emptyWorkspaceTrash,
       trashWorkspaceEntry: mocks.trashWorkspaceEntry,
-      restoreWorkspaceEntry: mocks.restoreWorkspaceEntry,
-      permanentlyDeleteWorkspaceEntry: mocks.permanentlyDeleteWorkspaceEntry,
+      restoreWorkspaceTrashItem: mocks.restoreWorkspaceTrashItem,
+      deleteWorkspaceTrashItem: mocks.deleteWorkspaceTrashItem,
       moveWorkspaceEntry: mocks.moveWorkspaceEntry,
       createWorkspaceFile: mocks.createWorkspaceFile,
       createWorkspaceDirectory: mocks.createWorkspaceDirectory,
@@ -69,7 +76,9 @@ vi.mock("swr", async () => {
     default: (...args: Parameters<typeof actual.default>) =>
       mocks.realSWR
         ? actual.default(...args)
-        : { data: mocks.data, error: mocks.error, mutate: mocks.mutate },
+        : Array.isArray(args[0]) && args[0][0] === "workspace-trash"
+          ? { data: mocks.trashData, error: mocks.trashError, mutate: mocks.mutateTrash }
+          : { data: mocks.data, error: mocks.error, mutate: mocks.mutate },
     useSWRConfig: () => {
       const config = actual.useSWRConfig();
       return mocks.realSWR ? config : { ...config, mutate: mocks.mutate };
@@ -218,7 +227,8 @@ vi.mock("@mantine/core", async (importOriginal) => {
     Title: ({ children }: { children: React.ReactNode }) => <h1>{children}</h1>,
   };
 });
-vi.mock("./DirectoryTree", () => ({
+vi.mock("./DirectoryTree", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./DirectoryTree")>()),
   default: ({
     files,
     setSelectedFile,
@@ -1219,9 +1229,14 @@ beforeEach(async () => {
   mocks.cardMounts = [];
   mocks.error = undefined;
   mocks.mutate.mockResolvedValue(undefined);
-  mocks.trashWorkspaceEntry.mockResolvedValue(undefined);
-  mocks.restoreWorkspaceEntry.mockResolvedValue(undefined);
-  mocks.permanentlyDeleteWorkspaceEntry.mockResolvedValue(undefined);
+  mocks.mutateTrash.mockResolvedValue(undefined);
+  mocks.trashData = { items: [], olderCount: 0, cursor: null };
+  mocks.trashError = undefined;
+  mocks.listWorkspaceTrash.mockResolvedValue({ items: [], olderCount: 0, cursor: null });
+  mocks.emptyWorkspaceTrash.mockResolvedValue(undefined);
+  mocks.trashWorkspaceEntry.mockResolvedValue("11111111-1111-4111-8111-111111111111");
+  mocks.restoreWorkspaceTrashItem.mockResolvedValue(undefined);
+  mocks.deleteWorkspaceTrashItem.mockResolvedValue(undefined);
   mocks.moveWorkspaceEntry.mockResolvedValue(undefined);
   mocks.createWorkspaceFile.mockResolvedValue(undefined);
   mocks.createWorkspaceDirectory.mockResolvedValue(undefined);
@@ -1238,12 +1253,130 @@ afterEach(async () => {
   container.remove();
 });
 
+describe("native trash view", () => {
+  const item = "22222222-2222-4222-8222-222222222222";
+  async function showTrash(category: ErrorCategory | null = null) {
+    mocks.trashData.items = [
+      {
+        item,
+        name: "older.pgn",
+        kind: "file",
+        originalFolder: "Archive",
+        trashedSeconds: 1700000000,
+        category,
+      },
+    ];
+    await act(async () => root.render(<FilesPage />));
+  }
+
+  test("native paging forwards the cursor and replaces the current page", async () => {
+    const cursor = { seconds: 1700000000, item };
+    const row = {
+      item,
+      name: "older.pgn",
+      kind: "file",
+      originalFolder: "Archive",
+      trashedSeconds: 1700000000,
+      category: null,
+    };
+    mocks.listFileWorkspace.mockResolvedValue({ entries: [], unread: [] });
+    mocks.listWorkspaceTrash
+      .mockResolvedValueOnce({ items: [row], olderCount: 1, cursor })
+      .mockResolvedValue({ items: [{ ...row, name: "oldest.pgn" }], olderCount: 0, cursor: null });
+    await realWorkspace();
+    await settle();
+    expect(container.textContent).toContain("older.pgn");
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((node) => node.textContent?.startsWith("Load older items"))!
+        .click(),
+    );
+    await settle();
+    expect(mocks.listWorkspaceTrash).toHaveBeenLastCalledWith(workspace, cursor, {
+      signal: expect.any(AbortSignal),
+    });
+    expect(container.textContent).toContain("oldest.pgn");
+    expect(container.textContent).not.toContain("older.pgn");
+  });
+
+  test.each(["restore", "delete"] as const)(
+    "%s addresses an older row by item id and refreshes both listings",
+    async (action) => {
+      await showTrash();
+      expect(container.textContent).toContain("Archive");
+      click(action === "restore" ? "Restore" : "Delete permanently");
+      await act(async () =>
+        dialogButton(action === "restore" ? "Restore" : "Common.Delete").click(),
+      );
+      expect(
+        action === "restore" ? mocks.restoreWorkspaceTrashItem : mocks.deleteWorkspaceTrashItem,
+      ).toHaveBeenCalledWith(workspace, item);
+      expect(mocks.mutate).toHaveBeenCalledOnce();
+      expect(mocks.mutateTrash).toHaveBeenCalledOnce();
+      expect(container.querySelector('[role="dialog"]')).toBeNull();
+    },
+  );
+
+  test.each(["durability", "partial-removal", "permission"] as const)(
+    "Empty trash preserves %s error and refresh policy",
+    async (category) => {
+      await showTrash();
+      mocks.emptyWorkspaceTrash.mockRejectedValueOnce(commandError(category, "private diagnostic"));
+      click("Empty trash");
+      await act(async () => dialogButton("Common.Delete").click());
+      expect(mocks.emptyWorkspaceTrash).toHaveBeenCalledWith(workspace);
+      expect(container.querySelector('[role="dialog"] [role="alert"]')).not.toBeNull();
+      expect(container.textContent).not.toContain("private diagnostic");
+      expect(mocks.mutateTrash).toHaveBeenCalledTimes(category === "permission" ? 0 : 1);
+      expect(mocks.mutate).toHaveBeenCalledTimes(category === "permission" ? 0 : 1);
+    },
+  );
+
+  test("Empty trash confirms, closes and refreshes after success even when relisting fails", async () => {
+    await showTrash();
+    mocks.mutateTrash.mockRejectedValueOnce(new Error("private listing error"));
+    click("Empty trash");
+    expect(mocks.emptyWorkspaceTrash).not.toHaveBeenCalled();
+    await act(async () => dialogButton("Common.Delete").click());
+    expect(mocks.emptyWorkspaceTrash).toHaveBeenCalledOnce();
+    expect(mocks.mutate).toHaveBeenCalledOnce();
+    expect(mocks.mutateTrash).toHaveBeenCalledOnce();
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  test("unreadable rows show their category and disable row actions", async () => {
+    await showTrash("permission");
+    expect(container.textContent).toContain("Files.ChildUnreadable.Permission");
+    expect(button("Restore").disabled).toBe(true);
+    expect(button("Delete permanently").disabled).toBe(true);
+  });
+
+  test("listing error offers retry and older pages use the native cursor", async () => {
+    mocks.trashError = commandError("permission", "private listing diagnostic");
+    await showTrash();
+    click("Common.Retry");
+    await settle();
+    expect(mocks.mutateTrash).toHaveBeenCalledOnce();
+    mocks.trashError = undefined;
+    mocks.trashData.cursor = { seconds: 1700000000, item };
+    mocks.trashData.olderCount = 4;
+    await act(async () => root.render(<FilesPage />));
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((node) => node.textContent?.startsWith("Load older items"))!
+        .click(),
+    );
+    await settle();
+    expect(container.textContent).not.toContain("private listing diagnostic");
+  });
+});
+
 describe("trash confirmations", () => {
   test("duplicate permanent-delete submits invoke native once", async () => {
     await completeTrash();
     mocks.mutate.mockClear();
     let resolve!: () => void;
-    mocks.permanentlyDeleteWorkspaceEntry.mockImplementationOnce(
+    mocks.deleteWorkspaceTrashItem.mockImplementationOnce(
       () =>
         new Promise<void>((done) => {
           resolve = done;
@@ -1254,7 +1387,7 @@ describe("trash confirmations", () => {
       button("Common.Delete").click();
       button("Common.Delete").click();
     });
-    expect(mocks.permanentlyDeleteWorkspaceEntry).toHaveBeenCalledTimes(1);
+    expect(mocks.deleteWorkspaceTrashItem).toHaveBeenCalledTimes(1);
     await act(async () => resolve());
     expect(mocks.mutate).toHaveBeenCalledTimes(1);
   });
@@ -1263,7 +1396,7 @@ describe("trash confirmations", () => {
     await completeTrash();
     mocks.mutate.mockClear();
     // Fallback-path coverage: classify() still matches this owned Display literal.
-    mocks.permanentlyDeleteWorkspaceEntry.mockRejectedValueOnce(
+    mocks.deleteWorkspaceTrashItem.mockRejectedValueOnce(
       new Error("Partially removed: 1 entries were deleted before failing: child not found"),
     );
     click("Delete permanently");
@@ -1283,7 +1416,7 @@ describe("trash confirmations", () => {
     mocks.mutate.mockRejectedValueOnce(new Error("list unavailable"));
     click("Delete permanently");
     await act(async () => button("Common.Delete").click());
-    expect(mocks.permanentlyDeleteWorkspaceEntry).toHaveBeenCalledTimes(1);
+    expect(mocks.deleteWorkspaceTrashItem).toHaveBeenCalledTimes(1);
     expect(mocks.mutate).toHaveBeenCalledTimes(1);
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(container.textContent).not.toContain("The action could not be completed");
@@ -1301,7 +1434,7 @@ describe("trash confirmations", () => {
     async (category, message) => {
       await completeTrash();
       mocks.mutate.mockClear();
-      mocks.permanentlyDeleteWorkspaceEntry.mockRejectedValueOnce(commandError(category, message));
+      mocks.deleteWorkspaceTrashItem.mockRejectedValueOnce(commandError(category, message));
       mocks.mutate.mockRejectedValueOnce(new Error("list unavailable"));
       click("Delete permanently");
       await act(async () => button("Common.Delete").click());
@@ -1320,13 +1453,13 @@ describe("trash confirmations", () => {
   );
 
   test.each([
-    ["restore", "Undo", "Restore file", "Restore", "restoreWorkspaceEntry"],
+    ["restore", "Undo", "Restore file", "Restore", "restoreWorkspaceTrashItem"],
     [
       "purge",
       "Delete permanently",
       "Delete permanently",
       "Common.Delete",
-      "permanentlyDeleteWorkspaceEntry",
+      "deleteWorkspaceTrashItem",
     ],
   ])(
     "%s rejection leaves the trashed item recoverable",
@@ -1334,7 +1467,7 @@ describe("trash confirmations", () => {
       await completeTrash();
       mocks.mutate.mockClear();
       mocks[
-        command as "restoreWorkspaceEntry" | "permanentlyDeleteWorkspaceEntry"
+        command as "restoreWorkspaceTrashItem" | "deleteWorkspaceTrashItem"
       ].mockRejectedValueOnce(new Error(`${_action} denied`));
       click(trigger);
       await act(async () => button(confirm).click());
@@ -1357,7 +1490,10 @@ describe("trash confirmations", () => {
     click("Undo");
     await act(async () => button("Restore").click());
 
-    expect(mocks.restoreWorkspaceEntry).toHaveBeenCalledWith(workspace, entry.handle);
+    expect(mocks.restoreWorkspaceTrashItem).toHaveBeenCalledWith(
+      workspace,
+      "11111111-1111-4111-8111-111111111111",
+    );
     expect(mocks.mutate).toHaveBeenCalledTimes(1);
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(container.textContent).not.toContain("The action could not be completed");
@@ -1368,7 +1504,7 @@ describe("trash confirmations", () => {
   test("applied restore keeps its warning when relisting fails", async () => {
     await completeTrash();
     mocks.mutate.mockClear();
-    mocks.restoreWorkspaceEntry.mockRejectedValueOnce(
+    mocks.restoreWorkspaceTrashItem.mockRejectedValueOnce(
       commandError("durability", "Committed but durability uncertain: parent not found"),
     );
     mocks.mutate.mockImplementationOnce(async () => {
@@ -1390,13 +1526,13 @@ describe("trash confirmations", () => {
   });
 
   test.each([
-    ["restore", "Undo", "Restore file", "Restore", "restoreWorkspaceEntry"],
+    ["restore", "Undo", "Restore file", "Restore", "restoreWorkspaceTrashItem"],
     [
       "purge",
       "Delete permanently",
       "Delete permanently",
       "Common.Delete",
-      "permanentlyDeleteWorkspaceEntry",
+      "deleteWorkspaceTrashItem",
     ],
   ])(
     "%s success closes and relists exactly once",
@@ -1406,8 +1542,8 @@ describe("trash confirmations", () => {
       click(trigger);
       await act(async () => button(confirm).click());
       expect(
-        mocks[command as "restoreWorkspaceEntry" | "permanentlyDeleteWorkspaceEntry"],
-      ).toHaveBeenCalledWith(workspace, entry.handle);
+        mocks[command as "restoreWorkspaceTrashItem" | "deleteWorkspaceTrashItem"],
+      ).toHaveBeenCalledWith(workspace, "11111111-1111-4111-8111-111111111111");
       expect(mocks.mutate).toHaveBeenCalledTimes(1);
       expect(container.querySelector('[role="dialog"]')).toBeNull();
       expect(container.textContent).not.toContain("Moved sample.pgn to trash.");
@@ -1527,13 +1663,16 @@ test("trash and restore durability relist and keep their confirmation with the s
   expect(container.querySelector('[role="dialog"] [role="alert"]')?.textContent).toBe(
     durabilityCopy,
   );
-  expect(container.textContent).toContain("Moved sample.pgn to trash.");
+  expect(mocks.mutateTrash).toHaveBeenCalledOnce();
   expect(container.querySelector("output")?.textContent).toBe("No selection");
+  expect(container.textContent).toContain("Moved sample.pgn to trash.");
+  expect(button("Undo")).toBeUndefined();
   expect(mocks.notify).not.toHaveBeenCalled();
   click("Common.Cancel");
 
+  await completeTrash();
   mocks.mutate.mockClear();
-  mocks.restoreWorkspaceEntry.mockRejectedValueOnce(
+  mocks.restoreWorkspaceTrashItem.mockRejectedValueOnce(
     commandError("durability", "Committed but durability uncertain: registry replacement"),
   );
   click("Undo");
@@ -1574,8 +1713,8 @@ test.each(["trash", "restore", "purge"] as const)(
     }
     const command = {
       trash: mocks.trashWorkspaceEntry,
-      restore: mocks.restoreWorkspaceEntry,
-      purge: mocks.permanentlyDeleteWorkspaceEntry,
+      restore: mocks.restoreWorkspaceTrashItem,
+      purge: mocks.deleteWorkspaceTrashItem,
     }[action];
     command.mockRejectedValueOnce(commandError("durability", "private diagnostic"));
     mocks.mutate.mockClear();
@@ -1596,7 +1735,7 @@ test.each(["trash", "restore", "purge"] as const)(
 test("permanent delete durability keeps its confirmation after a successful relist", async () => {
   await completeTrash();
   mocks.mutate.mockClear();
-  mocks.permanentlyDeleteWorkspaceEntry.mockRejectedValueOnce(
+  mocks.deleteWorkspaceTrashItem.mockRejectedValueOnce(
     commandError("durability", "private diagnostic"),
   );
   click("Delete permanently");
@@ -1619,7 +1758,8 @@ test.each(["trash", "restore"] as const)(
       click("Select sample file");
       click("Trash");
     }
-    const command = action === "trash" ? mocks.trashWorkspaceEntry : mocks.restoreWorkspaceEntry;
+    const command =
+      action === "trash" ? mocks.trashWorkspaceEntry : mocks.restoreWorkspaceTrashItem;
     mocks.mutate.mockClear();
     command.mockRejectedValueOnce(commandError("operation-and-cleanup", "private cleanup failure"));
     mocks.mutate.mockRejectedValueOnce(new Error("list unavailable"));

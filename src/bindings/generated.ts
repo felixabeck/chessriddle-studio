@@ -340,7 +340,7 @@ async writeWorkspaceFileMetadata(workspace: FileWorkspaceHandle, entry: FileWork
     else return { status: "error", error: e  as any };
 }
 },
-async trashWorkspaceEntry(workspace: FileWorkspaceHandle, entry: FileWorkspaceHandle) : Promise<Result<null, ErrorPayload>> {
+async trashWorkspaceEntry(workspace: FileWorkspaceHandle, entry: FileWorkspaceHandle) : Promise<Result<TrashItemId, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("trash_workspace_entry", { workspace, entry }) };
 } catch (e) {
@@ -348,17 +348,33 @@ async trashWorkspaceEntry(workspace: FileWorkspaceHandle, entry: FileWorkspaceHa
     else return { status: "error", error: e  as any };
 }
 },
-async restoreWorkspaceEntry(workspace: FileWorkspaceHandle, entry: FileWorkspaceHandle) : Promise<Result<null, ErrorPayload>> {
+async listWorkspaceTrash(workspace: FileWorkspaceHandle, cursor: TrashCursor | null, ticket: string | null) : Promise<Result<WorkspaceTrashPage, ErrorPayload>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("restore_workspace_entry", { workspace, entry }) };
+    return { status: "ok", data: await TAURI_INVOKE("list_workspace_trash", { workspace, cursor, ticket }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async permanentlyDeleteWorkspaceEntry(workspace: FileWorkspaceHandle, entry: FileWorkspaceHandle) : Promise<Result<null, ErrorPayload>> {
+async emptyWorkspaceTrash(workspace: FileWorkspaceHandle) : Promise<Result<null, ErrorPayload>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("permanently_delete_workspace_entry", { workspace, entry }) };
+    return { status: "ok", data: await TAURI_INVOKE("empty_workspace_trash", { workspace }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async restoreWorkspaceTrashItem(workspace: FileWorkspaceHandle, item: TrashItemId) : Promise<Result<null, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("restore_workspace_trash_item", { workspace, item }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteWorkspaceTrashItem(workspace: FileWorkspaceHandle, item: TrashItemId) : Promise<Result<null, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_workspace_trash_item", { workspace, item }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1524,6 +1540,8 @@ export type TimeControl = { initialTime: bigint; increment: bigint }
 export type Token = { type: "ParenOpen" } | { type: "ParenClose" } | { type: "Comment"; value: string } | { type: "Unparsed"; value: string } | { type: "San"; value: string } | { type: "Header"; value: { tag: string; value: string } } | { type: "Nag"; value: string } | { type: "Outcome"; value: string }
 export type TournamentQuery = { options: QueryOptions<TournamentSort>; name: string | null }
 export type TournamentSort = "id" | "name"
+export type TrashCursor = { seconds: bigint; item: string }
+export type TrashItemId = string
 /**
  * Represents a UCI option definition.
  */
@@ -1602,6 +1620,8 @@ export type WorkspaceFileContent = { kind: "text"; pgn: string } | { kind: "copy
 export type WorkspaceFileType = "repertoire" | "game" | "tournament" | "puzzle" | "other"
 export type WorkspaceListing = { entries: WorkspaceEntry[]; unread: WorkspaceUnread[] }
 export type WorkspaceMetadata = { type: WorkspaceFileType; tags: string[] }
+export type WorkspaceTrashItem = { item: TrashItemId; kind: WorkspaceEntryKind | null; name: string; originalFolder: string; trashedSeconds: bigint; category: ErrorCategory | null }
+export type WorkspaceTrashPage = { items: WorkspaceTrashItem[]; olderCount: bigint; cursor: TrashCursor | null }
 export type WorkspaceUnread = { name: string; kind: WorkspaceEntryKind | null; category: ErrorCategory; parent: FileWorkspaceHandle | null }
 export type WriteExpectation = { kind: "game"; stamp: string } | { kind: "linkedGame"; stamp: string; revision: string } | { kind: "append" }
 export type WriteStamp = { stamp: string | null; revision: string | null; linked?: LinkedGameLocator | null }

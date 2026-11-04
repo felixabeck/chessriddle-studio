@@ -723,7 +723,6 @@ impl CommittedRemoval {
         }
     }
 
-    #[cfg(test)]
     pub(crate) fn into_parts(self) -> (usize, Option<Error>) {
         (self.removed_entries, self.failure)
     }

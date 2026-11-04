@@ -22,6 +22,78 @@ const GAME_ROW_HEIGHT_PX = 30;
 // Covers 10 attempts × 3 animation frames each, plus a 2-frame margin for queued callbacks.
 const SCROLL_SETTLE_FRAMES = 32;
 
+for (const compact of [false, true]) {
+    test(`files-preview: Trash view ${compact ? "320px at 200%" : "standard"}`, async ({
+        page,
+        mockScenario,
+        assertNoHorizontalOverflow,
+    }) => {
+        await page.setViewportSize({ width: compact ? 320 : 1280, height: compact ? 3200 : 900 });
+        await page.addInitScript(
+            (scale) => localStorage.setItem("font-size", String(scale)),
+            compact ? 200 : 100,
+        );
+        const item = "11111111-1111-4111-8111-111111111111";
+        await mockScenario({
+            commands: filesWorkspaceCommands([[]], {
+                list_workspace_trash: {
+                    result: {
+                        items: [
+                            {
+                                item,
+                                kind: "directory",
+                                name: "Tournament preparation",
+                                originalFolder: "Archive/Openings",
+                                trashedSeconds: 1700000000,
+                                category: null,
+                            },
+                            {
+                                item: "22222222-2222-4222-8222-222222222222",
+                                kind: null,
+                                name: "Unreadable bucket",
+                                originalFolder: "",
+                                trashedSeconds: 1699900000,
+                                category: "permission",
+                            },
+                        ],
+                        olderCount: 3,
+                        cursor: {
+                            seconds: 1699900000,
+                            item: "22222222-2222-4222-8222-222222222222",
+                        },
+                    },
+                },
+                restore_workspace_trash_item: { result: null },
+                delete_workspace_trash_item: { result: null },
+                empty_workspace_trash: { result: null },
+            }),
+        });
+        await page.goto("/library");
+        await expect(page.locator("html")).toHaveCSS("font-size", compact ? "32px" : "16px");
+        await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+        const trash = page.getByRole("region", { name: "Trash", exact: true });
+        await expect(trash.getByText("Archive/Openings", { exact: true })).toBeVisible();
+        await expect(
+            trash.getByRole("button", { name: "Restore", exact: true }).first(),
+        ).toBeEnabled();
+        await expect(
+            trash.getByRole("button", { name: "Restore", exact: true }).last(),
+        ).toBeDisabled();
+        await assertNoHorizontalOverflow();
+        await expect(page).toHaveScreenshot(`files-trash-${compact ? "compact" : "standard"}.png`, {
+            fullPage: true,
+        });
+        await trash.getByRole("button", { name: "Restore", exact: true }).first().click();
+        const dialog = page.getByRole("dialog", { name: "Restore file", exact: true });
+        await dialog.getByRole("button", { name: "Restore", exact: true }).click();
+        await expect(dialog).toHaveCount(0);
+        const invocations = await page.evaluate(() => window.__E2E_TAURI__.invocations());
+        expect(
+            invocations.find(({ command }) => command === "restore_workspace_trash_item")?.args,
+        ).toEqual({ workspace: filesWorkspaceFixture.workspace, item });
+    });
+}
+
 const mandateComments = {
     Nf3: "62",
     Be3: "59. Olvidé mi preparación. Tengo Ld3 en mi prep.",

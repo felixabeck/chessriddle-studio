@@ -80,10 +80,10 @@ use crate::infra::keyed_locks::{KeyedLockLease, KeyedLocks};
 use crate::infra::operations::{OperationLease, OperationRegistry};
 
 use crate::file_workspace::{
-    create_workspace_directory, create_workspace_file, issue_file_workspace, list_file_workspace,
-    map_picker_join, move_workspace_entry, permanently_delete_workspace_entry,
-    rename_workspace_file, restore_workspace_entry, trash_workspace_entry,
-    write_workspace_file_metadata,
+    create_workspace_directory, create_workspace_file, delete_workspace_trash_item,
+    empty_workspace_trash, issue_file_workspace, list_file_workspace, list_workspace_trash,
+    map_picker_join, move_workspace_entry, rename_workspace_file, restore_workspace_trash_item,
+    trash_workspace_entry, write_workspace_file_metadata,
 };
 use crate::lexer::lex_pgn;
 use crate::lichess::{
@@ -2118,8 +2118,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             rename_workspace_file,
             write_workspace_file_metadata,
             trash_workspace_entry,
-            restore_workspace_entry,
-            permanently_delete_workspace_entry,
+            list_workspace_trash,
+            empty_workspace_trash,
+            restore_workspace_trash_item,
+            delete_workspace_trash_item,
             get_best_moves,
             prepare_engine_search,
             analyze_game,
@@ -4535,8 +4537,10 @@ mod blocking_offload_scans {
                     "rename_workspace_file",
                     "write_workspace_file_metadata",
                     "trash_workspace_entry",
-                    "restore_workspace_entry",
-                    "permanently_delete_workspace_entry",
+                    "list_workspace_trash",
+                    "empty_workspace_trash",
+                    "restore_workspace_trash_item",
+                    "delete_workspace_trash_item",
                 ][..],
             ),
         ] {
@@ -5014,11 +5018,11 @@ mod blocking_offload_scans {
                 "write_workspace_file_metadata_blocking",
             ),
             ("pub async fn trash_workspace_entry(", "trash_entry"),
-            ("pub async fn restore_workspace_entry(", "restore_entry"),
             (
-                "async fn permanently_delete_entry(",
-                "permanently_delete_entry_blocking",
+                "pub async fn restore_workspace_trash_item(",
+                "restore_trash_item",
             ),
+            ("async fn remove_trash(", "remove_trash_blocking"),
         ] {
             assert_offloads(file_workspace, signature, worker);
         }
@@ -5034,13 +5038,11 @@ mod blocking_offload_scans {
                 "{signature} must forward to save_native_export: {body}"
             );
         }
-        let delete_command = body_at_indent(
-            file_workspace,
-            "pub async fn permanently_delete_workspace_entry(",
-        );
+        let delete_command =
+            body_at_indent(file_workspace, "pub async fn delete_workspace_trash_item(");
         assert!(
-            delete_command.contains("permanently_delete_entry"),
-            "permanently_delete_workspace_entry must forward to permanently_delete_entry: {delete_command}"
+            delete_command.contains("remove_trash"),
+            "delete_workspace_trash_item must forward to remove_trash: {delete_command}"
         );
         let list_command = body_at_indent(file_workspace, "pub async fn list_file_workspace(");
         assert_eq!(
@@ -5176,12 +5178,12 @@ mod blocking_offload_scans {
         for signature in [
             "fn create_workspace_directory_inner(",
             "fn trash_entry(",
-            "fn restore_entry(",
+            "fn restore_trash_item(",
             "fn move_workspace_entry_blocking(",
             "fn rename_workspace_file_blocking(",
             "fn write_workspace_file_metadata_blocking(",
             "fn create_workspace_file_blocking(",
-            "fn permanently_delete_entry_blocking(",
+            "fn remove_trash_blocking(",
         ] {
             let body = body_at_indent(source, signature);
             let signature_text = body
@@ -5566,7 +5568,7 @@ mod blocking_offload_scans {
                 "create_workspace_directory_inner",
             ),
             ("file_workspace.rs", file_workspace, "trash_entry"),
-            ("file_workspace.rs", file_workspace, "restore_entry"),
+            ("file_workspace.rs", file_workspace, "restore_trash_item"),
             (
                 "file_workspace.rs",
                 file_workspace,

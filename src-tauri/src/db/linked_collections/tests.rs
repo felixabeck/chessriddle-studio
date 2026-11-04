@@ -941,7 +941,7 @@ mod native_tests {
         }
 
         fn trash(&self, file: &FileWorkspaceHandle) {
-            crate::file_workspace::trash_entry(
+            let _trash_item = crate::file_workspace::trash_entry(
                 &self.state.pgn_path_authority,
                 &self.state.workspace_mutation,
                 &self.workspace,
@@ -7934,7 +7934,7 @@ mod native_tests {
         .await
         .unwrap();
         assert_eq!(fixture.list()[0].id, collection.id);
-        crate::file_workspace::trash_workspace_entry(
+        let trash_item = crate::file_workspace::trash_workspace_entry(
             fixture.workspace.clone(),
             file.clone(),
             app.state::<AppState>(),
@@ -7953,9 +7953,9 @@ mod native_tests {
                 .is_err(),
             "trashed source was still advertised as a current collection"
         );
-        crate::file_workspace::restore_workspace_entry(
+        crate::file_workspace::restore_workspace_trash_item(
             fixture.workspace.clone(),
-            file,
+            trash_item,
             app.state::<AppState>(),
         )
         .await

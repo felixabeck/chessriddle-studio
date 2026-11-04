@@ -687,6 +687,7 @@ export function filesWorkspaceCommands(
             },
         },
         list_file_workspace: { results: listResults.map((entries) => ({ entries, unread: [] })) },
+        list_workspace_trash: { result: { items: [], olderCount: 0, cursor: null } },
         ...overrides,
     };
 }

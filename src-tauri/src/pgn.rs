@@ -2202,7 +2202,7 @@ mod tests {
                 purpose == WorkspaceFileType::Game
             );
 
-            trash_entry(
+            let _trash_item = trash_entry(
                 &state.pgn_path_authority,
                 &state.workspace_mutation,
                 &fixture.workspace,
@@ -2293,7 +2293,7 @@ mod tests {
                     // The bytes have been read and the entry guard has already passed.
                     // Rename changes ctime, so let the snapshot retry after this one move.
                     if hook_attempts.fetch_add(1, Ordering::SeqCst) == 0 {
-                        trash_entry(
+                        let _trash_item = trash_entry(
                             &authority,
                             &mutation,
                             &workspace,
@@ -2364,7 +2364,7 @@ mod tests {
             count_workspace_games(state, &file, &token).await.unwrap(),
             1
         );
-        trash_entry(
+        let _trash_item = trash_entry(
             &state.pgn_path_authority,
             &state.workspace_mutation,
             &fixture.workspace,

@@ -1096,7 +1096,7 @@ pub(crate) struct WorkspaceMutationTarget {
     pub(crate) leaf: OsString,
     pub(crate) identity: (u64, u64),
     pub(crate) is_dir: bool,
-    path: PathBuf,
+    pub(crate) path: PathBuf,
 }
 /// The failure classes shared by database probes, search-index loading and sidecar cleanup.
 /// Callers map the classes differently because absence, a wrong object kind and a malformed
@@ -5131,6 +5131,63 @@ impl PathAuthority {
             true,
             Some(trash_prefix),
         )
+    }
+
+    pub(crate) fn trash_listing_snapshot(
+        &self,
+        workspace: &FileWorkspaceHandle,
+        trash_prefix: &OsStr,
+    ) -> Result<DirectoryListingSnapshot, Error> {
+        let mut snapshot = self.directory_listing_snapshot(
+            workspace.path_ref(),
+            &[EntryPurpose::PgnFile, EntryPurpose::PgnWorkspace],
+            true,
+            None,
+        )?;
+        let prefix = snapshot.root.join(trash_prefix);
+        snapshot.entries.retain(|entry| {
+            entry
+                .path
+                .to_path()
+                .is_ok_and(|path| path.starts_with(&prefix))
+        });
+        Ok(snapshot)
+    }
+
+    pub(crate) fn retained_listing_records(
+        snapshot: &DirectoryListingSnapshot,
+        cancellation: &CancellationToken,
+    ) -> Result<BTreeSet<String>, Error> {
+        let mut retained = BTreeSet::new();
+        for recorded in &snapshot.entries {
+            if cancellation.is_cancelled() {
+                return Err(Error::Cancellation);
+            }
+            let shape = if recorded.target_is_dir {
+                AcquireShape::Root {
+                    parent_access: ParentAccess::Readable,
+                }
+            } else {
+                AcquireShape::File {
+                    parent_access: ParentAccess::Readable,
+                }
+            };
+            let retain = match acquire_stored_target(recorded, shape, "trash entry changed") {
+                Ok(_) => true,
+                Err(error) => {
+                    !matches!(
+                        classify_probe_error_kind(&error),
+                        ProbeErrorClass::NotFound
+                            | ProbeErrorClass::Reparse
+                            | ProbeErrorClass::WrongKind
+                    ) && !matches!(error, Error::Conflict(_) | Error::InvalidInput(_))
+                }
+            };
+            if retain {
+                retained.insert(recorded.id.id.clone());
+            }
+        }
+        Ok(retained)
     }
 
     fn listing_candidate(
@@ -9736,30 +9793,40 @@ impl PathAuthority {
             .cloned()
             .ok_or_else(|| Error::InvalidInput("workspace entry is not persistent".into()))?;
         let removed_path = removed.stored.path.to_path()?;
+        self.remove_workspace_path(
+            &removed_path,
+            removed.stored.target_is_dir,
+            status,
+            dropped_engine_executables,
+        )
+    }
+
+    pub(crate) fn remove_workspace_path(
+        &mut self,
+        removed_path: &Path,
+        is_dir: bool,
+        status: WorkspaceRemovalStatus,
+        dropped_engine_executables: &mut Vec<PathRef>,
+    ) -> Result<(CommitDurability, usize), Error> {
         let mut candidate = self.persistent.clone();
-        if status == WorkspaceRemovalStatus::Complete {
-            candidate.remove(&handle.path_ref().id);
-        }
-        if removed.stored.target_is_dir {
-            candidate.retain(|id, entry| {
-                if id == &handle.path_ref().id {
-                    return status == WorkspaceRemovalStatus::Partial;
-                }
-                let Ok(path) = entry.stored.path.to_path() else {
-                    return true;
-                };
-                let is_descendant =
-                    path != removed_path && path.strip_prefix(&removed_path).is_ok();
-                if !is_descendant {
-                    return true;
-                }
-                if status == WorkspaceRemovalStatus::Complete {
-                    return false;
-                }
-                refresh_entry(entry);
-                entry.availability == PathAvailability::Available
-            });
-        }
+        candidate.retain(|id, entry| {
+            let _ = id;
+            let Ok(path) = entry.stored.path.to_path() else {
+                return true;
+            };
+            if path == removed_path {
+                return status == WorkspaceRemovalStatus::Partial;
+            }
+            let is_descendant = is_dir && path.strip_prefix(removed_path).is_ok();
+            if !is_descendant {
+                return true;
+            }
+            if status == WorkspaceRemovalStatus::Complete {
+                return false;
+            }
+            refresh_entry(entry);
+            entry.availability == PathAvailability::Available
+        });
 
         let removed_ids: Vec<_> = self
             .persistent
@@ -9813,26 +9880,67 @@ impl PathAuthority {
         old_root: &Path,
         new_root: &Path,
     ) -> Result<(), Error> {
+        self.rebase_workspace_records(old_root, new_root, None)
+    }
+
+    pub(crate) fn restore_workspace_records(
+        &mut self,
+        old_root: &Path,
+        new_root: &Path,
+        parent_identity: (u64, u64),
+    ) -> Result<(), Error> {
+        self.rebase_workspace_records(old_root, new_root, Some(parent_identity))
+    }
+
+    fn rebase_workspace_records(
+        &mut self,
+        old_root: &Path,
+        new_root: &Path,
+        parent_identity: Option<(u64, u64)>,
+    ) -> Result<(), Error> {
         let mut candidate = self.persistent.clone();
         let mut changed = false;
         for entry in candidate.values_mut() {
-            let Ok(path) = entry.stored.path.to_path() else {
-                continue;
-            };
-            let Ok(suffix) = path.strip_prefix(old_root) else {
-                continue;
-            };
-            let rebased = new_root.join(suffix);
-            // A namespace rename cannot change the object. Keep the pre-rename identity instead
-            // of reopening `rebased`, which could bind an attacker replacement after commit.
-            entry.stored.path = NativePath::from_path(&rebased);
-            entry.availability = PathAvailability::Available;
-            changed = true;
+            let path = entry.stored.path.to_path()?;
+            if let Ok(suffix) = path.strip_prefix(old_root) {
+                let target = if suffix.as_os_str().is_empty() {
+                    new_root.to_path_buf()
+                } else {
+                    new_root.join(suffix)
+                };
+                entry.stored.path = NativePath::from_path(&target);
+                if path == old_root && !entry.stored.target_is_dir {
+                    if let Some((a, b)) = parent_identity {
+                        entry.stored.parent_identity = Some(Identity { a, b });
+                    }
+                }
+                entry.availability = PathAvailability::Available;
+                changed = true;
+            }
         }
         if changed {
             require_durable(self.commit_candidate(candidate, None)?)?;
         }
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fill_trash_registry_for_test(
+        &mut self,
+        workspace: &FileWorkspaceHandle,
+    ) -> Result<usize, Error> {
+        let template = self
+            .persistent
+            .get(&workspace.path_ref().id)
+            .cloned()
+            .ok_or_else(|| Error::InvalidInput("test workspace missing".into()))?;
+        for index in self.persistent.len()..MAX_AUTHORITY_IDS {
+            let mut entry = template.clone();
+            entry.stored.id.id = format!("trash-capacity-{index}");
+            self.persistent.insert(entry.stored.id.id.clone(), entry);
+        }
+        require_durable(self.save()?)?;
+        Ok(self.persistent.len())
     }
     fn take_dialog(
         &mut self,

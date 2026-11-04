@@ -1010,8 +1010,8 @@ async function submitPurgeAndOpenFailureDialog(
 ) {
     await mockScenario({
         commands: filesWorkspaceCommands([[openingDirectory], [], [refreshedDirectory]], {
-            trash_workspace_entry: { result: null },
-            permanently_delete_workspace_entry: { error: purgeError },
+            trash_workspace_entry: { result: "11111111-1111-4111-8111-111111111111" },
+            delete_workspace_trash_item: { error: purgeError },
         }),
     });
     await page.goto("/library");
@@ -1046,7 +1046,7 @@ async function assertPurgeInvocationAndRefresh(page: Page) {
                     "issue_file_workspace",
                     "list_file_workspace",
                     "trash_workspace_entry",
-                    "permanently_delete_workspace_entry",
+                    "delete_workspace_trash_item",
                 ].includes(command),
             ),
     );
@@ -1055,7 +1055,7 @@ async function assertPurgeInvocationAndRefresh(page: Page) {
         "list_file_workspace",
         "trash_workspace_entry",
         "list_file_workspace",
-        "permanently_delete_workspace_entry",
+        "delete_workspace_trash_item",
         "list_file_workspace",
     ]);
     expect(fileInvocations[2]).toEqual({
@@ -1063,8 +1063,8 @@ async function assertPurgeInvocationAndRefresh(page: Page) {
         args: { workspace, entry: openingDirectory.handle },
     });
     expect(fileInvocations[4]).toEqual({
-        command: "permanently_delete_workspace_entry",
-        args: { workspace, entry: openingDirectory.handle },
+        command: "delete_workspace_trash_item",
+        args: { workspace, item: "11111111-1111-4111-8111-111111111111" },
     });
     expect(fileInvocations.filter(({ command }) => command === "list_file_workspace")).toHaveLength(
         3,
@@ -1317,9 +1317,28 @@ for (const locale of ["en-US", "de-DE"] as const) {
                 localStorage.setItem("i18nextLng", language);
             }, locale);
             await mockScenario({
-                commands: filesWorkspaceCommands([[pgnFile], [pgnFile]], {
+                commands: filesWorkspaceCommands([[pgnFile], []], {
                     ...pgnFileCommands,
                     trash_workspace_entry: { error: durabilityUncertainPayload },
+                    list_workspace_trash: {
+                        results: [
+                            { items: [], olderCount: 0, cursor: null },
+                            {
+                                items: [
+                                    {
+                                        item: "11111111-1111-4111-8111-111111111111",
+                                        kind: "file",
+                                        name: pgnFile.name,
+                                        originalFolder: "",
+                                        trashedSeconds: 1700000000,
+                                        category: null,
+                                    },
+                                ],
+                                olderCount: 0,
+                                cursor: null,
+                            },
+                        ],
+                    },
                 }),
             });
             await page.goto("/library");
@@ -1337,6 +1356,9 @@ for (const locale of ["en-US", "de-DE"] as const) {
             await expect(dialog.getByRole("alert")).toHaveText(copy["Common.DurabilityUncertain"]);
             await expect(page.locator(".mantine-Notification-root")).toHaveCount(0);
             await expect(page.locator("body")).not.toContainText("typed durability diagnostic");
+            await expect(
+                page.getByRole("region", { name: copy["Files.Trash"], exact: true }),
+            ).toContainText(pgnFile.name);
             await expect(page.locator("body")).toContainText(
                 copy["Files.MovedToTrash"].replaceAll("{{name}}", pgnFile.name),
             );

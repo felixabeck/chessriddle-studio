@@ -1303,7 +1303,8 @@ function createWorkspacePgnFixture(invoke, workspace, name, pgn, type = "other")
 async function verifyWorkspaceDeletionOutcome(session, filesWorkspace) {
   const name = "verify-deletion-outcome";
   const primary = join(filesWorkspace, `${name}.pgn`);
-  const sidecar = join(filesWorkspace, `${name}.info`);
+  let sidecar = join(filesWorkspace, `${name}.info`);
+  let trashedPrimary;
   const unrelated = join(filesWorkspace, `${filesRowName}.pgn`);
   const workspace = { id: { id: filesWorkspaceId }, kind: "fileWorkspace" };
   const invokeListing = `window.__TAURI_INTERNALS__.invoke("list_file_workspace", { workspace: ${JSON.stringify(workspace)}, ticket: null })`;
@@ -1324,13 +1325,24 @@ async function verifyWorkspaceDeletionOutcome(session, filesWorkspace) {
     entry = before.value?.entries?.find((candidate) => candidate.name === name);
     if (!entry?.handle?.id?.id)
       throw new Error(`fixture handle unavailable: ${JSON.stringify(before)}`);
-    // Acquire the real handle first, so malformed metadata cannot prevent registration.
+    const trashed = await invokeAndWait(
+      session,
+      "workspace deletion fixture trash",
+      "__verifyAppDeletionTrash",
+      `window.__TAURI_INTERNALS__.invoke("trash_workspace_entry", { workspace: ${JSON.stringify(workspace)}, entry: ${JSON.stringify(entry.handle)} })`,
+    );
+    if (typeof trashed.value !== "string" || !/^[0-9a-f-]{36}$/.test(trashed.value))
+      throw new Error(`trash item unavailable: ${JSON.stringify(trashed)}`);
+    sidecar = join(filesWorkspace, ".en-croissant-trash", trashed.value, `${name}.info`);
+    trashedPrimary = join(filesWorkspace, ".en-croissant-trash", trashed.value, `${name}.pgn`);
+    // Corrupt only the disposable sidecar after the real move has committed.
+    await rm(sidecar, { force: true });
     await mkdir(sidecar);
     deletion = await invokeAndWait(
       session,
       "workspace deletion outcome",
       "__verifyAppDeletionOutcome",
-      `window.__TAURI_INTERNALS__.invoke("permanently_delete_workspace_entry", { workspace: ${JSON.stringify(workspace)}, entry: ${JSON.stringify(entry.handle)} })`,
+      `window.__TAURI_INTERNALS__.invoke("delete_workspace_trash_item", { workspace: ${JSON.stringify(workspace)}, item: ${JSON.stringify(trashed.value)} })`,
     );
     if (typeof deletion.rejected === "string") {
       try {
@@ -1373,7 +1385,7 @@ async function verifyWorkspaceDeletionOutcome(session, filesWorkspace) {
     detail,
   );
   check(
-    !setupError && !existsSync(primary),
+    !setupError && !existsSync(primary) && !existsSync(trashedPrimary),
     "WD4 post-commit rejection leaves the primary file deleted",
     detail,
   );
@@ -4448,6 +4460,77 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
     await waitForPracticeOwners(`${label} startup to retain practice capabilities`);
     return reconciledRegistry;
   };
+
+  const trashWorkspace = { id: { id: filesWorkspaceId }, kind: "fileWorkspace" };
+  const trashFolder = join(filesWorkspace, "Trash restart fixture");
+  const trashFilename = "restart-trash.pgn";
+  const restoredTrashFile = join(trashFolder, trashFilename);
+  const rootTrashConflict = join(filesWorkspace, trashFilename);
+  const rootTrashConflictBytes = '[Event "Root conflict"]\n\n1. d4 *\n';
+  await mkdir(trashFolder);
+  await writeFile(restoredTrashFile, filesGamePgn);
+  await writeFile(rootTrashConflict, rootTrashConflictBytes);
+  const trashBefore = await invokeJsonAndWait(
+    session,
+    "trash restart fixture listing",
+    "__trashRestartBefore",
+    `window.__TAURI_INTERNALS__.invoke("list_file_workspace", { workspace: ${JSON.stringify(trashWorkspace)}, ticket: null })`,
+  );
+  const trashSource = trashBefore.value?.entries
+    ?.find((entry) => entry.name === "Trash restart fixture")
+    ?.children?.find((entry) => entry.name === "restart-trash");
+  if (!trashSource?.handle)
+    throw new Error(`trash restart source missing: ${JSON.stringify(trashBefore)}`);
+  const trashMoved = await invokeAndWait(
+    session,
+    "trash restart move",
+    "__trashRestartMoved",
+    `window.__TAURI_INTERNALS__.invoke("trash_workspace_entry", { workspace: ${JSON.stringify(trashWorkspace)}, entry: ${JSON.stringify(trashSource.handle)} })`,
+  );
+  if (typeof trashMoved.value !== "string" || !/^[0-9a-f-]{36}$/.test(trashMoved.value))
+    throw new Error(`trash restart move failed: ${JSON.stringify(trashMoved)}`);
+  check(
+    !existsSync(restoredTrashFile),
+    "TR0 native trash removes the subfolder source before restart",
+  );
+  await reopenAssertionSession("workspace-trash-restart");
+  const trashAfter = await invokeJsonAndWait(
+    session,
+    "trash listing after restart",
+    "__trashRestartAfter",
+    `window.__TAURI_INTERNALS__.invoke("list_workspace_trash", { workspace: ${JSON.stringify(trashWorkspace)}, cursor: null, ticket: null })`,
+  );
+  check(
+    trashAfter.value?.items?.some(
+      (entry) =>
+        entry.item === trashMoved.value && entry.originalFolder === "Trash restart fixture",
+    ),
+    "TR1 native trash listing recovers the item and original subfolder after restart",
+    JSON.stringify(trashAfter),
+  );
+  const trashRestored = await invokeAndWait(
+    session,
+    "trash restore after restart",
+    "__trashRestartRestored",
+    `window.__TAURI_INTERNALS__.invoke("restore_workspace_trash_item", { workspace: ${JSON.stringify(trashWorkspace)}, item: ${JSON.stringify(trashMoved.value)} })`,
+  );
+  check(
+    !trashRestored.rejected &&
+      (await readFile(restoredTrashFile, "utf8").catch(() => null)) === filesGamePgn,
+    "TR2 item-id restore after restart returns exact bytes to the original subfolder",
+    JSON.stringify(trashRestored),
+  );
+  check(
+    (await readFile(rootTrashConflict, "utf8")) === rootTrashConflictBytes,
+    "TR3 subfolder restore preserves the root filename conflict",
+  );
+  check(
+    !existsSync(join(filesWorkspace, ".en-croissant-trash", trashMoved.value)) &&
+      !existsSync(join(filesWorkspace, ".en-croissant-trash", `${trashMoved.value}.origin`)),
+    "TR4 restore after restart removes its bucket and origin record",
+  );
+  await rm(trashFolder, { recursive: true });
+  await rm(rootTrashConflict);
 
   const largeDeckSnapshot = await loadPracticeDeckThroughIpc(
     session,

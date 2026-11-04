@@ -25,12 +25,15 @@ import AppModal from "../common/AppModal";
 import type { Entry, UsableEntry, FileType } from "./file";
 import { FILE_TYPES, workspaceListingToEntries } from "./file";
 import { filesMutationErrorMessage, runFilesMutationWithRefresh } from "./workspaceError";
+import { childUnreadableMessage } from "./DirectoryTree";
 import {
   reconcileWorkspaceListing,
   workspaceListingKey,
   type WorkspaceListingCache,
 } from "./workspaceListing";
-import type { FileWorkspaceHandle } from "@/bindings";
+import type { FileWorkspaceHandle, TrashItemId, TrashCursor } from "@/bindings";
+
+type TrashTarget = { item: TrashItemId; name: string };
 
 const fileAction = { file: "file", folder: "folder", rename: "rename", edit: "edit" } as const;
 type FileAction = (typeof fileAction)[keyof typeof fileAction];
@@ -105,10 +108,13 @@ export function useFileWorkspace(
   const [name, setName] = useState("");
   const [fileType, setFileType] = useState<FileType>("other");
   const [actionError, setActionError] = useState("");
-  const [trashed, setTrashed] = useState<UsableEntry | null>(null);
+  const [trashed, setTrashed] = useState<TrashTarget | null>(null);
+  const [uncertainTrashName, setUncertainTrashName] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<UsableEntry | null>(null);
-  const [restoreTarget, setRestoreTarget] = useState<UsableEntry | null>(null);
-  const [purgeTarget, setPurgeTarget] = useState<UsableEntry | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<TrashTarget | null>(null);
+  const [purgeTarget, setPurgeTarget] = useState<TrashTarget | null>(null);
+  const [emptyTarget, setEmptyTarget] = useState(false);
+  const [trashCursor, setTrashCursor] = useState<TrashCursor | null>(null);
   const [moveTarget, setMoveTarget] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -123,6 +129,17 @@ export function useFileWorkspace(
   }, [action]);
   const workspaceKey = workspace ? workspaceListingKey(workspace) : null;
   const workspaceIdentity = workspace ? fileWorkspaceKey(workspace) : null;
+  const trashKey = workspace ? ["workspace-trash", workspaceIdentity, trashCursor] : null;
+  const trashOwner = useNativeRequestOwner(trashKey);
+  const {
+    data: trashPage,
+    error: trashError,
+    mutate: mutateTrash,
+  } = useSWR(trashKey, async () =>
+    trashOwner!.run(async (signal) =>
+      tauri.listWorkspaceTrash(workspace!, trashCursor, { signal }),
+    ),
+  );
   const environment = useRef({ workspaceIdentity, cache: listingCache.cache });
   environment.current = { workspaceIdentity, cache: listingCache.cache };
   useEffect(() => {
@@ -131,6 +148,12 @@ export function useFileWorkspace(
     setActionError("");
     setSubmitting(false);
     setMoving(false);
+    setTrashed(null);
+    setUncertainTrashName(null);
+    setRestoreTarget(null);
+    setPurgeTarget(null);
+    setEmptyTarget(false);
+    setTrashCursor(null);
     return () => {
       presentation.current = null;
       moveInFlight.current = null;
@@ -143,6 +166,12 @@ export function useFileWorkspace(
     ),
   );
   const failure = listingFailure(error);
+  const trashFailure = listingFailure(trashError);
+  const trashLoadFailureMessage =
+    rootFailureMessage("files", trashError, t) ??
+    t("Files.LoadFailed", {
+      defaultValue: "Files could not be loaded. Please try again.",
+    });
   const loadFailureMessage =
     rootFailureMessage("files", error, t) ??
     t("Files.LoadFailed", {
@@ -406,10 +435,17 @@ export function useFileWorkspace(
     );
   }
   async function clearTrashAndRelist() {
+    if (environment.current.workspaceIdentity !== workspaceIdentity) return;
     setTrashed(null);
+    setUncertainTrashName(null);
     // SWR reports list failures separately; they must not replace the native mutation outcome
     // with a false generic failure or hide its applied-despite-error warning.
-    await mutate().catch(() => {});
+    await refreshListings();
+  }
+  async function refreshListings() {
+    if (environment.current.workspaceIdentity !== workspaceIdentity) return;
+    setTrashCursor(null);
+    await Promise.allSettled([mutate(), mutateTrash()]);
   }
   return {
     workspace,
@@ -454,6 +490,14 @@ export function useFileWorkspace(
     ),
     trash: (
       <>
+        {uncertainTrashName && (
+          <Text size="sm">
+            {t("Files.MovedToTrash", {
+              defaultValue: "Moved {{name}} to trash.",
+              name: uncertainTrashName,
+            })}
+          </Text>
+        )}
         {trashed && (
           <Group wrap="wrap" miw={0}>
             <Text size="sm" miw={0}>
@@ -474,6 +518,97 @@ export function useFileWorkspace(
               {t("Files.DeletePermanently", { defaultValue: "Delete permanently" })}
             </Button>
           </Group>
+        )}
+        {workspace && (
+          <Stack
+            gap="xs"
+            miw={0}
+            className="wrap-anywhere"
+            role="region"
+            aria-label={t("Files.Trash", { defaultValue: "Trash" })}
+          >
+            <Group justify="space-between" wrap="wrap">
+              <Text fw={600}>{t("Files.Trash", { defaultValue: "Trash" })}</Text>
+              <Button
+                size="xs"
+                {...libraryButtonProps}
+                color="danger"
+                onClick={() => setEmptyTarget(true)}
+              >
+                {t("Files.EmptyTrash", { defaultValue: "Empty trash" })}
+              </Button>
+            </Group>
+            {trashFailure !== "silent" && (
+              <Text c="danger" role="alert">
+                {trashLoadFailureMessage}
+              </Text>
+            )}
+            {trashFailure !== "silent" && (
+              <Button
+                size="xs"
+                {...libraryButtonProps}
+                onClick={() => void mutateTrash().catch(() => {})}
+              >
+                {t("Common.Retry")}
+              </Button>
+            )}
+            {(trashPage?.items ?? []).map((row) => (
+              <Box
+                key={row.item}
+                p="sm"
+                style={{
+                  border: "1px solid var(--cf-border)",
+                  borderRadius: "var(--mantine-radius-md)",
+                  background: "var(--cf-surface-inset)",
+                }}
+              >
+                <Text size="sm" fw={500}>
+                  {row.name}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  {row.originalFolder ||
+                    t("Files.CollectionRoot", { defaultValue: "Collection root" })}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  {new Date(Number(row.trashedSeconds) * 1000).toLocaleString()}
+                </Text>
+                {row.category && (
+                  <Text size="sm" c="danger">
+                    {childUnreadableMessage(row.category, t)}
+                  </Text>
+                )}
+                <Group wrap="wrap" gap="xs" mt="xs">
+                  <Button
+                    size="xs"
+                    {...libraryButtonProps}
+                    disabled={!!row.category}
+                    onClick={() => setRestoreTarget(row)}
+                  >
+                    {t("Files.Restore", { defaultValue: "Restore" })}
+                  </Button>
+                  <Button
+                    size="xs"
+                    {...libraryButtonProps}
+                    color="danger"
+                    disabled={!!row.category}
+                    onClick={() => setPurgeTarget(row)}
+                  >
+                    {t("Files.DeletePermanently", { defaultValue: "Delete permanently" })}
+                  </Button>
+                </Group>
+              </Box>
+            ))}
+            {trashPage?.cursor && (
+              <Button
+                size="xs"
+                {...libraryButtonProps}
+                onClick={() => setTrashCursor(trashPage.cursor)}
+              >
+                {t("Files.LoadOlderTrash", { defaultValue: "Load older items" })} (
+                {trashPage.olderCount})
+              </Button>
+            )}
+          </Stack>
         )}
       </>
     ),
@@ -703,16 +838,33 @@ export function useFileWorkspace(
             onClose={() => setDeleteTarget(null)}
             onConfirm={async () => {
               await runTrashMutationWithRefresh(
-                () => tauri.trashWorkspaceEntry(workspace!, deleteTarget.handle),
                 async () => {
-                  setTrashed(deleteTarget);
+                  try {
+                    const item = await tauri.trashWorkspaceEntry(workspace!, deleteTarget.handle);
+                    if (environment.current.workspaceIdentity === workspaceIdentity) {
+                      setUncertainTrashName(null);
+                      setTrashed({ item, name: deleteTarget.name });
+                    }
+                  } catch (cause) {
+                    if (
+                      normalizeError(cause).backendCategory === "durability" &&
+                      environment.current.workspaceIdentity === workspaceIdentity
+                    ) {
+                      setTrashed(null);
+                      setUncertainTrashName(deleteTarget.name);
+                    }
+                    throw cause;
+                  }
+                },
+                async () => {
+                  if (environment.current.workspaceIdentity !== workspaceIdentity) return;
                   setSelectedEntry(null);
                   // A durably successful trash still closes when the listing fails.
                   // ConfirmModal calls onClose only after this refresh resolves.
                   // A durability rejection throws after this refresh, so the confirm stays open.
-                  await mutate().catch(() => {});
+                  await refreshListings();
                 },
-                mutate,
+                refreshListings,
               );
             }}
           />
@@ -729,7 +881,7 @@ export function useFileWorkspace(
             onClose={() => setRestoreTarget(null)}
             onConfirm={async () => {
               await runTrashMutationWithRefresh(
-                () => tauri.restoreWorkspaceEntry(workspace!, restoreTarget.handle),
+                () => tauri.restoreWorkspaceTrashItem(workspace!, restoreTarget.item),
                 clearTrashAndRelist,
               );
             }}
@@ -746,7 +898,23 @@ export function useFileWorkspace(
             onClose={() => setPurgeTarget(null)}
             onConfirm={async () => {
               await runDestructiveWithRefresh(
-                () => tauri.permanentlyDeleteWorkspaceEntry(workspace!, purgeTarget.handle),
+                () => tauri.deleteWorkspaceTrashItem(workspace!, purgeTarget.item),
+                clearTrashAndRelist,
+              );
+            }}
+          />
+        )}
+        {emptyTarget && (
+          <ConfirmModal
+            title={t("Files.EmptyTrash", { defaultValue: "Empty trash" })}
+            description={t("Files.EmptyTrashConfirm", {
+              defaultValue: "Permanently delete every item in this collection's trash?",
+            })}
+            opened
+            onClose={() => setEmptyTarget(false)}
+            onConfirm={async () => {
+              await runDestructiveWithRefresh(
+                () => tauri.emptyWorkspaceTrash(workspace!),
                 clearTrashAndRelist,
               );
             }}

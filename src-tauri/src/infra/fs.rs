@@ -296,9 +296,14 @@ pub(crate) fn read_directory_entries_at(
     limit: Option<usize>,
     keep: &mut dyn FnMut(&OsStr) -> bool,
 ) -> Result<Vec<DirectoryEntry>, Error> {
-    read_directory_entries_with_stat_errors(dir, cancellation, limit, keep, &mut |_, _, error| {
-        Err(error)
-    })
+    read_directory_entries_with_stat_errors(
+        dir,
+        cancellation,
+        limit,
+        keep,
+        None,
+        &mut |_, _, error| Err(error),
+    )
 }
 
 /// Named stat failures belong to children. Stream, bound and cancellation failures remain fatal.
@@ -321,6 +326,7 @@ pub(crate) fn read_listing_directory_entries_at(
         cancellation,
         limit,
         keep,
+        None,
         &mut |name, kind, error| {
             unread.push((name, kind, error));
             Ok(())
@@ -335,6 +341,7 @@ fn read_directory_entries_with_stat_errors(
     cancellation: &CancellationToken,
     limit: Option<usize>,
     keep: &mut dyn FnMut(&OsStr) -> bool,
+    mut visit: Option<&mut dyn FnMut(DirectoryEntry) -> Result<(), Error>>,
     stat_error: &mut dyn FnMut(OsString, Option<DirectoryEntryKind>, Error) -> Result<(), Error>,
 ) -> Result<Vec<DirectoryEntry>, Error> {
     use rustix::fs::{self as rfs, AtFlags, FileType};
@@ -389,12 +396,17 @@ fn read_directory_entries_with_stat_errors(
             FileType::RegularFile => DirectoryEntryKind::RegularFile,
             _ => DirectoryEntryKind::Other,
         };
-        result.push(DirectoryEntry {
+        let entry = DirectoryEntry {
             name,
             kind,
             identity: unix::raw_stat_identity(&stat),
             modified_seconds: stat.st_mtime,
-        });
+        };
+        if let Some(visit) = visit.as_mut() {
+            visit(entry)?;
+        } else {
+            result.push(entry);
+        }
         Ok(())
     })?;
     if cancellation.is_cancelled() {
@@ -402,6 +414,43 @@ fn read_directory_entries_with_stat_errors(
     }
     unix::ensure_directory_not_removed(dir)?;
     Ok(result)
+}
+
+/// Visits a directory without retaining its contents or imposing a total-entry bound.
+pub(crate) fn visit_directory_entries_at(
+    dir: &File,
+    cancellation: &CancellationToken,
+    visit: &mut dyn FnMut(DirectoryEntry) -> Result<(), Error>,
+) -> Result<(), Error> {
+    #[cfg(unix)]
+    {
+        read_directory_entries_with_stat_errors(
+            dir,
+            cancellation,
+            None,
+            &mut |_| true,
+            Some(visit),
+            &mut |_, _, error| {
+                if error.is_missing_entry() {
+                    Ok(())
+                } else {
+                    Err(error)
+                }
+            },
+        )?;
+        Ok(())
+    }
+    #[cfg(windows)]
+    {
+        win::visit_directory(dir, cancellation, &mut |entry| {
+            visit(DirectoryEntry {
+                name: entry.name,
+                kind: entry.kind,
+                identity: entry.identity,
+                modified_seconds: win::filetime_to_unix_seconds(entry.last_write_time),
+            })
+        })
+    }
 }
 
 /// Windows counterpart of the unix descriptor-relative read.
@@ -3947,11 +3996,26 @@ mod win {
         cancellation: &CancellationToken,
         limit: Option<usize>,
     ) -> Result<Vec<EnumeratedEntry>, Error> {
+        let mut entries = Vec::new();
+        visit_directory(dir, cancellation, &mut |entry| {
+            if let Some(limit) = limit {
+                super::check_directory_listing_bound(entries.len(), limit)?;
+            }
+            entries.push(entry);
+            Ok(())
+        })?;
+        Ok(entries)
+    }
+
+    pub(super) fn visit_directory(
+        dir: &File,
+        cancellation: &CancellationToken,
+        visit: &mut dyn FnMut(EnumeratedEntry) -> Result<(), Error>,
+    ) -> Result<(), Error> {
         let volume = opened_file_identity(dir)?.0;
         let mut restart_scan = true;
         let mut buffer_len = DIRECTORY_ENUMERATION_START_BYTES;
         let mut overflow_retries = 0_u8;
-        let mut entries = Vec::new();
         loop {
             if cancellation.is_cancelled() {
                 return Err(Error::Cancellation);
@@ -3986,10 +4050,17 @@ mod win {
             }
             overflow_retries = 0;
             let used = status_block.Information.min(buffer_bytes);
-            parse_directory_page(&buffer, used, volume, &mut entries, limit)?;
+            let mut page = Vec::new();
+            parse_directory_page(&buffer, used, volume, &mut page, None)?;
+            for entry in page {
+                if cancellation.is_cancelled() {
+                    return Err(Error::Cancellation);
+                }
+                visit(entry)?;
+            }
             restart_scan = false;
         }
-        Ok(entries)
+        Ok(())
     }
 
     /// One directory read against a retained handle. The NT enumeration itself is

@@ -9,9 +9,9 @@ use crate::{
     infra::blocking::BLOCKING_GATEWAY,
     infra::cancellable_lock::lock_std_cancellable,
     infra::path_authority::{
-        workspace_sidecar_leaf as sidecar_leaf, CommitDurability, FileWorkspaceDescriptor,
-        FileWorkspaceHandle, IdentityBinding, NativePath, PathAuthority, PathClass, PathOperation,
-        PathRef, SharedPathAuthority, WorkspaceMutationTarget, WorkspaceRemovalStatus,
+        workspace_sidecar_leaf as sidecar_leaf, FileWorkspaceDescriptor, FileWorkspaceHandle,
+        IdentityBinding, NativePath, PathAuthority, PathClass, PathOperation, PathRef,
+        SharedPathAuthority, WorkspaceMutationTarget, WorkspaceRemovalStatus,
         PICKER_DIALOG_GRANT_TTL,
     },
     pgn, AppState,
@@ -29,11 +29,241 @@ use crate::infra::fs::DirectoryEntryKind;
 use crate::infra::fs::{
     check_directory_listing_bound, DirectoryEntry, RegularFileAccess, MAX_DIRECTORY_LISTING_ENTRIES,
 };
+use crate::infra::path_authority::CommitDurability;
 use crate::infra::path_authority::{CapabilityDirectory, PreparedEntry};
 use std::ffi::OsStr;
 
 const TRASH_DIRECTORY: &str = ".en-croissant-trash";
 const MAX_TRASH_ORIGIN_BYTES: usize = 64 * 1024;
+const TRASH_PAGE_SIZE: usize = 64;
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(transparent)]
+pub struct TrashItemId(String);
+
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TrashCursor {
+    seconds: i64,
+    item: String,
+}
+
+#[derive(Clone, Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceTrashItem {
+    pub item: TrashItemId,
+    pub kind: Option<WorkspaceEntryKind>,
+    pub name: String,
+    pub original_folder: String,
+    pub trashed_seconds: i64,
+    pub category: Option<ErrorCategory>,
+}
+
+#[derive(Clone, Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceTrashPage {
+    pub items: Vec<WorkspaceTrashItem>,
+    pub older_count: usize,
+    pub cursor: Option<TrashCursor>,
+}
+
+fn trash_item_target(
+    root: &WorkspaceMutationTarget,
+    item: &TrashItemId,
+    cancellation: &CancellationToken,
+) -> Result<WorkspaceMutationTarget, Error> {
+    let uuid = uuid::Uuid::parse_str(&item.0)
+        .map_err(|_| Error::InvalidInput("invalid trash item id".into()))?;
+    if uuid.to_string() != item.0 {
+        return Err(Error::InvalidInput("invalid trash item id".into()));
+    }
+    let trash =
+        crate::infra::fs::open_directory_at(root.directory()?, OsStr::new(TRASH_DIRECTORY), true)?;
+    let bucket = crate::infra::fs::open_directory_at(&trash, OsStr::new(&item.0), true)?;
+    let mut primary = None;
+    crate::infra::fs::visit_directory_entries_at(&bucket, cancellation, &mut |entry| {
+        if entry.kind == DirectoryEntryKind::Other
+            || entry.name.to_string_lossy().ends_with(".info")
+        {
+            return Ok(());
+        }
+        if primary.is_some() {
+            return Err(Error::Conflict("trash bucket has multiple entries".into()));
+        }
+        primary = Some(entry);
+        Ok(())
+    })?;
+    let entry = primary.ok_or_else(|| Error::InvalidInput("trash bucket is empty".into()))?;
+    let is_dir = entry.kind == DirectoryEntryKind::Directory;
+    crate::infra::fs::assert_entry_identity(&bucket, &entry.name, entry.identity, is_dir)?;
+    let directory = if is_dir {
+        Some(crate::infra::fs::open_directory_at(
+            &bucket,
+            &entry.name,
+            true,
+        )?)
+    } else {
+        None
+    };
+    Ok(WorkspaceMutationTarget {
+        parent: bucket,
+        directory,
+        path: root
+            .path()
+            .join(TRASH_DIRECTORY)
+            .join(&item.0)
+            .join(&entry.name),
+        leaf: entry.name,
+        identity: entry.identity,
+        is_dir,
+    })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn list_workspace_trash(
+    workspace: FileWorkspaceHandle,
+    cursor: Option<TrashCursor>,
+    ticket: Option<String>,
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, AppState>,
+) -> Result<WorkspaceTrashPage, Error> {
+    let operation = crate::native_read_operation(ticket, &window, &state, "list_workspace_trash")?;
+    let cancellation = operation.token();
+    let authority = state.pgn_path_authority.clone();
+    let mutation = Arc::clone(&state.workspace_mutation);
+    crate::infra::operations::run_native_operation(operation, "list_workspace_trash", async move {
+        BLOCKING_GATEWAY
+            .spawn_cancellable(cancellation, move |token| {
+                list_trash(&authority, &mutation, &workspace, cursor, token)
+            })
+            .await
+    })
+    .await
+}
+
+fn list_trash(
+    authority: &SharedPathAuthority,
+    mutation: &Mutex<()>,
+    workspace: &FileWorkspaceHandle,
+    cursor: Option<TrashCursor>,
+    cancellation: &CancellationToken,
+) -> Result<WorkspaceTrashPage, Error> {
+    let _guard = lock_std_cancellable(
+        mutation,
+        cancellation,
+        "workspace mutation lock was poisoned",
+    )?;
+    let root = mutation_target(authority, workspace)?;
+    let snapshot = authority.with_mut(|authority| {
+        authority.trash_listing_snapshot(workspace, OsStr::new(TRASH_DIRECTORY))
+    })??;
+    let mut page = WorkspaceTrashPage {
+        items: Vec::new(),
+        older_count: 0,
+        cursor: None,
+    };
+    let trash = match crate::infra::fs::open_directory_at(
+        root.directory()?,
+        OsStr::new(TRASH_DIRECTORY),
+        false,
+    ) {
+        Ok(trash) => Some(trash),
+        Err(error) if error.is_missing_entry() => None,
+        Err(error) => return Err(error),
+    };
+    let mut total = 0usize;
+    if let Some(trash) = trash {
+        crate::infra::fs::visit_directory_entries_at(&trash, cancellation, &mut |entry| {
+            let id = entry.name.to_string_lossy().into_owned();
+            if entry.kind != DirectoryEntryKind::Directory || uuid::Uuid::parse_str(&id).is_err() {
+                return Ok(());
+            }
+            let item = TrashItemId(id.clone());
+            let mut row = WorkspaceTrashItem {
+                item: item.clone(),
+                kind: None,
+                name: id.clone(),
+                original_folder: String::new(),
+                trashed_seconds: entry.modified_seconds,
+                category: None,
+            };
+            match trash_item_target(&root, &item, cancellation) {
+                Ok(source) => {
+                    row.name = source.leaf.to_string_lossy().into_owned();
+                    row.kind = Some(if source.is_dir {
+                        WorkspaceEntryKind::Directory
+                    } else {
+                        WorkspaceEntryKind::File
+                    });
+                    if let Ok(mut origin) = crate::infra::fs::open_regular_at(
+                        &trash,
+                        OsStr::new(&format!("{id}.origin")),
+                        RegularFileAccess::ReadOnly,
+                    ) {
+                        let declared = origin.metadata()?.len();
+                        if let Ok(bytes) = crate::infra::fs::read_bounded_bytes(
+                            &mut origin,
+                            declared,
+                            MAX_TRASH_ORIGIN_BYTES,
+                            "trash origin exceeds the supported size limit",
+                            || {
+                                if cancellation.is_cancelled() {
+                                    Err(Error::Cancellation)
+                                } else {
+                                    Ok(())
+                                }
+                            },
+                        ) {
+                            if let Ok(origin) = serde_json::from_slice::<TrashOrigin>(&bytes) {
+                                row.trashed_seconds =
+                                    i64::try_from(origin.trashed_seconds).unwrap_or(i64::MAX);
+                                row.original_folder = origin
+                                    .parents
+                                    .iter()
+                                    .filter_map(|part| part.to_path().ok())
+                                    .map(|part| part.to_string_lossy().into_owned())
+                                    .collect::<Vec<_>>()
+                                    .join("/");
+                            }
+                        }
+                    }
+                }
+                Err(Error::InvalidInput(message)) if message == "trash bucket is empty" => {
+                    return Ok(())
+                }
+                Err(Error::Cancellation) => return Err(Error::Cancellation),
+                Err(error) => row.category = Some(error.category()),
+            }
+            let key = (row.trashed_seconds, row.item.0.as_str());
+            if cursor
+                .as_ref()
+                .is_some_and(|cursor| key >= (cursor.seconds, cursor.item.as_str()))
+            {
+                return Ok(());
+            }
+            total += 1;
+            page.items.push(row);
+            page.items.sort_by(|a, b| {
+                (b.trashed_seconds, &b.item.0).cmp(&(a.trashed_seconds, &a.item.0))
+            });
+            page.items.truncate(TRASH_PAGE_SIZE);
+            Ok(())
+        })?;
+    }
+    page.older_count = total.saturating_sub(page.items.len());
+    if page.older_count > 0 {
+        page.cursor = page.items.last().map(|row| TrashCursor {
+            seconds: row.trashed_seconds,
+            item: row.item.0.clone(),
+        });
+    }
+    let retained = PathAuthority::retained_listing_records(&snapshot, cancellation)?;
+    authority.with_mut(|authority| {
+        authority.commit_directory_listing(snapshot, Vec::new(), &retained, cancellation)
+    })??;
+    Ok(page)
+}
 
 #[derive(Serialize, Deserialize)]
 struct TrashOrigin {
@@ -2330,7 +2560,7 @@ pub async fn trash_workspace_entry(
     workspace: FileWorkspaceHandle,
     entry: FileWorkspaceHandle,
     state: tauri::State<'_, AppState>,
-) -> Result<(), Error> {
+) -> Result<TrashItemId, Error> {
     let operation = state.operations.accept("trash_workspace_entry")?;
     let cancellation = operation.token();
     let pgn_path_authority = state.pgn_path_authority.clone();
@@ -2338,16 +2568,19 @@ pub async fn trash_workspace_entry(
     crate::infra::operations::run_native_operation(operation, "trash_workspace_entry", async move {
         BLOCKING_GATEWAY
             .spawn_cancellable(cancellation, move |token| {
+                let mut item = None;
                 let result = trash_entry(
                     &pgn_path_authority,
                     &workspace_mutation,
                     &workspace,
                     &entry,
                     token,
-                );
+                )
+                .map(|id| item = Some(id));
                 finish_committed_workspace_step(result, || {
                     reconcile_workspace_collections(&pgn_path_authority, &workspace)
-                })
+                })?;
+                item.ok_or_else(|| Error::Conflict("trash item was not committed".into()))
             })
             .await
     })
@@ -2360,7 +2593,7 @@ pub(crate) fn trash_entry(
     workspace: &FileWorkspaceHandle,
     entry: &FileWorkspaceHandle,
     cancellation: &CancellationToken,
-) -> Result<(), Error> {
+) -> Result<TrashItemId, Error> {
     let _guard = lock_std_cancellable(
         workspace_mutation,
         cancellation,
@@ -2491,31 +2724,32 @@ pub(crate) fn trash_entry(
         &source.leaf,
         &mut disposition,
         Some(&bucket),
-    )
+    )?;
+    Ok(TrashItemId(bucket.leaf.to_string_lossy().into_owned()))
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn restore_workspace_entry(
+pub async fn restore_workspace_trash_item(
     workspace: FileWorkspaceHandle,
-    entry: FileWorkspaceHandle,
+    item: TrashItemId,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
-    let operation = state.operations.accept("restore_workspace_entry")?;
+    let operation = state.operations.accept("restore_workspace_trash_item")?;
     let cancellation = operation.token();
     let pgn_path_authority = state.pgn_path_authority.clone();
     let workspace_mutation = Arc::clone(&state.workspace_mutation);
     crate::infra::operations::run_native_operation(
         operation,
-        "restore_workspace_entry",
+        "restore_workspace_trash_item",
         async move {
             BLOCKING_GATEWAY
                 .spawn_cancellable(cancellation, move |token| {
-                    let result = restore_entry(
+                    let result = restore_trash_item(
                         &pgn_path_authority,
                         &workspace_mutation,
                         &workspace,
-                        &entry,
+                        &item,
                         token,
                     );
                     finish_committed_workspace_step(result, || {
@@ -2528,11 +2762,34 @@ pub async fn restore_workspace_entry(
     .await
 }
 
+#[cfg(test)]
 pub(crate) fn restore_entry(
     pgn_path_authority: &SharedPathAuthority,
     workspace_mutation: &Mutex<()>,
     workspace: &FileWorkspaceHandle,
     entry: &FileWorkspaceHandle,
+    cancellation: &CancellationToken,
+) -> Result<(), Error> {
+    let source = mutation_target(pgn_path_authority, entry)?;
+    let bucket = source
+        .path()
+        .parent()
+        .and_then(Path::file_name)
+        .ok_or_else(|| Error::InvalidInput("trash item has no bucket".into()))?;
+    restore_trash_item(
+        pgn_path_authority,
+        workspace_mutation,
+        workspace,
+        &TrashItemId(bucket.to_string_lossy().into_owned()),
+        cancellation,
+    )
+}
+
+fn restore_trash_item(
+    pgn_path_authority: &SharedPathAuthority,
+    workspace_mutation: &Mutex<()>,
+    workspace: &FileWorkspaceHandle,
+    item: &TrashItemId,
     cancellation: &CancellationToken,
 ) -> Result<(), Error> {
     let _guard = lock_std_cancellable(
@@ -2541,7 +2798,7 @@ pub(crate) fn restore_entry(
         "workspace mutation lock was poisoned",
     )?;
     let root = mutation_target(pgn_path_authority, workspace)?;
-    let source = mutation_target(pgn_path_authority, entry)?;
+    let source = trash_item_target(&root, item, cancellation)?;
     let trash_root = root.path().join(TRASH_DIRECTORY);
     source
         .path()
@@ -2560,7 +2817,16 @@ pub(crate) fn restore_entry(
         if cancellation.is_cancelled() {
             return Err(Error::Cancellation);
         }
-        rebind_after_move(pgn_path_authority, entry, &source, &target, parent_identity)
+        pgn_path_authority.with_mut(|authority| {
+            #[cfg(test)]
+            WORKSPACE_REBIND_PRE_REGISTER_HOOK.with(|slot| {
+                if let Some(hook) = slot.borrow_mut().take() {
+                    hook()?;
+                }
+                Ok::<(), Error>(())
+            })?;
+            authority.restore_workspace_records(source.path(), &target, parent_identity)
+        })?
     });
     let result = compensate_workspace_rename(
         result,
@@ -2583,24 +2849,417 @@ pub(crate) fn restore_entry(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn permanently_delete_workspace_entry(
+pub async fn delete_workspace_trash_item(
     workspace: FileWorkspaceHandle,
-    entry: FileWorkspaceHandle,
+    item: TrashItemId,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
-    let operation = state
-        .operations
-        .accept("permanently_delete_workspace_entry")?;
+    let operation = state.operations.accept("delete_workspace_trash_item")?;
     let cancellation = operation.token();
     let state = state.inner().clone();
     crate::infra::operations::run_native_operation(
         operation,
-        "permanently_delete_workspace_entry",
-        async move { permanently_delete_entry(&state, &workspace, &entry, cancellation).await },
+        "delete_workspace_trash_item",
+        async move { remove_trash(&state, &workspace, Some(item), cancellation).await },
     )
     .await
 }
 
+#[tauri::command]
+#[specta::specta]
+pub async fn empty_workspace_trash(
+    workspace: FileWorkspaceHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), Error> {
+    let operation = state.operations.accept("empty_workspace_trash")?;
+    let cancellation = operation.token();
+    let state = state.inner().clone();
+    crate::infra::operations::run_native_operation(operation, "empty_workspace_trash", async move {
+        remove_trash(&state, &workspace, None, cancellation).await
+    })
+    .await
+}
+
+async fn remove_trash(
+    state: &AppState,
+    workspace: &FileWorkspaceHandle,
+    item: Option<TrashItemId>,
+    cancellation: CancellationToken,
+) -> Result<(), Error> {
+    let authority = state.pgn_path_authority.clone();
+    let mutation = Arc::clone(&state.workspace_mutation);
+    let workspace = workspace.clone();
+    let (executables, result) = BLOCKING_GATEWAY
+        .spawn_cancellable(cancellation, move |token| {
+            Ok(remove_trash_blocking(
+                &authority, &mutation, &workspace, item, token,
+            ))
+        })
+        .await?;
+    let retirement = state
+        .engine_supervisor
+        .retire_executables(executables)
+        .await;
+    match result {
+        Ok(mut removal) => {
+            removal.record(retirement, "trash engine retirement", Path::new("trash"));
+            removal.finish()
+        }
+        Err(error) => {
+            if let Err(retirement) = retirement {
+                log::warn!(
+                    "trash engine retirement failed: {}",
+                    retirement.diagnostic()
+                );
+            }
+            Err(error)
+        }
+    }
+}
+
+fn remove_trash_blocking(
+    authority: &SharedPathAuthority,
+    workspace_mutation: &Mutex<()>,
+    workspace: &FileWorkspaceHandle,
+    item: Option<TrashItemId>,
+    cancellation: &CancellationToken,
+) -> (Vec<PathRef>, Result<CommittedRemoval, Error>) {
+    let mut executables = Vec::new();
+    let result = (|| {
+        let _guard = lock_std_cancellable(
+            workspace_mutation,
+            cancellation,
+            "workspace mutation lock was poisoned",
+        )?;
+        let root = mutation_target(authority, workspace)?;
+        let trash = match crate::infra::fs::open_directory_at(
+            root.directory()?,
+            OsStr::new(TRASH_DIRECTORY),
+            true,
+        ) {
+            Ok(trash) => trash,
+            Err(error) if error.is_missing_entry() && item.is_none() => {
+                let registry = authority
+                    .with_mut(|authority| {
+                        authority.remove_workspace_path(
+                            &root.path().join(TRASH_DIRECTORY),
+                            true,
+                            WorkspaceRemovalStatus::Complete,
+                            &mut executables,
+                        )
+                    })
+                    .map_err(Error::from)
+                    .and_then(|result| result)
+                    .and_then(|(durability, _)| {
+                        crate::infra::path_authority::require_durable(durability)
+                    });
+                return Ok(CommittedRemoval::new(0, registry.err()));
+            }
+            Err(error) => return Err(error),
+        };
+        let mut count = 0;
+        let mut failure = None;
+        let mut remains = false;
+        let mut remove = |entry: DirectoryEntry| -> Result<(), Error> {
+            let name = entry.name.to_string_lossy();
+            if let Some(item) = &item {
+                if uuid::Uuid::parse_str(&item.0).is_err() || item.0 != name {
+                    return Ok(());
+                }
+            }
+            let bucket =
+                entry.kind == DirectoryEntryKind::Directory && uuid::Uuid::parse_str(&name).is_ok();
+            let origin = entry.kind == DirectoryEntryKind::RegularFile
+                && name
+                    .strip_suffix(".origin")
+                    .is_some_and(|id| uuid::Uuid::parse_str(id).is_ok());
+            if !bucket && !origin {
+                return Ok(());
+            }
+            let path = root.path().join(TRASH_DIRECTORY).join(&entry.name);
+            let result = remove_trash_bucket(
+                &trash,
+                &entry,
+                &path,
+                authority,
+                &mut executables,
+                cancellation,
+            );
+            match result {
+                Ok(removal) => {
+                    let (removed, error) = removal.into_parts();
+                    count += removed;
+                    if failure.is_none() {
+                        failure = error;
+                    }
+                }
+                Err(error) if item.is_none() && error.is_missing_entry() => {}
+                Err(error) => {
+                    if let Error::PartialRemoval {
+                        removed_entries, ..
+                    } = &error
+                    {
+                        count += removed_entries;
+                    }
+                    if crate::infra::fs::entry_identity_at(&trash, &entry.name, bucket).is_ok() {
+                        remains = true;
+                    }
+                    if failure.is_none() {
+                        failure = Some(error);
+                    }
+                }
+            }
+            Ok(())
+        };
+        if let Some(item) = &item {
+            // Resolving the primary first refuses malformed ids, symlinks and ambiguous buckets.
+            let _source = trash_item_target(&root, item, cancellation)?;
+            let identity = crate::infra::fs::entry_identity_at(&trash, OsStr::new(&item.0), true)?;
+            remove(DirectoryEntry {
+                name: item.0.clone().into(),
+                kind: DirectoryEntryKind::Directory,
+                identity,
+                modified_seconds: 0,
+            })?;
+        } else if let Err(error) =
+            crate::infra::fs::visit_directory_entries_at(&trash, cancellation, &mut remove)
+        {
+            remains = true;
+            if failure.is_none() {
+                failure = Some(error);
+            }
+        }
+        if item.is_none() {
+            let registry = authority
+                .with_mut(|authority| {
+                    authority.remove_workspace_path(
+                        &root.path().join(TRASH_DIRECTORY),
+                        true,
+                        WorkspaceRemovalStatus::Partial,
+                        &mut executables,
+                    )
+                })
+                .map_err(Error::from)
+                .and_then(|result| result)
+                .and_then(|(durability, _)| {
+                    crate::infra::path_authority::require_durable(durability)
+                });
+            if let Err(error) = registry {
+                if failure.is_none() {
+                    failure = Some(error);
+                }
+            }
+        }
+        if remains {
+            let cause = match failure {
+                Some(Error::PartialRemoval { cause, .. }) => cause,
+                Some(error) => Box::new(error),
+                None => Box::new(Error::Conflict("trash items remain".into())),
+            };
+            return Err(Error::PartialRemoval {
+                removed_entries: count,
+                cause,
+            });
+        }
+        Ok(CommittedRemoval::new(count, failure))
+    })();
+    // Discovery takes workspace ownership itself. Reconcile after releasing the mutation guard,
+    // including batches that committed some removals before a later bucket refused removal.
+    if matches!(&result, Ok(_) | Err(Error::PartialRemoval { .. })) {
+        if let Err(error) = reconcile_workspace_collections(authority, workspace) {
+            log::warn!(
+                "collection cleanup after trash removal will retry: {}",
+                error.diagnostic()
+            );
+        }
+    }
+    (executables, result)
+}
+
+fn remove_trash_bucket(
+    trash: &fs::File,
+    entry: &DirectoryEntry,
+    path: &Path,
+    authority: &SharedPathAuthority,
+    executables: &mut Vec<PathRef>,
+    cancellation: &CancellationToken,
+) -> Result<CommittedRemoval, Error> {
+    let is_dir = entry.kind == DirectoryEntryKind::Directory;
+    if !is_dir {
+        let removal =
+            crate::infra::fs::remove_entry_at_counted(trash, &entry.name, entry.identity, false)?;
+        let (_, failure) = removal.into_parts();
+        return Ok(CommittedRemoval::new(0, failure));
+    }
+    let directory = crate::infra::fs::open_directory_at(trash, &entry.name, true)?;
+    crate::infra::fs::assert_entry_identity(trash, &entry.name, entry.identity, true)?;
+    let mut bucket = TrashBucket {
+        parent: trash.try_clone()?,
+        leaf: entry.name.clone(),
+        identity: entry.identity,
+        origin_identity: None,
+    };
+    bucket.origin_identity =
+        crate::infra::fs::entry_identity_at(trash, &bucket.origin_leaf(), false).ok();
+    let mut count = 0;
+    let mut failure = None;
+    let walk =
+        crate::infra::fs::visit_directory_entries_at(&directory, cancellation, &mut |child| {
+            if child.kind == DirectoryEntryKind::Other {
+                return Ok(());
+            }
+            if child.name.to_string_lossy().ends_with(".info") {
+                if child.kind == DirectoryEntryKind::RegularFile {
+                    let result = crate::infra::fs::remove_entry_at(
+                        &directory,
+                        &child.name,
+                        child.identity,
+                        false,
+                    );
+                    if let Err(error) = result {
+                        if !error.is_missing_entry() && failure.is_none() {
+                            failure = Some(error);
+                        }
+                    }
+                }
+                return Ok(());
+            }
+            let child_path = path.join(&child.name);
+            let is_dir = child.kind == DirectoryEntryKind::Directory;
+            let source = WorkspaceMutationTarget {
+                parent: directory.try_clone()?,
+                directory: None,
+                leaf: child.name.clone(),
+                identity: child.identity,
+                is_dir,
+                path: child_path.clone(),
+            };
+            let result = remove_workspace_target(authority, &source, executables);
+            match result {
+                Ok(removal) => {
+                    let (removed, error) = removal.into_parts();
+                    count += removed;
+                    if failure.is_none() {
+                        failure = error;
+                    }
+                }
+                Err(error) => {
+                    if let Error::PartialRemoval {
+                        removed_entries, ..
+                    } = &error
+                    {
+                        count += removed_entries;
+                    }
+                    if failure.is_none() {
+                        failure = Some(error);
+                    }
+                }
+            }
+            Ok(())
+        });
+    if let Err(error) = walk {
+        if failure.is_none() {
+            failure = Some(error);
+        }
+    }
+    let cleanup = bucket.cleanup();
+    if let Err(error) = cleanup {
+        if matches!(error, Error::CommittedDurabilityUncertain(_)) {
+            if failure.is_none() {
+                failure = Some(error);
+            }
+        } else {
+            return Err(Error::PartialRemoval {
+                removed_entries: count,
+                cause: Box::new(error),
+            });
+        }
+    }
+    let registry = authority.with_mut(|authority| {
+        authority.remove_workspace_path(path, true, WorkspaceRemovalStatus::Complete, executables)
+    })?;
+    let mut removal = CommittedRemoval::new(count, failure);
+    removal.record(
+        registry
+            .and_then(|(durability, _)| crate::infra::path_authority::require_durable(durability)),
+        "trash bucket registry cleanup",
+        path,
+    );
+    Ok(removal)
+}
+
+fn remove_workspace_target(
+    authority: &SharedPathAuthority,
+    source: &WorkspaceMutationTarget,
+    executables: &mut Vec<PathRef>,
+) -> Result<CommittedRemoval, Error> {
+    let mut removal = match crate::infra::fs::remove_entry_at_counted(
+        &source.parent,
+        &source.leaf,
+        source.identity,
+        source.is_dir,
+    ) {
+        Ok(removal) => Ok(removal),
+        Err(error @ Error::PartialRemoval { .. }) => Err(error),
+        Err(error) => return Err(error),
+    };
+    let sidecar_result = if source.is_dir {
+        Ok(())
+    } else {
+        sidecar_leaf(&source.leaf).and_then(|sidecar| {
+            crate::infra::fs::remove_optional_regular_at(&source.parent, &sidecar)
+        })
+    };
+    if let Ok(removal) = &mut removal {
+        removal.record(
+            sidecar_result,
+            "workspace sidecar cleanup",
+            Path::new(&source.leaf),
+        );
+    }
+    let removal_status = if removal.is_err() {
+        WorkspaceRemovalStatus::Partial
+    } else {
+        WorkspaceRemovalStatus::Complete
+    };
+    let registry_result = (|| {
+        authority.with_mut(|authority| {
+            authority.remove_workspace_path(
+                source.path(),
+                source.is_dir,
+                removal_status,
+                executables,
+            )
+        })?
+    })();
+
+    if let Err(error) = removal {
+        match registry_result {
+            Ok((CommitDurability::Durable, _)) => {}
+            Ok((CommitDurability::DurabilityUncertain(stage), _)) => {
+                log::warn!("partial workspace removal registry durability uncertain: {stage}");
+            }
+            Err(registry_error) => {
+                log::warn!(
+                    "partial workspace removal registry reconciliation failed: {}",
+                    registry_error.diagnostic()
+                );
+            }
+        }
+        return Err(error);
+    }
+
+    let mut removal = removal?;
+    removal.record(
+        registry_result
+            .and_then(|(durability, _)| crate::infra::path_authority::require_durable(durability)),
+        "workspace removal registry reconciliation",
+        Path::new(&source.leaf),
+    );
+    Ok(removal)
+}
+
+#[cfg(test)]
 async fn permanently_delete_entry(
     state: &AppState,
     workspace: &FileWorkspaceHandle,
@@ -2613,7 +3272,7 @@ async fn permanently_delete_entry(
     let entry = entry.clone();
     let (dropped_engine_executables, result) = BLOCKING_GATEWAY
         .spawn_cancellable(cancellation, move |token| {
-            Ok(permanently_delete_entry_blocking(
+            Ok(remove_test_workspace_entry_blocking(
                 &pgn_path_authority,
                 &workspace_mutation,
                 &workspace,
@@ -2652,7 +3311,8 @@ async fn permanently_delete_entry(
 // an unlinked inode.
 // A completed removal carries its physical target count and first failure through retirement.
 // An incomplete walk retains its original error instead of entering the completed policy.
-fn permanently_delete_entry_blocking(
+#[cfg(test)]
+fn remove_test_workspace_entry_blocking(
     pgn_path_authority: &SharedPathAuthority,
     workspace_mutation: &Mutex<()>,
     workspace: &FileWorkspaceHandle,
@@ -2673,69 +3333,8 @@ fn permanently_delete_entry_blocking(
         if cancellation.is_cancelled() {
             return Err(Error::Cancellation);
         }
-        let mut removal = match crate::infra::fs::remove_entry_at_counted(
-            &source.parent,
-            &source.leaf,
-            source.identity,
-            source.is_dir,
-        ) {
-            Ok(removal) => Ok(removal),
-            Err(error @ Error::PartialRemoval { .. }) => Err(error),
-            Err(error) => return Err(error),
-        };
-        let sidecar_result = if source.is_dir {
-            Ok(())
-        } else {
-            sidecar_leaf(&source.leaf).and_then(|sidecar| {
-                crate::infra::fs::remove_optional_regular_at(&source.parent, &sidecar)
-            })
-        };
-        if let Ok(removal) = &mut removal {
-            removal.record(
-                sidecar_result,
-                "workspace sidecar cleanup",
-                Path::new(&source.leaf),
-            );
-        }
-        let removal_status = if removal.is_err() {
-            WorkspaceRemovalStatus::Partial
-        } else {
-            WorkspaceRemovalStatus::Complete
-        };
-        let registry_result = (|| {
-            pgn_path_authority.with_mut(|authority| {
-                authority.remove_workspace_entry(
-                    entry,
-                    removal_status,
-                    &mut dropped_engine_executables,
-                )
-            })?
-        })();
-
-        if let Err(error) = removal {
-            match registry_result {
-                Ok((CommitDurability::Durable, _)) => {}
-                Ok((CommitDurability::DurabilityUncertain(stage), _)) => {
-                    log::warn!("partial workspace removal registry durability uncertain: {stage}");
-                }
-                Err(registry_error) => {
-                    log::warn!(
-                        "partial workspace removal registry reconciliation failed: {}",
-                        registry_error.diagnostic()
-                    );
-                }
-            }
-            return Err(error);
-        }
-
-        let mut removal = removal?;
-        removal.record(
-            registry_result.and_then(|(durability, _)| {
-                crate::infra::path_authority::require_durable(durability)
-            }),
-            "workspace removal registry reconciliation",
-            Path::new(&source.leaf),
-        );
+        let removal =
+            remove_workspace_target(pgn_path_authority, &source, &mut dropped_engine_executables)?;
         if let Some(bucket) = bucket {
             bucket.cleanup_committed();
         }
@@ -2755,6 +3354,406 @@ fn permanently_delete_entry_blocking(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn empty_trash_removes_orphan_regular_sidecar_and_its_bucket() {
+        let (_directory, state, workspace) = workspace_state();
+        let (_, entry, bucket, origin) = trash_subfolder_file(&state, &workspace);
+        fs::remove_file(bucket.join("Najdorf.pgn")).unwrap();
+        assert!(bucket.join("Najdorf.info").is_file());
+        let (dropped, result) = remove_trash_blocking(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            None,
+            &CancellationToken::new(),
+        );
+        assert!(dropped.is_empty());
+        let (count, failure) = result.unwrap().into_parts();
+        assert_eq!(
+            count, 0,
+            "sidecars and buckets are bookkeeping, not primary targets"
+        );
+        assert!(failure.is_none(), "{failure:?}");
+        assert!(!bucket.exists());
+        assert!(!origin.exists());
+        assert!(mutation_target(&state.pgn_path_authority, &entry).is_err());
+    }
+
+    fn test_trash_item(
+        authority: &SharedPathAuthority,
+        entry: &FileWorkspaceHandle,
+    ) -> TrashItemId {
+        let source = mutation_target(authority, entry).unwrap();
+        let leaf = source.path().parent().unwrap().file_name().unwrap();
+        TrashItemId(leaf.to_string_lossy().into_owned())
+    }
+
+    #[test]
+    fn trash_items_survive_restart_and_all_operations_work_at_registry_capacity() {
+        let (directory, state, workspace) = workspace_state();
+        for name in ["restore", "delete", "empty"] {
+            let file = create_named_text(&state, &workspace, name, "*").unwrap();
+            trash_entry(
+                &state.pgn_path_authority,
+                &state.workspace_mutation,
+                &workspace,
+                &file.handle,
+                &CancellationToken::new(),
+            )
+            .unwrap();
+        }
+        let size = state
+            .pgn_path_authority
+            .with_mut(|authority| authority.fill_trash_registry_for_test(&workspace))
+            .unwrap()
+            .unwrap();
+        let fresh = AppState::default();
+        fresh
+            .pgn_path_authority
+            .install(PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap())
+            .unwrap();
+        let before = fs::read(directory.path().join("registry.json")).unwrap();
+        let page = list_trash(
+            &fresh.pgn_path_authority,
+            &fresh.workspace_mutation,
+            &workspace,
+            None,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert_eq!(page.items.len(), 3);
+        assert_eq!(
+            before,
+            fs::read(directory.path().join("registry.json")).unwrap()
+        );
+        assert_eq!(
+            fresh
+                .pgn_path_authority
+                .with_mut(|a| a.descriptors().len())
+                .unwrap(),
+            size
+        );
+        let item = |name: &str| {
+            page.items
+                .iter()
+                .find(|row| row.name == format!("{name}.pgn"))
+                .unwrap()
+                .item
+                .clone()
+        };
+        restore_trash_item(
+            &fresh.pgn_path_authority,
+            &fresh.workspace_mutation,
+            &workspace,
+            &item("restore"),
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        remove_trash_blocking(
+            &fresh.pgn_path_authority,
+            &fresh.workspace_mutation,
+            &workspace,
+            Some(item("delete")),
+            &CancellationToken::new(),
+        )
+        .1
+        .unwrap()
+        .finish()
+        .unwrap();
+        remove_trash_blocking(
+            &fresh.pgn_path_authority,
+            &fresh.workspace_mutation,
+            &workspace,
+            None,
+            &CancellationToken::new(),
+        )
+        .1
+        .unwrap()
+        .finish()
+        .unwrap();
+        assert!(list_trash(
+            &fresh.pgn_path_authority,
+            &fresh.workspace_mutation,
+            &workspace,
+            None,
+            &CancellationToken::new()
+        )
+        .unwrap()
+        .items
+        .is_empty());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn trash_listing_never_releases_engine_records_after_external_bucket_removal() {
+        let (_directory, state, workspace) = workspace_state();
+        let (_, entry, executable) = registered_engine_directory(&state, &workspace);
+        trash_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &entry,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let source = mutation_target(&state.pgn_path_authority, &entry).unwrap();
+        fs::remove_dir_all(source.path().parent().unwrap()).unwrap();
+        list_trash(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            None,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let ids = state
+            .pgn_path_authority
+            .with_mut(|a| a.descriptors())
+            .unwrap();
+        assert!(ids.iter().any(|descriptor| descriptor.id == executable));
+        assert!(!ids
+            .iter()
+            .any(|descriptor| descriptor.id == *entry.path_ref()));
+        remove_trash(&state, &workspace, None, CancellationToken::new())
+            .await
+            .unwrap();
+        assert_executable_retired(&state, executable).await;
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn trash_unreadable_bucket_keeps_its_category_and_symlinked_entry_is_skipped() {
+        use std::os::unix::fs::PermissionsExt;
+        let (directory, state, workspace) = workspace_state();
+        let (_, _, bucket, _) = trash_subfolder_file(&state, &workspace);
+        fs::set_permissions(&bucket, fs::Permissions::from_mode(0)).unwrap();
+        let page = list_trash(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            None,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        fs::set_permissions(&bucket, fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(page.items.len(), 1);
+        assert_eq!(page.items[0].category, Some(ErrorCategory::Permission));
+        fs::remove_file(bucket.join("Najdorf.pgn")).unwrap();
+        let outside = directory.path().join("outside.pgn");
+        fs::write(&outside, b"*").unwrap();
+        std::os::unix::fs::symlink(&outside, bucket.join("Najdorf.pgn")).unwrap();
+        assert!(list_trash(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            None,
+            &CancellationToken::new()
+        )
+        .unwrap()
+        .items
+        .is_empty());
+        assert_eq!(fs::read(&outside).unwrap(), b"*");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn empty_trash_continues_after_refusing_bucket_and_retires_committed_executables() {
+        use std::os::unix::fs::PermissionsExt;
+        for uncertain in [false, true] {
+            let (_directory, state, workspace) = workspace_state();
+            let (_, engine, executable) = registered_engine_directory(&state, &workspace);
+            let refused = create_named_directory(&state, &workspace, "refused")
+                .unwrap()
+                .handle;
+            for entry in [&engine, &refused] {
+                trash_entry(
+                    &state.pgn_path_authority,
+                    &state.workspace_mutation,
+                    &workspace,
+                    entry,
+                    &CancellationToken::new(),
+                )
+                .unwrap();
+            }
+            let refused_source = mutation_target(&state.pgn_path_authority, &refused).unwrap();
+            let refused_bucket = refused_source.path().parent().unwrap().to_path_buf();
+            fs::set_permissions(&refused_bucket, fs::Permissions::from_mode(0)).unwrap();
+            let fault = uncertain.then(|| {
+                crate::infra::fs::scoped_test_removal_injector(Arc::new(RemovalFault(
+                    RemovalFaultPoint::ParentSync,
+                )))
+            });
+            let error = remove_trash(&state, &workspace, None, CancellationToken::new())
+                .await
+                .unwrap_err();
+            drop(fault);
+            fs::set_permissions(&refused_bucket, fs::Permissions::from_mode(0o700)).unwrap();
+            assert!(matches!(error, Error::PartialRemoval { .. }), "{error:?}");
+            assert!(refused_bucket.exists());
+            assert!(mutation_target(&state.pgn_path_authority, &engine).is_err());
+            assert_executable_retired(&state, executable).await;
+        }
+    }
+
+    #[test]
+    fn trash_listing_pages_beyond_directory_listing_bound_without_admitting_handles() {
+        let (_directory, state, workspace) = workspace_state();
+        let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+        let trash = root.join(TRASH_DIRECTORY);
+        fs::create_dir(&trash).unwrap();
+        let count = MAX_DIRECTORY_LISTING_ENTRIES + 3;
+        for _ in 0..count {
+            let bucket = trash.join(uuid::Uuid::new_v4().to_string());
+            fs::create_dir(&bucket).unwrap();
+            fs::write(bucket.join("game.pgn"), b"*").unwrap();
+        }
+        let registry = fs::read(_directory.path().join("registry.json")).unwrap();
+        let mut seen = std::collections::BTreeSet::new();
+        let mut cursor = None;
+        loop {
+            let page = list_trash(
+                &state.pgn_path_authority,
+                &state.workspace_mutation,
+                &workspace,
+                cursor,
+                &CancellationToken::new(),
+            )
+            .unwrap();
+            assert!(page.items.len() <= TRASH_PAGE_SIZE);
+            for row in &page.items {
+                assert!(seen.insert(row.item.0.clone()));
+            }
+            cursor = page.cursor;
+            assert_eq!(page.older_count, count - seen.len());
+            if cursor.is_none() {
+                break;
+            }
+        }
+        assert_eq!(seen.len(), count);
+        assert_eq!(
+            fs::read(_directory.path().join("registry.json")).unwrap(),
+            registry
+        );
+    }
+
+    #[test]
+    fn trash_listing_releases_externally_removed_pgn_records_and_restores_by_item_id() {
+        let (_directory, state, workspace) = workspace_state();
+        let (original, entry, bucket, _) = trash_subfolder_file(&state, &workspace);
+        let page = list_trash(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            None,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert_eq!(page.items.len(), 1);
+        assert_eq!(page.items[0].original_folder, "Archive");
+        restore_trash_item(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &page.items[0].item,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert!(original.exists());
+        assert!(!bucket.exists());
+        trash_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &entry,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let source = mutation_target(&state.pgn_path_authority, &entry).unwrap();
+        fs::remove_dir_all(source.path().parent().unwrap()).unwrap();
+        let page = list_trash(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            None,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert!(page.items.is_empty());
+        assert!(mutation_target(&state.pgn_path_authority, &entry).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn trash_item_ids_and_symlinked_buckets_are_never_followed() {
+        let (directory, state, workspace) = workspace_state();
+        let root = mutation_target(&state.pgn_path_authority, &workspace).unwrap();
+        for id in ["not-a-uuid", "..", "../outside"] {
+            assert!(
+                trash_item_target(&root, &TrashItemId(id.into()), &CancellationToken::new())
+                    .is_err()
+            );
+        }
+        let trash = root.path().join(TRASH_DIRECTORY);
+        fs::create_dir(&trash).unwrap();
+        let outside = directory.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("game.pgn"), b"*").unwrap();
+        let id = uuid::Uuid::new_v4().to_string();
+        std::os::unix::fs::symlink(&outside, trash.join(&id)).unwrap();
+        assert!(trash_item_target(&root, &TrashItemId(id), &CancellationToken::new()).is_err());
+        let page = list_trash(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            None,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert!(page.items.is_empty());
+        let (_, removal) = remove_trash_blocking(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            None,
+            &CancellationToken::new(),
+        );
+        removal.unwrap().finish().unwrap();
+        assert!(outside.join("game.pgn").is_file());
+    }
+
+    #[tokio::test]
+    async fn empty_trash_retires_engine_executables_and_removes_records_and_origins() {
+        let (_directory, state, workspace) = workspace_state();
+        let (child, entry, executable) = registered_engine_directory(&state, &workspace);
+        #[cfg(unix)]
+        let key = EngineKey::new("empty-trash".into(), "engine".into()).unwrap();
+        #[cfg(unix)]
+        supervise_test_engine(&state, &key, "empty-trash-engine", executable.clone()).await;
+        trash_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &entry,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+        let empty = root
+            .join(TRASH_DIRECTORY)
+            .join(uuid::Uuid::new_v4().to_string());
+        fs::create_dir(&empty).unwrap();
+        fs::write(empty.with_extension("origin"), b"legacy origin").unwrap();
+        remove_trash(&state, &workspace, None, CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(fs::read_dir(root.join(TRASH_DIRECTORY)).unwrap().count(), 0);
+        assert!(!child.exists());
+        assert!(mutation_target(&state.pgn_path_authority, &entry).is_err());
+        #[cfg(unix)]
+        assert!(state.engine_supervisor.get_exact(&key).is_none());
+        assert_executable_retired(&state, executable).await;
+    }
 
     fn trash_subfolder_file(
         state: &AppState,
@@ -2960,7 +3959,7 @@ mod tests {
     fn permanent_delete_cleans_bucket_and_origin() {
         let (_directory, state, workspace) = workspace_state();
         let (_original, entry, bucket, origin) = trash_subfolder_file(&state, &workspace);
-        let (dropped, result) = permanently_delete_entry_blocking(
+        let (dropped, result) = remove_test_workspace_entry_blocking(
             &state.pgn_path_authority,
             &state.workspace_mutation,
             &workspace,
@@ -3101,7 +4100,7 @@ mod tests {
         use crate::db::linked_collections::{tests::Fixture, CollectionStatus};
         let fixture = Fixture::new();
         let (_, folder) = registered_child_directory(&fixture.state, &fixture.workspace, "games");
-        create_workspace_file_blocking(
+        let child = create_workspace_file_blocking(
             fixture.workspace.clone(),
             folder.clone(),
             "child".into(),
@@ -3119,6 +4118,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(fixture.list().len(), 1);
+        let collection_id = fixture.list()[0].id.clone();
         trash_entry(
             &fixture.state.pgn_path_authority,
             &fixture.state.workspace_mutation,
@@ -3128,11 +4128,44 @@ mod tests {
         )
         .unwrap();
         assert_eq!(fixture.list()[0].status, CollectionStatus::Trashed);
-        let (_, result) = permanently_delete_entry_blocking(
+        let page = list_trash(
+            &fixture.state.pgn_path_authority,
+            &fixture.state.workspace_mutation,
+            &fixture.workspace,
+            None,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        restore_trash_item(
+            &fixture.state.pgn_path_authority,
+            &fixture.state.workspace_mutation,
+            &fixture.workspace,
+            &page.items[0].item,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert_eq!(fixture.list()[0].id, collection_id);
+        assert_eq!(fixture.list()[0].status, CollectionStatus::Ready);
+        assert!(
+            mutation_target(&fixture.state.pgn_path_authority, &child.handle)
+                .unwrap()
+                .path()
+                .ends_with("games/child.pgn")
+        );
+        trash_entry(
             &fixture.state.pgn_path_authority,
             &fixture.state.workspace_mutation,
             &fixture.workspace,
             &folder,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert_eq!(fixture.list()[0].status, CollectionStatus::Trashed);
+        let (_, result) = remove_trash_blocking(
+            &fixture.state.pgn_path_authority,
+            &fixture.state.workspace_mutation,
+            &fixture.workspace,
+            None,
             &CancellationToken::new(),
         );
         result.unwrap().finish().unwrap();
@@ -3186,7 +4219,7 @@ mod tests {
         assert_eq!(fixture.list()[0].status, CollectionStatus::Trashed);
         let injector = Arc::new(FailCache::default());
         let fault = crate::infra::fs::scoped_test_removal_injector(injector.clone());
-        let (_, result) = permanently_delete_entry_blocking(
+        let (_, result) = remove_test_workspace_entry_blocking(
             &fixture.state.pgn_path_authority,
             &fixture.state.workspace_mutation,
             &fixture.workspace,
@@ -3408,7 +4441,10 @@ mod tests {
             let source = registered_child_file(&state, &workspace, &source_path);
             let (_destination_path, destination) =
                 registered_child_directory(&state, &workspace, "destination");
-            if matches!(command, QueuedWorkspaceCommand::Restore) {
+            if matches!(
+                command,
+                QueuedWorkspaceCommand::Restore | QueuedWorkspaceCommand::PermanentlyDelete
+            ) {
                 trash_entry(
                     &state.pgn_path_authority,
                     &state.workspace_mutation,
@@ -3500,15 +4536,20 @@ mod tests {
                     QueuedWorkspaceCommand::Trash => {
                         trash_workspace_entry(command_workspace, command_source.clone(), state)
                             .await
+                            .map(|_| ())
                     }
                     QueuedWorkspaceCommand::Restore => {
-                        restore_workspace_entry(command_workspace, command_source.clone(), state)
-                            .await
+                        restore_workspace_trash_item(
+                            command_workspace,
+                            test_trash_item(&state.pgn_path_authority, &command_source),
+                            state,
+                        )
+                        .await
                     }
                     QueuedWorkspaceCommand::PermanentlyDelete => {
-                        permanently_delete_workspace_entry(
+                        delete_workspace_trash_item(
                             command_workspace,
-                            command_source.clone(),
+                            test_trash_item(&state.pgn_path_authority, &command_source),
                             state,
                         )
                         .await
@@ -3581,7 +4622,10 @@ mod tests {
             let source = registered_child_file(&state, &workspace, &source_path);
             let (destination_path, destination) =
                 registered_child_directory(&state, &workspace, "destination");
-            if matches!(command, QueuedWorkspaceCommand::Restore) {
+            if matches!(
+                command,
+                QueuedWorkspaceCommand::Restore | QueuedWorkspaceCommand::PermanentlyDelete
+            ) {
                 trash_entry(
                     &state.pgn_path_authority,
                     &state.workspace_mutation,
@@ -3654,15 +4698,20 @@ mod tests {
                     QueuedWorkspaceCommand::Trash => {
                         trash_workspace_entry(command_workspace, command_source.clone(), state)
                             .await
+                            .map(|_| ())
                     }
                     QueuedWorkspaceCommand::Restore => {
-                        restore_workspace_entry(command_workspace, command_source.clone(), state)
-                            .await
+                        restore_workspace_trash_item(
+                            command_workspace,
+                            test_trash_item(&state.pgn_path_authority, &command_source),
+                            state,
+                        )
+                        .await
                     }
                     QueuedWorkspaceCommand::PermanentlyDelete => {
-                        permanently_delete_workspace_entry(
+                        delete_workspace_trash_item(
                             command_workspace,
-                            command_source.clone(),
+                            test_trash_item(&state.pgn_path_authority, &command_source),
                             state,
                         )
                         .await
@@ -4728,7 +5777,7 @@ mod tests {
         fs::write(&file, b"*").expect("file");
         let entry = registered_child_file(&state, &workspace, &file);
         fs::write(root.join("victim.info"), b"{}").expect("sidecar");
-        let (dropped, result) = permanently_delete_entry_blocking(
+        let (dropped, result) = remove_test_workspace_entry_blocking(
             &state.pgn_path_authority,
             &state.workspace_mutation,
             &workspace,
@@ -4969,6 +6018,15 @@ mod tests {
         let executable = registered_engine_file(&state, &executable_path);
         let key = EngineKey::new("tab".into(), "caller-drop".into()).unwrap();
         supervise_test_engine(&state, &key, "application-engine", executable.clone()).await;
+        trash_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &entry,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let item = test_trash_item(&state.pgn_path_authority, &entry);
         let mutation = Arc::clone(&state.workspace_mutation);
         let (entered_tx, entered_rx) = std::sync::mpsc::sync_channel(1);
         let (release_tx, release_rx) = std::sync::mpsc::sync_channel(1);
@@ -4984,7 +6042,7 @@ mod tests {
         let command_app = app.handle().clone();
         let caller = tokio::spawn(async move {
             let state = command_app.state::<AppState>();
-            permanently_delete_workspace_entry(workspace, entry, state).await
+            delete_workspace_trash_item(workspace, item, state).await
         });
         tokio::time::timeout(Duration::from_secs(1), async {
             while app
@@ -5032,6 +6090,15 @@ mod tests {
         let executable = registered_engine_file(&state, &executable_path);
         let key = EngineKey::new("tab".into(), "caller-drop-error".into()).unwrap();
         supervise_test_engine(&state, &key, "application-engine", executable.clone()).await;
+        trash_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &entry,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let item = test_trash_item(&state.pgn_path_authority, &entry);
         let mutation = Arc::clone(&state.workspace_mutation);
         let (entered_tx, entered_rx) = std::sync::mpsc::sync_channel(1);
         let (release_tx, release_rx) = std::sync::mpsc::sync_channel(1);
@@ -5047,7 +6114,7 @@ mod tests {
         let command_app = app.handle().clone();
         let caller = tokio::spawn(async move {
             let state = command_app.state::<AppState>();
-            permanently_delete_workspace_entry(workspace, entry, state).await
+            delete_workspace_trash_item(workspace, item, state).await
         });
         tokio::time::timeout(Duration::from_secs(1), async {
             while app
@@ -7471,7 +8538,8 @@ mod tests {
                     &workspace,
                     &created.handle,
                     &CancellationToken::new(),
-                ),
+                )
+                .map(|_| ()),
                 "restore" => restore_entry(
                     &state.pgn_path_authority,
                     &state.workspace_mutation,
@@ -8308,18 +9376,17 @@ mod tests {
                             )
                             .await
                         }
-                        QueuedWorkspaceCommand::Trash => {
-                            trash_workspace_entry(
-                                workspace.clone(),
-                                entry.clone(),
-                                app.state::<AppState>(),
-                            )
-                            .await
-                        }
+                        QueuedWorkspaceCommand::Trash => trash_workspace_entry(
+                            workspace.clone(),
+                            entry.clone(),
+                            app.state::<AppState>(),
+                        )
+                        .await
+                        .map(|_| ()),
                         QueuedWorkspaceCommand::Restore => {
-                            restore_workspace_entry(
+                            restore_workspace_trash_item(
                                 workspace.clone(),
-                                entry.clone(),
+                                test_trash_item(&state.pgn_path_authority, &entry),
                                 app.state::<AppState>(),
                             )
                             .await
@@ -8398,7 +9465,8 @@ mod tests {
                             &workspace,
                             entry,
                             &CancellationToken::new(),
-                        ),
+                        )
+                        .map(|_| ()),
                         QueuedWorkspaceCommand::Restore => restore_entry(
                             &state.pgn_path_authority,
                             &state.workspace_mutation,

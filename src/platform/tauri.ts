@@ -134,6 +134,7 @@ type NativeReadCommandName =
     | "readGames"
     | "lexPgn"
     | "listFileWorkspace"
+    | "listWorkspaceTrash"
     | "listLinkedCollections"
     | "resolveLinkedGame"
     | "collectionForDatabase";
@@ -178,6 +179,7 @@ const NATIVE_READ_ARITY: Readonly<Record<NativeReadCommandName, number>> = {
     readGames: 3,
     lexPgn: 1,
     listFileWorkspace: 1,
+    listWorkspaceTrash: 2,
     listLinkedCollections: 1,
     resolveLinkedGame: 3,
     collectionForDatabase: 1,
