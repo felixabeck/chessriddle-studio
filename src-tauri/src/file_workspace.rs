@@ -4542,8 +4542,14 @@ mod tests {
             &CancellationToken::new(),
         )
         .unwrap_err();
+        #[cfg(unix)]
         assert!(
             matches!(error, Error::Io(ref cause) if cause.kind() == std::io::ErrorKind::AlreadyExists),
+            "{error:?}"
+        );
+        #[cfg(windows)]
+        assert!(
+            matches!(error, Error::Conflict(ref message) if message == "Windows object name collision"),
             "{error:?}"
         );
         assert_eq!(fs::read(&original).unwrap(), b"new occupant");
