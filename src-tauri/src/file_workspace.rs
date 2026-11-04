@@ -3702,6 +3702,74 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn symlink_only_trash_bucket_is_unreadable_and_never_followed() -> Result<(), Error> {
+        let (directory, state, workspace) = workspace_state();
+        let root = workspace_root(&state.pgn_path_authority, &workspace)?;
+        let item = TrashItemId(uuid::Uuid::new_v4().to_string());
+        let bucket = root.join(TRASH_DIRECTORY).join(&item.0);
+        fs::create_dir_all(&bucket)?;
+        let outside = directory.path().join("outside");
+        fs::create_dir(&outside)?;
+        let sentinel = outside.join("keep.pgn");
+        fs::write(&sentinel, b"outside target")?;
+        let link = bucket.join("external");
+        std::os::unix::fs::symlink(&outside, &link)?;
+        let page = list_trash(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            None,
+            &CancellationToken::new(),
+        )?;
+        assert_eq!(page.items.len(), 1);
+        assert_eq!(page.items[0].item, item);
+        assert_eq!(page.items[0].category, Some(ErrorCategory::Conflict));
+        assert!(page.items[0].kind.is_none());
+        let restore = restore_trash_item(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &item,
+            &CancellationToken::new(),
+        );
+        assert!(matches!(restore, Err(Error::Conflict(_))), "{restore:?}");
+        assert_eq!(fs::read(&sentinel)?, b"outside target");
+        assert!(fs::symlink_metadata(&link)?.file_type().is_symlink());
+        let (_, delete) = remove_trash_blocking(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            Some(item),
+            &CancellationToken::new(),
+        );
+        assert!(matches!(delete, Err(Error::Conflict(_))), "{delete:?}");
+        assert_eq!(fs::read(&sentinel)?, b"outside target");
+        assert!(fs::symlink_metadata(&link)?.file_type().is_symlink());
+        let (_, empty) = remove_trash_blocking(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            None,
+            &CancellationToken::new(),
+        );
+        assert!(
+            matches!(
+                empty,
+                Err(Error::PartialRemoval {
+                    removed_entries: 0,
+                    ..
+                })
+            ),
+            "{empty:?}"
+        );
+        assert!(bucket.is_dir());
+        assert!(fs::symlink_metadata(&link)?.file_type().is_symlink());
+        assert_eq!(fs::read(&sentinel)?, b"outside target");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn symlink_beside_trash_primary_is_unreadable_and_never_followed() -> Result<(), Error> {
         let (directory, state, workspace) = workspace_state();
         let (_, _, bucket, _) = trash_subfolder_file(&state, &workspace);
