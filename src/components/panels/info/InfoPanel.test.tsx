@@ -14,6 +14,7 @@ import { getTabTreeKey } from "@/state/workspaceTypes";
 import { loadWorkspace, WORKSPACE_STORAGE_KEY } from "@/state/workspace";
 import { activeTabAtom, currentTabAtom, deckAtomFamily, tabsAtom } from "@/state/atoms";
 import { afterFileStructureChange } from "@/state/fileStructureChange";
+import * as practiceStorage from "@/state/practiceStorage";
 import { cancellationError, TauriCommandError } from "@/platform/tauri";
 import type { Tab } from "@/state/workspaceTypes";
 import { defaultTree } from "@/utils/treeReducer";
@@ -1453,6 +1454,7 @@ describe("InfoPanel game loading and cancellation", () => {
   ] as const)(
     "%s releases practice waiters after reconciling tabs and invalidating installed outcomes",
     async (_name, error, installed, refuseMetadata) => {
+      const clearFailures = vi.spyOn(practiceStorage, "clearPracticeFileMigrationFailures");
       const deletion = deferred<void>();
       mocks.deleteGame.mockReturnValueOnce(deletion.promise);
       await act(async () => root.render(renderPanel()));
@@ -1463,6 +1465,7 @@ describe("InfoPanel game loading and cancellation", () => {
       await primeAndDelete();
       expect(mocks.deleteGame).toHaveBeenCalledOnce();
       const resumed = vi.fn(async () => ({
+        failureClearCalls: clearFailures.mock.calls.slice(),
         decks: [0, 1, 9].map((game) => deckAtomFamily({ file: "workspace-token-a", game })),
         freshness: getFileFreshness(tabAId).state,
         origin: jotaiStore.get(currentTabAtom)?.gameOrigin,
@@ -1479,6 +1482,8 @@ describe("InfoPanel game loading and cancellation", () => {
 
       expect(resumed).toHaveBeenCalledOnce();
       const observed = await waiting;
+      expect(observed.failureClearCalls).toEqual(installed ? [["workspace-token-a"]] : []);
+      clearFailures.mockRestore();
       observed.decks.forEach((deck, index) => {
         expect(deck === before[index]).toBe(!installed);
       });

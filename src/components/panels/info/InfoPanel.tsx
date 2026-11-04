@@ -41,6 +41,7 @@ import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import { loadFileGame, withFileWrite } from "@/utils/files";
 import { setFileFreshness } from "@/state/fileFreshness";
 import { beginFileStructureChange } from "@/state/fileStructureChange";
+import { clearPracticeFileMigrationFailures } from "@/state/practiceStorage";
 import type { Tab } from "@/state/workspaceTypes";
 import type { TreeStore } from "@/state/store/tree";
 
@@ -596,7 +597,13 @@ function GameSelectorAccordion({
       throw error;
     } finally {
       try {
-        if (replacementMayBeInstalled) invalidateFileDeckAtoms(fileKey);
+        if (replacementMayBeInstalled) {
+          try {
+            invalidateFileDeckAtoms(fileKey);
+          } finally {
+            clearPracticeFileMigrationFailures(fileKey);
+          }
+        }
       } finally {
         endStructureChange();
       }

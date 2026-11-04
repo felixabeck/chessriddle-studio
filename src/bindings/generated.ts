@@ -1534,7 +1534,7 @@ entry: string;
  * Stable id used to recognize retries of the same review entry.
  */
 entryId: string }
-export type PracticeStoreAnomaly = { kind: PracticeStoreAnomalyKind; leaf: string; fileId: string | null; game: number | null }
+export type PracticeStoreAnomaly = { kind: PracticeStoreAnomalyKind; leaf: string; fileId: string | null; game: number | null; epoch?: string | null }
 export type PracticeStoreAnomalyKind = "OrphanShard" | "DamagedDeck" | "IdentityMismatch" | "Unreadable" | "NotARegularFile" | "StrandedMigration"
 export type ProgressEvent = { id: string; generation: string; progress: number; finished: boolean; state: ProgressState; cleared: boolean; failure?: ErrorPayload | null }
 export type ProgressItem = { id: string; generation: string; progress: number; finished: boolean; state: ProgressState; failure?: ErrorPayload | null }

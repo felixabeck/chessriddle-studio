@@ -159,6 +159,8 @@ pub(crate) struct PracticeStoreAnomaly {
     pub leaf: String,
     pub file_id: Option<String>,
     pub game: Option<i32>,
+    #[specta(optional)]
+    pub epoch: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -475,8 +477,7 @@ fn file_deck_leaves(
         ) {
             Ok(None) => continue,
             Ok(Some(value)) => Some(value),
-            Err(Error::InvalidInput(_)) => None,
-            Err(error) => return Err(error),
+            Err(_) => None,
         };
         let identity = value.as_ref().and_then(|value| {
             let owner = value.get("fileId")?.as_str()?;
@@ -2262,6 +2263,7 @@ fn anomaly(
         leaf,
         file_id: identity.map(|identity| identity.0.to_owned()),
         game: identity.map(|identity| identity.1),
+        epoch: None,
     }
 }
 
@@ -2278,6 +2280,17 @@ pub(crate) fn list_practice_decks_in(
 ) -> Result<PracticeDeckInventory, Error> {
     let mut inventory = list_practice_decks_raw(directory)?;
     let mut maps = HashMap::new();
+    let mut files = inventory
+        .decks
+        .iter()
+        .map(|deck| deck.file_id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    files.extend(
+        inventory
+            .anomalies
+            .iter()
+            .filter_map(|anomaly| anomaly.file_id.clone()),
+    );
     for entry in directory.entries(&mut |name| name.to_string_lossy().ends_with(MAP_SUFFIX))? {
         let leaf = entry.name.to_string_lossy().into_owned();
         let identity = read_json::<Value>(directory, &leaf, MAP_MAX_BYTES, "inventory deck map")
@@ -2290,6 +2303,7 @@ pub(crate) fn list_practice_decks_in(
                     .map(str::to_owned)
             });
         if let Some(file_id) = identity {
+            files.insert(file_id.clone());
             let map = with_map_lock(directory, &file_id, || {
                 if map_leaf(&file_id) != leaf {
                     return Err(invalid_leaf(&leaf, "map identity mismatch"));
@@ -2306,6 +2320,7 @@ pub(crate) fn list_practice_decks_in(
                         leaf,
                         file_id: Some(file_id.clone()),
                         game: None,
+                        epoch: None,
                     });
                     maps.insert(file_id, None);
                 }
@@ -2316,7 +2331,32 @@ pub(crate) fn list_practice_decks_in(
                 leaf,
                 file_id: None,
                 game: None,
+                epoch: None,
             });
+        }
+    }
+    // Also read maps for files with no map leaf in the directory snapshot. Stable deck numbers
+    // above are translated with the very same locked map snapshot that supplies their epoch.
+    for file_id in files {
+        if maps.contains_key(&file_id) {
+            continue;
+        }
+        let map = with_map_lock(directory, &file_id, || read_map(directory, &file_id));
+        match map {
+            Ok(None) => {}
+            Ok(Some(map)) if map.pending.is_none() => {
+                maps.insert(file_id, Some(map));
+            }
+            _ => {
+                inventory.anomalies.push(PracticeStoreAnomaly {
+                    kind: PracticeStoreAnomalyKind::DamagedDeck,
+                    leaf: map_leaf(&file_id),
+                    file_id: Some(file_id.clone()),
+                    game: None,
+                    epoch: None,
+                });
+                maps.insert(file_id, None);
+            }
         }
     }
     let ordinal = |file_id: &str, number: i32| -> Option<i32> {
@@ -2339,6 +2379,12 @@ pub(crate) fn list_practice_decks_in(
         }
     });
     inventory.anomalies.retain_mut(|anomaly| {
+        if let Some(file_id) = &anomaly.file_id {
+            anomaly.epoch = match maps.get(file_id) {
+                Some(map) => map.as_ref().map(|map| map.epoch.clone()),
+                None => Some(NO_MAP_EPOCH.to_owned()),
+            };
+        }
         if let (Some(file_id), Some(number)) = (&anomaly.file_id, anomaly.game) {
             if let Some(game) = ordinal(file_id, number) {
                 anomaly.game = Some(game);
@@ -2666,7 +2712,7 @@ async fn recover_inventory_pending(
         .await;
         if let Err(error) = recovery {
             log::warn!(
-                "practice inventory pending recovery failed: {}",
+                "practice inventory pending recovery failed for {file_id}: {}",
                 error.diagnostic()
             );
         }
@@ -3378,17 +3424,118 @@ mod tests {
     }
 
     #[test]
-    fn damaged_map_repair_propagates_leaf_io_failure_without_changing_data() {
+    fn damaged_map_repair_removes_attributed_unreadable_leaf() {
         let (_temp, directory) = directory();
         sync_practice_positions_in(&directory, "file", 7, 0, 0, &positions()).unwrap();
         fs::write(directory.path().join(map_leaf("file")), b"{damaged").unwrap();
         with_map_lock(&directory, "file", || Ok(())).unwrap();
-        let before = all_leaf_bytes(&directory);
         PRACTICE_POSITIONS_READ_IO_FAILURE_HOOK
             .with(|slot| *slot.borrow_mut() = Some(hash_deck("file", 7)));
+        repair_mapped_practice_deck_in(&directory, "file", 0, None).unwrap();
+        assert!(!directory
+            .path()
+            .join(positions_leaf(&hash_deck("file", 7)))
+            .exists());
+        assert_eq!(read_map(&directory, "file").unwrap().unwrap().next_deck, 8);
+    }
+
+    #[test]
+    fn foreign_unreadable_leaf_does_not_block_fresh_map_or_repair() {
+        let (_temp, directory) = directory();
+        sync_practice_positions_in(&directory, "other", 7, 0, 0, &positions()).unwrap();
+        let foreign = positions_leaf(&hash_deck("other", 7));
+        let before = fs::read(directory.path().join(&foreign)).unwrap();
+        for damaged_map in [false, true] {
+            PRACTICE_POSITIONS_READ_IO_FAILURE_HOOK
+                .with(|slot| *slot.borrow_mut() = Some(hash_deck("other", 7)));
+            if damaged_map {
+                fs::write(directory.path().join(map_leaf("file")), b"{damaged").unwrap();
+                repair_mapped_practice_deck_in(&directory, "file", 0, None).unwrap();
+            } else {
+                let pending = prepare_delete_in(&directory, "file", 0, 1).unwrap();
+                finish_delete_in(&directory, "file", &pending, true).unwrap();
+            }
+            assert_eq!(fs::read(directory.path().join(&foreign)).unwrap(), before);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn damaged_map_repair_propagates_attributed_leaf_removal_failure() {
+        use crate::infra::fs::{scoped_test_removal_injector, RemovalFault, RemovalFaultPoint};
+
+        let (_temp, directory) = directory();
+        sync_practice_positions_in(&directory, "file", 7, 0, 0, &positions()).unwrap();
+        let leaf = positions_leaf(&hash_deck("file", 7));
+        let before = fs::read(directory.path().join(&leaf)).unwrap();
+        fs::write(directory.path().join(map_leaf("file")), b"{damaged").unwrap();
+        // A directory fails leaf validation before removal. Inject after the regular leaf's
+        // identity check instead, so this exercises the removal error through file-wide Repair.
+        let fault =
+            scoped_test_removal_injector(Arc::new(RemovalFault(RemovalFaultPoint::BeforeTopOpen)));
         let error = repair_mapped_practice_deck_in(&directory, "file", 0, None).unwrap_err();
+        drop(fault);
         assert_eq!(error.category(), ErrorCategory::Io);
-        assert_eq!(all_leaf_bytes(&directory), before);
+        assert!(error.diagnostic().contains("remove practice leaf"));
+        assert_eq!(fs::read(directory.path().join(&leaf)).unwrap(), before);
+        assert!(read_map(&directory, "file").is_err());
+        repair_mapped_practice_deck_in(&directory, "file", 0, None).unwrap();
+        assert!(!directory.path().join(leaf).exists());
+        assert!(read_map(&directory, "file").unwrap().is_some());
+    }
+
+    #[test]
+    fn inventory_damage_carries_the_epoch_of_its_ordinal_mapping() {
+        let (_temp, directory) = directory();
+        for number in 0..3 {
+            sync_practice_positions_in(&directory, "file", number, 0, 0, &positions()).unwrap();
+        }
+        write_test_state(
+            &directory,
+            "file",
+            1,
+            MigrationPhase::Migrating,
+            &"0".repeat(64),
+        );
+        let damage_epoch = |inventory: PracticeDeckInventory| {
+            inventory
+                .anomalies
+                .into_iter()
+                .find(|anomaly| {
+                    anomaly.file_id.as_deref() == Some("file")
+                        && anomaly.kind == PracticeStoreAnomalyKind::DamagedDeck
+                })
+                .unwrap()
+        };
+        let before = damage_epoch(list_practice_decks_in(&directory).unwrap());
+        assert_eq!(before.game, Some(1));
+        assert_eq!(before.epoch.as_deref(), Some(NO_MAP_EPOCH));
+        let pending = prepare_delete_in(&directory, "file", 0, 3).unwrap();
+        finish_delete_in(&directory, "file", &pending, true).unwrap();
+        let after = damage_epoch(list_practice_decks_in(&directory).unwrap());
+        assert_eq!(after.game, Some(0));
+        assert_eq!(
+            after.epoch,
+            Some(practice_epoch_in(&directory, "file", 0).unwrap().epoch)
+        );
+        let healthy =
+            fs::read(directory.path().join(positions_leaf(&hash_deck("file", 2)))).unwrap();
+        assert!(matches!(
+            repair_mapped_practice_deck_in(&directory, "file", 1, before.epoch.as_deref()),
+            Err(Error::Conflict(_))
+        ));
+        assert_eq!(
+            fs::read(directory.path().join(positions_leaf(&hash_deck("file", 2)))).unwrap(),
+            healthy
+        );
+        fs::write(
+            directory.path().join(map_leaf("file")),
+            b"{\"fileId\":\"file\"}",
+        )
+        .unwrap();
+        let damaged = damage_epoch(list_practice_decks_in(&directory).unwrap());
+        assert_eq!(damaged.game, None);
+        assert_eq!(damaged.epoch, None);
     }
 
     #[cfg(unix)]

@@ -116,7 +116,11 @@ export type PracticeDeckAction =
 
 const positionsDocumentSchema = z.object({ positions: positionSchema.array() });
 
-type PracticeMigrationFailure = { error: AppError; repairable: boolean };
+type PracticeMigrationFailure = {
+    error: AppError;
+    repairable: boolean;
+    repairEpoch?: string | null;
+};
 let practiceMigrationFailures = new Map<string, PracticeMigrationFailure>();
 let practiceWritesBlocked = false;
 let reportedInventoryAnomalies = new Set<string>();
@@ -140,6 +144,7 @@ class PracticeMigrationBlockedError extends Error {
     constructor(
         readonly appError: AppError,
         readonly repairable: boolean,
+        readonly repairEpoch?: string | null,
     ) {
         super(appError.message, { cause: appError });
     }
@@ -222,7 +227,20 @@ export function reportPracticeInventoryAnomalies(inventory: PracticeDeckInventor
             // authorization refusal, or a renderer-side failure. Retry reruns the inventory.
             practiceMigrationFailures.set(identityKey(identity), {
                 error,
-                repairable: anomaly.kind !== "Unreadable",
+                repairable:
+                    anomaly.kind !== "Unreadable" &&
+                    (typeof anomaly.epoch === "string" ||
+                        (anomaly.epoch === null &&
+                            anomaly.game === null &&
+                            anomaly.kind === "DamagedDeck")),
+                repairEpoch:
+                    typeof anomaly.epoch === "string"
+                        ? anomaly.epoch
+                        : anomaly.epoch === null &&
+                            anomaly.game === null &&
+                            anomaly.kind === "DamagedDeck"
+                          ? null
+                          : undefined,
             });
         }
     }
@@ -294,6 +312,13 @@ function clearPracticeIdentityState(identity: PracticeDeckKey, rerunMigration: b
     practiceMigrationPromise = rerunMigration ? cleaned.then(() => migrationPass()) : cleaned;
 }
 
+/** A delete changes every ordinal in this file, so no cached damage identity survives it. */
+export function clearPracticeFileMigrationFailures(fileId: string): void {
+    for (const key of practiceMigrationFailures.keys()) {
+        if (key.startsWith(`${fileId}\u0000`)) practiceMigrationFailures.delete(key);
+    }
+}
+
 function inventoryIdentity(identity: { fileId: string; game: number }): string {
     return identityKey({ file: identity.fileId, game: identity.game });
 }
@@ -353,7 +378,7 @@ async function readMigrationEpoch(identity: PracticeDeckKey): Promise<PracticeEp
         if (appError.backendCategory === "invalid-input") {
             practiceMigrationFailures.set(
                 identityKey({ file: identity.file, game: PRACTICE_FILE_WIDE_FAILURE_GAME }),
-                { error: appError, repairable: true },
+                { error: appError, repairable: true, repairEpoch: null },
             );
         }
         throw error;
@@ -374,6 +399,7 @@ function failedMigrationOutcome(
         practiceMigrationFailures.set(identityKey(legacy.identity), {
             error: appError,
             repairable: known?.repairable ?? false,
+            repairEpoch: known?.repairEpoch,
         });
     }
     return { key: legacy.key, identity: legacy.identity, status: "failed", error: appError };
@@ -579,7 +605,9 @@ function migrationBlock(identity: PracticeDeckKey): Error | null {
         practiceMigrationFailures.get(
             identityKey({ file: identity.file, game: PRACTICE_FILE_WIDE_FAILURE_GAME }),
         ) ?? practiceMigrationFailures.get(identityKey(identity));
-    return failure ? new PracticeMigrationBlockedError(failure.error, failure.repairable) : null;
+    return failure
+        ? new PracticeMigrationBlockedError(failure.error, failure.repairable, failure.repairEpoch)
+        : null;
 }
 
 async function migrateLegacyDeckInline(identity: PracticeDeckKey): Promise<void> {
@@ -601,13 +629,15 @@ async function migrateLegacyDeckInline(identity: PracticeDeckKey): Promise<void>
         throw error;
     }
     if (healthyNativeIdentities(inventory).has(identityKey(identity))) {
-        retireMigratedLegacyDeckKeysFromBrowser([await outcomeForHeldDeck(legacy)]);
+        const outcome = await outcomeForHeldDeck(legacy);
+        if (outcome.status === "failed") throw outcome.error;
+        retireMigratedLegacyDeckKeysFromBrowser([outcome]);
         return;
     }
 
     const outcome = await migrateLegacyDeck(globalThis.localStorage, legacy);
     if (outcome.status === "failed") {
-        throw new Error(outcome.error?.message ?? i18n.t("Board.Practice.MigrationFailed"));
+        throw outcome.error;
     }
     retireMigratedLegacyDeckKeysFromBrowser([outcome]);
     clearPracticeIdentityState(identity, false);
@@ -870,27 +900,35 @@ class PracticeWriteDroppedError extends Error {
 
 async function hydrate(identity: PracticeDeckKey): Promise<PracticeDeckValue> {
     if (identity.file === "") return emptyDeck("ready");
+    let repairEpoch: string | null | undefined;
+    let epochError: unknown;
     try {
         await ensurePracticeMigration();
         const blocked = migrationBlock(identity);
         if (blocked) throw blocked;
+        // Capture authority before observing damage. A delete during the load makes Repair stale.
+        try {
+            repairEpoch = (await readPracticeEpoch(identity.file, identity.game)).epoch;
+        } catch (error) {
+            epochError = error;
+        }
         const snapshot = await loadPracticeDeck(identity.file, identity.game);
         return deckFromLoad(snapshot);
     } catch (error) {
         const failed = failureState(emptyDeck(), error);
         if (!failed.repairable) return failed;
-        // Bind Repair to the damaged state now, before a later delete can move its ordinal.
-        try {
+        if (error instanceof PracticeMigrationBlockedError) {
             return {
                 ...failed,
-                repairEpoch: (await readPracticeEpoch(identity.file, identity.game)).epoch,
+                repairable: error.repairEpoch !== undefined,
+                repairEpoch: error.repairEpoch,
             };
-        } catch (epochError) {
-            if (normalizeError(epochError).backendCategory === "invalid-input") {
-                return { ...failed, repairEpoch: null };
-            }
-            return { ...failureState(emptyDeck(), epochError), repairable: false };
         }
+        if (epochError) {
+            if (normalizeError(epochError).backendCategory === "invalid-input") repairEpoch = null;
+            else return { ...failureState(emptyDeck(), epochError), repairable: false };
+        }
+        return { ...failed, repairable: repairEpoch !== undefined, repairEpoch };
     }
 }
 
