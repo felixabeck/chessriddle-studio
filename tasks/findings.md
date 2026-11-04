@@ -20465,13 +20465,16 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 
 ### First Chess.com sync of a very large account always fails and every retry starts over
 
-* **ID:** f-20261101-29 · **Status:** open · **Area:** pgn-import · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261101-29 · **Status:** handled · **Area:** pgn-import · **Root:** - · **Entry:** build · **Blocked:** none
 * **Impact class:** behaviour
 * **Where:** `src-tauri/src/chesscom.rs:44,411-416` (100 MiB `MAX_PGN_BYTES` over the whole export), `chesscom.rs:40,43` (15-minute export deadline, 16 MiB per month), `db/linked_collections/batch.rs:509-531` (cursor saved only after a successful publish).
 * **Defect:** whole-run limits fail staging before anything is published, and without a cursor each retry refetches the full history.
 * **Failure scenario:** an account with roughly 40,000+ games (about 1.5-2.5 KB each with clocks) gets "Chess.com PGN export is too large" on every Download and never imports any history.
 * **Open question:** publish per month (or up to the last complete month under the cap) and let the cursor carry the rest; how does that interact with the pending-batch recovery contract?
 * **Found by:** cloud audit session session_01JbeKomYNAubvgDNCaEau2u (native security/accounts audit, base 301104da), verified against local HEAD by a Claude Code verifier subagent of session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+Handled by drain session c6681a98 (adopted planner plan, 4 plan-review rounds approved). A resumable Chess.com account export stages whole archive months up to the per-export byte (100 MiB), month-count (240) and 15-minute bounds, publishes that prefix and reports a coverage floor (00:00 UTC of the following month); `account_sync_cursor` folds the floor into the linked receipt cursor and the unlinked `AccountSyncCursor`. The account job loops from the native cursor chunk by chunk until a download reports no floor; each chunk is an ordinary pending batch, so the recovery contract stays per chunk and a recovered chunk is followed by one fresh download. A floor that does not advance the cursor fails with "Chess.com history could not advance". The standalone `download_chess_com_games` command keeps whole-export semantics. Commits ac5bb155 (implementation, 13 new tests), 391a35cd (review repair pinning the resumable scope). Decisions d-20261104-02..07. Review record tasks/handoffs/2026-11-04-f-20261101-29-review.md. Rejected: one chunk per Download click, game-level truncation, a separate persisted covered-month field.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"6e9874b22020ca77edfbcab094d062dd010d1a084429c82ccf7ef07df64b47bc","header_sha256":"1221dd0e7082a4f6f4009d6cc4a1c19ac14e193eec58bb6f3e9b5750dbccb5a3","header_status":"handled","input_sha256":"dd6b6f1de40985688fcf89c169f94b5b2386a9dd3438708495695791597d311a","kind":"mutation-receipt","operation":"1cd1b06c3e107b5eceea49a0cd90bdf75f1640edded486e6d5164f3941342082","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-29"],"target":"f-20261101-29","v":1} -->
 
 ---
 
