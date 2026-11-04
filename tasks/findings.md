@@ -20807,3 +20807,19 @@ Fixed by d1882467 (drain session a7d7a3cd): `rename_information_buffer` floors t
 * **Handled 2026-11-04:** `87ddb1c8` keys trash pages only on the origin record's time; an origin-less bucket keys as `(0, id)` and sorts as oldest while still displaying its directory time (d-20261104-12). New test `trash_listing_pages_are_stable_when_originless_bucket_times_change` moves unseen buckets' times forward between pages and guards origin ordering and both displayed times.
 * **Proof:** revert proofs on Linux — old mtime key: pagination assert fails (0 vs 66); origin key assignment removed: origin-order assert fails; displayed time zeroed: display assert fails. `pnpm gates:push -- --rust` green (lint, test, coverage, contract). Remote `Test` run 41827318462 on `87ddb1c8` succeeded, including `rust-windows-test`. The Windows failure was intermittent (2 of 4 runs before the fix), so one green run is not conclusive alone; a later red of `trash_listing_pages_beyond_directory_listing_bound_without_admitting_handles` reopens this finding. Review: Codex lenses correctness, root-cause, tests, code-quality, platform-semantics and records, all APPROVED after one repair round (Windows directory open in the test, origin/display guards, evidence boundary note).
 <!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"18e5ef8ffd67aad6c3d8021165878dd57ae37eb63ee99f4189eaf9342c7046b9","header_sha256":"2622ce0e94962d2ee10e4d066d6be66bb2739ba8e922208a1807783b28d06116","header_status":"handled","input_sha256":"50ff7b9fcf672baac72ce954d4f4ae236cb4f4a25c351d790c3cdf2cfdf2e61c","kind":"mutation-receipt","operation":"e3e71c7ae13100574e6f21d7b1a2464e2f6961d6cc226cc862e6a94cdfa2f271","options":{"section":null},"request_id_sha256":null,"results":["f-20261104-04"],"target":"f-20261104-04","v":1} -->
+
+---
+
+## 2026-11-04 — filed through the inbox spool
+
+### Required macOS jobs on e87df430 cancel before runner acquisition, so remote CI is red
+
+* **ID:** f-20261104-05 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** github-macos-runners-available
+* **Filed from:** f895315b-a040-4867-8b8a-cf3a1aca2cce
+* **Impact class:** tooling
+* **Where:** GitHub Test run 41855308635 on e87df430c12e7dad6b67690d0c9dff52d9fac7f9 (master), jobs rust-macos-test, rust-platform macos-26-intel aarch64-apple-darwin and x86_64-apple-darwin; `.github/workflows/test.yml`; `scripts/check-remote-ci.mjs`.
+* **Defect:** all three macOS jobs stayed queued about 15 minutes and concluded cancelled with the check-run annotation "The job was not acquired by Runner of type hosted even after multiple attempts", on the original attempt and again after `gh run rerun --failed`. Every Linux and Windows job on the same run succeeded. `pnpm ci:remote:check` now exits 1, which refuses the next code push to master (blocked work).
+* **Failure scenario:** the next drain session's push stops at the red-remote check although its own diff is green, until a replacement run acquires macOS runners.
+* **Fix shape:** once hosted macos-26-intel runners are available, rerun the failed jobs of run 41855308635 (`gh run rerun 41855308635 --failed -R felixabeck/en-croissant`) and confirm all three succeed; close with the job ids. Same external cause as handled f-20261019-06; no workflow change is implied by this observation.
+* **Proof:** `pnpm ci:remote:check` exits 0 with the three macOS jobs of the newest master run concluded success.
+* **Found by:** drain session f895315b-a040-4867-8b8a-cf3a1aca2cce while confirming the f-20261101-16 push, 2026-11-04.
