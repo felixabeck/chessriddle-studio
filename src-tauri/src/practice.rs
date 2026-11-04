@@ -631,18 +631,27 @@ pub(crate) fn resolve_pending_delete_in(
     establish_durability: impl FnOnce() -> Result<(), Error>,
 ) -> Result<(), Error> {
     with_map_lock(directory, file_id, || {
-        let Some(mut map) = read_map(directory, file_id)? else {
-            return Ok(());
-        };
-        let Some(pending) = &map.pending else {
-            return Ok(());
-        };
-        let landed = pending.game_count.checked_sub(1) == Some(count);
-        if landed {
-            establish_durability()?;
-        }
-        apply_pending(directory, &mut map, landed)
+        resolve_pending_delete_locked(directory, file_id, count, Box::new(establish_durability))
     })
+}
+
+fn resolve_pending_delete_locked(
+    directory: &AuthorizedDir,
+    file_id: &str,
+    count: usize,
+    establish_durability: Box<dyn FnOnce() -> Result<(), Error> + '_>,
+) -> Result<(), Error> {
+    let Some(mut map) = read_map(directory, file_id)? else {
+        return Ok(());
+    };
+    let Some(pending) = &map.pending else {
+        return Ok(());
+    };
+    let landed = pending.game_count.checked_sub(1) == Some(count);
+    if landed {
+        establish_durability()?;
+    }
+    apply_pending(directory, &mut map, landed)
 }
 
 pub(crate) fn prepare_delete_in(
@@ -694,6 +703,16 @@ fn with_mapped_deck<T>(
     create: bool,
     operation: impl FnOnce(Option<i32>, &str, bool) -> Result<T, Error>,
 ) -> Result<T, Error> {
+    // Preserve validation before lock acquisition and hold the lock through the operation.
+    let index = mapped_ordinal(ordinal)?;
+    with_map_lock(directory, file_id, || {
+        let (number, epoch, legacy_superseded) =
+            resolve_mapped_deck(directory, file_id, ordinal, index, expected_epoch, create)?;
+        operation(number, &epoch, legacy_superseded)
+    })
+}
+
+fn mapped_ordinal(ordinal: i32) -> Result<usize, Error> {
     let index = usize::try_from(ordinal)
         .map_err(|_| Error::InvalidInput("negative practice ordinal".into()))?;
     if index >= MAP_MAX_ORDINALS {
@@ -701,43 +720,53 @@ fn with_mapped_deck<T>(
             "practice ordinal limit exceeded".into(),
         ));
     }
-    with_map_lock(directory, file_id, || {
-        let mut map = read_map(directory, file_id).map_err(|error| {
-            if matches!(error, Error::InvalidInput(_)) {
-                error.with_root_failure(crate::error::RootFailure::Unusable)
-            } else {
-                error
-            }
-        })?;
-        let epoch = map_epoch(map.as_ref()).to_owned();
-        if expected_epoch.is_some_and(|expected| expected != epoch) {
-            return Err(Error::Conflict("practice epoch changed".into()));
-        }
-        if map.as_ref().is_some_and(|map| map.pending.is_some()) {
-            return Err(Error::Conflict(
-                "practice delete requires resolution".into(),
-            ));
-        }
-        let number = if let Some(map) = &mut map {
-            if create && map.ordinals.get(index).copied().flatten().is_none() {
-                let number = map.next_deck;
-                map.next_deck = number.checked_add(1).ok_or_else(|| {
-                    Error::ResourceLimit("practice deck numbers exhausted".into())
-                })?;
-                map.ordinals.resize(map.ordinals.len().max(index + 1), None);
-                map.ordinals[index] = Some(number);
-                write_map(directory, map)?;
-            }
-            map.ordinals.get(index).copied().flatten()
+    Ok(index)
+}
+
+/// Called with the map lock held, which the caller retains while using the resolved deck.
+fn resolve_mapped_deck(
+    directory: &AuthorizedDir,
+    file_id: &str,
+    ordinal: i32,
+    index: usize,
+    expected_epoch: Option<&str>,
+    create: bool,
+) -> Result<(Option<i32>, String, bool), Error> {
+    let mut map = read_map(directory, file_id).map_err(|error| {
+        if matches!(error, Error::InvalidInput(_)) {
+            error.with_root_failure(crate::error::RootFailure::Unusable)
         } else {
-            Some(ordinal)
-        };
-        operation(
-            number,
-            &epoch,
-            map.as_ref().is_some_and(|map| map.legacy_superseded),
-        )
-    })
+            error
+        }
+    })?;
+    let epoch = map_epoch(map.as_ref()).to_owned();
+    if expected_epoch.is_some_and(|expected| expected != epoch) {
+        return Err(Error::Conflict("practice epoch changed".into()));
+    }
+    if map.as_ref().is_some_and(|map| map.pending.is_some()) {
+        return Err(Error::Conflict(
+            "practice delete requires resolution".into(),
+        ));
+    }
+    let number = if let Some(map) = &mut map {
+        if create && map.ordinals.get(index).copied().flatten().is_none() {
+            let number = map.next_deck;
+            map.next_deck = number
+                .checked_add(1)
+                .ok_or_else(|| Error::ResourceLimit("practice deck numbers exhausted".into()))?;
+            map.ordinals.resize(map.ordinals.len().max(index + 1), None);
+            map.ordinals[index] = Some(number);
+            write_map(directory, map)?;
+        }
+        map.ordinals.get(index).copied().flatten()
+    } else {
+        Some(ordinal)
+    };
+    Ok((
+        number,
+        epoch,
+        map.as_ref().is_some_and(|map| map.legacy_superseded),
+    ))
 }
 
 fn hash_migration_entry(
@@ -876,9 +905,19 @@ fn write_json<T: Serialize>(
 ) -> Result<(), Error> {
     let bytes = serde_json::to_vec(value)
         .map_err(|_| invalid_leaf(leaf, "document cannot be serialized"))?;
+    write_json_bytes(directory, leaf, &bytes, stage, operation)
+}
+
+fn write_json_bytes(
+    directory: &AuthorizedDir,
+    leaf: &str,
+    bytes: &[u8],
+    stage: DurabilityStage,
+    operation: &str,
+) -> Result<(), Error> {
     let (outcome, _) = directory
         .atomic_replace_leaf_identified(OsStr::new(leaf), |file| {
-            file.write_all(&bytes)
+            file.write_all(bytes)
                 .map_err(|error| operation_io(operation, leaf, error))
         })
         .map_err(|error| operation_error(operation, leaf, error))?;
@@ -3229,6 +3268,370 @@ mod tests {
                 )
             },
         )
+    }
+
+    #[test]
+    fn deck_map_rejects_each_invalid_identity_epoch_number_and_pending_field() {
+        let (_temp, directory) = directory();
+        let valid = fresh_map(&directory, "file", 2, true).unwrap();
+        let valid_json = serde_json::to_value(&valid).unwrap();
+        let pending_id = uuid::Uuid::new_v4().to_string();
+        let cases = [
+            ("version", serde_json::json!(2)),
+            ("fileId", serde_json::json!("other")),
+            ("epoch", serde_json::json!("invalid-epoch")),
+            ("legacySuperseded", serde_json::json!(true)),
+            ("nextDeck", serde_json::json!(-1)),
+            ("ordinals", serde_json::json!([0, -1])),
+            ("ordinals", serde_json::json!([0, 2])),
+            ("ordinals", serde_json::json!([0, 0])),
+            (
+                "pending",
+                serde_json::json!({
+                    "id": pending_id, "ordinal": 0, "gameCount": MAP_MAX_ORDINALS + 1
+                }),
+            ),
+            (
+                "pending",
+                serde_json::json!({"id": pending_id, "ordinal": 2, "gameCount": 2}),
+            ),
+            (
+                "pending",
+                serde_json::json!({"id": "invalid-id", "ordinal": 0, "gameCount": 2}),
+            ),
+        ];
+        let leaf = map_leaf("file");
+        for (field, value) in cases {
+            let mut invalid = valid_json.clone();
+            invalid[field] = value.clone();
+            let bytes = serde_json::to_vec(&invalid).unwrap();
+            fs::write(directory.path().join(&leaf), &bytes).unwrap();
+            let error = read_map(&directory, "file").unwrap_err();
+            assert!(matches!(error, Error::InvalidInput(_)), "{field}: {value}");
+            assert_eq!(
+                error.diagnostic(),
+                invalid_leaf(&leaf, "deck map is invalid").diagnostic(),
+                "{field}: {value}"
+            );
+            assert_eq!(leaf_bytes(&directory, &leaf), bytes);
+        }
+        // A UUID epoch permits superseding legacy data and a valid pending record.
+        let mut valid = valid;
+        valid.epoch = uuid::Uuid::new_v4().to_string();
+        valid.legacy_superseded = true;
+        valid.pending = Some(PendingDelete {
+            id: pending_id.clone(),
+            ordinal: 1,
+            game_count: 2,
+        });
+        write_map(&directory, &valid).unwrap();
+        let loaded = read_map(&directory, "file").unwrap().unwrap();
+        assert_eq!(loaded.epoch, valid.epoch);
+        assert_eq!(loaded.ordinals, vec![Some(0), Some(1)]);
+        assert_eq!(loaded.pending.unwrap().id, pending_id);
+    }
+
+    #[test]
+    fn deck_map_read_and_write_enforce_ordinal_and_serialized_size_limits() {
+        let (_temp, directory) = directory();
+        let mut map = fresh_map(&directory, "file", 0, true).unwrap();
+        map.ordinals = vec![None; MAP_MAX_ORDINALS + 1];
+        let leaf = map_leaf("file");
+        fs::write(
+            directory.path().join(&leaf),
+            serde_json::to_vec(&map).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            read_map(&directory, "file").unwrap_err().diagnostic(),
+            invalid_leaf(&leaf, "deck map is invalid").diagnostic()
+        );
+        let before = leaf_bytes(&directory, &leaf);
+        assert_eq!(
+            write_map(&directory, &map).unwrap_err().diagnostic(),
+            invalid_leaf(&leaf, "deck map exceeds its size limit").diagnostic()
+        );
+        assert_eq!(leaf_bytes(&directory, &leaf), before);
+
+        map.ordinals.clear();
+        map.epoch = "x".repeat(MAP_MAX_BYTES);
+        assert_eq!(
+            write_map(&directory, &map).unwrap_err().diagnostic(),
+            invalid_leaf(&leaf, "deck map exceeds its size limit").diagnostic()
+        );
+        assert_eq!(leaf_bytes(&directory, &leaf), before);
+        map.epoch = NO_MAP_EPOCH.into();
+        map.ordinals = vec![None; MAP_MAX_ORDINALS];
+        write_map(&directory, &map).unwrap();
+        assert_eq!(
+            read_map(&directory, "file")
+                .unwrap()
+                .unwrap()
+                .ordinals
+                .len(),
+            MAP_MAX_ORDINALS
+        );
+    }
+
+    #[test]
+    fn mapped_ordinals_reject_bounds_before_locking_and_accept_the_last_ordinal() {
+        let (_temp, directory) = directory();
+        assert!(matches!(
+            practice_epoch_in(&directory, "file", -1),
+            Err(Error::InvalidInput(message)) if message == "negative practice ordinal"
+        ));
+        assert!(matches!(
+            practice_epoch_in(&directory, "file", MAP_MAX_ORDINALS as i32),
+            Err(Error::ResourceLimit(message)) if message == "practice ordinal limit exceeded"
+        ));
+        assert!(directory.entries(&mut |_| true).unwrap().is_empty());
+        let epoch = practice_epoch_in(&directory, "file", MAP_MAX_ORDINALS as i32 - 1).unwrap();
+        assert_eq!(epoch.epoch, NO_MAP_EPOCH);
+        assert!(!epoch.legacy_superseded);
+    }
+
+    #[test]
+    fn fresh_and_mapped_decks_report_resource_exhaustion_without_changes() {
+        let (_temp, directory) = directory();
+        assert!(matches!(
+            fresh_map(&directory, "file", MAP_MAX_ORDINALS + 1, true),
+            Err(Error::ResourceLimit(message)) if message == "practice ordinal limit exceeded"
+        ));
+        let leaf = positions_leaf(&hash_deck("file", i32::MAX));
+        let identity = serde_json::json!({"fileId": "file", "game": i32::MAX});
+        fs::write(directory.path().join(&leaf), identity.to_string()).unwrap();
+        assert!(matches!(
+            fresh_map(&directory, "file", 0, false),
+            Err(Error::ResourceLimit(message)) if message == "practice deck numbers exhausted"
+        ));
+        assert_eq!(
+            leaf_bytes(&directory, &leaf),
+            identity.to_string().as_bytes()
+        );
+
+        let map = FileDeckMap {
+            version: PRACTICE_STORAGE_VERSION,
+            file_id: "file".into(),
+            epoch: uuid::Uuid::new_v4().to_string(),
+            ordinals: vec![None],
+            next_deck: i32::MAX,
+            legacy_superseded: true,
+            pending: None,
+        };
+        write_map(&directory, &map).unwrap();
+        let before = leaf_bytes(&directory, &map_leaf("file"));
+        assert!(matches!(
+            mapped_sync(&directory, "file", 0, &map.epoch, &positions()),
+            Err(Error::ResourceLimit(message)) if message == "practice deck numbers exhausted"
+        ));
+        assert_eq!(leaf_bytes(&directory, &map_leaf("file")), before);
+        assert!(load_mapped_practice_deck_in(&directory, "file", 0)
+            .unwrap()
+            .deck
+            .is_none());
+    }
+
+    #[test]
+    fn pending_delete_conflicts_preserve_the_record_and_foreign_finishes_do_nothing() {
+        let (_temp, directory) = directory();
+        let vanished = prepare_delete_in(&directory, "file", 0, 2).unwrap();
+        fs::remove_file(directory.path().join(map_leaf("file"))).unwrap();
+        assert!(matches!(
+            finish_delete_in(&directory, "file", &vanished, true),
+            Err(Error::Conflict(message)) if message == "practice delete map disappeared"
+        ));
+        resolve_pending_delete_in(&directory, "file", 0, || {
+            panic!("missing map needs no durability sync")
+        })
+        .unwrap();
+        let id = prepare_delete_in(&directory, "file", 0, 2).unwrap();
+        let before = leaf_bytes(&directory, &map_leaf("file"));
+        assert!(matches!(
+            prepare_delete_in(&directory, "file", 1, 2),
+            Err(Error::Conflict(message)) if message == "practice delete is pending"
+        ));
+        assert!(matches!(
+            practice_epoch_in(&directory, "file", 0),
+            Err(Error::Conflict(message)) if message == "practice delete requires resolution"
+        ));
+        assert!(matches!(
+            repair_mapped_practice_deck_in(&directory, "file", 0, Some(NO_MAP_EPOCH)),
+            Err(Error::Conflict(message)) if message == "practice epoch changed or delete is pending"
+        ));
+        finish_delete_in(&directory, "file", &uuid::Uuid::new_v4().to_string(), true).unwrap();
+        assert_eq!(leaf_bytes(&directory, &map_leaf("file")), before);
+        finish_delete_in(&directory, "file", &id, false).unwrap();
+        let before = leaf_bytes(&directory, &map_leaf("file"));
+        finish_delete_in(&directory, "file", &id, true).unwrap();
+        resolve_pending_delete_in(&directory, "file", 1, || {
+            panic!("resolved map needs no durability sync")
+        })
+        .unwrap();
+        assert_eq!(leaf_bytes(&directory, &map_leaf("file")), before);
+        let mut map = read_map(&directory, "file").unwrap().unwrap();
+        apply_pending(&directory, &mut map, true).unwrap();
+        assert_eq!(leaf_bytes(&directory, &map_leaf("file")), before);
+    }
+
+    #[test]
+    fn invalid_maps_are_unusable_and_pending_resolution_preserves_the_error() {
+        let (_temp, directory) = directory();
+        let leaf = map_leaf("file");
+        fs::write(directory.path().join(&leaf), b"{damaged").unwrap();
+        let error = practice_epoch_in(&directory, "file", 0).unwrap_err();
+        assert_eq!(error.root_failure_reason(), Some(RootFailure::Unusable));
+        assert_eq!(
+            error.diagnostic(),
+            invalid_leaf(&leaf, "document is malformed JSON").diagnostic()
+        );
+        let error = resolve_pending_delete_in(&directory, "file", 0, || {
+            panic!("invalid map needs no durability sync")
+        })
+        .unwrap_err();
+        assert!(matches!(error, Error::InvalidInput(_)));
+        assert_eq!(leaf_bytes(&directory, &leaf), b"{damaged");
+    }
+
+    #[test]
+    fn pending_delete_uncertain_publication_advances_map_and_retirement_failure_is_best_effort() {
+        let (_temp, directory) = directory();
+        let id = prepare_delete_in(&directory, "file", 0, 1).unwrap();
+        let before = leaf_bytes(&directory, &map_leaf("file"));
+        set_test_atomic_file_injector(Some(Arc::new(ParentSyncFault("uncertain map publication"))));
+        let error = finish_delete_in(&directory, "file", &id, true).unwrap_err();
+        set_test_atomic_file_injector(None);
+        assert!(matches!(
+            error,
+            Error::CommittedDurabilityUncertain(DurabilityStage::PracticeState)
+        ));
+        assert_ne!(leaf_bytes(&directory, &map_leaf("file")), before);
+        assert!(!has_pending_delete(&directory, "file").unwrap());
+
+        let id = prepare_delete_in(&directory, "other", 0, 1).unwrap();
+        let leaf = positions_leaf(&hash_deck("other", 0));
+        fs::create_dir(directory.path().join(&leaf)).unwrap();
+        finish_delete_in(&directory, "other", &id, true).unwrap();
+        let map = read_map(&directory, "other").unwrap().unwrap();
+        assert!(map.pending.is_none());
+        assert!(map.ordinals.is_empty());
+        assert!(map.legacy_superseded);
+        assert_ne!(map.epoch, NO_MAP_EPOCH);
+        assert!(directory.path().join(leaf).is_dir());
+    }
+
+    #[test]
+    fn uncertain_map_allocation_does_not_run_the_deck_write_and_retry_keeps_the_number() {
+        let (_temp, directory) = directory();
+        let map = fresh_map(&directory, "file", 0, false).unwrap();
+        write_map(&directory, &map).unwrap();
+        set_test_atomic_file_injector(Some(Arc::new(ParentSyncFault("uncertain allocation"))));
+        let result = mapped_sync(&directory, "file", 0, &map.epoch, &positions());
+        set_test_atomic_file_injector(None);
+        assert!(matches!(
+            result,
+            Err(Error::CommittedDurabilityUncertain(
+                DurabilityStage::PracticeState
+            ))
+        ));
+        let allocated = read_map(&directory, "file").unwrap().unwrap();
+        assert_eq!(allocated.ordinals, vec![Some(0)]);
+        assert_eq!(allocated.next_deck, 1);
+        assert_eq!(allocated.epoch, map.epoch);
+        assert!(load_mapped_practice_deck_in(&directory, "file", 0)
+            .unwrap()
+            .deck
+            .is_none());
+        assert_eq!(
+            mapped_sync(&directory, "file", 0, &map.epoch, &positions()).unwrap(),
+            1
+        );
+        let after = read_map(&directory, "file").unwrap().unwrap();
+        assert_eq!(after.ordinals, allocated.ordinals);
+        assert_eq!(after.next_deck, allocated.next_deck);
+        assert!(load_mapped_practice_deck_in(&directory, "file", 0)
+            .unwrap()
+            .deck
+            .is_some());
+    }
+
+    #[test]
+    fn superseded_map_refuses_legacy_reimport_without_reading_the_document() {
+        let (_temp, directory) = directory();
+        let map = fresh_map(&directory, "file", 0, false).unwrap();
+        write_map(&directory, &map).unwrap();
+        let before = leaf_bytes(&directory, &map_leaf("file"));
+        assert_eq!(
+            migrate_mapped_practice_deck_in(&directory, "file", 0, &map.epoch, "malformed")
+                .unwrap(),
+            PracticeMigrationOutcome {
+                status: PracticeMigrationStatus::Superseded,
+                entries: 0,
+                positions: 0,
+                positions_digest: String::new(),
+                entries_digest: String::new(),
+            }
+        );
+        assert_eq!(leaf_bytes(&directory, &map_leaf("file")), before);
+        assert!(!directory
+            .path()
+            .join(positions_leaf(&hash_deck("file", 0)))
+            .exists());
+    }
+
+    #[test]
+    fn inventory_rejects_a_map_stored_under_another_files_leaf() {
+        let (_temp, directory) = directory();
+        let map = fresh_map(&directory, "file", 0, false).unwrap();
+        let leaf = map_leaf("other");
+        let bytes = serde_json::to_vec(&map).unwrap();
+        fs::write(directory.path().join(&leaf), &bytes).unwrap();
+        let inventory = list_practice_decks_in(&directory).unwrap();
+        assert!(inventory.decks.is_empty());
+        assert_eq!(inventory.anomalies.len(), 1);
+        let anomaly = &inventory.anomalies[0];
+        assert_eq!(anomaly.kind, PracticeStoreAnomalyKind::DamagedDeck);
+        assert_eq!(anomaly.leaf, leaf);
+        assert_eq!(anomaly.file_id.as_deref(), Some("file"));
+        assert_eq!(anomaly.game, None);
+        assert_eq!(anomaly.epoch, None);
+        assert_eq!(leaf_bytes(&directory, &leaf), bytes);
+    }
+
+    #[test]
+    fn inventory_classifies_orphan_shards_with_each_invalid_review_identity_as_unreadable() {
+        let (_temp, directory) = directory();
+        let leaf = shard_leaf(&hash_deck("file", 0), 0, 0);
+        for review in [
+            test_review("", 1, Value::Null),
+            test_review(&"x".repeat(PRACTICE_ID_MAX_BYTES + 1), 1, Value::Null),
+            test_review("id", 0, Value::Null),
+        ] {
+            write_test_shard(&directory, "file", 0, 0, 0, vec![review]);
+            let before = leaf_bytes(&directory, &leaf);
+            let inventory = list_practice_decks_in(&directory).unwrap();
+            assert!(inventory.decks.is_empty());
+            assert_eq!(inventory.anomalies.len(), 1);
+            assert_eq!(
+                inventory.anomalies[0].kind,
+                PracticeStoreAnomalyKind::Unreadable
+            );
+            assert_eq!(inventory.anomalies[0].leaf, leaf);
+            assert_eq!(leaf_bytes(&directory, &leaf), before);
+        }
+    }
+
+    #[test]
+    fn repair_refuses_a_non_regular_positions_leaf_before_removing_anything() {
+        let (_temp, directory) = directory();
+        let leaf = positions_leaf(&hash_deck("file", 0));
+        fs::create_dir(directory.path().join(&leaf)).unwrap();
+        let error = repair_practice_deck_in(&directory, "file", 0).unwrap_err();
+        assert!(matches!(error, Error::InvalidInput(_)));
+        assert_eq!(
+            error.diagnostic(),
+            invalid_leaf(&leaf, "cannot remove a non-regular leaf").diagnostic()
+        );
+        assert!(directory.path().join(leaf).is_dir());
     }
 
     #[test]
