@@ -106,12 +106,16 @@ fn classify_trash_bucket(
                 return Err(Error::Conflict("trash bucket has multiple entries".into()));
             };
             if primary.kind == DirectoryEntryKind::Other {
-                Ok(None)
+                Err(Error::Conflict(
+                    "trash bucket has an unsupported entry".into(),
+                ))
             } else {
                 Ok(Some(TrashBucketEntry::Item(primary)))
             }
         }
-        (Some(entry), None) if entry.kind == DirectoryEntryKind::Other => Ok(None),
+        (Some(entry), None) if entry.kind == DirectoryEntryKind::Other => Err(Error::Conflict(
+            "trash bucket has an unsupported entry".into(),
+        )),
         (Some(entry), None) => {
             if entry.kind == DirectoryEntryKind::RegularFile
                 && entry.name.to_string_lossy().ends_with(".info")
@@ -3069,6 +3073,7 @@ fn remove_trash_blocking(
                 &path,
                 authority,
                 &mut executables,
+                item.is_some(),
                 cancellation,
             );
             match result {
@@ -3168,6 +3173,7 @@ fn remove_trash_bucket(
     path: &Path,
     authority: &SharedPathAuthority,
     executables: &mut Vec<PathRef>,
+    item_only: bool,
     cancellation: &CancellationToken,
 ) -> Result<CommittedRemoval, Error> {
     let is_dir = entry.kind == DirectoryEntryKind::Directory;
@@ -3195,58 +3201,72 @@ fn remove_trash_bucket(
         crate::infra::fs::entry_identity_at(trash, &bucket.origin_leaf(), false).ok();
     let mut count = 0;
     let mut failure = None;
-    let walk = (|| {
-        match classify_trash_bucket(&directory, cancellation)? {
-            Some(TrashBucketEntry::OrphanSidecar(child)) => {
-                let result = crate::infra::fs::remove_entry_at(
-                    &directory,
-                    &child.name,
-                    child.identity,
-                    false,
-                );
-                if let Err(error) = result {
-                    if !error.is_missing_entry() && failure.is_none() {
-                        failure = Some(error);
-                    }
+    let mut remove_child = |child: DirectoryEntry| -> Result<(), Error> {
+        let result = if child.kind == DirectoryEntryKind::Other {
+            // Links and special files stay in the bucket and are never followed.
+            Err(Error::Conflict(
+                "trash bucket has an unsupported entry".into(),
+            ))
+        } else if child.kind == DirectoryEntryKind::RegularFile
+            && child.name.to_string_lossy().ends_with(".info")
+        {
+            crate::infra::fs::remove_entry_at_counted(
+                &directory,
+                &child.name,
+                child.identity,
+                false,
+            )
+            .map(|removal| {
+                let (_, error) = removal.into_parts();
+                CommittedRemoval::new(0, error)
+            })
+        } else {
+            let child_path = path.join(&child.name);
+            let is_dir = child.kind == DirectoryEntryKind::Directory;
+            let source = WorkspaceMutationTarget {
+                parent: directory.try_clone()?,
+                directory: None,
+                leaf: child.name.clone(),
+                identity: child.identity,
+                is_dir,
+                path: child_path.clone(),
+            };
+            remove_workspace_target(authority, &source, executables, item_only)
+        };
+        match result {
+            Ok(removal) => {
+                let (removed, error) = removal.into_parts();
+                count += removed;
+                if failure.is_none() {
+                    failure = error;
                 }
             }
-            Some(TrashBucketEntry::Item(child)) => {
-                let child_path = path.join(&child.name);
-                let is_dir = child.kind == DirectoryEntryKind::Directory;
-                let source = WorkspaceMutationTarget {
-                    parent: directory.try_clone()?,
-                    directory: None,
-                    leaf: child.name.clone(),
-                    identity: child.identity,
-                    is_dir,
-                    path: child_path.clone(),
-                };
-                let result = remove_workspace_target(authority, &source, executables);
-                match result {
-                    Ok(removal) => {
-                        let (removed, error) = removal.into_parts();
-                        count += removed;
-                        if failure.is_none() {
-                            failure = error;
-                        }
-                    }
-                    Err(error) => {
-                        if let Error::PartialRemoval {
-                            removed_entries, ..
-                        } = &error
-                        {
-                            count += removed_entries;
-                        }
-                        if failure.is_none() {
-                            failure = Some(error);
-                        }
-                    }
+            Err(error) if error.is_missing_entry() => {}
+            Err(error) => {
+                if let Error::PartialRemoval {
+                    removed_entries, ..
+                } = &error
+                {
+                    count += removed_entries;
+                }
+                if failure.is_none() {
+                    failure = Some(error);
                 }
             }
-            None => {}
         }
         Ok(())
-    })();
+    };
+    let walk = if item_only {
+        match classify_trash_bucket(&directory, cancellation) {
+            Ok(Some(TrashBucketEntry::Item(child) | TrashBucketEntry::OrphanSidecar(child))) => {
+                remove_child(child)
+            }
+            Ok(None) => Ok(()),
+            Err(error) => Err(error),
+        }
+    } else {
+        crate::infra::fs::visit_directory_entries_at(&directory, cancellation, &mut remove_child)
+    };
     if let Err(error) = walk {
         if failure.is_none() {
             failure = Some(error);
@@ -3287,6 +3307,7 @@ fn remove_workspace_target(
     authority: &SharedPathAuthority,
     source: &WorkspaceMutationTarget,
     executables: &mut Vec<PathRef>,
+    remove_sidecar: bool,
 ) -> Result<CommittedRemoval, Error> {
     let mut removal = match crate::infra::fs::remove_entry_at_counted(
         &source.parent,
@@ -3298,7 +3319,7 @@ fn remove_workspace_target(
         Err(error @ Error::PartialRemoval { .. }) => Err(error),
         Err(error) => return Err(error),
     };
-    let sidecar_result = if source.is_dir {
+    let sidecar_result = if source.is_dir || !remove_sidecar {
         Ok(())
     } else {
         sidecar_leaf(&source.leaf).and_then(|sidecar| {
@@ -3580,7 +3601,7 @@ mod tests {
     fn directory_sidecar_in_trash_reports_one_removed_primary() -> Result<(), Error> {
         for action in ["delete", "empty"] {
             let (_directory, state, workspace) = workspace_state();
-            let (_, entry, bucket, _) = trash_subfolder_file(&state, &workspace);
+            let (_, entry, bucket, origin) = trash_subfolder_file(&state, &workspace);
             let primary = bucket.join("Najdorf.pgn");
             let sidecar = bucket.join("Najdorf.info");
             fs::remove_file(&sidecar)?;
@@ -3600,15 +3621,188 @@ mod tests {
                 &CancellationToken::new(),
             );
             let result = result.and_then(CommittedRemoval::finish);
-            assert!(
-                matches!(&result, Err(Error::PartialRemoval { removed_entries: 1, cause })
+            if action == "delete" {
+                assert!(
+                    matches!(&result, Err(Error::PartialRemoval { removed_entries: 1, cause })
                     if matches!(cause.as_ref(), Error::InvalidInput(_) | Error::Io(_))),
-                "{action}: {result:?}"
-            );
+                    "{action}: {result:?}"
+                );
+                assert!(
+                    sidecar.is_dir(),
+                    "invalid sidecar must remain after item delete"
+                );
+            } else {
+                result?;
+                assert!(!bucket.exists());
+                assert!(!origin.exists());
+            }
             assert!(!primary.exists(), "{action}: primary must be gone");
-            assert!(sidecar.is_dir(), "{action}: invalid sidecar must remain");
             assert!(mutation_target(&state.pgn_path_authority, &entry).is_err());
         }
+        Ok(())
+    }
+
+    #[test]
+    fn empty_trash_removes_ambiguous_three_entry_and_unrelated_entry_buckets() -> Result<(), Error>
+    {
+        let (_directory, state, workspace) = workspace_state();
+        let (_, _, three, three_origin) = trash_subfolder_file(&state, &workspace);
+        fs::write(three.join("notes.txt"), b"external notes")?;
+        let root = workspace_root(&state.pgn_path_authority, &workspace)?;
+        let two = root
+            .join(TRASH_DIRECTORY)
+            .join(uuid::Uuid::new_v4().to_string());
+        fs::create_dir(&two)?;
+        fs::write(two.join("first.pgn"), b"*")?;
+        fs::write(two.join("second.txt"), b"notes")?;
+        let page = list_trash(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            None,
+            &CancellationToken::new(),
+        )?;
+        assert_eq!(page.items.len(), 2);
+        for row in page.items {
+            assert_eq!(row.category, Some(ErrorCategory::Conflict));
+            assert!(row.kind.is_none());
+            let restore = restore_trash_item(
+                &state.pgn_path_authority,
+                &state.workspace_mutation,
+                &workspace,
+                &row.item,
+                &CancellationToken::new(),
+            );
+            assert!(matches!(restore, Err(Error::Conflict(_))), "{restore:?}");
+            let (_, delete) = remove_trash_blocking(
+                &state.pgn_path_authority,
+                &state.workspace_mutation,
+                &workspace,
+                Some(row.item),
+                &CancellationToken::new(),
+            );
+            assert!(matches!(delete, Err(Error::Conflict(_))), "{delete:?}");
+        }
+        assert_eq!(fs::read(three.join("Najdorf.pgn"))?, b"1. e4 *");
+        assert_eq!(fs::read(two.join("first.pgn"))?, b"*");
+        remove_trash_blocking(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            None,
+            &CancellationToken::new(),
+        )
+        .1?
+        .finish()?;
+        assert!(!three.exists());
+        assert!(!three_origin.exists());
+        assert!(!two.exists());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_beside_trash_primary_is_unreadable_and_never_followed() -> Result<(), Error> {
+        let (directory, state, workspace) = workspace_state();
+        let (_, _, bucket, _) = trash_subfolder_file(&state, &workspace);
+        fs::remove_file(bucket.join("Najdorf.info"))?;
+        let outside = directory.path().join("outside");
+        fs::create_dir(&outside)?;
+        fs::write(outside.join("keep.pgn"), b"outside target")?;
+        let link = bucket.join("external");
+        std::os::unix::fs::symlink(&outside, &link)?;
+        let page = list_trash(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            None,
+            &CancellationToken::new(),
+        )?;
+        assert_eq!(page.items.len(), 1);
+        let row = &page.items[0];
+        assert_eq!(row.category, Some(ErrorCategory::Conflict));
+        assert!(row.kind.is_none());
+        let restore = restore_trash_item(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &row.item,
+            &CancellationToken::new(),
+        );
+        assert!(matches!(restore, Err(Error::Conflict(_))), "{restore:?}");
+        let (_, delete) = remove_trash_blocking(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            Some(row.item.clone()),
+            &CancellationToken::new(),
+        );
+        assert!(matches!(delete, Err(Error::Conflict(_))), "{delete:?}");
+        assert_eq!(fs::read(bucket.join("Najdorf.pgn"))?, b"1. e4 *");
+        assert_eq!(fs::read(outside.join("keep.pgn"))?, b"outside target");
+        let (_, empty) = remove_trash_blocking(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            None,
+            &CancellationToken::new(),
+        );
+        assert!(
+            matches!(
+                empty,
+                Err(Error::PartialRemoval {
+                    removed_entries: 1,
+                    ..
+                })
+            ),
+            "{empty:?}"
+        );
+        assert!(bucket.is_dir());
+        assert!(fs::symlink_metadata(link)?.file_type().is_symlink());
+        assert!(!bucket.join("Najdorf.pgn").exists());
+        assert_eq!(fs::read(outside.join("keep.pgn"))?, b"outside target");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn empty_trash_partial_bucket_preserves_surviving_capability_and_retires_deleted_executable(
+    ) -> Result<(), Error> {
+        let (_directory, state, workspace) = workspace_state();
+        let (folder, entry) = registered_child_directory(&state, &workspace, "surviving");
+        let survivor = registered_child_file(&state, &workspace, &folder.join("removed"));
+        let (trashed, _) = trash_test_entry(&state, &workspace, &entry);
+        let bucket = trashed
+            .parent()
+            .ok_or_else(|| Error::InvalidInput("missing test bucket".into()))?;
+        let executable_path = bucket.join("dropped-engine");
+        fs::write(&executable_path, b"engine")?;
+        let executable = registered_engine_file(&state, &executable_path);
+        let fault = crate::infra::fs::scoped_test_removal_injector(Arc::new(RemovalFault(
+            RemovalFaultPoint::BeforeChildStat,
+        )));
+        let result = remove_trash(&state, &workspace, None, CancellationToken::new()).await;
+        drop(fault);
+        assert!(
+            matches!(result, Err(Error::PartialRemoval { .. })),
+            "{result:?}"
+        );
+        assert!(
+            !executable_path.exists(),
+            "the independent child must be removed despite the failure"
+        );
+        assert!(bucket.is_dir());
+        let target = mutation_target(&state.pgn_path_authority, &survivor)?;
+        assert_eq!(fs::read(target.path())?, b"content");
+        mutation_target(&state.pgn_path_authority, &entry)?;
+        let records = state
+            .pgn_path_authority
+            .with_mut(|authority| authority.descriptors())?;
+        assert!(records
+            .iter()
+            .any(|record| record.id == *survivor.path_ref()));
+        assert!(!records.iter().any(|record| record.id == executable));
+        assert_executable_retired(&state, executable).await;
         Ok(())
     }
 
@@ -3817,7 +4011,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn trash_unreadable_bucket_keeps_its_category_and_symlinked_entry_is_skipped() {
+    fn trash_unreadable_bucket_keeps_its_category_and_symlinked_entry_is_unreadable() {
         use std::os::unix::fs::PermissionsExt;
         let (directory, state, workspace) = workspace_state();
         let (_, _, bucket, _) = trash_subfolder_file(&state, &workspace);
@@ -3837,16 +4031,16 @@ mod tests {
         let outside = directory.path().join("outside.pgn");
         fs::write(&outside, b"*").unwrap();
         std::os::unix::fs::symlink(&outside, bucket.join("Najdorf.pgn")).unwrap();
-        assert!(list_trash(
+        let page = list_trash(
             &state.pgn_path_authority,
             &state.workspace_mutation,
             &workspace,
             None,
-            &CancellationToken::new()
+            &CancellationToken::new(),
         )
-        .unwrap()
-        .items
-        .is_empty());
+        .unwrap();
+        assert_eq!(page.items.len(), 1);
+        assert_eq!(page.items[0].category, Some(ErrorCategory::Conflict));
         assert_eq!(fs::read(&outside).unwrap(), b"*");
     }
 
@@ -5999,6 +6193,7 @@ mod tests {
             &state.pgn_path_authority,
             &mutation_target(&state.pgn_path_authority, &entry).unwrap(),
             &mut Vec::new(),
+            true,
         )
         .and_then(CommittedRemoval::finish)
         .expect_err("sidecar cleanup failure must be applied-despite-error");
@@ -6100,6 +6295,7 @@ mod tests {
                 &state.pgn_path_authority,
                 &mutation_target(&state.pgn_path_authority, &entry).unwrap(),
                 &mut Vec::new(),
+                true,
             )
             .and_then(CommittedRemoval::finish);
             set_test_atomic_file_injector(None);
@@ -6128,6 +6324,7 @@ mod tests {
             &state.pgn_path_authority,
             &mutation_target(&state.pgn_path_authority, &entry).unwrap(),
             &mut dropped,
+            true,
         );
         let (count, failure) = result.expect("completed removal").into_parts();
         assert_eq!(count, 1);
