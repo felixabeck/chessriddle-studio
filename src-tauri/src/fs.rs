@@ -1568,6 +1568,7 @@ pub(crate) async fn download_lichess_games_runtime<R: tauri::Runtime>(
         publication,
         receipt_error: None,
         coverage_holds,
+        coverage_floor_ms: None,
     };
     downloaded.receipt_error = crate::db::linked_collections::record_download_receipt(
         &state.pgn_path_authority,
@@ -1576,6 +1577,7 @@ pub(crate) async fn download_lichess_games_runtime<R: tauri::Runtime>(
         &player,
         since_ms,
         downloaded.coverage_holds.clone(),
+        None,
         cancellation,
     )
     .await;

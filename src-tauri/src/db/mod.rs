@@ -1104,6 +1104,7 @@ pub(crate) struct AccountImportContext {
     pub identity: linked_collections::AccountIdentity,
     pub since_ms: Option<i64>,
     pub coverage_holds: Option<Vec<crate::lichess::CoverageHold>>,
+    pub coverage_floor_ms: Option<i64>,
 }
 
 struct AccountImporter {
@@ -1263,6 +1264,7 @@ impl AccountImporter {
             self.newest_start_ms,
             &self.provider_ids,
             self.context.coverage_holds.as_deref(),
+            self.context.coverage_floor_ms,
         );
         update_info_count(db, "AccountSyncCursor", cursor)?;
         db.batch_execute("DELETE FROM temp.AccountFingerprints;")?;
@@ -13845,6 +13847,7 @@ mod unlinked_account_tests {
                 },
                 since_ms: self.cursor(),
                 coverage_holds: holds,
+                coverage_floor_ms: None,
             }
         }
 
@@ -13900,6 +13903,21 @@ mod unlinked_account_tests {
             .map(|time| format!("[UTCTime \"{time}\"]\n"))
             .unwrap_or_default();
         format!("[White \"Player\"]\n[Black \"Opponent\"]\n[Date \"{date}\"]\n{identity}{time}\n1. e4 e5 *\n\n")
+    }
+
+    #[test]
+    fn unlinked_month_floor_survives_import_and_duplicate_replay() {
+        let fixture = Fixture::new();
+        let pgn = game("chesscom", "1", "2026.09.01", Some("12:00:00"));
+        for floor in [2_000_000_000_000, 2_000_100_000_000] {
+            let mut context = fixture.context("chesscom", None);
+            context.coverage_floor_ms = Some(floor);
+            fixture
+                .convert(&pgn, Some(context), &CancellationToken::new())
+                .unwrap();
+            assert_eq!(fixture.cursor(), Some(floor));
+            assert_eq!(fixture.count("Games"), 1);
+        }
     }
 
     #[test]

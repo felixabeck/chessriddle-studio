@@ -45,6 +45,7 @@ pub(crate) static RECORD_DOWNLOAD_FAILURE: crate::infra::test_hooks::KeyedTestVa
     Error,
 > = crate::infra::test_hooks::KeyedTestValues::new();
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn record_download_receipt(
     authority: &SharedPathAuthority,
     file: FileWorkspaceHandle,
@@ -52,6 +53,7 @@ pub(crate) async fn record_download_receipt(
     account: &str,
     since_ms: Option<i64>,
     coverage_holds: Option<Vec<crate::lichess::CoverageHold>>,
+    coverage_floor_ms: Option<i64>,
     cancellation: CancellationToken,
 ) -> Option<Error> {
     async {
@@ -68,6 +70,7 @@ pub(crate) async fn record_download_receipt(
                         &account,
                         since_ms,
                         coverage_holds.as_deref(),
+                        coverage_floor_ms,
                         token,
                     )
                 })
@@ -844,6 +847,7 @@ impl CollectionService {
         account: &str,
         since_ms: Option<i64>,
         coverage_holds: Option<&[crate::lichess::CoverageHold]>,
+        coverage_floor_ms: Option<i64>,
         token: &CancellationToken,
     ) -> Result<(), Error> {
         #[cfg(test)]
@@ -905,6 +909,7 @@ impl CollectionService {
             newest_start_ms,
             &provider_ids,
             coverage_holds,
+            coverage_floor_ms,
         );
         let current = authority.with_mut(|authority| {
             authority
@@ -2132,6 +2137,27 @@ impl CollectionService {
         Ok(())
     }
 
+    fn fetch_cursor(record: &Record) -> Option<i64> {
+        record.coverage_cursor_ms.filter(|_| {
+            record.coverage_cursor_current
+                || record
+                    .account
+                    .as_ref()
+                    .is_none_or(|account| account.provider != "lichess")
+        })
+    }
+
+    pub(crate) fn fetch_cursor_blocking(
+        &self,
+        collection: &str,
+        cancellation: &CancellationToken,
+    ) -> Result<Option<i64>, Error> {
+        let collection = Uuid::parse_str(collection)
+            .map_err(|_| Error::InvalidInput("invalid collection ID".into()))?;
+        let record = self.record(collection, cancellation)?;
+        Ok(Self::fetch_cursor(&record))
+    }
+
     fn descriptor(record: &Record) -> CollectionDescriptor {
         CollectionDescriptor {
             id: record.id.to_string(),
@@ -2147,16 +2173,7 @@ impl CollectionService {
             generation: String::new(),
             omitted: 0,
             retired_database: record.retired_database.clone(),
-            fetch_since_ms: record
-                .coverage_cursor_ms
-                .filter(|_| {
-                    record.coverage_cursor_current
-                        || record
-                            .account
-                            .as_ref()
-                            .is_none_or(|account| account.provider != "lichess")
-                })
-                .map(|value| value.to_string()),
+            fetch_since_ms: Self::fetch_cursor(record).map(|value| value.to_string()),
             pending_batch: record
                 .pending
                 .as_ref()
@@ -3527,19 +3544,24 @@ pub(crate) fn account_sync_cursor(
     newest_start_ms: Option<i64>,
     provider_ids: &HashSet<String>,
     holds: Option<&[crate::lichess::CoverageHold]>,
+    coverage_floor_ms: Option<i64>,
 ) -> i64 {
     let since = since_ms.unwrap_or(0);
     let newest = newest_start_ms.unwrap_or(since).max(since);
+    let floor = coverage_floor_ms.unwrap_or(i64::MIN);
     if provider != "lichess" {
-        return newest;
+        return newest.max(floor);
     }
-    let Some(holds) = holds else { return since };
+    let Some(holds) = holds else {
+        return since.max(floor);
+    };
     holds
         .iter()
         .filter(|hold| hold.ongoing || !provider_ids.contains(&hold.id))
         .map(|hold| hold.created_at_ms.saturating_sub(1).max(since))
         .min()
-        .map_or(newest, |floor| newest.min(floor))
+        .map_or(newest, |hold_floor| newest.min(hold_floor))
+        .max(floor)
 }
 
 pub(crate) fn initialize<R: tauri::Runtime>(

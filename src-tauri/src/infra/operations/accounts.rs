@@ -106,6 +106,9 @@ pub(crate) struct AccountCompletion {
     #[serde(skip)]
     #[specta(skip)]
     coverage_holds: Option<Vec<crate::lichess::CoverageHold>>,
+    #[serde(skip)]
+    #[specta(skip)]
+    coverage_floor_ms: Option<i64>,
 }
 
 type AccountAttempt = futures_util::future::Shared<
@@ -167,6 +170,7 @@ impl OperationRegistry {
                 deletion_pending: false,
                 importing: false,
                 coverage_holds: None,
+                coverage_floor_ms: None,
             }
         };
         let lease = self.accept_in_state(
@@ -306,7 +310,7 @@ pub(crate) async fn import_account_games_with_download<R, D, F>(
 ) -> Result<AccountCompletion, Error>
 where
     R: tauri::Runtime,
-    D: FnOnce(AccountImportRequest, String, String, tauri::AppHandle<R>, AppState) -> F
+    D: FnMut(AccountImportRequest, String, String, tauri::AppHandle<R>, AppState) -> F
         + Send
         + 'static,
     F: Future<Output = Result<RuntimeDownload, Error>> + Send + 'static,
@@ -354,6 +358,7 @@ async fn download_account<R: tauri::Runtime>(
             app,
             &owner,
             state.clone(),
+            crate::chesscom::ExportScope::Resumable,
             false,
         )
         .await
@@ -384,10 +389,10 @@ pub(crate) async fn start_account_completion<R, D, F>(
     app: tauri::AppHandle<R>,
     owner: String,
     state: AppState,
-    download: D,
+    mut download: D,
 ) where
     R: tauri::Runtime,
-    D: FnOnce(AccountImportRequest, String, String, tauri::AppHandle<R>, AppState) -> F
+    D: FnMut(AccountImportRequest, String, String, tauri::AppHandle<R>, AppState) -> F
         + Send
         + 'static,
     F: Future<Output = Result<RuntimeDownload, Error>> + Send + 'static,
@@ -402,183 +407,213 @@ pub(crate) async fn start_account_completion<R, D, F>(
     tokio::spawn(async move {
         let terminal = run_native_operation(lease, "import_account_games", async move {
             let outcome = std::panic::AssertUnwindSafe(async {
-                if !snapshot.deletion_pending {
-                    if snapshot.publication.is_none() {
-                        if let AccountImportTarget::Unlinked { database, .. } =
-                            &snapshot.request.target
-                        {
-                            let database = database.clone();
-                            let native = state.clone();
-                            snapshot.request.since_ms = BLOCKING_GATEWAY
-                                .spawn_cancellable(cancellation.clone(), move |token| {
-                                    crate::db::account_sync_cursor_blocking(
-                                        &native.pgn_path_authority,
-                                        &native.database_repository,
-                                        &database,
-                                        token,
-                                    )
-                                })
-                                .await?;
-                        }
+                loop {
+                    if cancellation.is_cancelled() {
+                        return Err(Error::Cancellation);
                     }
-                    let publication = match (
-                        snapshot.publication.clone(),
-                        snapshot.request.pending_batch.clone(),
-                    ) {
-                        (Some(publication), _) => publication,
-                        (None, Some(handle)) => ArtifactPublication {
-                            handle,
-                            durability: CommitDurability::Durable,
-                        },
-                        (None, None) => {
-                            // These reservations belong to the accepted native workflow, so the
-                            // starting document cannot cancel them during its reload cleanup.
-                            let native_owner = format!("account-workflow:{}", snapshot.id);
-                            let ticket = state.operations.prepare_download(&native_owner)?;
-                            snapshot.progress_id = ticket.clone();
-                            state
-                                .operations
-                                .update_account_completion(snapshot.clone())?;
-                            if let Err(error) = (CompletionChanged {
-                                id: snapshot.id.clone(),
-                            })
-                            .emit_to(&app, &owner)
-                            {
-                                log::warn!("account progress notification failed: {error}");
-                            }
-                            let downloaded = download(
-                                snapshot.request.clone(),
-                                ticket.clone(),
-                                native_owner.clone(),
-                                app.clone(),
-                                state.clone(),
+                    let mut downloaded_in_attempt = false;
+                    if !snapshot.deletion_pending {
+                        if snapshot.publication.is_none()
+                            && matches!(
+                                &snapshot.request.target,
+                                AccountImportTarget::Unlinked { .. }
                             )
-                            .await;
-                            state.operations.release_download(&ticket, &native_owner)?;
-                            let downloaded = downloaded?;
-                            snapshot.coverage_holds = downloaded.coverage_holds;
-                            downloaded.publication
+                        {
+                            snapshot.request.since_ms = native_account_cursor(
+                                &snapshot.request.target,
+                                &state,
+                                cancellation.clone(),
+                            )
+                            .await?;
                         }
-                    };
-                    snapshot.publication = Some(publication.clone());
-                    match &snapshot.request.target {
-                        AccountImportTarget::Linked { collection } => {
-                            let outcome =
-                                crate::db::linked_collections::batch::append_collection_batch(
-                                    &state,
-                                    collection,
-                                    publication.handle,
-                                    cancellation.clone(),
-                                )
-                                .await?;
-                            return Ok(AccountImportResult {
-                                collection_notice: !outcome.index_ready
-                                    || !outcome.durability_confirmed,
-                            });
-                        }
-                        AccountImportTarget::Unlinked { database, title } => {
-                            let native = state.clone();
-                            let database = database.clone();
-                            let committed = database.clone();
-                            let title = title.clone();
-                            let conversion_app = app.clone();
-                            let progress_id = format!("conversion:{}", snapshot.id);
-                            snapshot.importing = true;
-                            state
-                                .operations
-                                .update_account_completion(snapshot.clone())?;
-                            if let Err(error) = (CompletionChanged {
-                                id: snapshot.id.clone(),
-                            })
-                            .emit_to(&app, &owner)
-                            {
-                                log::warn!("account import notification failed: {error}");
-                            }
-                            let progress = crate::progress::begin_progress(
-                                &state.progress_state,
-                                &app,
-                                snapshot.progress_id.clone(),
-                            )?;
-                            let account = crate::db::AccountImportContext {
-                                identity: crate::db::linked_collections::AccountIdentity {
-                                    provider: snapshot.request.provider.clone(),
-                                    account: snapshot.request.account.clone(),
-                                },
-                                since_ms: snapshot.request.since_ms,
-                                coverage_holds: snapshot.coverage_holds.clone(),
-                            };
-                            #[cfg(test)]
-                            let completion_id = snapshot.id.clone();
-                            let converted = BLOCKING_GATEWAY
-                                .spawn_cancellable(cancellation.clone(), move |token| {
-                                    #[cfg(test)]
-                                    BEFORE_CONVERT.run(&completion_id);
-                                    crate::db::convert_pgn_blocking(
-                                        &native.pgn_path_authority,
-                                        &native.database_repository,
-                                        &native.search_cache,
-                                        vec![publication.handle],
-                                        database,
-                                        Some(account),
-                                        conversion_app,
-                                        title,
-                                        None,
-                                        progress_id,
-                                        token,
-                                    )
+                        let publication = match (
+                            snapshot.publication.clone(),
+                            snapshot.request.pending_batch.clone(),
+                        ) {
+                            (Some(publication), _) => publication,
+                            (None, Some(handle)) => ArtifactPublication {
+                                handle,
+                                durability: CommitDurability::Durable,
+                            },
+                            (None, None) => {
+                                // These reservations belong to the accepted native workflow, so the
+                                // starting document cannot cancel them during its reload cleanup.
+                                let native_owner = format!("account-workflow:{}", snapshot.id);
+                                let ticket = state.operations.prepare_download(&native_owner)?;
+                                snapshot.progress_id = ticket.clone();
+                                state
+                                    .operations
+                                    .update_account_completion(snapshot.clone())?;
+                                if let Err(error) = (CompletionChanged {
+                                    id: snapshot.id.clone(),
                                 })
+                                .emit_to(&app, &owner)
+                                {
+                                    log::warn!("account progress notification failed: {error}");
+                                }
+                                let downloaded = download(
+                                    snapshot.request.clone(),
+                                    ticket.clone(),
+                                    native_owner.clone(),
+                                    app.clone(),
+                                    state.clone(),
+                                )
                                 .await;
-                            let (value, terminal) = if converted.is_ok() {
-                                (100.0, crate::progress::ProgressState::Succeeded)
-                            } else {
-                                (0.0, crate::progress::ProgressState::Failed)
-                            };
-                            if let Err(error) = crate::progress::update_progress_with_state(
-                                &state.progress_state,
-                                &app,
-                                &progress,
-                                value,
-                                terminal,
-                            ) {
-                                log::warn!(
-                                    "account import progress update failed: {}",
-                                    error.diagnostic()
-                                );
+                                state.operations.release_download(&ticket, &native_owner)?;
+                                let downloaded = downloaded?;
+                                downloaded_in_attempt = true;
+                                snapshot.coverage_holds = downloaded.coverage_holds;
+                                snapshot.coverage_floor_ms = downloaded.coverage_floor_ms;
+                                downloaded.publication
                             }
-                            converted?;
-                            snapshot.committed_database = Some(committed);
-                            snapshot.deletion_pending = true;
+                        };
+                        snapshot.publication = Some(publication.clone());
+                        match &snapshot.request.target {
+                            AccountImportTarget::Linked { collection } => {
+                                let outcome =
+                                    crate::db::linked_collections::batch::append_collection_batch(
+                                        &state,
+                                        collection,
+                                        publication.handle,
+                                        cancellation.clone(),
+                                    )
+                                    .await?;
+                                if !outcome.index_ready || !outcome.durability_confirmed {
+                                    return Ok(AccountImportResult {
+                                        collection_notice: true,
+                                    });
+                                }
+                            }
+                            AccountImportTarget::Unlinked { database, title } => {
+                                let native = state.clone();
+                                let database = database.clone();
+                                let committed = database.clone();
+                                let title = title.clone();
+                                let conversion_app = app.clone();
+                                let progress_id = format!("conversion:{}", snapshot.id);
+                                snapshot.importing = true;
+                                state
+                                    .operations
+                                    .update_account_completion(snapshot.clone())?;
+                                if let Err(error) = (CompletionChanged {
+                                    id: snapshot.id.clone(),
+                                })
+                                .emit_to(&app, &owner)
+                                {
+                                    log::warn!("account import notification failed: {error}");
+                                }
+                                let progress = crate::progress::begin_progress(
+                                    &state.progress_state,
+                                    &app,
+                                    snapshot.progress_id.clone(),
+                                )?;
+                                let account = crate::db::AccountImportContext {
+                                    identity: crate::db::linked_collections::AccountIdentity {
+                                        provider: snapshot.request.provider.clone(),
+                                        account: snapshot.request.account.clone(),
+                                    },
+                                    since_ms: snapshot.request.since_ms,
+                                    coverage_holds: snapshot.coverage_holds.clone(),
+                                    coverage_floor_ms: snapshot.coverage_floor_ms,
+                                };
+                                #[cfg(test)]
+                                let completion_id = snapshot.id.clone();
+                                let converted = BLOCKING_GATEWAY
+                                    .spawn_cancellable(cancellation.clone(), move |token| {
+                                        #[cfg(test)]
+                                        BEFORE_CONVERT.run(&completion_id);
+                                        crate::db::convert_pgn_blocking(
+                                            &native.pgn_path_authority,
+                                            &native.database_repository,
+                                            &native.search_cache,
+                                            vec![publication.handle],
+                                            database,
+                                            Some(account),
+                                            conversion_app,
+                                            title,
+                                            None,
+                                            progress_id,
+                                            token,
+                                        )
+                                    })
+                                    .await;
+                                let (value, terminal) = if converted.is_ok() {
+                                    (100.0, crate::progress::ProgressState::Succeeded)
+                                } else {
+                                    (0.0, crate::progress::ProgressState::Failed)
+                                };
+                                if let Err(error) = crate::progress::update_progress_with_state(
+                                    &state.progress_state,
+                                    &app,
+                                    &progress,
+                                    value,
+                                    terminal,
+                                ) {
+                                    log::warn!(
+                                        "account import progress update failed: {}",
+                                        error.diagnostic()
+                                    );
+                                }
+                                converted?;
+                                snapshot.committed_database = Some(committed);
+                                snapshot.deletion_pending = true;
+                            }
                         }
                     }
-                }
-                let database = snapshot.committed_database.clone().ok_or_else(|| {
-                    Error::Conflict("committed account database unavailable".into())
-                })?;
-                let native = state.clone();
-                #[cfg(test)]
-                let completion_id = snapshot.id.clone();
-                BLOCKING_GATEWAY
-                    .spawn_cancellable(cancellation, move |token| {
+                    if snapshot.deletion_pending {
+                        let database = snapshot.committed_database.clone().ok_or_else(|| {
+                            Error::Conflict("committed account database unavailable".into())
+                        })?;
+                        let native = state.clone();
                         #[cfg(test)]
-                        {
-                            BEFORE_DELETE.run(&completion_id);
-                            if let Some(error) = DELETE_FAILURE.take(&completion_id) {
-                                return Err(error);
-                            }
-                        }
-                        crate::db::delete_empty_games_blocking(
-                            &native.pgn_path_authority,
-                            &native.database_repository,
-                            &native.search_cache,
-                            database,
-                            token,
-                        )
-                    })
+                        let completion_id = snapshot.id.clone();
+                        BLOCKING_GATEWAY
+                            .spawn_cancellable(cancellation.clone(), move |token| {
+                                #[cfg(test)]
+                                {
+                                    BEFORE_DELETE.run(&completion_id);
+                                    if let Some(error) = DELETE_FAILURE.take(&completion_id) {
+                                        return Err(error);
+                                    }
+                                }
+                                crate::db::delete_empty_games_blocking(
+                                    &native.pgn_path_authority,
+                                    &native.database_repository,
+                                    &native.search_cache,
+                                    database,
+                                    token,
+                                )
+                            })
+                            .await?;
+                        snapshot.deletion_pending = false;
+                    }
+                    if snapshot.request.provider != "chesscom"
+                        || (downloaded_in_attempt && snapshot.coverage_floor_ms.is_none())
+                    {
+                        return Ok(AccountImportResult {
+                            collection_notice: false,
+                        });
+                    }
+                    let next = native_account_cursor(
+                        &snapshot.request.target,
+                        &state,
+                        cancellation.clone(),
+                    )
                     .await?;
-                snapshot.deletion_pending = false;
-                Ok(AccountImportResult {
-                    collection_notice: false,
-                })
+                    if downloaded_in_attempt && next <= snapshot.request.since_ms {
+                        return Err(Error::Conflict(
+                            "Chess.com history could not advance".into(),
+                        ));
+                    }
+                    snapshot.request.since_ms = next;
+                    snapshot.request.pending_batch = None;
+                    snapshot.publication = None;
+                    snapshot.coverage_holds = None;
+                    snapshot.coverage_floor_ms = None;
+                    snapshot.committed_database = None;
+                    snapshot.deletion_pending = false;
+                    snapshot.importing = false;
+                }
             })
             .catch_unwind()
             .await
@@ -613,6 +648,32 @@ pub(crate) async fn start_account_completion<R, D, F>(
     });
 }
 
+async fn native_account_cursor(
+    target: &AccountImportTarget,
+    state: &AppState,
+    cancellation: CancellationToken,
+) -> Result<Option<i64>, Error> {
+    let target = target.clone();
+    let native = state.clone();
+    BLOCKING_GATEWAY
+        .spawn_cancellable(cancellation, move |token| match target {
+            AccountImportTarget::Linked { collection } => native
+                .pgn_path_authority
+                .collections()?
+                .ok_or_else(|| Error::Conflict("linked collections are unavailable".into()))?
+                .fetch_cursor_blocking(&collection, token),
+            AccountImportTarget::Unlinked { database, .. } => {
+                crate::db::account_sync_cursor_blocking(
+                    &native.pgn_path_authority,
+                    &native.database_repository,
+                    &database,
+                    token,
+                )
+            }
+        })
+        .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -645,6 +706,7 @@ mod tests {
             Ok(RuntimeDownload {
                 publication: publication.clone(),
                 receipt_error: Some(Error::Conflict("receipt recording failed".into())),
+                coverage_floor_ms: None,
                 coverage_holds: None,
             }),
             "lichess",

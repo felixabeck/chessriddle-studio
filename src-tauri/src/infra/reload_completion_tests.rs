@@ -100,6 +100,489 @@ fn unlinked_cursor(path: &std::path::Path) -> Option<i64> {
         .unwrap()
 }
 
+fn chesscom_chunk_publication(
+    state: &crate::AppState,
+    directory: &std::path::Path,
+    id: usize,
+) -> ArtifactPublication {
+    let path = directory.join(format!("chunk-{id}.pgn"));
+    std::fs::write(&path, format!("[Site \"Chess.com\"]\n[Link \"https://www.chess.com/game/daily/{id}\"]\n[White \"Player\"]\n[Black \"Opponent\"]\n[Date \"2026.01.01\"]\n[UTCTime \"12:00:00\"]\n\n1. e4 e5 *\n")).unwrap();
+    let handle = state
+        .pgn_path_authority
+        .with_mut(|authority| {
+            authority.get_or_create_persistent_file(&path, "chunk", vec![PathOperation::ReadPgn])
+        })
+        .unwrap()
+        .unwrap()
+        .id;
+    ArtifactPublication {
+        handle: super::path_authority::FileWorkspaceHandle::new(handle),
+        durability: CommitDurability::Durable,
+    }
+}
+
+#[cfg(unix)]
+async fn linked_chesscom_chunk(
+    fixture: Arc<crate::db::linked_collections::tests::Fixture>,
+    request: AccountImportRequest,
+    id: usize,
+    floor: Option<i64>,
+) -> super::operations::RuntimeDownload {
+    let handle = super::blocking::BLOCKING_GATEWAY
+        .spawn(move || {
+            use crate::db::linked_collections::tests::{game, received_provider_batch_with_floor};
+            Ok(received_provider_batch_with_floor(
+                &fixture,
+                &format!("chunk-{id}.pgn"),
+                &game(Some(&id.to_string()), "e4 e5", &format!("chunk {id}")),
+                "chesscom",
+                request.since_ms,
+                None,
+                floor,
+            ))
+        })
+        .await
+        .unwrap();
+    super::operations::RuntimeDownload {
+        publication: ArtifactPublication {
+            handle,
+            durability: CommitDurability::Durable,
+        },
+        receipt_error: None,
+        coverage_holds: None,
+        coverage_floor_ms: floor,
+    }
+}
+
+#[cfg(unix)]
+fn linked_chesscom_request(
+    fixture: &crate::db::linked_collections::tests::Fixture,
+) -> AccountImportRequest {
+    use crate::db::linked_collections::tests::game;
+    fixture.create(
+        "history",
+        &game(Some("0"), "d4 d5", "original"),
+        crate::file_workspace::WorkspaceFileType::Game,
+    );
+    let collection = fixture.list().pop().unwrap();
+    fixture.account(&collection.id, "chesscom");
+    AccountImportRequest {
+        provider: "chesscom".into(),
+        account: "player".into(),
+        account_handle: None,
+        destination: fixture.download_destination(),
+        pending_batch: None,
+        since_ms: None,
+        target: AccountImportTarget::Linked {
+            collection: collection.id,
+        },
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn chesscom_linked_second_chunk_pending_retry_preserves_prefix_and_continues_from_native_cursor(
+) {
+    use crate::db::linked_collections::tests::Fixture;
+    let fixture = Arc::new(Fixture::new());
+    let mut request = linked_chesscom_request(&fixture);
+    let app = fixture.app();
+    reload_completion_mount_account_events(app.handle());
+    let native = fixture.clone();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let count = calls.clone();
+    let failed = accounts::import_account_games_with_download(
+        request.clone(),
+        app.handle().clone(),
+        "main".into(),
+        fixture.state.clone(),
+        move |request, _, _, _, _| {
+            let index = count.fetch_add(1, Ordering::SeqCst);
+            assert!(index < 2);
+            assert_eq!(request.since_ms, [None, Some(2_000_000_000_000)][index]);
+            let native = native.clone();
+            async move {
+                let result = linked_chesscom_chunk(
+                    native.clone(),
+                    request,
+                    index + 1,
+                    Some(2_000_000_000_000 + index as i64 * 100_000_000),
+                )
+                .await;
+                if index == 1 {
+                    native.set_batch_preparation_fault(true);
+                }
+                Ok(result)
+            }
+        },
+    )
+    .await
+    .unwrap();
+    assert!(matches!(failed.outcome, CompletionOutcome::Failed(_)));
+    let source = std::fs::read_to_string(fixture.path("history")).unwrap();
+    assert_eq!(source.matches("[Event ").count(), 2);
+    assert!(source.contains("chunk 1"));
+    assert!(!source.contains("chunk 2"));
+    let descriptor = fixture.list().pop().unwrap();
+    assert_eq!(descriptor.fetch_since_ms, Some("2000000000000".into()));
+    request.pending_batch = Some(descriptor.pending_batch.unwrap());
+    request.since_ms = Some(0);
+    assert_ne!(
+        request.pending_batch.as_ref(),
+        failed
+            .publication
+            .as_ref()
+            .map(|publication| &publication.handle)
+    );
+    fixture
+        .state
+        .operations
+        .acknowledge_account_completion(&failed.id, "main")
+        .unwrap();
+    fixture.set_batch_preparation_fault(false);
+    let native = fixture.clone();
+    let followups = Arc::new(AtomicUsize::new(0));
+    let count = followups.clone();
+    let completed = accounts::import_account_games_with_download(
+        request,
+        app.handle().clone(),
+        "main".into(),
+        fixture.state.clone(),
+        move |request, _, _, _, _| {
+            assert_eq!(count.fetch_add(1, Ordering::SeqCst), 0);
+            assert!(request.pending_batch.is_none());
+            assert_eq!(request.since_ms, Some(2_000_100_000_000));
+            let native = native.clone();
+            async move { Ok(linked_chesscom_chunk(native, request, 3, None).await) }
+        },
+    )
+    .await
+    .unwrap();
+    assert!(matches!(completed.outcome, CompletionOutcome::Succeeded(_)));
+    assert_eq!(followups.load(Ordering::SeqCst), 1);
+    let source = std::fs::read_to_string(fixture.path("history")).unwrap();
+    assert_eq!(source.matches("[Event ").count(), 4);
+    for id in 1..=3 {
+        assert_eq!(source.matches(&format!("chunk {id}")).count(), 1);
+    }
+    let descriptor = fixture.list().pop().unwrap();
+    assert!(descriptor.pending_batch.is_none());
+    assert_eq!(descriptor.fetch_since_ms, Some("2000100000000".into()));
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn chesscom_linked_recovered_unchanged_cursor_still_downloads_once() {
+    use crate::db::linked_collections::tests::Fixture;
+    let fixture = Arc::new(Fixture::new());
+    let mut request = linked_chesscom_request(&fixture);
+    let AccountImportTarget::Linked { collection } = &request.target else {
+        unreachable!()
+    };
+    fixture.set_coverage_cursor(collection, 2_000_000_000_000);
+    request.since_ms = Some(2_000_000_000_000);
+    let recovered = linked_chesscom_chunk(fixture.clone(), request.clone(), 1, None).await;
+    request.pending_batch = Some(recovered.publication.handle);
+    let app = fixture.app();
+    reload_completion_mount_account_events(app.handle());
+    let native = fixture.clone();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let count = calls.clone();
+    let completed = accounts::import_account_games_with_download(
+        request,
+        app.handle().clone(),
+        "main".into(),
+        fixture.state.clone(),
+        move |request, _, _, _, _| {
+            assert_eq!(count.fetch_add(1, Ordering::SeqCst), 0);
+            assert_eq!(request.since_ms, Some(2_000_000_000_000));
+            let native = native.clone();
+            async move { Ok(linked_chesscom_chunk(native, request, 2, None).await) }
+        },
+    )
+    .await
+    .unwrap();
+    assert!(matches!(completed.outcome, CompletionOutcome::Succeeded(_)));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        fixture.list().pop().unwrap().fetch_since_ms,
+        Some("2000000000000".into())
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn chesscom_linked_unconfirmed_append_stops_with_notice_before_another_download() {
+    use crate::db::linked_collections::tests::Fixture;
+    let fixture = Arc::new(Fixture::new());
+    let request = linked_chesscom_request(&fixture);
+    let app = fixture.app();
+    reload_completion_mount_account_events(app.handle());
+    let native = fixture.clone();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let count = calls.clone();
+    let completed = accounts::import_account_games_with_download(
+        request,
+        app.handle().clone(),
+        "main".into(),
+        fixture.state.clone(),
+        move |request, _, _, _, _| {
+            let index = count.fetch_add(1, Ordering::SeqCst);
+            assert!(index < 2);
+            let native = native.clone();
+            async move {
+                let result = linked_chesscom_chunk(
+                    native.clone(),
+                    request,
+                    index + 1,
+                    Some(2_000_000_000_000 + index as i64 * 100_000_000),
+                )
+                .await;
+                if index == 1 {
+                    native
+                        .state
+                        .pgn_repository
+                        .set_atomic_file_injector(Some(Arc::new(super::fs::ParentSyncFault(
+                            "chunk publication parent sync",
+                        ))))
+                        .unwrap();
+                }
+                Ok(result)
+            }
+        },
+    )
+    .await
+    .unwrap();
+    fixture
+        .state
+        .pgn_repository
+        .set_atomic_file_injector(None)
+        .unwrap();
+    let CompletionOutcome::Succeeded(result) = completed.outcome else {
+        panic!("committed append must return a notice")
+    };
+    assert!(result.collection_notice);
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert!(fixture.list().pop().unwrap().pending_batch.is_some());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn chesscom_unlinked_chunks_read_native_cursor_and_reset_publication_and_progress() {
+    use tauri::Manager as _;
+    let (directory, app, path, mut request, _) = reload_completion_account_fixture();
+    let state = app.state::<crate::AppState>().inner().clone();
+    request.since_ms = Some(9_999_999_999_999);
+    let publications = (1..=3)
+        .map(|id| chesscom_chunk_publication(&state, directory.path(), id))
+        .collect::<Vec<_>>();
+    let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorded = calls.clone();
+    let mut index = 0;
+    let completed = accounts::import_account_games_with_download(
+        request,
+        app,
+        "main".into(),
+        state,
+        move |request, ticket, _, _, _| {
+            recorded.lock().unwrap().push((request.since_ms, ticket));
+            assert!(request.pending_batch.is_none());
+            let publication = publications[index].clone();
+            let coverage_floor_ms = [Some(2_000_000_000_000), Some(2_000_100_000_000), None][index];
+            index += 1;
+            async move {
+                Ok(super::operations::RuntimeDownload {
+                    publication,
+                    receipt_error: None,
+                    coverage_holds: None,
+                    coverage_floor_ms,
+                })
+            }
+        },
+    )
+    .await
+    .unwrap();
+    assert!(matches!(completed.outcome, CompletionOutcome::Succeeded(_)));
+    assert_eq!(reload_completion_account_rows(&path), 3);
+    assert_eq!(unlinked_cursor(&path), Some(2_000_100_000_000));
+    let calls = calls.lock().unwrap();
+    assert_eq!(
+        calls.iter().map(|call| call.0).collect::<Vec<_>>(),
+        vec![None, Some(2_000_000_000_000), Some(2_000_100_000_000)]
+    );
+    assert_eq!(
+        calls
+            .iter()
+            .map(|call| &call.1)
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+        3
+    );
+    assert_eq!(completed.progress_id, calls[2].1);
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn chesscom_linked_floor_without_native_cursor_progress_fails_once() {
+    use crate::db::linked_collections::tests::Fixture;
+    let fixture = Arc::new(Fixture::new());
+    let mut request = linked_chesscom_request(&fixture);
+    let AccountImportTarget::Linked { collection } = &request.target else {
+        unreachable!()
+    };
+    fixture.set_coverage_cursor(collection, 2_000_000_000_000);
+    request.since_ms = Some(2_000_000_000_000);
+    let app = fixture.app();
+    reload_completion_mount_account_events(app.handle());
+    let native = fixture.clone();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let count = calls.clone();
+    let completed =
+        accounts::import_account_games_with_download(
+            request,
+            app.handle().clone(),
+            "main".into(),
+            fixture.state.clone(),
+            move |request, _, _, _, _| {
+                assert_eq!(count.fetch_add(1, Ordering::SeqCst), 0);
+                let native = native.clone();
+                async move {
+                    Ok(linked_chesscom_chunk(native, request, 1, Some(2_000_000_000_000)).await)
+                }
+            },
+        )
+        .await
+        .unwrap();
+    let CompletionOutcome::Failed(error) = completed.outcome else {
+        panic!("stalled linked chunk must fail")
+    };
+    assert_eq!(error.category, crate::error::ErrorCategory::Conflict);
+    assert!(error
+        .message
+        .contains("Chess.com history could not advance"));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn chesscom_unlinked_second_chunk_cleanup_retry_recovers_then_downloads_remaining_history() {
+    use tauri::Manager as _;
+    let (directory, app, path, request, _) = reload_completion_account_fixture();
+    let state = app.state::<crate::AppState>().inner().clone();
+    let publications = (1..=3)
+        .map(|id| chesscom_chunk_publication(&state, directory.path(), id))
+        .collect::<Vec<_>>();
+    let second = publications[1].clone();
+    let final_publication = publications[2].clone();
+    let (attempt, start) = state
+        .operations
+        .admit_account_completion("main", request.clone())
+        .unwrap();
+    let start = start.unwrap();
+    let id = start.snapshot.id.clone();
+    let failure_id = id.clone();
+    let mut index = 0;
+    accounts::start_account_completion(
+        start,
+        app.clone(),
+        "main".into(),
+        state.clone(),
+        move |request, _, _, _, _| {
+            assert_eq!(request.since_ms, [None, Some(2_000_000_000_000)][index]);
+            if index == 1 {
+                accounts::DELETE_FAILURE.arm(
+                    failure_id.clone(),
+                    Error::Conflict("chunk 2 cleanup failed".into()),
+                );
+            }
+            let publication = publications[index].clone();
+            let coverage_floor_ms = Some(2_000_000_000_000 + index as i64 * 100_000_000);
+            index += 1;
+            async move {
+                Ok(super::operations::RuntimeDownload {
+                    publication,
+                    receipt_error: None,
+                    coverage_holds: None,
+                    coverage_floor_ms,
+                })
+            }
+        },
+    )
+    .await;
+    let failed = attempt.await.unwrap();
+    assert!(matches!(failed.outcome, CompletionOutcome::Failed(_)));
+    assert!(failed.deletion_pending);
+    assert_eq!(failed.publication, Some(second));
+    assert_eq!(reload_completion_account_rows(&path), 2);
+    assert_eq!(unlinked_cursor(&path), Some(2_000_100_000_000));
+    let downloads = Arc::new(AtomicUsize::new(0));
+    let count = downloads.clone();
+    let completed = accounts::import_account_games_with_download(
+        request,
+        app,
+        "main".into(),
+        state,
+        move |request, _, _, _, _| {
+            assert_eq!(count.fetch_add(1, Ordering::SeqCst), 0);
+            assert_eq!(request.since_ms, Some(2_000_100_000_000));
+            let publication = final_publication.clone();
+            async move {
+                Ok(super::operations::RuntimeDownload {
+                    publication,
+                    receipt_error: None,
+                    coverage_holds: None,
+                    coverage_floor_ms: None,
+                })
+            }
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(completed.id, id);
+    assert_eq!(completed.attempt, 2);
+    assert!(matches!(completed.outcome, CompletionOutcome::Succeeded(_)));
+    assert_eq!(downloads.load(Ordering::SeqCst), 1);
+    assert_eq!(reload_completion_account_rows(&path), 3);
+    assert_eq!(unlinked_cursor(&path), Some(2_000_100_000_000));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn chesscom_unlinked_floor_without_cursor_progress_fails_once() {
+    use tauri::Manager as _;
+    let (_directory, app, path, request, publication) = reload_completion_account_fixture();
+    let state = app.state::<crate::AppState>().inner().clone();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let count = calls.clone();
+    let completed = accounts::import_account_games_with_download(
+        request,
+        app,
+        "main".into(),
+        state,
+        move |_, _, _, _, _| {
+            let index = count.fetch_add(1, Ordering::SeqCst);
+            assert!(index < 2);
+            let publication = publication.clone();
+            async move {
+                Ok(super::operations::RuntimeDownload {
+                    publication,
+                    receipt_error: None,
+                    coverage_holds: None,
+                    coverage_floor_ms: Some(1000),
+                })
+            }
+        },
+    )
+    .await
+    .unwrap();
+    let CompletionOutcome::Failed(error) = completed.outcome else {
+        panic!("stalled chunk must fail")
+    };
+    assert_eq!(error.category, crate::error::ErrorCategory::Conflict);
+    assert!(error
+        .message
+        .contains("Chess.com history could not advance"));
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(unlinked_cursor(&path), Some(1000));
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn unlinked_lichess_adopted_holds_persist_cursor_and_next_download_imports_correspondence_once(
 ) {
@@ -120,24 +603,30 @@ async fn unlinked_lichess_adopted_holds_persist_cursor_and_next_download_imports
             app.clone(),
             "main".into(),
             state.clone(),
-            move |download_request, _, _, _, _| async move {
-                assert_eq!(
-                    download_request.since_ms, None,
-                    "native legacy cursor overrides renderer input"
-                );
-                accounts::adopt_account_download(
-                    Ok(super::operations::RuntimeDownload {
-                        publication: first_publication,
-                        receipt_error: Some(Error::Conflict("linked receipt unavailable".into())),
-                        coverage_holds: Some(vec![crate::lichess::CoverageHold {
-                            id: "corresp1".into(),
-                            created_at_ms: hold_start,
-                            ongoing,
-                        }]),
-                    }),
-                    "lichess",
-                    "Player",
-                )
+            move |download_request, _, _, _, _| {
+                let first_publication = first_publication.clone();
+                async move {
+                    assert_eq!(
+                        download_request.since_ms, None,
+                        "native legacy cursor overrides renderer input"
+                    );
+                    accounts::adopt_account_download(
+                        Ok(super::operations::RuntimeDownload {
+                            publication: first_publication,
+                            receipt_error: Some(Error::Conflict(
+                                "linked receipt unavailable".into(),
+                            )),
+                            coverage_floor_ms: None,
+                            coverage_holds: Some(vec![crate::lichess::CoverageHold {
+                                id: "corresp1".into(),
+                                created_at_ms: hold_start,
+                                ongoing,
+                            }]),
+                        }),
+                        "lichess",
+                        "Player",
+                    )
+                }
             },
         )
         .await
@@ -162,21 +651,25 @@ async fn unlinked_lichess_adopted_holds_persist_cursor_and_next_download_imports
                 app.clone(),
                 "main".into(),
                 state.clone(),
-                move |download_request, _, _, _, _| async move {
-                    assert_eq!(download_request.since_ms, expected);
-                    accounts::adopt_account_download(
-                        Ok(super::operations::RuntimeDownload {
-                            publication,
-                            receipt_error: None,
-                            coverage_holds: Some(vec![crate::lichess::CoverageHold {
-                                id: "corresp1".into(),
-                                created_at_ms: hold_start,
-                                ongoing: false,
-                            }]),
-                        }),
-                        "lichess",
-                        "Player",
-                    )
+                move |download_request, _, _, _, _| {
+                    let publication = publication.clone();
+                    async move {
+                        assert_eq!(download_request.since_ms, expected);
+                        accounts::adopt_account_download(
+                            Ok(super::operations::RuntimeDownload {
+                                publication,
+                                receipt_error: None,
+                                coverage_floor_ms: None,
+                                coverage_holds: Some(vec![crate::lichess::CoverageHold {
+                                    id: "corresp1".into(),
+                                    created_at_ms: hold_start,
+                                    ongoing: false,
+                                }]),
+                            }),
+                            "lichess",
+                            "Player",
+                        )
+                    }
                 },
             )
             .await
@@ -213,21 +706,26 @@ async fn unlinked_lichess_failed_conversion_downloads_again_with_fresh_publicati
         app.clone(),
         "main".into(),
         state.clone(),
-        move |_, _, _, _, _| async move {
-            first_downloads.fetch_add(1, Ordering::SeqCst);
-            accounts::adopt_account_download(
-                Ok(super::operations::RuntimeDownload {
-                    publication,
-                    receipt_error: None,
-                    coverage_holds: Some(vec![crate::lichess::CoverageHold {
-                        id: "corresp1".into(),
-                        created_at_ms: first_hold_start,
-                        ongoing: true,
-                    }]),
-                }),
-                "lichess",
-                "Player",
-            )
+        move |_, _, _, _, _| {
+            let first_downloads = first_downloads.clone();
+            let publication = publication.clone();
+            async move {
+                first_downloads.fetch_add(1, Ordering::SeqCst);
+                accounts::adopt_account_download(
+                    Ok(super::operations::RuntimeDownload {
+                        publication,
+                        receipt_error: None,
+                        coverage_floor_ms: None,
+                        coverage_holds: Some(vec![crate::lichess::CoverageHold {
+                            id: "corresp1".into(),
+                            created_at_ms: first_hold_start,
+                            ongoing: true,
+                        }]),
+                    }),
+                    "lichess",
+                    "Player",
+                )
+            }
         },
     )
     .await?;
@@ -262,22 +760,27 @@ async fn unlinked_lichess_failed_conversion_downloads_again_with_fresh_publicati
         app,
         "main".into(),
         state.clone(),
-        move |download_request, _, _, _, _| async move {
-            next_downloads.fetch_add(1, Ordering::SeqCst);
-            assert_eq!(download_request.since_ms, None);
-            accounts::adopt_account_download(
-                Ok(super::operations::RuntimeDownload {
-                    publication: fresh_publication,
-                    receipt_error: None,
-                    coverage_holds: Some(vec![crate::lichess::CoverageHold {
-                        id: "fresh-correspondence".into(),
-                        created_at_ms: next_hold_start,
-                        ongoing: true,
-                    }]),
-                }),
-                "lichess",
-                "Player",
-            )
+        move |download_request, _, _, _, _| {
+            let next_downloads = next_downloads.clone();
+            let fresh_publication = fresh_publication.clone();
+            async move {
+                next_downloads.fetch_add(1, Ordering::SeqCst);
+                assert_eq!(download_request.since_ms, None);
+                accounts::adopt_account_download(
+                    Ok(super::operations::RuntimeDownload {
+                        publication: fresh_publication,
+                        receipt_error: None,
+                        coverage_floor_ms: None,
+                        coverage_holds: Some(vec![crate::lichess::CoverageHold {
+                            id: "fresh-correspondence".into(),
+                            created_at_ms: next_hold_start,
+                            ongoing: true,
+                        }]),
+                    }),
+                    "lichess",
+                    "Player",
+                )
+            }
         },
     )
     .await?;
@@ -330,13 +833,18 @@ async fn reload_completion_account_unlinked_commits_before_reconnect_and_retains
             command_app,
             "main".into(),
             native,
-            move |_, _, _, _, _| async move {
-                observed_downloads.fetch_add(1, Ordering::SeqCst);
-                Ok(super::operations::RuntimeDownload {
-                    publication,
-                    receipt_error: None,
-                    coverage_holds: None,
-                })
+            move |_, _, _, _, _| {
+                let observed_downloads = observed_downloads.clone();
+                let publication = publication.clone();
+                async move {
+                    observed_downloads.fetch_add(1, Ordering::SeqCst);
+                    Ok(super::operations::RuntimeDownload {
+                        publication,
+                        receipt_error: None,
+                        coverage_floor_ms: None,
+                        coverage_holds: None,
+                    })
+                }
             },
         )
         .await;
@@ -411,7 +919,8 @@ async fn reload_completion_account_unlinked_commits_before_reconnect_and_retains
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn reload_completion_account_deletion_checkpoint_survives_ack_and_retries_only_deletion() {
     use tauri::Manager as _;
-    let (_directory, app, path, request, publication) = reload_completion_account_fixture();
+    let (_directory, app, path, mut request, publication) = reload_completion_account_fixture();
+    request.provider = "lichess".into();
     let state = app.state::<crate::AppState>().inner().clone();
     let (attempt, start) = state
         .operations
@@ -438,13 +947,18 @@ async fn reload_completion_account_deletion_checkpoint_survives_ack_and_retries_
         app.clone(),
         "main".into(),
         state.clone(),
-        move |_, _, _, _, _| async move {
-            count.fetch_add(1, Ordering::SeqCst);
-            Ok(super::operations::RuntimeDownload {
-                publication,
-                receipt_error: None,
-                coverage_holds: None,
-            })
+        move |_, _, _, _, _| {
+            let count = count.clone();
+            let publication = publication.clone();
+            async move {
+                count.fetch_add(1, Ordering::SeqCst);
+                Ok(super::operations::RuntimeDownload {
+                    publication,
+                    receipt_error: None,
+                    coverage_floor_ms: None,
+                    coverage_holds: None,
+                })
+            }
         },
     )
     .await;
@@ -486,9 +1000,12 @@ async fn reload_completion_account_deletion_checkpoint_survives_ack_and_retries_
         app,
         "main".into(),
         state.clone(),
-        move |_, _, _, _, _| async move {
-            count.fetch_add(1, Ordering::SeqCst);
-            Err(Error::Conflict("must not redownload".into()))
+        move |_, _, _, _, _| {
+            let count = count.clone();
+            async move {
+                count.fetch_add(1, Ordering::SeqCst);
+                Err(Error::Conflict("must not redownload".into()))
+            }
         },
     )
     .await
@@ -534,7 +1051,7 @@ async fn reload_completion_account_pending_batch_appends_without_transfer_before
         account: "player".into(),
         account_handle: None,
         destination: fixture.download_destination(),
-        pending_batch: Some(batch),
+        pending_batch: Some(batch.clone()),
         since_ms: None,
         target: AccountImportTarget::Linked {
             collection: collection.id.clone(),
@@ -549,7 +1066,20 @@ async fn reload_completion_account_pending_batch_appends_without_transfer_before
         app.handle().clone(),
         "main".into(),
         fixture.state.clone(),
-        |_, _, _, _, _| async { panic!("a prepared pending batch must not transfer") },
+        move |_, _, _, _, _| {
+            let handle = batch.clone();
+            async move {
+                Ok(super::operations::RuntimeDownload {
+                    publication: ArtifactPublication {
+                        handle,
+                        durability: CommitDurability::Durable,
+                    },
+                    receipt_error: None,
+                    coverage_holds: None,
+                    coverage_floor_ms: None,
+                })
+            }
+        },
     ));
     assert!(futures_util::poll!(&mut command).is_pending());
     tokio::time::timeout(Duration::from_secs(10), entered)

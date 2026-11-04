@@ -44,6 +44,29 @@ const MAX_ARCHIVE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_PGN_BYTES: usize = 100 * 1024 * 1024;
 const MAX_PUBLIC_JSON_BYTES: usize = 1024 * 1024;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ExportScope {
+    Complete,
+    Resumable,
+}
+
+#[derive(Clone, Copy)]
+struct ExportLimits {
+    timeout: Duration,
+    pgn_bytes: usize,
+    archives: usize,
+}
+
+impl Default for ExportLimits {
+    fn default() -> Self {
+        Self {
+            timeout: EXPORT_TIMEOUT,
+            pgn_bytes: MAX_PGN_BYTES,
+            archives: MAX_ARCHIVES,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PublicChessComRequest {
@@ -260,6 +283,7 @@ pub async fn download_chess_com_games(
             app,
             window.label(),
             state.inner().clone(),
+            ExportScope::Complete,
             true,
         )
         .await,
@@ -276,6 +300,7 @@ pub(crate) async fn download_chess_com_games_runtime<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     owner: &str,
     state: AppState,
+    scope: ExportScope,
     fail_progress_on_receipt_error: bool,
 ) -> Result<RuntimeDownload, Error> {
     let admission_key = format!("chesscom_{}", player.to_ascii_lowercase());
@@ -305,7 +330,8 @@ pub(crate) async fn download_chess_com_games_runtime<R: tauri::Runtime>(
             state,
             cancellation,
             commit_gate,
-            EXPORT_TIMEOUT,
+            ExportLimits::default(),
+            scope,
             fail_progress_on_receipt_error,
         ),
     )
@@ -348,7 +374,8 @@ async fn download_chess_com_games_core<R: tauri::Runtime>(
     state: AppState,
     cancellation: CancellationToken,
     commit_gate: crate::infra::operations::OperationCommitGate,
-    export_timeout: Duration,
+    limits: ExportLimits,
+    scope: ExportScope,
     fail_progress_on_receipt_error: bool,
 ) -> Result<RuntimeDownload, Error> {
     if cancellation.is_cancelled() {
@@ -357,7 +384,8 @@ async fn download_chess_com_games_core<R: tauri::Runtime>(
     let progress = begin_progress(&state.progress_state, &app, job_id)?;
 
     let result = async {
-        let staged = match tokio::time::timeout(export_timeout, async {
+        let deadline = tokio::time::Instant::now() + limits.timeout;
+        let archives = tokio::time::timeout_at(deadline, async {
             let index_bytes = fetch_bounded(
                 &state,
                 archive_index_url(&lower_player)?,
@@ -368,7 +396,7 @@ async fn download_chess_com_games_core<R: tauri::Runtime>(
             let index: ArchiveIndex = serde_json::from_slice(&index_bytes).map_err(|_| {
                 Error::InvalidInput("Chess.com returned an invalid archive index".into())
             })?;
-            if index.archives.len() > MAX_ARCHIVES {
+            if scope == ExportScope::Complete && index.archives.len() > limits.archives {
                 return Err(Error::ResourceLimit("too many Chess.com archives".into()));
             }
             let mut archives = index
@@ -387,71 +415,127 @@ async fn download_chess_com_games_core<R: tauri::Runtime>(
                 ));
             }
 
-            let mut staged =
-                tempfile::NamedTempFile::new().map_err(|error| Error::Io(Box::new(error)))?;
-            let mut total_pgn_bytes = 0usize;
-            let total = archives.len().max(1);
-            for (index, (archive, _, _)) in archives.into_iter().enumerate() {
-                let bytes =
-                    fetch_bounded(&state, archive, MAX_ARCHIVE_BYTES, &cancellation).await?;
-                let games: ArchiveGames = serde_json::from_slice(&bytes).map_err(|_| {
-                    Error::InvalidInput("Chess.com returned an invalid game archive".into())
-                })?;
-                if games.games.is_empty() {
-                    return Err(Error::InvalidInput(
-                        "Chess.com returned an empty requested game archive".into(),
-                    ));
-                }
-                for game in games.games {
-                    if cancellation.is_cancelled() {
-                        return Err(Error::Cancellation);
-                    }
-                    if game
-                        .rules
-                        .as_deref()
-                        .is_some_and(|rules| !ACCOUNT_ARCHIVE_RULES.contains(&rules))
-                    {
-                        continue;
-                    }
-                    let pgn = game
-                        .pgn
-                        .filter(|pgn| !pgn.trim().is_empty())
-                        .ok_or_else(|| {
-                            Error::InvalidInput("Chess.com returned a game without PGN".into())
-                        })?;
-                    total_pgn_bytes = total_pgn_bytes.saturating_add(pgn.len()).saturating_add(1);
-                    if total_pgn_bytes > MAX_PGN_BYTES {
-                        return Err(Error::ResourceLimit(
-                            "Chess.com PGN export is too large".into(),
-                        ));
-                    }
-                    staged.write_all(pgn.as_bytes())?;
-                    #[cfg(test)]
-                    capture_staged_pgn_bytes(pgn.as_bytes());
-                    staged.write_all(b"\n")?;
-                    #[cfg(test)]
-                    capture_staged_pgn_bytes(b"\n");
-                }
-                update_progress_with_state(
-                    &state.progress_state,
-                    &app,
-                    &progress,
-                    ((index + 1) as f32 / total as f32) * 90.0,
-                    ProgressState::Running,
-                )?;
-            }
-            staged.flush()?;
-            Ok::<_, Error>(staged)
+            Ok::<_, Error>(archives)
         })
         .await
-        {
-            Ok(result) => result?,
-            Err(_) => {
-                return Err(Error::EngineTimeout(
-                    "Chess.com export deadline exceeded".into(),
-                ));
+        .map_err(|_| export_deadline_error())??;
+
+        // Each temporary file is one complete month. A deadline can drop an in-flight month
+        // without losing the prefix or exposing a partially written archive.
+        let mut months = Vec::new();
+        let mut total_pgn_bytes = 0usize;
+        let mut last_month = None;
+        let mut stopped = false;
+        let total = archives.len();
+        for (index, (archive, year, month)) in archives.into_iter().enumerate() {
+            if scope == ExportScope::Resumable && index >= limits.archives {
+                stopped = true;
+                break;
             }
+            let token = cancellation.clone();
+            let staged_month = tokio::time::timeout_at(deadline, async {
+                let bytes =
+                    fetch_bounded(&state, archive, MAX_ARCHIVE_BYTES, &cancellation).await?;
+                crate::infra::blocking::BLOCKING_GATEWAY
+                    .spawn_cancellable(token, move |token| {
+                        let games: ArchiveGames = serde_json::from_slice(&bytes).map_err(|_| {
+                            Error::InvalidInput("Chess.com returned an invalid game archive".into())
+                        })?;
+                        if games.games.is_empty() {
+                            return Err(Error::InvalidInput(
+                                "Chess.com returned an empty requested game archive".into(),
+                            ));
+                        }
+                        let mut staged = tempfile::NamedTempFile::new()?;
+                        let mut month_bytes = 0usize;
+                        for game in games.games {
+                            if token.is_cancelled() {
+                                return Err(Error::Cancellation);
+                            }
+                            if game
+                                .rules
+                                .as_deref()
+                                .is_some_and(|rules| !ACCOUNT_ARCHIVE_RULES.contains(&rules))
+                            {
+                                continue;
+                            }
+                            let pgn =
+                                game.pgn
+                                    .filter(|pgn| !pgn.trim().is_empty())
+                                    .ok_or_else(|| {
+                                        Error::InvalidInput(
+                                            "Chess.com returned a game without PGN".into(),
+                                        )
+                                    })?;
+                            month_bytes = month_bytes.saturating_add(pgn.len()).saturating_add(1);
+                            if total_pgn_bytes.saturating_add(month_bytes) > limits.pgn_bytes {
+                                return Ok(None);
+                            }
+                            staged.write_all(pgn.as_bytes())?;
+                            #[cfg(test)]
+                            capture_staged_pgn_bytes(pgn.as_bytes());
+                            staged.write_all(b"\n")?;
+                            #[cfg(test)]
+                            capture_staged_pgn_bytes(b"\n");
+                        }
+                        staged.flush()?;
+                        Ok(Some((staged, month_bytes)))
+                    })
+                    .await
+            })
+            .await;
+            let (staged, month_bytes) = match staged_month {
+                Ok(Ok(Some(month))) => month,
+                Ok(Ok(None)) if scope == ExportScope::Resumable && !months.is_empty() => {
+                    stopped = true;
+                    break;
+                }
+                Ok(Ok(None)) => {
+                    return Err(Error::ResourceLimit(
+                        "Chess.com PGN export is too large".into(),
+                    ))
+                }
+                Ok(Err(error)) => return Err(error),
+                Err(_) if scope == ExportScope::Resumable && !months.is_empty() => {
+                    stopped = true;
+                    break;
+                }
+                Err(_) => return Err(export_deadline_error()),
+            };
+            months.push(staged);
+            total_pgn_bytes += month_bytes;
+            last_month = Some((year, month));
+            update_progress_with_state(
+                &state.progress_state,
+                &app,
+                &progress,
+                ((index + 1) as f32 / total as f32) * 90.0,
+                ProgressState::Running,
+            )?;
+        }
+        if months.is_empty() {
+            return Err(Error::ResourceLimit("too many Chess.com archives".into()));
+        }
+        let coverage_floor_ms = if stopped {
+            last_month.map(next_month_floor).transpose()?
+        } else {
+            None
         };
+        let staged = crate::infra::blocking::BLOCKING_GATEWAY
+            .spawn_cancellable(cancellation.clone(), move |token| {
+                use std::io::{Seek, SeekFrom};
+                let mut staged = tempfile::NamedTempFile::new()?;
+                for mut month in months {
+                    if token.is_cancelled() {
+                        return Err(Error::Cancellation);
+                    }
+                    month.seek(SeekFrom::Start(0))?;
+                    std::io::copy(&mut month, &mut staged)?;
+                }
+                staged.flush()?;
+                Ok(staged)
+            })
+            .await?;
 
         // Publication and its durability/activation tail are deliberately outside the staging
         // timeout. Once installation starts, cancellation checkpoints decide whether publication
@@ -476,6 +560,7 @@ async fn download_chess_com_games_core<R: tauri::Runtime>(
             &lower_player,
             since_ms,
             None,
+            coverage_floor_ms,
             cancellation.clone(),
         )
         .await;
@@ -483,6 +568,7 @@ async fn download_chess_com_games_core<R: tauri::Runtime>(
             publication,
             receipt_error,
             coverage_holds: None,
+            coverage_floor_ms,
         })
     }
     .await;
@@ -498,6 +584,22 @@ async fn download_chess_com_games_core<R: tauri::Runtime>(
         };
         report_terminal_progress(&state, &app, &progress, terminal)
     })
+}
+
+fn export_deadline_error() -> Error {
+    Error::EngineTimeout("Chess.com export deadline exceeded".into())
+}
+
+fn next_month_floor((year, month): (i32, u32)) -> Result<i64, Error> {
+    let (year, month) = if month == 12 {
+        (year + 1, 1)
+    } else {
+        (year, month + 1)
+    };
+    chrono::NaiveDate::from_ymd_opt(year, month, 1)
+        .and_then(|date| date.and_hms_opt(0, 0, 0))
+        .map(|date| date.and_utc().timestamp_millis())
+        .ok_or_else(|| Error::InvalidInput("invalid Chess.com archive date".into()))
 }
 
 #[cfg(test)]
@@ -627,7 +729,11 @@ mod tests {
                     state.clone(),
                     token,
                     gate,
-                    Duration::from_secs(30),
+                    ExportLimits {
+                        timeout: Duration::from_secs(30),
+                        ..ExportLimits::default()
+                    },
+                    ExportScope::Complete,
                     true,
                 ),
             )
@@ -820,6 +926,7 @@ mod tests {
                 app.handle().clone(),
                 "test",
                 state.clone(),
+                ExportScope::Complete,
                 true,
             )
             .await;
@@ -858,6 +965,33 @@ mod tests {
         state: AppState,
         timeout: Duration,
     ) -> Result<RuntimeDownload, Error> {
+        run_export_with_limits(
+            destination,
+            filename,
+            job_id,
+            app,
+            state,
+            None,
+            ExportScope::Complete,
+            ExportLimits {
+                timeout,
+                ..ExportLimits::default()
+            },
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn run_export_with_limits(
+        destination: PathRef,
+        filename: String,
+        job_id: String,
+        app: tauri::AppHandle<tauri::test::MockRuntime>,
+        state: AppState,
+        first_month: Option<(i32, u32)>,
+        scope: ExportScope,
+        limits: ExportLimits,
+    ) -> Result<RuntimeDownload, Error> {
         let lease = state.operations.claim_download(
             &job_id,
             "test",
@@ -877,16 +1011,198 @@ mod tests {
                 filename,
                 job_id,
                 "felix".into(),
-                None,
+                first_month,
                 app,
                 state,
                 cancellation,
                 commit_gate,
-                timeout,
+                limits,
+                scope,
                 true,
             ),
         )
         .await
+    }
+
+    const TWO_MONTHS: &[u8] = br#"{"archives":["https://api.chess.com/pub/player/felix/games/2026/09","https://api.chess.com/pub/player/felix/games/2026/10"]}"#;
+
+    #[tokio::test]
+    async fn resumable_limits_publish_whole_prefix_and_complete_scope_preserves_destination() {
+        for count_limit in [false, true] {
+            for scope in [ExportScope::Complete, ExportScope::Resumable] {
+                let transport = Arc::new(ExportTransport {
+                    responses: Mutex::new(VecDeque::from([
+                        response(TWO_MONTHS),
+                        response(ARCHIVE),
+                        response(br#"{"games":[{"pgn":"1. d4 d5"},{"pgn":"1. c4 c5"}]}"#),
+                    ])),
+                });
+                let (_dir, state, destination, root, app) = export_fixture(transport);
+                std::fs::write(root.join("bounded.pgn"), b"previous").unwrap();
+                let job = state.operations.prepare_download("test").unwrap();
+                let limits = ExportLimits {
+                    pgn_bytes: if count_limit { MAX_PGN_BYTES } else { 20 },
+                    archives: if count_limit { 1 } else { MAX_ARCHIVES },
+                    ..ExportLimits::default()
+                };
+                let result = run_export_with_limits(
+                    destination,
+                    "bounded.pgn".into(),
+                    job,
+                    app.handle().clone(),
+                    state,
+                    None,
+                    scope,
+                    limits,
+                )
+                .await;
+                if scope == ExportScope::Complete {
+                    assert!(matches!(result, Err(Error::ResourceLimit(_))));
+                    assert_eq!(
+                        std::fs::read(root.join("bounded.pgn")).unwrap(),
+                        b"previous"
+                    );
+                } else {
+                    let result = result.unwrap();
+                    assert_eq!(
+                        result.coverage_floor_ms,
+                        Some(next_month_floor((2026, 9)).unwrap())
+                    );
+                    assert_eq!(
+                        std::fs::read(root.join("bounded.pgn")).unwrap(),
+                        b"1. e4 e5\n"
+                    );
+                }
+            }
+        }
+    }
+
+    struct SlowMonths {
+        served_in_export: AtomicUsize,
+        completed: Mutex<Vec<String>>,
+        before_first: bool,
+    }
+
+    #[async_trait]
+    impl DownloadTransport for SlowMonths {
+        async fn request(&self, url: &str, _: HeaderMap) -> Result<DownloadResponse, Error> {
+            if url.ends_with("archives") {
+                self.served_in_export.store(0, Ordering::SeqCst);
+                return Ok(response(TWO_MONTHS));
+            }
+            let index = self.served_in_export.fetch_add(1, Ordering::SeqCst);
+            if self.before_first || index > 0 {
+                std::future::pending::<()>().await;
+            }
+            self.completed.lock().unwrap().push(url.to_owned());
+            Ok(response(ARCHIVE))
+        }
+    }
+
+    #[tokio::test]
+    async fn resumable_deadline_advances_months_without_refetching_completed_months() {
+        let transport = Arc::new(SlowMonths {
+            served_in_export: AtomicUsize::new(0),
+            completed: Mutex::new(Vec::new()),
+            before_first: false,
+        });
+        let (_dir, state, destination, root, app) = export_fixture(transport.clone());
+        let mut since = None;
+        let mut floors = Vec::new();
+        for _ in 0..2 {
+            let job = state.operations.prepare_download("test").unwrap();
+            let result = run_export_with_limits(
+                destination.clone(),
+                "slow.pgn".into(),
+                job,
+                app.handle().clone(),
+                state.clone(),
+                first_archive_month(since).unwrap(),
+                ExportScope::Resumable,
+                ExportLimits {
+                    timeout: Duration::from_millis(500),
+                    ..ExportLimits::default()
+                },
+            )
+            .await
+            .unwrap();
+            floors.push(result.coverage_floor_ms);
+            since = Some(crate::db::linked_collections::account_sync_cursor(
+                "chesscom",
+                since,
+                Some(1),
+                &Default::default(),
+                None,
+                result.coverage_floor_ms,
+            ));
+            assert_eq!(std::fs::read(root.join("slow.pgn")).unwrap(), b"1. e4 e5\n");
+        }
+        assert_eq!(
+            floors,
+            vec![Some(next_month_floor((2026, 9)).unwrap()), None]
+        );
+        {
+            let completed = transport.completed.lock().unwrap();
+            assert_eq!(completed.len(), 2);
+            assert!(completed[0].ends_with("/2026/09"));
+            assert!(completed[1].ends_with("/2026/10"));
+        }
+        let transport = Arc::new(SlowMonths {
+            served_in_export: AtomicUsize::new(0),
+            completed: Mutex::new(Vec::new()),
+            before_first: true,
+        });
+        let (_dir, state, destination, root, app) = export_fixture(transport);
+        std::fs::write(root.join("slow.pgn"), b"previous").unwrap();
+        let job = state.operations.prepare_download("test").unwrap();
+        let result = run_export_with_limits(
+            destination,
+            "slow.pgn".into(),
+            job,
+            app.handle().clone(),
+            state,
+            None,
+            ExportScope::Resumable,
+            ExportLimits {
+                timeout: Duration::from_millis(100),
+                ..ExportLimits::default()
+            },
+        )
+        .await;
+        assert!(matches!(result, Err(Error::EngineTimeout(_))));
+        assert_eq!(std::fs::read(root.join("slow.pgn")).unwrap(), b"previous");
+    }
+
+    #[tokio::test]
+    async fn resumable_filtered_month_publishes_empty_prefix_with_floor() {
+        let transport = Arc::new(ExportTransport {
+            responses: Mutex::new(VecDeque::from([
+                response(TWO_MONTHS),
+                response(br#"{"games":[{"rules":"crazyhouse","pgn":"1. N@f3 *"}]}"#),
+            ])),
+        });
+        let (_dir, state, destination, root, app) = export_fixture(transport);
+        let job = state.operations.prepare_download("test").unwrap();
+        let result = run_export_with_limits(
+            destination,
+            "empty.pgn".into(),
+            job,
+            app.handle().clone(),
+            state,
+            None,
+            ExportScope::Resumable,
+            ExportLimits {
+                archives: 1,
+                ..ExportLimits::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            result.coverage_floor_ms,
+            Some(next_month_floor((2026, 9)).unwrap())
+        );
+        assert!(std::fs::read(root.join("empty.pgn")).unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -1107,7 +1423,7 @@ mod tests {
             .unwrap();
         assert_eq!(command.matches("run_native_operation(").count(), 1);
         assert_eq!(command.matches("download_chess_com_games_core(").count(), 1);
-        assert!(command.contains("EXPORT_TIMEOUT"));
+        assert!(command.contains("ExportLimits::default()"));
     }
 
     #[test]

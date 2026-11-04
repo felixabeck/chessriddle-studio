@@ -1,4 +1,4 @@
-pub(crate) use native_tests::{game, Fixture};
+pub(crate) use native_tests::{game, received_provider_batch_with_floor, Fixture};
 
 #[cfg(test)]
 mod native_tests {
@@ -23,7 +23,8 @@ mod native_tests {
                 Some(50),
                 Some(500),
                 &present,
-                Some(std::slice::from_ref(&hold))
+                Some(std::slice::from_ref(&hold)),
+                None
             ),
             100
         );
@@ -35,7 +36,8 @@ mod native_tests {
                 Some(50),
                 Some(500),
                 &present,
-                Some(std::slice::from_ref(&finished))
+                Some(std::slice::from_ref(&finished)),
+                None
             ),
             500
         );
@@ -46,28 +48,36 @@ mod native_tests {
                 Some(50),
                 Some(500),
                 &present,
-                Some(std::slice::from_ref(&finished))
+                Some(std::slice::from_ref(&finished)),
+                None
             ),
             100
         );
         assert_eq!(
-            account_sync_cursor("chesscom", Some(50), Some(500), &present, Some(&[hold])),
+            account_sync_cursor(
+                "chesscom",
+                Some(50),
+                Some(500),
+                &present,
+                Some(&[hold]),
+                None
+            ),
             500
         );
         assert_eq!(
-            account_sync_cursor("lichess", Some(50), Some(500), &present, None),
+            account_sync_cursor("lichess", Some(50), Some(500), &present, None, None),
             50
         );
         assert_eq!(
-            account_sync_cursor("lichess", None, Some(500), &present, None),
+            account_sync_cursor("lichess", None, Some(500), &present, None, None),
             0
         );
         assert_eq!(
-            account_sync_cursor("lichess", Some(500), Some(50), &present, Some(&[])),
+            account_sync_cursor("lichess", Some(500), Some(50), &present, Some(&[]), None),
             500
         );
         assert_eq!(
-            account_sync_cursor("lichess", Some(50), None, &present, Some(&[finished])),
+            account_sync_cursor("lichess", Some(50), None, &present, Some(&[finished]), None),
             50
         );
     }
@@ -140,6 +150,18 @@ mod native_tests {
         since: Option<i64>,
         holds: Option<&[crate::lichess::CoverageHold]>,
     ) -> FileWorkspaceHandle {
+        received_provider_batch_with_floor(fixture, name, body, provider, since, holds, None)
+    }
+
+    pub(crate) fn received_provider_batch_with_floor(
+        fixture: &Fixture,
+        name: &str,
+        body: &str,
+        provider: &str,
+        since: Option<i64>,
+        holds: Option<&[crate::lichess::CoverageHold]>,
+        floor: Option<i64>,
+    ) -> FileWorkspaceHandle {
         let root = fixture
             .service
             .root
@@ -171,10 +193,91 @@ mod native_tests {
                 "player",
                 since,
                 holds,
+                floor,
                 &CancellationToken::new(),
             )
             .unwrap();
         file
+    }
+
+    #[test]
+    fn account_cursor_applies_month_floor_and_preserves_no_floor_semantics() {
+        let ids = HashSet::new();
+        for (provider, holds, expected) in [
+            ("chesscom", None, 500),
+            ("lichess", None, 50),
+            ("lichess", Some([].as_slice()), 500),
+        ] {
+            assert_eq!(
+                account_sync_cursor(provider, Some(50), Some(500), &ids, holds, None),
+                expected
+            );
+            assert_eq!(
+                account_sync_cursor(provider, Some(50), Some(500), &ids, holds, Some(1000)),
+                1000
+            );
+        }
+        assert_eq!(
+            account_sync_cursor("chesscom", None, None, &ids, None, Some(1000)),
+            1000
+        );
+        assert_eq!(
+            account_sync_cursor("chesscom", Some(2000), Some(500), &ids, None, Some(1000)),
+            2000
+        );
+    }
+
+    #[tokio::test]
+    async fn linked_receipt_carries_month_floor_through_empty_batch_and_native_fetch_cursor() {
+        let fixture = Fixture::new();
+        fixture.create(
+            "history",
+            &game(Some("1"), "e4 e5", "original"),
+            WorkspaceFileType::Game,
+        );
+        let collection = fixture.list().pop().unwrap();
+        fixture.account(&collection.id, "chesscom");
+        let file = received_provider_batch_with_floor(
+            &fixture,
+            "empty.pgn",
+            "",
+            "chesscom",
+            None,
+            None,
+            Some(2_000_000_000_000),
+        );
+        let outcome = fixture
+            .service
+            .clone()
+            .append_batch(
+                fixture.state.pgn_path_authority.clone(),
+                Uuid::parse_str(&collection.id).unwrap(),
+                file,
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert!(outcome.index_ready && outcome.durability_confirmed);
+        assert_eq!(
+            fixture.list().pop().unwrap().fetch_since_ms,
+            Some("2000000000000".into())
+        );
+        assert_eq!(
+            fixture
+                .service
+                .fetch_cursor_blocking(&collection.id, &CancellationToken::new())
+                .unwrap(),
+            Some(2_000_000_000_000)
+        );
+        assert!(fixture
+            .service
+            .record(
+                Uuid::parse_str(&collection.id).unwrap(),
+                &CancellationToken::new()
+            )
+            .unwrap()
+            .pending
+            .is_none());
     }
 
     #[tokio::test]
@@ -830,6 +933,13 @@ mod native_tests {
     }
 
     impl Fixture {
+        pub fn set_batch_preparation_fault(&self, enabled: bool) {
+            *self.service.batch_preparation_injector.lock().unwrap() = enabled.then(|| {
+                Arc::new(fs::ParentSyncFault("chunk preparation parent sync"))
+                    as Arc<dyn fs::AtomicWriterInjector + Send + Sync>
+            });
+        }
+
         fn trash(&self, file: &FileWorkspaceHandle) {
             crate::file_workspace::trash_entry(
                 &self.state.pgn_path_authority,
@@ -7979,6 +8089,7 @@ mod native_tests {
                 handle,
                 "chesscom",
                 "player",
+                None,
                 None,
                 None,
                 &CancellationToken::new(),
