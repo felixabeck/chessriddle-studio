@@ -1723,14 +1723,16 @@ fn windows_listing_identity_is_composed_not_a_raw_file_id() {
     let visit = compact(&source[braced_body(source, "pub(super) fn visit_directory(")]);
     assert!(
         visit.contains("letvolume=opened_file_identity(dir)?.0")
-            && visit.contains("parse_directory_page(&buffer,used,volume,&mutpage,None)?"),
+            && visit.contains("parse_directory_page(&buffer,used,volume,&mut|entry|{"),
         "the volume serial must come from the retained directory handle and reach the parser: {visit}"
     );
-    let page = compact(&source[braced_body(source, "fn parse_directory_page(")]);
+    let page = compact(&source[braced_body(source, "fn parse_directory_page")]);
     assert!(
         page.contains("identity:(volume,header.FileIdasu64)"),
         "enumeration identity must be composed with the volume serial: {page}"
     );
+    let owned = compact(&source[braced_body(source, "pub(super) fn into_owned(")]);
+    assert!(owned.contains("identity:self.identity,"));
     let read = compact(&source[braced_body(source, "pub(super) fn read_directory_entries(")]);
     assert!(
         read.contains("identity:entry.identity"),
@@ -1762,8 +1764,10 @@ fn windows_listing_classifies_reparse_entries_as_other_and_stays_cancellable() {
         entry_kind.contains("kind:DirectoryEntryKind,"),
         "the enumerator must carry the one kind enum: {entry_kind}"
     );
-    let page = compact(&source[braced_body(source, "fn parse_directory_page(")]);
+    let page = compact(&source[braced_body(source, "fn parse_directory_page")]);
     assert!(page.contains("kind:enumerated_kind(header.FileAttributes),"));
+    let owned = compact(&source[braced_body(source, "pub(super) fn into_owned(")]);
+    assert!(owned.contains("kind:self.kind,"));
     let kind = compact(&source[braced_body(source, "fn enumerated_kind(")]);
     assert!(
         kind.contains("ifattributes&FILE_ATTRIBUTE_REPARSE_POINT!=0{DirectoryEntryKind::Other}elseifattributes&FILE_ATTRIBUTE_DIRECTORY!=0{"),
@@ -1817,7 +1821,16 @@ fn directory_listing_bound_options_survive_platform_wrappers() {
         .is_some_and(|count| {
             unix.find("if!keep").is_some_and(|keep| count < keep)
                 && unix.find("rfs::statat").is_some_and(|stat| count < stat)
+                && unix
+                    .find("OsString::from_vec")
+                    .is_some_and(|name| count < name)
         }));
+    assert!(
+        unix.contains("ifletSome(visit)=visit.as_mut(){visit(entry)?;}else{result.push(entry);}")
+    );
+    let walk = compact(&source[braced_body(source, "pub(super) fn walk_directory(")]);
+    assert!(walk.contains("visit(bytes,entry.ino(),entry.file_type())?;"));
+    assert!(!walk.contains("Vec") && !walk.contains(".push("));
     let windows_source = &source[starts[1]..];
     let windows = compact(
         &windows_source[braced_body(windows_source, "pub(crate) fn read_directory_entries_at(")],
@@ -1828,21 +1841,26 @@ fn directory_listing_bound_options_survive_platform_wrappers() {
     for body in [&windows, &read] {
         assert!(!body.contains("Some("));
     }
-    let page = compact(&source[braced_body(source, "fn parse_directory_page(")]);
-    assert!(page.contains(
-        "ifletSome(limit)=limit{super::check_directory_listing_bound(entries.len(),limit)?;}"
-    ));
+    let page = compact(&source[braced_body(source, "fn parse_directory_page")]);
     let enumerate = compact(&source[braced_body(source, "pub(super) fn enumerate_directory(")]);
-    // The streaming visitor parses one page at a time; the wrapper owns the total-entry
-    // bound and must propagate its callback's failure before retaining another entry.
+    // The parser delivers borrowed names directly. Only the wrapper may allocate and
+    // retain entries, after its total-entry bound has accepted them.
     assert!(
-        enumerate.contains("visit_directory(dir,cancellation,&mut|entry|{ifletSome(limit)=limit{super::check_directory_listing_bound(entries.len(),limit)?;}entries.push(entry);Ok(())})?;Ok(entries)"),
-        "bounded enumeration must check every visited entry before retaining it: {enumerate}"
+        enumerate.contains("visit_directory(dir,cancellation,&mut|entry|{ifletSome(limit)=limit{super::check_directory_listing_bound(entries.len(),limit)?;}entries.push(entry.into_owned());Ok(())})?;Ok(entries)"),
+        "bounded enumeration must check every borrowed entry before allocating or retaining it: {enumerate}"
     );
     let visit = compact(&source[braced_body(source, "pub(super) fn visit_directory(")]);
     assert!(
-        visit.contains("parse_directory_page(&buffer,used,volume,&mutpage,None)?;forentryinpage{ifcancellation.is_cancelled(){returnErr(Error::Cancellation);}visit(entry)?;}"),
-        "every parsed entry must pass through the wrapper's fallible bound check: {visit}"
+        !visit.contains("Vec") && !visit.contains(".push(")
+            && visit.contains("parse_directory_page(&buffer,used,volume,&mut|entry|{ifcancellation.is_cancelled(){returnErr(Error::Cancellation);}visit(entry)})?;restart_scan=false;"),
+        "the visitor must deliver parsed entries directly without retaining a page before the bound check: {visit}"
+    );
+    assert!(
+        !page.contains("Vec") && !page.contains(".push(")
+            && !page.contains("OsString") && !page.contains("into_owned")
+            && page.contains("letname=unsafe{std::slice::from_raw_parts(")
+            && page.contains("visit(EnumeratedEntry{name,identity:(volume,header.FileIdasu64),kind:enumerated_kind(header.FileAttributes),last_write_time:header.LastWriteTime,})?;"),
+        "the parser must borrow each name and immediately propagate callback failure without buffering: {page}"
     );
     let removal = compact(&source[braced_body(source, "fn remove_windows_tree_at(")]);
     assert!(removal.contains("enumerate_directory(&child,&CancellationToken::new(),None)?"));
@@ -1962,7 +1980,7 @@ fn windows_enumeration_restart_terminal_and_exhaustion_are_handled() {
     );
     assert!(
         body.contains("nt_query_directory_file(dir,&mutstatus_block,&mutbuffer,restart_scan)")
-            && body.contains("visit(entry)?;}restart_scan=false;"),
+            && body.contains("visit(entry)})?;restart_scan=false;"),
         "later calls must not restart the scan: {body}"
     );
     let overflow_start = body

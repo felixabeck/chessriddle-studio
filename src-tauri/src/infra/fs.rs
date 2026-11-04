@@ -353,7 +353,6 @@ fn read_directory_entries_with_stat_errors(
     let mut result = Vec::new();
     let mut observed = 0;
     unix::walk_directory(dir, |bytes, _ino, file_type| {
-        let name = OsString::from_vec(bytes.to_vec());
         if cancellation.is_cancelled() {
             return Err(Error::Cancellation);
         }
@@ -361,6 +360,7 @@ fn read_directory_entries_with_stat_errors(
             check_directory_listing_bound(observed, limit)?;
             observed += 1;
         }
+        let name = OsString::from_vec(bytes.to_vec());
         if !keep(&name) {
             return Ok(());
         }
@@ -443,6 +443,7 @@ pub(crate) fn visit_directory_entries_at(
     #[cfg(windows)]
     {
         win::visit_directory(dir, cancellation, &mut |entry| {
+            let entry = entry.into_owned();
             visit(DirectoryEntry {
                 name: entry.name,
                 kind: entry.kind,
@@ -3844,8 +3845,8 @@ mod win {
         Ok(())
     }
 
-    pub(super) struct EnumeratedEntry {
-        pub name: OsString,
+    pub(super) struct EnumeratedEntry<N = OsString> {
+        pub name: N,
         pub identity: (u64, u64),
         /// The one kind enum: the enumerator and the platform-neutral `DirectoryEntry` classify
         /// exactly the same three cases, so there is no second type to keep in step.
@@ -3854,6 +3855,19 @@ mod win {
         /// ticks since 1601-01-01 UTC. Converted by `filetime_to_unix_seconds` before it
         /// reaches a `DirectoryEntry`; the renderer reads that value as Unix seconds.
         pub last_write_time: i64,
+    }
+
+    type BorrowedEnumeratedEntry<'a> = EnumeratedEntry<&'a [u16]>;
+
+    impl EnumeratedEntry<&[u16]> {
+        pub(super) fn into_owned(self) -> EnumeratedEntry {
+            EnumeratedEntry {
+                name: OsString::from_wide(self.name),
+                identity: self.identity,
+                kind: self.kind,
+                last_write_time: self.last_write_time,
+            }
+        }
     }
 
     /// Seconds between the FILETIME epoch (1601-01-01) and the Unix epoch (1970-01-01).
@@ -3908,13 +3922,13 @@ mod win {
     }
 
     /// Parses one `NtQueryDirectoryFile` page. `AlignedBuffer` carries the alignment required by
-    /// the headers, which are read as references to `FILE_ID_BOTH_DIR_INFORMATION`.
-    fn parse_directory_page(
-        buffer: &AlignedBuffer,
+    /// the headers, which are read as references to `FILE_ID_BOTH_DIR_INFORMATION`. Names stay
+    /// borrowed until the callback accepts the entry, so a bound refusal allocates no name.
+    fn parse_directory_page<'a>(
+        buffer: &'a AlignedBuffer,
         used: usize,
         volume: u64,
-        entries: &mut Vec<EnumeratedEntry>,
-        limit: Option<usize>,
+        visit: &mut dyn FnMut(BorrowedEnumeratedEntry<'a>) -> Result<(), Error>,
     ) -> Result<(), Error> {
         const FILE_NAME_OFFSET: usize =
             std::mem::offset_of!(FILE_ID_BOTH_DIR_INFORMATION, FileName);
@@ -3946,22 +3960,19 @@ mod win {
                 ))));
             }
             let name_units = name_bytes / 2;
-            let name = OsString::from_wide(unsafe {
+            let name = unsafe {
                 std::slice::from_raw_parts(
                     buffer_ptr.add(offset + FILE_NAME_OFFSET).cast::<u16>(),
                     name_units,
                 )
-            });
-            if name != OsStr::new(".") && name != OsStr::new("..") {
-                if let Some(limit) = limit {
-                    super::check_directory_listing_bound(entries.len(), limit)?;
-                }
-                entries.push(EnumeratedEntry {
+            };
+            if name != [b'.' as u16] && name != [b'.' as u16, b'.' as u16] {
+                visit(EnumeratedEntry {
                     name,
                     identity: (volume, header.FileId as u64),
                     kind: enumerated_kind(header.FileAttributes),
                     last_write_time: header.LastWriteTime,
-                });
+                })?;
             }
             if header.NextEntryOffset == 0 {
                 return Ok(());
@@ -4001,7 +4012,7 @@ mod win {
             if let Some(limit) = limit {
                 super::check_directory_listing_bound(entries.len(), limit)?;
             }
-            entries.push(entry);
+            entries.push(entry.into_owned());
             Ok(())
         })?;
         Ok(entries)
@@ -4010,7 +4021,7 @@ mod win {
     pub(super) fn visit_directory(
         dir: &File,
         cancellation: &CancellationToken,
-        visit: &mut dyn FnMut(EnumeratedEntry) -> Result<(), Error>,
+        visit: &mut dyn FnMut(BorrowedEnumeratedEntry<'_>) -> Result<(), Error>,
     ) -> Result<(), Error> {
         let volume = opened_file_identity(dir)?.0;
         let mut restart_scan = true;
@@ -4050,14 +4061,12 @@ mod win {
             }
             overflow_retries = 0;
             let used = status_block.Information.min(buffer_bytes);
-            let mut page = Vec::new();
-            parse_directory_page(&buffer, used, volume, &mut page, None)?;
-            for entry in page {
+            parse_directory_page(&buffer, used, volume, &mut |entry| {
                 if cancellation.is_cancelled() {
                     return Err(Error::Cancellation);
                 }
-                visit(entry)?;
-            }
+                visit(entry)
+            })?;
             restart_scan = false;
         }
         Ok(())
