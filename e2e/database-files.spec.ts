@@ -1890,7 +1890,7 @@ test.describe("database-files: labelled colour filters", () => {
                 page.getByRole("button", { name: "Farbe des Spielers: Schwarz", exact: true }),
             ).toBeVisible();
             await expect(
-                page.getByRole("button", { name: "Farbe des Gegners: Weiss", exact: true }),
+                page.getByRole("button", { name: "Farbe des Gegners: Weiß", exact: true }),
             ).toBeVisible();
             const chipLabel = page
                 .getByRole("button", { name: "Farbe des Spielers: Schwarz", exact: true })
@@ -1906,7 +1906,7 @@ test.describe("database-files: labelled colour filters", () => {
             }
             await assertTypingSpace();
             await page
-                .getByRole("button", { name: "Farbe des Gegners: Weiss", exact: true })
+                .getByRole("button", { name: "Farbe des Gegners: Weiß", exact: true })
                 .click();
             const menu = page.getByRole("menu");
             await expect(menu).toBeVisible();
