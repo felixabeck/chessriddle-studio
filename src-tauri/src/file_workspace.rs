@@ -221,6 +221,10 @@ fn list_trash(
         Err(error) => return Err(error),
     };
     let mut total = 0usize;
+    // Rows with their page key. The key's seconds come only from the origin record: a bucket
+    // without a readable one sorts as oldest (0) by id, because the directory modification time
+    // it displays is not stable across pages (NTFS updates the enumerated value lazily).
+    let mut keyed: Vec<(i64, WorkspaceTrashItem)> = Vec::new();
     if let Some(trash) = trash {
         crate::infra::fs::visit_directory_entries_at(&trash, cancellation, &mut |entry| {
             let id = entry.name.to_string_lossy().into_owned();
@@ -236,6 +240,7 @@ fn list_trash(
                 trashed_seconds: entry.modified_seconds,
                 category: None,
             };
+            let mut key_seconds = 0i64;
             match trash_item_target(&root, &item, false, cancellation) {
                 Ok(source) => {
                     row.name = source.leaf.to_string_lossy().into_owned();
@@ -253,6 +258,7 @@ fn list_trash(
                         Ok(origin) => {
                             row.trashed_seconds =
                                 i64::try_from(origin.trashed_seconds).unwrap_or(i64::MAX);
+                            key_seconds = row.trashed_seconds;
                             row.original_folder = origin
                                 .parents
                                 .iter()
@@ -271,7 +277,7 @@ fn list_trash(
                 Err(Error::Cancellation) => return Err(Error::Cancellation),
                 Err(error) => row.category = Some(error.category()),
             }
-            let key = (row.trashed_seconds, row.item.0.as_str());
+            let key = (key_seconds, row.item.0.as_str());
             if cursor
                 .as_ref()
                 .is_some_and(|cursor| key >= (cursor.seconds, cursor.item.as_str()))
@@ -279,21 +285,22 @@ fn list_trash(
                 return Ok(());
             }
             total += 1;
-            page.items.push(row);
-            page.items.sort_by(|a, b| {
-                (b.trashed_seconds, &b.item.0).cmp(&(a.trashed_seconds, &a.item.0))
+            keyed.push((key_seconds, row));
+            keyed.sort_by(|(a_seconds, a), (b_seconds, b)| {
+                (*b_seconds, &b.item.0).cmp(&(*a_seconds, &a.item.0))
             });
-            page.items.truncate(TRASH_PAGE_SIZE);
+            keyed.truncate(TRASH_PAGE_SIZE);
             Ok(())
         })?;
     }
-    page.older_count = total.saturating_sub(page.items.len());
+    page.older_count = total.saturating_sub(keyed.len());
     if page.older_count > 0 {
-        page.cursor = page.items.last().map(|row| TrashCursor {
-            seconds: row.trashed_seconds,
+        page.cursor = keyed.last().map(|(seconds, row)| TrashCursor {
+            seconds: *seconds,
             item: row.item.0.clone(),
         });
     }
+    page.items = keyed.into_iter().map(|(_, row)| row).collect();
     let retained = PathAuthority::retained_listing_records(&snapshot, cancellation)?;
     authority.with_mut(|authority| {
         authority.commit_directory_listing(snapshot, Vec::new(), &retained, cancellation)
@@ -4150,6 +4157,89 @@ mod tests {
             assert!(mutation_target(&state.pgn_path_authority, &engine).is_err());
             assert_executable_retired(&state, executable).await;
         }
+    }
+
+    #[test]
+    fn trash_listing_pages_are_stable_when_originless_bucket_times_change() {
+        let (_directory, state, workspace) = workspace_state();
+        let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+        let trash = root.join(TRASH_DIRECTORY);
+        fs::create_dir(&trash).unwrap();
+        let make_bucket = |origin_seconds: Option<u64>| {
+            let id = uuid::Uuid::new_v4().to_string();
+            let bucket = trash.join(&id);
+            fs::create_dir(&bucket).unwrap();
+            fs::write(bucket.join("game.pgn"), b"*").unwrap();
+            if let Some(trashed_seconds) = origin_seconds {
+                let origin = TrashOrigin {
+                    parents: Vec::new(),
+                    leaf: NativePath::from_path(Path::new("game.pgn")),
+                    trashed_seconds,
+                };
+                fs::write(
+                    trash.join(format!("{id}.origin")),
+                    serde_json::to_vec(&origin).unwrap(),
+                )
+                .unwrap();
+            }
+            (id, bucket)
+        };
+        // Origin-backed rows keep their origin time as key and display value, newest first. The
+        // times lie beyond the moved directory times below, so only the cursor key can fail.
+        let (older_origin, _) = make_bucket(Some(4_000_000_000));
+        let (newer_origin, _) = make_bucket(Some(4_100_000_000));
+        let originless: Vec<_> = (0..TRASH_PAGE_SIZE * 2)
+            .map(|_| make_bucket(None))
+            .collect();
+        let count = originless.len() + 2;
+        let list = |cursor| {
+            list_trash(
+                &state.pgn_path_authority,
+                &state.workspace_mutation,
+                &workspace,
+                cursor,
+                &CancellationToken::new(),
+            )
+            .unwrap()
+        };
+        let first = list(None);
+        assert_eq!(first.items[0].item.0, newer_origin);
+        assert_eq!(first.items[0].trashed_seconds, 4_100_000_000);
+        assert_eq!(first.items[1].item.0, older_origin);
+        assert_eq!(first.items[1].trashed_seconds, 4_000_000_000);
+        let mut seen: std::collections::BTreeSet<String> =
+            first.items.iter().map(|row| row.item.0.clone()).collect();
+        assert_eq!(first.older_count, count - seen.len());
+        // Windows may report a bucket's modification time lazily, so it can move between pages.
+        // Move every unseen bucket's time forward; none may jump to the wrong side of the cursor,
+        // and the moved time is still what the row displays.
+        let later = std::time::SystemTime::now() + std::time::Duration::from_secs(3600);
+        let later_seconds = i64::try_from(
+            later
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        )
+        .unwrap();
+        for (id, bucket) in &originless {
+            if !seen.contains(id) {
+                set_directory_modified(bucket, later);
+            }
+        }
+        let mut cursor = first.cursor;
+        let mut later_pages = 0;
+        while cursor.is_some() {
+            let page = list(cursor);
+            for row in &page.items {
+                assert!(seen.insert(row.item.0.clone()));
+                assert_eq!(row.trashed_seconds, later_seconds);
+            }
+            assert_eq!(page.older_count, count - seen.len());
+            cursor = page.cursor;
+            later_pages += 1;
+        }
+        assert!(later_pages > 0);
+        assert_eq!(seen.len(), count);
     }
 
     #[test]
