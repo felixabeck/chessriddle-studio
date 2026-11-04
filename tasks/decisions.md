@@ -11757,3 +11757,58 @@ Former private decision identifier: d-20261029-14
 * **Reason:** New evidence d-20261022-25 did not consider: a directory's derived sidecar name is a sibling PGN's real sidecar, so pairing directories moves user metadata away from its file and leaves names that block later creates. Directory metadata has no reader or writer. Listing returns `None`, rename and metadata writes refuse directories, and trash, restore and delete already skip it. Its rejection of "skip every directory's sidecar boundary" rested on preserving O1's exclusive destination-sidecar ownership. That ownership protects file metadata, and directory moves preserve it trivially by creating nothing. Reversal path: restore directory pairing only with a command that actually reads or writes directory metadata and a sidecar naming that cannot alias a file's sidecar.
 * **Decided by:** Claude (Opus) orchestrator, PLAN-ONLY under full auto. Plan authorship and arbitration share one context. Lenses run on the Codex executor (OpenAI family). Adopted by drain session a7d7a3cd, 2026-11-04. · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"7c7d1753fd790d17c5e10e13a20983bb5712bc9cb3ac02d0dd8232c2742cc6bd","input_sha256":"a0b2dba7611f321a80f8d342034dbf8bd72154342707abbf9f8741847d8f94f1","kind":"mutation-receipt","operation":"c08b6707a079ef3ec085f660826da21ca04f010fcdbb164009a76ac5e9d71f90","options":{"section":null},"request_id_sha256":null,"results":["d-20261104-01"],"target":"decisions-ledger","v":1} -->
+
+### d-20261104-02 — Where does a very large Chess.com account sync continue after one bounded export?
+
+* **Question:** Where does the continuation of a Chess.com account sync that exceeds one export's bounds live?
+* **Governs:** f-20261101-29
+* **Chosen:** The native account job loops: after a chunk fully completes its lifecycle it starts the next download from the native cursor under the same lease and cancellation token.
+* **Rejected:** One chunk per Download click (the renderer has no "more available" signal, so the user would see a successful sync with missing history). A renderer-driven loop (renderer state is not authoritative for native jobs, async-resource-invariants).
+* **Reason:** Keeps the job authoritative and the user action unchanged. Reversal path: drop the loop; the cursor still carries the rest one click at a time.
+* **Decided by:** Claude (Opus) planner under full auto, 4 plan-review rounds approved; adopted by drain session c6681a98, 2026-11-04. · **Superseded-by:** -
+
+### d-20261104-03 — Does a resumable Chess.com export truncate at a game or at a month boundary?
+
+* **Question:** Where does a resumable Chess.com export stop when it reaches a byte, month-count or time bound?
+* **Governs:** f-20261101-29
+* **Chosen:** At a whole-month boundary: only complete archive months are staged and published.
+* **Rejected:** Game-level truncation (the receipt would describe a partial month).
+* **Reason:** The month is the provider's archive unit and the cursor's natural hand-off point. Reversal path: none needed.
+* **Decided by:** Claude (Opus) planner under full auto, 4 plan-review rounds approved; adopted by drain session c6681a98, 2026-11-04. · **Superseded-by:** -
+
+### d-20261104-04 — How does a stopped Chess.com export record that its months are covered?
+
+* **Question:** How does a stopped export record that its published months are covered, given that the cursor is the newest game start?
+* **Governs:** f-20261101-29
+* **Chosen:** A month-start floor (00:00 UTC of the month after the last whole month) folded into the existing cursor through `account_sync_cursor`, for both the linked receipt and the unlinked `AccountSyncCursor`.
+* **Rejected:** The unchanged game-start cursor (stalls on a slow link or long daily games because the cursor month is re-fetched inclusively). A separate persisted "covered month" field (a second cursor beside the one both paths already store and read).
+* **Reason:** Guarantees strict progress without schema or registry change. Reversal path: pass no floor; the cursor returns to newest start.
+* **Decided by:** Claude (Opus) planner under full auto, 4 plan-review rounds approved; adopted by drain session c6681a98, 2026-11-04. · **Superseded-by:** -
+
+### d-20261104-05 — What follows a recovered Chess.com account chunk?
+
+* **Question:** After Retry recovers a pending batch or a deletion-pending chunk, does the account job end or continue?
+* **Governs:** f-20261101-29
+* **Chosen:** It always follows with one fresh, unguarded download from the cursor, which ends the job when it reports no floor.
+* **Rejected:** Ending the job after recovery (silently incomplete history). Persisting a "more available" flag with the pending batch (new registry state for what one incremental download answers).
+* **Reason:** The attempt cannot know whether the recovered chunk was the last. Reversal path: end recovered attempts after one chunk.
+* **Decided by:** Claude (Opus) planner under full auto, 4 plan-review rounds approved; adopted by drain session c6681a98, 2026-11-04. · **Superseded-by:** -
+
+### d-20261104-06 — What does the standalone `download_chess_com_games` command do over a limit?
+
+* **Question:** Does the standalone Chess.com file download also publish a partial prefix over a limit?
+* **Governs:** f-20261101-29
+* **Chosen:** No. It keeps whole-export semantics and fails as today, publishing nothing; the export scope is an explicit argument chosen by each caller.
+* **Rejected:** Publishing a silently partial file (it has no caller that can continue).
+* **Reason:** A partial file without continuation would be silently incomplete. Reversal path: route it through the resumable scope once a caller can continue.
+* **Decided by:** Claude (Opus) planner under full auto, 4 plan-review rounds approved; adopted by drain session c6681a98, 2026-11-04. · **Superseded-by:** -
+
+### d-20261104-07 — What does `MAX_ARCHIVES` bound for Chess.com exports?
+
+* **Question:** Does an archive index listing more than `MAX_ARCHIVES` months still refuse the sync?
+* **Governs:** f-20261101-29
+* **Chosen:** No. `MAX_ARCHIVES` becomes a per-export bound on months staged; the index stays bounded by `MAX_INDEX_BYTES`.
+* **Rejected:** Keeping it as an index refusal (a long-lived account then never syncs). Dropping it (the per-export work bound becomes byte- and time-only).
+* **Reason:** Keeps a work bound per export without refusing old accounts. Reversal path: restore the index check.
+* **Decided by:** Claude (Opus) planner under full auto, 4 plan-review rounds approved; adopted by drain session c6681a98, 2026-11-04. · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":53,"effect_sha256":"bcc6b267c32684fbdee3eb707c8dcea39221ddffa75b3a135f2423aee5f732e6","input_sha256":"8b8292bc2bbec00deffd7e34870be2c57bb7d0d8fb40fa00f3db5ddef536dfa4","kind":"mutation-receipt","operation":"1bd1fe88ea9fafd232379cd80b3e79389d7f7da2eeb314a56d8f58b219c7ee12","options":{"section":null},"request_id_sha256":null,"results":["d-20261104-02","d-20261104-03","d-20261104-04","d-20261104-05","d-20261104-06","d-20261104-07"],"target":"decisions-ledger","v":1} -->
