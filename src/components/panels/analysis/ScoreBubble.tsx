@@ -1,4 +1,5 @@
 import { Box, Progress, Text } from "@mantine/core";
+import { useTranslation } from "react-i18next";
 import type { Score } from "@/bindings";
 import { formatScore } from "@/utils/score";
 import classes from "./ScoreBubble.module.css";
@@ -14,6 +15,7 @@ function ScoreBubble({
   evalDisplay?: "cp" | "wdl";
   setEvalDisplay?: (display: "cp" | "wdl") => void;
 }) {
+  const { t } = useTranslation();
   if (evalDisplay === "wdl" && score.wdl) {
     const [w, d, l] = score.wdl;
     return (
@@ -29,17 +31,29 @@ function ScoreBubble({
           },
         }}
       >
-        <Progress.Section value={w} className={classes.white}>
+        <Progress.Section
+          value={w / 10}
+          aria-label={t("Board.Analysis.Tablebase.WhiteWins")}
+          className={classes.white}
+        >
           {w > 200 && (
             <Progress.Label className={classes.label}>{(w / 10).toFixed(0)}</Progress.Label>
           )}
         </Progress.Section>
-        <Progress.Section value={d} className={classes.equal}>
+        <Progress.Section
+          value={d / 10}
+          aria-label={t("Board.Analysis.Tablebase.Draw")}
+          className={classes.equal}
+        >
           {d > 200 && (
             <Progress.Label className={classes.label}>{(d / 10).toFixed(0)}</Progress.Label>
           )}
         </Progress.Section>
-        <Progress.Section value={l} className={classes.black}>
+        <Progress.Section
+          value={l / 10}
+          aria-label={t("Board.Analysis.Tablebase.BlackWins")}
+          className={classes.black}
+        >
           {l > 200 && (
             <Progress.Label className={classes.label}>{(l / 10).toFixed(0)}</Progress.Label>
           )}

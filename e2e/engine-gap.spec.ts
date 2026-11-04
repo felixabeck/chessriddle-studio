@@ -410,7 +410,10 @@ for (const colorScheme of ["light", "dark"] as const) {
                 {
                     ...payload.bestLines[0],
                     multipv: 3,
-                    score: { value: { type: "cp", value: 0 }, wdl: null },
+                    score: {
+                        value: { type: "cp", value: 0 },
+                        wdl: request.id === "e2e-engine" ? [450, 300, 250] : null,
+                    },
                     sanMoves: ["Nf3", "d5"],
                     uciMoves: ["g1f3", "d7d5"],
                 },
@@ -462,6 +465,20 @@ for (const colorScheme of ["light", "dark"] as const) {
         await expect.soft(rightColumn).toHaveScreenshot(`analysis-two-engines-${colorScheme}.png`, {
             animations: "disabled",
         });
+        await scoreChips.nth(2).click();
+        await expect(scoreChips.nth(2).getByRole("progressbar")).toHaveCount(3);
+        for (const [name, value] of [
+            ["White wins", "45%"],
+            ["Draw", "30%"],
+            ["Black wins", "25%"],
+        ]) {
+            await expect(
+                scoreChips.nth(2).getByRole("progressbar", { name, exact: true }),
+            ).toHaveAttribute("aria-valuetext", value);
+        }
+        await assertAccessible();
+        await scoreChips.nth(2).click();
+        await expect(scoreChips.nth(2)).toHaveText("0.00");
         await rightColumn.getByRole("button", { name: "Pause all engines", exact: true }).click();
         await expect(
             rightColumn.getByRole("button", { name: "Enable engine", exact: true }),
