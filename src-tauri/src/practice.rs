@@ -2335,6 +2335,8 @@ pub(crate) fn list_practice_decks_in(
             });
         }
     }
+    #[cfg(test)]
+    run_inventory_after_map_snapshot_hook();
     // Also read maps for files with no map leaf in the directory snapshot. Stable deck numbers
     // above are translated with the very same locked map snapshot that supplies their epoch.
     for file_id in files {
@@ -3145,6 +3147,7 @@ type MigrationHook = Box<dyn FnOnce() -> Result<(), Error>>;
 #[cfg(test)]
 thread_local! {
     static CRITICAL_SECTION_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
+    static INVENTORY_AFTER_MAP_SNAPSHOT_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
     static RECORD_AFTER_APPEND_HOOK: std::cell::RefCell<Option<RecordAfterAppendHook>> = const { std::cell::RefCell::new(None) };
     static MIGRATION_BEFORE_READBACK_HOOK: std::cell::RefCell<Option<MigrationHook>> = const { std::cell::RefCell::new(None) };
     static MIGRATION_BEFORE_POSITIONS_HOOK: std::cell::RefCell<Option<MigrationHook>> = const { std::cell::RefCell::new(None) };
@@ -3154,6 +3157,15 @@ thread_local! {
 #[cfg(test)]
 fn run_critical_section_hook() {
     CRITICAL_SECTION_HOOK.with(|slot| {
+        if let Some(hook) = slot.borrow_mut().take() {
+            hook();
+        }
+    });
+}
+
+#[cfg(test)]
+fn run_inventory_after_map_snapshot_hook() {
+    INVENTORY_AFTER_MAP_SNAPSHOT_HOOK.with(|slot| {
         if let Some(hook) = slot.borrow_mut().take() {
             hook();
         }
@@ -3536,6 +3548,52 @@ mod tests {
         let damaged = damage_epoch(list_practice_decks_in(&directory).unwrap());
         assert_eq!(damaged.game, None);
         assert_eq!(damaged.epoch, None);
+    }
+
+    #[test]
+    fn inventory_reads_map_created_after_directory_snapshot() {
+        let (_temp, directory) = directory();
+        let directory = Arc::new(directory);
+        for number in 0..3 {
+            sync_practice_positions_in(&directory, "file", number, 0, 0, &positions()).unwrap();
+        }
+        write_test_state(
+            &directory,
+            "file",
+            1,
+            MigrationPhase::Migrating,
+            &"0".repeat(64),
+        );
+        assert!(read_map(&directory, "file").unwrap().is_none());
+        let overlap_directory = directory.clone();
+        INVENTORY_AFTER_MAP_SNAPSHOT_HOOK.with(|slot| {
+            *slot.borrow_mut() = Some(Box::new(move || {
+                // The map leaf was absent from inventory's snapshot. Deleting ordinal zero
+                // now makes stable decks one and two resolve to ordinals zero and one.
+                let pending = prepare_delete_in(&overlap_directory, "file", 0, 3).unwrap();
+                finish_delete_in(&overlap_directory, "file", &pending, true).unwrap();
+            }));
+        });
+
+        let inventory = list_practice_decks_in(&directory).unwrap();
+
+        let map = read_map(&directory, "file").unwrap().unwrap();
+        assert_eq!(map.ordinals, vec![Some(1), Some(2)]);
+        assert_ne!(map.epoch, NO_MAP_EPOCH);
+        assert_eq!(inventory.anomalies.len(), 1);
+        let damage = &inventory.anomalies[0];
+        assert_eq!(damage.kind, PracticeStoreAnomalyKind::DamagedDeck);
+        assert_eq!(damage.leaf, positions_leaf(&hash_deck("file", 1)));
+        assert_eq!(damage.file_id.as_deref(), Some("file"));
+        assert_eq!(damage.game, Some(0));
+        assert_eq!(damage.epoch.as_deref(), Some(map.epoch.as_str()));
+        assert_eq!(inventory.decks.len(), 2);
+        for game in 0..2 {
+            assert!(inventory.decks.contains(&PracticeDeckIdentity {
+                file_id: "file".into(),
+                game,
+            }));
+        }
     }
 
     #[cfg(unix)]
