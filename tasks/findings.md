@@ -20417,7 +20417,7 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 
 ### Adding an already signed-in Lichess account without Login drops its handle, so logout no longer removes or revokes the token
 
-* **ID:** f-20261101-26 · **Status:** open · **Area:** oauth-credentials · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261101-26 · **Status:** handled · **Area:** oauth-credentials · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** security
 * **Where:** `src/utils/session.ts:309-322` (`upsertLichessSession` removes every session with the same username, case-sensitive, including the authenticated one), `src/components/home/Accounts.tsx:97-111,167-195` (`addLichessNoLogin` adds a handle-less session, no duplicate guard), `src/components/common/AccountCards.tsx:300-310` (logout without handle only filters the renderer list), `session.ts:275-305` (startup re-creates the card from native credentials).
 * **Defect:** the handle-less session replaces the signed-in one, so downloads fail with authentication required and logout never calls `removeLichessAccount`.
@@ -20426,6 +20426,9 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 * **Lens:** `review-tauri-security`
 * **Proof:** session tests: upserting a handle-less `alice` over an authenticated `alice` keeps the handle; logout then calls `removeLichessAccount`.
 * **Found by:** cloud audit session session_01JbeKomYNAubvgDNCaEau2u (native security/accounts audit, base 301104da), verified against local HEAD by a Claude Code verifier subagent of session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+Fixed in bd643599 (pushed to master at fd516eb8, interactive tower session parallel to the laptop drain). `upsertLichessSession` now matches Lichess usernames case-insensitively and keeps an existing handle when the incoming session has none; an incoming defined handle still wins. Proof: four new `src/utils/session.test.ts` cases; the two regression cases failed against the old implementation and pass now. Review: review-tauri-security (mandatory), correctness, root-cause, tests, error-handling, minimalism, code-quality all APPROVED (Codex lenses, same family as the Codex write leaf, disclosed). Final push gates (rust + frontend, all lanes) green.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"d88955517971e5a02470a8dba2b1e604c21ff3e321a1c0d41ff3ea0c143f0cd2","header_sha256":"86b42243a8586b975eadbb4779fe37e8ab28b72aaf3c1636e11f6b440bb742e4","header_status":"handled","input_sha256":"11f8b7e085c51c713580e2a40d22944b748a327bb3f6e20ff2c6c4ed0a5d138d","kind":"mutation-receipt","operation":"a427e33df7890f68d7820212afa316b49712c7a10b62f55b84a85aea5097c9a0","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-26"],"target":"f-20261101-26","v":1} -->
 
 ---
 
