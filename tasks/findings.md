@@ -20485,13 +20485,16 @@ Handled by drain session c6681a98 (adopted planner plan, 4 plan-review rounds ap
 
 ### A Lichess token obtained by a sign-in that then fails is discarded without revocation
 
-* **ID:** f-20261101-30 · **Status:** open · **Area:** oauth-credentials · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261101-30 · **Status:** handled · **Area:** oauth-credentials · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** security
 * **Where:** `src-tauri/src/oauth.rs:847-863` (identity mismatch and verification error after a successful code exchange), `oauth.rs:598-613,624-631` (store failure after the exchange).
 * **Defect:** the freshly issued token is dropped without `services.revoke_token`.
 * **Failure scenario:** the user types `alice` and ticks Login while the browser is signed in to Lichess as `bob`; `bob` approves, the mismatch branch returns "Authentication failed", and `bob`'s token stays valid and listed in his authorised apps with no local record.
 * **Fix shape:** revoke on every failure branch after a successful exchange; optionally a distinct non-sensitive "signed in to a different Lichess account" message.
 * **Found by:** cloud audit session session_01JbeKomYNAubvgDNCaEau2u (native security/accounts audit, base 301104da), verified against local HEAD by a Claude Code verifier subagent of session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+
+Fixed in 37553cd5 and fd516eb8 (pushed to master, interactive tower session parallel to the laptop drain). After a successful code exchange the token is held in an `issued_token` slot owned by `authenticate_internal` outside the 300 s authentication deadline and cleared only on a successful hand-off; any token left after the attempt (identity mismatch, verification error, delivery failure, or deadline expiry mid-verification) is revoked under REVOCATION_TIMEOUT after listener shutdown. The credential store failure in `persist_stashed_lichess_token` also revokes. Decision: store failures revoke fail-closed even when CredentialRecoveryRequired means the keyring may hold the token, because the user was told authentication failed; worst case is a re-login. Round 1 review found the deadline-cancellation path (root-cause, tauri-security, tests, error-handling); repaired in fd516eb8 and CLOSED by all five closure lenses. Proof: oauth:: tests 46 passed, including the new paused-time `verification_timeout_revokes_token_and_returns_generic_error`, which failed before the repair. Final push gates green.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"063fca4fed4dd078714e2b4d6575aa152544a3235c4451f282ac304a33007a22","header_sha256":"6834ce38fc7ecafb8bdd3cc9efad04f452c02f9ed3adc9de6496a8f8fa0f16f1","header_status":"handled","input_sha256":"f64d51f2c07d1fe1e463a711d929634436a4b54b188c722135cc622642b065ee","kind":"mutation-receipt","operation":"f1931a953bfebbe28c8940bdec7547a88728e00901ca6cc83c5443ade962ce15","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-30"],"target":"f-20261101-30","v":1} -->
 
 ---
 
