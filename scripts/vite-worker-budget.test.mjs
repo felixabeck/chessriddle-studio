@@ -4,6 +4,7 @@ import * as os from "node:os";
 import { describe, expect, test, vi } from "vitest";
 import {
   VITEST_BASE_BYTES,
+  VITEST_LOGICAL_CPUS_PER_WORKER,
   VITEST_WORKER_BYTES,
   vitestMaxWorkers,
   workerCount,
@@ -48,6 +49,23 @@ describe("Vitest worker budget wiring", () => {
             budgetBytes: TWO_GIB,
             env: process.env,
           }),
+        );
+      },
+    );
+  });
+
+  test("vite.config.ts applies the logical-CPU factor when memory does not bind", async () => {
+    await withEnvironment(
+      {
+        GATE_MEMORY_BYTES: String(100 * 1024 ** 3),
+        STRYKER_MEMORY_BYTES: undefined,
+        GATE_CPU_SHARE: undefined,
+        VITEST: "true",
+      },
+      async () => {
+        const { default: config } = await import("../vite.config.ts");
+        expect(config.test.maxWorkers).toBe(
+          Math.max(1, Math.floor(os.availableParallelism() / VITEST_LOGICAL_CPUS_PER_WORKER)),
         );
       },
     );

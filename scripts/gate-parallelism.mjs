@@ -54,7 +54,8 @@ export const VITEST_MINIMUM_BUDGET_BYTES = VITEST_BASE_BYTES + VITEST_WORKER_BYT
 export const VITEST_LOGICAL_CPUS_PER_WORKER = 2;
 
 // A detected chain failure uses the measured-safe 8 GiB agent-scope configuration from
-// d-20260930-03: after the 1 GiB agent reserve, Vitest gets 22 workers. d-20261031-06
+// d-20260930-03: the 7 GiB usable fallback admits 22 Vitest workers by memory, and
+// vitestMaxWorkers further caps them at one per two logical CPUs. d-20261031-06
 // recomputed CONSERVATIVE_STRYKER_RUNNERS (2) as workerCount over the undivided 7 GiB
 // usable budget; strykerSlots at that budget with three packages picks two slots of one.
 export const CONSERVATIVE_CGROUP_LIMIT_BYTES = 8 * 1024 ** 3;
