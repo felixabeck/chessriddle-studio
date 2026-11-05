@@ -121,3 +121,8 @@ as f-20261105-07 with the RL-2 correction folded in, the d-20261105-06 trailer n
 d-20261105-19, and the bundle was re-measured on `bf71bc27` against `b96abc72` with identical
 figures. Review evidence above refers to the same content under the new hashes; review ranges
 cite the pre-rebase base `7ac57840`.
+
+Rebase records lens: REVISE with two should-fix items, both **Fix**: f-20261102-06's older
+"abort happens on every run" claim got a correction annotation pointing at f-20261105-07, and
+the temporary measurement worktree was removed so the "removed after measurement" statement in
+d-20261105-19 and `docs/bundle-budgets.md` holds.
