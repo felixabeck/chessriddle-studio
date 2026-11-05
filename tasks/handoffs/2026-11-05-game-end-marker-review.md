@@ -144,3 +144,17 @@ final ones. Ledger entries written earlier cite pre-rebase hashes of the same co
 d-20261105-19's candidate `bf71bc27` is `caf1ef6a`, and f-20261105-07's `7b66be20`, `d31f67d5`
 and `dcc002af` are `c9e70908`, `7f070e11` and `d0bbc114`. `docs/bundle-budgets.md` cites
 `caf1ef6a`.
+
+## Final gates, second run
+
+After the rebase onto `defde908`, `frontend-coverage` went red: the GameNotation tests
+"virtualizes a 20,000-node line…" and "scrolls to a deep current node row…" timed out (5 s)
+under coverage. Measured without coverage: ~0.1 s on master, ~1.4 s on this branch. Cause, in
+this run's own code: `getEffectiveGameEnd` and the load default iterated
+`treeIteratorMainLine`, which copies a growing position array per step, so every lookup was
+quadratic; it runs whenever the notation's tree or headers change (memoized in
+`GameNotation`), in the row builder, in `makeMove` and in the
+header's store selectors. No review lens caught it. **Fix** (`36d9a61a`, two rounds; the second
+removed a now-unused position that left an equivalent mutant): linear `children[0]` walks; the
+tests run in 100 ms and 68 ms again, `tree-path` mutation 100 %, closure correctness lens
+APPROVED.
