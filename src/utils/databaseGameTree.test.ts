@@ -43,7 +43,19 @@ test.each(["database", "invalid-input", "cancellation", "unexpected"])(
         const tree = await seedDatabaseOrientation(defaultTree(), database, 812);
         expect(tree.headers.orientation).toBeUndefined();
         expect(tree.dirty).toBe(false);
-        expect(native.log).toHaveBeenCalledOnce();
+        expect(native.log).toHaveBeenCalledExactlyOnceWith(
+            expect.stringContaining(
+                "Database orientation inference failed for database orientation-db, game 812:",
+            ),
+            {
+                operation: "inferGameOrientation",
+                item: "database orientation-db, game 812",
+                primaryFailure: expect.objectContaining({
+                    message: expect.stringContaining("Inference failed"),
+                }),
+            },
+            "Database orientation inference logging failed",
+        );
     },
 );
 

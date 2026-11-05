@@ -460,6 +460,7 @@
     "Databases.Game.DeletedRefreshFailed": "La partida se ha eliminado, pero no se ha podido actualizar la vista de la base de datos.",
     "Databases.Game.Event": "Evento",
     "Databases.Game.NoGamesFound": "No se encontraron partidas",
+    "Databases.Game.NoLongerExists": "Esta partida ya no existe en la base de datos.",
     "Databases.Game.NoSelection": "No hay partida seleccionada",
     "Databases.Game.Plies": "Medias jugadas",
     "Databases.Game.Site": "Lugar",

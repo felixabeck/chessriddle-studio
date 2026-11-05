@@ -455,6 +455,7 @@
     "Databases.Game.DeletedRefreshFailed": "The game was deleted, but the database view could not be refreshed.",
     "Databases.Game.Event": "Event",
     "Databases.Game.NoGamesFound": "No games found",
+    "Databases.Game.NoLongerExists": "This game no longer exists in the database.",
     "Databases.Game.NoSelection": "No game selected",
     "Databases.Game.Plies": "Plies",
     "Databases.Game.Site": "Site",

@@ -589,7 +589,12 @@ export async function createTab({
                 ? { locator: databaseGame.linked, signature: gameSignature(databaseGame) }
                 : null,
         );
-        if (current.kind === "missing") return null;
+        if (current.kind === "missing") {
+            throw {
+                category: "not-found",
+                message: i18n.t("Databases.Game.NoLongerExists"),
+            } satisfies AppError;
+        }
         databaseGame = current.game;
         gameOrigin = {
             ...gameOrigin,

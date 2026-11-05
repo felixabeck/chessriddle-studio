@@ -450,6 +450,7 @@
     "Databases.Game.DeletedRefreshFailed": "对局已删除，但无法刷新数据库视图。",
     "Databases.Game.Event": "赛事",
     "Databases.Game.NoGamesFound": "未找到对局",
+    "Databases.Game.NoLongerExists": "此对局已不在数据库中。",
     "Databases.Game.NoSelection": "未选择对局",
     "Databases.Game.Plies": "半回合",
     "Databases.Game.Site": "地点",

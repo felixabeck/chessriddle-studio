@@ -2,6 +2,7 @@ import type { DatabaseHandle, NormalizedGame } from "@/bindings";
 import { logFailureSafely, safeFailureContext } from "@/platform/errors";
 import { tauri, type NativeReadOptions } from "@/platform/tauri";
 import { decodePgnTagValue, parsePGN } from "./chess";
+import { databaseHandleKey } from "./db";
 import type { TreeState } from "./treeReducer";
 
 /** Seed only the initial view. A remembered choice always wins and no edit is made. */
@@ -17,9 +18,10 @@ export async function seedDatabaseOrientation(
         if (orientation && !options?.signal?.aborted) tree.headers.orientation = orientation;
     } catch (cause) {
         const primaryFailure = safeFailureContext(cause);
+        const item = `database ${databaseHandleKey(database)}, game ${gameId}`;
         await logFailureSafely(
-            `Database orientation inference failed: ${primaryFailure.message}`,
-            { operation: "inferGameOrientation", primaryFailure },
+            `Database orientation inference failed for ${item}: ${primaryFailure.message}`,
+            { operation: "inferGameOrientation", item, primaryFailure },
             "Database orientation inference logging failed",
         );
     }

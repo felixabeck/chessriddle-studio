@@ -460,6 +460,7 @@
     "Databases.Game.DeletedRefreshFailed": "La partita è stata eliminata, ma non è stato possibile aggiornare la vista del database.",
     "Databases.Game.Event": "Evento",
     "Databases.Game.NoGamesFound": "Nessuna partita trovata",
+    "Databases.Game.NoLongerExists": "Questa partita non esiste più nel database.",
     "Databases.Game.NoSelection": "Nessuna partita selezionata",
     "Databases.Game.Plies": "Semimosse",
     "Databases.Game.Site": "Luogo",

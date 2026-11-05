@@ -1,4 +1,5 @@
 import { INITIAL_FEN } from "chessops/fen";
+import { initializeI18n } from "@/i18n";
 import { createStore } from "jotai";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { NormalizedGame, Token } from "@/bindings";
@@ -7,7 +8,7 @@ import signatureCases from "./gameSignature.cases.json";
 import { tabStorage } from "@/state/store/tabStorage";
 import { closeTreeStore, createTreeStore } from "@/state/store/tree";
 import { databaseGameSeed, normalizeGameSignature, openDatabaseGame } from "./databaseGame";
-import { createTab, serializeStoreTree } from "./tabs";
+import { createTab, runTabCreation, serializeStoreTree } from "./tabs";
 import type { TreeState } from "./treeReducer";
 
 const native = vi.hoisted(() => ({
@@ -28,7 +29,8 @@ vi.mock("@/platform/errors", async (original) => ({
 const database = { id: { id: "header-database" }, kind: "database" } as const;
 const ids: string[] = [];
 
-beforeEach(() => {
+beforeEach(async () => {
+    await initializeI18n();
     native.resolveLinkedGame.mockReset().mockResolvedValue(null);
     native.getDbGame.mockReset();
     native.inferGameOrientation.mockReset().mockResolvedValue(null);
@@ -365,16 +367,45 @@ test("an inference failure still admits the game cleanly with White fallback", a
     expect(addRecentFile).toHaveBeenCalledOnce();
 });
 
-test("a row deleted since listing admits no tab and records no recent game", async () => {
+test("a row deleted since listing rejects with a not-found error before any admission", async () => {
     native.getDbGame.mockResolvedValue({ kind: "missing" });
     const setTabs = vi.fn();
     const addRecentFile = vi.fn();
-    expect(
-        await openDatabaseGame({ game: orientationRow, database, setTabs, addRecentFile }),
-    ).toBeNull();
+    await expect(
+        openDatabaseGame({ game: orientationRow, database, setTabs, addRecentFile }),
+    ).rejects.toEqual({
+        category: "not-found",
+        message: "This game no longer exists in the database.",
+    });
     expect(setTabs).not.toHaveBeenCalled();
     expect(addRecentFile).not.toHaveBeenCalled();
     expect(native.inferGameOrientation).not.toHaveBeenCalled();
+    expect(native.resolveLinkedGame).not.toHaveBeenCalled();
+    expect(native.lexPgn).not.toHaveBeenCalled();
+    expect(sessionStorage.length).toBe(0);
+});
+
+test("a deleted row reaches the tab caller's error path without success or recent recording", async () => {
+    native.getDbGame.mockResolvedValue({ kind: "missing" });
+    const setTabs = vi.fn();
+    const addRecentFile = vi.fn();
+    const onError = vi.fn();
+    const onSuccess = vi.fn();
+    expect(
+        await runTabCreation({
+            create: () =>
+                openDatabaseGame({ game: orientationRow, database, setTabs, addRecentFile }),
+            onError,
+            onSuccess,
+        }),
+    ).toBeNull();
+    expect(onError).toHaveBeenCalledExactlyOnceWith({
+        category: "not-found",
+        message: "This game no longer exists in the database.",
+    });
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(setTabs).not.toHaveBeenCalled();
+    expect(addRecentFile).not.toHaveBeenCalled();
 });
 
 test.each(["Unknown", "?", ""])(

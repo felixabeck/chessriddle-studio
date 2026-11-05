@@ -455,6 +455,7 @@
     "Databases.Game.DeletedRefreshFailed": "Die Partie wurde gelöscht, aber die Datenbankansicht konnte nicht aktualisiert werden.",
     "Databases.Game.Event": "Ereignis",
     "Databases.Game.NoGamesFound": "Keine Partien gefunden",
+    "Databases.Game.NoLongerExists": "Diese Partie existiert nicht mehr in der Datenbank.",
     "Databases.Game.NoSelection": "Keine Auswahl",
     "Databases.Game.Plies": "Halbzüge",
     "Databases.Game.Site": "Ort",

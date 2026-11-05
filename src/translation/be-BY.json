@@ -465,6 +465,7 @@
     "Databases.Game.DeletedRefreshFailed": "Партыя выдалена, але не ўдалося абнавіць выгляд базы даных.",
     "Databases.Game.Event": "Турнір",
     "Databases.Game.NoGamesFound": "Партыі не знойдзены",
+    "Databases.Game.NoLongerExists": "Гэтай партыі больш няма ў базе даных.",
     "Databases.Game.NoSelection": "Гульня не выбрана",
     "Databases.Game.Plies": "Паўхады",
     "Databases.Game.Site": "Месца",

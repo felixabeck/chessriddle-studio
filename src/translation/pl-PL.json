@@ -465,6 +465,7 @@
     "Databases.Game.DeletedRefreshFailed": "Partia została usunięta, ale nie udało się odświeżyć widoku bazy danych.",
     "Databases.Game.Event": "Turniej",
     "Databases.Game.NoGamesFound": "Nie znaleziono partii",
+    "Databases.Game.NoLongerExists": "Ta partia już nie istnieje w bazie danych.",
     "Databases.Game.NoSelection": "Nie wybrano partii",
     "Databases.Game.Plies": "Półruchy",
     "Databases.Game.Site": "Miejsce",

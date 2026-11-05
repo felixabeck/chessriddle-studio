@@ -455,6 +455,7 @@
     "Databases.Game.DeletedRefreshFailed": "Partiet ble slettet, men databasevisningen kunne ikke oppdateres.",
     "Databases.Game.Event": "Turnering",
     "Databases.Game.NoGamesFound": "Ingen partier funnet",
+    "Databases.Game.NoLongerExists": "Dette partiet finnes ikke lenger i databasen.",
     "Databases.Game.NoSelection": "Ingen partier valgt",
     "Databases.Game.Plies": "Halvtrekk",
     "Databases.Game.Site": "Sted",

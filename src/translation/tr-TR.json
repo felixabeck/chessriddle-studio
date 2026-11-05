@@ -455,6 +455,7 @@
     "Databases.Game.DeletedRefreshFailed": "Oyun silindi, ancak veritabanı görünümü yenilenemedi.",
     "Databases.Game.Event": "Etkinlik",
     "Databases.Game.NoGamesFound": "Oyun bulunamadı",
+    "Databases.Game.NoLongerExists": "Bu oyun artık veritabanında mevcut değil.",
     "Databases.Game.NoSelection": "Oyun seçilmedi",
     "Databases.Game.Plies": "Yarım hamle",
     "Databases.Game.Site": "Yer",

@@ -40,7 +40,8 @@ vi.mock("@/platform/tauri", async (original) => {
   };
 });
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => mocks.navigate }));
-vi.mock("react-i18next", () => ({
+vi.mock("react-i18next", async (original) => ({
+  ...(await original<typeof import("react-i18next")>()),
   useTranslation: () => ({ t: (key: string, options?: any) => options?.defaultValue ?? key }),
 }));
 vi.mock("@mantine/notifications", () => ({ notifications: { show: mocks.notify } }));
@@ -568,3 +569,38 @@ test("refused storage admission and rejected parsing stay on the source and allo
   expect(jotai.get(tabsAtom)).toHaveLength(1);
   expect(mocks.navigate).toHaveBeenCalledOnce();
 });
+
+test.each(["button", "double-click", "Enter"])(
+  "a game deleted since listing reports its missing row through %s and allows retry",
+  async (gesture) => {
+    const { tauri } = await import("@/platform/tauri");
+    const { initializeI18n } = await import("@/i18n");
+    await initializeI18n();
+    vi.mocked(tauri.getDbGame).mockResolvedValueOnce({ kind: "missing" });
+    const seed = vi.spyOn(tabStorage, "seed");
+    await render();
+    if (gesture === "button") await act(async () => row(1).click());
+    await act(async () => {
+      if (gesture === "button") openButton().click();
+      else if (gesture === "double-click") {
+        row(1).dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+      } else {
+        row(1).dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      }
+    });
+    expect(mocks.notify).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        message: "This game no longer exists in the database.",
+        color: "danger",
+      }),
+    );
+    expect(jotai.get(tabsAtom)).toEqual([]);
+    expect(jotai.get(recentFilesAtom)).toEqual([]);
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(mocks.parsePGN).not.toHaveBeenCalled();
+    expect(seed).not.toHaveBeenCalled();
+    await doubleClick(1);
+    expect(jotai.get(tabsAtom)).toHaveLength(1);
+    expect(mocks.navigate).toHaveBeenCalledOnce();
+  },
+);

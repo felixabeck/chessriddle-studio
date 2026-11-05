@@ -460,6 +460,7 @@
     "Databases.Game.DeletedRefreshFailed": "La partie a été supprimée, mais la vue de la base de données n’a pas pu être actualisée.",
     "Databases.Game.Event": "Événement",
     "Databases.Game.NoGamesFound": "Aucune partie trouvée",
+    "Databases.Game.NoLongerExists": "Cette partie n’existe plus dans la base de données.",
     "Databases.Game.NoSelection": "Aucune partie sélectionnée",
     "Databases.Game.Plies": "Demi-coups",
     "Databases.Game.Site": "Lieu",

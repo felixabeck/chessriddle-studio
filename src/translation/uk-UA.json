@@ -465,6 +465,7 @@
     "Databases.Game.DeletedRefreshFailed": "Партію видалено, але не вдалося оновити подання бази даних.",
     "Databases.Game.Event": "Турнір",
     "Databases.Game.NoGamesFound": "Партій не знайдено",
+    "Databases.Game.NoLongerExists": "Цієї партії більше немає в базі даних.",
     "Databases.Game.NoSelection": "Гру не вибрано",
     "Databases.Game.Plies": "Півходи",
     "Databases.Game.Site": "Місце",
