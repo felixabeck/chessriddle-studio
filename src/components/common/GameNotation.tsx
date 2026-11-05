@@ -56,6 +56,8 @@ const NOTATION_MIN_HEIGHT_REM = "9rem";
 // Bound the frames spent waiting for React to mount a row after its offset scroll.
 const NOTATION_REVEAL_MAX_ATTEMPTS = 10;
 const NOTATION_INDEX_SCROLL_MAX_ATTEMPTS = 10;
+// Sub-pixel differences come from fractional layout and need no further scroll.
+const NOTATION_INDEX_SCROLL_TOLERANCE_PX = 1;
 
 export function scrollNotationToIndex(
   virtualizer: Virtualizer<HTMLDivElement, Element>,
@@ -74,7 +76,7 @@ export function scrollNotationToIndex(
     const target = virtualizer.getOffsetForIndex(index, resolvedAlign);
     if (
       target &&
-      Math.abs(target[0] - (virtualizer.scrollOffset ?? 0)) >= 1 &&
+      Math.abs(target[0] - (virtualizer.scrollOffset ?? 0)) >= NOTATION_INDEX_SCROLL_TOLERANCE_PX &&
       attempts < NOTATION_INDEX_SCROLL_MAX_ATTEMPTS
     ) {
       attempts++;

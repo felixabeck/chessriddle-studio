@@ -418,6 +418,34 @@ test("owned index verification corrects a changed offset and cancellation stops 
   }
 });
 
+test("owned index verification scrolls to the updated target after a row is measured", () => {
+  const queue = queueAnimationFrames();
+  const { virtualizer, offsets, cleanup } = mountRealVirtualizer();
+  try {
+    const initialTarget = virtualizer.getOffsetForIndex(2, "center")![0];
+    const cancel = scrollNotationToIndex(virtualizer, 2, "center");
+    expect(offsets).toEqual([initialTarget]);
+
+    virtualizer.resizeItem(2, 64);
+    expect(virtualizer.getVirtualItems().find((item) => item.index === 2)?.size).toBe(64);
+    const updatedTarget = virtualizer.getOffsetForIndex(2, "center")![0];
+    expect(updatedTarget).not.toBe(initialTarget);
+    // Measuring the target row changes its centered offset without a scroll correction.
+    expect(offsets).toEqual([initialTarget]);
+
+    queue.flushOne();
+    queue.flushOne();
+    expect(offsets).toEqual([initialTarget, updatedTarget]);
+    expect(virtualizer.scrollOffset).toBe(updatedTarget);
+
+    cancel();
+    expect(queue.frames.size).toBe(0);
+  } finally {
+    cleanup();
+    queue.restore();
+  }
+});
+
 test("owned index verification bounds unsuccessful scrolling to ten attempts", () => {
   const queue = queueAnimationFrames();
   const { virtualizer, offsets, cleanup } = mountRealVirtualizer();
