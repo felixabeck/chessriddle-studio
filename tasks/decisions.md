@@ -10670,7 +10670,7 @@ shape (`**Question:**` / `**Reason:**`); `record-decision` validates it.
 * **Chosen:** Keep contract and bundle checks concurrent with the one admitted Rust lane. Preserve Cargo compilation concurrency within its measured job allowance. After Rust terminates, retain the existing frontend coverage, e2e reservation and mutation sizing rules for the lanes actually active. Ordinary lane failure releases admission for later selected Rust work, while interruption or unconfirmed child cleanup prevents queued compilation starts.
 * **Rejected:** A serial whole-gate chain, multi-slot Rust allocation without aggregate evidence, stopping all proof at an ordinary lane failure, and releasing resources while a child may still survive.
 * **Reason:** The evidenced resource is overlapping compiler contexts, rather than every gate command. The approach preserves useful independent work and existing failure precedence without claiming an unmeasured smaller partition. Reversal path is O4's comparable cold proof supporting partitioned admission. Plan authorship and arbitration shared one context. Detection runs on the same OpenAI model family as code.
-* **Decided by:** Codex, autonomously under the pinned full-auto drain request. **Superseded-by:** -
+* **Decided by:** Codex, autonomously under the pinned full-auto drain request. **Superseded-by:** d-20261105-03, d-20261105-04
 
 ### d-20261029-04 — Narrowly supersede unconditional concurrent Rust gate scheduling
 
@@ -10680,7 +10680,7 @@ shape (`**Question:**` / `**Reason:**`); `record-decision` validates it.
 * **Rejected:** Treating the warm operational recovery as a scheduler repair, reopening settled placement or reserve questions without new evidence, and lowering tier to avoid review.
 * **Reason:** The later cgroup OOM is new evidence not available to the original concurrency decision. The one shared compile budget needs a resource design and discriminating proof. Reversal path is the measured admission replacement described in the adopted plan O4. Plan authorship and arbitration shared one context. Detection runs on the same OpenAI model family as code.
 * **Decided by:** Codex, autonomously under the pinned full-auto drain request. **Superseded-by:** -
-<!-- ledger-meta {"command":"record-decision","effect_lines":35,"effect_sha256":"7a089c4df59035faa24340467d27c1a384f379b3bdf6ce936e81ffef125c3317","input_sha256":"e706bc0922eae4a30f65746f1deb31a774f1628aad7ab294a881aa85658d8b76","kind":"mutation-receipt","operation":"a17e92c9432c30aadbd203c1b4c23082b65e2c9767c61e8f7ad3f06adf3bdbb7","options":{"section":null},"request_id_sha256":null,"results":["d-20261029-01","d-20261029-02","d-20261029-03","d-20261029-04"],"target":"decisions-ledger","v":1} -->
+<!-- ledger-meta {"command":"record-decision","effect_lines":35,"effect_sha256":"61dbf67eaf4476227dd11fdf6b65beec486e786fc9e4e6fb74847e490b82a56d","input_sha256":"e706bc0922eae4a30f65746f1deb31a774f1628aad7ab294a881aa85658d8b76","kind":"mutation-receipt","operation":"a17e92c9432c30aadbd203c1b4c23082b65e2c9767c61e8f7ad3f06adf3bdbb7","options":{"section":null},"request_id_sha256":null,"results":["d-20261029-01","d-20261029-02","d-20261029-03","d-20261029-04"],"target":"decisions-ledger","v":1} -->
 
 ### d-20261029-05 — Calibrate the Rust allowance and one-job fallback
 
