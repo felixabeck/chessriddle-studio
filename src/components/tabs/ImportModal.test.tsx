@@ -482,14 +482,7 @@ test.each(["saved file", "pasted PGN"])(
         host.querySelector<HTMLInputElement>('[data-testid="save-to-collection"]')!.click(),
       );
     } else {
-      const textarea = host.querySelector("textarea")!;
-      await act(async () => {
-        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
-          textarea,
-          linkPgn,
-        );
-        textarea.dispatchEvent(new Event("input", { bubbles: true }));
-      });
+      await pastePgn(linkPgn);
     }
     await clickSubmit();
     expect(host.textContent).toContain(
@@ -592,14 +585,7 @@ test.each(["saved file", "pasted PGN"])(
         host.querySelector<HTMLInputElement>('[data-testid="save-to-collection"]')!.click(),
       );
     } else {
-      const textarea = host.querySelector("textarea")!;
-      await act(async () => {
-        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
-          textarea,
-          linkPgn,
-        );
-        textarea.dispatchEvent(new Event("input", { bubbles: true }));
-      });
+      await pastePgn(linkPgn);
     }
     await clickSubmit();
     expect(create).toHaveBeenCalledOnce();
