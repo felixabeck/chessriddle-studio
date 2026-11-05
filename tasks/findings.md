@@ -20967,3 +20967,18 @@ Fixed in 3e2ea144..173b7574 range, pushed as 7171d6a8 (code commits: stack tiles
 * **Fix direction:** read `epoch` from the `load_practice_deck` result, use its `deck` for the position assertions, and pass that `expectedEpoch` to every `load_practice_reviews` call; check whether the "500 further positions" sync timeout clears with it or is a separate renderer defect.
 * **Related:** f-20261103-01 (verify:app aborted earlier, at the dirty-quit session, so this drift was never reached before 2026-11-05).
 * **Found by:** drain planner session bc639ab2-cce3-4336-a403-6d833de168a0 (PLAN-ONLY for f-20261103-01), 2026-11-05.
+
+---
+
+## 2026-11-05 — filed through the inbox spool
+
+### The Chess.com export test's 5 s progress wait elapses on the hosted Windows runner
+
+* **ID:** f-20261105-03 · **Status:** open · **Area:** pgn-import · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 8abd8187-8733-4fa1-8924-40354016a88d
+* **Impact class:** tooling
+* **Where:** `src-tauri/src/chesscom.rs`, helper `wait_for_progress` (`tokio::time::timeout(Duration::from_secs(5), …)` with `.unwrap()` at line 1298), used by test `chesscom::tests::dropped_callers_retain_success_and_publication_error_terminal_tails` (line 1446).
+* **Defect:** `wait_for_progress` polls the progress registry with `yield_now` under a 5 s wall-clock timeout and unwraps the result. On the hosted Windows runner the expected progress state did not appear within 5 s: `panicked at src\chesscom.rs:1298:10: called Result::unwrap() on an Err value: Elapsed(())`, `test result: FAILED. 1851 passed; 1 failed; 7 ignored`, finished in 297.17s. Observed on Test run 42011942850 attempt 1, job 127192873025 (`rust-windows-test`), head `7171d6a8c772b9d5e816ddb5d2270c71a418e154`, 2026-11-05. That push changed only frontend files and records; `chesscom.rs` is unchanged against earlier green Windows runs. The same test failed locally on wall-clock bounds before (recurrence bullets under handled f-20261011-03, which tracked local gate pressure and was closed with a test-only change elsewhere); this is the first hosted-runner observation of this helper.
+* **Spotted outside diff:** f-20261104-07 (board-tab layout, frontend only) push range `d510e9f6..7171d6a8` does not touch `src-tauri/`.
+* **Failure scenario:** A loaded hosted Windows runner delays the export task past 5 s; `rust-windows-test` goes red, and `pnpm ci:remote:check` then refuses later pushes from every session until a rerun is green.
+* **Fix direction:** Decide the bound on the test's own merits, as f-20261031-02 did: drive the wait with paused tokio time where the export path's timers allow it, or make the outer wait a generous hang detector that reports which progress state was last seen. Do not weaken the terminal-tail assertions.
