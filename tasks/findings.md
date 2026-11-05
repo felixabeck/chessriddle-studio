@@ -20994,3 +20994,19 @@ Correction to the closing note: `inode_ownership::REGISTRY` is not the only proc
 
 Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per staged game, once for the PGN (`src-tauri/src/chesscom.rs:476`) and once for the newline (line 479), and each call takes `STAGED_PGN_CAPTURE` for one slice copy. Both acquisitions end before staging returns, so the conclusion is unchanged. Found by the push records lens.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"dbad3e66dd8ccc356e24d99572a5a48a045177223c91dc117515f0a61d08f678","input_sha256":"ef1f8e68763acd11b3169f5b05e4caa7440aebf4bfb09244e82bca2ff1ca2424","kind":"mutation-receipt","operation":"27dbe7e7684233b5acc21990780ed933415e723922543b2704009d860f10ca97","options":{"section":null},"request_id_sha256":null,"results":["f-20261105-03"],"target":"f-20261105-03","v":1} -->
+
+---
+
+## 2026-11-05 — filed through the inbox spool
+
+### Opening a newly selected database game by double-click can throw from a retired notation virtualizer
+
+* **ID:** f-20261105-04 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Where:** `src/components/common/GameNotation.tsx` calls `rowVirtualizer.scrollToIndex`, and the installed TanStack virtualizer's dynamic scroll callback dereferences `this.targetWindow.requestAnimationFrame` after unmount has set `targetWindow` to null.
+* **Defect:** While running the Phase 2 database-orientation e2e scenario, opening the second game by double-click after closing the first game produced `TypeError: Cannot read properties of null (reading 'requestAnimationFrame')`. The orientation and persistence assertions completed, but the browser error made the test fail. The trace places the exception during the second database-row double-click, after its first click replaced the preview and before navigation finished.
+* **Evidence:** `/tmp/auto-orientation-phase2-fix2.F4B9fG/e2e-2.log` records the failed container run, with 64 tests passed and the new scenario rejected by its browser-error check. The original trace reported `http://127.0.0.1:4173/assets/esm-CdVUm_QK.js:4:12321`. Inspecting that location resolves to the dynamic `scrollToIndex` callback that invokes `this.targetWindow.requestAnimationFrame(d)` without rechecking the window. The trace's `pageError` occurred at time 11260.726, within the second-row `dblclick` call from 11095.365 to 11266.227.
+* **Failure scenario:** Open and close a database game, then double-click a different game whose first click changes the preview. The preview can unmount while its dynamic notation-scroll callback is pending, producing an uncaught JavaScript error.
+* **Scope:** The orientation scenarios use selection followed by the existing labelled Open game button. The double-click error is retained here for a separate lifecycle repair, with no error suppression or dependency change in Phase 2.
+* **Fix direction:** Give the notation scroll operation an owner that cancels or invalidates its pending work on preview retirement, or use a dependency fix with equivalent lifecycle guarantees. Preserve the double-click admission behavior and add a regression that retains browser-error assertions.
+* **Found by:** Codex Phase 2 renderer implementation, FIX 2, 2026-11-05.
