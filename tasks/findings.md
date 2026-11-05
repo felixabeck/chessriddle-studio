@@ -20372,7 +20372,7 @@ Provenance correction (2026-11-04, drain session f35f888f): the reviewed plan wa
 
 ### Keyboard move input bypasses the board's history, view-only and editing guards, so a live game plays a move entered on a past position
 
-* **ID:** f-20261101-20 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261101-20 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Where:** `src/components/boards/Board.tsx:355-425` (`keyboardMove` checks only `dests.get(keyboardSource)` of the displayed node, then calls `makeMove`), `Board.tsx:596-603` (pointer `dests` are `undefined` when `editingMode || viewOnly` or `disableVariations && currentNode.children.length > 0`), `Board.tsx:201-215` (`makeMove` → `onMove(makeUci(move))` without position identity), `src/components/boards/BoardGame.tsx` `handleHumanMove` → `tauri.makeGameMove(gameId, session, uci)`, `src-tauri/src/game.rs` `make_move` (applies the UCI to the live position).
 * **Defect:** the keyboard path never consults `disableVariations`, `viewOnly`, `editingMode` or the movable colour, and the native game receives no expected ply or FEN.
@@ -20381,6 +20381,13 @@ Provenance correction (2026-11-04, drain session f35f888f): the reviewed plan wa
 * **Lens:** `review-correctness`
 * **Proof:** a Board test entering a keyboard move while viewing history in a `disableVariations` game calls no `onMove`; a native `make_move` test refuses a stale expected ply.
 * **Found by:** cloud audit session session_01JbeKok45YnAvBbVKxMsko6 (puzzles/home/databases/board input audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+* **Closed 2026-11-05 (interactive tower session 8abd8187, in parallel with the laptop drain):** fixed in `10ed0202`.
+  * `Board.tsx`: one `boardDests` value (the Chessground `movable.dests`) and one `premovesEnabled` value feed both the pointer board and `boardAllows`, which also checks the source piece against `movableColor`. Keyboard input uses `boardAllows`. Keyboard premoves now need `!editingMode && !viewOnly`.
+  * Found in push review (chess-semantics lens) and fixed in the same change: `MoveInput.tsx` wrote typed moves straight into the tree store, bypassing the native game and every guard. It now calls back into Board, which checks `boardAllows` and then uses Board's own `makeMove` routing (practice, `onMove`, store).
+  * Native: `make_game_move` takes a trailing `expected_ply: u32`. `GameManager::make_move` returns `Error::Conflict` when `moves.len()` differs, before `apply_move`. `BoardGame.handleHumanMove` sends the displayed mainline ply from the tree store and refuses paths that are not on the mainline. Bindings were regenerated.
+  * Proof: `Board.test.tsx` (new; covers history, view-only, editing, movable colour, text input, castling and promotion), `BoardGame.test.tsx`, `tauri.test.ts`, plus the behavioural `GameManager` test `human_move_checks_expected_ply_before_applying_move` through `tauri::test::mock_app`. Each fix was reverted and its tests went red. All `pnpm gates:push -- --rust --frontend --bindings` lanes were green.
+  * Rejected: comparing full FEN strings natively (chessops and shakmaty can write the en-passant field differently); using the ply count is exact because the game tree's root is the game's initial FEN. Skipped: a dedicated stale-position error message, because once the board guards are in place the native refusal only fires in a race, and the existing authoritative-state recovery resynchronises.
+<!-- ledger-meta {"command":"close","effect_lines":6,"effect_sha256":"ba815ae81329547d490ef71ec4048e8ab4c5dcd361d923ac547c82e77c096f1a","header_sha256":"145b9825dcfd6d57cf3aafde1f1d7b56a4fa1373c900e4a7c1c79ee44eb9145a","header_status":"handled","input_sha256":"a2ece520683a032fdac01f2a78bd3d41594256681cc5e06437b1527fc75cda94","kind":"mutation-receipt","operation":"733a7be2a79045066ae714f793893f698d5f6943ba78fa6f74955d72f3e592ec","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-20"],"target":"f-20261101-20","v":1} -->
 
 ---
 
