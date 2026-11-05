@@ -20,7 +20,7 @@ const tokens: Token[] = [
 
 for (const colorScheme of ["light", "dark"] as const) {
     for (const tableView of [true, false]) {
-        test(`game-end: appended analysis follows the inline result and has muted color in ${tableView ? "table" : "inline"} view, ${colorScheme}`, async ({
+        test(`game-end: appended analysis follows the inline result and has reduced opacity in ${tableView ? "table" : "inline"} view, ${colorScheme}`, async ({
             page,
             mockScenario,
         }) => {
@@ -67,20 +67,14 @@ for (const colorScheme of ["light", "dark"] as const) {
             const analysisBox = (await analysis.boundingBox())!;
             expect(endBox.y + endBox.height).toBeLessThanOrEqual(boundaryBox.y);
             expect(boundaryBox.y + boundaryBox.height).toBeLessThanOrEqual(analysisBox.y);
-            const playedColor = await end.evaluate((element) => getComputedStyle(element).color);
-            const analysisColor = await analysis.evaluate(
-                (element) => getComputedStyle(element).color,
+            const playedOpacity = await end.evaluate(
+                (element) => getComputedStyle(element).opacity,
             );
-            const mutedColor = await analysis.evaluate((element) => {
-                const probe = document.createElement("span");
-                probe.style.color = "var(--cf-muted-foreground)";
-                element.append(probe);
-                const color = getComputedStyle(probe).color;
-                probe.remove();
-                return color;
-            });
-            expect(analysisColor).toBe(mutedColor);
-            expect(analysisColor).not.toBe(playedColor);
+            const analysisOpacity = await analysis.evaluate(
+                (element) => getComputedStyle(element).opacity,
+            );
+            expect(analysisOpacity).toBe("0.6");
+            expect(playedOpacity).toBe("1");
         });
     }
 }

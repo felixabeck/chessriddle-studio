@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 vi.mock("@/state/tabScope", () => ({ useTabAtom: (atom: unknown) => atom }));
 vi.mock("@/state/atoms", () => ({ showCommentsFamily: "comments", moveNotationTypeAtom: "type" }));
 vi.mock("jotai", () => ({
-  useAtom: (atom: string) => [atom === "type" ? "letters" : false],
+  useAtom: (atom: string) => [atom === "type" ? "letters" : true],
 }));
 vi.mock("lucide-react", () => ({ Flag: () => null }));
 vi.mock("@mantine/core", () => ({
@@ -13,7 +13,9 @@ vi.mock("@mantine/core", () => ({
     <Component {...props}>{children}</Component>
   ),
   rgba: () => "transparent",
-  useMantineTheme: () => ({ colors: { gray: Array(10).fill("#888") } }),
+  useMantineTheme: () => ({
+    colors: { gray: Array(10).fill("#888"), teal: Array(10).fill("#099") },
+  }),
 }));
 
 import MoveCell from "./MoveCell";
@@ -75,24 +77,31 @@ test("keyboard activation navigates and keeps focus on the move", async () => {
   expect(document.activeElement).toBe(button);
 });
 
-test("an unmocked MoveCell exposes the analysis styling hook and preserves navigation", async () => {
-  await act(async () =>
-    root.render(
-      <MoveCell
-        annotations={[]}
-        isStart={false}
-        isCurrentVariation={false}
-        move="c6"
-        analysis
-        onClick={onClick}
-        onContextMenu={() => {}}
-      />,
-    ),
-  );
-  expect(cell().getAttribute("data-notation-analysis")).toBe("true");
-  expect(cell().classList.contains(classes.cell)).toBe(true);
-  expect(cell().style.getPropertyValue("--light-color")).toContain("--notation-analysis-color");
-  expect(cell().style.getPropertyValue("--dark-color")).toContain("--notation-analysis-color");
-  await act(async () => cell().click());
-  expect(onClick).toHaveBeenCalledOnce();
-});
+test.each([false, true])(
+  "an analysis move exposes its styling hook and preserves navigation (annotated: %s)",
+  async (annotated) => {
+    await act(async () =>
+      root.render(
+        <MoveCell
+          annotations={annotated ? ["!"] : []}
+          isStart={false}
+          isCurrentVariation={false}
+          move="c6"
+          analysis
+          onClick={onClick}
+          onContextMenu={() => {}}
+        />,
+      ),
+    );
+    expect(cell().getAttribute("data-notation-analysis")).toBe("true");
+    expect(cell().classList.contains(classes.cell)).toBe(true);
+    expect(cell().textContent).toBe(annotated ? "c6!" : "c6");
+    for (const property of ["--light-color", "--dark-color"]) {
+      expect(cell().style.getPropertyValue(property)).toBe(
+        annotated ? "#099" : "var(--notation-unannotated-move-color, #888)",
+      );
+    }
+    await act(async () => cell().click());
+    expect(onClick).toHaveBeenCalledOnce();
+  },
+);

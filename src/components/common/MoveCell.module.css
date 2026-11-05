@@ -24,7 +24,8 @@
 }
 
 .cell[data-notation-analysis="true"] {
-  --notation-analysis-color: var(--cf-muted-foreground);
+  --notation-analysis-opacity: 0.6;
+  opacity: var(--notation-analysis-opacity);
 }
 
 [data-mantine-color-scheme="light"] .cell {

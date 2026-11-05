@@ -166,6 +166,19 @@ test.each(["PGN", "database"] as const)(
     },
 );
 
+test("an explicit end termination wins over a conflicting header on load and export", async () => {
+    mockCommentLexer();
+    const tree = await parsePGN(
+        '[Result "0-1"] [Termination "Abandoned"] 1. e4 e5 {[%gameend Resigned]} 0-1',
+    );
+    expect(getEffectiveGameEnd(tree.root)?.node.gameEnd).toEqual({ termination: "Resigned" });
+    expect(getEffectiveTermination(tree)).toBe("Resigned");
+    expect(tree.headers.other?.Termination).toBe("Abandoned");
+    const written = getPGN(tree.root, { ...ALL_MARKUPS, headers: tree.headers });
+    expect(written.match(/^\[Termination .*\]$/gm)).toEqual(['[Termination "Resigned"]']);
+    expect(tree.headers.other?.Termination).toBe("Abandoned");
+});
+
 function gameEndDatabaseRow(moves: string): NormalizedGame {
     return {
         id: 1,

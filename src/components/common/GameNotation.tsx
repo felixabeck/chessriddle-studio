@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { elementScroll, useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
 import { useAtom, useAtomValue } from "jotai";
+import type { TFunction } from "i18next";
 import { memo, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
@@ -98,6 +99,19 @@ export function scrollNotationToOffset(
     virtualizer.scrollToOffset(offset);
   } finally {
     scroll.direct = false;
+  }
+}
+
+function getResultText(result: string, t: TFunction): string | undefined {
+  switch (result) {
+    case "1-0":
+      return t("Board.Analysis.Tablebase.WhiteWins");
+    case "0-1":
+      return t("Board.Analysis.Tablebase.BlackWins");
+    case "1/2-1/2":
+      return t("Board.Analysis.Tablebase.Draw");
+    default:
+      return undefined;
   }
 }
 
@@ -302,11 +316,7 @@ function GameNotation({ topBar, controls }: { topBar?: boolean; controls?: React
                     {headers.result}
                     <br />
                     <Text span fs="italic">
-                      {headers.result === "1/2-1/2"
-                        ? t("Board.Analysis.Tablebase.Draw")
-                        : headers.result === "1-0"
-                          ? t("Board.Analysis.Tablebase.WhiteWins")
-                          : t("Board.Analysis.Tablebase.BlackWins")}
+                      {getResultText(headers.result, t)}
                     </Text>
                   </Text>
                 )}
@@ -438,14 +448,7 @@ function GameEndRow({
   hasAnalysis: boolean;
 }) {
   const { t } = useTranslation();
-  const resultText =
-    result === "1-0"
-      ? t("Board.Analysis.Tablebase.WhiteWins")
-      : result === "0-1"
-        ? t("Board.Analysis.Tablebase.BlackWins")
-        : result === "1/2-1/2"
-          ? t("Board.Analysis.Tablebase.Draw")
-          : undefined;
+  const resultText = getResultText(result, t);
   return (
     <Box data-notation-game-end className={styles.gameEnd}>
       <Text size="sm">

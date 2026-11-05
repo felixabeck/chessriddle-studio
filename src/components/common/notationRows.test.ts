@@ -353,6 +353,57 @@ describe("buildNotationRows", () => {
         expect(blackMove.halfMoves).toBe(46);
     });
 
+    test.each([false, true])(
+        "places a black-to-move start's end before later analysis (tableView: %s)",
+        (tableView) => {
+            const root = defaultTree("8/8/8/8/8/8/8/K6k b - - 0 23").root;
+            const end = fixtureNode("Kh2", { halfMoves: root.halfMoves + 1 });
+            const white = fixtureNode("Ka2", { halfMoves: end.halfMoves + 1 });
+            const black = fixtureNode("Kh3", { halfMoves: white.halfMoves + 1 });
+            root.children = [end];
+            end.gameEnd = {};
+            end.children = [white];
+            white.children = [black];
+            const model = buildNotationRows(root, {
+                tableView,
+                showComments: false,
+                showVariations: false,
+            });
+            expect(end.halfMoves).toBe(46);
+            expect(model.rowForNode.get(end)).toBe(0);
+            expect(model.rows).toHaveLength(3);
+            expect(model.rows[1]).toEqual({ type: "gameEnd", hasAnalysis: true });
+            expect(model.rowForNode.get(white)).toBe(2);
+            expect(model.rowForNode.get(black)).toBe(2);
+            expect(model.rows[0]).toMatchObject(
+                tableView
+                    ? {
+                          type: "table",
+                          moveNumber: 23,
+                          white: null,
+                          black: { node: end, analysis: false },
+                      }
+                    : { type: "moves", moves: [{ node: end, first: true, analysis: false }] },
+            );
+            expect(model.rows[2]).toMatchObject(
+                tableView
+                    ? {
+                          type: "table",
+                          moveNumber: 24,
+                          white: { node: white, analysis: true },
+                          black: { node: black, analysis: true },
+                      }
+                    : {
+                          type: "moves",
+                          moves: [
+                              { node: white, analysis: true },
+                              { node: black, analysis: true },
+                          ],
+                      },
+            );
+        },
+    );
+
     test("reconstructs every varied-tree path without storing paths on tokens", () => {
         const tree = variedTree();
         const result = buildNotationRows(tree.root, {
