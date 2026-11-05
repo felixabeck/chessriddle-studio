@@ -20,8 +20,8 @@ import { analysisSearch } from "../panels/analysis/analysisSearch";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
-vi.mock("@tauri-apps/plugin-log", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@tauri-apps/plugin-log")>()),
+vi.mock("@/platform/native", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/platform/native")>()),
   warn: vi.fn(),
 }));
 vi.mock("@/chessground/Chessground", () => ({
