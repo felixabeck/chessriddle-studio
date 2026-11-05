@@ -96,21 +96,18 @@ export const PUSH_GATE_SCHEDULE = Object.freeze({
         "pnpm rust:windows:check",
       ]),
       blocks: Object.freeze(["rust"]),
-      requires: Object.freeze(["setup-rust", "frontend-build"]),
     }),
     Object.freeze({
       name: "rust-test",
       rustCompilation: true,
       commands: Object.freeze(["pnpm gate:ensure backend-test"]),
       blocks: Object.freeze(["rust"]),
-      requires: Object.freeze(["setup-rust", "frontend-build"]),
     }),
     Object.freeze({
       name: "rust-coverage",
       rustCompilation: true,
       commands: Object.freeze(["pnpm gate:ensure backend-coverage"]),
       blocks: Object.freeze(["rust"]),
-      requires: Object.freeze(["setup-rust", "frontend-build"]),
     }),
     Object.freeze({
       name: "frontend-coverage",
@@ -122,7 +119,6 @@ export const PUSH_GATE_SCHEDULE = Object.freeze({
       name: "bundle",
       commands: Object.freeze(["pnpm bundle:check"]),
       blocks: Object.freeze(["frontend"]),
-      requires: Object.freeze(["frontend-build"]),
     }),
     Object.freeze({
       name: "e2e",
