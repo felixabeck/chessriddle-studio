@@ -27,6 +27,11 @@ mod puzzle;
 mod sound;
 #[cfg(target_os = "linux")]
 mod system_appearance;
+#[cfg(not(target_os = "linux"))]
+mod system_appearance {
+    /// macOS and Windows webviews follow the system colour scheme natively.
+    pub fn follow_desktop_color_scheme() {}
+}
 
 #[cfg(any(test, debug_assertions))]
 use std::path::Path;
@@ -2435,6 +2440,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             app.manage(lifecycle);
             // sound-startup-end — sliced by sound_startup_keeps_all_four_outcomes_distinguishable
 
+            // WebKitGTK only follows a desktop light/dark switch through GtkSettings.
+            system_appearance::follow_desktop_color_scheme();
+
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_cli::init())?;
 
@@ -2445,9 +2453,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .first()
                 .ok_or("main window configuration is missing")?;
             tauri::WebviewWindowBuilder::from_config(app.handle(), main_window)?.build()?;
-            // WebKitGTK only follows a desktop light/dark switch through GtkSettings.
-            #[cfg(target_os = "linux")]
-            system_appearance::follow_desktop_color_scheme();
 
             log::info!("Finished rust initialization");
 
