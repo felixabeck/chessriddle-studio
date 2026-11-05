@@ -31,7 +31,11 @@ instead of repeating colour values at call sites.
 The golden rule is to alternate surface tiers. A page uses `background` (tier 0),
 its cards use `card` (tier 1), and nested groups use `surface-inset` (tier 2).
 Interactive controls inside inset containers use `interactive`. In dark mode this
-makes them recessed, and `interactive-hover` lifts them on hover. Cards have a
+makes them recessed, and `interactive-hover` lifts them on hover. Text fields read
+their fill from `--cf-field-fill`: a tier-2 container that hosts fields sets it
+(and `--cf-field-fill-hover`) to the interactive pair, and `Paper` resets it so a
+card nested inside keeps the card-tier fill. Separators drawn on a `surface-inset`
+container use `border-strong`, because `border` is nearly the inset fill itself. Cards have a
 border and no default shadow. `Paper` and `Card` support `variant="inset"`.
 
 The exact muted-foreground token stays available. Mantine's secondary text is

@@ -27,6 +27,8 @@
 
 .engine.engine {
   background: var(--cf-surface-inset);
+  --cf-field-fill: var(--cf-interactive);
+  --cf-field-fill-hover: var(--cf-interactive-hover);
   border: 1px solid var(--cf-border);
   border-radius: var(--cf-radius-lg);
   overflow: hidden;

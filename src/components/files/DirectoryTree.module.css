@@ -45,7 +45,8 @@
   gap: 0.25rem var(--mantine-spacing-xs);
   min-height: 3rem;
   padding: var(--mantine-spacing-xs);
-  border-bottom: 1px solid var(--cf-border);
+  /* Rows sit on a surface-inset section, where `border` is within 2% lightness. */
+  border-bottom: 1px solid var(--cf-border-strong);
   cursor: pointer;
 }
 

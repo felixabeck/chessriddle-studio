@@ -260,4 +260,6 @@
 [data-mantine-color-scheme] .search {
   background-color: var(--cf-surface-inset);
   border-color: var(--cf-border);
+  --cf-field-fill: var(--cf-interactive);
+  --cf-field-fill-hover: var(--cf-interactive-hover);
 }

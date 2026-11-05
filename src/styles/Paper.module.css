@@ -4,6 +4,9 @@
   border: 1px solid var(--cf-border);
   border-radius: var(--cf-radius-lg);
   box-shadow: none;
+  /* A card nested in a tier-2 container restores the card-tier field fill. */
+  --cf-field-fill: var(--cf-surface-inset);
+  --cf-field-fill-hover: var(--cf-surface-inset);
 }
 
 .root[data-variant="inset"] {
@@ -11,4 +14,6 @@
   border-color: color-mix(in srgb, var(--cf-border) 50%, transparent);
   color: color-mix(in srgb, var(--cf-foreground) 70%, transparent);
   font-size: var(--mantine-font-size-sm);
+  --cf-field-fill: var(--cf-interactive);
+  --cf-field-fill-hover: var(--cf-interactive-hover);
 }

@@ -38,7 +38,7 @@
   font-weight: 500;
   white-space: nowrap;
   color: var(--cf-foreground);
-  background-color: var(--cf-interactive);
+  background-color: var(--cf-surface-inset);
   border: 1px solid var(--cf-border);
 }
 

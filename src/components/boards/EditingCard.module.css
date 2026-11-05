@@ -9,4 +9,6 @@
 
 [data-mantine-color-scheme] .card {
   background-color: var(--cf-surface-inset);
+  --cf-field-fill: var(--cf-interactive);
+  --cf-field-fill-hover: var(--cf-interactive-hover);
 }
