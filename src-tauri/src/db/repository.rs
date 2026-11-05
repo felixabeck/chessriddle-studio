@@ -4346,7 +4346,7 @@ mod retirement_tests {
             }
             assert_retained(repository, &key);
             // This healthy operation has its own recovery budget, including r2d2 backoff.
-            // The failed caller's 300 ms deadline and cancellation cannot poison it.
+            // The failed caller's deadline and cancellation cannot poison it.
             while caller_waited.try_recv().is_ok() {}
             let (healthy, healthy_result) = mpsc::channel();
             scope.spawn(move || {
