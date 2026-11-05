@@ -54,3 +54,20 @@ finding ids and date.
   database screens already behave at narrow widths.
 - **Findings:** `f-20261104-07`.
 - **Date:** 2026-11-05.
+
+## 2026-11-05 — Games reopen from the remembered side
+
+- **Question:** Should a game remember the board orientation the user chose, and should the
+  user's own black games open from Black's side without a flip?
+- **Choice:** Memory plus inference. A manual flip is remembered per game, in PGN files through
+  the `[Orientation]` tag and in databases through a stored per-game value. When nothing is
+  stored, a database game opens from Black's side if its Black player appears in nearly every
+  game of that database. A stored orientation always wins. Default on, no setting, no account
+  required.
+- **Ruled out:** Matching connected Lichess/Chess.com account names only (Felix has none
+  connected), a "my name" setting, and flip memory without inference (61 manual first flips in
+  "Meine Partien").
+- **Felix's reason:** "what's really annoying is that I have to do this every time again.
+  Because when I review a game I open it several times and then I have to do this every time.
+  That's what's annoying, not the first time."
+- **Date:** 2026-11-05.
