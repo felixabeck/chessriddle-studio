@@ -21042,7 +21042,7 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 
 ### Opening a newly selected database game by double-click can throw from a retired notation virtualizer
 
-* **ID:** f-20261105-04 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261105-04 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** ux
 * **Where:** `src/components/common/GameNotation.tsx` calls `rowVirtualizer.scrollToIndex`, and the installed TanStack virtualizer's dynamic scroll callback dereferences `this.targetWindow.requestAnimationFrame` after unmount has set `targetWindow` to null.
 * **Defect:** While running the Phase 2 database-orientation e2e scenario, opening the second game by double-click after closing the first game produced `TypeError: Cannot read properties of null (reading 'requestAnimationFrame')`. The orientation and persistence assertions completed, but the browser error made the test fail. The trace places the exception during the second database-row double-click, after its first click replaced the preview and before navigation finished.
@@ -21051,6 +21051,9 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Scope:** The orientation scenarios use selection followed by the existing labelled Open game button. The double-click error is retained here for a separate lifecycle repair, with no error suppression or dependency change in Phase 2.
 * **Fix direction:** Give the notation scroll operation an owner that cancels or invalidates its pending work on preview retirement, or use a dependency fix with equivalent lifecycle guarantees. Preserve the double-click admission behavior and add a regression that retains browser-error assertions.
 * **Found by:** Codex Phase 2 renderer implementation, FIX 2, 2026-11-05.
+* **Closed 2026-11-05 (drain b2715d6b):** Root cause confirmed in virtual-core 3.13.18 `scrollToIndex`: its first animation frame is never returned to the caller, and in dynamic mode it calls `this.targetWindow.requestAnimationFrame(verify)` after unmount cleanup has nulled `targetWindow`. GameNotation now scrolls through an owned `scrollNotationToIndex` (bounded scroll-and-verify, 10 attempts) whose frames every effect branch cancels on cleanup, including index scrolls started inside the tall-row reveal. The private `currentScrollToIndex`/`scrollToFn` gate that only neutralised the library's unowned retries was removed. Commit 81b36ba3. Regression: real-`Virtualizer` unit tests show the owned scroll leaves no frame after unmount, while the library's `scrollToIndex` throws `TypeError` under the same sequence; cancel-body mutation turned both regression cases red. The browser-error assertions in `e2e/fixtures.ts` stay in place.
+* **Rejected:** upgrading to virtual-core 3.19.x, which owns its frames (`rafId` cancelled in cleanup), but it rewrites the scroll engine underneath this component and every other virtualizer user, so it belongs in the dependency workflow. A `pnpm patch` null guard was also rejected because it would hide the unowned frame instead of giving it an owner.
+<!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"fb5f020c8e76fd464acff53481e3c267b36f365fb3c7e3e12e7516126ec4909a","header_sha256":"1c8f85f85c76f0c511435a79bb2a9ea1e2a3ce4306320c3fc29dabf38866b109","header_status":"handled","input_sha256":"c72e097e830b03f3acc1938edd43bec0a944d32714ef75a2bbbfacb529c63feb","kind":"mutation-receipt","operation":"d57a1eb4a2d46cc8cd9867f866dd16a2007e020a8bb061b95d41ed81bb354bdf","options":{"section":null},"request_id_sha256":null,"results":["f-20261105-04"],"target":"f-20261105-04","v":1} -->
 
 ---
 
