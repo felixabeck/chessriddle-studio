@@ -25,13 +25,21 @@ The push skill's §2 runs every final gate through one command,
 the contract-only run). For the selected blocks, it runs the mutation guard first (always), then
 the advisory `rust-target-eviction` step and `setup-rust` for Rust or bindings, then rebuilds
 `dist/` for every `dist/` consumer and runs `bindings:check` with `--bindings`. Contract and
-bundle run concurrently with one complete Rust lane at a time, in declaration order: lint, test,
-coverage. Frontend coverage and mutation wait until all Rust work terminates. An ordinary lane
-failure still admits later Rust lanes. Signals and unconfirmed child cleanup prevent queued
-starts. E2e waits for bundle and every Rust lane, including failures, because its container
+bundle run concurrently with rust-lint in the light stage. Every selected light lane must
+terminate before the heavy stage starts. Rust-test then rust-coverage run serially, followed by
+frontend coverage and e2e together. E2e waits for bundle and every Rust lane because its container
 build rewrites `dist/`, a Rust compile input. After Rust, frontend coverage shares memory only
 with concurrent mutation. Mutation runs last unless the existing budget and CPU thresholds allow
-one frontend wave.
+one frontend wave (d-20261105-03).
+
+In both push and pre-review mode, the first failed step or lane blocks every further step, lane
+and lane command. Advisory warnings do not latch. Every selected gate that never started is
+reported once as skipped with a reason naming the first red gate. Running commands finish under
+their existing supervision. A running multi-command lane starts no further command and records
+stopped with that reason and no exit code. Its own command failure remains failed. Signals and
+unconfirmed child cleanup retain their existing outcomes and reason precedence. Exit-code
+precedence is unchanged. Pre-review retains its single concurrent lane stage
+(d-20261105-04, d-20261105-05).
 
 The shared [gate-performance reference](~/.claude/references/gate-performance.md) owns machine-wide
 slot admission and scope caps. `agent-gate` takes one shared slot and runs the whole run in its

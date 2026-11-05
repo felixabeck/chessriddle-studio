@@ -66,11 +66,17 @@ Choose flags from the changed paths: `--rust` for Rust/Tauri changes, `--fronten
 changes, and all three flags for cross-layer contracts or changes to workflows, dependencies, or
 toolchain inputs. A Markdown/planning-only push uses no flags. The mutation guard and contract lane
 run on every invocation; the runner also runs the fenced commands below as their lane contents.
-One complete Rust lane runs at a time in declaration order, alongside contract and bundle.
-Frontend coverage and mutation wait for every Rust lane to terminate, then retain their frontend
-budget, e2e reservation and CPU rules. Ordinary Rust failures do not skip later selected lanes.
-Known limitation: the scheduler does not yet follow the shared push policy §8 "Fail-fast gate order" (no further start after a red). It is tracked as f-20261102-05.
-Signals or unconfirmed child cleanup stop queued starts. A failure
+P2 first runs the light stage: contract, bundle and rust-lint concurrently. Every selected light
+lane must terminate before the heavy stage starts. Rust-test then rust-coverage run serially,
+followed by frontend coverage and e2e together. Mutation runs last unless the existing memory
+and CPU thresholds admit it alongside frontend coverage and e2e. Budget and e2e reservation rules
+are unchanged (d-20261105-03).
+In both push and pre-review mode, the first failed step or lane blocks every further step, lane
+and lane command. Advisory warnings do not block starts. Selected gates that never started are
+reported as skipped with a reason naming the first red gate. Running commands finish under their
+existing supervision. A running multi-command lane starts no further command and records stopped
+with that reason and no exit code (d-20261105-04, d-20261105-05). Signals and unconfirmed child
+cleanup retain precedence over the red-gate reason. Exit-code precedence is unchanged. A failure
 returns to `repair`, commit, and the required affected final-gate rerun before push.
 
 `pnpm gates:push` and `pnpm checks:pre-review` run through `agent-gate`. Read

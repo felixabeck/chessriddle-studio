@@ -443,12 +443,6 @@ function selectedByBlocks(entry, blocks) {
   return entry.blocks?.some((block) => blocks.has(block)) ?? false;
 }
 
-function p0Step(name) {
-  const entry = PUSH_GATE_SCHEDULE.p0.find((step) => step.name === name);
-  if (!entry) throw new Error(`Push gate P0 has no step named ${JSON.stringify(name)}`);
-  return entry;
-}
-
 function formatDuration(durationMs) {
   return `${(durationMs / 1000).toFixed(1)}s`;
 }
@@ -615,7 +609,12 @@ function blockedStartReason(context) {
   }
   if (context.childCleanup.error)
     return "child cleanup is unconfirmed, so no further work may start";
+  if (context.firstRed.name) return `${context.firstRed.name} failed, so no further gate started`;
   return undefined;
+}
+
+function latchFailure(task, context) {
+  if (task.status === "failed") context.firstRed.name ??= task.name;
 }
 
 function logProgress(task, phase, message) {
@@ -639,6 +638,7 @@ async function runStep(task, command, context) {
     });
   } catch (error) {
     task.status = task.advisory && !task.terminationError ? "warning" : "failed";
+    latchFailure(task, context);
     task.code = 1;
     task.error = error;
     const fd = writeTaskHeader(task, commandLabel(command));
@@ -680,6 +680,7 @@ async function runStep(task, command, context) {
     task.code = result.code;
     task.status = "failed";
   }
+  latchFailure(task, context);
   logProgress(task, "finish", result.error ? `error=${errorMessage(result.error)}` : "");
   return task;
 }
@@ -697,16 +698,27 @@ async function runLane(lane, env, context, results) {
   task.startedAt = performance.now();
   logProgress(task, "start", `commands=${lane.commands.length}`);
   let result = { code: 0 };
-  for (const [index, command] of lane.commands.entries()) {
-    if (blockedStartReason(context)) {
+  let commandsStarted = 0;
+  const stopAtBoundary = () => {
+    const reason = blockedStartReason(context);
+    if (!reason) return false;
+    if (!context.signalForwarding.requestedSignal && !context.childCleanup.error) {
+      if (commandsStarted) task.status = "stopped";
+      else skipTask(task, reason);
+      task.reason = reason;
+      result = { ...result, code: undefined };
+    } else {
       result = {
         ...result,
         code: context.signalForwarding.requestedSignal
           ? signalExitCode(context.signalForwarding.requestedSignal)
           : 1,
       };
-      break;
     }
+    return true;
+  };
+  for (const [index, command] of lane.commands.entries()) {
+    if (stopAtBoundary()) break;
     const step = createTaskResult(context.logDirectory, lane.name, "lane-step", {
       phase: "P2",
       commandIndex: index,
@@ -718,14 +730,8 @@ async function runLane(lane, env, context, results) {
         command: commandLabel(command),
         index,
       });
-      if (blockedStartReason(context)) {
-        result = {
-          code: context.signalForwarding.requestedSignal
-            ? signalExitCode(context.signalForwarding.requestedSignal)
-            : 1,
-        };
-        break;
-      }
+      if (stopAtBoundary()) break;
+      commandsStarted += 1;
       result = await runCommand(command, step, { ...context, env });
     } catch (error) {
       result = { code: 1, error };
@@ -746,11 +752,14 @@ async function runLane(lane, env, context, results) {
   }
   task.durationMs = performance.now() - task.startedAt;
   task.code = result.code;
-  task.status = context.signalForwarding.requestedSignal
-    ? "interrupted"
-    : result.code === 0
-      ? "passed"
-      : "failed";
+  if (task.status !== "stopped" && task.status !== "skipped") {
+    task.status = context.signalForwarding.requestedSignal
+      ? "interrupted"
+      : result.code === 0
+        ? "passed"
+        : "failed";
+  }
+  latchFailure(task, context);
   task.error ??= result.error;
   task.logError ??= result.logError;
   recordChildOutcome(task, result);
@@ -894,6 +903,7 @@ export async function runPushGates(
     superviseProcess,
     signalForwarding,
     childCleanup: {},
+    firstRed: {},
     beforeStep,
     logDirectory,
     writeCapturedOutput,
@@ -930,27 +940,12 @@ export async function runPushGates(
       );
 
       const buildRequired = lanes.some((lane) => lane.requires?.includes("frontend-build"));
-      let frontendBuild;
       if (buildRequired) {
-        frontendBuild = await runSerialStep(PRE_REVIEW_GATE_SCHEDULE.p1[0], "P1");
+        await runSerialStep(PRE_REVIEW_GATE_SCHEDULE.p1[0], "P1");
       }
-      const buildReady = !buildRequired || frontendBuild?.status === "passed";
-      const runnableLanes = [];
-      for (const lane of lanes) {
-        if (!buildReady && lane.requires?.includes("frontend-build")) {
-          const skipped = createTaskResult(logDirectory, lane.name, "lane", { phase: "P2" });
-          skipTask(skipped, "frontend-build failed, so this dist/ consumer was skipped");
-          resultsByName.set(lane.name, skipped);
-        } else {
-          runnableLanes.push(lane);
-        }
-      }
-
-      const compilerEnv = runnableLanes.some((lane) => lane.rustCompilation)
-        ? getRustEnvironment()
-        : env;
+      const compilerEnv = lanes.some((lane) => lane.rustCompilation) ? getRustEnvironment() : env;
       await Promise.all(
-        runnableLanes.map((lane) =>
+        lanes.map((lane) =>
           runLane(lane, lane.rustCompilation ? compilerEnv : env, context, resultsByName),
         ),
       );
@@ -967,166 +962,121 @@ export async function runPushGates(
         }
       }
     } else {
-      const guard = await runSerialStep(p0Step("mutation-guard"), "P0");
-      if (guard.status !== "passed") {
-        exitCode = signalForwarding.requestedSignal
-          ? signalExitCode(signalForwarding.requestedSignal)
-          : guard.code;
-        for (const lane of PUSH_GATE_SCHEDULE.lanes) {
-          if (!selectedByBlocks(lane, blocks)) continue;
-          const skipped = createTaskResult(logDirectory, lane.name, "lane", { phase: "P2" });
-          skipTask(skipped, "P0 mutation guard failed before any lane started");
-          resultsByName.set(lane.name, skipped);
-        }
-      } else {
-        const eviction = p0Step("rust-target-eviction");
-        if (selectedByBlocks(eviction, blocks)) {
-          await runSerialStep(eviction, "P0");
-        }
-        let setupRust;
-        const setupRustEntry = p0Step("setup-rust");
-        if (selectedByBlocks(setupRustEntry, blocks)) {
-          setupRust = await runSerialStep(setupRustEntry, "P0");
-        }
-
-        const frontendBuildEntry = PUSH_GATE_SCHEDULE.p1[0];
-        let frontendBuild;
-        if (selectedByBlocks(frontendBuildEntry, blocks)) {
-          frontendBuild = await runSerialStep(frontendBuildEntry, "P1");
-        }
-
-        const bindingsEntry = PUSH_GATE_SCHEDULE.p1[1];
-        if (selectedByBlocks(bindingsEntry, blocks)) {
-          if (setupRust?.status !== "passed") {
-            const skipped = createTaskResult(logDirectory, bindingsEntry.name, "step", {
-              phase: "P1",
-            });
-            skipTask(skipped, "setup-rust failed, so bindings:check was skipped");
-            stepResults.push(skipped);
-          } else if (frontendBuild?.status !== "passed") {
-            const skipped = createTaskResult(logDirectory, bindingsEntry.name, "step", {
-              phase: "P1",
-            });
-            skipTask(skipped, "frontend-build failed, so bindings:check was skipped");
-            stepResults.push(skipped);
-          } else {
-            await runSerialStep(bindingsEntry, "P1", getRustEnvironment());
-          }
-        }
-
-        const buildReady = !frontendBuild || frontendBuild.status === "passed";
-        const setupReady = !setupRust || setupRust.status === "passed";
-        const lanes = PUSH_GATE_SCHEDULE.lanes.filter((lane) => selectedByBlocks(lane, blocks));
-        const runnableLanes = [];
-        for (const lane of lanes) {
-          if (lane.requires?.includes("setup-rust") && !setupReady) {
-            const skipped = createTaskResult(logDirectory, lane.name, "lane", { phase: "P2" });
-            skipTask(skipped, "setup-rust failed, so this Rust consumer was skipped");
-            resultsByName.set(lane.name, skipped);
-            continue;
-          }
-          if (lane.requires?.includes("frontend-build") && !buildReady) {
-            const skipped = createTaskResult(logDirectory, lane.name, "lane", { phase: "P2" });
-            skipTask(skipped, "frontend-build failed, so this dist/ consumer was skipped");
-            resultsByName.set(lane.name, skipped);
-            continue;
-          }
-          runnableLanes.push(lane);
-        }
-
-        if (blocks.has("frontend")) {
-          budgetBytes = getGateBudgetBytes();
-          cpuCount = availableParallelism();
-        }
-        const concurrentMutation =
-          blocks.has("frontend") &&
-          budgetBytes >= ONE_WAVE_BYTES &&
-          cpuCount >= MIN_CONCURRENT_SELF_SIZING_CPUS;
-        const laneByName = new Map(runnableLanes.map((lane) => [lane.name, lane]));
-        const e2eSelected = laneByName.has("e2e");
-        const rustLanes = runnableLanes.filter((lane) => lane.rustCompilation);
-        const compilerEnv = rustLanes.length ? getRustEnvironment() : env;
-        const baseLanes = runnableLanes.filter(
-          (lane) => lane.name !== "e2e" && lane.name !== "frontend-mutation",
+      for (const entry of PUSH_GATE_SCHEDULE.p0) {
+        if (selectedByBlocks(entry, blocks)) await runSerialStep(entry, "P0");
+      }
+      for (const entry of PUSH_GATE_SCHEDULE.p1) {
+        if (!selectedByBlocks(entry, blocks)) continue;
+        await runSerialStep(
+          entry,
+          "P1",
+          entry.name === "bindings-check" ? getRustEnvironment() : env,
         );
-        const p2Promises = new Map();
-        // Cold native, cross-target and instrumented contexts own the same unpartitioned
-        // compiler envelope. Ordinary failure releases admission after terminal cleanup.
-        // Keep contract/bundle useful concurrency, then admit heavyweight frontend work.
-        // Replace this ordering only after comparable cold proof supports partitioning.
-        let rustDone = Promise.resolve();
-        for (const lane of rustLanes) {
-          rustDone = rustDone.then(() => runLane(lane, compilerEnv, context, resultsByName));
-          p2Promises.set(lane.name, rustDone);
-        }
-        for (const lane of baseLanes) {
-          if (lane.rustCompilation) continue;
-          const laneEnv = lane.selfSizing
-            ? makeLaneEnvironment(env, lane.name, budgetBytes, concurrentMutation, e2eSelected)
-            : env;
-          const lanePromise = lane.selfSizing
-            ? rustDone.then(() => runLane(lane, laneEnv, context, resultsByName))
-            : runLane(lane, laneEnv, context, resultsByName);
-          p2Promises.set(lane.name, lanePromise);
-        }
+      }
+      const runnableLanes = PUSH_GATE_SCHEDULE.lanes.filter((lane) =>
+        selectedByBlocks(lane, blocks),
+      );
+      if (blocks.has("frontend") && !blockedStartReason(context)) {
+        budgetBytes = getGateBudgetBytes();
+        cpuCount = availableParallelism();
+      }
+      const concurrentMutation =
+        blocks.has("frontend") &&
+        budgetBytes >= ONE_WAVE_BYTES &&
+        cpuCount >= MIN_CONCURRENT_SELF_SIZING_CPUS;
+      const laneByName = new Map(runnableLanes.map((lane) => [lane.name, lane]));
+      const e2eSelected = laneByName.has("e2e");
+      const rustLanes = runnableLanes.filter((lane) => lane.rustCompilation);
+      const compilerEnv = rustLanes.length ? getRustEnvironment() : env;
+      const baseLanes = runnableLanes.filter(
+        (lane) => lane.name !== "e2e" && lane.name !== "frontend-mutation",
+      );
+      const p2Promises = new Map();
+      // Cold native, cross-target and instrumented contexts own the same unpartitioned
+      // compiler envelope. A red blocks every queued start after terminal cleanup.
+      // Finish contract, bundle and rust-lint before admitting heavyweight work.
+      // Replace this ordering only after comparable cold proof supports partitioning.
+      const lightLanes = runnableLanes.filter((lane) =>
+        ["contract", "bundle", "rust-lint"].includes(lane.name),
+      );
+      for (const lane of lightLanes) {
+        p2Promises.set(
+          lane.name,
+          runLane(lane, lane.rustCompilation ? compilerEnv : env, context, resultsByName),
+        );
+      }
+      let rustDone = Promise.all(p2Promises.values());
+      for (const lane of rustLanes.filter((lane) => lane.name !== "rust-lint")) {
+        rustDone = rustDone.then(() => runLane(lane, compilerEnv, context, resultsByName));
+        p2Promises.set(lane.name, rustDone);
+      }
+      for (const lane of baseLanes) {
+        if (lane.rustCompilation || lightLanes.includes(lane)) continue;
+        const laneEnv = lane.selfSizing
+          ? makeLaneEnvironment(env, lane.name, budgetBytes, concurrentMutation, e2eSelected)
+          : env;
+        const lanePromise = lane.selfSizing
+          ? rustDone.then(() => runLane(lane, laneEnv, context, resultsByName))
+          : runLane(lane, laneEnv, context, resultsByName);
+        p2Promises.set(lane.name, lanePromise);
+      }
 
-        const e2eLane = laneByName.get("e2e");
-        let e2ePromise;
-        if (e2eLane) {
-          const dependencies = e2eLane.after.map((name) => p2Promises.get(name)).filter(Boolean);
-          e2ePromise = Promise.all(dependencies).then(() =>
-            runLane(e2eLane, env, context, resultsByName),
+      const e2eLane = laneByName.get("e2e");
+      let e2ePromise;
+      if (e2eLane) {
+        const dependencies = e2eLane.after.map((name) => p2Promises.get(name)).filter(Boolean);
+        e2ePromise = Promise.all([rustDone, ...dependencies]).then(() =>
+          runLane(e2eLane, env, context, resultsByName),
+        );
+      }
+
+      const mutationLane = laneByName.get("frontend-mutation");
+      let mutationPromise;
+      if (mutationLane) {
+        if (concurrentMutation) {
+          const laneEnv = makeLaneEnvironment(
+            env,
+            mutationLane.name,
+            budgetBytes,
+            concurrentMutation,
+            e2eSelected,
           );
-        }
-
-        const mutationLane = laneByName.get("frontend-mutation");
-        let mutationPromise;
-        if (mutationLane) {
-          if (concurrentMutation) {
+          mutationPromise = rustDone.then(() =>
+            runLane(mutationLane, laneEnv, context, resultsByName),
+          );
+          p2Promises.set(mutationLane.name, mutationPromise);
+        } else {
+          const dependencies = [
+            ...baseLanes.map((lane) => p2Promises.get(lane.name)).filter(Boolean),
+            ...(e2ePromise ? [e2ePromise] : []),
+          ];
+          mutationPromise = Promise.all(dependencies).then(() => {
             const laneEnv = makeLaneEnvironment(
               env,
               mutationLane.name,
               budgetBytes,
-              concurrentMutation,
+              false,
               e2eSelected,
             );
-            mutationPromise = rustDone.then(() =>
-              runLane(mutationLane, laneEnv, context, resultsByName),
-            );
-            p2Promises.set(mutationLane.name, mutationPromise);
-          } else {
-            const dependencies = [
-              ...baseLanes.map((lane) => p2Promises.get(lane.name)).filter(Boolean),
-              ...(e2ePromise ? [e2ePromise] : []),
-            ];
-            mutationPromise = Promise.all(dependencies).then(() => {
-              const laneEnv = makeLaneEnvironment(
-                env,
-                mutationLane.name,
-                budgetBytes,
-                false,
-                e2eSelected,
-              );
-              return runLane(mutationLane, laneEnv, context, resultsByName);
-            });
-          }
+            return runLane(mutationLane, laneEnv, context, resultsByName);
+          });
         }
+      }
 
-        await Promise.all([
-          ...p2Promises.values(),
-          ...(e2ePromise ? [e2ePromise] : []),
-          ...(mutationPromise && !concurrentMutation ? [mutationPromise] : []),
-        ]);
+      await Promise.all([
+        ...p2Promises.values(),
+        ...(e2ePromise ? [e2ePromise] : []),
+        ...(mutationPromise && !concurrentMutation ? [mutationPromise] : []),
+      ]);
 
-        const failedStep = firstFailure(stepResults);
-        if (failedStep) exitCode = failedStep.code;
-        else {
-          for (const lane of PUSH_GATE_SCHEDULE.lanes) {
-            const result = resultsByName.get(lane.name);
-            if (result && (result.status === "failed" || result.status === "interrupted")) {
-              exitCode = result.code;
-              break;
-            }
+      const failedStep = firstFailure(stepResults);
+      if (failedStep) exitCode = failedStep.code;
+      else {
+        for (const lane of PUSH_GATE_SCHEDULE.lanes) {
+          const result = resultsByName.get(lane.name);
+          if (result && (result.status === "failed" || result.status === "interrupted")) {
+            exitCode = result.code;
+            break;
           }
         }
       }
