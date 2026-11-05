@@ -25,13 +25,7 @@ mod practice;
 mod progress;
 mod puzzle;
 mod sound;
-#[cfg(target_os = "linux")]
 mod system_appearance;
-#[cfg(not(target_os = "linux"))]
-mod system_appearance {
-    /// macOS and Windows webviews follow the system colour scheme natively.
-    pub fn follow_desktop_color_scheme() {}
-}
 
 #[cfg(any(test, debug_assertions))]
 use std::path::Path;
