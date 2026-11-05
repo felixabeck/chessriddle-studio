@@ -1242,6 +1242,23 @@ async function invokeJsonAndWait(session, label, globalName, invokeExpression) {
   }
 }
 
+async function invokeIpc(session, globalName, command, args) {
+  const result = await invokeJsonAndWait(
+    session,
+    command,
+    globalName,
+    `window.__TAURI_INTERNALS__.invoke(${JSON.stringify(command)}, ${JSON.stringify(args)})`,
+  );
+  if (result.value === undefined)
+    throw new Error(
+      result.result.rejected ??
+        result.result.error ??
+        result.error ??
+        `${command} returned no value`,
+    );
+  return result.value;
+}
+
 async function listFixtureEntries(invoke) {
   const listing = await invoke("list_file_workspace", {
     workspace: { id: { id: filesWorkspaceId }, kind: "fileWorkspace" },
@@ -2401,6 +2418,16 @@ async function reachableStableCoordinates(
   );
 }
 
+async function clickButton(session, name, icon = false) {
+  const point = await reachableStableCoordinates(
+    session,
+    name,
+    `[...document.querySelectorAll('button')].find(node => !node.disabled && (arguments[1] ? (node.getAttribute('aria-label') || '').startsWith(arguments[0]) : node.textContent.trim() === arguments[0]))`,
+    [name, icon],
+  );
+  await clickAt(session, point.x, point.y);
+}
+
 async function filesRowCoordinates(session, name, timeoutMs = FILES_PROBE_TIMEOUT_MS) {
   return reachableStableCoordinates(
     session,
@@ -2712,22 +2739,7 @@ export async function assertLinkedCollectionArtifact(assertion, artifacts) {
 }
 
 async function verifyLinkedCollections(session, filesWorkspace, profileDirectory) {
-  const invoke = async (command, args) => {
-    const result = await invokeJsonAndWait(
-      session,
-      command,
-      "__verifyLinkedIPC",
-      `window.__TAURI_INTERNALS__.invoke(${JSON.stringify(command)}, ${JSON.stringify(args)})`,
-    );
-    if (result.value === undefined)
-      throw new Error(
-        result.result.rejected ??
-          result.result.error ??
-          result.error ??
-          `${command} returned no value`,
-      );
-    return result.value;
-  };
+  const invoke = (command, args) => invokeIpc(session, "__verifyLinkedIPC", command, args);
   const workspace = { id: { id: filesWorkspaceId }, kind: "fileWorkspace" };
   const prefix = `verify-linked-${randomUUID()}`;
   const game = (id, moves, note) =>
@@ -3038,33 +3050,10 @@ async function verifyLinkedCollections(session, filesWorkspace, profileDirectory
 }
 
 async function verifyDatabaseOrientation(session) {
-  const invoke = async (command, args) => {
-    const result = await invokeJsonAndWait(
-      session,
-      command,
-      "__verifyOrientationIPC",
-      `window.__TAURI_INTERNALS__.invoke(${JSON.stringify(command)}, ${JSON.stringify(args)})`,
-    );
-    if (result.value === undefined)
-      throw new Error(
-        result.result.rejected ??
-          result.result.error ??
-          result.error ??
-          `${command} returned no value`,
-      );
-    return result.value;
-  };
+  const invoke = (command, args) => invokeIpc(session, "__verifyOrientationIPC", command, args);
   const wait = (label, probe) => waitFor(label, probe, { timeoutMs: FILES_PROBE_TIMEOUT_MS });
   const coordinates = (label, script, args = []) =>
     reachableStableCoordinates(session, label, script, args);
-  const clickButton = async (name, icon = false) => {
-    const point = await coordinates(
-      name,
-      `[...document.querySelectorAll('button')].find(node => !node.disabled && (arguments[1] ? (node.getAttribute('aria-label') || '').startsWith(arguments[0]) : node.textContent.trim() === arguments[0]))`,
-      [name, icon],
-    );
-    await clickAt(session, point.x, point.y);
-  };
   const boardIs = (side) =>
     wait(`orientation board is ${side}`, () =>
       session.execute(
@@ -3132,7 +3121,7 @@ async function verifyDatabaseOrientation(session) {
       [game.white, game.black],
     );
     await clickAt(session, gameRow.x, gameRow.y);
-    await clickButton("Open game");
+    await clickButton(session, "Open game");
     await wait("orientation analysis route", () =>
       session.execute("return location.pathname === '/' && !!document.querySelector('cg-board')"),
     );
@@ -3200,7 +3189,7 @@ async function verifyDatabaseOrientation(session) {
         current.game.stamp !== blackGame.stamp
       )
         throw new Error(`inference wrote the database row: ${JSON.stringify(current)}`);
-      await clickButton("Close tab", true);
+      await clickButton(session, "Close tab", true);
     },
   );
   await assertion(
@@ -3209,7 +3198,7 @@ async function verifyDatabaseOrientation(session) {
       if (!seeded) throw new Error("not attempted: AO1 fixture setup failed");
       await open(whiteGame);
       await boardIs("White");
-      await clickButton("Flip Board", true);
+      await clickButton(session, "Flip Board", true);
       await boardIs("Black");
       const saved = await wait("native orientation autosave", async () => {
         const current = await invoke("get_db_game", {
@@ -3229,13 +3218,13 @@ async function verifyDatabaseOrientation(session) {
         const tree = await activeTree();
         return tree?.dirty === false && tree.sourceStamp === saved.stamp;
       });
-      await clickButton("Close tab", true);
+      await clickButton(session, "Close tab", true);
       await open(whiteGame);
       await boardIs("Black");
       const path = `${screenshotPath ?? join(tmpdir(), `chessfable-orientation-${process.pid}`)}.database-orientation.png`;
       await writeFile(path, Buffer.from(await session.screenshot(), "base64"));
       console.log(`  .. database-orientation screenshot: ${path}`);
-      await clickButton("Close tab", true);
+      await clickButton(session, "Close tab", true);
     },
   );
   await assertion(
@@ -3249,33 +3238,10 @@ async function verifyDatabaseOrientation(session) {
 }
 
 async function verifyNewGameToDatabase(session) {
-  const invoke = async (command, args) => {
-    const result = await invokeJsonAndWait(
-      session,
-      command,
-      "__verifyNewGameIPC",
-      `window.__TAURI_INTERNALS__.invoke(${JSON.stringify(command)}, ${JSON.stringify(args)})`,
-    );
-    if (result.value === undefined)
-      throw new Error(
-        result.result.rejected ??
-          result.result.error ??
-          result.error ??
-          `${command} returned no value`,
-      );
-    return result.value;
-  };
+  const invoke = (command, args) => invokeIpc(session, "__verifyNewGameIPC", command, args);
   const wait = (label, probe) => waitFor(label, probe, { timeoutMs: FILES_PROBE_TIMEOUT_MS });
   const pointer = (label, script, args = []) =>
     reachableStableCoordinates(session, label, script, args);
-  const clickButton = async (name, icon = false) => {
-    const point = await pointer(
-      name,
-      `[...document.querySelectorAll('button')].find(node => !node.disabled && (arguments[1] ? (node.getAttribute('aria-label') || '').startsWith(arguments[0]) : node.textContent.trim() === arguments[0]))`,
-      [name, icon],
-    );
-    await clickAt(session, point.x, point.y);
-  };
   const move = async (from, to) => {
     for (const square of [from, to]) {
       const point = await pointer(
@@ -3337,12 +3303,12 @@ async function verifyNewGameToDatabase(session) {
       [title],
     );
     await clickAt(session, row.x, row.y);
-    await clickButton("New game");
+    await clickButton(session, "New game");
     await wait("new-game analysis board", () =>
       session.execute("return location.pathname === '/' && !!document.querySelector('cg-board')"),
     );
     await move("e2", "e4");
-    await clickButton("Save PGN", true);
+    await clickButton(session, "Save PGN", true);
     const first = await wait("new-game insert through native read", async () => {
       const games = await read();
       const added = games.data.filter((game) => !priorIds.has(game.id));
@@ -3354,7 +3320,7 @@ async function verifyNewGameToDatabase(session) {
       );
     });
     await move("e7", "e5");
-    await clickButton("Save PGN", true);
+    await clickButton(session, "Save PGN", true);
     const edited = await wait("new-game edit updates its original native row", async () => {
       const games = await read();
       const added = games.data.filter((game) => !priorIds.has(game.id));
@@ -3399,22 +3365,7 @@ async function verifyGameOpening(session, ownedRoot, filesWorkspace) {
   };
   const wait = (label, script, args = []) =>
     waitFor(label, () => session.execute(script, args), { timeoutMs: FILES_PROBE_TIMEOUT_MS });
-  const invoke = async (command, args) => {
-    const result = await invokeJsonAndWait(
-      session,
-      command,
-      "__verifyOpeningIPC",
-      `window.__TAURI_INTERNALS__.invoke(${JSON.stringify(command)}, ${JSON.stringify(args)})`,
-    );
-    if (result.value === undefined)
-      throw new Error(
-        result.result.rejected ??
-          result.result.error ??
-          result.error ??
-          `${command} returned no value`,
-      );
-    return result.value;
-  };
+  const invoke = (command, args) => invokeIpc(session, "__verifyOpeningIPC", command, args);
   const coordinates = (script, args = []) =>
     reachableStableCoordinates(session, "game-opening pointer target", script, args);
   const button = (text) =>
