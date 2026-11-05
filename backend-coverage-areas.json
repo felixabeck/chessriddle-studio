@@ -29,7 +29,12 @@
       "id": "app-infrastructure",
       "source": "backend",
       "minimumCoverage": { "lines": 81, "functions": 73, "branches": 47 },
-      "paths": ["src-tauri/src/main.rs", "src-tauri/src/error.rs", "src-tauri/src/infra/**"]
+      "paths": [
+        "src-tauri/src/main.rs",
+        "src-tauri/src/error.rs",
+        "src-tauri/src/infra/**",
+        "src-tauri/src/system_appearance.rs"
+      ]
     },
     {
       "id": "filesystem-native-boundaries",

@@ -18,7 +18,12 @@
       {
         "id": "app-infrastructure",
         "source": "backend",
-        "paths": ["src-tauri/src/error.rs", "src-tauri/src/infra/**", "src-tauri/src/main.rs"]
+        "paths": [
+          "src-tauri/src/error.rs",
+          "src-tauri/src/infra/**",
+          "src-tauri/src/main.rs",
+          "src-tauri/src/system_appearance.rs"
+        ]
       },
       {
         "id": "filesystem-native-boundaries",

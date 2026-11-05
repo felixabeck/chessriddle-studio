@@ -800,6 +800,7 @@ dependencies = [
  "flate2",
  "futures-util",
  "governor",
+ "gtk",
  "keyring",
  "lazy_static",
  "libc",

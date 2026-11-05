@@ -25,6 +25,8 @@ mod practice;
 mod progress;
 mod puzzle;
 mod sound;
+#[cfg(target_os = "linux")]
+mod system_appearance;
 
 #[cfg(any(test, debug_assertions))]
 use std::path::Path;
@@ -2443,6 +2445,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .first()
                 .ok_or("main window configuration is missing")?;
             tauri::WebviewWindowBuilder::from_config(app.handle(), main_window)?.build()?;
+            // WebKitGTK only follows a desktop light/dark switch through GtkSettings.
+            #[cfg(target_os = "linux")]
+            system_appearance::follow_desktop_color_scheme();
 
             log::info!("Finished rust initialization");
 
