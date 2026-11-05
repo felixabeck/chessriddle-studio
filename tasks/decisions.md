@@ -11517,8 +11517,8 @@ Former private decision identifier: d-20261029-14
 * **Rejected:** Cutting the growth: it is the quit gate, its summary dialog, five new strings in each of the 16 locale catalogues and the shared native-listener lifecycle, all required by the finding and its review; there is no duplicated helper or unused string to remove. Lazy-loading the dialog: total counts every emitted asset once, so it cannot reduce total.
 * **Reason:** Same procedure as d-20261101-04 and d-20261030-08; 9,001 B of margin remains. Reversal path: tighten total against a future smaller production build. This decision is the forward pointer for the ceilings.
 * **Review:** `tasks/handoffs/2026-11-02-f-20261101-13-review.md`
-* **Decided by:** Claude Code (Opus 5.5) drain build run f-20261101-13 (session 5760d80b-dd1f-45c3-80d3-ecf9daae3008), full auto, 2026-11-02 · **Superseded-by:** -
-<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"de59f04c675613c775cbbfe9286558700eccf923a7780ef083643940d5c82df8","input_sha256":"e83b28462d6a7af4d7a93fedd8e57d76de839eda6300a40febbc025815437b2c","kind":"mutation-receipt","operation":"743e66f60cd3d411677dbce5bc8ba95440246cf4b2afe6e02a2d55675503224c","options":{"section":null},"request_id_sha256":null,"results":["d-20261102-11"],"target":"decisions-ledger","v":1} -->
+* **Decided by:** Claude Code (Opus 5.5) drain build run f-20261101-13 (session 5760d80b-dd1f-45c3-80d3-ecf9daae3008), full auto, 2026-11-02 · **Superseded-by:** d-20261105-06
+<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"f447fc208c0c79063226e617205c5b29600bedeb9439d6833b1e6a7dc554a6f7","input_sha256":"e83b28462d6a7af4d7a93fedd8e57d76de839eda6300a40febbc025815437b2c","kind":"mutation-receipt","operation":"743e66f60cd3d411677dbce5bc8ba95440246cf4b2afe6e02a2d55675503224c","options":{"section":null},"request_id_sha256":null,"results":["d-20261102-11"],"target":"decisions-ledger","v":1} -->
 
 ### d-20261102-12 — Which Node version does CI run?
 
