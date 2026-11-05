@@ -20927,7 +20927,7 @@ Fixed by d1882467 (drain session a7d7a3cd): `rename_information_buffer` floors t
 
 ### Hosted macos-26-intel runner lost communication during Clippy on 7fcedd82, so remote CI is red
 
-* **ID:** f-20261105-01 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261105-01 · **Status:** handled · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 580a15d2-6d2c-421b-9121-6ddea49c8c7c
 * **Impact class:** tooling
 * **CI run:** 41923815678
@@ -20937,6 +20937,8 @@ Fixed by d1882467 (drain session a7d7a3cd): `rename_information_buffer` floors t
 * **Fix shape:** rerun the failed job (`gh run rerun 41923815678 --failed -R felixabeck/en-croissant`) and confirm it succeeds; close with the job id. Same external hosted-runner class as handled f-20261104-05 and f-20261019-06; investigate the workflow only if the rerun loses the runner again.
 * **Proof:** `pnpm ci:remote:check` exits 0 with `rust-platform (macos-26-intel, x86_64-apple-darwin)` of the newest master run concluded success.
 * **Found by:** Claude Code drain build session 580a15d2-6d2c-421b-9121-6ddea49c8c7c, 2026-11-05, at the pre-push remote check of the f-20261101-32 release.
+* **Closed 2026-11-05 (pickup re-check, interactive tower session 8abd8187):** the defect no longer holds. In run 41923815678 the failed job was rerun: `rust-platform (macos-26-intel, x86_64-apple-darwin)` is now job 126946243850, conclusion `success`. Run 41972299021 on `10ed0202` also passed every job, macOS included, and `pnpm ci:remote:check` reports "OK (all newest completed Test jobs succeeded on master)". This was an external hosted-runner loss, so there was no workflow change to make.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"d97fc7491644df4b5d845c021c1e3d7c29534bcc31eece80e59dee9d282c740e","header_sha256":"e180f8bb922f4eb8d6f341b72d8ea9e12f64ac1b1e8aae5846d92d23376ce4dc","header_status":"handled","input_sha256":"3ec2d595dca6faf17ec9406761c51adb7c509b44ef01745f306ab34a77e6570b","kind":"mutation-receipt","operation":"3e4a334975f6531a42ac30e600d8467809191fde2d253c16316e05366363fd95","options":{"section":null},"request_id_sha256":null,"results":["f-20261105-01"],"target":"f-20261105-01","v":1} -->
 
 ---
 
