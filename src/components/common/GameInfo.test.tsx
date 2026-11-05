@@ -76,14 +76,11 @@ test("the Termination field reads the effective value and edits and clears it th
   store.getState().setState(state);
   const setTermination = vi.spyOn(store.getState(), "setTermination");
   await act(async () => root.render(<Editor />));
-  const field = host.querySelector<HTMLInputElement>(
-    'input[id]:not([id="game-result"])[value="Abandoned"]',
-  )!;
+  const field = host.querySelector<HTMLInputElement>('input[aria-label="GameInfo.Termination"]')!;
   expect(field).not.toBeNull();
-  expect(host.querySelector(`label[for="${field.id}"]`)?.textContent).toBe("GameInfo.Termination");
-  expect(
-    field.parentElement?.parentElement?.parentElement?.querySelector("#game-result"),
-  ).not.toBeNull();
+  expect(field.value).toBe("Abandoned");
+  expect(field.placeholder).toBe("GameInfo.Termination");
+  expect(field.parentElement?.querySelector("#game-result")).not.toBeNull();
   for (const value of ["Time forfeit", ""]) {
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, value);
@@ -95,7 +92,7 @@ test("the Termination field reads the effective value and edits and clears it th
     expect(field.value).toBe(value);
   }
   await act(async () => store.getState().clearGameEnd());
-  expect(host.textContent).not.toContain("GameInfo.Termination");
+  expect(host.querySelector('[aria-label="GameInfo.Termination"]')).toBeNull();
 });
 
 test("the Termination field is hidden without an effective end", async () => {
@@ -107,5 +104,5 @@ test("the Termination field is hidden without an effective end", async () => {
   state.headers.other = { Termination: "Normal" };
   store.getState().setState(state);
   await act(async () => root.render(<Editor />));
-  expect(host.textContent).not.toContain("GameInfo.Termination");
+  expect(host.querySelector('[aria-label="GameInfo.Termination"]')).toBeNull();
 });

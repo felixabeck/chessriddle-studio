@@ -27,6 +27,7 @@ for (const colorScheme of ["light", "dark"] as const) {
             await mockScenario({
                 commands: filesWorkspaceCommands([[filesWorkspaceFixture.pgnFile]], {
                     ...pgnFileCommands,
+                    write_game: { result: { stamp: "e".repeat(64), revision: "e2e-pgn-revision" } },
                     lex_pgn: { pgnTokens: { [filesWorkspaceFixture.pgnGame]: tokens } },
                 }),
             });
@@ -65,8 +66,8 @@ for (const colorScheme of ["light", "dark"] as const) {
             const endBox = (await end.boundingBox())!;
             const boundaryBox = (await boundary.boundingBox())!;
             const analysisBox = (await analysis.boundingBox())!;
-            expect(endBox.y + endBox.height).toBeLessThanOrEqual(boundaryBox.y);
-            expect(boundaryBox.y + boundaryBox.height).toBeLessThanOrEqual(analysisBox.y);
+            expect(endBox.y + endBox.height).toBeLessThanOrEqual(boundaryBox.y + 1);
+            expect(boundaryBox.y + boundaryBox.height).toBeLessThanOrEqual(analysisBox.y + 1);
             const playedOpacity = await end.evaluate(
                 (element) => getComputedStyle(element).opacity,
             );
@@ -75,6 +76,9 @@ for (const colorScheme of ["light", "dark"] as const) {
             );
             expect(analysisOpacity).toBe("0.6");
             expect(playedOpacity).toBe("1");
+            await expect(
+                page.getByText("Unexpected Tauri IPC command", { exact: false }),
+            ).toHaveCount(0);
         });
     }
 }

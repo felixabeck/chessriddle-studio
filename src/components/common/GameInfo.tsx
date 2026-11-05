@@ -1,4 +1,4 @@
-import { Box, Group, Select, SimpleGrid, Text, TextInput } from "@mantine/core";
+import { Box, Group, Select, SimpleGrid, Text } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import cx from "clsx";
 import dayjs from "dayjs";
@@ -261,7 +261,9 @@ function GameInfo({
                 })
               }
             />
-            {contextStore && <TerminationField store={contextStore} headers={headers} />}
+            {contextStore && (
+              <TerminationField store={contextStore} headers={headers} disabled={disabled} />
+            )}
           </Box>
           <input
             className={cx(classes.textInput, classes.right)}
@@ -290,9 +292,11 @@ function GameInfo({
 function TerminationField({
   store,
   headers,
+  disabled,
 }: {
   store: NonNullable<React.ContextType<typeof TreeStateContext>>;
   headers: GameHeaders;
+  disabled: boolean;
 }) {
   const { t } = useTranslation();
   const hasGameEnd = useStore(store, (state) => !!getEffectiveGameEnd(state.root));
@@ -302,11 +306,14 @@ function TerminationField({
   const setTermination = useStore(store, (state) => state.setTermination);
   if (!hasGameEnd) return null;
   return (
-    <TextInput
-      label={t("GameInfo.Termination")}
+    <InlineInput
+      className={classes.input}
+      style={{ width: "100%" }}
+      aria-label={t("GameInfo.Termination")}
+      placeholder={t("GameInfo.Termination")}
+      disabled={disabled}
       value={termination ?? ""}
       onChange={(event) => setTermination(event.currentTarget.value)}
-      size="xs"
     />
   );
 }
