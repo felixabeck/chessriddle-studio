@@ -20195,13 +20195,15 @@ Already repaired by 55685b22 before this entry was merged: the redacts test's re
 
 ### Pasted PGN import ignores "Save to collection", the typed name and the chosen file type
 
-* **ID:** f-20261101-11 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261101-11 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** behaviour
 * **Where:** `src/components/tabs/ImportModal.tsx:185-197` (pasted-text branch hardcodes `filename: import-${Date.now()}`, `filetype: "game"`); the save checkbox, name field and type cards render for both input modes (`ImportModal.tsx:298` onward).
 * **Defect:** `save`, `filename` and `filetype` are read only in the picked-file branch.
 * **Failure scenario:** paste a repertoire PGN, tick "Save to collection", name it "Najdorf repertoire" and pick Repertoire: the file is saved as `import-<timestamp>.pgn` with type game, so the user cannot find it by name and repertoire features do not see it.
 * **Fix shape:** honour `filename`/`filetype` in the pasted branch with the same name-conflict handling as the file branch.
 * **Found by:** cloud audit session session_01JbeKomxzG32RyrZzRykRDV (PGN/database audit, base 301104da), verified against local HEAD 301104da by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+* **Handled 2026-11-05:** `15e3d4fb` — with "Save to collection" ticked, the pasted-PGN branch now passes the typed name and selected file type to `createFile` and reports a create failure (name taken, invalid/empty name) under the Name field and returns, exactly like the picked-file branch; unticked keeps the `import-<timestamp>` game file and the submit-error path. Two regression tests (typed name + repertoire type reach `createFile` and the created file opens; a name conflict shows under Name, keeps inputs, opens nothing) went red with the source hunk reverted and green with it restored. Rejected: deriving a name from the PGN headers when the Name field is empty (the field is required and the backend refuses empty names, which now surfaces under the field).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"39ea7bf68d5046d08b09df1fc7358c415d4a9f8c3ee88fa7360bd9a059b72dcb","header_sha256":"bca7e903a0a064f6e1327dd85f8ee3bcd75d0c8d1319fa499787fee7227811ea","header_status":"handled","input_sha256":"2b8470917d53d477c7149d710f7a305d567380961c1a6d167f195bb68062d5e4","kind":"mutation-receipt","operation":"bbb0b1dc5ec9b94ea8b11564fc377d31177784409408d35cd319ec98d3b2c664","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-11"],"target":"f-20261101-11","v":1} -->
 
 ---
 
