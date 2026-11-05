@@ -820,11 +820,13 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
   );
 
   const handleHumanMove = useCallback(
-    (uci: string): Promise<boolean> =>
-      runGameCommand({
+    (uci: string): Promise<boolean> => {
+      const { position } = store.getState();
+      if (position.some((index) => index !== 0)) return Promise.resolve(false);
+      return runGameCommand({
         command: "move",
         unavailable: false,
-        action: ({ gameId, session }) => tauri.makeGameMove(gameId, session, uci),
+        action: ({ gameId, session }) => tauri.makeGameMove(gameId, session, uci, position.length),
         onSuccess: (state, { gameId, session, generation }) => {
           if (state.gameId !== gameId || state.session !== session) return false;
           applyAuthoritativeState(state, gameId, session, generation);
@@ -832,8 +834,16 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
           return true;
         },
         recover: ({ gameId, session }) => tauri.getGameState(gameId, session),
-      }),
-    [applyAuthoritativeState, autoFlipBoard, isPlayerVsEngine, runGameCommand, toggleOrientation],
+      });
+    },
+    [
+      applyAuthoritativeState,
+      autoFlipBoard,
+      isPlayerVsEngine,
+      runGameCommand,
+      store,
+      toggleOrientation,
+    ],
   );
 
   const queueKeyboardPremove = useCallback(

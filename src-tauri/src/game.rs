@@ -1946,12 +1946,13 @@ impl GameManager {
             .ok_or_else(|| Error::GameNotFound(game_id.to_string()))
     }
 
-    pub async fn make_move(
+    pub async fn make_move<R: Runtime>(
         &self,
         game_id: &str,
         expected_session: u64,
         uci: &str,
-        app: &AppHandle,
+        expected_ply: u32,
+        app: &AppHandle<R>,
     ) -> Result<GameState, Error> {
         let lifecycle = self.lifecycle_lease(game_id);
         let _operation = lifecycle.lock().await;
@@ -1967,6 +1968,12 @@ impl GameManager {
 
         if controller.is_engine_turn() {
             return Err(Error::NotHumanTurn);
+        }
+
+        if controller.moves.len() != expected_ply as usize {
+            return Err(Error::Conflict(
+                "game position changed before move commit".into(),
+            ));
         }
 
         let game_move = match controller.apply_move(uci) {
@@ -3520,12 +3527,13 @@ pub async fn make_game_move(
     game_id: String,
     expected_session: u64,
     uci: String,
+    expected_ply: u32,
     app: AppHandle,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<GameState, Error> {
     state
         .game_manager
-        .make_move(&game_id, expected_session, &uci, &app)
+        .make_move(&game_id, expected_session, &uci, expected_ply, &app)
         .await
 }
 
@@ -5156,6 +5164,70 @@ done
             .await
             .unwrap();
         assert!(supervisor.get_exact(&registered.key).is_none());
+    }
+
+    #[tokio::test]
+    async fn human_move_checks_expected_ply_before_applying_move() {
+        let game_id = "human_move_checks_expected_ply_before_applying_move";
+        let app = tauri::test::mock_app();
+        tauri_specta::Builder::<tauri::test::MockRuntime>::new()
+            .events(tauri_specta::collect_events!(
+                GameMoveEvent,
+                GameOverEvent,
+                ClockUpdateEvent
+            ))
+            .mount_events(&app);
+        let manager = Arc::new(GameManager::new());
+        let initial = manager
+            .start_game(
+                game_id.into(),
+                human_config(),
+                app.handle().clone(),
+                crate::infra::path_authority::SharedPathAuthority::uninitialized(),
+                Arc::new(EngineSupervisor::default()),
+            )
+            .await
+            .unwrap();
+
+        for (ply, uci) in ["e2e4", "e7e5", "g1f3", "b8c6"].into_iter().enumerate() {
+            manager
+                .make_move(game_id, initial.session, uci, ply as u32, app.handle())
+                .await
+                .unwrap();
+        }
+        let before = manager
+            .get_game_state(game_id, initial.session)
+            .await
+            .unwrap();
+        let result = manager
+            .make_move(game_id, initial.session, "f1c4", 2, app.handle())
+            .await;
+        let after = manager
+            .get_game_state(game_id, initial.session)
+            .await
+            .unwrap();
+        // Retire the production loop even if an assertion below detects a regression.
+        let correct = manager
+            .make_move(game_id, initial.session, "f1c4", 4, app.handle())
+            .await;
+        manager.abort_game(game_id, initial.session).await.unwrap();
+
+        assert!(
+            matches!(result, Err(Error::Conflict(message)) if message == "game position changed before move commit")
+        );
+        assert_eq!(before.moves.len(), 4);
+        assert_eq!(
+            serde_json::to_value(&after.moves).unwrap(),
+            serde_json::to_value(&before.moves).unwrap()
+        );
+        assert_eq!(after.current_fen, before.current_fen);
+        assert_eq!(after.revision, before.revision);
+
+        let accepted = correct.unwrap();
+        assert_eq!(accepted.moves.len(), 5);
+        assert_eq!(accepted.moves[4].uci, "f1c4");
+        assert_ne!(accepted.current_fen, before.current_fen);
+        assert!(accepted.revision > before.revision);
     }
 
     fn assert_terminal_move_publication_revisions(config: GameConfig) {
@@ -8952,7 +9024,7 @@ done
         },
         RoutingAnchor {
             name: "human_move",
-            start_marker: "pub async fn make_move(",
+            start_marker: "pub async fn make_move<R: Runtime>(",
             end_marker: "pub async fn take_back_move(",
             expected_patterns: &[
                 RoutingPattern {

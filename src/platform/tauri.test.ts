@@ -889,7 +889,7 @@ describe("tauri command facade", () => {
             session: 1n,
             revision: 2n,
         });
-        await expect(tauri.makeGameMove("game", 2n, "e2e4")).resolves.toMatchObject({
+        await expect(tauri.makeGameMove("game", 2n, "e2e4", 4)).resolves.toMatchObject({
             session: 1n,
             revision: 2n,
         });
@@ -904,7 +904,7 @@ describe("tauri command facade", () => {
         await tauri.abortGame("game", 5n);
         await tauri.getGameEngineLogs("game", 6n, "black");
         expect(mocks.getGameState).toHaveBeenCalledWith("game", 1);
-        expect(mocks.makeGameMove).toHaveBeenCalledWith("game", 2, "e2e4");
+        expect(mocks.makeGameMove).toHaveBeenCalledWith("game", 2, "e2e4", 4);
         expect(mocks.takeBackGameMove).toHaveBeenCalledWith("game", 3);
         expect(mocks.resignGame).toHaveBeenCalledWith("game", 4, "white");
         expect(mocks.abortGame).toHaveBeenCalledWith("game", 5);

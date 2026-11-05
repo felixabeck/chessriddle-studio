@@ -1,15 +1,18 @@
 import { Input } from "@mantine/core";
-import { useContext, useState } from "react";
+import { isNormal, type NormalMove } from "chessops";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useStore } from "zustand";
 import { parseKeyboardMove } from "@/utils/chess";
 import type { TreeNode } from "@/utils/treeReducer";
-import { TreeStateContext } from "../common/TreeStateContext";
 
-export default function MoveInput({ currentNode }: { currentNode: TreeNode }) {
+export default function MoveInput({
+  currentNode,
+  onMove,
+}: {
+  currentNode: TreeNode;
+  onMove: (move: NormalMove) => boolean;
+}) {
   const { t } = useTranslation();
-  const store = useContext(TreeStateContext)!;
-  const makeMove = useStore(store, (s) => s.makeMove);
   const [move, setMove] = useState("");
   const [error, setError] = useState("");
 
@@ -28,8 +31,7 @@ export default function MoveInput({ currentNode }: { currentNode: TreeNode }) {
           const m = move.trim();
           if (m.length > 0) {
             const parsed = parseKeyboardMove(m, currentNode.fen);
-            if (parsed) {
-              makeMove({ payload: parsed });
+            if (parsed && isNormal(parsed) && onMove(parsed)) {
               setMove("");
             } else {
               setError(t("MoveInput.InvalidMove"));

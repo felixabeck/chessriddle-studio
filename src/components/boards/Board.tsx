@@ -180,6 +180,12 @@ function Board({
     return pos ? chessgroundDests(pos) : new Map<SquareName, SquareName[]>();
   }, [pos]);
 
+  const boardDests =
+    editingMode || viewOnly || (disableVariations && currentNode.children.length > 0)
+      ? undefined
+      : dests;
+  const premovesEnabled = enablePremoves && !editingMode && !viewOnly;
+
   const [pendingMove, setPendingMove] = useState<NormalMove | null>(null);
   const [keyboardSquare, setKeyboardSquare] = useState<SquareName>("e2");
   const [keyboardSource, setKeyboardSource] = useState<SquareName | null>(null);
@@ -309,6 +315,15 @@ function Board({
             .exhaustive();
   }, [practiceLock, editingMode, movable, turn]);
 
+  function boardAllows(from: SquareName, to: SquareName): boolean {
+    const sourceColor = pos?.board.get(parseSquare(from)!)?.color;
+    return (
+      boardDests?.get(from)?.includes(to) === true &&
+      sourceColor !== undefined &&
+      (movableColor === "both" || movableColor === sourceColor)
+    );
+  }
+
   const theme = useMantineTheme();
   const annotations = nagGlyphs(currentNode.nags);
   const color = ANNOTATION_INFO[annotations[0]]?.color || "gray";
@@ -392,8 +407,8 @@ function Board({
       );
       return;
     }
-    const legal = dests.get(keyboardSource)?.includes(keyboardSquare) ?? false;
-    if (!legal && enablePremoves && onKeyboardPremove) {
+    const legal = boardAllows(keyboardSource, keyboardSquare);
+    if (!legal && premovesEnabled && onKeyboardPremove) {
       const queued = onKeyboardPremove(keyboardSource, keyboardSquare);
       setKeyboardAnnouncement(
         queued
@@ -595,12 +610,7 @@ function Board({
                   movable={{
                     free: editingMode,
                     color: movableColor,
-                    dests:
-                      editingMode || viewOnly
-                        ? undefined
-                        : disableVariations && currentNode.children.length > 0
-                          ? undefined
-                          : dests,
+                    dests: boardDests,
                     showDests,
                     events: {
                       after(orig, dest, metadata) {
@@ -654,7 +664,7 @@ function Board({
                   check={moveHighlight && pos?.isCheck()}
                   lastMove={moveHighlight && !editingMode ? lastMove : undefined}
                   premovable={{
-                    enabled: enablePremoves && !editingMode && !viewOnly,
+                    enabled: premovesEnabled,
                   }}
                   draggable={{
                     enabled: true,
@@ -692,7 +702,16 @@ function Board({
               </Text>
             )}
 
-            {moveInput && <MoveInput currentNode={currentNode} />}
+            {moveInput && (
+              <MoveInput
+                currentNode={currentNode}
+                onMove={(move) => {
+                  if (!boardAllows(makeSquare(move.from), makeSquare(move.to))) return false;
+                  void makeMove(move);
+                  return true;
+                }}
+              />
+            )}
 
             <ShowMaterial fen={currentNode.fen} color={orientation} mode={materialDisplay} />
             {hasClock && (

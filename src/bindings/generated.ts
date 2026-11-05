@@ -1184,9 +1184,9 @@ async getGameState(gameId: string, expectedSession: bigint) : Promise<Result<Gam
     else return { status: "error", error: e  as any };
 }
 },
-async makeGameMove(gameId: string, expectedSession: bigint, uci: string) : Promise<Result<GameState, ErrorPayload>> {
+async makeGameMove(gameId: string, expectedSession: bigint, uci: string, expectedPly: number) : Promise<Result<GameState, ErrorPayload>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("make_game_move", { gameId, expectedSession, uci }) };
+    return { status: "ok", data: await TAURI_INVOKE("make_game_move", { gameId, expectedSession, uci, expectedPly }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

@@ -340,6 +340,7 @@ beforeEach(() => {
   fixtures.setEngineLogs = [];
   const rootNode = () => ({ fen: INITIAL_FEN, children: [] as any[] });
   fixtures.tree = {
+    position: [] as number[],
     root: rootNode(),
     headers: {} as Record<string, unknown>,
     setFen: vi.fn((fen: string) => {
@@ -769,6 +770,39 @@ test("a deferred start keeps real loading and disabled semantics until admission
   await act(async () => reply.resolve(state({ gameId })));
   expect(store.get(pendingGameStartFamily("tab-a"))).toBeNull();
   expect(store.get(gameStateFamily("tab-a"))).toBe("playing");
+});
+
+test("human moves pass the displayed mainline ply to native at call time", async () => {
+  const moves = ["e2e4", "e7e5", "g1f3", "b8c6"].map((uci) => ({ uci, clock: null }));
+  fixtures.startGame.mockImplementationOnce(async (gameId) =>
+    state({ gameId, moves, ply: 4, revision: 4n }),
+  );
+  await render();
+  await start();
+  expect(mainlineUcis(fixtures.tree.root)).toEqual(moves.map(({ uci }) => uci));
+  fixtures.tree.position = [0, 0];
+  fixtures.makeGameMove.mockImplementationOnce(async (gameId, session) =>
+    state({ gameId, session, moves, ply: 4, revision: 4n }),
+  );
+
+  await act(async () => fixtures.onMove!("f1c4"));
+
+  expect(fixtures.makeGameMove).toHaveBeenCalledWith(
+    fixtures.startGame.mock.calls[0][0],
+    1n,
+    "f1c4",
+    2,
+  );
+});
+
+test("human moves from a variation do not call native", async () => {
+  await render();
+  await start();
+  fixtures.tree.position = [0, 1];
+
+  await act(async () => expect(fixtures.onMove!("f1c4")).resolves.toBe(false));
+
+  expect(fixtures.makeGameMove).not.toHaveBeenCalled();
 });
 
 test("auto-flip after a terminal human move preserves live result and headers", async () => {
