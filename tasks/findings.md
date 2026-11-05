@@ -20923,7 +20923,7 @@ Fixed by d1882467 (drain session a7d7a3cd): `rename_information_buffer` floors t
 
 ### Analysis board at 320px width squeezes the board and side-panel Mosaic tiles to slivers, so board, tabs and notation are unusable
 
-* **ID:** f-20261104-07 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261104-07 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** build · **Blocked:** none
 * **Filed from:** 580a15d2-6d2c-421b-9121-6ddea49c8c7c
 * **Impact class:** ux
 * **Where:** `src/components/tabs/BoardsPage.tsx` (the board-tab Mosaic, `resize={{ minimumPaneSizePercentage: 0 }}`), `src/state/layoutStorage.ts` (default row split left | (topRight / bottomRight)), `src/styles/react-mosaic.css` (`.mosaic` clips with `overflow: hidden`).
@@ -20933,6 +20933,9 @@ Fixed by d1882467 (drain session a7d7a3cd): `rename_information_buffer` floors t
 * **Spotted outside diff:** the f-20261101-32 build changes only the `#bottomRight` column's vertical floor and scrolling; it does not touch the Mosaic split or horizontal sizing.
 * **Proof:** `playwright.config.ts` project `notation-hierarchy-scaled` set to `viewport: { width: 320, height: 720 }`: `pnpm test:e2e:container --project=notation-hierarchy-scaled` fails `notation-hierarchy: overflow-only in both views` with `locator.click: Test timeout of 45000ms exceeded … element is outside of the viewport`. Related handled finding f-20260829-02 fixed 320px/200% clipping on other screens, not the board tab.
 * **Found by:** Claude Code build session 580a15d2-6d2c-421b-9121-6ddea49c8c7c (drain), 2026-11-04.
+
+Fixed in 3e2ea144..173b7574 range, pushed as 7171d6a8 (code commits: stack tiles, annotation gutter alignment, shared e2e puzzle setup). Below two 20rem pane floors plus the divider, measured against the root font, the board tab (analysis, play, puzzles) stacks board, side panel and notation vertically at full width with vertical scroll; the saved desktop mosaic split is untouched. Decisions d-20261105-09/10/11; product decision in docs/context/PRODUCT-DECISIONS.md. Proof: Vitest, tsgo, container e2e incl. 320x720/200% geometry tests, WebKit geometry probe, gates:push --frontend green on the pushed tree.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"6155755966d6280559a8384d0c81e0f476b0acb8bb69cd3403acc66494530a33","header_sha256":"6aa3bf63ed4be0c9b94591a988733247c8d1e4db6b83294c379f215d28b59286","header_status":"handled","input_sha256":"7b51e0d77b1f91d0e78e3775417237bc93aa20d4ecd528395f4d41fe3c22efd5","kind":"mutation-receipt","operation":"567e32474255065690aaf67799ee012f0ac5d75791b7a4955e160536015f72ab","options":{"section":null},"request_id_sha256":null,"results":["f-20261104-07"],"target":"f-20261104-07","v":1} -->
 
 ### Hosted macos-26-intel runner lost communication during Clippy on 7fcedd82, so remote CI is red
 
