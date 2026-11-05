@@ -1,48 +1,31 @@
-import { expect, test, playBoardMove } from "./fixtures";
+import {
+    expect,
+    test,
+    playBoardMove,
+    bestMovesPayload,
+    seedAnalysisEngines,
+    type AnalysisRequest,
+} from "./fixtures";
 import type { Page } from "@playwright/test";
-import type { BestMovesPayload } from "../src/bindings/generated";
-
-type Request = {
-    id: string;
-    tab: string;
-    generation: string;
-    options: { fen: string; moves: string[] };
-};
 
 async function setup(page: Page) {
-    await page.addInitScript(() => {
-        localStorage.setItem("erase-drawables-on-click", "false");
-        localStorage.setItem(
-            "engines",
-            JSON.stringify([
-                {
-                    type: "local",
-                    id: "hotkey-engine",
-                    name: "Hotkey Stockfish",
-                    version: "19",
-                    filename: "stockfish",
-                    handle: { id: { id: "hotkey-handle" }, kind: "engine" },
-                    loaded: true,
-                    settings: [],
-                    go: { t: "Infinite" },
-                },
-            ]),
-        );
-    });
+    await seedAnalysisEngines(page, [
+        { id: "hotkey-engine", name: "Hotkey Stockfish", handleId: "hotkey-handle" },
+    ]);
     await page.goto("/");
     await page.getByRole("button", { name: /^open$/i }).click();
     await page.getByRole("tab", { name: "Analysis", exact: true }).click();
     const panel = page.locator(".mantine-Accordion-item").filter({ hasText: "Hotkey Stockfish" });
     await panel.getByRole("button", { name: "Enable engine", exact: true }).click();
     const request = async (moves: string[]) => {
-        let latest: Request | undefined;
+        let latest: AnalysisRequest | undefined;
         await expect
             .poll(async () => {
                 latest = await page.evaluate((moves) => {
                     const calls = window.__E2E_TAURI__
                         .invocations()
                         .filter(({ command }) => command === "get_best_moves");
-                    const args = calls.at(-1)?.args as Request | undefined;
+                    const args = calls.at(-1)?.args as AnalysisRequest | undefined;
                     return JSON.stringify(args?.options.moves) === JSON.stringify(moves)
                         ? args
                         : undefined;
@@ -58,34 +41,6 @@ async function setup(page: Page) {
         request,
         grid: page.getByRole("grid"),
         current: page.locator('[data-notation-current="true"] button'),
-    };
-}
-
-function payload(request: Request, san: string, uci: string) {
-    // Native IPC sends bigint counters as JSON numbers.
-    return {
-        engine: request.id,
-        tab: request.tab,
-        generation: request.generation,
-        fen: request.options.fen,
-        moves: request.options.moves,
-        progress: 50,
-        bestLines: [
-            {
-                depth: 20,
-                multipv: 1,
-                nodes: 1234,
-                nps: 5678,
-                score: { value: { type: "cp", value: 34 }, wdl: null },
-                sanMoves: [san],
-                uciMoves: [uci],
-            },
-        ],
-    } satisfies Omit<BestMovesPayload, "bestLines"> & {
-        bestLines: (Omit<BestMovesPayload["bestLines"][number], "nodes" | "nps"> & {
-            nodes: number;
-            nps: number;
-        })[];
     };
 }
 
@@ -109,7 +64,7 @@ test("pointer move then Space plays the best move and keeps the engine enabled",
     await expect(current).toHaveText("e4");
     await emitTauriEvent({
         event: "best-moves-payload",
-        payload: payload(await request(["e2e4"]), "c5", "c7c5"),
+        payload: bestMovesPayload(await request(["e2e4"]), ["c5"], ["c7c5"], 34),
     });
     await expect(panel.getByRole("button", { name: "c5", exact: true })).toBeVisible();
     await page.keyboard.press("Space");
@@ -126,7 +81,7 @@ test("Tab-focused board keeps Space and Enter for keyboard move entry", async ({
     const { panel, request, current } = await setup(page);
     await emitTauriEvent({
         event: "best-moves-payload",
-        payload: payload(await request([]), "d4", "d2d4"),
+        payload: bestMovesPayload(await request([]), ["d4"], ["d2d4"], 34),
     });
     await expect(panel.getByRole("button", { name: "d4", exact: true })).toBeVisible();
     await tabToBoard(page);
@@ -149,7 +104,7 @@ test("Space on the engine button plays a current move and suppresses its native 
     const { panel, request, current } = await setup(page);
     await emitTauriEvent({
         event: "best-moves-payload",
-        payload: payload(await request([]), "e4", "e2e4"),
+        payload: bestMovesPayload(await request([]), ["e4"], ["e2e4"], 34),
     });
     await expect(panel.getByRole("button", { name: "e4", exact: true })).toBeVisible();
     const toggle = panel.getByRole("button", { name: "Disable engine", exact: true });

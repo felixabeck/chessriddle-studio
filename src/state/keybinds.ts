@@ -96,7 +96,13 @@ export function createKeybindStorage(
 
     return {
         getItem(key, initialValue) {
-            const storedValue = storage.getItem(key);
+            let storedValue: string | null;
+            try {
+                storedValue = storage.getItem(key);
+            } catch (error) {
+                notifyListenerError(error);
+                return initialValue;
+            }
             if (storedValue === null) {
                 return initialValue;
             }

@@ -270,7 +270,7 @@ function ComposedBoardHarness() {
   );
 }
 
-describe("BoardAnalysis add game durability", () => {
+describe("BoardAnalysis", () => {
   const tabId = "11111111-1111-4111-8111-111111111111";
   const fileHandle = { id: { id: "workspace-token" }, kind: "fileWorkspace" } as const;
   const tab: Tab = {
@@ -383,85 +383,151 @@ describe("BoardAnalysis add game durability", () => {
     vi.unstubAllGlobals();
   });
 
-  function engineLines(engine: Engine = displayEngine, uci = "e2e4", key?: string) {
-    const settingsAtom = tabEngineSettingsFamily({ tab: tabId, engineId: engine.id });
-    jotaiStore.set(settingsAtom, {
-      enabled: true,
-      settings: [],
-      go: { t: "Infinite" },
-      synced: false,
-    });
-    const context = engineLineContext(jotaiStore.get(settingsAtom), engine);
-    const memory = new AnalysisLineMemory();
-    memory.context = context;
-    const searchedKey = key ?? analysisSearch(treeStore.getState().root.fen, [], false).key!;
-    memory.set(searchedKey, [{ ...displayLines[0], uciMoves: [uci] }]);
-    jotaiStore.set(engineMovesFamily({ tab: tabId, engine: engine.id }), memory);
-    return { memory, settingsAtom, context, searchedKey };
-  }
-
-  async function engineKey(id: "PLAY_BEST_ENGINE_MOVE" | "TOGGLE_THREAT_MODE", prevented = false) {
-    const key = jotaiStore.get(keyMapAtom)[id].keys;
-    const binding = hotkeys.mock.calls
-      .flatMap(([bindings]) => bindings)
-      .findLast(([bound]) => bound === key)!;
-    expect(binding[2]?.preventDefault).toBe(false);
-    const event = new KeyboardEvent("keydown", { cancelable: true });
-    if (prevented) event.preventDefault();
-    await act(async () => binding[1](event));
-    return event;
-  }
-
-  test.each([false, true])(
-    "Space adds a variation or navigates an existing child, existing=%s",
-    async (existing) => {
-      await act(async () => {
-        treeStore.getState().makeMove({ payload: "d4" });
-        treeStore.getState().goToStart();
-        if (existing) {
-          treeStore.getState().makeMove({ payload: "e4" });
-          treeStore.getState().goToStart();
-        }
-        await jotaiStore.set(enginesAtom, [displayEngine]);
-        engineLines();
+  describe("engine hotkeys", () => {
+    function engineLines(engine: Engine = displayEngine, uci = "e2e4", key?: string) {
+      const settingsAtom = tabEngineSettingsFamily({ tab: tabId, engineId: engine.id });
+      jotaiStore.set(settingsAtom, {
+        enabled: true,
+        settings: [],
+        go: { t: "Infinite" },
+        synced: false,
       });
-      const event = await engineKey("PLAY_BEST_ENGINE_MOVE");
-      expect(event.defaultPrevented).toBe(true);
-      expect(treeStore.getState().root.children.map((child) => child.san)).toEqual(["d4", "e4"]);
-      expect(treeStore.getState().position).toEqual([1]);
-      await act(async () => treeStore.getState().goToStart());
-      await engineKey("PLAY_BEST_ENGINE_MOVE");
-      expect(treeStore.getState().root.children).toHaveLength(2);
-    },
-  );
+      const context = engineLineContext(jotaiStore.get(settingsAtom), engine);
+      const memory = new AnalysisLineMemory();
+      memory.context = context;
+      const searchedKey = key ?? analysisSearch(treeStore.getState().root.fen, [], false).key!;
+      memory.set(searchedKey, [{ ...displayLines[0], uciMoves: [uci] }]);
+      jotaiStore.set(engineMovesFamily({ tab: tabId, engine: engine.id }), memory);
+      return { memory, settingsAtom, context, searchedKey };
+    }
 
-  test.each([
-    "stale-key",
-    "context",
-    "failed",
-    "disabled",
-    "unloaded",
-    "threat",
-    "practice",
-    "editing",
-    "illegal",
-    "prevented",
-    "no-lines",
-    "no-context",
-  ] as const)("Space leaves the tree and native event alone for %s", async (reason) => {
-    await act(async () => {
-      await jotaiStore.set(enginesAtom, [{ ...displayEngine, loaded: reason !== "unloaded" }]);
-      const setup = engineLines(
-        displayEngine,
-        reason === "illegal" ? "e2e5" : "e2e4",
-        reason === "stale-key" ? "old-position" : undefined,
-      );
-      if (reason === "context") setup.memory.context = "old settings";
-      if (reason === "no-context") setup.memory.context = null;
-      if (reason === "no-lines") setup.memory.clear();
-      if (reason === "disabled")
-        jotaiStore.set(setup.settingsAtom, (s) => ({ ...s, enabled: false }));
-      if (reason === "failed")
+    async function engineKey(
+      id: "PLAY_BEST_ENGINE_MOVE" | "TOGGLE_THREAT_MODE",
+      prevented = false,
+    ) {
+      const key = jotaiStore.get(keyMapAtom)[id].keys;
+      const binding = hotkeys.mock.calls
+        .flatMap(([bindings]) => bindings)
+        .findLast(([bound]) => bound === key)!;
+      expect(binding[2]?.preventDefault).toBe(false);
+      const event = new KeyboardEvent("keydown", { cancelable: true });
+      if (prevented) event.preventDefault();
+      await act(async () => binding[1](event));
+      return event;
+    }
+
+    test.each([false, true])(
+      "Space adds a variation or navigates an existing child, existing=%s",
+      async (existing) => {
+        await act(async () => {
+          treeStore.getState().makeMove({ payload: "d4" });
+          treeStore.getState().goToStart();
+          if (existing) {
+            treeStore.getState().makeMove({ payload: "e4" });
+            treeStore.getState().goToStart();
+          }
+          await jotaiStore.set(enginesAtom, [displayEngine]);
+          engineLines();
+        });
+        const event = await engineKey("PLAY_BEST_ENGINE_MOVE");
+        expect(event.defaultPrevented).toBe(true);
+        expect(treeStore.getState().root.children.map((child) => child.san)).toEqual(["d4", "e4"]);
+        expect(treeStore.getState().position).toEqual([1]);
+        await act(async () => treeStore.getState().goToStart());
+        await engineKey("PLAY_BEST_ENGINE_MOVE");
+        expect(treeStore.getState().root.children).toHaveLength(2);
+      },
+    );
+
+    test.each([
+      "stale-key",
+      "context",
+      "failed",
+      "disabled",
+      "unloaded",
+      "threat",
+      "practice",
+      "editing",
+      "illegal",
+      "prevented",
+      "no-lines",
+      "no-context",
+    ] as const)("Space leaves the tree and native event alone for %s", async (reason) => {
+      await act(async () => {
+        await jotaiStore.set(enginesAtom, [{ ...displayEngine, loaded: reason !== "unloaded" }]);
+        const setup = engineLines(
+          displayEngine,
+          reason === "illegal" ? "e2e5" : "e2e4",
+          reason === "stale-key" ? "old-position" : undefined,
+        );
+        if (reason === "context") setup.memory.context = "old settings";
+        if (reason === "no-context") setup.memory.context = null;
+        if (reason === "no-lines") setup.memory.clear();
+        if (reason === "disabled")
+          jotaiStore.set(setup.settingsAtom, (s) => ({ ...s, enabled: false }));
+        if (reason === "failed")
+          jotaiStore.set(engineTerminalFamily({ tab: tabId, engine: displayEngine.id }), {
+            type: "failed",
+            context: setup.context,
+            searchedKey: setup.searchedKey,
+            retry: 0,
+            fingerprint: "attempt",
+            generation: "generation",
+            engineIdentity: engineIdentity(displayEngine),
+          });
+        if (reason === "threat") jotaiStore.set(threatFamily(tabId), true);
+        if (reason === "practice") {
+          jotaiStore.set(tabFamily(tabId), "practice");
+          jotaiStore.set(practiceTabFamily(tabId), "train");
+        }
+        if (reason === "editing") {
+          mocks.editingMode = true;
+          root.render(
+            <JotaiProvider store={jotaiStore}>
+              <TreeStateContext.Provider value={treeStore}>
+                <RetainedBoardHarness />
+              </TreeStateContext.Provider>
+            </JotaiProvider>,
+          );
+        }
+      });
+      const before = treeStore.getState();
+      const event = await engineKey("PLAY_BEST_ENGINE_MOVE", reason === "prevented");
+      expect(treeStore.getState()).toBe(before);
+      expect(event.defaultPrevented).toBe(reason === "prevented");
+    });
+
+    test.each([false, true])(
+      "Space chooses the first eligible engine in tab order with duplicate names and paths, first disabled=%s",
+      async (disabled) => {
+        const other = { ...displayEngine, id: "second-engine" };
+        await act(async () => {
+          await jotaiStore.set(enginesAtom, [displayEngine, other]);
+          const first = engineLines();
+          engineLines(other, "d2d4");
+          if (disabled) jotaiStore.set(first.settingsAtom, (s) => ({ ...s, enabled: false }));
+        });
+        await engineKey("PLAY_BEST_ENGINE_MOVE");
+        expect(treeStore.getState().currentNode().san).toBe(disabled ? "d4" : "e4");
+      },
+    );
+
+    test("Space leaves the tree and native event alone when the only current line is PV2", async () => {
+      await act(async () => {
+        await jotaiStore.set(enginesAtom, [displayEngine]);
+        const { memory, searchedKey } = engineLines();
+        memory.set(searchedKey, [{ ...displayLines[0], multipv: 2, uciMoves: ["e2e4"] }]);
+      });
+      const before = treeStore.getState();
+      const event = await engineKey("PLAY_BEST_ENGINE_MOVE");
+      expect(treeStore.getState()).toBe(before);
+      expect(event.defaultPrevented).toBe(false);
+    });
+
+    test("a failed terminal only blocks its matching retry and search key", async () => {
+      await act(async () => {
+        await jotaiStore.set(enginesAtom, [displayEngine]);
+        const setup = engineLines();
         jotaiStore.set(engineTerminalFamily({ tab: tabId, engine: displayEngine.id }), {
           type: "failed",
           context: setup.context,
@@ -471,79 +537,36 @@ describe("BoardAnalysis add game durability", () => {
           generation: "generation",
           engineIdentity: engineIdentity(displayEngine),
         });
-      if (reason === "threat") jotaiStore.set(threatFamily(tabId), true);
-      if (reason === "practice") {
-        jotaiStore.set(tabFamily(tabId), "practice");
-        jotaiStore.set(practiceTabFamily(tabId), "train");
-      }
-      if (reason === "editing") {
-        mocks.editingMode = true;
-        root.render(
-          <JotaiProvider store={jotaiStore}>
-            <TreeStateContext.Provider value={treeStore}>
-              <RetainedBoardHarness />
-            </TreeStateContext.Provider>
-          </JotaiProvider>,
-        );
-      }
-    });
-    const before = treeStore.getState();
-    const event = await engineKey("PLAY_BEST_ENGINE_MOVE", reason === "prevented");
-    expect(treeStore.getState()).toBe(before);
-    expect(event.defaultPrevented).toBe(reason === "prevented");
-  });
-
-  test("Space chooses the first eligible engine in tab order even with duplicate names and paths", async () => {
-    const other = { ...displayEngine, id: "second-engine" };
-    await act(async () => {
-      await jotaiStore.set(enginesAtom, [displayEngine, other]);
-      const first = engineLines();
-      engineLines(other, "d2d4");
-      jotaiStore.set(first.settingsAtom, (s) => ({ ...s, enabled: false }));
-    });
-    await engineKey("PLAY_BEST_ENGINE_MOVE");
-    expect(treeStore.getState().currentNode().san).toBe("d4");
-  });
-
-  test("a failed terminal only blocks its matching retry and search key", async () => {
-    await act(async () => {
-      await jotaiStore.set(enginesAtom, [displayEngine]);
-      const setup = engineLines();
-      jotaiStore.set(engineTerminalFamily({ tab: tabId, engine: displayEngine.id }), {
-        type: "failed",
-        context: setup.context,
-        searchedKey: setup.searchedKey,
-        retry: 0,
-        fingerprint: "attempt",
-        generation: "generation",
-        engineIdentity: engineIdentity(displayEngine),
+        jotaiStore.set(engineRetryFamily({ tab: tabId, engine: displayEngine.id }), 1);
       });
-      jotaiStore.set(engineRetryFamily({ tab: tabId, engine: displayEngine.id }), 1);
+      await engineKey("PLAY_BEST_ENGINE_MOVE");
+      expect(treeStore.getState().currentNode().san).toBe("e4");
     });
-    await engineKey("PLAY_BEST_ENGINE_MOVE");
-    expect(treeStore.getState().currentNode().san).toBe("e4");
-  });
 
-  test("X requires a loaded enabled engine to turn on and always permits turning off", async () => {
-    expect((await engineKey("TOGGLE_THREAT_MODE")).defaultPrevented).toBe(false);
-    await act(async () => {
-      await jotaiStore.set(enginesAtom, [displayEngine]);
-      engineLines();
+    test("X requires a loaded enabled engine to turn on and always permits turning off", async () => {
+      expect((await engineKey("TOGGLE_THREAT_MODE")).defaultPrevented).toBe(false);
+      await act(async () => {
+        await jotaiStore.set(enginesAtom, [displayEngine]);
+        engineLines();
+      });
+      expect((await engineKey("TOGGLE_THREAT_MODE")).defaultPrevented).toBe(true);
+      expect(jotaiStore.get(threatFamily(tabId))).toBe(true);
+      await act(async () => jotaiStore.set(enginesAtom, []));
+      await engineKey("TOGGLE_THREAT_MODE");
+      expect(jotaiStore.get(threatFamily(tabId))).toBe(false);
+      await act(async () => {
+        await jotaiStore.set(enginesAtom, [displayEngine]);
+        jotaiStore.set(
+          tabEngineSettingsFamily({ tab: tabId, engineId: displayEngine.id }),
+          (s) => ({
+            ...s,
+            enabled: false,
+          }),
+        );
+      });
+      await engineKey("TOGGLE_THREAT_MODE");
+      expect(jotaiStore.get(threatFamily(tabId))).toBe(false);
     });
-    expect((await engineKey("TOGGLE_THREAT_MODE")).defaultPrevented).toBe(true);
-    expect(jotaiStore.get(threatFamily(tabId))).toBe(true);
-    await act(async () => jotaiStore.set(enginesAtom, []));
-    await engineKey("TOGGLE_THREAT_MODE");
-    expect(jotaiStore.get(threatFamily(tabId))).toBe(false);
-    await act(async () => {
-      await jotaiStore.set(enginesAtom, [displayEngine]);
-      jotaiStore.set(tabEngineSettingsFamily({ tab: tabId, engineId: displayEngine.id }), (s) => ({
-        ...s,
-        enabled: false,
-      }));
-    });
-    await engineKey("TOGGLE_THREAT_MODE");
-    expect(jotaiStore.get(threatFamily(tabId))).toBe(false);
   });
 
   test("annotation shortcuts preserve all six glyphs and the practice rating boundary", async () => {

@@ -2,6 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import type { KeyedNode } from "@lichess-org/chessground/types";
 import { expect, test as base, type Locator, type Page, type Request } from "@playwright/test";
 import type {
+    BestMovesPayload,
     DatabaseInfo,
     ErrorPayload,
     NormalizedGame,
@@ -39,6 +40,78 @@ type MockEngineSearchState = {
     settled: { generation: unknown; outcome: "cancelled" | "failed"; error: ErrorPayload }[];
     stops: { engine: unknown; tab: unknown; expectedGeneration: unknown; result: unknown }[];
 };
+
+export type AnalysisRequest = {
+    id: string;
+    tab: string;
+    generation: string;
+    options: { fen: string; moves: string[] };
+};
+
+// Native IPC serializes these bigint counters as JSON numbers.
+export type BestMovesFixturePayload = Omit<BestMovesPayload, "bestLines"> & {
+    bestLines: (Omit<BestMovesPayload["bestLines"][number], "nodes" | "nps"> & {
+        nodes: number;
+        nps: number;
+    })[];
+};
+
+export function bestMovesPayload(
+    request: AnalysisRequest,
+    sanMoves: string[],
+    uciMoves: string[],
+    score: number,
+): BestMovesFixturePayload {
+    return {
+        engine: request.id,
+        tab: request.tab,
+        generation: request.generation,
+        fen: request.options.fen,
+        moves: request.options.moves,
+        progress: 50,
+        bestLines: [
+            {
+                depth: 20,
+                multipv: 1,
+                nodes: 1234,
+                nps: 5678,
+                score: { value: { type: "cp", value: score }, wdl: null },
+                sanMoves,
+                uciMoves,
+            },
+        ],
+    };
+}
+
+export async function seedAnalysisEngines(
+    page: Page,
+    engines: {
+        id: string;
+        name: string;
+        handleId: string;
+        settings?: { type: "string"; name: string; value: string }[];
+    }[],
+) {
+    await page.addInitScript((engines) => {
+        localStorage.setItem("erase-drawables-on-click", "false");
+        localStorage.setItem(
+            "engines",
+            JSON.stringify(
+                engines.map(({ id, name, handleId, settings }) => ({
+                    type: "local",
+                    id,
+                    name,
+                    version: "19",
+                    filename: "stockfish",
+                    handle: { id: { id: handleId }, kind: "engine" },
+                    loaded: true,
+                    settings: settings ?? [],
+                    go: { t: "Infinite" },
+                })),
+            ),
+        );
+    }, engines);
+}
 
 export const filesWorkspaceFixture = {
     workspace: { id: { id: "files-workspace" }, kind: "fileWorkspace" },

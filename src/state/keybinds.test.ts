@@ -11,6 +11,24 @@ const defaults = {
     CLOSE: { name: "Close", keys: "ctrl+w" },
 };
 
+test("refused storage read reports the error and returns defaults without writing", () => {
+    const refused = new DOMException("Storage unavailable", "SecurityError");
+    const backing = {
+        getItem: vi.fn(() => {
+            throw refused;
+        }),
+        setItem: vi.fn(),
+        removeItem: vi.fn(),
+    };
+    const storage = createKeybindStorage(defaults, backing);
+
+    expect(storage.getItem("keybinds", defaults)).toBe(defaults);
+    expect(backing.getItem).toHaveBeenCalledWith("keybinds");
+    expect(backing.setItem).not.toHaveBeenCalled();
+    expect(backing.removeItem).not.toHaveBeenCalled();
+    expect(notifyListenerError).toHaveBeenCalledWith(refused);
+});
+
 test("keybind storage repairs malformed and stale records without throwing", () => {
     sessionStorage.clear();
     const storage = createKeybindStorage(defaults, sessionStorage);

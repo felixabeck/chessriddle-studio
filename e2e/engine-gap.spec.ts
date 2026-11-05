@@ -7,10 +7,13 @@ import {
     selectFilesTreeRow,
     whitePawnSquares,
     playBoardMove,
+    bestMovesPayload,
+    seedAnalysisEngines,
+    type AnalysisRequest,
     type MockScenario,
 } from "./fixtures";
 import type { Page } from "@playwright/test";
-import type { BestMovesPayload, ErrorPayload } from "../src/bindings/generated";
+import type { ErrorPayload } from "../src/bindings/generated";
 
 async function setupNotationMenu(
     page: Page,
@@ -294,69 +297,16 @@ test("engine-gap: warm actor contract preserves ownership and isolates searches"
     });
 });
 
-type AnalysisRequest = {
-    id: string;
-    tab: string;
-    generation: string;
-    options: { fen: string; moves: string[] };
-};
-
-// Native IPC serializes these bigint counters as JSON numbers.
-type BestMovesFixturePayload = Omit<BestMovesPayload, "bestLines"> & {
-    bestLines: (Omit<BestMovesPayload["bestLines"][number], "nodes" | "nps"> & {
-        nodes: number;
-        nps: number;
-    })[];
-};
-
-function bestMovesPayload(
-    request: AnalysisRequest,
-    sanMoves: string[],
-    uciMoves: string[],
-    score: number,
-): BestMovesFixturePayload {
-    return {
-        engine: request.id,
-        tab: request.tab,
-        generation: request.generation,
-        fen: request.options.fen,
-        moves: request.options.moves,
-        progress: 50,
-        bestLines: [
-            {
-                depth: 20,
-                multipv: 1,
-                nodes: 1234,
-                nps: 5678,
-                score: { value: { type: "cp", value: score }, wdl: null },
-                sanMoves,
-                uciMoves,
-            },
-        ],
-    };
-}
-
 async function setupAnalysisEngine(page: Page, engineCount = 1) {
-    await page.addInitScript((engineCount) => {
-        localStorage.setItem("erase-drawables-on-click", "false");
-        localStorage.setItem(
-            "engines",
-            JSON.stringify(
-                Array.from({ length: engineCount }, (_, index) => ({
-                    type: "local",
-                    id: index === 0 ? "e2e-engine" : "e2e-engine-2",
-                    name: index === 0 ? "E2E Stockfish" : "E2E ChessDB",
-                    version: "19",
-                    filename: "stockfish",
-                    handle: { id: { id: "e2e-engine-handle" }, kind: "engine" },
-                    loaded: true,
-                    settings:
-                        engineCount === 1 ? [] : [{ type: "string", name: "MultiPV", value: "3" }],
-                    go: { t: "Infinite" },
-                })),
-            ),
-        );
-    }, engineCount);
+    await seedAnalysisEngines(
+        page,
+        Array.from({ length: engineCount }, (_, index) => ({
+            id: index === 0 ? "e2e-engine" : "e2e-engine-2",
+            name: index === 0 ? "E2E Stockfish" : "E2E ChessDB",
+            handleId: "e2e-engine-handle",
+            settings: engineCount === 1 ? [] : [{ type: "string", name: "MultiPV", value: "3" }],
+        })),
+    );
     await page.goto("/");
     await page.getByRole("button", { name: /^open$/i }).click();
     await page.getByRole("tab", { name: "Analysis", exact: true }).click();
