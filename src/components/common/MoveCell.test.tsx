@@ -17,6 +17,7 @@ vi.mock("@mantine/core", () => ({
 }));
 
 import MoveCell from "./MoveCell";
+import classes from "./MoveCell.module.css";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -72,4 +73,26 @@ test("keyboard activation navigates and keeps focus on the move", async () => {
   });
   expect(onClick).toHaveBeenCalledTimes(1);
   expect(document.activeElement).toBe(button);
+});
+
+test("an unmocked MoveCell exposes the analysis styling hook and preserves navigation", async () => {
+  await act(async () =>
+    root.render(
+      <MoveCell
+        annotations={[]}
+        isStart={false}
+        isCurrentVariation={false}
+        move="c6"
+        analysis
+        onClick={onClick}
+        onContextMenu={() => {}}
+      />,
+    ),
+  );
+  expect(cell().getAttribute("data-notation-analysis")).toBe("true");
+  expect(cell().classList.contains(classes.cell)).toBe(true);
+  expect(cell().style.getPropertyValue("--light-color")).toContain("--notation-analysis-color");
+  expect(cell().style.getPropertyValue("--dark-color")).toContain("--notation-analysis-color");
+  await act(async () => cell().click());
+  expect(onClick).toHaveBeenCalledOnce();
 });

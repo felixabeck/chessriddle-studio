@@ -40,6 +40,125 @@ function moveNames(rows: NotationRow[]) {
 }
 
 describe("buildNotationRows", () => {
+    test.each([false, true])(
+        "places the end after its move, comment and alternatives before analysis (tableView: %s)",
+        (tableView) => {
+            const tree = variedTree();
+            tree.e5.gameEnd = { termination: "Abandoned" };
+            tree.e5.comment = "Last played move";
+            const laterAlternative = fixtureNode("Nc3", { halfMoves: 3 });
+            const nestedAlternative = fixtureNode("d3", { halfMoves: 3 });
+            tree.e5.children.push(laterAlternative);
+            tree.c5.children = [fixtureNode("c3", { halfMoves: 3 }), nestedAlternative];
+            const model = buildNotationRows(tree.root, {
+                tableView,
+                showComments: true,
+                showVariations: true,
+            });
+            const boundary = model.rows.findIndex((row) => row.type === "gameEnd");
+            expect(model.rows.filter((row) => row.type === "gameEnd")).toEqual([
+                { type: "gameEnd", hasAnalysis: true },
+            ]);
+            expect(model.rowForNode.get(tree.e5)).toBeLessThan(boundary);
+            expect(model.rowForNode.get(tree.c5)).toBeLessThan(boundary);
+            expect(model.rowForNode.get(nestedAlternative)).toBeLessThan(boundary);
+            expect(model.rowForNode.get(tree.nf3)).toBeGreaterThan(boundary);
+            const expectedComments = tableView
+                ? [{ type: "comment", depth: 0, comment: "Last played move" }]
+                : [];
+            expect(model.rows.slice(0, boundary).filter((row) => row.type === "comment")).toEqual(
+                expectedComments,
+            );
+            for (const row of model.rows) {
+                const moves =
+                    row.type === "moves"
+                        ? row.moves
+                        : row.type === "table"
+                          ? [row.white, row.black].filter((move) => move !== null)
+                          : [];
+                for (const move of moves) {
+                    expect(move.analysis).toBe(
+                        [tree.nf3, tree.nc6, tree.bb5, tree.a6, laterAlternative].includes(
+                            move.node,
+                        ),
+                    );
+                }
+            }
+        },
+    );
+
+    test.each([false, true])(
+        "splits a white end before the black reply even without comments or variations (tableView: %s)",
+        (tableView) => {
+            const tree = variedTree();
+            tree.e4.gameEnd = {};
+            const model = buildNotationRows(tree.root, {
+                tableView,
+                showComments: false,
+                showVariations: false,
+            });
+            expect(model.rows[1]).toEqual({ type: "gameEnd", hasAnalysis: true });
+            expect(model.rowForNode.get(tree.e4)).toBe(0);
+            expect(model.rowForNode.get(tree.e5)).toBe(2);
+            const expectedFirstRow = tableView
+                ? {
+                      type: "table",
+                      white: { node: tree.e4, analysis: false },
+                      black: null,
+                      splitRow: true,
+                  }
+                : { type: "moves", moves: [{ node: tree.e4, analysis: false }] };
+            expect(model.rows[0]).toMatchObject(expectedFirstRow);
+        },
+    );
+
+    test.each([false, true])(
+        "keeps a leaf end and collapsed alternatives before its boundary (tableView: %s)",
+        (tableView) => {
+            const tree = variedTree();
+            tree.e5.gameEnd = {};
+            tree.e5.children = [];
+            const model = buildNotationRows(tree.root, {
+                tableView,
+                showComments: true,
+                showVariations: true,
+                collapsedVariations: new Set([tree.e4]),
+            });
+            expect(model.rows.at(-1)).toEqual({ type: "gameEnd", hasAnalysis: false });
+            expect(model.rows.at(-2)).toMatchObject({
+                type: "variation",
+                parent: tree.e4,
+                collapsed: true,
+            });
+        },
+    );
+
+    test.each([false, true])(
+        "ignores root and variation flags without an effective end (tableView: %s)",
+        (tableView) => {
+            const tree = variedTree();
+            tree.root.gameEnd = {};
+            tree.c5.gameEnd = {};
+            const model = buildNotationRows(tree.root, {
+                tableView,
+                showComments: true,
+                showVariations: true,
+            });
+            expect(model.rows.some((row) => row.type === "gameEnd")).toBe(false);
+            expect(
+                model.rows
+                    .flatMap((row) =>
+                        row.type === "moves"
+                            ? row.moves
+                            : row.type === "table"
+                              ? [row.white, row.black].filter((move) => move !== null)
+                              : [],
+                    )
+                    .some((move) => move.analysis),
+            ).toBe(false);
+        },
+    );
+
     test("renders mainline and nested variations in order", () => {
         const tree = variedTree();
         const result = buildNotationRows(tree.root, {

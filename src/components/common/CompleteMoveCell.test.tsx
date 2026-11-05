@@ -41,8 +41,14 @@ vi.mock("@/components/common/IconAction", () => ({
 }));
 vi.mock("./MoveCell", async (importOriginal) => ({
   releasePointerFocus: (await importOriginal<typeof import("./MoveCell")>()).releasePointerFocus,
-  default: ({ move, onClick, onContextMenu }: any) => (
-    <button type="button" data-move={move} onClick={onClick} onContextMenu={onContextMenu}>
+  default: ({ move, onClick, onContextMenu, analysis }: any) => (
+    <button
+      type="button"
+      data-move={move}
+      data-analysis={analysis ? "true" : undefined}
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+    >
       {move}
     </button>
   ),
@@ -213,7 +219,7 @@ test.each([
     });
     expect(host.querySelectorAll('[data-menu="true"]').length).toBe(1);
     expect(host.querySelectorAll('[data-menu-item="true"]').length).toBe(
-      scope === "workspace" ? 5 : 4,
+      scope === "workspace" ? 6 : 4,
     );
 
     const expectedPath = [0];
@@ -411,3 +417,72 @@ test("updates transposition actions when another branch is added", async () => {
 
   expect(host.querySelector('[aria-label="Notation.Transposition"]')).not.toBeNull();
 });
+
+test.each([
+  ["workspace", false, false],
+  ["workspace", true, false],
+  ["workspace", false, true],
+  ["preview", false, false],
+  ["preview", true, false],
+] as const)(
+  "game-end menu visibility and calls for %s, marked %s, variation %s",
+  async (scope, marked, variation) => {
+    const tree = defaultTree();
+    const node = createNode({
+      fen: "end b - - 0 1",
+      move: parseUci("e2e4")!,
+      san: "e4",
+      halfMoves: 1,
+    });
+    tree.root.children = variation
+      ? [
+          createNode({ fen: "main b - - 0 1", move: parseUci("d2d4")!, san: "d4", halfMoves: 1 }),
+          node,
+        ]
+      : [node];
+    if (marked) node.gameEnd = {};
+    const store = createTreeStore();
+    const setGameEnd = vi.fn();
+    const clearGameEnd = vi.fn();
+    store.setState({ root: tree.root, setGameEnd, clearGameEnd });
+    const Scope = scope === "workspace" ? WorkspaceTabScope : EphemeralTabScope;
+    await act(async () =>
+      root.render(
+        <TreeStateContext.Provider value={store}>
+          <Scope tabId="tab">
+            <CompleteMoveCell
+              node={node}
+              nodeIndex={createNotationNodeIndex(tree.root)}
+              root={tree.root}
+              halfMoves={1}
+              move="e4"
+              fen={node.fen}
+              comment=""
+              annotations={[]}
+              showComments={false}
+              analysis
+            />
+          </Scope>
+        </TreeStateContext.Provider>,
+      ),
+    );
+    await act(async () =>
+      host
+        .querySelector("button")!
+        .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
+    );
+    const items = [...host.querySelectorAll<HTMLButtonElement>("[data-menu-item]")];
+    const mark = items.find((item) => item.textContent === "Notation.MarkGameEndHere");
+    const clear = items.find((item) => item.textContent === "Notation.ClearGameEnd");
+    const editable = scope === "workspace" && !variation;
+    expect(!!mark).toBe(editable && !marked);
+    expect(!!clear).toBe(editable && marked);
+    expect(host.querySelector("[data-move]")?.getAttribute("data-analysis")).toBe("true");
+    const expectedMarkCalls = editable && !marked ? [[[0]]] : [];
+    const expectedClearCalls = editable && marked ? [[]] : [];
+    if (mark) await act(async () => mark.click());
+    if (clear) await act(async () => clear.click());
+    expect(setGameEnd.mock.calls).toEqual(expectedMarkCalls);
+    expect(clearGameEnd.mock.calls).toEqual(expectedClearCalls);
+  },
+);

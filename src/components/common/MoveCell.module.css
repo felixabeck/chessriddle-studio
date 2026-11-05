@@ -23,6 +23,10 @@
   outline-offset: 2px;
 }
 
+.cell[data-notation-analysis="true"] {
+  --notation-analysis-color: var(--cf-muted-foreground);
+}
+
 [data-mantine-color-scheme="light"] .cell {
   color: var(--light-color);
   background-color: var(--light-bg);

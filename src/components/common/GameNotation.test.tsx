@@ -1,5 +1,6 @@
 import { WorkspaceTabScope } from "@/state/tabScope";
 import { parseUci } from "chessops";
+import { createInstance } from "i18next";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -23,6 +24,7 @@ const atoms = vi.hoisted(() => ({
 const virtualizerMock = vi.hoisted(() => ({
   current: null as null | { count: number; scrollToFn?: unknown },
   scrollCalls: [] as { index: number; options: unknown }[],
+  measured: [] as Element[],
 }));
 const notationSettings = vi.hoisted(() => ({ showComments: false, tableView: false }));
 
@@ -87,6 +89,7 @@ vi.mock("./CompleteMoveCell", () => ({
         data-node={props.node.san}
         data-current={props.isCurrentVariation ? "true" : "false"}
         data-starting-comment={props.startingComment}
+        data-analysis={props.analysis ? "true" : "false"}
         onClick={() => store.getState().goToMove(path)}
       >
         {props.move}
@@ -125,7 +128,9 @@ vi.mock("@tanstack/react-virtual", async (importOriginal) => ({
           size: 30,
           start: index * 30,
         })),
-      measureElement: () => undefined,
+      measureElement: (element: Element | null) => {
+        if (element) virtualizerMock.measured.push(element);
+      },
       scrollToIndex: (index: number, options: unknown) => {
         virtualizerMock.scrollCalls.push({ index, options });
       },
@@ -155,14 +160,138 @@ beforeEach(() => {
   store = createTreeStore();
   virtualizerMock.current = null;
   virtualizerMock.scrollCalls.length = 0;
+  virtualizerMock.measured.length = 0;
   notationSettings.showComments = false;
   notationSettings.tableView = false;
+});
+
+test.each([false, true])(
+  "renders and measures the inline end, forwards analysis, and removes the bottom result (tableView: %s)",
+  async (tableView) => {
+    notationSettings.tableView = tableView;
+    const state = defaultTree();
+    state.headers.result = "0-1";
+    const end = createNode({
+      fen: "end b - - 0 1",
+      move: parseUci("e2e4")!,
+      san: "e4",
+      halfMoves: 1,
+    });
+    const analysis = createNode({
+      fen: "analysis w - - 0 2",
+      move: parseUci("e7e5")!,
+      san: "e5",
+      halfMoves: 2,
+    });
+    end.gameEnd = { termination: "Abandoned" };
+    end.children = [analysis];
+    state.root.children = [end];
+    store.getState().setState(state);
+    await act(async () =>
+      root.render(
+        <TreeStateContext.Provider value={store}>
+          <WorkspaceTabScope tabId="notation-test">
+            <GameNotation />
+          </WorkspaceTabScope>
+        </TreeStateContext.Provider>,
+      ),
+    );
+    const boundary = host.querySelector("[data-notation-game-end]")!;
+    expect(boundary.textContent).toBe(
+      "0-1 · Board.Analysis.Tablebase.BlackWins · AbandonedNotation.AnalysisAfterGame",
+    );
+    expect(virtualizerMock.measured).toContain(boundary.closest("[data-index]"));
+    expect(host.textContent?.match(/Board.Analysis.Tablebase.BlackWins/g)).toHaveLength(1);
+    expect(host.querySelector('[data-node="e4"]')?.getAttribute("data-analysis")).toBe("false");
+    expect(host.querySelector('[data-node="e5"]')?.getAttribute("data-analysis")).toBe("true");
+  },
+);
+
+test.each([
+  ["Normal", "1-0", "Board.Analysis.Tablebase.WhiteWins"],
+  ["Unterminated", "1/2-1/2", "Board.Analysis.Tablebase.Draw"],
+  [undefined, "*", undefined],
+] as const)(
+  "a leaf end hides the analysis label and suppresses termination %s",
+  async (termination, result, resultText) => {
+    const state = defaultTree();
+    state.headers.result = result;
+    const end = createNode({
+      fen: "end b - - 0 1",
+      move: parseUci("e2e4")!,
+      san: "e4",
+      halfMoves: 1,
+    });
+    end.gameEnd = { termination };
+    state.root.children = [end];
+    store.getState().setState(state);
+    await act(async () =>
+      root.render(
+        <TreeStateContext.Provider value={store}>
+          <WorkspaceTabScope tabId="notation-test">
+            <GameNotation />
+          </WorkspaceTabScope>
+        </TreeStateContext.Provider>,
+      ),
+    );
+    const boundary = host.querySelector("[data-notation-game-end]")!;
+    expect(boundary.textContent).toBe(resultText ? `${result} · ${resultText}` : result);
+    expect(host.textContent).not.toContain("Notation.AnalysisAfterGame");
+  },
+);
+
+test("without an end it retains the bottom result and emits no gameEnd row", async () => {
+  const state = defaultTree();
+  state.headers.result = "1-0";
+  state.root.children = [
+    createNode({ fen: "end b - - 0 1", move: parseUci("e2e4")!, san: "e4", halfMoves: 1 }),
+  ];
+  store.getState().setState(state);
+  await act(async () =>
+    root.render(
+      <TreeStateContext.Provider value={store}>
+        <WorkspaceTabScope tabId="notation-test">
+          <GameNotation />
+        </WorkspaceTabScope>
+      </TreeStateContext.Provider>,
+    ),
+  );
+  expect(host.querySelector("[data-notation-game-end]")).toBeNull();
+  expect(host.textContent).toContain("1-0Board.Analysis.Tablebase.WhiteWins");
 });
 
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
 });
+
+const catalogues = import.meta.glob<{ translation: Record<string, string> }>(
+  "../../translation/*.json",
+  { eager: true, import: "default" },
+);
+test.each(Object.entries(catalogues))(
+  "ships game-end copy in %s with fallback disabled",
+  async (path, catalogue) => {
+    const locale = path.split("/").at(-1)!.replace(".json", "");
+    const i18n = createInstance();
+    await i18n.init({
+      lng: locale,
+      fallbackLng: false,
+      keySeparator: false,
+      resources: { [locale]: catalogue },
+    });
+    for (const key of [
+      "Notation.AnalysisAfterGame",
+      "Notation.MarkGameEndHere",
+      "Notation.ClearGameEnd",
+      "GameInfo.Termination",
+    ]) {
+      expect(catalogue.translation[key]?.trim()).toBeTruthy();
+      expect(i18n.t(key)).toBe(catalogue.translation[key]);
+      expect(i18n.t(key)).not.toBe(key);
+    }
+  },
+);
 
 test.each([false, true])(
   "cancels the real virtualizer's index verification (retry already queued: %s)",

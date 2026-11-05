@@ -32,6 +32,7 @@ interface MoveCellProps {
   onContextMenu: (e: React.MouseEvent) => void;
   fullWidth?: boolean;
   rightAccessory?: ReactNode;
+  analysis?: boolean;
   ref?: RefObject<HTMLButtonElement>;
 }
 
@@ -74,12 +75,17 @@ function MoveCell(props: MoveCellProps) {
       ref={props.ref}
       component="button"
       className={`${classes.cell} ${props.fullWidth ? classes.cellFullWidth : ""}`}
+      data-notation-analysis={props.analysis ? "true" : undefined}
       style={{
         "--light-color":
-          color === "gray" ? `var(--notation-unannotated-move-color, ${baseLight})` : baseLight,
+          color === "gray"
+            ? `var(--notation-analysis-color, var(--notation-unannotated-move-color, ${baseLight}))`
+            : baseLight,
         "--light-hover-color": hoverLight,
         "--dark-color":
-          color === "gray" ? `var(--notation-unannotated-move-color, ${baseDark})` : baseDark,
+          color === "gray"
+            ? `var(--notation-analysis-color, var(--notation-unannotated-move-color, ${baseDark}))`
+            : baseDark,
         "--dark-hover-color": hoverDark,
         "--dark-bg": darkBg,
         "--light-bg": lightBg,

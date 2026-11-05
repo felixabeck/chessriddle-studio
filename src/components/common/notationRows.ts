@@ -1,5 +1,5 @@
 import { splitPgnComment } from "@/utils/pgnComment";
-import type { TreeNode } from "@/utils/treeReducer";
+import { getEffectiveGameEnd, type TreeNode } from "@/utils/treeReducer";
 
 /** The largest run mounted as one notation row. */
 export const NOTATION_ROW_MAX_MOVES = 32;
@@ -8,6 +8,7 @@ export type NotationMove = {
     node: TreeNode;
     first: boolean;
     startingComment?: string;
+    analysis?: boolean;
 };
 
 export type InlineNotationRow = {
@@ -42,7 +43,13 @@ export type NotationRow =
     | InlineNotationRow
     | TableNotationRow
     | CommentNotationRow
-    | VariationNotationRow;
+    | VariationNotationRow
+    | GameEndNotationRow;
+
+export type GameEndNotationRow = {
+    type: "gameEnd";
+    hasAnalysis: boolean;
+};
 
 export type NodeLink = {
     parent: TreeNode | null;
@@ -78,6 +85,13 @@ type InlineTask = {
     first: boolean;
     variationParent?: TreeNode;
 };
+
+type RowBuildOptions = NotationRowOptions & {
+    gameEnd?: TreeNode;
+    analysisNodes: WeakSet<TreeNode>;
+};
+
+type RowTask = InlineTask | GameEndNotationRow;
 
 export function createNotationNodeIndex(root: TreeNode): NotationNodeIndex {
     const links = new WeakMap<TreeNode, NodeLink>();
@@ -154,9 +168,9 @@ function addInlineVariationRows(
     rowForNode: Map<TreeNode, number>,
     parent: TreeNode,
     depth: number,
-    options: NotationRowOptions,
+    options: RowBuildOptions,
 ): void {
-    const stack: InlineTask[] = [];
+    const stack: RowTask[] = [];
     queueVariationTasks(rows, rowForNode, parent, depth, options, stack);
     appendInlineTasks(rows, rowForNode, stack, options);
 }
@@ -166,9 +180,8 @@ function queueVariationTasks(
     rowForNode: Map<TreeNode, number>,
     parent: TreeNode,
     depth: number,
-    options: NotationRowOptions,
-    stack: InlineTask[],
-    continuation?: InlineTask,
+    options: RowBuildOptions,
+    stack: RowTask[],
 ): void {
     const collapsed = options.collapsedVariations?.has(parent) ?? false;
     addRow(rows, rowForNode, {
@@ -177,7 +190,6 @@ function queueVariationTasks(
         parent,
         collapsed,
     });
-    if (continuation) stack.push(continuation);
     if (collapsed) return;
     for (let childIndex = parent.children.length - 1; childIndex >= 1; childIndex -= 1) {
         stack.push({
@@ -193,11 +205,15 @@ function queueVariationTasks(
 function appendInlineTasks(
     rows: NotationRow[],
     rowForNode: Map<TreeNode, number>,
-    stack: InlineTask[],
-    options: NotationRowOptions,
+    stack: RowTask[],
+    options: RowBuildOptions,
 ): void {
     while (stack.length > 0) {
         const task = stack.pop()!;
+        if ("type" in task) {
+            addRow(rows, rowForNode, task);
+            continue;
+        }
         let parent = task.parent;
         let childIndex = task.childIndex;
         let first = task.first;
@@ -206,7 +222,12 @@ function appendInlineTasks(
         while (parent.children[childIndex]) {
             const node = parent.children[childIndex];
             const starting = startingCommentText(node, options);
-            moves.push({ node, first: first || !!starting, startingComment: starting });
+            moves.push({
+                node,
+                first: first || !!starting,
+                startingComment: starting,
+                analysis: options.analysisNodes.has(node),
+            });
             first = false;
 
             const variationParent = parent;
@@ -214,7 +235,8 @@ function appendInlineTasks(
                 options.showVariations && childIndex === 0 && variationParent.children.length > 1;
             const reachedLimit = moves.length >= NOTATION_ROW_MAX_MOVES;
 
-            if (hasVariations || reachedLimit) {
+            const isGameEnd = node === options.gameEnd;
+            if (hasVariations || reachedLimit || isGameEnd) {
                 addRow(rows, rowForNode, {
                     type: "moves",
                     depth: task.depth,
@@ -222,6 +244,17 @@ function appendInlineTasks(
                     variationParent: task.variationParent,
                 });
 
+                if (node.children.length > 0) {
+                    stack.push({
+                        parent: node,
+                        childIndex: 0,
+                        depth: task.depth,
+                        first: false,
+                        variationParent: task.variationParent,
+                    });
+                }
+                if (isGameEnd)
+                    stack.push({ type: "gameEnd", hasAnalysis: node.children.length > 0 });
                 if (hasVariations) {
                     queueVariationTasks(
                         rows,
@@ -230,22 +263,7 @@ function appendInlineTasks(
                         task.depth,
                         options,
                         stack,
-                        {
-                            parent: node,
-                            childIndex: 0,
-                            depth: task.depth,
-                            first: false,
-                            variationParent: task.variationParent,
-                        },
                     );
-                } else if (node.children.length > 0) {
-                    stack.push({
-                        parent: node,
-                        childIndex: 0,
-                        depth: task.depth,
-                        first: false,
-                        variationParent: task.variationParent,
-                    });
                 }
                 break;
             }
@@ -270,7 +288,7 @@ function appendMainlineInlineRows(
     rows: NotationRow[],
     rowForNode: Map<TreeNode, number>,
     root: TreeNode,
-    options: NotationRowOptions,
+    options: RowBuildOptions,
 ): void {
     appendInlineTasks(
         rows,
@@ -287,12 +305,17 @@ function addTableRow(
     white: TreeNode | null,
     black: TreeNode | null,
     splitRow: boolean,
+    options: RowBuildOptions,
 ): void {
     addRow(rows, rowForNode, {
         type: "table",
         moveNumber,
-        white: white ? { node: white, first: true } : null,
-        black: black ? { node: black, first: true } : null,
+        white: white
+            ? { node: white, first: true, analysis: options.analysisNodes.has(white) }
+            : null,
+        black: black
+            ? { node: black, first: true, analysis: options.analysisNodes.has(black) }
+            : null,
         splitRow,
     });
 }
@@ -301,7 +324,7 @@ function appendTableRows(
     rows: NotationRow[],
     rowForNode: Map<TreeNode, number>,
     root: TreeNode,
-    options: NotationRowOptions,
+    options: RowBuildOptions,
 ): void {
     let current = root;
 
@@ -317,9 +340,14 @@ function appendTableRows(
         if (!isWhite) {
             const hasComment = options.showComments && child.comment.length > 0;
             const hasVariations = options.showVariations && variations.length > 0;
-            addTableRow(rows, rowForNode, moveNumber, null, child, false);
+            addTableRow(rows, rowForNode, moveNumber, null, child, false, options);
             if (hasComment) addComment(rows, rowForNode, 0, child.comment);
             if (hasVariations) addInlineVariationRows(rows, rowForNode, current, 0, options);
+            if (child === options.gameEnd)
+                addRow(rows, rowForNode, {
+                    type: "gameEnd",
+                    hasAnalysis: child.children.length > 0,
+                });
             current = child;
             continue;
         }
@@ -331,23 +359,35 @@ function appendTableRows(
         const blackHasComment = !!black && options.showComments && black.comment.length > 0;
         const blackHasVariations = options.showVariations && blackVariations.length > 0;
         const blackStarting = black ? startingCommentText(black, options) : "";
-        const whiteBoundary = whiteHasComment || whiteHasVariations || blackStarting.length > 0;
+        const whiteBoundary =
+            whiteHasComment ||
+            whiteHasVariations ||
+            blackStarting.length > 0 ||
+            child === options.gameEnd;
         if (whiteBoundary) {
-            addTableRow(rows, rowForNode, moveNumber, child, null, !!black);
+            addTableRow(rows, rowForNode, moveNumber, child, null, !!black, options);
             if (whiteHasComment) addComment(rows, rowForNode, 0, child.comment);
             if (whiteHasVariations) addInlineVariationRows(rows, rowForNode, current, 0, options);
+            if (child === options.gameEnd)
+                addRow(rows, rowForNode, {
+                    type: "gameEnd",
+                    hasAnalysis: child.children.length > 0,
+                });
 
             if (black) {
                 if (blackStarting) addComment(rows, rowForNode, 0, blackStarting);
-                addTableRow(rows, rowForNode, moveNumber, null, black, false);
+                addTableRow(rows, rowForNode, moveNumber, null, black, false, options);
                 if (blackHasComment) addComment(rows, rowForNode, 0, black.comment);
                 if (blackHasVariations) addInlineVariationRows(rows, rowForNode, child, 0, options);
             }
         } else {
-            addTableRow(rows, rowForNode, moveNumber, child, black, false);
+            addTableRow(rows, rowForNode, moveNumber, child, black, false, options);
             if (blackHasComment) addComment(rows, rowForNode, 0, black.comment);
             if (blackHasVariations) addInlineVariationRows(rows, rowForNode, child, 0, options);
         }
+
+        if (black && black === options.gameEnd)
+            addRow(rows, rowForNode, { type: "gameEnd", hasAnalysis: black.children.length > 0 });
 
         current = black ?? child;
     }
@@ -357,15 +397,24 @@ export function buildNotationRows(root: TreeNode, options: NotationRowOptions): 
     const rows: NotationRow[] = [];
     const rowForNode = new Map<TreeNode, number>();
     const index = createNotationNodeIndex(root);
+    const gameEnd = getEffectiveGameEnd(root)?.node;
+    const analysisNodes = new WeakSet<TreeNode>();
+    const stack = [...(gameEnd?.children ?? [])];
+    while (stack.length > 0) {
+        const node = stack.pop()!;
+        analysisNodes.add(node);
+        for (const child of node.children) stack.push(child);
+    }
+    const buildOptions: RowBuildOptions = { ...options, gameEnd, analysisNodes };
 
     if (options.showComments && root.comment.length > 0) {
         addComment(rows, rowForNode, 0, root.comment);
     }
 
     if (options.tableView) {
-        appendTableRows(rows, rowForNode, root, options);
+        appendTableRows(rows, rowForNode, root, buildOptions);
     } else {
-        appendMainlineInlineRows(rows, rowForNode, root, options);
+        appendMainlineInlineRows(rows, rowForNode, root, buildOptions);
     }
 
     return { rows, index, rowForNode };

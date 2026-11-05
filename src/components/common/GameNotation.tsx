@@ -31,7 +31,12 @@ import {
 import { keyMapAtom } from "@/state/keybinds";
 import { nagGlyphs } from "@/utils/annotation";
 import { formatScore } from "@/utils/score";
-import { getNodeAtPath, type TreeNode } from "@/utils/treeReducer";
+import {
+  getEffectiveGameEnd,
+  getEffectiveTermination,
+  getNodeAtPath,
+  type TreeNode,
+} from "@/utils/treeReducer";
 import CompleteMoveCell from "./CompleteMoveCell";
 import {
   buildNotationRows,
@@ -100,6 +105,14 @@ function GameNotation({ topBar, controls }: { topBar?: boolean; controls?: React
   const { t } = useTranslation();
   const store = useContext(TreeStateContext)!;
   const { root, headers } = useTreeView(store);
+  const gameEnd = useMemo(
+    () => (isTreeViewDeferred(store) ? undefined : getEffectiveGameEnd(root)),
+    [root, store],
+  );
+  const termination = useMemo(
+    () => (isTreeViewDeferred(store) ? undefined : getEffectiveTermination({ root, headers })),
+    [root, headers, store],
+  );
   const currentNode = useStore(store, (s) => s.currentNode());
   const copyPgn = useStore(store, (s) => s.copyPgn);
   const showComments = useAtomValue(useTabAtom(showCommentsFamily));
@@ -254,6 +267,8 @@ function GameNotation({ topBar, controls }: { topBar?: boolean; controls?: React
                     <NotationVirtualRow
                       key={virtualRow.index}
                       row={model.rows[virtualRow.index]}
+                      result={headers.result}
+                      termination={termination}
                       index={model.index}
                       root={root}
                       currentNode={currentNode}
@@ -282,7 +297,7 @@ function GameNotation({ topBar, controls }: { topBar?: boolean; controls?: React
                 </Box>
               </Box>
               <Box pb="md">
-                {headers.result !== "*" && (
+                {!gameEnd && headers.result !== "*" && (
                   <Text ta="center">
                     {headers.result}
                     <br />
@@ -353,6 +368,8 @@ function NotationHeader() {
 
 function NotationVirtualRow({
   row,
+  result,
+  termination,
   index,
   root,
   currentNode,
@@ -365,6 +382,8 @@ function NotationVirtualRow({
   dataIndex,
 }: {
   row: NotationRow;
+  result: string;
+  termination?: string;
   index: NotationNodeIndex;
   root: TreeNode;
   currentNode: TreeNode;
@@ -378,6 +397,9 @@ function NotationVirtualRow({
 }) {
   return (
     <Box ref={measureRef} data-index={dataIndex} style={style}>
+      {row.type === "gameEnd" && (
+        <GameEndRow result={result} termination={termination} hasAnalysis={row.hasAnalysis} />
+      )}
       {row.type === "comment" && <CommentRow row={row} tableView={tableView} />}
       {row.type === "variation" && (
         <VariationRow row={row} onToggle={() => onToggleVariation(row.parent)} />
@@ -401,6 +423,43 @@ function NotationVirtualRow({
           startNode={startNode}
           showComments={showComments}
         />
+      )}
+    </Box>
+  );
+}
+
+function GameEndRow({
+  result,
+  termination,
+  hasAnalysis,
+}: {
+  result: string;
+  termination?: string;
+  hasAnalysis: boolean;
+}) {
+  const { t } = useTranslation();
+  const resultText =
+    result === "1-0"
+      ? t("Board.Analysis.Tablebase.WhiteWins")
+      : result === "0-1"
+        ? t("Board.Analysis.Tablebase.BlackWins")
+        : result === "1/2-1/2"
+          ? t("Board.Analysis.Tablebase.Draw")
+          : undefined;
+  return (
+    <Box data-notation-game-end className={styles.gameEnd}>
+      <Text size="sm">
+        {result}
+        {resultText && ` · ${resultText}`}
+        {termination &&
+          termination !== "Normal" &&
+          termination !== "Unterminated" &&
+          ` · ${termination}`}
+      </Text>
+      {hasAnalysis && (
+        <Text size="xs" c="dimmed">
+          {t("Notation.AnalysisAfterGame")}
+        </Text>
       )}
     </Box>
   );
@@ -432,6 +491,7 @@ function moveProps(
     isCurrentVariation: move.node === currentNode,
     tableLayout,
     scoreText,
+    analysis: move.analysis,
   };
 }
 

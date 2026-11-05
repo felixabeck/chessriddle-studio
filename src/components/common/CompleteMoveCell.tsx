@@ -11,7 +11,7 @@ import type { Annotation } from "@/utils/annotation";
 import { hasMorePriority, stripClock } from "@/utils/chess";
 import { formatMoveNumber } from "@/utils/format";
 import { getTabFile } from "@/utils/tabs";
-import type { TreeNode } from "@/utils/treeReducer";
+import { getEffectiveGameEnd, type TreeNode } from "@/utils/treeReducer";
 import type { NotationNodeIndex } from "./notationRows";
 import { pathForNotationNode } from "./notationRows";
 import MoveCell, { releasePointerFocus } from "./MoveCell";
@@ -74,6 +74,7 @@ type CompleteMoveCellProps = {
   nodeIndex: NotationNodeIndex;
   tableLayout?: boolean;
   scoreText?: string;
+  analysis?: boolean;
   isStart?: boolean;
   isCurrentVariation?: boolean;
   root: TreeNode;
@@ -92,6 +93,7 @@ function CompleteMoveCell({
   nodeIndex,
   tableLayout,
   scoreText,
+  analysis,
   isStart: providedIsStart,
   isCurrentVariation: providedIsCurrentVariation,
   root,
@@ -135,6 +137,7 @@ function CompleteMoveCell({
       onContextMenu={onContextMenu}
       fullWidth={tableLayout}
       rightAccessory={rightAccessory}
+      analysis={analysis}
     />
   ) : null;
 
@@ -163,6 +166,7 @@ function CompleteMoveCell({
             isCurrentVariation={isCurrentVariation}
             fullWidth={tableLayout}
             rightAccessory={rightAccessory}
+            analysis={analysis}
             onClose={() => setOpen(false)}
           />
         ) : (
@@ -207,6 +211,7 @@ function OpenMoveMenu({
   isCurrentVariation,
   fullWidth,
   rightAccessory,
+  analysis,
   onClose,
 }: {
   store: NonNullable<React.ContextType<typeof TreeStateContext>>;
@@ -218,12 +223,15 @@ function OpenMoveMenu({
   isCurrentVariation: boolean;
   fullWidth?: boolean;
   rightAccessory?: React.ReactNode;
+  analysis?: boolean;
   onClose: () => void;
 }) {
   const [currentTab] = useOwnerTab();
   const tabFile = getTabFile(currentTab);
   const { t } = useTranslation();
   const actions = store.getState();
+  const mainline = path.length > 0 && path.every((index) => index === 0);
+  const isGameEnd = equal(getEffectiveGameEnd(root)?.position, path);
 
   return (
     <Menu opened onClose={onClose} width={200}>
@@ -242,9 +250,23 @@ function OpenMoveMenu({
           }}
           fullWidth={fullWidth}
           rightAccessory={rightAccessory}
+          analysis={analysis}
         />
       </Menu.Target>
       <Menu.Dropdown>
+        {currentTab && mainline && (
+          <Menu.Item
+            leftSection={<Flag size="0.875rem" />}
+            onClick={() => {
+              if (store.getState().root !== root) return;
+              if (isGameEnd) actions.clearGameEnd();
+              else actions.setGameEnd(path);
+              onClose();
+            }}
+          >
+            {isGameEnd ? t("Notation.ClearGameEnd") : t("Notation.MarkGameEndHere")}
+          </Menu.Item>
+        )}
         {tabFile?.metadata.type === "repertoire" && (
           <Menu.Item
             leftSection={<Flag size="0.875rem" />}
@@ -318,6 +340,7 @@ export default memo(CompleteMoveCell, (prev, next) => {
     prev.halfMoves === next.halfMoves &&
     prev.tableLayout === next.tableLayout &&
     prev.scoreText === next.scoreText &&
+    prev.analysis === next.analysis &&
     prev.isStart === next.isStart &&
     prev.isCurrentVariation === next.isCurrentVariation
   );

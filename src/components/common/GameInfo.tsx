@@ -1,4 +1,4 @@
-import { Box, Group, Select, SimpleGrid, Text } from "@mantine/core";
+import { Box, Group, Select, SimpleGrid, Text, TextInput } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import cx from "clsx";
 import dayjs from "dayjs";
@@ -6,7 +6,11 @@ import { memo, useContext, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { createStore, useStore } from "zustand";
 import type { Outcome } from "@/bindings";
-import type { GameHeaders } from "@/utils/treeReducer";
+import {
+  getEffectiveGameEnd,
+  getEffectiveTermination,
+  type GameHeaders,
+} from "@/utils/treeReducer";
 import FideInfo from "../databases/FideInfo";
 import classes from "./GameInfo.module.css";
 import { InlineInput } from "./InlineInput";
@@ -26,7 +30,8 @@ function GameInfo({
   changeTitle?: (title: string) => void;
 }) {
   const { t } = useTranslation();
-  const store = useContext(TreeStateContext) || EMPTY_STORE;
+  const contextStore = useContext(TreeStateContext);
+  const store = contextStore || EMPTY_STORE;
   const disabled = store === EMPTY_STORE;
   const setHeaders = useStore(store, (s) => s.setHeaders);
 
@@ -233,28 +238,31 @@ function GameInfo({
             }}
             disabled={disabled}
           />
-          <label className={classes.visuallyHidden} htmlFor="game-result">
-            {t("GameInfo.Result")}
-          </label>
-          <Select
-            id="game-result"
-            readOnly={disabled}
-            allowDeselect={false}
-            data={["1-0", "0-1", "1/2-1/2", "*"]}
-            value={headers.result}
-            variant="unstyled"
-            rightSection={null}
-            rightSectionWidth={0}
-            styles={{
-              input: { textAlign: "center" },
-            }}
-            onChange={(result) =>
-              setHeaders({
-                ...headers,
-                result: result as Outcome,
-              })
-            }
-          />
+          <Box>
+            <label className={classes.visuallyHidden} htmlFor="game-result">
+              {t("GameInfo.Result")}
+            </label>
+            <Select
+              id="game-result"
+              readOnly={disabled}
+              allowDeselect={false}
+              data={["1-0", "0-1", "1/2-1/2", "*"]}
+              value={headers.result}
+              variant="unstyled"
+              rightSection={null}
+              rightSectionWidth={0}
+              styles={{
+                input: { textAlign: "center" },
+              }}
+              onChange={(result) =>
+                setHeaders({
+                  ...headers,
+                  result: result as Outcome,
+                })
+              }
+            />
+            {contextStore && <TerminationField store={contextStore} headers={headers} />}
+          </Box>
           <input
             className={cx(classes.textInput, classes.right)}
             placeholder={t("GameInfo.UnknownElo")}
@@ -276,6 +284,30 @@ function GameInfo({
         </SimpleGrid>
       )}
     </Box>
+  );
+}
+
+function TerminationField({
+  store,
+  headers,
+}: {
+  store: NonNullable<React.ContextType<typeof TreeStateContext>>;
+  headers: GameHeaders;
+}) {
+  const { t } = useTranslation();
+  const hasGameEnd = useStore(store, (state) => !!getEffectiveGameEnd(state.root));
+  const termination = useStore(store, (state) =>
+    getEffectiveTermination({ root: state.root, headers }),
+  );
+  const setTermination = useStore(store, (state) => state.setTermination);
+  if (!hasGameEnd) return null;
+  return (
+    <TextInput
+      label={t("GameInfo.Termination")}
+      value={termination ?? ""}
+      onChange={(event) => setTermination(event.currentTarget.value)}
+      size="xs"
+    />
   );
 }
 
