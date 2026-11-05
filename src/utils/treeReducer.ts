@@ -91,8 +91,14 @@ export function* treeIteratorMainLine(node: TreeNode): Generator<ListNode> {
 
 /** The first marked mainline move is the played game's boundary. Root flags are inert. */
 export function getEffectiveGameEnd(root: TreeNode): EffectiveGameEnd | undefined {
-    for (const entry of treeIteratorMainLine(root)) {
-        if (entry.position.length > 0 && entry.node.gameEnd) return entry as EffectiveGameEnd;
+    let node: TreeNode | undefined = root.children[0];
+    let depth = 1;
+    while (node) {
+        if (node.gameEnd) {
+            return { position: Array<number>(depth).fill(0), node } as EffectiveGameEnd;
+        }
+        node = node.children[0];
+        depth++;
     }
     return undefined;
 }
@@ -107,23 +113,22 @@ export function getEffectiveTermination(
 
 /** Apply only once final load headers are known, never during persisted-tab hydration. */
 export function applyGameEndLoadDefault(tree: TreeState): TreeState {
-    let end = getEffectiveGameEnd(tree.root);
-    if (!end && tree.headers.result !== "*") {
-        let last: ListNode | undefined;
-        for (const entry of treeIteratorMainLine(tree.root)) {
-            if (entry.position.length > 0) last = entry;
+    let endNode: EffectiveGameEnd["node"] | undefined = getEffectiveGameEnd(tree.root)?.node;
+    if (!endNode && tree.headers.result !== "*") {
+        let last = tree.root;
+        while (last.children[0]) {
+            last = last.children[0];
         }
-        if (last) {
-            const node = Object.assign(last.node, { gameEnd: {} });
-            end = { position: last.position, node };
+        if (last !== tree.root) {
+            endNode = Object.assign(last, { gameEnd: {} });
         }
     }
     if (
-        end &&
-        end.node.gameEnd.termination === undefined &&
+        endNode &&
+        endNode.gameEnd.termination === undefined &&
         tree.headers.other?.Termination !== undefined
     ) {
-        end.node.gameEnd = { termination: tree.headers.other.Termination };
+        endNode.gameEnd = { termination: tree.headers.other.Termination };
         delete tree.headers.other.Termination;
     }
     return tree;

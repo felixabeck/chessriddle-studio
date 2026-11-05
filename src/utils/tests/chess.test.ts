@@ -43,6 +43,24 @@ import {
 
 const mocks = vi.hoisted(() => ({ lexPgn: vi.fn() }));
 
+test("effective game end resolves the last flagged node on a 20,000-node mainline", () => {
+    const tree = defaultTree();
+    const move = parseUci("e2e4");
+    if (!move) throw new Error("Invalid fixture move");
+    let last = tree.root;
+    for (let depth = 1; depth <= 20_000; depth++) {
+        const child = createNode({ fen: INITIAL_FEN, move, san: "e4", halfMoves: depth });
+        last.children = [child];
+        last = child;
+    }
+    last.gameEnd = {};
+
+    const end = getEffectiveGameEnd(tree.root);
+    expect(end?.node).toBe(last);
+    expect(end?.position).toHaveLength(20_000);
+    expect(end?.position).toEqual(Array<number>(20_000).fill(0));
+});
+
 test.each([undefined, "Abandoned"])(
     "game-end markers parse on mainline, variation and root: %s",
     async (termination) => {
