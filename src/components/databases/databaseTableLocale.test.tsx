@@ -1,5 +1,5 @@
 import { MantineProvider } from "@mantine/core";
-import { createInstance, type i18n } from "i18next";
+import type { i18n } from "i18next";
 import { Provider, createStore } from "jotai";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -8,7 +8,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { NormalizedGame } from "@/bindings";
 import { activeDatabaseViewStore } from "@/state/store/database";
 import { installMatchMediaStub } from "@/tests/matchMedia";
-import german from "@/translation/de-DE.json";
+import { catalogueI18n } from "@/tests/catalogues";
 import type { SuccessDatabaseInfo } from "@/utils/db";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
 import GameTable from "./GameTable";
@@ -74,14 +74,7 @@ beforeEach(async () => {
   activeDatabaseViewStore.getState().clearDatabase();
   activeDatabaseViewStore.getState().setDatabase({ file, title: "Fixture" } as SuccessDatabaseInfo);
   jotai = createStore();
-  locale = createInstance();
-  await locale.init({
-    lng: "de-DE",
-    fallbackLng: false,
-    keySeparator: false,
-    resources: { "de-DE": german },
-    interpolation: { escapeValue: false },
-  });
+  locale = await catalogueI18n("de-DE");
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -185,6 +178,12 @@ test("PlayerTable renders translated column titles", async () => {
 test("TournamentTable renders translated column titles", async () => {
   await render(<TournamentTable />);
   expect(headers()).toEqual(["ID", "Name"]);
+});
+
+test.each(["players", "tournaments"])("%s renders French ID and name headers", async (view) => {
+  locale = await catalogueI18n("fr-FR");
+  await render(view === "players" ? <PlayerTable /> : <TournamentTable />);
+  expect(headers().slice(0, 2)).toEqual(["ID", "Nom"]);
 });
 
 test("TournamentCard renders the German empty leaderboard", async () => {

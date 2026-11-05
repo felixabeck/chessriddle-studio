@@ -61,12 +61,19 @@ vi.mock("./SideInput", () => ({ SideInput: () => null }));
 vi.mock("./GamePreview", () => ({ default: ({ pgn }: { pgn: string }) => <div>{pgn}</div> }));
 vi.mock("../common/GameInfo", () => ({ default: () => null }));
 vi.mock("mantine-datatable", () => ({
-  DataTable: ({ records, customRowAttributes, onRowClick, onRowDoubleClick }: any) => (
+  DataTable: ({
+    records,
+    customRowAttributes,
+    rowClassName,
+    onRowClick,
+    onRowDoubleClick,
+  }: any) => (
     <table>
       <tbody>
         {records.map((record: NormalizedGame, index: number) => (
           <tr
             key={record.id}
+            className={rowClassName?.(record, index)}
             onClick={() => onRowClick({ record, index })}
             onDoubleClick={() => onRowDoubleClick?.({ record, index })}
             {...customRowAttributes?.(record, index)}
@@ -170,6 +177,31 @@ function row(index: number) {
   return host.querySelectorAll("tr")[index];
 }
 
+async function requestDelete() {
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[aria-label="Databases.Game.Delete"]')!.click(),
+  );
+}
+
+async function confirmDelete() {
+  const confirm = [
+    ...document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+  ].find((button) => button.textContent === "Common.Delete")!;
+  await act(async () => confirm.click());
+}
+
+function refuseSelectionWrite() {
+  const nativeSetItem = Storage.prototype.setItem;
+  return vi
+    .spyOn(Storage.prototype, "setItem")
+    .mockImplementation(function (this: Storage, key, value) {
+      if (this === sessionStorage && key === "database-view") {
+        throw new DOMException("Selection could not be saved", "QuotaExceededError");
+      }
+      nativeSetItem.call(this, key, value);
+    });
+}
+
 test("the Games searches distinguish the player and opponent", async () => {
   await render();
   expect(host.querySelector('input[placeholder="Board.Database.Local.Player"]')).not.toBeNull();
@@ -180,14 +212,9 @@ test("confirmed deletion clears the selected preview before the next game occupi
   await render();
   await act(async () => row(0).click());
   expect(host.textContent).toContain(games[0].moves);
-  await act(async () =>
-    host.querySelector<HTMLButtonElement>('[aria-label="Databases.Game.Delete"]')!.click(),
-  );
+  await requestDelete();
   expect(mocks.deleteDbGame).not.toHaveBeenCalled();
-  const confirm = [
-    ...document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
-  ].find((button) => button.textContent === "Common.Delete")!;
-  await act(async () => confirm.click());
+  await confirmDelete();
   await render();
   expect(mocks.deleteDbGame).toHaveBeenCalledExactlyOnceWith(file, games[0].id);
   expect(host.querySelectorAll("tbody tr")).toHaveLength(1);
@@ -196,6 +223,84 @@ test("confirmed deletion clears the selected preview before the next game occupi
   expect(host.textContent).not.toContain(games[1].moves);
   expect(openButton().disabled).toBe(true);
   expect(activeDatabaseViewStore.getState().games.selectedGame).toBeUndefined();
+});
+
+test("a refused selection clear keeps the deleted preview empty until a row is selected again", async () => {
+  await render();
+  await act(async () => row(0).click());
+  await requestDelete();
+  const write = refuseSelectionWrite();
+  try {
+    await confirmDelete();
+    await render();
+    expect(write).toHaveBeenCalledOnce();
+    expect(mocks.deleteDbGame).toHaveBeenCalledExactlyOnceWith(file, games[0].id);
+    expect(activeDatabaseViewStore.getState().games.selectedGame).toBe(0);
+    expect(host.textContent).toContain("Databases.Game.NoSelection");
+    expect(host.textContent).not.toContain(games[1].moves);
+    expect(host.querySelector('tr[aria-selected="true"]')).toBeNull();
+    expect(row(0).className).toBe("");
+    expect(openButton().disabled).toBe(true);
+    expect(
+      host.querySelector<HTMLButtonElement>('[aria-label="Databases.Game.Delete"]')!.disabled,
+    ).toBe(true);
+  } finally {
+    write.mockRestore();
+  }
+  await act(async () => row(0).click());
+  expect(host.textContent).toContain(games[1].moves);
+  expect(row(0).getAttribute("aria-selected")).toBe("true");
+  expect(openButton().disabled).toBe(false);
+});
+
+test.each(["ArrowUp", "ArrowDown"])(
+  "%s starts from the suppressed selection after deletion",
+  async (key) => {
+    await render();
+    await act(async () => row(1).click());
+    await requestDelete();
+    const write = refuseSelectionWrite();
+    try {
+      await confirmDelete();
+    } finally {
+      write.mockRestore();
+    }
+    await act(async () =>
+      document.body.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })),
+    );
+    expect(activeDatabaseViewStore.getState().games.selectedGame).toBe(
+      key === "ArrowDown" ? 0 : undefined,
+    );
+    expect(openButton().disabled).toBe(key === "ArrowUp");
+    expect(row(0).getAttribute("aria-selected")).toBe(String(key === "ArrowDown"));
+  },
+);
+
+test("a pending deletion does not clear the replacement database selection", async () => {
+  let resolveDelete!: () => void;
+  mocks.deleteDbGame.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        resolveDelete = resolve;
+      }),
+  );
+  await render();
+  await act(async () => row(0).click());
+  await requestDelete();
+  await confirmDelete();
+  const replacementFile = { id: { id: "replacement-database" }, kind: "database" } as const;
+  await act(async () => {
+    activeDatabaseViewStore
+      .getState()
+      .setDatabase({ file: replacementFile, title: "Replacement" } as SuccessDatabaseInfo);
+    activeDatabaseViewStore.getState().setGamesSelectedGame(1);
+  });
+  await act(async () => resolveDelete());
+  expect(mocks.deleteDbGame).toHaveBeenCalledExactlyOnceWith(file, games[0].id);
+  expect(activeDatabaseViewStore.getState().games.selectedGame).toBe(1);
+  expect(host.textContent).toContain(games[1].moves);
+  expect(row(1).getAttribute("aria-selected")).toBe("true");
+  expect(openButton().disabled).toBe(false);
 });
 async function doubleClick(index: number) {
   await act(async () => {

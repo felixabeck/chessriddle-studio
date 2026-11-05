@@ -7,7 +7,6 @@ import {
   RangeSlider,
   Select,
   Stack,
-  Text,
 } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import { useHotkeys } from "@mantine/hooks";
@@ -16,7 +15,7 @@ import { useNavigate } from "@tanstack/react-router";
 import dayjs from "dayjs";
 import { useAtom, useSetAtom } from "jotai";
 import { DataTable } from "mantine-datatable";
-import { useContext } from "react";
+import { useContext, useState } from "react";
 import { useTranslation } from "react-i18next";
 import useSWR from "swr";
 import { useStore } from "zustand";
@@ -34,6 +33,7 @@ import GameCard from "./GameCard";
 import GridLayout from "./GridLayout";
 import layoutClasses from "./GridLayout.module.css";
 import { PlayerSearchInput } from "./PlayerSearchInput";
+import PlayerRatingCell from "./PlayerRatingCell";
 import { SideInput } from "./SideInput";
 import sideInputClasses from "./SideInput.module.css";
 import classes from "./styles.module.css";
@@ -51,6 +51,12 @@ function GameTable() {
 
   const selectedGame = useStore(store, (s) => s.games.selectedGame);
   const setSelectedGame = useStore(store, (s) => s.setGamesSelectedGame);
+  const [suppressedSelection, setSuppressedSelection] = useState<number | null>(null);
+  const activeSelection =
+    selectedGame != null && selectedGame === suppressedSelection ? undefined : selectedGame;
+  const selectGame = (index?: number) => {
+    if (setSelectedGame(index)) setSuppressedSelection(null);
+  };
   const generation = useStore(store, (s) => s.database?.collection?.generation);
 
   const navigate = useNavigate();
@@ -90,24 +96,24 @@ function GameTable() {
     [
       "ArrowUp",
       () => {
-        setSelectedGame(
-          selectedGame === undefined || selectedGame === null
+        selectGame(
+          activeSelection === undefined || activeSelection === null
             ? undefined
-            : selectedGame === 0
+            : activeSelection === 0
               ? 0
-              : selectedGame - 1,
+              : activeSelection - 1,
         );
       },
     ],
     [
       "ArrowDown",
       () => {
-        setSelectedGame(
-          selectedGame === undefined || selectedGame === null
+        selectGame(
+          activeSelection === undefined || activeSelection === null
             ? 0
-            : selectedGame === games.length - 1
+            : activeSelection === games.length - 1
               ? games.length - 1
-              : selectedGame + 1,
+              : activeSelection + 1,
         );
       },
     ],
@@ -248,36 +254,18 @@ function GameTable() {
           fetching={isLoading}
           customRowAttributes={(record, index) => ({
             ...gameRowActivation(record, gameOpen.activate),
-            "aria-selected": index === selectedGame,
+            "aria-selected": index === activeSelection,
           })}
           columns={[
             {
               accessor: "white",
               title: t("Fen.White"),
-              render: ({ white, white_elo }) => (
-                <div>
-                  <Text size="sm" fw={500}>
-                    {white}
-                  </Text>
-                  <Text size="xs" c="dimmed">
-                    {white_elo === 0 ? t("GameInfo.Unrated") : white_elo}
-                  </Text>
-                </div>
-              ),
+              render: ({ white, white_elo }) => <PlayerRatingCell name={white} elo={white_elo} />,
             },
             {
               accessor: "black",
               title: t("Fen.Black"),
-              render: ({ black, black_elo }) => (
-                <div>
-                  <Text size="sm" fw={500}>
-                    {black}
-                  </Text>
-                  <Text size="xs" c="dimmed">
-                    {black_elo === 0 ? t("GameInfo.Unrated") : black_elo}
-                  </Text>
-                </div>
-              ),
+              render: ({ black, black_elo }) => <PlayerRatingCell name={black} elo={black_elo} />,
             },
             { accessor: "date", title: t("Common.Date"), sortable: true },
             {
@@ -289,7 +277,7 @@ function GameTable() {
             { accessor: "event", title: t("Databases.Game.Event") },
             { accessor: "site", title: t("Databases.Game.Site") },
           ]}
-          rowClassName={(_, i) => (i === selectedGame ? classes.selected : "")}
+          rowClassName={(_, i) => (i === activeSelection ? classes.selected : "")}
           noRecordsText={
             error
               ? `${t("Common.Error")}: ${error instanceof Error ? error.message : String(error)}`
@@ -330,19 +318,21 @@ function GameTable() {
           recordsPerPageLabel={t("Common.RecordsPerPage")}
           recordsPerPageOptions={[10, 25, 50]}
           onRowClick={({ index }) => {
-            setSelectedGame(index);
+            selectGame(index);
           }}
         />
       }
       preview={
         <GameCard
-          game={selectedGame == null ? undefined : games[selectedGame]}
+          game={activeSelection == null ? undefined : games[activeSelection]}
           file={file}
           onOpen={gameOpen.activate}
           pending={gameOpen.pending}
           onDeleted={(deletedFile) => {
             if (sameDatabaseHandle(store.getState().database?.file, deletedFile)) {
-              setSelectedGame(undefined);
+              if (!setSelectedGame(undefined)) {
+                setSuppressedSelection(store.getState().games.selectedGame ?? null);
+              } else setSuppressedSelection(null);
             }
           }}
         />

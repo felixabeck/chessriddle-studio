@@ -18,6 +18,7 @@ import { getTournamentGames } from "@/utils/db";
 import { runTabCreation } from "@/utils/tabs";
 import { openDatabaseGame } from "@/utils/databaseGame";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
+import PlayerRatingCell from "./PlayerRatingCell";
 
 const gamePoints = (game: NormalizedGame, player: string) => {
   if (game.white === player) {
@@ -186,28 +187,14 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
                   accessor: "white",
                   title: t("Fen.White"),
                   render: ({ white, white_elo }) => (
-                    <div>
-                      <Text size="sm" fw={500}>
-                        {white}
-                      </Text>
-                      <Text size="xs" c="dimmed">
-                        {white_elo === 0 ? t("GameInfo.Unrated") : white_elo}
-                      </Text>
-                    </div>
+                    <PlayerRatingCell name={white} elo={white_elo} />
                   ),
                 },
                 {
                   accessor: "black",
                   title: t("Fen.Black"),
                   render: ({ black, black_elo }) => (
-                    <div>
-                      <Text size="sm" fw={500}>
-                        {black}
-                      </Text>
-                      <Text size="xs" c="dimmed">
-                        {black_elo === 0 ? t("GameInfo.Unrated") : black_elo}
-                      </Text>
-                    </div>
+                    <PlayerRatingCell name={black} elo={black_elo} />
                   ),
                 },
                 { accessor: "date", title: t("Common.Date"), sortable: true },
