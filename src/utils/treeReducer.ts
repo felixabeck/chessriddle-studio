@@ -50,6 +50,10 @@ export type ListNode = {
     node: TreeNode;
 };
 
+export type EffectiveGameEnd = ListNode & {
+    node: TreeNode & { gameEnd: NonNullable<TreeNode["gameEnd"]> };
+};
+
 export function* treeIterator(node: TreeNode): Generator<ListNode> {
     const stack: ListNode[] = [{ position: [], node }];
     while (stack.length > 0) {
@@ -86,9 +90,9 @@ export function* treeIteratorMainLine(node: TreeNode): Generator<ListNode> {
 }
 
 /** The first marked mainline move is the played game's boundary. Root flags are inert. */
-export function getEffectiveGameEnd(root: TreeNode): ListNode | undefined {
+export function getEffectiveGameEnd(root: TreeNode): EffectiveGameEnd | undefined {
     for (const entry of treeIteratorMainLine(root)) {
-        if (entry.position.length > 0 && entry.node.gameEnd) return entry;
+        if (entry.position.length > 0 && entry.node.gameEnd) return entry as EffectiveGameEnd;
     }
     return undefined;
 }
@@ -97,7 +101,7 @@ export function getEffectiveTermination(
     tree: Pick<TreeState, "root" | "headers">,
 ): string | undefined {
     return (
-        getEffectiveGameEnd(tree.root)?.node.gameEnd?.termination ?? tree.headers.other?.Termination
+        getEffectiveGameEnd(tree.root)?.node.gameEnd.termination ?? tree.headers.other?.Termination
     );
 }
 
@@ -110,13 +114,13 @@ export function applyGameEndLoadDefault(tree: TreeState): TreeState {
             if (entry.position.length > 0) last = entry;
         }
         if (last) {
-            last.node.gameEnd = {};
-            end = last;
+            const node = Object.assign(last.node, { gameEnd: {} });
+            end = { position: last.position, node };
         }
     }
     if (
         end &&
-        end.node.gameEnd?.termination === undefined &&
+        end.node.gameEnd.termination === undefined &&
         tree.headers.other?.Termination !== undefined
     ) {
         end.node.gameEnd = { termination: tree.headers.other.Termination };

@@ -220,6 +220,16 @@ test.each([false, true])(
     },
 );
 
+test("game-end termination trims cleaned text and exported markers", async () => {
+    expect(sanitizeGameEndTermination("  Abandoned]")).toBe("Abandoned");
+    expect(sanitizeGameEndTermination("Time forfeit\n")).toBe("Time forfeit");
+    mockCommentLexer();
+    const tree = await parsePGN("1. e4 {[%gameend]} *");
+    tree.root.children[0].gameEnd = { termination: " Abandoned " };
+    const written = getPGN(tree.root, { ...ALL_MARKUPS, headers: null });
+    expect(written).toContain("{[%gameend Abandoned] Game ended here}");
+});
+
 test("game-end termination export sanitizes command delimiters and bounds text", async () => {
     mockCommentLexer();
     const tree = await parsePGN("1. e4 {[%gameend]} *");
