@@ -31,7 +31,7 @@ function MoveControls({ readOnly }: { readOnly?: boolean }) {
   const end = useStore(store, (s) => s.goToEnd);
   const deleteMove = useStore(store, (s) => s.deleteMove);
   const startBranch = useStore(store, (s) => s.goToBranchStart);
-  const endBranch = useStore(store, (s) => s.goToBranchEnd);
+  const endBranch = useStore(store, (s) => s.goToBranchEndOrNextLine);
   const nextBranch = useStore(store, (s) => s.nextBranch);
   const previousBranch = useStore(store, (s) => s.previousBranch);
   const nextBranching = useStore(store, (s) => s.nextBranching);
@@ -72,8 +72,11 @@ function MoveControls({ readOnly }: { readOnly?: boolean }) {
   useHotkeys(keyMap.GO_TO_END.keys, navigate(end));
   useHotkeys(keyMap.DELETE_MOVE.keys, navigate(readOnly ? () => {} : () => deleteMove()));
   // While the list is open, only bare ArrowUp/ArrowDown select, whatever the branch key bindings.
-  useHotkeys(keyMap.GO_TO_BRANCH_START.keys, branchNavigation(startBranch));
-  useHotkeys(keyMap.GO_TO_BRANCH_END.keys, branchNavigation(endBranch));
+  // preventDefault: a no-op press at the last line must not scroll the notation instead.
+  useHotkeys(keyMap.GO_TO_BRANCH_START.keys, branchNavigation(startBranch), {
+    preventDefault: true,
+  });
+  useHotkeys(keyMap.GO_TO_BRANCH_END.keys, branchNavigation(endBranch), { preventDefault: true });
   useHotkeys("arrowup", () => select(-1), { enabled: choice !== null, preventDefault: true });
   useHotkeys("arrowdown", () => select(1), { enabled: choice !== null, preventDefault: true });
   useHotkeys("escape", () => close(), { enabled: choice !== null });

@@ -21,6 +21,7 @@ import {
     createTreeStore,
     discardTreeStoreStorage,
     nextContinuation,
+    nextLineStart,
     retryTreeStoreStorage,
     validateMoveSequence,
 } from "./tree";
@@ -328,6 +329,91 @@ test.each(["nextBranch", "previousBranch"] as const)(
         expect(store.getState().currentNode()).toBe(d4);
     },
 );
+
+// 1.e4 (1.d4 d5 (1...Nf6 2.c4) 2.c4) (1.c4) 1...e5 2.Nf3 (2.Nc3) 2...Nc6
+function linesTree() {
+    const tree = defaultTree();
+    tree.root.children = [
+        fixtureNode("e4", {
+            children: [
+                fixtureNode("e5", {
+                    halfMoves: 2,
+                    children: [
+                        fixtureNode("Nf3", {
+                            halfMoves: 3,
+                            children: [fixtureNode("Nc6", { halfMoves: 4 })],
+                        }),
+                        fixtureNode("Nc3", { halfMoves: 3 }),
+                    ],
+                }),
+            ],
+        }),
+        fixtureNode("d4", {
+            children: [
+                fixtureNode("d5", {
+                    halfMoves: 2,
+                    children: [fixtureNode("c4", { halfMoves: 3 })],
+                }),
+                fixtureNode("Nf6", {
+                    halfMoves: 2,
+                    children: [fixtureNode("c4", { halfMoves: 3 })],
+                }),
+            ],
+        }),
+        fixtureNode("c4"),
+    ];
+    return tree;
+}
+
+test.each([
+    { from: [0, 0, 0, 0], to: [1], why: "main line end goes to the first root alternative" },
+    { from: [1, 0, 0], to: [1, 1], why: "a line is followed by its own nested variation" },
+    { from: [1, 1, 0], to: [2], why: "a nested line is followed by the next sibling line" },
+    {
+        from: [2],
+        to: [0, 0, 1],
+        why: "the root alternatives are followed by later main-line forks",
+    },
+    { from: [0, 0, 1], to: null, why: "the last line in the notation has no successor" },
+    { from: [0, 0], to: [1], why: "any move inside a line names the same successor" },
+    { from: [], to: null, why: "the start position belongs to no line" },
+])("nextLineStart: $why", ({ from, to }) => {
+    expect(nextLineStart(linesTree().root, from)).toEqual(to);
+});
+
+test("goToBranchEndOrNextLine walks every line once, in notation order", () => {
+    const store = createTreeStore(undefined, linesTree());
+    const visited: string[] = [];
+    for (let i = 0; i < 12; i += 1) {
+        store.getState().goToBranchEndOrNextLine();
+        visited.push(store.getState().position.join("."));
+    }
+    expect(visited).toEqual([
+        "0.0.0.0",
+        "1",
+        "1.0.0",
+        "1.1",
+        "1.1.0",
+        "2",
+        "0.0.1",
+        "0.0.1",
+        "0.0.1",
+        "0.0.1",
+        "0.0.1",
+        "0.0.1",
+    ]);
+});
+
+test("goToBranchEndOrNextLine stays at a line end during a practice drill", () => {
+    const tree = linesTree();
+    tree.position = [2];
+    const store = createTreeStore(undefined, tree);
+    store.getState().setPracticePath([2]);
+
+    store.getState().goToBranchEndOrNextLine();
+
+    expect(store.getState().position).toEqual([2]);
+});
 
 test.each([
     { action: "nextBranch", indices: [1, 2, 0] },

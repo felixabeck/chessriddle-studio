@@ -367,3 +367,25 @@ test("a transposed leaf offers every continuation and plays the chosen variation
   expect(options()).toEqual([]);
   expect(store.getState().position).toEqual([0, 1]);
 });
+
+test("arrow down at a line end jumps to the next line and never scrolls at the last one", () => {
+  act(() => store.getState().goToMove([0, 0]));
+  render();
+
+  press("ArrowDown");
+  expect(store.getState().position).toEqual([1]);
+  press("ArrowDown");
+  expect(store.getState().position).toEqual([2]);
+
+  const event = new KeyboardEvent("keydown", {
+    key: "ArrowDown",
+    code: "ArrowDown",
+    bubbles: true,
+    cancelable: true,
+  });
+  act(() => {
+    document.dispatchEvent(event);
+  });
+  expect(store.getState().position).toEqual([2]);
+  expect(event.defaultPrevented).toBe(true);
+});
