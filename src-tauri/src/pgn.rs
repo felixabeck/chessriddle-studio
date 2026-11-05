@@ -243,6 +243,13 @@ pub(crate) struct BoundedHook {
     release: Arc<std::sync::Mutex<std::sync::mpsc::Receiver<()>>>,
 }
 
+/// Must exceed every caller's outer wait (tests wait at most 10 s for an event
+/// before releasing) so the test decides when the parked operation resumes.
+/// It only bounds a test whose sender stays alive without releasing; a panicking
+/// test drops its sender, which unblocks the hook immediately (`Disconnected`).
+#[cfg(test)]
+const BOUNDED_HOOK_RELEASE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 #[cfg(test)]
 #[derive(Clone, Default)]
 struct OneShotSignal(Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>>);
@@ -290,7 +297,7 @@ impl BoundedHook {
         if let Some(tx) = entered {
             let _ = tx.send(());
             if let Ok(guard) = self.release.lock() {
-                let _ = guard.recv_timeout(std::time::Duration::from_secs(5));
+                let _ = guard.recv_timeout(BOUNDED_HOOK_RELEASE_TIMEOUT);
             }
         }
     }
@@ -3026,6 +3033,30 @@ mod tests {
         first_done_rx
             .recv_timeout(Duration::from_secs(2))
             .expect("first invocation finishes after its release");
+    }
+
+    #[tokio::test]
+    async fn bounded_hook_release_survives_previous_five_second_bound() {
+        let (hook, entered, release) = BoundedHook::new();
+        let parked = std::thread::spawn(move || {
+            hook.notify_and_wait();
+        });
+        tokio::time::timeout(Duration::from_secs(2), entered)
+            .await
+            .expect("parked invocation entry timeout")
+            .expect("parked invocation entered");
+
+        // Previous recv_timeout was 5 s; sleeping past it proves the hook is still
+        // parked so the test, not the hook, decides when the operation resumes.
+        const PREVIOUS_RELEASE_BOUND_PLUS_MARGIN: Duration = Duration::from_secs(6);
+        tokio::time::sleep(PREVIOUS_RELEASE_BOUND_PLUS_MARGIN).await;
+
+        assert!(
+            release.send(()).is_ok(),
+            "parked hook must still accept a release after the previous 5 s bound"
+        );
+        parked.join().expect("join parked invocation");
+        assert!(BOUNDED_HOOK_RELEASE_TIMEOUT > Duration::from_secs(10));
     }
 
     fn resolved_for(
