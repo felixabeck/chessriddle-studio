@@ -21,6 +21,11 @@ type BoardStateMap = Record<string, { node: TreeNode; path: number[] }[]>;
 
 const boardStateMapCache = new WeakMap<TreeNode, { startKey: string; map: BoardStateMap }>();
 
+export const GAME_END_COMMAND = "gameend";
+export const GAME_END_PROSE = "Game ended here";
+// Match the lexer's text bound so every parsed termination can survive tab hydration.
+export const MAX_GAME_END_TERMINATION_LENGTH = 10 * 1024 * 1024;
+
 export interface TreeNode {
     fen: string;
     move: Move | null;
@@ -37,6 +42,7 @@ export interface TreeNode {
     /** A variation's comment that precedes its first move, verbatim (commands included). */
     startingComment?: string;
     clock?: number;
+    gameEnd?: { termination?: string };
 }
 
 export type ListNode = {
@@ -77,6 +83,53 @@ export function* treeIteratorMainLine(node: TreeNode): Generator<ListNode> {
         currentNode = currentNode.children[0];
         position = [...position, 0];
     }
+}
+
+/** The first marked mainline move is the played game's boundary. Root flags are inert. */
+export function getEffectiveGameEnd(root: TreeNode): ListNode | undefined {
+    for (const entry of treeIteratorMainLine(root)) {
+        if (entry.position.length > 0 && entry.node.gameEnd) return entry;
+    }
+    return undefined;
+}
+
+export function getEffectiveTermination(
+    tree: Pick<TreeState, "root" | "headers">,
+): string | undefined {
+    return (
+        getEffectiveGameEnd(tree.root)?.node.gameEnd?.termination ?? tree.headers.other?.Termination
+    );
+}
+
+/** Apply only once final load headers are known, never during persisted-tab hydration. */
+export function applyGameEndLoadDefault(tree: TreeState): TreeState {
+    let end = getEffectiveGameEnd(tree.root);
+    if (!end && tree.headers.result !== "*") {
+        let last: ListNode | undefined;
+        for (const entry of treeIteratorMainLine(tree.root)) {
+            if (entry.position.length > 0) last = entry;
+        }
+        if (last) {
+            last.node.gameEnd = {};
+            end = last;
+        }
+    }
+    if (
+        end &&
+        end.node.gameEnd?.termination === undefined &&
+        tree.headers.other?.Termination !== undefined
+    ) {
+        end.node.gameEnd = { termination: tree.headers.other.Termination };
+        delete tree.headers.other.Termination;
+    }
+    return tree;
+}
+
+export function sanitizeGameEndTermination(text: string): string {
+    return text
+        .replace(/[\]{}\r\n]/g, " ")
+        .slice(0, MAX_GAME_END_TERMINATION_LENGTH)
+        .trim();
 }
 
 export function countMainPly(node: TreeNode): number {

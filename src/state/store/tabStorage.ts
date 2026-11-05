@@ -5,7 +5,11 @@ import { puzzleSessionSchema } from "@/state/puzzleSession";
 import { splitPgnComment } from "@/utils/pgnComment";
 import { extractPgnDrawings, toDrawShape, type PgnDrawing } from "@/utils/drawings";
 import type { DrawShape } from "@lichess-org/chessground/draw";
-import { getResolvedPathLength, type TreeState } from "@/utils/treeReducer";
+import {
+    getResolvedPathLength,
+    MAX_GAME_END_TERMINATION_LENGTH,
+    type TreeState,
+} from "@/utils/treeReducer";
 import { z } from "zod";
 import { linkedGameLocatorSchema } from "@/utils/pathCapabilities";
 import type { PersistStorage, StorageValue } from "zustand/middleware";
@@ -164,6 +168,7 @@ function createPersistedTreeSchema() {
         commands?: string;
         startingComment?: string;
         clock?: number;
+        gameEnd?: { termination?: string };
     };
 
     const treeNodeSchema: z.ZodType<PersistedTreeNode> = z.lazy(() => treeNodeObjectSchema);
@@ -181,6 +186,9 @@ function createPersistedTreeSchema() {
         commands: boundedText.optional(),
         startingComment: boundedText.optional(),
         clock: z.number().finite().optional(),
+        gameEnd: z
+            .object({ termination: z.string().max(MAX_GAME_END_TERMINATION_LENGTH).optional() })
+            .optional(),
     });
 
     return z.object({

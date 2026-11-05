@@ -5,6 +5,7 @@ import {
     defaultTree,
     getBoardState,
     getMemoizedBoardStateMap,
+    getEffectiveGameEnd,
 } from "@/utils/treeReducer";
 import { serializeStorageValue } from "./debouncedStorage";
 import { tabStorage, TREE_STORAGE_VERSION } from "./tabStorage";
@@ -21,6 +22,37 @@ import {
 } from "./tree";
 
 const ids: string[] = [];
+
+test.each([undefined, {}, { termination: "Abandoned" }])(
+    "tab hydration preserves gameEnd=%j without applying a load default",
+    (gameEnd) => {
+        const tree = defaultTree();
+        const memory = createTreeStore(undefined, tree);
+        memory.getState().makeMoves({ payload: ["e4", "e5"] });
+        const saved = structuredClone({
+            ...tree,
+            root: memory.getState().root,
+            headers: {
+                ...tree.headers,
+                result: "1-0" as const,
+                other: { Termination: "Header stays on hydration" },
+            },
+        });
+        if (gameEnd) saved.root.children[0].gameEnd = gameEnd;
+        const id = crypto.randomUUID();
+        ids.push(id);
+        sessionStorage.setItem(
+            id,
+            serializeStorageValue({ version: TREE_STORAGE_VERSION, state: saved }),
+        );
+        const hydrated = createTreeStore(id).getState();
+        expect(hydrated.root).toEqual(saved.root);
+        expect(hydrated.headers).toEqual(saved.headers);
+        expect(hydrated.dirty).toBe(false);
+        expect(getEffectiveGameEnd(hydrated.root)?.position).toEqual(gameEnd ? [0] : undefined);
+        expect(hydrated.root.children[0].children[0].gameEnd).toBeUndefined();
+    },
+);
 
 test.each(
     [0, TREE_STORAGE_VERSION].flatMap((version) =>

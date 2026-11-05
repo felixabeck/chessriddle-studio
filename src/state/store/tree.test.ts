@@ -12,6 +12,10 @@ import {
     defaultTree,
     getMemoizedBoardStateMap,
     getNodeAtPath,
+    getEffectiveGameEnd,
+    getEffectiveTermination,
+    MAX_GAME_END_TERMINATION_LENGTH,
+    treeIterator,
     type TreeNode,
 } from "@/utils/treeReducer";
 import { positionFromFen } from "@/utils/chessops";
@@ -30,6 +34,113 @@ import { serializeStorageValue } from "./debouncedStorage";
 import { emptyPuzzleSession } from "@/state/puzzleSession";
 
 const persistedIds: string[] = [];
+
+test("setGameEnd keeps one flag, carries effective termination and clearGameEnd removes every flag", () => {
+    const store = createTreeStore();
+    store.getState().makeMoves({ payload: ["e4", "e5", "Nf3"] });
+    store.getState().goToStart();
+    store.getState().makeMove({ payload: "d4" });
+    const tree = structuredClone({
+        root: store.getState().root,
+        headers: store.getState().headers,
+    });
+    tree.root.gameEnd = { termination: "Root is inert" };
+    tree.root.children[0].gameEnd = { termination: "Abandoned" };
+    tree.root.children[0].children[0].gameEnd = {};
+    tree.root.children[1].gameEnd = { termination: "Variation is inert" };
+    tree.headers.other = { Termination: "Stale copy", Annotator: "Player" };
+    store.setState({ ...tree, dirty: false });
+    store.getState().setGameEnd([0, 0, 0]);
+    expect(
+        Array.from(treeIterator(store.getState().root))
+            .filter(({ node }) => node.gameEnd)
+            .map(({ position }) => position),
+    ).toEqual([[0, 0, 0]]);
+    expect(getEffectiveTermination(store.getState())).toBe("Abandoned");
+    expect(store.getState().dirty).toBe(true);
+    store.getState().save();
+    store.getState().setTermination("Time forfeit");
+    expect(getEffectiveTermination(store.getState())).toBe("Time forfeit");
+    expect(store.getState().headers.other).toEqual({ Annotator: "Player" });
+    expect(store.getState().dirty).toBe(true);
+    store.getState().setTermination("");
+    expect(getEffectiveGameEnd(store.getState().root)?.node.gameEnd).toEqual({});
+    expect(getEffectiveTermination(store.getState())).toBeUndefined();
+    store.getState().save();
+    store.getState().clearGameEnd();
+    expect(Array.from(treeIterator(store.getState().root)).every(({ node }) => !node.gameEnd)).toBe(
+        true,
+    );
+    expect(store.getState().dirty).toBe(true);
+});
+
+test("setGameEnd carries the fallback header termination and setTermination removes its copy", () => {
+    const store = createTreeStore();
+    store.getState().makeMove({ payload: "e4" });
+    store
+        .getState()
+        .setHeaders({ ...store.getState().headers, other: { Termination: "Abandoned" } });
+    store.getState().setGameEnd([0]);
+    expect(getEffectiveGameEnd(store.getState().root)?.node.gameEnd).toEqual({
+        termination: "Abandoned",
+    });
+    store.getState().setTermination("");
+    expect(store.getState().headers.other?.Termination).toBeUndefined();
+    expect(getEffectiveTermination(store.getState())).toBeUndefined();
+});
+
+test("game-end actions reject invalid paths and invalid termination without changing state", () => {
+    const store = createTreeStore();
+    store.getState().makeMove({ payload: "e4" });
+    store.getState().save();
+    const before = store.getState();
+    for (const path of [[], [1], [0, 0], [-1], [0.5], [NaN], [Infinity], undefined, null, "0"]) {
+        before.setGameEnd(path as number[]);
+        expect(store.getState()).toBe(before);
+    }
+    before.setTermination("Abandoned");
+    expect(store.getState()).toBe(before);
+    before.setGameEnd([0]);
+    store.getState().save();
+    const marked = store.getState();
+    for (const text of [null, undefined, 42, "x".repeat(MAX_GAME_END_TERMINATION_LENGTH + 1)]) {
+        marked.setTermination(text as string);
+        expect(store.getState()).toBe(marked);
+    }
+});
+
+test("clearGameEnd removes inert variation and root flags even without an effective end", () => {
+    const tree = defaultTree();
+    tree.root.gameEnd = {};
+    tree.root.children = [fixtureNode("e4"), { ...fixtureNode("d4"), gameEnd: {} }];
+    const store = createTreeStore(undefined, tree);
+    expect(getEffectiveGameEnd(store.getState().root)).toBeUndefined();
+    store.getState().clearGameEnd();
+    expect(Array.from(treeIterator(store.getState().root)).every(({ node }) => !node.gameEnd)).toBe(
+        true,
+    );
+    expect(store.getState().dirty).toBe(true);
+});
+
+test.each([false, true])(
+    "adjudication past a game end preserves the recorded result for existing child=%s",
+    (existing) => {
+        const tree = defaultTree("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 98 1");
+        tree.headers.result = "0-1";
+        const store = createTreeStore(undefined, tree);
+        store.getState().makeMove({ payload: "Nf3" });
+        if (existing) {
+            store.getState().makeMove({ payload: "Nf6", changeHeaders: false });
+        }
+        store.getState().setGameEnd([0]);
+        store.getState().goToMove([0]);
+        store.getState().save();
+        store.getState().makeMove({ payload: "Nf6" });
+        expect(store.getState().headers.result).toBe("0-1");
+        expect(store.getState().dirty).toBe(!existing);
+        expect(store.getState().position).toEqual([0, 0]);
+    },
+);
 
 test("session transition saves the latest accepted tree before publication and bypasses mutable actions", () => {
     const id = crypto.randomUUID();
@@ -815,6 +926,23 @@ const adjudicationReplayCases = [
         result: "1/2-1/2",
     },
 ] as const;
+
+test.each(adjudicationReplayCases)(
+    "re-entering the game-end move skips $kind adjudication",
+    ({ fen, moves }) => {
+        const store = createTreeStore(undefined, defaultTree(fen));
+        expect(
+            store.getState().makeMoves({ payload: [...moves], changeHeaders: false }).success,
+        ).toBe(true);
+        store.getState().setGameEnd(Array(moves.length).fill(0));
+        store.getState().setResult("*");
+        store.getState().goToStart();
+        store.getState().save();
+        expect(store.getState().makeMoves({ payload: [...moves] }).success).toBe(true);
+        expect(store.getState().headers.result).toBe("*");
+        expect(store.getState().dirty).toBe(false);
+    },
+);
 
 function prepareAdjudicationReplay(
     testCase: (typeof adjudicationReplayCases)[number],

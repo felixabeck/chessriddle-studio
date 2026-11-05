@@ -2,7 +2,10 @@ import { beforeEach, expect, test, vi } from "vitest";
 import { recognizeGameReferences } from "../gameReferences";
 import { parseUci } from "chessops";
 import { INITIAL_FEN, makeFen, parseFen } from "chessops/fen";
-import type { Token } from "@/bindings";
+import type { NormalizedGame, Token } from "@/bindings";
+import { createTreeStore } from "@/state/store/tree";
+import { databaseGameToTree } from "../databaseGameTree";
+import { serializeStoreTree } from "../tabs";
 import {
     ANNOTATION_INFO,
     type Annotation,
@@ -28,11 +31,195 @@ import {
     getBoardState,
     getMemoizedBoardStateMap,
     getNodeAtPath,
+    getEffectiveGameEnd,
+    getEffectiveTermination,
+    GAME_END_COMMAND,
+    GAME_END_PROSE,
+    MAX_GAME_END_TERMINATION_LENGTH,
+    sanitizeGameEndTermination,
     treeIteratorMainLine,
     type TreeNode,
 } from "../treeReducer";
 
 const mocks = vi.hoisted(() => ({ lexPgn: vi.fn() }));
+
+test.each([undefined, "Abandoned"])(
+    "game-end markers parse on mainline, variation and root: %s",
+    async (termination) => {
+        mockCommentLexer();
+        const command = `[%${GAME_END_COMMAND}${termination ? ` ${termination}` : ""}]`;
+        const { tree, losses } = await parsePGNWithLossReport(
+            `{${command} ${GAME_END_PROSE}} 1. e4 {${command} ${GAME_END_PROSE}} (1. d4 {${command} ${GAME_END_PROSE}}) e5 *`,
+        );
+        const expected = termination ? { termination } : {};
+        expect(losses).toEqual([]);
+        expect(tree.root.gameEnd).toBeUndefined();
+        expect(tree.root.commands).toBe(command);
+        expect(tree.root.comment).toBe(GAME_END_PROSE);
+        expect(tree.root.children[0].gameEnd).toEqual(expected);
+        expect(tree.root.children[1].gameEnd).toEqual(expected);
+        expect(tree.root.children[0].comment).toBe("");
+        expect(tree.root.children[0].commands).toBeUndefined();
+        expect(getEffectiveGameEnd(tree.root)?.position).toEqual([0]);
+        expect(
+            (await parsePGN(getPGN(tree.root, { ...ALL_MARKUPS, headers: tree.headers }))).root,
+        ).toEqual(tree.root);
+    },
+);
+
+test("duplicate game-end commands on one node report loss across and within comment tokens", async () => {
+    mockCommentLexer();
+    const { tree, losses } = await parsePGNWithLossReport(
+        "1. e4 {[%gameend Abandoned] [%gameend Time forfeit]} {[%gameend]} e5 {[%gameend]} *",
+    );
+    expect(losses).toEqual(["Multiple game ends on one node", "Multiple game ends on one node"]);
+    expect(tree.root.children[0].gameEnd).toEqual({ termination: "Abandoned" });
+    expect(tree.root.children[0].children[0].gameEnd).toEqual({});
+});
+
+test("game-end prose is dropped only when it is the marker token's entire prose", async () => {
+    mockCommentLexer();
+    const tree = await parsePGN(
+        "1. e4 {Game ended here} {[%gameend] Game ended here} {[%gameend] Game ended here by agreement} {Other text} *",
+    );
+    expect(tree.root.children[0].comment).toBe(
+        "Game ended here Game ended here by agreement Other text",
+    );
+    const next = await parsePGN(getPGN(tree.root, { ...ALL_MARKUPS, headers: tree.headers }));
+    expect(next.root).toEqual(tree.root);
+});
+
+test.each([
+    { result: "1-0", later: false, termination: undefined, emit: false },
+    { result: "1-0", later: true, termination: undefined, emit: true },
+    { result: "*", later: false, termination: undefined, emit: true },
+    { result: "1-0", later: false, termination: "Abandoned", emit: true },
+] as const)(
+    "game-end export omission and round-trip identity: $result, later=$later, termination=$termination",
+    async ({ result, later, termination, emit }) => {
+        mockCommentLexer();
+        const tree = await parsePGN(
+            `[Result "${result}"] 1. e4 {[%gameend${termination ? ` ${termination}` : ""}]} ${later ? "e5" : ""} ${result}`,
+        );
+        let written = getPGN(tree.root, { ...ALL_MARKUPS, headers: tree.headers });
+        expect(written.includes("[%gameend")).toBe(emit);
+        for (let pass = 0; pass < 3; pass++) {
+            const next = await parsePGN(written);
+            expect(next.root).toEqual(tree.root);
+            expect(getEffectiveTermination(next)).toBe(termination);
+            written = getPGN(next.root, { ...ALL_MARKUPS, headers: next.headers });
+        }
+        expect(getPGN(tree.root, { ...ALL_MARKUPS, headers: null })).toContain("[%gameend");
+        expect(
+            getPGN(tree.root, { ...ALL_MARKUPS, headers: tree.headers, comments: false }),
+        ).not.toContain("[%gameend");
+    },
+);
+
+test.each(["*", "1-0"] as const)(
+    "flagged variations stay inert and preserve round-trip identity after promotion: %s",
+    async (result) => {
+        mockCommentLexer();
+        const tree = await parsePGN(`1. e4 (1. d4 {[%gameend Abandoned]} d5) e5 ${result}`);
+        expect(getEffectiveGameEnd(tree.root)?.position).toEqual(
+            result === "*" ? undefined : [0, 0],
+        );
+        expect(
+            (await parsePGN(getPGN(tree.root, { ...ALL_MARKUPS, headers: tree.headers }))).root,
+        ).toEqual(tree.root);
+        const store = createTreeStore(undefined, tree);
+        store.getState().promoteToMainline([1]);
+        const promoted = store.getState();
+        expect(promoted.root.children[0].san).toBe("d4");
+        expect(getEffectiveGameEnd(promoted.root)?.position).toEqual([0]);
+        expect((await parsePGN(serializeStoreTree(store))).root).toEqual(promoted.root);
+    },
+);
+
+test.each(["PGN", "database"] as const)(
+    "%s load defaults only a finished nonempty unmarked mainline and moves Termination",
+    async (boundary) => {
+        mockCommentLexer();
+        for (const result of ["*", "0-1"] as const) {
+            for (const marked of [false, true]) {
+                for (const moves of [false, true]) {
+                    const movetext = `${moves ? `1. e4 ${marked ? "{[%gameend]}" : ""} e5` : ""} ${boundary === "PGN" ? result : "*"}`;
+                    const tree =
+                        boundary === "PGN"
+                            ? await parsePGN(
+                                  `[Result "${result}"] [Termination "Abandoned"] ${movetext}`,
+                              )
+                            : await databaseGameToTree({ ...gameEndDatabaseRow(movetext), result });
+                    const expectedPath =
+                        moves && (marked || result !== "*") ? (marked ? [0] : [0, 0]) : undefined;
+                    expect(getEffectiveGameEnd(tree.root)?.position).toEqual(expectedPath);
+                    expect(getEffectiveTermination(tree)).toBe(
+                        boundary === "PGN" ? "Abandoned" : undefined,
+                    );
+                    expect(tree.headers.other?.Termination).toBe(
+                        boundary === "PGN" && !expectedPath ? "Abandoned" : undefined,
+                    );
+                    expect(tree.dirty).toBe(false);
+                }
+            }
+        }
+    },
+);
+
+function gameEndDatabaseRow(moves: string): NormalizedGame {
+    return {
+        id: 1,
+        fen: INITIAL_FEN,
+        event: "Cup",
+        event_id: 1,
+        site: "Hall",
+        site_id: 1,
+        white: "White",
+        white_id: 1,
+        black: "Black",
+        black_id: 2,
+        result: "1-0",
+        moves,
+    };
+}
+
+test.each([false, true])(
+    "database save serialization preserves a marked end and termination with later moves=%s",
+    async (later) => {
+        mockCommentLexer();
+        const tree = await parsePGN(
+            `[Result "1-0"] 1. e4 {User comment} {[%gameend Abandoned] Game ended here} ${later ? "e5" : ""} 1-0`,
+        );
+        tree.headers.other = { Termination: "Stale copy", Annotator: "Player" };
+        const store = createTreeStore(undefined, tree);
+        const written = serializeStoreTree(store);
+        expect(written).toContain("{User comment} {[%gameend Abandoned] Game ended here}");
+        expect(written.match(/\[Termination /g)).toHaveLength(1);
+        expect(written).toContain('[Termination "Abandoned"]');
+        expect(tree.headers.other.Termination).toBe("Stale copy");
+        // The database keeps the movetext but replaces arbitrary PGN headers with fixed row columns.
+        const movetext = written.split("\n\n").slice(1).join("\n\n").trim();
+        expect(movetext).not.toContain("[Termination");
+        const loaded = await databaseGameToTree(gameEndDatabaseRow(movetext));
+        expect(loaded.root).toEqual(tree.root);
+        expect(getEffectiveTermination(loaded)).toBe("Abandoned");
+        expect(loaded.headers.other).toBeUndefined();
+    },
+);
+
+test("game-end termination export sanitizes command delimiters and bounds text", async () => {
+    mockCommentLexer();
+    const tree = await parsePGN("1. e4 {[%gameend]} *");
+    tree.root.children[0].gameEnd = { termination: "Abandoned]}{\n\r[%other" };
+    const written = getPGN(tree.root, { ...ALL_MARKUPS, headers: null });
+    expect(written).toContain("{[%gameend Abandoned     [%other] Game ended here}");
+    const parsed = await parsePGNWithLossReport(written);
+    expect(parsed.losses).toEqual([]);
+    expect(parsed.tree.root.children[0].gameEnd?.termination).toBe("Abandoned     [%other");
+    expect(
+        sanitizeGameEndTermination("x".repeat(MAX_GAME_END_TERMINATION_LENGTH + 1)),
+    ).toHaveLength(MAX_GAME_END_TERMINATION_LENGTH);
+});
 
 test.each([undefined, "invalid", "White", "white", "black"])(
     "orientation %s preserves the distinction between unset and explicit White",

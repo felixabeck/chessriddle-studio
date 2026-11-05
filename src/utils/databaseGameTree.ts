@@ -3,7 +3,7 @@ import { logFailureSafely, safeFailureContext } from "@/platform/errors";
 import { tauri, type NativeReadOptions } from "@/platform/tauri";
 import { decodePgnTagValue, parsePGN } from "./chess";
 import { databaseHandleKey } from "./db";
-import type { TreeState } from "./treeReducer";
+import { applyGameEndLoadDefault, type TreeState } from "./treeReducer";
 
 /** Seed only the initial view. A remembered choice always wins and no edit is made. */
 export async function seedDatabaseOrientation(
@@ -41,6 +41,7 @@ export async function databaseGameToTree(
 ) {
     const tree = await parsePGN(game.moves, game.fen, options);
     tree.headers = databaseGameHeaders(game);
+    applyGameEndLoadDefault(tree);
     tree.sourceStamp = game.stamp ?? null;
     return database ? seedDatabaseOrientation(tree, database, game.id, options) : tree;
 }

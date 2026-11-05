@@ -1,7 +1,7 @@
 import { EphemeralTabScope } from "@/state/tabScope";
 import { Box, Group, Stack } from "@mantine/core";
 import { useElementSize } from "@mantine/hooks";
-import { useContext } from "react";
+import { useContext, useMemo } from "react";
 import useSWRImmutable from "swr/immutable";
 import { useStore } from "zustand";
 import BoardFrame from "@/components/boards/BoardFrame";
@@ -17,7 +17,12 @@ import {
   fitPreviewSquare,
 } from "@/state/databaseLayout";
 import { parsePGN, parseStartHeader } from "@/utils/chess";
-import { type GameHeaders, getNodeAtPath, type TreeState } from "@/utils/treeReducer";
+import {
+  applyGameEndLoadDefault,
+  type GameHeaders,
+  getNodeAtPath,
+  type TreeState,
+} from "@/utils/treeReducer";
 import GameNotation from "../common/GameNotation";
 import MoveControls from "../common/MoveControls";
 import OpeningName from "../common/OpeningName";
@@ -68,21 +73,27 @@ function GamePreviewWrapper({
         )
       : value,
   );
-  const start = parsedGame
-    ? headers?.start === undefined
-      ? parsedGame.position
-      : parseStartHeader(headers.start, parsedGame.root)
-    : [];
-  const game = parsedGame && {
-    ...parsedGame,
-    headers: {
-      ...parsedGame.headers,
-      ...headers,
-      fen: parsedGame.root.fen,
-      start,
-    },
-    position: start,
-  };
+  // Read merged header inputs, including Start, from gameKey so equivalent objects reuse the clone.
+  const game = useMemo(() => {
+    if (!parsedGame) return undefined;
+    const [, keyedHeaders] = JSON.parse(gameKey) as [string, GameHeaders | null];
+    const start =
+      keyedHeaders?.start === undefined
+        ? parsedGame.position
+        : parseStartHeader(keyedHeaders.start, parsedGame.root);
+    return applyGameEndLoadDefault(
+      structuredClone({
+        ...parsedGame,
+        headers: {
+          ...parsedGame.headers,
+          ...keyedHeaders,
+          fen: parsedGame.root.fen,
+          start,
+        },
+        position: start,
+      }),
+    );
+  }, [parsedGame, gameKey]);
 
   return <>{game && <GamePreview key={gameKey} game={game} {...layout} />}</>;
 }

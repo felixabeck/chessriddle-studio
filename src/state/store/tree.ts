@@ -37,6 +37,11 @@ import {
     getBoardState,
     getMemoizedBoardStateMap,
     normalizeTreeHalfMoves,
+    getEffectiveGameEnd,
+    getEffectiveTermination,
+    getResolvedPathLength,
+    MAX_GAME_END_TERMINATION_LENGTH,
+    treeIterator,
 } from "@/utils/treeReducer";
 
 type CompleteTreeState = TreeState & Pick<TreeStoreState, "linkedSource">;
@@ -101,6 +106,9 @@ export interface TreeStoreState extends TreeState {
     setComment: (payload: string) => void;
     setHeaders: (payload: GameHeaders) => void;
     setResult: (payload: Outcome) => void;
+    setGameEnd: (path: number[]) => void;
+    clearGameEnd: () => void;
+    setTermination: (text: string) => void;
     setShapes: (shapes: DrawShape[]) => void;
     setScore: (score: Score) => void;
 
@@ -783,6 +791,42 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
                     }
                 }),
             ),
+        setGameEnd: (path) =>
+            set(
+                produce((state) => {
+                    if (
+                        !Array.isArray(path) ||
+                        path.length === 0 ||
+                        !path.every((index) => index === 0) ||
+                        getResolvedPathLength(state.root, path) !== path.length
+                    )
+                        return;
+                    const termination = getEffectiveTermination(state);
+                    for (const { node } of treeIterator(state.root)) delete node.gameEnd;
+                    getNodeAtPath(state.root, path).gameEnd =
+                        termination === undefined ? {} : { termination };
+                    state.dirty = true;
+                }),
+            ),
+        clearGameEnd: () =>
+            set(
+                produce((state) => {
+                    for (const { node } of treeIterator(state.root)) delete node.gameEnd;
+                    state.dirty = true;
+                }),
+            ),
+        setTermination: (text) =>
+            set(
+                produce((state) => {
+                    if (typeof text !== "string" || text.length > MAX_GAME_END_TERMINATION_LENGTH)
+                        return;
+                    const end = getEffectiveGameEnd(state.root);
+                    if (!end) return;
+                    end.node.gameEnd = text === "" ? {} : { termination: text };
+                    if (state.headers.other) delete state.headers.other.Termination;
+                    state.dirty = true;
+                }),
+            ),
         setHeaders: (headers) =>
             set(
                 produce((state) => {
@@ -935,7 +979,14 @@ export function makeMove({
         targetIndex === 0 &&
         (existingIndex === -1 || moveNode.children[existingIndex].children.length === 0);
     // Adjudication only applies when the move ends the main line, so a variation never rewrites the game's Result.
-    const adjudicate = changeHeaders && endsMainLine;
+    const end = getEffectiveGameEnd(state.root);
+    const endOnResultingPath =
+        end &&
+        targetIndex === 0 &&
+        position.every((index) => index === 0) &&
+        (end.position.length <= position.length ||
+            (existingIndex === 0 && end.position.length === position.length + 1));
+    const adjudicate = changeHeaders && endsMainLine && !endOnResultingPath;
     const previousResult = state.headers.result;
     if (adjudicate && pos.isEnd()) {
         if (pos.isCheckmate()) {

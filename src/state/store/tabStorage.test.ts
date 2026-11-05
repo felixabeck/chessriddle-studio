@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { DrawShape } from "@lichess-org/chessground/draw";
-import { defaultTree } from "@/utils/treeReducer";
+import { defaultTree, MAX_GAME_END_TERMINATION_LENGTH } from "@/utils/treeReducer";
 import { emptyPuzzleSession } from "@/state/puzzleSession";
 import { deserializeStorageValue, serializeStorageValue } from "./debouncedStorage";
 import {
@@ -84,6 +84,25 @@ function treeWithPaths(paths: {
 function persistTree(tabId: string, state: unknown) {
     sessionStorage.setItem(tabId, serializeStorageValue({ version: TREE_STORAGE_VERSION, state }));
 }
+
+test("persisted game-end termination accepts bounded text and rejects invalid shapes", () => {
+    const tree = treeWithPaths({});
+    for (const gameEnd of [{}, { termination: "x".repeat(MAX_GAME_END_TERMINATION_LENGTH) }]) {
+        tree.root.children[0].gameEnd = gameEnd;
+        expect(canRehydrate(tree)).toBe(true);
+        expect(prepareTreeForStorage(tree).root.children[0].gameEnd).toEqual(gameEnd);
+    }
+    for (const gameEnd of [
+        null,
+        true,
+        "Abandoned",
+        { termination: 5 },
+        { termination: "x".repeat(MAX_GAME_END_TERMINATION_LENGTH + 1) },
+    ]) {
+        const candidate = { ...tree, root: { ...tree.root, gameEnd } };
+        expect(canRehydrate(candidate)).toBe(false);
+    }
+});
 
 test("durable seed supersedes only its own stale pending frame and survives unload", () => {
     persistTree("session", defaultTree());

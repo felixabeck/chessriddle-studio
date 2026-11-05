@@ -9,7 +9,7 @@ import type { StampedGame } from "@/bindings";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { activeTabAtom, tabsAtom } from "@/state/atoms";
 import { DatabaseLayoutContext } from "@/state/databaseLayout";
-import type { GameHeaders } from "@/utils/treeReducer";
+import { getEffectiveGameEnd, type GameHeaders, type TreeNode } from "@/utils/treeReducer";
 import { INITIAL_FEN } from "chessops/fen";
 
 const mocks = vi.hoisted(() => ({
@@ -84,6 +84,7 @@ vi.mock("../common/GameNotation", async (importOriginal) => {
           data-testid="game-notation"
           data-headers={JSON.stringify(tree.headers)}
           data-root-fen={tree.root.fen}
+          data-root={JSON.stringify(tree.root)}
           data-position={JSON.stringify(tree.position)}
         />
       );
@@ -481,6 +482,33 @@ describe("GamePreview board sizing", () => {
       ),
     );
   }
+
+  test.each([false, true])(
+    "preview final-header boundary applies the game-end default without mutating the parse cache, marker=%s",
+    async (marked) => {
+      mocks.lexPgn.mockResolvedValue([
+        { type: "San", value: "e4" },
+        ...(marked ? [{ type: "Comment", value: "[%gameend] Game ended here" }] : []),
+        { type: "San", value: "e5" },
+      ]);
+      for (const result of ["1-0", "*", "0-1"] as const) {
+        await renderRecord({ ...recordA, result, other: { Termination: "Abandoned" } });
+        const notation = container.querySelector(
+          '[data-testid="selected-preview"] [data-testid="game-notation"]',
+        )!;
+        const treeRoot = JSON.parse(notation.getAttribute("data-root")!) as TreeNode;
+        const end = getEffectiveGameEnd(treeRoot);
+        expect(end?.position).toEqual(marked ? [0] : result === "*" ? undefined : [0, 0]);
+        expect(end?.node.gameEnd?.termination).toBe(
+          marked || result !== "*" ? "Abandoned" : undefined,
+        );
+        expect(selectedHeaders().other?.Termination).toBe(
+          marked || result !== "*" ? undefined : "Abandoned",
+        );
+      }
+      expect(mocks.lexPgn).toHaveBeenCalledOnce();
+    },
+  );
 
   test("warm FEN cache switches A-B-A with the selected root and navigable tree each time", async () => {
     await renderRecord(recordA, true);

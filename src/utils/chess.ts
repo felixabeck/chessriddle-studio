@@ -13,9 +13,15 @@ import { splitPgnComment } from "./pgnComment";
 import { formatScore, getAccuracy, getCPLoss, INITIAL_SCORE } from "./score";
 import {
     createNode,
+    applyGameEndLoadDefault,
     defaultTree,
+    GAME_END_COMMAND,
+    GAME_END_PROSE,
+    getEffectiveGameEnd,
+    getEffectiveTermination,
     getResolvedPathLength,
     normalizeFen,
+    sanitizeGameEndTermination,
     type GameHeaders,
     type TreeNode,
     type TreeState,
@@ -57,6 +63,7 @@ export function getMoveText(
         comments: boolean;
         extraMarkups: boolean;
         isFirst?: boolean;
+        omitGameEnd?: boolean;
     },
 ): string {
     const isBlack = tree.halfMoves % 2 === 0;
@@ -121,6 +128,10 @@ export function getMoveText(
         if (content !== "{} ") {
             moveText += content;
         }
+    }
+    if (opt.comments && tree.san && tree.gameEnd && !opt.omitGameEnd) {
+        const termination = sanitizeGameEndTermination(tree.gameEnd.termination ?? "");
+        moveText += `{[%${GAME_END_COMMAND}${termination ? ` ${termination}` : ""}] ${GAME_END_PROSE}} `;
     }
     return moveText;
 }
@@ -237,7 +248,31 @@ export function defaultPGN() {
     return `[Event "?"]\n[Site "?"]\n[Date "????.??.??"]\n[Round "?"]\n[White "?"]\n[Black "?"]\n[Result "*"]\n\n*`;
 }
 
-export function getPGN(
+export function getPGN(tree: TreeNode, options: Parameters<typeof writePGN>[1]): string {
+    const end = getEffectiveGameEnd(tree);
+    const termination = options.headers
+        ? getEffectiveTermination({ root: tree, headers: options.headers })
+        : undefined;
+    const headers = options.headers && {
+        ...options.headers,
+        other: { ...options.headers.other },
+    };
+    if (headers) {
+        delete headers.other.Termination;
+        if (termination !== undefined) headers.other.Termination = termination;
+    }
+    const omitGameEnd =
+        end &&
+        end.node.children.length === 0 &&
+        end.node.gameEnd?.termination === undefined &&
+        headers &&
+        headers.result !== "*"
+            ? end.node
+            : undefined;
+    return writePGN(tree, { ...options, headers }, omitGameEnd);
+}
+
+function writePGN(
     tree: TreeNode,
     {
         headers,
@@ -256,6 +291,7 @@ export function getPGN(
         root?: boolean;
         path?: number[] | null;
     },
+    omitGameEnd?: TreeNode,
 ): string {
     if (path && path.length === 0) {
         return "";
@@ -284,15 +320,20 @@ export function getPGN(
                       comments,
                       extraMarkups,
                       isFirst: true,
-                  })} ${getPGN(variation, {
-                      headers: null,
-                      glyphs,
-                      comments,
-                      variations,
-                      extraMarkups,
-                      root: false,
-                      path: null,
-                  })}`,
+                      omitGameEnd: variation === omitGameEnd,
+                  })} ${writePGN(
+                      variation,
+                      {
+                          headers: null,
+                          glyphs,
+                          comments,
+                          variations,
+                          extraMarkups,
+                          root: false,
+                          path: null,
+                      },
+                      omitGameEnd,
+                  )}`,
           )
         : [];
     if (tree.children.length > 0) {
@@ -302,6 +343,7 @@ export function getPGN(
             comments,
             extraMarkups,
             isFirst: root,
+            omitGameEnd: child === omitGameEnd,
         });
     }
     if (!path) {
@@ -311,15 +353,19 @@ export function getPGN(
     }
 
     if (tree.children.length > 0) {
-        pgn += getPGN(tree.children[path ? path[0] : 0], {
-            headers: null,
-            glyphs,
-            comments,
-            variations,
-            extraMarkups,
-            root: false,
-            path: path ? path.slice(1) : null,
-        });
+        pgn += writePGN(
+            tree.children[path ? path[0] : 0],
+            {
+                headers: null,
+                glyphs,
+                comments,
+                variations,
+                extraMarkups,
+                root: false,
+                path: path ? path.slice(1) : null,
+            },
+            omitGameEnd,
+        );
     }
     if (root && headers) {
         pgn += ` ${headers.result}`;
@@ -403,7 +449,11 @@ function innerParsePGN(
             if (isVariation && node === tree.root) {
                 losses.push("Comment on discarded variation root");
             }
-            const comment = splitPgnComment(token.value);
+            const comment = splitPgnComment(token.value, node !== tree.root);
+            for (const gameEnd of comment.gameEnds) {
+                if (node.gameEnd) losses.push("Multiple game ends on one node");
+                else node.gameEnd = gameEnd;
+            }
 
             if (comment.evaluation) {
                 if (isPawns(comment.evaluation)) {
@@ -556,6 +606,7 @@ export async function parsePGNWithLossReport(
     const start = parseStartHeader(headers.start, tree.root);
     tree.headers = { ...headers, fen: tree.root.fen, start };
     tree.position = start;
+    applyGameEndLoadDefault(tree);
     if (options?.signal?.aborted) {
         throw cancellationError();
     }
