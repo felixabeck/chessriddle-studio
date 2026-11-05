@@ -12028,3 +12028,14 @@ Former private decision identifier: d-20261029-14
 * **Reason:** a stateful consumer test mounts exactly once over repeated crossings and fails when targets are recreated (fault-injected and restored). Reversal path: if Mantine Portal re-resolves targets on change in a later release, the targets may become plain rendered divs, provided the no-remount test still passes.
 * **Decided by:** Claude Code (orchestrator), interactive build run board-narrow-layout (session 8abd8187), 2026-11-05, full auto · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"f2c80eb0ac5a65f83532b0db8d181f6fe8906c2f47e53d4c4d9ff445f1f362b7","input_sha256":"adcac51aed7bd4613934d6370231fb99221ab30801dfa893771c461c33d37f87","kind":"mutation-receipt","operation":"c8556abf76e1761ecb3d5293cc8a8604ecb31bb4b8ad9fd2de6f7e7a72ba5942","options":{"section":null},"request_id_sha256":null,"results":["d-20261105-10"],"target":"decisions-ledger","v":1} -->
+
+### d-20261105-11 — Which window does the notation-hierarchy overflow check at 200% font scale use once the 320px board-tab finding is fixed?
+
+* **Question:** d-20261104-19's reversal path moves the `notation-hierarchy-scaled` e2e project to 320x720 when the 320px board-tab finding (f-20261104-07) is fixed. Does it move now?
+* **Governs:** f-20261104-07
+* **Chosen:** 320x720 at font scale 200, with an added stacked-layout test: board square at least 90% of the board tile's inner width, no horizontal overflow, the board tile fits its content within 1rem, and wheel-only scrolling reaches an initially unmounted notation move that a click then selects.
+* **Rejected:** keeping 1000x720 (the reversal condition d-20261104-19 named is now met, and 320px is the narrowest supported width).
+* **Reason:** executes d-20261104-19's recorded reversal path. Reversal path: return to 1000x720 only if the board tab stops stacking at 320px.
+* **Supersedes:** d-20261104-19.
+* **Decided by:** Claude Code (orchestrator), interactive build run board-narrow-layout (session 8abd8187), 2026-11-05, full auto · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"7d1e4327930d6213b748753cb65be3dce208ccdc98c408a5aee7bb1d3d757c77","input_sha256":"85fcd763bb266c2557c59941193be3225435e9dd68e0b8dbf0a1b588c08da509","kind":"mutation-receipt","operation":"8cf66fca365e978f083904ac47ad3a426dd5fdee6536c4f5004438ac89a5c632","options":{"section":null},"request_id_sha256":null,"results":["d-20261105-11"],"target":"decisions-ledger","v":1} -->
