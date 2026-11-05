@@ -21039,3 +21039,10 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Run URL:** https://github.com/felixabeck/en-croissant/actions/runs/42030262952
 * **Proof:** `gh run view 42030262952 --log-failed`
 * **CI run:** 42030262952
+* **Found by:** drain remote-CI check (Claude Code)
+* **Where:** workflow `Test`, jobs `rust-windows-test`.
+* **Defect:** failed jobs on `7ac57840ccdeeb654a13c9222d4b586c05592cdc`: `rust-windows-test`.
+* **Run URL:** https://github.com/felixabeck/en-croissant/actions/runs/42030834306
+* **Proof:** `gh run view 42030834306 --log-failed`
+* **CI run:** 42030834306
+<!-- ledger-meta {"command":"annotate","effect_lines":6,"effect_sha256":"ba7e159aedd7db84583f49a33b846ba441b8d7b1f3db80ec5563228a37e73c56","input_sha256":"6353d3f36c937d50157a3a244c147f473de235a4febbe1102128357f45b79bab","kind":"mutation-receipt","operation":"7f0554dc40874ed41980cac428beb85f45e9743a9b6c348f40cc17d4485c0fd8","options":{"section":null},"request_id_sha256":null,"results":["f-20261105-06"],"target":"f-20261105-06","v":1} -->
