@@ -657,10 +657,16 @@ export async function drawMark(page: Page, board: Locator, from: string, to = fr
     await dragBoard(page, board, from, to, "right");
 }
 
-export async function playBoardMove(_page: Page, board: Locator, from: string, to: string) {
+export async function playBoardMove(page: Page, board: Locator, from: string, to: string) {
+    const interactiveBoard = board.and(page.locator(".cg-wrap.manipulable cg-board"));
     for (const square of [from, to]) {
-        const box = await boardBox(board);
-        await board.click({
+        await expect
+            .poll(() => interactiveBoard.count(), {
+                message: "The board stayed view-only instead of becoming interactive",
+            })
+            .toBe(1);
+        const box = await boardBox(interactiveBoard);
+        await interactiveBoard.click({
             position: squarePosition(square, box),
         });
     }

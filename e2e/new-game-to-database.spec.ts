@@ -10,7 +10,7 @@ import {
     selectFilesTreeRow,
     waitForScrollAreaScrollbarsHidden,
 } from "./fixtures";
-import type { Locator } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 
 // The board can report no box right after navigating to it (f-20261030-21). A stub board whose
 // first measurements are null proves playBoardMove waits for geometry instead of dereferencing it.
@@ -19,6 +19,8 @@ test("playBoardMove waits for a measured board box", async ({ page }) => {
     const boxes = [null, null, measured];
     const clicks: unknown[] = [];
     const board = {
+        and: () => board,
+        count: async () => 1,
         click: async (options?: { trial?: boolean; position?: { x: number; y: number } }) => {
             if (!options?.trial) clicks.push(options?.position);
         },
@@ -31,6 +33,68 @@ test("playBoardMove waits for a measured board box", async ({ page }) => {
         { x: 450, y: 650 },
         { x: 450, y: 450 },
     ]);
+});
+
+async function mountViewOnlyBoardStub(page: Page) {
+    await page.setContent(`
+        <style>
+            cg-board { display: block; width: 192px; height: 192px; }
+            .manipulable cg-board { width: 552px; height: 552px; }
+        </style>
+        <div class="cg-wrap"><cg-board id="preview"></cg-board></div>
+        <ol id="clicks"></ol>
+    `);
+    await page.evaluate(() => {
+        document.addEventListener("click", (event) => {
+            const board = (event.target as Element).closest("cg-board");
+            if (!board) return;
+            const box = board.getBoundingClientRect();
+            const click = document.createElement("li");
+            click.textContent = JSON.stringify({
+                board: board.id,
+                x: event.clientX - box.x,
+                y: event.clientY - box.y,
+            });
+            document.getElementById("clicks")!.appendChild(click);
+        });
+    });
+}
+
+test("playBoardMove waits for the caller's view-only board to be replaced by an interactive board", async ({
+    page,
+}) => {
+    await mountViewOnlyBoardStub(page);
+    await page.evaluate(() => {
+        setTimeout(() => {
+            const interactive = document.createElement("div");
+            interactive.className = "cg-wrap manipulable";
+            interactive.innerHTML = '<cg-board id="interactive"></cg-board>';
+            document.querySelector(".cg-wrap")!.replaceWith(interactive);
+        }, 1_000);
+    });
+
+    await playBoardMove(page, page.locator("cg-board").first(), "e2", "e4");
+
+    const clicks = await page
+        .locator("#clicks li")
+        .evaluateAll((clicks) => clicks.map((click) => JSON.parse(click.textContent!)));
+    expect(clicks.map((click) => click.board)).toEqual(["interactive", "interactive"]);
+    for (const [index, y] of [448.5, 310.5].entries()) {
+        // Mouse event coordinates can round to an integer CSS pixel.
+        expect(Math.abs(clicks[index].x - 310.5)).toBeLessThanOrEqual(0.5);
+        expect(Math.abs(clicks[index].y - y)).toBeLessThanOrEqual(0.5);
+    }
+});
+
+test("playBoardMove rejects a board that stays view-only without clicking it", async ({ page }) => {
+    test.setTimeout(20_000);
+    await mountViewOnlyBoardStub(page);
+
+    await expect(playBoardMove(page, page.locator("cg-board").first(), "e2", "e4")).rejects.toThrow(
+        "The board stayed view-only instead of becoming interactive",
+    );
+
+    await expect(page.locator("#clicks li")).toHaveCount(0);
 });
 
 test("New game inserts on explicit save, updates that row, and Save to database rebinds", async ({
