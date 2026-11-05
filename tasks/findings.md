@@ -16345,7 +16345,7 @@ Root corrected the initial frozen-phase disposition under push-review-policy sec
 
 ### Save rejection branch repeats a synchronous ownership check
 
-* **ID:** f-20261010-24 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261010-24 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** e838b3a7-7402-4e53-a614-eb2da79f3765 · output /home/felixb/.claude/drain-state/chessfable-0a459a4f.d/attempt-e838b3a7-7402-4e53-a614-eb2da79f3765-1.jsonl
 * **Where:** src/utils/tabs.ts:526.
 * **Defect:** The new catch-entry owns guard makes its applied-despite-error inner owns check redundant with no intervening await.
@@ -16358,6 +16358,9 @@ Root corrected the initial frozen-phase disposition under push-review-policy sec
 * **Closure qualification:** All nine R6 lenses reached EOS and source-closed prior adopted obligations within their inspected classes. They separately found inherited count-publication refusal f-20261010-27, physical blank-tree/page durability f-20261010-29 and existing terminal-replay dirty publication f-20261010-30, plus the dead variation flag f-20261010-28. These new corrections and fresh cumulative closure remain pending. The lifetime/admission class of f26 is source-covered, while its complete failure contract is pending f27/f29. This checkpoint leaves the finding open. Pixels, real native product, fourteen standalone fault/restoration stages and final push gates are not established by source proof. Complete raw R6 reports and root dispositions are in tasks/handoffs/2026-10-10-game-opening-round6.md.
 * **Review disclosure:** Plan authorship and arbitration shared one context. Detection ran on the same model family as the code.
 <!-- ledger-meta {"command":"annotate","effect_lines":3,"effect_sha256":"f704023f2f98fc690134fd2021846027339f52832f275a445d814a5ffdc7a49c","input_sha256":"57ac78351ad89d319aab8a9c8ec14495e89fdef0398debc042803df609145917","kind":"mutation-receipt","operation":"6685d3f4cca5153c8f41f80204942f3263822b64b9dc92ec89fab0fe95821e96","options":{"section":null},"request_id_sha256":null,"results":["f-20261010-24"],"target":"f-20261010-24","v":1} -->
+
+* **Closed at pickup (already fixed):** Commit 7b363143 ("fix(tabs): retain file action ownership across view lifetimes") removed the redundant inner `if (owns())` around the applied-despite-error updates. It is an ancestor of the pushed branch head 7171d6a8. Current `src/utils/tabs.ts:1289-1295` keeps the catch-entry guard `if (!owns()) return "superseded";` (line 1275). The `setSourceStamp(null)` and `setFileFreshness(tabId, "unverified")` updates run under that guard, with no await between them. The R6 lenses recorded the closure in tasks/handoffs/2026-10-10-game-opening-round6.md. Re-proof on 2026-11-05: `pnpm vitest run src/utils/tabs.test.ts src/utils/tabs.database.test.ts` passed 140/140, which covers the late-rejection and active-owner cases. No code change was needed in this session.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"397c224e2c6c400d3144d47fdd5b140bbffbf766ac6fdc4c9a83496e5d70869c","header_sha256":"2a4191ceb5fd5def76e9c4c6db7d7d40d905d7cee27bc8be395f595e3e156754","header_status":"handled","input_sha256":"a88e06e2d2c1c44ffca457fb43928a7171078eb92845249542af61185b664de6","kind":"mutation-receipt","operation":"d12c4ff58664929fbc61058f6541fc66b9daadc3e40a7f3430c3ffe7ba5e0aff","options":{"section":null},"request_id_sha256":null,"results":["f-20261010-24"],"target":"f-20261010-24","v":1} -->
 
 ---
 
