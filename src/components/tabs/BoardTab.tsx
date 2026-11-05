@@ -1,5 +1,5 @@
 import { Tabs, Tooltip } from "@mantine/core";
-import { useEffect, useRef, useState } from "react";
+import { type MouseEventHandler, useEffect, useRef, useState } from "react";
 import type { DraggableProvidedDragHandleProps } from "@hello-pangea/dnd";
 import { ChessKnight, Database, Puzzle, ScanSearch } from "lucide-react";
 import cx from "clsx";
@@ -14,12 +14,14 @@ export function BoardTab({
   setActiveTab,
   selected,
   dragHandleProps,
+  onContextMenu,
 }: {
   tab: Tab;
   tabType: string;
   setActiveTab: (v: string) => void;
   selected: boolean;
   dragHandleProps: DraggableProvidedDragHandleProps | null | undefined;
+  onContextMenu: MouseEventHandler<HTMLButtonElement>;
 }) {
   const { t } = useTranslation();
   const { role: _dragRole, tabIndex: _dragTabIndex, ...tabDragHandleProps } = dragHandleProps ?? {};
@@ -49,6 +51,7 @@ export function BoardTab({
           classNames={{ tabLabel: classes.tabLabelSlot }}
           leftSection={<TabIcon tab={tab} tabType={tabType} />}
           onClick={() => setActiveTab(tab.value)}
+          onContextMenu={onContextMenu}
         >
           <span ref={labelRef} className={classes.tabLabel}>
             {name}

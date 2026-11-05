@@ -4,6 +4,9 @@ import { getDefaultStore } from "jotai";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { TabTreeStorageStatus } from "@/state/store/tabStorage";
 import type { Tab } from "@/state/workspaceTypes";
+import { MantineProvider } from "@mantine/core";
+import { installMatchMediaStub } from "@/tests/matchMedia";
+import { installResizeObserverStub } from "@/tests/resizeObserver";
 
 const fixtures = vi.hoisted(() => ({
   abortGame: vi.fn(),
@@ -26,6 +29,7 @@ const fixtures = vi.hoisted(() => ({
   createTab: vi.fn(),
   duplicateHandler: null as (() => void) | null,
   mountPanels: true,
+  realMenus: false,
   cloneDurable: vi.fn(),
   readForClone: vi.fn(),
   seed: vi.fn(),
@@ -180,7 +184,8 @@ vi.mock("jotai/utils", async () => {
   const { atom } = await vi.importActual<typeof import("jotai")>("jotai");
   return { ...actual, atomWithStorage: (_key: string, initial: unknown) => atom(initial) };
 });
-vi.mock("@mantine/hooks", () => ({
+vi.mock("@mantine/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@mantine/hooks")>()),
   useHotkeys: vi.fn((bindings: Array<[string, () => void]>) => {
     fixtures.hotkeyBindings = bindings;
   }),
@@ -193,7 +198,8 @@ vi.mock("@hello-pangea/dnd", () => ({
   Droppable: ({ children }: { children: (provided: Record<string, unknown>) => ReactNode }) =>
     children({ droppableProps: {}, innerRef: vi.fn(), placeholder: null }),
 }));
-vi.mock("@mantine/core", () => {
+vi.mock("@mantine/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@mantine/core")>();
   const Tabs = Object.assign(
     ({
       children,
@@ -217,8 +223,22 @@ vi.mock("@mantine/core", () => {
         useContext(TabsContext) === value && fixtures.mountPanels ? (
           <div data-testid={`panel-${value}`}>{children}</div>
         ) : null,
-      Tab: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => (
-        <button type="button" onClick={onClick}>
+      Tab: ({
+        children,
+        value,
+        onClick,
+        onContextMenu,
+        classNames: _classNames,
+        leftSection: _leftSection,
+        ...props
+      }: any) => (
+        <button
+          type="button"
+          data-testid={`tab-${value}`}
+          onClick={onClick}
+          onContextMenu={onContextMenu}
+          {...props}
+        >
           {children}
         </button>
       ),
@@ -227,30 +247,54 @@ vi.mock("@mantine/core", () => {
 
   const passthrough = ({ children }: { children: ReactNode }) => <div>{children}</div>;
   return {
+    MantineProvider: actual.MantineProvider,
+    Tooltip: ({ children }: { children: ReactNode }) => children,
     Button: ({ children, disabled, onClick }: any) => (
       <button type="button" disabled={disabled} onClick={onClick}>
         {children}
       </button>
     ),
     Group: passthrough,
-    Menu: Object.assign(passthrough, {
-      Dropdown: passthrough,
-      Item: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => {
-        if (children === "Tab.Duplicate") fixtures.duplicateHandler = onClick ?? null;
-        return (
-          <button type="button" onClick={onClick}>
-            {children}
-          </button>
-        );
+    Menu: Object.assign(
+      (props: any) =>
+        fixtures.realMenus ? (
+          <actual.Menu {...props} transitionProps={{ duration: 0 }} />
+        ) : (
+          passthrough(props)
+        ),
+      {
+        Dropdown: (props: any) =>
+          fixtures.realMenus ? <actual.Menu.Dropdown {...props} /> : passthrough(props),
+        Item: ({ children, onClick, ...props }: any) => {
+          if (children === "Tab.Duplicate") fixtures.duplicateHandler = onClick ?? null;
+          if (fixtures.realMenus)
+            return (
+              <actual.Menu.Item {...props} onClick={onClick}>
+                {children}
+              </actual.Menu.Item>
+            );
+          return (
+            <button type="button" onClick={onClick}>
+              {children}
+            </button>
+          );
+        },
+        Target: (props: any) =>
+          fixtures.realMenus ? <actual.Menu.Target {...props} /> : passthrough(props),
       },
-      Target: passthrough,
-    }),
+    ),
     ScrollArea: passthrough,
     Tabs,
-    TextInput: passthrough,
+    TextInput: ({ label, autoFocus: _autoFocus, ...props }: any) => (
+      <input aria-label={label} {...props} />
+    ),
   };
 });
 vi.mock("lucide-react", () => ({
+  ChessKnight: () => null,
+  Database: () => null,
+  Puzzle: () => null,
+  ScanSearch: () => null,
   Copy: () => null,
   Ellipsis: () => null,
   Pencil: () => null,
@@ -261,7 +305,9 @@ vi.mock("../boards/BoardAnalysis", () => ({
   default: () => <div data-testid="board-analysis-child" />,
 }));
 vi.mock("../boards/BoardGame", () => ({ default: () => <div data-testid="board-game-child" /> }));
-vi.mock("../common/AppModal", () => ({ default: () => null }));
+vi.mock("../common/AppModal", () => ({
+  default: ({ opened, children }: any) => (opened ? <div role="dialog">{children}</div> : null),
+}));
 vi.mock("../common/IconAction", () => ({
   IconAction: ({ children, disabled, label, onClick }: any) => {
     if (label === "Tab.Close") fixtures.closeHandler = onClick;
@@ -273,13 +319,6 @@ vi.mock("../common/IconAction", () => ({
   },
 }));
 vi.mock("../puzzles/Puzzles", () => ({ default: () => <div data-testid="puzzles-child" /> }));
-vi.mock("./BoardTab", () => ({
-  BoardTab: ({ tab, setActiveTab }: { tab: TabFixture; setActiveTab: (value: string) => void }) => (
-    <button type="button" data-testid={`tab-${tab.value}`} onClick={() => setActiveTab(tab.value)}>
-      {tab.name}
-    </button>
-  ),
-}));
 vi.mock("./ConfirmChangesModal", () => ({
   default: (props: any) => {
     fixtures.confirm = props;
@@ -326,7 +365,9 @@ function renderPage() {
   return act(async () => {
     root.render(
       <Suspense fallback={<div data-testid="fallback">Loading</div>}>
-        <BoardsPage />
+        <MantineProvider env="test">
+          <BoardsPage />
+        </MantineProvider>
       </Suspense>,
     );
   });
@@ -340,6 +381,9 @@ function invokeHotkey(keys: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  installMatchMediaStub();
+  installResizeObserverStub();
+  fixtures.realMenus = false;
   fixtures.commitReceipt = true;
   fixtures.treeStatuses.clear();
   fixtures.mountPanels = true;
@@ -414,6 +458,157 @@ afterEach(async () => {
   vi.restoreAllMocks();
   await act(async () => root.unmount());
   container.remove();
+});
+
+async function renderMenuPage() {
+  fixtures.realMenus = true;
+  fixtures.mountPanels = false;
+  await renderPage();
+}
+
+function contextClick(tabId: string, clientX = 80, clientY = 30) {
+  const event = new MouseEvent("contextmenu", {
+    bubbles: true,
+    cancelable: true,
+    clientX,
+    clientY,
+  });
+  container.querySelector(`[data-testid="tab-${tabId}"]`)!.dispatchEvent(event);
+  expect(event.defaultPrevented).toBe(true);
+}
+
+async function openMenu(trigger: "context" | "actions") {
+  await act(async () => {
+    if (trigger === "context") contextClick("next");
+    else container.querySelector<HTMLButtonElement>('[aria-label="Tab.Actions"]')!.click();
+  });
+  expect(document.querySelectorAll('[role="menuitem"]')).toHaveLength(3);
+  expect(store.get(activeTabAtom)).toBe("current");
+}
+
+function menuAction(label: string) {
+  const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+    (candidate) => candidate.textContent === label,
+  );
+  if (!item) throw new Error(`Missing menu action: ${label}`);
+  item.click();
+}
+
+function enterRename(value: string) {
+  const input = container.querySelector<HTMLInputElement>('input[aria-label="Tab.Rename"]')!;
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function saveRename() {
+  [...container.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
+    .find((button) => button.textContent === "Common.Save")!
+    .click();
+}
+
+test.each(["context", "actions"] as const)("%s menu duplicates its target tab", async (trigger) => {
+  await renderMenuPage();
+  await openMenu(trigger);
+  await act(async () => menuAction("Tab.Duplicate"));
+  const target = trigger === "context" ? "next" : "current";
+  expect(fixtures.cloneDurable.mock.calls[0]?.[0]).toBe(target);
+  const tabs = store.get(tabsAtom);
+  expect(tabs).toHaveLength(3);
+  expect(tabs[2]?.name).toBe(target === "next" ? "Next" : "Current");
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+});
+
+test.each(["context", "actions"] as const)(
+  "%s menu renames its recorded target after selection changes",
+  async (trigger) => {
+    await renderMenuPage();
+    await openMenu(trigger);
+    await act(async () => menuAction("Tab.Rename"));
+    const target = trigger === "context" ? "next" : "current";
+    expect(container.querySelector<HTMLInputElement>("input")!.value).toBe(
+      target === "next" ? "Next" : "Current",
+    );
+    await act(async () => store.set(activeTabAtom, target === "next" ? "current" : "next"));
+    await act(async () => enterRename("  Renamed target  "));
+    await act(async () => saveRename());
+    expect(store.get(tabsAtom).find((tab) => tab.value === target)?.name).toBe("Renamed target");
+    expect(store.get(tabsAtom).find((tab) => tab.value !== target)?.name).toBe(
+      target === "next" ? "Current" : "Next",
+    );
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  },
+);
+
+test.each(["context", "actions"] as const)("%s menu closes its target tab", async (trigger) => {
+  await renderMenuPage();
+  await openMenu(trigger);
+  await act(async () => menuAction("Tab.Close"));
+  const target = trigger === "context" ? "next" : "current";
+  expect(fixtures.closeWorkspaceTab).toHaveBeenCalledWith(target);
+  expect(store.get(tabsAtom).map((tab) => tab.value)).toEqual([
+    target === "next" ? "current" : "next",
+  ]);
+  expect(store.get(activeTabAtom)).toBe(target === "next" ? "current" : "next");
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+});
+
+test("rename with a closed target closes the dialog without writing workspace metadata", async () => {
+  await renderMenuPage();
+  await openMenu("context");
+  await act(async () => menuAction("Tab.Rename"));
+  await act(async () => enterRename("Orphaned rename"));
+  await act(async () => store.set(tabsAtom, [fixtures.tabs[0]!]));
+  const before = store.get(tabsAtom);
+  const written = vi.fn();
+  const unsubscribe = store.sub(tabsAtom, written);
+  try {
+    await act(async () => saveRename());
+    expect(store.get(tabsAtom)).toBe(before);
+    expect(written).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  } finally {
+    unsubscribe();
+  }
+});
+
+test("context menu retargets, anchors at the pointer or keyboard tab and preserves left-click activation", async () => {
+  await renderMenuPage();
+  await openMenu("context");
+  let anchor = container.querySelector<HTMLElement>('span[aria-hidden="true"]')!;
+  expect(anchor.style.left).toBe("80px");
+  expect(anchor.style.top).toBe("30px");
+  const tab = container.querySelector<HTMLButtonElement>('[data-testid="tab-current"]')!;
+  vi.spyOn(tab, "getBoundingClientRect").mockReturnValue({ left: 12, bottom: 45 } as DOMRect);
+  await act(async () => contextClick("current", 0, 0));
+  expect(document.querySelectorAll('[role="menu"]')).toHaveLength(1);
+  anchor = container.querySelector<HTMLElement>('span[aria-hidden="true"]')!;
+  expect(anchor.style.left).toBe("12px");
+  expect(anchor.style.top).toBe("45px");
+  await act(async () => menuAction("Tab.Duplicate"));
+  expect(fixtures.cloneDurable.mock.calls[0]?.[0]).toBe("current");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[data-testid="tab-next"]')!.click(),
+  );
+  expect(store.get(activeTabAtom)).toBe("next");
+});
+
+test("context menu dismisses on Escape, an outside click and target removal", async () => {
+  await renderMenuPage();
+  await openMenu("context");
+  await act(async () =>
+    document
+      .querySelector('[role="menu"]')!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+  );
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+  await openMenu("context");
+  await act(async () =>
+    document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })),
+  );
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+  await openMenu("context");
+  await act(async () => store.set(tabsAtom, [fixtures.tabs[0]!]));
+  expect(document.querySelector('[role="menu"]')).toBeNull();
 });
 
 test("keeps the current view while closing into a suspending next tab", async () => {

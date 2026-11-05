@@ -1225,6 +1225,72 @@ test("workspace-tabs: creates, focuses, and cycles workspace tabs", async ({
     await expect(page).toHaveScreenshot("workspace-tabs.png", { fullPage: true });
 });
 
+test("workspace-tabs: right-click closes the inactive target through the shared tab menu", async ({
+    page,
+}) => {
+    await page.goto("/");
+    const tabs = page.getByRole("tablist").first().getByRole("tab");
+    await expect(tabs).toHaveCount(1);
+    await page.getByRole("button", { name: /new tab/i }).click();
+    await expect(tabs).toHaveCount(2);
+    const targetId = await tabs.first().getAttribute("id");
+    const activeId = await tabs.nth(1).getAttribute("id");
+    expect(targetId).toBeTruthy();
+    expect(activeId).toBeTruthy();
+    await tabs.first().click({ button: "right" });
+    const menu = page.getByRole("menu");
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole("menuitem")).toHaveText([
+        "Duplicate tab",
+        "Rename tab",
+        "Close tab",
+    ]);
+    await expect(tabs.first()).toHaveAttribute("aria-selected", "false");
+    await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
+    await expect(page).toHaveScreenshot("workspace-tab-context-menu.png", { fullPage: true });
+    await menu.getByRole("menuitem", { name: "Close tab", exact: true }).click();
+    await expect(menu).toBeHidden();
+    await expect(page.locator(`[id="${targetId}"]`)).toHaveCount(0);
+    await expect(tabs).toHaveCount(1);
+    await expect(tabs).toHaveAttribute("id", activeId!);
+    await expect(tabs).toHaveAttribute("aria-selected", "true");
+});
+
+test("workspace-tabs: native menu is suppressed on a plain surface and preserved in a text input", async ({
+    page,
+}) => {
+    await page.goto("/");
+    await expect(page.getByRole("tab")).toHaveCount(1);
+    const surface = page.locator("[data-home-title]");
+    await expect(surface).toBeVisible();
+    // Register after the app's window listener, and observe real pointer events after it runs.
+    await page.evaluate(() => {
+        window.addEventListener("contextmenu", (event) => {
+            document.documentElement.dataset.contextMenuPrevented = String(event.defaultPrevented);
+            document.documentElement.dataset.contextMenuTrusted = String(event.isTrusted);
+        });
+    });
+    const plainBox = (await surface.boundingBox())!;
+    await page.mouse.click(plainBox.x + plainBox.width / 2, plainBox.y + plainBox.height / 2, {
+        button: "right",
+    });
+    await expect(page.locator("html")).toHaveAttribute("data-context-menu-prevented", "true");
+    await expect(page.locator("html")).toHaveAttribute("data-context-menu-trusted", "true");
+
+    await page.getByRole("button", { name: "Tab actions", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Rename tab", exact: true }).click();
+    const input = page
+        .getByRole("dialog")
+        .getByRole("textbox", { name: "Rename tab", exact: true });
+    await expect(input).toBeVisible();
+    const inputBox = (await input.boundingBox())!;
+    await page.mouse.click(inputBox.x + inputBox.width / 2, inputBox.y + inputBox.height / 2, {
+        button: "right",
+    });
+    await expect(page.locator("html")).toHaveAttribute("data-context-menu-prevented", "false");
+    await expect(page.locator("html")).toHaveAttribute("data-context-menu-trusted", "true");
+});
+
 test("workspace-tabs: refuses failed creation and close until durable retry", async ({
     page,
     capture,

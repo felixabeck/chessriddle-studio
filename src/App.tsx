@@ -57,6 +57,7 @@ import { routeTree } from "./routeTree.gen";
 import { appCssVariablesResolver, createAppTheme } from "./styles/theme";
 import { initializePathOwners } from "./state/pathOwners";
 import { SessionPersistenceNotice } from "./components/home/SessionPersistenceNotice";
+import { installNativeContextMenuSuppression } from "./utils/nativeContextMenu";
 
 const router = createRouter({
   routeTree,
@@ -209,6 +210,8 @@ export default function App() {
   useDocumentLanguage();
   useConversionProgress();
   useDatabaseContentValidation();
+
+  useEffect(() => installNativeContextMenuSuppression(), []);
 
   useEffect(() => {
     document.documentElement.style.fontSize = `${fontSize}%`;

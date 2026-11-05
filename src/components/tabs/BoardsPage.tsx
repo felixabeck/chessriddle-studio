@@ -3,7 +3,7 @@ import { tauri } from "@/platform/tauri";
 import { DragDropContext, Draggable, Droppable } from "@hello-pangea/dnd";
 import { Button, Group, Menu, ScrollArea, Tabs, TextInput } from "@mantine/core";
 import { useHotkeys } from "@mantine/hooks";
-import { Copy, Ellipsis, Pencil, Plus, X } from "lucide-react";
+import { Ellipsis, Plus, X } from "lucide-react";
 import { getDefaultStore, useAtom, useAtomValue, useSetAtom } from "jotai";
 import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -43,6 +43,7 @@ import { abortExactTabGame } from "../boards/gameSession";
 import { TreeStateProvider } from "../common/TreeStateContext";
 import Puzzles from "../puzzles/Puzzles";
 import { BoardTab } from "./BoardTab";
+import { TabActionsMenu } from "./TabActionsMenu";
 import { IconAction } from "../common/IconAction";
 import AppModal from "../common/AppModal";
 import ConfirmChangesModal from "./ConfirmChangesModal";
@@ -66,9 +67,17 @@ export default function BoardsPage() {
   const [pendingClose, setPendingClose] = useState<{ tabId: string; store: TreeStore } | null>(
     null,
   );
-  const [renameOpened, setRenameOpened] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [actionsOpened, setActionsOpened] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ tabId: string; x: number; y: number } | null>(
+    null,
+  );
   const tabListRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (contextMenu && !tabs.some((tab) => tab.value === contextMenu.tabId)) setContextMenu(null);
+  }, [contextMenu, tabs]);
 
   const handleSetActiveTab = useCallback(
     (value: string | null | ((previous: string | null) => string | null)) => {
@@ -238,19 +247,26 @@ export default function BoardsPage() {
     [setTabs, t, tabs],
   );
 
-  const openRename = () => {
-    const tab = tabs.find((candidate) => candidate.value === activeTab);
+  const openRename = (tabId: string) => {
+    const tab = tabs.find((candidate) => candidate.value === tabId);
     if (!tab) return;
     setRenameValue(t(tab.name, { defaultValue: tab.name }));
-    setRenameOpened(true);
+    setRenameTarget(tabId);
   };
 
   const saveRename = () => {
-    if (!activeTab || !renameValue.trim()) return;
+    if (!renameTarget) return;
+    if (!tabs.some((tab) => tab.value === renameTarget)) {
+      setRenameTarget(null);
+      return;
+    }
+    if (!renameValue.trim()) return;
     setTabs((previous) =>
-      previous.map((tab) => (tab.value === activeTab ? { ...tab, name: renameValue.trim() } : tab)),
+      previous.map((tab) =>
+        tab.value === renameTarget ? { ...tab, name: renameValue.trim() } : tab,
+      ),
     );
-    setRenameOpened(false);
+    setRenameTarget(null);
   };
 
   useEffect(() => {
@@ -339,6 +355,17 @@ export default function BoardsPage() {
                             setActiveTab={handleSetActiveTab}
                             selected={activeTab === tab.value}
                             dragHandleProps={provided.dragHandleProps}
+                            onContextMenu={(event) => {
+                              event.preventDefault();
+                              const rect = event.currentTarget.getBoundingClientRect();
+                              const keyboard = event.clientX === 0 && event.clientY === 0;
+                              setActionsOpened(false);
+                              setContextMenu({
+                                tabId: tab.value,
+                                x: keyboard ? rect.left : event.clientX,
+                                y: keyboard ? rect.bottom : event.clientY,
+                              });
+                            }}
                           />
                         </div>
                       )}
@@ -351,7 +378,15 @@ export default function BoardsPage() {
             </Droppable>
           </DragDropContext>
         </ScrollArea>
-        <Menu shadow="md" width={200}>
+        <Menu
+          shadow="md"
+          width={200}
+          opened={actionsOpened}
+          onChange={(opened) => {
+            setActionsOpened(opened);
+            if (opened) setContextMenu(null);
+          }}
+        >
           <Menu.Target>
             <IconAction
               label={t("Tab.Actions", { defaultValue: "Tab actions" })}
@@ -363,22 +398,14 @@ export default function BoardsPage() {
             </IconAction>
           </Menu.Target>
           <Menu.Dropdown>
-            <Menu.Item
-              leftSection={<Copy size="0.875rem" />}
-              onClick={() => activeTab && duplicateTab(activeTab)}
-            >
-              {t("Tab.Duplicate", { defaultValue: "Duplicate tab" })}
-            </Menu.Item>
-            <Menu.Item leftSection={<Pencil size="0.875rem" />} onClick={openRename}>
-              {t("Tab.Rename", { defaultValue: "Rename tab" })}
-            </Menu.Item>
-            <Menu.Item
-              color="danger"
-              leftSection={<X size="0.875rem" />}
-              onClick={() => void closeTab(activeTab)}
-            >
-              {t("Tab.Close", { defaultValue: "Close tab" })}
-            </Menu.Item>
+            {activeTab && (
+              <TabActionsMenu
+                tabId={activeTab}
+                onDuplicate={duplicateTab}
+                onRename={openRename}
+                onClose={(id) => void closeTab(id)}
+              />
+            )}
           </Menu.Dropdown>
         </Menu>
         <IconAction
@@ -404,9 +431,47 @@ export default function BoardsPage() {
           <X />
         </IconAction>
       </div>
+      {contextMenu && tabs.some((tab) => tab.value === contextMenu.tabId) && (
+        <Menu
+          key={`${contextMenu.tabId}:${contextMenu.x}:${contextMenu.y}`}
+          opened
+          onChange={(opened) => {
+            if (!opened) setContextMenu(null);
+          }}
+          shadow="md"
+          width={200}
+          position="bottom-start"
+          offset={0}
+          floatingStrategy="fixed"
+          hideDetached={false}
+          returnFocus={false}
+        >
+          <Menu.Target>
+            <span
+              aria-hidden
+              style={{
+                position: "fixed",
+                left: contextMenu.x,
+                top: contextMenu.y,
+                width: 0,
+                height: 0,
+                pointerEvents: "none",
+              }}
+            />
+          </Menu.Target>
+          <Menu.Dropdown>
+            <TabActionsMenu
+              tabId={contextMenu.tabId}
+              onDuplicate={duplicateTab}
+              onRename={openRename}
+              onClose={(id) => void closeTab(id)}
+            />
+          </Menu.Dropdown>
+        </Menu>
+      )}
       <AppModal
-        opened={renameOpened}
-        onClose={() => setRenameOpened(false)}
+        opened={renameTarget !== null}
+        onClose={() => setRenameTarget(null)}
         title={t("Tab.Rename", { defaultValue: "Rename tab" })}
       >
         <TextInput
@@ -419,7 +484,7 @@ export default function BoardsPage() {
           }}
         />
         <Group justify="end" mt="md">
-          <Button variant="default" onClick={() => setRenameOpened(false)}>
+          <Button variant="default" onClick={() => setRenameTarget(null)}>
             {t("Common.Cancel")}
           </Button>
           <Button onClick={saveRename}>{t("Common.Save")}</Button>

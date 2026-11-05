@@ -564,6 +564,25 @@ describe("startup update check", () => {
 });
 
 describe("App", () => {
+  test("installs native context menu suppression and removes it on unmount", async () => {
+    mockLaunchWithoutCliFile();
+    await act(async () => root.render(<App />));
+    const plain = document.createElement("div");
+    const input = document.createElement("input");
+    container.append(plain, input);
+    const dispatch = (element: Element) => {
+      const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+      element.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    expect(dispatch(plain)).toBe(true);
+    expect(dispatch(input)).toBe(false);
+    await act(async () => root.render(null));
+    // Keep the same plain element attached so the event still reaches window after unmount.
+    container.append(plain);
+    expect(dispatch(plain)).toBe(false);
+  });
+
   test("applies the persisted font size and theme settings", async () => {
     mockLaunchWithoutCliFile();
 
