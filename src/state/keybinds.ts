@@ -1,4 +1,5 @@
 import { platform } from "@/platform/native";
+import { notifyListenerError } from "@/components/files/notifyError";
 import { atomWithStorage } from "jotai/utils";
 import type { SyncStorage, SyncStringStorage } from "jotai/vanilla/utils/atomWithStorage";
 import { z } from "zod";
@@ -27,7 +28,9 @@ const keys: KeyMap = {
     GO_TO_START: { name: "Go to start of game", keys: "shift+arrowup" },
     GO_TO_END: { name: "Go to end of game", keys: "shift+down" },
     NEXT_BRANCH: { name: "Next branch", keys: "c" },
-    PREVIOUS_BRANCH: { name: "Previous branch", keys: "x" },
+    PREVIOUS_BRANCH: { name: "Previous branch", keys: "shift+c" },
+    PLAY_BEST_ENGINE_MOVE: { name: "Play best engine move", keys: "space" },
+    TOGGLE_THREAT_MODE: { name: "Toggle threat mode", keys: "x" },
     NEXT_BRANCHING: { name: "Next branching point", keys: "shift+arrowright" },
     PREVIOUS_BRANCHING: {
         name: "Previous branching point",
@@ -75,6 +78,14 @@ export function createKeybindStorage(
     const repair = (value: unknown): KeyMap => {
         const parsed = keyMapSchema.safeParse(value);
         const persisted = parsed.success ? parsed.data : {};
+        if (
+            !persisted.TOGGLE_THREAT_MODE &&
+            persisted.PREVIOUS_BRANCH?.keys === "x" &&
+            defaults.TOGGLE_THREAT_MODE &&
+            defaults.PREVIOUS_BRANCH
+        ) {
+            persisted.PREVIOUS_BRANCH = { ...defaults.PREVIOUS_BRANCH };
+        }
         return Object.fromEntries(
             Object.entries(defaults).map(([id, fallback]) => [
                 id,
@@ -89,14 +100,14 @@ export function createKeybindStorage(
             if (storedValue === null) {
                 return initialValue;
             }
+            let repaired: KeyMap;
             try {
-                const repaired = repair(JSON.parse(storedValue));
-                if (JSON.stringify(repaired) !== storedValue) this.setItem(key, repaired);
-                return repaired;
+                repaired = repair(JSON.parse(storedValue));
             } catch {
-                this.setItem(key, initialValue);
-                return initialValue;
+                repaired = initialValue;
             }
+            if (JSON.stringify(repaired) !== storedValue) this.setItem(key, repaired);
+            return repaired;
         },
         setItem(key, value) {
             const normalized = Object.fromEntries(
@@ -105,7 +116,11 @@ export function createKeybindStorage(
                     { ...binding, keys: binding.keys.replace("meta", meta) },
                 ]),
             );
-            storage.setItem(key, JSON.stringify(normalized));
+            try {
+                storage.setItem(key, JSON.stringify(normalized));
+            } catch (error) {
+                notifyListenerError(error);
+            }
         },
         removeItem(key) {
             storage.removeItem(key);

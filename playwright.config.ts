@@ -32,6 +32,11 @@ export default defineConfig({
     snapshotPathTemplate: "{testDir}/{testFilePath}-snapshots/{arg}-{projectName}{ext}",
     projects: [
         {
+            name: "engine-hotkeys",
+            testMatch: /engine-hotkeys\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "light" },
+        },
+        {
             name: "database-conflict",
             testMatch: /database-conflict\.spec\.ts/,
             use: { ...chromium, viewport: { width: 1280, height: 900 }, colorScheme: "light" },

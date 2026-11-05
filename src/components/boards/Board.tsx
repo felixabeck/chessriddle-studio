@@ -15,7 +15,7 @@ import { chessgroundDests, chessgroundMove } from "chessops/compat";
 import { makeFen, parseFen } from "chessops/fen";
 import { makeSan } from "chessops/san";
 import { atom, useAtom, useAtomValue } from "jotai";
-import { memo, type MouseEvent, useCallback, useContext, useMemo, useState } from "react";
+import { memo, type MouseEvent, useCallback, useContext, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
 import { match } from "ts-pattern";
@@ -189,6 +189,7 @@ function Board({
   const [pendingMove, setPendingMove] = useState<NormalMove | null>(null);
   const [keyboardSquare, setKeyboardSquare] = useState<SquareName>("e2");
   const [keyboardSource, setKeyboardSource] = useState<SquareName | null>(null);
+  const keyboardFocus = useRef(false);
   const [keyboardAnnouncement, setKeyboardAnnouncement] = useState("");
 
   const turn = pos?.turn || "white";
@@ -380,6 +381,7 @@ function Board({
     if (event.key === "ArrowUp") nextRank += vertical;
     if (event.key === "ArrowDown") nextRank -= vertical;
     if (nextFile !== file || nextRank !== rank) {
+      keyboardFocus.current = true;
       event.preventDefault();
       if (nextFile >= 0 && nextFile < 8 && nextRank >= 0 && nextRank < 8) {
         const next =
@@ -399,6 +401,7 @@ function Board({
       return;
     }
     if (event.key !== " " && event.key !== "Enter") return;
+    if (event.key === " " && !keyboardSource && !keyboardFocus.current) return;
     event.preventDefault();
     if (!keyboardSource) {
       setKeyboardSource(keyboardSquare);
@@ -545,6 +548,13 @@ function Board({
                   orientation: boardColorLabel(t, orientation),
                 })}
                 aria-activedescendant={`board-square-${keyboardSquare}`}
+                onFocus={(event) => {
+                  // Capture focus modality before Space itself can change :focus-visible.
+                  keyboardFocus.current = event.currentTarget.matches(":focus-visible");
+                }}
+                onPointerDown={() => {
+                  keyboardFocus.current = false;
+                }}
                 onKeyDown={keyboardMove}
                 onClick={() => {
                   if (nodeDrawables.eraseOnMovablePieceClick) clearShapes();

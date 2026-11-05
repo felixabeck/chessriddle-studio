@@ -1,5 +1,5 @@
 import { useTabAtom, useOwnerTabId } from "@/state/tabScope";
-import { useAtomValue } from "jotai";
+import { useAtomValue, useStore, type Getter } from "jotai";
 import { useEffect, useState } from "react";
 import type { BestMoves, EngineLog, EngineTerminalEntry, EngineTerminalSnapshot } from "@/bindings";
 import type { TFunction } from "i18next";
@@ -80,6 +80,64 @@ export function matchingEngineTerminal(
         : null;
 }
 
+/** Shared current-line eligibility for the panel and actions consuming its analysis. */
+export function readEngineLines(
+    get: Getter,
+    tab: string,
+    engine: Engine,
+    fen: string,
+    moves: string[],
+    threat: boolean,
+) {
+    const settings = get(
+        tabEngineSettingsFamily({
+            tab,
+            engineId: engine.id,
+            defaultSettings: engine.settings ?? undefined,
+            defaultGo: engine.go ?? undefined,
+        }),
+    );
+    const memory = get(engineMovesFamily({ tab, engine: engine.id }));
+    const terminal = get(engineTerminalFamily({ tab, engine: engine.id }));
+    const retry = get(engineRetryFamily({ tab, engine: engine.id }));
+    const search = analysisSearch(fen, moves, threat);
+    const [, error] = positionFromFen(fen);
+    const isGameOver = search.position?.isEnd() ?? false;
+    const context = engineLineContext(settings, engine);
+    const current =
+        !search.available || (memory instanceof AnalysisLineMemory && memory.context !== context)
+            ? undefined
+            : memory.get(search.key);
+    const eligible = search.available && settings.enabled && !error && !isGameOver;
+    const currentTerminal = eligible
+        ? matchingEngineTerminal(terminal, engine, context, retry, search.key)
+        : null;
+    const failure = currentTerminal?.type === "failed" ? currentTerminal : null;
+    const remoteNoLines = engine.type !== "local" && currentTerminal !== null && !failure;
+    return {
+        settings,
+        search,
+        error,
+        isGameOver,
+        context,
+        retry,
+        current,
+        eligible,
+        currentTerminal,
+        failure,
+        remoteNoLines,
+        actionable:
+            engine.loaded &&
+            eligible &&
+            !failure &&
+            !remoteNoLines &&
+            memory instanceof AnalysisLineMemory &&
+            memory.context === context
+                ? current
+                : undefined,
+    };
+}
+
 /** Retains one committed display per mode and reader, scoped to its owner and settings. */
 export function useDisplayedEngineLines(
     engine: Engine,
@@ -89,7 +147,8 @@ export function useDisplayedEngineLines(
 ) {
     const tab = useOwnerTabId();
     const threat = useAtomValue(useTabAtom(threatFamily));
-    const settings = useAtomValue(
+    const store = useStore();
+    useAtomValue(
         tabEngineSettingsFamily({
             tab,
             engineId: engine.id,
@@ -97,18 +156,23 @@ export function useDisplayedEngineLines(
             defaultGo: engine.go ?? undefined,
         }),
     );
-    const memory = useAtomValue(engineMovesFamily({ tab, engine: engine.id }));
-    const terminal = useAtomValue(engineTerminalFamily({ tab, engine: engine.id }));
-    const retry = useAtomValue(engineRetryFamily({ tab, engine: engine.id }));
-    const search = analysisSearch(fen, moves, threat);
-    const [, error] = positionFromFen(fen);
-    const isGameOver = search.position?.isEnd() ?? false;
-    const context = engineLineContext(settings, engine);
+    useAtomValue(engineMovesFamily({ tab, engine: engine.id }));
+    useAtomValue(engineTerminalFamily({ tab, engine: engine.id }));
+    useAtomValue(engineRetryFamily({ tab, engine: engine.id }));
+    const {
+        settings,
+        search,
+        error,
+        isGameOver,
+        context,
+        retry,
+        current,
+        eligible,
+        currentTerminal,
+        failure,
+        remoteNoLines,
+    } = readEngineLines(store.get, tab, engine, fen, moves, threat);
     const scope = JSON.stringify([tab, context]);
-    const current =
-        !search.available || (memory instanceof AnalysisLineMemory && memory.context !== context)
-            ? undefined
-            : memory.get(search.key);
     const [previous, setPrevious] = useState<{
         scope: string;
         displays: Map<boolean, DisplayedLines>;
@@ -127,12 +191,6 @@ export function useDisplayedEngineLines(
             });
     }, [current, scope, search.searchedBoardFen, halfMoves, error, isGameOver, threat]);
 
-    const eligible = search.available && settings.enabled && !error && !isGameOver;
-    const currentTerminal = eligible
-        ? matchingEngineTerminal(terminal, engine, context, retry, search.key)
-        : null;
-    const failure = currentTerminal?.type === "failed" ? currentTerminal : null;
-    const remoteNoLines = engine.type !== "local" && currentTerminal !== null && !failure;
     const waiting = eligible && current === undefined && !currentTerminal;
     const request = JSON.stringify([scope, search.key, threat, retry]);
     const [expired, setExpired] = useState<string | null>(null);

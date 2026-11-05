@@ -3,8 +3,8 @@ import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { Paper, Portal, Stack, Tabs } from "@mantine/core";
 import { useHotkeys, useToggle, type HotkeyItem } from "@mantine/hooks";
 import { Database, Info, NotebookPen, Crosshair, ScanSearch } from "lucide-react";
-import type { Piece } from "chessops";
-import { useAtom, useAtomValue } from "jotai";
+import { parseUci, type Piece } from "chessops";
+import { useAtom, useAtomValue, useStore as useAtomStore } from "jotai";
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
@@ -18,7 +18,13 @@ import {
   enableAllFamily,
   practiceMoveControllerFamily,
   practiceStateFamily,
+  enginesAtom,
+  threatFamily,
+  tabEngineSettingsFamily,
 } from "@/state/atoms";
+import { getVariationLine } from "@/utils/chess";
+import { positionFromFen } from "@/utils/chessops";
+import { readEngineLines } from "../panels/analysis/useDisplayedEngineLines";
 import { keyMapAtom } from "@/state/keybinds";
 import type { Annotation } from "@/utils/annotation";
 import {
@@ -143,6 +149,61 @@ function BoardAnalysis() {
   const practiceState = useAtomValue(useTabAtom(practiceStateFamily));
   const practiceMoveController = useAtomValue(useTabAtom(practiceMoveControllerFamily));
   const isPracticeRating = practicing && practiceState.phase === "correct";
+  const atoms = useAtomStore();
+  const tabId = useOwnerTabId();
+
+  useHotkeys([
+    [
+      keyMap.PLAY_BEST_ENGINE_MOVE.keys,
+      (event) => {
+        if (event.defaultPrevented || practicing || editingMode || atoms.get(threatFamily(tabId)))
+          return;
+        const state = store.getState();
+        const moves = getVariationLine(state.root, state.position);
+        for (const engine of atoms.get(enginesAtom) ?? []) {
+          const lines = readEngineLines(
+            atoms.get,
+            tabId,
+            engine,
+            state.root.fen,
+            moves,
+            false,
+          ).actionable;
+          const uci = lines?.find((line) => line.multipv === 1)?.uciMoves[0];
+          if (!uci) continue;
+          const move = parseUci(uci);
+          const [position] = positionFromFen(state.currentNode().fen);
+          if (!move || !position?.isLegal(move)) return;
+          event.preventDefault();
+          state.makeMove({ payload: move });
+          return;
+        }
+      },
+      { preventDefault: false },
+    ],
+    [
+      keyMap.TOGGLE_THREAT_MODE.keys,
+      (event) => {
+        const threat = atoms.get(threatFamily(tabId));
+        const enabled = (atoms.get(enginesAtom) ?? []).some(
+          (engine) =>
+            engine.loaded &&
+            atoms.get(
+              tabEngineSettingsFamily({
+                tab: tabId,
+                engineId: engine.id,
+                defaultSettings: engine.settings ?? undefined,
+                defaultGo: engine.go ?? undefined,
+              }),
+            ).enabled,
+        );
+        if (!threat && !enabled) return;
+        atoms.set(threatFamily(tabId), !threat);
+        event.preventDefault();
+      },
+      { preventDefault: false },
+    ],
+  ]);
 
   const setPracticePath = useStore(store, (s) => s.setPracticePath);
   useEffect(() => {

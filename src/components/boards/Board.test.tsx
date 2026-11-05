@@ -119,6 +119,32 @@ async function press(grid: HTMLDivElement, ...keys: string[]) {
   }
 }
 
+test("pointer-focused grid yields Space without a selection and preserves Enter selection", async () => {
+  const { grid, onMove } = await render();
+  await act(async () => grid.dispatchEvent(new Event("pointerdown", { bubbles: true })));
+  const space = new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true });
+  await act(async () => grid.dispatchEvent(space));
+  expect(space.defaultPrevented).toBe(false);
+  expect(host.querySelector('[aria-live="polite"]')?.textContent).toBe("");
+  await press(grid, "Enter", "ArrowUp", "ArrowUp");
+  const selectedSpace = new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true });
+  await act(async () => grid.dispatchEvent(selectedSpace));
+  expect(selectedSpace.defaultPrevented).toBe(true);
+  expect(onMove).toHaveBeenCalledExactlyOnceWith("e2e4");
+});
+
+test("focus-visible grid consumes Space for square selection", async () => {
+  const { grid, onMove } = await render();
+  grid.blur();
+  vi.spyOn(grid, "matches").mockReturnValue(true);
+  await act(async () => grid.focus());
+  const space = new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true });
+  await act(async () => grid.dispatchEvent(space));
+  expect(space.defaultPrevented).toBe(true);
+  expect(host.querySelector('[aria-live="polite"]')?.textContent).toBe("Board.Aria.MoveSource");
+  expect(onMove).not.toHaveBeenCalled();
+});
+
 test("history with variations disabled refuses a legal keyboard move", async () => {
   tree.getState().makeMoves({ payload: ["e4", "e5", "Nf3", "Nc6"] });
   tree.getState().goToMove([0, 0]);

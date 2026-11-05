@@ -12,7 +12,7 @@ import { displayEngine, displayLines, engineDisplayHarness } from "@/tests/engin
 import { analysisSearch } from "./analysisSearch";
 import { AnalysisLineMemory } from "./analysisLineMemory";
 import { engineIdentity, engineLineContext } from "./analysisLineContext";
-import { useDisplayedEngineLines } from "./useDisplayedEngineLines";
+import { readEngineLines, useDisplayedEngineLines } from "./useDisplayedEngineLines";
 import type { Engine } from "@/utils/engines";
 import { createInstance } from "i18next";
 import english from "@/translation/en-US.json";
@@ -64,6 +64,31 @@ function terminal(moves: string[] = []) {
     retry: 0,
   };
 }
+
+test("the shared derivation excludes dimmed fallback and failed current lines from actions", async () => {
+  const memory = new AnalysisLineMemory();
+  memory.context = engineLineContext(h.store.get(h.settingsAtom), displayEngine);
+  memory.set(analysisSearch(INITIAL_FEN, [], false).key!, displayLines);
+  await act(async () => h.store.set(h.memoryAtom, memory));
+  await h.render(<Probe />);
+  const current = (moves: string[] = []) =>
+    readEngineLines(h.store.get, "display-tab", displayEngine, INITIAL_FEN, moves, false)
+      .actionable;
+  expect(current()).toEqual(display.lines);
+  await h.render(<Probe moves={["d2d4"]} />);
+  expect(display.dimmed).toBe(true);
+  expect(current(["d2d4"])).toBeUndefined();
+  await h.render(<Probe />);
+  await act(async () =>
+    h.store.set(engineTerminalFamily({ tab: "display-tab", engine: displayEngine.id }), {
+      ...terminal(),
+      type: "failed",
+    }),
+  );
+  expect(display.dimmed).toBe(true);
+  expect(display.lines).toEqual(displayLines);
+  expect(current()).toBeUndefined();
+});
 
 test("uses current lines immediately, then dimmed previous lines with their original position until 1000 ms", async () => {
   await h.remember();
