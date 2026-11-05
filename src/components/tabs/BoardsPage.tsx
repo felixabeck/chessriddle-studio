@@ -5,9 +5,9 @@ import { Button, Group, Menu, ScrollArea, Tabs, TextInput } from "@mantine/core"
 import { useHotkeys } from "@mantine/hooks";
 import { Copy, Ellipsis, Pencil, Plus, X } from "lucide-react";
 import { getDefaultStore, useAtom, useAtomValue, useSetAtom } from "jotai";
-import { type ReactNode, startTransition, useCallback, useEffect, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Mosaic } from "react-mosaic-component";
+import BoardTabLayout from "./BoardTabLayout";
 import {
   activeTabAtom,
   closeWorkspaceTabAtom,
@@ -54,8 +54,6 @@ import "react-mosaic-component/react-mosaic-component.css";
 
 import "@/styles/react-mosaic.css";
 import { platform } from "@/platform/native";
-import { atomWithStorage } from "jotai/utils";
-import { createWindowsStateStorage, defaultWindowsState, type ViewId } from "@/state/layoutStorage";
 import classes from "./BoardsPage.module.css";
 import { notifyUnlessCancelled } from "../files/notifyError";
 
@@ -428,7 +426,7 @@ export default function BoardsPage() {
         </Group>
       </AppModal>
       {tabs.map((tab) => (
-        <Tabs.Panel key={tab.value} value={tab.value} h="100%" w="100%" pb="sm" px="xs">
+        <Tabs.Panel key={tab.value} value={tab.value} h="100%" w="100%" mih={0} pb="sm" px="xs">
           <TabSwitch tab={tab} closeTab={(tabId) => void closeTab(tabId)} />
         </Tabs.Panel>
       ))}
@@ -463,22 +461,7 @@ export default function BoardsPage() {
   );
 }
 
-const fullLayout: Record<ViewId, ReactNode> = {
-  left: <div id="left" />,
-  topRight: <div id="topRight" />,
-  bottomRight: <div id="bottomRight" />,
-};
-
-const windowsStateAtom = atomWithStorage(
-  "windowsState",
-  defaultWindowsState(),
-  createWindowsStateStorage(localStorage),
-  { getOnInit: true },
-);
-
 function TabSwitch({ tab, closeTab }: { tab: Tab; closeTab: (tabId: string) => void }) {
-  const [windowsState, setWindowsState] = useAtom(windowsStateAtom);
-
   if (tab.type === "new") {
     return (
       <WorkspaceTabScope tabId={tab.value}>
@@ -486,28 +469,20 @@ function TabSwitch({ tab, closeTab }: { tab: Tab; closeTab: (tabId: string) => v
       </WorkspaceTabScope>
     );
   }
-  const layout = (
-    <Mosaic<ViewId>
-      renderTile={(id) => fullLayout[id]}
-      value={windowsState.currentNode}
-      onChange={(currentNode) => setWindowsState({ currentNode })}
-      resize={{ minimumPaneSizePercentage: 0 }}
-    />
-  );
   return (
     <WorkspaceTabScope tabId={tab.value}>
       <TreeStateProvider id={tab.value} treeKey={getTabTreeKey(tab)}>
         <TreeRecoveryGate tabId={tab.value} treeKey={getTabTreeKey(tab)}>
           {tab.type === "analysis" ? (
             <FileFreshnessGate tab={tab} closeTab={closeTab}>
-              {layout}
-              <BoardAnalysis />
+              <BoardTabLayout>
+                <BoardAnalysis />
+              </BoardTabLayout>
             </FileFreshnessGate>
           ) : (
-            <>
-              {layout}
+            <BoardTabLayout>
               {tab.type === "play" ? <BoardGame tabId={tab.value} /> : <Puzzles id={tab.value} />}
-            </>
+            </BoardTabLayout>
           )}
         </TreeRecoveryGate>
       </TreeStateProvider>

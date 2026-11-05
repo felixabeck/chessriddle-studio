@@ -15,36 +15,14 @@ import {
     whitePawnSquares,
     waitForFontsSettled,
     waitForScrollAreaScrollbarsHidden,
+    wheelBoardStackTo,
+    wheelColumnTo,
 } from "./fixtures";
 
 const databaseTitle = "Breakpoint database";
 
-async function wheelColumnToButton(page: Page, column: Locator, button: Locator) {
-    const columnBox = (await column.boundingBox())!;
-    const buttonBox = (await button.boundingBox())!;
-    // The left edge is outside the nested notation scroller, so the wheel targets the column.
-    await page.mouse.move(columnBox.x + 2, columnBox.y + columnBox.height / 2);
-    await page.mouse.wheel(
-        0,
-        buttonBox.y + buttonBox.height / 2 - (columnBox.y + columnBox.height / 2),
-    );
-    await expect
-        .poll(
-            () =>
-                button.evaluate((element) => {
-                    const box = element.getBoundingClientRect();
-                    const hit = document.elementFromPoint(
-                        box.left + box.width / 2,
-                        box.top + box.height / 2,
-                    );
-                    return hit !== null && element.contains(hit);
-                }),
-            { message: "button centre is hit-testable after user wheel scrolling" },
-        )
-        .toBe(true);
-}
-
 async function assertNotationColumn(page: Page, hasMoves: boolean) {
+    await wheelBoardStackTo(page, page.locator("#bottomRight"));
     const end = page.getByRole("button", { name: "Go to end", exact: true });
     const column = end.locator("../..");
     const card = page.locator("#bottomRight .mantine-Paper-root").filter({
@@ -88,9 +66,9 @@ async function assertNotationColumn(page: Page, hasMoves: boolean) {
                 }),
             )
             .toBe(true);
-        await wheelColumnToButton(page, column, san);
+        await wheelColumnTo(page, column, san);
     }
-    await wheelColumnToButton(page, column, end);
+    await wheelColumnTo(page, column, end);
     await expect.poll(() => column.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
 }
 

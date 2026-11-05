@@ -172,6 +172,71 @@ export async function waitForScrollAreaScrollbarsHidden(page: Page) {
     );
 }
 
+export async function wheelBoardStackTo(page: Page, target: Locator) {
+    const stack = page.locator('[data-board-layout="stacked"] > div').first();
+    if ((await stack.count()) === 0) return;
+    const frame = (await stack.boundingBox())!;
+    const box = (await target.boundingBox())!;
+    const before = await stack.evaluate((element) => ({
+        top: element.scrollTop,
+        maximum: element.scrollHeight - element.clientHeight,
+    }));
+    const delta = box.y - frame.y - 8;
+    const expected = Math.max(0, Math.min(before.maximum, before.top + delta));
+    // The four-pixel tile margin belongs to the outer stack, not an inner scroller.
+    await page.mouse.move(frame.x + 1, frame.y + Math.min(frame.height / 2, 100));
+    await page.mouse.wheel(0, delta);
+    await expect
+        .poll(() =>
+            stack.evaluate((element, expected) => Math.abs(element.scrollTop - expected), expected),
+        )
+        .toBeLessThanOrEqual(1);
+    await expect
+        .poll(
+            async () => {
+                const current = (await target.boundingBox())!;
+                return (
+                    current.y < frame.y + frame.height - 20 && current.y + current.height > frame.y
+                );
+            },
+            { message: "user wheel reveals the stacked tile" },
+        )
+        .toBe(true);
+}
+
+export async function wheelColumnTo(page: Page, column: Locator, target: Locator) {
+    const columnBox = (await column.boundingBox())!;
+    const targetBox = (await target.boundingBox())!;
+    const stack = page.locator('[data-board-layout="stacked"]');
+    const stackBox = (await stack.count())
+        ? (await stack.boundingBox())!
+        : { y: 0, height: page.viewportSize()!.height };
+    const top = Math.max(columnBox.y, stackBox.y);
+    const bottom = Math.min(
+        columnBox.y + columnBox.height,
+        stackBox.y + stackBox.height,
+        page.viewportSize()!.height,
+    );
+    const centre = (top + bottom) / 2;
+    // The column's left border is outside its nested notation viewport.
+    await page.mouse.move(columnBox.x, centre);
+    await page.mouse.wheel(0, targetBox.y + targetBox.height / 2 - centre);
+    await expect
+        .poll(
+            () =>
+                target.evaluate((element) => {
+                    const box = element.getBoundingClientRect();
+                    const hit = document.elementFromPoint(
+                        box.left + box.width / 2,
+                        box.top + box.height / 2,
+                    );
+                    return hit !== null && element.contains(hit);
+                }),
+            { message: "target centre is hit-testable after user wheel scrolling" },
+        )
+        .toBe(true);
+}
+
 export async function waitForFontsSettled(page: Page) {
     // One frame lets faces needed by just-rendered text enter loading before the first read, otherwise an empty set already reads as "loaded".
     await page.evaluate(

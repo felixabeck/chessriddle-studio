@@ -20,17 +20,14 @@ import { listingFailure } from "@/components/files/listingFailure";
 import { databaseLoadFailureMessage } from "./databaseLoadFailure";
 import { databaseHandleKey } from "@/utils/db";
 import { useElementSize } from "@mantine/hooks";
-import { useAtomValue } from "jotai";
-import { fontSizeAtom } from "@/state/atoms";
+import { useRootFontPx } from "@/hooks/useRootFontPx";
 import { databasePaneGeometry, DatabaseLayoutContext } from "@/state/databaseLayout";
 import classes from "./GridLayout.module.css";
 
 function DatabaseView() {
   const { t } = useTranslation();
   const { ref, width } = useElementSize();
-  const fontSize = useAtomValue(fontSizeAtom);
-  const rootFont =
-    Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || (16 * fontSize) / 100;
+  const rootFont = useRootFontPx();
   const geometry = { ...databasePaneGeometry(width, rootFont), rootFont };
   const { compact } = geometry;
   const database = useActiveDatabaseViewStore((s) => s.database);

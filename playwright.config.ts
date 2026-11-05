@@ -151,7 +151,7 @@ export default defineConfig({
             name: "notation-hierarchy-scaled",
             testMatch: /notation-hierarchy\.spec\.ts/,
             grep: /overflow-only/,
-            use: { ...chromium, viewport: { width: 1000, height: 720 }, colorScheme: "light" },
+            use: { ...chromium, viewport: { width: 320, height: 720 }, colorScheme: "light" },
         },
     ],
     webServer: {

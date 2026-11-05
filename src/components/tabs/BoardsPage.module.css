@@ -63,3 +63,55 @@
 .tabsFiller {
   flex-grow: 1;
 }
+
+.boardLayout {
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  container-type: inline-size;
+}
+
+.targetHost,
+.portalTarget {
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.boardStack {
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  --board-max-width: 100%;
+  --board-eval-width: 8px;
+  --board-gap: 0.1rem;
+  --notation-card-direction: column;
+  --notation-toolbar-height: auto;
+  --notation-toolbar-min-height: 0;
+  --notation-tools-direction: row;
+  --notation-tools-wrap: wrap;
+  --notation-comment-wrap: anywhere;
+}
+
+.boardStack > .targetHost {
+  position: relative;
+  margin: 4px;
+  /* Notation gets up to 70vh, capped at 32rem, with desktop internal scrolling. */
+  height: min(70vh, 32rem);
+}
+
+.boardStack > .targetHost:first-child {
+  /* PuzzleBoard sizes from its height and has no player bars. */
+  height: calc(100cqw - 8px);
+}
+
+.boardStack > .targetHost:first-child:has([data-board-surface]),
+.boardStack > .targetHost:first-child:has([data-board-surface]) > .portalTarget {
+  /* The standard board supplies its square, player bars and gutters at their real heights. */
+  height: auto;
+}
+
+.boardStack > .targetHost:nth-child(2) {
+  /* Nested analysis/practice tab lists need more room than the notation column. */
+  height: min(90vh, 32rem);
+}

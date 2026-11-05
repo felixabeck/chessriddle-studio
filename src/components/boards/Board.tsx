@@ -456,7 +456,7 @@ function Board({
             overflow: "hidden",
             maxWidth:
               //            topbar   bottompadding                tabs                                  bottomb    topbar   evalbar                                gaps    ???
-              `calc(100vh - 2.25rem - var(--mantine-spacing-sm) - 2.5rem - var(--mantine-spacing-sm) - ${BAR_HEIGHT} - ${BAR_HEIGHT} + 1.563rem + var(--mantine-spacing-md) - 1rem  - 0.2rem)`,
+              `var(--board-max-width, calc(100vh - 2.25rem - var(--mantine-spacing-sm) - 2.5rem - var(--mantine-spacing-sm) - ${BAR_HEIGHT} - ${BAR_HEIGHT} + 1.563rem + var(--mantine-spacing-md) - 1rem  - 0.2rem))`,
           }}
         >
           <BoardBar
@@ -492,6 +492,7 @@ function Board({
             style={{
               position: "relative",
               flexWrap: "nowrap",
+              columnGap: "var(--board-gap, var(--mantine-spacing-sm))",
             }}
             gap="sm"
           >
@@ -509,7 +510,7 @@ function Board({
             <Box
               h="100%"
               style={{
-                width: 25,
+                width: "var(--board-eval-width, 25px)",
               }}
             >
               {!evalOpen && (

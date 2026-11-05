@@ -13,7 +13,15 @@ export function BoardBar({ name, rating, onNameClick, height, children }: BoardB
   const hasPlayerName = name.trim().length > 0 && name !== "?";
 
   return (
-    <Group ml="2.5rem" mr="xs" h={height} justify="space-between" wrap="nowrap" align="flex-end">
+    <Group
+      data-board-bar
+      ml="2.5rem"
+      mr="xs"
+      h={height}
+      justify="space-between"
+      wrap="nowrap"
+      align="flex-end"
+    >
       <Group gap={6} align="baseline">
         {hasPlayerName && (
           <UnstyledButton type="button" onClick={onNameClick}>

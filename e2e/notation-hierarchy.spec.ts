@@ -10,6 +10,8 @@ import {
     waitForFontsSettled,
     waitForScrollAreaScrollbarsHidden,
     type MockScenario,
+    wheelBoardStackTo,
+    wheelColumnTo,
 } from "./fixtures";
 
 const MAIN_SAN = "e4";
@@ -150,8 +152,20 @@ async function openHierarchyGame(
     ).toBeVisible();
     await expect(notation.getByText(MAIN_COMMENT)).toBeVisible();
     await expect(notation.getByText(VARIATION_COMMENT)).toBeVisible();
+    await wheelBoardStackTo(page, page.locator("#bottomRight"));
+    await wheelColumnTo(
+        page,
+        page.getByRole("button", { name: "Go to end", exact: true }).locator("../.."),
+        notation,
+    );
     const current = notation.getByRole("button", { name: CURRENT_VARIATION_SAN, exact: true });
-    await current.scrollIntoViewIfNeeded();
+    const viewBox = (await notation.boundingBox())!;
+    const currentBox = (await current.boundingBox())!;
+    await page.mouse.move(
+        viewBox.x + viewBox.width / 2,
+        Math.min(viewBox.y + viewBox.height / 2, 680),
+    );
+    await page.mouse.wheel(0, currentBox.y - viewBox.y - 40);
     await current.click();
     await expect(notation.locator('[data-notation-current="true"] button')).toHaveText(
         CURRENT_VARIATION_SAN,
@@ -420,4 +434,152 @@ test("notation-hierarchy: overflow-only in both views", async ({ page, mockScena
     await assertNotationNoOverflow(notation, "inline");
     await showTableView(page, notation);
     await assertNotationNoOverflow(notation, "table");
+});
+
+async function assertStackedBoardGeometry(page: Page, label: string) {
+    await expect(page.locator('[data-board-layout="stacked"]')).toHaveCount(1);
+    await waitForFontsSettled(page);
+    const geometry = await page.evaluate(() => {
+        const target = document.getElementById("left")!;
+        const card = target.firstElementChild!;
+        const tile = target.getBoundingClientRect();
+        const cardBox = card.getBoundingClientRect();
+        const style = getComputedStyle(card);
+        const square = target.querySelector(".cg-wrap")!.getBoundingClientRect();
+        const content = [...target.querySelectorAll("[data-board-surface], [data-board-bar]")].map(
+            (element) => element.getBoundingClientRect(),
+        );
+        const contentHeight =
+            Math.max(...content.map((box) => box.bottom)) -
+            Math.min(...content.map((box) => box.top));
+        const tileInnerHeight =
+            cardBox.height -
+            parseFloat(style.borderTopWidth) -
+            parseFloat(style.borderBottomWidth) -
+            parseFloat(style.paddingTop) -
+            parseFloat(style.paddingBottom);
+        return {
+            tileWidth: tile.width,
+            tileInnerWidth: card.clientWidth,
+            tileInnerHeight,
+            contentHeight,
+            emptySpace: Math.max(0, tileInnerHeight - contentHeight),
+            rootFont: parseFloat(getComputedStyle(document.documentElement).fontSize),
+            squareWidth: square.width,
+            squareHeight: square.height,
+            paintedSquareWidth: target.querySelector("cg-board")!.getBoundingClientRect().width,
+            scrollWidth: document.documentElement.scrollWidth,
+            viewport: innerWidth,
+        };
+    });
+    console.log(`${label} geometry ${JSON.stringify(geometry)}`);
+    expect(geometry.squareWidth).toBeGreaterThanOrEqual(geometry.tileWidth * 0.9);
+    expect(geometry.paintedSquareWidth).toBeGreaterThanOrEqual(geometry.tileInnerWidth * 0.9);
+    expect(Math.abs(geometry.squareWidth - geometry.squareHeight)).toBeLessThanOrEqual(1);
+    expect(geometry.contentHeight).toBeLessThanOrEqual(geometry.tileInnerHeight + 1);
+    expect(geometry.emptySpace).toBeLessThanOrEqual(geometry.rootFont);
+    expect(geometry.scrollWidth).toBe(geometry.viewport);
+}
+
+test("notation-hierarchy: overflow-only stacked board fits content at 100%", async ({
+    page,
+    mockScenario,
+}) => {
+    await page.setViewportSize({ width: 560, height: 800 });
+    await page.addInitScript(() => localStorage.setItem("font-size", "100"));
+    await mockHierarchyGame(page, mockScenario);
+    await openLibraryFile(page);
+    await page.getByRole("button", { name: "Open game", exact: true }).click();
+    await expect(page).toHaveURL("/");
+    await expect(page.locator("html")).toHaveCSS("font-size", "16px");
+    await assertStackedBoardGeometry(page, "560x800/100%");
+});
+
+test("notation-hierarchy: overflow-only stacked geometry and wheel reachability", async ({
+    page,
+    mockScenario,
+}) => {
+    const tokens: Token[] = [
+        { type: "Header", value: { tag: "Result", value: "*" } },
+        ...Array.from({ length: 100 }, () =>
+            ["Nf3", "Nf6", "Ng1", "Ng8"].flatMap((value): Token[] => [
+                { type: "San", value },
+                { type: "Comment", value: "Scroll reachability row" },
+            ]),
+        ).flat(),
+        { type: "San", value: "e4" },
+        { type: "Outcome", value: "*" },
+    ];
+    await mockScenario({
+        commands: filesWorkspaceCommands([[filesWorkspaceFixture.pgnFile]], {
+            ...pgnFileCommands,
+            lex_pgn: { pgnTokens: { [filesWorkspaceFixture.pgnGame]: tokens } },
+        }),
+    });
+    await openLibraryFile(page);
+    await page.getByRole("button", { name: "Open game", exact: true }).click();
+    await expect(page).toHaveURL("/");
+    await assertStackedBoardGeometry(page, "320x720/200%");
+    for (const id of ["left", "topRight", "bottomRight"]) {
+        await expect
+            .poll(() =>
+                page.locator(`#${id}`).evaluate((element) => {
+                    const bounds = element.getBoundingClientRect();
+                    let ancestor = element.parentElement;
+                    while (ancestor) {
+                        const box = ancestor.getBoundingClientRect();
+                        if (
+                            getComputedStyle(ancestor).overflowX !== "visible" &&
+                            (bounds.left < box.left - 1 || bounds.right > box.right + 1)
+                        )
+                            return false;
+                        ancestor = ancestor.parentElement;
+                    }
+                    return true;
+                }),
+            )
+            .toBe(true);
+    }
+    await wheelBoardStackTo(page, page.locator("#topRight"));
+    const analysis = page.locator("#topRight").getByRole("tab", { name: "Analysis", exact: true });
+    await expect(analysis).toBeInViewport();
+    expect(
+        await analysis
+            .locator(".mantine-Tabs-tabLabel")
+            .evaluate((label) => label.scrollWidth <= label.clientWidth),
+    ).toBe(true);
+    const move = page.locator("#bottomRight").getByRole("button", { name: "e4", exact: true });
+    await expect(move, "late virtual move starts unmounted").toHaveCount(0);
+    await wheelBoardStackTo(page, page.locator("#bottomRight"));
+    const viewport = page.locator("#bottomRight .mantine-ScrollArea-viewport").last();
+    await wheelColumnTo(
+        page,
+        page.getByRole("button", { name: "Go to end", exact: true }).locator("../.."),
+        viewport,
+    );
+    const viewportBox = (await viewport.boundingBox())!;
+    const stackBox = (await page.locator('[data-board-layout="stacked"]').boundingBox())!;
+    const x = viewportBox.x + viewportBox.width / 2;
+    const y = Math.max(viewportBox.y, stackBox.y) + 30;
+    await page.mouse.move(x, y);
+    for (let step = 0; step < 200; step++) {
+        if (
+            (await move.count()) &&
+            (await move.evaluate((element) => {
+                const box = element.getBoundingClientRect();
+                return element.contains(
+                    document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2),
+                );
+            }))
+        )
+            break;
+        await page.mouse.wheel(0, 500);
+        await page.waitForTimeout(30);
+    }
+    await expect(move).toBeInViewport();
+    const moveBox = (await move.boundingBox())!;
+    await page.mouse.click(moveBox.x + moveBox.width / 2, moveBox.y + moveBox.height / 2);
+    await expect(page.locator('#bottomRight [data-notation-current="true"] button')).toHaveText(
+        "e4",
+    );
 });

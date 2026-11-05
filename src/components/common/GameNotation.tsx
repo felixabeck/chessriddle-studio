@@ -221,7 +221,7 @@ function GameNotation({ topBar, controls }: { topBar?: boolean; controls?: React
         flexShrink: topBar ? 0 : undefined,
       }}
     >
-      <Group h="100%" wrap="nowrap" align="stretch" gap={0}>
+      <Group h="100%" wrap="nowrap" align="stretch" gap={0} className={styles.contentRow}>
         {controls && (
           <Box className={styles.toolbar}>
             <ScrollArea type="never" flex={1} mih={0} py="md" px="xs">

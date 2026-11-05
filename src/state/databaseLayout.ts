@@ -3,12 +3,11 @@ import { atomWithStorage } from "jotai/utils";
 import { createContext } from "react";
 import { z } from "zod";
 import { createZodStorage } from "./utils";
+import { needsTwoPaneStack, PANE_FLOOR_REM, MOSAIC_DIVIDER_ALLOWANCE_PX } from "./paneLayout";
 
 export const DATABASE_SPLIT_KEY = "database-table-percentage";
 export const DATABASE_SPLIT_STEP_PERCENT = 5;
 const DATABASE_SPLIT_MIN_PERCENT = 20;
-const DATABASE_PANE_FLOOR_REM = 20;
-const MOSAIC_DIVIDER_ALLOWANCE_PX = 6;
 const PREVIEW_NOTATION_WIDTH_REM = 12;
 const PREVIEW_NOTATION_HEIGHT_REM = 8;
 const PREVIEW_COMPACT_NOTATION_HEIGHT_REM = 12;
@@ -43,8 +42,8 @@ export const databaseSplitAtoms = createDatabaseSplitAtoms(localStorage);
 
 // Mosaic's row divider extends three pixels into each tile.
 export function databasePaneGeometry(width: number, rootFont: number) {
-    const floor = DATABASE_PANE_FLOOR_REM * rootFont;
-    const compact = width < 2 * floor + MOSAIC_DIVIDER_ALLOWANCE_PX;
+    const floor = PANE_FLOOR_REM * rootFont;
+    const compact = needsTwoPaneStack(width, rootFont);
     const minimum = compact
         ? 50
         : Math.max(

@@ -293,6 +293,9 @@ vi.mock("./NewTabHome", () => ({
   },
 }));
 vi.mock("react-mosaic-component", () => ({ Mosaic: () => null }));
+vi.mock("./BoardTabLayout", () => ({
+  default: ({ children }: { children: ReactNode }) => children,
+}));
 
 import BoardsPage from "./BoardsPage";
 import {
