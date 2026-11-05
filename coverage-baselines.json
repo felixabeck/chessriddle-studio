@@ -32,7 +32,8 @@
           "src/bootstrap.tsx",
           "src/i18n.ts",
           "src/index.tsx",
-          "src/platform/analytics.ts"
+          "src/platform/analytics.ts",
+          "src/utils/nativeContextMenu.ts"
         ]
       },
       {
