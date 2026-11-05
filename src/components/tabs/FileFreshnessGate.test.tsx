@@ -36,6 +36,7 @@ const mocks = vi.hoisted(() => ({
   reportPersistError: vi.fn(),
   writeGame: vi.fn(),
   getDbGame: vi.fn(),
+  inferGameOrientation: vi.fn(),
   lexPgn: vi.fn(),
   insertDbGame: vi.fn(),
   showNotification: vi.fn(),
@@ -74,6 +75,7 @@ vi.mock("@/platform/tauri", async (importOriginal) => {
       ...actual.tauri,
       writeGame: mocks.writeGame,
       getDbGame: mocks.getDbGame,
+      inferGameOrientation: mocks.inferGameOrientation,
       lexPgn: mocks.lexPgn,
       insertDbGame: mocks.insertDbGame,
       qualifyFileGame: vi.fn(async () => null),
@@ -317,6 +319,7 @@ async function setup({
 
 beforeEach(() => {
   mocks.lexPgn.mockResolvedValue([]);
+  mocks.inferGameOrientation.mockResolvedValue(null);
   mocks.collections = [];
   sessionStorage.clear();
   vi.clearAllMocks();
@@ -362,33 +365,55 @@ test("an unverified database tab shows the board until a conflict unmounts it", 
   expect(host.textContent).toContain("FileFreshness.ChangedInDatabase");
 });
 
-test("database reload installs the row's starting tree, headers and stamp", async () => {
+test.each([undefined, "white", "black"] as const)(
+  "database reload preserves stored/inferred orientation %s and the row's tree and stamp",
+  async (orientation) => {
+    await setup({ tab: databaseTab, freshness: "conflict", dirty: true });
+    const actual = await vi.importActual<typeof import("@/utils/chess")>("@/utils/chess");
+    mocks.parsePGN.mockImplementation(actual.parsePGN);
+    mocks.lexPgn.mockResolvedValue([
+      { type: "San", value: "c5" },
+      { type: "Outcome", value: "*" },
+    ]);
+    mocks.getDbGame.mockResolvedValue({ kind: "found", game: { ...databaseRow, orientation } });
+    mocks.inferGameOrientation.mockResolvedValue("black");
+    await act(async () => button("FileFreshness.ReloadFromDatabase").click());
+    expect(mocks.getDbGame).toHaveBeenCalledWith(
+      databaseTab.gameOrigin.kind === "database" && databaseTab.gameOrigin.database,
+      812,
+      null,
+      { signal: expect.any(AbortSignal) },
+    );
+    expect(treeStore.getState().root.fen).toBe(databaseRow.fen);
+    expect(treeStore.getState().root.children[0].san).toBe("c5");
+    expect(treeStore.getState().headers).toMatchObject({
+      event: "Row event",
+      site: "Berlin",
+      white: "White",
+      black: "Black",
+    });
+    expect(treeStore.getState()).toMatchObject({ sourceStamp: changedStamp, dirty: false });
+    expect(treeStore.getState().headers.orientation).toBe(orientation ?? "black");
+    expect(mocks.inferGameOrientation).toHaveBeenCalledTimes(orientation ? 0 : 1);
+    expect(getFileFreshness(tabId).state).toBe("verified");
+    expect(host.querySelector('[data-testid="board-and-panels"]')).not.toBeNull();
+  },
+);
+
+test("a late database inference cannot replace an unmounted reload owner", async () => {
   await setup({ tab: databaseTab, freshness: "conflict", dirty: true });
   const actual = await vi.importActual<typeof import("@/utils/chess")>("@/utils/chess");
   mocks.parsePGN.mockImplementation(actual.parsePGN);
-  mocks.lexPgn.mockResolvedValue([
-    { type: "San", value: "c5" },
-    { type: "Outcome", value: "*" },
-  ]);
   mocks.getDbGame.mockResolvedValue({ kind: "found", game: databaseRow });
+  const inference = deferred<"black">();
+  mocks.inferGameOrientation.mockReturnValueOnce(inference.promise);
+  const original = treeStore.getState().root;
   await act(async () => button("FileFreshness.ReloadFromDatabase").click());
-  expect(mocks.getDbGame).toHaveBeenCalledWith(
-    databaseTab.gameOrigin.kind === "database" && databaseTab.gameOrigin.database,
-    812,
-    null,
-    { signal: expect.any(AbortSignal) },
-  );
-  expect(treeStore.getState().root.fen).toBe(databaseRow.fen);
-  expect(treeStore.getState().root.children[0].san).toBe("c5");
-  expect(treeStore.getState().headers).toMatchObject({
-    event: "Row event",
-    site: "Berlin",
-    white: "White",
-    black: "Black",
-  });
-  expect(treeStore.getState()).toMatchObject({ sourceStamp: changedStamp, dirty: false });
-  expect(getFileFreshness(tabId).state).toBe("verified");
-  expect(host.querySelector('[data-testid="board-and-panels"]')).not.toBeNull();
+  expect(mocks.inferGameOrientation).toHaveBeenCalledOnce();
+  await act(async () => root.render(null));
+  await act(async () => inference.resolve("black"));
+  expect(treeStore.getState().root).toBe(original);
+  expect(treeStore.getState().dirty).toBe(true);
 });
 
 test("a missing database row keeps the tree and offers Close", async () => {

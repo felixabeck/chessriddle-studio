@@ -15,7 +15,15 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   notify: vi.fn(),
 }));
-vi.mock("@/platform/tauri", () => ({ tauri: { resolveLinkedGame: mocks.resolve } }));
+vi.mock("@/platform/tauri", () => ({
+  tauri: {
+    resolveLinkedGame: mocks.resolve,
+    getDbGame: vi.fn(async (_database, gameId: number) =>
+      game.id === gameId ? { kind: "found", game } : { kind: "missing" },
+    ),
+    inferGameOrientation: vi.fn(async () => null),
+  },
+}));
 vi.mock("@/utils/chess", async (original) => ({
   ...(await original<typeof import("@/utils/chess")>()),
   parsePGN: mocks.parse,

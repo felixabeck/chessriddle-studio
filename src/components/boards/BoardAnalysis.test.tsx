@@ -1073,6 +1073,41 @@ describe("BoardAnalysis", () => {
     return binding[1] as () => void;
   }
 
+  test("a database orientation flip autosaves its PGN tag and advances the row stamp", async () => {
+    const database = { id: { id: "orientation-db" }, kind: "database" } as const;
+    mocks.collectionForDatabase.mockReset().mockResolvedValue(null);
+    mocks.writeDbGame.mockReset().mockResolvedValue("b".repeat(64));
+    await act(async () => {
+      treeStore.getState().setState({ ...defaultTree(), sourceStamp: "a".repeat(64) });
+      updateTabById(
+        (...args) => jotaiStore.set(tabsAtom, ...args),
+        tabId,
+        (previous) => ({
+          ...previous,
+          gameOrigin: { kind: "database", database, gameId: 812 },
+        }),
+      );
+      jotaiStore.set(autoSaveAtom, true);
+    });
+    expect(mocks.writeDbGame).not.toHaveBeenCalled();
+    await act(async () => {
+      treeStore.getState().setHeaders({
+        ...treeStore.getState().headers,
+        fen: treeStore.getState().root.fen,
+        orientation: "black",
+      });
+    });
+    await vi.waitFor(() => expect(mocks.writeDbGame).toHaveBeenCalledOnce());
+    expect(mocks.writeDbGame).toHaveBeenCalledWith(
+      database,
+      812,
+      expect.stringContaining('[Orientation "black"]'),
+      "a".repeat(64),
+    );
+    expect(treeStore.getState()).toMatchObject({ dirty: false, sourceStamp: "b".repeat(64) });
+    expect(mocks.writeGame).not.toHaveBeenCalled();
+  });
+
   async function startAutosave() {
     const tree = defaultTree();
     tree.headers.event = "Captured autosave header";

@@ -34,6 +34,26 @@ import {
 
 const mocks = vi.hoisted(() => ({ lexPgn: vi.fn() }));
 
+test.each([undefined, "invalid", "White", "white", "black"])(
+    "orientation %s preserves the distinction between unset and explicit White",
+    async (value) => {
+        mocks.lexPgn.mockResolvedValueOnce([
+            ...(value === undefined
+                ? []
+                : [{ type: "Header", value: { tag: "Orientation", value } }]),
+            { type: "Outcome", value: "*" },
+        ]);
+        const tree = await parsePGN("*");
+        const expected = value === "white" || value === "black" ? value : undefined;
+        expect(tree.headers.orientation).toBe(expected);
+        expect(Object.hasOwn(tree.headers, "orientation")).toBe(expected !== undefined);
+        expect(headersToPGN(tree.headers).includes("[Orientation")).toBe(expected !== undefined);
+        const expectedTag = expected === undefined ? undefined : `[Orientation "${expected}"]`;
+        expect(headersToPGN(tree.headers).match(/^\[Orientation .*\]$/m)?.[0]).toBe(expectedTag);
+        expect(tree.dirty).toBe(false);
+    },
+);
+
 const sanToken = (value: string): Token => ({ type: "San", value });
 const commentToken = (value: string): Token => ({ type: "Comment", value });
 const outcomeToken: Token = { type: "Outcome", value: "*" };

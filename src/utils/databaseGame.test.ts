@@ -10,16 +10,29 @@ import { databaseGameSeed, normalizeGameSignature, openDatabaseGame } from "./da
 import { createTab, serializeStoreTree } from "./tabs";
 import type { TreeState } from "./treeReducer";
 
-const native = vi.hoisted(() => ({ lexPgn: vi.fn(), resolveLinkedGame: vi.fn() }));
+const native = vi.hoisted(() => ({
+    lexPgn: vi.fn(),
+    resolveLinkedGame: vi.fn(),
+    getDbGame: vi.fn(),
+    inferGameOrientation: vi.fn(),
+    log: vi.fn(),
+}));
 vi.mock("@/platform/tauri", () => ({ tauri: native }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 vi.mock("@/state/persistError", () => ({ reportPersistError: vi.fn() }));
+vi.mock("@/platform/errors", async (original) => ({
+    ...(await original<typeof import("@/platform/errors")>()),
+    logFailureSafely: native.log,
+}));
 
 const database = { id: { id: "header-database" }, kind: "database" } as const;
 const ids: string[] = [];
 
 beforeEach(() => {
     native.resolveLinkedGame.mockReset().mockResolvedValue(null);
+    native.getDbGame.mockReset();
+    native.inferGameOrientation.mockReset().mockResolvedValue(null);
+    native.log.mockReset().mockResolvedValue(undefined);
     native.lexPgn.mockReset().mockResolvedValue([
         { type: "San", value: "e4" },
         { type: "San", value: "e5" },
@@ -59,6 +72,7 @@ test.each([
             moves: "1. e4 e5 *",
         };
         const seed = databaseGameSeed(game, database);
+        native.getDbGame.mockResolvedValue({ kind: "found", game });
         expect(seed.headers).toEqual({ ...game, event: decoded, site: decoded });
         expect(game.event).toBe(stored);
         expect(game.site).toBe(stored);
@@ -154,6 +168,7 @@ test.each(["admitted", "refused", "online"] as const)(
         const workspace = createStore();
         workspace.set(tabsAtom, []);
         workspace.set(recentFilesAtom, []);
+        native.getDbGame.mockResolvedValue({ kind: "found", game });
         const add = vi.fn(
             (
                 entry: Parameters<typeof openDatabaseGame>[0]["addRecentFile"] extends (
@@ -192,12 +207,19 @@ test.each(["admitted", "refused", "online"] as const)(
         });
         expect(add.mock.calls).toEqual(mode === "admitted" ? [[expectedEntry]] : []);
         expect(workspace.get(recentFilesAtom)).toHaveLength(mode === "admitted" ? 1 : 0);
+        expect(native.getDbGame).toHaveBeenCalledTimes(mode === "online" ? 0 : 1);
+        expect(native.inferGameOrientation).toHaveBeenCalledTimes(mode === "online" ? 0 : 1);
     },
 );
 
-test.each([false, true])(
-    "opening a row seeds its own FEN and the final origin's stamp, linked=%s",
-    async (linked) => {
+test.each([
+    { linked: false, orientation: undefined },
+    { linked: true, orientation: undefined },
+    { linked: true, orientation: "white" },
+    { linked: true, orientation: "black" },
+] as const)(
+    "opening a row preserves its tree and stamp, linked=$linked, orientation=$orientation",
+    async ({ linked, orientation }) => {
         const fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
         const row: NormalizedGame = {
             id: 812,
@@ -226,6 +248,14 @@ test.each([false, true])(
         ] satisfies Token[]);
         if (linked) {
             native.lexPgn.mockResolvedValueOnce([
+                ...(orientation
+                    ? [
+                          {
+                              type: "Header" as const,
+                              value: { tag: "Orientation", value: orientation },
+                          },
+                      ]
+                    : []),
                 { type: "San", value: "d4" },
                 { type: "Outcome", value: "*" },
             ] satisfies Token[]);
@@ -241,6 +271,8 @@ test.each([false, true])(
         }
         const workspace = createStore();
         workspace.set(tabsAtom, []);
+        native.getDbGame.mockResolvedValue({ kind: "found", game: row });
+        native.inferGameOrientation.mockResolvedValue("black");
         const id = await openDatabaseGame({
             game: row,
             database,
@@ -264,5 +296,106 @@ test.each([false, true])(
                       black: "Black",
                   },
         );
+        expect(persisted?.headers.orientation).toBe(orientation ?? "black");
+        expect(persisted?.dirty).toBe(false);
+        expect(native.inferGameOrientation).toHaveBeenCalledTimes(orientation ? 0 : 1);
+    },
+);
+
+const orientationRow: NormalizedGame = {
+    id: 42,
+    stamp: "a".repeat(64),
+    fen: INITIAL_FEN,
+    white: "Opponent",
+    white_id: 1,
+    black: "Owner",
+    black_id: 2,
+    event: "Game",
+    event_id: 1,
+    site: "?",
+    site_id: 1,
+    result: "*",
+    moves: "1. e4 e5 *",
+};
+
+test.each(["white", "black"] as const)(
+    "a stale list row opens with the current %s orientation and CAS stamp",
+    async (orientation) => {
+        const current = { ...orientationRow, orientation, stamp: "c".repeat(64) };
+        native.getDbGame.mockResolvedValue({ kind: "found", game: current });
+        native.inferGameOrientation.mockResolvedValue("black");
+        const workspace = createStore();
+        workspace.set(tabsAtom, []);
+        const id = await openDatabaseGame({
+            game: orientationRow,
+            database,
+            setTabs: (...args) => workspace.set(tabsAtom, ...args),
+            addRecentFile: vi.fn(),
+        });
+        expect(id).not.toBeNull();
+        ids.push(id!);
+        expect(tabStorage.read<TreeState>(id!)?.state).toMatchObject({
+            headers: { orientation },
+            sourceStamp: current.stamp,
+            dirty: false,
+        });
+        expect(native.getDbGame).toHaveBeenCalledExactlyOnceWith(database, 42, null);
+        expect(native.inferGameOrientation).not.toHaveBeenCalled();
+    },
+);
+
+test("an inference failure still admits the game cleanly with White fallback", async () => {
+    native.getDbGame.mockResolvedValue({ kind: "found", game: orientationRow });
+    native.inferGameOrientation.mockRejectedValue(new Error("Inference failed"));
+    const workspace = createStore();
+    workspace.set(tabsAtom, []);
+    const addRecentFile = vi.fn();
+    const id = await openDatabaseGame({
+        game: orientationRow,
+        database,
+        setTabs: (...args) => workspace.set(tabsAtom, ...args),
+        addRecentFile,
+    });
+    expect(id).not.toBeNull();
+    ids.push(id!);
+    const tree = tabStorage.read<TreeState>(id!)?.state;
+    expect(tree?.headers.orientation).toBeUndefined();
+    expect(tree?.dirty).toBe(false);
+    expect(native.log).toHaveBeenCalledOnce();
+    expect(addRecentFile).toHaveBeenCalledOnce();
+});
+
+test("a row deleted since listing admits no tab and records no recent game", async () => {
+    native.getDbGame.mockResolvedValue({ kind: "missing" });
+    const setTabs = vi.fn();
+    const addRecentFile = vi.fn();
+    expect(
+        await openDatabaseGame({ game: orientationRow, database, setTabs, addRecentFile }),
+    ).toBeNull();
+    expect(setTabs).not.toHaveBeenCalled();
+    expect(addRecentFile).not.toHaveBeenCalled();
+    expect(native.inferGameOrientation).not.toHaveBeenCalled();
+});
+
+test.each(["Unknown", "?", ""])(
+    "a native no-inference result for Black %s leaves White fallback unset",
+    async (black) => {
+        native.getDbGame.mockResolvedValue({
+            kind: "found",
+            game: { ...orientationRow, black, black_id: 0 },
+        });
+        const workspace = createStore();
+        workspace.set(tabsAtom, []);
+        const id = await openDatabaseGame({
+            game: orientationRow,
+            database,
+            setTabs: (...args) => workspace.set(tabsAtom, ...args),
+            addRecentFile: vi.fn(),
+        });
+        expect(id).not.toBeNull();
+        ids.push(id!);
+        const tree = tabStorage.read<TreeState>(id!)?.state;
+        expect(tree?.headers.orientation).toBeUndefined();
+        expect(tree?.dirty).toBe(false);
     },
 );

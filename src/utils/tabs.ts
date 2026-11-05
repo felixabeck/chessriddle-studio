@@ -34,10 +34,11 @@ import { pickPgnFile, readFileGame, writeFileGame } from "./files";
 import type { GameHeaders, TreeState } from "./treeReducer";
 import { fileWorkspaceKey } from "./pathCapabilities";
 import type { DatabaseHandle, NormalizedGame } from "@/bindings";
-import { databaseGameToTree } from "./databaseGameTree";
+import { databaseGameToTree, seedDatabaseOrientation } from "./databaseGameTree";
 import { databaseHandleKey } from "./db";
 import { getFileFreshness, setFileFreshness } from "@/state/fileFreshness";
 import type { Workspace } from "@/state/workspace";
+import { gameSignature } from "@/state/gameSignature";
 export { getTabTreeKey, tabSchema, type GameOrigin, type Tab };
 
 export type FileBackedTab = Tab & {
@@ -579,7 +580,23 @@ export async function createTab({
     existingTabIds?: Iterable<string>;
 }): Promise<string | null> {
     let treeToSeed: TreeState | undefined = initialTree;
+    const databaseOrigin = gameOrigin?.kind === "database" ? gameOrigin : undefined;
     if (gameOrigin?.kind === "database") {
+        const current = await tauri.getDbGame(
+            gameOrigin.database,
+            gameOrigin.gameId,
+            databaseGame?.linked
+                ? { locator: databaseGame.linked, signature: gameSignature(databaseGame) }
+                : null,
+        );
+        if (current.kind === "missing") return null;
+        databaseGame = current.game;
+        gameOrigin = {
+            ...gameOrigin,
+            gameId: databaseGame.id,
+            linked: databaseGame.linked ?? undefined,
+        };
+        tab = { ...tab, name: `${databaseGame.white} - ${databaseGame.black}` };
         const linked = await tauri.resolveLinkedGame(
             gameOrigin.database,
             gameOrigin.gameId,
@@ -622,6 +639,14 @@ export async function createTab({
             }
         }
         treeToSeed = tree;
+    }
+
+    if (treeToSeed && databaseOrigin) {
+        await seedDatabaseOrientation(
+            treeToSeed,
+            databaseOrigin.database,
+            databaseGame?.id ?? databaseOrigin.gameId,
+        );
     }
 
     return commitNewTab({

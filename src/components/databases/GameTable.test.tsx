@@ -30,6 +30,11 @@ vi.mock("@/platform/tauri", async (original) => {
     tauri: {
       ...actual.tauri,
       resolveLinkedGame: vi.fn(async () => null),
+      getDbGame: vi.fn(async (_file, gameId: number) => {
+        const game = games.find((row) => row.id === gameId);
+        return game ? { kind: "found", game } : { kind: "missing" };
+      }),
+      inferGameOrientation: vi.fn(async () => null),
       deleteDbGame: mocks.deleteDbGame,
     },
   };
@@ -422,7 +427,7 @@ test("single click previews, labelled button admits the selected content and dat
   expect(jotai.get(recentFilesAtom)).toEqual([
     expect.objectContaining({ kind: "database", database: file, gameId: 22, name: "Second - B" }),
   ]);
-  expect(mocks.parsePGN).toHaveBeenCalledWith(games[1].moves, games[1].fen);
+  expect(mocks.parsePGN).toHaveBeenCalledWith(games[1].moves, games[1].fen, undefined);
   expect(seed).toHaveBeenCalledWith(
     expect.any(String),
     expect.objectContaining({ headers: games[1] }),

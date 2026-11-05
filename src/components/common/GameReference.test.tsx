@@ -28,6 +28,8 @@ const mocks = vi.hoisted(() => ({
   lookup: vi.fn(),
   resolve: vi.fn(),
   lex: vi.fn(),
+  getDbGame: vi.fn(),
+  inferGameOrientation: vi.fn(),
   navigate: vi.fn(),
   notify: vi.fn(),
 }));
@@ -36,7 +38,12 @@ vi.mock("@/utils/gameReferences", async (original) => ({
   lookupGameReference: mocks.lookup,
 }));
 vi.mock("@/platform/tauri", () => ({
-  tauri: { resolveLinkedGame: mocks.resolve, lexPgn: mocks.lex },
+  tauri: {
+    resolveLinkedGame: mocks.resolve,
+    lexPgn: mocks.lex,
+    getDbGame: mocks.getDbGame,
+    inferGameOrientation: mocks.inferGameOrientation,
+  },
   cancellationError: () => new Error("cancelled"),
 }));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => mocks.navigate }));
@@ -144,6 +151,12 @@ beforeEach(() => {
   root = createRoot(host);
   owner = createTreeStore();
   mocks.lookup.mockResolvedValue(found());
+  mocks.getDbGame.mockReset().mockImplementation(async (_database, gameId: number) => {
+    const result: ReferenceSearch = await mocks.lookup.mock.results.at(-1)?.value;
+    const current = result.candidates.find((candidate) => candidate.game.id === gameId)?.game;
+    return current ? { kind: "found", game: current } : { kind: "missing" };
+  });
+  mocks.inferGameOrientation.mockReset().mockResolvedValue(null);
   mocks.resolve.mockResolvedValue(null);
   mocks.lex.mockResolvedValue([
     { type: "San", value: "Kf3" },

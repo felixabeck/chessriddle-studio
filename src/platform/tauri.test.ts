@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
     cancelAnalysis: vi.fn(),
     getGames: vi.fn(),
     getDbGame: vi.fn(),
+    inferGameOrientation: vi.fn(),
     countPgnGames: vi.fn(),
     fileRevision: vi.fn(),
     readGame: vi.fn(),
@@ -65,6 +66,22 @@ test("getDbGame forwards identity as the third argument and owns its abort ticke
 
 vi.mock("./native", () => ({ error: mocks.logError, getCurrentWindow: mocks.getCurrentWindow }));
 
+test("orientation inference unwraps success and normalizes typed failures", async () => {
+    const database = { id: { id: "db" }, kind: "database" } as const;
+    for (const data of [null, "black"] as const) {
+        mocks.inferGameOrientation.mockResolvedValue({ status: "ok", data });
+        expect(await tauri.inferGameOrientation(database, 42)).toBe(data);
+        expect(mocks.inferGameOrientation).toHaveBeenLastCalledWith(database, 42);
+    }
+    mocks.inferGameOrientation.mockResolvedValue({
+        status: "error",
+        error: { tag: "backend-error", category: "database", message: "Inference failed" },
+    });
+    await expect(tauri.inferGameOrientation(database, 42)).rejects.toBeInstanceOf(
+        TauriCommandError,
+    );
+});
+
 vi.mock("@/bindings/generated", () => ({
     commands: {
         closeSplashscreen: mocks.closeSplashscreen,
@@ -95,6 +112,7 @@ vi.mock("@/bindings/generated", () => ({
         cancelAnalysis: mocks.cancelAnalysis,
         getGames: mocks.getGames,
         getDbGame: mocks.getDbGame,
+        inferGameOrientation: mocks.inferGameOrientation,
         countPgnGames: mocks.countPgnGames,
         fileRevision: mocks.fileRevision,
         readGame: mocks.readGame,

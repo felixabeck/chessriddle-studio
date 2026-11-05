@@ -2233,7 +2233,7 @@ async function loadPracticeDeckThroughIpc(session, fileId, game, globalName) {
   );
 }
 
-async function loadAllPracticeReviews(session, fileId, game, globalPrefix) {
+async function loadAllPracticeReviews(session, fileId, game, globalPrefix, expectedEpoch) {
   const ids = [];
   const entries = [];
   let cursor = null;
@@ -2248,6 +2248,7 @@ async function loadAllPracticeReviews(session, fileId, game, globalPrefix) {
         game,
         cursor,
         limit: PRACTICE_REVIEW_PAGE_LIMIT,
+        expectedEpoch,
       })})`,
     );
     if (!loaded.value || !Array.isArray(loaded.value.entries)) {
@@ -2409,7 +2410,10 @@ async function filesRowCoordinates(session, name, timeoutMs = FILES_PROBE_TIMEOU
     {
       timeoutMs,
       leftInset: 60,
-      beforeProbe: () => showLibraryOverview(session).catch(() => false),
+      beforeProbe: async () => {
+        await showLibraryOverview(session);
+        await session.execute("window.dispatchEvent(new Event('focus')); return true;");
+      },
     },
   );
 }
@@ -3031,6 +3035,217 @@ async function verifyLinkedCollections(session, filesWorkspace, profileDirectory
   // Leave the existing Library, explorer, opening and file-freshness acceptance paths active.
   // The fixture uses the same native migration/append boundary as the account action.
   await showLibraryOverview(session);
+}
+
+async function verifyDatabaseOrientation(session) {
+  const invoke = async (command, args) => {
+    const result = await invokeJsonAndWait(
+      session,
+      command,
+      "__verifyOrientationIPC",
+      `window.__TAURI_INTERNALS__.invoke(${JSON.stringify(command)}, ${JSON.stringify(args)})`,
+    );
+    if (result.value === undefined)
+      throw new Error(
+        result.result.rejected ??
+          result.result.error ??
+          result.error ??
+          `${command} returned no value`,
+      );
+    return result.value;
+  };
+  const wait = (label, probe) => waitFor(label, probe, { timeoutMs: FILES_PROBE_TIMEOUT_MS });
+  const coordinates = (label, script, args = []) =>
+    reachableStableCoordinates(session, label, script, args);
+  const clickButton = async (name, icon = false) => {
+    const point = await coordinates(
+      name,
+      `[...document.querySelectorAll('button')].find(node => !node.disabled && (arguments[1] ? (node.getAttribute('aria-label') || '').startsWith(arguments[0]) : node.textContent.trim() === arguments[0]))`,
+      [name, icon],
+    );
+    await clickAt(session, point.x, point.y);
+  };
+  const boardIs = (side) =>
+    wait(`orientation board is ${side}`, () =>
+      session.execute(
+        `return location.pathname === '/' && !!document.querySelector('[role="grid"][aria-label=' + JSON.stringify('Chessboard, ' + arguments[0] + ' orientation') + ']')`,
+        [side],
+      ),
+    );
+  const activeTree = async () => (await readActiveTabTree(session)).tree;
+  // The surrounding NAG scenario disables autosave. Change it through the real settings control
+  // for this scenario and restore its prior value before returning to the surrounding checks.
+  let previousAutoSave;
+  const setAutoSave = async (enabled) => {
+    const settings = await coordinates(
+      "orientation Settings navigation",
+      `document.querySelector('nav a[aria-label="Settings"]')`,
+    );
+    await clickAt(session, settings.x, settings.y);
+    const checked = await wait("orientation Auto Save control", () =>
+      session.execute(`
+      const input = document.querySelector('input[aria-label="Auto Save"]');
+      return input ? { checked: input.checked } : false;
+    `),
+    );
+    previousAutoSave ??= checked.checked;
+    if (checked.checked !== enabled) {
+      const control = await coordinates(
+        "orientation Auto Save switch",
+        `document.querySelector('input[aria-label="Auto Save"]')?.closest('.mantine-Switch-root')`,
+      );
+      await clickAt(session, control.x, control.y);
+      await wait("orientation Auto Save setting applied", () =>
+        session.execute(
+          `return document.querySelector('input[aria-label="Auto Save"]')?.checked === arguments[0]`,
+          [enabled],
+        ),
+      );
+    }
+  };
+  let database;
+  let blackGame;
+  let whiteGame;
+  const title = "verify orientation database";
+  const open = async (game) => {
+    await showLibraryOverview(session);
+    await wait("orientation database in Library", () =>
+      session.execute(
+        `window.dispatchEvent(new Event('focus')); return [...document.querySelectorAll('[role="treeitem"]')].some(node => node.getAttribute('aria-label') === arguments[0])`,
+        [title],
+      ),
+    );
+    const opener = await coordinates(
+      "orientation database opener",
+      `[...[...document.querySelectorAll('[role="treeitem"]')].find(node => node.getAttribute('aria-label') === arguments[0]).querySelectorAll('button')].find(node => node.textContent.trim() === 'Open database')`,
+      [title],
+    );
+    await clickAt(session, opener.x, opener.y);
+    await wait("orientation database route", () =>
+      session.execute("return location.pathname === arguments[0]", [
+        `/databases/${database.id.id}`,
+      ]),
+    );
+    const gameRow = await coordinates(
+      "orientation game row",
+      `[...document.querySelectorAll('tbody tr')].find(node => node.textContent.includes(arguments[0]) && node.textContent.includes(arguments[1]))`,
+      [game.white, game.black],
+    );
+    await clickAt(session, gameRow.x, gameRow.y);
+    await clickButton("Open game");
+    await wait("orientation analysis route", () =>
+      session.execute("return location.pathname === '/' && !!document.querySelector('cg-board')"),
+    );
+  };
+  const assertion = async (label, action) => {
+    try {
+      await action();
+      check(true, label);
+      return true;
+    } catch (error) {
+      check(false, label, error.message);
+      return false;
+    }
+  };
+  const seeded = await assertion(
+    "AO1 an owner's Black game opens Black without dirtying or writing the native row",
+    async () => {
+      await setAutoSave(true);
+      const workspace = { id: { id: filesWorkspaceId }, kind: "fileWorkspace" };
+      const pgn = Array.from({ length: 12 }, (_, index) => {
+        const ownerIsWhite = index >= 10;
+        const opponent = `Orientation Opponent ${index}`;
+        return `[Event "Orientation ${index}"]\n[White "${ownerIsWhite ? "Orientation Owner" : opponent}"]\n[Black "${ownerIsWhite ? opponent : "Orientation Owner"}"]\n[Result "*"]\n\n1. e4 e5 *\n`;
+      }).join("\n");
+      const source = await createWorkspacePgnFixture(invoke, workspace, "verify-orientation", pgn);
+      const root = await invoke("get_database_workspace", {});
+      database = await invoke("create_workspace_database", {
+        root,
+        filename: "verify-orientation.db3",
+      });
+      await invoke("convert_pgn", {
+        progressId: `verify-orientation:${randomUUID()}`,
+        files: [source.handle],
+        database,
+        title,
+        description: "Orientation proof",
+        ticket: null,
+      });
+      const rows = await invoke("get_games", {
+        file: database,
+        query: {
+          options: { page: 1, pageSize: 25, sort: "id", direction: "asc", skipCount: false },
+        },
+        ticket: null,
+      });
+      if (rows.count !== 12) throw new Error(`expected 12 imported games, received ${rows.count}`);
+      blackGame = rows.data.find((game) => game.white === "Orientation Opponent 0");
+      whiteGame = rows.data.find((game) => game.black === "Orientation Opponent 10");
+      if (!blackGame || !whiteGame) throw new Error("orientation fixture games are missing");
+      await open(blackGame);
+      await boardIs("Black");
+      await wait("inferred orientation stays clean", async () => {
+        const tree = await activeTree();
+        return tree?.headers.orientation === "black" && tree.dirty === false;
+      });
+      const current = await invoke("get_db_game", {
+        file: database,
+        gameId: blackGame.id,
+        linked: null,
+        ticket: null,
+      });
+      if (
+        current.kind !== "found" ||
+        current.game.orientation !== undefined ||
+        current.game.stamp !== blackGame.stamp
+      )
+        throw new Error(`inference wrote the database row: ${JSON.stringify(current)}`);
+      await clickButton("Close tab", true);
+    },
+  );
+  await assertion(
+    "AO2 flipping the owner's White game autosaves Black and reopening retains Black",
+    async () => {
+      if (!seeded) throw new Error("not attempted: AO1 fixture setup failed");
+      await open(whiteGame);
+      await boardIs("White");
+      await clickButton("Flip Board", true);
+      await boardIs("Black");
+      const saved = await wait("native orientation autosave", async () => {
+        const current = await invoke("get_db_game", {
+          file: database,
+          gameId: whiteGame.id,
+          linked: null,
+          ticket: null,
+        });
+        return (
+          current.kind === "found" &&
+          current.game.orientation === "black" &&
+          current.game.stamp !== whiteGame.stamp &&
+          current.game
+        );
+      });
+      await wait("orientation autosave acknowledged by renderer", async () => {
+        const tree = await activeTree();
+        return tree?.dirty === false && tree.sourceStamp === saved.stamp;
+      });
+      await clickButton("Close tab", true);
+      await open(whiteGame);
+      await boardIs("Black");
+      const path = `${screenshotPath ?? join(tmpdir(), `chessfable-orientation-${process.pid}`)}.database-orientation.png`;
+      await writeFile(path, Buffer.from(await session.screenshot(), "base64"));
+      console.log(`  .. database-orientation screenshot: ${path}`);
+      await clickButton("Close tab", true);
+    },
+  );
+  await assertion(
+    "AO3 orientation verification restores the surrounding autosave preference",
+    async () => {
+      if (previousAutoSave === undefined) throw new Error("Auto Save control was unavailable");
+      await setAutoSave(previousAutoSave);
+      await showLibraryOverview(session);
+    },
+  );
 }
 
 async function verifyNewGameToDatabase(session) {
@@ -3896,12 +4111,22 @@ async function verifyGameOpening(session, ownedRoot, filesWorkspace) {
     );
   };
   const completeCitationAdmission = async (white) => {
-    const choice = await session.execute(
-      `return [...document.querySelectorAll('[role="dialog"] button')].find(node => node.textContent.trim() === 'Open game') != null`,
+    const outcome = await waitFor(
+      "citation automatic admission or enabled choice",
+      async () => {
+        const current = await readActiveTabTree(session);
+        if (current.tree?.headers.white === white) return "opened";
+        const choice = await session.execute(
+          `return [...document.querySelectorAll('[role="dialog"] button')].some(node => !node.disabled && node.textContent.trim() === 'Open game' && node.closest('.mantine-Paper-root')?.textContent.includes(arguments[0]))`,
+          [white],
+        );
+        return choice ? "choice" : false;
+      },
+      { timeoutMs: FILES_PROBE_TIMEOUT_MS },
     );
-    if (choice) {
+    if (outcome === "choice") {
       const target = await coordinates(
-        `[...document.querySelectorAll('[role="dialog"] .mantine-Paper-root')].find(node => node.textContent.includes(arguments[0]))?.querySelector('button')`,
+        `[...document.querySelectorAll('[role="dialog"] button')].find(node => !node.disabled && node.textContent.trim() === 'Open game' && node.closest('.mantine-Paper-root')?.textContent.includes(arguments[0]))`,
         [white],
       );
       await clickAt(session, target.x, target.y);
@@ -4538,7 +4763,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
     practiceGame,
     "__verifyAppLargeDeckSnapshot",
   );
-  const largePositions = practicePositionsFromSnapshot(largeDeckSnapshot.value);
+  const largePositions = practicePositionsFromSnapshot(largeDeckSnapshot.value?.deck);
   check(
     largeDeckSnapshot.result.rejected === undefined &&
       Array.isArray(largePositions) &&
@@ -4551,6 +4776,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
     largePracticeId,
     practiceGame,
     "__verifyAppLargeReviews",
+    largeDeckSnapshot.value?.epoch,
   );
   const oldestFirstReviewIds = [...largeReviewPage.ids].reverse();
   check(
@@ -4568,16 +4794,17 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
     practiceGame,
     "__verifyAppMigratedDeckSnapshot",
   );
-  const migratedPositions = practicePositionsFromSnapshot(migratedDeckSnapshot.value);
+  const migratedPositions = practicePositionsFromSnapshot(migratedDeckSnapshot.value?.deck);
   const migratedReviews = await loadAllPracticeReviews(
     session,
     legacyPracticeId,
     practiceGame,
     "__verifyAppMigratedReviews",
+    migratedDeckSnapshot.value?.epoch,
   );
   check(
     migratedDeckSnapshot.result.rejected === undefined &&
-      migratedDeckSnapshot.value?.migrated === true &&
+      migratedDeckSnapshot.value?.deck?.migrated === true &&
       migratedPositions?.length === legacyPracticePositions.length &&
       migratedReviews.complete &&
       migratedReviews.ids.length === legacyPracticeLogs.length,
@@ -4755,12 +4982,13 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
     practiceGame,
     "__verifyAppWriterSnapshot",
   );
-  const writerPositions = practicePositionsFromSnapshot(writerSnapshot.value);
+  const writerPositions = practicePositionsFromSnapshot(writerSnapshot.value?.deck);
   const writerReviews = await loadAllPracticeReviews(
     session,
     largePracticeId,
     practiceGame,
     "__verifyAppWriterReviews",
+    writerSnapshot.value?.epoch,
   );
   const deckKeysAfterWriter = await session.execute(
     "return Object.keys(localStorage).filter((key) => key.startsWith('deck-')).sort()",
@@ -5053,7 +5281,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
           practiceGame,
           "__verifyAppExtendedDeckSnapshot",
         );
-        return practicePositionsFromSnapshot(loaded.value)?.length === 12_500;
+        return practicePositionsFromSnapshot(loaded.value?.deck)?.length === 12_500;
       },
       { timeoutMs: PRACTICE_RENDERER_TIMEOUT_MS },
     );
@@ -5071,7 +5299,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
     practiceGame,
     "__verifyAppExtendedDeckSnapshotFinal",
   );
-  const extendedPositions = practicePositionsFromSnapshot(extendedSnapshot.value);
+  const extendedPositions = practicePositionsFromSnapshot(extendedSnapshot.value?.deck);
   check(
     syncWaitError === undefined &&
       extendedSnapshot.result.rejected === undefined &&
@@ -5098,12 +5326,14 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
     largePracticeId,
     practiceGame,
     "__verifyAppFinalLargeReviews",
+    finalLargeSnapshot.value?.epoch,
   );
   const finalLegacyReviews = await loadAllPracticeReviews(
     session,
     legacyPracticeId,
     practiceGame,
     "__verifyAppFinalLegacyReviews",
+    finalLegacySnapshot.value?.epoch,
   );
   const finalInventory = await invokeJsonAndWait(
     session,
@@ -5111,8 +5341,10 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
     "__verifyAppFinalPracticeInventory",
     `window.__TAURI_INTERNALS__.invoke("list_practice_decks")`,
   );
-  const finalLargePositions = practicePositionsFromSnapshot(finalLargeSnapshot.value);
-  const finalLegacyPositionCount = practicePositionsFromSnapshot(finalLegacySnapshot.value)?.length;
+  const finalLargePositions = practicePositionsFromSnapshot(finalLargeSnapshot.value?.deck);
+  const finalLegacyPositionCount = practicePositionsFromSnapshot(
+    finalLegacySnapshot.value?.deck,
+  )?.length;
   check(
     practiceCardsMatch(finalLargePositions, extendedPracticePositions) &&
       finalLargeReviews.ids.length === seededLargePractice.reviewIds.length + 50 &&
@@ -5619,6 +5851,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
 
   await verifyGameOpening(session, ownedRoot, filesWorkspace);
   await verifyNewGameToDatabase(session);
+  await verifyDatabaseOrientation(session);
   await verifyLinkedCollections(session, filesWorkspace, profileDirectory);
   await verifyConversionCancellation(session, ownedRoot);
 

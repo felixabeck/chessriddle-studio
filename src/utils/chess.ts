@@ -644,7 +644,7 @@ function getPgnHeaders(tokens: Token[]): GameHeaders {
         site: Site ?? "",
         event: Event ?? "",
         start: parseRawStartHeader(Start),
-        orientation: isValidOrientation(Orientation) ? Orientation : "white",
+        ...(isValidOrientation(Orientation) ? { orientation: Orientation } : {}),
         time_control: TimeControl,
         variant: Variant,
         other: other,

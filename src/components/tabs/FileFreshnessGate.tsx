@@ -198,7 +198,7 @@ function DatabaseConflictGate({ tab, closeTab, children }: Props) {
           setFileFreshness(tab.value, "unavailable");
           return false;
         }
-        const tree = await databaseGameToTree(result.game);
+        const tree = await databaseGameToTree(result.game, origin.database, { signal });
         if (!isCurrent(signal)) return false;
         installTree(tree, null);
         return true;

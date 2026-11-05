@@ -22,6 +22,8 @@ type MockCommand = {
     /** Multi-game fixtures retain the requested native index and PGN identity. */
     pgnGames?: StampedGame[];
     pgnTokens?: Record<string, unknown[]>;
+    /** Current database rows retain orientation writes and the returned CAS stamp. */
+    databaseGames?: NormalizedGame[];
     delay?: number;
     error?: string | ErrorPayload;
     result?: unknown;
@@ -753,6 +755,7 @@ export const gameOpeningCommands: NonNullable<MockScenario["commands"]> = {
         indexed: false,
     }),
     get_games: { result: { data: gameOpeningFixture.games, count: 2 } },
+    get_db_game: { databaseGames: gameOpeningFixture.games },
     get_players: { result: { data: [], count: 0 } },
     get_tournaments: { result: { data: [], count: 0 } },
     read_games: { pgnGames: openingPgnGames },
@@ -915,6 +918,7 @@ const tauriBootstrap = () => {
         linked_collections_supported: { result: false },
         collection_for_database: { result: null },
         resolve_linked_game: { result: null },
+        infer_game_orientation: { result: null },
         cancel_conversion: { result: true },
         release_conversion: { result: null },
         get_opening_from_fens: { result: [] },
@@ -1016,6 +1020,20 @@ const tauriBootstrap = () => {
             throw failure.error;
         }
         if (outcome) return outcome.result;
+        if (command === "get_db_game" && response.databaseGames) {
+            const game = response.databaseGames.find((row) => row.id === args.gameId);
+            return game ? { kind: "found", game } : { kind: "missing" };
+        }
+        if (command === "write_db_game") {
+            const game = state.commands.get_db_game?.databaseGames?.find(
+                (row) => row.id === args.gameId,
+            );
+            if (game) {
+                const orientation = /\[Orientation "(white|black)"\]/.exec(String(args.pgn))?.[1];
+                game.orientation = orientation as "white" | "black" | undefined;
+                game.stamp = response.result as string;
+            }
+        }
         if (response.gameState)
             return {
                 ...response.gameState,

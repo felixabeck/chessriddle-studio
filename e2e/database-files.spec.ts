@@ -20,6 +20,80 @@ import {
 } from "./fixtures";
 import type { Locator, Page } from "@playwright/test";
 
+test("database-files: owner inference opens Black and a manual flip survives autosave and reopening from a stale list", async ({
+    page,
+    mockScenario,
+}) => {
+    const [blackGame, whiteGame] = gameOpeningFixture.games;
+    await mockScenario({
+        commands: filesWorkspaceCommands([[]], {
+            ...gameOpeningCommands,
+            infer_game_orientation: { results: ["black", null] },
+            write_db_game: { result: "c".repeat(64) },
+        }),
+    });
+    await page.goto(`/databases/${gameOpeningFixture.databaseId}`);
+    const open = async (white: string) => {
+        if (!page.url().endsWith(`/databases/${gameOpeningFixture.databaseId}`)) {
+            await page.locator("nav").getByRole("link", { name: "Library", exact: true }).click();
+            await expect(page).toHaveURL(`/databases/${gameOpeningFixture.databaseId}`);
+        }
+        await page.getByRole("row").filter({ hasText: white }).click();
+        await page.getByRole("button", { name: "Open game", exact: true }).click();
+        await expect(page).toHaveURL("/");
+    };
+    await open(blackGame.white);
+    await expect(
+        page.getByRole("grid", { name: "Chessboard, Black orientation", exact: true }),
+    ).toBeVisible();
+    expect(
+        await page.evaluate(() =>
+            window.__E2E_TAURI__.invocations().filter(({ command }) => command === "write_db_game"),
+        ),
+    ).toHaveLength(0);
+    await page.getByRole("button", { name: /close tab/i }).click();
+
+    await open(whiteGame.white);
+    await expect(
+        page.getByRole("grid", { name: "Chessboard, White orientation", exact: true }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: /^Flip Board/ }).click();
+    await expect(
+        page.getByRole("grid", { name: "Chessboard, Black orientation", exact: true }),
+    ).toBeVisible();
+    await expect
+        .poll(() =>
+            page.evaluate(() =>
+                window.__E2E_TAURI__
+                    .invocations()
+                    .filter(({ command }) => command === "write_db_game"),
+            ),
+        )
+        .toEqual([
+            {
+                command: "write_db_game",
+                args: expect.objectContaining({
+                    gameId: whiteGame.id,
+                    pgn: expect.stringContaining('[Orientation "black"]'),
+                    expectedStamp: whiteGame.stamp,
+                }),
+            },
+        ]);
+    await page.getByRole("button", { name: /close tab/i }).click();
+    await open(whiteGame.white);
+    await expect(
+        page.getByRole("grid", { name: "Chessboard, Black orientation", exact: true }),
+    ).toBeVisible();
+    expect(
+        await page.evaluate(() =>
+            window.__E2E_TAURI__
+                .invocations()
+                .filter(({ command }) => command === "infer_game_orientation"),
+        ),
+    ).toHaveLength(2);
+    await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
+});
+
 for (const oldRoute of ["/files", "/databases"] as const) {
     test(`database-files: ${oldRoute} redirects to Library`, async ({ page }) => {
         await page.goto(oldRoute);
