@@ -403,6 +403,7 @@ pub struct TempGame {
     pub moves: Vec<u8>,
     pub position: Chess,
     pub material_count: MaterialColor,
+    pub orientation: Option<String>,
 }
 
 impl TempGame {
@@ -457,6 +458,7 @@ impl TempGame {
             result: self.result.as_deref(),
             moves: self.moves.as_slice(),
             pawn_home: pawn_home as i32,
+            orientation: self.orientation.as_deref(),
         };
 
         Ok(create_game(db, new_game)?.id)
@@ -564,6 +566,9 @@ impl Visitor for Importer {
         } else if key == b"Result" {
             self.game.result =
                 Some(normalize_pgn_result(&String::from_utf8_lossy(value.as_bytes())).to_string());
+        } else if key == b"Orientation" {
+            let value = value.decode_utf8_lossy();
+            self.game.orientation = BoardOrientation::from_pgn(&value).map(|_| value.into_owned());
         } else if key == b"FEN" {
             if value.as_bytes() == b"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" {
                 self.game.fen = None;
@@ -863,7 +868,7 @@ pub(crate) fn schema_database_case(
     let mut connection = diesel::SqliteConnection::establish(database.to_str().unwrap()).unwrap();
     connection.batch_execute(CREATE_TABLES_SQL).unwrap();
     connection
-        .batch_execute("INSERT INTO Info (Name, Value) VALUES ('Version', '2.0.0');")
+        .batch_execute("INSERT INTO Info (Name, Value) VALUES ('Version', '2.1.0');")
         .unwrap();
     drop(connection);
 
@@ -2629,6 +2634,102 @@ fn load_games(
     })
 }
 
+const OWNER_INFERENCE_SAMPLE_CAP: i64 = 500;
+const OWNER_INFERENCE_MIN_GAMES: usize = 10;
+const OWNER_INFERENCE_THRESHOLD_PERCENT: usize = 80;
+
+#[tauri::command]
+#[specta::specta]
+pub async fn infer_game_orientation(
+    file: DatabaseHandle,
+    game_id: i32,
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<BoardOrientation>, Error> {
+    let operation = state.operations.accept("infer_game_orientation")?;
+    let cancellation = operation.token();
+    let authority = state.pgn_path_authority.clone();
+    let repository = Arc::clone(&state.database_repository);
+    crate::infra::operations::run_native_operation(
+        operation,
+        "infer_game_orientation",
+        async move {
+            BLOCKING_GATEWAY
+                .spawn_cancellable(cancellation, move |token| {
+                    infer_game_orientation_blocking(&authority, &repository, file, game_id, token)
+                })
+                .await
+        },
+    )
+    .await
+}
+
+fn infer_game_orientation_blocking(
+    authority: &crate::infra::path_authority::SharedPathAuthority,
+    repository: &DatabaseRepository,
+    file: DatabaseHandle,
+    game_id: i32,
+    cancellation: &CancellationToken,
+) -> Result<Option<BoardOrientation>, Error> {
+    cancellation_check(cancellation)?;
+    let target = resolve_database(authority, &file, PathOperation::DatabaseRead)?;
+    let mut connection =
+        get_db_or_create(repository, &target, Some(cancellation), authority, &file)?;
+    linked_collections::read_snapshot(&mut connection, authority, &file, |db| {
+        sqlite_cancellation::with_sqlite_cancellation(cancellation, || {
+            infer_owner_orientation(db, game_id)
+        })
+    })
+}
+
+fn infer_owner_orientation(
+    db: &mut SqliteConnection,
+    game_id: i32,
+) -> Result<Option<BoardOrientation>, Error> {
+    let (white_id, black_id) = games::table
+        .find(game_id)
+        .select((games::white_id, games::black_id))
+        .first::<(i32, i32)>(db)
+        .optional()?
+        .ok_or_else(|| Error::GameNotFound(game_id.to_string()))?;
+    let mut eligible = |id| -> Result<bool, Error> {
+        if id == 0 {
+            return Ok(false);
+        }
+        let name = players::table
+            .find(id)
+            .select(players::name)
+            .first::<Option<String>>(db)
+            .optional()?
+            .flatten();
+        Ok(name.is_some_and(|name| !matches!(name.trim(), "" | "?" | "Unknown")))
+    };
+    if !eligible(black_id)? {
+        return Ok(None);
+    }
+    let white_eligible = eligible(white_id)?;
+    // The primary-key walk reads only this bounded sample, with no player index required.
+    let sample = games::table
+        .select((games::white_id, games::black_id))
+        .order(games::id.desc())
+        .limit(OWNER_INFERENCE_SAMPLE_CAP)
+        .load::<(i32, i32)>(db)?;
+    if sample.len() < OWNER_INFERENCE_MIN_GAMES {
+        return Ok(None);
+    }
+    let dominant = |id| {
+        sample
+            .iter()
+            .filter(|(white, black)| *white == id || *black == id)
+            .count()
+            * 100
+            >= sample.len() * OWNER_INFERENCE_THRESHOLD_PERCENT
+    };
+    Ok(
+        (dominant(black_id) && !(white_eligible && dominant(white_id)))
+            .then_some(BoardOrientation::Black),
+    )
+}
+
 /// Hash the stored row, independently of joined names and decoded movetext.
 fn game_row_stamp(game: &Game) -> String {
     use sha2::{Digest, Sha256};
@@ -2684,6 +2785,10 @@ fn game_row_stamp(game: &Game) -> String {
     text!(game.fen);
     field(&mut hash, Some(&game.moves));
     integer!(game.pawn_home);
+    // Preserve the exact pre-orientation stamp for existing, unset rows.
+    if game.orientation.is_some() {
+        text!(game.orientation);
+    }
     format!("{:x}", hash.finalize())
 }
 
@@ -2713,6 +2818,10 @@ fn normalize_games(
             };
 
             Ok(NormalizedGame {
+                orientation: game
+                    .orientation
+                    .as_deref()
+                    .and_then(BoardOrientation::from_pgn),
                 stamp: Some(stamp),
                 linked: None,
                 id: game.id,
@@ -4231,6 +4340,7 @@ fn delete_empty_games_transaction(db: &mut SqliteConnection) -> Result<(), Error
 }
 
 struct PgnGame {
+    orientation: Option<String>,
     event: Option<String>,
     site: Option<String>,
     date: Option<String>,
@@ -4310,6 +4420,9 @@ impl PgnGame {
         if let Some(fen) = self.fen.as_deref() {
             writeln!(writer, "[SetUp \"1\"]")?;
             write_decoded_pgn_tag(writer, "FEN", fen)?;
+        }
+        if let Some(orientation) = self.orientation.as_deref() {
+            write_decoded_pgn_tag(writer, "Orientation", orientation)?;
         }
         writeln!(writer)?;
         if let Some(moves) = self.moves.as_deref() {
@@ -4464,6 +4577,7 @@ where
             Error::InvalidInput(format!("game {} has invalid movetext: {error}", game.id))
         })?;
         PgnGame {
+            orientation: game.orientation,
             event: event.name,
             site: site.name,
             date: game.date,
@@ -4782,6 +4896,7 @@ fn write_parsed_db_game(
             games::fen.eq(temp_game.fen.clone()),
             games::moves.eq(temp_game.moves.clone()),
             games::pawn_home.eq(pawn_home),
+            games::orientation.eq(temp_game.orientation.clone()),
         ))
         .execute(db)?;
 
@@ -5649,8 +5764,9 @@ mod tests {
             .unwrap();
         // Includes the two collection-service admission checks, the authority door,
         // the insert command's mutation resolution, the deletion recovery present-arm re-resolve,
-        // and the single-game recent lookup's read resolution.
-        assert_eq!(production.matches("resolve_database(").count(), 24);
+        // the single-game recent lookup's read resolution, and
+        // the owner-orientation inference's read resolution.
+        assert_eq!(production.matches("resolve_database(").count(), 25);
         let resolver = production
             .split("pub(crate) fn resolve_database(")
             .nth(1)
@@ -6128,6 +6244,7 @@ mod tests {
                 fen: None,
                 moves: &[],
                 pawn_home: 0,
+                orientation: None,
             },
         )
         .unwrap();
@@ -6204,6 +6321,7 @@ mod tests {
                     fen: None,
                     moves: &[],
                     pawn_home: 0,
+                    orientation: None,
                 },
             )
             .unwrap()
@@ -6301,6 +6419,7 @@ mod tests {
                 fen: None,
                 moves: &[],
                 pawn_home: 0,
+                orientation: None,
             },
         )
         .unwrap()
@@ -6573,6 +6692,7 @@ mod tests {
                 fen: None,
                 moves: &[],
                 pawn_home: 0,
+                orientation: None,
             },
         ) {
             Err(diesel::result::Error::DatabaseError(_, _)) => {}
@@ -8444,6 +8564,7 @@ mod tests {
                         fen: None,
                         moves: &moves,
                         pawn_home: 0xffff,
+                        orientation: None,
                     })
                     .execute(db)?;
             }
@@ -8491,6 +8612,7 @@ mod tests {
                         fen: None,
                         moves: &moves,
                         pawn_home: 0xffff,
+                        orientation: None,
                     })
                     .execute(db)?;
             }
@@ -8546,6 +8668,7 @@ mod tests {
                 fen: None,
                 moves: vec![],
                 pawn_home: 0,
+                orientation: None,
             },
             Player {
                 id: 1,
@@ -11043,6 +11166,7 @@ mod tests {
                 fen: fixture.fen,
                 moves: &fixture.moves,
                 pawn_home: 0,
+                orientation: None,
             },
         )
         .unwrap();
@@ -15102,7 +15226,7 @@ mod deletion_tests {
         let mut connection = SqliteConnection::establish(database.to_str().unwrap()).unwrap();
         connection.batch_execute(CREATE_TABLES_SQL).unwrap();
         connection
-            .batch_execute("INSERT INTO Info (Name, Value) VALUES ('Version', '2.0.0');")
+            .batch_execute("INSERT INTO Info (Name, Value) VALUES ('Version', '2.1.0');")
             .unwrap();
         connection.batch_execute(
             "INSERT INTO Games (ID, Result, Moves, PawnHome, WhiteMaterial, BlackMaterial) VALUES (1, '*', X'', 0, 0, 0);"

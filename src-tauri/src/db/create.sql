@@ -39,6 +39,7 @@ CREATE TABLE Games (
     FEN TEXT,
     Moves BLOB,
     PawnHome INTEGER NOT NULL DEFAULT 0,
+    Orientation TEXT CHECK(Orientation IN ('white', 'black') OR Orientation IS NULL),
     FOREIGN KEY(EventID) REFERENCES Events(ID),
     FOREIGN KEY(SiteID) REFERENCES Sites(ID),
     FOREIGN KEY(WhiteID) REFERENCES Players(ID),

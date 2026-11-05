@@ -60,6 +60,7 @@ pub struct Game {
     pub fen: Option<String>,
     pub moves: Vec<u8>,
     pub pawn_home: i32,
+    pub orientation: Option<String>,
 }
 
 #[derive(Insertable, Debug)]
@@ -83,6 +84,7 @@ pub struct NewGame<'a> {
     pub fen: Option<&'a str>,
     pub moves: &'a [u8],
     pub pawn_home: i32,
+    pub orientation: Option<&'a str>,
 }
 
 #[derive(Default, Debug, Queryable, Serialize, Deserialize, Identifiable, Clone)]
@@ -144,6 +146,9 @@ impl FromStr for Outcome {
 
 #[derive(Serialize, Deserialize, Clone, Type)]
 pub struct NormalizedGame {
+    #[specta(optional, type = BoardOrientation)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub orientation: Option<BoardOrientation>,
     #[specta(optional)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stamp: Option<String>,
@@ -184,4 +189,21 @@ pub struct NormalizedGame {
 pub struct InsertedDbGame {
     pub id: i32,
     pub stamp: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "lowercase")]
+pub enum BoardOrientation {
+    White,
+    Black,
+}
+
+impl BoardOrientation {
+    pub fn from_pgn(value: &str) -> Option<Self> {
+        match value {
+            "white" => Some(Self::White),
+            "black" => Some(Self::Black),
+            _ => None,
+        }
+    }
 }

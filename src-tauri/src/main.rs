@@ -2161,6 +2161,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             cancel_conversion,
             release_conversion,
             get_player,
+            db::infer_game_orientation,
             count_pgn_games,
             file_revision,
             read_game,

@@ -3778,6 +3778,7 @@ mod tests {
                 fen: None,
                 moves: &[12, 12],
                 pawn_home: i32::from(get_pawn_home(chess.board())),
+                orientation: None,
             },
         )
         .unwrap()

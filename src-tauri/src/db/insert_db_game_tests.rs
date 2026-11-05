@@ -3,6 +3,148 @@ use tauri::Manager;
 
 const PGN: &str = "[Event \"New game\"]\n[Site \"Berlin\"]\n[White \"White\"]\n[Black \"Black\"]\n[Result \"*\"]\n\n1. e4 e5 *\n";
 
+// headersToPGN + getPGN for a two-ply game after the renderer flips the board.
+const RENDERER_FLIPPED_PGN: &str = "[Event \"?\"]\n[Site \"?\"]\n[Date \"????.??.??\"]\n[Round \"?\"]\n[White \"White\"]\n[Black \"Black\"]\n[Result \"*\"]\n[Orientation \"black\"]\n\n1. e4 e5 *";
+
+#[test]
+fn orientation_import_write_export_round_trip_and_optional_normalized_field() {
+    let (_dir, app, handle, _) = blocking_database_case();
+    let token = CancellationToken::new();
+    let state = app.state::<AppState>();
+    let inserted = insert(&app, handle.clone(), PGN, &token).unwrap();
+    let read = || {
+        get_games_blocking(
+            &state.pgn_path_authority,
+            &state.database_repository,
+            handle.clone(),
+            GameQuery::new(),
+            &token,
+        )
+        .unwrap()
+        .data
+    };
+    assert!(serde_json::to_value(&read()[0])
+        .unwrap()
+        .get("orientation")
+        .is_none());
+
+    for (tag, expected) in [
+        (Some("black"), Some(BoardOrientation::Black)),
+        (Some("white"), Some(BoardOrientation::White)),
+        (Some("BLACK"), None),
+        (Some("invalid"), None),
+        (Some(""), None),
+        (None, None),
+    ] {
+        let pgn = match tag {
+            Some(tag) => RENDERER_FLIPPED_PGN.replace(
+                "[Orientation \"black\"]",
+                &format!("[Orientation \"{tag}\"]"),
+            ),
+            None => RENDERER_FLIPPED_PGN.replace("[Orientation \"black\"]\n", ""),
+        };
+        let stamp = write_db_game_blocking(
+            &state.pgn_path_authority,
+            &state.database_repository,
+            &state.search_cache,
+            handle.clone(),
+            inserted.id,
+            pgn.clone(),
+            test_game_stamp(&state, &handle, inserted.id),
+            &token,
+        )
+        .unwrap();
+        let row = read()
+            .into_iter()
+            .find(|row| row.id == inserted.id)
+            .unwrap();
+        assert_eq!(row.orientation, expected);
+        assert_eq!(row.stamp.as_deref(), Some(stamp.as_str()));
+        let json = serde_json::to_value(&row).unwrap();
+        assert_eq!(
+            json.get("orientation"),
+            expected
+                .map(|value| serde_json::to_value(value).unwrap())
+                .as_ref()
+        );
+        let parsed = parse_first_db_game(pgn.as_bytes(), &token).unwrap();
+        let imported = insert(&app, handle.clone(), &pgn, &token).unwrap();
+        assert_eq!(
+            read()
+                .into_iter()
+                .find(|row| row.id == imported.id)
+                .unwrap()
+                .orientation,
+            expected
+        );
+        let target = resolve_database(
+            &state.pgn_path_authority,
+            &handle,
+            PathOperation::DatabaseRead,
+        )
+        .unwrap();
+        let mut db = state.database_repository.connection(&target, None).unwrap();
+        let game = games::table
+            .find(inserted.id)
+            .first::<Game>(&mut *db)
+            .unwrap();
+        assert_eq!(game.orientation, parsed.orientation);
+        let white = players::table
+            .find(game.white_id)
+            .first::<Player>(&mut *db)
+            .unwrap();
+        let black = players::table
+            .find(game.black_id)
+            .first::<Player>(&mut *db)
+            .unwrap();
+        let event = events::table
+            .find(game.event_id)
+            .first::<Event>(&mut *db)
+            .unwrap();
+        let site = sites::table
+            .find(game.site_id)
+            .first::<Site>(&mut *db)
+            .unwrap();
+        let mut exported = Vec::new();
+        write_pgn_rows(
+            &mut exported,
+            [Ok((game, white, black, event, site))],
+            &token,
+        )
+        .unwrap();
+        drop(db);
+        let exported = String::from_utf8(exported).unwrap();
+        assert_eq!(exported.contains("[Orientation"), expected.is_some());
+        let roundtrip = insert(&app, handle.clone(), &exported, &token).unwrap();
+        assert_eq!(
+            read()
+                .into_iter()
+                .find(|row| row.id == roundtrip.id)
+                .unwrap()
+                .orientation,
+            expected
+        );
+    }
+}
+
+#[test]
+fn orientation_does_not_change_account_fingerprints() {
+    let token = CancellationToken::new();
+    let mut game = parse_first_db_game(PGN.as_bytes(), &token).unwrap();
+    let account = linked_collections::AccountIdentity {
+        provider: "lichess".into(),
+        account: "owner".into(),
+    };
+    let original = linked_collections::semantic_fingerprint(&game, &account);
+    for orientation in ["white", "black"] {
+        game.orientation = Some(orientation.into());
+        assert_eq!(
+            linked_collections::semantic_fingerprint(&game, &account),
+            original
+        );
+    }
+}
+
 fn insert(
     app: &tauri::AppHandle<tauri::test::MockRuntime>,
     file: DatabaseHandle,

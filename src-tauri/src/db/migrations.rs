@@ -6,7 +6,8 @@ use diesel::{
     sql_types::{BigInt, Integer, Nullable, Text},
 };
 
-const CURRENT_DATABASE_VERSION: &str = "2.0.0";
+const CURRENT_DATABASE_VERSION: &str = "2.1.0";
+const PRE_ORIENTATION_DATABASE_VERSION: &str = "2.0.0";
 const LEGACY_DATABASE_VERSION: &str = "1.0.0";
 const CREATE_TABLES_SQL: &str = include_str!("create.sql");
 
@@ -202,6 +203,18 @@ fn migrate_database(conn: &mut SqliteConnection) -> Result<bool, Error> {
     match (version.as_str(), canonical) {
         (CURRENT_DATABASE_VERSION, true) => validate_schema(conn).map(|()| false),
         (LEGACY_DATABASE_VERSION, _) => migrate_legacy_database(conn).map(|()| true),
+        (PRE_ORIENTATION_DATABASE_VERSION, _) => conn.transaction::<_, Error, _>(|conn| {
+            validate_games_schema_version(conn, false)?;
+            validate_reference_schema(conn)?;
+            validate_sentinel_records_and_triggers(conn)?;
+            conn.batch_execute(
+                "ALTER TABLE Games ADD COLUMN Orientation TEXT \
+                 CHECK(Orientation IN ('white', 'black') OR Orientation IS NULL);",
+            )?;
+            insert_info(conn, "Version", CURRENT_DATABASE_VERSION)?;
+            validate_database(conn)?;
+            Ok(true)
+        }),
         (CURRENT_DATABASE_VERSION, false) => Err(Error::InvalidInput(
             "Database Version does not match its Games schema".into(),
         )),
@@ -241,6 +254,7 @@ fn migrate_legacy_database(conn: &mut SqliteConnection) -> Result<(), Error> {
                 FEN TEXT,
                 Moves BLOB,
                 PawnHome INTEGER NOT NULL DEFAULT 0,
+                Orientation TEXT CHECK(Orientation IN ('white', 'black') OR Orientation IS NULL),
                 FOREIGN KEY(EventID) REFERENCES Events(ID),
                 FOREIGN KEY(SiteID) REFERENCES Sites(ID),
                 FOREIGN KEY(WhiteID) REFERENCES Players(ID),
@@ -351,13 +365,20 @@ pub(super) fn validate_content(conn: &mut SqliteConnection) -> Result<(), Error>
 }
 
 fn validate_games_schema(conn: &mut SqliteConnection) -> Result<(), Error> {
+    validate_games_schema_version(conn, true)
+}
+
+fn validate_games_schema_version(
+    conn: &mut SqliteConnection,
+    with_orientation: bool,
+) -> Result<(), Error> {
     let columns: Vec<DetailedColumnInfo> = sql_query(
         "SELECT cid, name, type AS column_type, \"notnull\" AS is_not_null,
                 dflt_value AS default_value, pk
          FROM pragma_table_info('Games') ORDER BY cid",
     )
     .load(conn)?;
-    let expected = [
+    let mut expected = vec![
         ("ID", "INTEGER", false, None, 1),
         ("EventID", "INTEGER", true, Some("0"), 0),
         ("SiteID", "INTEGER", true, Some("0"), 0),
@@ -378,6 +399,9 @@ fn validate_games_schema(conn: &mut SqliteConnection) -> Result<(), Error> {
         ("Moves", "BLOB", false, None, 0),
         ("PawnHome", "INTEGER", true, Some("0"), 0),
     ];
+    if with_orientation {
+        expected.push(("Orientation", "TEXT", false, None, 0));
+    }
     if columns.len() != expected.len()
         || columns
             .iter()
@@ -443,6 +467,12 @@ fn validate_games_schema(conn: &mut SqliteConnection) -> Result<(), Error> {
     if !sql.contains("CHECK(RESULTIN('1-0','0-1','1/2-1/2','*')ORRESULTISNULL)") {
         return Err(Error::InvalidInput(
             "Games.Result CHECK constraint is missing".into(),
+        ));
+    }
+    if with_orientation && !sql.contains("CHECK(ORIENTATIONIN('WHITE','BLACK')ORORIENTATIONISNULL)")
+    {
+        return Err(Error::InvalidInput(
+            "Games.Orientation CHECK constraint is missing".into(),
         ));
     }
     Ok(())
@@ -689,8 +719,8 @@ mod tests {
              INSERT INTO Players VALUES (0, 'Unknown', NULL);
              INSERT INTO Events VALUES (0, 'Unknown');
              INSERT INTO Sites VALUES (0, 'Unknown');
-             INSERT INTO Games (ID, EventID, SiteID, Round, WhiteID, BlackID, Result, Moves, PawnHome)
-             VALUES (42, 0, 0, 7, 0, 0, '1-0', X'00', 255);
+             INSERT INTO Games (ID, EventID, SiteID, Round, WhiteID, BlackID, Result, Moves, PawnHome, WhiteMaterial, BlackMaterial)
+             VALUES (42, 0, 0, 7, 0, 0, '1-0', X'00', 255, 0, 0);
              INSERT INTO Info VALUES ('Version', '1.0.0');",
         )
         .unwrap();
@@ -714,6 +744,79 @@ mod tests {
                 pawn_home: 255,
             }
         );
+        assert_migrated_orientation_and_stamp(&mut conn);
+    }
+
+    fn assert_migrated_orientation_and_stamp(conn: &mut SqliteConnection) {
+        let row = super::super::schema::games::table
+            .find(42)
+            .first::<super::super::models::Game>(conn)
+            .unwrap();
+        assert!(row.orientation.is_none());
+        // Golden digest of this row with the original, pre-orientation field framing.
+        assert_eq!(
+            super::super::game_row_stamp(&row),
+            "18add3dbe3e697f80e999fbbf72733d2e1ceadebf7008ccfeab9969671089cbb"
+        );
+        validate_database(conn).unwrap();
+    }
+
+    fn pre_orientation_connection() -> SqliteConnection {
+        let mut conn = connection();
+        let old_schema = CREATE_TABLES_SQL.replace(
+            "    Orientation TEXT CHECK(Orientation IN ('white', 'black') OR Orientation IS NULL),\n",
+            "",
+        );
+        conn.batch_execute(&old_schema).unwrap();
+        insert_info(&mut conn, "Version", PRE_ORIENTATION_DATABASE_VERSION).unwrap();
+        conn
+    }
+
+    #[test]
+    fn version_two_upgrade_adds_nullable_orientation_in_place_and_preserves_stamps() {
+        let mut conn = pre_orientation_connection();
+        conn.batch_execute(
+            "INSERT INTO Games (ID, Round, Result, Moves, PawnHome, WhiteMaterial, BlackMaterial)
+             VALUES (42, '7', '1-0', X'00', 255, 0, 0);
+             CREATE INDEX retained_game_index ON Games(Date);",
+        )
+        .unwrap();
+        assert!(validate_existing_database(&mut conn).unwrap());
+        assert_eq!(
+            info_value(&mut conn, "Version").unwrap().as_deref(),
+            Some(CURRENT_DATABASE_VERSION)
+        );
+        assert_migrated_orientation_and_stamp(&mut conn);
+        assert_eq!(
+            sql_query(
+                "SELECT COUNT(*) AS count FROM sqlite_master WHERE name = 'retained_game_index'"
+            )
+            .get_result::<CountRow>(&mut conn)
+            .unwrap()
+            .count,
+            1
+        );
+        assert!(!validate_existing_database(&mut conn).unwrap());
+        assert!(sql_query("UPDATE Games SET Orientation = 'invalid'")
+            .execute(&mut conn)
+            .is_err());
+    }
+
+    #[test]
+    fn failed_orientation_upgrade_rolls_back_column_and_version() {
+        let mut conn = pre_orientation_connection();
+        conn.batch_execute(
+            "PRAGMA ignore_check_constraints = ON;
+            INSERT INTO Games (Result) VALUES ('invalid');
+            PRAGMA ignore_check_constraints = OFF;",
+        )
+        .unwrap();
+        assert!(validate_existing_database(&mut conn).is_err());
+        assert_eq!(
+            info_value(&mut conn, "Version").unwrap().as_deref(),
+            Some(PRE_ORIENTATION_DATABASE_VERSION)
+        );
+        validate_games_schema_version(&mut conn, false).unwrap();
     }
 
     #[test]
