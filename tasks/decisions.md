@@ -11989,3 +11989,22 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Same procedure as d-20261102-11, d-20261101-04 and d-20261030-08; 8,279 B of margin remains. Reversal path: tighten total against a future smaller production build. This decision is the forward pointer for the ceilings.
 * **Decided by:** Claude Code (Opus 5.5) drain session 81b6e46b-0520-43cf-9648-b4982074973e, full auto, 2026-11-05 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"3964d41904ceb67c27f506152f59aebd7dfc43719e22df52a80c9acf00de9409","input_sha256":"589233199247dfc92d8335ce16f544540ffd6e929ede58f04fe43692de21b125","kind":"mutation-receipt","operation":"19075b3d4494138ddccce6172702415b20949c54bdc9d107890f44dda36e7b29","options":{"section":null},"request_id_sha256":null,"results":["d-20261105-06"],"target":"decisions-ledger","v":1} -->
+
+### d-20261105-07 — Which key does "Previous branch" use once X toggles threat mode?
+
+* **Question:** Felix ordered X for threat mode, but X was the default for Previous branch. Which default does Previous branch get, and what happens to stored keymaps?
+* **Governs:** -
+* **Chosen:** Previous branch defaults to `shift+c` (reverse of Next branch `c`, like `tab`/`shift+tab`). A stored keymap without the new threat entry whose Previous branch is still `x` is migrated once to `shift+c`; any other stored choice is kept.
+* **Rejected:** Keeping `x` on both actions (one key press would do two things). `v` (no convention, still breaks the old pairing).
+* **Reason:** Direct consequence of the X order; shift as reverse already exists in the keymap. Reversal path: change the default in `src/state/keybinds.ts` and drop the migration.
+* **Decided by:** Claude Code (Opus 5.5) build run engine-hotkeys, full auto, 2026-11-05 · **Superseded-by:** -
+
+### d-20261105-08 — Where does Space go when the board or a button has focus?
+
+* **Question:** Clicking the board focuses its keyboard grid, which uses Space for square selection, and a just-clicked button is activated by Space. Who gets Space?
+* **Governs:** -
+* **Chosen:** A pointer-focused grid with no keyboard selection lets Space through to "play best engine move". A keyboard-focused grid (`:focus-visible`) or a grid with a selected keyboard source keeps Space for square selection. On other focused controls, Space plays the move and suppresses that control's Space activation only when a move is actually played. Space in threat mode does nothing. The engine is the first enabled, loaded engine in panel order with current, non-failed lines.
+* **Rejected:** Board always wins (the hotkey would never fire after a mouse move). Hotkey always wins (keyboard-only move entry breaks). Buttons always win (click engine Play, then Space, would pause the engine).
+* **Reason:** Felix's flow is "enter a move, press space". Enter still activates buttons and still drives keyboard move entry. Reversal path: the focus checks in `Board.tsx` keyboard handler and the Space handler in `BoardAnalysis.tsx`.
+* **Decided by:** Claude Code (Opus 5.5) build run engine-hotkeys, full auto, 2026-11-05 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":17,"effect_sha256":"8349bca8845aa6804eeea448c96c9f406a29da8f2755207208a33c3a354e2f7d","input_sha256":"96e6721ac11fc83f39d9becd3620ba0dea740b45322865668466d50aa5329ba8","kind":"mutation-receipt","operation":"4bae8f482780f37a6668e8d96739238bdbc7aa7633f2ca4c3cdb6154eb895f94","options":{"section":null},"request_id_sha256":null,"results":["d-20261105-07","d-20261105-08"],"target":"decisions-ledger","v":1} -->
