@@ -20958,7 +20958,7 @@ Fixed in 3e2ea144..173b7574 range, pushed as 7171d6a8 (code commits: stack tiles
 
 ### verify:app practice checks call the deck commands without the epoch they now require
 
-* **ID:** f-20261105-02 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261105-02 · **Status:** handled · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** bc639ab2-cce3-4336-a403-6d833de168a0
 * **Impact class:** tooling
 * **Where:** `scripts/verify-app.mjs` `loadAllPracticeReviews` (invokes `load_practice_reviews` with `{ fileId, game, cursor, limit }`) and `loadPracticeDeckThroughIpc` (reads `load_practice_deck`, which now returns `PracticeDeckLoad { epoch, deck }`), and the practice scenario callers that consume them; native contract in `src-tauri/src/practice.rs` `load_practice_reviews(.., expected_epoch: String)`, introduced by 991747a8 (f-20261101-17).
@@ -20967,6 +20967,9 @@ Fixed in 3e2ea144..173b7574 range, pushed as 7171d6a8 (code commits: stack tiles
 * **Fix direction:** read `epoch` from the `load_practice_deck` result, use its `deck` for the position assertions, and pass that `expectedEpoch` to every `load_practice_reviews` call; check whether the "500 further positions" sync timeout clears with it or is a separate renderer defect.
 * **Related:** f-20261103-01 (verify:app aborted earlier, at the dirty-quit session, so this drift was never reached before 2026-11-05).
 * **Found by:** drain planner session bc639ab2-cce3-4336-a403-6d833de168a0 (PLAN-ONLY for f-20261103-01), 2026-11-05.
+
+Fixed in d84d7741/b3fa38dc (pushed to master as part of d7f93752): `scripts/verify-app.mjs` reads `epoch` and `deck` from `load_practice_deck` and passes `expectedEpoch` to every `load_practice_reviews` call. `pnpm verify:app` ended "all checks passed" twice on 2026-11-05 (auto-orientation build run), including all practice checks; the "500 further positions" sync timeout cleared with it.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"627a5ef951771761565b28d5a23322f3abee97c7fe387a69f7e1dfa48fa64d19","header_sha256":"2519d6989ece9021d1e57c1546ae72748dcfdcf42e608ad18f1b4d4ee76ce5ed","header_status":"handled","input_sha256":"dfcb7460fff455d5d7845cbe9003ac9acdff4c3fa1fd774789e1fa8833211378","kind":"mutation-receipt","operation":"56b5f2261a570f5317d596ac1e73f97f01442032cb7ca0ed41e8c298ce154e8f","options":{"section":null},"request_id_sha256":null,"results":["f-20261105-02"],"target":"f-20261105-02","v":1} -->
 
 ---
 
