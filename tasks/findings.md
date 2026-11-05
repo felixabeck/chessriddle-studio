@@ -20835,7 +20835,7 @@ Fixed by d1882467 (drain session a7d7a3cd): `rename_information_buffer` floors t
 
 ### Hosted e2e intermittently leaves the linked New game tab as a database draft after the append
 
-* **ID:** f-20261104-02 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261104-02 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** build · **Blocked:** none
 * **Filed from:** c6681a98-3b9c-44b5-be19-f49bb7c17761
 * **Impact class:** tooling
 * **Where:** `e2e/new-game-to-database.spec.ts:183` (`expect.poll(activeWorkspaceTab(page)?.gameOrigin).toMatchObject({ kind: "file", gameNumber: 2, … })`, 8000 ms).
@@ -20843,6 +20843,9 @@ Fixed by d1882467 (drain session a7d7a3cd): `rename_information_buffer` floors t
 * **Failure scenario:** a push to master shows the Test job red at random and holds the post-push install until the job is rerun.
 * **Open question:** is this a test race (the origin poll starts before the append's origin switch is observable under hosted load) or a real renderer race where the database-draft-to-file origin transition can be lost?
 * **Found by:** drain session c6681a98-3b9c-44b5-be19-f49bb7c17761 while waiting on hosted CI for the f-20261101-29 push, 2026-11-04.
+
+Fixed by e4230a0c (decision d-20261105-15, review record `tasks/handoffs/2026-11-05-f-20261104-02-review.md`). Mechanism: a test race, not a renderer race. The run 41755396509 trace shows the tree never received 1. e4: `playBoardMove` measured the outgoing view-only Library preview board (192 px, `.cg-wrap` without `manipulable`) that `page.locator("cg-board").first()` still matched right after navigation, then Playwright re-resolved the click onto the 552 px game board with the stale offset (empty b6). With no moves, `storeToDatabase` took its `NoMoves` exit and the origin legitimately stayed `databaseDraft`. `playBoardMove` now intersects the caller's locator with `.cg-wrap.manipulable cg-board`, waits (default 8 s expect timeout) while the match is view-only, fails with a view-only diagnostic otherwise, and still dispatches exactly one source and one destination click. Proof: two synthetic-page regression tests in `e2e/new-game-to-database.spec.ts` fail with only the helper reverted (2 failed) and pass with it; the spec passed 50/50 with `--repeat-each=10` and 25/25 with `--repeat-each=5` in the container; nine caller specs passed 131/131. Rejected: renderer save-path change or a longer origin poll (no move existed), a spec-only `1. e4` assertion, ElementHandle detach-restart, rendered-selection probes, retry-on-revert, box-stability windows (see d-20261105-15). Plan review r1=3 r2=1 r3=2 r4=0 r5=0; diff review 6/6 APPROVED.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"18d851eead7d5a2233bfff3abcbe3d18324d894ac7bb0f583f3e5f40c8f28874","header_sha256":"d1084dc619cde2ae5be1bb2ec81fd349c2c16163ec8b9314c3ca4a3bffc8e519","header_status":"handled","input_sha256":"819f0cd35d7037cfe6f848c515711d7da8327a0019c23e5009db2ffe0bb35860","kind":"mutation-receipt","operation":"373b2c9f2ba445325c47f1538b6c896ed5f4d71b20bfc5b7a8a1657b88388326","options":{"section":null},"request_id_sha256":null,"results":["f-20261104-02"],"target":"f-20261104-02","v":1} -->
 
 ---
 
