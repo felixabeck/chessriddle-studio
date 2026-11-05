@@ -206,6 +206,16 @@ async function setInputValue(target: HTMLInputElement, value: string) {
   });
 }
 
+async function pastePgn(pgn: string) {
+  const textarea = host.querySelector<HTMLTextAreaElement>("textarea")!;
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    setter.call(textarea, pgn);
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  return textarea;
+}
+
 async function pressEnter(target: HTMLInputElement) {
   await act(async () => {
     target.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
@@ -385,51 +395,65 @@ test("a rejected game-0 preflight creates no copied file", async () => {
   expect(fixtures.replaceNewTab).not.toHaveBeenCalled();
 });
 
-test("saved pasted PGN conflict retains input and shows the error under Name", async () => {
-  const { tauri, TauriCommandError } = await import("@/platform/tauri");
-  const create = vi.spyOn(tauri, "createWorkspaceFile").mockRejectedValueOnce(
-    new TauriCommandError({
-      tag: "backend-error",
-      category: "conflict",
-      nameTaken: true,
-      message: "unrelated diagnostic",
-    }),
-  );
-  fixtures.ensureFileWorkspace.mockResolvedValue({
-    id: { id: "workspace" },
-    kind: "fileWorkspace",
-  });
-  fixtures.createFile.mockImplementation(
-    (await vi.importActual<typeof import("@/utils/files")>("@/utils/files")).createFile,
-  );
-  const setOpen = await renderModal();
-  const textarea = host.querySelector("textarea")!;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
-      textarea,
-      linkPgn,
+test.each([
+  {
+    saveState: "unsaved",
+    nameInput: null,
+    fieldError: null,
+    submitError: expect.objectContaining({ textContent: "Name already used" }),
+  },
+  {
+    saveState: "saved",
+    nameInput: expect.objectContaining({ value: "Najdorf repertoire" }),
+    fieldError: expect.objectContaining({ textContent: "Name already used" }),
+    submitError: null,
+  },
+])(
+  "$saveState pasted PGN conflict retains input and shows Name already used",
+  async ({ saveState, nameInput, fieldError, submitError }) => {
+    const { tauri, TauriCommandError } = await import("@/platform/tauri");
+    const create = vi.spyOn(tauri, "createWorkspaceFile").mockRejectedValueOnce(
+      new TauriCommandError({
+        tag: "backend-error",
+        category: "conflict",
+        nameTaken: true,
+        message: "unrelated diagnostic",
+      }),
     );
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  await act(async () =>
-    host.querySelector<HTMLInputElement>('[data-testid="save-to-collection"]')!.click(),
-  );
-  await setInputValue(input("Common.Name"), "Najdorf repertoire");
-  await clickSubmit();
+    fixtures.ensureFileWorkspace.mockResolvedValue({
+      id: { id: "workspace" },
+      kind: "fileWorkspace",
+    });
+    fixtures.createFile.mockImplementation(
+      (await vi.importActual<typeof import("@/utils/files")>("@/utils/files")).createFile,
+    );
+    const setOpen = await renderModal();
+    const textarea = await pastePgn(linkPgn);
+    if (saveState === "saved") {
+      await act(async () =>
+        host.querySelector<HTMLInputElement>('[data-testid="save-to-collection"]')!.click(),
+      );
+      await setInputValue(input("Common.Name"), "Najdorf repertoire");
+    }
+    await clickSubmit();
 
-  expect(host.querySelector('[data-testid="error-Common.Name"]')?.textContent).toBe(
-    "Name already used",
-  );
-  expect(submitButton().nextElementSibling).toBeNull();
-  expect(input("Common.Name").value).toBe("Najdorf repertoire");
-  expect(textarea.value).toBe(linkPgn);
-  expect(host.textContent).not.toContain("unrelated diagnostic");
-  expect(modalElement().dataset.opened).toBe("true");
-  expect(create).toHaveBeenCalledOnce();
-  expect(fixtures.openFile).not.toHaveBeenCalled();
-  expect(fixtures.setTabs).not.toHaveBeenCalled();
-  expect(setOpen).not.toHaveBeenCalled();
-});
+    expect(host.textContent).toContain("Name already used");
+    expect(host.querySelector('input[aria-label="Common.Name"]')).toEqual(nameInput);
+    expect(host.querySelector('[data-testid="error-Common.Name"]')).toEqual(fieldError);
+    expect(submitButton().nextElementSibling).toEqual(submitError);
+    expect(textarea.value).toBe(linkPgn);
+    expect(fixtures.loadFileGame).not.toHaveBeenCalled();
+    expect(host.textContent).not.toContain("unrelated diagnostic");
+    expect(modalElement().dataset.opened).toBe("true");
+    expect(create).toHaveBeenCalledOnce();
+    expect(fixtures.openFile).not.toHaveBeenCalled();
+    expect(fixtures.replaceNewTab).not.toHaveBeenCalled();
+    expect(fixtures.storeSet).not.toHaveBeenCalled();
+    expect(fixtures.setTabs).not.toHaveBeenCalled();
+    expect(fixtures.notifyUnlessCancelled).not.toHaveBeenCalled();
+    expect(setOpen).not.toHaveBeenCalled();
+  },
+);
 
 test.each(["saved file", "pasted PGN"])(
   "cleanup importing %s retains values and blocks success continuations",
@@ -529,51 +553,6 @@ test.each([
   expect(input("Common.Name").value).toBe("Keep this name.pgn");
   expect(fixtures.loadFileGame).toHaveBeenCalledOnce();
   expect(host.textContent).not.toContain(failure.hidden);
-  expect(modalElement().dataset.opened).toBe("true");
-  expect(create).toHaveBeenCalledOnce();
-  expect(fixtures.openFile).not.toHaveBeenCalled();
-  expect(fixtures.replaceNewTab).not.toHaveBeenCalled();
-  expect(fixtures.storeSet).not.toHaveBeenCalled();
-  expect(fixtures.setTabs).not.toHaveBeenCalled();
-  expect(fixtures.notifyUnlessCancelled).not.toHaveBeenCalled();
-  expect(setOpen).not.toHaveBeenCalled();
-});
-
-test("pasted PGN conflict retains input and shows Name already used", async () => {
-  const { tauri, TauriCommandError } = await import("@/platform/tauri");
-  const create = vi.spyOn(tauri, "createWorkspaceFile").mockRejectedValueOnce(
-    new TauriCommandError({
-      tag: "backend-error",
-      category: "conflict",
-      nameTaken: true,
-      message: "unrelated diagnostic",
-    }),
-  );
-  fixtures.ensureFileWorkspace.mockResolvedValue({
-    id: { id: "workspace" },
-    kind: "fileWorkspace",
-  });
-  fixtures.createFile.mockImplementation(
-    (await vi.importActual<typeof import("@/utils/files")>("@/utils/files")).createFile,
-  );
-  const setOpen = await renderModal();
-  const textarea = host.querySelector("textarea")!;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
-      textarea,
-      linkPgn,
-    );
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  await clickSubmit();
-
-  expect(host.textContent).toContain("Name already used");
-  expect(host.querySelector('input[aria-label="Common.Name"]')).toBeNull();
-  expect(host.querySelector('[data-testid="error-Common.Name"]')).toBeNull();
-  expect(submitButton().nextElementSibling?.textContent).toBe("Name already used");
-  expect(host.querySelector("textarea")?.value).toBe(linkPgn);
-  expect(fixtures.loadFileGame).not.toHaveBeenCalled();
-  expect(host.textContent).not.toContain("unrelated diagnostic");
   expect(modalElement().dataset.opened).toBe("true");
   expect(create).toHaveBeenCalledOnce();
   expect(fixtures.openFile).not.toHaveBeenCalled();
@@ -948,67 +927,52 @@ test("shows an import failure inline while the modal is mounted", async () => {
   expect(fixtures.replaceNewTab).not.toHaveBeenCalled();
 });
 
-test("pasted PGN uses the text content variant and still opens through file admission", async () => {
-  const workspace = { id: { id: "workspace" }, kind: "fileWorkspace" } as const;
-  fixtures.ensureFileWorkspace.mockResolvedValue(workspace);
-  fixtures.createFile.mockResolvedValue({ isErr: false, value: fixtures.file });
-  await renderModal();
-
-  const pgn = '[Event "Pasted"]\n\n1. e4 *';
-  const textarea = host.querySelector<HTMLTextAreaElement>("textarea")!;
-  const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
-  await act(async () => {
-    valueSetter.call(textarea, pgn);
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  await clickSubmit();
-
-  expect(fixtures.createFile).toHaveBeenCalledWith({
+test.each([
+  { saveState: "unsaved", filename: expect.stringMatching(/^import-/), filetype: "game" },
+  { saveState: "saved", filename: "Najdorf repertoire", filetype: "repertoire" },
+  {
+    saveState: "unsaved after toggling Save",
     filename: expect.stringMatching(/^import-/),
-    listingCache: expect.objectContaining({
-      cache: expect.anything(),
-      mutate: expect.any(Function),
-    }),
     filetype: "game",
-    content: { kind: "text", pgn },
-    workspace,
-    parent: workspace,
-  });
-  expect(fixtures.replaceNewTab).not.toHaveBeenCalled();
-});
+  },
+])(
+  "$saveState pasted PGN uses the text content variant and opens the created file",
+  async ({ saveState, filename, filetype }) => {
+    const workspace = { id: { id: "workspace" }, kind: "fileWorkspace" } as const;
+    fixtures.ensureFileWorkspace.mockResolvedValue(workspace);
+    fixtures.createFile.mockResolvedValue({ isErr: false, value: fixtures.file });
+    await renderModal();
 
-test("saved pasted PGN uses the typed name and selected repertoire type and opens the created file", async () => {
-  const workspace = { id: { id: "workspace" }, kind: "fileWorkspace" } as const;
-  fixtures.ensureFileWorkspace.mockResolvedValue(workspace);
-  fixtures.createFile.mockResolvedValue({ isErr: false, value: fixtures.file });
-  await renderModal();
+    const pgn = '[Event "Pasted"]\n\n1. e4 *';
+    await pastePgn(pgn);
+    if (saveState !== "unsaved") {
+      await act(async () =>
+        host.querySelector<HTMLInputElement>('[data-testid="save-to-collection"]')!.click(),
+      );
+      await setInputValue(input("Common.Name"), "Najdorf repertoire");
+      await act(async () =>
+        host.querySelector<HTMLButtonElement>('[data-testid="mode-repertoire"]')!.click(),
+      );
+      if (saveState === "unsaved after toggling Save") {
+        await act(async () =>
+          host.querySelector<HTMLInputElement>('[data-testid="save-to-collection"]')!.click(),
+        );
+      }
+    }
+    await clickSubmit();
 
-  const pgn = '[Event "Pasted"]\n\n1. e4 *';
-  const textarea = host.querySelector<HTMLTextAreaElement>("textarea")!;
-  const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
-  await act(async () => {
-    valueSetter.call(textarea, pgn);
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  await act(async () =>
-    host.querySelector<HTMLInputElement>('[data-testid="save-to-collection"]')!.click(),
-  );
-  await setInputValue(input("Common.Name"), "Najdorf repertoire");
-  await act(async () =>
-    host.querySelector<HTMLButtonElement>('[data-testid="mode-repertoire"]')!.click(),
-  );
-  await clickSubmit();
-
-  expect(fixtures.createFile).toHaveBeenCalledWith({
-    filename: "Najdorf repertoire",
-    listingCache: expect.objectContaining({
-      cache: expect.anything(),
-      mutate: expect.any(Function),
-    }),
-    filetype: "repertoire",
-    content: { kind: "text", pgn },
-    workspace,
-    parent: workspace,
-  });
-  expect(fixtures.openFile).toHaveBeenCalledExactlyOnceWith(fixtures.file, fixtures.setTabs);
-});
+    expect(fixtures.createFile).toHaveBeenCalledWith({
+      filename,
+      listingCache: expect.objectContaining({
+        cache: expect.anything(),
+        mutate: expect.any(Function),
+      }),
+      filetype,
+      content: { kind: "text", pgn },
+      workspace,
+      parent: workspace,
+    });
+    expect(fixtures.replaceNewTab).not.toHaveBeenCalled();
+    expect(fixtures.openFile).toHaveBeenCalledExactlyOnceWith(fixtures.file, fixtures.setTabs);
+  },
+);
