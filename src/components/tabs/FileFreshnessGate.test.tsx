@@ -1935,6 +1935,90 @@ test.each(appendOutcomes)(
   },
 );
 
+async function startPendingPicker(route: "button" | "registered") {
+  mocks.readFileGame.mockResolvedValueOnce(stampedGame(changedStamp));
+  await setup({ dirty: true, persisted: true });
+  await vi.waitFor(() => expect(getFileFreshness(tabId).state).toBe("conflict"));
+  const picker = deferred<Awaited<ReturnType<(typeof import("@/utils/files"))["pickPgnFile"]>>>();
+  mocks.pickPgnFile.mockReturnValueOnce(picker.promise);
+  let completion: Promise<{ result: boolean } | { error: unknown }> | undefined;
+  await act(async () => {
+    if (route === "registered") {
+      completion = saveFileConflictVersion(tabId).then(
+        (result) => ({ result }),
+        (error: unknown) => ({ error }),
+      );
+    } else button("FileFreshness.SaveAsNewGame").click();
+  });
+  expect(mocks.pickPgnFile).toHaveBeenCalledOnce();
+  return { picker, completion };
+}
+
+for (const route of ["button", "registered"] as const) {
+  test.each(reloadFailures)(
+    `obsolete physical-generation ${route} picker rejection with %s leaves its durable replacement and later panel intact`,
+    async (category) => {
+      const { picker, completion } = await startPendingPicker(route);
+      const replacement = await installAppendReplacement(false);
+
+      await act(async () =>
+        picker.reject({ tag: "backend-error", category, message: `late picker ${category}` }),
+      );
+
+      expect(await completion).toEqual(route === "registered" ? { result: false } : undefined);
+      expectAppendReplacement(replacement);
+      expect(mocks.writeGame).not.toHaveBeenCalled();
+      expect(mocks.showNotification).not.toHaveBeenCalled();
+      await act(async () => setFileFreshness(tabId, "conflict", { conflictReason: "changed" }));
+      expect(host.textContent).not.toContain(`late picker ${category}`);
+      expect(host.textContent).toContain("FileFreshness.Changed");
+      expect(button("FileFreshness.SaveAsNewGame").disabled).toBe(false);
+    },
+  );
+
+  test.each(reloadFailures)(
+    `unmount silences a pending ${route} picker rejection with %s`,
+    async (category) => {
+      const { picker, completion } = await startPendingPicker(route);
+      const current = treeStore.getState();
+      const freshness = getFileFreshness(tabId);
+      expect(tabStorage.flush()).toEqual([]);
+      const durableBytes = sessionStorage.getItem(tabId);
+      await act(async () => root.unmount());
+
+      await act(async () =>
+        picker.reject({ tag: "backend-error", category, message: `late picker ${category}` }),
+      );
+
+      expect(await completion).toEqual(route === "registered" ? { result: false } : undefined);
+      expect(treeStore.getState()).toBe(current);
+      expect(getFileFreshness(tabId)).toBe(freshness);
+      expect(tabStorage.flush()).toEqual([]);
+      expect(sessionStorage.getItem(tabId)).toBe(durableBytes);
+      expect(mocks.writeGame).not.toHaveBeenCalled();
+      expect(mocks.showNotification).not.toHaveBeenCalled();
+      expect(host.textContent).toBe("");
+    },
+  );
+
+  test(`current-owner ${route} picker rejection surfaces its error`, async () => {
+    const { picker, completion } = await startPendingPicker(route);
+
+    await act(async () =>
+      picker.reject({ tag: "backend-error", category: "io", message: "late picker io" }),
+    );
+
+    const failure = {
+      error: expect.objectContaining({ backendCategory: "io", message: "late picker io" }),
+    };
+    expect(await completion).toEqual(route === "registered" ? failure : undefined);
+    expect(host.textContent).toContain("late picker io");
+    expect(mocks.writeGame).not.toHaveBeenCalled();
+    expect(getFileFreshness(tabId).state).toBe("conflict");
+    expect(button("FileFreshness.SaveAsNewGame").disabled).toBe(false);
+  });
+}
+
 test.each(["stale-game", "io"] as const)(
   "registered append returns false for an obsolete %s rejection without damaging its replacement",
   async (outcome) => {
