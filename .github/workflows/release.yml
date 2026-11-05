@@ -15,6 +15,7 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     outputs:
       release_id: ${{ steps.draft.outputs.release_id }}
     steps:
@@ -48,6 +49,7 @@ jobs:
           - platform: 'windows-latest'
             args: '--bundles nsis'
     runs-on: ${{ matrix.platform }}
+    timeout-minutes: 120
     steps:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -115,6 +117,7 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - name: Verify latest.json and publish
         env:
