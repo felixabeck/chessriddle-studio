@@ -652,6 +652,10 @@ mod tests {
         br#"{"archives":["https://api.chess.com/pub/player/felix/games/2026/09"]}"#;
     const ARCHIVE: &[u8] = br#"{"games":[{"pgn":"1. e4 e5"}]}"#;
 
+    // Hang guard, not a latency assertion. Hosted Windows runners stall for tens of seconds
+    // (43 s in CI run 42011942850), so durable I/O needs a bound far above those stalls.
+    const TERMINAL_HANG_GUARD: Duration = Duration::from_secs(120);
+
     struct ExportTransport {
         responses: Mutex<VecDeque<DownloadResponse>>,
     }
@@ -819,11 +823,9 @@ mod tests {
                 if let Some(entered) = self.entered.lock().unwrap().take() {
                     let _ = entered.send(());
                 }
-                self.release
-                    .lock()
-                    .unwrap()
-                    .recv_timeout(Duration::from_secs(5))
-                    .map_err(|_| std::io::Error::other("test publication release timed out"))?;
+                self.release.lock().unwrap().recv().map_err(|_| {
+                    std::io::Error::other("test publication release sender dropped")
+                })?;
                 if self.fail_after_release {
                     return Err(std::io::Error::other("injected publication failure"));
                 }
@@ -1281,7 +1283,7 @@ mod tests {
     }
 
     async fn wait_for_progress(state: &AppState, job_id: &str, expected: ProgressState) {
-        tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(TERMINAL_HANG_GUARD, async {
             loop {
                 if state
                     .progress_state
@@ -1291,24 +1293,31 @@ mod tests {
                 {
                     return;
                 }
-                tokio::task::yield_now().await;
+                tokio::time::sleep(Duration::from_millis(5)).await;
             }
         })
         .await
-        .unwrap();
+        .unwrap_or_else(|_| {
+            panic!("job {job_id} did not reach {expected:?} within {TERMINAL_HANG_GUARD:?}")
+        });
     }
 
     async fn wait_for_operation_drain(state: &AppState) {
-        tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(TERMINAL_HANG_GUARD, async {
             loop {
                 if state.operations.outstanding_labels().unwrap().is_empty() {
                     return;
                 }
-                tokio::task::yield_now().await;
+                tokio::time::sleep(Duration::from_millis(5)).await;
             }
         })
         .await
-        .unwrap();
+        .unwrap_or_else(|_| {
+            panic!(
+                "operations did not drain within {TERMINAL_HANG_GUARD:?}, remaining outstanding_labels: {:?}",
+                state.operations.outstanding_labels()
+            )
+        });
     }
 
     #[test]
@@ -1459,9 +1468,9 @@ mod tests {
             job_id.clone(),
             app.handle().clone(),
             state.clone(),
-            Duration::from_secs(5),
+            TERMINAL_HANG_GUARD,
         ));
-        tokio::time::timeout(Duration::from_secs(5), entered)
+        tokio::time::timeout(TERMINAL_HANG_GUARD, entered)
             .await
             .unwrap()
             .unwrap();
@@ -1490,9 +1499,9 @@ mod tests {
             job_id.clone(),
             app.handle().clone(),
             state.clone(),
-            Duration::from_secs(5),
+            TERMINAL_HANG_GUARD,
         ));
-        tokio::time::timeout(Duration::from_secs(5), entered)
+        tokio::time::timeout(TERMINAL_HANG_GUARD, entered)
             .await
             .unwrap()
             .unwrap();
@@ -1764,9 +1773,9 @@ mod tests {
             job_id.clone(),
             app.handle().clone(),
             state.clone(),
-            Duration::from_secs(5),
+            TERMINAL_HANG_GUARD,
         ));
-        tokio::time::timeout(Duration::from_secs(5), entered)
+        tokio::time::timeout(TERMINAL_HANG_GUARD, entered)
             .await
             .unwrap()
             .unwrap();
