@@ -2687,6 +2687,93 @@ test("accounts-puzzles-engines: navigates empty account, puzzle, and engine stat
     await expect(page).toHaveScreenshot("accounts-puzzles-engines.png", { fullPage: true });
 });
 
+test.describe("stacked puzzle geometry", () => {
+    test.use({ viewport: { width: 320, height: 720 } });
+
+    test("accounts-puzzles-engines: puzzle board fills its narrow tile at 200%", async ({
+        page,
+        mockScenario,
+    }) => {
+        await page.addInitScript(() => {
+            localStorage.setItem("font-size", "200");
+            localStorage.setItem("puzzle-db", JSON.stringify({ id: "geometry-puzzles" }));
+            localStorage.setItem("track-puzzle-time", "false");
+        });
+        await mockScenario({
+            commands: {
+                list_puzzle_databases: {
+                    result: [
+                        {
+                            title: "Geometry.db3",
+                            description: "Geometry",
+                            puzzleCount: 1,
+                            storageSize: "1024",
+                            path: { id: "geometry-puzzles" },
+                        },
+                    ],
+                },
+                get_puzzle_themes: { result: [] },
+                get_themes_for_puzzle: { result: [] },
+                get_puzzle: {
+                    result: {
+                        id: 7,
+                        fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1",
+                        moves: "e7e5 g1f3 b8c6 b1c3",
+                        rating: 1200,
+                        rating_deviation: 50,
+                        popularity: 1,
+                        nb_plays: 1,
+                    },
+                },
+            },
+        });
+        await page.goto("/");
+        await page.getByRole("button", { name: "Train", exact: true }).click();
+        await page.getByRole("button", { name: "New Puzzle", exact: true }).click();
+        await expect(
+            page.getByRole("button", { name: "Challenge 1: incomplete", exact: true }),
+        ).toBeVisible();
+        await expect(page.locator('[data-board-layout="stacked"]')).toHaveCount(1);
+        await expect(page.locator("html")).toHaveCSS("font-size", "32px");
+        // PuzzleBoard's ResizeObserver sizes the square from its tile height.
+        await expect
+            .poll(async () => {
+                return page.locator("#left cg-board").evaluate((board) => {
+                    const tile = document.getElementById("left")!;
+                    return board.getBoundingClientRect().width / tile.clientWidth;
+                });
+            })
+            .toBeGreaterThanOrEqual(0.9);
+        const geometry = await page.locator("#left").evaluate((tile) => {
+            const style = getComputedStyle(tile);
+            const square = tile.querySelector("cg-board")!.getBoundingClientRect();
+            const innerWidth =
+                tile.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+            const innerHeight =
+                tile.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+            return {
+                innerWidth,
+                innerHeight,
+                squareWidth: square.width,
+                squareHeight: square.height,
+                emptySpace: Math.max(0, innerHeight - square.height),
+                rootFont: parseFloat(getComputedStyle(document.documentElement).fontSize),
+                scrollWidth: document.documentElement.scrollWidth,
+                viewport: window.innerWidth,
+                tileScrollWidth: tile.scrollWidth,
+                tileClientWidth: tile.clientWidth,
+            };
+        });
+        console.log(`320x720/200% puzzle geometry ${JSON.stringify(geometry)}`);
+        expect(geometry.squareWidth).toBeGreaterThanOrEqual(geometry.innerWidth * 0.9);
+        expect(Math.abs(geometry.squareWidth - geometry.squareHeight)).toBeLessThanOrEqual(1);
+        expect(geometry.squareHeight).toBeLessThanOrEqual(geometry.innerHeight + 1);
+        expect(geometry.emptySpace).toBeLessThanOrEqual(geometry.rootFont);
+        expect(geometry.tileScrollWidth).toBeLessThanOrEqual(geometry.tileClientWidth);
+        expect(geometry.scrollWidth).toBe(geometry.viewport);
+    });
+});
+
 for (const erase of [true, false]) {
     test(`accounts-puzzles-engines: puzzle marks survive progressive hints, toggle and honor erase ${erase}`, async ({
         page,

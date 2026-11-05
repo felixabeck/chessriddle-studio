@@ -9,6 +9,7 @@ import { useElementSize } from "@mantine/hooks";
 import { useTranslation } from "react-i18next";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { tabsAtom } from "@/state/atoms";
+import { rootFontPx } from "@/state/paneLayout";
 import { IconAction } from "@/components/common/IconAction";
 import { OpenGameButton, useGameOpen } from "@/components/common/gameOpen";
 import { openFile } from "@/utils/files";
@@ -23,10 +24,6 @@ import type { FileMetadata } from "./file";
 // list's needs grow with the font scale while a window width in px does not.
 const PREVIEW_CONTROLS_MIN_WIDTH_REM = 26;
 const GAME_LIST_MIN_HEIGHT = "8rem";
-
-function rootFontSizePx() {
-  return Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-}
 
 // The parent keys this card by the handle key, so a different file remounts it (resetting the
 // page and the game-name cache) while a relisted copy of the same file keeps both.
@@ -51,7 +48,9 @@ function FileCard({
   handleRef.current = selected.handle;
   const handleKey = fileWorkspaceKey(selected.handle);
   const { ref: cardRef, width: cardWidth } = useElementSize();
-  const narrow = cardWidth < PREVIEW_CONTROLS_MIN_WIDTH_REM * rootFontSizePx();
+  // Preserve this card's 16px fallback regardless of the configured font scale.
+  const rootFont = rootFontPx(getComputedStyle(document.documentElement).fontSize, 100);
+  const narrow = cardWidth < PREVIEW_CONTROLS_MIN_WIDTH_REM * rootFont;
 
   // Keyed by the handle, not the entry object: a relisting must not re-read the same file.
   useEffect(() => {

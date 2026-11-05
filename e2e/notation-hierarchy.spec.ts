@@ -21,6 +21,8 @@ const NAG_MAIN_SAN = "Nf3?";
 const NAG_VARIATION_SAN = "f5?";
 const MAIN_COMMENT = "Main-line comment";
 const VARIATION_COMMENT = "Variation comment";
+// Keep the pointer and selected move clear of the viewport's bottom/top edges.
+const SCROLL_CLEARANCE_PX = 40;
 
 const hierarchyTokens: Token[] = [
     { type: "Header", value: { tag: "Event", value: "E2E" } },
@@ -163,9 +165,9 @@ async function openHierarchyGame(
     const currentBox = (await current.boundingBox())!;
     await page.mouse.move(
         viewBox.x + viewBox.width / 2,
-        Math.min(viewBox.y + viewBox.height / 2, 680),
+        Math.min(viewBox.y + viewBox.height / 2, page.viewportSize()!.height - SCROLL_CLEARANCE_PX),
     );
-    await page.mouse.wheel(0, currentBox.y - viewBox.y - 40);
+    await page.mouse.wheel(0, currentBox.y - viewBox.y - SCROLL_CLEARANCE_PX);
     await current.click();
     await expect(notation.locator('[data-notation-current="true"] button')).toHaveText(
         CURRENT_VARIATION_SAN,
@@ -441,6 +443,10 @@ async function assertStackedBoardGeometry(page: Page, label: string) {
     await waitForFontsSettled(page);
     const geometry = await page.evaluate(() => {
         const target = document.getElementById("left")!;
+        const host = target.parentElement!;
+        const hostStyle = getComputedStyle(host);
+        const stack = host.parentElement!;
+        const stackStyle = getComputedStyle(stack);
         const card = target.firstElementChild!;
         const tile = target.getBoundingClientRect();
         const cardBox = card.getBoundingClientRect();
@@ -460,6 +466,12 @@ async function assertStackedBoardGeometry(page: Page, label: string) {
             parseFloat(style.paddingBottom);
         return {
             tileWidth: tile.width,
+            availableWidth:
+                stack.clientWidth -
+                parseFloat(stackStyle.paddingLeft) -
+                parseFloat(stackStyle.paddingRight) -
+                parseFloat(hostStyle.marginLeft) -
+                parseFloat(hostStyle.marginRight),
             tileInnerWidth: card.clientWidth,
             tileInnerHeight,
             contentHeight,
@@ -473,6 +485,7 @@ async function assertStackedBoardGeometry(page: Page, label: string) {
         };
     });
     console.log(`${label} geometry ${JSON.stringify(geometry)}`);
+    expect(Math.abs(geometry.tileWidth - geometry.availableWidth)).toBeLessThanOrEqual(1);
     expect(geometry.squareWidth).toBeGreaterThanOrEqual(geometry.tileWidth * 0.9);
     expect(geometry.paintedSquareWidth).toBeGreaterThanOrEqual(geometry.tileInnerWidth * 0.9);
     expect(Math.abs(geometry.squareWidth - geometry.squareHeight)).toBeLessThanOrEqual(1);
@@ -493,6 +506,60 @@ test("notation-hierarchy: overflow-only stacked board fits content at 100%", asy
     await expect(page).toHaveURL("/");
     await expect(page.locator("html")).toHaveCSS("font-size", "16px");
     await assertStackedBoardGeometry(page, "560x800/100%");
+});
+
+test("notation-hierarchy: overflow-only stacked annotation stays over its square", async ({
+    page,
+    mockScenario,
+}) => {
+    await mockScenario({
+        commands: filesWorkspaceCommands([[filesWorkspaceFixture.pgnFile]], {
+            ...pgnFileCommands,
+            lex_pgn: {
+                pgnTokens: {
+                    [filesWorkspaceFixture.pgnGame]: [
+                        { type: "Header", value: { tag: "Result", value: "*" } },
+                        { type: "San", value: "a3" },
+                        { type: "Nag", value: "$1" },
+                        { type: "Outcome", value: "*" },
+                    ],
+                },
+            },
+        }),
+    });
+    await openLibraryFile(page);
+    await page.getByRole("button", { name: "Open game", exact: true }).click();
+    await expect(page).toHaveURL("/");
+    await expect(page.locator('[data-board-layout="stacked"]')).toHaveCount(1);
+    await expect(page.locator("html")).toHaveCSS("font-size", "32px");
+    await wheelBoardStackTo(page, page.locator("#bottomRight"));
+    await page.locator("#bottomRight").getByRole("button", { name: "a3!", exact: true }).click();
+    await wheelBoardStackTo(page, page.locator("#left"));
+    const hint = page.locator("#left [data-board-annotation-hint]");
+    // A visible hint also proves that this tab has comments enabled.
+    await expect(hint).toBeVisible();
+    await waitForFontsSettled(page);
+    const geometry = await hint.evaluate((element) => {
+        const hint = element.getBoundingClientRect();
+        const board = document.querySelector("#left cg-board")!.getBoundingClientRect();
+        // White orientation, a3 is file 0 and row 5 from the top of the painted board.
+        const square = {
+            left: board.left,
+            right: board.left + board.width / 8,
+            top: board.top + (5 * board.height) / 8,
+            bottom: board.top + (6 * board.height) / 8,
+        };
+        return {
+            hint: { x: hint.x, y: hint.y, width: hint.width, height: hint.height },
+            center: { x: hint.x + hint.width / 2, y: hint.y + hint.height / 2 },
+            square,
+        };
+    });
+    console.log(`320x720/200% a3! annotation ${JSON.stringify(geometry)}`);
+    expect(geometry.center.x).toBeGreaterThanOrEqual(geometry.square.left);
+    expect(geometry.center.x).toBeLessThanOrEqual(geometry.square.right);
+    expect(geometry.center.y).toBeGreaterThanOrEqual(geometry.square.top);
+    expect(geometry.center.y).toBeLessThanOrEqual(geometry.square.bottom);
 });
 
 test("notation-hierarchy: overflow-only stacked geometry and wheel reachability", async ({

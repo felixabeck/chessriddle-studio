@@ -85,6 +85,7 @@
   --board-max-width: 100%;
   --board-eval-width: 8px;
   --board-gap: 0.1rem;
+  --board-annotation-offset: calc(var(--board-eval-width) + var(--board-gap));
   --notation-card-direction: column;
   --notation-toolbar-height: auto;
   --notation-toolbar-min-height: 0;

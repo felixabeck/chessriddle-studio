@@ -3,7 +3,8 @@
 }
 
 .toolbar {
-  /* Keep toolbar contents out of the card's intrinsic height while filling its final row. */
+  /* Desktop defaults keep toolbar contents out of the card's intrinsic height while filling
+     its final row. The stacked layout overrides these custom properties to use natural height. */
   height: var(--notation-toolbar-height, 0);
   min-height: var(--notation-toolbar-min-height, 100%);
   display: flex;
