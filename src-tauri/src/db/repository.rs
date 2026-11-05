@@ -4556,9 +4556,23 @@ mod retirement_tests {
         assert_retained(&repository, &second_key);
         let (waiting, waited) = signal();
         let (drained, drain_signal) = signal();
+        let acquisition_started = Arc::new(std::sync::OnceLock::<Instant>::new());
+        let hook_started = Arc::clone(&acquisition_started);
         let _hooks = configure_test_hooks(&next, |hooks| {
+            let mut first_held = Some(first_held);
             hooks.predecessor_wait = Some(Box::new(move || {
                 waiting.send(()).unwrap();
+                if let Some(first_held) = first_held.take() {
+                    let release_at = *hook_started.get().expect("acquisition start was not set")
+                        + FIRST_PREDECESSOR_RELEASE_DELAY;
+                    let delay = release_at.saturating_duration_since(Instant::now());
+                    if !delay.is_zero() {
+                        std::thread::sleep(delay);
+                    }
+                    // Release before waiting, independently of the test thread's wakeup.
+                    // The second predecessor stays held so refreshing its budget is visible.
+                    drop(first_held);
+                }
             }));
             hooks.predecessor_drained = Some(Box::new(move || {
                 drained.send(()).unwrap();
@@ -4569,32 +4583,32 @@ mod retirement_tests {
             let repository = &repository;
             let next = &next;
             let started = Instant::now();
+            acquisition_started.set(started).unwrap();
             scope.spawn(move || {
-                done.send(
-                    repository
-                        .initialization_connection(&test_target(next), None)
-                        .map(|_| ()),
-                )
-                .unwrap();
+                let outcome = repository
+                    .initialization_connection(&test_target(next), None)
+                    .map(|_| ());
+                let elapsed = started.elapsed();
+                done.send((outcome, elapsed)).unwrap();
             });
-            reached(&waited);
-            // The wait boundary is observed before delaying the first release. The second
-            // predecessor stays held through the outcome, so refreshing its budget is visible.
-            std::thread::sleep(FIRST_PREDECESSOR_RELEASE_DELAY.saturating_sub(started.elapsed()));
-            drop(first_held);
-            reached(&drain_signal);
-            let error = result.recv_timeout(COMPLETION_BOUND).unwrap().unwrap_err();
+            waited
+                .recv_timeout(SIGNAL_TIMEOUT)
+                .expect("predecessor-wait boundary was not reached");
+            drain_signal
+                .recv_timeout(SIGNAL_TIMEOUT)
+                .expect("first-predecessor drain boundary was not reached");
+            let (outcome, elapsed) = result.recv_timeout(COMPLETION_BOUND).unwrap();
+            let error = outcome.unwrap_err();
             assert!(matches!(error, Error::Conflict(_)));
             assert!(
-                started.elapsed() < MULTI_PREDECESSOR_COMPLETION_BOUND,
+                elapsed < MULTI_PREDECESSOR_COMPLETION_BOUND,
                 "each predecessor received a fresh retirement budget: {:?}",
-                started.elapsed()
+                elapsed
             );
             assert_retained(repository, &second_key);
             eprintln!(
                 "multiple predecessor acquisition completed in {:?} with one {:?} budget",
-                started.elapsed(),
-                MULTI_PREDECESSOR_BUDGET
+                elapsed, MULTI_PREDECESSOR_BUDGET
             );
             drop(second_held);
         });
