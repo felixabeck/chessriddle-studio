@@ -18,6 +18,12 @@
   color: var(--cf-foreground);
 }
 
+/* Highlighted and selected options draw filled, ringed boxes; a gap keeps two
+   adjacent ones from reading as one overlapping block. Matches the dropdown padding. */
+.option + .option {
+  margin-top: 4px;
+}
+
 .option[data-combobox-selected] {
   background: color-mix(in srgb, var(--cf-primary) 5%, transparent);
   box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--cf-primary) 50%, transparent);

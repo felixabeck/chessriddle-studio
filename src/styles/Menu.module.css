@@ -7,6 +7,11 @@
   color: var(--menu-item-color, var(--mantine-color-dimmed));
 }
 
+/* Same separation as Combobox options: hovered and checked items must not touch. */
+.item + .item {
+  margin-top: 4px;
+}
+
 .item[data-hovered] {
   background: var(--cf-interactive);
   color: var(--menu-item-color, var(--cf-foreground));
