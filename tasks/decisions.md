@@ -12068,3 +12068,22 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Probes: the Rust tests pass with a 1600 ms delay after `force_lru` and without it (`retirement_tests::` 41 passed). With every transition forced to 2 s, the e2e test passes with the settle call and fails without it. The real specs passed 12/12 in the container. Reversal path: restore a pre-spawn origin only with a setup that cannot outlast the caller's budget, and keep the setup-delay probe green.
 * **Decided by:** drain session a8af03d2, full auto, 2026-11-05 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"41b018af231e69a78a61af0b0c6220244e74623ea791b9803e4bc0989883fa8d","input_sha256":"bd73f403f08e26ae0efabbccc32b36d4d33d1462f730b89b6152e464e1dfa063","kind":"mutation-receipt","operation":"75683497b78e0858c7aea1d55e35c444f7f3c6d72dbf43a8340cac79574afbcb","options":{"section":null},"request_id_sha256":null,"results":["d-20261105-14"],"target":"decisions-ledger","v":1} -->
+
+### d-20261105-17 — Where is a game's end point stored so later moves can be shown as analysis?
+
+* **Question:** Felix accepted a game-end marker with analysis styling after it. The recommendation named the `PlyCount`/`Termination` headers as storage. Is that the storage?
+* **Governs:** -
+* **Chosen:** Node data `gameEnd { termination? }` serialized as its own comment token `{[%gameend <termination>] Game ended here}` after the end move's comment. Re-import drops exactly that prose in the marker token. Export omits the token only for a termination-less end on the mainline leaf of a finished game, which the load default (last mainline move of a game whose Result is not `*`) reproduces. The effective end is the first flagged mainline node; flags elsewhere are inert and preserved. Termination lives on the end node and is mirrored to the standard `[Termination]` header on export.
+* **Rejected:** Header-only storage (database rows drop every non-column header and recompute `PlyCount` from the whole mainline, `src-tauri/src/db/mod.rs:436`, so Felix's database game would lose it). A new database column (schema migration and a second source of truth beside the movetext). A render-time derived end (it moves when analysis is appended, the defect itself).
+* **Reason:** Comments are stored verbatim in PGN files and database rows, so one representation survives every destination. Reversal path: additionally read/write a header, or migrate the marker into a column.
+* **Decided by:** Claude Code (Opus 5.5) build run game-end-marker, full auto, 2026-11-05 · **Superseded-by:** -
+
+### d-20261105-18 — How does the game-end marker look and what can the user edit?
+
+* **Question:** Felix delegated the copy and visual details ("You find the best solution").
+* **Governs:** -
+* **Chosen:** An inline row after the end move (and its comment and alternative variations): "0-1 · Black wins", plus the termination unless it is Normal/Unterminated, plus "Analysis after the game" only when moves follow. Later mainline moves and their variations render muted with existing tokens. Move menu: "Mark game end here" / "Clear game end". A Termination text field beside the Result select while an end exists. The Result no longer auto-adjudicates past the end. Not applied to tabs already open before the update.
+* **Rejected:** A dialog when entering moves after the end (Felix wants moves enterable without friction). Converting later moves into a variation (PGN has no variation without a played move to diverge from).
+* **Reason:** Smallest visible distinction that keeps every analysis feature working. Reversal path: change the row copy, tokens or menu entries in the notation components.
+* **Decided by:** Claude Code (Opus 5.5) build run game-end-marker, full auto, 2026-11-05 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":17,"effect_sha256":"dac1cda14bfe58c76cee769bf505920e640bdf2236a3cb91dbe295dcab80b240","input_sha256":"3dc62c24479e23a988438429ca37828ad1739c5ad681fe24390b64407a6b8c93","kind":"mutation-receipt","operation":"640d6f0db887e1dd8ff87ee3180da15739138e11845587c00502ddef3f36c1f3","options":{"section":null},"request_id_sha256":null,"results":["d-20261105-17","d-20261105-18"],"target":"decisions-ledger","v":1} -->
