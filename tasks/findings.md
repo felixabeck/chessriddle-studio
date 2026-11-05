@@ -20889,3 +20889,33 @@ Fixed by d1882467 (drain session a7d7a3cd): `rename_information_buffer` floors t
 
 * **Correction 2026-11-04 (attempt numbers):** the handled note above numbers the reruns wrong. The GitHub attempts API for run 41855308635 shows: attempt 1 and attempt 2 (the filing session's rerun) cancelled all three macOS jobs; attempt 3 (this session's first rerun) brought `rust-macos-test` 126717415920 to success while both `macos-26-intel` jobs (126717416680, 126717417187) were cancelled again; attempt 4 brought all three to success (126733446394, 126733447093, 126733522811). Where the note says "attempt 2" read attempt 3, and where it says "attempt 3" read attempt 4. The filing's "`pnpm ci:remote:check` now exits 1" described the state before attempt 4. It now exits 0, and the incident is resolved.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"23f58caccde3ade93758f08ac2308ce39d43df791272ebbf3b5b268fc434c244","input_sha256":"46534e1f3ca424987f957f6e2057f2b445e9efc3d33c7cbbcdbd311f7204aab0","kind":"mutation-receipt","operation":"a901f6fe111a0d0e4684a0447a068ed166a61dbb65678ba24c2cd7a6ef05a0ce","options":{"section":null},"request_id_sha256":null,"results":["f-20261104-06"],"target":"f-20261104-06","v":1} -->
+
+---
+
+## 2026-11-05 — filed through the inbox spool
+
+### Analysis board at 320px width squeezes the board and side-panel Mosaic tiles to slivers, so board, tabs and notation are unusable
+
+* **ID:** f-20261104-07 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** build · **Blocked:** none
+* **Filed from:** 580a15d2-6d2c-421b-9121-6ddea49c8c7c
+* **Impact class:** ux
+* **Where:** `src/components/tabs/BoardsPage.tsx` (the board-tab Mosaic, `resize={{ minimumPaneSizePercentage: 0 }}`), `src/state/layoutStorage.ts` (default row split left | (topRight / bottomRight)), `src/styles/react-mosaic.css` (`.mosaic` clips with `overflow: hidden`).
+* **Defect:** In a 320x720 window at 200% app font scale the analysis board keeps the desktop row split: the board tile and the right-hand column are each about 80px wide. The board renders as a thumbnail, the panel tab label is clipped ("nalys"), and the notation card in `#bottomRight` is too narrow to click any move: Playwright's click on the mounted `d3` move fails with "element is outside of the viewport". Observed in the pinned Playwright container while moving `notation-hierarchy-scaled` to 320x720 for f-20261101-32 (screenshot `/tmp/build-580a15d2-6d2c-421b-9121-6ddea49c8c7c/evidence/analysis-320x720-200.png`, inspected).
+* **Failure scenario:** A user with a narrow window (or 200% font scale on a small display) opens the analysis board. They see a tiny board and an unreadable side panel, and cannot read or click the notation. Other surfaces (database, library, settings) stack or adapt at this width, the board tab does not.
+* **Open question:** How should the board-tab Mosaic adapt to narrow widths (stack the tiles vertically below a breakpoint, a minimum tile width with horizontal scrolling, or a single-tile switcher) without changing the desktop composition or the user's saved split?
+* **Spotted outside diff:** the f-20261101-32 build changes only the `#bottomRight` column's vertical floor and scrolling; it does not touch the Mosaic split or horizontal sizing.
+* **Proof:** `playwright.config.ts` project `notation-hierarchy-scaled` set to `viewport: { width: 320, height: 720 }`: `pnpm test:e2e:container --project=notation-hierarchy-scaled` fails `notation-hierarchy: overflow-only in both views` with `locator.click: Test timeout of 45000ms exceeded … element is outside of the viewport`. Related handled finding f-20260829-02 fixed 320px/200% clipping on other screens, not the board tab.
+* **Found by:** Claude Code build session 580a15d2-6d2c-421b-9121-6ddea49c8c7c (drain), 2026-11-04.
+
+### Hosted macos-26-intel runner lost communication during Clippy on 7fcedd82, so remote CI is red
+
+* **ID:** f-20261105-01 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 580a15d2-6d2c-421b-9121-6ddea49c8c7c
+* **Impact class:** tooling
+* **CI run:** 41923815678
+* **Where:** GitHub Test run 41923815678 on 7fcedd824817a5f64ef07f8e07aeb7e471c6cda3 (master), job `rust-platform (macos-26-intel, x86_64-apple-darwin)` 126902850575; `.github/workflows/test.yml`.
+* **Defect:** the job ran from 22:16:35Z to 23:07:38Z and concluded failure during "Clippy all Rust targets" with the check-run annotation "The hosted runner lost communication with the server. Anything in your workflow that terminates the runner process, starves it for CPU/Memory, or blocks its network access can cause this error." The job log is unavailable (BlobNotFound). Every earlier step succeeded; the step itself has no conclusion.
+* **Failure scenario:** every drain push stops at `pnpm ci:remote:check` (exit 1) although its own diff is green, until a rerun of this job succeeds.
+* **Fix shape:** rerun the failed job (`gh run rerun 41923815678 --failed -R felixabeck/en-croissant`) and confirm it succeeds; close with the job id. Same external hosted-runner class as handled f-20261104-05 and f-20261019-06; investigate the workflow only if the rerun loses the runner again.
+* **Proof:** `pnpm ci:remote:check` exits 0 with `rust-platform (macos-26-intel, x86_64-apple-darwin)` of the newest master run concluded success.
+* **Found by:** Claude Code drain build session 580a15d2-6d2c-421b-9121-6ddea49c8c7c, 2026-11-05, at the pre-push remote check of the f-20261101-32 release.
