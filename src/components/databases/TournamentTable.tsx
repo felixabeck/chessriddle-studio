@@ -72,8 +72,8 @@ function TournamentTable() {
           records={tournaments}
           fetching={isLoading}
           columns={[
-            { accessor: "id", sortable: true },
-            { accessor: "name", sortable: true },
+            { accessor: "id", title: t("Common.Id"), sortable: true },
+            { accessor: "name", title: t("Common.Name"), sortable: true },
           ]}
           rowClassName={(t) => (t.id === selected ? classes.selected : "")}
           noRecordsText={
@@ -113,6 +113,7 @@ function TournamentTable() {
               },
             })
           }
+          recordsPerPageLabel={t("Common.RecordsPerPage")}
           recordsPerPageOptions={[10, 25, 50]}
           onRowClick={({ index }) => {
             setSelected(tournaments[index].id);

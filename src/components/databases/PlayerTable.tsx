@@ -121,9 +121,9 @@ function PlayerTable() {
           records={players}
           fetching={isLoading}
           columns={[
-            { accessor: "id", sortable: true },
-            { accessor: "name", sortable: true },
-            { accessor: "elo", sortable: true },
+            { accessor: "id", title: t("Common.Id"), sortable: true },
+            { accessor: "name", title: t("Common.Name"), sortable: true },
+            { accessor: "elo", title: t("Board.Database.Local.Elo"), sortable: true },
           ]}
           rowClassName={(r) => (r.id === selectedPlayer ? classes.selected : "")}
           noRecordsText={
@@ -163,6 +163,7 @@ function PlayerTable() {
               },
             })
           }
+          recordsPerPageLabel={t("Common.RecordsPerPage")}
           recordsPerPageOptions={[10, 25, 50]}
           onRowClick={({ index }) => {
             setSelectedPlayer(players[index].id);

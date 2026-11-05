@@ -9,6 +9,7 @@ import { useSWRConfig } from "swr";
 import { type DatabaseHandle, type NormalizedGame } from "@/bindings";
 import { OpenGameButton } from "@/components/common/gameOpen";
 import { IconAction } from "@/components/common/IconAction";
+import ConfirmModal from "@/components/common/ConfirmModal";
 import GameInfo from "../common/GameInfo";
 import GamePreview from "./GamePreview";
 import { refreshDatabaseGameQueries } from "./databaseMutation";
@@ -19,16 +20,22 @@ function GameCard({
   file,
   onOpen,
   pending,
+  onDeleted,
 }: {
   game?: NormalizedGame;
   file: DatabaseHandle;
   onOpen: (game: NormalizedGame) => void | Promise<void>;
   pending: boolean;
+  onDeleted?: (file: DatabaseHandle, gameId: number) => void;
 }) {
   const { t } = useTranslation();
   const { compact } = useContext(DatabaseLayoutContext);
   const { cache, mutate: globalMutate } = useSWRConfig();
   const [deleting, setDeleting] = useState(false);
+  const [deleteSnapshot, setDeleteSnapshot] = useState<{
+    game: NormalizedGame;
+    file: DatabaseHandle;
+  } | null>(null);
   const deletionPending = useRef(false);
   const mounted = useRef(false);
   useEffect(() => {
@@ -39,8 +46,8 @@ function GameCard({
   }, []);
 
   const deleteGame = async () => {
-    if (!game || deletionPending.current) return;
-    const targetFile = file;
+    if (!deleteSnapshot || deletionPending.current) return;
+    const { game, file: targetFile } = deleteSnapshot;
     const targetGameId = game.id;
     deletionPending.current = true;
     setDeleting(true);
@@ -56,6 +63,8 @@ function GameCard({
         if (mounted.current) notifyUnlessCancelled(t("Common.Error"), error);
         return;
       }
+
+      onDeleted?.(targetFile, targetGameId);
 
       try {
         const refreshed = await refreshDatabaseGameQueries(targetFile, cache, globalMutate);
@@ -75,6 +84,17 @@ function GameCard({
 
   return (
     <Paper shadow="sm" p="sm" withBorder h={compact ? "auto" : "100%"} className={classes.gameCard}>
+      <ConfirmModal
+        title={t("Databases.Game.Delete")}
+        description={t("Databases.Game.DeleteConfirm", {
+          white: deleteSnapshot?.game.white || "?",
+          black: deleteSnapshot?.game.black || "?",
+          date: deleteSnapshot?.game.date || "?",
+        })}
+        opened={deleteSnapshot !== null}
+        onClose={() => setDeleteSnapshot(null)}
+        onConfirm={deleteGame}
+      />
       <Stack gap="xs" className={classes.gameCardStack}>
         <Group justify="left" className={classes.gameActions}>
           <OpenGameButton disabled={!game} pending={pending} onOpen={() => game && onOpen(game)} />
@@ -85,7 +105,7 @@ function GameCard({
             color="danger"
             disabled={!game}
             pending={deleting}
-            onClick={() => void deleteGame()}
+            onClick={() => game && setDeleteSnapshot({ game, file })}
           >
             <Trash2 size="1.2rem" strokeWidth={2} />
           </IconAction>

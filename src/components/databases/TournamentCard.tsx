@@ -148,6 +148,7 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
                 setPageSize(size);
                 setPage(1);
               }}
+              recordsPerPageLabel={t("Common.RecordsPerPage")}
               recordsPerPageOptions={[10, 25, 50]}
               page={page}
               onPageChange={setPage}
@@ -183,35 +184,37 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
                 },
                 {
                   accessor: "white",
+                  title: t("Fen.White"),
                   render: ({ white, white_elo }) => (
                     <div>
                       <Text size="sm" fw={500}>
                         {white}
                       </Text>
                       <Text size="xs" c="dimmed">
-                        {white_elo === 0 ? "Unrated" : white_elo}
+                        {white_elo === 0 ? t("GameInfo.Unrated") : white_elo}
                       </Text>
                     </div>
                   ),
                 },
                 {
                   accessor: "black",
+                  title: t("Fen.Black"),
                   render: ({ black, black_elo }) => (
                     <div>
                       <Text size="sm" fw={500}>
                         {black}
                       </Text>
                       <Text size="xs" c="dimmed">
-                        {black_elo === 0 ? "Unrated" : black_elo}
+                        {black_elo === 0 ? t("GameInfo.Unrated") : black_elo}
                       </Text>
                     </div>
                   ),
                 },
-                { accessor: "date", sortable: true },
-                { accessor: "result" },
-                { accessor: "ply_count", sortable: true },
+                { accessor: "date", title: t("Common.Date"), sortable: true },
+                { accessor: "result", title: t("Board.Database.Local.Result") },
+                { accessor: "ply_count", title: t("Databases.Game.Plies"), sortable: true },
               ]}
-              noRecordsText="No games found"
+              noRecordsText={t("Databases.Game.NoGamesFound")}
             />
           </Tabs.Panel>
           <Tabs.Panel value="leaderboard" flex={1} style={{ overflow: "hidden" }}>
@@ -250,7 +253,7 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
                   ),
                 },
               ]}
-              noRecordsText="No players found"
+              noRecordsText={t("Databases.Player.NoPlayersFound")}
             />
           </Tabs.Panel>
         </Tabs>

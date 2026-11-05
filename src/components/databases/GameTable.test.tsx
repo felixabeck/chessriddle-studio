@@ -19,11 +19,20 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   parsePGN: vi.fn(),
   notify: vi.fn(),
+  deleteDbGame: vi.fn(),
+  deletedGameId: undefined as number | undefined,
   queryError: undefined as Error | undefined,
 }));
 vi.mock("@/platform/tauri", async (original) => {
   const actual = await original<typeof import("@/platform/tauri")>();
-  return { ...actual, tauri: { ...actual.tauri, resolveLinkedGame: vi.fn(async () => null) } };
+  return {
+    ...actual,
+    tauri: {
+      ...actual.tauri,
+      resolveLinkedGame: vi.fn(async () => null),
+      deleteDbGame: mocks.deleteDbGame,
+    },
+  };
 });
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => mocks.navigate }));
 vi.mock("react-i18next", () => ({
@@ -37,7 +46,10 @@ vi.mock("@/utils/chess", async (original) => ({
 vi.mock("swr", async (original) => ({
   ...(await original<typeof import("swr")>()),
   default: () => ({
-    data: { data: games, count: games.length },
+    data: {
+      data: games.filter((game) => game.id !== mocks.deletedGameId),
+      count: games.length - (mocks.deletedGameId === undefined ? 0 : 1),
+    },
     error: mocks.queryError,
     mutate: vi.fn(),
   }),
@@ -116,6 +128,10 @@ let jotai: ReturnType<typeof createStore>;
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.queryError = undefined;
+  mocks.deletedGameId = undefined;
+  mocks.deleteDbGame.mockReset().mockImplementation(async (_file, id: number) => {
+    mocks.deletedGameId = id;
+  });
   sessionStorage.clear();
   localStorage.clear();
   mocks.parsePGN
@@ -137,7 +153,7 @@ afterEach(async () => {
 async function render() {
   await act(async () =>
     root.render(
-      <MantineProvider>
+      <MantineProvider env="test">
         <Provider store={jotai}>
           <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
             <GameTable />
@@ -158,6 +174,28 @@ test("the Games searches distinguish the player and opponent", async () => {
   await render();
   expect(host.querySelector('input[placeholder="Board.Database.Local.Player"]')).not.toBeNull();
   expect(host.querySelector('input[placeholder="Board.Database.Local.Opponent"]')).not.toBeNull();
+});
+
+test("confirmed deletion clears the selected preview before the next game occupies its row", async () => {
+  await render();
+  await act(async () => row(0).click());
+  expect(host.textContent).toContain(games[0].moves);
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[aria-label="Databases.Game.Delete"]')!.click(),
+  );
+  expect(mocks.deleteDbGame).not.toHaveBeenCalled();
+  const confirm = [
+    ...document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+  ].find((button) => button.textContent === "Common.Delete")!;
+  await act(async () => confirm.click());
+  await render();
+  expect(mocks.deleteDbGame).toHaveBeenCalledExactlyOnceWith(file, games[0].id);
+  expect(host.querySelectorAll("tbody tr")).toHaveLength(1);
+  expect(row(0).textContent).toContain(games[1].white);
+  expect(host.textContent).toContain("Databases.Game.NoSelection");
+  expect(host.textContent).not.toContain(games[1].moves);
+  expect(openButton().disabled).toBe(true);
+  expect(activeDatabaseViewStore.getState().games.selectedGame).toBeUndefined();
 });
 async function doubleClick(index: number) {
   await act(async () => {

@@ -9,16 +9,31 @@ import english from "@/translation/en-US.json";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import GameCard from "./GameCard";
 
-const mocks = vi.hoisted(() => ({ deleteDbGame: vi.fn(), notification: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  deleteDbGame: vi.fn(),
+  editLinkedCollection: vi.fn(),
+  notification: vi.fn(),
+}));
 vi.mock("@/platform/tauri", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/platform/tauri")>();
-  return { ...actual, tauri: { ...actual.tauri, deleteDbGame: mocks.deleteDbGame } };
+  return {
+    ...actual,
+    tauri: {
+      ...actual.tauri,
+      deleteDbGame: mocks.deleteDbGame,
+      editLinkedCollection: mocks.editLinkedCollection,
+    },
+  };
 });
 vi.mock("@mantine/notifications", () => ({ notifications: { show: mocks.notification } }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { defaultValue?: string }) =>
-      (english.translation as Record<string, string>)[key] ?? options?.defaultValue ?? key,
+    t: (key: string, options?: Record<string, string>) =>
+      (
+        (english.translation as Record<string, string>)[key] ??
+        options?.defaultValue ??
+        key
+      ).replace(/\{\{(\w+)\}\}/g, (placeholder, name) => options?.[name] ?? placeholder),
   }),
 }));
 vi.mock("../common/GameInfo", () => ({ default: () => null }));
@@ -49,6 +64,7 @@ describe("database game deletion with real SWR revalidation", () => {
   let initialLoaded: boolean;
   let showHistoricalPlayers: boolean;
   let revalidateHistoricalPlayers: () => Promise<unknown>;
+  let onDeleted: ReturnType<typeof vi.fn<(file: DatabaseHandle, gameId: number) => void>>;
   const file: DatabaseHandle = { id: { id: "database" }, kind: "database" };
   const otherFile: DatabaseHandle = { id: { id: "other-database" }, kind: "database" };
   const views = ["games", "players", "tournaments"] as const;
@@ -57,7 +73,13 @@ describe("database game deletion with real SWR revalidation", () => {
   );
   const keys = [...queryKeys, "databases", ["engines", file]];
   const historicalPlayersKey = ["players", file, { limit: 10, search: "old filter" }] as const;
-  const game = { id: 42, white: "Alice", black: "Bob", moves: "1. e4 *" } as NormalizedGame;
+  const game = {
+    id: 42,
+    white: "Alice",
+    black: "Bob",
+    date: "2026.11.01",
+    moves: "1. e4 *",
+  } as NormalizedGame;
   const refreshTitle = "The game was deleted, but the database view could not be refreshed.";
 
   function fetcher(view: (typeof views)[number], database = file) {
@@ -78,7 +100,9 @@ describe("database game deletion with real SWR revalidation", () => {
 
   beforeEach(() => {
     mocks.deleteDbGame.mockReset().mockResolvedValue(undefined);
+    mocks.editLinkedCollection.mockReset().mockResolvedValue(undefined);
     mocks.notification.mockReset();
+    onDeleted = vi.fn();
     cache = new Map();
     initialLoaded = false;
     showHistoricalPlayers = false;
@@ -113,7 +137,7 @@ describe("database game deletion with real SWR revalidation", () => {
   ) {
     await act(async () =>
       root.render(
-        <MantineProvider>
+        <MantineProvider env="test">
           <SWRConfig
             value={{
               provider: () => cache,
@@ -132,6 +156,7 @@ describe("database game deletion with real SWR revalidation", () => {
                 file={selectedFile}
                 pending={pending}
                 onOpen={onOpen}
+                onDeleted={onDeleted}
               />
             )}
           </SWRConfig>
@@ -155,6 +180,13 @@ describe("database game deletion with real SWR revalidation", () => {
 
   async function clickDelete() {
     await act(async () => deleteButton().click());
+    await act(async () => modalButton("Delete").click());
+  }
+
+  function modalButton(label: string) {
+    return [...document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
+      (button) => button.textContent === label,
+    )!;
   }
 
   function expectRefreshes(database = file, calls = 2) {
@@ -171,6 +203,102 @@ describe("database game deletion with real SWR revalidation", () => {
       expect(cache.get(unstable_serialize(key))?.data).toMatchObject({ phase: "initial" });
     }
   }
+
+  test("Trash describes the game and Cancel dismisses without native deletion", async () => {
+    await render();
+    await act(async () => deleteButton().click());
+    expect(mocks.deleteDbGame).not.toHaveBeenCalled();
+    expect(mocks.editLinkedCollection).not.toHaveBeenCalled();
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain(
+      "Delete Alice vs. Bob (2026.11.01) from this database?",
+    );
+    await act(async () => modalButton("Cancel").click());
+    await vi.waitFor(() => expect(document.body.querySelector('[role="dialog"]')).toBeNull());
+    expect(mocks.deleteDbGame).not.toHaveBeenCalled();
+    expect(mocks.editLinkedCollection).not.toHaveBeenCalled();
+    expect(onDeleted).not.toHaveBeenCalled();
+  });
+
+  test("confirmation retains the described game and database while props change", async () => {
+    await render();
+    await act(async () => deleteButton().click());
+    await render({ ...game, id: 99, white: "Carol", black: "Dave", date: "2026.11.05" }, otherFile);
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain(
+      "Delete Alice vs. Bob (2026.11.01) from this database?",
+    );
+    await act(async () => modalButton("Delete").click());
+    expect(mocks.deleteDbGame).toHaveBeenCalledExactlyOnceWith(file, 42);
+    expect(onDeleted).toHaveBeenCalledExactlyOnceWith(file, 42);
+    expectRefreshes();
+    expectOtherQueriesUntouched();
+  });
+
+  test("missing confirmation metadata uses question marks", async () => {
+    await render({ ...game, white: "", black: "", date: undefined });
+    await act(async () => deleteButton().click());
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain(
+      "Delete ? vs. ? (?) from this database?",
+    );
+  });
+
+  test.each([false, true])(
+    "native success publishes deletion exactly once before refresh, including linked=%s",
+    async (linked) => {
+      const locator = {
+        collection: "22222222-2222-4222-8222-222222222222",
+        generation: "source-generation",
+        ordinal: 4,
+        stamp: "a".repeat(64),
+      };
+      const native = deferred();
+      const remove = linked ? mocks.editLinkedCollection : mocks.deleteDbGame;
+      remove.mockReturnValueOnce(native.promise);
+      const refreshCountsAtDeletion: number[][] = [];
+      onDeleted.mockImplementation(() => {
+        refreshCountsAtDeletion.push(views.map((view) => fetcher(view).mock.calls.length));
+      });
+      await render(linked ? { ...game, linked: locator } : game);
+      await clickDelete();
+      expect(onDeleted).not.toHaveBeenCalled();
+      await act(async () => native.resolve());
+      expect(onDeleted).toHaveBeenCalledExactlyOnceWith(file, 42);
+      expect(refreshCountsAtDeletion).toEqual([[1, 1, 1]]);
+      expectRefreshes();
+      expect(mocks.editLinkedCollection.mock.calls).toEqual(
+        linked
+          ? [[locator.collection, locator.generation, { kind: "delete", games: [locator] }]]
+          : [],
+      );
+      expect(mocks.deleteDbGame.mock.calls).toEqual(linked ? [] : [[file, 42]]);
+    },
+  );
+
+  test.each([
+    { linked: false, outcome: "refusal" },
+    { linked: true, outcome: "refusal" },
+    { linked: false, outcome: "cancellation" },
+    { linked: true, outcome: "cancellation" },
+  ])(
+    "native $outcome never publishes deletion, including linked=$linked",
+    async ({ linked, outcome }) => {
+      const remove = linked ? mocks.editLinkedCollection : mocks.deleteDbGame;
+      const locator = {
+        collection: "22222222-2222-4222-8222-222222222222",
+        generation: "source-generation",
+        ordinal: 4,
+        stamp: "a".repeat(64),
+      };
+      await render(linked ? { ...game, linked: locator } : game);
+      remove.mockRejectedValueOnce(
+        outcome === "cancellation" ? cancellationError() : new Error("Deletion refused"),
+      );
+      await clickDelete();
+      expect(onDeleted).not.toHaveBeenCalled();
+      await vi.waitFor(() => expect(document.body.querySelector('[role="dialog"]')).toBeNull());
+      expect(mocks.notification).toHaveBeenCalledTimes(outcome === "cancellation" ? 0 : 1);
+      expectRefreshes(file, 1);
+    },
+  );
 
   test("visible game action delegates its exact record and remains allocated without selection", async () => {
     const onOpen = vi.fn();
@@ -237,10 +365,8 @@ describe("database game deletion with real SWR revalidation", () => {
     mocks.deleteDbGame.mockReturnValueOnce(native.promise);
     await render();
     fetcher("tournaments").mockReturnValueOnce(related.promise);
-    await act(async () => {
-      deleteButton().click();
-      deleteButton().click();
-    });
+    await clickDelete();
+    await act(async () => modalButton("Delete").click());
     expect(mocks.deleteDbGame).toHaveBeenCalledExactlyOnceWith(file, game.id);
     expect(deleteButton().disabled).toBe(true);
     expectRefreshes(file, 1);
@@ -389,6 +515,7 @@ describe("database game deletion with real SWR revalidation", () => {
       expectRefreshes(file, outcome === "success" ? 2 : 1);
       expectOtherQueriesUntouched();
       expect(mocks.notification).not.toHaveBeenCalled();
+      expect(onDeleted.mock.calls).toEqual(outcome === "success" ? [[file, 42]] : []);
     },
   );
 

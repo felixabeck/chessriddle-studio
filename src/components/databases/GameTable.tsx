@@ -26,7 +26,7 @@ import { gameRowActivation, useGameOpen } from "@/components/common/gameOpen";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { addRecentFileAtom, tabsAtom } from "@/state/atoms";
-import { ELO_FILTER_MAX, query_games } from "@/utils/db";
+import { ELO_FILTER_MAX, query_games, sameDatabaseHandle } from "@/utils/db";
 import { runTabCreation } from "@/utils/tabs";
 import { openDatabaseGame } from "@/utils/databaseGame";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
@@ -253,44 +253,47 @@ function GameTable() {
           columns={[
             {
               accessor: "white",
+              title: t("Fen.White"),
               render: ({ white, white_elo }) => (
                 <div>
                   <Text size="sm" fw={500}>
                     {white}
                   </Text>
                   <Text size="xs" c="dimmed">
-                    {white_elo === 0 ? "Unrated" : white_elo}
+                    {white_elo === 0 ? t("GameInfo.Unrated") : white_elo}
                   </Text>
                 </div>
               ),
             },
             {
               accessor: "black",
+              title: t("Fen.Black"),
               render: ({ black, black_elo }) => (
                 <div>
                   <Text size="sm" fw={500}>
                     {black}
                   </Text>
                   <Text size="xs" c="dimmed">
-                    {black_elo === 0 ? "Unrated" : black_elo}
+                    {black_elo === 0 ? t("GameInfo.Unrated") : black_elo}
                   </Text>
                 </div>
               ),
             },
-            { accessor: "date", sortable: true },
+            { accessor: "date", title: t("Common.Date"), sortable: true },
             {
               accessor: "result",
+              title: t("Board.Database.Local.Result"),
               render: ({ result }) => result?.replaceAll("1/2", "½"),
             },
             { accessor: "ply_count", title: t("Databases.Game.Plies"), sortable: true },
-            { accessor: "event" },
-            { accessor: "site" },
+            { accessor: "event", title: t("Databases.Game.Event") },
+            { accessor: "site", title: t("Databases.Game.Site") },
           ]}
           rowClassName={(_, i) => (i === selectedGame ? classes.selected : "")}
           noRecordsText={
             error
               ? `${t("Common.Error")}: ${error instanceof Error ? error.message : String(error)}`
-              : "No games found"
+              : t("Databases.Game.NoGamesFound")
           }
           totalRecords={count!}
           recordsPerPage={query.options?.pageSize ?? 25}
@@ -324,6 +327,7 @@ function GameTable() {
               },
             })
           }
+          recordsPerPageLabel={t("Common.RecordsPerPage")}
           recordsPerPageOptions={[10, 25, 50]}
           onRowClick={({ index }) => {
             setSelectedGame(index);
@@ -336,6 +340,11 @@ function GameTable() {
           file={file}
           onOpen={gameOpen.activate}
           pending={gameOpen.pending}
+          onDeleted={(deletedFile) => {
+            if (sameDatabaseHandle(store.getState().database?.file, deletedFile)) {
+              setSelectedGame(undefined);
+            }
+          }}
         />
       }
     />
