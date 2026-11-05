@@ -543,6 +543,21 @@ describe("BoardAnalysis", () => {
       expect(treeStore.getState().currentNode().san).toBe("e4");
     });
 
+    test("X leaves threat off and the native event alone when the only enabled engine is unloaded", async () => {
+      const engine = { ...displayEngine, loaded: false };
+      await act(async () => {
+        await jotaiStore.set(enginesAtom, [engine]);
+        engineLines(engine);
+      });
+      const event = await engineKey("TOGGLE_THREAT_MODE");
+      expect.soft(jotaiStore.get(threatFamily(tabId))).toBe(false);
+      expect.soft(event.defaultPrevented).toBe(false);
+
+      await act(async () => jotaiStore.set(threatFamily(tabId), true));
+      expect((await engineKey("TOGGLE_THREAT_MODE")).defaultPrevented).toBe(true);
+      expect(jotaiStore.get(threatFamily(tabId))).toBe(false);
+    });
+
     test("X requires a loaded enabled engine to turn on and always permits turning off", async () => {
       expect((await engineKey("TOGGLE_THREAT_MODE")).defaultPrevented).toBe(false);
       await act(async () => {

@@ -90,6 +90,40 @@ test("the shared derivation excludes dimmed fallback and failed current lines fr
   expect(current()).toBeUndefined();
 });
 
+test.each(["not-in-database", "completed-without-lines"] as const)(
+  "the shared derivation excludes remembered remote lines from actions for a matching %s terminal",
+  async (type) => {
+    const remote: Engine = {
+      type: "chessdb",
+      id: displayEngine.id,
+      name: "Cloud",
+      url: "https://example.test",
+      loaded: true,
+    };
+    const memory = new AnalysisLineMemory();
+    memory.context = engineLineContext(h.store.get(h.settingsAtom), remote);
+    memory.set(analysisSearch(INITIAL_FEN, [], false).key!, displayLines);
+    await act(async () => h.store.set(h.memoryAtom, memory));
+    const current = () =>
+      readEngineLines(h.store.get, "display-tab", remote, INITIAL_FEN, [], false).actionable;
+    expect(current()).toEqual(displayLines);
+
+    const terminalAtom = engineTerminalFamily({ tab: "display-tab", engine: remote.id });
+    await act(async () =>
+      h.store.set(terminalAtom, {
+        ...terminal(),
+        type,
+        generation: null,
+        context: memory.context!,
+        engineIdentity: engineIdentity(remote),
+      }),
+    );
+    expect(current()).toBeUndefined();
+    await act(async () => h.store.set(terminalAtom, null));
+    expect(current()).toEqual(displayLines);
+  },
+);
+
 test("uses current lines immediately, then dimmed previous lines with their original position until 1000 ms", async () => {
   await h.remember();
   await h.render(<Probe />);
