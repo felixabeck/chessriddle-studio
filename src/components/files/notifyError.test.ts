@@ -18,6 +18,28 @@ for (const locale of ["en-US", "de-DE"] as const) {
             vi.mocked(i18n.t).mockImplementation(fallbackTranslation);
         });
 
+        test.each(["database", "puzzle", "engine", "files", undefined] as const)(
+            "shows translated name-taken guidance in %s",
+            (domain) => {
+                notifyUnlessCancelled(
+                    "Error",
+                    {
+                        tag: "backend-error",
+                        category: "conflict",
+                        message: "Conflict: workspace file already exists",
+                        nameTaken: true,
+                    },
+                    domain,
+                );
+                expect(notifications.show).toHaveBeenCalledExactlyOnceWith({
+                    color: "danger",
+                    title: "Error",
+                    message: catalogue.t("Common.NameAlreadyUsed"),
+                });
+                expect(catalogue.t("Common.NameAlreadyUsed")).not.toBe("Common.NameAlreadyUsed");
+            },
+        );
+
         test.each([
             {
                 status: 401,

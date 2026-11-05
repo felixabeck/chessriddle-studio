@@ -1020,6 +1020,7 @@ async fn download_to_destination_with_failure<R: tauri::Runtime>(
             commit_gate,
             file_generation.as_deref(),
             lichess_coverage_url,
+            Box::new(|op, url, integrity| validate_artifact_integrity(op, url, Some(integrity))),
         )
         .await
         .map_err(sanitize_download_error)
@@ -1139,6 +1140,7 @@ async fn download_to_destination_inner<R: tauri::Runtime>(
     commit_gate: crate::infra::operations::OperationCommitGate,
     file_generation: Option<&std::sync::OnceLock<ProgressGeneration>>,
     lichess_coverage_url: Option<reqwest::Url>,
+    validate_integrity: ArtifactIntegrityValidator,
 ) -> Result<DownloadPublication, Error> {
     // Validate and reserve all fallible producer prerequisites before starting
     // visible progress. No failed setup may leave a running progress entry.
@@ -1152,12 +1154,20 @@ async fn download_to_destination_inner<R: tauri::Runtime>(
                     "Payload download requires a plain-file operation".into(),
                 ));
             }
-            validate_artifact_integrity(op, url, integrity)?;
+            match integrity {
+                Some(integrity) => validate_integrity(op, url, integrity)?,
+                None => validate_artifact_integrity(op, url, None)?,
+            }
             let resolved = authority.resolve(
                 &destination,
                 crate::infra::path_authority::PathOperation::DownloadFile,
                 std::slice::from_ref(&filename),
             )?;
+            if matches!(op, OpClass::Db | OpClass::PuzzleDb) && resolved.is_regular_file() {
+                return Err(Error::Conflict(
+                    crate::error::WORKSPACE_FILE_NAME_TAKEN.into(),
+                ));
+            }
             Ok::<_, Error>((op, resolved))
         })??
     };
@@ -1298,16 +1308,24 @@ async fn download_to_destination_inner<R: tauri::Runtime>(
                     }),
                 None => {
                     staged_file.rewind()?;
-                    resolved
-                        .atomic_replace_download_cancellable_with_commit_gate(
+                    let write = |target: &mut crate::infra::inode_ownership::OwnedFile| {
+                        copy_cancellable(&mut staged_file, target, worker_cancellation)?;
+                        Ok(())
+                    };
+                    let outcome = if matches!(op, OpClass::Db | OpClass::PuzzleDb) {
+                        resolved.atomic_create_download_cancellable_with_commit_gate(
                             worker_cancellation,
                             &commit_gate,
-                            |target| {
-                                copy_cancellable(&mut staged_file, target, worker_cancellation)?;
-                                Ok(())
-                            },
+                            write,
                         )
-                        .map(|outcome| (outcome, None))
+                    } else {
+                        resolved.atomic_replace_download_cancellable_with_commit_gate(
+                            worker_cancellation,
+                            &commit_gate,
+                            write,
+                        )
+                    };
+                    outcome.map(|outcome| (outcome, None))
                 }
             }
         })
@@ -9561,10 +9579,24 @@ mod tests {
         crate::infra::path_authority::PathRef,
         PathBuf,
     ) {
+        test_downloads_destination_with_operations(
+            dir,
+            vec![crate::infra::path_authority::PathOperation::DownloadFile],
+        )
+    }
+
+    fn test_downloads_destination_with_operations(
+        dir: &tempfile::TempDir,
+        operations: Vec<crate::infra::path_authority::PathOperation>,
+    ) -> (
+        crate::infra::path_authority::PathAuthority,
+        crate::infra::path_authority::PathRef,
+        PathBuf,
+    ) {
         let app_root = crate::infra::path_authority::AppOwnedRoot::canonical_for_test(
             "downloads",
             &dir.path().join("downloads"),
-            vec![crate::infra::path_authority::PathOperation::DownloadFile],
+            operations,
         );
         let download_root = app_root.path.clone();
         let root_id = app_root.id.clone();
@@ -10037,6 +10069,203 @@ mod tests {
             responses: std::sync::Mutex::new(vec![Ok(mock_successful_response(payload))]),
             requests_seen: std::sync::Mutex::new(vec![]),
         })
+    }
+
+    #[tokio::test]
+    async fn catalog_download_refuses_existing_file_before_network_and_progress() {
+        use crate::infra::path_authority::PathOperation;
+
+        for marker in [PathOperation::DatabaseRead, PathOperation::PuzzleRead] {
+            let dir = tempdir().unwrap();
+            let (authority, destination, root) = test_downloads_destination_with_operations(
+                &dir,
+                vec![PathOperation::DownloadFile, marker],
+            );
+            let target = root.join("library.db3");
+            let original = b"user database with annotations";
+            std::fs::write(&target, original).unwrap();
+            let transport = Arc::new(MockTransport {
+                responses: Mutex::new(vec![Ok(mock_successful_response(b"replacement"))]),
+                requests_seen: Mutex::new(vec![]),
+            });
+            let state = AppState {
+                http_transport: transport.clone(),
+                ..AppState::default()
+            };
+            state.pgn_path_authority.install(authority).unwrap();
+            let app = test_progress_app();
+            let (job_id, lease) = test_download_lease(&state);
+            let integrity = ArtifactIntegrity {
+                sha256: "ab".repeat(32),
+                signature: FIXTURE_ENTRY_SIGNATURE.into(),
+            };
+            let error = download_to_destination_inner(
+                "catalog_name_taken",
+                FIXTURE_ENTRY_URL,
+                destination,
+                "library.db3".into(),
+                app.handle(),
+                &state,
+                None,
+                None,
+                job_id,
+                false,
+                Some(&integrity),
+                lease.token(),
+                lease.commit_gate(),
+                None,
+                None,
+                Box::new(|op, url, integrity| {
+                    validate_artifact_integrity_with(op, url, Some(integrity), fixture_verify)
+                }),
+            )
+            .await
+            .unwrap_err();
+
+            let payload = error.renderer_payload();
+            assert_eq!(payload.name_taken, Some(true));
+            assert_eq!(
+                serde_json::to_value(payload).unwrap()["category"],
+                "conflict"
+            );
+            assert_eq!(std::fs::read(target).unwrap(), original);
+            assert!(transport.requests_seen.lock().unwrap().is_empty());
+            assert!(state
+                .progress_state
+                .get("catalog_name_taken")
+                .unwrap()
+                .is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn catalog_download_preserves_file_created_during_network_transfer() {
+        use crate::infra::path_authority::PathOperation;
+
+        for marker in [PathOperation::DatabaseRead, PathOperation::PuzzleRead] {
+            let dir = tempdir().unwrap();
+            let (authority, destination, root) = test_downloads_destination_with_operations(
+                &dir,
+                vec![PathOperation::DownloadFile, marker],
+            );
+            let target = root.join("library.db3");
+            let concurrent_target = target.clone();
+            let payload: &'static [u8] = b"downloaded database";
+            let response = DownloadResponse {
+                stream: Box::pin(futures_util::stream::once(async move {
+                    std::fs::write(concurrent_target, b"concurrent user database").unwrap();
+                    Ok(bytes::Bytes::from_static(payload))
+                })),
+                ..mock_successful_response(payload)
+            };
+            let transport = Arc::new(MockTransport {
+                responses: Mutex::new(vec![Ok(response)]),
+                requests_seen: Mutex::new(vec![]),
+            });
+            let state = AppState {
+                http_transport: transport.clone(),
+                ..AppState::default()
+            };
+            state.pgn_path_authority.install(authority).unwrap();
+            let app = test_progress_app();
+            let (job_id, lease) = test_download_lease(&state);
+            let error = download_to_destination_inner(
+                "catalog_concurrent_name_taken",
+                "https://example.com/library.db3",
+                destination,
+                "library.db3".into(),
+                app.handle(),
+                &state,
+                None,
+                None,
+                job_id,
+                false,
+                Some(&unsigned_test_integrity(payload)),
+                lease.token(),
+                lease.commit_gate(),
+                None,
+                None,
+                Box::new(accept_any_integrity),
+            )
+            .await
+            .unwrap_err();
+
+            assert!(matches!(error, Error::Conflict(ref message)
+                if message == crate::error::WORKSPACE_FILE_NAME_TAKEN));
+            assert_eq!(std::fs::read(target).unwrap(), b"concurrent user database");
+            assert_eq!(transport.requests_seen.lock().unwrap().len(), 1);
+        }
+    }
+
+    #[test]
+    fn download_create_publication_preserves_concurrent_file_and_creates_missing_leaf() {
+        use crate::infra::path_authority::PathOperation;
+
+        for occupied in [false, true] {
+            let dir = tempdir().unwrap();
+            let (mut authority, destination, root) = test_downloads_destination(&dir);
+            let resolved = authority
+                .resolve(
+                    &destination,
+                    PathOperation::DownloadFile,
+                    &["library.db3".into()],
+                )
+                .unwrap();
+            assert!(!resolved.is_regular_file());
+            let target = root.join("library.db3");
+            if occupied {
+                std::fs::write(&target, b"concurrent user database").unwrap();
+            }
+            let state = AppState::default();
+            let (_, lease) = test_download_lease(&state);
+            let result = resolved.atomic_create_download_cancellable_with_commit_gate(
+                &lease.token(),
+                &lease.commit_gate(),
+                |file| file.write_all(b"downloaded database").map_err(Error::from),
+            );
+            if occupied {
+                assert!(matches!(result, Err(Error::Conflict(ref message))
+                    if message == crate::error::WORKSPACE_FILE_NAME_TAKEN));
+                assert_eq!(std::fs::read(target).unwrap(), b"concurrent user database");
+            } else {
+                result.unwrap().expect_durable();
+                assert_eq!(std::fs::read(target).unwrap(), b"downloaded database");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn lichess_download_still_replaces_existing_file() {
+        let dir = tempdir().unwrap();
+        let (authority, destination, root) = test_downloads_destination(&dir);
+        let target = root.join("games.pgn");
+        std::fs::write(&target, b"previous export").unwrap();
+        let payload: &'static [u8] = b"1. e4 c5 2. Nf3 d6";
+        let state = AppState {
+            http_transport: mock_successful_transport(payload),
+            ..AppState::default()
+        };
+        state.pgn_path_authority.install(authority).unwrap();
+        let app = test_progress_app();
+        let (job_id, lease) = test_download_lease(&state);
+        download_to_destination(
+            "lichess_replace_existing",
+            "https://example.com/games.pgn",
+            destination,
+            "games.pgn".into(),
+            app.handle(),
+            &state,
+            None,
+            None,
+            job_id,
+            lease,
+            false,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(std::fs::read(target).unwrap(), payload);
     }
 
     #[tokio::test]

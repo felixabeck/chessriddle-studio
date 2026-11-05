@@ -15,7 +15,12 @@ export function notifyUnlessCancelled(
     if (visible) {
         const fallback =
             (domain ? rootFailureMessage(domain, visible) : undefined) ?? visible.message;
-        let message = domain === "files" ? workspaceErrorMessage(visible, fallback) : fallback;
+        let message =
+            domain === "files"
+                ? workspaceErrorMessage(visible, fallback)
+                : visible.nameTaken === true
+                  ? i18n.t("Common.NameAlreadyUsed")
+                  : fallback;
         const remoteRejection =
             visible.rootFailure == null && visible.backendCategory !== "operation-and-cleanup"
                 ? visible.remoteHttpRejection
