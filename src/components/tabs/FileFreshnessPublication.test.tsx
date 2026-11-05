@@ -99,7 +99,9 @@ vi.mock("@tanstack/react-virtual", async (original) => ({
     getVirtualItems: () =>
       Array.from({ length: count }, (_, index) => ({ index, start: index * 32 })),
     measureElement: () => undefined,
-    scrollToIndex: () => undefined,
+    getOffsetForIndex: () => undefined,
+    scrollToOffset: () => undefined,
+    scrollOffset: 0,
   }),
 }));
 // Only the chart drawing surface is replaced. EvalChart's mainline and data derivations run.

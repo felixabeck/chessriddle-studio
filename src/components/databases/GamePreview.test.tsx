@@ -50,7 +50,9 @@ vi.mock("@tanstack/react-virtual", () => ({
     getVirtualItems: () =>
       Array.from({ length: count }, (_, index) => ({ index, start: index * 32 })),
     measureElement: () => undefined,
-    scrollToIndex: () => undefined,
+    getOffsetForIndex: () => undefined,
+    scrollToOffset: () => undefined,
+    scrollOffset: 0,
   }),
 }));
 

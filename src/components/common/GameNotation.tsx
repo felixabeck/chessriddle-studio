@@ -12,7 +12,7 @@ import {
   Minus,
   Plus,
 } from "lucide-react";
-import { elementScroll, useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
+import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
 import { useAtom, useAtomValue } from "jotai";
 import type { TFunction } from "i18next";
 import { memo, useContext, useEffect, useMemo, useRef, useState } from "react";
@@ -55,51 +55,46 @@ const NOTATION_MIN_HEIGHT_REM = "9rem";
 
 // Bound the frames spent waiting for React to mount a row after its offset scroll.
 const NOTATION_REVEAL_MAX_ATTEMPTS = 10;
-const notationOffsetScrolls = new WeakMap<
-  Virtualizer<HTMLDivElement, Element>,
-  { direct: boolean }
->();
+const NOTATION_INDEX_SCROLL_MAX_ATTEMPTS = 10;
 
-export function scrollNotationElement(
-  offset: number,
-  options: Parameters<typeof elementScroll>[1],
+export function scrollNotationToIndex(
   virtualizer: Virtualizer<HTMLDivElement, Element>,
-) {
-  const scroll = notationOffsetScrolls.get(virtualizer);
-  const pending = virtualizer as unknown as { currentScrollToIndex: number | null };
-  // A retry already queued by scheduleRetry calls tryScroll without checking the field first.
-  // Guard index writes at the scroll boundary, keeping direct reveals and size adjustments.
-  if (
-    !scroll ||
-    pending.currentScrollToIndex !== null ||
-    scroll.direct ||
-    options.adjustments !== undefined
-  ) {
-    elementScroll(offset, options, virtualizer);
-  }
-}
+  index: number,
+  align: "center" | "start",
+): () => void {
+  const offsetInfo = virtualizer.getOffsetForIndex(index, align);
+  if (!offsetInfo) return () => {};
+  const [offset, resolvedAlign] = offsetInfo;
+  let cancelled = false;
+  let frame: number;
+  let attempts = 1;
 
-export function cancelNotationIndexScroll(virtualizer: Virtualizer<HTMLDivElement, Element>) {
-  // virtual-core 3.13.18's verify loop checks this private field, which scrollToOffset leaves set.
-  const pending = virtualizer as unknown as { currentScrollToIndex: number | null };
-  pending.currentScrollToIndex = null;
-  if (!notationOffsetScrolls.has(virtualizer)) {
-    notationOffsetScrolls.set(virtualizer, { direct: false });
-  }
-}
+  const verify = () => {
+    if (cancelled) return;
+    const target = virtualizer.getOffsetForIndex(index, resolvedAlign);
+    if (
+      target &&
+      Math.abs(target[0] - (virtualizer.scrollOffset ?? 0)) >= 1 &&
+      attempts < NOTATION_INDEX_SCROLL_MAX_ATTEMPTS
+    ) {
+      attempts++;
+      virtualizer.scrollToOffset(target[0]);
+      scheduleVerification();
+    }
+  };
+  const scheduleVerification = () => {
+    frame = requestAnimationFrame(() => {
+      if (cancelled) return;
+      frame = requestAnimationFrame(verify);
+    });
+  };
 
-export function scrollNotationToOffset(
-  virtualizer: Virtualizer<HTMLDivElement, Element>,
-  offset: number,
-) {
-  cancelNotationIndexScroll(virtualizer);
-  const scroll = notationOffsetScrolls.get(virtualizer)!;
-  scroll.direct = true;
-  try {
-    virtualizer.scrollToOffset(offset);
-  } finally {
-    scroll.direct = false;
-  }
+  virtualizer.scrollToOffset(offset);
+  scheduleVerification();
+  return () => {
+    cancelled = true;
+    cancelAnimationFrame(frame);
+  };
 }
 
 function getResultText(result: string, t: TFunction): string | undefined {
@@ -157,7 +152,6 @@ function GameNotation({ topBar, controls }: { topBar?: boolean; controls?: React
     estimateSize: () => 32,
     overscan: 8,
     getScrollElement: () => viewport.current,
-    scrollToFn: scrollNotationElement,
   });
 
   useEffect(() => {
@@ -172,36 +166,36 @@ function GameNotation({ topBar, controls }: { topBar?: boolean; controls?: React
     if (rowIndex !== undefined) {
       const scrollViewport = viewport.current;
       if (node !== currentNode || !scrollViewport || scrollViewport.clientHeight === 0) {
-        rowVirtualizer.scrollToIndex(rowIndex, { align: "center" });
-        return;
+        return scrollNotationToIndex(rowVirtualizer, rowIndex, "center");
       }
 
       const rowSelector = `[data-index="${rowIndex}"]`;
       const mountedRow = scrollViewport.querySelector<HTMLElement>(rowSelector);
       if (mountedRow && mountedRow.getBoundingClientRect().height <= scrollViewport.clientHeight) {
-        rowVirtualizer.scrollToIndex(rowIndex, { align: "center" });
-        return;
+        return scrollNotationToIndex(rowVirtualizer, rowIndex, "center");
       }
 
-      // Cancel an earlier selection's verification even when this cell already needs no scroll.
-      cancelNotationIndexScroll(rowVirtualizer);
+      // The previous effect cleanup cancels the earlier selection's verification.
       // Mount the row without an index-scroll retry that could later recenter a tall row.
       if (!mountedRow) {
         const offset = rowVirtualizer.getOffsetForIndex(rowIndex, "start");
         if (!offset) return;
-        scrollNotationToOffset(rowVirtualizer, offset[0]);
+        rowVirtualizer.scrollToOffset(offset[0]);
       }
 
       let frame: number;
       let attempts = 0;
+      let cancelled = false;
+      let cancelIndexScroll: (() => void) | undefined;
       const revealMove = () => {
+        if (cancelled) return;
         const row = scrollViewport.querySelector<HTMLElement>(rowSelector);
         if (!row) {
           if (++attempts < NOTATION_REVEAL_MAX_ATTEMPTS) frame = requestAnimationFrame(revealMove);
           return;
         }
         if (row.getBoundingClientRect().height <= scrollViewport.clientHeight) {
-          rowVirtualizer.scrollToIndex(rowIndex, { align: "center" });
+          cancelIndexScroll = scrollNotationToIndex(rowVirtualizer, rowIndex, "center");
           return;
         }
         const cell = row.querySelector<HTMLElement>('[data-notation-current="true"]');
@@ -218,19 +212,21 @@ function GameNotation({ topBar, controls }: { topBar?: boolean; controls?: React
         if (delta) {
           // Fractional text bounds need the browser's scroll offset rounded toward visibility.
           const offset = scrollViewport.scrollTop + delta;
-          scrollNotationToOffset(
-            rowVirtualizer,
-            delta > 0 ? Math.ceil(offset) : Math.floor(offset),
-          );
+          rowVirtualizer.scrollToOffset(delta > 0 ? Math.ceil(offset) : Math.floor(offset));
         }
       };
       // Give the mounted row and ResizeObserver a frame to settle before reading geometry.
       frame = requestAnimationFrame(() => {
+        if (cancelled) return;
         frame = requestAnimationFrame(revealMove);
       });
-      return () => cancelAnimationFrame(frame);
+      return () => {
+        cancelled = true;
+        cancelAnimationFrame(frame);
+        cancelIndexScroll?.();
+      };
     } else if (model.rows.length > 0) {
-      rowVirtualizer.scrollToIndex(0, { align: "start" });
+      return scrollNotationToIndex(rowVirtualizer, 0, "start");
     }
   }, [currentNode, model, rowVirtualizer]);
 

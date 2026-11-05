@@ -22,7 +22,7 @@ const atoms = vi.hoisted(() => ({
   keyMap: Symbol("key-map"),
 }));
 const virtualizerMock = vi.hoisted(() => ({
-  current: null as null | { count: number; scrollToFn?: unknown },
+  current: null as null | { count: number },
   scrollCalls: [] as { index: number; options: unknown }[],
   measured: [] as Element[],
 }));
@@ -118,9 +118,11 @@ vi.mock("@mantine/core", () => {
 });
 vi.mock("@tanstack/react-virtual", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-virtual")>()),
-  useVirtualizer: (options: { count: number; scrollToFn?: unknown }) => {
+  useVirtualizer: (options: { count: number }) => {
     virtualizerMock.current = options;
-    return {
+    let target: { index: number; align: "center" | "start" };
+    const virtualizer = {
+      scrollOffset: 0,
       getTotalSize: () => options.count * 30,
       getVirtualItems: () =>
         Array.from({ length: Math.min(options.count, 20) }, (_, index) => ({
@@ -131,20 +133,22 @@ vi.mock("@tanstack/react-virtual", async (importOriginal) => ({
       measureElement: (element: Element | null) => {
         if (element) virtualizerMock.measured.push(element);
       },
-      scrollToIndex: (index: number, options: unknown) => {
-        virtualizerMock.scrollCalls.push({ index, options });
+      getOffsetForIndex: (index: number, align: "center" | "start") => {
+        target = { index, align };
+        return [index * 30, align];
+      },
+      scrollToOffset: (offset: number) => {
+        virtualizer.scrollOffset = offset;
+        virtualizerMock.scrollCalls.push({ index: offset / 30, options: { align: target.align } });
       },
     };
+    return virtualizer;
   },
 }));
 
 import React from "react";
-import { Virtualizer } from "@tanstack/react-virtual";
-import GameNotation, {
-  cancelNotationIndexScroll,
-  scrollNotationElement,
-  scrollNotationToOffset,
-} from "./GameNotation";
+import { elementScroll, Virtualizer } from "@tanstack/react-virtual";
+import GameNotation, { scrollNotationToIndex } from "./GameNotation";
 import styles from "./GameNotation.module.css";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -293,90 +297,188 @@ test.each(Object.entries(catalogues))(
   },
 );
 
+function queueAnimationFrames() {
+  const frames = new Map<number, FrameRequestCallback>();
+  let nextId = 0;
+  const request = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+    frames.set(++nextId, callback);
+    return nextId;
+  });
+  const cancel = vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => {
+    frames.delete(id);
+  });
+  const flushOne = () => {
+    const [id, callback] = frames.entries().next().value!;
+    frames.delete(id);
+    callback(0);
+  };
+  return {
+    frames,
+    flushOne,
+    flush: () => {
+      while (frames.size) flushOne();
+    },
+    restore: () => {
+      request.mockRestore();
+      cancel.mockRestore();
+    },
+  };
+}
+
+function mountRealVirtualizer() {
+  const viewport = document.createElement("div");
+  Object.defineProperties(viewport, {
+    clientHeight: { value: 100 },
+    scrollHeight: { value: 3200 },
+  });
+  const offsets: number[] = [];
+  const virtualizer = new Virtualizer<HTMLDivElement, Element>({
+    count: 100,
+    estimateSize: () => 32,
+    getScrollElement: () => viewport,
+    observeElementRect: (_instance, callback) => callback({ width: 300, height: 100 }),
+    observeElementOffset: () => undefined,
+    scrollToFn: elementScroll,
+  });
+  Object.defineProperty(viewport, "scrollTo", {
+    value: ({ top }: ScrollToOptions) => {
+      offsets.push(top!);
+      virtualizer.scrollOffset = top!;
+    },
+  });
+  const cleanup = virtualizer._didMount();
+  virtualizer._willUpdate();
+  virtualizer.elementsCache.set(2, viewport);
+  offsets.length = 0;
+  return { virtualizer, offsets, cleanup };
+}
+
 test.each([false, true])(
-  "cancels the real virtualizer's index verification (retry already queued: %s)",
-  (retryQueued) => {
-    const frames: FrameRequestCallback[] = [];
-    const requestFrame = vi
-      .spyOn(window, "requestAnimationFrame")
-      .mockImplementation((callback) => {
-        frames.push(callback);
-        return frames.length;
-      });
-    const viewport = document.createElement("div");
-    Object.defineProperties(viewport, {
-      clientHeight: { value: 100 },
-      scrollHeight: { value: 3200 },
-    });
-    const offsets: number[] = [];
-    const virtualizer = new Virtualizer<HTMLDivElement, Element>({
-      count: 100,
-      estimateSize: () => 32,
-      getScrollElement: () => viewport,
-      observeElementRect: (_instance, callback) => callback({ width: 300, height: 100 }),
-      observeElementOffset: () => undefined,
-      scrollToFn: scrollNotationElement,
-    });
-    Object.defineProperty(viewport, "scrollTo", {
-      value: ({ top }: ScrollToOptions) => {
-        const offset = top!;
-        offsets.push(offset);
-        virtualizer.scrollOffset = offset;
-      },
-    });
-    const cleanup = virtualizer._didMount();
+  "cancels owned index verification after real virtualizer unmount (verify queued: %s)",
+  (verifyQueued) => {
+    const queue = queueAnimationFrames();
+    const { virtualizer, offsets, cleanup } = mountRealVirtualizer();
+    const getOffset = vi.spyOn(virtualizer, "getOffsetForIndex");
     try {
-      virtualizer._willUpdate();
-      virtualizer.elementsCache.set(2, viewport);
-      virtualizer.scrollToIndex(2, { align: "center" });
-      // This assertion also fails if a library upgrade renames the private cancellation field.
-      expect(virtualizer).toHaveProperty("currentScrollToIndex", 2);
-      if (retryQueued) {
-        // Change the offset before verify runs, so it queues tryScroll for the old index.
-        virtualizer.scrollOffset = 1000;
-        frames.shift()!(0);
-        frames.shift()!(0);
-      }
-      expect(frames).toHaveLength(1);
-      const previousOffset = virtualizer.scrollOffset;
-      const previousScrollCount = offsets.length;
-      cancelNotationIndexScroll(virtualizer);
-      expect(virtualizer).toHaveProperty("currentScrollToIndex", null);
-      expect(virtualizer.scrollOffset).toBe(previousOffset);
-      expect(offsets).toHaveLength(previousScrollCount);
-      scrollNotationToOffset(virtualizer, 2000);
-      expect(virtualizer.scrollOffset).toBe(2000);
-      offsets.length = 0;
-      while (frames.length) frames.shift()!(0);
-      expect(offsets).toEqual([]);
-      expect(virtualizer.scrollOffset).toBe(2000);
-      // Resize corrections and subsequent short-row index navigation still use normal scrolling.
-      virtualizer.options.scrollToFn(2000, { adjustments: 10 }, virtualizer);
-      expect(virtualizer.scrollOffset).toBe(2010);
-      virtualizer.scrollToIndex(3, { align: "center" });
-      expect(virtualizer.scrollOffset).toBe(62);
-      while (frames.length) frames.shift()!(0);
-      expect(virtualizer.scrollOffset).toBe(62);
+      const cancel = scrollNotationToIndex(virtualizer, 2, "center");
+      expect(offsets).toEqual([30]);
+      if (verifyQueued) queue.flushOne();
+      const queuedCallback = queue.frames.values().next().value!;
+      cleanup();
+      virtualizer.scrollOffset = 1000;
+      getOffset.mockClear();
+      cancel();
+      expect(queue.frames.size).toBe(0);
+      expect(() => queue.flush()).not.toThrow();
+      // A callback already dispatched before cancellation must also leave its owner alone.
+      expect(() => queuedCallback(0)).not.toThrow();
+      expect(getOffset).not.toHaveBeenCalled();
+      expect(queue.frames.size).toBe(0);
+      expect(offsets).toEqual([30]);
     } finally {
       cleanup();
-      requestFrame.mockRestore();
+      getOffset.mockRestore();
+      queue.restore();
     }
   },
 );
 
-test("wires the guarded scroll function into the mounted notation virtualizer", async () => {
-  await act(async () => {
-    root.render(
-      <TreeStateContext.Provider value={store}>
-        <WorkspaceTabScope tabId="notation-test">
-          <GameNotation />
-        </WorkspaceTabScope>
-      </TreeStateContext.Provider>,
-    );
-  });
-
-  expect(virtualizerMock.current?.scrollToFn).toBe(scrollNotationElement);
+test("the library's unowned dynamic index frame throws after real virtualizer unmount", () => {
+  const queue = queueAnimationFrames();
+  const { virtualizer, cleanup } = mountRealVirtualizer();
+  try {
+    virtualizer.scrollToIndex(2, { align: "center" });
+    cleanup();
+    expect(() => queue.flush()).toThrow(TypeError);
+  } finally {
+    cleanup();
+    queue.restore();
+  }
 });
+
+test("owned index verification corrects a changed offset and cancellation stops retries", () => {
+  const queue = queueAnimationFrames();
+  const { virtualizer, offsets, cleanup } = mountRealVirtualizer();
+  try {
+    const cancel = scrollNotationToIndex(virtualizer, 2, "center");
+    virtualizer.scrollOffset = 1000;
+    queue.flushOne();
+    expect(offsets).toEqual([30]);
+    queue.flushOne();
+    expect(offsets).toEqual([30, 30]);
+    expect(virtualizer.scrollOffset).toBe(30);
+    virtualizer.scrollOffset = 1000;
+    queue.flushOne();
+    cancel();
+    queue.flush();
+    expect(offsets).toEqual([30, 30]);
+  } finally {
+    cleanup();
+    queue.restore();
+  }
+});
+
+test("owned index verification bounds unsuccessful scrolling to ten attempts", () => {
+  const queue = queueAnimationFrames();
+  const { virtualizer, offsets, cleanup } = mountRealVirtualizer();
+  try {
+    scrollNotationToIndex(virtualizer, 2, "center");
+    while (queue.frames.size) {
+      virtualizer.scrollOffset = 1000;
+      queue.flushOne();
+    }
+    expect(offsets).toEqual(Array(10).fill(30));
+  } finally {
+    cleanup();
+    queue.restore();
+  }
+});
+
+test.each([false, true])(
+  "notation cleanup cancels its owned index frames (started inside reveal: %s)",
+  async (insideReveal) => {
+    const queue = queueAnimationFrames();
+    const height = vi
+      .spyOn(HTMLElement.prototype, "clientHeight", "get")
+      .mockReturnValue(insideReveal ? 100 : 0);
+    const bounds = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      height: 200,
+    } as DOMRect);
+    try {
+      const state = defaultTree();
+      state.root.children = [
+        createNode({ fen: "e4 b - - 0 1", move: parseUci("e2e4")!, san: "e4", halfMoves: 1 }),
+      ];
+      store.getState().setState({ ...state, position: [0] });
+      await act(async () => {
+        root.render(
+          <TreeStateContext.Provider value={store}>
+            <WorkspaceTabScope tabId="notation-test">
+              <GameNotation />
+            </WorkspaceTabScope>
+          </TreeStateContext.Provider>,
+        );
+      });
+      expect(virtualizerMock.scrollCalls).toHaveLength(insideReveal ? 0 : 1);
+      if (insideReveal) {
+        bounds.mockReturnValue({ height: 30 } as DOMRect);
+        queue.flushOne();
+        queue.flushOne();
+      }
+      expect(virtualizerMock.scrollCalls).toEqual([{ index: 0, options: { align: "center" } }]);
+      expect(queue.frames.size).toBe(1);
+      await act(async () => root.render(null));
+      expect(queue.frames.size).toBe(0);
+      queue.flush();
+      expect(virtualizerMock.scrollCalls).toHaveLength(1);
+    } finally {
+      await act(async () => root.render(null));
+      height.mockRestore();
+      bounds.mockRestore();
+      queue.restore();
+    }
+  },
+);
 
 test("forwards a variation's starting comment prose to its mounted move cell", async () => {
   notationSettings.showComments = true;

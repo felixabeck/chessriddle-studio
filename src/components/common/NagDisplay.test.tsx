@@ -36,7 +36,9 @@ vi.mock("@tanstack/react-virtual", () => ({
     getVirtualItems: () =>
       Array.from({ length: count }, (_, index) => ({ index, size: 30, start: index * 30 })),
     measureElement: () => undefined,
-    scrollToIndex: () => undefined,
+    getOffsetForIndex: () => undefined,
+    scrollToOffset: () => undefined,
+    scrollOffset: 0,
   }),
 }));
 // The chart adapter renders the real tooltip and dot with the data supplied by EvalChart.
