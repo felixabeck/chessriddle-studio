@@ -294,6 +294,11 @@ mod tests {
         follower.on_setting_changed(&setting_changed(
             "org.gnome.desktop.interface",
             COLOR_SCHEME_KEY,
+            1u32.to_variant(),
+        ));
+        follower.on_setting_changed(&setting_changed(
+            APPEARANCE_NAMESPACE,
+            COLOR_SCHEME_KEY,
             "prefer-dark".to_variant(),
         ));
         follower.on_setting_changed(&1u32.to_variant());
