@@ -15685,7 +15685,7 @@ The earlier cancellation remains historical evidence, superseded by the successf
 
 ### Reclosing a reopened finding fails against its earlier close receipt
 
-* **ID:** f-20261008-15 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261008-15 · **Status:** handled · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 765c4c8c-60f4-49b7-80b5-a4a1b939f9fe · output /home/felixb/.claude/drain-state/chessfable-0a459a4f.d/attempt-765c4c8c-60f4-49b7-80b5-a4a1b939f9fe-1.jsonl
 * **Where:** `scripts/findings.py`, `_mutate_finding_note` around 11260–11320, `_close_receipt_updates` around 6483, and canonical `agent-kit/scripts/findings.py` equivalents.
 * **Defect:** The normal sequence `close`, `set-header --status open`, then a second `close` fails validation. Reopening correctly refreshes the existing close receipt to the current open header. A later `close` changes the header to handled and creates its new receipt, but does not refresh earlier close receipts. Validation rejects the candidate because the earlier receipt still expects the open header. The refused mutation leaves the valid ledger unchanged.
@@ -15701,6 +15701,9 @@ The earlier cancellation remains historical evidence, superseded by the successf
 
 **Pickup re-check 2026-10-14 (setup simplification):** obsolete. The stale close-receipt defect was fixed in agent-kit c6bdb226 and reached ChessFable through vendor commit d445b128; current scripts/findings.py close refreshes earlier close receipts before publishing the new closure. Closing is refused today only because an earlier annotation in this entry says "Still open", which is agent-kit f-20261011-08; close this finding once that is fixed.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"110316cacc9a131046a8945c9fc48dbf568528ff7851143f56697f28245699d4","input_sha256":"dcbb45ff5236845393e5a860e5776afc20dc1d0882331e997e4b8fbd063e787e","kind":"mutation-receipt","operation":"68179cccc957d995d5754d27746723a732225abf9ed199389b8780bb4aa5de2e","options":{"section":null},"request_id_sha256":null,"results":["f-20261008-15"],"target":"f-20261008-15","v":1} -->
+
+**Closed 2026-11-05 (drain e1779f6a, co-located with f-20260920-14):** the reclose defect no longer holds. agent-kit c6bdb226 (vendored in d445b128) refreshes earlier close receipts on close, and the open-wording guard now reads only the closing note, not earlier annotations (agent-kit f-20261011-08 handled; vendored `_mutate_finding_note` checks `_unfenced_text(note)`). Proof: on a disposable clone at 1b41032d, `scripts/findings.py close f-20261008-15` exited 0 and `scripts/findings.py check` passed afterwards. No code change in this repository.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"88511ef83b32e0008825be3f886c331e8c3aecd18898a61f76441c17b9c8fc84","header_sha256":"c206f6b3fa888414ec57f1afa0e6cd66ad3a5122da04f2d10fb14748860e7e37","header_status":"handled","input_sha256":"970d0432b9f94aa90e88247b7b14a27b9f990b17f803a6573d15a9d3adcdb77b","kind":"mutation-receipt","operation":"477ea14636a46e2ba346587ec8edd92a36f1ab5afdc8dee8ca09c659cb8c9dc6","options":{"section":null},"request_id_sha256":null,"results":["f-20261008-15"],"target":"f-20261008-15","v":1} -->
 
 ---
 
