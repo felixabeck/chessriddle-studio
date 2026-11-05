@@ -20653,7 +20653,7 @@ Fixed in 7a00afaa (notation main-line hierarchy build). Cause: the table view's 
 
 ### Linked-collection New game e2e: tab origin stays databaseDraft past the 8 s poll under full-suite load
 
-* **ID:** f-20261102-02 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261102-02 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** tooling
 * **Where:** `e2e/new-game-to-database.spec.ts:176-178`, "linked collection New game appends to its PGN without inserting into the index": `expect.poll(... activeWorkspaceTab(page))?.gameOrigin).toMatchObject({ kind: "file", gameNumber: 2, file: { handle: file.handle } })`.
 * **Defect:** In a full `pnpm gate:ensure e2e-container` run in the pinned container (2026-11-02, notation-hierarchy build tree, 316 passed, 1 failed), the poll timed out after 8000 ms with `gameOrigin` still `{ kind: "databaseDraft" }`, so the append-to-file transition had not been observed. The same project then passed 15/15 with `--repeat-each=5` in isolation, and the previous full gate run on the same spec bytes passed. The build changed only notation styling and its own e2e spec, nothing on this journey.
@@ -20663,6 +20663,9 @@ Fixed in 7a00afaa (notation main-line hierarchy build). Cause: the table view's 
 * **Spotted outside diff:** notation-hierarchy build (variation-block styling, e2e notation-hierarchy spec).
 * **Proof:** `/tmp/build-notation-hierarchy/flake-evidence/receipt-e2e-container.log` (failure at spec line 178, Expected file origin, Received databaseDraft).
 * **Found by:** Claude Code build session 60051fea-9337-444c-8ec6-3b33ed3c1129, 2026-11-02.
+
+Closed as the same defect as f-20261104-02, fixed by e4230a0c (d-20261105-15). Confirmed against the code: the failing test "linked collection New game appends to its PGN without inserting into the index" navigates from `/library` (with the view-only game preview mounted) to `/` and calls `playBoardMove(page, page.locator("cg-board").first(), "e2", "e4")`, the exact path whose stale-offset click left the tree without a move and the origin as `databaseDraft` in hosted run 41755396509. `playBoardMove` now acts only on `.cg-wrap.manipulable` boards. The pinned-container failure of 2026-11-02 had no retained trace, so the mechanism is inferred from the identical assertion, state and call path; the spec passed 50/50 with `--repeat-each=10` in the container after the fix.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"2720a011196d1d9ab3bf8e292731ebc39cb1baefc2d7d43e38f692dfef925586","header_sha256":"e830f7d0b6a2bde5070682e823d21d9af60095d9f184b4c248bb1023a374dbc7","header_status":"handled","input_sha256":"804d4ed1eaa1ac0be78cac8d00f3a25423ab8f9399641667e74ae6b1d22e7de3","kind":"mutation-receipt","operation":"9bc9e3db8ba37fd849c22d98f176aa531ad5c6f954c0e6d754a8f4a4515e2ac5","options":{"section":null},"request_id_sha256":null,"results":["f-20261102-02"],"target":"f-20261102-02","v":1} -->
 
 ---
 
