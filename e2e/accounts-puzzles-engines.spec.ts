@@ -2687,6 +2687,56 @@ test("accounts-puzzles-engines: navigates empty account, puzzle, and engine stat
     await expect(page).toHaveScreenshot("accounts-puzzles-engines.png", { fullPage: true });
 });
 
+async function openTestPuzzle(
+    page: Page,
+    mockScenario: (scenario: MockScenario) => Promise<void>,
+    options: {
+        databaseId: string;
+        databaseName: string;
+        fontScale?: number;
+        eraseDrawablesOnClick?: boolean;
+    },
+) {
+    await page.addInitScript(({ databaseId, fontScale, eraseDrawablesOnClick }) => {
+        if (fontScale !== undefined) localStorage.setItem("font-size", String(fontScale));
+        localStorage.setItem("puzzle-db", JSON.stringify({ id: databaseId }));
+        localStorage.setItem("track-puzzle-time", "false");
+        if (eraseDrawablesOnClick === false)
+            localStorage.setItem("erase-drawables-on-click", "false");
+    }, options);
+    await mockScenario({
+        commands: {
+            list_puzzle_databases: {
+                result: [
+                    {
+                        title: `${options.databaseName}.db3`,
+                        description: options.databaseName,
+                        puzzleCount: 1,
+                        storageSize: "1024",
+                        path: { id: options.databaseId },
+                    },
+                ],
+            },
+            get_puzzle_themes: { result: [] },
+            get_themes_for_puzzle: { result: [] },
+            get_puzzle: {
+                result: {
+                    id: 7,
+                    fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1",
+                    moves: "e7e5 g1f3 b8c6 b1c3",
+                    rating: 1200,
+                    rating_deviation: 50,
+                    popularity: 1,
+                    nb_plays: 1,
+                },
+            },
+        },
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Train", exact: true }).click();
+    await page.getByRole("button", { name: "New Puzzle", exact: true }).click();
+}
+
 test.describe("stacked puzzle geometry", () => {
     test.use({ viewport: { width: 320, height: 720 } });
 
@@ -2694,42 +2744,11 @@ test.describe("stacked puzzle geometry", () => {
         page,
         mockScenario,
     }) => {
-        await page.addInitScript(() => {
-            localStorage.setItem("font-size", "200");
-            localStorage.setItem("puzzle-db", JSON.stringify({ id: "geometry-puzzles" }));
-            localStorage.setItem("track-puzzle-time", "false");
+        await openTestPuzzle(page, mockScenario, {
+            databaseId: "geometry-puzzles",
+            databaseName: "Geometry",
+            fontScale: 200,
         });
-        await mockScenario({
-            commands: {
-                list_puzzle_databases: {
-                    result: [
-                        {
-                            title: "Geometry.db3",
-                            description: "Geometry",
-                            puzzleCount: 1,
-                            storageSize: "1024",
-                            path: { id: "geometry-puzzles" },
-                        },
-                    ],
-                },
-                get_puzzle_themes: { result: [] },
-                get_themes_for_puzzle: { result: [] },
-                get_puzzle: {
-                    result: {
-                        id: 7,
-                        fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1",
-                        moves: "e7e5 g1f3 b8c6 b1c3",
-                        rating: 1200,
-                        rating_deviation: 50,
-                        popularity: 1,
-                        nb_plays: 1,
-                    },
-                },
-            },
-        });
-        await page.goto("/");
-        await page.getByRole("button", { name: "Train", exact: true }).click();
-        await page.getByRole("button", { name: "New Puzzle", exact: true }).click();
         await expect(
             page.getByRole("button", { name: "Challenge 1: incomplete", exact: true }),
         ).toBeVisible();
@@ -2780,42 +2799,11 @@ for (const erase of [true, false]) {
         mockScenario,
         capture,
     }) => {
-        await page.addInitScript((erase) => {
-            localStorage.setItem("puzzle-db", JSON.stringify({ id: "drawing-puzzles" }));
-            localStorage.setItem("track-puzzle-time", "false");
-            if (!erase) localStorage.setItem("erase-drawables-on-click", "false");
-        }, erase);
-        await mockScenario({
-            commands: {
-                list_puzzle_databases: {
-                    result: [
-                        {
-                            title: "Drawings.db3",
-                            description: "Drawings",
-                            puzzleCount: 1,
-                            storageSize: "1024",
-                            path: { id: "drawing-puzzles" },
-                        },
-                    ],
-                },
-                get_puzzle_themes: { result: [] },
-                get_themes_for_puzzle: { result: [] },
-                get_puzzle: {
-                    result: {
-                        id: 7,
-                        fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1",
-                        moves: "e7e5 g1f3 b8c6 b1c3",
-                        rating: 1200,
-                        rating_deviation: 50,
-                        popularity: 1,
-                        nb_plays: 1,
-                    },
-                },
-            },
+        await openTestPuzzle(page, mockScenario, {
+            databaseId: "drawing-puzzles",
+            databaseName: "Drawings",
+            eraseDrawablesOnClick: erase,
         });
-        await page.goto("/");
-        await page.getByRole("button", { name: "Train", exact: true }).click();
-        await page.getByRole("button", { name: "New Puzzle", exact: true }).click();
         const board = page.locator("cg-board").first();
         await expect(
             page.getByRole("button", { name: "Challenge 1: incomplete", exact: true }),
