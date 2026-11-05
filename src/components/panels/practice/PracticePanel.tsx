@@ -981,7 +981,7 @@ function PracticePanel() {
                             leftSection={<Target size={20} />}
                             justify="space-between"
                             rightSection={
-                              <Badge size="sm" variant="white" color="gold">
+                              <Badge size="sm" color="gold">
                                 {stats.due + stats.unseen}
                               </Badge>
                             }
@@ -999,7 +999,7 @@ function PracticePanel() {
                           leftSection={<BookOpen size={20} />}
                           justify="space-between"
                           rightSection={
-                            <Badge size="sm" variant="white" color="gray">
+                            <Badge size="sm" color="gray">
                               {deck.positions.length}
                             </Badge>
                           }
