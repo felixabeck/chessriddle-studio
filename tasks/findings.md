@@ -20925,3 +20925,19 @@ Fixed by d1882467 (drain session a7d7a3cd): `rename_information_buffer` floors t
 * **Fix shape:** rerun the failed job (`gh run rerun 41923815678 --failed -R felixabeck/en-croissant`) and confirm it succeeds; close with the job id. Same external hosted-runner class as handled f-20261104-05 and f-20261019-06; investigate the workflow only if the rerun loses the runner again.
 * **Proof:** `pnpm ci:remote:check` exits 0 with `rust-platform (macos-26-intel, x86_64-apple-darwin)` of the newest master run concluded success.
 * **Found by:** Claude Code drain build session 580a15d2-6d2c-421b-9121-6ddea49c8c7c, 2026-11-05, at the pre-push remote check of the f-20261101-32 release.
+
+---
+
+## 2026-11-05 — filed through the inbox spool
+
+### verify:app practice checks call the deck commands without the epoch they now require
+
+* **ID:** f-20261105-02 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** bc639ab2-cce3-4336-a403-6d833de168a0
+* **Impact class:** tooling
+* **Where:** `scripts/verify-app.mjs` `loadAllPracticeReviews` (invokes `load_practice_reviews` with `{ fileId, game, cursor, limit }`) and `loadPracticeDeckThroughIpc` (reads `load_practice_deck`, which now returns `PracticeDeckLoad { epoch, deck }`), and the practice scenario callers that consume them; native contract in `src-tauri/src/practice.rs` `load_practice_reviews(.., expected_epoch: String)`, introduced by 991747a8 (f-20261101-17).
+* **Defect:** 991747a8 made every deck-addressed practice command take the epoch the caller observed, and `load_practice_deck` return the epoch beside the deck. verify:app was not updated: every `load_practice_reviews` call is rejected with `invalid args expectedEpoch … missing required key expectedEpoch`, and the deck read no longer matches the shape the checks expect.
+* **Failure scenario:** `node scripts/verify-app.mjs` on 2026-11-05 at d8b1a576 (binary built from the same source plus a docs commit) ends "12 check(s) failed". Nine are this defect or its cascade: "the native practice read returns all 12,000 seeded positions", "native practice review paging returns every seeded entry…", "the legacy practice deck is migrated into the native store through real IPC", "fifty renderer ratings land in the native practice review store", "renderer ratings do not alter the large deck's 12,000 native positions", "the 50 new native reviews record the panel's Good rating", "the real sync path stores 500 further repertoire positions" (timed out), "final restart preserves exact native position and review counts for both decks", "final migrated-deck counts still equal the legacy value's counts". (The other three were sound-server checks, an artefact of that run's copied binary lacking its `sound/` resource directory.) Log: `/tmp/drain-plan-drain-90a2aa88-slot0/build/probe/verify-app.log`.
+* **Fix direction:** read `epoch` from the `load_practice_deck` result, use its `deck` for the position assertions, and pass that `expectedEpoch` to every `load_practice_reviews` call; check whether the "500 further positions" sync timeout clears with it or is a separate renderer defect.
+* **Related:** f-20261103-01 (verify:app aborted earlier, at the dirty-quit session, so this drift was never reached before 2026-11-05).
+* **Found by:** drain planner session bc639ab2-cce3-4336-a403-6d833de168a0 (PLAN-ONLY for f-20261103-01), 2026-11-05.
