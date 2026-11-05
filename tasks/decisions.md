@@ -12039,3 +12039,22 @@ Former private decision identifier: d-20261029-14
 * **Supersedes:** d-20261104-19.
 * **Decided by:** Claude Code (orchestrator), interactive build run board-narrow-layout (session 8abd8187), 2026-11-05, full auto · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"7d1e4327930d6213b748753cb65be3dce208ccdc98c408a5aee7bb1d3d757c77","input_sha256":"85fcd763bb266c2557c59941193be3225435e9dd68e0b8dbf0a1b588c08da509","kind":"mutation-receipt","operation":"8cf66fca365e978f083904ac47ad3a426dd5fdee6536c4f5004438ac89a5c632","options":{"section":null},"request_id_sha256":null,"results":["d-20261105-11"],"target":"decisions-ledger","v":1} -->
+
+### d-20261105-12 — Where is a database game's chosen board orientation stored, and how do existing databases upgrade?
+
+* **Question:** Felix chose "remember a manual flip per database game". Where does the value live and how do 2.0.0/1.0.0 databases reach the new shape?
+* **Governs:** -
+* **Chosen:** A nullable `Orientation` column on `Games` (`'white'`, `'black'` or NULL), carried through PGN in both directions by the `[Orientation]` tag. Database version moves from 2.0.0 to a new version; 2.0.0 upgrades in place by a transactional column addition, 1.0.0 reaches the same shape through the legacy path. `game_row_stamp` hashes the orientation only when non-null, so every existing row keeps its stamp. Signatures, duplicate partitions and account fingerprints exclude orientation.
+* **Rejected:** Renderer-side storage keyed by database and game id (does not travel with the database, needs an unbounded registry). Hashing NULL into every stamp (every open tab would hit a CAS conflict after the update).
+* **Reason:** The database is the owner of game data; the tag already carries orientation in PGN files. Reversal path: drop the column through a further version migration and remove the importer/exporter mapping; older binaries refuse an upgraded database until then.
+* **Decided by:** Claude Code (Opus 5.5) build run auto-orientation, full auto, 2026-11-05 · **Superseded-by:** -
+
+### d-20261105-13 — How is the database owner inferred for opening their black games flipped?
+
+* **Question:** With nothing stored, when does a database game open from Black's side?
+* **Governs:** -
+* **Chosen:** Ask the backend at open time whether the game's Black player appears in at least 80 % of a bounded sample of the database's most recent games (fixed cap, at least 10 sampled games), while the White player does not also reach 80 %. Player ID 0 (Unknown) and placeholder names never qualify. The answer seeds the new tab without marking it dirty; failure opens from White and is logged.
+* **Rejected:** A full participation count (linear in database size; seconds on multi-million-game databases without player indexes). Account-name matching (Felix has no account connected). A "my name" setting (Felix declined).
+* **Reason:** Constant cost on any database, and a personal database's owner is in its recent games. Reversal path: change the thresholds or sample cap constants in the backend inference command.
+* **Decided by:** Claude Code (Opus 5.5) build run auto-orientation, full auto, 2026-11-05 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":17,"effect_sha256":"2ec93d162c529eac4944d0067db17b301a36c4ddff88839275ce9ba03afdd7da","input_sha256":"20ec4fd049d0e708c78f603738b74f2f3eafa0bebbd22fab0dcbfb0b8211c8bb","kind":"mutation-receipt","operation":"3a08a9247fb778495c04db6eb4887505c5d697a4ec0d56173758418892d50d99","options":{"section":null},"request_id_sha256":null,"results":["d-20261105-12","d-20261105-13"],"target":"decisions-ledger","v":1} -->
