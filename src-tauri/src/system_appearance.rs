@@ -26,9 +26,9 @@ const COLOR_SCHEME_KEY: &str = "color-scheme";
 const READ_ONE_METHOD: &str = "ReadOne";
 const LEGACY_READ_METHOD: &str = "Read";
 const READ_TIMEOUT_MS: i32 = 2_000;
-/// Variant layers examined before giving up: the legacy `Read` reply is the deepest shape,
-/// `(v)` → `v` → `u`, so three unwraps reach the scalar; one spare layer tolerates a
-/// redundant box without accepting arbitrarily nested input.
+/// Layers inspected for a `u32`: the legacy `Read` reply `(v)` → `v` → `v` → `u` is the deepest
+/// accepted shape, so its three unwraps plus the final scalar check are exactly four; anything
+/// nested deeper is rejected.
 const MAX_VARIANT_DEPTH: usize = 4;
 
 thread_local! {
