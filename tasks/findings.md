@@ -20753,6 +20753,9 @@ Closed by 5ea1ae3b, pushed to master as part of 4633e57f (database games in Rece
 * **Correction (2026-11-02):** the **Side observation** claims more than its probe showed. The probe requested `/board/does-not-exist.png`, which the preview server's SPA fallback most likely answered with `index.html`, so it proves only that an image request answered by that fallback does not fail a test. A genuine HTTP 404 would normally reach the fixture's console-error check (`e2e/fixtures.ts`, the `console` listener) and was not probed. The fix also moved the request classification into the exported `localRequestFailure` in `e2e/fixtures.ts`, and `e2e/board-wood-texture.spec.ts` now holds the texture response so the abort happens on every run.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"e234530ad2790001af52aad1051f987608ba04c48b853f5fd432f6f5d9a78f80","input_sha256":"9854c032cdb6e01e01a3026016e0c9c0e1f51a79932542e89649a45c8cac6a54","kind":"mutation-receipt","operation":"3d94cdb68a9a1f970d564e33b707433ba88d7af9af7689a2268c7e0cbc80a2ab","options":{"section":null},"request_id_sha256":null,"results":["f-20261102-06"],"target":"f-20261102-06","v":1} -->
 
+* **Correction (2026-11-05):** "so the abort happens on every run" in the Correction above states the intent of holding the texture response, not a guarantee: under load the page does not always abandon the held fetch and the test times out. Tracked as f-20261105-07.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"2dc53981b2bd1ed04e4cc2109da9ec19f11372c0a23157216362f6a8617fda6c","input_sha256":"2ace63cf5b517a049c85ed1837c07c63537e427b14deb955bdf26a3f375a6fa5","kind":"mutation-receipt","operation":"80cffe7250de8b8de5b38933a39ad59d23b5e2cb90a45cc30b6da18c90c4e97f","options":{"section":null},"request_id_sha256":null,"results":["f-20261102-06"],"target":"f-20261102-06","v":1} -->
+
 ---
 
 ## 2026-11-02 — filed through the inbox spool
