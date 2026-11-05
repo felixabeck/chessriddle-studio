@@ -655,6 +655,8 @@ mod tests {
     // Hang guard, not a latency assertion. Hosted Windows runners stall for tens of seconds
     // (43 s in CI run 42011942850), so durable I/O needs a bound far above those stalls.
     const TERMINAL_HANG_GUARD: Duration = Duration::from_secs(120);
+    // Sleep between polls of native state, so a waiting test does not spin a core.
+    const TEST_POLL_INTERVAL: Duration = Duration::from_millis(5);
 
     struct ExportTransport {
         responses: Mutex<VecDeque<DownloadResponse>>,
@@ -1293,7 +1295,7 @@ mod tests {
                 {
                     return;
                 }
-                tokio::time::sleep(Duration::from_millis(5)).await;
+                tokio::time::sleep(TEST_POLL_INTERVAL).await;
             }
         })
         .await
@@ -1308,7 +1310,7 @@ mod tests {
                 if state.operations.outstanding_labels().unwrap().is_empty() {
                     return;
                 }
-                tokio::time::sleep(Duration::from_millis(5)).await;
+                tokio::time::sleep(TEST_POLL_INTERVAL).await;
             }
         })
         .await
