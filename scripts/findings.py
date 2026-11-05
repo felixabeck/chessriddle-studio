@@ -1,5 +1,5 @@
 #!/usr/bin/env -S uv run --script
-# agent-kit-sha256: 1ea6a910e2d4f2f1066d940eb1ab15b10e03878a7aac306b2f43d995c80e4819
+# agent-kit-sha256: 270b5c8bcb656667f50d1a9d91254123b13936af5be624214a38790849e905c5
 # /// script
 # requires-python = ">=3.14"
 # ///
@@ -1132,11 +1132,27 @@ def _receipt_effect_issues(
     issues: list[str] = []
     seen: dict[tuple[str, str], int] = {}
     finding_at_line: dict[int, str] = {}
+    # One header scan per pass: rescanning per close/set-header receipt made a
+    # pass O(receipts x lines) (f-20261105-01).
+    header_matches: list[tuple[int, int, re.Match[str]]] | None = None
+    headers_by_id: dict[str, list[tuple[int, re.Match[str]]]] | None = None
+
+    def _headers() -> list[tuple[int, int, re.Match[str]]]:
+        nonlocal header_matches
+        if header_matches is None:
+            header_matches = _unfenced_header_matches(text, fence_states)[1]
+        return header_matches
+
+    def _headers_for(finding_id: str) -> list[tuple[int, re.Match[str]]]:
+        nonlocal headers_by_id
+        if headers_by_id is None:
+            headers_by_id = {}
+            for _heading, index, match in _headers():
+                headers_by_id.setdefault(match.group("id"), []).append((index, match))
+        return headers_by_id.get(finding_id, [])
+
     if "**Area vocabulary:**" in text.split("### ", 1)[0]:
-        _found_lines, headers, _orphans = _unfenced_header_matches(
-            text, fence_states
-        )
-        for heading_index, header_index, match in headers:
+        for heading_index, header_index, match in _headers():
             end = _find_entry_span(lines, fence_states, header_index)
             for index in range(heading_index, end):
                 finding_at_line[index + 1] = match.group("id")
@@ -1187,13 +1203,7 @@ def _receipt_effect_issues(
                     f"target finding {target}"
                 )
             if command in {"close", "set-header"}:
-                target_headers = [
-                    (index, match)
-                    for _heading, index, match in _unfenced_header_matches(
-                        text, fence_states
-                    )[1]
-                    if match.group("id") == target
-                ]
+                target_headers = _headers_for(target)
                 if len(target_headers) != 1:
                     issues.append(
                         f"{path}:{meta.line}: {command} receipt target {target} has "
@@ -6623,6 +6633,24 @@ def assign_pending_ids(text: str, date: str, taken: set[str]) -> tuple[str, list
     )
 
 
+def _next_high_water_id(prefix: str, date: str, taken: set[str]) -> str:
+    """Return and take the id after the highest one `date` has used; gaps stay gaps."""
+    used = sorted(
+        int(identifier.rsplit("-", 1)[1])
+        for identifier in taken
+        if identifier.startswith(f"{prefix}-{date}-")
+    )
+    seq = (used[-1] + 1) if used else 1
+    if seq > ID_SEQ_MAX:
+        kind = "finding" if prefix == "f" else "decision"
+        raise LedgerError(
+            f"no free {kind} id left for {date} — the sequence reached {ID_SEQ_MAX}"
+        )
+    candidate = f"{prefix}-{date}-{seq:0{ID_SEQ_DIGITS}d}"
+    taken.add(candidate)
+    return candidate
+
+
 def _allocate_pending(
     text: str,
     prefix: str,
@@ -6637,19 +6665,7 @@ def _allocate_pending(
     for heading_idx, idx, match in matches:
         if match.group("id") != pending_token:
             continue
-        used = sorted(
-            int(identifier.rsplit("-", 1)[1])
-            for identifier in taken
-            if identifier.startswith(f"{prefix}-{date}-")
-        )
-        seq = (used[-1] + 1) if used else 1
-        if seq > ID_SEQ_MAX:
-            kind = "finding" if prefix == "f" else "decision"
-            raise LedgerError(
-                f"no free {kind} id left for {date} — the sequence reached {ID_SEQ_MAX}"
-            )
-        candidate = f"{prefix}-{date}-{seq:0{ID_SEQ_DIGITS}d}"
-        taken.add(candidate)
+        candidate = _next_high_water_id(prefix, date, taken)
         assigned.append(candidate)
         lines[idx] = lines[idx].replace(pending_token, candidate, 1)
         if prefix == "f":
@@ -7663,11 +7679,19 @@ def _write_claim_intent(
             name: sorted(identifiers)
             for name, identifiers in sorted(provisional_ids.items())
         }
-    intent = _claim_intent_path(claim)
-    serialized = json.dumps(payload, sort_keys=True)
+    _persist_claim_intent(claim, payload, ids)
+
+
+def _persist_claim_intent(
+    claim: Path, payload: Mapping[str, object], ids: Collection[str] | None
+) -> None:
+    """Reserve new ids before the durable intent, release old ones only after it."""
     if ids is not None:
         _set_claim_id_reservation(claim, ids, retain_previous=True)
-    _atomic_write(intent, serialized, durable_directory=True)
+    _atomic_write(
+        _claim_intent_path(claim), json.dumps(payload, sort_keys=True),
+        durable_directory=True,
+    )
     if ids is not None:
         _set_claim_id_reservation(claim, ids)
 
@@ -9490,6 +9514,163 @@ def _reconcile_prepared_claim(
     )
 
 
+def _active_clone_allocation_root(ledger: Path) -> Path | None:
+    """Return the clone root only while this process holds its id fence."""
+    root = _clone_id_allocation_root(ledger, explicit=_EXPLICIT_ID_ALLOCATION_PATHS)
+    if root is None:
+        return None
+    holder = _ACTIVE_CLONE_ID_SCOPES.get(str(_clone_id_fence_lock(root)))
+    return holder[0] if holder is not None else None
+
+
+def _head_partly_holds(
+    expected: FindingExpectation, head: Finding, head_findings: Collection[Finding]
+) -> bool:
+    """Whether HEAD carries any of the claimed filing's own text.
+
+    A title, the whole filing under another id, or a body line that only the
+    colliding HEAD entry carries is a content conflict, not an id collision:
+    renumbering then would write the same finding twice.
+    """
+    if head.title == expected.title:
+        return True
+    if any(_finding_identity_preserved(expected, finding) for finding in head_findings):
+        return True
+    line_owners: dict[str, int] = {}
+    for finding in head_findings:
+        for line in {line.strip() for line in finding.body if line.strip()}:
+            line_owners[line] = line_owners.get(line, 0) + 1
+    head_lines = {line.strip() for line in head.body}
+    return any(
+        line.strip() in head_lines and line_owners.get(line.strip()) == 1
+        for line in expected.body
+        if line.strip()
+    )
+
+
+def _claim_never_committed_under(ledger: Path, expected: FindingExpectation) -> bool:
+    """Prove from history that no commit held this filing under its provisional id.
+
+    A claim can stay ``prepared`` after its commit landed (cleanup failed), and a
+    later edit can then replace that entry wholesale. Every commit that changed
+    the count of the id's header or of the claimed title text is inspected, which
+    also catches a replacement that kept the header. An unreadable history
+    refuses with git's cause.
+    """
+    root = cast(Path, REPO_ROOT).resolve()
+    relative = _repo_relative(_resolved_repo_path(ledger), root)
+    commits: list[str] = []
+    # The bare title, not its heading line: the parser normalises heading spaces.
+    for needle in (f"**ID:** {expected.identifier}", expected.title):
+        log = _git_for_ledger(
+            root, "log", "--format=%H", "-S", needle, "HEAD", "--", relative,
+        )
+        if log.returncode != 0:
+            raise LedgerError(
+                f"could not read the history of {relative} to prove "
+                f"{expected.identifier} was never committed: "
+                f"{_git_failure_detail(log)}; the claim is kept"
+            )
+        commits += [commit for commit in log.stdout.split() if commit not in commits]
+    for commit in commits:
+        blob = _git_for_ledger(root, "show", f"{commit}:{relative}")
+        if blob.returncode != 0:
+            raise LedgerError(
+                f"could not read {relative} at {commit} to prove "
+                f"{expected.identifier} was never committed: "
+                f"{_git_failure_detail(blob)}; the claim is kept"
+            )
+        findings, _problems, _vocabulary = _parse_text(blob.stdout, ledger)
+        earlier = next((f for f in findings if f.id == expected.identifier), None)
+        if earlier is not None and _head_partly_holds(expected, earlier, findings):
+            return False
+    return True
+
+
+def _renumber_provisional_collisions(
+    claim: Path,
+    ledger: Path,
+    intent: ClaimIntent,
+    expectations: Mapping[str, tuple[Path, FindingExpectation]],
+    head_findings: Collection[Finding],
+) -> bool:
+    """Move a never-committed claim off a provisional id another checkout committed.
+
+    Each checkout's merge hands out ids before its commit lands. When another
+    checkout reaches HEAD first with a different finding under the same id, the
+    claimed filing is still unwritten, so it takes the next free id for its
+    date and waits for the next merge. Hand-chosen ids, content conflicts, a
+    filing some commit already held under that id, and a caller without the
+    clone-wide id fence keep the refusal.
+    """
+    head_by_id = {finding.id: finding for finding in head_findings}
+    collided: dict[Path, set[str]] = {}
+    for key, (path, expected) in expectations.items():
+        head = head_by_id.get(expected.identifier)
+        if (
+            head is None
+            or expected.identifier in intent.fixed
+            or _head_partly_holds(expected, head, head_findings)
+            or not _claim_never_committed_under(ledger, expected)
+        ):
+            continue
+        collided.setdefault(path, set()).add(key)
+    if not collided:
+        return False
+    root = _active_clone_allocation_root(ledger)
+    if root is None:
+        return False
+
+    taken = _clone_allocation_ids(root, ledger, own_claim=claim)
+    taken |= set(head_by_id) | set(intent.ids)
+    for record in intent.receipt_ids.values():
+        taken.add(cast(dict[str, str], record)["id"])
+    for path in intent.claimed:
+        taken |= header_ids(path.read_text(encoding="utf-8"))
+
+    payload = json.loads(_claim_intent_path(claim).read_text(encoding="utf-8"))
+    renamed: dict[str, str] = {}
+    rewrites: list[tuple[Path, str, str]] = []
+    for path, keys in collided.items():
+        text = path.read_text(encoding="utf-8")
+        lines, headers, _orphans = _unfenced_header_matches(text)
+        pending_lines = list(lines)
+        for index, (_heading, line_index, match) in enumerate(headers):
+            key = path.name if len(headers) == 1 else f"{path.name}#{index}"
+            if key not in keys:
+                continue
+            old = payload["receipt_ids"][key]["id"]
+            new = _next_high_water_id("f", old.split("-")[1], taken)
+            payload["receipt_ids"][key]["id"] = new
+            renamed[old] = new
+            provisional = payload.get("provisional_ids")
+            if isinstance(provisional, dict):
+                provisional[path.name] = sorted(
+                    set(provisional.get(path.name, [])) | {new}
+                )
+            if match.group("id") == old:
+                pending_lines[line_index] = lines[line_index].replace(old, PENDING_ID, 1)
+                lines[line_index] = lines[line_index].replace(old, new, 1)
+        suffix = "\n" if text.endswith("\n") else ""
+        rewrites.append(
+            (path, "\n".join(pending_lines) + suffix, "\n".join(lines) + suffix)
+        )
+    ids = {renamed.get(identifier, identifier) for identifier in payload.get("ids", [])}
+    payload["ids"] = sorted(ids)
+
+    # Every step leaves a state the next run accepts: a placeholder file is read
+    # under its recorded id, so the file goes pending, the intent moves, then the
+    # file takes the new id.
+    for path, pending_text, _final in rewrites:
+        _atomic_write(path, pending_text, durable_directory=True)
+    _persist_claim_intent(claim, payload, ids)
+    for path, _pending, final_text in rewrites:
+        _atomic_write(path, final_text, durable_directory=True)
+    # Silent on purpose: the drain accepts a replayable finalize-claims only with
+    # empty stderr, and the next merge prints the id it finally allocates.
+    return True
+
+
 def _reconcile_inbox_claim(
     claim: Path, inbox: Path, ledger: Path, decisions: Path
 ) -> Reconciliation:
@@ -9550,6 +9731,12 @@ def _reconcile_inbox_claim(
         head_findings, _head_problems, _head_vocabulary = _parse_text(
             snapshot.findings_text, ledger
         )
+
+    if _renumber_provisional_collisions(
+        claim, ledger, intent, entry_expectations, head_findings
+    ):
+        intent = cast(ClaimIntent, _read_claim_intent(claim))
+        entry_expectations = _claim_entry_expectations(claim, ledger, intent)
 
     head_by_id = {finding.id: finding for finding in head_findings}
     working_by_id = {finding.id: finding for finding in working_findings}
@@ -10083,6 +10270,26 @@ def cmd_finalize_claims(args: argparse.Namespace) -> int:
         print(f"FAIL {exc}", file=sys.stderr)
         return 1
 
+    if mode != "deferred":
+        return _finalize_claims_clone_locked(args, mode, inbox_claim, answers_claim)
+    # A deferred inbox claim may need a fresh id (see
+    # _renumber_provisional_collisions); the fence precedes the ledger lock.
+    try:
+        with _clone_id_allocation_scope(
+            args.ledger, explicit=_EXPLICIT_ID_ALLOCATION_PATHS,
+        ):
+            return _finalize_claims_clone_locked(args, mode, inbox_claim, answers_claim)
+    except LedgerReadRefused:
+        raise
+    except LedgerError as exc:
+        print(f"FAIL {exc}", file=sys.stderr)
+        return 1
+
+
+def _finalize_claims_clone_locked(
+    args: argparse.Namespace, mode: str, inbox_claim: Path, answers_claim: Path
+) -> int:
+    decisions = args.decisions
     lock = ledger_lock_path(args.ledger)
     try:
         acquired, waited_seconds = acquire_ledger_lock(lock)
