@@ -77,6 +77,7 @@ function commands(matches: NormalizedGame[]) {
             },
         },
         get_games: { result: { data: matches, count: matches.length } },
+        get_db_game: { databaseGames: matches },
     });
 }
 
