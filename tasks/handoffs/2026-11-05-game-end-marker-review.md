@@ -49,37 +49,37 @@ All APPROVED; R2-1 and R1-6 closed. Adoptions per round: r1=7 r2=2 r3=0.
 
 ## Implementation
 
-- Phase 1 (`d31f67d5`, sensitive rung): data model, PGN round trip, load default, store actions,
+- Phase 1 (`7f070e11`, sensitive rung): data model, PGN round trip, load default, store actions,
   adjudication guard, persisted schema. Orchestrator inspection found a per-render deep clone in
   the database preview; two resume rounds memoized it (second round fixed an exhaustive-deps
   lint error by reading headers from the memo key).
-- Phase 2 (`dcc002af`, normal rung): notation rows, end row, analysis styling, menu entries,
+- Phase 2 (`d0bbc114`, normal rung): notation rows, end row, analysis styling, menu entries,
   Termination field, 16 catalogues, e2e spec. Two resume rounds fixed missing jsdom APIs in the
   new `GameInfo` test and five lint warnings.
 
-## Cumulative diff review (7ac57840..dcc002af, records excluded)
+## Cumulative diff review (7ac57840..d0bbc114, records excluded)
 
 Lenses: correctness, root-cause, chess-semantics, persisted-state, tests, code-quality,
 minimalism, error-handling (Codex, sensitive rung). Five APPROVED outright.
 
 - **CR-C1** (correctness, blocker): an annotated analysis move kept its annotation colour and
-  looked like a played move. **Fix** (`7b66be20`): every analysis move renders at opacity 0.6.
+  looked like a played move. **Fix** (`c9e70908`): every analysis move renders at opacity 0.6.
 - **CR-M1** (minimalism, should-fix): duplicated result-label mapping. **Fix**: one helper.
 - **CR-T1** (tests, should-fix): no conflicting marker/header termination test. **Fix**.
 - **CR-T2** (tests, should-fix): no Black-to-move end-row test. **Fix**.
 - **CR-RC1** (root-cause, should-fix): browser spec not yet executed. **Skip** as a code change;
   it ran at browser verification (below).
-- Closure round over `dcc002af..7b66be20` (correctness, minimalism, tests): all closed, APPROVED.
+- Closure round over `d0bbc114..c9e70908` (correctness, minimalism, tests): all closed, APPROVED.
   Minimalism nit (inline the `--notation-analysis-opacity` custom property): **Skip**, the name
   documents the value; arbiter close.
 
 ## Browser verification
 
-`pnpm test:e2e:container` (full suite) on `7b66be20`: 344 passed, 5 failed, no snapshot moved.
+`pnpm test:e2e:container` (full suite) on `c9e70908`: 344 passed, 5 failed, no snapshot moved.
 The four game-end cases failed on a 0.4 px sub-pixel overlap in the order assertion; the
 screenshots showed the intended layout but an "Unexpected Tauri IPC command: write_game" toast
 (the spec lacked the autosave mock) and a filled Termination field out of character with the
-header strip. **Fix** (`bf71bc27`): 1 px tolerance, `write_game` mock with a no-toast assertion,
+header strip. **Fix** (`caf1ef6a`): 1 px tolerance, `write_game` mock with a no-toast assertion,
 Termination as an unstyled inline input. Rerun: game-end 4/4 passed; screenshots inspected in
 table/inline views, light/dark.
 
@@ -89,9 +89,9 @@ checkout. Filed as **f-20261105-07** (follow-up of f-20261102-06).
 
 ## Bundle budget
 
-Pre-review `bundle` failed after `bf71bc27`: total 1,710,028 B vs 1,710,000 B. Published base
+Pre-review `bundle` failed after `caf1ef6a`: total 1,710,028 B vs 1,710,000 B. Published base
 `b96abc72` measured 1,706,857 B (+3,171 B), as did the earlier base `7ac57840`. Recorded **d-20261105-19** (raise total by the
-established 10,000 B step), applied in `0e8104b7`.
+established 10,000 B step), applied in `01f6313a`.
 
 ## Known limits
 
@@ -103,8 +103,8 @@ established 10,000 B step), applied in `0e8104b7`.
 
 ## Final closure reviews
 
-- Budget change (`0e8104b7`), correctness lens with the measurement evidence: APPROVED.
-- Browser repair (`bf71bc27`), correctness lens: APPROVED.
+- Budget change (`01f6313a`), correctness lens with the measurement evidence: APPROVED.
+- Browser repair (`caf1ef6a`), correctness lens: APPROVED.
 - Records lens over `tasks/decisions.md`, `tasks/findings.md` and this file: REVISE.
   - **RL-1** (should-fix): f-20261102-06 is still `open` although `e2e/fixtures.ts` implements
     its fix. **Skip**: that finding's lifecycle belongs to its owning session; this run did not
@@ -118,7 +118,7 @@ While this run was in review, master gained its own `d-20261105-14` and `f-20261
 branch was rebuilt on `b96abc72`: the four code commits were replayed unchanged (identical
 source), the decisions were re-recorded as d-20261105-17, -18 and -19, the finding was re-filed
 as f-20261105-07 with the RL-2 correction folded in, the d-20261105-06 trailer now points at
-d-20261105-19, and the bundle was re-measured on `bf71bc27` against `b96abc72` with identical
+d-20261105-19, and the bundle was re-measured on `caf1ef6a` against `b96abc72` with identical
 figures. Review evidence above refers to the same content under the new hashes; review ranges
 cite the pre-rebase base `7ac57840`.
 
@@ -132,6 +132,15 @@ d-20261105-19 and `docs/bundle-budgets.md` holds.
 First `pnpm gates:push -- --frontend` run: contract, build, bundle, frontend coverage and e2e
 green; `frontend-mutation` red in package `tree-path` (98.81 % against the 100 % break
 threshold): two unreachable optional chains on an effective end's `gameEnd` and an untested
-`.trim()` in termination sanitizing. **Fix** (`f852575d`): `getEffectiveGameEnd` returns a type
+`.trim()` in termination sanitizing. **Fix** (`0b6986fa`): `getEffectiveGameEnd` returns a type
 that guarantees `gameEnd`, plus a trimming test; `tree-path` mutation 100 %, closure correctness
 lens APPROVED. The six timeouts in that package are pre-existing loop mutants.
+
+## Hash map after the final rebase
+
+Master moved twice more before the final gates (f-20261010-25 commits, then defde908 arrow-down
+navigation), so the branch was rebased without content changes. Hashes in this file are the
+final ones. Ledger entries written earlier cite pre-rebase hashes of the same commits:
+d-20261105-19's candidate `bf71bc27` is `caf1ef6a`, and f-20261105-07's `7b66be20`, `d31f67d5`
+and `dcc002af` are `c9e70908`, `7f070e11` and `d0bbc114`. `docs/bundle-budgets.md` cites
+`caf1ef6a`.
