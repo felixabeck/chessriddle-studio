@@ -408,6 +408,14 @@ pnpm ci:remote:check
   and gate on each job's `conclusion`, never on the run having started. Red returns to
   `repair`; read the failing tests from `gh api repos/<owner>/<repo>/actions/jobs/<job-id>/logs`,
   because `gh run view --log-failed` returned nothing for these runs on 2026-09-19.
+  Exception for runner infrastructure: when a red job's failing or timed-out step is a setup step
+  (`Set up job`, checkout, `Set up repository dependencies`, toolchain install) and no repository
+  check had started, wait until the whole run has completed, then run
+  `gh run rerun <run-id> --failed` once and wait again. A second red, or a hang in any later step,
+  takes the ordinary red-job path above. Every job carries `timeout-minutes`, which does not cover
+  a job still `queued`: if the run has not completed 120 minutes after the push, cancel it, rerun
+  it once, and if that attempt also misses 120 minutes, stop the wait and report the push as
+  landed with CI unconfirmed, naming the stuck jobs.
 - The post-push coordination-record exception remains governed by
   `~/.claude/references/coordination-file-commits.md`; it does not generalize to implementation changes.
 - After a verified push to `master`, including the required remote-CI wait above, run the installer only from a checkout whose `HEAD` equals the verified pushed SHA, normally the pushing worktree. Check that equality immediately before invoking the installer. A main checkout on `master` is eligible only when its `HEAD` equals that same SHA. The installer performs a Tauri release build followed by an atomic swap of `~/.local/opt/chessfable/current`:
