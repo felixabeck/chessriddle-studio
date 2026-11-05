@@ -186,14 +186,20 @@ export default function ImportModal({
             const workspace = await ensureFileWorkspace();
             if (!workspace) return;
             const created = await createFile({
-              filename: `import-${Date.now()}`,
-              filetype: "game",
+              filename: save ? filename : `import-${Date.now()}`,
+              filetype: save ? filetype : "game",
               content: { kind: "text", pgn },
               workspace,
               parent: workspace,
               listingCache,
             });
-            if (created.isErr) throw created.error;
+            if (created.isErr) {
+              if (save) {
+                reportImportError(created.error, true);
+                return;
+              }
+              throw created.error;
+            }
             await openFile(created.value, setTabs);
           }
         }
