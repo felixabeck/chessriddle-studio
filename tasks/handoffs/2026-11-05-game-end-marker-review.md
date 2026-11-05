@@ -126,3 +126,12 @@ Rebase records lens: REVISE with two should-fix items, both **Fix**: f-20261102-
 "abort happens on every run" claim got a correction annotation pointing at f-20261105-07, and
 the temporary measurement worktree was removed so the "removed after measurement" statement in
 d-20261105-19 and `docs/bundle-budgets.md` holds.
+
+## Final gates
+
+First `pnpm gates:push -- --frontend` run: contract, build, bundle, frontend coverage and e2e
+green; `frontend-mutation` red in package `tree-path` (98.81 % against the 100 % break
+threshold): two unreachable optional chains on an effective end's `gameEnd` and an untested
+`.trim()` in termination sanitizing. **Fix** (`f852575d`): `getEffectiveGameEnd` returns a type
+that guarantees `gameEnd`, plus a trimming test; `tree-path` mutation 100 %, closure correctness
+lens APPROVED. The six timeouts in that package are pre-existing loop mutants.
