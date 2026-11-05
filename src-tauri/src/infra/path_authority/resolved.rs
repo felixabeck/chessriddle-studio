@@ -169,12 +169,22 @@ impl ResolvedPath {
         Ok(chain)
     }
 
-    pub(crate) fn is_regular_file(&self) -> bool {
+    pub(super) fn is_regular_file(&self) -> bool {
         #[cfg(unix)]
         if self.regular_file_identity.is_some() {
             return true;
         }
         self.file.is_some()
+    }
+
+    /// True only when resolution observed an absent leaf below the retained parent. An
+    /// occupied leaf is a regular file, or a directory (Unix descends into it; the Windows
+    /// non-directory leaf open refuses it during resolution).
+    pub(crate) fn names_missing_leaf(&self) -> bool {
+        self.parent.is_some()
+            && self.leaf.is_some()
+            && self.directory.is_none()
+            && !self.is_regular_file()
     }
 
     #[cfg(unix)]
@@ -364,9 +374,10 @@ impl ResolvedPath {
         self.atomic_replace_download_cancellable(&CancellationToken::new(), write)
     }
 
-    /// Test-only ungated variant: production downloads publish through
-    /// `atomic_replace_download_cancellable_with_commit_gate`, so that a cancellation
-    /// acknowledged before the rename can never be followed by a publication.
+    /// Test-only ungated variant. Production PGN/engine plain-file downloads use
+    /// `atomic_replace_download_cancellable_with_commit_gate`, and catalog databases use
+    /// `atomic_create_download_cancellable_with_commit_gate`. Both ensure that cancellation
+    /// acknowledged before the rename can never be followed by publication.
     #[cfg(all(test, unix))]
     pub(crate) fn atomic_replace_download_cancellable<F>(
         &self,

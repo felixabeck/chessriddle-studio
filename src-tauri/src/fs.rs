@@ -1163,7 +1163,7 @@ async fn download_to_destination_inner<R: tauri::Runtime>(
                 crate::infra::path_authority::PathOperation::DownloadFile,
                 std::slice::from_ref(&filename),
             )?;
-            if matches!(op, OpClass::Db | OpClass::PuzzleDb) && resolved.is_regular_file() {
+            if matches!(op, OpClass::Db | OpClass::PuzzleDb) && !resolved.names_missing_leaf() {
                 return Err(Error::Conflict(
                     crate::error::WORKSPACE_FILE_NAME_TAKEN.into(),
                 ));
@@ -10075,66 +10075,81 @@ mod tests {
     async fn catalog_download_refuses_existing_file_before_network_and_progress() {
         use crate::infra::path_authority::PathOperation;
 
-        for marker in [PathOperation::DatabaseRead, PathOperation::PuzzleRead] {
-            let dir = tempdir().unwrap();
-            let (authority, destination, root) = test_downloads_destination_with_operations(
-                &dir,
-                vec![PathOperation::DownloadFile, marker],
-            );
-            let target = root.join("library.db3");
-            let original = b"user database with annotations";
-            std::fs::write(&target, original).unwrap();
-            let transport = Arc::new(MockTransport {
-                responses: Mutex::new(vec![Ok(mock_successful_response(b"replacement"))]),
-                requests_seen: Mutex::new(vec![]),
-            });
-            let state = AppState {
-                http_transport: transport.clone(),
-                ..AppState::default()
-            };
-            state.pgn_path_authority.install(authority).unwrap();
-            let app = test_progress_app();
-            let (job_id, lease) = test_download_lease(&state);
-            let integrity = ArtifactIntegrity {
-                sha256: "ab".repeat(32),
-                signature: FIXTURE_ENTRY_SIGNATURE.into(),
-            };
-            let error = download_to_destination_inner(
-                "catalog_name_taken",
-                FIXTURE_ENTRY_URL,
-                destination,
-                "library.db3".into(),
-                app.handle(),
-                &state,
-                None,
-                None,
-                job_id,
-                false,
-                Some(&integrity),
-                lease.token(),
-                lease.commit_gate(),
-                None,
-                None,
-                Box::new(|op, url, integrity| {
-                    validate_artifact_integrity_with(op, url, Some(integrity), fixture_verify)
-                }),
-            )
-            .await
-            .unwrap_err();
+        // Unix descends into an occupied directory leaf; the Windows non-directory leaf open
+        // refuses it during resolution with its own error, also before network and progress.
+        let occupied_by_directory: &[bool] = if cfg!(unix) { &[true, false] } else { &[false] };
+        for &directory in occupied_by_directory {
+            for marker in [PathOperation::DatabaseRead, PathOperation::PuzzleRead] {
+                let dir = tempdir().unwrap();
+                let (authority, destination, root) = test_downloads_destination_with_operations(
+                    &dir,
+                    vec![PathOperation::DownloadFile, marker],
+                );
+                let target = root.join("library.db3");
+                let original = b"user database with annotations";
+                if directory {
+                    std::fs::create_dir(&target).unwrap();
+                    std::fs::write(target.join("annotations"), original).unwrap();
+                } else {
+                    std::fs::write(&target, original).unwrap();
+                }
+                let transport = Arc::new(MockTransport {
+                    responses: Mutex::new(vec![Ok(mock_successful_response(b"replacement"))]),
+                    requests_seen: Mutex::new(vec![]),
+                });
+                let state = AppState {
+                    http_transport: transport.clone(),
+                    ..AppState::default()
+                };
+                state.pgn_path_authority.install(authority).unwrap();
+                let app = test_progress_app();
+                let (job_id, lease) = test_download_lease(&state);
+                let integrity = ArtifactIntegrity {
+                    sha256: "ab".repeat(32),
+                    signature: FIXTURE_ENTRY_SIGNATURE.into(),
+                };
+                let error = download_to_destination_inner(
+                    "catalog_name_taken",
+                    FIXTURE_ENTRY_URL,
+                    destination,
+                    "library.db3".into(),
+                    app.handle(),
+                    &state,
+                    None,
+                    None,
+                    job_id,
+                    false,
+                    Some(&integrity),
+                    lease.token(),
+                    lease.commit_gate(),
+                    None,
+                    None,
+                    Box::new(|op, url, integrity| {
+                        validate_artifact_integrity_with(op, url, Some(integrity), fixture_verify)
+                    }),
+                )
+                .await
+                .unwrap_err();
 
-            let payload = error.renderer_payload();
-            assert_eq!(payload.name_taken, Some(true));
-            assert_eq!(
-                serde_json::to_value(payload).unwrap()["category"],
-                "conflict"
-            );
-            assert_eq!(std::fs::read(target).unwrap(), original);
-            assert!(transport.requests_seen.lock().unwrap().is_empty());
-            assert!(state
-                .progress_state
-                .get("catalog_name_taken")
-                .unwrap()
-                .is_none());
+                let payload = error.renderer_payload();
+                assert_eq!(payload.name_taken, Some(true));
+                assert_eq!(
+                    serde_json::to_value(payload).unwrap()["category"],
+                    "conflict"
+                );
+                if directory {
+                    assert!(target.is_dir());
+                    assert_eq!(std::fs::read(target.join("annotations")).unwrap(), original);
+                } else {
+                    assert_eq!(std::fs::read(target).unwrap(), original);
+                }
+                assert!(transport.requests_seen.lock().unwrap().is_empty());
+                assert!(state
+                    .progress_state
+                    .get("catalog_name_taken")
+                    .unwrap()
+                    .is_none());
+            }
         }
     }
 
@@ -10211,7 +10226,7 @@ mod tests {
                     &["library.db3".into()],
                 )
                 .unwrap();
-            assert!(!resolved.is_regular_file());
+            assert!(resolved.names_missing_leaf());
             let target = root.join("library.db3");
             if occupied {
                 std::fs::write(&target, b"concurrent user database").unwrap();

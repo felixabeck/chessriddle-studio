@@ -8,7 +8,7 @@ import { notifyListenerError, notifyUnlessCancelled, runUnlessCancelled } from "
 const fallbackTranslation = vi.mocked(i18n.t).getMockImplementation()!;
 
 for (const locale of ["en-US", "de-DE"] as const) {
-    describe(`remote HTTP notifications in ${locale}`, () => {
+    describe(`download failure notifications in ${locale}`, () => {
         let catalogue: Awaited<ReturnType<typeof catalogueI18n>>;
         beforeEach(async () => {
             catalogue = await catalogueI18n(locale);
