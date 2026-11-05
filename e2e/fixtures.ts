@@ -168,6 +168,25 @@ export async function expectNotificationSettled(notification: Locator) {
     await expect(notification).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)");
 }
 
+/** Skip cancelled or retargeted transitions and await their replacements before geometry or colour reads.
+ * Ignore infinite animations. */
+export async function waitForTransitionsSettled(page: Page) {
+    await page.evaluate(async () => {
+        while (true) {
+            const animations = document.getAnimations().filter((animation) => {
+                const endTime = animation.effect?.getComputedTiming().endTime;
+                return (
+                    typeof endTime === "number" &&
+                    Number.isFinite(endTime) &&
+                    animation.playState !== "finished"
+                );
+            });
+            if (animations.length === 0) return;
+            await Promise.allSettled(animations.map((animation) => animation.finished));
+        }
+    });
+}
+
 export async function waitForScrollAreaScrollbarsHidden(page: Page) {
     await expect(page.locator('.mantine-ScrollArea-scrollbar[data-state="visible"]')).toHaveCount(
         0,

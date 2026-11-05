@@ -4272,7 +4272,10 @@ mod retirement_tests {
         let root = tempfile::tempdir().unwrap();
         let old = path_in(root.path(), "old", "old.db3");
         let next = old.with_file_name("cached.db3");
-        let repository = DatabaseRepository::with_retire_wait(SHORT_WAIT);
+        // The caller's deadline starts at call entry, before the paused admission hook.
+        // Give cancellation a budget only it ends, keeping the timeout case's asserted 300 ms.
+        let repository =
+            DatabaseRepository::with_retire_wait(if cancel { SIGNAL_TIMEOUT } else { SHORT_WAIT });
         let (key, _, held) = held_handle(&repository, &old);
         // A valid WAL database avoids racing initial journal-mode conversion between
         // the failed worker's r2d2 retry and the independently admitted healthy caller.
@@ -4297,7 +4300,6 @@ mod retirement_tests {
         let cancellation = CancellationToken::new();
         std::thread::scope(|scope| {
             let (done, result) = mpsc::channel();
-            let started = Instant::now();
             let repository = &repository;
             let next = &next;
             let cancellation = &cancellation;
@@ -4311,6 +4313,8 @@ mod retirement_tests {
             });
             reached(&entry_signal);
             force_lru(repository, &key, root.path(), "churn");
+            // The worker's deadline starts in connect after the admission hook, excluding setup before resume.
+            let resumed_at = Instant::now();
             resume.send(()).unwrap();
             reached(&waited);
             let cancelled_at = Instant::now();
@@ -4321,9 +4325,9 @@ mod retirement_tests {
                 .recv_timeout(COMPLETION_BOUND)
                 .expect("cached acquisition consumed an additional pool timeout")
                 .unwrap_err();
-            eprintln!("cached worker {} completed in {:?} from pre-spawn origin, {:?} after synchronized signal", if cancel { "cancellation" } else { "timeout" }, started.elapsed(), cancelled_at.elapsed());
+            eprintln!("cached worker {} completed in {:?} from worker resume, {:?} after synchronized signal", if cancel { "cancellation" } else { "timeout" }, resumed_at.elapsed(), cancelled_at.elapsed());
             assert!(
-                started.elapsed() < COMPLETION_BOUND,
+                resumed_at.elapsed() < COMPLETION_BOUND,
                 "cached acquisition refreshed its predecessor budget"
             );
             if cancel {

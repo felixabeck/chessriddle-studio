@@ -15,6 +15,7 @@ import {
     assertPageNotClipped,
     selectFilesTreeRow,
     test,
+    waitForTransitionsSettled,
     type MockScenario,
 } from "./fixtures";
 
@@ -597,6 +598,8 @@ async function setTitleBarFontScale(page: Page, scale: 100 | 200) {
     for (let step = 0; step < (scale - 50) / 10; step++) await page.keyboard.press("ArrowRight");
     await expect(slider).toHaveAttribute("aria-valuenow", String(scale));
     await expect(page.locator("html")).toHaveCSS("font-size", scale === 100 ? "16px" : "32px");
+    // Root font-size changes restart the Switch track margin and thumb position transitions.
+    await waitForTransitionsSettled(page);
     return slider;
 }
 

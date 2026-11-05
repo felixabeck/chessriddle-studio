@@ -7,6 +7,7 @@ import {
     preserveStorageForReload,
     selectFilesTreeRow,
     test,
+    waitForTransitionsSettled,
 } from "./fixtures";
 import type { Page, Request } from "@playwright/test";
 
@@ -31,13 +32,6 @@ async function openAppearanceTab(page: Page) {
     const woodTexture = page.getByRole("switch", { name: "Wood texture", exact: true });
     await expect(woodTexture).toBeVisible();
     return woodTexture;
-}
-
-/** The switch thumb and track colours animate; axe has to read the settled label colours. */
-async function waitForTransitionsSettled(page: Page) {
-    await page.evaluate(() =>
-        Promise.all(document.getAnimations().map((animation) => animation.finished)),
-    );
 }
 
 test("board-wood-texture: the real stylesheet layers the tile over the board image, and the switch turns it off", async ({
