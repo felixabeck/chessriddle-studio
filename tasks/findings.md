@@ -20404,7 +20404,7 @@ Provenance correction (2026-11-04, drain session f35f888f): the reviewed plan wa
 
 ### Deleting a database game is one unconfirmed click, and the preview then slides onto the next game
 
-* **ID:** f-20261101-22 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261101-22 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** data-loss
 * **Where:** `src/components/databases/GameCard.tsx:41-91` (Trash button calls `deleteGame` → `tauri.deleteDbGame` / `editLinkedCollection(... { kind: "delete" })` with no confirmation), `src/components/databases/GameTable.tsx` (preview is `games[selectedGame]`, an index), `src/components/databases/databaseMutation.ts` `refreshDatabaseGameQueries` (refetch without clearing the selection).
 * **Defect:** after a successful delete the selection index stays, so the preview shows the game that moved into that row with Delete enabled again; nothing asks before the permanent delete. Files and puzzle databases delete behind a confirm.
@@ -20413,6 +20413,8 @@ Provenance correction (2026-11-04, drain session f35f888f): the reviewed plan wa
 * **Lens:** `review-correctness`
 * **Proof:** a GameCard/GameTable test: after delete the preview is empty, and the native delete runs only after confirmation.
 * **Found by:** cloud audit session session_01JbeKok45YnAvBbVKxMsko6 (puzzles/home/databases/board input audit, base 301104da), verified against local HEAD by Claude Code session 22c82e8b-ce9a-41db-8264-d2c52e744eee, 2026-11-01.
+* **Handled (2026-11-05, drain 81b6e46b, lens tier):** The Trash action in the database game preview now opens `ConfirmModal` naming white, black and date of a game snapshotted at click; the native delete (or linked-collection delete) runs only on confirm, against the snapshot (99a62aa1). Root cause of the slide-onto-next-game: games selection was a persisted row index. It is now `games.selectedGameId` (record id, like players and tournaments); the old `selectedGame` index key is stripped on hydration and never read as an id, and a successful delete also clears the selection when the store's database is unchanged, so a deleted id matches no row even when the clear is refused by storage, after a remount, or when the delete finishes after unmount (e792a9b5, 7b2e10ba). Proof: GameCard/GameTable Vitest cases (no native delete before confirm, snapshot target, preview empty after delete, storage-refused clear survives remount, database switch keeps the other selection), red before the fix. Rejected: component-local suppression of the stale index (lost on remount, review round 2). Bundle total ceiling raised per d-20261105-06. Review: lenses correctness, root-cause, tests, minimalism, code-quality, persisted-state over three rounds.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"d8076269751055525f5f4ab6d90ba5da336432b8ce551079833059007c7406ab","header_sha256":"3720dec435363a35afb5681952392faf501caf044f649f360d05e13a96741cb1","header_status":"handled","input_sha256":"88376ecb93781de19e86032b53dbe71507a125740ddb5c1f73ad612990b4f25b","kind":"mutation-receipt","operation":"9dc8a5924e7857028daade37a9bface8ebbe901886561c78c1e9d4de176dd330","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-22"],"target":"f-20261101-22","v":1} -->
 
 ---
 
