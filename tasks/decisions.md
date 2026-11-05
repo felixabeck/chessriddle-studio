@@ -11951,3 +11951,31 @@ Former private decision identifier: d-20261029-14
 * **Reason:** A disposable probe reproduced the miss with +300 ms test-thread latency: the test-thread release lands after the shared 700 ms deadline, the first predecessor wait returns `Conflict`, so `PredecessorDrained` never fires and `reached(&drain_signal)` times out after 10 s, matching the hosted signature. The hook already runs synchronously on the acquiring thread before any predecessor wait. Reversal path: restore the test-thread release only with a deterministic ordering primitive that keeps the first release before the deadline independently of scheduling, and keep the fresh-budget fault rejection proof.
 * **Decided by:** drain planner run 7e119598 (3 plan-review rounds, approved), adopted by drain session a0f93dfe, full auto, 2026-11-05 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"0aeea158c4cfef158dc86f1478527d234362dab5a63127b1a4728850107254a9","input_sha256":"7d7b194e84f3bb4741a4dd2165be229f47e0fd9ad5a12df52691ab9fce9d188d","kind":"mutation-receipt","operation":"59d34829cda4bca01adf0409e2bfc7baf7e3417768107d4a951f9014f84cc620","options":{"section":null},"request_id_sha256":null,"results":["d-20261105-02"],"target":"decisions-ledger","v":1} -->
+
+### d-20261105-03 — How does push policy §8's light-then-fastest-failing order map onto the push gate scheduler?
+
+* **Question:** Push policy §8 "Fail-fast gate order" requires light gates first, then heavy gates by how fast they fail. How does that map onto `scripts/run-push-gates.mjs` push-mode P2?
+* **Governs:** f-20261102-05
+* **Chosen:** P2 becomes two stages. A light stage (contract, bundle, rust-lint, concurrent as before) must terminate before the heavy stage (rust-test, rust-coverage, frontend-coverage, e2e, frontend-mutation) starts. The heavy stage keeps its declared order and d-20261029-04's serial Rust admission, with mutation last unless the existing concurrency thresholds apply. Pre-review mode keeps its single concurrent lane stage.
+* **Rejected:** The unchanged single P2 stage, because rust-test starts as soon as rust-lint ends, about 88 s before contract's lint and contract checks finish (measured run 20261104T211509957Z), which §8 forbids. Moving frontend-coverage between rust-test and rust-coverage, because it saves about 15 s of measured time to red (115 s vs 130 s) and reopens d-20261029-04's compiler/memory admission without new evidence.
+* **Reason:** Policy §8 (agent-kit 3fd5a27a) is new evidence that d-20261029-04 did not consider; it supersedes d-20261029-04's preserved "every lane runs to completion" behaviour for start-after-red only. Cost on a green run: about 88 s before rust-test starts, and a `--frontend`-only run waits for contract and bundle before frontend-coverage. Reversal path: measured lane durations that justify a new admission proof, or removing the light-stage barrier.
+* **Decided by:** drain planner run 7e119598 (4 plan-review rounds, approved), adopted by drain session 006e58e9, full auto, 2026-11-05 · **Superseded-by:** -
+
+### d-20261105-04 — Which push-gate lanes may finish once a sibling is red?
+
+* **Question:** After the first red step or lane, what happens to gates that are already running and to the remaining commands of a running multi-command lane?
+* **Governs:** f-20261102-05
+* **Chosen:** A red `failed` result latches the run, and no further step, lane or lane command starts. Running commands finish under their existing supervision and cleanup. A running multi-command lane stops at its next command boundary and records the new non-failing status `stopped`. Gates that never start record `skipped` with a reason naming the first red task. Advisory `warning` results do not latch. Exit-code precedence is unchanged.
+* **Rejected:** Terminating running lanes, because it would lose receipts and cleanup guarantees and §8 forbids only starts. Letting multi-command lanes finish every command, because each further command is a gate start.
+* **Reason:** Policy §8 "After a red, start no further gate … A project runner that schedules a batch must stop queued starts after a red." Reversal path: remove the latch check at the command boundary, or remove the latch.
+* **Decided by:** drain planner run 7e119598 (4 plan-review rounds, approved), adopted by drain session 006e58e9, full auto, 2026-11-05 · **Superseded-by:** -
+
+### d-20261105-05 — Does the push-gate red latch also apply to pre-review mode?
+
+* **Question:** Does the fail-fast red latch apply to `pnpm checks:pre-review` as well as `pnpm gates:push`?
+* **Governs:** f-20261102-05
+* **Chosen:** Yes. Both modes share `runStep`/`runLane`, and the latch lives there.
+* **Rejected:** A push-only latch, which would need a mode flag through shared helpers.
+* **Reason:** Policy §8 covers every batch runner. Reversal path: gate the latch on mode.
+* **Decided by:** drain planner run 7e119598 (4 plan-review rounds, approved), adopted by drain session 006e58e9, full auto, 2026-11-05 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":26,"effect_sha256":"f280d21280d46804298510aa8565bad06c87cb085e131afd431a49483c2d3905","input_sha256":"3926606e33293ef5fdd9bede979f4f0d7558890f422063a4edd8af2d8449664a","kind":"mutation-receipt","operation":"0fa3f1d4b79a94b79633ebdf2518757c746111dff459107e0a7acfedc95d88f2","options":{"section":null},"request_id_sha256":null,"results":["d-20261105-03","d-20261105-04","d-20261105-05"],"target":"decisions-ledger","v":1} -->
