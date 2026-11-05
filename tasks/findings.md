@@ -21013,3 +21013,29 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Scope:** The orientation scenarios use selection followed by the existing labelled Open game button. The double-click error is retained here for a separate lifecycle repair, with no error suppression or dependency change in Phase 2.
 * **Fix direction:** Give the notation scroll operation an owner that cancels or invalidates its pending work on preview retirement, or use a dependency fix with equivalent lifecycle guarantees. Preserve the double-click admission behavior and add a regression that retains browser-error assertions.
 * **Found by:** Codex Phase 2 renderer implementation, FIX 2, 2026-11-05.
+
+---
+
+## 2026-11-05 — filed through the inbox spool
+
+### `pnpm gates:push` fails before any gate when the installed agent-kit release predates `push-lock.sh gate`
+
+* **ID:** f-20261105-05 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** c080ebe9-e334-46d1-98d5-23a946be3fc8
+* **Impact class:** tooling
+* **Found by:** drain session c080ebe9-e334-46d1-98d5-23a946be3fc8, 2026-11-05.
+* **Where:** `package.json` script `gates:push` (since 108cf9cf): `bash "$HOME/.claude/scripts/push-lock.sh" gate -- agent-gate node scripts/run-push-gates.mjs`.
+* **Defect:** 108cf9cf says a missing helper or a lock failure never blocks a gate. But when `~/.claude/scripts/push-lock.sh` exists without the `gate` subcommand (installed agent-kit release 110918ee; `gate` landed on agent-kit's remote in 829cd8c3), the helper prints its usage line, `Push lock error: usage: … acquire [--wait SECONDS] | release. Pushes proceed without the lock.`, and exits 1 without running the scheduler. The gate is red with no gate run. Observed in drain gate attempt `gate-push-gate.seIsMg` (2026-11-05) and on `push-lock.sh gate -- true` (exit 1). The `.githooks/pre-push` counterpart fails open correctly (it refuses only on exit 75).
+* **Failure scenario:** Every machine whose kit release is older than the consumer's `package.json` cannot run `pnpm gates:push`, so every push on it stops until the kit is reinstalled.
+* **Fix direction:** Make the wrapper fail open the way the pre-push hook does. For example, run the scheduler directly when the helper is absent or rejects `gate` with a usage error. Keep the 76 "upstream moved" refusal.
+
+### Remote CI repair: Test
+* **ID:** f-20261105-06 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** lens · **Blocked:** none
+
+* **Impact class:** tooling
+* **Found by:** drain remote-CI check (Claude Code)
+* **Where:** workflow `Test`, jobs `e2e`.
+* **Defect:** failed jobs on `8679bf537b01a86df1397435478dbd58c73ca3f6`: `e2e`.
+* **Run URL:** https://github.com/felixabeck/en-croissant/actions/runs/42030262952
+* **Proof:** `gh run view 42030262952 --log-failed`
+* **CI run:** 42030262952
