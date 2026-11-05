@@ -12,6 +12,8 @@
 //! the session bus connection at process exit. An absent or failing portal only logs; the
 //! window then keeps GTK's own startup value, which is the behaviour before this module existed.
 
+use std::rc::Rc;
+
 use gtk::gio;
 use gtk::glib;
 use gtk::prelude::*;
@@ -21,7 +23,13 @@ const PORTAL_OBJECT_PATH: &str = "/org/freedesktop/portal/desktop";
 const SETTINGS_INTERFACE: &str = "org.freedesktop.portal.Settings";
 const APPEARANCE_NAMESPACE: &str = "org.freedesktop.appearance";
 const COLOR_SCHEME_KEY: &str = "color-scheme";
+const READ_ONE_METHOD: &str = "ReadOne";
+const LEGACY_READ_METHOD: &str = "Read";
 const READ_TIMEOUT_MS: i32 = 2_000;
+/// Variant layers examined before giving up: the legacy `Read` reply is the deepest shape,
+/// `(v)` → `v` → `u`, so three unwraps reach the scalar; one spare layer tolerates a
+/// redundant box without accepting arbitrarily nested input.
+const MAX_VARIANT_DEPTH: usize = 4;
 
 thread_local! {
     // Keeps the connection and its subscription alive on the main thread for the process lifetime.
@@ -29,13 +37,86 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
-/// Maps the portal's `color-scheme` value to GTK's dark preference. `0` means "no preference"
-/// and any unknown value is ignored, so GTK keeps the theme the user configured for it.
-fn prefer_dark_from_color_scheme(value: u32) -> Option<bool> {
-    match value {
-        1 => Some(true),
-        2 => Some(false),
-        _ => None,
+/// The one GTK property this module drives, behind a seam so the follower is testable without
+/// a display.
+trait PreferDarkSetting {
+    fn prefer_dark(&self) -> bool;
+    fn set_prefer_dark(&self, prefer_dark: bool);
+}
+
+impl PreferDarkSetting for gtk::Settings {
+    fn prefer_dark(&self) -> bool {
+        self.is_gtk_application_prefer_dark_theme()
+    }
+
+    fn set_prefer_dark(&self, prefer_dark: bool) {
+        self.set_gtk_application_prefer_dark_theme(prefer_dark);
+    }
+}
+
+struct Follower<S> {
+    setting: S,
+    /// GTK's value before this module wrote anything: what the user configured for GTK.
+    startup_prefer_dark: bool,
+}
+
+impl<S: PreferDarkSetting> Follower<S> {
+    fn new(setting: S) -> Self {
+        let startup_prefer_dark = setting.prefer_dark();
+        Self {
+            setting,
+            startup_prefer_dark,
+        }
+    }
+
+    /// Maps the portal's `color-scheme` value to GTK's dark preference. `0` ("no preference")
+    /// is GNOME's light setting, so it withdraws an earlier dark override by restoring GTK's
+    /// startup value; any unknown value is ignored.
+    fn prefer_dark_for(&self, color_scheme: u32) -> Option<bool> {
+        match color_scheme {
+            0 => Some(self.startup_prefer_dark),
+            1 => Some(true),
+            2 => Some(false),
+            _ => None,
+        }
+    }
+
+    fn apply(&self, color_scheme: u32) {
+        let Some(prefer_dark) = self.prefer_dark_for(color_scheme) else {
+            return;
+        };
+        if self.setting.prefer_dark() != prefer_dark {
+            log::info!("desktop colour scheme changed, prefer dark theme: {prefer_dark}");
+            self.setting.set_prefer_dark(prefer_dark);
+        }
+    }
+
+    fn on_setting_changed(&self, parameters: &glib::Variant) {
+        if let Some(color_scheme) = color_scheme_from_setting_changed(parameters) {
+            self.apply(color_scheme);
+        }
+    }
+
+    /// Handles a `ReadOne`/`Read` reply and says whether the legacy method is still worth trying.
+    fn on_read_reply(
+        &self,
+        method: &str,
+        reply: Result<glib::Variant, glib::Error>,
+    ) -> Option<&'static str> {
+        match reply {
+            Ok(reply) => {
+                if let Some(color_scheme) = color_scheme_from_variant(&reply) {
+                    self.apply(color_scheme);
+                }
+                None
+            }
+            // Portal interface version 1 has only `Read`.
+            Err(_) if method == READ_ONE_METHOD => Some(LEGACY_READ_METHOD),
+            Err(error) => {
+                log::info!("desktop colour scheme could not be read: {error}");
+                None
+            }
+        }
     }
 }
 
@@ -44,7 +125,7 @@ fn prefer_dark_from_color_scheme(value: u32) -> Option<bool> {
 /// `v` holding `u`. Any other shape yields `None`.
 fn color_scheme_from_variant(variant: &glib::Variant) -> Option<u32> {
     let mut current = variant.clone();
-    for _ in 0..4 {
+    for _ in 0..MAX_VARIANT_DEPTH {
         if let Some(value) = current.get::<u32>() {
             return Some(value);
         }
@@ -66,22 +147,12 @@ fn color_scheme_from_setting_changed(parameters: &glib::Variant) -> Option<u32> 
         .flatten()
 }
 
-fn apply_color_scheme(value: u32) {
-    let Some(prefer_dark) = prefer_dark_from_color_scheme(value) else {
-        return;
-    };
-    let Some(settings) = gtk::Settings::default() else {
-        log::warn!("GTK settings are unavailable; the desktop colour scheme is not applied");
-        return;
-    };
-    if settings.is_gtk_application_prefer_dark_theme() != prefer_dark {
-        log::info!("desktop colour scheme changed, prefer dark theme: {prefer_dark}");
-        settings.set_gtk_application_prefer_dark_theme(prefer_dark);
-    }
-}
-
-fn read_color_scheme(connection: &gio::DBusConnection, method: &'static str) {
-    let fallback = connection.clone();
+fn read_color_scheme(
+    connection: &gio::DBusConnection,
+    follower: Rc<Follower<gtk::Settings>>,
+    method: &'static str,
+) {
+    let retry_connection = connection.clone();
     connection.call(
         Some(PORTAL_BUS_NAME),
         PORTAL_OBJECT_PATH,
@@ -92,15 +163,10 @@ fn read_color_scheme(connection: &gio::DBusConnection, method: &'static str) {
         gio::DBusCallFlags::NONE,
         READ_TIMEOUT_MS,
         None::<&gio::Cancellable>,
-        move |reply| match reply {
-            Ok(reply) => {
-                if let Some(value) = color_scheme_from_variant(&reply) {
-                    apply_color_scheme(value);
-                }
+        move |reply| {
+            if let Some(retry) = follower.on_read_reply(method, reply) {
+                read_color_scheme(&retry_connection, follower, retry);
             }
-            // Portal interface version 1 has only `Read`.
-            Err(_) if method == "ReadOne" => read_color_scheme(&fallback, "Read"),
-            Err(error) => log::info!("desktop colour scheme could not be read: {error}"),
         },
     );
 }
@@ -108,10 +174,15 @@ fn read_color_scheme(connection: &gio::DBusConnection, method: &'static str) {
 /// Starts following the desktop colour scheme. Must run on the GTK main thread (Tauri's
 /// `setup`), whose main context dispatches the D-Bus callbacks.
 pub fn follow_desktop_color_scheme() {
+    let Some(settings) = gtk::Settings::default() else {
+        log::warn!("GTK settings are unavailable; the desktop colour scheme is not followed");
+        return;
+    };
+    let follower = Rc::new(Follower::new(settings));
     gio::bus_get(
         gio::BusType::Session,
         None::<&gio::Cancellable>,
-        |connection| {
+        move |connection| {
             let connection = match connection {
                 Ok(connection) => connection,
                 Err(error) => {
@@ -130,13 +201,12 @@ pub fn follow_desktop_color_scheme() {
                 Some(PORTAL_OBJECT_PATH),
                 Some(APPEARANCE_NAMESPACE),
                 gio::DBusSignalFlags::NONE,
-                |_, _, _, _, _, parameters| {
-                    if let Some(value) = color_scheme_from_setting_changed(parameters) {
-                        apply_color_scheme(value);
-                    }
+                {
+                    let follower = follower.clone();
+                    move |_, _, _, _, _, parameters| follower.on_setting_changed(parameters)
                 },
             );
-            read_color_scheme(&connection, "ReadOne");
+            read_color_scheme(&connection, follower, READ_ONE_METHOD);
             SUBSCRIPTION.with(|slot| {
                 if let Some((previous, id)) = slot.replace(Some((connection, subscription))) {
                     previous.signal_unsubscribe(id);
@@ -149,13 +219,120 @@ pub fn follow_desktop_color_scheme() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::{Cell, RefCell};
+
+    #[derive(Default)]
+    struct FakeSetting {
+        value: Cell<bool>,
+        writes: RefCell<Vec<bool>>,
+    }
+
+    impl PreferDarkSetting for &FakeSetting {
+        fn prefer_dark(&self) -> bool {
+            self.value.get()
+        }
+
+        fn set_prefer_dark(&self, prefer_dark: bool) {
+            self.value.set(prefer_dark);
+            self.writes.borrow_mut().push(prefer_dark);
+        }
+    }
+
+    fn setting_changed(namespace: &str, key: &str, value: glib::Variant) -> glib::Variant {
+        (namespace, key, value).to_variant()
+    }
+
+    fn color_scheme_signal(value: u32) -> glib::Variant {
+        setting_changed(APPEARANCE_NAMESPACE, COLOR_SCHEME_KEY, value.to_variant())
+    }
+
+    fn portal_error() -> glib::Error {
+        glib::Error::new(gio::IOErrorEnum::Failed, "no such method")
+    }
 
     #[test]
-    fn maps_portal_values_to_gtk_preference() {
-        assert_eq!(prefer_dark_from_color_scheme(0), None);
-        assert_eq!(prefer_dark_from_color_scheme(1), Some(true));
-        assert_eq!(prefer_dark_from_color_scheme(2), Some(false));
-        assert_eq!(prefer_dark_from_color_scheme(3), None);
+    fn kde_switches_flip_gtk_preference_live() {
+        let setting = FakeSetting::default();
+        let follower = Follower::new(&setting);
+        follower.on_setting_changed(&color_scheme_signal(1));
+        assert!(setting.value.get());
+        follower.on_setting_changed(&color_scheme_signal(2));
+        assert!(!setting.value.get());
+        assert_eq!(*setting.writes.borrow(), vec![true, false]);
+    }
+
+    #[test]
+    fn gnome_default_withdraws_the_dark_override() {
+        let setting = FakeSetting::default();
+        let follower = Follower::new(&setting);
+        follower.on_setting_changed(&color_scheme_signal(1));
+        follower.on_setting_changed(&color_scheme_signal(0));
+        assert!(!setting.value.get());
+    }
+
+    #[test]
+    fn no_preference_restores_a_dark_gtk_startup_value() {
+        let setting = FakeSetting::default();
+        setting.value.set(true);
+        let follower = Follower::new(&setting);
+        follower.on_setting_changed(&color_scheme_signal(2));
+        follower.on_setting_changed(&color_scheme_signal(0));
+        assert!(setting.value.get());
+        follower.on_setting_changed(&color_scheme_signal(7));
+        assert_eq!(*setting.writes.borrow(), vec![false, true]);
+    }
+
+    #[test]
+    fn ignores_other_settings_and_malformed_signals() {
+        let setting = FakeSetting::default();
+        let follower = Follower::new(&setting);
+        follower.on_setting_changed(&setting_changed(
+            APPEARANCE_NAMESPACE,
+            "accent-color",
+            1u32.to_variant(),
+        ));
+        follower.on_setting_changed(&setting_changed(
+            "org.gnome.desktop.interface",
+            COLOR_SCHEME_KEY,
+            "prefer-dark".to_variant(),
+        ));
+        follower.on_setting_changed(&1u32.to_variant());
+        assert!(setting.writes.borrow().is_empty());
+    }
+
+    #[test]
+    fn startup_read_applies_and_falls_back_to_legacy_read_once() {
+        let setting = FakeSetting::default();
+        let follower = Follower::new(&setting);
+        let boxed = glib::Variant::from_variant(&1u32.to_variant());
+        assert_eq!(
+            follower.on_read_reply(READ_ONE_METHOD, Err(portal_error())),
+            Some(LEGACY_READ_METHOD)
+        );
+        assert!(setting.writes.borrow().is_empty());
+        let legacy_reply = glib::Variant::tuple_from_iter([glib::Variant::from_variant(&boxed)]);
+        assert_eq!(
+            follower.on_read_reply(LEGACY_READ_METHOD, Ok(legacy_reply)),
+            None
+        );
+        assert!(setting.value.get());
+    }
+
+    #[test]
+    fn failed_reads_leave_gtk_untouched() {
+        let setting = FakeSetting::default();
+        setting.value.set(true);
+        let follower = Follower::new(&setting);
+        assert_eq!(
+            follower.on_read_reply(LEGACY_READ_METHOD, Err(portal_error())),
+            None
+        );
+        assert_eq!(
+            follower.on_read_reply(READ_ONE_METHOD, Ok("dark".to_variant())),
+            None
+        );
+        assert!(setting.value.get());
+        assert!(setting.writes.borrow().is_empty());
     }
 
     #[test]
@@ -173,38 +350,5 @@ mod tests {
         );
         assert_eq!(color_scheme_from_variant(&"dark".to_variant()), None);
         assert_eq!(color_scheme_from_variant(&(1u32, 2u32).to_variant()), None);
-    }
-
-    fn setting_changed(namespace: &str, key: &str, value: glib::Variant) -> glib::Variant {
-        (namespace, key, value).to_variant()
-    }
-
-    #[test]
-    fn reads_only_the_appearance_color_scheme_signal() {
-        assert_eq!(
-            color_scheme_from_setting_changed(&setting_changed(
-                APPEARANCE_NAMESPACE,
-                COLOR_SCHEME_KEY,
-                2u32.to_variant()
-            )),
-            Some(2)
-        );
-        assert_eq!(
-            color_scheme_from_setting_changed(&setting_changed(
-                APPEARANCE_NAMESPACE,
-                "accent-color",
-                2u32.to_variant()
-            )),
-            None
-        );
-        assert_eq!(
-            color_scheme_from_setting_changed(&setting_changed(
-                "org.gnome.desktop.interface",
-                COLOR_SCHEME_KEY,
-                "prefer-dark".to_variant()
-            )),
-            None
-        );
-        assert_eq!(color_scheme_from_setting_changed(&1u32.to_variant()), None);
     }
 }
