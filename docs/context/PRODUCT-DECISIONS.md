@@ -39,3 +39,18 @@ finding ids and date.
   purpose, not storage format.
 - **Findings:** `f-20261001-11` (phase 1), `f-20261004-15` (phase 2, linked collections).
 - **Date:** 2026-10-04.
+
+## 2026-11-05 — The board tab stacks its tiles in narrow windows
+
+- **Question:** How should the board tab (board, side panel, notation) adapt when the
+  window is too narrow for the desktop side-by-side split, for example 320px wide or a
+  small screen at 200% font scale?
+- **Choice:** Stack vertically. Board at full width on top, side panel and notation
+  below, the page scrolls vertically. The saved desktop split is untouched and returns
+  when the window is wide again.
+- **Ruled out:** A single-tile switcher (board and notation never visible together) and
+  minimum tile widths with horizontal scrolling (sideways scrolling is awkward).
+- **Felix's reason:** chose the recommended option. It matches how the settings and
+  database screens already behave at narrow widths.
+- **Findings:** `f-20261104-07`.
+- **Date:** 2026-11-05.
