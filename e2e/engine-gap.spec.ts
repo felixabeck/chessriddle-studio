@@ -586,7 +586,7 @@ test("engine-gap: A lines stay dimmed and inert at B until explicitly emitted B 
 /** The threat line d4 Nf3 as the pinned bar renders it after 1. e4 a6 2. e5 d5. */
 const PINNED_THREAT_LINE = "3...d44.♘f3";
 
-test("engine-gap: pinned engine shows up to its own line count above the notation", async ({
+test("engine-gap: pinned engine shows up to its own line count and swaps between the tabs and the notation", async ({
     page,
     emitTauriEvent,
     assertAccessible,
@@ -594,10 +594,8 @@ test("engine-gap: pinned engine shows up to its own line count above the notatio
     await page.emulateMedia({ colorScheme: "dark" });
     await page.addInitScript(() => localStorage.setItem("mantine-color-scheme", "dark"));
     const { searches, panel } = await setupAnalysisEngine(page, 2);
-    await panel.getByRole("button", { name: "Pin above notation", exact: true }).click();
-    const detached = page.locator(".mantine-Paper-root").filter({
-        has: page.getByRole("button", { name: "Unpin engine", exact: true }),
-    });
+    await panel.getByRole("button", { name: "Pin engine", exact: true }).click();
+    const detached = page.getByTestId("pinned-engine");
     const request = (await searches()).find(
         ({ args }) => (args as AnalysisRequest).id === "e2e-engine",
     )!.args as AnalysisRequest;
@@ -657,6 +655,24 @@ test("engine-gap: pinned engine shows up to its own line count above the notatio
     });
     await page.mouse.move(0, 0);
     await expect(preview).toHaveCount(0);
+
+    // The bar starts above the panel tabs; its swap button moves it above the notation and back.
+    const tabList = page.locator("#topRight").getByRole("tablist").first();
+    const notation = page.locator("#bottomRight");
+    const top = async (locator: typeof detached) => (await locator.boundingBox())!.y;
+    expect(await top(detached)).toBeLessThan(await top(tabList));
+    await detached.getByRole("button", { name: "Move above the notation", exact: true }).click();
+    await expect(
+        detached.getByRole("button", { name: "Move above the tabs", exact: true }),
+    ).toBeVisible();
+    expect(await top(detached)).toBeGreaterThan(await top(tabList));
+    expect(await top(detached)).toBeGreaterThanOrEqual(await top(notation));
+    await expect(detached).toHaveCount(1);
+    await detached.getByRole("button", { name: "Move above the tabs", exact: true }).click();
+    await expect(
+        detached.getByRole("button", { name: "Move above the notation", exact: true }),
+    ).toBeVisible();
+    expect(await top(detached)).toBeLessThan(await top(tabList));
 });
 
 test("engine-gap: legal threat after a double push becomes unavailable in check and recovers", async ({
@@ -665,10 +681,8 @@ test("engine-gap: legal threat after a double push becomes unavailable in check 
 }) => {
     await page.clock.install({ time: new Date("2026-10-21T12:00:00Z") });
     const { searches, panel } = await setupAnalysisEngine(page);
-    await panel.getByRole("button", { name: "Pin above notation", exact: true }).click();
-    const detached = page.locator(".mantine-Paper-root").filter({
-        has: page.getByRole("button", { name: "Unpin engine", exact: true }),
-    });
+    await panel.getByRole("button", { name: "Pin engine", exact: true }).click();
+    const detached = page.getByTestId("pinned-engine");
     const board = page.locator("cg-board");
     for (const [index, [from, to]] of [
         ["e2", "e4"],

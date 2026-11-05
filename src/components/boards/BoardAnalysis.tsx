@@ -1,6 +1,6 @@
 import { useTabAtom, useOwnerTab, useOwnerTabId } from "@/state/tabScope";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
-import { Paper, Portal, Tabs } from "@mantine/core";
+import { Paper, Portal, Stack, Tabs } from "@mantine/core";
 import { useHotkeys, useToggle, type HotkeyItem } from "@mantine/hooks";
 import { Database, Info, NotebookPen, Crosshair, ScanSearch } from "lucide-react";
 import type { Piece } from "chessops";
@@ -234,77 +234,80 @@ function BoardAnalysis() {
         </Paper>
       </Portal>
       <Portal target="#topRight" className={paneClasses.root} style={{ height: "100%" }}>
-        <Paper
-          withBorder
-          className={paneClasses.root}
-          style={{
-            height: "100%",
-            overflow: "hidden",
-          }}
-          pos="relative"
-        >
-          <Tabs
-            w="100%"
-            h="100%"
-            value={currentTabSelected}
-            onChange={(v) => setCurrentTabSelected(v || "info")}
-            keepMounted={false}
-            activateTabWithKeyboard={false}
-            data-compact={compactTabs || undefined}
-            classNames={{
-              root: paneClasses.root,
-              list: paneClasses.list,
-              panel: paneClasses.panel,
-              tab: paneClasses.tab,
-              tabLabel: paneClasses.label,
-            }}
+        <Stack h="100%" gap="xs" className={paneClasses.root}>
+          <DetachedEval placement="tabs" />
+          <Paper
+            withBorder
+            className={paneClasses.root}
             style={{
-              display: "flex",
-              flexDirection: "column",
+              flex: 1,
+              overflow: "hidden",
             }}
-            styles={{
-              tab: {
-                display: "flex",
-                justifyContent: "center",
-                gap: "0.3rem",
-              },
-              panel: { flex: 1, overflowY: "hidden" },
-            }}
+            pos="relative"
           >
-            <Tabs.List grow={!compactTabs}>
-              {[
-                ...(isRepertoire
-                  ? [{ value: "practice", title: t("Board.Tabs.Practice"), Icon: Crosshair }]
-                  : []),
-                { value: "analysis", title: t("Board.Tabs.Analysis"), Icon: ScanSearch },
-                { value: "database", title: t("Board.Tabs.Database"), Icon: Database },
-                { value: "annotate", title: t("Board.Tabs.Annotate"), Icon: NotebookPen },
-                { value: "info", title: t("Board.Tabs.Info"), Icon: Info },
-              ].map(({ value, title, Icon }) => (
-                <Tabs.Tab key={value} value={value} leftSection={<Icon size="1rem" />}>
-                  {title}
-                </Tabs.Tab>
-              ))}
-            </Tabs.List>
-            {isRepertoire && (
-              <Tabs.Panel value="practice">
-                <PracticePanel />
+            <Tabs
+              w="100%"
+              h="100%"
+              value={currentTabSelected}
+              onChange={(v) => setCurrentTabSelected(v || "info")}
+              keepMounted={false}
+              activateTabWithKeyboard={false}
+              data-compact={compactTabs || undefined}
+              classNames={{
+                root: paneClasses.root,
+                list: paneClasses.list,
+                panel: paneClasses.panel,
+                tab: paneClasses.tab,
+                tabLabel: paneClasses.label,
+              }}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+              }}
+              styles={{
+                tab: {
+                  display: "flex",
+                  justifyContent: "center",
+                  gap: "0.3rem",
+                },
+                panel: { flex: 1, overflowY: "hidden" },
+              }}
+            >
+              <Tabs.List grow={!compactTabs}>
+                {[
+                  ...(isRepertoire
+                    ? [{ value: "practice", title: t("Board.Tabs.Practice"), Icon: Crosshair }]
+                    : []),
+                  { value: "analysis", title: t("Board.Tabs.Analysis"), Icon: ScanSearch },
+                  { value: "database", title: t("Board.Tabs.Database"), Icon: Database },
+                  { value: "annotate", title: t("Board.Tabs.Annotate"), Icon: NotebookPen },
+                  { value: "info", title: t("Board.Tabs.Info"), Icon: Info },
+                ].map(({ value, title, Icon }) => (
+                  <Tabs.Tab key={value} value={value} leftSection={<Icon size="1rem" />}>
+                    {title}
+                  </Tabs.Tab>
+                ))}
+              </Tabs.List>
+              {isRepertoire && (
+                <Tabs.Panel value="practice">
+                  <PracticePanel />
+                </Tabs.Panel>
+              )}
+              <Tabs.Panel value="info">
+                <InfoPanel addGame={addGame} />
               </Tabs.Panel>
-            )}
-            <Tabs.Panel value="info">
-              <InfoPanel addGame={addGame} />
-            </Tabs.Panel>
-            <Tabs.Panel value="database">
-              <DatabasePanel />
-            </Tabs.Panel>
-            <Tabs.Panel value="annotate">
-              <AnnotationPanel />
-            </Tabs.Panel>
-            <Tabs.Panel value="analysis">
-              <AnalysisPanel />
-            </Tabs.Panel>
-          </Tabs>
-        </Paper>
+              <Tabs.Panel value="database">
+                <DatabasePanel />
+              </Tabs.Panel>
+              <Tabs.Panel value="annotate">
+                <AnnotationPanel />
+              </Tabs.Panel>
+              <Tabs.Panel value="analysis">
+                <AnalysisPanel />
+              </Tabs.Panel>
+            </Tabs>
+          </Paper>
+        </Stack>
       </Portal>
       <Portal target="#bottomRight" style={{ height: "100%" }}>
         {editingMode ? (
@@ -316,7 +319,7 @@ function BoardAnalysis() {
           />
         ) : (
           <NotationColumn>
-            <DetachedEval />
+            <DetachedEval placement="notation" />
             <GameNotation
               topBar
               controls={

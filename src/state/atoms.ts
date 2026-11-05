@@ -1065,6 +1065,15 @@ export const detachedEngineLinesAtom = atomWithStorage<number | null>(
     createZodStorage(z.number().int().min(1).max(5).nullable(), localStorage),
 );
 
+/** Where the pinned engine bar sits: above the panel tabs, or above the move notation. */
+export type DetachedEnginePlacement = "tabs" | "notation";
+
+export const detachedEnginePlacementAtom = atomWithStorage<DetachedEnginePlacement>(
+    "detached-engine-placement",
+    "tabs",
+    createZodStorage(z.enum(["tabs", "notation"]), localStorage),
+);
+
 export const pgnOptionsFamily = atomFamily((_tab: string) =>
     atom({
         comments: true,

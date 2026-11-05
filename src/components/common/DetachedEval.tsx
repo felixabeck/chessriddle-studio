@@ -1,14 +1,16 @@
 import { useOwnerTabId } from "@/state/tabScope";
 import { Box, Group, Paper, Stack, Text, Tooltip, useMantineTheme } from "@mantine/core";
-import { PinOff, Pause, Play } from "lucide-react";
+import { ArrowDownToLine, ArrowUpToLine, PinOff, Pause, Play } from "lucide-react";
 import { useAtom, useAtomValue } from "jotai";
-import { memo, useContext, useRef } from "react";
+import { memo, useContext, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 import {
   currentDetachedEngineAtom,
+  type DetachedEnginePlacement,
   detachedEngineLinesAtom,
+  detachedEnginePlacementAtom,
   enginesAtom,
   tabEngineSettingsFamily,
 } from "@/state/atoms";
@@ -27,11 +29,22 @@ import { TreeStateContext } from "./TreeStateContext";
 /** Moves rendered per line; the row clips whatever does not fit its width. */
 const MOVES_PER_LINE = 12;
 
-function DetachedEval() {
+/**
+ * Set by the swap button: the bar remounts in its other slot, so the new instance takes focus on
+ * its own swap button instead of leaving it on the body.
+ */
+let focusSwapOnMount = false;
+
+/**
+ * The pinned engine bar. The analysis board mounts it in both slots it can occupy; only the one
+ * matching the stored placement renders, so the bar exists once.
+ */
+function DetachedEval({ placement }: { placement: DetachedEnginePlacement }) {
   const [detachedEngineId, setDetachedEngineId] = useAtom(currentDetachedEngineAtom);
   const engines = useAtomValue(enginesAtom);
+  const storedPlacement = useAtomValue(detachedEnginePlacementAtom);
 
-  if (!detachedEngineId || !engines) return null;
+  if (placement !== storedPlacement || !detachedEngineId || !engines) return null;
 
   const engine = engines.find((e) => e.id === detachedEngineId);
   if (!engine || !engine.loaded) {
@@ -59,6 +72,13 @@ const DetachedEvalInner = memo(function DetachedEvalInner({
   const currentHalfMoves = useStore(store, (s) => s.currentNode().halfMoves);
   const orientation = useStore(store, (s) => s.headers.orientation || "white");
   const [lineCap, setLineCap] = useAtom(detachedEngineLinesAtom);
+  const [placement, setPlacement] = useAtom(detachedEnginePlacementAtom);
+  const swapRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!focusSwapOnMount) return;
+    focusSwapOnMount = false;
+    swapRef.current?.focus();
+  }, []);
   const theme = useMantineTheme();
 
   const [settings, setSettings] = useAtom(
@@ -90,7 +110,7 @@ const DetachedEvalInner = memo(function DetachedEvalInner({
       : [];
 
   return (
-    <Paper withBorder px="sm" py={6}>
+    <Paper withBorder px="sm" py={6} data-testid="pinned-engine">
       <Group gap="xs" wrap="nowrap" justify="space-between">
         <Group gap="xs" wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
           <IconAction
@@ -140,6 +160,28 @@ const DetachedEvalInner = memo(function DetachedEvalInner({
             </Box>
           </Tooltip>
         )}
+        <IconAction
+          label={t(placement === "tabs" ? "Engine.MoveAboveNotation" : "Engine.MoveAboveTabs")}
+          size="sm"
+          variant="subtle"
+          ref={swapRef}
+          onClick={() => {
+            focusSwapOnMount = true;
+            setPlacement(placement === "tabs" ? "notation" : "tabs");
+            // A click is a discrete update, so the new slot mounts and runs its effect before this
+            // task ends. When no slot mounts (board editing hides the notation slot), the flag
+            // must not leak into a later, unrelated mount.
+            setTimeout(() => {
+              focusSwapOnMount = false;
+            }, 0);
+          }}
+        >
+          {placement === "tabs" ? (
+            <ArrowDownToLine size="0.875rem" />
+          ) : (
+            <ArrowUpToLine size="0.875rem" />
+          )}
+        </IconAction>
         <IconAction label={t("Engine.Unpin")} size="sm" variant="subtle" onClick={onClose}>
           <PinOff size="0.875rem" />
         </IconAction>

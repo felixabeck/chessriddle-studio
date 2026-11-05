@@ -4,6 +4,7 @@ import { createTreeStore } from "@/state/store/tree";
 import {
   currentDetachedEngineAtom,
   detachedEngineLinesAtom,
+  detachedEnginePlacementAtom,
   enginesAtom,
   engineTerminalFamily,
   previewBoardOnHoverAtom,
@@ -19,6 +20,10 @@ import { analysisSearch } from "../panels/analysis/analysisSearch";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
+vi.mock("@tauri-apps/plugin-log", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tauri-apps/plugin-log")>()),
+  warn: vi.fn(),
+}));
 vi.mock("@/chessground/Chessground", () => ({
   Chessground: ({ fen }: { fen: string }) => <div data-preview-fen={fen} />,
 }));
@@ -48,7 +53,7 @@ test("DetachedEval drops historical threat PV and score in check and restores le
   h.store.set(h.memoryAtom, new Map([[analysisSearch(INITIAL_FEN, [], true).key!, threatLines]]));
   await h.render(
     <TreeStateContext.Provider value={tree}>
-      <DetachedEval />
+      <DetachedEval placement="tabs" />
     </TreeStateContext.Provider>,
   );
   expect(h.host.textContent).toContain(THREAT_LINE);
@@ -71,7 +76,7 @@ test("DetachedEval uses the shared dimmed fallback and replaces it with current 
   await h.remember();
   await h.render(
     <TreeStateContext.Provider value={tree}>
-      <DetachedEval />
+      <DetachedEval placement="tabs" />
     </TreeStateContext.Provider>,
   );
   expect(h.host.textContent).toContain(LINE);
@@ -98,7 +103,7 @@ test.each([false, true])(
     if (partial) await h.remember();
     await h.render(
       <TreeStateContext.Provider value={tree}>
-        <DetachedEval />
+        <DetachedEval placement="tabs" />
       </TreeStateContext.Provider>,
     );
     await act(async () =>
@@ -151,7 +156,7 @@ async function renderPinned(multiPv: string | null, lines = threeLines) {
   await h.remember(lines);
   await h.render(
     <TreeStateContext.Provider value={tree}>
-      <DetachedEval />
+      <DetachedEval placement="tabs" />
     </TreeStateContext.Provider>,
   );
   return tree;
@@ -271,4 +276,102 @@ test("DetachedEval renders a line only up to its first illegal move", async () =
   expect(h.host.textContent).not.toContain("e7");
   expect(h.host.textContent).not.toContain("f3");
   tree.dispose();
+});
+
+const PLACEMENT_KEY = "detached-engine-placement";
+
+async function renderBothSlots(stored: string | null) {
+  if (stored === null) localStorage.removeItem(PLACEMENT_KEY);
+  else localStorage.setItem(PLACEMENT_KEY, stored);
+  installResizeObserverStub();
+  h = engineDisplayHarness();
+  const tree = createTreeStore();
+  expect((await h.store.set(enginesAtom, [displayEngine])).saved).toBe(true);
+  h.store.set(currentDetachedEngineAtom, displayEngine.id);
+  await h.remember();
+  await h.render(
+    <TreeStateContext.Provider value={tree}>
+      <div data-slot="tabs">
+        <DetachedEval placement="tabs" />
+      </div>
+      <div data-slot="notation">
+        <DetachedEval placement="notation" />
+      </div>
+    </TreeStateContext.Provider>,
+  );
+  return tree;
+}
+
+const slot = (name: string) => h.host.querySelector(`[data-slot=${name}]`)!;
+
+test.each([
+  ['"notation"', "notation"],
+  ['"sideways"', "tabs"],
+  ["not json", "tabs"],
+])("DetachedEval hydrates stored placement %s into the %s slot", async (stored, expected) => {
+  try {
+    const tree = await renderBothSlots(stored);
+    const other = expected === "tabs" ? "notation" : "tabs";
+    expect(slot(expected).textContent).toContain(LINE);
+    expect(slot(other).childElementCount).toBe(0);
+    tree.dispose();
+  } finally {
+    localStorage.removeItem(PLACEMENT_KEY);
+  }
+});
+
+test("DetachedEval renders in the stored slot only, and its swap button moves it and persists", async () => {
+  try {
+    const tree = await renderBothSlots(null);
+    const swap = (label: string) =>
+      slot(label === "Engine.MoveAboveNotation" ? "tabs" : "notation").querySelector<HTMLElement>(
+        `[aria-label="${label}"]`,
+      );
+
+    expect(h.store.get(detachedEnginePlacementAtom)).toBe("tabs");
+    expect(slot("tabs").textContent).toContain(LINE);
+    expect(slot("notation").childElementCount).toBe(0);
+
+    await act(async () => swap("Engine.MoveAboveNotation")!.click());
+    expect(localStorage.getItem(PLACEMENT_KEY)).toBe('"notation"');
+    expect(slot("tabs").childElementCount).toBe(0);
+    expect(slot("notation").textContent).toContain(LINE);
+    expect(document.activeElement).toBe(swap("Engine.MoveAboveTabs"));
+
+    await act(async () => swap("Engine.MoveAboveTabs")!.click());
+    expect(h.store.get(detachedEnginePlacementAtom)).toBe("tabs");
+    expect(slot("tabs").textContent).toContain(LINE);
+    expect(slot("notation").childElementCount).toBe(0);
+    tree.dispose();
+  } finally {
+    localStorage.removeItem(PLACEMENT_KEY);
+  }
+});
+
+test("DetachedEval swap focus does not leak into a later mount when the other slot is absent", async () => {
+  try {
+    localStorage.removeItem(PLACEMENT_KEY);
+    installResizeObserverStub();
+    h = engineDisplayHarness();
+    const tree = createTreeStore();
+    expect((await h.store.set(enginesAtom, [displayEngine])).saved).toBe(true);
+    h.store.set(currentDetachedEngineAtom, displayEngine.id);
+    await h.remember();
+    // Board editing renders no notation slot, so a swap to it mounts nothing.
+    await h.render(
+      <TreeStateContext.Provider value={tree}>
+        <DetachedEval placement="tabs" />
+      </TreeStateContext.Provider>,
+    );
+    const swap = () => h.host.querySelector<HTMLElement>('[aria-label="Engine.MoveAboveNotation"]');
+    await act(async () => swap()!.click());
+    expect(h.host.textContent).not.toContain(LINE);
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    await act(async () => h.store.set(detachedEnginePlacementAtom, "tabs"));
+    expect(h.host.textContent).toContain(LINE);
+    expect(document.activeElement).not.toBe(swap());
+    tree.dispose();
+  } finally {
+    localStorage.removeItem(PLACEMENT_KEY);
+  }
 });
