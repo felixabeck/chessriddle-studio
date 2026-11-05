@@ -457,7 +457,7 @@ describe("DatabasePanel", () => {
     const panel = selectedPanel("games");
     expect(panel.textContent).toContain("Board.Database.GamesFailed W0 - B0, W1 - B1");
     expect(panel.textContent).not.toContain("Board.Database.GamesIncomplete");
-    expect(panel.textContent).not.toContain("No games found");
+    expect(panel.textContent).not.toContain("Databases.Game.NoGamesFound");
     expect(panel.querySelector("table")).toBeNull();
     expect(panel.textContent).not.toContain(diagnostic);
     expectMatches(panel, 100);
@@ -466,7 +466,7 @@ describe("DatabasePanel", () => {
   test("mounted empty explorer list: keeps the genuine empty state and opening Matches total", async () => {
     await mountExplorer({ ...mockExplorerData, topGames: [] }, []);
     const panel = selectedPanel("games");
-    expect(panel.textContent).toContain("No games found");
+    expect(panel.textContent).toContain("Databases.Game.NoGamesFound");
     expect(panel.querySelector(".mantine-datatable-empty-state[data-active]")).not.toBeNull();
     expect(panel.textContent).not.toContain("Board.Database.GamesIncomplete");
     expect(panel.textContent).not.toContain("Board.Database.GamesFailed");
@@ -501,7 +501,7 @@ describe("DatabasePanel", () => {
         `Board.Database.GamesFailed ${expected}`,
       );
       expect(panel.textContent).not.toContain(diagnostic);
-      expect(panel.textContent).not.toContain("No games found");
+      expect(panel.textContent).not.toContain("Databases.Game.NoGamesFound");
     },
   );
 

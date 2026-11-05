@@ -33,7 +33,7 @@ export interface DatabaseViewStore {
     games: {
         isFilterExpanded: boolean;
         query: GameQuery;
-        selectedGame?: number;
+        selectedGameId?: number;
     };
     players: {
         query: PlayerQuery;
@@ -51,7 +51,7 @@ export interface DatabaseViewStore {
     setActiveTab: (mode: DatabaseViewStore["activeTab"]) => boolean;
 
     setGamesQuery: (filter: GameQuery) => boolean;
-    setGamesSelectedGame: (game?: number) => boolean;
+    setGamesSelectedGameId: (gameId?: number) => boolean;
     toggleGamesOpenedSettings: () => boolean;
 
     setPlayersQuery: (filter: PlayerQuery) => boolean;
@@ -89,7 +89,7 @@ const defaultTournamentsQueryOptions: QueryOptions<TournamentSort> = {
 
 const defaultGamesState: DatabaseViewStore["games"] = {
     isFilterExpanded: false,
-    selectedGame: undefined,
+    selectedGameId: undefined,
     query: {
         player1: undefined,
         range1: [0, ELO_FILTER_MAX],
@@ -172,10 +172,7 @@ const activeTabSchema = z.enum(["games", "players", "tournaments"]);
 const persistedGamesSchema: z.ZodType<DatabaseViewStore["games"], z.ZodTypeDef, unknown> = z.object(
     {
         isFilterExpanded: z.boolean(),
-        selectedGame: queryIntegerSchema
-            .min(0)
-            .nullish()
-            .transform((value) => value ?? undefined),
+        selectedGameId: queryIntegerSchema.nullish().transform((value) => value ?? undefined),
         query: z.object({
             options: createQueryOptionsSchema(["id", "date", "whiteElo", "blackElo", "ply_count"]),
             player1: queryIntegerSchema.nullish(),
@@ -311,14 +308,14 @@ const databaseViewStore = createStore<DatabaseViewStore>()<[["zustand/persist", 
                         // A filter/sort change can make the old row either absent or refer to
                         // a different page. Selection belongs to the result set, never to a
                         // bare game ID surviving an unrelated query.
-                        state.games.selectedGame = undefined;
+                        state.games.selectedGameId = undefined;
                     }),
                 );
             },
-            setGamesSelectedGame: (game) => {
+            setGamesSelectedGameId: (gameId) => {
                 return admit(
                     produce((state: Draft<DatabaseViewStore>) => {
-                        state.games.selectedGame = game;
+                        state.games.selectedGameId = gameId;
                     }),
                 );
             },

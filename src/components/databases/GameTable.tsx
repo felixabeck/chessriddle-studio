@@ -15,7 +15,7 @@ import { useNavigate } from "@tanstack/react-router";
 import dayjs from "dayjs";
 import { useAtom, useSetAtom } from "jotai";
 import { DataTable } from "mantine-datatable";
-import { useContext, useState } from "react";
+import { useContext } from "react";
 import { useTranslation } from "react-i18next";
 import useSWR from "swr";
 import { useStore } from "zustand";
@@ -32,6 +32,7 @@ import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
 import GameCard from "./GameCard";
 import GridLayout from "./GridLayout";
 import layoutClasses from "./GridLayout.module.css";
+import { getAdjacentRecordId } from "./pageSelection";
 import { PlayerSearchInput } from "./PlayerSearchInput";
 import PlayerRatingCell from "./PlayerRatingCell";
 import { SideInput } from "./SideInput";
@@ -49,14 +50,8 @@ function GameTable() {
   const openedSettings = useStore(store, (s) => s.games.isFilterExpanded);
   const toggleOpenedSettings = useStore(store, (s) => s.toggleGamesOpenedSettings);
 
-  const selectedGame = useStore(store, (s) => s.games.selectedGame);
-  const setSelectedGame = useStore(store, (s) => s.setGamesSelectedGame);
-  const [suppressedSelection, setSuppressedSelection] = useState<number | null>(null);
-  const activeSelection =
-    selectedGame != null && selectedGame === suppressedSelection ? undefined : selectedGame;
-  const selectGame = (index?: number) => {
-    if (setSelectedGame(index)) setSuppressedSelection(null);
-  };
+  const selectedGameId = useStore(store, (s) => s.games.selectedGameId);
+  const setSelectedGameId = useStore(store, (s) => s.setGamesSelectedGameId);
   const generation = useStore(store, (s) => s.database?.collection?.generation);
 
   const navigate = useNavigate();
@@ -73,6 +68,7 @@ function GameTable() {
   );
 
   const games = error ? [] : (data?.data ?? []);
+  const game = games.find((game) => game.id === selectedGameId);
   const count = error ? undefined : data?.count;
   const reportOpenError = (error: unknown) => notifyUnlessCancelled(t("Common.Error"), error);
   const gameOpen = useGameOpen(
@@ -96,25 +92,16 @@ function GameTable() {
     [
       "ArrowUp",
       () => {
-        selectGame(
-          activeSelection === undefined || activeSelection === null
-            ? undefined
-            : activeSelection === 0
-              ? 0
-              : activeSelection - 1,
-        );
+        const id = getAdjacentRecordId(games, selectedGameId, -1);
+        if (id != null) setSelectedGameId(id);
       },
     ],
     [
       "ArrowDown",
       () => {
-        selectGame(
-          activeSelection === undefined || activeSelection === null
-            ? 0
-            : activeSelection === games.length - 1
-              ? games.length - 1
-              : activeSelection + 1,
-        );
+        const id = getAdjacentRecordId(games, selectedGameId, 1);
+        if (id != null) setSelectedGameId(id);
+        else if (!game && games[0]) setSelectedGameId(games[0].id);
       },
     ],
   ]);
@@ -252,9 +239,9 @@ function GameTable() {
           highlightOnHover
           records={games}
           fetching={isLoading}
-          customRowAttributes={(record, index) => ({
+          customRowAttributes={(record) => ({
             ...gameRowActivation(record, gameOpen.activate),
-            "aria-selected": index === activeSelection,
+            "aria-selected": record.id === selectedGameId,
           })}
           columns={[
             {
@@ -277,7 +264,7 @@ function GameTable() {
             { accessor: "event", title: t("Databases.Game.Event") },
             { accessor: "site", title: t("Databases.Game.Site") },
           ]}
-          rowClassName={(_, i) => (i === activeSelection ? classes.selected : "")}
+          rowClassName={(record) => (record.id === selectedGameId ? classes.selected : "")}
           noRecordsText={
             error
               ? `${t("Common.Error")}: ${error instanceof Error ? error.message : String(error)}`
@@ -317,22 +304,21 @@ function GameTable() {
           }
           recordsPerPageLabel={t("Common.RecordsPerPage")}
           recordsPerPageOptions={[10, 25, 50]}
-          onRowClick={({ index }) => {
-            selectGame(index);
+          onRowClick={({ record }) => {
+            setSelectedGameId(record.id);
           }}
         />
       }
       preview={
         <GameCard
-          game={activeSelection == null ? undefined : games[activeSelection]}
+          game={game}
           file={file}
           onOpen={gameOpen.activate}
           pending={gameOpen.pending}
           onDeleted={(deletedFile) => {
             if (sameDatabaseHandle(store.getState().database?.file, deletedFile)) {
-              if (!setSelectedGame(undefined)) {
-                setSuppressedSelection(store.getState().games.selectedGame ?? null);
-              } else setSuppressedSelection(null);
+              // A refused clear is harmless because the deleted ID matches no remaining row.
+              setSelectedGameId(undefined);
             }
           }}
         />

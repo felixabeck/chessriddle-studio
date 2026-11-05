@@ -6,6 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { NormalizedGame } from "@/bindings";
+import PanelGamesTable from "@/components/panels/database/GamesTable";
 import { activeDatabaseViewStore } from "@/state/store/database";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { catalogueI18n } from "@/tests/catalogues";
@@ -118,6 +119,25 @@ test("GameTable renders German column headers without an English fallback", asyn
     "Ereignis",
     "Ort",
   ]);
+});
+
+test("board-panel games render German column headers", async () => {
+  await render(<PanelGamesTable games={[game]} loading={false} databasePath={file} />);
+  expect(headers()).toEqual(["Weiß", "Schwarz", "Datum", "Ergebnis", "Halbzüge"]);
+});
+
+test("board-panel games render both German unrated labels", async () => {
+  await render(<PanelGamesTable games={[game]} loading={false} databasePath={file} />);
+  expect(
+    [...host.querySelectorAll("tbody td")].filter((cell) =>
+      cell.textContent?.includes("Ungewertet"),
+    ),
+  ).toHaveLength(2);
+});
+
+test("board-panel games render the German empty state", async () => {
+  await render(<PanelGamesTable games={[]} loading={false} databasePath={file} />);
+  expect(host.textContent).toContain("Keine Partien gefunden");
 });
 
 test.each(["games", "tournament"])("%s renders both German unrated labels", async (view) => {

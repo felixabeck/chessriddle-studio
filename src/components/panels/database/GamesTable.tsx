@@ -1,9 +1,9 @@
-import { Text } from "@mantine/core";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom, useSetAtom } from "jotai";
 import { DataTable } from "mantine-datatable";
 import { memo, useEffect, useState } from "react";
 import type { DatabaseHandle, NormalizedGame } from "@/bindings";
+import PlayerRatingCell from "@/components/databases/PlayerRatingCell";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { addRecentFileAtom, tabsAtom } from "@/state/atoms";
 import { runTabCreation } from "@/utils/tabs";
@@ -52,35 +52,19 @@ function GamesTable({
       columns={[
         {
           accessor: "white",
-          render: ({ white, white_elo }) => (
-            <div>
-              <Text size="sm" fw={500}>
-                {white}
-              </Text>
-              <Text size="xs" c="dimmed">
-                {white_elo === 0 ? "Unrated" : white_elo}
-              </Text>
-            </div>
-          ),
+          title: t("Fen.White"),
+          render: ({ white, white_elo }) => <PlayerRatingCell name={white} elo={white_elo} />,
         },
         {
           accessor: "black",
-          render: ({ black, black_elo }) => (
-            <div>
-              <Text size="sm" fw={500}>
-                {black}
-              </Text>
-              <Text size="xs" c="dimmed">
-                {black_elo === 0 ? "Unrated" : black_elo}
-              </Text>
-            </div>
-          ),
+          title: t("Fen.Black"),
+          render: ({ black, black_elo }) => <PlayerRatingCell name={black} elo={black_elo} />,
         },
-        { accessor: "date" },
-        { accessor: "result" },
-        { accessor: "ply_count" },
+        { accessor: "date", title: t("Common.Date") },
+        { accessor: "result", title: t("Board.Database.Local.Result") },
+        { accessor: "ply_count", title: t("Databases.Game.Plies") },
       ]}
-      noRecordsText="No games found"
+      noRecordsText={t("Databases.Game.NoGamesFound")}
     />
   );
 }

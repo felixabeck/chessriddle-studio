@@ -81,9 +81,9 @@ describe("database-view sessionStorage hydration", () => {
         expect(store.getState().database).toBeUndefined();
         expect(databaseRouteTarget(store.getState().database)).toEqual({ to: "/library" });
         expect(() => resolveDatabaseRoute([], "selected", store.getState().database)).not.toThrow();
-        store.getState().setGamesSelectedGame(42);
+        store.getState().setGamesSelectedGameId(42);
         store.getState().clearDatabase();
-        expect(store.getState().games.selectedGame).toBeUndefined();
+        expect(store.getState().games.selectedGameId).toBeUndefined();
     });
 
     it.each([undefined, null, {}, { database: { file: "old.db3" } }])(
@@ -111,7 +111,7 @@ describe("database-view sessionStorage hydration", () => {
         const store = await hydrate({
             database: selectedDatabase,
             activeTab: "players",
-            games: { ...initial.games, selectedGame: 42 },
+            games: { ...initial.games, selectedGameId: 42 },
             players: { ...initial.players, selectedPlayer: 7 },
             tournaments: { ...initial.tournaments, selectedTournament: 9 },
             clearDatabase: null,
@@ -120,7 +120,7 @@ describe("database-view sessionStorage hydration", () => {
         expect(store.getState().database).toEqual(selectedDatabase);
         expect(store.getState()).toMatchObject({
             activeTab: "players",
-            games: { selectedGame: 42 },
+            games: { selectedGameId: 42 },
             players: { selectedPlayer: 7 },
             tournaments: { selectedTournament: 9 },
         });
@@ -129,7 +129,7 @@ describe("database-view sessionStorage hydration", () => {
             params: { databaseId: "selected" },
         });
         store.getState().setGamesQuery(initial.games.query);
-        expect(store.getState().games.selectedGame).toBeUndefined();
+        expect(store.getState().games.selectedGameId).toBeUndefined();
         store.getState().clearDatabase();
         expect(store.getState().database).toBeUndefined();
     });
@@ -151,7 +151,7 @@ describe("database-view durable admission", () => {
             (store) =>
                 store.getState().setGamesQuery({ ...store.getState().games.query, player1: 7 }),
         ],
-        ["setGamesSelectedGame", (store) => store.getState().setGamesSelectedGame(43)],
+        ["setGamesSelectedGameId", (store) => store.getState().setGamesSelectedGameId(43)],
         ["toggleGamesOpenedSettings", (store) => store.getState().toggleGamesOpenedSettings()],
         [
             "setPlayersQuery",
@@ -180,7 +180,8 @@ describe("database-view durable admission", () => {
         ["setState partial", (store) => store.setState({ activeTab: "players" })],
         [
             "setState function",
-            (store) => store.setState((state) => ({ games: { ...state.games, selectedGame: 43 } })),
+            (store) =>
+                store.setState((state) => ({ games: { ...state.games, selectedGameId: 43 } })),
         ],
         [
             "setState replace",
@@ -200,7 +201,7 @@ describe("database-view durable admission", () => {
             const previous = {
                 ...initial,
                 database,
-                games: { ...initial.games, selectedGame: 42 },
+                games: { ...initial.games, selectedGameId: 42 },
                 players: { ...initial.players, selectedPlayer: 7 },
                 tournaments: { ...initial.tournaments, selectedTournament: 9 },
             };
@@ -317,7 +318,7 @@ describe("database-view durable admission", () => {
 const defaults = activeDatabaseViewStore.getInitialState();
 const validGames = {
     isFilterExpanded: true,
-    selectedGame: 42,
+    selectedGameId: 42,
     query: {
         ...defaults.games.query,
         player1: 7,
@@ -357,12 +358,28 @@ const validTournaments = {
 };
 
 describe("database-view panel hydration", () => {
+    it("drops a legacy game row index while preserving the rest of the games state", async () => {
+        const games = { ...validGames, selectedGameId: undefined };
+        const store = await hydrate({ games: { ...games, selectedGame: 0 } });
+        expect(store.getState().games).toEqual(games);
+        expect(store.getState().games).not.toHaveProperty("selectedGame");
+    });
+
+    it.each([-2_147_483_648, -1, 0, 2_147_483_647])(
+        "preserves the signed game record ID %s",
+        async (selectedGameId) => {
+            const games = { ...validGames, selectedGameId };
+            const store = await hydrate({ games });
+            expect(store.getState().games).toEqual(games);
+        },
+    );
+
     it.each(["id", "date", "whiteElo", "blackElo", "ply_count"])(
         "preserves the supported game sort %s",
         async (sort) => {
             const games = {
                 ...validGames,
-                selectedGame: 0,
+                selectedGameId: 0,
                 query: {
                     ...validGames.query,
                     options: { ...validGames.query.options, page: 1, pageSize: 1, sort },
@@ -513,15 +530,13 @@ describe("database-view panel hydration", () => {
         expect(store.getState().players).toEqual(validPlayers);
     });
 
-    it.each([
-        { isFilterExpanded: "true" },
-        { selectedGame: "42" },
-        { selectedGame: -1 },
-        { selectedGame: 0.5 },
-    ])("rejects malformed games panel fields %j", async (fields) => {
-        const store = await hydrate({ games: { ...validGames, ...fields } });
-        expect(store.getState().games).toEqual(store.getInitialState().games);
-    });
+    it.each([{ isFilterExpanded: "true" }, { selectedGameId: "42" }, { selectedGameId: 0.5 }])(
+        "rejects malformed games panel fields %j",
+        async (fields) => {
+            const store = await hydrate({ games: { ...validGames, ...fields } });
+            expect(store.getState().games).toEqual(store.getInitialState().games);
+        },
+    );
 
     it.each([
         undefined,
@@ -621,7 +636,7 @@ describe("database-view panel hydration", () => {
         const store = await hydrate({
             games: {
                 ...validGames,
-                selectedGame: null,
+                selectedGameId: null,
                 query: {
                     ...validGames.query,
                     player1: null,
@@ -652,7 +667,7 @@ describe("database-view panel hydration", () => {
             exclude_fast_events: null,
         });
         expect(store.getState().players.query).toMatchObject({ name: null, range: null });
-        expect(store.getState().games.selectedGame).toBeUndefined();
+        expect(store.getState().games.selectedGameId).toBeUndefined();
         expect(store.getState().players.selectedPlayer).toBeUndefined();
         expect(store.getState().tournaments.selectedTournament).toBeUndefined();
     });
@@ -660,12 +675,12 @@ describe("database-view panel hydration", () => {
 
 describe("database result-set state", () => {
     it("clears a games selection when the query is replaced", () => {
-        activeDatabaseViewStore.getState().setGamesSelectedGame(42);
+        activeDatabaseViewStore.getState().setGamesSelectedGameId(42);
         activeDatabaseViewStore.getState().setGamesQuery({
             ...activeDatabaseViewStore.getState().games.query,
             player1: 7,
         });
-        expect(activeDatabaseViewStore.getState().games.selectedGame).toBeUndefined();
+        expect(activeDatabaseViewStore.getState().games.selectedGameId).toBeUndefined();
     });
 
     it("resets the games page when a player filter changes", () => {

@@ -222,10 +222,10 @@ test("confirmed deletion clears the selected preview before the next game occupi
   expect(host.textContent).toContain("Databases.Game.NoSelection");
   expect(host.textContent).not.toContain(games[1].moves);
   expect(openButton().disabled).toBe(true);
-  expect(activeDatabaseViewStore.getState().games.selectedGame).toBeUndefined();
+  expect(activeDatabaseViewStore.getState().games.selectedGameId).toBeUndefined();
 });
 
-test("a refused selection clear keeps the deleted preview empty until a row is selected again", async () => {
+test("a refused selection clear keeps the deleted preview empty after remount and allows reselection", async () => {
   await render();
   await act(async () => row(0).click());
   await requestDelete();
@@ -235,7 +235,7 @@ test("a refused selection clear keeps the deleted preview empty until a row is s
     await render();
     expect(write).toHaveBeenCalledOnce();
     expect(mocks.deleteDbGame).toHaveBeenCalledExactlyOnceWith(file, games[0].id);
-    expect(activeDatabaseViewStore.getState().games.selectedGame).toBe(0);
+    expect(activeDatabaseViewStore.getState().games.selectedGameId).toBe(games[0].id);
     expect(host.textContent).toContain("Databases.Game.NoSelection");
     expect(host.textContent).not.toContain(games[1].moves);
     expect(host.querySelector('tr[aria-selected="true"]')).toBeNull();
@@ -244,6 +244,11 @@ test("a refused selection clear keeps the deleted preview empty until a row is s
     expect(
       host.querySelector<HTMLButtonElement>('[aria-label="Databases.Game.Delete"]')!.disabled,
     ).toBe(true);
+    await act(async () => root.render(null));
+    await render();
+    expect(host.textContent).toContain("Databases.Game.NoSelection");
+    expect(host.querySelector('tr[aria-selected="true"]')).toBeNull();
+    expect(openButton().disabled).toBe(true);
   } finally {
     write.mockRestore();
   }
@@ -254,7 +259,7 @@ test("a refused selection clear keeps the deleted preview empty until a row is s
 });
 
 test.each(["ArrowUp", "ArrowDown"])(
-  "%s starts from the suppressed selection after deletion",
+  "%s handles a deleted game ID absent from the current page",
   async (key) => {
     await render();
     await act(async () => row(1).click());
@@ -265,11 +270,12 @@ test.each(["ArrowUp", "ArrowDown"])(
     } finally {
       write.mockRestore();
     }
+    await render();
     await act(async () =>
       document.body.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })),
     );
-    expect(activeDatabaseViewStore.getState().games.selectedGame).toBe(
-      key === "ArrowDown" ? 0 : undefined,
+    expect(activeDatabaseViewStore.getState().games.selectedGameId).toBe(
+      key === "ArrowDown" ? games[0].id : games[1].id,
     );
     expect(openButton().disabled).toBe(key === "ArrowUp");
     expect(row(0).getAttribute("aria-selected")).toBe(String(key === "ArrowDown"));
@@ -293,14 +299,60 @@ test("a pending deletion does not clear the replacement database selection", asy
     activeDatabaseViewStore
       .getState()
       .setDatabase({ file: replacementFile, title: "Replacement" } as SuccessDatabaseInfo);
-    activeDatabaseViewStore.getState().setGamesSelectedGame(1);
+    activeDatabaseViewStore.getState().setGamesSelectedGameId(games[1].id);
   });
   await act(async () => resolveDelete());
   expect(mocks.deleteDbGame).toHaveBeenCalledExactlyOnceWith(file, games[0].id);
-  expect(activeDatabaseViewStore.getState().games.selectedGame).toBe(1);
+  expect(activeDatabaseViewStore.getState().games.selectedGameId).toBe(games[1].id);
   expect(host.textContent).toContain(games[1].moves);
   expect(row(1).getAttribute("aria-selected")).toBe("true");
   expect(openButton().disabled).toBe(false);
+});
+
+test("deletion completing after unmount leaves no preview even when the clear is refused", async () => {
+  let resolveDelete!: () => void;
+  const native = new Promise<void>((resolve) => {
+    resolveDelete = resolve;
+  });
+  mocks.deleteDbGame.mockImplementationOnce(async (_file, id: number) => {
+    await native;
+    mocks.deletedGameId = id;
+  });
+  await render();
+  await act(async () => row(0).click());
+  await requestDelete();
+  await confirmDelete();
+  await act(async () => root.render(null));
+  const write = refuseSelectionWrite();
+  try {
+    await act(async () => resolveDelete());
+    expect(write).toHaveBeenCalledOnce();
+    expect(activeDatabaseViewStore.getState().games.selectedGameId).toBe(games[0].id);
+  } finally {
+    write.mockRestore();
+  }
+  await render();
+  expect(host.textContent).toContain("Databases.Game.NoSelection");
+  expect(host.querySelector('tr[aria-selected="true"]')).toBeNull();
+  expect(openButton().disabled).toBe(true);
+});
+
+test.each([
+  { selected: undefined, key: "ArrowDown", expected: 11 },
+  { selected: 99, key: "ArrowDown", expected: 11 },
+  { selected: undefined, key: "ArrowUp", expected: undefined },
+  { selected: 99, key: "ArrowUp", expected: 99 },
+  { selected: 11, key: "ArrowUp", expected: 11 },
+  { selected: 22, key: "ArrowDown", expected: 22 },
+  { selected: 11, key: "ArrowDown", expected: 22 },
+  { selected: 22, key: "ArrowUp", expected: 11 },
+])("$key navigates record IDs from $selected to $expected", async ({ selected, key, expected }) => {
+  activeDatabaseViewStore.getState().setGamesSelectedGameId(selected);
+  await render();
+  await act(async () =>
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })),
+  );
+  expect(activeDatabaseViewStore.getState().games.selectedGameId).toBe(expected);
 });
 async function doubleClick(index: number) {
   await act(async () => {
