@@ -651,6 +651,60 @@ test("vitestMaxWorkers leaves the production config unset without reading cgroup
   assert.equal(reads, 0);
 });
 
+test("vitestMaxWorkers sizes one worker per two logical CPUs when memory is non-binding", () => {
+  const env = { VITEST: "true", GATE_MEMORY_BYTES: String(100 * GIB) };
+  assert.equal(
+    vitestMaxWorkers({
+      env,
+      availableParallelism: () => 20,
+    }),
+    10,
+  );
+  assert.equal(
+    vitestMaxWorkers({
+      env: { ...env, GATE_CPU_SHARE: "0.5" },
+      availableParallelism: () => 20,
+    }),
+    5,
+  );
+  assert.equal(
+    vitestMaxWorkers({
+      env,
+      availableParallelism: () => 1,
+    }),
+    1,
+  );
+});
+
+test("workerCount halves the CPU cap when logicalCpusPerWorker is 2", () => {
+  assert.equal(
+    workerCount({
+      perWorkerBytes: MIB,
+      budgetBytes: 100 * GIB,
+      availableParallelism: () => 24,
+      env: {},
+      logicalCpusPerWorker: 2,
+    }),
+    12,
+  );
+});
+
+for (const value of [0, 1.5, -1]) {
+  test(`workerCount rejects logicalCpusPerWorker=${String(value)}`, () => {
+    assert.throws(
+      () =>
+        workerCount({
+          perWorkerBytes: MIB,
+          budgetBytes: 100 * GIB,
+          availableParallelism: () => 24,
+          env: {},
+          logicalCpusPerWorker: value,
+        }),
+      (error) => error instanceof Error && error.message.includes("logicalCpusPerWorker"),
+    );
+  });
+}
+
 test("vitestMaxWorkers returns one under Stryker without reading its budget or cgroup", () => {
   let reads = 0;
   assert.equal(

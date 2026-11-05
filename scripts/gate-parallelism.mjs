@@ -43,6 +43,16 @@ export const VITEST_WORKER_BYTES = 256 * 1024 * 1024;
 export const VITEST_BASE_BYTES = 1536 * 1024 * 1024;
 export const VITEST_MINIMUM_BUDGET_BYTES = VITEST_BASE_BYTES + VITEST_WORKER_BYTES;
 
+// f-20261029-16, measured 2026-11-06 on AMD Ryzen AI 9 365 (10 physical cores, SMT, 20 logical):
+// unloaded --maxWorkers=20: wall 69.2 s, slowest app test 2651 ms, 111 tests > 1 s;
+// unloaded --maxWorkers=10: wall 62.8 s, slowest app test 1591 ms, 1 test > 2 s;
+// 20 busy-loop processes --maxWorkers=20: 3 tests timed out at 5000 ms
+// (workspace, EnginesPage.publication, Puzzles);
+// same load --maxWorkers=10: 0 failures.
+// One worker per two logical CPUs is one per physical core on SMT hosts. Without SMT the
+// count is halved, the accepted cost.
+export const VITEST_LOGICAL_CPUS_PER_WORKER = 2;
+
 // A detected chain failure uses the measured-safe 8 GiB agent-scope configuration from
 // d-20260930-03: after the 1 GiB agent reserve, Vitest gets 22 workers. d-20261031-06
 // recomputed CONSERVATIVE_STRYKER_RUNNERS (2) as workerCount over the undivided 7 GiB
@@ -252,17 +262,24 @@ function validateByteCount(name, value, { allowZero = false } = {}) {
   }
 }
 
-/** Choose a worker count bounded by both the gate memory budget and the CPU share. */
+/**
+ * Choose a worker count bounded by the gate memory budget, the CPU share, and optional
+ * logicalCpusPerWorker (default 1: one worker per logical CPU after GATE_CPU_SHARE).
+ */
 export function workerCount({
   perWorkerBytes,
   baseBytes = 0,
   budgetBytes,
   env = process.env,
   availableParallelism = defaultAvailableParallelism,
+  logicalCpusPerWorker = 1,
   ...memoryOptions
 } = {}) {
   validateByteCount("perWorkerBytes", perWorkerBytes);
   validateByteCount("baseBytes", baseBytes, { allowZero: true });
+  if (!Number.isSafeInteger(logicalCpusPerWorker) || logicalCpusPerWorker < 1) {
+    throw new Error("logicalCpusPerWorker must be a positive safe integer.");
+  }
   const budget =
     budgetBytes === undefined ? gateBudgetBytes({ env, ...memoryOptions }) : budgetBytes;
   validateByteCount("budgetBytes", budget, { allowZero: true });
@@ -283,7 +300,7 @@ export function workerCount({
     throw new Error(`os.availableParallelism() returned an invalid CPU count ${String(cpuCount)}.`);
   }
   const share = configuredCpuShare(env);
-  const cpuCap = Math.max(1, Math.floor(cpuCount * share));
+  const cpuCap = Math.max(1, Math.floor((cpuCount * share) / logicalCpusPerWorker));
   const memoryCap = Math.floor((budget - baseBytes) / perWorkerBytes);
   return Math.max(1, Math.min(cpuCap, memoryCap));
 }
@@ -401,5 +418,6 @@ export function vitestMaxWorkers({ env = process.env, ...injectables } = {}) {
     baseBytes: VITEST_BASE_BYTES,
     env,
     ...injectables,
+    logicalCpusPerWorker: VITEST_LOGICAL_CPUS_PER_WORKER,
   });
 }

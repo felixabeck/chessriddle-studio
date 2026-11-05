@@ -79,7 +79,8 @@ export default defineConfig({
         setupFiles: ["./src/tests/setup.ts"],
         include: ["src/**/*.{test,spec}.{ts,tsx}", "scripts/**/*.test.mjs"],
         exclude: ["**/node_modules/**", ".stryker-tmp/**", "e2e/**"],
-        // Size Vitest workers from the gate memory budget; Stryker forces one worker per runner.
+        // Size Vitest workers from the gate memory budget at one per two logical CPUs;
+        // Stryker forces one worker per runner.
         maxWorkers: vitestMaxWorkers(),
         // Once warm, persistent transforms keep cold compilation out of timed tests (a cold cache still
         // transforms inside them; f-20260930-02): warm totals fell 112s → 2.45s, and the first tests fell
