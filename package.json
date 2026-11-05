@@ -18,7 +18,7 @@
     "gates:routing:check": "node scripts/check-gate-routing.mjs",
     "gates:routing:test": "node --test scripts/check-gate-routing-tests.mjs",
     "gates:contract:check": "pnpm mutation:guard:check && pnpm lint:ci && pnpm tauri:boundary:check && pnpm rust:surface:check && pnpm ui:boundary:check && pnpm skills:check && pnpm skills:bridges:test && pnpm gates:routing:check && pnpm gates:routing:test && pnpm ci:remote:test && pnpm tools:parity:check && pnpm tools:parity:test && pnpm workflows:check && pnpm workflows:permissions:test && pnpm ui:boundary:report:test && pnpm coverage:report:test && pnpm bundle:report:test && pnpm mutation:runner:test && pnpm rust:target:evict:test && pnpm gates:receipt:test && pnpm gates:logs:test && pnpm gates:parallelism:test && pnpm gates:push:test && pnpm gates:child-supervisor:test && pnpm gates:imports:test && pnpm rust:windows:test && pnpm entrypoint:test && pnpm e2e:launchers:test && pnpm install:local:test && pnpm app:driver:test && ./scripts/findings.py check && pnpm ipc:consumers:check",
-    "gates:push": "agent-gate node scripts/run-push-gates.mjs",
+    "gates:push": "bash \"$HOME/.claude/scripts/push-lock.sh\" gate -- agent-gate node scripts/run-push-gates.mjs",
     "checks:pre-review": "agent-gate node scripts/run-push-gates.mjs --pre-review",
     "gates:push:test": "node --test scripts/run-push-gates-tests.mjs",
     "gates:child-supervisor:test": "node --test scripts/child-supervisor-tests.mjs",

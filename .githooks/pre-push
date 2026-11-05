@@ -1,0 +1,10 @@
+#!/bin/sh
+# agent-kit push lock (d-20261105-01): refuse a master push while another
+# checkout runs final gates, and release this checkout's own lock. Only exit 75
+# refuses, so a missing helper or a lock machinery failure never blocks a push.
+helper="$HOME/.claude/scripts/push-lock.sh"
+[ -f "$helper" ] || exit 0
+status=0
+bash "$helper" pre-push "$1" master || status=$?
+[ "$status" -ne 75 ] || exit 1
+exit 0

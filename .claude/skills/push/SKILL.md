@@ -79,6 +79,12 @@ with that reason and no exit code (d-20261105-04, d-20261105-05). Signals and un
 cleanup retain precedence over the red-gate reason. Exit-code precedence is unchanged. A failure
 returns to `repair`, commit, and the required affected final-gate rerun before push.
 
+`pnpm gates:push` first takes agent-kit's cross-repository push lock through
+`push-lock.sh gate` (agent-kit d-20261105-01): it waits while another checkout holds it, exits 76
+without starting when `origin/master` moved since the rebase (rebase and rerun), and releases it
+after a red run. The tracked `.githooks/pre-push` releases it at the push and refuses a `master`
+push while another checkout holds it; a clone without `core.hooksPath=.githooks` gates without the
+lock and prints the remedy.
 `pnpm gates:push` and `pnpm checks:pre-review` run through `agent-gate`. Read
 `.claude/rules/gate-tooling.md` "Scheduling and placement" before running a gate for admission,
 worker sizing, e2e reservation, exit 125 and nesting. The shared

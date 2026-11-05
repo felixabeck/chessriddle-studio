@@ -15,8 +15,11 @@ const CONTRACT_GATE = "gates:contract:check";
 // The strict launcher takes the machine-wide heavy-gate lock and its own agents.slice scope;
 // it fails closed, nests in place, and permits no command -v fallback (d-20261002-01).
 const GATE_LAUNCHER = "agent-gate";
+// The final push gate first takes agent-kit's cross-repository push lock, before the
+// launcher queues for a machine slot (agent-kit d-20261105-01).
+const PUSH_LOCK_GATE = 'bash "$HOME/.claude/scripts/push-lock.sh" gate --';
 const GATE_RUNNER_SCRIPTS = Object.freeze({
-  "gates:push": `${GATE_LAUNCHER} node scripts/run-push-gates.mjs`,
+  "gates:push": `${PUSH_LOCK_GATE} ${GATE_LAUNCHER} node scripts/run-push-gates.mjs`,
   "checks:pre-review": `${GATE_LAUNCHER} node scripts/run-push-gates.mjs --pre-review`,
   "gate:ensure": `${GATE_LAUNCHER} node scripts/gate-receipt.mjs ensure`,
   "gate:run": `${GATE_LAUNCHER} node scripts/gate-receipt.mjs run`,
