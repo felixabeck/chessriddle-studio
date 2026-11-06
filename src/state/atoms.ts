@@ -94,7 +94,13 @@ export function initializeRendererState() {
     if (rendererStateInitialized) return;
     initializeOriginalPathOwners();
     // Legacy renderer-visible directories are scrubbed, never migrated into opaque authority.
-    if (typeof localStorage !== "undefined") localStorage.removeItem("document-dir");
+    // Retired borrowed PostHog telemetry is scrubbed the same way: never migrated.
+    if (typeof localStorage !== "undefined") {
+        localStorage.removeItem("document-dir");
+        localStorage.removeItem("telemetry-enabled");
+        localStorage.removeItem("ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_posthog");
+        localStorage.removeItem("__ph_opt_in_out_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z");
+    }
     documentPreferences.initialize();
     rendererStateInitialized = true;
 }
@@ -603,11 +609,6 @@ export const sessionsAtom = atom(
 );
 export const nativeBarAtom = atomWithStorage<boolean>(
     "native-bar",
-    false,
-    createPreferenceStorage(false),
-);
-export const telemetryEnabledAtom = documentPreferences.atomWithStorage<boolean>(
-    "telemetry-enabled",
     false,
     createPreferenceStorage(false),
 );

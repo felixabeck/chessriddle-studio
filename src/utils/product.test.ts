@@ -32,7 +32,6 @@ describe("product identity", () => {
             "Menu.Application.About",
             "Menu.Application.Hide",
             "Menu.Application.Quit",
-            "Settings.Privacy.Telemetry.Desc",
             "Settings.Version",
         ];
         for (const { translation } of shippedCatalogues()) {

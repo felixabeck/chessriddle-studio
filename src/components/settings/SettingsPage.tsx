@@ -5,7 +5,6 @@ import {
   ScrollArea,
   Select,
   Stack,
-  Switch,
   Table,
   Tabs,
   Text,
@@ -22,7 +21,6 @@ import {
   Mouse,
   RotateCcw,
   Search,
-  Shield,
   Volume2,
 } from "lucide-react";
 import { useLoaderData } from "@tanstack/react-router";
@@ -60,14 +58,12 @@ import {
   spellCheckAtom,
   fileWorkspaceAtom,
   fileWorkspaceDisplayNameAtom,
-  telemetryEnabledAtom,
   boardWoodTextureAtom,
   puzzleWorkspaceGenerationAtom,
 } from "@/state/atoms";
 import { keyMapAtom } from "@/state/keybinds";
 import { FONT_SCALE_MAX, FONT_SCALE_MIN, FONT_SCALE_STEP } from "@/state/fontScale";
 import { PIECE_SCALE_MAX, PIECE_SCALE_MIN, PIECE_SCALE_STEP } from "@/state/pieceScale";
-import { analytics } from "@/platform/analytics";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { IconAction } from "../common/IconAction";
 import BoardSelect from "./BoardSelect";
@@ -95,8 +91,7 @@ type SettingCategory =
   | "sound"
   | "keybinds"
   | "directories"
-  | "repertoire"
-  | "privacy";
+  | "repertoire";
 
 interface SettingItem {
   id: string;
@@ -105,30 +100,6 @@ interface SettingItem {
   description: string;
   keywords?: string[];
   render: () => React.ReactNode;
-}
-
-function TelemetrySwitch() {
-  const { t } = useTranslation();
-  const [enabled, setEnabled] = useAtom(telemetryEnabledAtom);
-  return (
-    <Switch
-      aria-label={t("Settings.Privacy.Telemetry")}
-      onLabel={t("Common.On")}
-      offLabel={t("Common.Off")}
-      size="lg"
-      checked={enabled}
-      onChange={(event) => {
-        const newValue = event.currentTarget.checked;
-        setEnabled(newValue);
-        if (newValue) analytics.enable();
-        else analytics.disable();
-      }}
-      styles={{
-        track: { cursor: "pointer" },
-        thumb: { pointerEvents: "none" },
-      }}
-    />
-  );
 }
 
 export default function Page() {
@@ -639,15 +610,6 @@ export default function Page() {
           />
         ),
       },
-      // Privacy settings
-      {
-        id: "telemetry",
-        category: "privacy",
-        title: t("Settings.Privacy.Telemetry"),
-        description: t("Settings.Privacy.Telemetry.Desc"),
-        keywords: ["telemetry", "privacy", "analytics", "tracking"],
-        render: () => <TelemetrySwitch />,
-      },
     ],
     [
       t,
@@ -720,11 +682,6 @@ export default function Page() {
         title: t("Settings.Repertoire"),
         description: t("Settings.Repertoire.Desc"),
         icon: <BookOpen size="1rem" />,
-      },
-      privacy: {
-        title: t("Settings.Privacy"),
-        description: t("Settings.Privacy.Desc"),
-        icon: <Shield size="1rem" />,
       },
     }),
     [t],
@@ -864,9 +821,6 @@ export default function Page() {
             <Tabs.Tab value="repertoire" leftSection={<BookOpen size="1rem" />}>
               {t("Settings.Repertoire")}
             </Tabs.Tab>
-            <Tabs.Tab value="privacy" leftSection={<Shield size="1rem" />}>
-              {t("Settings.Privacy")}
-            </Tabs.Tab>
           </Tabs.List>
           <Stack flex={1} className={classes.settingsContent}>
             <ScrollArea className={classes.settingsScroll}>
@@ -963,16 +917,6 @@ export default function Page() {
                     {t("Settings.Repertoire.Desc")}
                   </Text>
                   {renderCategorySettings("repertoire")}
-                </Tabs.Panel>
-
-                <Tabs.Panel value="privacy">
-                  <Text size="lg" fw={500} className={classes.title}>
-                    {t("Settings.Privacy")}
-                  </Text>
-                  <Text size="xs" c="dimmed" mt={3} mb="lg">
-                    {t("Settings.Privacy.Desc")}
-                  </Text>
-                  {renderCategorySettings("privacy")}
                 </Tabs.Panel>
               </Card>
             </ScrollArea>

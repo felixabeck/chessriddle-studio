@@ -52,14 +52,13 @@ test("file deck invalidation evicts every cached ordinal and preserves other fil
     expect(atoms.deckAtomFamily({ file: "file-b", game: 0 })).toBe(other);
 });
 
-test("the eight eager preferences share declaration-ordered synchronous document initial values", async () => {
+test("the seven eager preferences share declaration-ordered synchronous document initial values", async () => {
     const values = [
         ["download-destination-capability", { id: "download" }],
         ["file-workspace", { id: { id: "workspace" }, kind: "fileWorkspace" }],
         ["show-coordinates-v2", "all"],
         ["sound-collection", "custom"],
         ["sound-volume", 0.25],
-        ["telemetry-enabled", true],
         ["lichess-all-options", { color: "black", speeds: ["rapid"], ratings: [1800] }],
         ["lichess-master-options", { moves: 12 }],
     ] as const;
@@ -80,7 +79,6 @@ test("the eight eager preferences share declaration-ordered synchronous document
         atoms.showCoordinatesAtom,
         atoms.soundCollectionAtom,
         atoms.soundVolumeAtom,
-        atoms.telemetryEnabledAtom,
         atoms.lichessOptionsAtom,
         atoms.masterOptionsAtom,
     ];
@@ -101,13 +99,27 @@ test("the eight eager preferences share declaration-ordered synchronous document
 
 test("first eager preference access snapshots every eager initial value before later unrelated reads", async () => {
     localStorage.setItem("sound-volume", "0.3");
-    localStorage.setItem("telemetry-enabled", "true");
+    localStorage.setItem(
+        "lichess-all-options",
+        JSON.stringify({ color: "black", speeds: ["rapid"], ratings: [1800] }),
+    );
     const { atoms } = await importAtoms();
     const first = createStore();
     expect(first.get(atoms.soundVolumeAtom)).toBe(0.3);
-    localStorage.setItem("telemetry-enabled", "false");
-    expect(first.get(atoms.telemetryEnabledAtom)).toBe(true);
-    expect(createStore().get(atoms.telemetryEnabledAtom)).toBe(true);
+    localStorage.setItem(
+        "lichess-all-options",
+        JSON.stringify({ color: "white", speeds: ["blitz"], ratings: [2000] }),
+    );
+    expect(first.get(atoms.lichessOptionsAtom)).toEqual({
+        color: "black",
+        speeds: ["rapid"],
+        ratings: [1800],
+    });
+    expect(createStore().get(atoms.lichessOptionsAtom)).toEqual({
+        color: "black",
+        speeds: ["rapid"],
+        ratings: [1800],
+    });
 });
 
 test.each([

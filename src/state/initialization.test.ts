@@ -29,6 +29,9 @@ afterEach(() => vi.restoreAllMocks());
 // Restoring the old production sources must fail on storage behavior, not import resolution.
 test("real state import leaves fixture storage untouched", async () => {
     localStorage.setItem("document-dir", "legacy-directory");
+    localStorage.setItem("telemetry-enabled", "true");
+    localStorage.setItem("ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_posthog", "{}");
+    localStorage.setItem("__ph_opt_in_out_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z", "1");
     localStorage.setItem("download-destination-capability", "{malformed");
     localStorage.setItem("show-coordinates-v2", JSON.stringify("invalid"));
     sessionStorage.setItem("expanded-directories", JSON.stringify(["unscoped-directory"]));
@@ -52,6 +55,13 @@ test("real state import leaves fixture storage untouched", async () => {
     expect(effects.report).not.toHaveBeenCalled();
     for (const operation of Object.values(tauri)) expect(operation).not.toHaveBeenCalled();
     expect(localStorage.getItem("document-dir")).toBe("legacy-directory");
+    expect(localStorage.getItem("telemetry-enabled")).toBe("true");
+    expect(localStorage.getItem("ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_posthog")).toBe(
+        "{}",
+    );
+    expect(
+        localStorage.getItem("__ph_opt_in_out_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z"),
+    ).toBe("1");
     expect(localStorage.getItem("download-destination-capability")).toBe("{malformed");
     expect(localStorage.getItem("show-coordinates-v2")).toBe(JSON.stringify("invalid"));
     expect(sessionStorage.getItem("expanded-directories")).toBe(
@@ -62,6 +72,9 @@ test("real state import leaves fixture storage untouched", async () => {
 
 test("explicit initialization preserves raw lossy and sibling ownership after repairs and reconciliation", async () => {
     localStorage.setItem("document-dir", "legacy-directory");
+    localStorage.setItem("telemetry-enabled", "true");
+    localStorage.setItem("ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_posthog", "{}");
+    localStorage.setItem("__ph_opt_in_out_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z", "1");
     localStorage.setItem(
         "download-destination-capability",
         JSON.stringify({ id: "lossy-download", obsolete: true }),
@@ -111,6 +124,13 @@ test("explicit initialization preserves raw lossy and sibling ownership after re
         JSON.stringify({ id: "lossy-download" }),
     );
     expect(localStorage.getItem("document-dir")).toBeNull();
+    expect(localStorage.getItem("telemetry-enabled")).toBeNull();
+    expect(
+        localStorage.getItem("ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_posthog"),
+    ).toBeNull();
+    expect(
+        localStorage.getItem("__ph_opt_in_out_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z"),
+    ).toBeNull();
     expect(sessionStorage.getItem("expanded-directories")).toBeNull();
     localStorage.setItem("engines", serializeStorageValue([]));
     await owners.initializePathOwners();

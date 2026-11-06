@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
   const referenceDbAtom = {};
-  const telemetryEnabledAtom = {};
   const fontSizeAtom = {};
   const pieceSetAtom = {};
   const pieceSizeAtom = {};
@@ -19,10 +18,6 @@ const mocks = vi.hoisted(() => {
     check: vi.fn(),
     relaunch: vi.fn(),
     showNotification: vi.fn(),
-    analytics: {
-      capture: vi.fn(),
-      enable: vi.fn(),
-    },
     attachConsole: vi.fn(),
     useConversionProgress: vi.fn(),
     useDatabaseContentValidation: vi.fn(),
@@ -31,14 +26,12 @@ const mocks = vi.hoisted(() => {
     closeSplashscreen: vi.fn(),
     getDefaultStore: vi.fn(),
     getMatches: vi.fn(),
-    getVersion: vi.fn(),
     info: vi.fn(),
     preloadReferenceDb: vi.fn(),
     reconcileStartupPathOwners: vi.fn(),
     reconcileEngineAttachments: vi.fn(),
     warn: vi.fn(),
     referenceDbAtom,
-    telemetryEnabledAtom,
     fontSizeAtom,
     pieceSetAtom,
     pieceSizeAtom,
@@ -51,7 +44,6 @@ vi.mock("@/platform/native", () => ({
   attachConsole: mocks.attachConsole,
   check: mocks.check,
   getMatches: mocks.getMatches,
-  getVersion: mocks.getVersion,
   info: mocks.info,
   relaunch: mocks.relaunch,
   warn: mocks.warn,
@@ -70,14 +62,12 @@ vi.mock("@/platform/tauri", () => ({
     reconcileEngineAttachments: mocks.reconcileEngineAttachments,
   },
 }));
-vi.mock("@/platform/analytics", () => ({ analytics: mocks.analytics }));
 vi.mock("@/state/atoms", () => ({
   fontSizeAtom: mocks.fontSizeAtom,
   pieceSetAtom: mocks.pieceSetAtom,
   pieceSizeAtom: mocks.pieceSizeAtom,
   referenceDbAtom: mocks.referenceDbAtom,
   spellCheckAtom: mocks.spellCheckAtom,
-  telemetryEnabledAtom: mocks.telemetryEnabledAtom,
 }));
 vi.mock("jotai", () => ({
   getDefaultStore: mocks.getDefaultStore,
@@ -128,7 +118,7 @@ import { resetPathOwnerInitializationForTests } from "./state/pathOwners";
 
 let root: Root;
 let container: HTMLDivElement;
-let storeValues: { telemetryEnabled: boolean; referenceDb: string | undefined };
+let storeValues: { referenceDb: string | undefined };
 let atomValues: Map<object, unknown>;
 
 function Probe() {
@@ -160,13 +150,10 @@ beforeEach(() => {
   mocks.check.mockReset().mockResolvedValue(null);
   mocks.relaunch.mockReset().mockResolvedValue(undefined);
   mocks.showNotification.mockReset();
-  mocks.analytics.capture.mockReset();
-  mocks.analytics.enable.mockReset();
   mocks.attachConsole.mockReset();
   mocks.closeSplashscreen.mockReset();
   mocks.getDefaultStore.mockReset();
   mocks.getMatches.mockReset();
-  mocks.getVersion.mockReset();
   mocks.info.mockReset();
   mocks.reconcileStartupPathOwners.mockReset().mockResolvedValue(null);
   mocks.reconcileEngineAttachments.mockReset().mockResolvedValue(null);
@@ -182,10 +169,9 @@ beforeEach(() => {
   mocks.sessionPersistenceNotice.mockClear();
   mocks.useAtomValue.mockReset();
 
-  storeValues = { telemetryEnabled: false, referenceDb: undefined };
+  storeValues = { referenceDb: undefined };
   mocks.getDefaultStore.mockReturnValue({
     get: (atom: object) => {
-      if (atom === mocks.telemetryEnabledAtom) return storeValues.telemetryEnabled;
       if (atom === mocks.referenceDbAtom) return storeValues.referenceDb;
       return undefined;
     },
@@ -264,17 +250,13 @@ describe("useAppStartup", () => {
     expect(mocks.closeSplashscreen).toHaveBeenCalledOnce();
   });
 
-  test("captures the version through telemetry and logs the CLI file argument", async () => {
-    storeValues.telemetryEnabled = true;
-    mocks.getVersion.mockResolvedValue("1.2.3");
+  test("logs the CLI file argument", async () => {
     mocks.getMatches.mockResolvedValue({
       args: { file: { occurrences: 1, value: "/games/opening.pgn" } },
     });
 
     await act(async () => root.render(<Probe />));
 
-    expect(mocks.analytics.enable).toHaveBeenCalledOnce();
-    expect(mocks.analytics.capture).toHaveBeenCalledWith("app_started", { version: "1.2.3" });
     expect(mocks.info).toHaveBeenCalledWith("Opening file from command line: /games/opening.pgn");
     expect(mocks.closeSplashscreen).toHaveBeenCalledOnce();
   });
@@ -284,9 +266,6 @@ describe("useAppStartup", () => {
 
     await act(async () => root.render(<Probe />));
 
-    expect(mocks.analytics.enable).not.toHaveBeenCalled();
-    expect(mocks.analytics.capture).not.toHaveBeenCalled();
-    expect(mocks.getVersion).not.toHaveBeenCalled();
     expect(mocks.info).not.toHaveBeenCalledWith(
       expect.stringContaining("Opening file from command line"),
     );
@@ -373,7 +352,7 @@ describe("useAppStartup", () => {
     expect(mocks.closeSplashscreen).not.toHaveBeenCalled();
   });
 
-  test("stops before telemetry when startup is cancelled during reconciliation", async () => {
+  test("stops before CLI handling when startup is cancelled during reconciliation", async () => {
     let resolveOwners: () => void = () => {};
     mocks.reconcileStartupPathOwners.mockImplementation(
       () =>
@@ -386,28 +365,6 @@ describe("useAppStartup", () => {
     await act(async () => root.unmount());
     await act(async () => resolveOwners());
 
-    expect(mocks.getMatches).not.toHaveBeenCalled();
-    expect(mocks.closeSplashscreen).not.toHaveBeenCalled();
-  });
-
-  test("does not report a start when cancellation lands while the version is read", async () => {
-    storeValues.telemetryEnabled = true;
-    let resolveVersion: (version: string) => void = () => undefined;
-    mocks.getVersion.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolveVersion = resolve;
-        }),
-    );
-
-    await act(async () => root.render(<Probe />));
-    await act(async () => root.unmount());
-    await act(async () => {
-      resolveVersion("1.2.3");
-    });
-
-    expect(mocks.analytics.enable).toHaveBeenCalledOnce();
-    expect(mocks.analytics.capture).not.toHaveBeenCalled();
     expect(mocks.getMatches).not.toHaveBeenCalled();
     expect(mocks.closeSplashscreen).not.toHaveBeenCalled();
   });

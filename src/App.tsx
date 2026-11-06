@@ -2,16 +2,7 @@ import { localStorageColorSchemeManager, MantineProvider } from "@mantine/core";
 import { Notifications, notifications } from "@mantine/notifications";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import i18n from "@/i18n";
-import {
-  ask,
-  check,
-  getMatches,
-  getVersion,
-  info,
-  relaunch,
-  type Update,
-  warn,
-} from "@/platform/native";
+import { ask, check, getMatches, info, relaunch, type Update, warn } from "@/platform/native";
 import { getDefaultStore, useAtomValue } from "jotai";
 import { ContextMenuProvider } from "mantine-contextmenu";
 import { useEffect, useMemo, useRef } from "react";
@@ -23,7 +14,6 @@ import {
   pieceSizeAtom,
   referenceDbAtom,
   spellCheckAtom,
-  telemetryEnabledAtom,
 } from "./state/atoms";
 
 import "@/styles/chessgroundBaseOverride.css";
@@ -40,7 +30,6 @@ import "mantine-datatable/styles.css";
 
 import "@/styles/global.css";
 
-import { analytics } from "./platform/analytics";
 import { tauri } from "./platform/tauri";
 
 const colorSchemeManager = localStorageColorSchemeManager({
@@ -161,16 +150,6 @@ export function useAppStartup() {
         info("React app started successfully");
 
         const store = getDefaultStore();
-        const telemetryEnabled = store.get(telemetryEnabledAtom);
-
-        if (telemetryEnabled) {
-          analytics.enable();
-          const version = await getVersion();
-          // Cancellation is checked before the emit, never after it: a startup that was torn
-          // down while the version was read must not report itself as started.
-          if (signal.aborted) return;
-          analytics.capture("app_started", { version });
-        }
         try {
           const matches = await getMatches();
           if (matches.args.file.occurrences > 0) {
