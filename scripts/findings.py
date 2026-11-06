@@ -1,5 +1,5 @@
 #!/usr/bin/env -S uv run --script
-# agent-kit-sha256: 207321e8d655f05a62eff09e958bec51b951933aca06032f5ddc217b3b42b95d
+# agent-kit-sha256: 270b5c8bcb656667f50d1a9d91254123b13936af5be624214a38790849e905c5
 # /// script
 # requires-python = ">=3.14"
 # ///
@@ -12745,43 +12745,6 @@ def _mutate_finding_note(
             )
             if admission_issues:
                 raise LedgerError("\n".join(admission_issues))
-
-        decisions = _args_decisions(args)
-        location_prefix = re.compile(r"^.*?:\d+: ")
-
-        def without_location(issue: str) -> str:
-            return location_prefix.sub("", issue, count=1)
-
-        def without_placeholder(source: str) -> str:
-            # build inserts RECEIPT_PLACEHOLDER, which is not JSON; the real
-            # receipt is written after this function returns.
-            return _with_final_newline(
-                source,
-                [
-                    line
-                    for line in source.splitlines()
-                    if line != RECEIPT_PLACEHOLDER
-                ],
-            )
-
-        after_issues = _candidate_citation_issues(
-            without_placeholder(candidate), args.ledger, decisions
-        )
-        before_issues = _candidate_citation_issues(
-            without_placeholder(text), args.ledger, decisions
-        )
-        remaining = [without_location(issue) for issue in before_issues]
-        introduced: list[str] = []
-        for issue in after_issues:
-            stripped = without_location(issue)
-            try:
-                remaining.remove(stripped)
-            except ValueError:
-                introduced.append(stripped)
-        if introduced:
-            raise LedgerError(
-                f"{command} {args.id} refused: " + "\n".join(introduced)
-            )
 
         receipt_postcondition = _receipt_postcondition(
             command=command,
