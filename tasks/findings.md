@@ -21672,6 +21672,9 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Fix:** Mirror puzzles: return a descriptor with `displayName` from `issue_database_workspace` / `get_database_workspace` (or a sibling read of stored `display_name`), hydrate on Settings mount, and pass that string through `DirectorySetting` `onSelect`. Surface Changed/unusable roots instead of silently keeping the placeholder. Add a Settings/DirectorySetting regression that a resolved issue updates the visible label to the folder leaf.
 * **Proof:** Ephemeral Vitest on HEAD `c4b2faf0` (`SettingsPage.area5-ephemeral.test.ts`, removed after filing): source matches `useState("Databases")`, `issueDatabaseWorkspace(); return "Databases"`, no `getDatabaseWorkspace`, while puzzles call `getPuzzleWorkspace` / `displayName`. Native blocking path sets `display_name` from `path.file_name()`. No app/probe residue.
 
+**Where correction (2026-11-06, push records review):** the cited `~147, ~595-604` are board settings and the Puzzles `DirectorySetting`. The Databases defect is `useState("Databases")` at `src/components/settings/SettingsPage.tsx:118` and `await tauri.issueDatabaseWorkspace(); return "Databases"` at `:569-570`. The puzzle workspace hydrate the fix should mirror is `:129-132`, not `~164-168`.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"85c912f9a962af7f51bef73660447d86256a8d8ae3cce7c63f8cdcc094a26bc6","input_sha256":"30f8c27a2052c47d8a156b457ed9d6dd66b5abd3dd660f84b0e2fd81710ef979","kind":"mutation-receipt","operation":"3c8fa4ad75464c549f924a83cd5c4a3428768c7d2ce0d7346478b6ec654a8d12","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-29"],"target":"f-20261106-29","v":1} -->
+
 ---
 
 ## 2026-11-06 — filed through the inbox spool
