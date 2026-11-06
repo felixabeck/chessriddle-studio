@@ -463,7 +463,7 @@ test("reports each release matrix target-coverage clause through the CLI", async
       ".github/workflows/release.yml",
       (text) =>
         text.replace(
-          "            args: '--target aarch64-apple-darwin --bundles dmg'",
+          "            args: '--target aarch64-apple-darwin --bundles app,dmg'",
           "            args: []",
         ),
       "(1d) release matrix entry 1 args must be a string",
@@ -485,7 +485,7 @@ test("reports each release matrix target-coverage clause through the CLI", async
       ".github/workflows/release.yml",
       (text) =>
         text.replace(
-          "            args: '--target aarch64-apple-darwin --bundles dmg'",
+          "            args: '--target aarch64-apple-darwin --bundles app,dmg'",
           "            args: '--target x86_64-pc-windows-msvc'",
         ),
       "(1f) derived target x86_64-pc-windows-msvc does not match release platform macos-latest",

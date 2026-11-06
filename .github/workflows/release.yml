@@ -36,6 +36,8 @@ jobs:
           esac
           echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
 
+  # macOS legs build `app` beside `dmg`: the updater's darwin entry is the signed .app.tar.gz,
+  # which only the app bundle produces (run 42296138869 lacked darwin in latest.json).
   release:
     needs: create-release
     permissions:
@@ -45,9 +47,9 @@ jobs:
       matrix:
         include:
           - platform: 'macos-latest' # for Arm based macs (M1 and above).
-            args: '--target aarch64-apple-darwin --bundles dmg'
+            args: '--target aarch64-apple-darwin --bundles app,dmg'
           - platform: 'macos-latest' # for Intel based macs.
-            args: '--target x86_64-apple-darwin --bundles dmg'
+            args: '--target x86_64-apple-darwin --bundles app,dmg'
           - platform: 'ubuntu-24.04'
             args: ''
           - platform: 'windows-latest'

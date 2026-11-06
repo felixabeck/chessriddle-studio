@@ -89,7 +89,8 @@ test("release.yml builds on tags into one draft and publishes only a complete ma
     expect(build).toMatch(/includeUpdaterJson: true/);
     expect(build).not.toMatch(/releaseDraft: false/);
     for (const target of ["aarch64-apple-darwin", "x86_64-apple-darwin"]) {
-        expect(build).toContain(`--target ${target}`);
+        // The updater needs the app bundle's .app.tar.gz; dmg alone leaves darwin out of latest.json.
+        expect(build).toContain(`--target ${target} --bundles app,dmg`);
     }
     expect(build).toMatch(/platform: 'ubuntu-/);
     expect(build).toMatch(/platform: 'windows-/);
