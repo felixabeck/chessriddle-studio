@@ -77,7 +77,10 @@ test("release.yml builds on tags into one draft and publishes only a complete ma
     expect(createRelease).toContain("if: startsWith(github.ref, 'refs/tags/v')");
     expect(createRelease).toMatch(/contents: write/);
     expect(createRelease).toMatch(/release_id:/);
-    expect(createRelease).toMatch(/--draft/);
+    expect(createRelease).toContain("-F draft=true");
+    // The id must come from the create response, never from a follow-up listing (run 42286539160).
+    expect(createRelease).toContain("--jq .id)");
+    expect(createRelease).not.toMatch(/gh api "repos\/\$GITHUB_REPOSITORY\/releases" \\\n/);
 
     const build = jobBlock("release");
     expect(build).toMatch(/needs: create-release/);
