@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -1299,12 +1301,7 @@ function ciWorkflowContracts(texts) {
     ),
   );
   // Every later shell step reads the directory from the sourced library, never from its own copy.
-  pinDepsStep("deps library carries the archive directory", "resolve", (step) =>
-    assert.ok(
-      step.text.includes("declare -p packages archives;"),
-      "deps library carries the archive directory",
-    ),
-  );
+  // The executed resolve test pins what the library carries.
   for (const id of ["verify", "download", "prune", "install"])
     pinDepsStep(`deps ${id} sources the library`, id, (step) =>
       assert.ok(
@@ -1398,7 +1395,8 @@ function ciWorkflowContracts(texts) {
         "deps steps run in the documented order",
       ),
   ]);
-  // The bound chain, step-scoped to the resolve step that owns the sourced helpers.
+  // Wiring: the input reaches the resolve step, and both apt call sites go through the helper. The
+  // bound, deadline and export logic is run by the executed helper and resolve tests.
   pinDepsStep("deps resolve maps timeout-minutes to TIMEOUT_MINUTES", "resolve", (step) =>
     assert.ok(
       step.text.includes(
@@ -1407,44 +1405,6 @@ function ciWorkflowContracts(texts) {
       "deps resolve maps timeout-minutes to TIMEOUT_MINUTES",
     ),
   );
-  // The deadline derivation. The helper logic itself is run, not text-matched, by the executed
-  // helper test below.
-  pinDepsStep("deps resolve derives the deadline from start and bound", "resolve", (step) =>
-    assert.ok(
-      step.text.includes(
-        '        LINUX_DESKTOP_DEPS_START=$(date +%s)\n        LINUX_DESKTOP_DEPS_BOUND=$bound\n        LINUX_DESKTOP_DEPS_DEADLINE=""\n        if [ "$bound" -gt 0 ]; then LINUX_DESKTOP_DEPS_DEADLINE=$((LINUX_DESKTOP_DEPS_START + bound)); fi\n',
-      ),
-      "deps resolve derives the deadline from start and bound",
-    ),
-  );
-  // The deadline variables reach the later steps only through GITHUB_ENV.
-  for (const name of ["START", "BOUND", "DEADLINE"])
-    pinDepsStep(`deps resolve exports LINUX_DESKTOP_DEPS_${name}`, "resolve", (step) =>
-      assert.ok(
-        step.text.includes(`echo "LINUX_DESKTOP_DEPS_${name}=$LINUX_DESKTOP_DEPS_${name}"\n`),
-        `deps resolve exports LINUX_DESKTOP_DEPS_${name}`,
-      ),
-    );
-  pinDepsStep("deps resolve writes the deadline variables to GITHUB_ENV", "resolve", (step) =>
-    assert.ok(
-      step.text.includes(
-        '        {\n          echo "LINUX_DESKTOP_DEPS_START=$LINUX_DESKTOP_DEPS_START"\n          echo "LINUX_DESKTOP_DEPS_BOUND=$LINUX_DESKTOP_DEPS_BOUND"\n          echo "LINUX_DESKTOP_DEPS_DEADLINE=$LINUX_DESKTOP_DEPS_DEADLINE"\n        } >> "$GITHUB_ENV"',
-      ),
-      "deps resolve writes the deadline variables to GITHUB_ENV",
-    ),
-  );
-  // The bound call site: the computed bound, not a constant, reaches the exported variable.
-  for (const [label, needle] of [
-    [
-      "deps resolve computes the bound from TIMEOUT_MINUTES",
-      'bound=$(desktop_deps_bound_seconds "$TIMEOUT_MINUTES") || { printf \'%s\\n\' "$bound"; exit 1; }',
-    ],
-    [
-      "deps library carries the helper functions",
-      "declare -f desktop_deps_label_stall desktop_deps_apt;",
-    ],
-  ])
-    pinDepsStep(label, "resolve", (step) => assert.ok(step.text.includes(needle), label));
   pinDepsStep("deps update goes through desktop_deps_apt", "resolve", (step) =>
     assert.ok(
       step.text.includes("\n        desktop_deps_apt update update || exit $?\n"),
@@ -1736,13 +1696,6 @@ const linuxDesktopDepsRows = [
     "deps has one shell source of the archive directory",
   ],
   [
-    "library stops carrying the archive directory",
-    "deps",
-    "declare -p packages archives;",
-    "declare -p packages;",
-    "deps library carries the archive directory",
-  ],
-  [
     "verify stops sourcing the library",
     "deps",
     '        source "$RUNNER_TEMP/linux-desktop-deps-lib.sh" || exit 1\n        reason=""\n        verify_restored() {',
@@ -1790,104 +1743,6 @@ const linuxDesktopDepsRows = [
     "        TIMEOUT_MINUTES: ${{ inputs.timeout-minutes }}\n",
     '        TIMEOUT_MINUTES: ""\n',
     "deps resolve maps timeout-minutes to TIMEOUT_MINUTES",
-  ],
-  [
-    "deadline ignores the bound",
-    "deps",
-    "LINUX_DESKTOP_DEPS_DEADLINE=$((LINUX_DESKTOP_DEPS_START + bound))",
-    "LINUX_DESKTOP_DEPS_DEADLINE=$LINUX_DESKTOP_DEPS_START",
-    "deps resolve derives the deadline from start and bound",
-  ],
-  [
-    "deadline guard dropped",
-    "deps",
-    'if [ "$bound" -gt 0 ]; then LINUX_DESKTOP_DEPS_DEADLINE=$((LINUX_DESKTOP_DEPS_START + bound)); fi',
-    "LINUX_DESKTOP_DEPS_DEADLINE=$((LINUX_DESKTOP_DEPS_START + bound))",
-    "deps resolve derives the deadline from start and bound",
-  ],
-  [
-    "start set to a constant",
-    "deps",
-    "LINUX_DESKTOP_DEPS_START=$(date +%s)",
-    "LINUX_DESKTOP_DEPS_START=0",
-    "deps resolve derives the deadline from start and bound",
-  ],
-  [
-    "deadline default dropped",
-    "deps",
-    '        LINUX_DESKTOP_DEPS_DEADLINE=""\n',
-    "",
-    "deps resolve derives the deadline from start and bound",
-  ],
-  [
-    "start not exported",
-    "deps",
-    '          echo "LINUX_DESKTOP_DEPS_START=$LINUX_DESKTOP_DEPS_START"\n',
-    "",
-    "deps resolve exports LINUX_DESKTOP_DEPS_START",
-  ],
-  [
-    "bound not exported",
-    "deps",
-    '          echo "LINUX_DESKTOP_DEPS_BOUND=$LINUX_DESKTOP_DEPS_BOUND"\n',
-    "",
-    "deps resolve exports LINUX_DESKTOP_DEPS_BOUND",
-  ],
-  [
-    "deadline not exported",
-    "deps",
-    '          echo "LINUX_DESKTOP_DEPS_DEADLINE=$LINUX_DESKTOP_DEPS_DEADLINE"\n',
-    "",
-    "deps resolve exports LINUX_DESKTOP_DEPS_DEADLINE",
-  ],
-  [
-    "deadline variables go to GITHUB_OUTPUT",
-    "deps",
-    '        } >> "$GITHUB_ENV"',
-    '        } >> "$GITHUB_OUTPUT"',
-    "deps resolve writes the deadline variables to GITHUB_ENV",
-  ],
-  [
-    "bound call replaced by zero",
-    "deps",
-    'bound=$(desktop_deps_bound_seconds "$TIMEOUT_MINUTES") || { printf \'%s\\n\' "$bound"; exit 1; }',
-    "bound=0",
-    "deps resolve computes the bound from TIMEOUT_MINUTES",
-  ],
-  [
-    "bound call loses the timeout argument",
-    "deps",
-    'desktop_deps_bound_seconds "$TIMEOUT_MINUTES")',
-    'desktop_deps_bound_seconds "")',
-    "deps resolve computes the bound from TIMEOUT_MINUTES",
-  ],
-  [
-    "bound call loses the abort",
-    "deps",
-    " || { printf '%s\\n' \"$bound\"; exit 1; }",
-    "",
-    "deps resolve computes the bound from TIMEOUT_MINUTES",
-  ],
-  [
-    "bound export ignores the computed bound",
-    "deps",
-    "\n        LINUX_DESKTOP_DEPS_BOUND=$bound\n",
-    "\n        LINUX_DESKTOP_DEPS_BOUND=0\n",
-    "deps resolve derives the deadline from start and bound",
-  ],
-  [
-    "library drops the label function",
-    "deps",
-    "declare -f desktop_deps_label_stall desktop_deps_apt;",
-    "declare -f desktop_deps_apt;",
-    "deps library carries the helper functions",
-  ],
-  [
-    "library drops the apt function",
-    "deps",
-    "declare -f desktop_deps_label_stall desktop_deps_apt;",
-    "declare -f desktop_deps_label_stall;",
-    "deps library carries the helper functions",
   ],
   [
     "verify step id lost",
@@ -2322,4 +2177,219 @@ test("linux-desktop-deps helpers behave when executed", async (t) => {
       }),
     );
   }
+});
+
+// Executed resolve-prologue test: the resolve step's real run body runs in bash (`-eo pipefail`, as
+// GitHub runs `shell: bash`) with `date`, `sudo`, `mkdir` and `rm` replaced by PATH shims inside a
+// per-test temporary directory. `sudo` records its argv and a snapshot of GITHUB_ENV at call time,
+// then fails, so the step ends right after `apt-get update` and never reaches the archive
+// directory. The `mkdir` and `rm` shims fail loudly if that ever stops being true.
+const resolveEpoch = 1_800_000_000;
+
+function depsResolveBody(depsText) {
+  const resolve = workflowStepBlocks(depsText).find((step) => step.id === "resolve");
+  assert.ok(resolve, "linux-desktop-deps has a resolve step");
+  const lines = resolve.text.split("\n");
+  const runIndex = lines.indexOf("      run: |");
+  assert.ok(runIndex >= 0, "the resolve step has a run body");
+  return lines
+    .slice(runIndex + 1)
+    .map((line) => line.slice(8))
+    .join("\n");
+}
+
+function runResolveBody(body, timeoutMinutes) {
+  const dir = mkdtempSync(join(tmpdir(), "linux-desktop-deps-resolve-"));
+  try {
+    const bin = join(dir, "bin");
+    const runnerTemp = join(dir, "runner-temp");
+    mkdirSync(bin);
+    mkdirSync(runnerTemp);
+    const shim = (name, text) =>
+      writeFileSync(join(bin, name), `#!/bin/bash\n${text}\n`, { mode: 0o755 });
+    shim("date", 'echo "$FAKE_EPOCH"');
+    shim(
+      "sudo",
+      `{ printf 'argv:'; printf '<%s>' "$@"; printf '\\n'; } >> "$SHIM_DIR/sudo-calls"\ncp "$GITHUB_ENV" "$SHIM_DIR/env-at-sudo"\nexit 1`,
+    );
+    for (const name of ["mkdir", "rm"])
+      shim(name, `echo "${name} $*" >> "$SHIM_DIR/forbidden"\nexit 99`);
+    const githubEnv = join(runnerTemp, "github_env");
+    writeFileSync(githubEnv, "");
+    const script = join(dir, "resolve.sh");
+    writeFileSync(script, body);
+    const result = spawnSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", script], {
+      encoding: "utf8",
+      cwd: dir,
+      env: {
+        PATH: `${bin}:${process.env.PATH}`,
+        RUNNER_TEMP: runnerTemp,
+        GITHUB_ENV: githubEnv,
+        GITHUB_OUTPUT: join(runnerTemp, "github_output"),
+        TIMEOUT_MINUTES: timeoutMinutes,
+        FAKE_EPOCH: String(resolveEpoch),
+        SHIM_DIR: dir,
+      },
+    });
+    assert.equal(result.error, undefined, "bash ran");
+    const read = (path) => (existsSync(path) ? readFileSync(path, "utf8") : undefined);
+    assert.equal(read(join(dir, "forbidden")), undefined, "the step reached mkdir or rm");
+    return {
+      status: result.status,
+      output: result.stdout,
+      calls: (read(join(dir, "sudo-calls")) ?? "").split("\n").filter(Boolean),
+      envAtSudo: read(join(dir, "env-at-sudo")),
+      env: read(githubEnv),
+      library: read(join(runnerTemp, "linux-desktop-deps-lib.sh")),
+    };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const exportedEnv = (bound, deadline) =>
+  `LINUX_DESKTOP_DEPS_START=${resolveEpoch}\nLINUX_DESKTOP_DEPS_BOUND=${bound}\nLINUX_DESKTOP_DEPS_DEADLINE=${deadline}\n`;
+
+const resolveCases = [
+  [
+    "TIMEOUT_MINUTES=18 exports the deadline, then runs update under timeout",
+    (body) => {
+      const result = runResolveBody(body, "18");
+      assert.equal(result.status, 1);
+      assert.ok(!result.output.includes("mirror stall"), result.output);
+      assert.deepEqual(result.calls, ["argv:<timeout><--kill-after=10><1080><apt-get><update>"]);
+      // The snapshot was taken inside the update call, so the export came first.
+      assert.equal(result.envAtSudo, exportedEnv(1080, resolveEpoch + 1080));
+      assert.equal(result.env, exportedEnv(1080, resolveEpoch + 1080));
+      assert.match(result.library, /^declare -a packages=/mu);
+      assert.match(result.library, /^declare -- archives="\/tmp\/[^"]+"$/mu);
+      assert.match(result.library, /^desktop_deps_label_stall \(\) *$/mu);
+      assert.match(result.library, /^desktop_deps_apt \(\) *$/mu);
+    },
+  ],
+  [
+    "an empty TIMEOUT_MINUTES runs update unbounded",
+    (body) => {
+      const result = runResolveBody(body, "");
+      assert.equal(result.status, 1);
+      assert.ok(!result.output.includes("mirror stall"), result.output);
+      assert.deepEqual(result.calls, ["argv:<apt-get><update>"]);
+      assert.equal(result.envAtSudo, exportedEnv(0, ""));
+      assert.equal(result.env, exportedEnv(0, ""));
+    },
+  ],
+  [
+    "TIMEOUT_MINUTES=0 fails before any sudo call and exports nothing",
+    (body) => {
+      const result = runResolveBody(body, "0");
+      assert.equal(result.status, 1);
+      assert.ok(result.output.includes("::error::linux-desktop-deps: timeout-minutes must be"));
+      assert.ok(result.output.includes("got '0'"), result.output);
+      assert.deepEqual(result.calls, []);
+      assert.equal(result.envAtSudo, undefined);
+      assert.equal(result.env, "");
+    },
+  ],
+];
+
+function failedResolveCases(body) {
+  return failingNames(resolveCases.map(([name, run]) => [name, () => run(body)]));
+}
+
+const replaceText = (before, after) => (body) => {
+  assert.ok(body.includes(before), `the resolve body lacks: ${before}`);
+  return body.replaceAll(before, after);
+};
+// Moves the block matched by `block` in front of the line `anchor`.
+const moveBefore = (block, anchor) => (body) => {
+  const found = block.exec(body);
+  assert.ok(found && body.includes(anchor), "the resolve body lacks the block or its anchor");
+  return body.replace(found[0], "").replace(anchor, found[0] + anchor);
+};
+const startLine = "LINUX_DESKTOP_DEPS_START=$(date +%s)\n";
+const exportBlock = /^\{\n {2}echo "LINUX_DESKTOP_DEPS_START=[\s\S]*?\} >> "\$GITHUB_ENV"\n/mu;
+const boundCall =
+  'bound=$(desktop_deps_bound_seconds "$TIMEOUT_MINUTES") || { printf \'%s\\n\' "$bound"; exit 1; }';
+const [cases18, casesEmpty, cases0] = resolveCases.map(([name]) => name);
+
+// [label, mutation of the resolve body, the case that must turn red]
+const resolveMutations = [
+  [
+    "update call moved above the deadline derivation",
+    moveBefore(/^desktop_deps_apt update update \|\| exit \$\?\n/mu, startLine),
+    cases18,
+  ],
+  [
+    "GITHUB_ENV export moved above the derivation lines",
+    moveBefore(exportBlock, startLine),
+    cases18,
+  ],
+  ["bound call replaced by bound=0", replaceText(boundCall, "bound=0"), cases18],
+  [
+    "bound call loses the abort",
+    replaceText(` || { printf '%s\\n' "$bound"; exit 1; }`, ""),
+    cases0,
+  ],
+  [
+    "bound call is not given TIMEOUT_MINUTES",
+    replaceText('desktop_deps_bound_seconds "$TIMEOUT_MINUTES")', 'desktop_deps_bound_seconds "")'),
+    cases18,
+  ],
+  [
+    "deadline guard dropped",
+    replaceText(
+      'if [ "$bound" -gt 0 ]; then LINUX_DESKTOP_DEPS_DEADLINE=$((LINUX_DESKTOP_DEPS_START + bound)); fi',
+      "LINUX_DESKTOP_DEPS_DEADLINE=$((LINUX_DESKTOP_DEPS_START + bound))",
+    ),
+    casesEmpty,
+  ],
+  ["deadline default dropped", replaceText('LINUX_DESKTOP_DEPS_DEADLINE=""\n', ""), casesEmpty],
+  ["START set to 0", replaceText(startLine, "LINUX_DESKTOP_DEPS_START=0\n"), cases18],
+  ...["START", "BOUND", "DEADLINE"].map((name) => [
+    `${name} not exported`,
+    replaceText(`  echo "LINUX_DESKTOP_DEPS_${name}=$LINUX_DESKTOP_DEPS_${name}"\n`, ""),
+    cases18,
+  ]),
+  [
+    "export goes to GITHUB_OUTPUT",
+    replaceText('} >> "$GITHUB_ENV"', '} >> "$GITHUB_OUTPUT"'),
+    cases18,
+  ],
+  [
+    "library stops carrying archives",
+    replaceText("declare -p packages archives;", "declare -p packages;"),
+    cases18,
+  ],
+  [
+    "library drops the label function",
+    replaceText(
+      "declare -f desktop_deps_label_stall desktop_deps_apt;",
+      "declare -f desktop_deps_apt;",
+    ),
+    cases18,
+  ],
+  [
+    "library drops the apt function",
+    replaceText(
+      "declare -f desktop_deps_label_stall desktop_deps_apt;",
+      "declare -f desktop_deps_label_stall;",
+    ),
+    cases18,
+  ],
+];
+
+test("linux-desktop-deps resolve prologue behaves when executed", async (t) => {
+  const { deps } = await readCiWorkflowTexts();
+  const body = depsResolveBody(deps);
+  assert.deepEqual(failedResolveCases(body), []);
+  for (const [label, mutate, expected] of resolveMutations)
+    await t.test(label, (subtest) =>
+      assertMutationRed({
+        original: body,
+        mutate,
+        failedFor: failedResolveCases,
+        expected,
+        report: (failed) => subtest.diagnostic(`red: ${failed.join(" | ")}`),
+      }),
+    );
 });
