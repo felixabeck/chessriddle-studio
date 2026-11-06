@@ -109,6 +109,17 @@ test("renders an extra diagnostic when it differs from the message", async () =>
   expect(host.textContent).toContain("Error.CopyStackTrace");
 });
 
+async function findFeedbackModal(host: ParentNode) {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const node = host.querySelector("[data-testid='feedback-modal']");
+    if (node) return node;
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
+  throw new Error("feedback modal did not open");
+}
+
 test("send feedback opens the dialog without RootLayout", async () => {
   host = document.createElement("div");
   document.body.append(host);
@@ -122,7 +133,7 @@ test("send feedback opens the dialog without RootLayout", async () => {
   await act(async () => {
     send?.click();
   });
-  expect(host.querySelector("[data-testid='feedback-modal']")).not.toBeNull();
+  expect(await findFeedbackModal(host)).not.toBeNull();
   expect(host.querySelector("a")?.getAttribute("href")).toContain(
     "github.com/felixabeck/chessriddle-studio",
   );

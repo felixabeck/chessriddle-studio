@@ -1404,7 +1404,7 @@ test("async-errors: verifies German navigation and a delayed native rejection at
     await expect(page.getByRole("tabpanel", { name: "Brett" })).toBeVisible();
     await assertNoHorizontalOverflow();
     await assertPageNotClipped(page);
-    for (const tab of ["Erscheinungsbild", "Privatsphäre"]) {
+    for (const tab of ["Erscheinungsbild", "Ton"]) {
         await page.getByRole("tab", { name: tab }).click();
         await expect(page.getByRole("tabpanel", { name: tab })).toBeVisible();
         await assertNoHorizontalOverflow();
