@@ -6,10 +6,11 @@ import { exit, getCurrentWebviewWindow, getCurrentWindow, platform } from "@/pla
 import { logFailureSafely, warnSafely } from "@/platform/errors";
 import { tauri, tauriSubscriptions } from "@/platform/tauri";
 import { useAtom, useAtomValue, useStore as useJotaiStore } from "jotai";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
 import AboutModal from "@/components/About";
+import LazyFeedbackModal from "@/components/feedback/LazyFeedbackModal";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { SideBar } from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
@@ -53,8 +54,6 @@ import {
   type MenuHandle,
   type NativeMenuResource,
 } from "./-appMenu";
-
-const FeedbackModal = lazy(() => import("@/components/feedback/FeedbackModal"));
 
 async function createMenu(menuActions: MenuGroup[]): Promise<MenuHandle> {
   const menu = await assembleNativeMenuResources<NativeMenuResource>(menuActions, {
@@ -197,7 +196,7 @@ export function RootLayout() {
   }, []);
 
   const [keyMap] = useAtom(keyMapAtom);
-  const [opened, setOpened] = useState(false);
+  const [aboutOpened, setAboutOpened] = useState(false);
   const [feedbackOpened, setFeedbackOpened] = useState(false);
   const [quitDialog, setQuitDialog] = useState<{
     failClosed: boolean;
@@ -254,7 +253,7 @@ export function RootLayout() {
     () =>
       bindAppMenuCallbacks({
         runMenu,
-        about: () => setOpened(true),
+        about: () => setAboutOpened(true),
         sendFeedback: () => setFeedbackOpened(true),
         createNewTab,
         openNewFile,
@@ -357,12 +356,8 @@ export function RootLayout() {
         header: { background: "var(--cf-card)", borderColor: "var(--cf-border)" },
       }}
     >
-      <AboutModal opened={opened} setOpened={setOpened} />
-      {feedbackOpened && (
-        <Suspense fallback={null}>
-          <FeedbackModal opened={feedbackOpened} onClose={() => setFeedbackOpened(false)} />
-        </Suspense>
-      )}
+      <AboutModal opened={aboutOpened} setOpened={setAboutOpened} />
+      <LazyFeedbackModal opened={feedbackOpened} onClose={() => setFeedbackOpened(false)} />
       <QuitConfirmModal
         opened={quitDialog !== null}
         failClosed={quitDialog?.failClosed ?? false}

@@ -362,15 +362,16 @@ test("the root poll follows current file tabs, listens for focus, and stops its 
   vi.useRealTimers();
 });
 
-async function findFeedbackModal(host: ParentNode) {
-  for (let attempt = 0; attempt < 20; attempt++) {
-    const node = host.querySelector("[data-testid='feedback-modal']");
-    if (node) return node;
-    await act(async () => {
-      await Promise.resolve();
-    });
+async function waitFor(assertion: () => void) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    try {
+      assertion();
+      return;
+    } catch {
+      await act(async () => Promise.resolve());
+    }
   }
-  throw new Error("feedback modal did not open");
+  assertion();
 }
 
 test("the Help-menu feedback action opens the dialog", async () => {
@@ -386,7 +387,7 @@ test("the Help-menu feedback action opens the dialog", async () => {
   await act(async () => {
     mocks.lastCallbacks?.sendFeedback();
   });
-  expect(await findFeedbackModal(host)).not.toBeNull();
+  await waitFor(() => expect(host.querySelector("[data-testid='feedback-modal']")).not.toBeNull());
   await act(async () => root.unmount());
   host.remove();
 });

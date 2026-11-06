@@ -40,7 +40,10 @@ function isPlausibleEmail(email: string): boolean {
   return domain.includes(".") && !domain.startsWith(".") && !domain.endsWith(".");
 }
 
-function outcomeMessage(outcome: FeedbackOutcome, t: (key: string) => string): string {
+function outcomeMessage(
+  outcome: Exclude<FeedbackOutcome, "sent">,
+  t: (key: string) => string,
+): string {
   switch (outcome) {
     case "inProgress":
       return t("Feedback.Error.InProgress");
@@ -54,8 +57,6 @@ function outcomeMessage(outcome: FeedbackOutcome, t: (key: string) => string): s
       return t("Feedback.Error.DeliveryFailed");
     case "serviceUnavailable":
       return t("Feedback.Error.ServiceUnavailable");
-    case "sent":
-      return t("Feedback.Success");
   }
 }
 
@@ -119,7 +120,7 @@ export default function FeedbackModal({
     onClose();
   }
 
-  function keyFor(fingerprint: string): string {
+  function idempotencyKeyFor(fingerprint: string): string {
     if (lastPayloadRef.current !== fingerprint || keyRef.current === null) {
       keyRef.current = crypto.randomUUID();
       lastPayloadRef.current = fingerprint;
@@ -130,7 +131,7 @@ export default function FeedbackModal({
   async function submit() {
     if (pending || !canSubmit) return;
     const fingerprint = payloadFingerprint(feedbackType, message, email);
-    const idempotencyKey = keyFor(fingerprint);
+    const idempotencyKey = idempotencyKeyFor(fingerprint);
     const generation = ++submitGeneration.current;
     setPending(true);
     setError("");

@@ -1,12 +1,11 @@
 import { Anchor, Button, Code, CopyButton, Group, Stack, Text, Title } from "@mantine/core";
-import { lazy, Suspense, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Trans, useTranslation } from "react-i18next";
 import { normalizeError } from "@/platform/errors";
+import LazyFeedbackModal from "@/components/feedback/LazyFeedbackModal";
 import { runUnlessCancelled } from "@/components/files/notifyError";
 import { REPOSITORY_URL } from "@/utils/product.json";
-
-const FeedbackModal = lazy(() => import("@/components/feedback/FeedbackModal"));
 
 const issueUrl = `${REPOSITORY_URL}/issues/new?assignees=&labels=bug&projects=&template=bug.yml`;
 
@@ -58,11 +57,7 @@ export default function ErrorComponent({ error }: { error: unknown }) {
           }}
         />
       </Text>
-      {feedbackOpened && (
-        <Suspense fallback={null}>
-          <FeedbackModal opened={feedbackOpened} onClose={() => setFeedbackOpened(false)} />
-        </Suspense>
-      )}
+      <LazyFeedbackModal opened={feedbackOpened} onClose={() => setFeedbackOpened(false)} />
     </Stack>
   );
 }
