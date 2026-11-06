@@ -36,7 +36,8 @@ export function SettingsCombobox<T extends string>({
   const previewedValue = useRef<T | null>(null);
 
   useEffect(() => {
-    committedValue.current = value;
+    // Preview writes flow back through `value` and must not become the committed value.
+    if (previewedValue.current === null) committedValue.current = value;
   }, [value]);
 
   const restorePreview = () => {
@@ -62,6 +63,9 @@ export function SettingsCombobox<T extends string>({
       onOptionSubmit={(nextValue) => {
         const next = nextValue as T;
         previewedValue.current = null;
+        // Committing the option already being previewed leaves `value` unchanged, so the sync
+        // effect does not re-run.
+        committedValue.current = next;
         onCommit(next);
         combobox.closeDropdown();
       }}
