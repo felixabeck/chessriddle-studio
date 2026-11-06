@@ -21320,3 +21320,19 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Proof:** A focused parse assertion that `[WhiteTimeControl "600+5"]` / `[BlackTimeControl "300+2"]` restore `headers.white_time_control` / `headers.black_time_control` currently fails (`undefined`). Reproduce with `pnpm exec vitest run` against a temporary test calling `parsePGN` with mocked `lexPgn` Header tokens for those tags. After the fix, update `chess.test.ts` round-trip expectations so those fields are modeled (and not also re-emitted from `other`). Same mapping should cover `ECO` → `eco` and `UTCTime` → `time` so BoardGame's written `time` survives reopen.
 * **Found by:** Grok Bot PGN fidelity review (Felix request, 2026-11-06)
 * **Related:** No open finding covers this parse gap. Handled Elo/`?` NaN work is a different tag path. Text text fidelity of the tags is preserved via `other`; the defect is the modeled-field / UI consumer contract.
+
+---
+
+## 2026-11-06 — filed through the inbox spool
+
+### Custom-FEN PGN round trips emit duplicate `[SetUp "1"]` tags
+
+* **ID:** f-20261106-10 · **Status:** open · **Area:** chess-tree · **Root:** pgn-modeled-header-parse-gap · **Entry:** inline · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** PGN fidelity / file-save review at HEAD `7861ffea`, beyond annotation and startup coverage
+* **Where:** `src/utils/chess.ts:659-675` leaves `SetUp` in `headers.other`; `headersToPGN` at `src/utils/chess.ts:238-242` rewrites every `other` entry including `SetUp`; `writePGN` at `src/utils/chess.ts:303-305` then unconditionally appends another `[SetUp "1"]` whenever `tree.fen !== INITIAL_FEN`.
+* **Defect:** Opening or importing a non-standard starting position that already carries `[SetUp "1"]` (normal for any FEN game) and saving exports two identical SetUp tags. The duplicate survives further round trips. Most readers tolerate it, but the exported PGN is not faithful, PgnInput/raw export shows the duplication, and any strict consumer or diff-based sync sees a spurious change on every save of an otherwise untouched custom-start game.
+* **Failure scenario:** Open a repertoire or analysis game that starts from a FEN (file already has `[SetUp "1"]` and `[FEN "…"]`), make no positional change, Save. The written PGN now contains two `[SetUp "1"]` lines. Saving again keeps both.
+* **Proof:** Temporary vitest at HEAD `7861ffea` (deleted after probe): `parsePGN` of a SetUp+FEN game then `getPGN(...)` yielded `['[SetUp "1"]', '[SetUp "1"]']` instead of one tag. Fix by omitting `SetUp` from `other` on parse and/or skipping `SetUp` (and the synthesized `FEN`) when emitting `other`, matching the WhiteElo skip pattern.
+* **Found by:** Grok Bot PGN fidelity review (Felix request, 2026-11-06)
+* **Related:** Shares root `pgn-modeled-header-parse-gap` with the White/Black time-control modeled-field gap: both are headers the writer synthesizes or models that `getPgnHeaders` does not keep out of the opaque `other` bag. `f-20260914-22` / duplicate FEN sticky position is a different Rust encode path.
