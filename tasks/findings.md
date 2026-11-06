@@ -21287,3 +21287,18 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Proof:** `gh api repos/felixabeck/en-croissant/actions/jobs/127725818339/logs` lines for `Fetched 63.7 MB in 22min 52s (46.4 kB/s)` and the cancelled "Run Rust tests with coverage" step; copy at `/tmp/nf-f-20261102-04/rust-job.log`.
 * **Found by:** Claude Code drain session b628926f-b0c5-473b-b51c-5cc2bca9a930 (f-20261102-04 release), 2026-11-06.
 * **Id note (2026-11-06):** first allocated as f-20261106-03 by an unpushed drain inbox merge (0156ba24 on drain/drain-20261102); renumbered during the rebase onto origin/master, where f-20261106-03 was already published for a different finding.
+
+---
+
+## 2026-11-06 — filed through the inbox spool
+
+### Startup logs a failed PGN game count for a file handle whose dialog grant expired with the previous session
+
+* **ID:** f-20261106-08 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Where:** renderer callers of `countPgnGames` (`src/components/panels/info/FileInfo.tsx:50`, `src/components/panels/info/InfoPanel.tsx:329`, `src/components/tabs/NewTabHome.tsx:199`) → native `count_pgn_games` (`src-tauri/src/infra/operations` error path).
+* **Defect:** on a normal start with Felix's real profile, the first renderer work after "React app started successfully" calls `count_pgn_games` with a file handle backed by a dialog grant that no longer exists, and the native side refuses it: `native operation failed … label=count_pgn_games: Invalid input: unknown, revoked, or expired dialog grant`. Dialog grants are per-session, so a restored tab or remembered file that still carries a previous session's grant asks for a count that can only fail.
+* **Observed:** twice in the real log, not in a fixture: `~/.local/share/com.chessriddle.encroissant/logs/en-croissant.log` on 2026-11-05 21:19:45 (build before the rename), and on 2026-11-06 13:03:03 at the first start of 7861ffea against the migrated profile (`chessriddle-studio.log`). Not caused by the rename or the data move: the earlier occurrence predates both.
+* **Impact class:** behaviour
+* **Everyday path:** every start with a restored file tab; user-visible effect not yet confirmed (missing count or an error).
+* **Failure scenario:** open a PGN file through the file dialog, quit with its tab open, start again: the restored tab's info panel or the new-tab home asks for the game count with the stale grant and gets the refusal.
+* **Found by:** Claude Code, build run rename-chessriddle-studio, 2026-11-06, during the post-install start check.
