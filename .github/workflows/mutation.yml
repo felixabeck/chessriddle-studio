@@ -72,13 +72,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install Linux desktop build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf
+        uses: ./.github/actions/linux-desktop-deps
 
       - name: Install Rust toolchain
         shell: bash

@@ -26,6 +26,7 @@ on:
       - "scripts/verify-catalog-engines.mjs"
       - "scripts/child-supervisor.mjs"
       - "scripts/gate-logs.mjs"
+      - ".github/actions/linux-desktop-deps/**"
       - ".github/workflows/catalog-engines.yml"
   pull_request:
     paths:
@@ -50,6 +51,7 @@ on:
       - "scripts/verify-catalog-engines.mjs"
       - "scripts/child-supervisor.mjs"
       - "scripts/gate-logs.mjs"
+      - ".github/actions/linux-desktop-deps/**"
       - ".github/workflows/catalog-engines.yml"
 
 permissions:
@@ -88,13 +90,7 @@ jobs:
 
       - name: Install Linux desktop build dependencies
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf
+        uses: ./.github/actions/linux-desktop-deps
 
       - name: Use a canonical macOS temporary directory
         if: runner.os == 'macOS'

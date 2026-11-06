@@ -4,6 +4,9 @@ inputs:
   desktop:
     description: Install Linux desktop build dependencies
     default: "false"
+  desktop-timeout-minutes:
+    description: Wall-clock bound in minutes for the desktop dependency download. Empty means no bound
+    default: ""
 runs:
   using: composite
   steps:
@@ -30,11 +33,6 @@ runs:
 
     - name: Install Linux desktop build dependencies
       if: inputs.desktop == 'true'
-      shell: bash
-      run: |
-        sudo apt-get update
-        sudo apt-get install --no-install-recommends -y \
-          libwebkit2gtk-4.1-dev \
-          libayatana-appindicator3-dev \
-          librsvg2-dev \
-          patchelf
+      uses: ./.github/actions/linux-desktop-deps
+      with:
+        timeout-minutes: ${{ inputs.desktop-timeout-minutes }}

@@ -7,6 +7,7 @@ import {
   checkGateRouting,
   pnpmReferences,
   workflowJobs,
+  workflowStepBlocks,
   workflowSteps,
 } from "./check-gate-routing.mjs";
 import { gitInit } from "./test-git-init.mjs";
@@ -759,6 +760,56 @@ test("parses job bodies and step shell metadata without depending on field order
   ]);
 });
 
+test("splits step blocks including uses steps and ignores comments and nested lists", () => {
+  const steps = workflowStepBlocks(
+    [
+      "jobs:",
+      "  rust:",
+      "    strategy:",
+      "      matrix:",
+      "        os:",
+      "          - ubuntu-latest",
+      "    steps:",
+      "      # leading comment",
+      "      - name: Restore",
+      "        id: restore",
+      "        if: steps.a.outputs.b != ''",
+      "        continue-on-error: true",
+      "        uses: actions/cache/restore@v4",
+      "        with:",
+      "          path: /tmp/x/*.deb",
+      "          restore-keys: |",
+      "            one-",
+      "            two-",
+      "",
+      "      # between steps",
+      "      - run: echo done",
+      "        shell: bash",
+    ].join("\n"),
+  );
+  assert.equal(steps.length, 2);
+  assert.deepEqual(
+    { ...steps[0], withValues: [...steps[0].withValues], text: undefined },
+    {
+      name: "Restore",
+      id: "restore",
+      uses: "actions/cache/restore@v4",
+      ifValue: "steps.a.outputs.b != ''",
+      continueOnError: "true",
+      withValues: [
+        ["path", "/tmp/x/*.deb"],
+        ["restore-keys", "|"],
+      ],
+      text: undefined,
+    },
+  );
+  assert.match(steps[0].text, /one-\n\s+two-/u);
+  assert.doesNotMatch(steps[0].text, /comment/u);
+  assert.equal(steps[1].uses, undefined);
+  assert.match(steps[1].text, /run: echo done/u);
+  assert.deepEqual(workflowStepBlocks("name: composite\n"), []);
+});
+
 test("unquotes YAML run scalars and their supported escapes", () => {
   const steps = workflowSteps(
     `steps:\n  - name: Double\n    run: "node scripts/check-example.mjs \\"quoted\\" \\\\path"\n  - name: Single\n    run: 'node scripts/check-example.mjs ''quoted'''\n`,
@@ -1094,16 +1145,193 @@ function ciWorkflowContracts(texts) {
     "if: inputs.desktop == 'true'",
   ])
     requireText(`composite ${value}`, texts.action, value);
+
+  // linux-desktop-deps: one shared install, wired into every desktop consumer.
+  const blocksOf = (source) => workflowStepBlocks(source ?? "");
+  const pinStep = (label, steps, match, check) =>
+    contracts.push([
+      label,
+      () => {
+        const step = steps.find(match);
+        assert.ok(step, label);
+        check(step);
+      },
+    ]);
+  const depsUses = "./.github/actions/linux-desktop-deps";
+  const callsDeps = (step) => step.uses === depsUses;
+  pinStep(
+    "rust passes desktop-timeout-minutes 18",
+    blocksOf(rust),
+    (step) => step.uses === "./.github/actions/setup-ci",
+    (step) =>
+      assert.equal(
+        step.withValues.get("desktop-timeout-minutes"),
+        '"18"',
+        "rust passes desktop-timeout-minutes 18",
+      ),
+  );
+  const setupSteps = blocksOf(texts.action);
+  pinStep(
+    "setup-ci calls linux-desktop-deps under the desktop condition",
+    setupSteps,
+    callsDeps,
+    (step) =>
+      assert.equal(
+        step.ifValue,
+        "inputs.desktop == 'true'",
+        "setup-ci calls linux-desktop-deps under the desktop condition",
+      ),
+  );
+  pinStep("setup-ci forwards desktop-timeout-minutes", setupSteps, callsDeps, (step) =>
+    assert.equal(
+      step.withValues.get("timeout-minutes"),
+      "${{ inputs.desktop-timeout-minutes }}",
+      "setup-ci forwards desktop-timeout-minutes",
+    ),
+  );
+  const backend = sweepJobs.get("backend");
+  pinStep("mutation backend calls linux-desktop-deps", blocksOf(backend), callsDeps, () => {});
+  const catalog = jobs(texts.catalog).get("native");
+  pinStep(
+    "catalog-engines Linux leg calls linux-desktop-deps under runner.os == 'Linux'",
+    blocksOf(catalog),
+    callsDeps,
+    (step) =>
+      assert.equal(
+        step.ifValue,
+        "runner.os == 'Linux'",
+        "catalog-engines Linux leg calls linux-desktop-deps under runner.os == 'Linux'",
+      ),
+  );
+  for (const [label, body] of [
+    ["mutation backend", backend],
+    ["catalog-engines", catalog],
+  ])
+    contracts.push([
+      `${label} checks out before linux-desktop-deps`,
+      () =>
+        assert.ok(
+          body.indexOf("uses: actions/checkout@v4") >= 0 &&
+            body.indexOf("uses: actions/checkout@v4") < body.indexOf(`uses: ${depsUses}`),
+          `${label} checks out before linux-desktop-deps`,
+        ),
+    ]);
+  contracts.push([
+    "catalog-engines path filters cover linux-desktop-deps",
+    () =>
+      assert.equal(
+        texts.catalog.split('      - ".github/actions/linux-desktop-deps/**"\n').length - 1,
+        2,
+        "catalog-engines path filters cover linux-desktop-deps",
+      ),
+  ]);
+  forbid("setup-ci keeps no inline desktop package list", texts.action, /libwebkit2gtk-4\.1-dev/u);
+  forbid("mutation keeps no inline desktop package list", texts.sweep, /libwebkit2gtk-4\.1-dev/u);
+  forbid(
+    "catalog-engines keeps no inline desktop package list",
+    texts.catalog,
+    /libwebkit2gtk-4\.1-dev/u,
+  );
+
+  const depsSteps = blocksOf(texts.deps);
+  const depsStep = (id) => depsSteps.find((step) => step.id === id);
+  const pinDepsStep = (label, id, check) =>
+    pinStep(label, depsSteps, (step) => step.id === id, check);
+  const cachePath = depsStep("restore")?.withValues.get("path");
+  const archives = /^(\/tmp\/[\w./-]+)\/\*\.deb$/u.exec(cachePath ?? "")?.[1];
+  for (const [name, id, uses] of [
+    ["restore", "restore", "actions/cache/restore@v4"],
+    ["save", "save", "actions/cache/save@v4"],
+  ]) {
+    pinDepsStep(`deps ${name} uses ${uses}`, id, (step) =>
+      assert.equal(step.uses, uses, `deps ${name} uses ${uses}`),
+    );
+    pinDepsStep(`deps ${name} continues on error`, id, (step) =>
+      assert.equal(step.continueOnError, "true", `deps ${name} continues on error`),
+    );
+  }
+  pinDepsStep("deps restore runs only with a key", "restore", (step) =>
+    assert.equal(
+      step.ifValue,
+      "steps.resolve.outputs.save-key != ''",
+      "deps restore runs only with a key",
+    ),
+  );
+  // The literal `== 'true'` forms: a loosened `!= 'false'` treats a missing output as true.
+  for (const [label, term] of [
+    ["deps save needs a key", "steps.resolve.outputs.save-key != ''"],
+    ["deps save needs fetched == 'true'", "steps.download.outputs.fetched == 'true'"],
+    ["deps save needs prune ok == 'true'", "steps.prune.outputs.ok == 'true'"],
+  ])
+    pinDepsStep(label, "save", (step) =>
+      assert.ok(step.ifValue?.split(" && ").includes(term), label),
+    );
+  contracts.push([
+    "deps cache paths are the archive directory's .deb files",
+    () => assert.ok(archives, "deps cache paths are the archive directory's .deb files"),
+  ]);
+  pinDepsStep("deps restore and save share one cache path", "save", (step) =>
+    assert.equal(
+      step.withValues.get("path"),
+      cachePath,
+      "deps restore and save share one cache path",
+    ),
+  );
+  forbid(
+    "deps archive directory is not a mktemp path",
+    depsSteps.map((step) => step.text).join("\n"),
+    /mktemp/u,
+  );
+  for (const [label, id, needle] of [
+    ["deps resolve passes the cache path directory to apt", "resolve", "install --print-uris"],
+    ["deps download passes the cache path directory to apt", "download", "install --download-only"],
+    ["deps install passes the cache path directory to apt", "install", "install --no-download"],
+  ])
+    pinDepsStep(label, id, (step) =>
+      assert.ok(
+        archives && step.text.includes(`-o Dir::Cache::Archives=${archives} ${needle}`),
+        label,
+      ),
+    );
+  contracts.push([
+    "deps save comes before install",
+    () => {
+      const ids = depsSteps.map((step) => step.id);
+      assert.ok(
+        ids.includes("save") && ids.indexOf("save") < ids.indexOf("install"),
+        "deps save comes before install",
+      );
+    },
+  ]);
+  pinDepsStep("deps update runs under sudo timeout --kill-after", "resolve", (step) =>
+    assert.match(
+      step.text,
+      /sudo timeout --kill-after=\d+ "\$remaining" apt-get update/u,
+      "deps update runs under sudo timeout --kill-after",
+    ),
+  );
+  pinDepsStep("deps download runs under sudo timeout --kill-after", "download", (step) =>
+    assert.match(
+      step.text,
+      /sudo timeout --kill-after=\d+ "\$remaining" apt-get "\$\{download_args\[@\]\}"/u,
+      "deps download runs under sudo timeout --kill-after",
+    ),
+  );
+  pinDepsStep("deps install uses --no-download", "install", (step) =>
+    assert.match(step.text, /install --no-download /u, "deps install uses --no-download"),
+  );
   return contracts;
 }
 
 async function readCiWorkflowTexts() {
-  const [test, sweep, action] = await Promise.all([
+  const [test, sweep, action, deps, catalog] = await Promise.all([
     readFile(join(projectRoot, ".github/workflows/test.yml"), "utf8"),
     readFile(join(projectRoot, ".github/workflows/mutation.yml"), "utf8"),
     readFile(join(projectRoot, ".github/actions/setup-ci/action.yml"), "utf8"),
+    readFile(join(projectRoot, ".github/actions/linux-desktop-deps/action.yml"), "utf8"),
+    readFile(join(projectRoot, ".github/workflows/catalog-engines.yml"), "utf8"),
   ]);
-  return { test, sweep, action };
+  return { test, sweep, action, deps, catalog };
 }
 
 test("CI workflow wiring preserves parallel gates and bounded incremental reuse", async () => {
@@ -1118,9 +1346,215 @@ test("CI workflow wiring preserves parallel gates and bounded incremental reuse"
   assert.deepEqual(JSON.parse(listed.stdout), Object.keys(mutationPackages));
 });
 
+const depsCall = "uses: ./.github/actions/linux-desktop-deps";
+const depsArchives = "/tmp/linux-desktop-apt-archives";
+const depsSavePath = `path: ${depsArchives}/*.deb\n        key: ${"$"}{{ steps.resolve.outputs.save-key }}\n\n`;
+const depsRestorePath = `path: ${depsArchives}/*.deb\n        key: ${"$"}{{ steps.resolve.outputs.save-key }}\n        restore-keys`;
+// [label, file, before, after, contract that must turn red]
+const linuxDesktopDepsRows = [
+  [
+    "rust bound emptied",
+    "test",
+    'desktop-timeout-minutes: "18"',
+    'desktop-timeout-minutes: ""',
+    "rust passes desktop-timeout-minutes 18",
+  ],
+  [
+    "rust bound removed",
+    "test",
+    '          desktop-timeout-minutes: "18"\n',
+    "",
+    "rust passes desktop-timeout-minutes 18",
+  ],
+  [
+    "setup-ci timeout not forwarded",
+    "action",
+    "timeout-minutes: ${{ inputs.desktop-timeout-minutes }}",
+    'timeout-minutes: ""',
+    "setup-ci forwards desktop-timeout-minutes",
+  ],
+  [
+    "setup-ci desktop condition loosened",
+    "action",
+    "      if: inputs.desktop == 'true'\n      uses",
+    "      if: inputs.desktop != 'false'\n      uses",
+    "setup-ci calls linux-desktop-deps under the desktop condition",
+  ],
+  [
+    "setup-ci call replaced by an inline install",
+    "action",
+    depsCall,
+    "run: sudo apt-get install -y libwebkit2gtk-4.1-dev",
+    "setup-ci calls linux-desktop-deps under the desktop condition",
+  ],
+  [
+    "setup-ci package list restored",
+    "action",
+    depsCall,
+    `${depsCall}\n      env:\n        PACKAGES: libwebkit2gtk-4.1-dev`,
+    "setup-ci keeps no inline desktop package list",
+  ],
+  [
+    "mutation backend call removed",
+    "sweep",
+    depsCall,
+    "run: echo skipped",
+    "mutation backend calls linux-desktop-deps",
+  ],
+  [
+    "mutation package list restored",
+    "sweep",
+    depsCall,
+    `${depsCall}\n        env:\n          PACKAGES: libwebkit2gtk-4.1-dev`,
+    "mutation keeps no inline desktop package list",
+  ],
+  [
+    "catalog-engines call removed",
+    "catalog",
+    depsCall,
+    "run: echo skipped",
+    "catalog-engines Linux leg calls linux-desktop-deps under runner.os == 'Linux'",
+  ],
+  [
+    "catalog-engines Linux guard removed",
+    "catalog",
+    `        if: runner.os == 'Linux'\n        ${depsCall}`,
+    `        ${depsCall}`,
+    "catalog-engines Linux leg calls linux-desktop-deps under runner.os == 'Linux'",
+  ],
+  [
+    "catalog-engines path filters lose the action",
+    "catalog",
+    '      - ".github/actions/linux-desktop-deps/**"\n',
+    "",
+    "catalog-engines path filters cover linux-desktop-deps",
+  ],
+  [
+    "catalog-engines package list restored",
+    "catalog",
+    depsCall,
+    `${depsCall}\n        env:\n          PACKAGES: libwebkit2gtk-4.1-dev`,
+    "catalog-engines keeps no inline desktop package list",
+  ],
+  [
+    "restore continue-on-error removed",
+    "deps",
+    "      continue-on-error: true\n      uses: actions/cache/restore@v4",
+    "      uses: actions/cache/restore@v4",
+    "deps restore continues on error",
+  ],
+  [
+    "save continue-on-error removed",
+    "deps",
+    "      continue-on-error: true\n      uses: actions/cache/save@v4",
+    "      uses: actions/cache/save@v4",
+    "deps save continues on error",
+  ],
+  [
+    "restore key guard removed",
+    "deps",
+    "      id: restore\n      if: steps.resolve.outputs.save-key != ''\n",
+    "      id: restore\n",
+    "deps restore runs only with a key",
+  ],
+  [
+    "save key guard removed",
+    "deps",
+    "steps.resolve.outputs.save-key != '' && steps.download",
+    "steps.download",
+    "deps save needs a key",
+  ],
+  [
+    "save fetched guard loosened",
+    "deps",
+    "steps.download.outputs.fetched == 'true'",
+    "steps.download.outputs.fetched != 'false'",
+    "deps save needs fetched == 'true'",
+  ],
+  [
+    "save prune guard loosened",
+    "deps",
+    "steps.prune.outputs.ok == 'true'",
+    "steps.prune.outputs.ok != 'false'",
+    "deps save needs prune ok == 'true'",
+  ],
+  [
+    "save path becomes the directory",
+    "deps",
+    depsSavePath,
+    depsSavePath.replace("/*.deb", ""),
+    "deps restore and save share one cache path",
+  ],
+  [
+    "restore path becomes the directory",
+    "deps",
+    depsRestorePath,
+    depsRestorePath.replace("/*.deb", ""),
+    "deps cache paths are the archive directory's .deb files",
+  ],
+  [
+    "resolve loses the archive directory",
+    "deps",
+    `apt-get -o Dir::Cache::Archives=${depsArchives} install --print-uris`,
+    "apt-get install --print-uris",
+    "deps resolve passes the cache path directory to apt",
+  ],
+  [
+    "download uses another archive directory",
+    "deps",
+    `download_args=(-o Dir::Cache::Archives=${depsArchives}`,
+    "download_args=(-o Dir::Cache::Archives=/tmp/other-archives",
+    "deps download passes the cache path directory to apt",
+  ],
+  [
+    "install loses the archive directory",
+    "deps",
+    `apt-get -o Dir::Cache::Archives=${depsArchives} install --no-download`,
+    "apt-get install --no-download",
+    "deps install passes the cache path directory to apt",
+  ],
+  [
+    "archive directory from mktemp",
+    "deps",
+    `archives=${depsArchives}\n        lib=`,
+    "archives=$(mktemp -d)\n        lib=",
+    "deps archive directory is not a mktemp path",
+  ],
+  [
+    "update loses sudo timeout",
+    "deps",
+    'sudo timeout --kill-after=10 "$remaining" apt-get update',
+    "sudo apt-get update",
+    "deps update runs under sudo timeout --kill-after",
+  ],
+  [
+    "update loses sudo before timeout",
+    "deps",
+    'sudo timeout --kill-after=10 "$remaining" apt-get update',
+    'timeout --kill-after=10 "$remaining" apt-get update',
+    "deps update runs under sudo timeout --kill-after",
+  ],
+  [
+    "download loses sudo timeout",
+    "deps",
+    'sudo timeout --kill-after=10 "$remaining" apt-get "${download_args[@]}"',
+    'sudo apt-get "${download_args[@]}"',
+    "deps download runs under sudo timeout --kill-after",
+  ],
+  [
+    "install loses --no-download",
+    "deps",
+    "install --no-download ",
+    "install ",
+    "deps install uses --no-download",
+  ],
+];
+
 test("CI workflow wiring rejects removed selectors, checkout, freshness, publication and dist prerequisites", async (t) => {
   const texts = await readCiWorkflowTexts();
-  for (const [label, file, before, afterText = ""] of [
+  // A row with a fifth element must turn exactly that labelled contract red; the older rows
+  // only need some contract to fail.
+  for (const [label, file, before, afterText = "", contract] of [
     ["matrix package env", "test", "      FRONTEND_MUTATION_PACKAGE: ${{ matrix.package }}\n"],
     ["fetch full history", "test", "          fetch-depth: 0"],
     ["restore action", "test", "uses: actions/cache/restore@v4"],
@@ -1150,14 +1584,37 @@ test("CI workflow wiring rejects removed selectors, checkout, freshness, publica
       "package: ${{ fromJSON(needs.frontend-mutation-packages.outputs.ids) }}",
     ],
     ["change base removed", "test", "github.event.pull_request.base.sha", "''"],
+    ...linuxDesktopDepsRows,
   ]) {
     await t.test(label, () => {
       // Disposable strings exercise the same assertions used above, without touching the checkout.
       const changed = { ...texts, [file]: texts[file].replaceAll(before, afterText) };
       assert.notEqual(changed[file], texts[file]);
-      assert.throws(() => {
-        for (const [, check] of ciWorkflowContracts(changed)) check();
+      const failed = ciWorkflowContracts(changed).flatMap(([name, check]) => {
+        try {
+          check();
+          return [];
+        } catch {
+          return [name];
+        }
       });
+      if (contract) assert.ok(failed.includes(contract), `${contract} stayed green: ${failed}`);
+      else assert.ok(failed.length > 0);
     });
   }
+  await t.test("save moved after install", () => {
+    const start = texts.deps.indexOf("    # Save only a set");
+    const end = texts.deps.indexOf("    # `--no-download`");
+    assert.ok(start > 0 && end > start);
+    const moved = texts.deps.slice(0, start) + texts.deps.slice(end) + texts.deps.slice(start, end);
+    const failed = ciWorkflowContracts({ ...texts, deps: moved }).flatMap(([name, check]) => {
+      try {
+        check();
+        return [];
+      } catch {
+        return [name];
+      }
+    });
+    assert.deepEqual(failed, ["deps save comes before install"]);
+  });
 });

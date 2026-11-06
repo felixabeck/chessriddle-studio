@@ -250,6 +250,7 @@ jobs:
         uses: ./.github/actions/setup-ci
         with:
           desktop: "true"
+          desktop-timeout-minutes: "18"
 
       - name: Install Rust toolchain
         shell: bash

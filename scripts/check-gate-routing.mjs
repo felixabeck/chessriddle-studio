@@ -221,6 +221,61 @@ export function workflowSteps(workflow) {
   return steps;
 }
 
+// Splits the first `steps:` sequence of a job body or composite action into step blocks. Unlike
+// `workflowSteps`, it keeps `uses:` steps, because step-scoped pins need them. Comment lines are
+// left out of every block's text, so a comment can never satisfy a pin.
+export function workflowStepBlocks(workflow) {
+  const lines = workflow.split(/\r?\n/u);
+  const indentationOf = (line) => line.match(/^\s*/u)[0].length;
+  const stepsIndex = lines.findIndex((line) => /^\s*steps:\s*$/u.test(line));
+  if (stepsIndex < 0) return [];
+  const stepsIndentation = indentationOf(lines[stepsIndex]);
+  const blocks = [];
+  let itemIndentation;
+  for (let index = stepsIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!line.trim()) {
+      blocks.at(-1)?.lines.push(line);
+      continue;
+    }
+    if (line.trimStart().startsWith("#")) continue;
+    const indentation = indentationOf(line);
+    if (indentation <= stepsIndentation) break;
+    const isItem = /^\s*-\s/u.test(line);
+    itemIndentation ??= isItem ? indentation : undefined;
+    if (itemIndentation === undefined || indentation < itemIndentation) break;
+    if (isItem && indentation === itemIndentation) blocks.push({ lines: [line] });
+    else blocks.at(-1).lines.push(line);
+  }
+  return blocks.map(({ lines: blockLines }) => {
+    const keyIndentation = itemIndentation + 2;
+    const fields = new Map();
+    const withValues = new Map();
+    let inWith = false;
+    for (const [position, line] of blockLines.entries()) {
+      const text = position === 0 ? line.slice(itemIndentation + 2) : line.slice(keyIndentation);
+      const indentation = position === 0 ? 0 : indentationOf(line) - keyIndentation;
+      if (indentation === 0) {
+        const field = /^([\w-]+):\s*(.*)$/u.exec(text);
+        inWith = field?.[1] === "with";
+        if (field && !fields.has(field[1])) fields.set(field[1], field[2].trim());
+      } else if (inWith && indentation === 2) {
+        const entry = /^\s*([\w-]+):\s*(.*)$/u.exec(text);
+        if (entry) withValues.set(entry[1], entry[2].trim());
+      }
+    }
+    return {
+      name: fields.get("name") ?? "",
+      id: fields.get("id"),
+      uses: fields.get("uses"),
+      ifValue: fields.get("if"),
+      continueOnError: fields.get("continue-on-error"),
+      withValues,
+      text: blockLines.join("\n"),
+    };
+  });
+}
+
 export function workflowJobs(workflow) {
   const jobs = [];
   const lines = workflow.split(/\r?\n/u);
