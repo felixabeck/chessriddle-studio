@@ -21126,3 +21126,19 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Follow-up of:** f-20261102-06 (its fix made the spec hold the texture response so the page abandons the fetch; under load the page does not always abandon it, which is this defect).
 * **Found by:** Claude Code build run game-end-marker, 2026-11-05.
 * **Impact class:** tooling
+
+---
+
+## 2026-11-06 — filed through the inbox spool
+
+### Shutdown sound-teardown test races its 5 ms budget on the macOS runner
+
+* **ID:** f-20261106-01 · **Status:** open · **Area:** app-startup · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 52393836-b09f-4a48-a4ee-9e54382a6b35
+* **Impact class:** tooling
+* **Where:** src-tauri/src/main.rs, test `tests::shutdown_timeout_still_runs_sound_teardown_when_attachments_are_pending` (~line 4080), exercising `shutdown_backend_with_attachments` (~line 1831) and `SoundServerLifecycle::shutdown_and_join` (~line 1803).
+* **Defect:** The test calls `shutdown_backend_with_attachments` with `budget = Duration::from_millis(5)` and then asserts `sound_joined`. The sound task is spawned through `tauri::async_runtime::spawn`, which is a separate runtime from the test's tokio runtime. It sets the flag only after it is polled and receives the signal. `tokio::time::timeout(budget, cleanup)` drops the whole `tokio::join!` once 5 ms elapse. When the runner is slow enough that the sound task has not run inside 5 ms, the join is cancelled before `sound_joined` is stored, and the assertion fails. The test asserts that teardown runs, but its outcome depends on scheduling within 5 ms.
+* **Failure scenario:** Test workflow run 42138340950 at 34a546e2, job rust-macos-test (127632075578): "panicked at src/main.rs:4107:9: assertion failed: sound_joined.load(...)". Result: 3025 passed, 1 failed. The previous 24 master runs of rust-macos-test passed, and the commits between the last green run (9e5ff562) and 34a546e2 change no Rust file.
+* **Evidence:** `gh api repos/felixabeck/en-croissant/actions/jobs/127632075578/logs`.
+* **Proof:** Make the test deterministic. Either let the attachment future stay pending until the sound join is observed, or assert ordering through a signal instead of a 5 ms wall-clock race. The test must keep its intent: sound teardown still runs when attachments time out. Run it in a loop under CPU load on Linux with no failures, and check that it fails if the sound join is removed from the cleanup.
+* **Found by:** Claude Code (Opus 5.5), drain session 52393836-b09f-4a48-a4ee-9e54382a6b35, post-push CI wait for f-20261029-16, 2026-11-06.
