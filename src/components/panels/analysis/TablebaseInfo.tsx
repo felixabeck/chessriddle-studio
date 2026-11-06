@@ -41,7 +41,7 @@ function TablebaseInfo({ fen, turn }: { fen: string; turn: "white" | "black" }) 
               )}
               {error && (
                 <Text>
-                  {t("Common.Error")}: {error}
+                  {t("Common.Error")}: {error instanceof Error ? error.message : String(error)}
                 </Text>
               )}
               {data && <OutcomeBadge category={data.category} turn={turn} wins />}
@@ -57,7 +57,8 @@ function TablebaseInfo({ fen, turn }: { fen: string; turn: "white" | "black" }) 
                       key={m.san}
                       px="xs"
                       onClick={() => {
-                        makeMove({ payload: parseUci(m.uci)! });
+                        const move = parseUci(m.uci);
+                        if (move) makeMove({ payload: move });
                       }}
                       className={classes.info}
                     >
@@ -67,8 +68,8 @@ function TablebaseInfo({ fen, turn }: { fen: string; turn: "white" | "black" }) 
                         </Text>
                         <OutcomeBadge
                           category={m.category}
-                          dtz={Math.abs(m.dtz)}
-                          dtm={m.dtm}
+                          dtz={m.dtz === null ? undefined : Math.abs(m.dtz)}
+                          dtm={m.dtm ?? undefined}
                           turn={turn === "white" ? "black" : "white"}
                         />
                       </Group>
@@ -142,7 +143,11 @@ function OutcomeBadge({
     : match(category)
         .with("draw", () => t("Board.Analysis.Tablebase.Draw"))
         .with("unknown", () => t("Common.Unknown"))
-        .otherwise(() => (dtm ? `DTM ${Math.abs(dtm)}` : `DTZ ${dtz}`));
+        .otherwise(() => {
+          if (dtm) return `DTM ${Math.abs(dtm)}`;
+          if (typeof dtz === "number") return `DTZ ${dtz}`;
+          return t("Common.Unknown");
+        });
 
   return (
     <Group p="xs">

@@ -9,16 +9,17 @@ import TablebaseInfo, { compareTablebaseMoves } from "./TablebaseInfo";
 
 const mocks = vi.hoisted(() => ({
   makeMove: vi.fn(),
+  error: undefined as unknown,
   data: {
     category: "win",
     moves: [{ category: "win", uci: "e2e4", san: "e4", dtz: 1, dtm: null }],
-  },
+  } as { category: string; moves: Record<string, unknown>[] },
 }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("swr/immutable", () => ({
   default: () => ({
     data: mocks.data,
-    error: undefined,
+    error: mocks.error,
     isLoading: false,
   }),
 }));
@@ -39,6 +40,7 @@ installResizeObserverStub();
 let root: ReturnType<typeof createRoot>;
 let host: HTMLDivElement;
 beforeEach(() => {
+  mocks.error = undefined;
   mocks.data = {
     category: "win",
     moves: [{ category: "win", uci: "e2e4", san: "e4", dtz: 1, dtm: null }],
@@ -135,3 +137,25 @@ test.each([
     expect(mocks.makeMove).toHaveBeenCalledExactlyOnceWith({ payload: { from: 12, to: 28 } });
   },
 );
+
+test("renders a rejected response's message instead of throwing on the Error object", async () => {
+  mocks.error = new Error("Lichess returned an invalid response");
+  mocks.data = undefined as never;
+
+  await render(<TablebaseInfo fen="8/8/8/8/8/8/4P3/8 w - - 0 1" turn="white" />);
+
+  expect(host.textContent).toContain("Common.Error: Lichess returned an invalid response");
+});
+
+test("labels a child with null dtz and dtm as unknown instead of a DTZ number", async () => {
+  mocks.data.moves = [{ category: "maybe-win", uci: "e2e4", san: "e4", dtz: null, dtm: null }];
+
+  await render(<TablebaseInfo fen="8/8/8/8/8/8/4P3/8 w - - 0 1" turn="white" />);
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>(".mantine-Accordion-control")!.click(),
+  );
+
+  const labels = [...host.querySelectorAll(".mantine-Badge-root")].map((b) => b.textContent);
+  expect(labels).toContain("Common.Unknown");
+  expect(labels.some((label) => label?.includes("DTZ"))).toBe(false);
+});

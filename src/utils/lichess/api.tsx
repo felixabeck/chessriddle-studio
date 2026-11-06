@@ -26,43 +26,41 @@ import { engineMultiPv } from "@/utils/engines";
 
 export const MIN_DATE = new Date(1952, 0, 1);
 
-export type TablebaseCategory =
-  | "win"
-  | "unknown"
-  | "maybe-win"
-  | "cursed-win"
-  | "draw"
-  | "blessed-loss"
-  | "maybe-loss"
-  | "loss";
+const tablebaseCategorySchema = z.enum([
+  "win",
+  "unknown",
+  "maybe-win",
+  "cursed-win",
+  "draw",
+  "blessed-loss",
+  "maybe-loss",
+  "loss",
+]);
 
-type TablebaseData = {
-  checkmate: boolean;
-  stalemate: boolean;
-  variant_win: boolean;
-  variant_loss: boolean;
-  insufficient_material: boolean;
-  dtz: number;
-  precise_dtz: number;
-  dtm: number;
-  category: TablebaseCategory;
-  moves: TablebaseMove[];
-};
+export type TablebaseCategory = z.infer<typeof tablebaseCategorySchema>;
 
-export type TablebaseMove = {
-  uci: string;
-  san: string;
-  zeroing: boolean;
-  checkmate: boolean;
-  stalemate: boolean;
-  variant_win: boolean;
-  variant_loss: boolean;
-  insufficient_material: boolean;
-  dtz: number;
-  precise_dtz: number;
-  dtm: number;
-  category: TablebaseCategory;
-};
+// Only the fields the tablebase panel reads are validated. Lichess returns null for dtz/dtm
+// routinely (e.g. dtm outside the DTM tables), so both are nullable.
+const tablebaseMoveSchema = z
+  .object({
+    uci: z.string().refine((uci) => parseUci(uci) !== undefined),
+    san: z.string(),
+    dtz: z.number().nullable(),
+    dtm: z.number().nullable(),
+    category: tablebaseCategorySchema,
+  })
+  .passthrough();
+
+export type TablebaseMove = z.infer<typeof tablebaseMoveSchema>;
+
+const tablebaseDataSchema = z
+  .object({
+    category: tablebaseCategorySchema,
+    moves: z.array(tablebaseMoveSchema),
+  })
+  .passthrough();
+
+type TablebaseData = z.infer<typeof tablebaseDataSchema>;
 
 type LichessPerf = {
   games: number;
@@ -402,7 +400,7 @@ export async function getLichessGame(gameId: string): Promise<string> {
 
 export async function getTablebaseInfo(fen: string): Promise<TablebaseData> {
   const result = await tauri.getPublicLichessJson({ kind: "tablebase", fen });
-  return JSON.parse(result) as TablebaseData;
+  return parseNativeJson(result, tablebaseDataSchema);
 }
 
 export async function getFidePlayer(query: string) {

@@ -35,7 +35,13 @@ vi.mock("@/platform/tauri", async () => {
     };
 });
 
-import { convertToNormalized, downloadLichess, getBestMoves, getLichessAccount } from "./api";
+import {
+    convertToNormalized,
+    downloadLichess,
+    getBestMoves,
+    getLichessAccount,
+    getTablebaseInfo,
+} from "./api";
 
 const publication: ArtifactPublication = {
     handle: { id: { id: "artifact" }, kind: "fileWorkspace" },
@@ -168,6 +174,79 @@ describe("getBestMoves", () => {
             kind: "cloud_eval",
             fen: AFTER_E4,
             multi_pv: 1,
+        });
+    });
+});
+
+describe("getTablebaseInfo", () => {
+    const fen = "4k3/6KP/8/8/8/8/7p/8 w - - 0 1";
+    const validMove = {
+        uci: "h7h8q",
+        san: "h8=Q+",
+        zeroing: true,
+        checkmate: false,
+        stalemate: false,
+        variant_win: false,
+        variant_loss: false,
+        insufficient_material: false,
+        dtz: -2,
+        precise_dtz: -2,
+        dtm: null,
+        category: "loss",
+    };
+
+    beforeEach(() => {
+        mocks.getPublicLichessJson.mockReset();
+    });
+
+    test("accepts a realistic payload with null dtm and extra fields", async () => {
+        const payload = {
+            checkmate: false,
+            stalemate: false,
+            variant_win: false,
+            variant_loss: false,
+            insufficient_material: false,
+            dtz: 1,
+            precise_dtz: 1,
+            dtm: null,
+            category: "win",
+            moves: [
+                validMove,
+                { ...validMove, uci: "g7f6", san: "Kf6", dtz: null, category: "draw" },
+            ],
+        };
+        mocks.getPublicLichessJson.mockResolvedValue(JSON.stringify(payload));
+
+        const data = await getTablebaseInfo(fen);
+
+        expect(data.category).toBe("win");
+        expect(data.moves.map((m) => [m.uci, m.san, m.dtz, m.dtm, m.category])).toEqual([
+            ["h7h8q", "h8=Q+", -2, null, "loss"],
+            ["g7f6", "Kf6", null, null, "draw"],
+        ]);
+        expect(mocks.getPublicLichessJson).toHaveBeenCalledExactlyOnceWith({
+            kind: "tablebase",
+            fen,
+        });
+    });
+
+    test.each([
+        ["missing moves", { checkmate: false, category: "win" }],
+        ["unknown category", { category: "maybe-draw", moves: [] }],
+        [
+            "unknown move category",
+            { category: "win", moves: [{ ...validMove, category: "maybe-draw" }] },
+        ],
+        ["numeric san", { category: "win", moves: [{ ...validMove, san: 5 }] }],
+        ["string dtz", { category: "win", moves: [{ ...validMove, dtz: "2" }] }],
+        ["unparseable uci", { category: "win", moves: [{ ...validMove, uci: "zz99" }] }],
+    ])("rejects %s", async (_name, payload) => {
+        mocks.getPublicLichessJson.mockResolvedValue(JSON.stringify(payload));
+
+        await expect(getTablebaseInfo(fen)).rejects.toThrow(/invalid response/);
+        expect(mocks.getPublicLichessJson).toHaveBeenCalledExactlyOnceWith({
+            kind: "tablebase",
+            fen,
         });
     });
 });
