@@ -54,7 +54,8 @@ test("renders nothing while closed", async () => {
   await act(async () => {
     root.render(<LazyFeedbackModal opened={false} onClose={onClose} />);
   });
-  await act(async () => Promise.resolve());
+  // Long enough for the lazy import to settle, so a wrapper that mounts while closed would be seen.
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 50)));
   expect(container.querySelector("[data-testid='feedback-modal']")).toBeNull();
   expect(mocks.FeedbackModal).not.toHaveBeenCalled();
 });
