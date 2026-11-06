@@ -21403,3 +21403,19 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Proof:** on a probe worktree at the S2 commit, `pnpm test:e2e:container --project=engine-gap` failed 7/17; removing only the two `FeedbackModal` imports made it pass except the expected settings snapshot. `vite build` of both variants: with the import, `dist/assets/useScaledMaxWidth-*.css` (18,234 bytes, theme module rules and Inter font faces) appears and `index-*.css` shrinks from 384,147 to 365,914 bytes.
 * **Found by:** Claude Code (Opus 5.5), build run studio-feedback, 2026-11-06
 * **Open question:** pin the cascade independent of chunking. Candidates: Mantine's `styles.layer.css` for every Mantine package that ships one (then every unlayered app rule beats Mantine regardless of specificity, which needs a full-suite snapshot review), or putting the theme modules into an explicit later layer, or a build setting that keeps global theme CSS in the entry stylesheet. Decide with the full e2e container suite as the proof.
+
+---
+
+## 2026-11-06 — filed through the inbox spool
+
+### One Chess.com chess/chess960 game without PGN permanently blocks that account's archive sync
+
+* **ID:** f-20261106-12 · **Status:** open · **Area:** pgn-import · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** behaviour
+* **Where:** `src-tauri/src/chesscom.rs:451-479` (`download_chess_com_games_core` month staging loop): after the `ACCOUNT_ARCHIVE_RULES` allowlist (`:94`, `:455-461`) keeps `chess`/`chess960`/absent-`rules`, a missing, empty or whitespace-only `pgn` returns `Error::InvalidInput("Chess.com returned a game without PGN")` for the whole month (`:462-469`). `Ok(Err(error))` at `:498` abandons any already-staged earlier months in the same attempt without publication.
+* **Defect:** a single allowed-rules archive game that carries no usable PGN fails the entire Chess.com export. Sibling valid games in the same month are discarded, the coverage cursor cannot advance past that month, and every Retry hits the same record. This is the same user-visible permanent sync stall as the handled variant case `f-20261101-24`, after `d-20261103-18` only filtered by `rules` and not by missing PGN payload. The linked-collection batch path already omits unparsable games (`f-20261101-24` / `d-20261103-17`); the download never reaches it.
+* **Failure scenario:** a Chess.com month contains normal games plus one `rules: "chess"` (or `chess960`) entry with absent, `""`, or whitespace `pgn` (aborted/draft/API gap). Download fails with "Chess.com returned a game without PGN"; the user's linked collection or unlinked account DB never receives the good games from that month or later months in the attempt; Download/Retry keeps failing until the remote month changes.
+* **Related:** `f-20261101-24` (handled; variant `rules` filter + batch omit). Distinct residual: empty/missing PGN on *allowed* rules still hard-fails staging. `d-20261103-17`/`d-20261103-18` do not decide empty-PGN handling.
+* **Open question:** should staging `continue` (skip) an allowlisted game with no usable PGN — matching variant-only months that publish an empty readable PGN and advance the resumable floor — or treat empty PGN as a distinct typed skip logged like batch omissions?
+* **Found by:** Grok Bot review-only account/archive pass on tuxedo-atlas HEAD `14ba4a4c`, 2026-11-06.
+* **Proof:** temporary production-path probe (removed; tree clean) drove `download_chess_com_games_core` via `run_owned_export` with INDEX + one archive containing a good `chess` game beside (1) `"pgn":""`, (2) missing `pgn`, (3) whitespace `pgn`. All three returned `Err(InvalidInput("Chess.com returned a game without PGN"))` with no published artifact. Contrast: `staging_only_variant_games_publishes_readable_empty_pgn` keeps variant-only months publishing empty PGN; `staging_keeps_only_supported_rules_and_absent_rules` keeps absent-`rules` with PGN.
