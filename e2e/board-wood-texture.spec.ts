@@ -169,9 +169,11 @@ test("board-wood-texture: arrows from PGN drawings keep finite coordinates when 
             },
         }),
     });
-    // The first board renders the default texture before the stored "off" hydrates. Holding the
-    // tile response makes the page abandon that fetch on every run, which the fixture must not
-    // report as a browser failure (f-20261102-06).
+    // The first board may request the default tile before the stored "off" hydrates. Holding the
+    // response keeps that fetch pending, so if the page abandons it the fixture must not report
+    // that abort as a browser failure (f-20261102-06). Whether the tile is requested and abandoned
+    // depends on timing, so the test does not wait for it (f-20261105-07); the classifier test
+    // "the browser-failure check exempts only abandoned image fetches" proves it.
     const textureAborted = new Promise<string | undefined>((resolve) => {
         page.on("requestfailed", (request) => {
             if (request.url().endsWith("/board/wood4-square.png")) {
@@ -207,7 +209,6 @@ test("board-wood-texture: arrows from PGN drawings keep finite coordinates when 
     );
     expect(coordinates).toHaveLength(24);
     expect(coordinates.every(Number.isFinite)).toBe(true);
-    expect(await textureAborted).toBe("net::ERR_ABORTED");
 });
 
 test("board-wood-texture: the browser-failure check exempts only abandoned image fetches", async ({
