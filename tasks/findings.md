@@ -21279,7 +21279,7 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 
 ### A slow Ubuntu mirror consumes the Linux `rust` job's 30-minute budget before the Rust tests finish
 
-* **ID:** f-20261106-07 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261106-07 · **Status:** handled · **Area:** ci-workflows · **Root:** - · **Entry:** build · **Blocked:** none
 * **Impact class:** tooling
 * **Filed from:** b628926f-b0c5-473b-b51c-5cc2bca9a930
 * **Where:** `.github/actions/setup-ci/action.yml:31-41` (uncached `sudo apt-get update` + `apt-get install` of the WebKitGTK desktop build dependencies), `.github/workflows/test.yml:244` (`rust` job `timeout-minutes: 30`, which covers setup and tests together).
@@ -21293,6 +21293,19 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **CI run:** 42247376577
 * **Recurrence (2026-11-06, drain session c9f01c8c):** Test run 42247376577 on master b7bb04c6 cancelled the `rust` job 127993028355 the same way. "Set up repository dependencies" ran from 15:54:34 to 16:23:49Z (`Need to get 63.7 MB`, `Fetched 56.0 MB in 28min 43s (32.5 kB/s)`), and the job was cancelled at its 30-minute limit in "Cache Rust build artifacts" before any Rust check started. The unpushed repair on drain/drain-20261102 (commit 0f6d6c59 and its follow-ups, `.github/actions/linux-desktop-deps`) caches the packages and bounds this download at 18 minutes, so this run is owned here. The same run's `e2e` failure is a separate defect, filed through the inbox by this session (board-wood-texture snapshot export).
 <!-- ledger-meta {"command":"annotate","effect_lines":2,"effect_sha256":"d628b472ec2492b08fc26ccd2c4b090d1dd38a42b6a73c0209dcecfa9fb4fbc4","input_sha256":"e1408f3de357f29f768b3f760d4fa0b1dae1b5b46a3bc9ae7efb5b6ef399fe3e","kind":"mutation-receipt","operation":"8b5c54b22b4121620aee71cb3e1e2c01e76d404762dc1c34b0389201cb5606c0","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-07"],"target":"f-20261106-07","v":1} -->
+
+**Closed (2026-11-06, drain session c9f01c8c, adopted plan run 5b521300):** The fix is on master as fd9142aa through 7fad2737. The new composite action `.github/actions/linux-desktop-deps` owns the WebKitGTK package list, and `setup-ci`, `mutation.yml` `backend` and the Linux leg of `catalog-engines.yml` call it.
+- **Cache:** the action restores the resolved `.deb` set from an `actions/cache` entry. The key covers the codename, the architecture and a hash of the `--print-uris` filename, size and checksum columns. Each restored file is checked against its size and checksum, only missing files are downloaded, files outside the set are pruned, a changed set is saved, and the install runs with `--no-download`. The cache fails open with a warning.
+- **Bound:** `apt-get update` and the download share one wall-clock deadline (`sudo timeout --kill-after`). The `rust` job sets it to 18 minutes. Only a real expiry prints a labelled `::error::` inside "Set up repository dependencies", which the push skill's setup-step rerun exception already matches.
+- **Committed proof:** `scripts/check-gate-routing-tests.mjs` pins the cross-step wiring and runs the action's real shell helpers and resolve prologue under bash with stubbed sudo and date. 24 in-test mutations each turn a named case red.
+- **Container probe:** a disposable probe with real apt 3.2 on ubuntu:26.04 passed all nine plan items.
+- **CI release gate, first run:** Test run 42281161340 on 7fad2737. `rust` and `frontend` resolved the same key, `frontend` saved it, and `rust` got the benign "Cache save failed" reservation conflict.
+- **CI release gate, second run:** dispatched Test run 42283553030. Both desktop jobs restored on the set prefix, reported `Need to get 0 B/63.7 MB of archives` and saved nothing.
+- **Catalog engines:** run 42281161275 ran the action on the Linux leg and skipped it on macOS and Windows. All legs are green.
+- **Decisions:** d-20261106-07 (cache plus a bound only where the job budget cannot absorb a stall) and d-20261106-08 (one shared action for the three callers).
+- **Rejected:** bound-and-retry alone, a separate test budget or a larger job timeout, swapping mirrors, and a third-party apt-cache action.
+- **Known limits:** a cold cache on a slow mirror can still fail `rust` at the 18-minute bound, as an identified setup step. `mutation.yml` `backend` is proven statically, and its Sunday run is a follow-up observation.
+<!-- ledger-meta {"command":"close","effect_lines":11,"effect_sha256":"9ad45c0afa9c2af7c511f99b3c321aea2999be0c3404ee6e383ae8bfc621fb44","header_sha256":"684cedaecd399d9553871e0395606d4209345c0d3436dd5433a9228aa3c19602","header_status":"handled","input_sha256":"c5ce8d985e1db8e4f61fc783dd4c82cc655d058b781b3299eb55bcc08852c626","kind":"mutation-receipt","operation":"9187b0dfc9adb989f7f18838a8c0321427ca3478de948f27ba405c8436e806b4","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-07"],"target":"f-20261106-07","v":1} -->
 
 ---
 
