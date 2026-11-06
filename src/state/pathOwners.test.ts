@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import "./atoms";
+// Warms the transform at collection for the dynamic import in the incomplete-startup-scan test (f-20261101-01).
+import "../routes/__root";
 import { deserializeStorageValue, serializeStorageValue } from "./store/debouncedStorage";
 import {
     EXPANDED_DIRECTORIES_STORAGE_KEY,
