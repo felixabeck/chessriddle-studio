@@ -21654,6 +21654,9 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Fix:** On Escape during recording, call `stop()` without `setKeymap` (same as Cancel). Optionally ignore Escape in the recorded set. Add a KeybindInput regression that Escape while recording exits recording and leaves the stored keys unchanged.
 * **Proof:** Ephemeral Vitest on HEAD `c4b2faf0` (`KeybindInput.area5-ephemeral.test.tsx`, removed after filing): after starting record, `KeyboardEvent` Escape leaves Cancel/Save visible and a `kbd` whose text includes escape/esc. Aligns with `useRecordHotkeys` adding `i(e.code)` for every keydown. No app/probe residue.
 
+**Related correction (2026-11-06, push records review):** `f-20261106-06` (piece-set hover preview stick) is handled, not open; it remains a different control.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"eae04295333d2199b4aa7e938cdc829019468de5d7d9ebe9c616b74c6842bbb4","input_sha256":"aad3ec9fdaf827c588d1b883a0d7eb95f9b0a874412f42d9d0dacbfcfc8f314e","kind":"mutation-receipt","operation":"259fd6cd7f9ba3f634768f1fcce4457c0f4dfbee051e8449b4d0a6f381c578d4","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-28"],"target":"f-20261106-28","v":1} -->
+
 ---
 
 ## 2026-11-06 — filed through the inbox spool
