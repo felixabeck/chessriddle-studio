@@ -1,7 +1,7 @@
 <br />
 <div align="center">
   <a href="https://github.com/felixabeck/chessriddle-studio">
-    <img width="115" height="115" src="https://github.com/franciscoBSalgueiro/en-croissant/blob/master/src-tauri/icons/icon.png" alt="Logo of the original En Croissant project">
+    <img width="115" height="115" src="src-tauri/icons/icon.png" alt="ChessRiddle Studio logo">
   </a>
 
 <h3 align="center">ChessRiddle Studio</h3>
