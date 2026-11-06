@@ -21546,6 +21546,9 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Fix:** In `DetachedLine` (and preferably `EngineSummary`), use `useAtom(scoreTypeFamily(engine.id))` the same way `AnalysisRow` does; pass `evalDisplay` / `setEvalDisplay`, and disable the setter when `inert`. Add a DetachedEval regression that sets `scoreTypeFamily` to `"wdl"` with a WDL payload and expects the WhiteWins progress section.
 * **Proof:** Ephemeral Vitest on HEAD `6df505a9` in `DetachedEval.test.tsx`: pin `displayEngine`, `scoreTypeFamily(id)="wdl"`, remember a line with `wdl: [450,300,250]`. Query `[aria-label="Board.Analysis.Tablebase.WhiteWins"]` was null (expected present). Probe removed (`git checkout -- DetachedEval.test.tsx`); tree clean.
 
+**Citation correction (2026-11-06, push records review):** `scoreTypeFamily` is at `src/state/atoms.ts:1007`, not `:994` (that line range is `coverageMinGamesAtom`). The DetachedEval and AnalysisRow citations stand.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"aae37f8d882696b8cfc793d059902d375d3e0a7fafb338f80b5c69d7bb9a75ae","input_sha256":"f2fb3b015a73ce2d8cdbb7cf4b786e2d73ea6bd8419943c6c615837aac09cd52","kind":"mutation-receipt","operation":"483d82096d75809a3c9c08b78b5c8da7498a0c455d1d921aa3bd1fa63fc4ece9","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-21"],"target":"f-20261106-21","v":1} -->
+
 ---
 
 ## 2026-11-06 — filed through the inbox spool
