@@ -21304,3 +21304,19 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Found by:** Claude Code, build run rename-chessriddle-studio, 2026-11-06, during the post-install start check.
 * **Proof (correction, 2026-11-06):** the first occurrence's log moved with the data: it is now `~/.local/share/com.chessriddle.studio/logs/en-croissant.log` (line 2, 2026-11-05 21:19:45); the second is `chessriddle-studio.log` in the same directory (2026-11-06 13:03:03). A fourth caller belongs in Where: `src/components/tabs/NewTabHome.tsx:254` (`countPgnGames` without an abort signal).
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"2d4ccbcb74799121f61e89726a4f696a547e6ab57bc2c1396471057f558976a6","input_sha256":"c8163f39c4cd69823e27f4c4861fa8c3504295bc7f8590ee6b96fdaaf4a75494","kind":"mutation-receipt","operation":"a0857e46a01b968f383a36e62e4d31f52f8b0de4c52f5ee2476dbe6bed003136","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-08"],"target":"f-20261106-08","v":1} -->
+
+---
+
+## 2026-11-06 — filed through the inbox spool
+
+### Asymmetric White/Black time-control tags are not restored to the modeled header fields clocks read
+
+* **ID:** f-20261106-09 · **Status:** open · **Area:** chess-tree · **Root:** pgn-modeled-header-parse-gap · **Entry:** inline · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** PGN fidelity / file-save review at HEAD `7861ffea`, beyond annotation and startup coverage
+* **Where:** `src/utils/chess.ts:659-701` (`getPgnHeaders`) promotes only `TimeControl` and `Variant` into modeled fields; `WhiteTimeControl`, `BlackTimeControl`, `ECO` and `UTCTime` fall into `other`. Writers and consumers use the modeled fields: `headersToPGN` at `src/utils/chess.ts:204-233`, `BoardGame.tsx:702-720` (asymmetric clocks clear `time_control` and set `white_time_control` / `black_time_control`), `src/utils/clock.ts:84-98`, `src/components/boards/Board.tsx:296-301`.
+* **Defect:** After a save/reopen (or any parse) of a game with unequal White/Black clocks, `headers.white_time_control` and `headers.black_time_control` are `undefined` while the same strings sit only under `headers.other`. `hasClock` and `getClocks` never read `other`, and BoardGame deliberately left `time_control` unset for the asymmetric case, so the clock strip and per-side time controls disappear even though the PGN tags are still present. Shared `TimeControl` alone still works because it is modeled. The existing round-trip test at `src/utils/tests/chess.test.ts:1307-1324` currently pins the wrong shape by expecting those tags only in `other`.
+* **Failure scenario:** Play vs engine with different White and Black time controls (for example 10+5 vs 5+2), finish or interrupt, save the game to a PGN file, close the tab and reopen the same game. The board no longer shows the clock UI / per-side controls that were active when the game was played, even though `[WhiteTimeControl]` / `[BlackTimeControl]` are still in the file.
+* **Proof:** A focused parse assertion that `[WhiteTimeControl "600+5"]` / `[BlackTimeControl "300+2"]` restore `headers.white_time_control` / `headers.black_time_control` currently fails (`undefined`). Reproduce with `pnpm exec vitest run` against a temporary test calling `parsePGN` with mocked `lexPgn` Header tokens for those tags. After the fix, update `chess.test.ts` round-trip expectations so those fields are modeled (and not also re-emitted from `other`). Same mapping should cover `ECO` → `eco` and `UTCTime` → `time` so BoardGame's written `time` survives reopen.
+* **Found by:** Grok Bot PGN fidelity review (Felix request, 2026-11-06)
+* **Related:** No open finding covers this parse gap. Handled Elo/`?` NaN work is a different tag path. Text text fidelity of the tags is preserved via `other`; the defect is the modeled-field / UI consumer contract.
