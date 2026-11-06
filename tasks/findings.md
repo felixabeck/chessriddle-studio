@@ -21252,3 +21252,21 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Proof:** A focused harness importing production `SettingsCombobox` with the `PiecesSelect` wiring (`value`/`onPreview`/`onCommit` all on one `atomWithStorage`) was run with `pnpm exec vitest run` on 2026-11-06 (Europe/Berlin): (1) invoking the option's React `onMouseEnter` changed the atom and `localStorage` to `"merida"`; (2) closing the dropdown without submit left `"merida"` in both atom and storage instead of restoring `"staunty"`; (3) an isolated copy of the `committedValue` sync showed preview overwrites committed, making restore a no-op. The temporary harness file was deleted after the probe. A permanent regression should live next to `SettingsCombobox` / `PiecesSelect` and assert Escape/outside-close restores the pre-open set while click-to-select still commits. Fix shape: snapshot the committed value when the dropdown opens (or skip the `value`→`committedValue` sync while `previewedValue !== null`), and keep preview writes out of durable storage if a separate preview channel is introduced.
 
 * **Related:** No prior finding on `SettingsCombobox` / `PiecesSelect`. Upstream hover preview (`ca7de4d8`, `49098152`) is intentional; the restore contract was added later in `3afed031` and is what fails. `f-20260829-02` is layout-only for Settings at 320px/200%. VolumeSlider already previews in local state and commits only on release (`VolumeSlider.test.tsx`), which is the correct pattern this combobox claims but does not keep when `onPreview` shares the persisted atom.
+
+---
+
+## 2026-11-06 — filed through the inbox spool
+
+### A slow Ubuntu mirror consumes the Linux `rust` job's 30-minute budget before the Rust tests finish
+
+* **ID:** f-20261106-07 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** tooling
+* **Filed from:** b628926f-b0c5-473b-b51c-5cc2bca9a930
+* **Where:** `.github/actions/setup-ci/action.yml:31-41` (uncached `sudo apt-get update` + `apt-get install` of the WebKitGTK desktop build dependencies), `.github/workflows/test.yml:244` (`rust` job `timeout-minutes: 30`, which covers setup and tests together).
+* **Defect:** On the push of 17b782bb (run 42167043743, `rust` job 127725818339) the apt step fetched 63.7 MB in 22 min 52 s (46.4 kB/s) from `azure.archive.ubuntu.com` (05:13:03 → 05:36:00Z). Rust setup, clippy and the coverage build then left about 4 minutes for `pnpm test:coverage:backend`, and the job was cancelled at the 30-minute limit in "Run Rust tests with coverage" while tests were still passing. The same job on the two preceding master runs took 8 min 22 s and 8 min 36 s. The pushed diff changed no Rust code. Nothing in the workflow bounds or caches the apt download, so a mirror stall becomes a red repository-check step instead of an identified setup failure, and the push skill's setup-step rerun exception does not match it.
+* **Failure scenario:** a mirror slowdown on any push reddens `rust` (or another desktop job) at its timeout inside a test step. `pnpm ci:remote:check` then refuses the next push until someone diagnoses the log and reruns it.
+* **Open question:** cache the desktop apt packages (for example, an apt package cache keyed on the package list), bound the apt step with its own `timeout-minutes` and one retry so a stall fails as a setup step, or give the test step its own budget separate from setup.
+* **Related:** f-20261106-02 (hosted-runner class failure on `rust-macos-test`, different job and cause).
+* **Proof:** `gh api repos/felixabeck/en-croissant/actions/jobs/127725818339/logs` lines for `Fetched 63.7 MB in 22min 52s (46.4 kB/s)` and the cancelled "Run Rust tests with coverage" step; copy at `/tmp/nf-f-20261102-04/rust-job.log`.
+* **Found by:** Claude Code drain session b628926f-b0c5-473b-b51c-5cc2bca9a930 (f-20261102-04 release), 2026-11-06.
+* **Id note (2026-11-06):** first allocated as f-20261106-03 by an unpushed drain inbox merge (0156ba24 on drain/drain-20261102); renumbered during the rebase onto origin/master, where f-20261106-03 was already published for a different finding.
