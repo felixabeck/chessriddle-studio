@@ -914,7 +914,13 @@ async fn save_engine_logs(app: tauri::AppHandle, text: String) -> Result<(), Err
 }
 
 const DOCUMENTATION_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/tree/master/docs");
-const APP_LOG_FILE_NAME: &str = "chessriddle-studio.log";
+macro_rules! app_log_file_stem {
+    () => {
+        "chessriddle-studio"
+    };
+}
+const APP_LOG_FILE_STEM: &str = app_log_file_stem!();
+const APP_LOG_FILE_NAME: &str = concat!(app_log_file_stem!(), ".log");
 
 /// Opens the fixed project documentation URL without granting arbitrary URL authority to the
 /// renderer.
@@ -2050,6 +2056,9 @@ enum NativeLogSink {
 }
 
 const NATIVE_LOG_SINKS: &[NativeLogSink] = &[NativeLogSink::Stdout, NativeLogSink::LogDir];
+/// Bound: 2 MiB per file plus 2 archived files (~6 MiB of native log on disk).
+const NATIVE_LOG_MAX_FILE_SIZE: u128 = 2 * 1024 * 1024;
+const NATIVE_LOG_ROTATION_KEEP: usize = 2;
 
 fn native_log_sinks() -> &'static [NativeLogSink] {
     #[cfg(debug_assertions)]
@@ -2066,7 +2075,7 @@ fn target_for_sink(sink: NativeLogSink) -> Target {
     match sink {
         NativeLogSink::Stdout => Target::new(TargetKind::Stdout),
         NativeLogSink::LogDir => Target::new(TargetKind::LogDir {
-            file_name: Some(String::from(APP_LOG_FILE_NAME)),
+            file_name: Some(String::from(APP_LOG_FILE_STEM)),
         }),
     }
 }
@@ -2282,6 +2291,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .plugin(
             tauri_plugin_log::Builder::default()
                 .targets(native_log_targets())
+                .max_file_size(NATIVE_LOG_MAX_FILE_SIZE)
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(
+                    NATIVE_LOG_ROTATION_KEEP,
+                ))
                 .level(LevelFilter::Info)
                 .build(),
         )
@@ -3455,7 +3468,11 @@ mod tests {
         assert_eq!(native_log_sinks(), &[NativeLogSink::Stdout]);
         assert_eq!(native_log_targets().len(), native_log_sinks().len());
         let _ = target_for_sink(NativeLogSink::LogDir);
+        assert_eq!(APP_LOG_FILE_STEM, "chessriddle-studio");
         assert_eq!(APP_LOG_FILE_NAME, "chessriddle-studio.log");
+        assert_eq!(APP_LOG_FILE_NAME, format!("{APP_LOG_FILE_STEM}.log"));
+        assert_eq!(NATIVE_LOG_MAX_FILE_SIZE, 2 * 1024 * 1024);
+        assert_eq!(NATIVE_LOG_ROTATION_KEEP, 2);
 
         let source = include_str!("main.rs");
         let sinks = body_at_indent(source, "fn native_log_sinks()");
@@ -3471,8 +3488,12 @@ mod tests {
             "plugin sinks must be exactly NativeLogSink, which has no webview: {targets}"
         );
         assert!(
-            map.contains("APP_LOG_FILE_NAME") && opener.contains("APP_LOG_FILE_NAME"),
-            "log-dir creation and open_app_log must share APP_LOG_FILE_NAME"
+            map.contains("APP_LOG_FILE_STEM") && opener.contains("APP_LOG_FILE_NAME"),
+            "log-dir uses the plugin stem; open_app_log reads the derived active file"
+        );
+        assert!(
+            !map.contains("APP_LOG_FILE_NAME"),
+            "LogDir file_name is the stem; the plugin appends .log: {map}"
         );
 
         let main = body_at_indent(source, "fn main()");
@@ -3483,6 +3504,15 @@ mod tests {
         assert!(
             !main.contains("TargetKind::Webview"),
             "main must not reintroduce the webview log target: {main}"
+        );
+        assert!(
+            main.contains(".max_file_size(NATIVE_LOG_MAX_FILE_SIZE)"),
+            "the plugin must take the named max-file-size bound: {main}"
+        );
+        assert!(
+            main.contains("RotationStrategy::KeepSome(")
+                && main.contains("NATIVE_LOG_ROTATION_KEEP"),
+            "the plugin must keep the named archive count: {main}"
         );
     }
 
