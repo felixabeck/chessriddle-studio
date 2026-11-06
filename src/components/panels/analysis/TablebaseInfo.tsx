@@ -16,6 +16,8 @@ function TablebaseInfo({ fen, turn }: { fen: string; turn: "white" | "black" }) 
   const { data, error, isLoading } = useSWRImmutable(
     ["tablebase", fen],
     async ([_, fen]) => await getTablebaseInfo(fen),
+    // A schema rejection is deterministic, so retries are bounded while a transient network failure can still recover.
+    { errorRetryCount: 3 },
   );
 
   // SWR owns `data`; sorting it in place changes the cache seen by every view.

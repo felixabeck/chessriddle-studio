@@ -196,6 +196,7 @@ describe("getTablebaseInfo", () => {
     };
 
     beforeEach(() => {
+        mocks.logError.mockReset().mockResolvedValue(undefined);
         mocks.getPublicLichessJson.mockReset();
     });
 
@@ -248,6 +249,28 @@ describe("getTablebaseInfo", () => {
             kind: "tablebase",
             fen,
         });
+    });
+
+    test("logs a rejected payload exactly once and still rejects", async () => {
+        mocks.getPublicLichessJson.mockResolvedValue(
+            JSON.stringify({ category: "maybe-draw", moves: [] }),
+        );
+
+        await expect(getTablebaseInfo(fen)).rejects.toThrow(/invalid response/);
+
+        expect(mocks.logError).toHaveBeenCalledExactlyOnceWith(
+            "Lichess tablebase response was rejected",
+        );
+    });
+
+    test("returns a valid payload without logging", async () => {
+        mocks.getPublicLichessJson.mockResolvedValue(
+            JSON.stringify({ category: "win", moves: [validMove] }),
+        );
+
+        await expect(getTablebaseInfo(fen)).resolves.toMatchObject({ category: "win" });
+
+        expect(mocks.logError).not.toHaveBeenCalled();
     });
 });
 

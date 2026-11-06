@@ -10,6 +10,7 @@ import TablebaseInfo, { compareTablebaseMoves } from "./TablebaseInfo";
 const mocks = vi.hoisted(() => ({
   makeMove: vi.fn(),
   error: undefined as unknown,
+  swrOptions: undefined as unknown,
   data: {
     category: "win",
     moves: [{ category: "win", uci: "e2e4", san: "e4", dtz: 1, dtm: null }],
@@ -17,11 +18,10 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("swr/immutable", () => ({
-  default: () => ({
-    data: mocks.data,
-    error: mocks.error,
-    isLoading: false,
-  }),
+  default: (_key: unknown, _fetcher: unknown, options?: unknown) => {
+    mocks.swrOptions = options;
+    return { data: mocks.data, error: mocks.error, isLoading: false };
+  },
 }));
 vi.mock("@/utils/lichess/api", () => ({ getTablebaseInfo: vi.fn() }));
 vi.mock("@/components/common/TreeStateContext", async () => {
@@ -41,6 +41,7 @@ let root: ReturnType<typeof createRoot>;
 let host: HTMLDivElement;
 beforeEach(() => {
   mocks.error = undefined;
+  mocks.swrOptions = undefined;
   mocks.data = {
     category: "win",
     moves: [{ category: "win", uci: "e2e4", san: "e4", dtz: 1, dtm: null }],
@@ -145,6 +146,12 @@ test("renders a rejected response's message instead of throwing on the Error obj
   await render(<TablebaseInfo fen="8/8/8/8/8/8/4P3/8 w - - 0 1" turn="white" />);
 
   expect(host.textContent).toContain("Common.Error: Lichess returned an invalid response");
+});
+
+test("bounds SWR error retries so a deterministic rejection does not retry forever", async () => {
+  await render(<TablebaseInfo fen="8/8/8/8/8/8/4P3/8 w - - 0 1" turn="white" />);
+
+  expect(mocks.swrOptions).toEqual({ errorRetryCount: 3 });
 });
 
 test("labels a child with null dtz and dtm as unknown instead of a DTZ number", async () => {

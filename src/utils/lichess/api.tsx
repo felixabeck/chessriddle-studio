@@ -170,6 +170,24 @@ function parseNativeJson<T>(body: string, schema: z.ZodType<T>): T {
   return result.data;
 }
 
+async function parseNativeJsonLogged<T>(
+  body: string,
+  schema: z.ZodType<T>,
+  operation: string,
+  message: string,
+): Promise<T> {
+  try {
+    return parseNativeJson(body, schema);
+  } catch (cause) {
+    await logFailureSafely(
+      message,
+      { operation, primaryFailure: safeFailureContext(cause) },
+      message,
+    );
+    throw cause;
+  }
+}
+
 type PositionGames = {
   uci: string;
   id: string;
@@ -247,19 +265,12 @@ export async function getLichessAccount({
     if (!username) return null;
     result = await tauri.getPublicLichessJson({ kind: "account", username });
   }
-  try {
-    return parseNativeJson(result, lichessAccountSchema) as LichessAccount;
-  } catch (cause) {
-    await logFailureSafely(
-      "Lichess account response was rejected",
-      {
-        operation: "Lichess account lookup",
-        primaryFailure: safeFailureContext(cause),
-      },
-      "Lichess account response was rejected",
-    );
-    throw cause;
-  }
+  return (await parseNativeJsonLogged(
+    result,
+    lichessAccountSchema,
+    "Lichess account lookup",
+    "Lichess account response was rejected",
+  )) as LichessAccount;
 }
 
 export async function getBestMoves(
@@ -400,7 +411,12 @@ export async function getLichessGame(gameId: string): Promise<string> {
 
 export async function getTablebaseInfo(fen: string): Promise<TablebaseData> {
   const result = await tauri.getPublicLichessJson({ kind: "tablebase", fen });
-  return parseNativeJson(result, tablebaseDataSchema);
+  return await parseNativeJsonLogged(
+    result,
+    tablebaseDataSchema,
+    "Lichess tablebase lookup",
+    "Lichess tablebase response was rejected",
+  );
 }
 
 export async function getFidePlayer(query: string) {
