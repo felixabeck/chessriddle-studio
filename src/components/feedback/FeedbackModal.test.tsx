@@ -125,6 +125,8 @@ type Uuid = `${string}-${string}-${string}-${string}-${string}`;
 const firstKey: Uuid = "11111111-1111-4111-8111-111111111111";
 const secondKey: Uuid = "22222222-2222-4222-8222-222222222222";
 const thirdKey: Uuid = "33333333-3333-4333-8333-333333333333";
+const FEEDBACK_MAX_EMAIL = 254;
+const FEEDBACK_MAX_MESSAGE = 5000;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -348,10 +350,39 @@ test("keeps send disabled for an implausible email", async () => {
   expect(container.querySelector<HTMLButtonElement>("button[type='submit']")?.disabled).toBe(true);
 });
 
+test("keeps send disabled for a too-long or whitespace email", async () => {
+  await renderModal();
+  await fillMessage("A useful Studio report.");
+  await fillEmail(`a@b.${"c".repeat(FEEDBACK_MAX_EMAIL)}`);
+  expect(container.querySelector<HTMLButtonElement>("button[type='submit']")?.disabled).toBe(true);
+  await fillEmail("user @example.com");
+  expect(container.querySelector<HTMLButtonElement>("button[type='submit']")?.disabled).toBe(true);
+  await fillEmail("user@example.com");
+  expect(container.querySelector<HTMLButtonElement>("button[type='submit']")?.disabled).toBe(false);
+});
+
 test("keeps send disabled for a message over the max", async () => {
   await renderModal();
-  await fillMessage("x".repeat(5001));
+  await fillMessage("x".repeat(FEEDBACK_MAX_MESSAGE + 1));
   expect(container.querySelector<HTMLButtonElement>("button[type='submit']")?.disabled).toBe(true);
+});
+
+test("selecting suggestion sends that feedback type", async () => {
+  await renderModal();
+  await fillMessage("A useful Studio report.");
+  const suggestion = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Feedback.Type.Suggestion",
+  );
+  await act(async () => {
+    suggestion?.click();
+  });
+  await submitForm();
+  expect(mocks.submitFeedback).toHaveBeenCalledExactlyOnceWith(
+    "suggestion",
+    "A useful Studio report.",
+    null,
+    firstKey,
+  );
 });
 
 test("ignores a second submit and close while pending", async () => {

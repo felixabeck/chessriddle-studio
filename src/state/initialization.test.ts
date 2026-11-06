@@ -27,6 +27,41 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 
+const POSTHOG_COOKIE_EXPIRE =
+    "ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_posthog=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
+
+function captureCookieWrites(): { writes: string[]; restore: () => void } {
+    const writes: string[] = [];
+    let target: object = document;
+    let descriptor: PropertyDescriptor | undefined;
+    while (target && !descriptor) {
+        descriptor = Object.getOwnPropertyDescriptor(target, "cookie");
+        if (descriptor?.get && descriptor?.set) break;
+        descriptor = undefined;
+        target = Object.getPrototypeOf(target) as object;
+    }
+    if (!descriptor?.get || !descriptor?.set) {
+        throw new Error("document.cookie descriptor missing");
+    }
+    const getter = descriptor.get;
+    const setter = descriptor.set;
+    Object.defineProperty(document, "cookie", {
+        configurable: true,
+        enumerable: true,
+        get: () => getter.call(document),
+        set: (value: string) => {
+            writes.push(value);
+            setter.call(document, value);
+        },
+    });
+    return {
+        writes,
+        restore: () => {
+            Reflect.deleteProperty(document, "cookie");
+        },
+    };
+}
+
 // This case deliberately uses only existing production module paths and no new API.
 // Restoring the old production sources must fail on storage behavior, not import resolution.
 test("real state import leaves fixture storage untouched", async () => {
@@ -121,7 +156,15 @@ test("explicit initialization preserves raw lossy and sibling ownership after re
     const owners = await import("./pathOwners");
     const { tauri } = await import("@/platform/tauri");
     vi.mocked(tauri.listPracticeDecks).mockResolvedValue({ decks: [], anomalies: [] });
+    const cookies = captureCookieWrites();
     atoms.initializeRendererState();
+    cookies.restore();
+    expect(cookies.writes).toEqual([
+        POSTHOG_COOKIE_EXPIRE,
+        `${POSTHOG_COOKIE_EXPIRE}; Domain=.tauri.localhost`,
+        `${POSTHOG_COOKIE_EXPIRE}; Domain=.localhost`,
+        `${POSTHOG_COOKIE_EXPIRE}; Domain=tauri.localhost`,
+    ]);
     const snapshot = owners.initializeOriginalPathOwners();
     expect(snapshot.pathOwners.retainedIds).toEqual(
         expect.arrayContaining([

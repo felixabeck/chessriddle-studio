@@ -106,8 +106,12 @@ export function initializeRendererState() {
         sessionStorage.removeItem("ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_window_id");
     }
     if (typeof document !== "undefined") {
-        document.cookie =
+        const expired =
             "ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_posthog=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
+        document.cookie = expired;
+        document.cookie = `${expired}; Domain=.tauri.localhost`;
+        document.cookie = `${expired}; Domain=.localhost`;
+        document.cookie = `${expired}; Domain=tauri.localhost`;
     }
     documentPreferences.initialize();
     rendererStateInitialized = true;

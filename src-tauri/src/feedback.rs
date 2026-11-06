@@ -253,7 +253,31 @@ pub async fn submit_feedback(
     idempotency_key: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<FeedbackOutcome, Error> {
-    let platform = client_platform_label(std::env::consts::OS).ok_or_else(invalid_feedback)?;
+    submit_feedback_request(
+        &state.json_http_client,
+        FEEDBACK_URL,
+        feedback_type,
+        message,
+        contact_email,
+        idempotency_key,
+        FeedbackIdentity {
+            app_version: env!("CARGO_PKG_VERSION"),
+            platform: std::env::consts::OS,
+            os_version: &current_os_version(),
+        },
+    )
+    .await
+}
+
+async fn submit_feedback_request(
+    client: &reqwest::Client,
+    url: &str,
+    feedback_type: FeedbackType,
+    message: String,
+    contact_email: Option<String>,
+    idempotency_key: String,
+    identity: FeedbackIdentity<'_>,
+) -> Result<FeedbackOutcome, Error> {
     let request = build_feedback_request(
         FeedbackInput {
             feedback_type,
@@ -261,20 +285,8 @@ pub async fn submit_feedback(
             contact_email: contact_email.as_deref(),
             idempotency_key: &idempotency_key,
         },
-        FeedbackIdentity {
-            app_version: env!("CARGO_PKG_VERSION"),
-            platform,
-            os_version: &current_os_version(),
-        },
+        identity,
     )?;
-    send_feedback_request(&state.json_http_client, FEEDBACK_URL, request).await
-}
-
-async fn send_feedback_request(
-    client: &reqwest::Client,
-    url: &str,
-    request: BuiltFeedbackRequest,
-) -> Result<FeedbackOutcome, Error> {
     let response = client
         .post(url)
         .headers(request.headers)
@@ -551,6 +563,26 @@ mod tests {
         assert!(header_value("bad\nheader").is_err());
     }
 
+    #[test]
+    fn email_plausible_rejects_overlong_local_part_whitespace_and_dot_rules() {
+        assert!(email_plausible("user@example.com"));
+
+        let over_total = format!("a@b.{}", "c".repeat(MAX_EMAIL_CHARS));
+        assert!(over_total.len() > MAX_EMAIL_CHARS);
+        assert!(!email_plausible(&over_total));
+
+        let over_local = format!("{}@example.com", "a".repeat(MAX_EMAIL_LOCAL_PART_CHARS + 1));
+        assert!(over_local.len() <= MAX_EMAIL_CHARS);
+        assert!(!email_plausible(&over_local));
+
+        assert!(!email_plausible("user @example.com"));
+        assert!(!email_plausible("user@examplecom"));
+        assert!(!email_plausible(".user@example.com"));
+        assert!(!email_plausible("user.@example.com"));
+        assert!(!email_plausible("user@.example.com"));
+        assert!(!email_plausible("user@example.com."));
+    }
+
     fn http_response(status: &str, body: &str) -> String {
         format!(
             "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -581,21 +613,34 @@ mod tests {
         String::from_utf8(request).unwrap()
     }
 
-    async fn loopback_feedback(response: String) -> (String, Result<FeedbackOutcome, Error>) {
+    async fn loopback_feedback(
+        response: impl AsRef<[u8]>,
+    ) -> (String, Result<FeedbackOutcome, Error>) {
         use std::time::Duration;
         use tokio::io::AsyncWriteExt;
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}/api/v1/feedback", listener.local_addr().unwrap());
         let client = reqwest::Client::builder().no_proxy().build().unwrap();
-        let request = built(None);
+        let identity = identity();
         let server = async {
             let (mut stream, _) = listener.accept().await.unwrap();
             let captured = read_http_request(&mut stream).await;
-            let _ = stream.write_all(response.as_bytes()).await;
+            let _ = stream.write_all(response.as_ref()).await;
             captured
         };
         tokio::time::timeout(Duration::from_secs(3), async {
-            tokio::join!(server, send_feedback_request(&client, &url, request))
+            tokio::join!(
+                server,
+                submit_feedback_request(
+                    &client,
+                    &url,
+                    FeedbackType::Bug,
+                    MESSAGE.to_string(),
+                    None,
+                    KEY.to_string(),
+                    identity,
+                )
+            )
         })
         .await
         .expect("loopback feedback must finish")
@@ -672,5 +717,46 @@ mod tests {
     async fn loopback_401_is_service_unavailable() {
         let (_, outcome) = loopback_feedback(http_response("401 Unauthorized", "")).await;
         assert_eq!(outcome.expect("401"), FeedbackOutcome::ServiceUnavailable);
+    }
+
+    #[tokio::test]
+    async fn loopback_oversize_body_without_content_length_is_delivery_failed() {
+        let mut response = b"HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n".to_vec();
+        response.resize(response.len() + MAX_RESPONSE_BYTES + 1, b'x');
+        let (_, outcome) = loopback_feedback(response).await;
+        assert_eq!(
+            outcome.expect("oversize body without content-length"),
+            FeedbackOutcome::DeliveryFailed
+        );
+    }
+
+    #[tokio::test]
+    async fn unreachable_port_is_a_network_error_not_an_outcome() {
+        use std::time::Duration;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/api/v1/feedback", listener.local_addr().unwrap());
+        drop(listener);
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(2))
+            .build()
+            .unwrap();
+        let outcome = submit_feedback_request(
+            &client,
+            &url,
+            FeedbackType::Bug,
+            MESSAGE.to_string(),
+            None,
+            KEY.to_string(),
+            identity(),
+        )
+        .await;
+        assert!(
+            matches!(
+                outcome,
+                Err(ref error) if error.category() == crate::error::ErrorCategory::Network
+            ),
+            "expected network error, got {outcome:?}"
+        );
     }
 }
