@@ -257,7 +257,7 @@ async function installerTemps({ install, data, binaryName }) {
   ];
 }
 
-async function legacyRelease(install, name, commitCharacter) {
+async function unmarkedRelease(install, name, commitCharacter) {
   const release = join(install, "releases", name);
   const short = name.slice(0, 7);
   const commit = commitCharacter.repeat(40);
@@ -269,7 +269,7 @@ async function legacyRelease(install, name, commitCharacter) {
   await writeFile(join(release, "icon.png"), "icon");
   await writeFile(
     join(release, "VERSION"),
-    `commit ${commit}\nshort ${short}\nsubject legacy install\ninstalled 2026-09-01T01:01:01+02:00\nprovenance reviewed\n`,
+    `commit ${commit}\nshort ${short}\nsubject unmarked install\ninstalled 2026-09-01T01:01:01+02:00\nprovenance reviewed\n`,
   );
   return release;
 }
@@ -310,6 +310,40 @@ test("installs the derived binary, resources, desktop entry and pointers", async
   assert.equal(await provenanceLine(f.install), "provenance UNREVIEWED (prebuilt binary, --force)");
   assert.deepEqual(await releaseNames(f.install), ["A", "B", current.split("/").at(-1)].sort());
   assert.deepEqual(await installerTemps(f), []);
+});
+
+test("defaults the install root to HOME/.local/opt/chessriddle-studio when CHESSFABLE_INSTALL_DIR is unset", async (t) => {
+  const f = await fixture(t);
+  const home = join(f.base, "home");
+  await mkdir(home, { recursive: true });
+  const env = {
+    ...process.env,
+    HOME: home,
+    XDG_DATA_HOME: f.data,
+    PATH: `${f.bin}:${process.env.PATH}`,
+    INSTALL_FAILURE: "",
+  };
+  delete env.CHESSFABLE_INSTALL_DIR;
+  const result = spawnSync(
+    "bash",
+    [join(f.repo, "scripts/install-local.sh"), "--no-build", "--force"],
+    {
+      cwd: f.repo,
+      encoding: "utf8",
+      env,
+    },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  const installRoot = join(home, ".local/opt/chessriddle-studio");
+  const current = await readlink(join(installRoot, "current"));
+  assert.ok(current.startsWith(`${installRoot}/`));
+  assert.equal((await lstat(join(current, "bin/chessriddle-studio"))).isFile(), true);
+  const desktop = await readFile(join(f.data, "applications/chessriddle-studio.desktop"), "utf8");
+  assert.match(
+    desktop,
+    /Exec=".*\/\.local\/opt\/chessriddle-studio\/current\/bin\/chessriddle-studio"/u,
+  );
+  await assert.rejects(lstat(join(f.install, "current")), { code: "ENOENT" });
 });
 
 test("names resources after productName and the launcher after the binary", async (t) => {
@@ -492,7 +526,7 @@ test("retains only current and previous managed releases while preserving foreig
 test("leaves unmarked historical layouts in the install root as foreign siblings", async (t) => {
   const f = await fixture(t);
   await mkdir(join(f.install, "releases"), { recursive: true });
-  const historical = await legacyRelease(f.install, "bbbbbbb-20260901T020202", "b");
+  const historical = await unmarkedRelease(f.install, "bbbbbbb-20260901T020202", "b");
   const foreign = join(f.install, "releases", "ccccccc-20260901T030303");
   await mkdir(foreign, { recursive: true });
   await writeFile(join(foreign, "VERSION"), "not installer provenance\n");

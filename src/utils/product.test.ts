@@ -39,6 +39,7 @@ describe("product identity", () => {
             const brandedValues = brandedKeys.map((key) => translation[key]).join("\n");
             expect(brandedValues).not.toContain("En Croissant");
             expect(brandedValues).not.toContain("En-Croissant");
+            expect(brandedValues).not.toContain("ChessFable");
             expect(translation["Error.ReportIssue"]).toMatch(/<github>[^<]+<\/github>/u);
             expect(translation["Error.ReportIssue"]).not.toContain("discord");
             expect(translation["About.ModificationNotice"]).toContain("En Croissant");

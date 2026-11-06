@@ -115,9 +115,16 @@ export function coverageTools(runCommand = run) {
   };
 }
 
+// Cargo names a binary's test executable after the crate name with hyphens
+// replaced by underscores, so package `chessriddle-studio` produces
+// `deps/chessriddle_studio-<hash>`.
+const COVERAGE_EXECUTABLE_PREFIX = "chessriddle_studio-";
+
 export function isCoverageExecutable(name, details, platform = process.platform) {
   const pattern =
-    platform === "win32" ? /^chessriddle_studio-[0-9a-f]+\.exe$/ : /^chessriddle_studio-[0-9a-f]+$/;
+    platform === "win32"
+      ? new RegExp(`^${COVERAGE_EXECUTABLE_PREFIX}[0-9a-f]+\\.exe$`)
+      : new RegExp(`^${COVERAGE_EXECUTABLE_PREFIX}[0-9a-f]+$`);
   return (
     pattern.test(name) && details.isFile() && (platform === "win32" || (details.mode & 0o111) !== 0)
   );
@@ -236,7 +243,7 @@ export async function runBranchCoverage({
 
   const executableCandidates = [];
   for (const entry of await readdir(dependencies)) {
-    if (!entry.startsWith("chessriddle_studio-")) continue;
+    if (!entry.startsWith(COVERAGE_EXECUTABLE_PREFIX)) continue;
     const path = resolve(dependencies, entry);
     const details = await stat(path);
     if (isCoverageExecutable(entry, details))
