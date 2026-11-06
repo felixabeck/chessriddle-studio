@@ -914,7 +914,7 @@ async fn save_engine_logs(app: tauri::AppHandle, text: String) -> Result<(), Err
 }
 
 const DOCUMENTATION_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/tree/master/docs");
-const APP_LOG_FILE_NAME: &str = "en-croissant.log";
+const APP_LOG_FILE_NAME: &str = "chessriddle-studio.log";
 
 /// Opens the fixed project documentation URL without granting arbitrary URL authority to the
 /// renderer.
@@ -2328,8 +2328,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 crate::infra::path_authority::InstanceAdmission::HeldElsewhere => {
                     use tauri_plugin_dialog::DialogExt;
                     app.dialog()
-                        .message("ChessFable is already open. Switch to its window to continue.")
-                        .title("ChessFable is already running")
+                        .message(
+                            "ChessRiddle Studio is already open. Switch to its window to continue.",
+                        )
+                        .title("ChessRiddle Studio is already running")
                         // Skip the window-state exit hook, which would save this refused launch's cache.
                         .show(|_| std::process::exit(0));
                     return Ok(());
@@ -3453,7 +3455,7 @@ mod tests {
         assert_eq!(native_log_sinks(), &[NativeLogSink::Stdout]);
         assert_eq!(native_log_targets().len(), native_log_sinks().len());
         let _ = target_for_sink(NativeLogSink::LogDir);
-        assert_eq!(APP_LOG_FILE_NAME, "en-croissant.log");
+        assert_eq!(APP_LOG_FILE_NAME, "chessriddle-studio.log");
 
         let source = include_str!("main.rs");
         let sinks = body_at_indent(source, "fn native_log_sinks()");
@@ -3488,7 +3490,7 @@ mod tests {
     fn documentation_url_targets_the_fork_repository() {
         assert_eq!(
             DOCUMENTATION_URL,
-            "https://github.com/felixabeck/en-croissant/tree/master/docs"
+            "https://github.com/felixabeck/chessriddle-studio/tree/master/docs"
         );
     }
 
@@ -4848,9 +4850,9 @@ mod blocking_offload_scans {
         assert!(held.trim_end().ends_with("return Ok(());"));
         assert!(held.contains("use tauri_plugin_dialog::DialogExt;"));
         assert!(held.contains(
-            ".message(\"ChessFable is already open. Switch to its window to continue.\")"
+            ".message(\"ChessRiddle Studio is already open. Switch to its window to continue.\")"
         ));
-        assert!(held.contains(".title(\"ChessFable is already running\")"));
+        assert!(held.contains(".title(\"ChessRiddle Studio is already running\")"));
         assert!(held.contains(".show(|_| std::process::exit(0));"));
         assert!(!held.contains(".parent("));
         assert!(!held

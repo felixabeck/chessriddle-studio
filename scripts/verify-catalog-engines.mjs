@@ -21,7 +21,7 @@ const cargo = [
   "src-tauri/Cargo.toml",
   "--locked",
   "--bin",
-  "chessfable",
+  "chessriddle-studio",
   "--features",
   "catalog-network-tests",
   MODULE,

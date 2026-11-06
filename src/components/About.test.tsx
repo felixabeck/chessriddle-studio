@@ -84,9 +84,9 @@ test("renders the modification notice inside the opened About dialog", async () 
   expect(dialog?.textContent).toContain("since 2026-08-09");
   expect(dialog?.textContent).toContain("GNU General Public License version 3");
   expect(dialog?.textContent).toContain("no warranty");
-  expect(dialog?.getAttribute("aria-label")).toBe("ChessFable");
+  expect(dialog?.getAttribute("aria-label")).toBe("ChessRiddle Studio");
   expect(dialog?.querySelector("a")?.getAttribute("href")).toBe(
-    "https://github.com/felixabeck/en-croissant",
+    "https://github.com/felixabeck/chessriddle-studio",
   );
 });
 

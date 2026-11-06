@@ -639,7 +639,7 @@ test.each([1, 2])(
       databases: [],
       unread: Array.from({ length: count }, () => ({
         filename: "Magnus_lichess.db3",
-        error: "ChessFable is not allowed to read this database file",
+        error: "ChessRiddle Studio is not allowed to read this database file",
       })),
       root: { id: { id: "account-root" }, kind: "databaseRoot" },
     });
@@ -647,7 +647,9 @@ test.each([1, 2])(
     await vi.waitFor(() => expect(container.textContent).toContain("Home.Databases.Failed.Title"));
     expect(container.textContent).toContain("Magnus_lichess.db3");
     expect(
-      container.textContent?.includes("ChessFable is not allowed to read this database file"),
+      container.textContent?.includes(
+        "ChessRiddle Studio is not allowed to read this database file",
+      ),
     ).toBe(count === 1);
     expect(mocks.query_players).not.toHaveBeenCalled();
   },

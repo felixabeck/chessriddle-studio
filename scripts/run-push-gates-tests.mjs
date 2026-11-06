@@ -1845,7 +1845,7 @@ test("Cargo allocation survives production bindings, receipt, coverage and Windo
     "--manifest-path",
     "src-tauri/Cargo.toml",
     "--bin",
-    "chessfable",
+    "chessriddle-studio",
     "--",
     "--export-bindings-only",
   ];
@@ -1920,7 +1920,7 @@ test("Cargo allocation survives production bindings, receipt, coverage and Windo
         "--manifest-path",
         join(root, "src-tauri/Cargo.toml"),
         "--bin",
-        "chessfable",
+        "chessriddle-studio",
         "--locked",
         "--branch",
         "--no-report",
@@ -1964,13 +1964,13 @@ test("Cargo allocation survives production bindings, receipt, coverage and Windo
               writeFiles: [
                 { path: freshProfile, contents: "fresh counts" },
                 {
-                  path: join(target, "debug/deps/chessfable-deadbeef"),
+                  path: join(target, "debug/deps/chessriddle_studio-deadbeef"),
                   contents: "fixture executable",
                   mode: 0o755,
                 },
               ],
             },
-            [`llvm-cov export -format=lcov -instr-profile=${join(root, "backend-coverage/src-tauri.profdata")} ${join(target, "debug/deps/chessfable-deadbeef")} -sources ${source}`]:
+            [`llvm-cov export -format=lcov -instr-profile=${join(root, "backend-coverage/src-tauri.profdata")} ${join(target, "debug/deps/chessriddle_studio-deadbeef")} -sources ${source}`]:
               {
                 stdout: `SF:${source}\nBRDA:1,0,0,1\nend_of_record\n`,
               },

@@ -1,4 +1,4 @@
-# ChessFable design system
+# ChessRiddle Studio design system
 
 ChessRiddle web is the visual source of truth. Copy executable values from
 `chess-tactics-app/frontend/web/src/app/globals.css` and the implemented
@@ -95,7 +95,7 @@ following table records the implemented mapping. Reference paths are relative to
 `chess-tactics-app/frontend/`. A source reference identifies the matched artwork
 and meaning. Entries marked closest by meaning have no exact reference slot.
 
-| ChessFable slot | Lucide export | ChessRiddle source or fallback |
+| ChessRiddle Studio slot | Lucide export | ChessRiddle source or fallback |
 | --- | --- | --- |
 | Board, play and game tabs | `ChessKnight` | `shared/icon-catalog.json:664` |
 | Account and human opponent | `User` | `shared/icon-catalog.json:655` |

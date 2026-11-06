@@ -6,7 +6,7 @@ import publicKeyFile from "../../src-tauri/keys/release.minisign.pub?raw";
 import releaseWorkflow from "../../.github/workflows/release.yml?raw";
 
 const FORK_UPDATE_ENDPOINT =
-    "https://github.com/felixabeck/en-croissant/releases/latest/download/latest.json";
+    "https://github.com/felixabeck/chessriddle-studio/releases/latest/download/latest.json";
 const RETIRED_UPSTREAM_KEY = "RWSF3PMxhuaQf7613UytN4bdF7FQyBymLJVDIG3OE8xNa+0fcs6KE6/J";
 
 type JsonObject = Record<string, unknown>;

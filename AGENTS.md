@@ -1,7 +1,7 @@
-# ChessFable — agent context
+# ChessRiddle Studio — agent context
 
-ChessFable is Felix's fork of En Croissant, a Tauri v2 desktop chess GUI with a Rust backend and
-React/TypeScript renderer. `origin` is `felixabeck/en-croissant`, En Croissant names upstream.
+ChessRiddle Studio is Felix's fork of En Croissant, a Tauri v2 desktop chess GUI with a Rust backend and
+React/TypeScript renderer. `origin` is `felixabeck/chessriddle-studio`, En Croissant names upstream.
 
 Read `CLAUDE.md` first for the canonical layout, domain-rule routing and product invariants.
 Codex and Grok do not auto-load `.claude/rules/*.md`, open applicable rules before working.

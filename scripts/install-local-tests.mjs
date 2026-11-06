@@ -26,7 +26,10 @@ function git(root, ...args) {
   return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
 }
 
-async function fixture(t, { productName = "ChessFable", binaryName = "chessfable" } = {}) {
+async function fixture(
+  t,
+  { productName = "ChessRiddle Studio", binaryName = "chessriddle-studio" } = {},
+) {
   const base = await mkdtemp(join(tmpdir(), "chessfable-install-"));
   const childRuns = [];
   t.after(async () => {
@@ -118,7 +121,7 @@ fi
     join(bin, "rm"),
     `#!/bin/sh
 case "$INSTALL_FAILURE:$*" in
-  retire-stale:*ChessFable.desktop*) echo "forced rm failure" >&2; exit 75 ;;
+  retire-stale:*superseded.desktop*) echo "forced rm failure" >&2; exit 75 ;;
 esac
 exec /usr/bin/rm "$@"
 `,
@@ -271,7 +274,7 @@ async function legacyRelease(install, name, commitCharacter) {
   return release;
 }
 
-test("installs the derived binary, resources, compatibility link, desktop entry and pointers", async (t) => {
+test("installs the derived binary, resources, desktop entry and pointers", async (t) => {
   const f = await fixture(t);
   const { a } = await seedPointers(f.install);
   const result = run(f);
@@ -279,14 +282,17 @@ test("installs the derived binary, resources, compatibility link, desktop entry 
   const current = await readlink(join(f.install, "current"));
   assert.notEqual(current, a);
   assert.equal(await readlink(join(f.install, "previous")), a);
-  assert.equal(await readlink(join(current, "bin/en-croissant")), "chessfable");
-  assert.equal((await lstat(join(current, "bin/chessfable"))).isFile(), true);
-  assert.equal((await lstat(join(current, "lib/ChessFable/sound/move.mp3"))).isFile(), true);
-  const desktop = await readFile(join(f.data, "applications/chessfable.desktop"), "utf8");
-  assert.match(desktop, /Exec=".*install with spaces\/current\/bin\/chessfable"/u);
+  await assert.rejects(lstat(join(current, "bin/en-croissant")), { code: "ENOENT" });
+  assert.equal((await lstat(join(current, "bin/chessriddle-studio"))).isFile(), true);
+  assert.equal(
+    (await lstat(join(current, "lib/ChessRiddle Studio/sound/move.mp3"))).isFile(),
+    true,
+  );
+  const desktop = await readFile(join(f.data, "applications/chessriddle-studio.desktop"), "utf8");
+  assert.match(desktop, /Exec=".*install with spaces\/current\/bin\/chessriddle-studio"/u);
   assert.match(desktop, /Icon=.*install\\swith\\sspaces\/current\/icon\.png/u);
-  assert.match(desktop, /^StartupWMClass=chessfable$/mu);
-  assert.match(desktop, /^Name=ChessFable$/mu);
+  assert.match(desktop, /^StartupWMClass=chessriddle-studio$/mu);
+  assert.match(desktop, /^Name=ChessRiddle Studio$/mu);
   assert.match(desktop, /^Categories=Game;BoardGame;$/mu);
   assert.match(desktop, /^StartupNotify=true$/mu);
   assert.match(desktop, /^GenericName=Chess analysis and database$/mu);
@@ -297,8 +303,8 @@ test("installs the derived binary, resources, compatibility link, desktop entry 
     /^Comment\[de\]=Partien analysieren, Datenbanken durchsuchen, gegen Engines spielen$/mu,
   );
   assert.match(
-    await readFile(join(current, ".chessfable-managed-release"), "utf8"),
-    /^ChessFable local installer release v1\ninvocation \.staging-[A-Za-z0-9]{8}\n$/u,
+    await readFile(join(current, ".chessriddle-studio-managed-release"), "utf8"),
+    /^ChessRiddle Studio local installer release v1\ninvocation \.staging-[A-Za-z0-9]{8}\n$/u,
   );
   assert.equal((await lstat(join(f.install, ".install.lock"))).isFile(), true);
   assert.equal(await provenanceLine(f.install), "provenance UNREVIEWED (prebuilt binary, --force)");
@@ -324,18 +330,18 @@ test("retires superseded desktop entries and preserves foreign ones", async (t) 
   const f = await fixture(t);
   const applications = join(f.data, "applications");
   await mkdir(applications, { recursive: true });
-  const superseded = join(applications, "ChessFable.desktop");
+  const superseded = join(applications, "superseded.desktop");
   const foreign = join(applications, "unrelated.desktop");
   const linked = join(applications, "linked.desktop");
   const target = join(f.base, "linked-source.desktop");
   await writeFile(
     superseded,
-    `[Desktop Entry]\nType=Application\nName=ChessFable\nExec="${f.install}/current/bin/en-croissant"\n`,
+    `[Desktop Entry]\nType=Application\nName=Old\nExec="${f.install}/current/bin/old-binary"\n`,
   );
   await writeFile(foreign, "[Desktop Entry]\nType=Application\nName=Other\nExec=/usr/bin/other\n");
   await writeFile(
     target,
-    `[Desktop Entry]\nType=Application\nName=Linked\nExec="${f.install}/current/bin/en-croissant"\n`,
+    `[Desktop Entry]\nType=Application\nName=Linked\nExec="${f.install}/current/bin/old-binary"\n`,
   );
   await symlink(target, linked);
   const result = run(f);
@@ -343,8 +349,8 @@ test("retires superseded desktop entries and preserves foreign ones", async (t) 
   await assert.rejects(lstat(superseded), { code: "ENOENT" });
   assert.equal((await lstat(foreign)).isFile(), true);
   assert.equal((await lstat(linked)).isSymbolicLink(), true);
-  assert.match(result.stdout, /retired superseded desktop entry .*ChessFable\.desktop/u);
-  assert.equal((await lstat(join(applications, "chessfable.desktop"))).isFile(), true);
+  assert.match(result.stdout, /retired superseded desktop entry .*superseded\.desktop/u);
+  assert.equal((await lstat(join(applications, "chessriddle-studio.desktop"))).isFile(), true);
   assert.deepEqual(await installerTemps(f), []);
 });
 
@@ -352,16 +358,16 @@ test("a failed retirement is reported without failing the completed install", as
   const f = await fixture(t);
   const applications = join(f.data, "applications");
   await mkdir(applications, { recursive: true });
-  const superseded = join(applications, "ChessFable.desktop");
+  const superseded = join(applications, "superseded.desktop");
   await writeFile(
     superseded,
-    `[Desktop Entry]\nType=Application\nName=ChessFable\nExec="${f.install}/current/bin/en-croissant"\n`,
+    `[Desktop Entry]\nType=Application\nName=Old\nExec="${f.install}/current/bin/old-binary"\n`,
   );
   const result = run(f, "retire-stale");
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stderr, /could not retire superseded desktop entry .*ChessFable\.desktop/u);
+  assert.match(result.stderr, /could not retire superseded desktop entry .*superseded\.desktop/u);
   assert.equal((await lstat(superseded)).isFile(), true);
-  assert.equal((await lstat(join(applications, "chessfable.desktop"))).isFile(), true);
+  assert.equal((await lstat(join(applications, "chessriddle-studio.desktop"))).isFile(), true);
   assert.equal((await lstat(await readlink(join(f.install, "current")))).isDirectory(), true);
   assert.deepEqual(await installerTemps(f), []);
 });
@@ -483,21 +489,44 @@ test("retains only current and previous managed releases while preserving foreig
   );
 });
 
-test("retires a verified legacy installer release but preserves an unverified sibling", async (t) => {
+test("leaves unmarked historical layouts in the install root as foreign siblings", async (t) => {
   const f = await fixture(t);
   await mkdir(join(f.install, "releases"), { recursive: true });
-  const currentLegacy = await legacyRelease(f.install, "aaaaaaa-20260901T010101", "a");
-  const staleLegacy = await legacyRelease(f.install, "bbbbbbb-20260901T020202", "b");
+  const historical = await legacyRelease(f.install, "bbbbbbb-20260901T020202", "b");
   const foreign = join(f.install, "releases", "ccccccc-20260901T030303");
   await mkdir(foreign, { recursive: true });
   await writeFile(join(foreign, "VERSION"), "not installer provenance\n");
-  await symlink(currentLegacy, join(f.install, "current"));
 
   const result = run(f);
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(await readlink(join(f.install, "previous")), currentLegacy);
-  await assert.rejects(lstat(staleLegacy), { code: "ENOENT" });
+  assert.equal((await lstat(historical)).isDirectory(), true);
   assert.equal((await lstat(foreign)).isDirectory(), true);
+});
+
+test("refuses an invalid productName or mainBinaryName", async (t) => {
+  const spacedBinary = await fixture(t, {
+    productName: "ChessRiddle Studio",
+    binaryName: "chess riddle",
+  });
+  await assertRefusedNothingInstalled(
+    run(spacedBinary),
+    spacedBinary.install,
+    /invalid product identity in tauri.conf.json/u,
+  );
+
+  const leadingSpace = await fixture(t, { productName: " ChessRiddle" });
+  await assertRefusedNothingInstalled(
+    run(leadingSpace),
+    leadingSpace.install,
+    /invalid product identity in tauri.conf.json/u,
+  );
+
+  const doubleSpace = await fixture(t, { productName: "ChessRiddle  Studio" });
+  await assertRefusedNothingInstalled(
+    run(doubleSpace),
+    doubleSpace.install,
+    /invalid product identity in tauri.conf.json/u,
+  );
 });
 
 test("refuses dirty, unpushed and missing-upstream repositories", async (t) => {

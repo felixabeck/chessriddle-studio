@@ -744,7 +744,7 @@ test("two-engine terminal diagnostics follow only the failed side's selected col
   expect(fixtures.getGameEngineLogs).not.toHaveBeenCalled();
 });
 
-test("starting a human game sends numeric configuration and records ChessFable as the PGN Site", async () => {
+test("starting a human game sends numeric configuration and records ChessRiddle Studio as the PGN Site", async () => {
   await render();
   await start();
   expect(fixtures.startGame).toHaveBeenCalledOnce();
@@ -754,7 +754,9 @@ test("starting a human game sends numeric configuration and records ChessFable a
     openingBook: null,
   });
   expect(() => JSON.stringify(fixtures.startGame.mock.calls[0][1])).not.toThrow();
-  expect(fixtures.setHeaders).toHaveBeenCalledWith(expect.objectContaining({ site: "ChessFable" }));
+  expect(fixtures.setHeaders).toHaveBeenCalledWith(
+    expect.objectContaining({ site: "ChessRiddle Studio" }),
+  );
 });
 
 test("a deferred start keeps real loading and disabled semantics until admission settles", async () => {
@@ -833,7 +835,7 @@ test("auto-flip after a terminal human move preserves live result and headers", 
     expect.objectContaining({
       result: "1-0",
       orientation: "black",
-      site: "ChessFable",
+      site: "ChessRiddle Studio",
       event: "Concurrent header edit",
     }),
   );
@@ -2206,7 +2208,7 @@ test("initialization restores setup moves into the reset live tree and keeps met
   await render();
   await start();
   expect(treeMoves()).toEqual([expect.objectContaining({ from: 12, to: 28 })]);
-  expect(fixtures.tree.headers).toEqual(expect.objectContaining({ site: "ChessFable" }));
+  expect(fixtures.tree.headers).toEqual(expect.objectContaining({ site: "ChessRiddle Studio" }));
 });
 
 test("consecutive authoritative snapshots extend the live tree before React rerenders", async () => {

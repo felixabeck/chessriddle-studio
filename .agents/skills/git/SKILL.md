@@ -1,6 +1,6 @@
 ---
 name: git
-description: Create one explicit, well-scoped ChessFable commit without pushing or adding AI/co-author trailers.
+description: Create one explicit, well-scoped ChessRiddle Studio commit without pushing or adding AI/co-author trailers.
 ---
 
 # git (Codex bridge)

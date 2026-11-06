@@ -1412,12 +1412,12 @@ mod tests {
     #[test]
     fn keyring_service_is_derived_from_the_bundle_identifier() {
         assert_eq!(
-            OsCredentialStore::new("com.chessriddle.encroissant").service,
-            "com.chessriddle.encroissant.lichess"
+            OsCredentialStore::new("com.chessriddle.studio").service,
+            "com.chessriddle.studio.lichess"
         );
         assert_eq!(
-            OsCredentialStore::new("com.chessriddle.encroissant.dev").service,
-            "com.chessriddle.encroissant.dev.lichess"
+            OsCredentialStore::new("com.chessriddle.studio.dev").service,
+            "com.chessriddle.studio.dev.lichess"
         );
     }
 

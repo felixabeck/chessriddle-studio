@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         ## First of all
-        1. Please search for [existing issues](https://github.com/felixabeck/en-croissant/issues?q=is%3Aissue) about this problem first.
+        1. Please search for [existing issues](https://github.com/felixabeck/chessriddle-studio/issues?q=is%3Aissue) about this problem first.
         2. Please reproduce the problem with the latest source from this repository and include the commit you built.
 
   - type: textarea

@@ -11,7 +11,7 @@ const scriptsDirectory = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(scriptsDirectory, "..");
 const cliPath = join(scriptsDirectory, "check-remote-ci.mjs");
 const upstreamArgs = ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"];
-const defaultRepository = "felixabeck/en-croissant";
+const defaultRepository = "felixabeck/chessriddle-studio";
 const defaultRemoteUrl = `https://github.com/${defaultRepository}.git`;
 
 function listRunsArgs(branch, repository = defaultRepository) {
@@ -115,7 +115,7 @@ function job(name, { status = "completed", conclusion = "success" } = {}) {
     name,
     status,
     conclusion,
-    url: `https://github.com/felixabeck/en-croissant/actions/runs/1/jobs/${encodeURIComponent(name)}`,
+    url: `https://github.com/felixabeck/chessriddle-studio/actions/runs/1/jobs/${encodeURIComponent(name)}`,
   };
 }
 

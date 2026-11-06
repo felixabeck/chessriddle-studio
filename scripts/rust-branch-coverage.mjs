@@ -30,7 +30,7 @@
  * 12  post-Cargo profile walk       ENOTDIR: not a directory, scandir '<path>'      rejected promise
  * 13  no new profiles               Rust coverage produced no raw profiles         rejected promise
  * 14  dependencies / readdir        ENOENT: ... scandir '<target>/missing-deps'     rejected promise
- * 15  executable / stat             EACCES: ... stat '<deps>/chessfable-deadbeef'   rejected promise
+ * 15  executable / stat             EACCES: ... stat '<deps>/chessriddle_studio-deadbeef'   rejected promise
  * 16  executable selection          Rust coverage test executable was not found    rejected promise
  * 17  configuration / readFile      ENOENT: ... open '<root>/missing-config.json'   rejected promise
  * 18  configuration / JSON.parse    Expected property name ... in JSON ...         rejected promise
@@ -116,7 +116,8 @@ export function coverageTools(runCommand = run) {
 }
 
 export function isCoverageExecutable(name, details, platform = process.platform) {
-  const pattern = platform === "win32" ? /^chessfable-[0-9a-f]+\.exe$/ : /^chessfable-[0-9a-f]+$/;
+  const pattern =
+    platform === "win32" ? /^chessriddle_studio-[0-9a-f]+\.exe$/ : /^chessriddle_studio-[0-9a-f]+$/;
   return (
     pattern.test(name) && details.isFile() && (platform === "win32" || (details.mode & 0o111) !== 0)
   );
@@ -221,7 +222,7 @@ export async function runBranchCoverage({
       "--manifest-path",
       manifestPath,
       "--bin",
-      "chessfable",
+      "chessriddle-studio",
       "--locked",
       "--branch",
       "--no-report",
@@ -235,7 +236,7 @@ export async function runBranchCoverage({
 
   const executableCandidates = [];
   for (const entry of await readdir(dependencies)) {
-    if (!entry.startsWith("chessfable-")) continue;
+    if (!entry.startsWith("chessriddle_studio-")) continue;
     const path = resolve(dependencies, entry);
     const details = await stat(path);
     if (isCoverageExecutable(entry, details))

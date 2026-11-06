@@ -17,7 +17,7 @@ const generated = spawnSync(
     "--manifest-path",
     "src-tauri/Cargo.toml",
     "--bin",
-    "chessfable",
+    "chessriddle-studio",
     "--",
     "--export-bindings-only",
   ],

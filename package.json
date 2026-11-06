@@ -1,5 +1,5 @@
 {
-  "name": "chessfable",
+  "name": "chessriddle-studio",
   "version": "0.15.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
     "build": "tauri build --no-bundle",
     "dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
     "tauri": "tauri",
-    "bindings:generate": "cargo run --manifest-path src-tauri/Cargo.toml --bin chessfable -- --export-bindings-only",
+    "bindings:generate": "cargo run --manifest-path src-tauri/Cargo.toml --bin chessriddle-studio -- --export-bindings-only",
     "bindings:check": "node scripts/check-bindings.mjs",
     "skills:check": "node scripts/check-skill-bridges.mjs",
     "skills:bridges:test": "node --test scripts/check-skill-bridges-tests.mjs",

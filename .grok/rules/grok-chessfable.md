@@ -1,4 +1,4 @@
-# Grok overlay — ChessFable
+# Grok overlay — ChessRiddle Studio
 
 Grok-only delta. Shared conventions live in `CLAUDE.md` and `AGENTS.md`.
 Do not copy them here.

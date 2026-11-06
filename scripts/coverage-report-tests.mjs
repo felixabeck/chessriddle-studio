@@ -3330,7 +3330,7 @@ async function branchCoverageFixture(t) {
   const source = join(root, "src-tauri/src/example.rs");
   const executable = join(
     dependencies,
-    `chessfable-deadbeef${process.platform === "win32" ? ".exe" : ""}`,
+    `chessriddle_studio-deadbeef${process.platform === "win32" ? ".exe" : ""}`,
   );
   await mkdir(dependencies, { recursive: true });
   await mkdir(dirname(source), { recursive: true });
@@ -3853,28 +3853,32 @@ test("coverage tools refuse invalid metadata and propagate command errors", (t) 
 
 test("coverage executable selection respects native naming and file types", () => {
   const file = { isFile: () => true, mode: 0o644 };
-  assert.equal(isCoverageExecutable("chessfable-deadbeef.exe", file, "win32"), true);
-  assert.equal(isCoverageExecutable("chessfable-deadbeef", file, "linux"), false);
+  assert.equal(isCoverageExecutable("chessriddle_studio-deadbeef.exe", file, "win32"), true);
+  assert.equal(isCoverageExecutable("chessriddle_studio-deadbeef", file, "linux"), false);
   assert.equal(
-    isCoverageExecutable("chessfable-deadbeef", { ...file, mode: 0o755 }, "linux"),
+    isCoverageExecutable("chessriddle_studio-deadbeef", { ...file, mode: 0o755 }, "linux"),
     true,
   );
   for (const name of [
-    "chessfable-deadbeef.d",
-    "chessfable-deadbeef.pdb",
-    "chessfable-deadbeef.exe",
+    "chessriddle_studio-deadbeef.d",
+    "chessriddle_studio-deadbeef.pdb",
+    "chessriddle_studio-deadbeef.exe",
   ]) {
     assert.equal(isCoverageExecutable(name, { ...file, mode: 0o755 }, "linux"), false);
   }
   assert.equal(
-    isCoverageExecutable("chessfable-deadbeef.exe", { ...file, isFile: () => false }, "win32"),
+    isCoverageExecutable(
+      "chessriddle_studio-deadbeef.exe",
+      { ...file, isFile: () => false },
+      "win32",
+    ),
     false,
   );
 });
 
 test("bulk llvm-cov export and the crash probe share one argument builder", () => {
   const profilePath = "/tmp/src-tauri.profdata";
-  const executable = "/tmp/chessfable-deadbeef";
+  const executable = "/tmp/chessriddle_studio-deadbeef";
   const sources = ["/repo/src-tauri/src/chess.rs", "/repo/src-tauri/src/game.rs"];
   const bulk = llvmCovExportArgs(profilePath, executable, sources);
   const probe = llvmCovExportArgs(profilePath, executable, [sources[0]]);
@@ -3892,7 +3896,7 @@ test("bulk llvm-cov export and the crash probe share one argument builder", () =
 
 test("bulk export diagnoses crashes with the shared argv", (t) => {
   const profilePath = "/tmp/src-tauri.profdata";
-  const executable = "/tmp/chessfable-deadbeef";
+  const executable = "/tmp/chessriddle_studio-deadbeef";
   const sources = ["src-tauri/src/chess.rs", "src-tauri/src/db/schema.rs"];
   const calls = [];
   const attempt = (_command, argumentsList) => {
@@ -3923,7 +3927,7 @@ test("signal diagnostic names the crashing source without a retracted cause", ()
     attempt,
     "llvm-cov",
     "/tmp/src-tauri.profdata",
-    "/tmp/chessfable-deadbeef",
+    "/tmp/chessriddle_studio-deadbeef",
     sources,
   );
   assert.deepEqual(offenders, ["src-tauri/src/db/schema.rs"]);

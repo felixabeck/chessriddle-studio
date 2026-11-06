@@ -2032,7 +2032,7 @@ describe("listing failures", () => {
     ["changed", "This collection changed. Choose another."],
     ["missing", "This collection is no longer available. Choose another."],
     ["unusable", "This collection cannot be opened. Choose another."],
-    ["permission", "ChessFable is not allowed to read this collection. Choose another."],
+    ["permission", "ChessRiddle Studio is not allowed to read this collection. Choose another."],
     ["too-large", "This collection is too large to list. Choose another."],
   ])("%s renders its sentence and keeps the header recovery", async (rootFailure, sentence) => {
     mocks.error = {

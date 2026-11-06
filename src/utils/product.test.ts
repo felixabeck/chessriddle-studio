@@ -11,16 +11,16 @@ import releasePublicKey from "../../src-tauri/keys/release.minisign.pub?raw";
 
 describe("product identity", () => {
     test("keeps independent native, document and renderer inputs consistent", () => {
-        expect(PRODUCT_NAME).toBe("ChessFable");
+        expect(PRODUCT_NAME).toBe("ChessRiddle Studio");
         expect(config.productName).toBe(PRODUCT_NAME);
-        expect(config.mainBinaryName).toBe("chessfable");
+        expect(config.mainBinaryName).toBe("chessriddle-studio");
         expect(config.bundle.publisher).toBe("Felix Beck");
         expect(config.app.windows[0].title).toBe(PRODUCT_NAME);
         expect(indexDocument).toContain(`<title>${PRODUCT_NAME}</title>`);
     });
 
     test("routes source, contribution and bug support to the fork", () => {
-        expect(REPOSITORY_URL).toBe("https://github.com/felixabeck/en-croissant");
+        expect(REPOSITORY_URL).toBe("https://github.com/felixabeck/chessriddle-studio");
         expect(cargoManifest).toContain(`repository = "${REPOSITORY_URL}"`);
         expect(contributionGuide).toContain(`${REPOSITORY_URL}/compare`);
         expect(bugForm).toContain(`${REPOSITORY_URL}/issues?q=`);

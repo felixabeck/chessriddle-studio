@@ -109,7 +109,7 @@ test("routes issue reports to the fork", async () => {
   root = createRoot(host);
   await act(async () => root.render(<ErrorComponent error={new Error("boom")} />));
   expect(host.querySelector("a")?.getAttribute("href")).toBe(
-    "https://github.com/felixabeck/en-croissant/issues/new?assignees=&labels=bug&projects=&template=bug.yml",
+    "https://github.com/felixabeck/chessriddle-studio/issues/new?assignees=&labels=bug&projects=&template=bug.yml",
   );
 });
 

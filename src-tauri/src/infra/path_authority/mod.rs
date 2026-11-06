@@ -210,7 +210,7 @@ impl Drop for TestRootPermissionGuard {
 }
 
 #[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
-compile_error!("ChessFable supports Linux, macOS and Windows");
+compile_error!("ChessRiddle Studio supports Linux, macOS and Windows");
 
 mod resolved;
 pub use resolved::ResolvedPath;
@@ -3121,7 +3121,7 @@ fn admit_instance_with_lock(
                     files.push(file);
                 }
                 Err(AdvisoryLockError::HeldElsewhere(_)) => {
-                    log::warn!("another ChessFable process holds the application data directory; this launch exits");
+                    log::warn!("another ChessRiddle Studio process holds the application data directory; this launch exits");
                     return Ok(InstanceAdmission::HeldElsewhere);
                 }
                 Err(AdvisoryLockError::Io(error))
@@ -3129,7 +3129,7 @@ fn admit_instance_with_lock(
                         .raw_os_error()
                         .is_some_and(|code| advisory_lock_is_unsupported(code, platform)) =>
                 {
-                    log::warn!("the {role} directory's filesystem does not support advisory locking. ChessFable starts without an instance lock there: {error}");
+                    log::warn!("the {role} directory's filesystem does not support advisory locking. ChessRiddle Studio starts without an instance lock there: {error}");
                 }
                 Err(AdvisoryLockError::Io(error)) => return Err(error.into()),
             }
@@ -10707,7 +10707,7 @@ pub(crate) mod portable_tests {
         assert_eq!(records[0].level, log::Level::Warn);
         assert_eq!(
             records[0].message,
-            "another ChessFable process holds the application data directory; this launch exits"
+            "another ChessRiddle Studio process holds the application data directory; this launch exits"
         );
         drop(guard);
         assert!(temp.path().join("instance.lock").is_file());

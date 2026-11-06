@@ -1427,7 +1427,7 @@ async function verifyWorkspaceDeletionOutcome(session, filesWorkspace) {
 async function verifyLosslessFileGameSave(session, filesWorkspace) {
   const workspace = { id: { id: filesWorkspaceId }, kind: "fileWorkspace" };
   const sentence =
-    "The game in the file contains moves or comments ChessFable cannot keep. Saving over it would delete them. You can save your version as a new game.";
+    "The game in the file contains moves or comments ChessRiddle Studio cannot keep. Saving over it would delete them. You can save your version as a new game.";
   const fixtures = [
     {
       name: "verify-lossy-source",
@@ -1671,7 +1671,7 @@ async function verifySelectedRootPermissions(session, puzzleRoot, engineRoot) {
     if (error)
       ownedProbe.notification =
         error.rootFailure === "permission"
-          ? "ChessFable is not allowed to read this engine folder. Choose another in Settings."
+          ? "ChessRiddle Studio is not allowed to read this engine folder. Choose another in Settings."
           : error.message;
     return response;
   };
@@ -1774,7 +1774,7 @@ async function verifySelectedRootPermissions(session, puzzleRoot, engineRoot) {
     await click("Train");
     check(
       await visible(
-        "ChessFable is not allowed to read this puzzle folder. Choose another in Settings.",
+        "ChessRiddle Studio is not allowed to read this puzzle folder. Choose another in Settings.",
       ),
       "RF5 puzzle permission guidance is visible through the actual renderer",
     );
@@ -1793,7 +1793,7 @@ async function verifySelectedRootPermissions(session, puzzleRoot, engineRoot) {
     await click("Install");
     check(
       await visible(
-        "ChessFable is not allowed to read this engine folder. Choose another in Settings.",
+        "ChessRiddle Studio is not allowed to read this engine folder. Choose another in Settings.",
       ),
       "RF6 Add permission guidance is visible through the actual renderer",
     );
@@ -1804,7 +1804,7 @@ async function verifySelectedRootPermissions(session, puzzleRoot, engineRoot) {
     await click("Close dialog");
     await dismissNotification(
       "RF6",
-      "ChessFable is not allowed to read this engine folder. Choose another in Settings.",
+      "ChessRiddle Studio is not allowed to read this engine folder. Choose another in Settings.",
       true,
     );
 
@@ -2852,7 +2852,7 @@ async function verifyLinkedCollections(session, filesWorkspace, profileDirectory
     archived: join(filesWorkspace, `${prefix}-restored-export.pgn`),
     cache: join(
       profileDirectory,
-      ".local/share/com.chessriddle.encroissant/collections",
+      ".local/share/com.chessriddle.studio/collections",
       `${collection.id}.db3`,
     ),
     search: join(filesWorkspace, `${prefix}-search.json`),
@@ -4313,16 +4313,13 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
   const orphanFile = join(fixtureDirectory, "orphan-opening-book.bin");
   const imageDirectory = join(
     profileDirectory,
-    ".local/share/com.chessriddle.encroissant/engine-images",
+    ".local/share/com.chessriddle.studio/engine-images",
   );
   const retainedImage = join(imageDirectory, retainedImageId);
   const retiredImage = join(imageDirectory, retiredImageId);
   const orphanImage = join(imageDirectory, orphanImageId);
   const filesWorkspace = join(fixtureDirectory, "files-workspace");
-  const practiceDirectory = join(
-    profileDirectory,
-    ".local/share/com.chessriddle.encroissant/practice",
-  );
+  const practiceDirectory = join(profileDirectory, ".local/share/com.chessriddle.studio/practice");
   const largePracticePath = join(filesWorkspace, `${largePracticeName}.pgn`);
   const largePracticeMetadataPath = join(filesWorkspace, `${largePracticeName}.info`);
   const legacyPracticePath = join(fixtureDirectory, "legacy-practice-repertoire.pgn");
@@ -4391,11 +4388,8 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
   await writeFile(retainedImage, retainedImageBytes);
   await writeFile(retiredImage, "retired managed image bytes");
   await writeFile(orphanImage, "orphan managed image bytes");
-  const registryFile = join(
-    profileDirectory,
-    ".config/com.chessriddle.encroissant/path-authority.json",
-  );
-  await mkdir(join(profileDirectory, ".config/com.chessriddle.encroissant"), { recursive: true });
+  const registryFile = join(profileDirectory, ".config/com.chessriddle.studio/path-authority.json");
+  await mkdir(join(profileDirectory, ".config/com.chessriddle.studio"), { recursive: true });
   const storedEntry = async (id, displayName, nativePath, purpose, operations, targetIsDir) => {
     const metadata = await stat(nativePath, { bigint: true });
     return {
@@ -4517,7 +4511,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
   await rm(downloadDestination, { recursive: true, force: true });
   const logFile = join(
     profileDirectory,
-    ".local/share/com.chessriddle.encroissant/logs/en-croissant.log",
+    ".local/share/com.chessriddle.studio/logs/chessriddle-studio.log",
   );
   const readLogSinceFirstOpen = await createSinceOpenLogReader(logFile);
   const readLog = () => readLogSinceFirstOpen().catch(() => "");
@@ -4574,8 +4568,8 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
     "the real Tauri IPC bridge is present (not a test mock)",
   );
   check(
-    (await session.execute("return document.title")) === "ChessFable",
-    "the real renderer exposes the ChessFable document title",
+    (await session.execute("return document.title")) === "ChessRiddle Studio",
+    "the real renderer exposes the ChessRiddle Studio document title",
   );
   await verifyProgressContract(session);
 
@@ -6238,7 +6232,9 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
     probe,
     { description, stopStep, survivorMessage, setStep },
   ) => {
-    await probe.waitForLine("another ChessFable process holds the application data directory");
+    await probe.waitForLine(
+      "another ChessRiddle Studio process holds the application data directory",
+    );
     setStep(stopStep);
     await stopLaunchedChild(probe.child);
     if (processExists(probe.child.pid)) throw new Error(survivorMessage);
@@ -6253,7 +6249,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
   try {
     const credentialRegistry = join(
       profileDirectory,
-      ".local/share/com.chessriddle.encroissant/credentials/lichess-accounts.json",
+      ".local/share/com.chessriddle.studio/credentials/lichess-accounts.json",
     );
     const before = await Promise.all([readFile(registryFile), readFile(credentialRegistry)]);
     refusalStep = "wait for same-directory refusal";
@@ -6521,9 +6517,9 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
     if (!released.released)
       throw new Error(`could not release the asserted session: ${released.error}`);
     await rm(profileDirectory, { recursive: true, force: true });
-    const appDataDirectory = join(profileDirectory, ".local/share/com.chessriddle.encroissant");
+    const appDataDirectory = join(profileDirectory, ".local/share/com.chessriddle.studio");
     await mkdir(appDataDirectory, { recursive: true });
-    await mkdir(join(profileDirectory, ".config/com.chessriddle.encroissant"), { recursive: true });
+    await mkdir(join(profileDirectory, ".config/com.chessriddle.studio"), { recursive: true });
     await writeFile(join(appDataDirectory, "db"), "default database root is a regular file\n");
     session = await Session.open(APP_BINARY);
     const alert = await databaseAlert(session, "the unusable default database root alert");
@@ -6541,10 +6537,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
   // while the app is stopped. Relaunching re-proves the persisted selection without a cached list.
   const selectedRootCheck =
     "selected-root-missing: the Databases alert offers a visible folder chooser without recreating db";
-  const selectedDatabaseRoot = join(
-    profileDirectory,
-    ".local/share/com.chessriddle.encroissant/db",
-  );
+  const selectedDatabaseRoot = join(profileDirectory, ".local/share/com.chessriddle.studio/db");
   try {
     const closed = await closeApplicationThroughTitlebar(session, "default-root-unusable");
     if (!closed.gone || closed.survivors.length > 0)
@@ -6553,7 +6546,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
     if (!released.released)
       throw new Error(`could not release the default-root-unusable session: ${released.error}`);
     await rm(profileDirectory, { recursive: true, force: true });
-    await mkdir(join(profileDirectory, ".config/com.chessriddle.encroissant"), { recursive: true });
+    await mkdir(join(profileDirectory, ".config/com.chessriddle.studio"), { recursive: true });
     session = await Session.open(APP_BINARY);
     await waitFor(
       "the Databases page to activate the default database root",

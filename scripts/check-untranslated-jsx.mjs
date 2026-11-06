@@ -59,7 +59,9 @@ function isStructuredTechnicalLiteral(value, filename) {
     return /^\d+%$|^\(\d+\)$/u.test(value) || /^[\p{L}\d .()]+$/u.test(value);
   return (
     productIdentitySources.has(basename) &&
-    /^(?:ChessFable|En Croissant|Lichess|Chess\.com|chess\.com|www\.encroissant\.org)$/u.test(value)
+    /^(?:ChessRiddle Studio|En Croissant|Lichess|Chess\.com|chess\.com|www\.encroissant\.org)$/u.test(
+      value,
+    )
   );
 }
 

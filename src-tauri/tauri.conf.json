@@ -42,14 +42,14 @@
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420"
   },
-  "productName": "ChessFable",
-  "mainBinaryName": "chessfable",
-  "identifier": "com.chessriddle.encroissant",
+  "productName": "ChessRiddle Studio",
+  "mainBinaryName": "chessriddle-studio",
+  "identifier": "com.chessriddle.studio",
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhFQ0Q5NDAzRUE3Qjc4RUMKUldUc2VIdnFBNVROam9xMGl6SjY4UDNaQTJyeE9MY2k5SkY0N25mZVNXNHJxcnpQRW9wWmhMQjcK",
       "endpoints": [
-        "https://github.com/felixabeck/en-croissant/releases/latest/download/latest.json"
+        "https://github.com/felixabeck/chessriddle-studio/releases/latest/download/latest.json"
       ]
     },
     "cli": {
@@ -66,7 +66,7 @@
     "withGlobalTauri": false,
     "windows": [
       {
-        "title": "ChessFable",
+        "title": "ChessRiddle Studio",
         "create": false,
         "visible": false,
         "decorations": true

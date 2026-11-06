@@ -662,7 +662,7 @@ function FileBackedGate({
           ? freshness.conflictReason === "lossy-source"
             ? t("FileFreshness.LossySource", {
                 defaultValue:
-                  "The game in the file contains moves or comments ChessFable cannot keep. Saving over it would delete them. You can save your version as a new game.",
+                  "The game in the file contains moves or comments ChessRiddle Studio cannot keep. Saving over it would delete them. You can save your version as a new game.",
               })
             : t("FileFreshness.Changed")
           : t("FileFreshness.Unavailable")}

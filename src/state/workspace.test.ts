@@ -35,9 +35,9 @@ vi.mock("@/platform/native", () => native);
 vi.mock("./persistError", () => persistError);
 
 const treeOverflowMessage =
-    "ChessFable could not finish deleting every closed board. The newest deletions were kept. Quit ChessFable to discard the leftover saved games.";
+    "ChessRiddle Studio could not finish deleting every closed board. The newest deletions were kept. Quit ChessRiddle Studio to discard the leftover saved games.";
 const puzzleOverflowMessage =
-    "ChessFable could not finish deleting every old puzzle session. The newest deletions were kept. Quit ChessFable to discard the leftover puzzle sessions.";
+    "ChessRiddle Studio could not finish deleting every old puzzle session. The newest deletions were kept. Quit ChessRiddle Studio to discard the leftover puzzle sessions.";
 
 const legacyTab = {
     name: "Legacy",

@@ -810,7 +810,7 @@ test("failing assertion-session open still throws when the since-open log cannot
 test("reopen diagnostics exclude log bytes written before that open", async (t) => {
   const { errors } = captureConsole(t);
   const directory = await mkdtemp(join(tmpdir(), "verify-app-log-offset-"));
-  const logFile = join(directory, "en-croissant.log");
+  const logFile = join(directory, "chessriddle-studio.log");
   t.after(() => rm(directory, { recursive: true, force: true }));
   await writeFile(logFile, "BEFORE_FIRST_OPEN\n");
   const first = await openAssertionSession({
@@ -883,7 +883,7 @@ test("since-open log reader treats a missing file as empty and surfaces other re
   const missingReader = await createSinceOpenLogReader(missing);
   assert.equal(await missingReader(), "");
 
-  const logFile = join(directory, "en-croissant.log");
+  const logFile = join(directory, "chessriddle-studio.log");
   await writeFile(logFile, "seed\n");
   const reader = await createSinceOpenLogReader(logFile);
   await rm(logFile);

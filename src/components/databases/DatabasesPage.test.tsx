@@ -351,7 +351,10 @@ describe("listing failure copy and state", () => {
     ["changed", "This database folder changed. Choose another."],
     ["missing", "This database folder is no longer available. Choose another."],
     ["unusable", "This database folder cannot be opened. Choose another."],
-    ["permission", "ChessFable is not allowed to read this database folder. Choose another."],
+    [
+      "permission",
+      "ChessRiddle Studio is not allowed to read this database folder. Choose another.",
+    ],
     ["too-large", "This database folder is too large to list. Choose another."],
   ])("%s renders its sentence and chooser", async (reason, sentence) => {
     mocks.listWorkspaceDatabases.mockRejectedValue(failure(reason as RootFailure));
@@ -450,7 +453,7 @@ describe("listing failure copy and state", () => {
     await act(async () => revalidate());
     expect(host.textContent).toContain("Cached database");
     expect(alert()?.textContent).toContain(
-      "ChessFable is not allowed to read this database folder. Choose another.",
+      "ChessRiddle Studio is not allowed to read this database folder. Choose another.",
     );
     expect(host.textContent).not.toContain("No databases installed");
   });

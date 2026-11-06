@@ -35,7 +35,7 @@ afterEach(async () => {
 
 test.each([
   ["missing", "This database folder is no longer available. Choose another."],
-  ["permission", "ChessFable is not allowed to read this database folder. Choose another."],
+  ["permission", "ChessRiddle Studio is not allowed to read this database folder. Choose another."],
   ["changed", "This database folder changed. Choose another."],
   ["too-large", "This database folder is too large to list. Choose another."],
 ] as const)(

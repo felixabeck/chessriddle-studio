@@ -107,7 +107,7 @@ focused tests before the baseline is refreshed.
 
 After adding coverage, deliberately refresh the frontend baseline so the new gains become
 binding. First require a green full coverage run against the existing baseline. Obtain the
-`frontend-coverage` LCOV artifact from a successful `Test` run in `felixabeck/en-croissant`,
+`frontend-coverage` LCOV artifact from a successful `Test` run in `felixabeck/chessriddle-studio`,
 verify that its frontend source, dependencies, test configuration and coverage scope match
 the candidate tree, and compare its area metrics with a fresh local `pnpm test:coverage`.
 Do not use an old artifact across changed measurement inputs. Require every covered count

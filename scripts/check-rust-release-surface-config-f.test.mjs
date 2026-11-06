@@ -10,7 +10,7 @@ describe("R5 config, test-only scope, and physical source surface", () => {
   const packageTargetRoots = [
     [
       "bin target path",
-      '\n[[bin]]\nname = "chessfable"\npath = "release_main.rs"\nautobins = false\n',
+      '\n[[bin]]\nname = "chessriddle-studio"\npath = "release_main.rs"\nautobins = false\n',
       "Cargo manifest path keys may add Rust code",
     ],
     [

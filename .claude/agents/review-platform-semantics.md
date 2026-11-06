@@ -18,7 +18,7 @@ compiler, test fixture or CI job; do not infer them from the Unix-like surface.
 
 ## Why this lens exists
 
-These are traced ChessFable incidents, not hypothetical portability risks:
+These are traced ChessRiddle Studio incidents, not hypothetical portability risks:
 
 - `f-20260912-05`: Windows parent-swap tests looked up a registered entry using a non-canonical
   spelling, while the registry held the verbatim-prefixed spelling; fixed by `6ab9ffad`, with the
@@ -57,7 +57,7 @@ These are traced ChessFable incidents, not hypothetical portability risks:
   `pnpm rust:windows:check`, was added by `01c5797e` and is listed at
   `.claude/skills/push/SKILL.md:102`.
 
-The six earlier ChessFable-specific lenses owned chess-tree semantics, engine protocol, IPC,
+The six earlier ChessRiddle Studio-specific lenses owned chess-tree semantics, engine protocol, IPC,
 persisted state, PGN indexing and Tauri security; none owned OS semantics. CI's
 `rust-windows-test`, `rust-macos-test` and `rust-platform` matrix are the only runtime proof for
 Windows and macOS behavior. `pnpm rust:windows:check` is the only local Windows compile check; it

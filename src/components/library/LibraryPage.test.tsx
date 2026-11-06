@@ -202,8 +202,8 @@ function rows() {
 
 test("unread peers use root and index keys, show category copy and leave healthy siblings usable", async () => {
   mocks.unread = [
-    { filename: "�.db3", error: "ChessFable is not allowed to read this database file" },
-    { filename: "�.db3", error: "ChessFable is not allowed to read this database file" },
+    { filename: "�.db3", error: "ChessRiddle Studio is not allowed to read this database file" },
+    { filename: "�.db3", error: "ChessRiddle Studio is not allowed to read this database file" },
   ];
   mocks.files = workspaceListingToEntries(
     {
@@ -232,8 +232,10 @@ test("unread peers use root and index keys, show category copy and leave healthy
   expect(mocks.navigate).not.toHaveBeenCalled();
   expect(host.querySelector('[role="alert"]')).toBeNull();
   expect(host.textContent).not.toContain("Files could not be loaded");
-  expect(host.textContent).toContain("ChessFable is not allowed to read this file.");
-  expect(host.textContent).toContain("ChessFable is not allowed to read this database file");
+  expect(host.textContent).toContain("ChessRiddle Studio is not allowed to read this file.");
+  expect(host.textContent).toContain(
+    "ChessRiddle Studio is not allowed to read this database file",
+  );
   for (const row of unreadRows) {
     await act(async () => {
       row.focus();

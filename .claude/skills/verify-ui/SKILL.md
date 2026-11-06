@@ -1,9 +1,9 @@
 ---
 name: verify-ui
-description: Verify ChessFable UI changes. Pixels are Playwright e2e; the real product is driven off-screen by `pnpm verify:app`; only native GTK chrome is left to Felix. Chrome MCP is never a valid verifier for this desktop app.
+description: Verify ChessRiddle Studio UI changes. Pixels are Playwright e2e; the real product is driven off-screen by `pnpm verify:app`; only native GTK chrome is left to Felix. Chrome MCP is never a valid verifier for this desktop app.
 ---
 
-# Verify UI (ChessFable)
+# Verify UI (ChessRiddle Studio)
 
 This file is the source of truth. Codex follows
 `.agents/skills/verify-ui/SKILL.md` after reading this contract.

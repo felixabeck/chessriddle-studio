@@ -3,7 +3,7 @@
 //   kwin_wayland --virtual        an off-screen compositor, so nothing reaches the desktop
 //     └─ tauri-driver             proxies WebDriver to WebKitWebDriver
 //        └─ WebKitWebDriver       launches and controls the app
-//           └─ chessfable         the real binary, real IPC, real WebKitGTK
+//           └─ chessriddle-studio the real binary, real IPC, real WebKitGTK
 //
 // This is the complement to `pnpm test:e2e:container`, not a replacement for it. The container
 // suite pins renderer *pixels* in Chromium against a mocked IPC surface; this pins *behaviour* in
@@ -28,7 +28,7 @@ import { fileURLToPath } from "node:url";
 
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
-export const APP_BINARY = join(projectRoot, "src-tauri", "target", "release", "chessfable");
+export const APP_BINARY = join(projectRoot, "src-tauri", "target", "release", "chessriddle-studio");
 
 const DRIVER_PORT = 4444;
 const NATIVE_PORT = 4445;

@@ -1,11 +1,11 @@
 ---
 name: git
-description: Create one explicit, well-scoped ChessFable commit without pushing or adding AI/co-author trailers.
+description: Create one explicit, well-scoped ChessRiddle Studio commit without pushing or adding AI/co-author trailers.
 ---
 
 # Git — smart commit
 
-This is the canonical ChessFable commit workflow.
+This is the canonical ChessRiddle Studio commit workflow.
 
 ## Authority
 

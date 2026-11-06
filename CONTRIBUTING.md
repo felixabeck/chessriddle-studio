@@ -15,15 +15,15 @@ your contribution.
 
 ## Initial Steps
 
-Before you start working on a contribution, please check the [ChessFable issues page](https://github.com/felixabeck/en-croissant/issues). It's possible someone else is already working on something similar, or perhaps there is a reason that feature isn't implemented. The maintainers will point you in the right direction.
+Before you start working on a contribution, please check the [ChessRiddle Studio issues page](https://github.com/felixabeck/chessriddle-studio/issues). It's possible someone else is already working on something similar, or perhaps there is a reason that feature isn't implemented. The maintainers will point you in the right direction.
 
 ## Development
 
 The following steps will get you setup to contribute changes to this repo:
 
 - Fork the repo
-- Clone your forked repository: `git clone git@github.com:{your_username}/en-croissant.git`
-- Enter the en-croissant directory: `cd en-croissant`
+- Clone your forked repository: `git clone git@github.com:{your_username}/chessriddle-studio.git`
+- Enter the chessriddle-studio directory: `cd chessriddle-studio`
 - Create a new branch off the `master` branch: `git checkout -b your-feature-name`
 - Install dependencies `pnpm i`
 - Open the code in your preferred IDE and contribute your changes
@@ -55,14 +55,14 @@ Do not add repository Cargo configuration. CI does not require sccache.
 
 - Starts the app in development mode to see changes in real time
 - Merges `src-tauri/tauri.dev.conf.json`, which overrides the bundle identifier to
-  `com.chessriddle.encroissant.dev`. Everything Tauri derives from the identifier moves with it:
+  `com.chessriddle.studio.dev`. Everything Tauri derives from the identifier moves with it:
   the app
   data directory (`db/`, `engines/`, `engine-images/`, `credentials/`, `puzzles/`), the config
   directory (`path-authority.json`), the log directory, the OS keyring service name, and — on Linux
   and Windows — the webview's storage. On Linux that means
-  `~/.local/share/com.chessriddle.encroissant.dev` and
-  `~/.config/com.chessriddle.encroissant.dev` instead of the installed release's
-  `~/.local/share/com.chessriddle.encroissant`. A dev build may therefore run alongside an installed
+  `~/.local/share/com.chessriddle.studio.dev` and
+  `~/.config/com.chessriddle.studio.dev` instead of the installed release's
+  `~/.local/share/com.chessriddle.studio`. A dev build may therefore run alongside an installed
   release without two processes writing the same SQLite files.
 - **Only `pnpm dev` is isolated.** `pnpm tauri dev`, `cargo tauri dev` and a bare `cargo run` do not
   merge the config, so they run under the release identifier and write the installed release's data.
@@ -70,7 +70,7 @@ Do not add repository Cargo configuration. CI does not require sccache.
 - One thing the identifier does not cover: a database folder chosen explicitly in the app's
   settings is honoured as given.
 - Seed the dev directory by copying out of the release directory, for example
-  `cp -r ~/.local/share/com.chessriddle.encroissant/{engines,engine-images} ~/.local/share/com.chessriddle.encroissant.dev/`.
+  `cp -r ~/.local/share/com.chessriddle.studio/{engines,engine-images} ~/.local/share/com.chessriddle.studio.dev/`.
   Keyring secrets do not follow a file copy: a copied `lichess-accounts.json` lists accounts whose
   tokens live under the release's keyring service, and the first dev launch prunes them.
 
@@ -99,7 +99,7 @@ Do not add repository Cargo configuration. CI does not require sccache.
 - Implement your contributions (see the [Development](#development) section for more information)
 - Before submitting a PR, first build the app using `pnpm build` and check every feature you've contributed to.
 - Format and lint your code using `pnpm format` followed by `pnpm lint:fix`. If you added or changed any translation keys, run `pnpm i18n:extract` to update the translation files.
-- Go to [the comparison page](https://github.com/felixabeck/en-croissant/compare) and select the branch you just pushed in the `compare:` dropdown
+- Go to [the comparison page](https://github.com/felixabeck/chessriddle-studio/compare) and select the branch you just pushed in the `compare:` dropdown
 - Submit the new PR. The maintainers will follow up ASAP.
 
 ## Extra Notes

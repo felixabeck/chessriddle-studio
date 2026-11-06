@@ -362,7 +362,7 @@ for (const layout of ["desktop", "320-200"] as const) {
             const notification = page.locator(".mantine-Notification-root");
             const guidance = notification.locator(".mantine-Notification-description");
             await expect(guidance).toHaveText(
-                `ChessFable is not allowed to read this ${surface === "puzzle" ? "puzzle" : "engine"} folder. Choose another in Settings.`,
+                `ChessRiddle Studio is not allowed to read this ${surface === "puzzle" ? "puzzle" : "engine"} folder. Choose another in Settings.`,
             );
             await expectNotificationSettled(notification);
             expect(await page.evaluate(() => localStorage.getItem("engines"))).toBe(saved);
@@ -502,7 +502,7 @@ async function expectNotificationTextReachable(
         };
     }, edge);
     expect(geometry.text).toBe(
-        `ChessFable is not allowed to read this ${folder} folder. Choose another in Settings.`,
+        `ChessRiddle Studio is not allowed to read this ${folder} folder. Choose another in Settings.`,
     );
     expect(geometry.lines.length).toBeGreaterThan(0);
     // Range rects measure the complete painted sentence even when Mantine permits ellipsis.
@@ -1730,7 +1730,7 @@ test("accounts-puzzles-engines: retains unsaved public cards and retries only th
     await page.goto("/accounts");
     const notice = page.getByRole("alert").filter({ hasText: "Accounts could not be saved" });
     await expect(notice).toContainText(
-        "Your accounts are available during this session. Unsaved account changes may be lost when you close or reload ChessFable.",
+        "Your accounts are available during this session. Unsaved account changes may be lost when you close or reload ChessRiddle Studio.",
     );
     await expect(page.getByText("Saved player", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Remove me", { exact: true }).first()).toBeVisible();
@@ -1765,7 +1765,7 @@ test("accounts-puzzles-engines: retains unsaved public cards and retries only th
     const retry = notice.getByRole("button", { name: "Try saving again", exact: true });
     const title = notice.getByText("Accounts could not be saved", { exact: true });
     const explanation = notice.getByText(
-        "Your accounts are available during this session. Unsaved account changes may be lost when you close or reload ChessFable.",
+        "Your accounts are available during this session. Unsaved account changes may be lost when you close or reload ChessRiddle Studio.",
         { exact: true },
     );
     async function expectNoticeReachable(width: number, height: number) {
@@ -1945,11 +1945,15 @@ test("accounts-puzzles-engines: workspace-read-refusal preserves saved bytes and
     await page.goto("/");
 
     await expect(
-        page.getByRole("heading", { name: "ChessFable could not start", level: 1, exact: true }),
+        page.getByRole("heading", {
+            name: "ChessRiddle Studio could not start",
+            level: 1,
+            exact: true,
+        }),
     ).toBeVisible();
     await expect(
         page.getByText(
-            "ChessFable could not read its saved workspace and left it unchanged. Try again to read it once more.",
+            "ChessRiddle Studio could not read its saved workspace and left it unchanged. Try again to read it once more.",
             { exact: true },
         ),
     ).toBeVisible();
@@ -1977,11 +1981,15 @@ test("accounts-puzzles-engines: refuses startup when legacy sign-in storage cann
     await page.goto("/");
 
     await expect(
-        page.getByRole("heading", { name: "ChessFable could not start", level: 1, exact: true }),
+        page.getByRole("heading", {
+            name: "ChessRiddle Studio could not start",
+            level: 1,
+            exact: true,
+        }),
     ).toBeVisible();
     await expect(
         page.getByText(
-            "A saved Lichess sign-in could not be removed from local storage. This sign-in no longer works at Lichess. You can sign in again once ChessFable starts. Try again to retry removing the saved sign-in.",
+            "A saved Lichess sign-in could not be removed from local storage. This sign-in no longer works at Lichess. You can sign in again once ChessRiddle Studio starts. Try again to retry removing the saved sign-in.",
             { exact: true },
         ),
     ).toBeVisible();
@@ -2025,7 +2033,7 @@ test("accounts-puzzles-engines: startup names every unconfirmed revocation reaso
     });
     await page.goto("/");
     await expect(
-        page.getByRole("heading", { name: "ChessFable could not start", exact: true }),
+        page.getByRole("heading", { name: "ChessRiddle Studio could not start", exact: true }),
     ).toBeVisible();
     for (const reason of [
         "Lichess could not be reached.",

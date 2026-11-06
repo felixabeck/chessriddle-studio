@@ -42,13 +42,13 @@ const states = [
     legacySignInFound: false,
     allRevoked: true,
     explanation:
-      "ChessFable could not update its saved account data and did not start. Try again to retry the update.",
+      "ChessRiddle Studio could not update its saved account data and did not start. Try again to retry the update.",
   },
   {
     legacySignInFound: true,
     allRevoked: true,
     explanation:
-      "A saved Lichess sign-in could not be removed from local storage. This sign-in no longer works at Lichess. You can sign in again once ChessFable starts. Try again to retry removing the saved sign-in.",
+      "A saved Lichess sign-in could not be removed from local storage. This sign-in no longer works at Lichess. You can sign in again once ChessRiddle Studio starts. Try again to retry removing the saved sign-in.",
   },
   {
     legacySignInFound: true,
@@ -110,9 +110,9 @@ test("the workspace refusal uses the English fallback before i18n initializes an
   const i18n = createInstance();
   await renderWorkspaceFailure(i18n);
   await renderWorkspaceFailure(i18n);
-  expect(host.querySelector("h1")?.textContent).toBe("ChessFable could not start");
+  expect(host.querySelector("h1")?.textContent).toBe("ChessRiddle Studio could not start");
   expect(Array.from(host.querySelectorAll("p"), (p) => p.textContent)).toEqual([
-    "ChessFable could not read its saved workspace and left it unchanged. Try again to read it once more.",
+    "ChessRiddle Studio could not read its saved workspace and left it unchanged. Try again to read it once more.",
   ]);
   expect(host.querySelectorAll("button")).toHaveLength(1);
   const button = host.querySelector("button");
@@ -193,7 +193,7 @@ test.each(states)(
     await renderFailure(i18n, legacySignInFound, allRevoked);
     // Exercise the React compiler's cached render as well as its initial render.
     await renderFailure(i18n, legacySignInFound, allRevoked);
-    expect(host.querySelector("h1")?.textContent).toBe("ChessFable could not start");
+    expect(host.querySelector("h1")?.textContent).toBe("ChessRiddle Studio could not start");
     expect(host.querySelectorAll("p")).toHaveLength(1);
     expect(host.querySelector("p")?.textContent).toBe(explanation);
     const container = host.querySelector<HTMLElement>(".mantine-Container-root");
@@ -235,7 +235,7 @@ test.each(states)(
     const i18n = createInstance();
     await renderFailure(i18n, legacySignInFound, allRevoked);
     await renderFailure(i18n, legacySignInFound, allRevoked);
-    expect(host.querySelector("h1")?.textContent).toBe("ChessFable could not start");
+    expect(host.querySelector("h1")?.textContent).toBe("ChessRiddle Studio could not start");
     expect(host.querySelector("p")?.textContent).toBe(explanation);
     expect(host.querySelector("button")?.textContent).toBe("Try again");
   },

@@ -1,3 +1,3 @@
-# ChessFable has no project-scoped MCP servers.
+# ChessRiddle Studio has no project-scoped MCP servers.
 # chrome-devtools is configured user-wide in ~/.grok/config.toml.
 # This desktop app does not use Sentry or Supabase — do not add those servers here.

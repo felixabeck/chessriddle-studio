@@ -38,15 +38,18 @@ test("settings-responsive: preserves keyboard focus at narrow 200% font scale", 
     await page.keyboard.press("End");
     await expect(page.getByRole("menuitem", { name: /^about$/i })).toBeFocused();
     await page.keyboard.press("Enter");
-    const about = page.getByRole("dialog", { name: "ChessFable" });
+    const about = page.getByRole("dialog", { name: "ChessRiddle Studio" });
     await expect(about).toBeVisible();
     await expect(about).toHaveCSS("opacity", "1");
     await capture("settings-about-modal");
     const support = about.getByRole("link", {
-        name: "https://github.com/felixabeck/en-croissant",
+        name: "https://github.com/felixabeck/chessriddle-studio",
     });
     await support.scrollIntoViewIfNeeded();
-    await expect(support).toHaveAttribute("href", "https://github.com/felixabeck/en-croissant");
+    await expect(support).toHaveAttribute(
+        "href",
+        "https://github.com/felixabeck/chessriddle-studio",
+    );
     await capture("settings-about-support");
 });
 

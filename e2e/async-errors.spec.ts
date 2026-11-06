@@ -716,7 +716,7 @@ test("compact title-bar: mouse actions and German popup geometry at 320px / 200%
                     ),
                 )
                 .toBe(1);
-        } else await expect(page.getByRole("dialog", { name: "ChessFable" })).toBeVisible();
+        } else await expect(page.getByRole("dialog", { name: "ChessRiddle Studio" })).toBeVisible();
     }
     await assertNoHorizontalOverflow();
     await assertPageNotClipped(page);
@@ -765,7 +765,7 @@ test("compact title-bar: all groups and actions by keyboard", async ({
         await page.keyboard.press("Enter");
         await expect(page.getByRole("menu")).toHaveCount(0);
         if (index === 2) {
-            const dialog = page.getByRole("dialog", { name: "ChessFable" });
+            const dialog = page.getByRole("dialog", { name: "ChessRiddle Studio" });
             await expect(dialog).toBeVisible();
             await dialog.getByRole("button", { name: "Dialog schließen" }).click();
         }

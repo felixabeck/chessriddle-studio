@@ -15,7 +15,7 @@ use crate::{
 };
 
 const MIN_BUFFER_SIZE: usize = 8192;
-// Matches ChessFable's per-game MAX_PGN_BYTES in src-tauri/src/pgn.rs.
+// Matches ChessRiddle Studio's per-game MAX_PGN_BYTES in src-tauri/src/pgn.rs.
 const MAX_TOKEN_BYTES: usize = 10 * 1024 * 1024;
 
 trait ReadPgn {

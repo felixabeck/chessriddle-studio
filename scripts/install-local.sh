@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install a ChessFable build for daily use, separate from the build tree.
+# Install a ChessRiddle Studio build for daily use, separate from the build tree.
 # provenance `reviewed` is written only when this invocation compiled from a clean
 # tree whose HEAD is still on the branch's @{upstream}.
 #
@@ -8,15 +8,14 @@
 #       install the build already in target/release as UNREVIEWED
 #   bash scripts/install-local.sh --force         permit a dirty tree, unpushed HEAD, or a tree/HEAD change during the build
 #
-# The desktop entry launches current/bin/chessfable directly, because a GTK window takes its
+# The desktop entry launches current/bin/chessriddle-studio directly, because a GTK window takes its
 # Wayland app id from argv[0] and Plasma matches a window to a launcher by that id. The entry is
-# therefore named after the binary, not after productName. current/bin/en-croissant remains as a
-# compatibility launcher for older references and rollback. Tauri resolves resources from
-# lib/ChessFable.
+# therefore named after the binary, not after productName. Tauri resolves resources from
+# lib/ChessRiddle Studio (PackageInfo.name is productName verbatim, including the space).
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ROOT="${CHESSFABLE_INSTALL_DIR:-$HOME/.local/opt/chessfable}"
+ROOT="${CHESSFABLE_INSTALL_DIR:-$HOME/.local/opt/chessriddle-studio}"
 RELEASE_DIR="$REPO/src-tauri/target/release"
 ICON="$REPO/src-tauri/icons/icon.png"
 APPLICATIONS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
@@ -33,10 +32,12 @@ done
 
 mapfile -t identity < <(node -e '
   const c = require(process.argv[1]);
-  for (const value of [c.mainBinaryName, c.productName]) {
-    if (typeof value !== "string" || !/^[A-Za-z0-9_-]+$/.test(value)) process.exit(2);
-    console.log(value);
-  }
+  const binary = c.mainBinaryName;
+  const product = c.productName;
+  if (typeof binary !== "string" || !/^[A-Za-z0-9_-]+$/.test(binary)) process.exit(2);
+  if (typeof product !== "string" || !/^[A-Za-z0-9_-]+( [A-Za-z0-9_-]+)*$/.test(product)) process.exit(2);
+  console.log(binary);
+  console.log(product);
 ' "$REPO/src-tauri/tauri.conf.json")
 [ "${#identity[@]}" -eq 2 ] || { echo "invalid product identity in tauri.conf.json" >&2; exit 1; }
 binary="${identity[0]}"
@@ -160,8 +161,8 @@ current_tmp=""
 previous_tmp=""
 desktop_tmp=""
 invocation_id=""
-managed_marker_name='.chessfable-managed-release'
-managed_marker_value='ChessFable local installer release v1'
+managed_marker_name='.chessriddle-studio-managed-release'
+managed_marker_value='ChessRiddle Studio local installer release v1'
 current_committed=0
 target_owned=0
 original_current_present=0
@@ -240,7 +241,6 @@ rm "$current_tmp" "$previous_tmp"
 mkdir -p "$staging/bin" "$staging/lib/$product_name"
 cp "$RELEASE_DIR/$binary" "$staging/bin/$binary"
 chmod 755 "$staging/bin/$binary"
-ln -s "$binary" "$staging/bin/en-croissant"
 cp -R "$RELEASE_DIR/sound" "$staging/lib/$product_name/sound"
 cp "$ICON" "$staging/icon.png"
 printf 'commit %s\nshort %s\nsubject %s\ninstalled %s\nprovenance %s\n' \
@@ -306,39 +306,6 @@ for stale in "$APPLICATIONS_DIR"/*.desktop; do
   fi
 done
 
-is_legacy_managed_release() {
-  local candidate="$1" name commit_line short_line subject_line installed_line provenance_line extra
-  name="${candidate##*/}"
-  [[ "$name" =~ ^([0-9a-f]{7,40})-[0-9]{8}T[0-9]{6}(-[0-9]+)?$ ]] || return 1
-  [ -f "$candidate/VERSION" ] && [ ! -L "$candidate/VERSION" ] || return 1
-  {
-    IFS= read -r commit_line
-    IFS= read -r short_line
-    IFS= read -r subject_line
-    IFS= read -r installed_line
-    IFS= read -r provenance_line
-    IFS= read -r extra || true
-  } < "$candidate/VERSION"
-  [[ "$commit_line" =~ ^commit\ ([0-9a-f]{40})$ ]] || return 1
-  [[ "$short_line" =~ ^short\ ([0-9a-f]{7,40})$ ]] || return 1
-  [ "${BASH_REMATCH[1]}" = "${name%%-*}" ] || return 1
-  [[ "$commit_line" == "commit ${BASH_REMATCH[1]}"* ]] || return 1
-  [[ "$subject_line" == subject\ * ]] || return 1
-  [[ "$installed_line" == installed\ * ]] || return 1
-  [[ "$provenance_line" == provenance\ reviewed || "$provenance_line" == provenance\ UNREVIEWED\ * ]] || return 1
-  [ -z "$extra" ] || return 1
-  [ -f "$candidate/icon.png" ] && [ ! -L "$candidate/icon.png" ] || return 1
-  if [ -x "$candidate/bin/en-croissant" ] && [ ! -L "$candidate/bin/en-croissant" ] &&
-     [ -d "$candidate/lib/en-croissant/sound" ] && [ ! -L "$candidate/lib/en-croissant/sound" ]; then
-    return 0
-  fi
-  [ -x "$candidate/bin/$binary" ] &&
-    [ -L "$candidate/bin/en-croissant" ] &&
-    [ "$(readlink "$candidate/bin/en-croissant")" = "$binary" ] &&
-    [ -d "$candidate/lib/$product_name/sound" ] &&
-    [ ! -L "$candidate/lib/$product_name/sound" ]
-}
-
 is_marked_managed_release() {
   local candidate="$1" header invocation extra
   [ -f "$candidate/$managed_marker_name" ] &&
@@ -361,9 +328,9 @@ for candidate in "$ROOT/releases"/*; do
   candidate_real="$(readlink -f "$candidate")"
   [ "$candidate_real" = "$keep_current" ] && continue
   [ "$candidate_real" = "$keep_previous" ] && continue
-  if is_marked_managed_release "$candidate" || is_legacy_managed_release "$candidate"; then
+  if is_marked_managed_release "$candidate"; then
     rm -rf "$candidate"
   fi
 done
 
-echo "installed $short → $ROOT/current/bin/$binary (desktop entry: $DESKTOP; compatibility launcher: $ROOT/current/bin/en-croissant; $provenance)"
+echo "installed $short → $ROOT/current/bin/$binary (desktop entry: $DESKTOP; $provenance)"

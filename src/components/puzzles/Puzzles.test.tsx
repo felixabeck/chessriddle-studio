@@ -3131,7 +3131,7 @@ test.each(["permission", "child", "cancellation"] as const)(
                 title: "Common.Error",
                 message:
                   outcome === "permission"
-                    ? "ChessFable is not allowed to read this puzzle folder. Choose another in Settings."
+                    ? "ChessRiddle Studio is not allowed to read this puzzle folder. Choose another in Settings."
                     : "I/O failure",
               },
             ],

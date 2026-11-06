@@ -23,7 +23,7 @@ export const supportedLocales = [
 
 /** Product names, chess notation, and technical identifiers may legitimately be unchanged. */
 const untranslatedTechnicalTerm =
-  /^(?:[A-Z][A-Za-z0-9.+-]*|[a-h][1-8](?:[a-h][1-8])?|O-O(?:-O)?|\?+|[0-9:./ -]+|\{\{[\w.]+\}\}|\{\{value\}\} s|ChessFable v\{\{version\}\})$/u;
+  /^(?:[A-Z][A-Za-z0-9.+-]*|[a-h][1-8](?:[a-h][1-8])?|O-O(?:-O)?|\?+|[0-9:./ -]+|\{\{[\w.]+\}\}|\{\{value\}\} s|ChessRiddle Studio v\{\{version\}\})$/u;
 
 const pluralSuffix = /_(?:zero|one|two|few|many|other)$/u;
 

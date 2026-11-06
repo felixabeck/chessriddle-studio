@@ -173,7 +173,7 @@ Implementation attempt 1, before the R-P1-MAC correction, on 2026-10-16:
 | Command | Observed exit and result | Full output under the named scratch directory |
 | --- | --- | --- |
 | `pnpm gate:run frontend-build` | 0, frontend built | `gate-catalog-phase1-frontend.7SgV6K/log` |
-| `cargo test --manifest-path src-tauri/Cargo.toml --locked --bin chessfable -- --list` | 0, 2,442 tests, network test absent | `gate-catalog-phase1-disabled-discovery.BEIEXL/log` |
+| `cargo test --manifest-path src-tauri/Cargo.toml --locked --bin chessriddle-studio -- --list` | 0, 2,442 tests, network test absent | `gate-catalog-phase1-disabled-discovery.BEIEXL/log` |
 | `pnpm verify:catalog-engines` | 0, exact enabled discovery, 1 passed, 0 ignored, 4 Linux entries and 3 native executions | `gate-catalog-phase1-network.HtvbfD/log` |
 | `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --features catalog-network-tests --locked -- -D warnings` | 0 | `gate-catalog-phase1-clippy.qxi7wG/log` |
 | `pnpm gate:ensure backend-coverage` | 143, terminated while queued, coverage body did not start | `gate-catalog-phase1-backend-coverage.TSrpMU/log` |
@@ -204,7 +204,7 @@ output under `resume-20261016`:
 | Command | Observed exit and result | Full output under `resume-20261016` |
 | --- | --- | --- |
 | `pnpm gate:run frontend-build` | 0 | `gate-catalog-p1-resume-frontend.fxDFEU/log` |
-| `cargo test --manifest-path src-tauri/Cargo.toml --locked --bin chessfable -- --list` | 0, 2,442 tests, exact network test absent | `gate-catalog-p1-resume-disabled-discovery.antHW6/log` |
+| `cargo test --manifest-path src-tauri/Cargo.toml --locked --bin chessriddle-studio -- --list` | 0, 2,442 tests, exact network test absent | `gate-catalog-p1-resume-disabled-discovery.antHW6/log` |
 | `pnpm verify:catalog-engines` | 0, exact enabled discovery, 1 passed, 0 ignored, all 4 Linux entries and 3 native executions, 23.87 seconds | `gate-catalog-p1-resume-network.hlgtK9/log` |
 | `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --features catalog-network-tests --locked -- -D warnings` | 0 | `gate-catalog-p1-resume-clippy.alyRKA/log` |
 | `pnpm gate:ensure backend-coverage` | 3, receipt refused because the tree changed during the gate. 2,440 tests passed, 0 failed, 2 ignored. Coverage ratchet and area floors passed, but the overall command did not pass | `gate-catalog-p1-resume-backend-coverage.Q6o4r7/log` |
@@ -327,7 +327,7 @@ This checkpoint preserves the earlier attempts and argued native failure gaps ab
 The focused regression command was:
 
 ```text
-cargo test --manifest-path src-tauri/Cargo.toml --locked --bin chessfable --features catalog-network-tests fs::tests::catalog_network::cleanup_failure_retains_case_owners_until_process_exit -- --exact --nocapture --test-threads=1
+cargo test --manifest-path src-tauri/Cargo.toml --locked --bin chessriddle-studio --features catalog-network-tests fs::tests::catalog_network::cleanup_failure_retains_case_owners_until_process_exit -- --exact --nocapture --test-threads=1
 ```
 
 | Proof | Actual result | Output under the repair evidence directory |

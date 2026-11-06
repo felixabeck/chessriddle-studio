@@ -1,4 +1,4 @@
-# Chess Logic Map: ChessFable 🥐
+# Chess Logic Map: ChessRiddle Studio 🥐
 
 Architecture and navigation map for agents: where state lives, how the renderer reaches the Rust
 side, how engine output is streamed, how games are stored, and which bottlenecks are still real.

@@ -1055,7 +1055,7 @@ mod tests {
         let config = serde_json::from_str::<tauri::Config>(include_str!("../tauri.conf.json"))
             .expect("repository Tauri configuration must deserialize");
         let auth_config = auth_internal_config(&config);
-        assert_eq!(config.identifier, "com.chessriddle.encroissant");
+        assert_eq!(config.identifier, "com.chessriddle.studio");
         assert_eq!(auth_config.client_id, config.identifier);
     }
 
@@ -1064,7 +1064,7 @@ mod tests {
         let config =
             serde_json::from_str::<serde_json::Value>(include_str!("../tauri.dev.conf.json"))
                 .expect("repository development Tauri configuration must deserialize");
-        assert_eq!(config["identifier"], "com.chessriddle.encroissant.dev");
+        assert_eq!(config["identifier"], "com.chessriddle.studio.dev");
     }
 
     #[derive(Clone)]

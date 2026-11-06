@@ -1,4 +1,4 @@
 interface:
-  display_name: "Verify ChessFable UI"
+  display_name: "Verify ChessRiddle Studio UI"
   short_description: "Prove a UI change with the container e2e suite, not a browser"
-  default_prompt: "Use $verify-ui to verify the current ChessFable UI change. Automated proof is pnpm test:e2e:container; Chrome MCP cannot attach to the Tauri webview."
+  default_prompt: "Use $verify-ui to verify the current ChessRiddle Studio UI change. Automated proof is pnpm test:e2e:container; Chrome MCP cannot attach to the Tauri webview."

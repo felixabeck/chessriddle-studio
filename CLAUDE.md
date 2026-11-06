@@ -1,9 +1,9 @@
-# ChessFable — project context
+# ChessRiddle Studio — project context
 
-Chess GUI: Tauri v2 desktop shell (Rust) + React/TypeScript renderer. **ChessFable** is Felix's
-fork of En Croissant (`origin` = `felixabeck/en-croissant`, `upstream` = the original project).
-Foreign upstream changes are never rewritten casually. En Croissant is the upstream name and the
-GitHub remote, not this project's name.
+Chess GUI: Tauri v2 desktop shell (Rust) + React/TypeScript renderer. **ChessRiddle Studio** is Felix's
+fork of En Croissant (`origin` = `felixabeck/chessriddle-studio`, `upstream` = the original project).
+Foreign upstream changes are never rewritten casually. En Croissant is the upstream name, not this
+project's name.
 
 ## Layout
 

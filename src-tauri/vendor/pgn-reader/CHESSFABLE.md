@@ -1,4 +1,4 @@
-# ChessFable patch to pgn-reader
+# ChessRiddle Studio patch to pgn-reader
 
 Upstream: pgn-reader 0.26.0, from the Cargo registry. The complete crate is
 retained except for Cargo.lock, including COPYING, Cargo.toml, Cargo.toml.orig,
@@ -14,7 +14,7 @@ scans share one private bounded-search helper. The existing InvalidData recovery
 EOF and tokens over the cap, including terminated tokens. The buffer remains
 grown until the reader is dropped.
 
-MAX_TOKEN_BYTES is 10 MiB, matching ChessFable's per-game MAX_PGN_BYTES without
+MAX_TOKEN_BYTES is 10 MiB, matching ChessRiddle Studio's per-game MAX_PGN_BYTES without
 coupling this crate to the application. Comments count their content bytes;
 headers count the retained line from after `[` through the value, excluding
 the terminating quote. One extra buffered byte permits recognizing a closing

@@ -38,7 +38,7 @@ export function rootFailureMessage(
                 }),
                 permission: t("Databases.LoadError.RootPermission", {
                     defaultValue:
-                        "ChessFable is not allowed to read this database folder. Choose another.",
+                        "ChessRiddle Studio is not allowed to read this database folder. Choose another.",
                 }),
                 "too-large": t("Databases.LoadError.TooLarge", {
                     defaultValue: "This database folder is too large to list. Choose another.",
@@ -60,7 +60,7 @@ export function rootFailureMessage(
                 }),
                 permission: t("Puzzle.LoadError.RootPermission", {
                     defaultValue:
-                        "ChessFable is not allowed to read this puzzle folder. Choose another in Settings.",
+                        "ChessRiddle Studio is not allowed to read this puzzle folder. Choose another in Settings.",
                 }),
             };
             break;
@@ -79,7 +79,7 @@ export function rootFailureMessage(
                 }),
                 permission: t("Engines.LoadError.RootPermission", {
                     defaultValue:
-                        "ChessFable is not allowed to read this engine folder. Choose another in Settings.",
+                        "ChessRiddle Studio is not allowed to read this engine folder. Choose another in Settings.",
                 }),
             };
             break;
@@ -96,7 +96,7 @@ export function rootFailureMessage(
                 }),
                 permission: t("Files.LoadFailed.Permission", {
                     defaultValue:
-                        "ChessFable is not allowed to read this collection. Choose another.",
+                        "ChessRiddle Studio is not allowed to read this collection. Choose another.",
                 }),
                 "too-large": t("Files.LoadFailed.TooLarge", {
                     defaultValue: "This collection is too large to list. Choose another.",

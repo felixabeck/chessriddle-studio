@@ -1,18 +1,18 @@
 <br />
 <div align="center">
-  <a href="https://github.com/felixabeck/en-croissant">
+  <a href="https://github.com/felixabeck/chessriddle-studio">
     <img width="115" height="115" src="https://github.com/franciscoBSalgueiro/en-croissant/blob/master/src-tauri/icons/icon.png" alt="Logo of the original En Croissant project">
   </a>
 
-<h3 align="center">ChessFable</h3>
+<h3 align="center">ChessRiddle Studio</h3>
 
   <p align="center">
     The Ultimate Chess Toolkit
     <br />
-    <a href="https://github.com/felixabeck/en-croissant"><strong>Source and support</strong></a>
+    <a href="https://github.com/felixabeck/chessriddle-studio"><strong>Source and support</strong></a>
     <br />
     <br />
-    <a href="https://github.com/felixabeck/en-croissant/issues">Issues</a>
+    <a href="https://github.com/felixabeck/chessriddle-studio/issues">Issues</a>
     ·
     <a href="https://www.encroissant.org/docs">Upstream documentation</a>
   </p>
@@ -22,7 +22,7 @@
 > Modified by Felix Beck since 2026-08-09, and released under the GNU General Public License v3.0
 > with no warranty. Not affiliated with, nor endorsed by, the original project.
 
-ChessFable is an open-source, cross-platform chess GUI that aims to be powerful, customizable and easy to use. It is Felix Beck's fork of En Croissant.
+ChessRiddle Studio is an open-source, cross-platform chess GUI that aims to be powerful, customizable and easy to use. It is Felix Beck's fork of En Croissant.
 
 ## Features
 
@@ -38,11 +38,11 @@ ChessFable is an open-source, cross-platform chess GUI that aims to be powerful,
 
 Refer to the [Tauri documentation](https://tauri.app/start/prerequisites/) for the requirements on your platform.
 
-ChessFable uses pnpm as the package manager for dependencies. Refer to the [pnpm install instructions](https://pnpm.io/installation) for how to install it on your platform.
+ChessRiddle Studio uses pnpm as the package manager for dependencies. Refer to the [pnpm install instructions](https://pnpm.io/installation) for how to install it on your platform.
 
 ```bash
-git clone https://github.com/felixabeck/en-croissant
-cd en-croissant
+git clone https://github.com/felixabeck/chessriddle-studio
+cd chessriddle-studio
 pnpm install
 pnpm build
 ```
@@ -61,4 +61,4 @@ For contributing to this project please refer to the [Contributing guide](./CONT
 
 This software is licensed under GPL-3.0 License.
 
-The Alpha chess piece set (`public/pieces/alpha.css`), designed by Eric Bentzen, is not covered by the GPL. Felix Beck holds a lifelong licence from the designer to use it in ChessFable. Reselling the design or images based on it is not permitted. Outside ChessFable, the designer's own terms apply: free for personal, non-commercial use.
+The Alpha chess piece set (`public/pieces/alpha.css`), designed by Eric Bentzen, is not covered by the GPL. Felix Beck holds a lifelong licence from the designer to use it in ChessRiddle Studio. Reselling the design or images based on it is not permitted. Outside ChessRiddle Studio, the designer's own terms apply: free for personal, non-commercial use.

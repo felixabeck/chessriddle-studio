@@ -390,7 +390,7 @@ test("closing keeps the newest 100 intents when all prior targets are unreadable
     expect(sessionStorage.getItem(closed)).toBeNull();
     expect(store.get(atoms.tabsAtom)).toEqual([workspace.tabs[1]]);
     const message =
-        "ChessFable could not finish deleting every closed board. The newest deletions were kept. Quit ChessFable to discard the leftover saved games.";
+        "ChessRiddle Studio could not finish deleting every closed board. The newest deletions were kept. Quit ChessRiddle Studio to discard the leftover saved games.";
     expect(enUSCatalogue.translation["Common.PendingTreeRemovalOverflow"]).toBe(message);
     expect(persistError.reportPersistError).toHaveBeenLastCalledWith(
         expect.objectContaining({

@@ -1,12 +1,12 @@
 ---
 name: push
-description: Validate, independently review, remediate, commit, and ordinarily push ChessFable changes to the current branch's configured upstream. Use when Felix asks to push, or when a drain session or a build run invokes it (push-review-policy section 1); push is not a release or deployment.
+description: Validate, independently review, remediate, commit, and ordinarily push ChessRiddle Studio changes to the current branch's configured upstream. Use when Felix asks to push, or when a drain session or a build run invokes it (push-review-policy section 1); push is not a release or deployment.
 disable-model-invocation: false
 ---
 
-# Push ChessFable
+# Push ChessRiddle Studio
 
-Complete the push autonomously. Read `~/.claude/references/push-review-policy.md` first; it is the single source for authorization, attribution, review lenses, model allocation, triage, remediation, and red-gate behavior. This skill adds only ChessFable mechanics.
+Complete the push autonomously. Read `~/.claude/references/push-review-policy.md` first; it is the single source for authorization, attribution, review lenses, model allocation, triage, remediation, and red-gate behavior. This skill adds only ChessRiddle Studio mechanics.
 
 **Execution order:** establish the exact push scope (§1) → run pre-review checks (§2a) on the last
 implementation phase → complete review and arbitration with repairs (§3), including any preliminary
@@ -44,7 +44,7 @@ interrupted runs, and accumulated work from another session.
 ## 1. Establish the exact push scope
 
 - Inspect `git status --porcelain=v1`, `git branch --show-current`, `git rev-parse --abbrev-ref @{u}`, `git remote get-url origin`, and `git remote get-url --push origin`.
-- This repository's expected remote is `felixabeck/en-croissant` in either of its two legitimate forms — `git@github.com:felixabeck/en-croissant.git` (the `tuxedo-atlas` clone) or `https://github.com/felixabeck/en-croissant.git`. Any other owner, repository or host is a stop. Reject a separate `remote.origin.pushurl`. In an opted-in linked worktree, require `.project.json`'s `worktreeBuilds.target` to be `master` and the branch's configured upstream to be `origin/master`. Otherwise the current local branch must track the same-named `origin/<branch>`, so `master` must track `origin/master`. Commits on a `build/*` or `drain/*` branch may reach `master` only through that opted-in worktree push route. Stop for Felix if any identity is missing or different. Never invent or change a remote/upstream.
+- This repository's expected remote is `felixabeck/chessriddle-studio` in either of its two legitimate forms — `git@github.com:felixabeck/chessriddle-studio.git` (the `tuxedo-atlas` clone) or `https://github.com/felixabeck/chessriddle-studio.git`. Any other owner, repository or host is a stop. Reject a separate `remote.origin.pushurl`. In an opted-in linked worktree, require `.project.json`'s `worktreeBuilds.target` to be `master` and the branch's configured upstream to be `origin/master`. Otherwise the current local branch must track the same-named `origin/<branch>`, so `master` must track `origin/master`. Commits on a `build/*` or `drain/*` branch may reach `master` only through that opted-in worktree push route. Stop for Felix if any identity is missing or different. Never invent or change a remote/upstream.
 - Build an explicit owned-path manifest from files created or edited in the invoking conversation plus file scopes assigned to its finished workers. Compare it with the initial status. Ambiguous or foreign paths are excluded and left untouched. Commits already ahead of the upstream in this single-user checkout are Felix's own agents' unpushed work: they are in the reviewed range (`~/.claude/references/push-review-policy.md` §2) and are carried by this push, never a reason to stop for Felix; stop only for a committer outside the Multi-Agent rubric or an unexpected remote (§1). A drain session (`--yes` at drain start) or a `build` run invoking this skill is the explicit push request. Commit only manifest paths in cohesive atomic commits and never use `git add -A`.
 - Gates execute against the complete worktree. Therefore stop before any compile, generator, formatter, or browser gate when a foreign dirty path is code, generated output, dependency/configuration, test, asset, locale, workflow, or another input to an affected gate. Only clearly inert foreign Markdown/planning files may remain. Never generate or commit an owned output from foreign dirty inputs.
 - Every workflow-created commit sets `GIT_COMMITTER_NAME` to the acting agent per `~/.claude/references/push-review-policy.md` §1 (`Claude Code`, `Codex`, or `Grok`). Leave the author untouched and add no co-author trailer.
@@ -304,7 +304,7 @@ need no manual handoff prompt. Never ask Felix which.
 
 Records-only pushes use policy §1b's single records lens instead of this fan-out. For a mixed range,
 run the §3 fan-out over a DIFF excluding the record paths and, in parallel, the records lens over
-the record paths, as §1b specifies. ChessFable's record paths are `tasks/findings.md`,
+the record paths, as §1b specifies. ChessRiddle Studio's record paths are `tasks/findings.md`,
 `tasks/decisions.md`, `tasks/build-ledger.md` and `tasks/handoffs/**`.
 
 A path below is a Sensitive-Path glob: a hit is `--role sensitive` for that lens (and for
@@ -363,7 +363,7 @@ The lens executor, its model rungs and the fallback switch are governed by `~/.c
 
 ## Project `Skip` catalog
 
-ChessFable adds these rejected actions to the shared policy §4 `Skip` catalog:
+ChessRiddle Studio adds these rejected actions to the shared policy §4 `Skip` catalog:
 
 * Rebaselining coverage or lowering a coverage floor to clear a ratchet.
 * Re-recording e2e snapshots natively.
@@ -418,22 +418,22 @@ pnpm ci:remote:check
   landed with CI unconfirmed, naming the stuck jobs.
 - The post-push coordination-record exception remains governed by
   `~/.claude/references/coordination-file-commits.md`; it does not generalize to implementation changes.
-- After a verified push to `master`, including the required remote-CI wait above, run the installer only from a checkout whose `HEAD` equals the verified pushed SHA, normally the pushing worktree. Check that equality immediately before invoking the installer. A main checkout on `master` is eligible only when its `HEAD` equals that same SHA. The installer performs a Tauri release build followed by an atomic swap of `~/.local/opt/chessfable/current`:
+- After a verified push to `master`, including the required remote-CI wait above, run the installer only from a checkout whose `HEAD` equals the verified pushed SHA, normally the pushing worktree. Check that equality immediately before invoking the installer. A main checkout on `master` is eligible only when its `HEAD` equals that same SHA. The installer performs a Tauri release build followed by an atomic swap of `~/.local/opt/chessriddle-studio/current`:
 
 ```bash
 bash scripts/install-local.sh
 ```
 
-  This is how a pushed change reaches the application-menu entry Felix uses; nothing else updates it, and it is not a release or deployment. Report the installed short commit from `~/.local/opt/chessfable/current/VERSION`. If the build fails, the push stands and the failure is reported as its own blocker — the previous installed copy keeps running.
+  This is how a pushed change reaches the application-menu entry Felix uses; nothing else updates it, and it is not a release or deployment. Report the installed short commit from `~/.local/opt/chessriddle-studio/current/VERSION`. If the build fails, the push stands and the failure is reported as its own blocker — the previous installed copy keeps running.
 - On any persistent red gate, follow the shared policy: do not push and report the exact blocker.
 
-ChessFable override to shared policy §7: this workflow never performs a force push. A message containing `force push` requires a separate stop for the exact refspec and force-with-lease decision; it is not treated as an automatic gate-skip-and-push marker here.
+ChessRiddle Studio override to shared policy §7: this workflow never performs a force push. A message containing `force push` requires a separate stop for the exact refspec and force-with-lease decision; it is not treated as an automatic gate-skip-and-push marker here.
 
 ## Project review lenses
 
 
 Adversarial review runs in two tiers, and names never collide between them. Project-independent
-lenses live in `~/.claude/agents/`, ChessFable-specific ones in `.claude/agents/`.
+lenses live in `~/.claude/agents/`, ChessRiddle Studio-specific ones in `.claude/agents/`.
 
 | Lens | Owns | Triggered by a diff touching |
 | --- | --- | --- |

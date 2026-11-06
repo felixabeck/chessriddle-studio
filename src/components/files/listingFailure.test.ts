@@ -145,7 +145,7 @@ test.each(["database", "puzzle", "engine", "files"] as const)(
             ["changed", `This ${folder} changed. ${recovery}`],
             ["missing", `This ${folder} is no longer available. ${recovery}`],
             ["unusable", `This ${folder} cannot be opened. ${recovery}`],
-            ["permission", `ChessFable is not allowed to read this ${folder}. ${recovery}`],
+            ["permission", `ChessRiddle Studio is not allowed to read this ${folder}. ${recovery}`],
             [
                 "too-large",
                 domain === "database" || domain === "files"
