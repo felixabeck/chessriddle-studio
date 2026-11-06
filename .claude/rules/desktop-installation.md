@@ -28,8 +28,10 @@ The installer owns exactly one desktop entry, `~/.local/share/applications/chess
 and its basename is `mainBinaryName`, not `productName`. A GTK window takes its Wayland app id
 from `argv[0]`, and Plasma matches a window to its pinned launcher by that id, so the entry, the
 `StartupWMClass` and the launched binary must all carry the same string. The installer now deletes
-any other desktop entry whose `Exec` points into the install root, so a future rename cannot leave
-a duplicate behind. That
+any other desktop entry whose `Exec` points into the install root, so a binary rename inside one
+root cannot leave a duplicate behind. A rename that also moves the install root (2026-11-06:
+`~/.local/opt/chessfable` → `~/.local/opt/chessriddle-studio`) is not covered: the old entry
+points into the old root and has to be removed once by hand on every machine. That
 retirement covers only regular files it could have written itself: a **symlinked** entry belongs to
 whoever installed it and is left alone, and the installer never touches Plasma's pinned-launcher
 list. A rename therefore still leaves a pin naming the old id, which has to be repointed by hand or
