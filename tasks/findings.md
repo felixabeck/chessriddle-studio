@@ -20788,7 +20788,7 @@ Closed by 5ea1ae3b, pushed to master as part of 4633e57f (database games in Rece
 ## 2026-11-02 — filed through the inbox spool
 
 ### The e2e browser-failure collector fails a test when the page abandons its own image fetch
-* **ID:** f-20261102-06 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261102-06 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 
 * **Where:** `e2e/fixtures.ts`, the `page` fixture's `requestfailed` listener, which records every failed same-origin request as `Failed local request`.
 * **Defect:** a request the page itself cancels (Chromium `net::ERR_ABORTED`) is treated as a broken request. `boardWoodTextureAtom` hydrates on mount, so a board first renders the default texture, starts fetching `/board/wood4-square.png`, then hydrates the stored "off" and can abandon the still-pending tile. Whether the fetch finishes first depends on runner load.
@@ -20803,6 +20803,9 @@ Closed by 5ea1ae3b, pushed to master as part of 4633e57f (database games in Rece
 
 * **Correction (2026-11-05):** "so the abort happens on every run" in the Correction above states the intent of holding the texture response, not a guarantee: under load the page does not always abandon the held fetch and the test times out. Tracked as f-20261105-07.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"2dc53981b2bd1ed04e4cc2109da9ec19f11372c0a23157216362f6a8617fda6c","input_sha256":"2ace63cf5b517a049c85ed1837c07c63537e427b14deb955bdf26a3f375a6fa5","kind":"mutation-receipt","operation":"80cffe7250de8b8de5b38933a39ad59d23b5e2cb90a45cc30b6da18c90c4e97f","options":{"section":null},"request_id_sha256":null,"results":["f-20261102-06"],"target":"f-20261102-06","v":1} -->
+
+* **Closed (2026-11-06):** fixed by 6709c199 (already on the upstream branch). `e2e/fixtures.ts` exports `localRequestFailure`, which exempts only an image request that fails with `net::ERR_ABORTED`; refused, reset and blocked requests and aborts of other resource types stay fatal. `board-wood-texture.spec.ts` "the browser-failure check exempts only abandoned image fetches" proves the classifier against real Chromium failures (an aborted image is exempt, an aborted fetch and a refused image are not). The remaining flake in the spec that holds the texture response is f-20261105-07, closed in the same session.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"dc1622ae7961a6ad75fbe9dc5d580930b03ede71a88eeca936020a0d5de0eb10","header_sha256":"2621e4221a6f6536d9265e2ed0d1140777e7d474be5a1b47d8fd75dbb3a07471","header_status":"handled","input_sha256":"85b9362182aed57a9a055a78dfcec1525b133b50debecb4a738c6bfd639ae485","kind":"mutation-receipt","operation":"43bab7afb7ec9c02cdc5a7cd90a55821687c8e240b62cff339a8c7be161a83bc","options":{"section":null},"request_id_sha256":null,"results":["f-20261102-06"],"target":"f-20261102-06","v":1} -->
 
 ---
 
