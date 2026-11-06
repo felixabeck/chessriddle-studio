@@ -4879,10 +4879,24 @@ mod blocking_offload_scans {
         );
         assert!(held.trim_end().ends_with("return Ok(());"));
         assert!(held.contains("use tauri_plugin_dialog::DialogExt;"));
-        assert!(held.contains(
-            ".message(\"ChessRiddle Studio is already open. Switch to its window to continue.\")"
-        ));
-        assert!(held.contains(".title(\"ChessRiddle Studio is already running\")"));
+        let compact: String = held.chars().filter(|c| !c.is_whitespace()).collect();
+        let compact_contains_call = |call: &str| {
+            let needle: String = call.chars().filter(|c| !c.is_whitespace()).collect();
+            compact.contains(&needle) || {
+                let (head, close) = needle.split_at(needle.len() - 1);
+                compact.contains(&format!("{head},{close}"))
+            }
+        };
+        assert!(
+            compact_contains_call(
+                ".message(\"ChessRiddle Studio is already open. Switch to its window to continue.\")"
+            ),
+            "{held}"
+        );
+        assert!(
+            compact_contains_call(".title(\"ChessRiddle Studio is already running\")"),
+            "{held}"
+        );
         assert!(held.contains(".show(|_| std::process::exit(0));"));
         assert!(!held.contains(".parent("));
         assert!(!held
