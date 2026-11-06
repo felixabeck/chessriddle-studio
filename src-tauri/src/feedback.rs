@@ -731,6 +731,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn loopback_truncated_body_is_a_network_error_not_an_outcome() {
+        let response =
+            "HTTP/1.1 409 Conflict\r\nContent-Length: 32\r\nConnection: close\r\n\r\nshort";
+        assert!(response.rsplit_once("\r\n\r\n").unwrap().1.len() < 32);
+        let (_, outcome) = loopback_feedback(response).await;
+        assert!(
+            matches!(
+                outcome,
+                Err(ref error) if error.category() == crate::error::ErrorCategory::Network
+            ),
+            "expected network error, got {outcome:?}"
+        );
+    }
+
+    #[tokio::test]
     async fn unreachable_port_is_a_network_error_not_an_outcome() {
         use std::time::Duration;
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

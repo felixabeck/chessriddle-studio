@@ -17,18 +17,17 @@ vi.mock("@/platform/tauri", async (importOriginal) => {
     };
 });
 
+const POSTHOG_COOKIE_EXPIRE =
+    "ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_posthog=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
+
 beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
     localStorage.clear();
     sessionStorage.clear();
-    document.cookie =
-        "ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_posthog=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
+    document.cookie = POSTHOG_COOKIE_EXPIRE;
 });
 afterEach(() => vi.restoreAllMocks());
-
-const POSTHOG_COOKIE_EXPIRE =
-    "ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_posthog=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
 
 function captureCookieWrites(): { writes: string[]; restore: () => void } {
     const writes: string[] = [];
