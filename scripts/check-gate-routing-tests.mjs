@@ -1948,7 +1948,8 @@ function runDepsHelper(source, { env = {}, args = [], body }) {
   const script = [
     "set -uo pipefail",
     source,
-    'date() { printf "%s\\n" "$FAKE_NOW"; }',
+    // Strict: only the exact `date +%s` call yields the fake epoch, any other form fails.
+    'date() { if [ "$#" -eq 1 ] && [ "$1" = "+%s" ]; then printf "%s\\n" "$FAKE_NOW"; else echo "date: unexpected arguments: $*" >&2; return 2; fi; }',
     `sudo() { printf 'sudo-argv:'; printf '<%s>' "$@"; printf '\\n'; FAKE_NOW=$((FAKE_NOW + SUDO_ELAPSE)); return "$SUDO_STATUS"; }`,
     body,
   ].join("\n");
@@ -2155,6 +2156,18 @@ const depsHelperMutations = [
     "validation rounds 0.01 minutes up to 1 second",
   ],
   [
+    "remaining read in another date format",
+    "now=$(date +%s)",
+    "now=$(date +%S)",
+    "bounded: sudo runs timeout --kill-after=10 with the remaining seconds",
+  ],
+  [
+    "elapsed read in another date format",
+    "$(date +%s) - LINUX_DESKTOP_DEPS_START",
+    "$(date +%S) - LINUX_DESKTOP_DEPS_START",
+    "bounded: 124 at the bound is labelled and returned",
+  ],
+  [
     "bounded run loses sudo timeout",
     'sudo timeout --kill-after="$kill_grace" "$remaining" apt-get "$@"',
     'sudo apt-get "$@"',
@@ -2207,7 +2220,11 @@ function runResolveBody(body, timeoutMinutes) {
     mkdirSync(runnerTemp);
     const shim = (name, text) =>
       writeFileSync(join(bin, name), `#!/bin/bash\n${text}\n`, { mode: 0o755 });
-    shim("date", 'echo "$FAKE_EPOCH"');
+    // Strict: only the exact `date +%s` call yields the fake epoch, any other form fails.
+    shim(
+      "date",
+      'if [ "$#" -eq 1 ] && [ "$1" = "+%s" ]; then echo "$FAKE_EPOCH"; else echo "date: unexpected arguments: $*" >&2; exit 2; fi',
+    );
     shim(
       "sudo",
       `{ printf 'argv:'; printf '<%s>' "$@"; printf '\\n'; } >> "$SHIM_DIR/sudo-calls"\ncp "$GITHUB_ENV" "$SHIM_DIR/env-at-sudo"\nexit 1`,
@@ -2345,6 +2362,11 @@ const resolveMutations = [
   ],
   ["deadline default dropped", replaceText('LINUX_DESKTOP_DEPS_DEADLINE=""\n', ""), casesEmpty],
   ["START set to 0", replaceText(startLine, "LINUX_DESKTOP_DEPS_START=0\n"), cases18],
+  [
+    "START read with a bare date",
+    replaceText(startLine, "LINUX_DESKTOP_DEPS_START=$(date)\n"),
+    cases18,
+  ],
   ...["START", "BOUND", "DEADLINE"].map((name) => [
     `${name} not exported`,
     replaceText(`  echo "LINUX_DESKTOP_DEPS_${name}=$LINUX_DESKTOP_DEPS_${name}"\n`, ""),
