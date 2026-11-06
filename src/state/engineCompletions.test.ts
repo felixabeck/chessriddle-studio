@@ -2,6 +2,11 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { EngineCompletion, ErrorPayload } from "@/bindings";
 import type { LocalEngine } from "@/utils/engines";
 import { decodeCompressedOrJson, serializeStorageValue } from "./store/debouncedStorage";
+// Warms the transforms at collection for the dynamic imports in documentRuntime (f-20261102-04).
+import "./atoms";
+import "./engineCompletions";
+import "./engineOwnerStorage";
+import "./catalogEngineCompletion";
 
 const native = vi.hoisted(() => ({
     records: new Map<string, EngineCompletion>(),

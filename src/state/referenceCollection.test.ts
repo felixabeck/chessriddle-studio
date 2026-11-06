@@ -1,5 +1,8 @@
 import { expect, test, vi } from "vitest";
 import type { CollectionDescriptor } from "@/bindings";
+// Warms the transforms at collection for the dynamic imports in the reload test (f-20261102-04).
+import "./atoms";
+import "@/hooks/useDatabaseList";
 
 const mocks = vi.hoisted(() => ({ getDatabases: vi.fn() }));
 vi.mock("@/utils/db", () => ({ getDatabases: mocks.getDatabases }));
