@@ -21151,3 +21151,20 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Found by:** Claude Code (Opus 5.5), drain session 52393836-b09f-4a48-a4ee-9e54382a6b35, post-push CI wait for f-20261029-16, 2026-11-06.
 * **2026-11-06 — handled (drain ce1eebf3-94ff-4a4f-85cf-ecb02a74eb45, inline tier):** `ad59109d` makes the test deterministic. The attachment future is now `std::future::pending()`, so the 5 ms budget always takes the timeout path. The test no longer reads a flag set by a task on the separate tauri runtime inside the budget. It asserts that the teardown took the shutdown sender and the join handle. `shutdown_and_join` does both on its first synchronous poll, and `tokio::time::timeout` polls the inner future before it checks the deadline. A oneshot then shows, within a 10 s bound outside the budget, that the sound task received the signal (a dropped sender does not count). Proof: 200/200 passes under 20 busy-loop CPU load on Linux. Replacing the sound future in `shutdown_backend_with_attachments` with `async { Ok(()) }` fails the test at the join-handle assertion. fmt/clippy are clean, and `gates:push --rust` is green. CI rust-macos-test on `ad59109d`: success (Test run 42142451793). Rejected alternative: raising the budget. That only widens the wall-clock race and does not remove it.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"e1d5e4082e61e3ee46298d5b8acfe0f985aef1b5d7fb6b03d82165ab7a17d2fc","header_sha256":"65cc02bf72f23b81b364dede9106e76efd0a371ff758cccfc0b64146ea993c84","header_status":"handled","input_sha256":"d5ec229e755bdbf91c135489f32c6558a5b11a221a55768d74c11e1651075929","kind":"mutation-receipt","operation":"8e9e3aa27f22bed3d881ed5042ef6acf02aa360ff6b080eb8a8ef81819ed2e14","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-01"],"target":"f-20261106-01","v":1} -->
+
+---
+
+## 2026-11-06 — filed through the inbox spool
+
+### Hosted macOS runner lost communication during rust-macos-test on 888df3d2, so remote CI is red
+
+* **ID:** f-20261106-02 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 4f818af6-f7d6-45cf-a5e0-9da3607d09a2
+* **Impact class:** tooling
+* **CI run:** 42149900654
+* **Where:** GitHub Test run 42149900654 on 888df3d2ae78b02f663e96fa081d8534dc9a3140 (master), job `rust-macos-test` 127670304506; `.github/workflows/test.yml`.
+* **Defect:** the job ran from 02:22:29Z to 03:14:30Z and concluded failure during "Run Rust tests" (step still `in_progress`, no conclusion) with the check-run annotation "The hosted runner lost communication with the server. Anything in your workflow that terminates the runner process, starves it for CPU/Memory, or blocks its network access can cause this error." The job log is unavailable (BlobNotFound). Every earlier step succeeded.
+* **Failure scenario:** every drain push stops at `pnpm ci:remote:check` (exit 1) although its own diff is green, until a rerun of this job succeeds.
+* **Fix shape:** rerun the failed job (`gh run rerun 42149900654 --failed -R felixabeck/en-croissant`) and confirm it succeeds; close with the job id. Same external hosted-runner class as handled f-20261105-01 and the 2026-11-02 macOS loss recorded on the Node 26 finding; investigate the workflow only if the rerun loses the runner again.
+* **Proof:** `pnpm ci:remote:check` exits 0 with `rust-macos-test` of the newest master run concluded success.
+* **Found by:** Claude Code drain session 4f818af6-f7d6-45cf-a5e0-9da3607d09a2, 2026-11-06, at the pre-push remote check of the f-20261101-01 release.
