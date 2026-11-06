@@ -21359,3 +21359,19 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 
 **Review correction, 2026-11-06:** scope the first example narrowly. It is `h1b1`, not an ordinary legal king move, that production `storeMakeMove` transforms into `Kg1`, leaving the rook on a1. Ordinary b1/h2 destinations remain intact. The second FEN with king b1/rooks a1,c1 drops all Chess960 king castling rights even though the native database decoder accepts `CastlingMode::Chess960`. These are the two actual move-rule defects supported by the focused production probes; no failure of a live native game's guarded move admission is claimed. A file/database analysis tree retains the user's wrong edit on its ordinary save path.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"b665bc43bda20fdc179af51ca592f53f45434ef809aaf8020f7b174b98138895","input_sha256":"2eb19284eccbf4d2f5826867d99f40eacc5d0a85779f141228b83829089a28df","kind":"mutation-receipt","operation":"e81f3dcd9647757961fc44e67c1a02797f335adcbce5d0443d7efff5d8e96f0b","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-11"],"target":"f-20261106-11","v":1} -->
+
+---
+
+## 2026-11-06 — filed through the inbox spool
+
+### The Settings Board tab's select controls have no accessible label and fail axe
+
+* **ID:** f-20261106-13 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** build run studio-feedback, phase S1 (telemetry removal), 2026-11-06
+* **Where:** `src/components/settings/SettingsPage.tsx` Board tab (the default tab) renders Mantine `Select` controls, including `src/components/settings/BoardSelect.tsx`, without an associated label.
+* **Defect:** `assertAccessible()` (axe) reports the `label` rule on the default Settings Board tab. Screen-reader users hear unnamed comboboxes for board, piece and related choices.
+* **Failure scenario:** open Settings (lands on Board) with a screen reader, or run the e2e `assertAccessible()` on that tab: axe fails `label` for the selects.
+* **Proof:** observed by the Grok phase-S1 leaf while adapting `e2e/security-consent.spec.ts`: after the Privacy tab was removed, running the spec's `assertAccessible()` on the default Board tab failed axe `label`; the spec now checks the Appearance tab instead (commit `79dd8999`). Not yet reproduced by the orchestrator.
+* **Found by:** Grok leaf, build run studio-feedback, 2026-11-06
+* **Open question:** give every Board-tab `Select` an accessible name (visible label or `aria-label` from the existing setting title) and move the e2e accessibility check back to the default tab.
