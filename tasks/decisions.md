@@ -12132,3 +12132,14 @@ Former private decision identifier: d-20261029-14
 * **Supersedes:** d-20260830-16 (bundle identifier `com.chessriddle.encroissant`) and the binary/productName/GitHub-repo clauses of d-20260903-09 (name ChessFable).
 * **Decided by:** Felix in chat, 2026-11-05/06 (name, identifier change, repository rename); technical choices by Claude Code (Opus 5.5), build run rename-chessriddle-studio, full auto, 2026-11-06 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"3bfba4eb7533ddcf32ecd890ee04a4017589fb50a38959ac0e42a2b4a5717370","input_sha256":"610f0a134b24b8335c5f7447cf036394235d679b2760f91e02d658c0d8932121","kind":"mutation-receipt","operation":"64755928aee9796c748eb4f4b6e5f1156a9111342dfff7a1cf0aef5ac1e8f3a0","options":{"section":null},"request_id_sha256":null,"results":["d-20261106-02"],"target":"decisions-ledger","v":1} -->
+
+### d-20261106-03 — Which earlier identity decisions does the ChessRiddle Studio rename (d-20261106-02) replace beyond the two it names?
+
+* **Question:** d-20261106-02 names d-20260830-16 and clauses of d-20260903-09 as superseded. Which other current decisions chose the old identity strings that commit a262557a replaced?
+* **Governs:** -
+* **Chosen:** d-20261106-02 also supersedes d-20260907-06 (ChessFable/chessfable names, keeping com.chessriddle.encroissant, the bin/en-croissant link and the existing log name; still binding for its kept trash/MIME names, which d-20261106-02 keeps too), d-20260907-07 (support/source links to felixabeck/en-croissant; the links now lead to felixabeck/chessriddle-studio under the same shared identity module), d-20260910-01 (Exec bin/chessfable plus the bin/en-croissant link; the launcher identity is now mainBinaryName chessriddle-studio with no compatibility link, the same one-string rule) and d-20260830-17 (its restated identifier value; its finding that the identifier is what Lichess shows at authorization still holds and is why the identifier changed before release).
+* **Rejected:** Editing d-20261106-02 in place (receipts forbid it); leaving those four current (the ledger would still record the old names as live).
+* **Reason:** The records lens of the rename review found the four entries still current. Reversal path: same as d-20261106-02.
+* **Supersedes:** d-20260907-06, d-20260907-07, d-20260910-01, d-20260830-17.
+* **Decided by:** Claude Code (Opus 5.5), build run rename-chessriddle-studio, full auto, 2026-11-06 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"ba10e1101e84ad479134a630307ac971f3bb149afb5ab4a04ca61c634888d82a","input_sha256":"0e6f1ab40c3b17bfdb9efa302a8fdce529ee3ac4c6fe370814251e468770e840","kind":"mutation-receipt","operation":"7d1e80bc7c867f8a3e2932f452ea7b133d49a17805c49204c9f9a58000607085","options":{"section":null},"request_id_sha256":null,"results":["d-20261106-03"],"target":"decisions-ledger","v":1} -->
