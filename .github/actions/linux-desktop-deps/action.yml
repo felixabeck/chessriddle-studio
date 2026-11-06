@@ -29,16 +29,12 @@ runs:
           patchelf
         )
 
-        # desktop_deps_apt <phase> <apt-get argument>...: runs `sudo apt-get <arguments>` and returns
-        # apt's own status. With a deadline set, the command runs as `sudo timeout --kill-after`
-        # for the time that remains; a deadline already used up fails at once. <phase> (update or
-        # download) only names the stall in the annotation.
         # desktop_deps_label_stall <phase> <status>: annotates a failed apt command as a mirror
         # stall, only when a bound is set and the elapsed time reached it. <status> 124 is the
         # `timeout` expiry, 137 the SIGKILL that follows --kill-after. Any other status, an
         # OOM-killed apt before the deadline and every unbounded run keep apt's own output.
-        # Remaining and elapsed time both come from the integer `date +%s`, so a real exit at the
-        # bound always sees elapsed >= bound.
+        # Elapsed time comes from the integer `date +%s`, the same source as the remaining time in
+        # desktop_deps_apt, so a real exit at the bound always sees elapsed >= bound.
         desktop_deps_label_stall() {
           local elapsed
           if [ -z "$LINUX_DESKTOP_DEPS_DEADLINE" ] || [ "$LINUX_DESKTOP_DEPS_BOUND" -le 0 ]; then return 0; fi
@@ -48,6 +44,10 @@ runs:
             echo "::error::linux-desktop-deps: mirror stall: apt-get $1 was stopped after ${elapsed}s, past the ${LINUX_DESKTOP_DEPS_BOUND}s bound"
           fi
         }
+        # desktop_deps_apt <phase> <apt-get argument>...: runs `sudo apt-get <arguments>` and returns
+        # apt's own status. With a deadline set, the command runs as `sudo timeout --kill-after`
+        # for the time that remains; a deadline already used up fails at once. <phase> (update or
+        # download) only names the stall in the annotation.
         desktop_deps_apt() {
           local phase=$1 kill_grace=10 now remaining rc=0
           shift

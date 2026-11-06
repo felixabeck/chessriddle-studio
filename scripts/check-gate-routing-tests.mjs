@@ -1296,6 +1296,30 @@ function ciWorkflowContracts(texts) {
   // The cache population chain: verify and prune exist, their producers feed the save guard, and
   // restore and save agree on the keys.
   pinDepsStep("deps has a verify step", "verify", () => {});
+  // The verify step's working lines: the checksum-type dispatch, both drops and the error discard.
+  const dropBranch = (opener, echoed) =>
+    `            ${opener}\n              echo "linux-desktop-deps: dropping restored $name: ${echoed}"\n              rm -f -- "$file"`;
+  for (const [label, needle] of [
+    ["deps verify dispatches on the checksum type", 'case "${checksum%%:*}" in'],
+    ["deps verify handles MD5Sum", "MD5Sum) tool=md5sum ;;"],
+    ["deps verify handles SHA256", "SHA256) tool=sha256sum ;;"],
+    [
+      "deps verify drops a size mismatch",
+      dropBranch('if [ "$actual_size" != "$size" ]; then', "size $actual_size, expected $size"),
+    ],
+    [
+      "deps verify drops a checksum mismatch",
+      dropBranch(
+        'elif [ "$digest" != "${checksum#*:}" ]; then',
+        "${checksum%%:*} $digest, expected ${checksum#*:}",
+      ),
+    ],
+    [
+      "deps verify discards every file on a verification error",
+      "find \"$archives\" -maxdepth 1 -name '*.deb' -delete",
+    ],
+  ])
+    pinDepsStep(label, "verify", (step) => assert.ok(step.text.includes(needle), label));
   pinDepsStep("deps has a prune step", "prune", () => {});
   pinDepsStep("deps download emits fetched=true", "download", (step) =>
     assert.ok(
@@ -1347,8 +1371,43 @@ function ciWorkflowContracts(texts) {
       "deps resolve maps timeout-minutes to TIMEOUT_MINUTES",
     ),
   );
-  pinDepsStep("deps helper labels a mirror stall", "resolve", (step) =>
-    assert.ok(step.text.includes("mirror stall"), "deps helper labels a mirror stall"),
+  // The stall label and the pieces that decide when it prints, each pinned on its own line.
+  for (const [label, needle] of [
+    [
+      "deps helper labels the expiry as a mirror stall",
+      "mirror stall: apt-get $1 was stopped after",
+    ],
+    [
+      "deps helper never labels an unbounded run",
+      'if [ -z "$LINUX_DESKTOP_DEPS_DEADLINE" ] || [ "$LINUX_DESKTOP_DEPS_BOUND" -le 0 ]; then return 0; fi',
+    ],
+    ["deps helper labels a failed apt command", 'desktop_deps_label_stall "$phase" "$rc"'],
+    ["deps helper labels a used-up bound", "bound is used up"],
+    [
+      "deps resolve derives the deadline from start and bound",
+      "LINUX_DESKTOP_DEPS_DEADLINE=$((LINUX_DESKTOP_DEPS_START + bound))",
+    ],
+    [
+      "deps helper computes remaining from the deadline",
+      "remaining=$((LINUX_DESKTOP_DEPS_DEADLINE - now))",
+    ],
+  ])
+    pinDepsStep(label, "resolve", (step) => assert.ok(step.text.includes(needle), label));
+  // The deadline variables reach the later steps only through GITHUB_ENV.
+  for (const name of ["START", "BOUND", "DEADLINE"])
+    pinDepsStep(`deps resolve exports LINUX_DESKTOP_DEPS_${name}`, "resolve", (step) =>
+      assert.ok(
+        step.text.includes(`echo "LINUX_DESKTOP_DEPS_${name}=$LINUX_DESKTOP_DEPS_${name}"\n`),
+        `deps resolve exports LINUX_DESKTOP_DEPS_${name}`,
+      ),
+    );
+  pinDepsStep("deps resolve writes the deadline variables to GITHUB_ENV", "resolve", (step) =>
+    assert.ok(
+      step.text.includes(
+        '        {\n          echo "LINUX_DESKTOP_DEPS_START=$LINUX_DESKTOP_DEPS_START"\n          echo "LINUX_DESKTOP_DEPS_BOUND=$LINUX_DESKTOP_DEPS_BOUND"\n          echo "LINUX_DESKTOP_DEPS_DEADLINE=$LINUX_DESKTOP_DEPS_DEADLINE"\n        } >> "$GITHUB_ENV"',
+      ),
+      "deps resolve writes the deadline variables to GITHUB_ENV",
+    ),
   );
   pinDepsStep("deps update goes through desktop_deps_apt", "resolve", (step) =>
     assert.ok(
@@ -1433,7 +1492,7 @@ const depsCall = "uses: ./.github/actions/linux-desktop-deps";
 const depsArchives = "/tmp/linux-desktop-apt-archives";
 const depsSaveStepFragment = `path: ${depsArchives}/*.deb\n        key: ${"$"}{{ steps.resolve.outputs.save-key }}\n\n`;
 const depsRestoreStepFragment = `path: ${depsArchives}/*.deb\n        key: ${"$"}{{ steps.resolve.outputs.save-key }}\n        restore-keys`;
-// [label, file, before, after, contract that must turn red]
+// [label, file, before (a string or a global RegExp), after, contract that must turn red]
 const linuxDesktopDepsRows = [
   [
     "rust bound emptied",
@@ -1653,11 +1712,74 @@ const linuxDesktopDepsRows = [
     "deps resolve maps timeout-minutes to TIMEOUT_MINUTES",
   ],
   [
-    "helper loses the stall label",
+    "helper loses the unbounded guard",
     "deps",
-    "mirror stall",
-    "mirror slowness",
-    "deps helper labels a mirror stall",
+    '          if [ -z "$LINUX_DESKTOP_DEPS_DEADLINE" ] || [ "$LINUX_DESKTOP_DEPS_BOUND" -le 0 ]; then return 0; fi\n',
+    "",
+    "deps helper never labels an unbounded run",
+  ],
+  [
+    "helper loses the expiry label",
+    "deps",
+    /^( +)echo "::error::[^\n]*was stopped after[^\n]*\n/gmu,
+    "$1:\n",
+    "deps helper labels the expiry as a mirror stall",
+  ],
+  [
+    "helper loses the label call",
+    "deps",
+    '          if [ "$rc" -ne 0 ]; then desktop_deps_label_stall "$phase" "$rc"; fi\n',
+    "",
+    "deps helper labels a failed apt command",
+  ],
+  [
+    "helper loses the used-up label",
+    "deps",
+    /^( +)echo "::error::[^\n]*bound is used up[^\n]*\n/gmu,
+    "$1:\n",
+    "deps helper labels a used-up bound",
+  ],
+  [
+    "deadline ignores the bound",
+    "deps",
+    "LINUX_DESKTOP_DEPS_DEADLINE=$((LINUX_DESKTOP_DEPS_START + bound))",
+    "LINUX_DESKTOP_DEPS_DEADLINE=$LINUX_DESKTOP_DEPS_START",
+    "deps resolve derives the deadline from start and bound",
+  ],
+  [
+    "remaining ignores the deadline",
+    "deps",
+    "remaining=$((LINUX_DESKTOP_DEPS_DEADLINE - now))",
+    "remaining=$((LINUX_DESKTOP_DEPS_START - now))",
+    "deps helper computes remaining from the deadline",
+  ],
+  [
+    "start not exported",
+    "deps",
+    '          echo "LINUX_DESKTOP_DEPS_START=$LINUX_DESKTOP_DEPS_START"\n',
+    "",
+    "deps resolve exports LINUX_DESKTOP_DEPS_START",
+  ],
+  [
+    "bound not exported",
+    "deps",
+    '          echo "LINUX_DESKTOP_DEPS_BOUND=$LINUX_DESKTOP_DEPS_BOUND"\n',
+    "",
+    "deps resolve exports LINUX_DESKTOP_DEPS_BOUND",
+  ],
+  [
+    "deadline not exported",
+    "deps",
+    '          echo "LINUX_DESKTOP_DEPS_DEADLINE=$LINUX_DESKTOP_DEPS_DEADLINE"\n',
+    "",
+    "deps resolve exports LINUX_DESKTOP_DEPS_DEADLINE",
+  ],
+  [
+    "deadline variables go to GITHUB_OUTPUT",
+    "deps",
+    '        } >> "$GITHUB_ENV"',
+    '        } >> "$GITHUB_OUTPUT"',
+    "deps resolve writes the deadline variables to GITHUB_ENV",
   ],
   [
     "verify step id lost",
@@ -1665,6 +1787,55 @@ const linuxDesktopDepsRows = [
     "      id: verify\n",
     "      id: checked\n",
     "deps has a verify step",
+  ],
+  [
+    "verify dispatch removed",
+    "deps",
+    'case "${checksum%%:*}" in',
+    "case MD5Sum in",
+    "deps verify dispatches on the checksum type",
+  ],
+  [
+    "verify loses the MD5Sum arm",
+    "deps",
+    "              MD5Sum) tool=md5sum ;;\n",
+    "",
+    "deps verify handles MD5Sum",
+  ],
+  [
+    "verify loses the SHA256 arm",
+    "deps",
+    "              SHA256) tool=sha256sum ;;\n",
+    "",
+    "deps verify handles SHA256",
+  ],
+  [
+    "verify stops dropping a size mismatch",
+    "deps",
+    'if [ "$actual_size" != "$size" ]; then',
+    "if false; then",
+    "deps verify drops a size mismatch",
+  ],
+  [
+    "verify stops dropping a checksum mismatch",
+    "deps",
+    'elif [ "$digest" != "${checksum#*:}" ]; then',
+    "elif false; then",
+    "deps verify drops a checksum mismatch",
+  ],
+  [
+    "verify error discard removed",
+    "deps",
+    "          find \"$archives\" -maxdepth 1 -name '*.deb' -delete || true\n",
+    "          true\n",
+    "deps verify discards every file on a verification error",
+  ],
+  [
+    "verify body replaced by exit 0",
+    "deps",
+    /(      id: verify\n      shell: bash\n      run: \|\n)[\s\S]*?(?=\n    - name: Download)/gu,
+    "$1        exit 0\n",
+    "deps verify dispatches on the checksum type",
   ],
   [
     "prune step id lost",
@@ -1688,7 +1859,7 @@ const linuxDesktopDepsRows = [
     "deps prune emits ok=true",
   ],
   [
-    "restore key is not the save key",
+    "restore key uses the set prefix",
     "deps",
     depsRestoreStepFragment,
     depsRestoreStepFragment.replace("save-key", "set-prefix"),
@@ -1709,7 +1880,7 @@ const linuxDesktopDepsRows = [
     "deps restore-keys are the set and bare prefixes",
   ],
   [
-    "save key is not the save key",
+    "save key uses the set prefix",
     "deps",
     depsSaveStepFragment,
     depsSaveStepFragment.replace("save-key", "set-prefix"),
