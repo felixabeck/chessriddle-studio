@@ -21590,3 +21590,18 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Failure scenario:** Open a tournament Games tab, sort by plies descending, leave and re-enter the tournament card (or remount the view). The cached array is already reversed; default "date asc" then re-sorts the mutated list. With `Object.freeze` on the fetcher result the card crashes on render instead of showing games.
 * **Fix:** Copy before sort (`[...games].sort(...)` or `toSorted`), matching `TablebaseInfo`. Add a TournamentCard regression that freezes the mock `data` array and asserts the Games table still renders after a sort click without throw, and that the frozen array's order is unchanged.
 * **Proof:** Ephemeral Vitest on HEAD `868bf535` in `TournamentCard.test.tsx`: `getTournamentGames` resolved `{ data: Object.freeze(games(3)) }`; render threw `TypeError: Cannot assign to read only property '0'` at `TournamentCard.tsx:72` `games?.sort`. Probe removed; tree clean for that path.
+
+---
+
+## 2026-11-06 — filed through the inbox spool
+
+### Successful player merge never reloads the library list or clears the merger selection
+
+* **ID:** f-20261106-25 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** Database library settings review (t20u area 3/5) at HEAD `8b4a18f7`
+* **Where:** `src/components/databases/useDatabaseLibrary.tsx:654-666` `PlayerMerger.mergePlayers` awaits `tauri.mergePlayers` and only notifies on failure; the `finally` clears `loading` with no `reload`. Sibling `DuplicateRemover.runCleanup` (`:708-720`) always `reload()`s after success or failure. Native merge deletes the source player and invalidates the search cache (`merge_players_blocking` → `with_validated_mutation` / `finish_search_cache_after_transaction`). Related handled (different tools): `f-20261101-05` (duplicate-game deletion criteria). Failure notify path is covered by ConcurrentConversion "failed player merge" test; success reload is not.
+* **Defect:** After a successful merge, the settings pane keeps the pre-merge `player_count`/`event` cards and leaves `player1`/`player2` set to the old ids (Player One was deleted). The next Merge click can target a missing source id; the Players explore view still shows the pre-merge census until some other action revalidates the list.
+* **Failure scenario:** Open Databases → select a DB → Advanced Tools → pick Player 1 and Player 2 → Merge. Native merge succeeds (Player 1's games retargeted, row deleted, search cache invalidated). The library sidebar and the Data stats still show the old player count. Player 1's name remains in the merger fields. Duplicate removal in the same panel refreshes immediately for comparison.
+* **Fix:** Mirror `DuplicateRemover`: on success (and optionally on failure) call the `reload` already passed into `AdvancedSettings`, then `setPlayer1(undefined)` / `setPlayer2(undefined)`. Pass `value={player1}` / `value={player2}` into `PlayerSearchInput` so the cleared ids clear the visible fields. Add a ConcurrentConversion (or library) regression that resolves `mergePlayers` and asserts `getDatabases` was called again and the merger controls no longer hold the prior ids.
+* **Proof:** Ephemeral Vitest on HEAD `8b4a18f7` in `ConcurrentConversion.test.tsx`: after selecting both players and a resolved `mergePlayers`, `getDatabases.mock.calls.length` stayed equal to the pre-click count (`expected 1 to be greater than 1`). Contrast: duplicate cleanup tests already assert `getDatabases` increases by one. Probe removed; tree clean for that path.
