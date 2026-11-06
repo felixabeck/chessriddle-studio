@@ -21290,6 +21290,9 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Proof:** `gh api repos/felixabeck/en-croissant/actions/jobs/127725818339/logs` lines for `Fetched 63.7 MB in 22min 52s (46.4 kB/s)` and the cancelled "Run Rust tests with coverage" step; copy at `/tmp/nf-f-20261102-04/rust-job.log`.
 * **Found by:** Claude Code drain session b628926f-b0c5-473b-b51c-5cc2bca9a930 (f-20261102-04 release), 2026-11-06.
 * **Id note (2026-11-06):** first allocated as f-20261106-03 by an unpushed drain inbox merge (0156ba24 on drain/drain-20261102); renumbered during the rebase onto origin/master, where f-20261106-03 was already published for a different finding.
+* **CI run:** 42247376577
+* **Recurrence (2026-11-06, drain session c9f01c8c):** Test run 42247376577 on master b7bb04c6 cancelled the `rust` job 127993028355 the same way. "Set up repository dependencies" ran from 15:54:34 to 16:23:49Z (`Need to get 63.7 MB`, `Fetched 56.0 MB in 28min 43s (32.5 kB/s)`), and the job was cancelled at its 30-minute limit in "Cache Rust build artifacts" before any Rust check started. The unpushed repair on drain/drain-20261102 (commit 0f6d6c59 and its follow-ups, `.github/actions/linux-desktop-deps`) caches the packages and bounds this download at 18 minutes, so this run is owned here. The same run's `e2e` failure is a separate defect, filed through the inbox by this session (board-wood-texture snapshot export).
+<!-- ledger-meta {"command":"annotate","effect_lines":2,"effect_sha256":"d628b472ec2492b08fc26ccd2c4b090d1dd38a42b6a73c0209dcecfa9fb4fbc4","input_sha256":"e1408f3de357f29f768b3f760d4fa0b1dae1b5b46a3bc9ae7efb5b6ef399fe3e","kind":"mutation-receipt","operation":"8b5c54b22b4121620aee71cb3e1e2c01e76d404762dc1c34b0389201cb5606c0","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-07"],"target":"f-20261106-07","v":1} -->
 
 ---
 
