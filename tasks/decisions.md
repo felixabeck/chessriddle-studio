@@ -12185,3 +12185,14 @@ Former private decision identifier: d-20261029-14
 * **Cost and reversal path:** About 64 MB of Actions cache per resolved set. To reverse, delete the cache steps in `linux-desktop-deps`; the install falls back to the bounded mirror download.
 * **Decided by:** Claude Code (Opus 5.5), drain plan run 5b521300-21a5-4d7a-b888-da0d6404d1d4 adopted by session c9f01c8c-19e6-4623-b8d0-e7b0068f0ac6, full auto, 2026-11-06 (first recorded in unpushed commits under ids that collided with pushed d-20261106-05 and d-20261106-06; re-recorded after the release rebases) · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"22bf96e29f0af7d18406bf88a9018314f451178463b56b389fd155101c50186f","input_sha256":"6c25d57ee1cd3d394d17bcbab6c8036802086980c3bf68d9331c6a82fa774223","kind":"mutation-receipt","operation":"db112882fb0e20398c92d1c5f9ef7e67e633c50a220ee736f7a2fe8c57e5f410","options":{"section":null},"request_id_sha256":null,"results":["d-20261106-07"],"target":"decisions-ledger","v":1} -->
+
+### d-20261106-08 — Should the Linux desktop package list copied into `mutation.yml` and `catalog-engines.yml` share the cached install from `setup-ci`?
+
+* **Question:** The same WebKitGTK package list exists in `setup-ci`, `mutation.yml` `backend` and the Linux leg of `catalog-engines.yml`. Cache only `setup-ci`, or unify all three?
+* **Governs:** f-20261106-07
+* **Chosen:** All three call `.github/actions/linux-desktop-deps`, so one copy of the list and one cache/bound implementation remain. `catalog-engines.yml` path filters gain the action directory. `release.yml` stays separate because its pinned ubuntu-24.04 WebKit 2.44 list differs.
+* **Rejected:** Caching only `setup-ci`, which leaves two uncached, unbounded copies of the same install (rule 11).
+* **Reason:** The finding states that nothing in the workflow bounds or caches the apt download; the two other copies would keep that defect.
+* **Cost and reversal path:** The scheduled mutation and catalog jobs depend on the local action. To reverse, inline the install back into the two workflows.
+* **Decided by:** Claude Code (Opus 5.5), drain plan run 5b521300-21a5-4d7a-b888-da0d6404d1d4 adopted by session c9f01c8c-19e6-4623-b8d0-e7b0068f0ac6, full auto, 2026-11-06 (first recorded in unpushed commits under ids that collided with pushed d-20261106-05 and d-20261106-06; re-recorded after the release rebases) · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"0273e367404bce62ea98f0477aaf8d96074990690963f59df7727c5089b59204","input_sha256":"8822ce06fee9f3d3eb16bcc37fdeb403eb064425aad549fbb212c68473a56300","kind":"mutation-receipt","operation":"e941dc2bf3a5026dd53e59aebcc00d56fea074444529345a70c3195e12b26742","options":{"section":null},"request_id_sha256":null,"results":["d-20261106-08"],"target":"decisions-ledger","v":1} -->
