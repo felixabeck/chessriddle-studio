@@ -13,9 +13,15 @@ vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => mocks.navigate,
 }));
 vi.mock("@mantine/notifications", () => ({ notifications: { show: mocks.notify } }));
-vi.mock("@/components/feedback/FeedbackModal", () => ({
-  default: ({ opened }: { opened: boolean }) =>
-    opened ? <div data-testid="feedback-modal" /> : null,
+vi.mock("@/components/feedback/LazyFeedbackModal", () => ({
+  default: ({ opened, onClose }: { opened: boolean; onClose: () => void }) =>
+    opened ? (
+      <div data-testid="feedback-modal">
+        <button type="button" data-testid="feedback-modal-close" onClick={onClose}>
+          close
+        </button>
+      </div>
+    ) : null,
 }));
 vi.mock("@mantine/core", () => ({
   Anchor: ({ children, href }: any) => <a href={href}>{children}</a>,
@@ -109,18 +115,6 @@ test("renders an extra diagnostic when it differs from the message", async () =>
   expect(host.textContent).toContain("Error.CopyStackTrace");
 });
 
-async function waitFor(assertion: () => void) {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    try {
-      assertion();
-      return;
-    } catch {
-      await act(async () => Promise.resolve());
-    }
-  }
-  assertion();
-}
-
 test("send feedback opens the dialog without RootLayout", async () => {
   host = document.createElement("div");
   document.body.append(host);
@@ -134,10 +128,14 @@ test("send feedback opens the dialog without RootLayout", async () => {
   await act(async () => {
     send?.click();
   });
-  await waitFor(() => expect(host.querySelector("[data-testid='feedback-modal']")).not.toBeNull());
+  expect(host.querySelector("[data-testid='feedback-modal']")).not.toBeNull();
   expect(host.querySelector("a")?.getAttribute("href")).toContain(
     "github.com/felixabeck/chessriddle-studio",
   );
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>("[data-testid='feedback-modal-close']")?.click();
+  });
+  expect(host.querySelector("[data-testid='feedback-modal']")).toBeNull();
 });
 
 test("routes issue reports to the fork", async () => {

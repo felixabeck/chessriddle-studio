@@ -62,9 +62,15 @@ vi.mock("@/platform/tauri", () => ({
   tauriSubscriptions: { windowFocus: mocks.windowFocus },
 }));
 vi.mock("@/components/About", () => ({ default: () => null }));
-vi.mock("@/components/feedback/FeedbackModal", () => ({
-  default: ({ opened }: { opened: boolean }) =>
-    opened ? <div data-testid="feedback-modal" /> : null,
+vi.mock("@/components/feedback/LazyFeedbackModal", () => ({
+  default: ({ opened, onClose }: { opened: boolean; onClose: () => void }) =>
+    opened ? (
+      <div data-testid="feedback-modal">
+        <button type="button" data-testid="feedback-modal-close" onClick={onClose}>
+          close
+        </button>
+      </div>
+    ) : null,
 }));
 vi.mock("@/components/Sidebar", () => ({ SideBar: () => null }));
 vi.mock("@/components/TopBar", () => ({ default: () => null }));
@@ -362,18 +368,6 @@ test("the root poll follows current file tabs, listens for focus, and stops its 
   vi.useRealTimers();
 });
 
-async function waitFor(assertion: () => void) {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    try {
-      assertion();
-      return;
-    } catch {
-      await act(async () => Promise.resolve());
-    }
-  }
-  assertion();
-}
-
 test("the Help-menu feedback action opens the dialog", async () => {
   const host = document.createElement("div");
   document.body.append(host);
@@ -387,7 +381,11 @@ test("the Help-menu feedback action opens the dialog", async () => {
   await act(async () => {
     mocks.lastCallbacks?.sendFeedback();
   });
-  await waitFor(() => expect(host.querySelector("[data-testid='feedback-modal']")).not.toBeNull());
+  expect(host.querySelector("[data-testid='feedback-modal']")).not.toBeNull();
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>("[data-testid='feedback-modal-close']")?.click();
+  });
+  expect(host.querySelector("[data-testid='feedback-modal']")).toBeNull();
   await act(async () => root.unmount());
   host.remove();
 });
