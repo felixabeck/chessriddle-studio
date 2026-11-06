@@ -447,7 +447,7 @@ shape (`**Question:**` / `**Reason:**`); `record-decision` validates it.
   that will not change, rather than a marketing name that might; that is what makes it stable enough
   to pick before the name is chosen. **It is changeable later** at the cost of moving the data
   directory and re-registering roots, which was understood when this was decided.
-* **Decided by:** Felix, 2026-08-30 · **Superseded-by:** -
+* **Decided by:** Felix, 2026-08-30 · **Superseded-by:** d-20261106-02
 
 ### d-20260830-17 — Correction to d-20260830-16's rationale: the bundle identifier IS user-visible
 
