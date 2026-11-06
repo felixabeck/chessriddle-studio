@@ -169,21 +169,21 @@ test("board-wood-texture: arrows from PGN drawings keep finite coordinates when 
             },
         }),
     });
-    // The first board may request the default tile before the stored "off" hydrates. Holding the
-    // response keeps that fetch pending, so if the page abandons it the fixture must not report
-    // that abort as a browser failure (f-20261102-06). Whether the tile is requested and abandoned
-    // depends on timing, so the test does not wait for it (f-20261105-07); the classifier test
-    // "the browser-failure check exempts only abandoned image fetches" proves it.
-    const textureAborted = new Promise<string | undefined>((resolve) => {
+    // Holding the default-tile response keeps that fetch pending if the first board requests it
+    // before the stored "off" hydrates. The hold is released when the page abandons the tile
+    // (or after HELD_RESPONSE_DEADLINE_MS). Whether the tile is requested and abandoned depends
+    // on timing, so the test does not wait for it (f-20261105-07). The test "the page fixture
+    // accepts an abandoned image fetch" proves the exemption end to end.
+    const textureFailed = new Promise<void>((resolve) => {
         page.on("requestfailed", (request) => {
             if (request.url().endsWith("/board/wood4-square.png")) {
-                resolve(request.failure()?.errorText);
+                resolve();
             }
         });
     });
     await page.route("**/board/wood4-square.png", async (route) => {
         await Promise.race([
-            textureAborted,
+            textureFailed,
             new Promise((resolve) => setTimeout(resolve, HELD_RESPONSE_DEADLINE_MS)),
         ]);
         await route.continue().catch(() => undefined);
@@ -262,6 +262,28 @@ test("board-wood-texture: the browser-failure check exempts only abandoned image
         },
     });
     await context.close();
+});
+
+test("board-wood-texture: the page fixture accepts an abandoned image fetch", async ({ page }) => {
+    // If the fixture reported this abort as a browser failure the test would fail at fixture
+    // teardown (f-20261102-06).
+    await page.route("**/board/held.png", () => undefined);
+    await page.goto("/board/wood4.jpg");
+    const abandoned = new Promise<string | undefined>((resolve) => {
+        page.on("requestfailed", (request) => {
+            if (request.url().endsWith("/board/held.png")) {
+                resolve(request.failure()?.errorText);
+            }
+        });
+    });
+    await page.evaluate((cancelAfterMs) => {
+        const held = new Image();
+        held.src = "/board/held.png";
+        setTimeout(() => {
+            held.src = "";
+        }, cancelAfterMs);
+    }, CANCEL_AFTER_MS);
+    expect(await abandoned).toBe("net::ERR_ABORTED");
 });
 
 test("board-wood-texture: the default board shows the wood grain", async ({ page }) => {
