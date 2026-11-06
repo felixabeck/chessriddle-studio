@@ -473,7 +473,7 @@ shape (`**Question:**` / `**Reason:**`); `record-decision` validates it.
   Commit `6c2749ad` removes the duplication rather than rewriting the second literal, so
   `tauri.conf.json` is now the single place the fork's identity is written and the two can no longer
   drift apart.
-* **Decided by:** Claude (autonomous, `full auto`), 2026-08-30 · **Superseded-by:** -
+* **Decided by:** Claude (autonomous, `full auto`), 2026-08-30 · **Superseded-by:** d-20261106-03
 
 ### d-20260830-18 — The real Tauri window is driven off-screen by `pnpm verify:app`; only native GTK chrome stays manual
 
