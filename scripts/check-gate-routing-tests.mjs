@@ -1409,13 +1409,14 @@ function ciWorkflowContracts(texts) {
   );
   // The deadline derivation. The helper logic itself is run, not text-matched, by the executed
   // helper test below.
-  for (const [label, needle] of [
-    [
+  pinDepsStep("deps resolve derives the deadline from start and bound", "resolve", (step) =>
+    assert.ok(
+      step.text.includes(
+        '        LINUX_DESKTOP_DEPS_START=$(date +%s)\n        LINUX_DESKTOP_DEPS_BOUND=$bound\n        LINUX_DESKTOP_DEPS_DEADLINE=""\n        if [ "$bound" -gt 0 ]; then LINUX_DESKTOP_DEPS_DEADLINE=$((LINUX_DESKTOP_DEPS_START + bound)); fi\n',
+      ),
       "deps resolve derives the deadline from start and bound",
-      "LINUX_DESKTOP_DEPS_DEADLINE=$((LINUX_DESKTOP_DEPS_START + bound))",
-    ],
-  ])
-    pinDepsStep(label, "resolve", (step) => assert.ok(step.text.includes(needle), label));
+    ),
+  );
   // The deadline variables reach the later steps only through GITHUB_ENV.
   for (const name of ["START", "BOUND", "DEADLINE"])
     pinDepsStep(`deps resolve exports LINUX_DESKTOP_DEPS_${name}`, "resolve", (step) =>
@@ -1438,7 +1439,6 @@ function ciWorkflowContracts(texts) {
       "deps resolve computes the bound from TIMEOUT_MINUTES",
       'bound=$(desktop_deps_bound_seconds "$TIMEOUT_MINUTES") || { printf \'%s\\n\' "$bound"; exit 1; }',
     ],
-    ["deps resolve exports the computed bound", "\n        LINUX_DESKTOP_DEPS_BOUND=$bound\n"],
     [
       "deps library carries the helper functions",
       "declare -f desktop_deps_label_stall desktop_deps_apt;",
@@ -1799,6 +1799,27 @@ const linuxDesktopDepsRows = [
     "deps resolve derives the deadline from start and bound",
   ],
   [
+    "deadline guard dropped",
+    "deps",
+    'if [ "$bound" -gt 0 ]; then LINUX_DESKTOP_DEPS_DEADLINE=$((LINUX_DESKTOP_DEPS_START + bound)); fi',
+    "LINUX_DESKTOP_DEPS_DEADLINE=$((LINUX_DESKTOP_DEPS_START + bound))",
+    "deps resolve derives the deadline from start and bound",
+  ],
+  [
+    "start set to a constant",
+    "deps",
+    "LINUX_DESKTOP_DEPS_START=$(date +%s)",
+    "LINUX_DESKTOP_DEPS_START=0",
+    "deps resolve derives the deadline from start and bound",
+  ],
+  [
+    "deadline default dropped",
+    "deps",
+    '        LINUX_DESKTOP_DEPS_DEADLINE=""\n',
+    "",
+    "deps resolve derives the deadline from start and bound",
+  ],
+  [
     "start not exported",
     "deps",
     '          echo "LINUX_DESKTOP_DEPS_START=$LINUX_DESKTOP_DEPS_START"\n',
@@ -1852,7 +1873,7 @@ const linuxDesktopDepsRows = [
     "deps",
     "\n        LINUX_DESKTOP_DEPS_BOUND=$bound\n",
     "\n        LINUX_DESKTOP_DEPS_BOUND=0\n",
-    "deps resolve exports the computed bound",
+    "deps resolve derives the deadline from start and bound",
   ],
   [
     "library drops the label function",
