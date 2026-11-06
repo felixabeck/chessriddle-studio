@@ -21545,3 +21545,18 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Failure scenario:** Enable an engine that reports WDL, open its analysis lines, click a score chip to WDL (aria-labelled WhiteWins/Draw/BlackWins sections). Pin the same engine: DetachedEval still shows `+0.34` (CP). Clicking that chip does not switch it. Switching tabs or disabling/unloading the engine does not create the missing wire.
 * **Fix:** In `DetachedLine` (and preferably `EngineSummary`), use `useAtom(scoreTypeFamily(engine.id))` the same way `AnalysisRow` does; pass `evalDisplay` / `setEvalDisplay`, and disable the setter when `inert`. Add a DetachedEval regression that sets `scoreTypeFamily` to `"wdl"` with a WDL payload and expects the WhiteWins progress section.
 * **Proof:** Ephemeral Vitest on HEAD `6df505a9` in `DetachedEval.test.tsx`: pin `displayEngine`, `scoreTypeFamily(id)="wdl"`, remember a line with `wdl: [450,300,250]`. Query `[aria-label="Board.Analysis.Tablebase.WhiteWins"]` was null (expected present). Probe removed (`git checkout -- DetachedEval.test.tsx`); tree clean.
+
+---
+
+## 2026-11-06 — filed through the inbox spool
+
+### Lichess explorer Games tab never shows recentGames when topGames is present
+
+* **ID:** f-20261106-22 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** Opening explorer deep review (t19u) at HEAD `28ca865a`
+* **Where:** `src/components/panels/database/DatabasePanel.tsx:103` in `fetchOnlineOpening`: `convertToNormalized(data.topGames || data.recentGames || [], { signal })`. Query builders in `src/utils/lichess/explorer.ts:91-98` can request both `topGames` and `recentGames` (Lichess defaults both to 4). Related handled (different defects): `f-20261007-10` (per-game fetch/parse failures after the list is chosen); `f-20260905-12` (local rating/recent filter composition). Not a Zod/`f-04`-class issue.
+* **Defect:** JavaScript treats an empty array as truthy, so `topGames || recentGames` keeps `topGames` whenever the key is present — including `[]` — and never falls through to `recentGames`. The live Lichess explorer response always includes `topGames` (required in the OpenAPI schema), so the Games tab normalizes only top games and permanently drops the recent-game references the same payload carries. Masters is unaffected (topGames only).
+* **Failure scenario:** Open Database → Lichess All on a common opening. The explorer JSON contains both `topGames` and `recentGames`. The Games tab lists only the top-rated sample. Setting or relying on `recentGames` in options (schema supports 0–4) cannot surface those rows while `topGames` is a non-null array. With `topGames: []` and non-empty `recentGames`, the tab still shows the genuine empty state instead of the recent games.
+* **Fix:** Choose references without `||` on arrays — e.g. concatenate `topGames` and `recentGames` and dedupe by `id`, or prefer recent when top is empty via `(data.topGames?.length ? data.topGames : data.recentGames) ?? []` if product wants a single list. Add a `fetchOpening` regression with both arrays populated (and one with empty `topGames` + non-empty `recentGames`) asserting the recent ids are normalized.
+* **Proof:** Ephemeral Vitest on HEAD `28ca865a` in `DatabasePanel.test.tsx`: `getLichessGames` resolved `{ topGames: [], recentGames: [{ id: "recent1", white: { name: "RW", ...}, ...}], moves: [...] }`; `fetchOpening` returned `games` that did not contain `"RW"` (`expected [] to include 'RW'`). Node check: `([] || [{id:"r"}])` is `[]`; `([{id:"t"}] || [{id:"r"}])` is only `t`. Probe removed (`cp` restore of `DatabasePanel.test.tsx`); tree clean for that path.
