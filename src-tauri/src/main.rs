@@ -4082,29 +4082,38 @@ mod tests {
         let games = GameManager::new();
         let operations = OperationRegistry::default();
         let (sound_shutdown, sound_signal) = tokio::sync::oneshot::channel();
-        let sound_joined = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let sound_joined_clone = sound_joined.clone();
+        let (sound_seen_tx, sound_seen_rx) = tokio::sync::oneshot::channel();
         let sound_join = tauri::async_runtime::spawn(async move {
-            let _ = sound_signal.await;
-            sound_joined_clone.store(true, std::sync::atomic::Ordering::SeqCst);
+            if sound_signal.await.is_ok() {
+                let _ = sound_seen_tx.send(());
+            }
         });
         let sound = SoundServerLifecycle::new(Some(sound_shutdown), Some(sound_join));
+        // Pending attachment forces the 5 ms timeout path; join/shutdown slots and the oneshot prove sound teardown without racing the budget.
         assert!(
             !shutdown_backend_with_attachments(
                 &supervisor,
                 &games,
                 Some(&sound),
                 &operations,
-                async {
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                    Err("attachment cleanup remained pending".into())
-                },
+                std::future::pending::<Result<(), String>>(),
                 std::future::ready(Ok(())),
                 Duration::from_millis(5),
             )
             .await
         );
-        assert!(sound_joined.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(
+            sound.join.try_lock().unwrap().is_none(),
+            "sound teardown took its join handle"
+        );
+        assert!(
+            sound.shutdown.0.lock().unwrap().is_none(),
+            "sound teardown took its shutdown sender"
+        );
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(10), sound_seen_rx).await,
+            Ok(Ok(()))
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
