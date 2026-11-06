@@ -19,6 +19,9 @@ runs:
         TIMEOUT_MINUTES: ${{ inputs.timeout-minutes }}
       run: |
         set -uo pipefail
+        # The one shell source of the archive directory, written into the sourced library for every
+        # later step. The `path:` of the cache steps must repeat this literal, because actions/cache
+        # derives the entry version from the path string. The routing test pins that equality.
         archives=/tmp/linux-desktop-apt-archives
         lib="$RUNNER_TEMP/linux-desktop-deps-lib.sh"
         set_file="$RUNNER_TEMP/linux-desktop-deps-set.txt"
@@ -65,19 +68,30 @@ runs:
           if [ "$rc" -ne 0 ]; then desktop_deps_label_stall "$phase" "$rc"; fi
           return "$rc"
         }
-        # The later steps of this action source the helpers and the package list from one file.
-        { declare -p packages; declare -f desktop_deps_label_stall desktop_deps_apt; } > "$lib" || exit 1
+        # desktop_deps_bound_seconds <minutes>: prints the bound in whole seconds, rounded up. An empty
+        # value prints 0, meaning no bound. Anything else that is not a positive number prints the
+        # `::error::` annotation naming the value and returns 1, so a typo or 0 cannot silently
+        # remove the bound.
+        desktop_deps_bound_seconds() {
+          local minutes=$1 seconds=0
+          if [ -z "$minutes" ]; then
+            echo 0
+            return 0
+          fi
+          if [[ "$minutes" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+            seconds=$(awk -v minutes="$minutes" 'BEGIN { seconds = minutes * 60; whole = int(seconds); print (whole < seconds ? whole + 1 : whole) }')
+          fi
+          if ! [[ "$seconds" =~ ^[0-9]+$ ]] || [ "$seconds" -le 0 ]; then
+            echo "::error::linux-desktop-deps: timeout-minutes must be a positive number of minutes or empty, got '$minutes'"
+            return 1
+          fi
+          echo "$seconds"
+        }
+        # The later steps of this action source the helpers, the package list and the archive
+        # directory from one file.
+        { declare -p packages archives; declare -f desktop_deps_label_stall desktop_deps_apt; } > "$lib" || exit 1
 
-        bound=0
-        if [ -n "$TIMEOUT_MINUTES" ]; then
-          if [[ "$TIMEOUT_MINUTES" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
-            bound=$(awk -v minutes="$TIMEOUT_MINUTES" 'BEGIN { seconds = minutes * 60; whole = int(seconds); print (whole < seconds ? whole + 1 : whole) }')
-          fi
-          if ! [[ "$bound" =~ ^[0-9]+$ ]] || [ "$bound" -le 0 ]; then
-            echo "::error::linux-desktop-deps: timeout-minutes must be a positive number of minutes or empty, got '$TIMEOUT_MINUTES'"
-            exit 1
-          fi
-        fi
+        bound=$(desktop_deps_bound_seconds "$TIMEOUT_MINUTES") || { printf '%s\n' "$bound"; exit 1; }
         LINUX_DESKTOP_DEPS_START=$(date +%s)
         LINUX_DESKTOP_DEPS_BOUND=$bound
         LINUX_DESKTOP_DEPS_DEADLINE=""
@@ -94,7 +108,7 @@ runs:
         # set is resolved against the same still-empty directory the download later fills.
         mkdir -p "$archives" || exit 1
         rm -f -- "$archives"/*.deb || exit 1
-        uris=$(sudo apt-get -o Dir::Cache::Archives=/tmp/linux-desktop-apt-archives install --print-uris -qq --no-install-recommends "${packages[@]}") || exit $?
+        uris=$(sudo apt-get -o "Dir::Cache::Archives=$archives" install --print-uris -qq --no-install-recommends "${packages[@]}") || exit $?
 
         # Key derivation is guarded apart from the apt call above: a derivation failure empties
         # every key output and the packages come from the mirror, but apt's own failure ends the
@@ -160,9 +174,12 @@ runs:
       id: verify
       shell: bash
       run: |
+        # `archives` comes from the sourced library.
+        # shellcheck disable=SC2154
         set -uo pipefail
-        archives=/tmp/linux-desktop-apt-archives
         set_file="$RUNNER_TEMP/linux-desktop-deps-set.txt"
+        # shellcheck source=/dev/null
+        source "$RUNNER_TEMP/linux-desktop-deps-lib.sh" || exit 1
         reason=""
         verify_restored() {
           local name size checksum file tool actual_size digest
@@ -202,10 +219,9 @@ runs:
       id: download
       shell: bash
       run: |
-        # `packages` and `desktop_deps_apt` come from the sourced library.
+        # `packages`, `archives` and `desktop_deps_apt` come from the sourced library.
         # shellcheck disable=SC2154
         set -uo pipefail
-        archives=/tmp/linux-desktop-apt-archives
         set_file="$RUNNER_TEMP/linux-desktop-deps-set.txt"
         # shellcheck source=/dev/null
         source "$RUNNER_TEMP/linux-desktop-deps-lib.sh" || exit 1
@@ -218,7 +234,7 @@ runs:
           done < "$set_file"
         fi
 
-        download_args=(-o Dir::Cache::Archives=/tmp/linux-desktop-apt-archives install --download-only -y --no-install-recommends "${packages[@]}")
+        download_args=(-o "Dir::Cache::Archives=$archives" install --download-only -y --no-install-recommends "${packages[@]}")
         desktop_deps_apt download "${download_args[@]}" || exit $?
 
         # An undetermined set emits nothing, which the save guard reads as "do not save".
@@ -235,9 +251,12 @@ runs:
       id: prune
       shell: bash
       run: |
+        # `archives` comes from the sourced library.
+        # shellcheck disable=SC2154
         set -uo pipefail
-        archives=/tmp/linux-desktop-apt-archives
         set_file="$RUNNER_TEMP/linux-desktop-deps-set.txt"
+        # shellcheck source=/dev/null
+        source "$RUNNER_TEMP/linux-desktop-deps-lib.sh" || exit 1
         reason=""
         prune_unneeded() {
           local -A wanted=()
@@ -281,9 +300,9 @@ runs:
       id: install
       shell: bash
       run: |
-        # `packages` comes from the sourced library.
+        # `packages` and `archives` come from the sourced library.
         # shellcheck disable=SC2154
         set -uo pipefail
         # shellcheck source=/dev/null
         source "$RUNNER_TEMP/linux-desktop-deps-lib.sh" || exit 1
-        sudo apt-get -o Dir::Cache::Archives=/tmp/linux-desktop-apt-archives install --no-download --no-install-recommends -y "${packages[@]}"
+        sudo apt-get -o "Dir::Cache::Archives=$archives" install --no-download --no-install-recommends -y "${packages[@]}"

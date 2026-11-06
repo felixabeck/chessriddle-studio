@@ -1238,7 +1238,15 @@ function ciWorkflowContracts(texts) {
   const pinDepsStep = (label, id, check) =>
     pinStep(label, depsSteps, (step) => step.id === id, check);
   const cachePath = depsStep("restore")?.withValues.get("path");
-  const archives = /^(\/tmp\/[\w./-]+)\/\*\.deb$/u.exec(cachePath ?? "")?.[1];
+  const depsText = depsSteps.map((step) => step.text).join("\n");
+  // The one shell source of the archive directory: a single assignment, in the resolve step. The
+  // cache `path:` literals and every `Dir::Cache::Archives` option must agree with it.
+  const archiveAssignments = [...depsText.matchAll(/^ *archives=(\S+)$/gmu)];
+  const archives =
+    archiveAssignments.length === 1 &&
+    depsStep("resolve")?.text.includes(`\n        archives=${archiveAssignments[0][1]}\n`)
+      ? archiveAssignments[0][1]
+      : undefined;
   for (const [name, id, uses] of [
     ["restore", "restore", "actions/cache/restore@v4"],
     ["save", "save", "actions/cache/save@v4"],
@@ -1267,16 +1275,53 @@ function ciWorkflowContracts(texts) {
       assert.ok(step.ifValue?.split(" && ").includes(term), label),
     );
   contracts.push([
+    "deps has one shell source of the archive directory",
+    () =>
+      assert.ok(
+        archives && /^\/tmp\/[\w./-]+$/u.test(archives),
+        "deps has one shell source of the archive directory",
+      ),
+  ]);
+  contracts.push([
     "deps cache paths are the archive directory's .deb files",
-    () => assert.ok(archives, "deps cache paths are the archive directory's .deb files"),
+    () =>
+      assert.equal(
+        cachePath,
+        `${archives}/*.deb`,
+        "deps cache paths are the archive directory's .deb files",
+      ),
   ]);
   pinDepsStep("deps restore and save share one cache path", "save", (step) =>
     assert.equal(
       step.withValues.get("path"),
-      cachePath,
+      `${archives}/*.deb`,
       "deps restore and save share one cache path",
     ),
   );
+  // Every later shell step reads the directory from the sourced library, never from its own copy.
+  pinDepsStep("deps library carries the archive directory", "resolve", (step) =>
+    assert.ok(
+      step.text.includes("declare -p packages archives;"),
+      "deps library carries the archive directory",
+    ),
+  );
+  for (const id of ["verify", "download", "prune", "install"])
+    pinDepsStep(`deps ${id} sources the library`, id, (step) =>
+      assert.ok(
+        step.text.includes('source "$RUNNER_TEMP/linux-desktop-deps-lib.sh" || exit 1'),
+        `deps ${id} sources the library`,
+      ),
+    );
+  contracts.push([
+    "deps every Dir::Cache::Archives option uses the archive directory source",
+    () =>
+      assert.ok(
+        depsText.split('"Dir::Cache::Archives=$archives"').length - 1 >= 3 &&
+          depsText.split("Dir::Cache::Archives").length ===
+            depsText.split('"Dir::Cache::Archives=$archives"').length,
+        "deps every Dir::Cache::Archives option uses the archive directory source",
+      ),
+  ]);
   forbid(
     "deps archive directory is not a mktemp path",
     depsSteps.map((step) => step.text).join("\n"),
@@ -1288,10 +1333,7 @@ function ciWorkflowContracts(texts) {
     ["deps install passes the cache path directory to apt", "install", "install --no-download"],
   ])
     pinDepsStep(label, id, (step) =>
-      assert.ok(
-        archives && step.text.includes(`-o Dir::Cache::Archives=${archives} ${needle}`),
-        label,
-      ),
+      assert.ok(step.text.includes(`-o "Dir::Cache::Archives=$archives" ${needle}`), label),
     );
   // The cache population chain: verify and prune exist, their producers feed the save guard, and
   // restore and save agree on the keys.
@@ -1353,14 +1395,13 @@ function ciWorkflowContracts(texts) {
     ),
   );
   contracts.push([
-    "deps save comes before install",
-    () => {
-      const ids = depsSteps.map((step) => step.id);
-      assert.ok(
-        ids.includes("save") && ids.indexOf("save") < ids.indexOf("install"),
-        "deps save comes before install",
-      );
-    },
+    "deps steps run in the documented order",
+    () =>
+      assert.deepEqual(
+        depsSteps.map((step) => step.id),
+        ["resolve", "restore", "verify", "download", "prune", "save", "install"],
+        "deps steps run in the documented order",
+      ),
   ]);
   // The bound chain, step-scoped to the resolve step that owns the sourced helpers.
   pinDepsStep("deps resolve maps timeout-minutes to TIMEOUT_MINUTES", "resolve", (step) =>
@@ -1371,25 +1412,12 @@ function ciWorkflowContracts(texts) {
       "deps resolve maps timeout-minutes to TIMEOUT_MINUTES",
     ),
   );
-  // The stall label and the pieces that decide when it prints, each pinned on its own line.
+  // The deadline derivation. The helper logic itself is run, not text-matched, by the executed
+  // helper test below.
   for (const [label, needle] of [
-    [
-      "deps helper labels the expiry as a mirror stall",
-      "mirror stall: apt-get $1 was stopped after",
-    ],
-    [
-      "deps helper never labels an unbounded run",
-      'if [ -z "$LINUX_DESKTOP_DEPS_DEADLINE" ] || [ "$LINUX_DESKTOP_DEPS_BOUND" -le 0 ]; then return 0; fi',
-    ],
-    ["deps helper labels a failed apt command", 'desktop_deps_label_stall "$phase" "$rc"'],
-    ["deps helper labels a used-up bound", "bound is used up"],
     [
       "deps resolve derives the deadline from start and bound",
       "LINUX_DESKTOP_DEPS_DEADLINE=$((LINUX_DESKTOP_DEPS_START + bound))",
-    ],
-    [
-      "deps helper computes remaining from the deadline",
-      "remaining=$((LINUX_DESKTOP_DEPS_DEADLINE - now))",
     ],
   ])
     pinDepsStep(label, "resolve", (step) => assert.ok(step.text.includes(needle), label));
@@ -1419,20 +1447,6 @@ function ciWorkflowContracts(texts) {
     assert.ok(
       step.text.includes('\n        desktop_deps_apt download "${download_args[@]}" || exit $?\n'),
       "deps download goes through desktop_deps_apt",
-    ),
-  );
-  pinDepsStep("deps helper runs apt under sudo timeout --kill-after", "resolve", (step) =>
-    assert.ok(
-      step.text.includes(
-        'sudo timeout --kill-after="$kill_grace" "$remaining" apt-get "$@" || rc=$?',
-      ),
-      "deps helper runs apt under sudo timeout --kill-after",
-    ),
-  );
-  pinDepsStep("deps helper keeps the unbounded sudo apt-get form", "resolve", (step) =>
-    assert.ok(
-      step.text.includes('\n            sudo apt-get "$@" || rc=$?\n'),
-      "deps helper keeps the unbounded sudo apt-get form",
     ),
   );
   contracts.push([
@@ -1637,23 +1651,93 @@ const linuxDesktopDepsRows = [
   [
     "resolve loses the archive directory",
     "deps",
-    `apt-get -o Dir::Cache::Archives=${depsArchives} install --print-uris`,
+    'apt-get -o "Dir::Cache::Archives=$archives" install --print-uris',
     "apt-get install --print-uris",
     "deps resolve passes the cache path directory to apt",
   ],
   [
     "download uses another archive directory",
     "deps",
-    `download_args=(-o Dir::Cache::Archives=${depsArchives}`,
+    'download_args=(-o "Dir::Cache::Archives=$archives"',
     "download_args=(-o Dir::Cache::Archives=/tmp/other-archives",
     "deps download passes the cache path directory to apt",
   ],
   [
     "install loses the archive directory",
     "deps",
-    `apt-get -o Dir::Cache::Archives=${depsArchives} install --no-download`,
+    'apt-get -o "Dir::Cache::Archives=$archives" install --no-download',
     "apt-get install --no-download",
     "deps install passes the cache path directory to apt",
+  ],
+  [
+    "download passes a literal archive directory",
+    "deps",
+    'download_args=(-o "Dir::Cache::Archives=$archives"',
+    `download_args=(-o Dir::Cache::Archives=${depsArchives}`,
+    "deps every Dir::Cache::Archives option uses the archive directory source",
+  ],
+  [
+    "resolve archive directory drifts",
+    "deps",
+    `archives=${depsArchives}\n        lib=`,
+    "archives=/tmp/other-archives\n        lib=",
+    "deps cache paths are the archive directory's .deb files",
+  ],
+  [
+    "save path drifts from the archive directory",
+    "deps",
+    depsSaveStepFragment,
+    depsSaveStepFragment.replace(depsArchives, "/tmp/other-archives"),
+    "deps restore and save share one cache path",
+  ],
+  [
+    "restore path drifts from the archive directory",
+    "deps",
+    depsRestoreStepFragment,
+    depsRestoreStepFragment.replace(depsArchives, "/tmp/other-archives"),
+    "deps cache paths are the archive directory's .deb files",
+  ],
+  [
+    "verify assigns its own archive directory",
+    "deps",
+    '        reason=""\n        verify_restored() {',
+    '        archives=/tmp/other-archives\n        reason=""\n        verify_restored() {',
+    "deps has one shell source of the archive directory",
+  ],
+  [
+    "prune assigns its own archive directory",
+    "deps",
+    '        reason=""\n        prune_unneeded() {',
+    '        archives=/tmp/other-archives\n        reason=""\n        prune_unneeded() {',
+    "deps has one shell source of the archive directory",
+  ],
+  [
+    "library stops carrying the archive directory",
+    "deps",
+    "declare -p packages archives;",
+    "declare -p packages;",
+    "deps library carries the archive directory",
+  ],
+  [
+    "verify stops sourcing the library",
+    "deps",
+    '        source "$RUNNER_TEMP/linux-desktop-deps-lib.sh" || exit 1\n        reason=""\n        verify_restored() {',
+    '        reason=""\n        verify_restored() {',
+    "deps verify sources the library",
+  ],
+  [
+    "prune stops sourcing the library",
+    "deps",
+    '        source "$RUNNER_TEMP/linux-desktop-deps-lib.sh" || exit 1\n        reason=""\n        prune_unneeded() {',
+    '        reason=""\n        prune_unneeded() {',
+    "deps prune sources the library",
+  ],
+  [
+    "verify moved after download",
+    "deps",
+    /(    # apt 3\.2 checks only[\s\S]*?)(    - name: Download the missing[\s\S]*?)(?=    # Bound the cache)/gu,
+    "$2$1",
+    "deps steps run in the documented order",
   ],
   [
     "archive directory from mktemp",
@@ -1661,27 +1745,6 @@ const linuxDesktopDepsRows = [
     `archives=${depsArchives}\n        lib=`,
     "archives=$(mktemp -d)\n        lib=",
     "deps archive directory is not a mktemp path",
-  ],
-  [
-    "helper loses sudo timeout",
-    "deps",
-    'sudo timeout --kill-after="$kill_grace" "$remaining" apt-get "$@" || rc=$?',
-    'sudo apt-get "$@" || rc=$?',
-    "deps helper runs apt under sudo timeout --kill-after",
-  ],
-  [
-    "helper loses sudo before timeout",
-    "deps",
-    'sudo timeout --kill-after="$kill_grace" "$remaining" apt-get "$@" || rc=$?',
-    'timeout --kill-after="$kill_grace" "$remaining" apt-get "$@" || rc=$?',
-    "deps helper runs apt under sudo timeout --kill-after",
-  ],
-  [
-    "helper loses the unbounded form",
-    "deps",
-    '            sudo apt-get "$@" || rc=$?\n',
-    '            apt-get "$@" || rc=$?\n',
-    "deps helper keeps the unbounded sudo apt-get form",
   ],
   [
     "download re-adds an inline timeout",
@@ -1712,46 +1775,11 @@ const linuxDesktopDepsRows = [
     "deps resolve maps timeout-minutes to TIMEOUT_MINUTES",
   ],
   [
-    "helper loses the unbounded guard",
-    "deps",
-    '          if [ -z "$LINUX_DESKTOP_DEPS_DEADLINE" ] || [ "$LINUX_DESKTOP_DEPS_BOUND" -le 0 ]; then return 0; fi\n',
-    "",
-    "deps helper never labels an unbounded run",
-  ],
-  [
-    "helper loses the expiry label",
-    "deps",
-    /^( +)echo "::error::[^\n]*was stopped after[^\n]*\n/gmu,
-    "$1:\n",
-    "deps helper labels the expiry as a mirror stall",
-  ],
-  [
-    "helper loses the label call",
-    "deps",
-    '          if [ "$rc" -ne 0 ]; then desktop_deps_label_stall "$phase" "$rc"; fi\n',
-    "",
-    "deps helper labels a failed apt command",
-  ],
-  [
-    "helper loses the used-up label",
-    "deps",
-    /^( +)echo "::error::[^\n]*bound is used up[^\n]*\n/gmu,
-    "$1:\n",
-    "deps helper labels a used-up bound",
-  ],
-  [
     "deadline ignores the bound",
     "deps",
     "LINUX_DESKTOP_DEPS_DEADLINE=$((LINUX_DESKTOP_DEPS_START + bound))",
     "LINUX_DESKTOP_DEPS_DEADLINE=$LINUX_DESKTOP_DEPS_START",
     "deps resolve derives the deadline from start and bound",
-  ],
-  [
-    "remaining ignores the deadline",
-    "deps",
-    "remaining=$((LINUX_DESKTOP_DEPS_DEADLINE - now))",
-    "remaining=$((LINUX_DESKTOP_DEPS_START - now))",
-    "deps helper computes remaining from the deadline",
   ],
   [
     "start not exported",
@@ -1946,7 +1974,256 @@ test("CI workflow wiring rejects removed selectors, checkout, freshness, publica
     assert.ok(start > 0 && end > start);
     const moved = texts.deps.slice(0, start) + texts.deps.slice(end) + texts.deps.slice(start, end);
     assert.deepEqual(failedContracts({ ...texts, deps: moved }), [
-      "deps save comes before install",
+      "deps steps run in the documented order",
     ]);
   });
+});
+
+// Executed helper test: the resolve step's shell helpers run in bash with `sudo` and `date`
+// stubbed, so the deadline, stall-label and validation logic is run instead of text-matched. The
+// clock is a variable the stubbed `sudo` advances, so no case sleeps.
+const depsHelperNames = [
+  "desktop_deps_label_stall",
+  "desktop_deps_apt",
+  "desktop_deps_bound_seconds",
+];
+const fakeNow = 1_800_000_000;
+
+function depsHelperSource(depsText) {
+  const resolve = workflowStepBlocks(depsText).find((step) => step.id === "resolve");
+  assert.ok(resolve, "linux-desktop-deps has a resolve step");
+  return depsHelperNames
+    .map((name) => {
+      const definition = new RegExp(`^ {8}${name}\\(\\) \\{\\n[\\s\\S]*?\\n {8}\\}$`, "mu").exec(
+        resolve.text,
+      );
+      assert.ok(definition, `the resolve step defines ${name}`);
+      return definition[0];
+    })
+    .join("\n");
+}
+
+// Runs `body` after the helper definitions. `sudo` prints its argv as `sudo-argv:<a><b>…`, advances
+// the clock by SUDO_ELAPSE seconds and returns SUDO_STATUS.
+function runDepsHelper(source, { env = {}, args = [], body }) {
+  const script = [
+    "set -uo pipefail",
+    source,
+    'date() { printf "%s\\n" "$FAKE_NOW"; }',
+    `sudo() { printf 'sudo-argv:'; printf '<%s>' "$@"; printf '\\n'; FAKE_NOW=$((FAKE_NOW + SUDO_ELAPSE)); return "$SUDO_STATUS"; }`,
+    body,
+  ].join("\n");
+  const result = spawnSync("bash", ["--noprofile", "--norc", "-c", script, "bash", ...args], {
+    encoding: "utf8",
+    env: {
+      PATH: process.env.PATH,
+      FAKE_NOW: String(fakeNow),
+      SUDO_STATUS: "0",
+      SUDO_ELAPSE: "0",
+      LINUX_DESKTOP_DEPS_START: String(fakeNow),
+      LINUX_DESKTOP_DEPS_BOUND: "0",
+      LINUX_DESKTOP_DEPS_DEADLINE: "",
+      ...env,
+    },
+  });
+  assert.equal(result.error, undefined, "bash ran");
+  const lines = result.stdout.split("\n");
+  return {
+    status: result.status,
+    calls: lines.filter((line) => line.startsWith("sudo-argv:")).map((line) => line.slice(10)),
+    output: lines.filter((line) => !line.startsWith("sudo-argv:")).join("\n"),
+  };
+}
+
+// A bound of 60 s that started 30 s ago, so 30 s remain.
+const boundedEnv = (status, elapse) => ({
+  LINUX_DESKTOP_DEPS_START: String(fakeNow - 30),
+  LINUX_DESKTOP_DEPS_BOUND: "60",
+  LINUX_DESKTOP_DEPS_DEADLINE: String(fakeNow + 30),
+  SUDO_STATUS: String(status),
+  SUDO_ELAPSE: String(elapse),
+});
+const unboundedEnv = (status) => ({
+  LINUX_DESKTOP_DEPS_START: String(fakeNow - 30),
+  LINUX_DESKTOP_DEPS_BOUND: "0",
+  LINUX_DESKTOP_DEPS_DEADLINE: "",
+  SUDO_STATUS: String(status),
+  SUDO_ELAPSE: "30",
+});
+const aptArgs = ["download", "install", "--download-only"];
+const runApt = (source, env) =>
+  runDepsHelper(source, { env, args: aptArgs, body: 'desktop_deps_apt "$@"; exit $?' });
+const runBound = (source, minutes) =>
+  runDepsHelper(source, { args: [minutes], body: 'desktop_deps_bound_seconds "$1"; exit $?' });
+const stallLabel = "mirror stall: apt-get download was stopped after";
+
+const depsHelperCases = [
+  [
+    "a used-up deadline returns 1 with the used-up label and no sudo call",
+    (source) => {
+      // remaining is exactly 0 here, so `-le 0` and `-lt 0` differ.
+      const result = runApt(source, {
+        ...boundedEnv(0, 0),
+        LINUX_DESKTOP_DEPS_START: String(fakeNow - 60),
+        LINUX_DESKTOP_DEPS_DEADLINE: String(fakeNow),
+      });
+      assert.equal(result.status, 1);
+      assert.match(
+        result.output,
+        /bound is used up \(60s elapsed\) before apt-get download started/u,
+      );
+      assert.deepEqual(result.calls, []);
+    },
+  ],
+  [
+    "bounded: 124 at the bound is labelled and returned",
+    (source) => {
+      // The clock reaches START + 60 exactly, so `-ge` and `-gt` differ.
+      const result = runApt(source, boundedEnv(124, 30));
+      assert.equal(result.status, 124);
+      assert.ok(
+        result.output.includes(`${stallLabel} 60s, past the 60s bound`),
+        `no expiry label in: ${result.output}`,
+      );
+    },
+  ],
+  [
+    "bounded: 137 at the bound is labelled and returned",
+    (source) => {
+      const result = runApt(source, boundedEnv(137, 40));
+      assert.equal(result.status, 137);
+      assert.ok(result.output.includes(`${stallLabel} 70s, past the 60s bound`));
+    },
+  ],
+  [
+    "bounded: 137 before the bound is not labelled",
+    (source) => {
+      const result = runApt(source, boundedEnv(137, 10));
+      assert.equal(result.status, 137);
+      assert.ok(!result.output.includes("mirror stall"), result.output);
+    },
+  ],
+  [
+    "bounded: a non-timeout status is returned without a label",
+    (source) => {
+      const result = runApt(source, boundedEnv(100, 40));
+      assert.equal(result.status, 100);
+      assert.ok(!result.output.includes("mirror stall"), result.output);
+    },
+  ],
+  [
+    "bounded: sudo runs timeout --kill-after=10 with the remaining seconds",
+    (source) => {
+      const result = runApt(source, boundedEnv(0, 0));
+      assert.equal(result.status, 0);
+      assert.deepEqual(result.calls, [
+        "<timeout><--kill-after=10><30><apt-get><install><--download-only>",
+      ]);
+    },
+  ],
+  ...[124, 137].map((status) => [
+    `unbounded: ${status} is not labelled and sudo runs without timeout`,
+    (source) => {
+      const result = runApt(source, unboundedEnv(status));
+      assert.equal(result.status, status);
+      assert.ok(!result.output.includes("mirror stall"), result.output);
+      assert.deepEqual(result.calls, ["<apt-get><install><--download-only>"]);
+    },
+  ]),
+  [
+    "validation rejects 0, -1, abc and 0.0 naming the value",
+    (source) => {
+      for (const value of ["0", "-1", "abc", "0.0"]) {
+        const result = runBound(source, value);
+        assert.equal(result.status, 1, `${value} was accepted`);
+        assert.ok(
+          result.output.includes(
+            `::error::linux-desktop-deps: timeout-minutes must be a positive number of minutes or empty, got '${value}'`,
+          ),
+          `${value}: ${result.output}`,
+        );
+      }
+    },
+  ],
+  [
+    "validation turns 1.5 minutes into 90 seconds",
+    (source) => {
+      const result = runBound(source, "1.5");
+      assert.equal(result.status, 0);
+      assert.equal(result.output.trim(), "90");
+    },
+  ],
+  [
+    "an empty value means unbounded",
+    (source) => {
+      const result = runBound(source, "");
+      assert.equal(result.status, 0);
+      assert.equal(result.output.trim(), "0");
+    },
+  ],
+];
+
+function failedDepsHelperCases(source) {
+  return depsHelperCases.flatMap(([name, run]) => {
+    try {
+      run(source);
+      return [];
+    } catch {
+      return [name];
+    }
+  });
+}
+
+// [label, before, after, the case that must turn red]
+const depsHelperMutations = [
+  [
+    "used-up guard accepts a remaining of 0",
+    '[ "$remaining" -le 0 ]',
+    '[ "$remaining" -lt 0 ]',
+    "a used-up deadline returns 1 with the used-up label and no sudo call",
+  ],
+  [
+    "stall filter drops 137",
+    ' && [ "$2" -ne 137 ]',
+    "",
+    "bounded: 137 at the bound is labelled and returned",
+  ],
+  [
+    "expiry needs elapsed past the bound",
+    '[ "$elapsed" -ge "$LINUX_DESKTOP_DEPS_BOUND" ]',
+    '[ "$elapsed" -gt "$LINUX_DESKTOP_DEPS_BOUND" ]',
+    "bounded: 124 at the bound is labelled and returned",
+  ],
+  [
+    "unbounded guard removed",
+    '          if [ -z "$LINUX_DESKTOP_DEPS_DEADLINE" ] || [ "$LINUX_DESKTOP_DEPS_BOUND" -le 0 ]; then return 0; fi\n',
+    "",
+    "unbounded: 124 is not labelled and sudo runs without timeout",
+  ],
+  [
+    "validation accepts 0",
+    '[ "$seconds" -le 0 ]',
+    '[ "$seconds" -lt 0 ]',
+    "validation rejects 0, -1, abc and 0.0 naming the value",
+  ],
+  [
+    "bounded run loses sudo timeout",
+    'sudo timeout --kill-after="$kill_grace" "$remaining" apt-get "$@"',
+    'sudo apt-get "$@"',
+    "bounded: sudo runs timeout --kill-after=10 with the remaining seconds",
+  ],
+];
+
+test("linux-desktop-deps helpers behave when executed", async (t) => {
+  const { deps } = await readCiWorkflowTexts();
+  const source = depsHelperSource(deps);
+  assert.deepEqual(failedDepsHelperCases(source), []);
+  for (const [label, before, after, expected] of depsHelperMutations) {
+    await t.test(label, (subtest) => {
+      assert.equal(source.split(before).length, 2, `${label}: before must occur exactly once`);
+      const failed = failedDepsHelperCases(source.replace(before, after));
+      subtest.diagnostic(`red: ${failed.join(" | ")}`);
+      assert.ok(failed.includes(expected), `${expected} stayed green: ${failed}`);
+    });
+  }
 });
