@@ -20068,7 +20068,7 @@ Fixed in 17d570d3: the board column's fixed 0.5rem gaps became two shrinkable 0.
 
 ### pathOwners "incomplete startup scan" test times out at 5 s in the frontend-coverage gate under load
 
-* **ID:** f-20261101-01 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261101-01 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** tooling
 * **Where:** `src/state/pathOwners.test.ts:610`, test "refuses clearing without retiring migrated keys after an incomplete startup scan" (`vi.resetModules()` then `await import("./practiceStorage")`).
 * **Defect:** in `pnpm gates:push -- --frontend` on 2026-10-31 23:42 (build search-side-toggle, HEAD c72e233d, a diff that touches no `src/state` file) the frontend-coverage lane failed only this test with "Test timed out in 5000ms" (5893 passed, 1 failed). Run alone it passes in 1.54 s. This is the cold-transform-under-load class of f-20260930-02, which is marked handled, so the earlier fix did not cover this test.
@@ -20077,6 +20077,10 @@ Fixed in 17d570d3: the board column's fixed 0.5rem gaps became two shrinkable 0.
 * **Spotted outside diff:** the colour-filter build changes only `src/components/databases/**`, translations and the database e2e spec.
 * **Proof:** gate transcript `artifacts/gates/20261031T224221444Z-3061068/receipt-frontend-coverage.log` in the search-side-toggle worktree.
 * **Found by:** Claude Code build session e68b0001-fd41-489f-b2b2-93048631b46d, 2026-10-31.
+* **Handled (2026-11-06, drain session 4f818af6-f7d6-45cf-a5e0-9da3607d09a2):** 5dd9cfed adds a static side-effect `import "../routes/__root";` at the top of `src/state/pathOwners.test.ts`, so the cold transform of the UI graph that the incomplete-startup-scan test dynamically imports after `vi.resetModules()` is paid at collection, outside `testTimeout` (d-20260901-36 option (b), the pattern d-20261026-10 made safe for the state graph). `__root.tsx` module scope only defines `Route`, and `src/routes/-root.test.tsx` already imports it statically, so the warm import has no side effects. The dynamic imports keep per-test module freshness.
+* **Proof:** cold run (fs module cache off via `STRYKER_MEMORY_BYTES=1`) of `src/state/pathOwners.test.ts` alone, before the change: the test took 672 ms. After the change it took 13 ms, and pathOwners plus `-root.test.tsx` passed 35/35. oxlint and oxfmt are clean. The loaded 5 s timeout itself is not reproducible on demand, so the proof is the removed in-test transform cost, not a reproduced timeout.
+* **Rejected:** raising `testTimeout`, and a shared setupFiles preload (both rejected by d-20260930-09 and d-20261026-10).
+<!-- ledger-meta {"command":"close","effect_lines":3,"effect_sha256":"39c4838db64346938c113851ac48878bbff2b2252abdc3ceff7b2a67c2ea5b62","header_sha256":"e424bb88b6bf7b56102246445d19d13e4ed60eb97404392b669973c7fc5a2e53","header_status":"handled","input_sha256":"aa533b5d1deee45a0c8384588f5d63855b81cb6f158afec3555ed37a488bdf28","kind":"mutation-receipt","operation":"924328f74f26ca241169c5ef42aaf54cf8a085a129f5fea286284e6b90d42267","options":{"section":null},"request_id_sha256":null,"results":["f-20261101-01"],"target":"f-20261101-01","v":1} -->
 
 ---
 
