@@ -21753,3 +21753,19 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Repair guard:** Invalidate the displayed stats at the earliest future due instant and on resume as appropriate, clean up/rekey timers on deck/owner changes, and retain absolute timestamp comparison. Add a real idle-boundary regression rather than requiring unrelated input to refresh the queue.
 * **Related:** related queries over the affected files and frontend-state/frontend-ui found no same mechanism. Existing f-20261106-14 is the deliberately excluded Start-path card-generation bug; earlier stale-FEN and completion-retry findings are distinct.
 * **Found by:** GrokBot, targeted t22u review with a real mounted consumer probe.
+
+---
+
+## 2026-11-06 — filed through the inbox spool
+
+### Reloaded overdue practice cards show Practiced instead of Due in Show All
+* **ID:** f-20261106-37 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** Repertoire card/scheduling review (Felix t22u), HEAD `2e256a5c`.
+* **Where:** `src/components/panels/practice/PracticePanel.tsx:1318-1327` compares `c.card.due < new Date()` directly for the Show All status badge; `src/state/practiceStorage.ts:797-800` hydrates positions with JSON.parse and a passthrough card schema, retaining serialized due strings. `src/components/files/opening.ts` getStats/getCardForReview already wrap these due values with new Date.
+* **Failure scenario:** Reopen a repertoire containing any previously reviewed card whose saved due instant has passed, then Show All. The main practice queue offers that card as due, but its card status in the modal says Practiced (gold), not Due (warning), despite the displayed due date being in the past.
+* **Defect:** A persisted ISO timestamp string compared directly to a Date is numerically coerced to NaN, so the overdue branch never wins for hydrated cards. This remains wrong after an explicit fresh render; it is distinct from the idle due-boundary invalidation bug.
+* **Proof:** A second disposable real PracticePanel gameplay-derived probe loaded a genuine FSRS Again card through native-shaped JSON hydration, advanced beyond its due instant and clicked Show All. The click refreshed main stats and exposed Start Practice, establishing that the queue already recognized it as due. Reading the actual portal dialog badge gave `Board.Practice.Practiced`; the hydrated due type was string. `pnpm exec vitest run src/components/panels/practice/PracticePanel.area22-due-probe.test.tsx -t 'area22 reloaded'` failed solely on expected badge text `Board.Practice.Due`. Production sources were unchanged and the probe was removed. All 221 authoritative tests across the six repertoire/practice suites pass; this is mounted renderer/native-payload evidence, not a claim about a live Tauri window.
+* **Repair guard:** Normalize due to an instant consistently with getStats/getCardForReview and use the same inclusive due boundary, rather than relying on the TypeScript Date annotation after JSON hydration. Cover actual persisted ISO strings plus future/unseen controls.
+* **Related:** related queries across frontend-ui/frontend-state and affected files found no same mechanism. Existing practice-log move-number/key findings and Start-path omission are unrelated; missing idle clock invalidation cannot fix this fresh-render coercion error.
+* **Found by:** GrokBot, targeted t22u review with the actual portal modal and persisted payload shape.
