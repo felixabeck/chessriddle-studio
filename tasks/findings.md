@@ -21917,6 +21917,9 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Verification and cleanup:** Disposable suite: two exact missing-asset failures, five passing controls (supported piece/board, real theme persistence, both coordinate orientations). After removing the probe, all 128 authoritative tests passed across ten suites: fontScale, pieceScale, atoms, utils, App, Chessground, ThemeButton, PercentagePreferenceSlider, useScaledMaxWidth and styles/theme. No production files, snapshots, stored user preferences, native data, browser/Vite or external service was changed.
 * **Found by:** GrokBot, Felix-authorized t23u 3/5 bounded appearance preference review.
 
+**Where correction (2026-11-06, push records review):** piece-set and board-image hydration is `pieceSetAtom` / `boardImageAtom` at `src/state/atoms.ts:589-597`, not `:571-580` (those are `showCoordinatesAtom` / `soundCollectionAtom`). The piece stylesheet link is `src/App.tsx:207`; `:228` closes `DndProvider`.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"9b2e36b4009a7e38d81e8ff5a4caca34eb99204affab212f33a0a77665156855","input_sha256":"fdec01c95648965b14f6cdf993c3514490abcc754da2da329997f14f0c769355","kind":"mutation-receipt","operation":"ca3b6fe1228461cac874d1dc81d37ba11330e1a5bd6e4de20e46b8c2744ea50d","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-45"],"target":"f-20261106-45","v":1} -->
+
 ---
 
 ## 2026-11-06 — filed through the inbox spool
