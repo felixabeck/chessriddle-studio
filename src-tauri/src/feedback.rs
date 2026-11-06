@@ -15,7 +15,9 @@ pub(crate) const FEEDBACK_URL: &str = "https://chessriddle.com/api/v1/feedback";
 const STUDIO_PRODUCT: &str = "ChessRiddle Studio";
 const MIN_MESSAGE_CHARS: usize = 10;
 const MAX_MESSAGE_CHARS: usize = 5000;
+const MIN_EMAIL_CHARS: usize = 3;
 const MAX_EMAIL_CHARS: usize = 254;
+const MAX_EMAIL_LOCAL_PART_CHARS: usize = 64;
 const MAX_OS_VERSION_CHARS: usize = 64;
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
 const REASON_IN_PROGRESS: &str = "feedback_submission_in_progress";
@@ -56,7 +58,6 @@ pub(crate) struct FeedbackInput<'a> {
 }
 
 pub(crate) struct BuiltFeedbackRequest {
-    pub url: &'static str,
     pub headers: HeaderMap,
     pub body: serde_json::Value,
 }
@@ -112,7 +113,7 @@ fn current_os_version() -> String {
 }
 
 fn email_plausible(email: &str) -> bool {
-    if email.len() < 3 || email.len() > MAX_EMAIL_CHARS {
+    if email.len() < MIN_EMAIL_CHARS || email.len() > MAX_EMAIL_CHARS {
         return false;
     }
     if email.contains(char::is_whitespace)
@@ -125,7 +126,11 @@ fn email_plausible(email: &str) -> bool {
     let Some((local, domain)) = email.split_once('@') else {
         return false;
     };
-    if local.is_empty() || local.len() > 64 || domain.is_empty() || !domain.contains('.') {
+    if local.is_empty()
+        || local.len() > MAX_EMAIL_LOCAL_PART_CHARS
+        || domain.is_empty()
+        || !domain.contains('.')
+    {
         return false;
     }
     if local.starts_with('.')
@@ -211,11 +216,7 @@ pub(crate) fn build_feedback_request(
         user_agent: &body_user_agent,
     })
     .map_err(|_| invalid_feedback())?;
-    Ok(BuiltFeedbackRequest {
-        url: FEEDBACK_URL,
-        headers,
-        body,
-    })
+    Ok(BuiltFeedbackRequest { headers, body })
 }
 
 fn conflict_reason(body: &[u8]) -> Option<&str> {
@@ -266,9 +267,16 @@ pub async fn submit_feedback(
             os_version: &current_os_version(),
         },
     )?;
-    let response = state
-        .json_http_client
-        .post(request.url)
+    send_feedback_request(&state.json_http_client, FEEDBACK_URL, request).await
+}
+
+async fn send_feedback_request(
+    client: &reqwest::Client,
+    url: &str,
+    request: BuiltFeedbackRequest,
+) -> Result<FeedbackOutcome, Error> {
+    let response = client
+        .post(url)
         .headers(request.headers)
         .json(&request.body)
         .send()
@@ -297,7 +305,7 @@ pub async fn submit_feedback(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reqwest::header::{HeaderValue, AUTHORIZATION};
+    use reqwest::header::AUTHORIZATION;
 
     const KEY: &str = "550e8400-e29b-41d4-a716-446655440000";
     const MESSAGE: &str = "A useful Studio report.";
@@ -333,7 +341,6 @@ mod tests {
     #[test]
     fn url_is_the_compile_time_chessriddle_endpoint() {
         assert_eq!(FEEDBACK_URL, "https://chessriddle.com/api/v1/feedback");
-        assert_eq!(built(None).url, FEEDBACK_URL);
     }
 
     #[test]
@@ -439,6 +446,22 @@ mod tests {
     }
 
     #[test]
+    fn local_validation_rejects_a_message_over_the_upper_bound() {
+        let accepted = "x".repeat(MAX_MESSAGE_CHARS);
+        let mut at_max = input(None);
+        at_max.message = &accepted;
+        assert!(build_feedback_request(at_max, identity()).is_ok());
+
+        let rejected = "x".repeat(MAX_MESSAGE_CHARS + 1);
+        let mut over_max = input(None);
+        over_max.message = &rejected;
+        assert!(matches!(
+            build_feedback_request(over_max, identity()),
+            Err(Error::InvalidInput(_))
+        ));
+    }
+
+    #[test]
     fn outcome_mapping_is_a_closed_set() {
         let in_progress = br#"{"error":{"code":"CONFLICT","message":"hidden","details":{"reason":"feedback_submission_in_progress","retryable":true}}}"#;
         let mismatch = br#"{"error":{"code":"CONFLICT","message":"hidden","details":{"reason":"idempotency_key_request_mismatch"}}}"#;
@@ -524,6 +547,130 @@ mod tests {
 
     #[test]
     fn header_value_helper_accepts_the_studio_user_agent() {
-        assert!(HeaderValue::from_str("ChessRiddle Studio/1.2.3 (linux)").is_ok());
+        assert!(header_value("ChessRiddle Studio/1.2.3 (linux)").is_ok());
+        assert!(header_value("bad\nheader").is_err());
+    }
+
+    fn http_response(status: &str, body: &str) -> String {
+        format!(
+            "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        )
+    }
+
+    async fn read_http_request(stream: &mut tokio::net::TcpStream) -> String {
+        use tokio::io::AsyncReadExt;
+        let mut request = Vec::new();
+        while !request.ends_with(b"\r\n\r\n") {
+            request.push(stream.read_u8().await.unwrap());
+            assert!(request.len() <= 8192);
+        }
+        let headers = String::from_utf8(request.clone()).unwrap();
+        let length = headers
+            .lines()
+            .find_map(|line| {
+                let (name, value) = line.split_once(':')?;
+                name.eq_ignore_ascii_case("content-length")
+                    .then(|| value.trim().parse::<usize>().unwrap())
+            })
+            .unwrap_or(0);
+        assert!(length <= 8192);
+        let mut body = vec![0; length];
+        stream.read_exact(&mut body).await.unwrap();
+        request.extend(body);
+        String::from_utf8(request).unwrap()
+    }
+
+    async fn loopback_feedback(response: String) -> (String, Result<FeedbackOutcome, Error>) {
+        use std::time::Duration;
+        use tokio::io::AsyncWriteExt;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/api/v1/feedback", listener.local_addr().unwrap());
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let request = built(None);
+        let server = async {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let captured = read_http_request(&mut stream).await;
+            let _ = stream.write_all(response.as_bytes()).await;
+            captured
+        };
+        tokio::time::timeout(Duration::from_secs(3), async {
+            tokio::join!(server, send_feedback_request(&client, &url, request))
+        })
+        .await
+        .expect("loopback feedback must finish")
+    }
+
+    fn assert_identity_request(captured: &str, expected_body: &serde_json::Value) {
+        let (headers, body) = captured.split_once("\r\n\r\n").expect("request headers");
+        let headers = headers.to_ascii_lowercase();
+        assert!(captured.starts_with("POST /api/v1/feedback HTTP/1.1\r\n"));
+        assert!(headers.contains("user-agent: chessriddle studio/1.2.3 (linux)"));
+        assert!(headers.contains("content-type: application/json"));
+        assert!(headers.contains("accept: application/json"));
+        assert!(headers.contains(&format!("idempotency-key: {}", KEY.to_ascii_lowercase())));
+        assert!(headers.contains("x-client-surface: desktop"));
+        assert!(headers.contains("x-client-platform: linux"));
+        assert!(headers.contains("x-client-app-version: 1.2.3"));
+        assert!(!headers
+            .lines()
+            .any(|line| line.starts_with("authorization:")));
+        let parsed: serde_json::Value = serde_json::from_str(body).expect("json body");
+        assert_eq!(&parsed, expected_body);
+    }
+
+    #[tokio::test]
+    async fn loopback_201_sends_identity_headers_json_body_and_never_authorization() {
+        let expected = built(None).body;
+        let (captured, outcome) = loopback_feedback(http_response("201 Created", "")).await;
+        assert_eq!(outcome.expect("201"), FeedbackOutcome::Sent);
+        assert_identity_request(&captured, &expected);
+    }
+
+    #[tokio::test]
+    async fn loopback_409_reasons_map_to_in_progress_and_key_mismatch() {
+        let in_progress = http_response(
+            "409 Conflict",
+            r#"{"error":{"code":"CONFLICT","message":"hidden","details":{"reason":"feedback_submission_in_progress"}}}"#,
+        );
+        let (_, outcome) = loopback_feedback(in_progress).await;
+        assert_eq!(
+            outcome.expect("409 in progress"),
+            FeedbackOutcome::InProgress
+        );
+
+        let mismatch = http_response(
+            "409 Conflict",
+            r#"{"error":{"code":"CONFLICT","message":"hidden","details":{"reason":"idempotency_key_request_mismatch"}}}"#,
+        );
+        let (_, outcome) = loopback_feedback(mismatch).await;
+        assert_eq!(outcome.expect("409 mismatch"), FeedbackOutcome::KeyMismatch);
+    }
+
+    #[tokio::test]
+    async fn loopback_409_html_is_delivery_failed() {
+        let (_, outcome) =
+            loopback_feedback(http_response("409 Conflict", "<html>nope</html>")).await;
+        assert_eq!(outcome.expect("409 html"), FeedbackOutcome::DeliveryFailed);
+    }
+
+    #[tokio::test]
+    async fn loopback_oversize_body_is_delivery_failed_without_forwarding() {
+        let body = r#"{"error":{"details":{"reason":"feedback_submission_in_progress"}}}"#;
+        let response = format!(
+            "HTTP/1.1 409 Conflict\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            MAX_RESPONSE_BYTES + 1
+        );
+        let (_, outcome) = loopback_feedback(response).await;
+        assert_eq!(
+            outcome.expect("oversize body"),
+            FeedbackOutcome::DeliveryFailed
+        );
+    }
+
+    #[tokio::test]
+    async fn loopback_401_is_service_unavailable() {
+        let (_, outcome) = loopback_feedback(http_response("401 Unauthorized", "")).await;
+        assert_eq!(outcome.expect("401"), FeedbackOutcome::ServiceUnavailable);
     }
 }

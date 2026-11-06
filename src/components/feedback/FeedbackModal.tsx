@@ -17,11 +17,13 @@ import { wrappingButton } from "@/components/common/wrappingButton";
 import { normalizeError } from "@/platform/errors";
 import { tauri } from "@/platform/tauri";
 
-export const FEEDBACK_MIN_MESSAGE = 10;
-export const FEEDBACK_MAX_MESSAGE = 5000;
+const FEEDBACK_MIN_MESSAGE = 10;
+const FEEDBACK_MAX_MESSAGE = 5000;
+const FEEDBACK_MIN_EMAIL = 3;
+const FEEDBACK_MAX_EMAIL = 254;
 const PRIVACY_URL = "https://chessriddle.com/privacy";
 
-function payloadIdentity(type: FeedbackType, message: string, email: string): string {
+function payloadFingerprint(type: FeedbackType, message: string, email: string): string {
   return JSON.stringify({
     type,
     message: message.trim(),
@@ -30,7 +32,8 @@ function payloadIdentity(type: FeedbackType, message: string, email: string): st
 }
 
 function isPlausibleEmail(email: string): boolean {
-  if (email.length < 3 || email.length > 254 || email.includes(" ")) return false;
+  if (email.length < FEEDBACK_MIN_EMAIL || email.length > FEEDBACK_MAX_EMAIL || email.includes(" "))
+    return false;
   const at = email.indexOf("@");
   if (at < 1) return false;
   const domain = email.slice(at + 1);
@@ -79,14 +82,14 @@ export default function FeedbackModal({
   const [error, setError] = useState("");
   const keyRef = useRef<string | null>(null);
   const lastPayloadRef = useRef<string | null>(null);
-  const flight = useRef(0);
+  const submitGeneration = useRef(0);
   const mounted = useRef(true);
 
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
-      flight.current += 1;
+      submitGeneration.current += 1;
     };
   }, []);
 
@@ -116,19 +119,19 @@ export default function FeedbackModal({
     onClose();
   }
 
-  function keyFor(identity: string): string {
-    if (lastPayloadRef.current !== identity || keyRef.current === null) {
+  function keyFor(fingerprint: string): string {
+    if (lastPayloadRef.current !== fingerprint || keyRef.current === null) {
       keyRef.current = crypto.randomUUID();
-      lastPayloadRef.current = identity;
+      lastPayloadRef.current = fingerprint;
     }
     return keyRef.current;
   }
 
   async function submit() {
     if (pending || !canSubmit) return;
-    const identity = payloadIdentity(feedbackType, message, email);
-    const idempotencyKey = keyFor(identity);
-    const id = ++flight.current;
+    const fingerprint = payloadFingerprint(feedbackType, message, email);
+    const idempotencyKey = keyFor(fingerprint);
+    const generation = ++submitGeneration.current;
     setPending(true);
     setError("");
     try {
@@ -138,7 +141,7 @@ export default function FeedbackModal({
         trimmedEmail.length > 0 ? trimmedEmail : null,
         idempotencyKey,
       );
-      if (!mounted.current || id !== flight.current) return;
+      if (!mounted.current || generation !== submitGeneration.current) return;
       if (outcome === "sent") {
         notifications.show({ color: "success", message: t("Feedback.Success") });
         resetForm();
@@ -150,11 +153,11 @@ export default function FeedbackModal({
       }
       setError(outcomeMessage(outcome, t));
     } catch (cause) {
-      if (!mounted.current || id !== flight.current) return;
+      if (!mounted.current || generation !== submitGeneration.current) return;
       const mapped = transportMessage(cause, t);
       if (mapped) setError(mapped);
     } finally {
-      if (mounted.current && id === flight.current) setPending(false);
+      if (mounted.current && generation === submitGeneration.current) setPending(false);
     }
   }
 

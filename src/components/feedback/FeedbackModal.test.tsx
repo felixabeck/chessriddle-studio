@@ -18,10 +18,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/platform/tauri", () => ({
   tauri: { submitFeedback: mocks.submitFeedback },
 }));
-vi.mock("@/platform/errors", async () => {
-  const actual = await vi.importActual<typeof import("@/platform/errors")>("@/platform/errors");
-  return actual;
-});
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
   Trans: ({ i18nKey, components }: { i18nKey: string; components: Record<string, ReactNode> }) => (
@@ -36,13 +32,18 @@ vi.mock("../common/AppModal", () => ({
     children,
     opened,
     title,
+    onClose,
   }: {
     children: ReactNode;
     opened: boolean;
     title?: string;
+    onClose?: () => void;
   }) =>
     opened ? (
       <div data-testid="dialog" data-title={title}>
+        <button type="button" data-testid="dialog-close" onClick={onClose}>
+          close
+        </button>
         {children}
       </div>
     ) : null,
@@ -264,4 +265,120 @@ test("transport failures map to the network copy", async () => {
   await submitForm();
   expect(container.querySelector("[role='alert']")?.textContent).toBe("Feedback.Error.Network");
   expect(container.querySelector("textarea")?.value).toBe("A useful Studio report.");
+});
+
+test("mapped outcomes surface the closed alert copy", async () => {
+  vi.spyOn(crypto, "randomUUID").mockImplementation(() => firstKey);
+  const cases: [FeedbackOutcome, string][] = [
+    ["inProgress", "Feedback.Error.InProgress"],
+    ["keyMismatch", "Feedback.Error.KeyMismatch"],
+    ["invalidInput", "Feedback.Error.InvalidInput"],
+    ["rateLimited", "Feedback.Error.RateLimited"],
+    ["deliveryFailed", "Feedback.Error.DeliveryFailed"],
+    ["serviceUnavailable", "Feedback.Error.ServiceUnavailable"],
+  ];
+  for (const [outcome, copy] of cases) {
+    mocks.submitFeedback.mockReset();
+    mocks.submitFeedback.mockResolvedValueOnce(outcome);
+    await renderModal();
+    await fillMessage("A useful Studio report.");
+    await submitForm();
+    expect(container.querySelector("[role='alert']")?.textContent).toBe(copy);
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+    root = createRoot(container);
+  }
+});
+
+test("success notifies without an error alert", async () => {
+  await renderModal();
+  await fillMessage("A useful Studio report.");
+  await submitForm();
+  expect(mocks.notify).toHaveBeenCalledExactlyOnceWith({
+    color: "success",
+    message: "Feedback.Success",
+  });
+  expect(container.querySelector("[role='alert']")).toBeNull();
+});
+
+test("a cancelled transport leaves the form without an alert", async () => {
+  mocks.submitFeedback.mockRejectedValueOnce({
+    category: "cancelled",
+    message: "cancelled",
+  });
+  await renderModal();
+  await fillMessage("A useful Studio report.");
+  await submitForm();
+  expect(container.querySelector("[role='alert']")).toBeNull();
+  expect(onClose).not.toHaveBeenCalled();
+  expect(container.querySelector("textarea")?.value).toBe("A useful Studio report.");
+});
+
+test("a validation transport maps to invalid input", async () => {
+  mocks.submitFeedback.mockRejectedValueOnce({
+    category: "validation",
+    message: "invalid",
+  });
+  await renderModal();
+  await fillMessage("A useful Studio report.");
+  await submitForm();
+  expect(container.querySelector("[role='alert']")?.textContent).toBe(
+    "Feedback.Error.InvalidInput",
+  );
+});
+
+test("an unclassified transport maps to delivery failed", async () => {
+  mocks.submitFeedback.mockRejectedValueOnce({
+    category: "unexpected",
+    message: "boom",
+  });
+  await renderModal();
+  await fillMessage("A useful Studio report.");
+  await submitForm();
+  expect(container.querySelector("[role='alert']")?.textContent).toBe(
+    "Feedback.Error.DeliveryFailed",
+  );
+});
+
+test("keeps send disabled for an implausible email", async () => {
+  await renderModal();
+  await fillMessage("A useful Studio report.");
+  expect(container.querySelector<HTMLButtonElement>("button[type='submit']")?.disabled).toBe(false);
+  await fillEmail("not-an-email");
+  expect(container.querySelector<HTMLButtonElement>("button[type='submit']")?.disabled).toBe(true);
+});
+
+test("keeps send disabled for a message over the max", async () => {
+  await renderModal();
+  await fillMessage("x".repeat(5001));
+  expect(container.querySelector<HTMLButtonElement>("button[type='submit']")?.disabled).toBe(true);
+});
+
+test("ignores a second submit and close while pending", async () => {
+  let finish!: (outcome: FeedbackOutcome) => void;
+  mocks.submitFeedback.mockReturnValueOnce(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  await renderModal();
+  await fillMessage("A useful Studio report.");
+  await submitForm();
+  expect(mocks.submitFeedback).toHaveBeenCalledTimes(1);
+  await submitForm();
+  expect(mocks.submitFeedback).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    container.querySelector<HTMLButtonElement>("[data-testid='dialog-close']")?.click();
+  });
+  expect(onClose).not.toHaveBeenCalled();
+  await act(async () => {
+    finish("sent");
+  });
+});
+
+test("privacy link points at the ChessRiddle privacy policy", async () => {
+  await renderModal();
+  expect(container.querySelector("a")?.getAttribute("href")).toBe(
+    "https://chessriddle.com/privacy",
+  );
 });

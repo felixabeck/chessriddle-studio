@@ -275,7 +275,10 @@ test("a fresh initializer refuses the envelope without changing pending bytes an
     expect(write).not.toHaveBeenCalled();
     expect(
         remove.mock.calls.filter((_, index) => remove.mock.contexts[index] === sessionStorage),
-    ).toEqual([]);
+    ).toEqual([
+        ["ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_posthog"],
+        ["ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_window_id"],
+    ]);
     expect(persistError.reportPersistError).not.toHaveBeenCalled();
     refusal.mockRestore();
     expect(sessionStorage.getItem("workspace")).toBe(bytes);

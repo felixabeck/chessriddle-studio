@@ -22,6 +22,8 @@ beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
     sessionStorage.clear();
+    document.cookie =
+        "ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_posthog=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -32,6 +34,9 @@ test("real state import leaves fixture storage untouched", async () => {
     localStorage.setItem("telemetry-enabled", "true");
     localStorage.setItem("ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_posthog", "{}");
     localStorage.setItem("__ph_opt_in_out_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z", "1");
+    sessionStorage.setItem("ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_posthog", "{}");
+    sessionStorage.setItem("ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_window_id", "1");
+    document.cookie = "ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_posthog={}";
     localStorage.setItem("download-destination-capability", "{malformed");
     localStorage.setItem("show-coordinates-v2", JSON.stringify("invalid"));
     sessionStorage.setItem("expanded-directories", JSON.stringify(["unscoped-directory"]));
@@ -62,6 +67,13 @@ test("real state import leaves fixture storage untouched", async () => {
     expect(
         localStorage.getItem("__ph_opt_in_out_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z"),
     ).toBe("1");
+    expect(
+        sessionStorage.getItem("ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_posthog"),
+    ).toBe("{}");
+    expect(
+        sessionStorage.getItem("ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_window_id"),
+    ).toBe("1");
+    expect(document.cookie).toContain("ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_posthog");
     expect(localStorage.getItem("download-destination-capability")).toBe("{malformed");
     expect(localStorage.getItem("show-coordinates-v2")).toBe(JSON.stringify("invalid"));
     expect(sessionStorage.getItem("expanded-directories")).toBe(
@@ -75,6 +87,9 @@ test("explicit initialization preserves raw lossy and sibling ownership after re
     localStorage.setItem("telemetry-enabled", "true");
     localStorage.setItem("ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_posthog", "{}");
     localStorage.setItem("__ph_opt_in_out_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z", "1");
+    sessionStorage.setItem("ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_posthog", "{}");
+    sessionStorage.setItem("ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_window_id", "1");
+    document.cookie = "ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_posthog={}";
     localStorage.setItem(
         "download-destination-capability",
         JSON.stringify({ id: "lossy-download", obsolete: true }),
@@ -131,6 +146,15 @@ test("explicit initialization preserves raw lossy and sibling ownership after re
     expect(
         localStorage.getItem("__ph_opt_in_out_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z"),
     ).toBeNull();
+    expect(
+        sessionStorage.getItem("ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_posthog"),
+    ).toBeNull();
+    expect(
+        sessionStorage.getItem("ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_window_id"),
+    ).toBeNull();
+    expect(document.cookie).not.toContain(
+        "ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_posthog",
+    );
     expect(sessionStorage.getItem("expanded-directories")).toBeNull();
     localStorage.setItem("engines", serializeStorageValue([]));
     await owners.initializePathOwners();

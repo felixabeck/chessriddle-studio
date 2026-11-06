@@ -101,6 +101,14 @@ export function initializeRendererState() {
         localStorage.removeItem("ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_posthog");
         localStorage.removeItem("__ph_opt_in_out_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z");
     }
+    if (typeof sessionStorage !== "undefined") {
+        sessionStorage.removeItem("ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_posthog");
+        sessionStorage.removeItem("ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_window_id");
+    }
+    if (typeof document !== "undefined") {
+        document.cookie =
+            "ph_phc_kgEBtifs0EgWlrl4ROYEbnsQ1b7BS2W5BKLNyXe7f8z_posthog=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
+    }
     documentPreferences.initialize();
     rendererStateInitialized = true;
 }
