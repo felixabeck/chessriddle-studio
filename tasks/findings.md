@@ -21419,3 +21419,21 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Open question:** should staging `continue` (skip) an allowlisted game with no usable PGN — matching variant-only months that publish an empty readable PGN and advance the resumable floor — or treat empty PGN as a distinct typed skip logged like batch omissions?
 * **Found by:** Grok Bot review-only account/archive pass on tuxedo-atlas HEAD `14ba4a4c`, 2026-11-06.
 * **Proof:** temporary production-path probe (removed; tree clean) drove `download_chess_com_games_core` via `run_owned_export` with INDEX + one archive containing a good `chess` game beside (1) `"pgn":""`, (2) missing `pgn`, (3) whitespace `pgn`. All three returned `Err(InvalidInput("Chess.com returned a game without PGN"))` with no published artifact. Contrast: `staging_only_variant_games_publishes_readable_empty_pgn` keeps variant-only months publishing empty PGN; `staging_keeps_only_supported_rules_and_absent_rules` keeps absent-`rules` with PGN.
+
+---
+
+## 2026-11-06 — filed through the inbox spool
+
+### Setting Start on the player's turn omits that position's move from the practice deck
+
+* **ID:** f-20261106-14 · **Status:** open · **Area:** chess-tree · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** practice and puzzle-generation integrity review at HEAD `2cf8ccb1`
+* **Where:** `src/components/files/opening.ts:36` (`buildFromTree` skips every `item.position` that is a prefix of `start`, including `start` itself); callers `src/components/panels/practice/PracticePanel.tsx:150,1139`. Coverage walks the opposite inclusive bound: `src/components/panels/practice/RepertoireInfo.tsx:142,276,600` keep paths with `isPrefix(startPath, path)`.
+* **Defect:** `headers.start` is the marked chapter start ("Set as Start" / presets). Practice cards are generated only for positions *strictly after* that path, so the mainline answer *from* the start node is never a card. Marking Start on a player-to-move position therefore drops the chapter's first drill; a short line whose only player move is at Start yields an empty deck (`Board.Practice.NoPositionsYet`) while the Build pane still counts that move in coverage. Example: White line `1.e4 e5 2.Nf3`, Start at `[0,0]` (after `1...e5`, White to move) → `buildFromTree(..., "white", [0,0])` returns `[]`; the same tree with `start=[]` returns the `Nf3` card.
+* **Failure scenario:** Build a White repertoire, play `1.e4 e5`, click **Set as Start**, add `Nf3` (and stop). Open Practice → no positions. Or extend the line further: practice begins only after Black's reply to `Nf3`, never drilling `Nf3` itself. Coverage / start-state moves still list `Nf3` from the Start fen.
+* **Proof:** Production `buildFromTree` via `pnpm exec tsx` on HEAD `2cf8ccb1` against a real tree (`e4`/`e5`/`Nf3`): `start=[]` → `["Nf3"]`; `start=[0,0]` → `[]`. No app source or probe file left. No existing test passes a non-empty `start` into `buildFromTree` (gameplay asserts only the `start=[]` shape).
+* **Not claimed:** skipping the game-root card when `start=[]` (White never drills move one from the initial fen). `PracticePanel.gameplay.test.tsx` locks that shape (`e4 e5 Nf3` → one card). This finding is only the exclusive bound for a *non-empty* Start that is the player's turn, which those tests never exercise.
+* **Found by:** Grok Bot practice/puzzle integrity review (Felix authorized, 2026-11-06)
+* **Related:** Handled `f-20260922-02` (syncDeck FEN identity) and `f-20260909-08` (buildFromTree board-state dedup) share `opening.ts` but not this start-bound cause. Coverage's inclusive `isPrefix(startPath, path)` is the contrasting contract, not a duplicate defect.
+* **Open question for the lens:** whether Start should be inclusive for practice (match coverage / Chessable-style "find the move in this position") or coverage should become exclusive. Recommend inclusive practice: change the skip to a strict prefix (`item.position.length < start.length && isPrefix(item.position, start)`), keep `start=[]` root behaviour under a separate product decision if Felix wants White's first move drilled.
