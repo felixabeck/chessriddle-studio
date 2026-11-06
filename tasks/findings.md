@@ -21198,3 +21198,22 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 
 * **Why rejected:** Duplicate of handled `f-20261101-10`; the reported defect is already fixed. Current `src-tauri/src/db/search.rs:416-422` maps shaped PGN dates to interval bounds, with the corresponding SQL path handled by commits `5704cee4` and `fdf35c64`. Those commits precede the review base `17b782bb`. This filing's probe used stale line positions and exercised raw SQL rather than the now-wrapped production query; its raw-SQL result is therefore not a current production defect. No behavior is reopened. Duplicate identified while verifying the same day's tablebase candidate.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"02aab38888ad69145119761d78dff66fdbdb4e1bee3febcfd2beaee9c2ffdf24","input_sha256":"cdfb7bbaedecdbc28299ce5f9a86406b45d824cb8d80ebd7d06932ae6ff7fd01","kind":"mutation-receipt","operation":"f2b43405b01989b227f68ec82b8006d0d3a81da230a6b83ad9b4c945f9f95d32","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-03"],"target":"f-20261106-03","v":1} -->
+
+---
+
+## 2026-11-06 — filed through the inbox spool
+
+### Tablebase responses bypass schema validation and can crash the analysis panel
+
+* **ID:** f-20261106-04 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** behaviour
+
+* **Where:** `src/utils/lichess/api.tsx:403-405` copies the native response with `JSON.parse(result) as TablebaseData` instead of schema validation. `src/components/panels/analysis/TablebaseInfo.tsx:17-25` trusts that cast and feeds the payload to exhaustive `match` expressions (lines 117-145), `compareTablebaseMoves` (lines 82-86), and `parseUci(m.uci)!` (line 56). The native public JSON boundary checks only that the body is valid JSON (`src-tauri/src/lichess.rs:255-257`), so this is not duplicate validation.
+
+* **Defect:** A syntactically valid but partial or changed Lichess tablebase response becomes typed `TablebaseData` without any check. If `moves` is absent, `[...data.moves]` throws while rendering. If `category` is a new string or an unrecognized error value, `OutcomeBadge`'s exhaustive match has no fallback and throws. With a non-string `san` or `dtz`, rendering and `san.localeCompare` throw; with an invalid `uci`, clicking a move applies `parseUci(...)!` and can throw. React/SWR's error state protects only the fetch promise, not rendering of the accepted bad data. The panel can therefore crash instead of showing its existing `Common.Error` state. Other online API consumers, including chess.com and Lichess explorer, already reject malformed responses with Zod.
+
+* **Failure scenario:** Open Analysis → Tablebase for a position in tablebase range while the API, a proxy, or a future response version returns `{"category":"unknown"}` or `{"checkmate":false,"category":"win"}` without `moves`. Native JSON validation passes and the renderer throws immediately. The same happens if a category is added to the service without a client update. An invalid UCI additionally turns a user click into an unchecked failure.
+
+* **Proof:** A focused `TablebaseInfo` test should mock `getTablebaseInfo` with a valid-JSON partial payload and a valid-JSON payload containing an unknown category; both currently reach the unchecked render paths. A test directly exercising `getTablebaseInfo` with a mocked `tauri.getPublicLichessJson` should assert that these responses are rejected. The fixed path should preserve the existing error UI and legal-move behavior while rejecting malformed fields before they enter SWR's data cache.
+
+* **Related:** `f-20261007-10` covers dropping individual Lichess explorer games after parse failures, not this tablebase cast. `f-20261029-07` fixes tablebase move ranking and its later response-semantics note confirms the native body is preserved unchanged; it does not validate that body. Tablebase layout and WDL entries are separate mechanisms.
