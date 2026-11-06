@@ -21650,3 +21650,18 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Failure scenario:** Settings → Keybinds → click a shortcut → press Escape expecting to cancel → the UI shows Escape as the candidate and Save is enabled → Save → that action is now bound to Escape (and Escape no longer behaves as a general dismiss elsewhere for that action).
 * **Fix:** On Escape during recording, call `stop()` without `setKeymap` (same as Cancel). Optionally ignore Escape in the recorded set. Add a KeybindInput regression that Escape while recording exits recording and leaves the stored keys unchanged.
 * **Proof:** Ephemeral Vitest on HEAD `c4b2faf0` (`KeybindInput.area5-ephemeral.test.tsx`, removed after filing): after starting record, `KeyboardEvent` Escape leaves Cancel/Save visible and a `kbd` whose text includes escape/esc. Aligns with `useRecordHotkeys` adding `i(e.code)` for every keydown. No app/probe residue.
+
+---
+
+## 2026-11-06 — filed through the inbox spool
+
+### Settings Databases directory always shows the literal "Databases" and never the selected folder name
+
+* **ID:** f-20261106-29 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** App startup/preferences/i18n/file-input review (t20u area 5/5) at HEAD `c4b2faf0`
+* **Where:** `src/components/settings/SettingsPage.tsx` (~147, ~595-604): `databasesDirectory` is `useState("Databases")`; `issueWorkspace` awaits `tauri.issueDatabaseWorkspace()` then `return "Databases"`, discarding the native result; no `getDatabaseWorkspace` hydrate on mount. Contrast puzzles (~164-168, ~633): `getPuzzleWorkspace()` → `displayName`, and issue returns `displayName`. Native `issue_database_workspace_blocking` (`src-tauri/src/main.rs` ~1066-1075) stores `path.file_name()` as `display_name`, but `DatabaseRootHandle` exposes no display field (unlike `PuzzleRootDescriptor`). Related handled (picker rejection UX, different): workspace folder picker findings. Not `f-20261106-06` / `f-20261106-05`.
+* **Defect:** After choosing a custom databases folder, Settings still labels the control "Databases". Remounting resets the same literal. The user cannot see which folder is active or tell a custom root from the app-owned default. Native retention of the real display name is unused by this UI.
+* **Failure scenario:** Settings → Directories → Databases → pick `/home/…/MyChessDBs`. The button still reads "Databases". Leave Settings and return: still "Databases". Puzzles in the same panel correctly show the folder leaf after pick and on remount.
+* **Fix:** Mirror puzzles: return a descriptor with `displayName` from `issue_database_workspace` / `get_database_workspace` (or a sibling read of stored `display_name`), hydrate on Settings mount, and pass that string through `DirectorySetting` `onSelect`. Surface Changed/unusable roots instead of silently keeping the placeholder. Add a Settings/DirectorySetting regression that a resolved issue updates the visible label to the folder leaf.
+* **Proof:** Ephemeral Vitest on HEAD `c4b2faf0` (`SettingsPage.area5-ephemeral.test.ts`, removed after filing): source matches `useState("Databases")`, `issueDatabaseWorkspace(); return "Databases"`, no `getDatabaseWorkspace`, while puzzles call `getPuzzleWorkspace` / `displayName`. Native blocking path sets `display_name` from `path.file_name()`. No app/probe residue.
