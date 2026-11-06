@@ -2305,7 +2305,7 @@ shape (`**Question:**` / `**Reason:**`); `record-decision` validates it.
 * **Rejected:** changing the application identifier again; leaving mismatched build and public package names; breaking existing launchers when the executable moves; retaining scattered renderer identity literals.
 * **Reason:** d-20260903-09 already settles the public name and permits the dedicated rebrand. d-20260830-16 and d-20260830-17 settle persisted and OAuth identity. The local Tauri source resolves resources using PackageInfo.name exactly, and CLAUDE.md documents the daily launcher at current/bin/en-croissant. A compatibility symlink preserves that existing consumer and rollback to older installations without a new running helper.
 * **Reversal path:** a future brand change updates the config and shared renderer identity with their consumers; remove the compatibility symlink only after the old launcher/install path is no longer used. Any identifier migration requires a separate data/credential migration decision.
-* **Decided by:** Codex, autonomously under full auto, 2026-09-07 · **Superseded-by:** -
+* **Decided by:** Codex, autonomously under full auto, 2026-09-07 · **Superseded-by:** d-20261106-03
 
 ### d-20260907-07 — Where do ChessFable support and source links lead before a dedicated site exists?
 
@@ -2326,7 +2326,7 @@ shape (`**Question:**` / `**Reason:**`); `record-decision` validates it.
 * **Reason:** d-20260830-15 sequenced this work and d-20260903-09 resolves its former name prerequisite. f-20260830-06 still records an actual product choice over supported platforms; the code cannot answer it. Branding and preserving native data identity do not choose a platform policy.
 * **Reversal path:** when Felix answers f-20260830-06, resume the distribution package under that answer and verify signing, manifest hosting and the supported release targets before closing f-20260830-48.
 * **Decided by:** Codex, autonomously under full auto, 2026-09-07 · **Superseded-by:** -
-<!-- ledger-meta {"command":"record-decision","effect_lines":29,"effect_sha256":"75d9482e1bbb0eef9fabe56fb00c64d425cf5d385f367429f6f69fe81a1688b2","input_sha256":"ca9a9ad53abcc71b154c488fd2c10bb803e947fadb8d82d0c2790ef61c975188","kind":"mutation-receipt","operation":"d091d37102bcaa331b0e764a4f8b6a51702459f5c6321899405bd693b3e8d5a1","options":{"section":null},"request_id_sha256":null,"results":["d-20260907-06","d-20260907-07","d-20260907-08"],"target":"decisions-ledger","v":1} -->
+<!-- ledger-meta {"command":"record-decision","effect_lines":29,"effect_sha256":"29106a8cd6d67aa6666bc386ae183333d0a88def03fa85e62e69526be403526d","input_sha256":"ca9a9ad53abcc71b154c488fd2c10bb803e947fadb8d82d0c2790ef61c975188","kind":"mutation-receipt","operation":"d091d37102bcaa331b0e764a4f8b6a51702459f5c6321899405bd693b3e8d5a1","options":{"section":null},"request_id_sha256":null,"results":["d-20260907-06","d-20260907-07","d-20260907-08"],"target":"decisions-ledger","v":1} -->
 
 ### d-20260907-09 — How do local installs stay serialized and bounded without deleting foreign releases?
 
