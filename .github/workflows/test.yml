@@ -250,6 +250,7 @@ jobs:
         uses: ./.github/actions/setup-ci
         with:
           desktop: "true"
+          # 18 min network + ~1 min other setup + <=10 min observed job work stays under the 30-minute job timeout.
           desktop-timeout-minutes: "18"
 
       - name: Install Rust toolchain

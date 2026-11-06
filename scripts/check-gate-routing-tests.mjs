@@ -1293,6 +1293,41 @@ function ciWorkflowContracts(texts) {
         label,
       ),
     );
+  // The cache population chain: verify and prune exist, their producers feed the save guard, and
+  // restore and save agree on the keys.
+  pinDepsStep("deps has a verify step", "verify", () => {});
+  pinDepsStep("deps has a prune step", "prune", () => {});
+  pinDepsStep("deps download emits fetched=true", "download", (step) =>
+    assert.ok(
+      step.text.includes('echo "fetched=true" >> "$GITHUB_OUTPUT"'),
+      "deps download emits fetched=true",
+    ),
+  );
+  pinDepsStep("deps prune emits ok=true", "prune", (step) =>
+    assert.ok(step.text.includes('echo "ok=true" >> "$GITHUB_OUTPUT"'), "deps prune emits ok=true"),
+  );
+  pinDepsStep("deps restore key is the save key", "restore", (step) =>
+    assert.equal(
+      step.withValues.get("key"),
+      "${{ steps.resolve.outputs.save-key }}",
+      "deps restore key is the save key",
+    ),
+  );
+  pinDepsStep("deps restore-keys are the set and bare prefixes", "restore", (step) =>
+    assert.ok(
+      step.text.includes(
+        "restore-keys: |\n          ${{ steps.resolve.outputs.set-prefix }}\n          ${{ steps.resolve.outputs.bare-prefix }}\n",
+      ),
+      "deps restore-keys are the set and bare prefixes",
+    ),
+  );
+  pinDepsStep("deps save key is the save key", "save", (step) =>
+    assert.equal(
+      step.withValues.get("key"),
+      "${{ steps.resolve.outputs.save-key }}",
+      "deps save key is the save key",
+    ),
+  );
   contracts.push([
     "deps save comes before install",
     () => {
@@ -1303,24 +1338,72 @@ function ciWorkflowContracts(texts) {
       );
     },
   ]);
-  pinDepsStep("deps update runs under sudo timeout --kill-after", "resolve", (step) =>
-    assert.match(
-      step.text,
-      /sudo timeout --kill-after=\d+ "\$remaining" apt-get update/u,
-      "deps update runs under sudo timeout --kill-after",
+  // The bound chain, step-scoped to the resolve step that owns the sourced helpers.
+  pinDepsStep("deps resolve maps timeout-minutes to TIMEOUT_MINUTES", "resolve", (step) =>
+    assert.ok(
+      step.text.includes(
+        "      env:\n        TIMEOUT_MINUTES: ${{ inputs.timeout-minutes }}\n      run:",
+      ),
+      "deps resolve maps timeout-minutes to TIMEOUT_MINUTES",
     ),
   );
-  pinDepsStep("deps download runs under sudo timeout --kill-after", "download", (step) =>
-    assert.match(
-      step.text,
-      /sudo timeout --kill-after=\d+ "\$remaining" apt-get "\$\{download_args\[@\]\}"/u,
-      "deps download runs under sudo timeout --kill-after",
+  pinDepsStep("deps helper labels a mirror stall", "resolve", (step) =>
+    assert.ok(step.text.includes("mirror stall"), "deps helper labels a mirror stall"),
+  );
+  pinDepsStep("deps update goes through desktop_deps_apt", "resolve", (step) =>
+    assert.ok(
+      step.text.includes("\n        desktop_deps_apt update update || exit $?\n"),
+      "deps update goes through desktop_deps_apt",
     ),
   );
+  pinDepsStep("deps download goes through desktop_deps_apt", "download", (step) =>
+    assert.ok(
+      step.text.includes('\n        desktop_deps_apt download "${download_args[@]}" || exit $?\n'),
+      "deps download goes through desktop_deps_apt",
+    ),
+  );
+  pinDepsStep("deps helper runs apt under sudo timeout --kill-after", "resolve", (step) =>
+    assert.ok(
+      step.text.includes(
+        'sudo timeout --kill-after="$kill_grace" "$remaining" apt-get "$@" || rc=$?',
+      ),
+      "deps helper runs apt under sudo timeout --kill-after",
+    ),
+  );
+  pinDepsStep("deps helper keeps the unbounded sudo apt-get form", "resolve", (step) =>
+    assert.ok(
+      step.text.includes('\n            sudo apt-get "$@" || rc=$?\n'),
+      "deps helper keeps the unbounded sudo apt-get form",
+    ),
+  );
+  contracts.push([
+    "deps has a single sudo timeout --kill-after form",
+    () =>
+      assert.equal(
+        depsSteps
+          .map((step) => step.text)
+          .join("\n")
+          .split("sudo timeout --kill-after=").length - 1,
+        1,
+        "deps has a single sudo timeout --kill-after form",
+      ),
+  ]);
   pinDepsStep("deps install uses --no-download", "install", (step) =>
     assert.match(step.text, /install --no-download /u, "deps install uses --no-download"),
   );
   return contracts;
+}
+
+// Names of the contracts that fail for the given workflow texts.
+function failedContracts(texts) {
+  return ciWorkflowContracts(texts).flatMap(([name, check]) => {
+    try {
+      check();
+      return [];
+    } catch {
+      return [name];
+    }
+  });
 }
 
 async function readCiWorkflowTexts() {
@@ -1348,8 +1431,8 @@ test("CI workflow wiring preserves parallel gates and bounded incremental reuse"
 
 const depsCall = "uses: ./.github/actions/linux-desktop-deps";
 const depsArchives = "/tmp/linux-desktop-apt-archives";
-const depsSavePath = `path: ${depsArchives}/*.deb\n        key: ${"$"}{{ steps.resolve.outputs.save-key }}\n\n`;
-const depsRestorePath = `path: ${depsArchives}/*.deb\n        key: ${"$"}{{ steps.resolve.outputs.save-key }}\n        restore-keys`;
+const depsSaveStepFragment = `path: ${depsArchives}/*.deb\n        key: ${"$"}{{ steps.resolve.outputs.save-key }}\n\n`;
+const depsRestoreStepFragment = `path: ${depsArchives}/*.deb\n        key: ${"$"}{{ steps.resolve.outputs.save-key }}\n        restore-keys`;
 // [label, file, before, after, contract that must turn red]
 const linuxDesktopDepsRows = [
   [
@@ -1481,15 +1564,15 @@ const linuxDesktopDepsRows = [
   [
     "save path becomes the directory",
     "deps",
-    depsSavePath,
-    depsSavePath.replace("/*.deb", ""),
+    depsSaveStepFragment,
+    depsSaveStepFragment.replace("/*.deb", ""),
     "deps restore and save share one cache path",
   ],
   [
     "restore path becomes the directory",
     "deps",
-    depsRestorePath,
-    depsRestorePath.replace("/*.deb", ""),
+    depsRestoreStepFragment,
+    depsRestoreStepFragment.replace("/*.deb", ""),
     "deps cache paths are the archive directory's .deb files",
   ],
   [
@@ -1521,25 +1604,116 @@ const linuxDesktopDepsRows = [
     "deps archive directory is not a mktemp path",
   ],
   [
-    "update loses sudo timeout",
+    "helper loses sudo timeout",
     "deps",
-    'sudo timeout --kill-after=10 "$remaining" apt-get update',
-    "sudo apt-get update",
-    "deps update runs under sudo timeout --kill-after",
+    'sudo timeout --kill-after="$kill_grace" "$remaining" apt-get "$@" || rc=$?',
+    'sudo apt-get "$@" || rc=$?',
+    "deps helper runs apt under sudo timeout --kill-after",
   ],
   [
-    "update loses sudo before timeout",
+    "helper loses sudo before timeout",
     "deps",
-    'sudo timeout --kill-after=10 "$remaining" apt-get update',
-    'timeout --kill-after=10 "$remaining" apt-get update',
-    "deps update runs under sudo timeout --kill-after",
+    'sudo timeout --kill-after="$kill_grace" "$remaining" apt-get "$@" || rc=$?',
+    'timeout --kill-after="$kill_grace" "$remaining" apt-get "$@" || rc=$?',
+    "deps helper runs apt under sudo timeout --kill-after",
   ],
   [
-    "download loses sudo timeout",
+    "helper loses the unbounded form",
     "deps",
-    'sudo timeout --kill-after=10 "$remaining" apt-get "${download_args[@]}"',
-    'sudo apt-get "${download_args[@]}"',
-    "deps download runs under sudo timeout --kill-after",
+    '            sudo apt-get "$@" || rc=$?\n',
+    '            apt-get "$@" || rc=$?\n',
+    "deps helper keeps the unbounded sudo apt-get form",
+  ],
+  [
+    "download re-adds an inline timeout",
+    "deps",
+    'desktop_deps_apt download "${download_args[@]}" || exit $?',
+    'sudo timeout --kill-after=10 600 apt-get "${download_args[@]}" || exit $?',
+    "deps has a single sudo timeout --kill-after form",
+  ],
+  [
+    "update bypasses the helper",
+    "deps",
+    "desktop_deps_apt update update || exit $?",
+    "sudo apt-get update || exit $?",
+    "deps update goes through desktop_deps_apt",
+  ],
+  [
+    "download bypasses the helper",
+    "deps",
+    'desktop_deps_apt download "${download_args[@]}" || exit $?',
+    'sudo apt-get "${download_args[@]}" || exit $?',
+    "deps download goes through desktop_deps_apt",
+  ],
+  [
+    "resolve timeout input unmapped",
+    "deps",
+    "        TIMEOUT_MINUTES: ${{ inputs.timeout-minutes }}\n",
+    '        TIMEOUT_MINUTES: ""\n',
+    "deps resolve maps timeout-minutes to TIMEOUT_MINUTES",
+  ],
+  [
+    "helper loses the stall label",
+    "deps",
+    "mirror stall",
+    "mirror slowness",
+    "deps helper labels a mirror stall",
+  ],
+  [
+    "verify step id lost",
+    "deps",
+    "      id: verify\n",
+    "      id: checked\n",
+    "deps has a verify step",
+  ],
+  [
+    "prune step id lost",
+    "deps",
+    "      id: prune\n",
+    "      id: pruned\n",
+    "deps has a prune step",
+  ],
+  [
+    "download loses the fetched producer",
+    "deps",
+    'echo "fetched=true" >> "$GITHUB_OUTPUT"',
+    'echo "fetched=1" >> "$GITHUB_OUTPUT"',
+    "deps download emits fetched=true",
+  ],
+  [
+    "prune loses the ok producer",
+    "deps",
+    'echo "ok=true" >> "$GITHUB_OUTPUT"',
+    'echo "ok=1" >> "$GITHUB_OUTPUT"',
+    "deps prune emits ok=true",
+  ],
+  [
+    "restore key is not the save key",
+    "deps",
+    depsRestoreStepFragment,
+    depsRestoreStepFragment.replace("save-key", "set-prefix"),
+    "deps restore key is the save key",
+  ],
+  [
+    "restore-keys lose the set prefix",
+    "deps",
+    "          ${{ steps.resolve.outputs.set-prefix }}\n",
+    "",
+    "deps restore-keys are the set and bare prefixes",
+  ],
+  [
+    "restore-keys lose the bare prefix",
+    "deps",
+    "          ${{ steps.resolve.outputs.bare-prefix }}\n",
+    "",
+    "deps restore-keys are the set and bare prefixes",
+  ],
+  [
+    "save key is not the save key",
+    "deps",
+    depsSaveStepFragment,
+    depsSaveStepFragment.replace("save-key", "set-prefix"),
+    "deps save key is the save key",
   ],
   [
     "install loses --no-download",
@@ -1552,8 +1726,8 @@ const linuxDesktopDepsRows = [
 
 test("CI workflow wiring rejects removed selectors, checkout, freshness, publication and dist prerequisites", async (t) => {
   const texts = await readCiWorkflowTexts();
-  // A row with a fifth element must turn exactly that labelled contract red; the older rows
-  // only need some contract to fail.
+  // A row with a fifth element must turn at least that labelled contract red (other contracts may
+  // legitimately fail too); the older rows only need some contract to fail.
   for (const [label, file, before, afterText = "", contract] of [
     ["matrix package env", "test", "      FRONTEND_MUTATION_PACKAGE: ${{ matrix.package }}\n"],
     ["fetch full history", "test", "          fetch-depth: 0"],
@@ -1590,14 +1764,7 @@ test("CI workflow wiring rejects removed selectors, checkout, freshness, publica
       // Disposable strings exercise the same assertions used above, without touching the checkout.
       const changed = { ...texts, [file]: texts[file].replaceAll(before, afterText) };
       assert.notEqual(changed[file], texts[file]);
-      const failed = ciWorkflowContracts(changed).flatMap(([name, check]) => {
-        try {
-          check();
-          return [];
-        } catch {
-          return [name];
-        }
-      });
+      const failed = failedContracts(changed);
       if (contract) assert.ok(failed.includes(contract), `${contract} stayed green: ${failed}`);
       else assert.ok(failed.length > 0);
     });
@@ -1607,14 +1774,8 @@ test("CI workflow wiring rejects removed selectors, checkout, freshness, publica
     const end = texts.deps.indexOf("    # `--no-download`");
     assert.ok(start > 0 && end > start);
     const moved = texts.deps.slice(0, start) + texts.deps.slice(end) + texts.deps.slice(start, end);
-    const failed = ciWorkflowContracts({ ...texts, deps: moved }).flatMap(([name, check]) => {
-      try {
-        check();
-        return [];
-      } catch {
-        return [name];
-      }
-    });
-    assert.deepEqual(failed, ["deps save comes before install"]);
+    assert.deepEqual(failedContracts({ ...texts, deps: moved }), [
+      "deps save comes before install",
+    ]);
   });
 });

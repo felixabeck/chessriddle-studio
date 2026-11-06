@@ -29,27 +29,44 @@ runs:
           patchelf
         )
 
-        # Both helpers read the deadline from one integer epoch source, so a real `timeout` exit
-        # at the bound always sees elapsed >= bound and is labelled.
-        desktop_deps_remaining() {
-          local now
-          now=$(date +%s)
-          remaining=$((LINUX_DESKTOP_DEPS_DEADLINE - now))
-          if [ "$remaining" -le 0 ]; then
-            echo "::error::linux-desktop-deps: mirror stall: the ${LINUX_DESKTOP_DEPS_BOUND}s bound is used up ($((now - LINUX_DESKTOP_DEPS_START))s elapsed) before apt-get $1 started"
-            return 1
-          fi
-        }
-        desktop_deps_expired() {
+        # desktop_deps_apt <phase> <apt-get argument>...: runs `sudo apt-get <arguments>` and returns
+        # apt's own status. With a deadline set, the command runs as `sudo timeout --kill-after`
+        # for the time that remains; a deadline already used up fails at once. <phase> (update or
+        # download) only names the stall in the annotation.
+        # desktop_deps_label_stall <phase> <status>: annotates a failed apt command as a mirror
+        # stall, only when a bound is set and the elapsed time reached it. <status> 124 is the
+        # `timeout` expiry, 137 the SIGKILL that follows --kill-after. Any other status, an
+        # OOM-killed apt before the deadline and every unbounded run keep apt's own output.
+        # Remaining and elapsed time both come from the integer `date +%s`, so a real exit at the
+        # bound always sees elapsed >= bound.
+        desktop_deps_label_stall() {
           local elapsed
+          if [ -z "$LINUX_DESKTOP_DEPS_DEADLINE" ] || [ "$LINUX_DESKTOP_DEPS_BOUND" -le 0 ]; then return 0; fi
           if [ "$2" -ne 124 ] && [ "$2" -ne 137 ]; then return 0; fi
           elapsed=$(($(date +%s) - LINUX_DESKTOP_DEPS_START))
           if [ "$elapsed" -ge "$LINUX_DESKTOP_DEPS_BOUND" ]; then
             echo "::error::linux-desktop-deps: mirror stall: apt-get $1 was stopped after ${elapsed}s, past the ${LINUX_DESKTOP_DEPS_BOUND}s bound"
           fi
         }
+        desktop_deps_apt() {
+          local phase=$1 kill_grace=10 now remaining rc=0
+          shift
+          if [ -n "$LINUX_DESKTOP_DEPS_DEADLINE" ]; then
+            now=$(date +%s)
+            remaining=$((LINUX_DESKTOP_DEPS_DEADLINE - now))
+            if [ "$remaining" -le 0 ]; then
+              echo "::error::linux-desktop-deps: mirror stall: the ${LINUX_DESKTOP_DEPS_BOUND}s bound is used up ($((now - LINUX_DESKTOP_DEPS_START))s elapsed) before apt-get $phase started"
+              return 1
+            fi
+            sudo timeout --kill-after="$kill_grace" "$remaining" apt-get "$@" || rc=$?
+          else
+            sudo apt-get "$@" || rc=$?
+          fi
+          if [ "$rc" -ne 0 ]; then desktop_deps_label_stall "$phase" "$rc"; fi
+          return "$rc"
+        }
         # The later steps of this action source the helpers and the package list from one file.
-        { declare -p packages; declare -f desktop_deps_remaining desktop_deps_expired; } > "$lib" || exit 1
+        { declare -p packages; declare -f desktop_deps_label_stall desktop_deps_apt; } > "$lib" || exit 1
 
         bound=0
         if [ -n "$TIMEOUT_MINUTES" ]; then
@@ -71,17 +88,7 @@ runs:
           echo "LINUX_DESKTOP_DEPS_DEADLINE=$LINUX_DESKTOP_DEPS_DEADLINE"
         } >> "$GITHUB_ENV"
 
-        rc=0
-        if [ -n "$LINUX_DESKTOP_DEPS_DEADLINE" ]; then
-          desktop_deps_remaining update || exit 1
-          sudo timeout --kill-after=10 "$remaining" apt-get update || rc=$?
-        else
-          sudo apt-get update || rc=$?
-        fi
-        if [ "$rc" -ne 0 ]; then
-          desktop_deps_expired update "$rc"
-          exit "$rc"
-        fi
+        desktop_deps_apt update update || exit $?
 
         # apt prints no line for a package whose .deb is already in the archive directory, so the
         # set is resolved against the same still-empty directory the download later fills.
@@ -146,8 +153,9 @@ runs:
 
     # apt 3.2 checks only the size of an archive that is already present, so a same-size
     # corrupted file would pass the download and fail later in dpkg. Check each restored file
-    # against its size and checksum from the resolved set. A failing check discards every restored
-    # file, so the download refetches them.
+    # against its size and checksum from the resolved set. A size or checksum mismatch drops that
+    # file; a verification error (unsupported checksum type, stat or hash failure) discards every
+    # restored file. The download refetches whatever is missing.
     - name: Verify the restored apt archives
       id: verify
       shell: bash
@@ -194,7 +202,7 @@ runs:
       id: download
       shell: bash
       run: |
-        # `packages` and `remaining` come from the sourced library.
+        # `packages` and `desktop_deps_apt` come from the sourced library.
         # shellcheck disable=SC2154
         set -uo pipefail
         archives=/tmp/linux-desktop-apt-archives
@@ -211,17 +219,7 @@ runs:
         fi
 
         download_args=(-o Dir::Cache::Archives=/tmp/linux-desktop-apt-archives install --download-only -y --no-install-recommends "${packages[@]}")
-        rc=0
-        if [ -n "$LINUX_DESKTOP_DEPS_DEADLINE" ]; then
-          desktop_deps_remaining download || exit 1
-          sudo timeout --kill-after=10 "$remaining" apt-get "${download_args[@]}" || rc=$?
-        else
-          sudo apt-get "${download_args[@]}" || rc=$?
-        fi
-        if [ "$rc" -ne 0 ]; then
-          desktop_deps_expired download "$rc"
-          exit "$rc"
-        fi
+        desktop_deps_apt download "${download_args[@]}" || exit $?
 
         # An undetermined set emits nothing, which the save guard reads as "do not save".
         if [ "$missing" -gt 0 ]; then

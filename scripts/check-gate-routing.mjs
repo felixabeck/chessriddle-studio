@@ -247,6 +247,8 @@ export function workflowStepBlocks(workflow) {
     if (isItem && indentation === itemIndentation) blocks.push({ lines: [line] });
     else blocks.at(-1).lines.push(line);
   }
+  // The first `2` is the width of the "- " item marker, so a step's keys sit that far right of the
+  // marker. The second `2` further down is the two-space nesting of `with:` entries.
   return blocks.map(({ lines: blockLines }) => {
     const keyIndentation = itemIndentation + 2;
     const fields = new Map();
