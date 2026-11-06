@@ -2315,7 +2315,7 @@ shape (`**Question:**` / `**Reason:**`); `record-decision` validates it.
 * **Rejected:** introducing a website or background service; presenting upstream issues or Discord as fork support; rebranding an unused HTTP header API whose output reaches no request or retaining its pointless startup call.
 * **Reason:** the existing fork repository is already the reviewed push destination and provides those public surfaces without new infrastructure. Source tracing found a native documentation command and a bug-form issue-search link in addition to the renderer links named by the finding.
 * **Reversal path:** point the shared links and native fixed destination at an explicitly established project site when one exists; retain fork-specific support routing and attribution.
-* **Decided by:** Codex, autonomously under full auto, 2026-09-07 · **Superseded-by:** -
+* **Decided by:** Codex, autonomously under full auto, 2026-09-07 · **Superseded-by:** d-20261106-03
 
 ### d-20260907-08 — Can the identity package ship before the existing platform decision?
 
@@ -2326,7 +2326,7 @@ shape (`**Question:**` / `**Reason:**`); `record-decision` validates it.
 * **Reason:** d-20260830-15 sequenced this work and d-20260903-09 resolves its former name prerequisite. f-20260830-06 still records an actual product choice over supported platforms; the code cannot answer it. Branding and preserving native data identity do not choose a platform policy.
 * **Reversal path:** when Felix answers f-20260830-06, resume the distribution package under that answer and verify signing, manifest hosting and the supported release targets before closing f-20260830-48.
 * **Decided by:** Codex, autonomously under full auto, 2026-09-07 · **Superseded-by:** -
-<!-- ledger-meta {"command":"record-decision","effect_lines":29,"effect_sha256":"29106a8cd6d67aa6666bc386ae183333d0a88def03fa85e62e69526be403526d","input_sha256":"ca9a9ad53abcc71b154c488fd2c10bb803e947fadb8d82d0c2790ef61c975188","kind":"mutation-receipt","operation":"d091d37102bcaa331b0e764a4f8b6a51702459f5c6321899405bd693b3e8d5a1","options":{"section":null},"request_id_sha256":null,"results":["d-20260907-06","d-20260907-07","d-20260907-08"],"target":"decisions-ledger","v":1} -->
+<!-- ledger-meta {"command":"record-decision","effect_lines":29,"effect_sha256":"7aecc3c6a30a08970d911afa043a7bb189a2d0e0600e8e0d18154ad15e658a8f","input_sha256":"ca9a9ad53abcc71b154c488fd2c10bb803e947fadb8d82d0c2790ef61c975188","kind":"mutation-receipt","operation":"d091d37102bcaa331b0e764a4f8b6a51702459f5c6321899405bd693b3e8d5a1","options":{"section":null},"request_id_sha256":null,"results":["d-20260907-06","d-20260907-07","d-20260907-08"],"target":"decisions-ledger","v":1} -->
 
 ### d-20260907-09 — How do local installs stay serialized and bounded without deleting foreign releases?
 
