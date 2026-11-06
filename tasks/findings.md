@@ -21575,3 +21575,18 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Failure scenario:** Open a database player whose games include rated rows dated `2024.??.??` plus one full `2026.10.01` loss. Overview reads "3 Games" (or whatever the partial-day totals sum to). Switch to Ratings: the same card shows only the fully dated games (here "1 Games") and a thinner result bar. Month chart already drops `2024-??` buckets (`fillMissingMonths` tests); Ratings silently shrinks the headline count too.
 * **Fix:** Share one date-eligibility helper with Overview (and Openings if needed): either exclude partial/unknown dates from every panel's totals, or keep them in Ratings totals while omitting them only from the time-series domain. Prefer rejecting non-`YYYY.MM.DD` complete dates before `valueOf`, and never put `NaN` into the `dates` domain. Add a PersonalCardPanels regression that mounts Overview then Ratings on one fixture with a partial-date day and a full-date day and asserts matching or explicitly documented counts.
 * **Proof:** Ephemeral Vitest on HEAD `868bf535` in `statisticsPanels.test.tsx`: fixture daily `[{date:"2024.??.??", won:2,...},{date:"2026.10.01", lost:1,...}]` → Overview text contained `3 Common.Games`; Ratings text contained `1 Common.Games`. Probe removed; tree clean for that path.
+
+---
+
+## 2026-11-06 — filed through the inbox spool
+
+### TournamentCard sorts the SWR games array in place
+
+* **ID:** f-20261106-24 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** Database player/tournament statistics review (t20u area 2/5) at HEAD `868bf535`
+* **Where:** `src/components/databases/TournamentCard.tsx:71-80` assigns `sortedGames = games?.sort(...)`, mutating the `useSWRImmutable(["tournament-games", file, id])` cache value. Leaderboard reduce follows on the same `games` reference. Related handled (different defect): `f-20261010-03` (page-size vs slice). Same immutability rule as the tablebase fix that copies before sort in `TablebaseInfo.tsx`.
+* **Defect:** Sorting tournament games writes the new order into the shared SWR cache. A frozen payload throws on first render; a live cache is permanently reordered, so remounts, tab switches, and any other subscriber of the same key see the last sort direction as the stored order before the comparator runs again.
+* **Failure scenario:** Open a tournament Games tab, sort by plies descending, leave and re-enter the tournament card (or remount the view). The cached array is already reversed; default "date asc" then re-sorts the mutated list. With `Object.freeze` on the fetcher result the card crashes on render instead of showing games.
+* **Fix:** Copy before sort (`[...games].sort(...)` or `toSorted`), matching `TablebaseInfo`. Add a TournamentCard regression that freezes the mock `data` array and asserts the Games table still renders after a sort click without throw, and that the frozen array's order is unchanged.
+* **Proof:** Ephemeral Vitest on HEAD `868bf535` in `TournamentCard.test.tsx`: `getTournamentGames` resolved `{ data: Object.freeze(games(3)) }`; render threw `TypeError: Cannot assign to read only property '0'` at `TournamentCard.tsx:72` `games?.sort`. Probe removed; tree clean for that path.
