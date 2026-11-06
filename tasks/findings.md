@@ -21172,7 +21172,7 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 
 ### Hosted macOS runner lost communication during rust-macos-test on 888df3d2, so remote CI is red
 
-* **ID:** f-20261106-02 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261106-02 · **Status:** handled · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 4f818af6-f7d6-45cf-a5e0-9da3607d09a2
 * **Impact class:** tooling
 * **CI run:** 42149900654
@@ -21182,6 +21182,9 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Fix shape:** rerun the failed job (`gh run rerun 42149900654 --failed -R felixabeck/en-croissant`) and confirm it succeeds; close with the job id. Same external hosted-runner class as handled f-20261105-01 and the 2026-11-02 macOS loss recorded on the Node 26 finding; investigate the workflow only if the rerun loses the runner again.
 * **Proof:** `pnpm ci:remote:check` exits 0 with `rust-macos-test` of the newest master run concluded success.
 * **Found by:** Claude Code drain session 4f818af6-f7d6-45cf-a5e0-9da3607d09a2, 2026-11-06, at the pre-push remote check of the f-20261101-01 release.
+
+**Closed (2026-11-06, drain session c9f01c8c, co-located joiner of f-20261106-07):** The hosted-runner loss did not recur. Run 42149900654 was rerun and concluded success, with `rust-macos-test` job 127699921854 passing. On the newest master Test run, 42223920193 at 05489474, `rust-macos-test` job 127912470623 and both `rust-platform` macOS legs also concluded success. No workflow change was needed, because the failure was the external runner class the fix shape names. Proof: `gh run view 42149900654 -R felixabeck/chessriddle-studio --json jobs,conclusion` and the same query for 42223920193.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"bcbfe3111bd69731505bf6c1f5ff5a6c8a476e0225671574dc25fbf24927c0d7","header_sha256":"fe42c1f54ee615ff2822bf8a5b88ca1711da468e07bbc1cd3d70ae10a88a3ebf","header_status":"handled","input_sha256":"15fcdf7d7d1b04009e490cd77eca3d41da2e0d6b07f09b410fbf42b5110bf7cf","kind":"mutation-receipt","operation":"2b4c1d894229d0991e3c726cc88fb59303cb6e0121b371f24775a4a85f28ce23","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-02"],"target":"f-20261106-02","v":1} -->
 
 ---
 
