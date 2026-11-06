@@ -21635,3 +21635,18 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Failure scenario:** Uncheck Same time control, set White time to 0 (or clear the field → 1ms) while Black keeps 3+2, start the game. Within about one tick White loses on time without making a move. Clearing the time field looks like "0 minutes" in the minute unit but stores 1ms and fails the same way.
 * **Fix:** Reject any `initial_time == 0` in `validate_time_controls` (or define and implement a real first-move/increment-only rule). Mirror the guard in OpponentForm / disable Start when either timed side has `seconds <` a minimum. Change TimeInput empty handling to keep the previous value or surface validation instead of writing `c: 1`. Add a native unit test that `initial_time: 0` on one side returns `InvalidInput`, and a UI test that Start stays blocked for 0.
 * **Proof:** Reading `validate_time_controls` + `settle_active_clock` on HEAD `094f97bd`: with `white_time = Some(0)`, first `settle_active_clock` after `last_tick` advances takes the `elapsed >= *remaining` branch and returns `Timeout`. Existing test `timeout_awards_the_opponent_and_current_times_debit_only_the_active_side` shows the settle path; `clock_is_debited_before_a_legal_move_then_incremented_once` shows increment is applied only after a successful settle. TimeInput empty → `c: 1` is the literal else branch in `TimeInput.tsx` onChange. No probe residue.
+
+---
+
+## 2026-11-06 — filed through the inbox spool
+
+### Escape while recording a keybind is saved as the shortcut instead of cancelling
+
+* **ID:** f-20261106-28 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** App startup/preferences/i18n/file-input review (t20u area 5/5) at HEAD `c4b2faf0`
+* **Where:** `src/components/settings/KeybindInput.tsx` `ShortcutInput` — Cancel is only the X `IconAction` calling `stop()`; Save persists `Array.from(keys)`. Recording uses `useRecordHotkeys()` from `react-hotkeys-hook`, which adds every `keydown` (including Escape) to the set and does not treat Escape as abort. Related open (different control): `f-20261106-06` piece-set hover preview stick. Not language/date `f-20261106-05`.
+* **Defect:** While remapping a shortcut, pressing Escape does not leave recording or restore the prior binding. It appears as a recorded key (`escape`/`esc`). Saving then stores Escape as the action's keybind; only the explicit Cancel button aborts without writing.
+* **Failure scenario:** Settings → Keybinds → click a shortcut → press Escape expecting to cancel → the UI shows Escape as the candidate and Save is enabled → Save → that action is now bound to Escape (and Escape no longer behaves as a general dismiss elsewhere for that action).
+* **Fix:** On Escape during recording, call `stop()` without `setKeymap` (same as Cancel). Optionally ignore Escape in the recorded set. Add a KeybindInput regression that Escape while recording exits recording and leaves the stored keys unchanged.
+* **Proof:** Ephemeral Vitest on HEAD `c4b2faf0` (`KeybindInput.area5-ephemeral.test.tsx`, removed after filing): after starting record, `KeyboardEvent` Escape leaves Cancel/Save visible and a `kbd` whose text includes escape/esc. Aligns with `useRecordHotkeys` adding `i(e.code)` for every keydown. No app/probe residue.
