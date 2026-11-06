@@ -53,6 +53,7 @@ function option(groups: MenuGroup[], groupLabel: string, id: string) {
 function callbacks(overrides: Partial<AppMenuCallbacks> = {}): AppMenuCallbacks {
     return {
         about: () => undefined,
+        sendFeedback: () => undefined,
         createNewTab: () => undefined,
         openNewFile: () => undefined,
         openSettings: () => undefined,
@@ -82,6 +83,7 @@ test("non-macOS tree has File/View/Help with Exit and About", () => {
     expect(idsOf(groups, "Menu.View")).toEqual(["reload", "toggle_fullscreen"]);
     expect(idsOf(groups, "Menu.Help")).toEqual([
         "documentation",
+        "send_feedback",
         "clear_saved_data",
         "logs",
         "about",
@@ -95,6 +97,7 @@ test("non-macOS tree has File/View/Help with Exit and About", () => {
     expect(option(groups, "Menu.View", "reload").action).toBe(actions.reload);
     expect(option(groups, "Menu.View", "toggle_fullscreen").action).toBe(actions.toggleFullscreen);
     expect(option(groups, "Menu.Help", "documentation").action).toBe(actions.documentation);
+    expect(option(groups, "Menu.Help", "send_feedback").action).toBe(actions.sendFeedback);
     expect(option(groups, "Menu.Help", "clear_saved_data").action).toBe(actions.clearSavedData);
     expect(option(groups, "Menu.Help", "logs").action).toBe(actions.openLogs);
     expect(option(groups, "Menu.Help", "about").action).toBe(actions.about);
@@ -120,7 +123,12 @@ test("macOS tree has Application/Edit, no File Exit, no Help About", () => {
         "Menu.Help",
     ]);
     expect(idsOf(groups, "Menu.File")).toEqual(["new_tab", "open_file"]);
-    expect(idsOf(groups, "Menu.Help")).toEqual(["documentation", "clear_saved_data", "logs"]);
+    expect(idsOf(groups, "Menu.Help")).toEqual([
+        "documentation",
+        "send_feedback",
+        "clear_saved_data",
+        "logs",
+    ]);
     expect(option(groups, "Menu.Application.Menu", "about").action).toBe(actions.about);
     expect(option(groups, "Menu.Application.Menu", "settings").action).toBe(actions.openSettings);
     expect(option(groups, "Menu.File", "new_tab").action).toBe(actions.createNewTab);
@@ -128,6 +136,7 @@ test("macOS tree has Application/Edit, no File Exit, no Help About", () => {
     expect(option(groups, "Menu.View", "reload").action).toBe(actions.reload);
     expect(option(groups, "Menu.View", "toggle_fullscreen").action).toBe(actions.toggleFullscreen);
     expect(option(groups, "Menu.Help", "documentation").action).toBe(actions.documentation);
+    expect(option(groups, "Menu.Help", "send_feedback").action).toBe(actions.sendFeedback);
     expect(option(groups, "Menu.Help", "clear_saved_data").action).toBe(actions.clearSavedData);
     expect(option(groups, "Menu.Help", "logs").action).toBe(actions.openLogs);
     const hide = groups[0].options.find((item) => "item" in item && item.item === "Hide");
@@ -323,6 +332,9 @@ test("bindAppMenuCallbacks returns runMenu's promise for each wired command", as
         about: () => {
             seen.push("about");
         },
+        sendFeedback: () => {
+            seen.push("send-feedback");
+        },
         createNewTab: () => opened.promise,
         openNewFile: async () => {
             throw new Error("open failed");
@@ -367,12 +379,14 @@ test("bindAppMenuCallbacks returns runMenu's promise for each wired command", as
     ]);
 
     callbacks.about();
+    callbacks.sendFeedback();
     callbacks.reload();
     await callbacks.openLogs();
     expect(seen).toEqual([
         expect.objectContaining({ message: "open failed" }),
         expect.objectContaining({ message: "clear failed" }),
         "about",
+        "send-feedback",
         "reload",
         "logs-ok",
     ]);

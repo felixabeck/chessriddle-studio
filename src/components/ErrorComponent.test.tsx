@@ -13,6 +13,10 @@ vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => mocks.navigate,
 }));
 vi.mock("@mantine/notifications", () => ({ notifications: { show: mocks.notify } }));
+vi.mock("@/components/feedback/FeedbackModal", () => ({
+  default: ({ opened }: { opened: boolean }) =>
+    opened ? <div data-testid="feedback-modal" /> : null,
+}));
 vi.mock("@mantine/core", () => ({
   Anchor: ({ children, href }: any) => <a href={href}>{children}</a>,
   Button: ({ children, ...props }: any) => <button {...props}>{children}</button>,
@@ -49,7 +53,9 @@ async function renderError() {
   document.body.append(host);
   root = createRoot(host);
   await act(async () => root.render(<ErrorComponent error={new Error("boom")} />));
-  return host.querySelector("button") as HTMLButtonElement;
+  return [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "Menu.View.Reload",
+  ) as HTMLButtonElement;
 }
 
 test("does not present a duplicate diagnostic", async () => {
@@ -101,6 +107,25 @@ test("renders an extra diagnostic when it differs from the message", async () =>
   );
   expect(host.querySelector("code")?.textContent).toBe("safe-code");
   expect(host.textContent).toContain("Error.CopyStackTrace");
+});
+
+test("send feedback opens the dialog without RootLayout", async () => {
+  host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  await act(async () => root.render(<ErrorComponent error={new Error("boom")} />));
+  expect(host.querySelector("[data-testid='feedback-modal']")).toBeNull();
+  const send = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "Menu.Help.SendFeedback",
+  );
+  expect(send).toBeDefined();
+  await act(async () => {
+    send?.click();
+  });
+  expect(host.querySelector("[data-testid='feedback-modal']")).not.toBeNull();
+  expect(host.querySelector("a")?.getAttribute("href")).toContain(
+    "github.com/felixabeck/chessriddle-studio",
+  );
 });
 
 test("routes issue reports to the fork", async () => {

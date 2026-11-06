@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
 import AboutModal from "@/components/About";
+import FeedbackModal from "@/components/feedback/FeedbackModal";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { SideBar } from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
@@ -135,7 +136,7 @@ export function startRootFileFreshnessPoll(getTabs: () => readonly Tab[]): () =>
   });
 }
 
-function RootLayout() {
+export function RootLayout() {
   const isNative = useAtomValue(nativeBarAtom);
   const navigate = useNavigate();
   const jotaiStore = useJotaiStore();
@@ -196,6 +197,7 @@ function RootLayout() {
 
   const [keyMap] = useAtom(keyMapAtom);
   const [opened, setOpened] = useState(false);
+  const [feedbackOpened, setFeedbackOpened] = useState(false);
   const [quitDialog, setQuitDialog] = useState<{
     failClosed: boolean;
     tabs: BlockingTab[];
@@ -252,6 +254,7 @@ function RootLayout() {
       bindAppMenuCallbacks({
         runMenu,
         about: () => setOpened(true),
+        sendFeedback: () => setFeedbackOpened(true),
         createNewTab,
         openNewFile,
         openSettings,
@@ -354,6 +357,7 @@ function RootLayout() {
       }}
     >
       <AboutModal opened={opened} setOpened={setOpened} />
+      <FeedbackModal opened={feedbackOpened} onClose={() => setFeedbackOpened(false)} />
       <QuitConfirmModal
         opened={quitDialog !== null}
         failClosed={quitDialog?.failClosed ?? false}

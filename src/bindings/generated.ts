@@ -1287,6 +1287,14 @@ async getPublicChessComJson(request: PublicChessComRequest) : Promise<Result<str
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async submitFeedback(feedbackType: FeedbackType, message: string, contactEmail: string | null, idempotencyKey: string) : Promise<Result<FeedbackOutcome, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("submit_feedback", { feedbackType, message, contactEmail, idempotencyKey }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1446,6 +1454,8 @@ export type ErrorCategory = "io" | "parsing" | "platform" | "network" | "chess-d
 export type ErrorPayload = { tag: ErrorPayloadTag; category: ErrorCategory; message: string; rootFailure?: RootFailure | null; engineFailure?: EngineTerminalSnapshot | null; remoteHttpRejection?: RemoteHttpRejection | null; nameTaken?: boolean | null; databaseAdmission?: boolean | null; progressGeneration?: string | null }
 export type ErrorPayloadTag = "backend-error" | "engine-failure"
 export type Event = { id: number; name: string | null }
+export type FeedbackOutcome = "sent" | "inProgress" | "keyMismatch" | "invalidInput" | "rateLimited" | "deliveryFailed" | "serviceUnavailable"
+export type FeedbackType = "bug" | "suggestion" | "praise" | "other"
 export type FileWorkspaceDescriptor = { handle: FileWorkspaceHandle; displayName: string; availability: PathAvailability }
 /**
  * Renderer-safe handle for one authority-managed file workspace. It cannot contain a native

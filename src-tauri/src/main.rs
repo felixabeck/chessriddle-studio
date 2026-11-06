@@ -11,6 +11,7 @@ mod credentials;
 mod db;
 mod engine;
 mod error;
+mod feedback;
 mod file_workspace;
 mod game;
 mod infra;
@@ -80,6 +81,7 @@ use crate::infra::blocking::BLOCKING_GATEWAY;
 use crate::infra::keyed_locks::{KeyedLockLease, KeyedLocks};
 use crate::infra::operations::{OperationLease, OperationRegistry};
 
+use crate::feedback::submit_feedback;
 use crate::file_workspace::{
     create_workspace_directory, create_workspace_file, delete_workspace_trash_item,
     empty_workspace_trash, issue_file_workspace, list_file_workspace, list_workspace_trash,
@@ -2245,7 +2247,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             clear_progress,
             get_sound_server_port,
             download_chess_com_games,
-            get_public_chess_com_json
+            get_public_chess_com_json,
+            submit_feedback
         ))
         .events(tauri_specta::collect_events!(
             BestMovesPayload,

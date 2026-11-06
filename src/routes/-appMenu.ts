@@ -23,6 +23,7 @@ export type MenuGroup = {
 
 export type AppMenuCallbacks = {
     about: () => void;
+    sendFeedback: () => void;
     createNewTab: () => void | Promise<void>;
     openNewFile: () => void | Promise<void>;
     openSettings: () => void | Promise<void>;
@@ -170,6 +171,11 @@ export function buildAppMenuTree(args: {
                     action: callbacks.documentation,
                 },
                 {
+                    label: t("Menu.Help.SendFeedback"),
+                    id: "send_feedback",
+                    action: callbacks.sendFeedback,
+                },
+                {
                     label: t("Menu.Help.ClearSavedData"),
                     id: "clear_saved_data",
                     action: callbacks.clearSavedData,
@@ -246,6 +252,7 @@ export async function runWindowAction(
 export type AppMenuCommandBindings = {
     runMenu: (command: () => Promise<unknown>, successMessage?: string) => Promise<void>;
     about: () => void;
+    sendFeedback: () => void;
     createNewTab: () => Promise<unknown>;
     openNewFile: () => Promise<unknown>;
     openSettings: () => Promise<unknown>;
@@ -261,6 +268,7 @@ export type AppMenuCommandBindings = {
 export function bindAppMenuCallbacks(bindings: AppMenuCommandBindings): AppMenuCallbacks {
     return {
         about: bindings.about,
+        sendFeedback: bindings.sendFeedback,
         createNewTab: () => bindings.runMenu(bindings.createNewTab),
         openNewFile: () => bindings.runMenu(bindings.openNewFile),
         openSettings: () => bindings.runMenu(bindings.openSettings),

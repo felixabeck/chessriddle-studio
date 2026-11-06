@@ -61,6 +61,7 @@
         "id": "auxiliary-domain-services",
         "source": "backend",
         "paths": [
+          "src-tauri/src/feedback.rs",
           "src-tauri/src/opening.rs",
           "src-tauri/src/practice.rs",
           "src-tauri/src/progress.rs",

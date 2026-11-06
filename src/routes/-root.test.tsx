@@ -1,4 +1,7 @@
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, expect, test, vi } from "vitest";
+import type { AppMenuCallbacks } from "./-appMenu";
 
 const mocks = vi.hoisted(() => ({
   initializePathOwners: vi.fn(),
@@ -8,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   retireMigratedKeys: vi.fn(),
   fileRevision: vi.fn(),
   windowFocus: vi.fn(),
+  lastCallbacks: null as AppMenuCallbacks | null,
 }));
 
 vi.mock("@/state/pathOwners", () => ({
@@ -19,8 +23,20 @@ vi.mock("@/state/practiceStorage", () => ({
   runPracticeMigrationPass: mocks.runMigration,
   retireMigratedLegacyDeckKeysFromBrowser: mocks.retireMigratedKeys,
 }));
-vi.mock("@/state/atoms", () => ({ nativeBarAtom: {}, tabsAtom: {} }));
-vi.mock("@/state/keybinds", () => ({ keyMapAtom: {} }));
+vi.mock("@/state/atoms", async () => {
+  const { atom } = await import("jotai");
+  return { nativeBarAtom: atom(false), tabsAtom: atom([]) };
+});
+vi.mock("@/state/keybinds", async () => {
+  const { atom } = await import("jotai");
+  return {
+    keyMapAtom: atom({
+      NEW_TAB: { keys: "Ctrl+T" },
+      OPEN_FILE: { keys: "Ctrl+O" },
+    }),
+  };
+});
+vi.mock("react-hotkeys-hook", () => ({ useHotkeys: () => undefined }));
 vi.mock("@/platform/native", () => ({
   Menu: {},
   MenuItem: {},
@@ -46,11 +62,34 @@ vi.mock("@/platform/tauri", () => ({
   tauriSubscriptions: { windowFocus: mocks.windowFocus },
 }));
 vi.mock("@/components/About", () => ({ default: () => null }));
+vi.mock("@/components/feedback/FeedbackModal", () => ({
+  default: ({ opened }: { opened: boolean }) =>
+    opened ? <div data-testid="feedback-modal" /> : null,
+}));
 vi.mock("@/components/Sidebar", () => ({ SideBar: () => null }));
 vi.mock("@/components/TopBar", () => ({ default: () => null }));
 vi.mock("@/components/tabs/QuitConfirmModal", () => ({ default: () => null }));
 vi.mock("@/utils/files", () => ({ openFile: vi.fn(), pickPgnFile: vi.fn() }));
-vi.mock("@mantine/core", () => ({ AppShell: {} }));
+vi.mock("@mantine/core", () => {
+  function AppShell({ children }: { children: React.ReactNode }) {
+    return <div>{children}</div>;
+  }
+  AppShell.Header = ({ children }: { children: React.ReactNode }) => <div>{children}</div>;
+  AppShell.Navbar = ({ children }: { children: React.ReactNode }) => <div>{children}</div>;
+  AppShell.Main = ({ children }: { children: React.ReactNode }) => <div>{children}</div>;
+  return { AppShell };
+});
+vi.mock("./-appMenu", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./-appMenu")>();
+  return {
+    ...actual,
+    buildAppMenuTree: (args: Parameters<typeof actual.buildAppMenuTree>[0]) => {
+      mocks.lastCallbacks = args.callbacks;
+      return actual.buildAppMenuTree(args);
+    },
+    installAppMenuSurface: vi.fn(async () => ({ decorationsApplied: false })),
+  };
+});
 vi.mock("@mantine/notifications", () => ({ notifications: { show: vi.fn() } }));
 vi.mock("@tanstack/react-router", () => ({
   Outlet: () => null,
@@ -59,7 +98,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
-import { clearSavedDataAfterConfirmation, startRootFileFreshnessPoll } from "./__root";
+import { clearSavedDataAfterConfirmation, RootLayout, startRootFileFreshnessPoll } from "./__root";
 import { clearSavedDataFromMenu } from "./-appMenu";
 import type { Tab } from "@/utils/tabs";
 
@@ -71,6 +110,7 @@ beforeEach(() => {
   mocks.retireMigratedKeys.mockReset();
   mocks.fileRevision.mockReset().mockResolvedValue("dev:ino:revision");
   mocks.windowFocus.mockReset().mockResolvedValue(vi.fn());
+  mocks.lastCallbacks = null;
 });
 
 async function clearThroughProductionPath(
@@ -320,6 +360,24 @@ test("the root poll follows current file tabs, listens for focus, and stops its 
   await vi.advanceTimersByTimeAsync(2_000);
   expect(mocks.fileRevision).toHaveBeenCalledOnce();
   vi.useRealTimers();
+});
+
+test("the Help-menu feedback action opens the dialog", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root: Root = createRoot(host);
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  await act(async () => {
+    root.render(<RootLayout />);
+  });
+  expect(host.querySelector("[data-testid='feedback-modal']")).toBeNull();
+  expect(mocks.lastCallbacks).not.toBeNull();
+  await act(async () => {
+    mocks.lastCallbacks?.sendFeedback();
+  });
+  expect(host.querySelector("[data-testid='feedback-modal']")).not.toBeNull();
+  await act(async () => root.unmount());
+  host.remove();
 });
 
 function deferred<T>() {

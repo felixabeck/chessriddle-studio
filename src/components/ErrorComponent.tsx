@@ -1,8 +1,10 @@
 import { Anchor, Button, Code, CopyButton, Group, Stack, Text, Title } from "@mantine/core";
+import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Trans, useTranslation } from "react-i18next";
 import { normalizeError } from "@/platform/errors";
 import { runUnlessCancelled } from "@/components/files/notifyError";
+import FeedbackModal from "@/components/feedback/FeedbackModal";
 import { REPOSITORY_URL } from "@/utils/product.json";
 
 const issueUrl = `${REPOSITORY_URL}/issues/new?assignees=&labels=bug&projects=&template=bug.yml`;
@@ -10,6 +12,7 @@ const issueUrl = `${REPOSITORY_URL}/issues/new?assignees=&labels=bug&projects=&t
 export default function ErrorComponent({ error }: { error: unknown }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [feedbackOpened, setFeedbackOpened] = useState(false);
   const normalized = normalizeError(error);
   const showDiagnostic = Boolean(
     normalized.diagnostic && normalized.diagnostic !== normalized.message,
@@ -23,6 +26,7 @@ export default function ErrorComponent({ error }: { error: unknown }) {
       </Text>
       {showDiagnostic && <Code>{normalized.diagnostic}</Code>}
       <Group>
+        <Button onClick={() => setFeedbackOpened(true)}>{t("Menu.Help.SendFeedback")}</Button>
         {showDiagnostic && (
           <CopyButton value={normalized.diagnostic ?? ""}>
             {({ copied, copy }) => (
@@ -33,6 +37,7 @@ export default function ErrorComponent({ error }: { error: unknown }) {
           </CopyButton>
         )}
         <Button
+          variant="default"
           onClick={() => {
             void runUnlessCancelled(t("Common.Error"), async () => {
               await navigate({ to: "/" });
@@ -52,6 +57,7 @@ export default function ErrorComponent({ error }: { error: unknown }) {
           }}
         />
       </Text>
+      <FeedbackModal opened={feedbackOpened} onClose={() => setFeedbackOpened(false)} />
     </Stack>
   );
 }

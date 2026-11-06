@@ -50,7 +50,6 @@
         "src/bootstrap.tsx",
         "src/i18n.ts",
         "src/index.tsx",
-        "src/platform/analytics.ts",
         "src/utils/nativeContextMenu.ts"
       ]
     },
@@ -157,6 +156,7 @@
       "paths": [
         "src/components/About.tsx",
         "src/components/ErrorComponent.tsx",
+        "src/components/feedback/**",
         "src/components/Sidebar.tsx",
         "src/components/TopBar.tsx",
         "src/components/common/ConfirmModal.tsx",
