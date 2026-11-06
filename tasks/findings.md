@@ -21321,6 +21321,9 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Found by:** Grok Bot PGN fidelity review (Felix request, 2026-11-06)
 * **Related:** No open finding covers this parse gap. Handled Elo/`?` NaN work is a different tag path. Text text fidelity of the tags is preserved via `other`; the defect is the modeled-field / UI consumer contract.
 
+**Review correction, 2026-11-06:** the live-save path does not replace `store.headers` with its round-trip printed-copy parse; traced `saveToFile` retains the existing store and updates only the admitted source stamp. Accordingly, the earlier failure scenario overstated clock UI loss on ordinary file-tab reopen. The verified affected scenario is an explicit PGN header import/new-tree parse of an asymmetric-clock PGN into an engine game, where `white_time_control` / `black_time_control` never become modeled while the shared `time_control` stays unset. Source and probe proof remain valid; tags still round-trip through `other`, so textual PGN is not lost.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"3899b23621addbf65c9a4a6b51abfdf2f354639ad19780fd9c1acaa0d87cbd83","input_sha256":"f816b73a6a4b043929d159c1d6f362fa555619c37b431d4796baccaff16e4c1c","kind":"mutation-receipt","operation":"5054dc0b9f78dd09d5a5c7e2779e4064d0e81a814c9214368ef7c356347ea086","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-09"],"target":"f-20261106-09","v":1} -->
+
 ---
 
 ## 2026-11-06 — filed through the inbox spool
