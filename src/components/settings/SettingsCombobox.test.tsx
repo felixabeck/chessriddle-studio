@@ -34,6 +34,9 @@ function Harness() {
         onCommit={setValue}
         ariaLabel="Pieces"
       />
+      <button type="button" data-testid="external" onClick={() => setValue("alpha")}>
+        external
+      </button>
       <div data-testid="outside">outside</div>
     </div>
   );
@@ -144,4 +147,17 @@ test("restores to the option last committed, not to the value before opening", a
 
   await pressEscape();
   expect(currentValue()).toBe("merida");
+});
+
+test("restores a value changed from outside while the dropdown was closed", async () => {
+  await renderHarness();
+  await act(async () => host!.querySelector<HTMLElement>("[data-testid=external]")!.click());
+  expect(currentValue()).toBe("alpha");
+
+  await open();
+  await hover("Merida");
+  expect(currentValue()).toBe("merida");
+
+  await pressEscape();
+  expect(currentValue()).toBe("alpha");
 });
