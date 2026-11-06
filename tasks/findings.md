@@ -21381,3 +21381,19 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 
 **Review correction, 2026-11-06 (records lens, build run studio-feedback):** `BoardSelect` and `PiecesSelect` live on the Appearance tab and already pass `ariaLabel`. The unlabelled Mantine `Select`s on the default Board tab are move notation, move method, coordinates and material display (`src/components/settings/SettingsPage.tsx` around lines 184, 202, 253 and 333). The e2e change that moved `assertAccessible()` to Appearance landed as `f5e22519` after rebase (originally `79dd8999`).
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"e50a3053fbff1a92e0e6f32a87fedb40b2925405b976b10ae2764c6980bca8ac","input_sha256":"4c5c440551e3053f96e02b2c0b720a49214aa2e74914d6412bb55c3cc6bbb07a","kind":"mutation-receipt","operation":"cf5cca1534e476b3a85e970e279192246a2a4fb2093836bb42e6bffa0783ff34","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-13"],"target":"f-20261106-13","v":1} -->
+
+---
+
+## 2026-11-06 — filed through the inbox spool
+
+### The Mantine theme overrides only win by CSS load order, which changes with Vite chunking
+
+* **ID:** f-20261106-30 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** build run studio-feedback (in-app feedback dialog), 2026-11-06
+* **Where:** `src/App.tsx:22-29` imports `@mantine/core/styles.css` and the other Mantine package styles unlayered; the theme's component CSS modules (button root `._root_oda36_1`, action icon, card, tabs list `._list_1xhpi_1`, the Inter `@font-face` rules) override Mantine core selectors at equal specificity and therefore win only when their CSS is emitted after Mantine's.
+* **Defect:** which CSS chunk those theme modules land in depends on the module graph. Importing one more component eagerly from the root route (the feedback dialog, through `AppModal`) moved about 18 KB of them out of `index-*.css` into a shared `useScaledMaxWidth-*.css` chunk that loads before Mantine's core styles, so Mantine's defaults won and the analysis tabs, the Engines/Report/Logs list and buttons rendered with the old Mantine look.
+* **Failure scenario:** any change that alters chunking (a new eager import, a dependency update, a Vite/Rolldown upgrade) silently restyles shared controls across the app; `engine-gap` failed 7 of 17 screenshot tests and the full container suite 119 tests on branch `build/studio-feedback-20261106` before the dialog was loaded lazily.
+* **Proof:** on a probe worktree at the S2 commit, `pnpm test:e2e:container --project=engine-gap` failed 7/17; removing only the two `FeedbackModal` imports made it pass except the expected settings snapshot. `vite build` of both variants: with the import, `dist/assets/useScaledMaxWidth-*.css` (18,234 bytes, theme module rules and Inter font faces) appears and `index-*.css` shrinks from 384,147 to 365,914 bytes.
+* **Found by:** Claude Code (Opus 5.5), build run studio-feedback, 2026-11-06
+* **Open question:** pin the cascade independent of chunking. Candidates: Mantine's `styles.layer.css` for every Mantine package that ships one (then every unlayered app rule beats Mantine regardless of specificity, which needs a full-suite snapshot review), or putting the theme modules into an explicit later layer, or a build setting that keeps global theme CSS in the entry stylesheet. Decide with the full e2e container suite as the proof.
