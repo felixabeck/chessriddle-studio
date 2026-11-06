@@ -40,7 +40,7 @@ runs:
         # desktop_deps_apt, so a real exit at the bound always sees elapsed >= bound.
         desktop_deps_label_stall() {
           local elapsed
-          if [ -z "$LINUX_DESKTOP_DEPS_DEADLINE" ] || [ "$LINUX_DESKTOP_DEPS_BOUND" -le 0 ]; then return 0; fi
+          if [ -z "$LINUX_DESKTOP_DEPS_DEADLINE" ]; then return 0; fi
           if [ "$2" -ne 124 ] && [ "$2" -ne 137 ]; then return 0; fi
           elapsed=$(($(date +%s) - LINUX_DESKTOP_DEPS_START))
           if [ "$elapsed" -ge "$LINUX_DESKTOP_DEPS_BOUND" ]; then

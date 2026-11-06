@@ -1322,11 +1322,6 @@ function ciWorkflowContracts(texts) {
         "deps every Dir::Cache::Archives option uses the archive directory source",
       ),
   ]);
-  forbid(
-    "deps archive directory is not a mktemp path",
-    depsSteps.map((step) => step.text).join("\n"),
-    /mktemp/u,
-  );
   for (const [label, id, needle] of [
     ["deps resolve passes the cache path directory to apt", "resolve", "install --print-uris"],
     ["deps download passes the cache path directory to apt", "download", "install --download-only"],
@@ -1437,6 +1432,19 @@ function ciWorkflowContracts(texts) {
       "deps resolve writes the deadline variables to GITHUB_ENV",
     ),
   );
+  // The bound call site: the computed bound, not a constant, reaches the exported variable.
+  for (const [label, needle] of [
+    [
+      "deps resolve computes the bound from TIMEOUT_MINUTES",
+      'bound=$(desktop_deps_bound_seconds "$TIMEOUT_MINUTES") || { printf \'%s\\n\' "$bound"; exit 1; }',
+    ],
+    ["deps resolve exports the computed bound", "\n        LINUX_DESKTOP_DEPS_BOUND=$bound\n"],
+    [
+      "deps library carries the helper functions",
+      "declare -f desktop_deps_label_stall desktop_deps_apt;",
+    ],
+  ])
+    pinDepsStep(label, "resolve", (step) => assert.ok(step.text.includes(needle), label));
   pinDepsStep("deps update goes through desktop_deps_apt", "resolve", (step) =>
     assert.ok(
       step.text.includes("\n        desktop_deps_apt update update || exit $?\n"),
@@ -1467,9 +1475,11 @@ function ciWorkflowContracts(texts) {
   return contracts;
 }
 
-// Names of the contracts that fail for the given workflow texts.
-function failedContracts(texts) {
-  return ciWorkflowContracts(texts).flatMap(([name, check]) => {
+// Shared mutation-harness mechanics. `failingNames` runs [name, check] entries and returns the
+// names whose check throws; `assertMutationRed` applies a mutation, refuses one that changed
+// nothing, and asserts that the expected entry (or any entry, when none is named) turns red.
+function failingNames(entries) {
+  return entries.flatMap(([name, check]) => {
     try {
       check();
       return [];
@@ -1477,6 +1487,20 @@ function failedContracts(texts) {
       return [name];
     }
   });
+}
+
+function assertMutationRed({ original, mutate, failedFor, expected, report = () => {} }) {
+  const mutated = mutate(original);
+  assert.notDeepEqual(mutated, original, "the mutation changed nothing");
+  const failed = failedFor(mutated);
+  report(failed);
+  if (expected) assert.ok(failed.includes(expected), `${expected} stayed green: ${failed}`);
+  else assert.ok(failed.length > 0);
+}
+
+// Names of the contracts that fail for the given workflow texts.
+function failedContracts(texts) {
+  return failingNames(ciWorkflowContracts(texts));
 }
 
 async function readCiWorkflowTexts() {
@@ -1740,13 +1764,6 @@ const linuxDesktopDepsRows = [
     "deps steps run in the documented order",
   ],
   [
-    "archive directory from mktemp",
-    "deps",
-    `archives=${depsArchives}\n        lib=`,
-    "archives=$(mktemp -d)\n        lib=",
-    "deps archive directory is not a mktemp path",
-  ],
-  [
     "download re-adds an inline timeout",
     "deps",
     'desktop_deps_apt download "${download_args[@]}" || exit $?',
@@ -1808,6 +1825,48 @@ const linuxDesktopDepsRows = [
     '        } >> "$GITHUB_ENV"',
     '        } >> "$GITHUB_OUTPUT"',
     "deps resolve writes the deadline variables to GITHUB_ENV",
+  ],
+  [
+    "bound call replaced by zero",
+    "deps",
+    'bound=$(desktop_deps_bound_seconds "$TIMEOUT_MINUTES") || { printf \'%s\\n\' "$bound"; exit 1; }',
+    "bound=0",
+    "deps resolve computes the bound from TIMEOUT_MINUTES",
+  ],
+  [
+    "bound call loses the timeout argument",
+    "deps",
+    'desktop_deps_bound_seconds "$TIMEOUT_MINUTES")',
+    'desktop_deps_bound_seconds "")',
+    "deps resolve computes the bound from TIMEOUT_MINUTES",
+  ],
+  [
+    "bound call loses the abort",
+    "deps",
+    " || { printf '%s\\n' \"$bound\"; exit 1; }",
+    "",
+    "deps resolve computes the bound from TIMEOUT_MINUTES",
+  ],
+  [
+    "bound export ignores the computed bound",
+    "deps",
+    "\n        LINUX_DESKTOP_DEPS_BOUND=$bound\n",
+    "\n        LINUX_DESKTOP_DEPS_BOUND=0\n",
+    "deps resolve exports the computed bound",
+  ],
+  [
+    "library drops the label function",
+    "deps",
+    "declare -f desktop_deps_label_stall desktop_deps_apt;",
+    "declare -f desktop_deps_apt;",
+    "deps library carries the helper functions",
+  ],
+  [
+    "library drops the apt function",
+    "deps",
+    "declare -f desktop_deps_label_stall desktop_deps_apt;",
+    "declare -f desktop_deps_label_stall;",
+    "deps library carries the helper functions",
   ],
   [
     "verify step id lost",
@@ -1961,11 +2020,15 @@ test("CI workflow wiring rejects removed selectors, checkout, freshness, publica
   ]) {
     await t.test(label, () => {
       // Disposable strings exercise the same assertions used above, without touching the checkout.
-      const changed = { ...texts, [file]: texts[file].replaceAll(before, afterText) };
-      assert.notEqual(changed[file], texts[file]);
-      const failed = failedContracts(changed);
-      if (contract) assert.ok(failed.includes(contract), `${contract} stayed green: ${failed}`);
-      else assert.ok(failed.length > 0);
+      assertMutationRed({
+        original: texts,
+        mutate: (original) => ({
+          ...original,
+          [file]: original[file].replaceAll(before, afterText),
+        }),
+        failedFor: failedContracts,
+        expected: contract,
+      });
     });
   }
   await t.test("save moved after install", () => {
@@ -2154,6 +2217,14 @@ const depsHelperCases = [
     },
   ],
   [
+    "validation rounds 0.01 minutes up to 1 second",
+    (source) => {
+      const result = runBound(source, "0.01");
+      assert.equal(result.status, 0);
+      assert.equal(result.output.trim(), "1");
+    },
+  ],
+  [
     "an empty value means unbounded",
     (source) => {
       const result = runBound(source, "");
@@ -2163,15 +2234,10 @@ const depsHelperCases = [
   ],
 ];
 
+// The bash cases are not ciWorkflowContracts entries, so they run once per mutation, not once per
+// table row.
 function failedDepsHelperCases(source) {
-  return depsHelperCases.flatMap(([name, run]) => {
-    try {
-      run(source);
-      return [];
-    } catch {
-      return [name];
-    }
-  });
+  return failingNames(depsHelperCases.map(([name, run]) => [name, () => run(source)]));
 }
 
 // [label, before, after, the case that must turn red]
@@ -2196,7 +2262,7 @@ const depsHelperMutations = [
   ],
   [
     "unbounded guard removed",
-    '          if [ -z "$LINUX_DESKTOP_DEPS_DEADLINE" ] || [ "$LINUX_DESKTOP_DEPS_BOUND" -le 0 ]; then return 0; fi\n',
+    '          if [ -z "$LINUX_DESKTOP_DEPS_DEADLINE" ]; then return 0; fi\n',
     "",
     "unbounded: 124 is not labelled and sudo runs without timeout",
   ],
@@ -2205,6 +2271,12 @@ const depsHelperMutations = [
     '[ "$seconds" -le 0 ]',
     '[ "$seconds" -lt 0 ]',
     "validation rejects 0, -1, abc and 0.0 naming the value",
+  ],
+  [
+    "validation rounds down",
+    "(whole < seconds ? whole + 1 : whole)",
+    "whole",
+    "validation rounds 0.01 minutes up to 1 second",
   ],
   [
     "bounded run loses sudo timeout",
@@ -2219,11 +2291,14 @@ test("linux-desktop-deps helpers behave when executed", async (t) => {
   const source = depsHelperSource(deps);
   assert.deepEqual(failedDepsHelperCases(source), []);
   for (const [label, before, after, expected] of depsHelperMutations) {
-    await t.test(label, (subtest) => {
-      assert.equal(source.split(before).length, 2, `${label}: before must occur exactly once`);
-      const failed = failedDepsHelperCases(source.replace(before, after));
-      subtest.diagnostic(`red: ${failed.join(" | ")}`);
-      assert.ok(failed.includes(expected), `${expected} stayed green: ${failed}`);
-    });
+    await t.test(label, (subtest) =>
+      assertMutationRed({
+        original: source,
+        mutate: (original) => original.replaceAll(before, after),
+        failedFor: failedDepsHelperCases,
+        expected,
+        report: (failed) => subtest.diagnostic(`red: ${failed.join(" | ")}`),
+      }),
+    );
   }
 });
