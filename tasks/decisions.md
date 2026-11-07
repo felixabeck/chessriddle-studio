@@ -12226,3 +12226,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Same corpus, same denominator on the unfiltered view; narrowed views stay honest. Reversal path: change the filter in `RatingsPanel.tsx`.
 * **Decided by:** Claude Code (Opus 5.5) next-finding drain, full auto, 2026-11-07 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":26,"effect_sha256":"972b9753065d5a6432f40d0ee04ccdced2af05a9c3b4f573bf8838f952883178","input_sha256":"641444dcbebea64ee04cca318a8d8c9b8e6a497d9e7e63cad1c3917c5b17df0a","kind":"mutation-receipt","operation":"3e53960521cf2af7a417daaa919f452ff8b96b3af76fb4059244cc1d10ee5b5b","options":{"section":null},"request_id_sha256":null,"results":["d-20261107-01","d-20261107-02","d-20261107-03"],"target":"decisions-ledger","v":1} -->
+
+### d-20261107-04 — How does the Ratings panel count games whose PGN date is incomplete? (corrects d-20261107-03)
+
+* **Question:** d-20261107-03 names the helper `completeDailyDate` and says incomplete-date days count "while the selected range spans the whole domain". Review renamed the helper and found that preset windows (Seven Days, One Year) set a full-width slider, so that wording counted undated games in narrowed presets.
+* **Governs:** f-20261106-23
+* **Chosen:** A strict `parseCompleteDailyDate` helper in `src/components/home/PersonalCardPanels/dailyStatsSummary.ts`. Only complete dates enter the time domain and rating series. Incomplete-date days count in the Ratings summary only for the All time tab, or for a manual slider range covering the whole timeline; every preset narrower than All time excludes them.
+* **Rejected:** Excluding them from every panel (Overview would hide real games). Always counting them (a narrowed range would include games that may lie outside it). Keying on slider width alone (a preset window can be full-width).
+* **Reason:** Same corpus, same denominator on the unfiltered view; narrowed views stay honest. Reversal path: change the incomplete-date filter in `RatingsPanel.tsx`.
+* **Decided by:** Claude Code (Opus 5.5) next-finding drain, correcting the records-lens finding against d-20261107-03, full auto, 2026-11-07 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"02162583eed4b7def8b8f08e47c7f57856f25c2808d34e93e1691010581fbf0e","input_sha256":"ee6bade5dcdb42fb4232ec251cd209922a49cf58bf0f78af710a8578c8ff84f8","kind":"mutation-receipt","operation":"c633037db85931decf09aca71db813cba9d194ec266967a770c67f54f24cad02","options":{"section":null},"request_id_sha256":null,"results":["d-20261107-04"],"target":"decisions-ledger","v":1} -->
