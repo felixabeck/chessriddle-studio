@@ -20,6 +20,89 @@ import {
 } from "./fixtures";
 import type { Locator, Page } from "@playwright/test";
 
+for (const width of [1920, 320]) {
+    test(`database-files: player opening tree previews and prepares two moves at ${width}px`, async ({
+        page,
+        mockScenario,
+        assertNoHorizontalOverflow,
+    }) => {
+        await page.addInitScript(() => localStorage.setItem("font-size", "100"));
+        await page.setViewportSize({ width, height: 1000 });
+        const game = gameOpeningFixture.games[0];
+        await mockScenario({
+            commands: {
+                ...databaseLayoutCommands,
+                get_progress: { result: null },
+                search_position: {
+                    results: [
+                        [[{ move: "e4", white: 3, draw: 1, black: 1, unknown: 1 }], [game]],
+                        [[{ move: "e5", white: 3, draw: 1, black: 1, unknown: 1 }], [game]],
+                    ],
+                    result: [[{ move: "*", white: 3, draw: 1, black: 1, unknown: 1 }], [game]],
+                },
+            },
+        });
+        await page.goto(`/databases/${gameOpeningFixture.databaseId}`);
+        await page.getByRole("tab", { name: "Players", exact: true }).click();
+        const players = page.getByRole("tabpanel", { name: "Players", exact: true });
+        await players
+            .locator('[data-database-pane="table"] tbody tr')
+            .filter({ hasText: "First White" })
+            .click();
+        const preview = players.locator('[data-database-pane="preview"]');
+        await preview.getByRole("tab", { name: "Openings", exact: true }).click();
+        const tree = preview.locator("[data-player-opening-tree]");
+        await expect(tree.locator("[data-opening-sequence]")).toHaveText("Start position");
+        await expect(tree.locator("[data-opening-board] .cg-wrap")).toBeVisible();
+        await tree.locator("[data-opening-moves] tbody tr").filter({ hasText: "e4" }).click();
+        await expect(tree.locator("[data-opening-sequence]")).toHaveText("1. e4");
+        await expect(tree.locator("[data-opening-board]")).toHaveAttribute("data-fen", /4P3/);
+        await expect(tree.locator("[data-opening-games]")).toContainText("First Black");
+        await tree.locator("[data-opening-games] tbody tr").click();
+        const gamePreview = tree.locator("[data-opening-preview]");
+        await expect(gamePreview.locator(".cg-wrap")).toBeVisible();
+        await expect(
+            gamePreview.getByRole("button", { name: "Open on board", exact: true }),
+        ).toBeVisible();
+        await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
+        await assertNoHorizontalOverflow();
+        const layout = await tree.evaluate((element) => {
+            const board = element.querySelector("[data-opening-board]")!.getBoundingClientRect();
+            const table = element.querySelector("[data-opening-moves]")!.getBoundingClientRect();
+            return {
+                width: element.clientWidth,
+                scroll: element.scrollWidth,
+                board: {
+                    x: board.x,
+                    y: board.y,
+                    width: board.width,
+                    height: board.height,
+                    bottom: board.bottom,
+                },
+                table: { x: table.x, y: table.y },
+            };
+        });
+        expect(layout.scroll).toBeLessThanOrEqual(layout.width + 1);
+        expect(Math.abs(layout.board.width - layout.board.height)).toBeLessThan(1);
+        if (width === 320) expect(layout.table.y).toBeGreaterThanOrEqual(layout.board.bottom);
+        if (layout.width >= 576) expect(layout.table.x).toBeGreaterThan(layout.board.x);
+        await tree.locator("[data-opening-moves] tbody tr").filter({ hasText: "e5" }).click();
+        await expect(tree.locator("[data-opening-sequence]")).toHaveText("1. e4 e5");
+        await expect(tree.locator("[data-opening-moves]")).toContainText("Game ended here");
+        await tree.getByRole("button", { name: "Prepare on board", exact: true }).click();
+        await expect(page).toHaveURL("/");
+        const database = page.getByRole("tab", { name: "Database", exact: true });
+        await expect(database).toHaveAttribute("aria-selected", "true");
+        const stats = page.getByRole("tab", { name: "Stats", exact: true });
+        await expect(stats).toHaveAttribute("aria-selected", "true");
+        await expect(page.getByRole("button", { name: "e4", exact: true })).toBeVisible();
+        await expect(page.getByRole("button", { name: "e5", exact: true })).toBeVisible();
+        const tab = await activeWorkspaceTab(page);
+        expect(tab.type).toBe("analysis");
+        await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
+    });
+}
+
 test("database-files: owner inference opens Black and a manual flip survives autosave and reopening from a stale list", async ({
     page,
     mockScenario,

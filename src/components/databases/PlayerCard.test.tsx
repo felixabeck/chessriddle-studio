@@ -6,6 +6,7 @@ import type { DatabaseHandle, Player } from "@/bindings";
 
 const mocks = vi.hoisted(() => ({
   getPlayersGameInfo: vi.fn(),
+  personalCard: vi.fn(),
 }));
 
 vi.mock("@/platform/tauri", async () => {
@@ -16,7 +17,12 @@ vi.mock("@/platform/tauri", async () => {
   };
 });
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock("../home/PersonalCard", () => ({ default: () => <div>player-card</div> }));
+vi.mock("../home/PersonalCard", () => ({
+  default: (props: unknown) => {
+    mocks.personalCard(props);
+    return <div>player-card</div>;
+  },
+}));
 vi.mock("@mantine/core", () => ({
   Center: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Loader: () => null,
@@ -66,4 +72,16 @@ test("a failed player lookup renders an error instead of a blank panel", async (
   });
   expect(container.textContent).not.toBe("");
   expect(container.textContent).not.toContain("player-card");
+});
+
+test("the database caller passes its own player and database to the shared personal card", async () => {
+  const info = { site_stats_data: [] };
+  mocks.getPlayersGameInfo.mockResolvedValue(info);
+  await renderPlayerCard();
+  expect(mocks.personalCard).toHaveBeenCalledWith({
+    name: player.name,
+    info,
+    isDatabase: true,
+    databasePlayer: { player, file },
+  });
 });

@@ -39,7 +39,14 @@ function PlayerCard({ player, file }: { player: Player; file: DatabaseHandle }) 
           </Center>
         </Paper>
       )}
-      {info && <PersonalPlayerCard name={player.name!} info={info} isDatabase />}
+      {info && (
+        <PersonalPlayerCard
+          name={player.name!}
+          info={info}
+          isDatabase
+          databasePlayer={{ player, file }}
+        />
+      )}
     </>
   );
 }

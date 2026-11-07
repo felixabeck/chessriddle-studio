@@ -14,6 +14,8 @@ import FideInfo from "../databases/FideInfo";
 import OpeningsPanel from "./PersonalCardPanels/OpeningsPanel";
 import OverviewPanel from "./PersonalCardPanels/OverviewPanel";
 import RatingsPanel from "./PersonalCardPanels/RatingsPanel";
+import PlayerOpeningTree from "../databases/PlayerOpeningTree";
+import type { DatabaseHandle, Player } from "@/bindings";
 
 function PersonalPlayerCard({
   name,
@@ -21,12 +23,14 @@ function PersonalPlayerCard({
   info,
   isDatabase,
   notice,
+  databasePlayer,
 }: {
   name: string;
   setName?: (name: string) => void;
   info: PlayerGameInfo;
   isDatabase?: boolean;
   notice?: ReactNode;
+  databasePlayer?: { player: Player; file: DatabaseHandle };
 }) {
   const { t } = useTranslation();
   const store = useContext(DatabaseViewStateContext)!;
@@ -102,8 +106,19 @@ function PersonalPlayerCard({
         <Tabs.Panel value="overview" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
           <OverviewPanel playerName={name} info={info} isDatabase={isDatabase} />
         </Tabs.Panel>
-        <Tabs.Panel value="openings" style={{ overflow: "hidden" }}>
-          <OpeningsPanel playerName={name} info={info} isDatabase={isDatabase} />
+        <Tabs.Panel
+          value="openings"
+          style={
+            isDatabase && databasePlayer
+              ? { flex: 1, minHeight: 0, overflowY: "auto" }
+              : { overflow: "hidden" }
+          }
+        >
+          {isDatabase && databasePlayer ? (
+            <PlayerOpeningTree {...databasePlayer} />
+          ) : (
+            <OpeningsPanel playerName={name} info={info} isDatabase={isDatabase} />
+          )}
         </Tabs.Panel>
         <Tabs.Panel value="ratings">
           <RatingsPanel playerName={name} info={info} isDatabase={isDatabase} />
