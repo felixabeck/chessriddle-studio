@@ -53,6 +53,7 @@ export function PlayerSearchInput({
         }
       })
       .catch((cause) => {
+        if (playerLookupVersion.current !== lookupVersion) return;
         notifyUnlessCancelled(t("Common.Error"), cause);
       });
   }, [file, t, value]);

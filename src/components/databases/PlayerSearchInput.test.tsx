@@ -84,6 +84,43 @@ test("file replacement cancels the active native search and refuses its stale re
   expect(mocks.notify).not.toHaveBeenCalled();
 });
 
+test("a stale getPlayer rejection is silent after value changes while a current rejection notifies", async () => {
+  let rejectStale!: (reason: Error) => void;
+  const staleLookup = new Promise<never>((_, fail) => {
+    rejectStale = fail;
+  });
+  mocks.getPlayer.mockImplementation((_handle: DatabaseHandle, id: number) => {
+    if (id === 1) return staleLookup;
+    if (id === 3) return Promise.reject(new Error("current lookup"));
+    return Promise.resolve(null);
+  });
+  await act(async () =>
+    root.render(
+      <PlayerSearchInput label="Player" file={file("db")} value={1} setValue={vi.fn()} />,
+    ),
+  );
+  await vi.waitFor(() => expect(mocks.getPlayer).toHaveBeenCalledWith(file("db"), 1));
+  await act(async () =>
+    root.render(
+      <PlayerSearchInput label="Player" file={file("db")} value={2} setValue={vi.fn()} />,
+    ),
+  );
+  await act(async () => {
+    rejectStale(new Error("stale lookup"));
+    await Promise.resolve();
+  });
+  expect(mocks.notify).not.toHaveBeenCalled();
+
+  await act(async () =>
+    root.render(
+      <PlayerSearchInput label="Player" file={file("db")} value={3} setValue={vi.fn()} />,
+    ),
+  );
+  await vi.waitFor(() =>
+    expect(mocks.notify).toHaveBeenCalledExactlyOnceWith("Common.Error", expect.any(Error)),
+  );
+});
+
 test("unmount cancels an active lookup while an ordinary failure is surfaced", async () => {
   let signal!: AbortSignal;
   mocks.queryPlayers.mockImplementationOnce(

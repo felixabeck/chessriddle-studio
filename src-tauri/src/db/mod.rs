@@ -10965,9 +10965,9 @@ mod tests {
         };
 
         for sides in [Sides::WhiteBlack, Sides::BlackWhite, Sides::Any] {
-            let unrated = query(sides.clone(), (0, 2000));
-            assert_eq!(unrated.data.len(), 3, "{sides:?} (0, 2000) rows");
-            assert_eq!(unrated.count, Some(3), "{sides:?} (0, 2000) count");
+            let zero_inclusive = query(sides.clone(), (0, 2000));
+            assert_eq!(zero_inclusive.data.len(), 3, "{sides:?} (0, 2000) rows");
+            assert_eq!(zero_inclusive.count, Some(3), "{sides:?} (0, 2000) count");
 
             let zero_only = query(sides.clone(), (0, 0));
             assert_eq!(zero_only.data.len(), 2, "{sides:?} (0, 0) rows");
