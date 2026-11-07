@@ -2232,6 +2232,194 @@ async function verifyProgressContract(session) {
   }
 }
 
+/**
+ * Native Help menus are GTK chrome, so the sidebar Send feedback button is the
+ * reachable entry. Never click Send: this scenario must not reach the network.
+ */
+async function verifyFeedbackScreenshot(session) {
+  const wait = (label, probe) => waitFor(label, probe, { timeoutMs: FILES_PROBE_TIMEOUT_MS });
+  const assertion = async (label, action) => {
+    try {
+      await action();
+      check(true, label);
+      return true;
+    } catch (error) {
+      check(false, label, error.message);
+      return false;
+    }
+  };
+  const feedbackDialogOpen = () =>
+    session.execute(`
+      return [...document.querySelectorAll('[role="dialog"]')].some((dialog) =>
+        [...dialog.querySelectorAll("button")].some(
+          (button) => button.textContent.trim() === "Take screenshot",
+        ),
+      );
+    `);
+  const dismissFeedbackDialog = async () => {
+    await session
+      .execute("delete window.__verifyAppFeedbackScreenshot; return true;")
+      .catch(() => false);
+    const previewPresent = await session
+      .execute(
+        `return Boolean(document.querySelector('[role="dialog"] img[alt="Image preview"]'));`,
+      )
+      .catch(() => false);
+    if (previewPresent) {
+      await clickButton(session, "Remove image", true);
+      await wait("feedback image preview to leave", () =>
+        session
+          .execute(`return !document.querySelector('[role="dialog"] img[alt="Image preview"]');`)
+          .catch(() => false),
+      );
+    }
+    if (await feedbackDialogOpen().catch(() => false)) {
+      await clickButton(session, "Close dialog", true);
+      await wait("feedback dialog to leave", () =>
+        feedbackDialogOpen()
+          .then((open) => !open)
+          .catch(() => false),
+      );
+    }
+  };
+
+  try {
+    await assertion("the sidebar Send feedback control opens the feedback dialog", async () => {
+      await clickButton(session, "Send feedback", true);
+      await wait("the feedback dialog", feedbackDialogOpen);
+    });
+    await assertion(
+      "Take screenshot attaches a decodable preview with more than one colour",
+      async () => {
+        await clickButton(session, "Take screenshot");
+        await waitFor("the feedback image preview", () =>
+          session
+            .execute(
+              `const img = document.querySelector('[role="dialog"] img[alt="Image preview"]');
+               return Boolean(img && img.src);`,
+            )
+            .catch(() => false),
+        );
+        const path = `${screenshotPath ?? join(tmpdir(), `chessfable-feedback-${process.pid}`)}.feedback-preview.png`;
+        await writeFile(path, Buffer.from(await session.screenshot(), "base64"));
+        console.log(`  .. feedback-preview screenshot: ${path}`);
+        const decoded = await waitFor("feedback screenshot preview to decode", async () => {
+          const failure = await session.execute(`
+            const alert = document.querySelector('[role="dialog"] [role="alert"]');
+            return alert && alert.textContent
+              ? { error: "undecodable", message: alert.textContent }
+              : false;
+          `);
+          if (failure) return failure;
+          return session.execute(`
+            const preview = document.querySelector('[role="dialog"] img[alt="Image preview"]');
+            const src = preview && typeof preview.src === "string" ? preview.src : "";
+            if (!src.startsWith("data:")) return false;
+            let state = window.__verifyAppFeedbackScreenshot;
+            if (!state || state.src !== src) {
+              state = { src, done: false, value: false };
+              window.__verifyAppFeedbackScreenshot = state;
+              const probe = new Image();
+              probe.onload = () => {
+                if (window.__verifyAppFeedbackScreenshot?.src !== src) return;
+                const width = probe.naturalWidth;
+                const height = probe.naturalHeight;
+                if (!(width > 0 && height > 0)) {
+                  window.__verifyAppFeedbackScreenshot.value = {
+                    error: "blank",
+                    width,
+                    height,
+                    colors: 0,
+                    samples: 0,
+                  };
+                  window.__verifyAppFeedbackScreenshot.done = true;
+                  return;
+                }
+                try {
+                  const canvas = document.createElement("canvas");
+                  canvas.width = width;
+                  canvas.height = height;
+                  const ctx = canvas.getContext("2d");
+                  if (!ctx) {
+                    window.__verifyAppFeedbackScreenshot.value = {
+                      error: "undecodable",
+                      width,
+                      height,
+                      colors: 0,
+                      samples: 0,
+                    };
+                    window.__verifyAppFeedbackScreenshot.done = true;
+                    return;
+                  }
+                  ctx.drawImage(probe, 0, 0);
+                  const cols = 8;
+                  const rows = 8;
+                  const colors = new Set();
+                  for (let y = 0; y < rows; y++) {
+                    for (let x = 0; x < cols; x++) {
+                      const px = Math.min(width - 1, Math.floor(((x + 0.5) * width) / cols));
+                      const py = Math.min(height - 1, Math.floor(((y + 0.5) * height) / rows));
+                      const pixel = ctx.getImageData(px, py, 1, 1).data;
+                      colors.add([pixel[0], pixel[1], pixel[2], pixel[3]].join(","));
+                    }
+                  }
+                  window.__verifyAppFeedbackScreenshot.value = {
+                    width,
+                    height,
+                    colors: colors.size,
+                    samples: cols * rows,
+                  };
+                  window.__verifyAppFeedbackScreenshot.done = true;
+                } catch (error) {
+                  if (window.__verifyAppFeedbackScreenshot?.src !== src) return;
+                  window.__verifyAppFeedbackScreenshot.value = {
+                    error: "undecodable",
+                    message: String(error && error.message ? error.message : error),
+                    width,
+                    height,
+                    colors: 0,
+                    samples: 0,
+                  };
+                  window.__verifyAppFeedbackScreenshot.done = true;
+                }
+              };
+              probe.onerror = () => {
+                if (window.__verifyAppFeedbackScreenshot?.src !== src) return;
+                window.__verifyAppFeedbackScreenshot.value = {
+                  error: "undecodable",
+                  width: 0,
+                  height: 0,
+                  colors: 0,
+                  samples: 0,
+                };
+                window.__verifyAppFeedbackScreenshot.done = true;
+              };
+              probe.src = src;
+              return false;
+            }
+            return state.done ? state.value : false;
+          `);
+        });
+        if (decoded.error) throw new Error(`preview ${decoded.error}: ${JSON.stringify(decoded)}`);
+        if (!(decoded.width > 0 && decoded.height > 0))
+          throw new Error(`preview has no dimensions: ${JSON.stringify(decoded)}`);
+        if (!(decoded.samples >= 64))
+          throw new Error(`preview sampled fewer than 64 pixels: ${JSON.stringify(decoded)}`);
+        if (!(decoded.colors >= 2))
+          throw new Error(`preview is blank or single-colour: ${JSON.stringify(decoded)}`);
+      },
+    );
+  } finally {
+    try {
+      await dismissFeedbackDialog();
+      const remaining = await feedbackDialogOpen().catch(() => true);
+      check(!remaining, "the feedback dialog closes without sending");
+    } catch (error) {
+      check(false, "the feedback dialog closes without sending", error.message);
+    }
+  }
+}
+
 function canonicalProgressGeneration(value) {
   return (
     typeof value === "string" &&
@@ -4572,6 +4760,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
     "the real renderer exposes the ChessRiddle Studio document title",
   );
   await verifyProgressContract(session);
+  await verifyFeedbackScreenshot(session);
 
   const waitForPracticeOwners = async (label) =>
     waitFor(
