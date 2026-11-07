@@ -72,7 +72,13 @@ vi.mock("@/components/feedback/LazyFeedbackModal", () => ({
       </div>
     ) : null,
 }));
-vi.mock("@/components/Sidebar", () => ({ SideBar: () => null }));
+vi.mock("@/components/Sidebar", () => ({
+  SideBar: ({ onSendFeedback }: { onSendFeedback: () => void }) => (
+    <button type="button" data-testid="sidebar-feedback" onClick={onSendFeedback}>
+      feedback
+    </button>
+  ),
+}));
 vi.mock("@/components/TopBar", () => ({ default: () => null }));
 vi.mock("@/components/tabs/QuitConfirmModal", () => ({ default: () => null }));
 vi.mock("@/utils/files", () => ({ openFile: vi.fn(), pickPgnFile: vi.fn() }));
@@ -366,6 +372,23 @@ test("the root poll follows current file tabs, listens for focus, and stops its 
   await vi.advanceTimersByTimeAsync(2_000);
   expect(mocks.fileRevision).toHaveBeenCalledOnce();
   vi.useRealTimers();
+});
+
+test("the sidebar feedback button opens the same dialog", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root: Root = createRoot(host);
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  await act(async () => {
+    root.render(<RootLayout />);
+  });
+  expect(host.querySelector("[data-testid='feedback-modal']")).toBeNull();
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>("[data-testid='sidebar-feedback']")?.click();
+  });
+  expect(host.querySelector("[data-testid='feedback-modal']")).not.toBeNull();
+  await act(async () => root.unmount());
+  host.remove();
 });
 
 test("the Help-menu feedback action opens the dialog", async () => {

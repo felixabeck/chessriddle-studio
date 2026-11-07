@@ -132,6 +132,7 @@ and meaning. Entries marked closest by meaning have no exact reference slot.
 | More actions | `Ellipsis` | `web/src/components/profile/ProfileActionsMenu.tsx:71` |
 | Engine drag and resize handles | `GripVertical` | `web/src/components/entityEditor/SortableReorderList.tsx:20` |
 | Compact application menu | `Menu` | `web/src/components/layout/Header.tsx:11` |
+| Send feedback (sidebar, above Settings) | `MessageSquarePlus` | `web/src/components/feedback/FeedbackButton.tsx:47` (`UI_ICONS.feedback`) |
 | Add an account | `UserPlus` | `shared/icon-catalog.json:700` |
 | Download account games | `Download` | `web/src/components/legal/WithdrawalFormLink.tsx:1` |
 | Practice streak | `Flame` | `shared/icon-catalog.json:763` |

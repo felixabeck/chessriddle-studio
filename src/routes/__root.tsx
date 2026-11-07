@@ -376,7 +376,7 @@ export function RootLayout() {
         </AppShell.Header>
       )}
       <AppShell.Navbar>
-        <SideBar />
+        <SideBar onSendFeedback={menuCallbacks.sendFeedback} />
       </AppShell.Navbar>
       <AppShell.Main>
         <Outlet />

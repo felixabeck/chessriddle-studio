@@ -35,12 +35,12 @@ afterEach(() => {
   sessionStorage.clear();
 });
 
-async function renderSidebar(initialPath = "/") {
+async function renderSidebar(initialPath = "/", onSendFeedback: () => void = () => {}) {
   const rootRoute = createRootRoute({
     component: () => (
       <AppShell navbar={{ width: "3rem", breakpoint: 0 }}>
         <AppShell.Navbar>
-          <SideBar />
+          <SideBar onSendFeedback={onSendFeedback} />
         </AppShell.Navbar>
         <AppShell.Main>
           <Outlet />
@@ -173,4 +173,34 @@ test("marks all database routes active independently of the resume target", asyn
     expect(databasesLink().getAttribute("aria-current")).toBe(active ? "page" : null);
     expect(databasesLink().classList.contains(classes.active)).toBe(active);
   }
+});
+
+test("opens feedback from the sidebar without navigating", async () => {
+  const onSendFeedback = vi.fn();
+  const router = await renderSidebar("/library", onSendFeedback);
+  const button = host!.querySelector<HTMLButtonElement>(
+    'button[aria-label="Menu.Help.SendFeedback"]',
+  )!;
+  expect(button.getAttribute("type")).toBe("button");
+  await act(async () => button.click());
+  expect(onSendFeedback).toHaveBeenCalledTimes(1);
+  expect(router.state.location.pathname).toBe("/library");
+  expect(button.classList.contains(classes.active)).toBe(false);
+  expect(button.hasAttribute("aria-current")).toBe(false);
+});
+
+test("labels the sidebar feedback button with a tooltip", async () => {
+  await renderSidebar();
+  const button = host!.querySelector<HTMLButtonElement>(
+    'button[aria-label="Menu.Help.SendFeedback"]',
+  )!;
+  await act(async () => {
+    button.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    button.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+  });
+  await vi.waitFor(() =>
+    expect(
+      [...document.querySelectorAll('[role="tooltip"]')].map((node) => node.textContent),
+    ).toContain("Menu.Help.SendFeedback"),
+  );
 });

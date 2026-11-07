@@ -1,5 +1,13 @@
 import { AppShellSection, Stack, Tooltip } from "@mantine/core";
-import { type LucideIcon, ChessKnight, Brain, Library, Settings, User } from "lucide-react";
+import {
+  type LucideIcon,
+  ChessKnight,
+  Brain,
+  Library,
+  MessageSquarePlus,
+  Settings,
+  User,
+} from "lucide-react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import cx from "clsx";
 import { useTranslation } from "react-i18next";
@@ -56,7 +64,7 @@ const linksdata = [
   { icon: Brain, labelKey: "SideBar.Engines", matchPath: "/engines" },
 ] as const;
 
-export function SideBar() {
+export function SideBar({ onSendFeedback }: { onSendFeedback: () => void }) {
   const { t } = useTranslation();
   const database = useActiveDatabaseViewStore((s) => s.database);
 
@@ -78,6 +86,16 @@ export function SideBar() {
       </AppShellSection>
       <AppShellSection>
         <Stack justify="center" gap={0}>
+          <Tooltip label={t("Menu.Help.SendFeedback")} position="right">
+            <button
+              type="button"
+              aria-label={t("Menu.Help.SendFeedback")}
+              className={cx(classes.link, classes.button)}
+              onClick={onSendFeedback}
+            >
+              <MessageSquarePlus size="1.5rem" strokeWidth={2} />
+            </button>
+          </Tooltip>
           <NavbarLink icon={Settings} label={t("SideBar.Settings")} matchPath="/settings" />
         </Stack>
       </AppShellSection>
