@@ -22080,3 +22080,22 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Failure scenario:** release build 50fdcc36, throwaway profile seeded with a 2.1.0 copy of Mega Database 2025 (3 GB): the library listed the database after 62 s (73 s in an earlier run); screenshot `00-library-loading.png` of the run shows the generic text only. Felix's own Mega database will hit this once after the 2.2.0 schema update.
 * **Open question:** should the listing show a per-database "upgrading database (one time)" state with progress, or should the content check after an additive migration move to the existing background content validation (d-20261107-13 kept it inline)?
 * **Found by:** Claude Code (Opus 5.5), build opponent-prep-tree, 2026-11-07.
+
+---
+
+## 2026-11-07 — filed through the inbox spool
+
+### `wheelColumnTo` wheels outside the viewport when the stacked board layout has scrolled back to the top
+
+* **ID:** f-20261107-03 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** tooling
+* **Follow-up of:** f-20261106-48
+* **CI run:** 42409425212
+* **Spotted outside diff:** build opponent-prep-tree, `pnpm ci:remote:check` refused the release push, 2026-11-07
+* **Where:** `e2e/fixtures.ts` `wheelColumnTo`, called from `e2e/font-scaled-breakpoints.spec.ts:69` (`assertNotationColumn`) in `font-scaled-breakpoints: analysis notation floor and column scrolling at 800px and 200%`.
+* **Defect:** f-20261106-48's repair re-measures and re-wheels inside `toPass`, but every attempt assumes the notation column is inside the stacked layout's visible area. In run 42409425212 the outer `[data-board-layout="stacked"]` scroller was back at scrollTop 0 when `wheelColumnTo` ran (failure screenshot shows only the board), although `assertNotationColumn` had revealed `#bottomRight` with `wheelBoardStackTo` first. The column then lies below the viewport, the computed visible range is empty (`bottom < top`), the mouse is moved outside the viewport, and all wheels for 15 s miss.
+* **Failure scenario:** Test run 42409425212, job `e2e` 128514113148, master 48723325: `Error: target centre is hit-testable after user wheel scrolling`, `Timeout 15000ms exceeded`, at `fixtures.ts:266` from `spec.ts:69`; 1 failed. Every push to master is refused by `pnpm ci:remote:check` while this job is red.
+* **Proof:** job log `gh api repos/felixabeck/chessriddle-studio/actions/jobs/128514113148/logs`; artifact 13589296542 `test-results/font-scaled-breakpoints-fo-6bb86-*/test-failed-1.png` (board only, notation off-screen) and `trace.zip`.
+* **Repair guard:** inside each `toPass` attempt, when the column's visible part within the stack and viewport is empty or smaller than the target, first re-reveal the column with `wheelBoardStackTo`, then re-measure and wheel the column. Keep scrolling mouse-wheel driven and the hit-test assertion unchanged.
+* **Open question:** what resets the stacked layout's scroll position after `wheelBoardStackTo` (a re-mount of the stack container on a late layout re-measure is the likely cause); if it is the product, file it separately.
+* **Found by:** Claude Code (Opus 5.5), build opponent-prep-tree, 2026-11-07.
