@@ -252,6 +252,7 @@ test("board-state identity tokenizes FEN fields the same way chessops does", () 
     const key = getBoardState(single);
     expect(getBoardState("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR  b KQkq - 0 17")).toBe(key);
     expect(getBoardState("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR\tb KQkq - 0 17")).toBe(key);
+    expect(getBoardState("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR_b_KQkq_-_0_17")).toBe(key);
 });
 
 test("board-state identity skips construction only when castling and EP are both absent", () => {
