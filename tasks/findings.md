@@ -21368,6 +21368,9 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 **Handled, 2026-11-07 (drain 0ad17dd7):** `getPgnHeaders` discards a parsed `SetUp` tag, and `headersToPGN` skips `SetUp` and `FEN` in `other` (following the WhiteElo/BlackElo skip), so `writePGN` is the sole emitter of the root-position tags, including for headers persisted before this fix. New test: a SetUp+FEN game exported, reparsed and re-exported carries exactly one `[SetUp "1"]` and one `[FEN` each pass; a direct `headersToPGN` call with `other: {SetUp, FEN}` emits neither. The test fails with the fix stashed. Rejected: removing the synthesized writer tag instead — it is the only source when a FEN game was built in-app without a parsed SetUp. Commit `404e1588`.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"52807e9a34cf366d63ec3fc7b1526a172865b9c620c279c9df22c6d26f7d7885","header_sha256":"19a0e9482c2bdb1896d548f255a9f708c904d6cbc5c0de7c31ce696efbfb5a7f","header_status":"handled","input_sha256":"111b58100be14c4e861478ccde92b87d8c881cb62738dd9921189f438d1be673","kind":"mutation-receipt","operation":"db4610b8a76d5068f765c9240417a80426c6217ddbe88fe61c723e4185e23d85","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-10"],"target":"f-20261106-10","v":1} -->
 
+**Commit correction, 2026-11-07:** the release rebase rewrote fix commit `404e1588` to `995cd1c2` (same patch); `995cd1c2` is the commit on master.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"89019426d9e095c6e6694aecf9c47659fcb0913624875b470bf31445c00f3955","input_sha256":"874a84e616af9cf9dc522f7a5509c3a7ee4578760d8f2f731f00b3512f355615","kind":"mutation-receipt","operation":"3febdfbaa8b10be5369fe39f5ff8649cbdfef5d7072a76f511d9c069c7bd67d7","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-10"],"target":"f-20261106-10","v":1} -->
+
 ---
 
 ## 2026-11-06 — filed through the inbox spool
