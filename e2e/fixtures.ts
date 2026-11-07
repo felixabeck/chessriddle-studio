@@ -257,13 +257,13 @@ export async function wheelColumnTo(page: Page, column: Locator, target: Locator
         // The column's left border is outside its nested notation viewport.
         await page.mouse.move(columnBox.x, centre);
         await page.mouse.wheel(0, targetBox.y + targetBox.height / 2 - centre);
-        await expect.poll(targetCentreIsHitTestable, { timeout: 1000 }).toBe(true);
+        await expect
+            .poll(targetCentreIsHitTestable, {
+                timeout: 1000,
+                message: "target centre is hit-testable after user wheel scrolling",
+            })
+            .toBe(true);
     }).toPass({ timeout: 15_000, intervals: [100, 250, 500] });
-    await expect
-        .poll(targetCentreIsHitTestable, {
-            message: "target centre is hit-testable after user wheel scrolling",
-        })
-        .toBe(true);
 }
 
 export async function waitForFontsSettled(page: Page) {

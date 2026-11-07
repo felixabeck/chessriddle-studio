@@ -72,6 +72,44 @@ async function assertNotationColumn(page: Page, hasMoves: boolean) {
     await expect.poll(() => column.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
 }
 
+test("wheelColumnTo retries after a first wheel miss", async ({ page }) => {
+    await page.setContent(`
+        <div
+            id="column"
+            style="height: 200px; overflow-y: auto; border-left: 1px solid black; width: 240px"
+        >
+            <div style="height: 800px">above</div>
+            <button type="button">target</button>
+            <div style="height: 800px">below</div>
+        </div>
+    `);
+    const column = page.locator("#column");
+    const target = page.getByRole("button", { name: "target", exact: true });
+    await column.evaluate((element) => {
+        element.addEventListener("wheel", (event) => event.preventDefault(), {
+            capture: true,
+            once: true,
+            passive: false,
+        });
+    });
+
+    await wheelColumnTo(page, column, target);
+
+    await expect.poll(() => column.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    await expect
+        .poll(() =>
+            target.evaluate((element) => {
+                const box = element.getBoundingClientRect();
+                const hit = document.elementFromPoint(
+                    box.left + box.width / 2,
+                    box.top + box.height / 2,
+                );
+                return hit !== null && element.contains(hit);
+            }),
+        )
+        .toBe(true);
+});
+
 for (const host of ["analysis", "play"] as const) {
     for (const width of [1000, 800]) {
         test(`font-scaled-breakpoints: ${host} notation floor and column scrolling at ${width}px and 200%`, async ({
