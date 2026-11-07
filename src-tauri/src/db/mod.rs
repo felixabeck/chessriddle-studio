@@ -10915,6 +10915,77 @@ mod tests {
     }
 
     #[test]
+    fn game_list_elo_band_treats_sql_null_as_unrated_zero() {
+        let (_directory, app, file, path) = blocking_database_case();
+        let mut db = SqliteConnection::establish(&path.to_string_lossy()).unwrap();
+        TempGame {
+            white_name: Some("NullWhite".into()),
+            black_name: Some("NullBlack".into()),
+            white_elo: None,
+            black_elo: None,
+            ..Default::default()
+        }
+        .insert_to_db(&mut db)
+        .unwrap();
+        TempGame {
+            white_name: Some("ZeroWhite".into()),
+            black_name: Some("ZeroBlack".into()),
+            white_elo: Some(0),
+            black_elo: Some(0),
+            ..Default::default()
+        }
+        .insert_to_db(&mut db)
+        .unwrap();
+        TempGame {
+            white_name: Some("RatedWhite".into()),
+            black_name: Some("RatedBlack".into()),
+            white_elo: Some(1850),
+            black_elo: Some(1850),
+            ..Default::default()
+        }
+        .insert_to_db(&mut db)
+        .unwrap();
+        drop(db);
+
+        let state = app.state::<AppState>();
+        let query = |sides: Sides, range: (i32, i32)| {
+            get_games_blocking(
+                &state.pgn_path_authority,
+                &state.database_repository,
+                file.clone(),
+                GameQuery {
+                    sides: Some(sides),
+                    range1: Some(range),
+                    range2: Some(range),
+                    ..Default::default()
+                },
+                &CancellationToken::new(),
+            )
+            .unwrap()
+        };
+
+        for sides in [Sides::WhiteBlack, Sides::BlackWhite, Sides::Any] {
+            let unrated = query(sides.clone(), (0, 2000));
+            assert_eq!(unrated.data.len(), 3, "{sides:?} (0, 2000) rows");
+            assert_eq!(unrated.count, Some(3), "{sides:?} (0, 2000) count");
+
+            let zero_only = query(sides.clone(), (0, 0));
+            assert_eq!(zero_only.data.len(), 2, "{sides:?} (0, 0) rows");
+            assert_eq!(zero_only.count, Some(2), "{sides:?} (0, 0) count");
+
+            let mid = query(sides.clone(), (1800, 1900));
+            assert_eq!(mid.data.len(), 1, "{sides:?} (1800, 1900) rows");
+            assert_eq!(mid.count, Some(1), "{sides:?} (1800, 1900) count");
+            assert_eq!(mid.data[0].white, "RatedWhite");
+
+            let rated = query(sides.clone(), (1, 3000));
+            assert_eq!(rated.data.len(), 1, "{sides:?} (1, 3000) rows");
+            assert_eq!(rated.count, Some(1), "{sides:?} (1, 3000) count");
+            assert_eq!(rated.data[0].white, "RatedWhite");
+        }
+    }
+
+    #[test]
     fn get_db_info_reflects_edits_and_whether_indexes_exist() {
         let (_dir, app, handle, _database) = blocking_database_case();
         let state = app.state::<AppState>();

@@ -697,7 +697,6 @@ function PlayerMerger({
       setPlayer2(undefined);
     } catch (error) {
       notifyUnlessCancelled(t("Common.Error"), error);
-      reload();
     } finally {
       setLoading(false);
     }

@@ -13,7 +13,7 @@ import {
 import type { PlayerGameInfo } from "@/bindings";
 import { getTimeControl } from "@/utils/timeControl";
 import DateRangeTabs, { DateRange } from "./DateRangeTabs";
-import { completeDailyDate, summarizeDailyStats } from "./dailyStatsSummary";
+import { parseCompleteDailyDate, summarizeDailyStats } from "./dailyStatsSummary";
 import {
   gradientStops,
   linearGradientProps,
@@ -73,7 +73,7 @@ function RatingsPanel({
           .filter(
             (day) => !timeControl || getTimeControl(website, day.time_control) === timeControl,
           )
-          .map((day) => completeDailyDate(day.date))
+          .map((day) => parseCompleteDailyDate(day.date))
           .filter((date): date is number => date !== null),
       ]),
     ).sort((a, b) => a - b);
@@ -97,11 +97,14 @@ function RatingsPanel({
         .flatMap((games) => games.daily)
         .filter((day) => !timeControl || getTimeControl(website!, day.time_control) === timeControl)
         .filter((day) => {
-          const gameDate = completeDailyDate(day.date);
-          // Incomplete dates cannot be placed on the slider; include them only
-          // when the selected range is the whole domain.
+          const gameDate = parseCompleteDailyDate(day.date);
+          // Incomplete dates cannot be placed on the slider; count them only for
+          // All time, or a manual slider covering the whole timeline.
           if (gameDate === null) {
-            return timeRange.start === 0 && timeRange.end === dates.length - 1;
+            return (
+              dateRange === DateRange.AllTime ||
+              (dateRange === null && timeRange.start === 0 && timeRange.end === dates.length - 1)
+            );
           }
           return (
             gameDate >= (dates[timeRange.start] || 0) && gameDate <= (dates[timeRange.end] || 0)
@@ -113,7 +116,7 @@ function RatingsPanel({
     const ratingData = (() => {
       const map = new Map<number, { date: number; player_elo: number }>();
       for (const day of filteredDailyStats) {
-        const date = completeDailyDate(day.date);
+        const date = parseCompleteDailyDate(day.date);
         if (date === null) continue;
         if (!map.has(date) || map.get(date)!.player_elo < day.max_player_elo) {
           map.set(date, { date, player_elo: day.max_player_elo });
@@ -126,7 +129,7 @@ function RatingsPanel({
       { games: summary.total, won: summary.won, draw: summary.draw, lost: summary.lost },
       ratingData,
     ];
-  }, [info.site_stats_data, website, account, timeControl, timeRange, dates]);
+  }, [info.site_stats_data, website, account, timeControl, timeRange, dates, dateRange]);
 
   const playerEloDomain =
     ratingData.length === 0

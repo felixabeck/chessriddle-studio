@@ -1324,7 +1324,7 @@ function playerSearchValue(label: string) {
   return host.querySelector<HTMLInputElement>(`input[aria-label='${label}']`)?.value ?? "";
 }
 
-test("a failed player merge surfaces an error notification and reloads the list", async () => {
+test("a failed player merge surfaces an error notification without reloading the list", async () => {
   await renderRoute();
   await selectExistingDatabase();
   await pickMergePair("AliceB", "BobB");
@@ -1338,7 +1338,7 @@ test("a failed player merge surfaces an error notification and reloads the list"
     title: "Common.Error",
     message: "merge failed",
   });
-  expect(mocks.getDatabases).toHaveBeenCalledTimes(reloads + 1);
+  expect(mocks.getDatabases).toHaveBeenCalledTimes(reloads);
 });
 
 test("switching libraries drops the merge draft so Merge does not send the previous ids", async () => {

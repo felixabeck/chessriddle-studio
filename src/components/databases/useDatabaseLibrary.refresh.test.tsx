@@ -305,6 +305,31 @@ test("an unchanged same-handle revalidation does not write database metadata", a
   expect(namedField("Common.Name", "input").value).toBe("Games");
 });
 
+test("a live title draft saves with a same-handle external description after debounce", async () => {
+  let listed = database;
+  mocks.getDatabases.mockImplementation(async () => list([listed]));
+  mocks.editDbInfo.mockImplementation(
+    async (_file: SuccessDatabaseInfo["file"], title: string, description: string) => {
+      listed = { ...listed, title, description };
+    },
+  );
+  await render();
+  await editNamedField("Common.Name", "input", "Typed");
+  expect(mocks.editDbInfo).not.toHaveBeenCalled();
+
+  listed = { ...listed, description: "From disk" };
+  await act(async () => {
+    await mutate(DATABASE_LIST_KEY);
+  });
+  expect(namedField("Common.Description", "textarea").value).toBe("From disk");
+  expect(mocks.editDbInfo).not.toHaveBeenCalled();
+
+  await waitForSettingsDebounce();
+  expect(mocks.editDbInfo).toHaveBeenCalledExactlyOnceWith(database.file, "Typed", "From disk");
+  expect(namedField("Common.Name", "input").value).toBe("Typed");
+  expect(namedField("Common.Description", "textarea").value).toBe("From disk");
+});
+
 test("typing a title saves the typed title with the current description after debounce", async () => {
   let listed = database;
   mocks.getDatabases.mockImplementation(async () => list([listed]));

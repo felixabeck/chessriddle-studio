@@ -361,6 +361,52 @@ test("Overview and Ratings All-time both count games on incomplete daily dates",
   );
 });
 
+test("Ratings Seven Days excludes incomplete dates that All time includes", async () => {
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const yesterdayDate = [
+    yesterday.getFullYear(),
+    String(yesterday.getMonth() + 1).padStart(2, "0"),
+    String(yesterday.getDate()).padStart(2, "0"),
+  ].join(".");
+  const mixedDateStatistics: PlayerGameInfo = {
+    site_stats_data: [
+      {
+        site: "Lichess",
+        player: "Magnus",
+        daily: [
+          {
+            date: "2024.??.??",
+            time_control: "600+0",
+            won: 2,
+            drawn: 0,
+            lost: 0,
+            max_player_elo: 2_700,
+          },
+          {
+            date: yesterdayDate,
+            time_control: "600+0",
+            won: 0,
+            drawn: 0,
+            lost: 1,
+            max_player_elo: 2_650,
+          },
+        ],
+        openings: [],
+      },
+    ],
+  };
+
+  await render(<RatingsPanel playerName="Magnus" info={mixedDateStatistics} isDatabase />);
+  expect(container.textContent).toContain("3 Common.Games");
+
+  await act(async () => {
+    container.querySelector<HTMLButtonElement>("[data-testid='select-seven-days']")?.click();
+  });
+
+  expect(container.textContent).toContain("1 Common.Games");
+  expect(container.querySelector("[data-testid='rating-data']")?.textContent).toBe("2650");
+});
+
 test("Openings sums duplicate opening keys and retains each colour's results", async () => {
   await render(<OpeningsPanel playerName="Magnus" info={duplicatedOpeningStatistics} isDatabase />);
 
