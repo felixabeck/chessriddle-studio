@@ -21330,7 +21330,7 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 
 ### Asymmetric White/Black time-control tags are not restored to the modeled header fields clocks read
 
-* **ID:** f-20261106-09 · **Status:** open · **Area:** chess-tree · **Root:** pgn-modeled-header-parse-gap · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261106-09 · **Status:** handled · **Area:** chess-tree · **Root:** pgn-modeled-header-parse-gap · **Entry:** inline · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** PGN fidelity / file-save review at HEAD `7861ffea`, beyond annotation and startup coverage
 * **Where:** `src/utils/chess.ts:659-701` (`getPgnHeaders`) promotes only `TimeControl` and `Variant` into modeled fields; `WhiteTimeControl`, `BlackTimeControl`, `ECO` and `UTCTime` fall into `other`. Writers and consumers use the modeled fields: `headersToPGN` at `src/utils/chess.ts:204-233`, `BoardGame.tsx:702-720` (asymmetric clocks clear `time_control` and set `white_time_control` / `black_time_control`), `src/utils/clock.ts:84-98`, `src/components/boards/Board.tsx:296-301`.
@@ -21342,6 +21342,9 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 
 **Review correction, 2026-11-06:** the live-save path does not replace `store.headers` with its round-trip printed-copy parse; traced `saveToFile` retains the existing store and updates only the admitted source stamp. Accordingly, the earlier failure scenario overstated clock UI loss on ordinary file-tab reopen. The verified affected scenario is an explicit PGN header import/new-tree parse of an asymmetric-clock PGN into an engine game, where `white_time_control` / `black_time_control` never become modeled while the shared `time_control` stays unset. Source and probe proof remain valid; tags still round-trip through `other`, so textual PGN is not lost.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"3899b23621addbf65c9a4a6b51abfdf2f354639ad19780fd9c1acaa0d87cbd83","input_sha256":"f816b73a6a4b043929d159c1d6f362fa555619c37b431d4796baccaff16e4c1c","kind":"mutation-receipt","operation":"5054dc0b9f78dd09d5a5c7e2779e4064d0e81a814c9214368ef7c356347ea086","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-09"],"target":"f-20261106-09","v":1} -->
+
+**Handled, 2026-11-07 (drain 0ad17dd7):** `getPgnHeaders` now destructures `WhiteTimeControl`, `BlackTimeControl`, `ECO` and `UTCTime` into `white_time_control`, `black_time_control`, `eco` and `time` — the exact inverses of the tags `headersToPGN` writes — so a parsed asymmetric-clock game exposes the modeled fields `hasClock`/`getClocks`/Board read. The round-trip test now pins the modeled shape (tags absent from `other`, each emitted once) and a new parse test pins all four fields. Fix-revert proof: with the `chess.ts` hunk stashed the round-trip cases and the new test fail; restored, `chess.test.ts` plus `src/state` and `src/components/boards` suites pass (1715 tests). Commit `404e1588`.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"b150fe18cb4f9c4f493e22b7e1c8073a061e19be610dd9e6b2512d9c31dff029","header_sha256":"9bdd9111419361f01dd7f0738f495a5e67161fa99098cbe89231f7361d3fddd8","header_status":"handled","input_sha256":"ae3f16ba0f5c35f4781b050c1f4e35c19614ad3934477c4fa362765cedf1f6f0","kind":"mutation-receipt","operation":"0802fc52f36c51ffc2775d21baadc989f04a59a6cd9c5239a81e6800d2df23cc","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-09"],"target":"f-20261106-09","v":1} -->
 
 ---
 
