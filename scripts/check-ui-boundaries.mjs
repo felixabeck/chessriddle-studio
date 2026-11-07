@@ -13,6 +13,8 @@ const violations = [];
 const actionIconImport = /import\s*\{[^}]*\bActionIcon\b[^}]*\}\s*from\s*["']@mantine\/core["']/;
 const modalImport = /import\s*\{[^}]*\bModal\b[^}]*\}\s*from\s*["']@mantine\/core["']/;
 const unsafeFocusReset = /\b(all\s*:\s*unset|outline\s*:\s*(?:none|0(?:px)?))\b/;
+const mantineStylesheetSpec =
+  /(?:from|import)\s+["']((?:@mantine\/[\w-]+|mantine-contextmenu|mantine-datatable)\/(?:styles(?:\.layer)?\.css|styles\/[\w.-]+\.css))["']/;
 
 function inspectLine(file, line) {
   if (
@@ -27,6 +29,12 @@ function inspectLine(file, line) {
   }
   if (modalImport.test(line) && file !== "src/components/common/AppModal.tsx") {
     violations.push(`${file}: direct Modal import; use AppModal instead`);
+  }
+  const stylesheet = line.match(mantineStylesheetSpec);
+  if (stylesheet && !stylesheet[1].endsWith(".layer.css")) {
+    violations.push(
+      `${file}: unlayered Mantine stylesheet import '${stylesheet[1]}'; use styles.layer.css`,
+    );
   }
 }
 

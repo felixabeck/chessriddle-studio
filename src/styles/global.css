@@ -97,7 +97,20 @@ cg-board square.oc.move-dest:hover {
   text-align: center;
 }
 
-:focus-visible {
+/* Mantine focus treatments beat this rule by specificity before @layer mantine.
+   Those states stay excluded so layering does not restyle them. :where() keeps
+   the original (0,1,0) specificity so component :focus-visible rules still win
+   by specificity. */
+:focus-visible:where(
+  :not(
+    .mantine-focus-auto,
+    .mantine-focus-always,
+    .mantine-focus-never,
+    .mantine-Input-input,
+    .mantine-Popover-dropdown,
+    .ProseMirror
+  )
+) {
   outline: 3px solid var(--cf-ring);
   outline-offset: 3px;
 }

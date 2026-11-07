@@ -6,6 +6,13 @@
   box-shadow: var(--cf-shadow-elevated);
 }
 
+/* Mantine's [data-full-screen] { border-radius: 0 } beat .content/.root by
+   specificity before @layer mantine. Restore that value in app CSS so it does
+   not depend on emission order. */
+.content[data-full-screen] {
+  border-radius: 0;
+}
+
 .header {
   background: var(--cf-card);
   color: var(--cf-foreground);

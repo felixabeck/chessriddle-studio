@@ -238,6 +238,9 @@ for (const locale of ["en-US", "de-DE"] as const) {
             await assertDialogWithinViewport(dialog);
             await assertNothingClipped(dialog, { mode: "reachable" });
             await assertNoHorizontalOverflow();
+            // BASE (unlayered Mantine, measured 2026-11-07): .m_54c44539[data-full-screen]
+            // sets border-radius: 0 and beat Paper/Modal theme radius by specificity.
+            await expect(dialog).toHaveCSS("border-radius", "0px");
             if (!relistFails)
                 await expect(dialog).toHaveScreenshot(`workspace-cleanup-320-200-${locale}.png`);
             await capture(

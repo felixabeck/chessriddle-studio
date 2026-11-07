@@ -75,6 +75,37 @@ test("settings-responsive: uses the fixed accent and retains scheme selection", 
     }
 });
 
+test("settings search TextInput keeps Mantine outline-none on keyboard focus", async ({ page }) => {
+    await page.goto("/settings");
+    const search = page.getByPlaceholder("Search", { exact: true });
+    await expect(search).toBeVisible();
+    await search.focus();
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Tab");
+    await expect(search).toBeFocused();
+    expect(await search.evaluate((element) => element.matches(":focus-visible"))).toBe(true);
+    // BASE (unlayered Mantine, measured 2026-11-07): Input .m_8fb7ebe7:focus
+    // sets outline: none. Chromium still reports outline-width as the UA
+    // medium (3px) while style is none; the painted outline is absent.
+    await expect(search).toHaveCSS("outline-style", "none");
+});
+
+test("sidebar Send feedback button keeps its 2px inset outline on keyboard focus", async ({
+    page,
+}) => {
+    await page.goto("/settings");
+    const feedback = page.getByRole("button", { name: "Send feedback", exact: true });
+    await expect(feedback).toBeVisible();
+    await feedback.focus();
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Tab");
+    await expect(feedback).toBeFocused();
+    expect(await feedback.evaluate((element) => element.matches(":focus-visible"))).toBe(true);
+    // BASE: Sidebar.module.css .link:focus-visible { outline: 2px; outline-offset: -3px }.
+    await expect(feedback).toHaveCSS("outline-width", "2px");
+    await expect(feedback).toHaveCSS("outline-offset", "-3px");
+});
+
 test("settings-responsive: retired Anarchy setting is absent from search", async ({
     page,
     capture,

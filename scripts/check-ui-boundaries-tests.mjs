@@ -61,3 +61,47 @@ test("rethrows a source read failure that is not ENOENT", async () => {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /EISDIR/);
 });
+
+test("rejects an unlayered Mantine stylesheet import", async () => {
+  const result = await runChecker("src/App.tsx", async (root) => {
+    await writeFile(join(root, "src", "App.tsx"), 'import "@mantine/core/styles.css";\n');
+  });
+
+  assert.notEqual(result.status, 0, result.stderr);
+  assert.match(result.stderr, /unlayered Mantine stylesheet import '@mantine\/core\/styles\.css'/);
+  assert.match(result.stderr, /styles\.layer\.css/);
+});
+
+test("accepts a layered Mantine stylesheet import", async () => {
+  const result = await runChecker("src/App.tsx", async (root) => {
+    await writeFile(join(root, "src", "App.tsx"), 'import "@mantine/core/styles.layer.css";\n');
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.error, undefined);
+});
+
+test("rejects an unlayered per-component Mantine stylesheet import", async () => {
+  const result = await runChecker("src/App.tsx", async (root) => {
+    await writeFile(join(root, "src", "App.tsx"), 'import "@mantine/core/styles/Button.css";\n');
+  });
+
+  assert.notEqual(result.status, 0, result.stderr);
+  assert.match(
+    result.stderr,
+    /unlayered Mantine stylesheet import '@mantine\/core\/styles\/Button\.css'/,
+  );
+  assert.match(result.stderr, /styles\.layer\.css/);
+});
+
+test("accepts a layered per-component Mantine stylesheet import", async () => {
+  const result = await runChecker("src/App.tsx", async (root) => {
+    await writeFile(
+      join(root, "src", "App.tsx"),
+      'import "@mantine/core/styles/Button.layer.css";\n',
+    );
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.error, undefined);
+});
