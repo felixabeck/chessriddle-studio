@@ -21541,7 +21541,7 @@ chessops 0.14 has one unified `Chess` with arbitrary-file rook castling: `Castle
 
 ### Board `aria-selected` follows keyboard focus instead of the move source
 
-* **ID:** f-20261106-18 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261106-18 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** accessibility of core board workflows review at HEAD `dc280784`
 * **Where:** Accessible square grid in `src/components/boards/Board.tsx`: `aria-label` passes `keyboardSource === square` into `accessibleSquareLabel` (`Board.tsx:605-609`), while `aria-selected={keyboardSquare === square}` (`Board.tsx:611`). `aria-activedescendant` correctly tracks `keyboardSquare` (`Board.tsx:556`). Label copy for the selected source is `Board.Aria.MoveSourceSelected` via `boardAccessibility.ts`. Related handled: `f-20261101-20` (keyboard legality/viewOnly guards — different defect). Accessible keyboard promotion remains covered by `PromotionModal.test.tsx` and is not reopened here.
@@ -21549,6 +21549,9 @@ chessops 0.14 has one unified `Chess` with arbitrary-file rook castling: `Castle
 * **Failure scenario:** Focus the board grid, press Enter/Space on e2 (live region announces move source), then ArrowUp to e4. `aria-activedescendant` becomes `board-square-e4`. The e4 gridcell is `aria-selected="true"` and e2 is not, even though the pending source is still e2 and only e2’s label includes the move-source selected wording. A screen-reader user following selection state hears the destination as selected before the move is confirmed.
 * **Fix:** Set `aria-selected={keyboardSource === square}` so selection matches the label’s source flag and the ARIA grid pattern (focus via `aria-activedescendant`, selection via `aria-selected`). Add a Board component regression that selects e2, moves focus to e4, and asserts e2 selected / e4 not selected.
 * **Proof:** Ephemeral Board.test.tsx probe `aria-selected tracks move source, not only keyboard focus` on HEAD `dc280784`: after `Enter` then `ArrowUp`×2, `aria-activedescendant` was `board-square-e4` and `#board-square-e4` had `aria-selected="true"` (expected `false` with source still on e2). Probe removed; `git checkout -- src/components/boards/Board.test.tsx`; tree clean.
+
+**Handled, 2026-11-08 (drain session 145da2cd-7b80-40cb-ab39-2cca73a7c760), commit `eae41707`:** `Board.tsx` now sets `aria-selected={keyboardSource === square}`, so selection follows the committed move source and focus stays on `aria-activedescendant`. A new regression in `Board.test.tsx` (`keyboard source stays aria-selected after the focus square moves`) presses Enter, ArrowUp, ArrowUp and asserts e2 is selected while e4 is focused. It failed with the old binding.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"3a6e89e44ef9f73b92eab406a6e630a230b1110524bf5e129fd341a408c586cc","header_sha256":"c5f3a3b087f6ad39c96d3c325c26399c6fc8448db4ace3aa5ac9159d1681eac7","header_status":"handled","input_sha256":"7b81c15a394da7629e242750fdd58acd41633d99cf050433d069cf138b103de1","kind":"mutation-receipt","operation":"3d258b8e756e1d6aac8d515caf98ba0de35f9cbed92cdadfbf0e0ea257a0fa3a","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-18"],"target":"f-20261106-18","v":1} -->
 
 ---
 
