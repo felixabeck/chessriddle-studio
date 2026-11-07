@@ -13,6 +13,8 @@ import type { FeedbackOutcome } from "@/bindings";
 const mocks = vi.hoisted(() => ({
   submitFeedback: vi.fn(),
   notify: vi.fn(),
+  toPng: vi.fn(),
+  pickImage: undefined as ((file: File | null) => void) | undefined,
 }));
 
 vi.mock("@/platform/tauri", () => ({
@@ -49,6 +51,24 @@ vi.mock("../common/AppModal", () => ({
     ) : null,
 }));
 vi.mock("@mantine/notifications", () => ({ notifications: { show: mocks.notify } }));
+vi.mock("html-to-image", () => ({
+  toPng: mocks.toPng,
+}));
+vi.mock("@/components/common/IconAction", () => ({
+  IconAction: ({
+    label,
+    onClick,
+    disabled,
+  }: {
+    label: string;
+    onClick?: () => void;
+    disabled?: boolean;
+  }) => (
+    <button type="button" aria-label={label} onClick={onClick} disabled={disabled}>
+      {label}
+    </button>
+  ),
+}));
 vi.mock("@mantine/core", () => ({
   Anchor: ({ children, href }: { children?: ReactNode; href?: string }) => (
     <a href={href}>{children}</a>
@@ -56,12 +76,30 @@ vi.mock("@mantine/core", () => ({
   Button: ({
     children,
     loading,
+    leftSection: _leftSection,
+    styles: _styles,
+    variant: _variant,
     ...props
-  }: ButtonHTMLAttributes<HTMLButtonElement> & { loading?: boolean }) => (
+  }: ButtonHTMLAttributes<HTMLButtonElement> & {
+    loading?: boolean;
+    leftSection?: ReactNode;
+    styles?: unknown;
+    variant?: string;
+  }) => (
     <button {...props} disabled={loading || props.disabled}>
       {children}
     </button>
   ),
+  FileButton: ({
+    children,
+    onChange,
+  }: {
+    children: (props: { onClick: () => void }) => ReactNode;
+    onChange: (file: File | null) => void;
+  }) => {
+    mocks.pickImage = onChange;
+    return children({ onClick: () => {} });
+  },
   Group: ({ children }: HTMLAttributes<HTMLDivElement>) => <div>{children}</div>,
   SegmentedControl: ({
     data,
@@ -125,14 +163,20 @@ type Uuid = `${string}-${string}-${string}-${string}-${string}`;
 const firstKey: Uuid = "11111111-1111-4111-8111-111111111111";
 const secondKey: Uuid = "22222222-2222-4222-8222-222222222222";
 const thirdKey: Uuid = "33333333-3333-4333-8333-333333333333";
+const fourthKey: Uuid = "44444444-4444-4444-8444-444444444444";
 const FEEDBACK_MAX_EMAIL = 254;
 const FEEDBACK_MAX_MESSAGE = 5000;
+const SMALL_PNG = "data:image/png;base64,aGVsbG8=";
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const OVERSIZED_PNG = `data:image/png;base64,${"A".repeat(Math.ceil(((MAX_IMAGE_BYTES + 1) * 4) / 3))}`;
 
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.submitFeedback.mockResolvedValue("sent" satisfies FeedbackOutcome);
   let issued = 0;
-  const keys = [firstKey, secondKey, thirdKey] as const;
+  mocks.toPng.mockResolvedValue(SMALL_PNG);
+  Object.defineProperty(window, "devicePixelRatio", { configurable: true, value: 2 });
+  const keys = [firstKey, secondKey, thirdKey, fourthKey] as const;
   vi.spyOn(crypto, "randomUUID").mockImplementation(() => {
     const key = keys[issued++];
     if (!key) throw new Error("unexpected extra UUID");
@@ -147,6 +191,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 async function renderModal() {
@@ -179,6 +224,98 @@ async function submitForm() {
       .querySelector("form")!
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   });
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+function screenshotButton() {
+  return [...container.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Feedback.TakeScreenshot"),
+  );
+}
+
+function sendButton() {
+  return container.querySelector<HTMLButtonElement>("button[type='submit']");
+}
+
+function preview() {
+  return container.querySelector<HTMLImageElement>("img[alt='Feedback.ImagePreview']");
+}
+
+async function takeScreenshot() {
+  await act(async () => {
+    screenshotButton()?.click();
+  });
+}
+
+async function clickSend() {
+  await act(async () => {
+    sendButton()?.click();
+  });
+}
+
+async function pickFile(file: File) {
+  await act(async () => {
+    mocks.pickImage?.(file);
+  });
+}
+
+async function removeAttachedImage() {
+  const button = container.querySelector<HTMLButtonElement>(
+    "button[aria-label='Feedback.RemoveImage']",
+  );
+  await act(async () => {
+    button?.click();
+  });
+}
+
+function pngFile(name = "shot.png") {
+  return new File([new Uint8Array([1, 2, 3])], name, { type: "image/png" });
+}
+
+function installDeferredFileReader() {
+  const readers: Array<{
+    load: (dataUrl: string) => void;
+    error: () => void;
+  }> = [];
+  class DeferredFileReader {
+    result: string | ArrayBuffer | null = null;
+    onload: ((event: ProgressEvent<FileReader>) => void) | null = null;
+    onerror: ((event: ProgressEvent<FileReader>) => void) | null = null;
+    onabort: ((event: ProgressEvent<FileReader>) => void) | null = null;
+    readAsDataURL = () => {
+      readers.push({
+        load: (dataUrl: string) => {
+          this.result = dataUrl;
+          this.onload?.(new ProgressEvent("load") as ProgressEvent<FileReader>);
+        },
+        error: () => {
+          this.onerror?.(new ProgressEvent("error") as ProgressEvent<FileReader>);
+        },
+      });
+    };
+  }
+  vi.stubGlobal("FileReader", DeferredFileReader);
+  return {
+    async load(index: number, dataUrl: string) {
+      await act(async () => {
+        readers[index]?.load(dataUrl);
+      });
+    },
+    async error(index = 0) {
+      await act(async () => {
+        readers[index]?.error();
+      });
+    },
+  };
 }
 
 test("keeps send disabled until the message is long enough", async () => {
@@ -427,5 +564,231 @@ test("privacy link points at the ChessRiddle privacy policy", async () => {
   await renderModal();
   expect(container.querySelector("a")?.getAttribute("href")).toBe(
     "https://chessriddle.com/privacy",
+  );
+});
+
+test("capture success attaches and previews the image", async () => {
+  await renderModal();
+  await takeScreenshot();
+  expect(preview()?.getAttribute("src")).toBe(SMALL_PNG);
+  expect(mocks.toPng).toHaveBeenCalledTimes(1);
+  expect(mocks.toPng.mock.calls[0]?.[0]).toBe(document.body);
+  expect(mocks.toPng.mock.calls[0]?.[1]).toMatchObject({
+    pixelRatio: 2,
+    cacheBust: true,
+    skipFonts: true,
+  });
+});
+
+test("capture failure shows the screenshot-failed copy", async () => {
+  mocks.toPng.mockRejectedValueOnce(new Error("boom"));
+  await renderModal();
+  await takeScreenshot();
+  expect(container.querySelector("[role='alert']")?.textContent).toBe(
+    "Feedback.Error.ScreenshotFailed",
+  );
+  expect(preview()).toBeNull();
+});
+
+test("retries capture at pixelRatio 1 when the first PNG is over 5 MiB", async () => {
+  mocks.toPng.mockResolvedValueOnce(OVERSIZED_PNG);
+  mocks.toPng.mockResolvedValueOnce(SMALL_PNG);
+  await renderModal();
+  await takeScreenshot();
+  expect(mocks.toPng).toHaveBeenCalledTimes(2);
+  expect(mocks.toPng.mock.calls[0]?.[1]).toMatchObject({ pixelRatio: 2 });
+  expect(mocks.toPng.mock.calls[1]?.[1]).toMatchObject({ pixelRatio: 1 });
+  expect(preview()?.getAttribute("src")).toBe(SMALL_PNG);
+});
+
+test("too-large capture after retry attaches nothing", async () => {
+  mocks.toPng.mockResolvedValue(OVERSIZED_PNG);
+  await renderModal();
+  await takeScreenshot();
+  expect(mocks.toPng).toHaveBeenCalledTimes(2);
+  expect(preview()).toBeNull();
+  expect(container.querySelector("[role='alert']")?.textContent).toBe(
+    "Feedback.Error.ImageTooLarge",
+  );
+});
+
+test("rejects a file that is not an accepted image type", async () => {
+  await renderModal();
+  await pickFile(new File(["nope"], "notes.txt", { type: "text/plain" }));
+  expect(preview()).toBeNull();
+  expect(container.querySelector("[role='alert']")?.textContent).toBe("Feedback.Error.ImageType");
+});
+
+test("rejects a file over 5 MiB", async () => {
+  const file = pngFile("big.png");
+  Object.defineProperty(file, "size", { value: MAX_IMAGE_BYTES + 1 });
+  await renderModal();
+  await pickFile(file);
+  expect(preview()).toBeNull();
+  expect(container.querySelector("[role='alert']")?.textContent).toBe(
+    "Feedback.Error.ImageTooLarge",
+  );
+});
+
+test("file read failure shows the could-not-read copy", async () => {
+  const reader = installDeferredFileReader();
+  await renderModal();
+  await pickFile(pngFile());
+  await reader.error(0);
+  expect(preview()).toBeNull();
+  expect(container.querySelector("[role='alert']")?.textContent).toBe(
+    "Feedback.Error.ImageReadFailed",
+  );
+});
+
+test("remove clears the attached image", async () => {
+  await renderModal();
+  await takeScreenshot();
+  expect(preview()).not.toBeNull();
+  await removeAttachedImage();
+  expect(preview()).toBeNull();
+});
+
+test("ignores a stale capture after close", async () => {
+  const capture = deferred<string>();
+  mocks.toPng.mockReturnValueOnce(capture.promise);
+  await renderModal();
+  await takeScreenshot();
+  await act(async () => {
+    container.querySelector<HTMLButtonElement>("[data-testid='dialog-close']")?.click();
+  });
+  await act(async () => {
+    capture.resolve(SMALL_PNG);
+    await capture.promise;
+  });
+  expect(preview()).toBeNull();
+});
+
+test("ignores a stale capture after remove", async () => {
+  await renderModal();
+  await takeScreenshot();
+  const capture = deferred<string>();
+  mocks.toPng.mockReturnValueOnce(capture.promise);
+  await takeScreenshot();
+  await removeAttachedImage();
+  await act(async () => {
+    capture.resolve(SMALL_PNG);
+    await capture.promise;
+  });
+  expect(preview()).toBeNull();
+});
+
+test("ignores a stale capture after a successful send", async () => {
+  const first = deferred<string>();
+  const second = deferred<string>();
+  mocks.toPng.mockReturnValueOnce(first.promise);
+  mocks.toPng.mockReturnValueOnce(second.promise);
+  await renderModal();
+  await fillMessage("A useful Studio report.");
+  await takeScreenshot();
+  await takeScreenshot();
+  await act(async () => {
+    second.resolve(SMALL_PNG);
+    await second.promise;
+  });
+  expect(preview()?.getAttribute("src")).toBe(SMALL_PNG);
+  await submitForm();
+  expect(onClose).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    first.resolve(`${SMALL_PNG}stale`);
+    await first.promise;
+  });
+  expect(preview()).toBeNull();
+});
+
+test("ignores a stale file read after close", async () => {
+  const reader = installDeferredFileReader();
+  await renderModal();
+  await pickFile(pngFile());
+  await act(async () => {
+    container.querySelector<HTMLButtonElement>("[data-testid='dialog-close']")?.click();
+  });
+  await reader.load(0, SMALL_PNG);
+  expect(preview()).toBeNull();
+});
+
+test("ignores a stale file read after remove", async () => {
+  const reader = installDeferredFileReader();
+  await renderModal();
+  await pickFile(pngFile());
+  await reader.load(0, SMALL_PNG);
+  expect(preview()).not.toBeNull();
+  await pickFile(pngFile("second.png"));
+  await removeAttachedImage();
+  await reader.load(1, `${SMALL_PNG}stale`);
+  expect(preview()).toBeNull();
+});
+
+test("ignores a stale file read after a successful send", async () => {
+  const reader = installDeferredFileReader();
+  await renderModal();
+  await fillMessage("A useful Studio report.");
+  await pickFile(pngFile("first.png"));
+  await pickFile(pngFile("second.png"));
+  await reader.load(1, SMALL_PNG);
+  expect(preview()?.getAttribute("src")).toBe(SMALL_PNG);
+  await submitForm();
+  expect(onClose).toHaveBeenCalledTimes(1);
+  await reader.load(0, `${SMALL_PNG}stale`);
+  expect(preview()).toBeNull();
+});
+
+test("does not submit while a capture is in flight", async () => {
+  const capture = deferred<string>();
+  mocks.toPng.mockReturnValueOnce(capture.promise);
+  await renderModal();
+  await fillMessage("A useful Studio report.");
+  await takeScreenshot();
+  expect(sendButton()?.disabled).toBe(true);
+  await clickSend();
+  await submitForm();
+  expect(mocks.submitFeedback).not.toHaveBeenCalled();
+  await act(async () => {
+    capture.resolve(SMALL_PNG);
+    await capture.promise;
+  });
+});
+
+test("does not submit while a file read is in flight", async () => {
+  const reader = installDeferredFileReader();
+  await renderModal();
+  await fillMessage("A useful Studio report.");
+  await pickFile(pngFile());
+  expect(sendButton()?.disabled).toBe(true);
+  await clickSend();
+  await submitForm();
+  expect(mocks.submitFeedback).not.toHaveBeenCalled();
+  await reader.load(0, SMALL_PNG);
+});
+
+test("changing the image after a failed send mints a new idempotency key", async () => {
+  mocks.submitFeedback.mockResolvedValueOnce("deliveryFailed" satisfies FeedbackOutcome);
+  await renderModal();
+  await fillMessage("A useful Studio report.");
+  await takeScreenshot();
+  await submitForm();
+  expect(mocks.submitFeedback.mock.calls[0]?.[3]).toBe(firstKey);
+  mocks.toPng.mockResolvedValueOnce("data:image/png;base64,c2Vjb25k");
+  await takeScreenshot();
+  await submitForm();
+  expect(mocks.submitFeedback.mock.calls[1]?.[3]).toBe(secondKey);
+});
+
+test("passes the attached image as the fifth argument", async () => {
+  await renderModal();
+  await fillMessage("A useful Studio report.");
+  await takeScreenshot();
+  await submitForm();
+  expect(mocks.submitFeedback).toHaveBeenCalledExactlyOnceWith(
+    "bug",
+    "A useful Studio report.",
+    null,
+    firstKey,
+    SMALL_PNG,
   );
 });

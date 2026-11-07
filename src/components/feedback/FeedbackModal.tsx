@@ -1,6 +1,7 @@
 import {
   Anchor,
   Button,
+  FileButton,
   Group,
   SegmentedControl,
   Stack,
@@ -9,10 +10,12 @@ import {
   TextInput,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { Camera, ImagePlus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import type { FeedbackOutcome, FeedbackType } from "@/bindings";
 import AppModal from "@/components/common/AppModal";
+import { IconAction } from "@/components/common/IconAction";
 import { wrappingButton } from "@/components/common/wrappingButton";
 import { normalizeError } from "@/platform/errors";
 import { tauri } from "@/platform/tauri";
@@ -22,12 +25,20 @@ const FEEDBACK_MAX_MESSAGE = 5000;
 const FEEDBACK_MIN_EMAIL = 3;
 const FEEDBACK_MAX_EMAIL = 254;
 const PRIVACY_URL = "https://chessriddle.com/privacy";
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"] as const;
 
-function payloadFingerprint(type: FeedbackType, message: string, email: string): string {
+function payloadFingerprint(
+  type: FeedbackType,
+  message: string,
+  email: string,
+  attachmentId: number,
+): string {
   return JSON.stringify({
     type,
     message: message.trim(),
     email: email.trim() || null,
+    attachmentId,
   });
 }
 
@@ -70,6 +81,21 @@ function transportMessage(error: unknown, t: (key: string) => string): string {
   return t("Feedback.Error.DeliveryFailed");
 }
 
+function decodedDataUrlBytes(dataUrl: string): number {
+  const comma = dataUrl.indexOf(",");
+  const payload = comma === -1 ? "" : dataUrl.slice(comma + 1);
+  const padding = payload.endsWith("==") ? 2 : payload.endsWith("=") ? 1 : 0;
+  return (payload.length * 3) / 4 - padding;
+}
+
+function captureFilter(node: HTMLElement): boolean {
+  if (!(node instanceof Element)) return true;
+  const role = node.getAttribute("role");
+  if (role === "dialog" || role === "presentation") return false;
+  if (node.classList.contains("mantine-Notifications-root")) return false;
+  return true;
+}
+
 export default function FeedbackModal({
   opened,
   onClose,
@@ -81,11 +107,15 @@ export default function FeedbackModal({
   const [feedbackType, setFeedbackType] = useState<FeedbackType>("bug");
   const [message, setMessage] = useState("");
   const [email, setEmail] = useState("");
+  const [image, setImage] = useState<string | null>(null);
+  const [attachmentId, setAttachmentId] = useState(0);
   const [pending, setPending] = useState(false);
+  const [attaching, setAttaching] = useState(false);
   const [error, setError] = useState("");
   const keyRef = useRef<string | null>(null);
   const lastPayloadRef = useRef<string | null>(null);
   const submitGeneration = useRef(0);
+  const attachmentGeneration = useRef(0);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -93,6 +123,7 @@ export default function FeedbackModal({
     return () => {
       mounted.current = false;
       submitGeneration.current += 1;
+      attachmentGeneration.current += 1;
     };
   }, []);
 
@@ -107,12 +138,16 @@ export default function FeedbackModal({
     emailError === "";
 
   function resetForm() {
+    attachmentGeneration.current += 1;
     keyRef.current = null;
     lastPayloadRef.current = null;
     setFeedbackType("bug");
     setMessage("");
     setEmail("");
+    setImage(null);
+    setAttachmentId(0);
     setPending(false);
+    setAttaching(false);
     setError("");
   }
 
@@ -120,6 +155,96 @@ export default function FeedbackModal({
     if (pending) return;
     resetForm();
     onClose();
+  }
+
+  function bumpAttachment(nextImage: string | null) {
+    setImage(nextImage);
+    setAttachmentId((id) => id + 1);
+  }
+
+  function removeImage() {
+    attachmentGeneration.current += 1;
+    setAttaching(false);
+    bumpAttachment(null);
+    setError("");
+  }
+
+  function captureOptions(pixelRatio: number) {
+    return {
+      pixelRatio,
+      cacheBust: true,
+      skipFonts: true,
+      filter: captureFilter,
+    };
+  }
+
+  async function captureScreenshot() {
+    const generation = ++attachmentGeneration.current;
+    setAttaching(true);
+    setError("");
+    try {
+      const { toPng } = await import("html-to-image");
+      const capture = (pixelRatio: number) => toPng(document.body, captureOptions(pixelRatio));
+      let dataUrl = await capture(Math.min(window.devicePixelRatio, 2));
+      if (!mounted.current || generation !== attachmentGeneration.current) return;
+      if (decodedDataUrlBytes(dataUrl) > MAX_IMAGE_BYTES) {
+        dataUrl = await capture(1);
+        if (!mounted.current || generation !== attachmentGeneration.current) return;
+        if (decodedDataUrlBytes(dataUrl) > MAX_IMAGE_BYTES) {
+          setError(t("Feedback.Error.ImageTooLarge"));
+          return;
+        }
+      }
+      bumpAttachment(dataUrl);
+    } catch {
+      if (!mounted.current || generation !== attachmentGeneration.current) return;
+      setError(t("Feedback.Error.ScreenshotFailed"));
+    } finally {
+      if (mounted.current && generation === attachmentGeneration.current) setAttaching(false);
+    }
+  }
+
+  function acceptImageFile(file: File) {
+    if (!(ACCEPTED_IMAGE_TYPES as readonly string[]).includes(file.type)) {
+      setError(t("Feedback.Error.ImageType"));
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setError(t("Feedback.Error.ImageTooLarge"));
+      return;
+    }
+    const generation = ++attachmentGeneration.current;
+    setAttaching(true);
+    setError("");
+    const reader = new FileReader();
+    const finishIfCurrent = (apply: () => void) => {
+      if (!mounted.current || generation !== attachmentGeneration.current) return;
+      apply();
+    };
+    reader.onload = () => {
+      finishIfCurrent(() => {
+        if (typeof reader.result !== "string") {
+          setError(t("Feedback.Error.ImageReadFailed"));
+          setAttaching(false);
+          return;
+        }
+        bumpAttachment(reader.result);
+        setAttaching(false);
+      });
+    };
+    reader.onerror = () => {
+      finishIfCurrent(() => {
+        setError(t("Feedback.Error.ImageReadFailed"));
+        setAttaching(false);
+      });
+    };
+    reader.onabort = () => {
+      finishIfCurrent(() => {
+        setError(t("Feedback.Error.ImageReadFailed"));
+        setAttaching(false);
+      });
+    };
+    reader.readAsDataURL(file);
   }
 
   function idempotencyKeyFor(fingerprint: string): string {
@@ -131,8 +256,8 @@ export default function FeedbackModal({
   }
 
   async function submit() {
-    if (pending || !canSubmit) return;
-    const fingerprint = payloadFingerprint(feedbackType, message, email);
+    if (pending || attaching || !canSubmit) return;
+    const fingerprint = payloadFingerprint(feedbackType, message, email, attachmentId);
     const idempotencyKey = idempotencyKeyFor(fingerprint);
     const generation = ++submitGeneration.current;
     setPending(true);
@@ -143,7 +268,7 @@ export default function FeedbackModal({
         trimmedMessage,
         trimmedEmail.length > 0 ? trimmedEmail : null,
         idempotencyKey,
-        null,
+        image,
       );
       if (!mounted.current || generation !== submitGeneration.current) return;
       if (outcome === "sent") {
@@ -215,6 +340,63 @@ export default function FeedbackModal({
             autoComplete="email"
             inputMode="email"
           />
+          <div>
+            <Text size="sm" fw={500} mb={4}>
+              {t("Feedback.Image")}
+            </Text>
+            <Group>
+              <Button
+                type="button"
+                variant="default"
+                leftSection={<Camera size="1rem" />}
+                onClick={() => void captureScreenshot()}
+                disabled={pending}
+                styles={wrappingButton}
+              >
+                {t("Feedback.TakeScreenshot")}
+              </Button>
+              <FileButton
+                onChange={(file) => {
+                  if (file) acceptImageFile(file);
+                }}
+                accept="image/png,image/jpeg,image/webp"
+                disabled={pending}
+              >
+                {(props) => (
+                  <Button
+                    type="button"
+                    variant="default"
+                    leftSection={<ImagePlus size="1rem" />}
+                    disabled={pending}
+                    styles={wrappingButton}
+                    {...props}
+                  >
+                    {t("Feedback.ChooseImage")}
+                  </Button>
+                )}
+              </FileButton>
+            </Group>
+            {image && (
+              <div style={{ position: "relative", display: "inline-block", marginTop: 8 }}>
+                <img
+                  src={image}
+                  alt={t("Feedback.ImagePreview")}
+                  style={{ height: "6rem", width: "auto", display: "block" }}
+                />
+                <IconAction
+                  label={t("Feedback.RemoveImage")}
+                  color="danger"
+                  variant="filled"
+                  size="sm"
+                  disabled={pending}
+                  onClick={removeImage}
+                  style={{ position: "absolute", top: -8, right: -8 }}
+                >
+                  <X size="1rem" />
+                </IconAction>
+              </div>
+            )}
+          </div>
           <Text size="sm" c="dimmed">
             {t("Feedback.MetadataNote")}
           </Text>
@@ -232,7 +414,12 @@ export default function FeedbackModal({
             </Text>
           )}
           <Group justify="right">
-            <Button type="submit" loading={pending} disabled={!canSubmit} styles={wrappingButton}>
+            <Button
+              type="submit"
+              loading={pending}
+              disabled={!canSubmit || attaching}
+              styles={wrappingButton}
+            >
               {t("Feedback.Submit")}
             </Button>
           </Group>
