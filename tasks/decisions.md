@@ -12307,3 +12307,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** The preparation tab must search the player's database without side effects elsewhere. Reversal path: remove the pin family and its read in `DatabasePanel.tsx`.
 * **Decided by:** Claude Code (Opus 5.5) build opponent-prep-tree, full auto, 2026-11-07 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"4c78d28c238feaf7629019a39913de2070501d932ce414cb958beefac7b327a1","input_sha256":"06ae44ef792ceba8a30ce6ae46501f5d8dc091dead713de8e5615df7c8b84f63","kind":"mutation-receipt","operation":"86f84bb55f593bc490e45078c98595fbdd01d57352cb261d5413a95e019014fb","options":{"section":null},"request_id_sha256":null,"results":["d-20261107-11"],"target":"decisions-ledger","v":1} -->
+
+### d-20261107-12 — Does the opening tree also replace the Openings tab on the Accounts page?
+
+* **Question:** Felix decided that the opening tree replaces the Openings tab of the database player card. The same panel is shared with the Accounts personal card. Does the Accounts card change too?
+* **Governs:** -
+* **Chosen:** No. Only the database player card renders the opening tree; the Accounts card keeps the existing Openings panel.
+* **Rejected:** Replacing it in both places (the Accounts card combines several online accounts and has no single local player id to filter by).
+* **Reason:** Felix's decision concerned the database Players view. Reversal path: render the tree in `PersonalCard.tsx` for the Accounts caller once a player-id mapping exists.
+* **Decided by:** Claude Code (Opus 5.5) build opponent-prep-tree, full auto, 2026-11-07 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"a28348e8c2e9512738f7869caa7d8426c31d34374971a24e9d0d7a95594324e3","input_sha256":"ed0b66dcd8abbfbbcde51608326cad2de0547add3db82c89c511b0a2c68f5247","kind":"mutation-receipt","operation":"314ef0b6bbf12d64016cfdda304d1b66c4f9c8f8c794508cd8204269fbb68157","options":{"section":null},"request_id_sha256":null,"results":["d-20261107-12"],"target":"decisions-ledger","v":1} -->
