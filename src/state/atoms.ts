@@ -51,6 +51,12 @@ import {
 } from "./utils";
 import { FONT_SCALE_DEFAULT, fontScaleSchema } from "./fontScale";
 import { PIECE_SCALE_DEFAULT, pieceScaleSchema } from "./pieceScale";
+import {
+    DEFAULT_BOARD_IMAGE,
+    DEFAULT_PIECE_SET,
+    boardImageSchema,
+    pieceSetSchema,
+} from "./artworkCatalog";
 import { createExpandedDirectoriesAtom } from "./expandedDirectories";
 import {
     WORKSPACE_STORAGE_KEY,
@@ -588,13 +594,13 @@ export const soundVolumeAtom = documentPreferences.atomWithStorage<number>(
 
 export const pieceSetAtom = atomWithStorage<string>(
     "piece-set",
-    "staunty",
-    createPreferenceStorage("staunty"),
+    DEFAULT_PIECE_SET,
+    createZodStorage(pieceSetSchema as z.ZodType<string>, localStorage),
 );
 export const boardImageAtom = atomWithStorage<string>(
     "board-image",
-    "chessriddle.svg",
-    createPreferenceStorage("chessriddle.svg"),
+    DEFAULT_BOARD_IMAGE,
+    createZodStorage(boardImageSchema as z.ZodType<string>, localStorage),
 );
 export const boardWoodTextureAtom = atomWithStorage<boolean>(
     "board-wood-texture",
