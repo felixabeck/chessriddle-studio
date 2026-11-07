@@ -12196,3 +12196,33 @@ Former private decision identifier: d-20261029-14
 * **Cost and reversal path:** The scheduled mutation and catalog jobs depend on the local action. To reverse, inline the install back into the two workflows.
 * **Decided by:** Claude Code (Opus 5.5), drain plan run 5b521300-21a5-4d7a-b888-da0d6404d1d4 adopted by session c9f01c8c-19e6-4623-b8d0-e7b0068f0ac6, full auto, 2026-11-06 (first recorded in unpushed commits under ids that collided with pushed d-20261106-05 and d-20261106-06; re-recorded after the release rebases) · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"0273e367404bce62ea98f0477aaf8d96074990690963f59df7727c5089b59204","input_sha256":"8822ce06fee9f3d3eb16bcc37fdeb403eb064425aad549fbb212c68473a56300","kind":"mutation-receipt","operation":"e941dc2bf3a5026dd53e59aebcc00d56fea074444529345a70c3195e12b26742","options":{"section":null},"request_id_sha256":null,"results":["d-20261106-08"],"target":"decisions-ledger","v":1} -->
+
+## 2026-11-07 — recorded through the decisions lock
+
+### d-20261107-01 — How does the database game list treat a missing Elo against an Elo band?
+
+* **Question:** f-20261106-15: the position index stores a missing rating as 0 and includes it in any band containing 0, while the SQL game list compared the nullable column with BETWEEN and excluded NULL. Which representation is canonical?
+* **Governs:** f-20261106-15
+* **Chosen:** The index contract. The game-list filter for a band that contains 0 matches `Elo BETWEEN lo AND hi OR Elo IS NULL`; a band that excludes 0 stays a plain BETWEEN. One helper in `src-tauri/src/db/mod.rs` builds every game-list Elo term.
+* **Rejected:** A distinct unrated sentinel in the index with `elo_in_range` excluding it (rebuilds every sidecar index and contradicts the documented and tested `elo_in_range` contract). `COALESCE(Elo, 0) BETWEEN` (same result, but SQLite can no longer use `games_white_elo_idx`/`games_black_elo_idx`).
+* **Reason:** The index contract was already documented and tested; matching SQL to it changes one query builder and keeps the indexes usable. Reversal path: drop the `IS NULL` arm and add an unrated sentinel to the index instead.
+* **Decided by:** Claude Code (Opus 5.5) next-finding drain, full auto, 2026-11-07 · **Superseded-by:** -
+
+### d-20261107-02 — When does library autosave write database Info metadata?
+
+* **Question:** f-20261106-41: GeneralSettings treated any difference between its seeded form state and refreshed props as save intent. What is the ownership policy?
+* **Governs:** f-20261106-41
+* **Chosen:** Each field holds a nullable user draft. A null draft is clean and follows props; only a settled (debounced) user draft triggers `editDbInfo`, and clean fields are sent with the current props value. An un-persisted draft wins over concurrent external metadata for that field only; the draft clears once props equal it. A failed save keeps the draft visible, surfaces the typed error through the existing `Common.Error` notification and is not retried automatically; the next edit retries.
+* **Rejected:** Remounting or resetting the form on every refresh (discards in-flight edits). An expected-value compare in the native upsert (a schema-wide concurrency contract for one form; the renderer bug is that a refresh became a write at all).
+* **Reason:** Write intent comes only from input events. Reversal path: replace the draft state in `GeneralSettings` with a conflict prompt.
+* **Decided by:** Claude Code (Opus 5.5) next-finding drain, full auto, 2026-11-07 · **Superseded-by:** -
+
+### d-20261107-03 — How does the Ratings panel count games whose PGN date is incomplete?
+
+* **Question:** f-20261106-23: partial dates such as `2024.??.??` cannot be placed on the Ratings time axis, so Ratings dropped them from its totals while Overview counted them.
+* **Governs:** f-20261106-23
+* **Chosen:** A strict `completeDailyDate` helper. Only complete dates enter the time domain and rating series. Incomplete-date days count in the Ratings summary only while the selected range spans the whole domain, so All time matches Overview.
+* **Rejected:** Excluding them from every panel (Overview would hide real games). Always counting them (a narrowed range would include games that may lie outside it).
+* **Reason:** Same corpus, same denominator on the unfiltered view; narrowed views stay honest. Reversal path: change the filter in `RatingsPanel.tsx`.
+* **Decided by:** Claude Code (Opus 5.5) next-finding drain, full auto, 2026-11-07 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":26,"effect_sha256":"972b9753065d5a6432f40d0ee04ccdced2af05a9c3b4f573bf8838f952883178","input_sha256":"641444dcbebea64ee04cca318a8d8c9b8e6a497d9e7e63cad1c3917c5b17df0a","kind":"mutation-receipt","operation":"3e53960521cf2af7a417daaa919f452ff8b96b3af76fb4059244cc1d10ee5b5b","options":{"section":null},"request_id_sha256":null,"results":["d-20261107-01","d-20261107-02","d-20261107-03"],"target":"decisions-ledger","v":1} -->
