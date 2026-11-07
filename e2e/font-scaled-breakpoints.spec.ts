@@ -110,6 +110,49 @@ test("wheelColumnTo retries after a first wheel miss", async ({ page }) => {
         .toBe(true);
 });
 
+test("wheelColumnTo re-reveals a column scrolled out of the stacked viewport", async ({ page }) => {
+    await page.setViewportSize({ width: 800, height: 720 });
+    await page.setContent(`
+        <div data-board-layout="stacked" style="height: 240px">
+            <div style="height: 100%; overflow-y: auto; padding: 0 4px">
+                <div id="board" style="height: 2000px">board</div>
+                <div
+                    id="column"
+                    style="height: 200px; overflow-y: auto; border-left: 1px solid black; width: 240px"
+                >
+                    <div style="height: 800px">above</div>
+                    <button type="button">target</button>
+                    <div style="height: 800px">below</div>
+                </div>
+                <div style="height: 800px">below column</div>
+            </div>
+        </div>
+    `);
+    const column = page.locator("#column");
+    const target = page.getByRole("button", { name: "target", exact: true });
+    await wheelBoardStackTo(page, column);
+    await wheelBoardStackTo(page, page.locator("#board"));
+    await expect
+        .poll(async () => (await column.boundingBox())!.y)
+        .toBeGreaterThanOrEqual(page.viewportSize()!.height);
+
+    await wheelColumnTo(page, column, target);
+
+    await expect.poll(() => column.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    await expect
+        .poll(() =>
+            target.evaluate((element) => {
+                const box = element.getBoundingClientRect();
+                const hit = document.elementFromPoint(
+                    box.left + box.width / 2,
+                    box.top + box.height / 2,
+                );
+                return hit !== null && element.contains(hit);
+            }),
+        )
+        .toBe(true);
+});
+
 for (const host of ["analysis", "play"] as const) {
     for (const width of [1000, 800]) {
         test(`font-scaled-breakpoints: ${host} notation floor and column scrolling at ${width}px and 200%`, async ({

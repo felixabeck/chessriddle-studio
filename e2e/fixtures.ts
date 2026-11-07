@@ -241,18 +241,27 @@ export async function wheelColumnTo(page: Page, column: Locator, target: Locator
             return;
         }
 
-        const columnBox = (await column.boundingBox())!;
-        const targetBox = (await target.boundingBox())!;
-        const stack = page.locator('[data-board-layout="stacked"]');
-        const stackBox = (await stack.count())
-            ? (await stack.boundingBox())!
-            : { y: 0, height: page.viewportSize()!.height };
-        const top = Math.max(columnBox.y, stackBox.y);
-        const bottom = Math.min(
-            columnBox.y + columnBox.height,
-            stackBox.y + stackBox.height,
-            page.viewportSize()!.height,
-        );
+        const measure = async () => {
+            const columnBox = (await column.boundingBox())!;
+            const targetBox = (await target.boundingBox())!;
+            const stack = page.locator('[data-board-layout="stacked"]');
+            const stackBox = (await stack.count())
+                ? (await stack.boundingBox())!
+                : { y: 0, height: page.viewportSize()!.height };
+            const top = Math.max(columnBox.y, stackBox.y, 0);
+            const bottom = Math.min(
+                columnBox.y + columnBox.height,
+                stackBox.y + stackBox.height,
+                page.viewportSize()!.height,
+            );
+            return { columnBox, targetBox, top, bottom };
+        };
+        let { columnBox, targetBox, top, bottom } = await measure();
+        if (bottom - top < Math.max(targetBox.height, 40)) {
+            await wheelBoardStackTo(page, column);
+            ({ columnBox, targetBox, top, bottom } = await measure());
+        }
+        await expect(bottom - top).toBeGreaterThanOrEqual(Math.max(targetBox.height, 40));
         const centre = (top + bottom) / 2;
         // The column's left border is outside its nested notation viewport.
         await page.mouse.move(columnBox.x, centre);
