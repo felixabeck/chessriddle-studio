@@ -324,6 +324,9 @@ pub enum Error {
     #[error("The file was moved to the trash")]
     FileTrashed,
 
+    #[error("The file or folder is no longer available to the app")]
+    UnknownPathCapability,
+
     #[error("Conflict: {0}")]
     Conflict(String),
 
@@ -569,6 +572,7 @@ impl Error {
             | Self::NoPuzzles
             | Self::GameNotFound(_)
             | Self::FileTrashed
+            | Self::UnknownPathCapability
             | Self::EngineNotInitialized
             | Self::EngineDisconnected => ErrorCategory::MissingResource,
             Self::NotDistinctPlayers

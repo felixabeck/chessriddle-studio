@@ -9947,15 +9947,18 @@ impl PathAuthority {
         require_durable(self.save()?)?;
         Ok(self.persistent.len())
     }
+    /// An id that is neither persistent nor a live grant is reported as a missing resource so
+    /// renderer owners (recent files) can drop it.
     fn take_dialog(
         &mut self,
         id: &PathRef,
         required: Option<PathOperation>,
     ) -> Result<DialogGrant, Error> {
         self.evict_dialogs();
-        let mut grant = self.dialogs.remove(&id.id).ok_or_else(|| {
-            Error::InvalidInput("unknown, revoked, or expired dialog grant".into())
-        })?;
+        let mut grant = self
+            .dialogs
+            .remove(&id.id)
+            .ok_or(Error::UnknownPathCapability)?;
         if let Some(op) = required {
             if !grant.entry.stored.operations.contains(&op) {
                 self.dialogs.insert(id.id.clone(), grant);
@@ -13340,8 +13343,6 @@ pub(crate) mod portable_tests {
         pub(super) fn new(v: u64) -> Self {
             Self(AtomicU64::new(v))
         }
-        // Only the expiry tests advance the clock, and they are all unix-gated today.
-        #[cfg_attr(not(unix), allow(dead_code))]
         pub(super) fn advance(&self, n: u64) {
             self.0.fetch_add(n, Ordering::SeqCst);
         }
@@ -14010,6 +14011,112 @@ pub(crate) mod portable_tests {
             !dir.path().join("practice").exists(),
             "authorization must not open the practice root"
         );
+    }
+
+    fn assert_unknown_path_capability(error: Error) {
+        assert_eq!(error.category(), ErrorCategory::MissingResource);
+        assert!(matches!(error, Error::UnknownPathCapability), "{error:?}");
+    }
+
+    #[test]
+    fn resolve_never_issued_id_reports_unknown_path_capability() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut authority = authority(&dir, Arc::new(TestClock::new(1)));
+        let error = authority
+            .resolve(
+                &PathRef {
+                    id: "never-issued".into(),
+                },
+                PathOperation::ReadPgn,
+                &[],
+            )
+            .err()
+            .expect("never-issued id must fail");
+        assert_unknown_path_capability(error);
+    }
+
+    #[test]
+    fn resolve_removed_persistent_pgn_id_reports_unknown_path_capability() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("revoked.pgn");
+        fs::write(&file, b"*").unwrap();
+        let mut authority = authority(&dir, Arc::new(TestClock::new(1)));
+        let stored = StoredEntry {
+            id: PathRef {
+                id: "revoked".into(),
+            },
+            display_name: "revoked".into(),
+            class: PathClass::PersistentFile,
+            purpose: Some(EntryPurpose::PgnReadOnlyFile),
+            operations: vec![PathOperation::ReadPgn],
+            path: NativePath::from_path(&file),
+            identity: identity(&file).unwrap(),
+            parent_identity: None,
+            target_is_dir: false,
+        };
+        authority.persistent.insert(
+            "revoked".into(),
+            Entry {
+                stored,
+                availability: PathAvailability::Available,
+            },
+        );
+        authority.persistent.remove("revoked");
+        let error = authority
+            .resolve(
+                &PathRef {
+                    id: "revoked".into(),
+                },
+                PathOperation::ReadPgn,
+                &[],
+            )
+            .err()
+            .expect("removed persistent id must fail");
+        assert_unknown_path_capability(error);
+    }
+
+    #[test]
+    fn resolve_consumed_or_expired_dialog_grant_reports_unknown_path_capability() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("grant.pgn");
+        fs::write(&file, b"*").unwrap();
+        let clock = Arc::new(TestClock::new(1));
+        let mut authority = authority(&dir, clock.clone());
+        let consumed = authority
+            .grant_dialog(
+                &file,
+                "grant.pgn",
+                PathClass::SingleDialogGrant,
+                PathOperation::ReadPgn,
+                Duration::from_secs(30),
+                1,
+            )
+            .unwrap();
+        authority
+            .resolve(&consumed, PathOperation::ReadPgn, &[])
+            .unwrap();
+        let consumed_error = authority
+            .resolve(&consumed, PathOperation::ReadPgn, &[])
+            .err()
+            .expect("consumed grant must fail");
+        assert_unknown_path_capability(consumed_error);
+
+        let expired = authority
+            .grant_dialog(
+                &file,
+                "grant.pgn",
+                PathClass::SingleDialogGrant,
+                PathOperation::ReadPgn,
+                Duration::from_secs(1),
+                1,
+            )
+            .unwrap();
+        clock.advance(1);
+        let expired_error = authority
+            .resolve(&expired, PathOperation::ReadPgn, &[])
+            .err()
+            .expect("expired grant must fail");
+        assert_unknown_path_capability(expired_error);
     }
 
     /// The leaves are written out verbatim rather than read back from the enum. A leaf is the
