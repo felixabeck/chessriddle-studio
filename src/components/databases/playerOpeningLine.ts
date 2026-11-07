@@ -1,33 +1,29 @@
-import { Chess, type Color } from "chessops";
-import { makeFen } from "chessops/fen";
-import { makeSan } from "chessops/san";
-import { parseSanOrUci } from "@/utils/chessops";
-import { createNode, defaultTree } from "@/utils/treeReducer";
+import type { Color } from "chessops";
+import { makeMove } from "@/state/store/tree";
+import { getMoveText } from "@/utils/chess";
+import { parseSanOrUci, positionFromFen } from "@/utils/chessops";
+import { defaultTree, getNodeAtPath } from "@/utils/treeReducer";
 
 /** One mainline supplies both the card position and the admitted analysis tree. */
 export function playerOpeningLine(moves: string[], color: Color) {
     const tree = defaultTree();
     tree.headers.orientation = color;
-    const position = Chess.default();
     let node = tree.root;
     const notation: string[] = [];
     for (const san of moves) {
+        const [position] = positionFromFen(node.fen);
+        if (!position) break;
         const move = parseSanOrUci(position, san);
         if (!move) break;
-        const canonicalSan = makeSan(position, move);
-        notation.push(
-            `${position.turn === "white" ? `${position.fullmoves}. ` : ""}${canonicalSan}`,
-        );
-        position.play(move);
-        const next = createNode({
+        makeMove({
+            state: tree,
             move,
-            san: canonicalSan,
-            fen: makeFen(position.toSetup()),
-            halfMoves: node.halfMoves + 1,
+            last: true,
+            sound: false,
+            changeHeaders: false,
         });
-        node.children.push(next);
-        node = next;
-        tree.position.push(0);
+        node = getNodeAtPath(tree.root, tree.position);
+        notation.push(getMoveText(node, { glyphs: false, comments: false, extraMarkups: false }));
     }
-    return { tree, fen: node.fen, notation: notation.join(" ") };
+    return { tree, fen: node.fen, notation: notation.join("").trim() };
 }

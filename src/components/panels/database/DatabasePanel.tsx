@@ -261,9 +261,14 @@ function DatabasePanel() {
               value={selectedReferenceDatabase}
               onChange={async (value) => {
                 await tauri.clearGames();
-                (pinnedDatabase ? setPinnedDatabase : setReferenceDatabase)(
-                  databaseHandleFromKey(readableDatabases, value),
-                );
+                const nextDatabase = databaseHandleFromKey(readableDatabases, value);
+                if (
+                  (nextDatabase ? databaseHandleKey(nextDatabase) : null) !==
+                  (selectedDatabase ? databaseHandleKey(selectedDatabase) : null)
+                ) {
+                  setLocalOptions((options) => ({ ...options, player: null }));
+                }
+                (pinnedDatabase ? setPinnedDatabase : setReferenceDatabase)(nextDatabase);
               }}
               placeholder={t("Board.Database.SelectReference")}
               size="sm"

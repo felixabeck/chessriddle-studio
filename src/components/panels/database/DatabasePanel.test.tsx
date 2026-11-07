@@ -35,6 +35,7 @@ const mocks = vi.hoisted(() => ({
   getDatabases: vi.fn(),
   searchPosition: vi.fn(),
   collectionForDatabase: vi.fn(),
+  clearGames: vi.fn(),
 }));
 
 vi.mock("react-i18next", () => ({
@@ -89,6 +90,7 @@ vi.mock("@/platform/tauri", async () => {
       lexPgn: mocks.lexPgn,
       searchPosition: mocks.searchPosition,
       collectionForDatabase: mocks.collectionForDatabase,
+      clearGames: mocks.clearGames,
     },
   };
 });
@@ -135,8 +137,13 @@ describe("DatabasePanel", () => {
   let container: HTMLDivElement;
   let root: Root;
   let treeStore: TreeStore;
+  const originalScroll = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
 
   beforeEach(() => {
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: vi.fn(),
+    });
     sessionStorage.clear();
     localStorage.clear();
     container = document.createElement("div");
@@ -151,6 +158,7 @@ describe("DatabasePanel", () => {
     mocks.getDatabases.mockReset();
     mocks.searchPosition.mockReset().mockResolvedValue([[], []]);
     mocks.collectionForDatabase.mockReset().mockResolvedValue(null);
+    mocks.clearGames.mockReset().mockResolvedValue(undefined);
   });
 
   afterEach(async () => {
@@ -158,6 +166,8 @@ describe("DatabasePanel", () => {
       root?.unmount();
     });
     container?.remove();
+    if (originalScroll) Object.defineProperty(Element.prototype, "scrollIntoView", originalScroll);
+    else Reflect.deleteProperty(Element.prototype, "scrollIntoView");
   });
 
   const mockExplorerData = {
@@ -506,7 +516,7 @@ describe("DatabasePanel", () => {
     },
   );
 
-  async function mountLocal(pin?: DatabaseHandle) {
+  async function mountLocal(pin?: DatabaseHandle, player: number | null = null) {
     const store = createJotaiStore();
     store.set(tabsAtom, [validTab]);
     store.set(activeTabAtom, tabId);
@@ -518,6 +528,7 @@ describe("DatabasePanel", () => {
     store.set(localOptionsFamily(tabId), {
       ...store.get(localOptionsFamily(tabId)),
       path: stalePath,
+      player,
       fen: treeStore.getState().currentNode().fen,
       result: "draw",
       elo: [1800, 2400],
@@ -616,6 +627,56 @@ describe("DatabasePanel", () => {
     expectNoReference();
     expect(store.get(pinnedExplorerDatabaseFamily(tabId))).toEqual(stalePath);
     expectSavedChoice(store);
+  });
+
+  test.each(["pinned", "global"] as const)(
+    "local: %s database selector clears the database-local player before searching another database",
+    async (selection) => {
+      mocks.getDatabases.mockResolvedValue(
+        databaseList([readable, { ...readable, file: stalePath, title: "Other database" }]),
+      );
+      const pinned = selection === "pinned";
+      const { store } = await mountLocal(pinned ? stalePath : undefined, 42);
+      const initialDatabase = pinned ? stalePath : reference;
+      const nextDatabase = pinned ? reference : stalePath;
+      expect(mocks.searchPosition.mock.lastCall?.[0]).toEqual(initialDatabase);
+      expect(mocks.searchPosition.mock.lastCall?.[1].player1).toBe(42);
+      mocks.searchPosition.mockClear();
+
+      const selector =
+        selectedPanel("stats").querySelector<HTMLInputElement>(".mantine-Select-input")!;
+      await act(async () => selector.click());
+      const option = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(
+        (item) => item.textContent === (pinned ? "Saved reference" : "Other database"),
+      );
+      expect(option).toBeDefined();
+      await act(async () => option!.click());
+
+      expect(mocks.clearGames).toHaveBeenCalledOnce();
+      expect(store.get(localOptionsFamily(tabId)).player).toBeNull();
+      expect(mocks.searchPosition).toHaveBeenCalled();
+      for (const [database, query] of mocks.searchPosition.mock.calls) {
+        expect(database).toEqual(nextDatabase);
+        expect(query.player1 ?? null).toBeNull();
+        expect(query.player2 ?? null).toBeNull();
+      }
+      expect(store.get(pinnedExplorerDatabaseFamily(tabId))).toEqual(pinned ? nextDatabase : null);
+      expect(store.get(referenceDbAtom)).toEqual(pinned ? reference : nextDatabase);
+      expect(JSON.parse(localStorage.getItem("reference-database")!)).toEqual(
+        pinned ? reference : nextDatabase,
+      );
+    },
+  );
+
+  test("local: resolving a new handle with the same database key preserves the player filter", async () => {
+    mocks.getDatabases.mockResolvedValue(databaseList([readable]));
+    const { store, revalidate } = await mountLocal(reference, 42);
+    mocks.getDatabases.mockResolvedValue(
+      databaseList([{ ...readable, file: { ...reference, id: { ...reference.id } } }]),
+    );
+    await revalidate();
+    expect(store.get(localOptionsFamily(tabId)).player).toBe(42);
+    expect(mocks.searchPosition.mock.lastCall?.[1].player1).toBe(42);
   });
 
   test.each([

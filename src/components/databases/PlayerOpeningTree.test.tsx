@@ -288,12 +288,16 @@ test("Prepare admits the mainline and orientation, presets before navigation, th
   mocks.navigate.mockImplementation(() => {
     const id = store.get(tabsAtom).at(-1)!.value;
     expect(store.get(pinnedExplorerDatabaseFamily(id))).toEqual(file);
-    expect(store.get(localOptionsFamily(id))).toMatchObject({
+    expect(store.get(localOptionsFamily(id))).toEqual({
       path: file,
       player: 42,
       color: "black",
       fen: endFen,
+      type: "exact",
+      result: "any",
     });
+    expect(store.get(localOptionsFamily(id))).not.toHaveProperty("include_unknown_results");
+    expect(store.get(localOptionsFamily(id))).not.toHaveProperty("sample_order");
     expect(store.get(tabFamily(id))).toBe("database");
     expect(store.get(dbTypeFamily(id))).toBe("local");
     expect(store.get(dbTabFamily(id))).toBe("stats");
@@ -319,13 +323,13 @@ test("Prepare admits the mainline and orientation, presets before navigation, th
       expect.objectContaining({
         player2: 42,
         position: { fen: endFen, type_: "exact" },
-        include_unknown_results: true,
-        sample_order: "date",
       }),
       tab.value,
       { signal: expect.any(AbortSignal) },
     ),
   );
+  expect(mocks.searchPosition.mock.lastCall?.[1]).not.toHaveProperty("include_unknown_results");
+  expect(mocks.searchPosition.mock.lastCall?.[1]).not.toHaveProperty("sample_order");
   expect(store.get(referenceDbAtom)).toEqual(reference);
   expect(JSON.parse(localStorage.getItem("reference-database")!)).toEqual(reference);
 });

@@ -86,7 +86,14 @@ function OpeningTree({ player, file }: { player: Player; file: DatabaseHandle })
             initialTree: line.tree,
           }),
         onSuccess: (id) => {
-          atoms.set(localOptionsFamily(id), options);
+          atoms.set(localOptionsFamily(id), {
+            path: file,
+            fen: line.fen,
+            type: "exact",
+            player: player.id,
+            color,
+            result: "any",
+          });
           atoms.set(pinnedExplorerDatabaseFamily(id), file);
           atoms.set(dbTypeFamily(id), "local");
           atoms.set(dbTabFamily(id), "stats");
