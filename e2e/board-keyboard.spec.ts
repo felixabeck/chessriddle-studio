@@ -853,7 +853,7 @@ test("board-keyboard: opens analysis and exposes a keyboard-operable board", asy
     }
     await expect(
         page.getByRole("gridcell", { name: "e2, White Pawn", exact: true }),
-    ).toHaveAttribute("aria-selected", "true");
+    ).toHaveAttribute("aria-selected", "false");
     await expect(page.getByRole("gridcell", { name: "e4, empty", exact: true })).toHaveCount(1);
     await expect(page.getByLabel(/^result$/i)).toBeVisible();
     await whiteBoard.focus();

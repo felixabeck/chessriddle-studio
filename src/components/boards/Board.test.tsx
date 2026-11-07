@@ -219,6 +219,7 @@ test("a legal live keyboard move reaches onMove", async () => {
 
 test("keyboard source stays aria-selected after the focus square moves", async () => {
   const { grid } = await render();
+  expect(host.querySelector("#board-square-e2")?.getAttribute("aria-selected")).toBe("false");
   await press(grid, "Enter", "ArrowUp", "ArrowUp");
   expect(grid.getAttribute("aria-activedescendant")).toBe("board-square-e4");
   expect(host.querySelector("#board-square-e2")?.getAttribute("aria-selected")).toBe("true");

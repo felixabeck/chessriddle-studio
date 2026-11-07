@@ -348,6 +348,7 @@ export interface ReportState {
 }
 
 export function getBoardState(fen: string): string {
+    // Same field separators chessops parseFen accepts (whitespace runs and "_").
     const fields = fen.split(/[\s_]+/).slice(0, 4);
     if ((fields[2] && fields[2] !== "-") || (fields[3] && fields[3] !== "-")) {
         const [position] = positionFromFen(fen);

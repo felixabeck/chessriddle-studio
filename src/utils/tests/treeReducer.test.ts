@@ -343,7 +343,10 @@ test.each([
     for (const uci of captures) expect(position!.isLegal(parseUci(uci)!)).toBe(true);
     for (const uci of rejected) expect(position!.isLegal(parseUci(uci)!)).toBe(false);
     const withoutEp = fen.replace(/ [a-h][36] /, " - ");
-    const expectedKey = (captures.length ? fen : withoutEp).split(" ").slice(0, 4).join(" ");
+    const expectedKey = (captures.length ? fen : withoutEp)
+        .split(/[\s_]+/)
+        .slice(0, 4)
+        .join(" ");
     expect(getBoardState(fen) === getBoardState(withoutEp)).toBe(captures.length === 0);
     expect(getBoardState(fen)).toBe(expectedKey);
 });
@@ -457,5 +460,10 @@ test.each([
     "",
 ])("board-state identity tolerates rejected positions without rewriting %s", (fen) => {
     expect(chessops.positionFromFen(fen)[0]).toBeNull();
-    expect(getBoardState(fen)).toBe(fen.split(" ").slice(0, 4).join(" "));
+    expect(getBoardState(fen)).toBe(
+        fen
+            .split(/[\s_]+/)
+            .slice(0, 4)
+            .join(" "),
+    );
 });
