@@ -21929,6 +21929,9 @@ chessops 0.14 has one unified `Chess` with arbitrary-file rook castling: `Castle
 * **Related:** f-20261106-11 explicitly covers the shared renderer position factory's Chess960 legality/castling defect; it mentions FenSearch as a caller but does not cover orthodox suggestions acquiring a false exported Variant. This reproduction uses a standard B20 position and an ordinary knight move, with no Chess960 castling or archive import. Fixing that shared factory alone cannot correct this membership-to-header assignment. f-20261101-07 concerns native position-to-opening counter normalization, not suggestion variant provenance; f-20261106-35 concerns accepted FEN whitespace/repetition. Related helper queries over FenSearch, opening.rs, chess.ts and the reference panel plus Variant/catalogue ledger/decision searches found no existing same defect.
 * **Found by:** GrokBot, bounded t22u real-consumer selection and copied-PGN probes.
 
+**Correction, 2026-11-08:** the Related bullet's description of `f-20261106-11` is stale. That finding was re-measured and rejected: chessops 0.14 already handles Chess960 castling in the renderer factory, so no Chess960 legality defect exists. This finding's false-`Variant` provenance defect is unaffected and still stands on its own.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"6c0d8a6d5267cfc5cb776b638a0ee7e9df3b319acee39f62ea451fa0e6aac6d2","input_sha256":"322db46d98e61f8ecbd28adf8466be24589c34e6f90f51ab2d1a343c59f5fc72","kind":"mutation-receipt","operation":"12023f1b97d202fa2b915fb5267a9c0c9912bb3f59780978fef9c30f15faec4d","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-42"],"target":"f-20261106-42","v":1} -->
+
 ---
 
 ## 2026-11-06 — filed through the inbox spool
