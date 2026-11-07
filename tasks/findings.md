@@ -22108,7 +22108,7 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 ## 2026-11-07 — filed through the inbox spool
 
 ### Remote CI repair: Test
-* **ID:** f-20261107-04 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261107-04 · **Status:** handled · **Area:** ci-workflows · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** 425777fb-9848-4f33-9a3f-63d5c431f3a2
 
 * **Impact class:** tooling
@@ -22118,3 +22118,6 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Run URL:** https://github.com/felixabeck/chessriddle-studio/actions/runs/42409425212
 * **Proof:** `gh run view 42409425212 --log-failed`
 * **CI run:** 42409425212
+
+**Handled, 2026-11-07 (drain 217ddd6d, inline; filed by the drain as provisional f-20261107-02 and renumbered by `merge-inbox` because master had already published a different f-20261107-02):** cause from run 42409425212's trace: `wheelBoardStackTo` counted `[data-board-layout="stacked"] > div` once at t≈400898 ms, when the DOM snapshot held no `[data-board-layout]` element at all; the board tab mounted about 1.3 s later, already stacked. The helper had returned without scrolling, so `#bottomRight` stayed below the 720px viewport and every `wheelColumnTo` retry wheeled at y=1160 (the failure screenshot shows the stack at the top). This answers f-20261107-03's open question: nothing reset the stack's scroll position; it was never scrolled. Fix (commit `test(e2e): wait for the settled board layout before wheeling the stack`): `wheelBoardStackTo` polls until exactly one `[data-board-layout]` exists and its value equals `needsTwoPaneStack(width, rootFont)` before choosing its branch. Test `wheelBoardStackTo waits for a late-mounted board layout` mounts the layout after 300 ms. It fails on the pre-fix helper (scrollTop 0) and passes with the fix. f-20261107-03's `c6fe14f1` re-reveal stays as the downstream defence. Its fixture got a 400px width so its declared stacked layout agrees with `needsTwoPaneStack` (commit `test(e2e): model the late-mounted board layout in the wheelBoardStackTo test`). On the rebased tree the font-scaled-breakpoints, notation-hierarchy and notation-hierarchy-scaled container projects pass 27/27. The pre-fix CI test had passed 12/12 locally, so the post-push hosted Test run is the confirmation.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"3cc2c47e07959caa4047e609a8f113efb9f13f4bba2968e306015da51c14543f","header_sha256":"01a808b76d6757bfe4508f98c43902ce075886bab9bc3cc97cc7f7142341a31e","header_status":"handled","input_sha256":"94322ed1fa473b60d1cd20f7b2d3d8bcb083b5211fdf58f83473089ba930d94b","kind":"mutation-receipt","operation":"5278b97b96cd274dda953926db3e1eeeef6a8cc3d33e6a5c40c8d3fe855731ba","options":{"section":null},"request_id_sha256":null,"results":["f-20261107-04"],"target":"f-20261107-04","v":1} -->
