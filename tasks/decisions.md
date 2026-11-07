@@ -12267,3 +12267,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** One module declares all three layers. Reversal path: add the statement if a layered Mantine import ever moves to a second module; the boundary guard keeps those imports visible.
 * **Decided by:** Claude Code (Opus 5.5) next-finding drain, full auto, 2026-11-07 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"639bd3988aa5ee2f765789d91123794f488baeaf774705152b41853d55c7f019","input_sha256":"d674a3b20d88f394db9646a54a46976c490bcde21ca5ca6b24cc41c458c6e0d3","kind":"mutation-receipt","operation":"67815f6c4567161de43c6a4869df5efe5541f582126869fb085f2387883282ae","options":{"section":null},"request_id_sha256":null,"results":["d-20261107-07"],"target":"decisions-ledger","v":1} -->
+
+### d-20261107-08 — May the Mantine layering fix change the rendered look?
+
+* **Question:** May the e2e snapshots change when Mantine's styles move into cascade layers?
+* **Governs:** f-20261106-30
+* **Chosen:** No. The fix preserves today's look, and every case where layering would flip a winner is corrected in app CSS and, for interaction states, asserted in e2e.
+* **Rejected:** Accepting the post-layer look and re-baselining snapshots.
+* **Reason:** A visible change is Felix's decision (universal rule 33), and this defect fix restores the current look rather than choosing a new one. Reversal path: none needed; a deliberate restyle is a separate, Felix-approved change.
+* **Decided by:** Claude Code (Opus 5.5) next-finding drain, full auto, 2026-11-07 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"0d2997a3a3ade26c5f0b3538348f79293ad84cce1acbc80f8a498138c3ddac9a","input_sha256":"14079a4aebcae87ae0030dd956eb5f9ea27c8a4fa7a9f8b3e2ff3640cd7f9194","kind":"mutation-receipt","operation":"48e6dd2ce74215187cdfe3e754843e9cc719cd665310c24508f066f215cb43de","options":{"section":null},"request_id_sha256":null,"results":["d-20261107-08"],"target":"decisions-ledger","v":1} -->
