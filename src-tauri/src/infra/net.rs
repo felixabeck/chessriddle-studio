@@ -63,6 +63,9 @@ const JSON_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const DOWNLOAD_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const DOWNLOAD_READ_TIMEOUT: Duration = Duration::from_secs(30);
 const DOWNLOAD_REQUEST_TIMEOUT: Duration = Duration::from_secs(3600);
+pub(crate) const UPLOAD_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+pub(crate) const UPLOAD_READ_TIMEOUT: Duration = Duration::from_secs(120);
+pub(crate) const UPLOAD_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Process-lifetime client for bounded JSON and OAuth provider requests.
 pub fn native_json_http_client(
@@ -73,6 +76,19 @@ pub fn native_json_http_client(
         JSON_CONNECT_TIMEOUT,
         JSON_READ_TIMEOUT,
         JSON_REQUEST_TIMEOUT,
+    )
+}
+
+/// Feedback image-upload client: [`safe_http_client`] with a 10 s connect timeout
+/// and 120 s read and total timeouts.
+pub fn native_upload_http_client(
+    builder: reqwest::ClientBuilder,
+) -> Result<reqwest::Client, reqwest::Error> {
+    safe_http_client(
+        builder,
+        UPLOAD_CONNECT_TIMEOUT,
+        UPLOAD_READ_TIMEOUT,
+        UPLOAD_REQUEST_TIMEOUT,
     )
 }
 
@@ -272,6 +288,14 @@ mod tests {
             Duration::from_millis(15),
         );
         assert!(client.is_ok());
+    }
+
+    #[test]
+    fn production_upload_client_is_built_through_safe_http_client_with_120s_timeouts() {
+        assert_eq!(UPLOAD_CONNECT_TIMEOUT, Duration::from_secs(10));
+        assert_eq!(UPLOAD_READ_TIMEOUT, Duration::from_secs(120));
+        assert_eq!(UPLOAD_REQUEST_TIMEOUT, Duration::from_secs(120));
+        assert!(native_upload_http_client(reqwest::Client::builder()).is_ok());
     }
 
     #[tokio::test]

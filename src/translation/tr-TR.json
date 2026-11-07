@@ -595,6 +595,7 @@
     "Feedback.EmailNote": "Yalnızca size yanıt vermek için kullanılır.",
     "Feedback.Error.DeliveryFailed": "İleti teslim edilemedi. Lütfen daha sonra yeniden deneyin.",
     "Feedback.Error.InProgress": "Bu geri bildirim hâlâ gönderiliyor. Lütfen biraz bekleyip yeniden deneyin.",
+    "Feedback.Error.InvalidImage": "Görüntü gönderilemedi. Kaldırın veya başka bir görüntü seçin.",
     "Feedback.Error.InvalidInput": "İletiyi ve e-postayı kontrol edip yeniden deneyin.",
     "Feedback.Error.KeyMismatch": "Lütfen iletiyi yeniden gönderin.",
     "Feedback.Error.Network": "Sunucuya ulaşılamadı. Bağlantınızı kontrol edip yeniden deneyin.",

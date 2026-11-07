@@ -595,6 +595,7 @@
     "Feedback.EmailNote": "Brukes bare til å svare deg.",
     "Feedback.Error.DeliveryFailed": "Meldingen kunne ikke leveres. Prøv igjen senere.",
     "Feedback.Error.InProgress": "Denne tilbakemeldingen sendes fortsatt. Vent et øyeblikk og prøv igjen.",
+    "Feedback.Error.InvalidImage": "Bildet kunne ikke sendes. Fjern det eller velg et annet.",
     "Feedback.Error.InvalidInput": "Kontroller meldingen og e-postadressen og prøv igjen.",
     "Feedback.Error.KeyMismatch": "Send meldingen på nytt.",
     "Feedback.Error.Network": "Kunne ikke nå serveren. Sjekk tilkoblingen og prøv igjen.",

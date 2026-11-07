@@ -588,6 +588,7 @@
     "Feedback.EmailNote": "仅用于回复您。",
     "Feedback.Error.DeliveryFailed": "消息未能送达。请稍后再试。",
     "Feedback.Error.InProgress": "这条反馈仍在发送中。请稍候再试。",
+    "Feedback.Error.InvalidImage": "无法发送该图片。请移除或另选一张。",
     "Feedback.Error.InvalidInput": "请检查消息和电子邮件后重试。",
     "Feedback.Error.KeyMismatch": "请重新发送该消息。",
     "Feedback.Error.Network": "无法连接服务器。请检查网络后重试。",

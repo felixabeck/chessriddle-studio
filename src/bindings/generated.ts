@@ -1288,9 +1288,9 @@ async getPublicChessComJson(request: PublicChessComRequest) : Promise<Result<str
     else return { status: "error", error: e  as any };
 }
 },
-async submitFeedback(feedbackType: FeedbackType, message: string, contactEmail: string | null, idempotencyKey: string) : Promise<Result<FeedbackOutcome, ErrorPayload>> {
+async submitFeedback(feedbackType: FeedbackType, message: string, contactEmail: string | null, idempotencyKey: string, image: string | null) : Promise<Result<FeedbackOutcome, ErrorPayload>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("submit_feedback", { feedbackType, message, contactEmail, idempotencyKey }) };
+    return { status: "ok", data: await TAURI_INVOKE("submit_feedback", { feedbackType, message, contactEmail, idempotencyKey, image }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1454,7 +1454,7 @@ export type ErrorCategory = "io" | "parsing" | "platform" | "network" | "chess-d
 export type ErrorPayload = { tag: ErrorPayloadTag; category: ErrorCategory; message: string; rootFailure?: RootFailure | null; engineFailure?: EngineTerminalSnapshot | null; remoteHttpRejection?: RemoteHttpRejection | null; nameTaken?: boolean | null; databaseAdmission?: boolean | null; progressGeneration?: string | null }
 export type ErrorPayloadTag = "backend-error" | "engine-failure"
 export type Event = { id: number; name: string | null }
-export type FeedbackOutcome = "sent" | "inProgress" | "keyMismatch" | "invalidInput" | "rateLimited" | "deliveryFailed" | "serviceUnavailable"
+export type FeedbackOutcome = "sent" | "inProgress" | "keyMismatch" | "invalidInput" | "invalidImage" | "rateLimited" | "deliveryFailed" | "serviceUnavailable"
 export type FeedbackType = "bug" | "suggestion" | "praise" | "other"
 export type FileWorkspaceDescriptor = { handle: FileWorkspaceHandle; displayName: string; availability: PathAvailability }
 /**

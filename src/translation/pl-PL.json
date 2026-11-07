@@ -609,6 +609,7 @@
     "Feedback.EmailNote": "Używany tylko do odpowiedzi.",
     "Feedback.Error.DeliveryFailed": "Nie udało się dostarczyć wiadomości. Spróbuj ponownie później.",
     "Feedback.Error.InProgress": "Ta opinia jest nadal wysyłana. Poczekaj chwilę i spróbuj ponownie.",
+    "Feedback.Error.InvalidImage": "Nie udało się wysłać obrazu. Usuń go lub wybierz inny.",
     "Feedback.Error.InvalidInput": "Sprawdź wiadomość i e-mail i spróbuj ponownie.",
     "Feedback.Error.KeyMismatch": "Wyślij wiadomość ponownie.",
     "Feedback.Error.Network": "Nie udało się połączyć z serwerem. Sprawdź połączenie i spróbuj ponownie.",

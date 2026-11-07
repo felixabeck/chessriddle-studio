@@ -1,10 +1,11 @@
 //! Native ChessRiddle feedback submission.
 //!
-//! The renderer supplies the type, message, optional email and an idempotency key. The API URL,
-//! Studio marker, version and operating system are assembled here so the webview never passes a
-//! URL or a token.
+//! The renderer supplies the type, message, optional email, optional image data URL and an
+//! idempotency key. The API URL, Studio marker, version and operating system are assembled here
+//! so the webview never passes a URL or a token.
 
 use crate::{error::Error, AppState};
+use base64::Engine;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, CONTENT_TYPE, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -20,6 +21,11 @@ const MAX_EMAIL_CHARS: usize = 254;
 const MAX_EMAIL_LOCAL_PART_CHARS: usize = 64;
 const MAX_OS_VERSION_CHARS: usize = 64;
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
+const MAX_IMAGE_BYTES: usize = 5 * 1024 * 1024;
+const PNG_SIGNATURE: &[u8] = &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+const JPEG_SIGNATURE: &[u8] = &[0xFF, 0xD8, 0xFF];
+const WEBP_RIFF: &[u8] = b"RIFF";
+const WEBP_WEBP: &[u8] = b"WEBP";
 const REASON_IN_PROGRESS: &str = "feedback_submission_in_progress";
 const REASON_KEY_MISMATCH: &str = "idempotency_key_request_mismatch";
 
@@ -39,6 +45,7 @@ pub enum FeedbackOutcome {
     InProgress,
     KeyMismatch,
     InvalidInput,
+    InvalidImage,
     RateLimited,
     DeliveryFailed,
     ServiceUnavailable,
@@ -55,6 +62,15 @@ pub(crate) struct FeedbackInput<'a> {
     pub message: &'a str,
     pub contact_email: Option<&'a str>,
     pub idempotency_key: &'a str,
+    pub image_base64: Option<&'a str>,
+}
+
+struct FeedbackSubmission {
+    feedback_type: FeedbackType,
+    message: String,
+    contact_email: Option<String>,
+    idempotency_key: String,
+    image: Option<String>,
 }
 
 pub(crate) struct BuiltFeedbackRequest {
@@ -69,6 +85,8 @@ struct FeedbackRequestBody<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     contact_email: Option<&'a str>,
     user_agent: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    image_base64: Option<&'a str>,
 }
 
 #[derive(Deserialize)]
@@ -147,6 +165,31 @@ fn invalid_feedback() -> Error {
     Error::InvalidInput("invalid feedback request".into())
 }
 
+fn image_signature_matches(mime: &str, bytes: &[u8]) -> bool {
+    match mime {
+        "png" => bytes.starts_with(PNG_SIGNATURE),
+        "jpeg" => bytes.starts_with(JPEG_SIGNATURE),
+        "webp" => bytes.len() >= 12 && bytes.starts_with(WEBP_RIFF) && &bytes[8..12] == WEBP_WEBP,
+        _ => false,
+    }
+}
+
+fn valid_feedback_image(data_url: &str) -> bool {
+    let Some(rest) = data_url.strip_prefix("data:image/") else {
+        return false;
+    };
+    let Some((mime, payload)) = rest.split_once(";base64,") else {
+        return false;
+    };
+    if !matches!(mime, "png" | "jpeg" | "webp") {
+        return false;
+    }
+    let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(payload) else {
+        return false;
+    };
+    bytes.len() <= MAX_IMAGE_BYTES && image_signature_matches(mime, &bytes)
+}
+
 fn header_value(value: &str) -> Result<HeaderValue, Error> {
     HeaderValue::from_str(value).map_err(|_| invalid_feedback())
 }
@@ -214,6 +257,7 @@ pub(crate) fn build_feedback_request(
         message,
         contact_email,
         user_agent: &body_user_agent,
+        image_base64: input.image_base64,
     })
     .map_err(|_| invalid_feedback())?;
     Ok(BuiltFeedbackRequest { headers, body })
@@ -239,7 +283,7 @@ pub(crate) fn map_feedback_response(status: u16, body: &[u8]) -> FeedbackOutcome
         422 => FeedbackOutcome::InvalidInput,
         429 => FeedbackOutcome::RateLimited,
         401 => FeedbackOutcome::ServiceUnavailable,
-        400 | 500..=599 => FeedbackOutcome::DeliveryFailed,
+        400 | 413 | 500..=599 => FeedbackOutcome::DeliveryFailed,
         _ => FeedbackOutcome::DeliveryFailed,
     }
 }
@@ -251,15 +295,21 @@ pub async fn submit_feedback(
     message: String,
     contact_email: Option<String>,
     idempotency_key: String,
+    image: Option<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<FeedbackOutcome, Error> {
+    let upload_client = crate::infra::net::native_upload_http_client(reqwest::Client::builder())?;
     submit_feedback_request(
         &state.json_http_client,
+        &upload_client,
         FEEDBACK_URL,
-        feedback_type,
-        message,
-        contact_email,
-        idempotency_key,
+        FeedbackSubmission {
+            feedback_type,
+            message,
+            contact_email,
+            idempotency_key,
+            image,
+        },
         FeedbackIdentity {
             app_version: env!("CARGO_PKG_VERSION"),
             platform: std::env::consts::OS,
@@ -270,23 +320,35 @@ pub async fn submit_feedback(
 }
 
 async fn submit_feedback_request(
-    client: &reqwest::Client,
+    json_client: &reqwest::Client,
+    upload_client: &reqwest::Client,
     url: &str,
-    feedback_type: FeedbackType,
-    message: String,
-    contact_email: Option<String>,
-    idempotency_key: String,
+    submission: FeedbackSubmission,
     identity: FeedbackIdentity<'_>,
 ) -> Result<FeedbackOutcome, Error> {
-    let request = build_feedback_request(
+    let mut request = build_feedback_request(
         FeedbackInput {
-            feedback_type,
-            message: &message,
-            contact_email: contact_email.as_deref(),
-            idempotency_key: &idempotency_key,
+            feedback_type: submission.feedback_type,
+            message: &submission.message,
+            contact_email: submission.contact_email.as_deref(),
+            idempotency_key: &submission.idempotency_key,
+            image_base64: None,
         },
         identity,
     )?;
+    let image_base64 = match submission.image.as_deref() {
+        None => None,
+        Some(data_url) if valid_feedback_image(data_url) => Some(data_url),
+        Some(_) => return Ok(FeedbackOutcome::InvalidImage),
+    };
+    if let Some(data_url) = image_base64 {
+        request.body["image_base64"] = serde_json::Value::String(data_url.to_owned());
+    }
+    let client = if image_base64.is_some() {
+        upload_client
+    } else {
+        json_client
+    };
     let response = client
         .post(url)
         .headers(request.headers)
@@ -336,6 +398,39 @@ mod tests {
             message: MESSAGE,
             contact_email: email,
             idempotency_key: KEY,
+            image_base64: None,
+        }
+    }
+
+    fn png_bytes() -> Vec<u8> {
+        PNG_SIGNATURE.to_vec()
+    }
+
+    fn jpeg_bytes() -> Vec<u8> {
+        JPEG_SIGNATURE.to_vec()
+    }
+
+    fn webp_bytes() -> Vec<u8> {
+        let mut bytes = Vec::from(WEBP_RIFF);
+        bytes.extend_from_slice(&[12, 0, 0, 0]);
+        bytes.extend_from_slice(WEBP_WEBP);
+        bytes
+    }
+
+    fn image_data_url(mime: &str, bytes: &[u8]) -> String {
+        format!(
+            "data:image/{mime};base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        )
+    }
+
+    fn submission(image: Option<String>) -> FeedbackSubmission {
+        FeedbackSubmission {
+            feedback_type: FeedbackType::Bug,
+            message: MESSAGE.to_string(),
+            contact_email: None,
+            idempotency_key: KEY.to_string(),
+            image,
         }
     }
 
@@ -388,6 +483,19 @@ mod tests {
 
         let with = built(Some("user@example.com")).body;
         assert_eq!(with["contact_email"], "user@example.com");
+    }
+
+    #[test]
+    fn body_serializes_image_base64_only_when_present() {
+        let png = image_data_url("png", &png_bytes());
+        let mut with_image = input(None);
+        with_image.image_base64 = Some(&png);
+        let body = build_feedback_request(with_image, identity())
+            .expect("valid request")
+            .body;
+        assert_eq!(body["image_base64"], png);
+
+        assert!(built(None).body.get("image_base64").is_none());
     }
 
     #[test]
@@ -519,6 +627,10 @@ mod tests {
             FeedbackOutcome::DeliveryFailed
         );
         assert_eq!(
+            map_feedback_response(413, validation),
+            FeedbackOutcome::DeliveryFailed
+        );
+        assert_eq!(
             map_feedback_response(401, validation),
             FeedbackOutcome::ServiceUnavailable
         );
@@ -590,12 +702,15 @@ mod tests {
         )
     }
 
-    async fn read_http_request(stream: &mut tokio::net::TcpStream) -> String {
+    async fn read_http_request_with_limit(
+        stream: &mut tokio::net::TcpStream,
+        limit: usize,
+    ) -> String {
         use tokio::io::AsyncReadExt;
         let mut request = Vec::new();
         while !request.ends_with(b"\r\n\r\n") {
             request.push(stream.read_u8().await.unwrap());
-            assert!(request.len() <= 8192);
+            assert!(request.len() <= limit);
         }
         let headers = String::from_utf8(request.clone()).unwrap();
         let length = headers
@@ -606,15 +721,17 @@ mod tests {
                     .then(|| value.trim().parse::<usize>().unwrap())
             })
             .unwrap_or(0);
-        assert!(length <= 8192);
+        assert!(length <= limit);
         let mut body = vec![0; length];
         stream.read_exact(&mut body).await.unwrap();
         request.extend(body);
         String::from_utf8(request).unwrap()
     }
 
-    async fn loopback_feedback(
+    async fn loopback_feedback_with_image(
         response: impl AsRef<[u8]>,
+        image: Option<String>,
+        body_limit: usize,
     ) -> (String, Result<FeedbackOutcome, Error>) {
         use std::time::Duration;
         use tokio::io::AsyncWriteExt;
@@ -624,26 +741,36 @@ mod tests {
         let identity = identity();
         let server = async {
             let (mut stream, _) = listener.accept().await.unwrap();
-            let captured = read_http_request(&mut stream).await;
+            let captured = read_http_request_with_limit(&mut stream, body_limit).await;
             let _ = stream.write_all(response.as_ref()).await;
             captured
         };
         tokio::time::timeout(Duration::from_secs(3), async {
             tokio::join!(
                 server,
-                submit_feedback_request(
-                    &client,
-                    &url,
-                    FeedbackType::Bug,
-                    MESSAGE.to_string(),
-                    None,
-                    KEY.to_string(),
-                    identity,
-                )
+                submit_feedback_request(&client, &client, &url, submission(image), identity,)
             )
         })
         .await
         .expect("loopback feedback must finish")
+    }
+
+    async fn loopback_feedback(
+        response: impl AsRef<[u8]>,
+    ) -> (String, Result<FeedbackOutcome, Error>) {
+        loopback_feedback_with_image(response, None, 8192).await
+    }
+
+    async fn submit_without_server(image: Option<String>) -> Result<FeedbackOutcome, Error> {
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        submit_feedback_request(
+            &client,
+            &client,
+            "http://127.0.0.1:1/api/v1/feedback",
+            submission(image),
+            identity(),
+        )
+        .await
     }
 
     fn assert_identity_request(captured: &str, expected_body: &serde_json::Value) {
@@ -756,16 +883,8 @@ mod tests {
             .timeout(Duration::from_secs(2))
             .build()
             .unwrap();
-        let outcome = submit_feedback_request(
-            &client,
-            &url,
-            FeedbackType::Bug,
-            MESSAGE.to_string(),
-            None,
-            KEY.to_string(),
-            identity(),
-        )
-        .await;
+        let outcome =
+            submit_feedback_request(&client, &client, &url, submission(None), identity()).await;
         assert!(
             matches!(
                 outcome,
@@ -773,5 +892,136 @@ mod tests {
             ),
             "expected network error, got {outcome:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn accepted_image_formats_are_sent_with_the_original_data_url() {
+        for (mime, bytes) in [
+            ("png", png_bytes()),
+            ("jpeg", jpeg_bytes()),
+            ("webp", webp_bytes()),
+        ] {
+            let data_url = image_data_url(mime, &bytes);
+            let (captured, outcome) = loopback_feedback_with_image(
+                http_response("201 Created", ""),
+                Some(data_url.clone()),
+                8192,
+            )
+            .await;
+            assert_eq!(
+                outcome.expect("accepted image"),
+                FeedbackOutcome::Sent,
+                "{mime}"
+            );
+            let body = captured.split_once("\r\n\r\n").expect("request body").1;
+            let parsed: serde_json::Value = serde_json::from_str(body).expect("json body");
+            assert_eq!(parsed["image_base64"], data_url, "{mime}");
+        }
+    }
+
+    #[tokio::test]
+    async fn absent_image_sends_without_image_base64() {
+        let (captured, outcome) = loopback_feedback(http_response("201 Created", "")).await;
+        assert_eq!(outcome.expect("absent image"), FeedbackOutcome::Sent);
+        let body = captured.split_once("\r\n\r\n").expect("request body").1;
+        let parsed: serde_json::Value = serde_json::from_str(body).expect("json body");
+        assert!(parsed.get("image_base64").is_none());
+    }
+
+    #[tokio::test]
+    async fn rejected_images_return_invalid_image_without_a_request() {
+        let jpeg = jpeg_bytes();
+        let oversize = {
+            let mut bytes = png_bytes();
+            bytes.resize(MAX_IMAGE_BYTES + 1, 0);
+            bytes
+        };
+        let cases = [
+            image_data_url("gif", b"GIF89a"),
+            format!(
+                "data:image/png;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(&jpeg)
+            ),
+            "data:image/png;base64,@@@".to_string(),
+            image_data_url("png", &oversize),
+            "data:image/jpg;base64,AAAA".to_string(),
+            String::new(),
+        ];
+        for image in cases {
+            let outcome = submit_without_server(Some(image.clone()))
+                .await
+                .expect("invalid image is an outcome");
+            assert_eq!(
+                outcome,
+                FeedbackOutcome::InvalidImage,
+                "expected InvalidImage for {image}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn image_request_uses_the_upload_client_timeout_not_the_json_client() {
+        use std::time::Duration;
+        use tokio::io::AsyncWriteExt;
+
+        let json_client = reqwest::Client::builder()
+            .no_proxy()
+            .read_timeout(Duration::from_millis(80))
+            .build()
+            .unwrap();
+        let upload_client = reqwest::Client::builder().no_proxy().build().unwrap();
+
+        async fn delayed_201() -> (String, tokio::task::JoinHandle<()>) {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("http://{}/api/v1/feedback", listener.local_addr().unwrap());
+            let handle = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                let response =
+                    b"HTTP/1.1 201 Created\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                let _ = stream.write_all(response).await;
+            });
+            (url, handle)
+        }
+
+        let png = image_data_url("png", &png_bytes());
+        let (url, handle) = delayed_201().await;
+        let image_outcome = tokio::time::timeout(
+            Duration::from_secs(3),
+            submit_feedback_request(
+                &json_client,
+                &upload_client,
+                &url,
+                submission(Some(png)),
+                identity(),
+            ),
+        )
+        .await
+        .expect("image request must finish")
+        .expect("image request result");
+        assert_eq!(image_outcome, FeedbackOutcome::Sent);
+        handle.await.unwrap();
+
+        let (url, handle) = delayed_201().await;
+        let text_outcome = tokio::time::timeout(
+            Duration::from_secs(3),
+            submit_feedback_request(
+                &json_client,
+                &upload_client,
+                &url,
+                submission(None),
+                identity(),
+            ),
+        )
+        .await
+        .expect("text request must finish");
+        assert!(
+            matches!(
+                text_outcome,
+                Err(ref error) if error.category() == crate::error::ErrorCategory::Network
+            ),
+            "expected json-client timeout, got {text_outcome:?}"
+        );
+        let _ = handle.await;
     }
 }

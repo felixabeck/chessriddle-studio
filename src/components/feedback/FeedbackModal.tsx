@@ -51,6 +51,8 @@ function outcomeMessage(
       return t("Feedback.Error.KeyMismatch");
     case "invalidInput":
       return t("Feedback.Error.InvalidInput");
+    case "invalidImage":
+      return t("Feedback.Error.InvalidImage");
     case "rateLimited":
       return t("Feedback.Error.RateLimited");
     case "deliveryFailed":
@@ -141,6 +143,7 @@ export default function FeedbackModal({
         trimmedMessage,
         trimmedEmail.length > 0 ? trimmedEmail : null,
         idempotencyKey,
+        null,
       );
       if (!mounted.current || generation !== submitGeneration.current) return;
       if (outcome === "sent") {

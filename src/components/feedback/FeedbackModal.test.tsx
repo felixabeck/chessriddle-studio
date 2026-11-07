@@ -198,6 +198,7 @@ test("success closes the dialog and notifies without exposing a server body", as
     "A useful Studio report.",
     "user@example.com",
     firstKey,
+    null,
   );
   expect(mocks.notify).toHaveBeenCalledExactlyOnceWith({
     color: "success",
@@ -221,6 +222,7 @@ test("an unchanged retry reuses the idempotency key", async () => {
     "A useful Studio report.",
     null,
     firstKey,
+    null,
   );
   expect(mocks.submitFeedback).toHaveBeenNthCalledWith(
     2,
@@ -228,6 +230,7 @@ test("an unchanged retry reuses the idempotency key", async () => {
     "A useful Studio report.",
     null,
     firstKey,
+    null,
   );
 });
 
@@ -257,6 +260,17 @@ test("mapped outcomes keep the typed message", async () => {
   expect(onClose).not.toHaveBeenCalled();
 });
 
+test("invalidImage shows the image-specific copy", async () => {
+  mocks.submitFeedback.mockResolvedValueOnce("invalidImage" satisfies FeedbackOutcome);
+  await renderModal();
+  await fillMessage("A useful Studio report.");
+  await submitForm();
+  expect(container.querySelector("[role='alert']")?.textContent).toBe(
+    "Feedback.Error.InvalidImage",
+  );
+  expect(onClose).not.toHaveBeenCalled();
+});
+
 test("transport failures map to the network copy", async () => {
   mocks.submitFeedback.mockRejectedValueOnce({
     category: "network",
@@ -275,6 +289,7 @@ test("mapped outcomes surface the closed alert copy", async () => {
     ["inProgress", "Feedback.Error.InProgress"],
     ["keyMismatch", "Feedback.Error.KeyMismatch"],
     ["invalidInput", "Feedback.Error.InvalidInput"],
+    ["invalidImage", "Feedback.Error.InvalidImage"],
     ["rateLimited", "Feedback.Error.RateLimited"],
     ["deliveryFailed", "Feedback.Error.DeliveryFailed"],
     ["serviceUnavailable", "Feedback.Error.ServiceUnavailable"],
@@ -382,6 +397,7 @@ test("selecting suggestion sends that feedback type", async () => {
     "A useful Studio report.",
     null,
     firstKey,
+    null,
   );
 });
 

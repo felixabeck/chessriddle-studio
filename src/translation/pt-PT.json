@@ -602,6 +602,7 @@
     "Feedback.EmailNote": "Usado apenas para lhe responder.",
     "Feedback.Error.DeliveryFailed": "A mensagem não pôde ser entregue. Tente novamente mais tarde.",
     "Feedback.Error.InProgress": "Este comentário ainda está a ser enviado. Aguarde um momento e tente novamente.",
+    "Feedback.Error.InvalidImage": "Não foi possível enviar a imagem. Remova-a ou escolha outra.",
     "Feedback.Error.InvalidInput": "Verifique a mensagem e o e-mail e tente novamente.",
     "Feedback.Error.KeyMismatch": "Envie a mensagem novamente.",
     "Feedback.Error.Network": "Não foi possível contactar o servidor. Verifique a ligação e tente novamente.",

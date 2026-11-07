@@ -595,6 +595,7 @@
     "Feedback.EmailNote": "Wird nur verwendet, um dir zu antworten.",
     "Feedback.Error.DeliveryFailed": "Die Nachricht konnte nicht zugestellt werden. Bitte versuche es später erneut.",
     "Feedback.Error.InProgress": "Dieses Feedback wird noch gesendet. Bitte warte einen Moment und versuche es erneut.",
+    "Feedback.Error.InvalidImage": "Das Bild konnte nicht gesendet werden. Entferne es oder wähle ein anderes.",
     "Feedback.Error.InvalidInput": "Prüfe Nachricht und E-Mail und versuche es erneut.",
     "Feedback.Error.KeyMismatch": "Bitte sende die Nachricht erneut.",
     "Feedback.Error.Network": "Der Server konnte nicht erreicht werden. Prüfe deine Verbindung und versuche es erneut.",
