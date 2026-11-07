@@ -1,4 +1,10 @@
 import type { DailyStatsData } from "@/bindings";
+import dayjs from "dayjs";
+
+export function completeDailyDate(date: string): number | null {
+    const parsed = dayjs(date, "YYYY.MM.DD", true);
+    return parsed.isValid() ? parsed.valueOf() : null;
+}
 
 export function summarizeDailyStats(dailyStats: DailyStatsData[]) {
     let won = 0;

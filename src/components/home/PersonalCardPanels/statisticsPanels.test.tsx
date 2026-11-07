@@ -57,7 +57,11 @@ vi.mock("./DateRangeTabs", () => ({
     </button>
   ),
 }));
-vi.mock("./TimeRangeSlider", () => ({ default: () => null }));
+vi.mock("./TimeRangeSlider", () => ({
+  default: ({ ratingDates }: { ratingDates: number[] }) => (
+    <div data-testid="rating-dates">{ratingDates.join("|")}</div>
+  ),
+}));
 vi.mock("@/platform/tauri", () => ({ tauri: { getOpeningFromName: vi.fn() } }));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
 vi.mock("@tanstack/react-virtual", () => ({
@@ -315,6 +319,46 @@ test("Ratings excludes out-of-range days from the summary and rating series", as
   expect(container.textContent).toContain("1 Common.Games");
   expect(container.querySelector("[data-testid='result-counts']")?.textContent).toBe("0:0:1");
   expect(container.querySelector("[data-testid='rating-data']")?.textContent).toBe("2810");
+});
+
+test("Overview and Ratings All-time both count games on incomplete daily dates", async () => {
+  const partialDateStatistics: PlayerGameInfo = {
+    site_stats_data: [
+      {
+        site: "Lichess",
+        player: "Magnus",
+        daily: [
+          {
+            date: "2024.??.??",
+            time_control: "600+0",
+            won: 2,
+            drawn: 0,
+            lost: 0,
+            max_player_elo: 2_700,
+          },
+          {
+            date: "2026.10.01",
+            time_control: "600+0",
+            won: 0,
+            drawn: 0,
+            lost: 1,
+            max_player_elo: 2_710,
+          },
+        ],
+        openings: [],
+      },
+    ],
+  };
+
+  await render(<OverviewPanel playerName="Magnus" info={partialDateStatistics} isDatabase />);
+  expect(container.textContent).toContain("3 Common.Games");
+
+  await render(<RatingsPanel playerName="Magnus" info={partialDateStatistics} isDatabase />);
+  expect(container.textContent).toContain("3 Common.Games");
+  const dates = container.querySelector("[data-testid='rating-dates']")?.textContent ?? "";
+  expect(dates.split("|").some((value) => value === "NaN" || Number.isNaN(Number(value)))).toBe(
+    false,
+  );
 });
 
 test("Openings sums duplicate opening keys and retains each colour's results", async () => {
