@@ -21931,7 +21931,7 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 ## 2026-11-06 — filed through the inbox spool
 
 ### Unsupported persisted artwork names suppress the built-in piece and checkerboard fallback
-* **ID:** f-20261106-45 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261106-45 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** Felix t23u appearance preferences review, area 3/5, HEAD `bd69bf7d`.
 * **Where:** `src/state/atoms.ts:571-580` hydrates piece-set and board-image with createPreferenceStorage(string), whose schema is only z.string() in `src/state/utils.ts:130-132`. `src/App.tsx:228` directly uses the hydrated piece-set as the sole piece stylesheet URL, without load-error fallback. `src/chessground/Chessground.tsx:209-221` directly supplies the hydrated board-image as --board-image; `src/styles/chessgroundColorsOverride.css:4` provides a var fallback only when that custom property is absent, not when its URL names a missing resource. Settings selectors offer bounded built-in catalogs, not a custom artwork file workflow.
@@ -21947,6 +21947,9 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 
 **Where correction (2026-11-06, push records review):** piece-set and board-image hydration is `pieceSetAtom` / `boardImageAtom` at `src/state/atoms.ts:589-597`, not `:571-580` (those are `showCoordinatesAtom` / `soundCollectionAtom`). The piece stylesheet link is `src/App.tsx:207`; `:228` closes `DndProvider`.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"9b2e36b4009a7e38d81e8ff5a4caca34eb99204affab212f33a0a77665156855","input_sha256":"fdec01c95648965b14f6cdf993c3514490abcc754da2da329997f14f0c769355","kind":"mutation-receipt","operation":"ca3b6fe1228461cac874d1dc81d37ba11330e1a5bd6e4de20e46b8c2744ea50d","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-45"],"target":"f-20261106-45","v":1} -->
+
+**Handled (2026-11-07, drain session 0e11f3af-c8a9-406f-a5c1-51c75f5abe31, co-located joiner of f-20261106-30, lens tier with review-persisted-state in push round 1):** one catalog, `src/state/artworkCatalog.ts`, now feeds the piece-set and board pickers and both atoms. `pieceSetAtom` and `boardImageAtom` are typed as the catalog unions and validated with Zod enums through `createZodStorage`, so an unknown or obsolete stored name repairs to `staunty` / `chessriddle.svg` and supported names round-trip unchanged (d-20261107-09, superseding only d-20261029-23's rejected-fallback clause on the new evidence that upstream 4b7fa4dd deleted five board images). No `onError` machinery: the catalog plus an asset-existence test (every piece stylesheet, board image and derived thumbnail exists under `public/`) is the fix. Proof: `src/state/artworkCatalog.test.ts` hydration tests for unknown, removed (`blue.svg`), supported and absent values go red when the enum is replaced by `z.string()`; vitest related 4234 passed; final gates and CI run 42384771760 green. Commits: d5c44e30, d4fc944e.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"ea71f046aad79804562eb950337e60d42c958a53a5cfe089174f48c94f888b2e","header_sha256":"18978a0801654398784bfe51f21dedea6075cfc15f2fe608395ada130530019c","header_status":"handled","input_sha256":"1d329fc3906b79e598d7d1fac84bafe0b117b917741dc24e34c21e2268c0f2a5","kind":"mutation-receipt","operation":"b6de815ec81724e7551365a3db8d8fb05e55afccbe65bec3e681eff5f9077e5c","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-45"],"target":"f-20261106-45","v":1} -->
 
 ---
 
