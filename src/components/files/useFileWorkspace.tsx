@@ -3,7 +3,7 @@ import {
   LibrarySectionHeading,
   libraryClasses,
 } from "@/components/library/presentation";
-import { Trash2 } from "lucide-react";
+import { FileText, Trash2 } from "lucide-react";
 import { tauri } from "@/platform/tauri";
 import { listingFailure, rootFailureMessage } from "@/components/files/listingFailure";
 import { useNativePicker } from "@/hooks/useNativePicker";
@@ -577,104 +577,119 @@ export function useFileWorkspace(
       (!!displayedTrash?.items?.length ||
         Number(displayedTrash?.olderCount) > 0 ||
         trashFailure !== "silent") ? (
-        <Stack
-          gap="xs"
-          miw={0}
-          mt="md"
-          className={`${libraryClasses.section} wrap-anywhere`}
-          role="region"
-          aria-label={t("Files.Trash", { defaultValue: "Trash" })}
-          data-section="trash"
-        >
-          <LibrarySectionHeading
-            count={(displayedTrash?.items?.length ?? 0) + Number(displayedTrash?.olderCount ?? 0)}
-            icon={<Trash2 />}
+        // The library's container queries measure the file tree. The trash view sits beside
+        // it, so it needs its own query container for the section inset and heading icon.
+        <Box mt="md" miw={0} className={libraryClasses.trashContainer}>
+          <Stack
+            gap="xs"
+            miw={0}
+            className={`${libraryClasses.section} wrap-anywhere`}
+            role="region"
+            aria-label={t("Files.Trash", { defaultValue: "Trash" })}
+            data-section="trash"
           >
-            {t("Files.Trash", { defaultValue: "Trash" })}
-          </LibrarySectionHeading>
-          <Group justify="space-between" wrap="wrap">
-            <Button
-              size="xs"
-              {...libraryButtonProps}
-              color="danger"
-              onClick={() => setEmptyTarget(true)}
-            >
-              {t("Files.EmptyTrash", { defaultValue: "Empty trash" })}
-            </Button>
-          </Group>
-          {trashFailure !== "silent" && (
-            <Text c="danger" role="alert">
-              {trashLoadFailureMessage}
-            </Text>
-          )}
-          {trashFailure !== "silent" && (
-            <Button
-              size="xs"
-              {...libraryButtonProps}
-              onClick={() =>
-                void (olderTrashError ? loadOlderTrash() : mutateTrash().catch(() => {}))
-              }
-            >
-              {t("Common.Retry")}
-            </Button>
-          )}
-          {(displayedTrash?.items ?? []).map((row) => (
-            <Box
-              key={row.item}
-              p="sm"
-              style={{
-                borderBottom: "1px solid var(--cf-border)",
-              }}
-            >
-              <Text size="sm" fw={500}>
-                {row.name}
-              </Text>
-              <Text size="xs" c="dimmed">
-                {row.originalFolder ||
-                  t("Files.CollectionRoot", { defaultValue: "Collection root" })}
-              </Text>
-              <Text size="xs" c="dimmed">
-                {new Date(Number(row.trashedSeconds) * 1000).toLocaleString()}
-              </Text>
-              {row.category && (
-                <Text size="sm" c="danger">
-                  {childUnreadableMessage(row.category, t)}
-                </Text>
+            <Group gap={0} wrap="wrap" align="center" pr="xs">
+              <Box flex="1 1 8rem" miw={0}>
+                <LibrarySectionHeading
+                  count={
+                    (displayedTrash?.items?.length ?? 0) + Number(displayedTrash?.olderCount ?? 0)
+                  }
+                  icon={<Trash2 />}
+                >
+                  {t("Files.Trash", { defaultValue: "Trash" })}
+                </LibrarySectionHeading>
+              </Box>
+              <Button
+                size="xs"
+                variant="subtle"
+                {...libraryButtonProps}
+                color="danger"
+                onClick={() => setEmptyTarget(true)}
+              >
+                {t("Files.EmptyTrash", { defaultValue: "Empty trash" })}
+              </Button>
+            </Group>
+            <Stack gap="xs" miw={0} className={libraryClasses.trashBody}>
+              {trashFailure !== "silent" && (
+                <Group gap="xs" wrap="wrap">
+                  <Text c="danger" role="alert" size="sm">
+                    {trashLoadFailureMessage}
+                  </Text>
+                  <Button
+                    size="xs"
+                    variant="default"
+                    {...libraryButtonProps}
+                    onClick={() =>
+                      void (olderTrashError ? loadOlderTrash() : mutateTrash().catch(() => {}))
+                    }
+                  >
+                    {t("Common.Retry")}
+                  </Button>
+                </Group>
               )}
-              <Group wrap="wrap" gap="xs" mt="xs">
+              {(displayedTrash?.items ?? []).map((row) => (
+                <div key={row.item} className={libraryClasses.trashRow}>
+                  <span className={libraryClasses.trashRowIcon} aria-hidden>
+                    <FileText />
+                  </span>
+                  <Box miw={0} className={libraryClasses.trashRowMain}>
+                    <Text size="sm" fw={500}>
+                      {row.name}
+                    </Text>
+                    <Group gap="sm" wrap="wrap" mt={2}>
+                      <Text size="xs" c="dimmed">
+                        {row.originalFolder ||
+                          t("Files.CollectionRoot", { defaultValue: "Collection root" })}
+                      </Text>
+                      <Text size="xs" c="dimmed">
+                        {new Date(Number(row.trashedSeconds) * 1000).toLocaleString()}
+                      </Text>
+                    </Group>
+                    {row.category && (
+                      <Text size="sm" c="danger" mt={4}>
+                        {childUnreadableMessage(row.category, t)}
+                      </Text>
+                    )}
+                  </Box>
+                  <Group wrap="wrap" gap="xs" className={libraryClasses.trashRowActions}>
+                    <Button
+                      size="xs"
+                      variant="default"
+                      {...libraryButtonProps}
+                      disabled={!!row.category}
+                      onClick={() => setRestoreTarget(row)}
+                    >
+                      {t("Files.Restore", { defaultValue: "Restore" })}
+                    </Button>
+                    <Button
+                      size="xs"
+                      variant="subtle"
+                      {...libraryButtonProps}
+                      color="danger"
+                      disabled={!!row.category}
+                      onClick={() => setPurgeTarget(row)}
+                    >
+                      {t("Files.DeletePermanently", { defaultValue: "Delete permanently" })}
+                    </Button>
+                  </Group>
+                </div>
+              ))}
+              {displayedTrash?.cursor && (
                 <Button
                   size="xs"
+                  variant="default"
                   {...libraryButtonProps}
-                  disabled={!!row.category}
-                  onClick={() => setRestoreTarget(row)}
+                  loading={loadingOlderTrash}
+                  disabled={loadingOlderTrash}
+                  onClick={() => void loadOlderTrash()}
                 >
-                  {t("Files.Restore", { defaultValue: "Restore" })}
+                  {t("Files.LoadOlderTrash", { defaultValue: "Load older items" })} (
+                  {displayedTrash.olderCount})
                 </Button>
-                <Button
-                  size="xs"
-                  {...libraryButtonProps}
-                  color="danger"
-                  disabled={!!row.category}
-                  onClick={() => setPurgeTarget(row)}
-                >
-                  {t("Files.DeletePermanently", { defaultValue: "Delete permanently" })}
-                </Button>
-              </Group>
-            </Box>
-          ))}
-          {displayedTrash?.cursor && (
-            <Button
-              size="xs"
-              {...libraryButtonProps}
-              loading={loadingOlderTrash}
-              disabled={loadingOlderTrash}
-              onClick={() => void loadOlderTrash()}
-            >
-              {t("Files.LoadOlderTrash", { defaultValue: "Load older items" })} (
-              {displayedTrash.olderCount})
-            </Button>
-          )}
-        </Stack>
+              )}
+            </Stack>
+          </Stack>
+        </Box>
       ) : null,
     status: (
       <Stack

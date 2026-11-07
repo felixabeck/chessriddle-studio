@@ -43,6 +43,58 @@
   background: color-mix(in srgb, var(--cf-primary) 16%, transparent);
 }
 
+/* The trash view is outside the file tree's query container, so it brings its own. */
+.trashContainer {
+  container-type: inline-size;
+}
+
+.section[data-section="trash"] .sectionIcon,
+.trashRowIcon {
+  color: var(--cf-muted-foreground);
+  background: var(--cf-interactive);
+}
+
+/* Trashed files are card rows like databases: icon, name with origin and time, actions. */
+.trashRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "main" "actions";
+  align-items: center;
+  gap: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  /* Below 24rem a flat list: card chrome would leave the buttons no width. */
+  padding: var(--mantine-spacing-xs) 0;
+  border-bottom: 1px solid var(--cf-border-strong);
+}
+
+/* Same inset as the section heading, so rows start under its text. */
+.trashBody {
+  padding: 0 var(--mantine-spacing-xs) var(--mantine-spacing-xs);
+}
+
+/* Like the section icon, shown from 24rem so a narrow row keeps its width for the name. */
+.trashRowIcon {
+  grid-area: icon;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--library-database-icon);
+  height: var(--library-database-icon);
+  border-radius: var(--cf-radius-sm);
+}
+
+.trashRowIcon svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.trashRowMain {
+  grid-area: main;
+}
+
+.trashRowActions {
+  grid-area: actions;
+}
+
 /* Column captions of both sections. */
 .columnCaption {
   color: var(--mantine-color-dimmed);
@@ -149,5 +201,28 @@
 
   .databaseColumns > span:first-child {
     padding-left: calc(var(--library-database-icon) + var(--mantine-spacing-sm));
+  }
+}
+
+@container (min-width: 24rem) {
+  .trashRow {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas: "icon main" "actions actions";
+    padding: var(--mantine-spacing-sm);
+    border: 1px solid var(--cf-border);
+    border-radius: var(--cf-radius-lg);
+    background: var(--cf-card);
+  }
+
+  .trashRowIcon {
+    display: inline-flex;
+  }
+}
+
+/* Wide enough for the actions beside the name. */
+@container (min-width: 30rem) {
+  .trashRow {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "icon main actions";
   }
 }
