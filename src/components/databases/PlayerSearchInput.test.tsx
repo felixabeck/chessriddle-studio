@@ -11,7 +11,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/utils/db", () => ({ query_players: mocks.queryPlayers }));
 vi.mock("@/platform/tauri", () => ({ tauri: { getPlayer: mocks.getPlayer } }));
 vi.mock("@/components/files/notifyError", () => ({ notifyUnlessCancelled: mocks.notify }));
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock("react-i18next", () => {
+  const t = (key: string) => key;
+  return { useTranslation: () => ({ t }) };
+});
 vi.mock("lucide-react", () => ({ Search: () => null }));
 vi.mock("@mantine/core", () => ({
   Autocomplete: ({
@@ -44,6 +47,9 @@ let root: Root;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.getPlayer.mockReset();
+  mocks.queryPlayers.mockReset();
+  mocks.notify.mockReset();
   mocks.getPlayer.mockResolvedValue(null);
   container = document.createElement("div");
   document.body.append(container);
@@ -119,6 +125,50 @@ test("a stale getPlayer rejection is silent after value changes while a current 
   await vi.waitFor(() =>
     expect(mocks.notify).toHaveBeenCalledExactlyOnceWith("Common.Error", expect.any(Error)),
   );
+});
+
+test("a getPlayer rejection after unmount does not notify", async () => {
+  let rejectLookup!: (reason: Error) => void;
+  const lookup = new Promise<never>((_, fail) => {
+    rejectLookup = fail;
+  });
+  mocks.getPlayer.mockImplementation(() => lookup);
+  await act(async () =>
+    root.render(
+      <PlayerSearchInput label="Player" file={file("db")} value={1} setValue={vi.fn()} />,
+    ),
+  );
+  await vi.waitFor(() => expect(mocks.getPlayer).toHaveBeenCalledWith(file("db"), 1));
+  await act(async () => root.render(null));
+  await act(async () => {
+    rejectLookup(new Error("unmounted lookup"));
+    await Promise.resolve();
+  });
+  expect(mocks.notify).not.toHaveBeenCalled();
+});
+
+test("a query_players rejection after a newer lookup does not notify", async () => {
+  const database = file("db");
+  let rejectSearch!: (reason: Error) => void;
+  mocks.queryPlayers.mockImplementation(
+    () =>
+      new Promise((_, fail) => {
+        rejectSearch = fail;
+      }),
+  );
+  await render(database);
+  await act(async () => {
+    container.querySelector("button")!.click();
+  });
+  await vi.waitFor(() => expect(mocks.queryPlayers).toHaveBeenCalledOnce());
+  await act(async () =>
+    root.render(<PlayerSearchInput label="Player" file={database} value={1} setValue={vi.fn()} />),
+  );
+  await act(async () => {
+    rejectSearch(new Error("stale search"));
+    await Promise.resolve();
+  });
+  expect(mocks.notify).not.toHaveBeenCalled();
 });
 
 test("unmount cancels an active lookup while an ordinary failure is surfaced", async () => {

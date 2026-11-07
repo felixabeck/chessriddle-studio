@@ -27,7 +27,13 @@ export function PlayerSearchInput({
   const playerLookupVersion = useRef(0);
   const searchController = useRef<AbortController | null>(null);
 
-  useEffect(() => () => searchController.current?.abort(), []);
+  useEffect(
+    () => () => {
+      playerLookupVersion.current += 1;
+      searchController.current?.abort();
+    },
+    [],
+  );
 
   useEffect(() => {
     playerLookupVersion.current += 1;
@@ -93,7 +99,9 @@ export function PlayerSearchInput({
         setData(res.data);
       }
     } catch (cause) {
-      if (!controller.signal.aborted) notifyUnlessCancelled(t("Common.Error"), cause);
+      if (playerLookupVersion.current === lookupVersion && !controller.signal.aborted) {
+        notifyUnlessCancelled(t("Common.Error"), cause);
+      }
     }
   }
   return (

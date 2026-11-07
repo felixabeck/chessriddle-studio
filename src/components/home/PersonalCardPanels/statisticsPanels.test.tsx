@@ -475,6 +475,8 @@ test("Ratings manual slider counts incomplete dates only on the full timeline", 
   await act(async () => {
     container.querySelector<HTMLButtonElement>("[data-testid='manual-narrow-range']")?.click();
   });
+  // Dates always include today, so start: 1 also drops yesterday's dated game.
+  // The assertion is that incomplete-date games are not counted.
   expect(container.textContent).toContain("0 Common.Games");
 });
 
