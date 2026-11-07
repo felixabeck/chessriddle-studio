@@ -1315,17 +1315,64 @@ test.each([
             black: value,
             round: value,
             time_control: value,
+            white_time_control: value,
+            black_time_control: value,
+            eco: value,
             variant: value,
             other: {
                 Annotator: value,
-                WhiteTimeControl: value,
-                BlackTimeControl: value,
-                ECO: value,
             },
         });
+        expect(parsed.headers.other).not.toHaveProperty("WhiteTimeControl");
+        expect(parsed.headers.other).not.toHaveProperty("BlackTimeControl");
+        expect(parsed.headers.other).not.toHaveProperty("ECO");
+        for (const tag of expectedTags) {
+            expect(written.split(tag).length - 1).toBe(1);
+        }
         expect(parsed.root.children[0].san).toBe("e4");
         written = getPGN(parsed.root, { ...ALL_MARKUPS, headers: parsed.headers });
     }
+});
+
+test("parsePGN models WhiteTimeControl, BlackTimeControl, ECO and UTCTime", async () => {
+    mocks.lexPgn.mockResolvedValueOnce([
+        { type: "Header", value: { tag: "WhiteTimeControl", value: "600+5" } },
+        { type: "Header", value: { tag: "BlackTimeControl", value: "300+2" } },
+        { type: "Header", value: { tag: "ECO", value: "B20" } },
+        { type: "Header", value: { tag: "UTCTime", value: "12:34:56" } },
+        { type: "Outcome", value: "*" },
+    ] satisfies Token[]);
+    const parsed = await parsePGN(
+        '[WhiteTimeControl "600+5"]\n[BlackTimeControl "300+2"]\n[ECO "B20"]\n[UTCTime "12:34:56"]\n\n*',
+    );
+    expect(parsed.headers.white_time_control).toBe("600+5");
+    expect(parsed.headers.black_time_control).toBe("300+2");
+    expect(parsed.headers.eco).toBe("B20");
+    expect(parsed.headers.time).toBe("12:34:56");
+    expect(parsed.headers.other).not.toHaveProperty("WhiteTimeControl");
+    expect(parsed.headers.other).not.toHaveProperty("BlackTimeControl");
+    expect(parsed.headers.other).not.toHaveProperty("ECO");
+    expect(parsed.headers.other).not.toHaveProperty("UTCTime");
+});
+
+test("SetUp and FEN are emitted once by writePGN and never from other", async () => {
+    mockCommentLexer();
+    const fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 23";
+    const parsed = await parsePGN(`[SetUp "1"]\n[FEN "${fen}"]\n\n*`);
+    const written = getPGN(parsed.root, { ...ALL_MARKUPS, headers: parsed.headers });
+    expect(written.match(/\[SetUp "1"\]/g)).toEqual(['[SetUp "1"]']);
+    expect(written.match(/\[FEN /g)).toEqual(["[FEN "]);
+    const reparsed = await parsePGN(written);
+    const rewritten = getPGN(reparsed.root, { ...ALL_MARKUPS, headers: reparsed.headers });
+    expect(rewritten.match(/\[SetUp "1"\]/g)).toEqual(['[SetUp "1"]']);
+    expect(rewritten.match(/\[FEN /g)).toEqual(["[FEN "]);
+
+    const fromOther = headersToPGN({
+        ...defaultTree().headers,
+        other: { SetUp: "1", FEN: "x" },
+    });
+    expect(fromOther).not.toMatch(/SetUp/);
+    expect(fromOther).not.toMatch(/\[FEN /);
 });
 
 test("unrated and empty Elo tags stay raw instead of becoming NaN", async () => {

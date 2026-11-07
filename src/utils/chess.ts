@@ -236,7 +236,13 @@ export function headersToPGN(game: GameHeaders): string {
         headers += pgnTag("Variant", game.variant);
     }
     for (const [key, value] of Object.entries(game.other ?? {})) {
-        if ((key === "WhiteElo" && emitWhiteElo) || (key === "BlackElo" && emitBlackElo)) {
+        // writePGN owns root-position tags; skip copies persisted in `other` before they were modeled.
+        if (
+            (key === "WhiteElo" && emitWhiteElo) ||
+            (key === "BlackElo" && emitBlackElo) ||
+            key === "SetUp" ||
+            key === "FEN"
+        ) {
             continue;
         }
         headers += pgnTag(key, value);
@@ -671,6 +677,11 @@ function getPgnHeaders(tokens: Token[]): GameHeaders {
         Orientation,
         TimeControl,
         Variant,
+        WhiteTimeControl,
+        BlackTimeControl,
+        ECO,
+        UTCTime,
+        SetUp: _SetUp,
         ...other
     } = Object.fromEntries(headersN);
 
@@ -697,6 +708,10 @@ function getPgnHeaders(tokens: Token[]): GameHeaders {
         start: parseRawStartHeader(Start),
         ...(isValidOrientation(Orientation) ? { orientation: Orientation } : {}),
         time_control: TimeControl,
+        white_time_control: WhiteTimeControl,
+        black_time_control: BlackTimeControl,
+        eco: ECO,
+        time: UTCTime,
         variant: Variant,
         other: other,
     };
