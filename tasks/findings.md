@@ -21386,7 +21386,7 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 
 ### The renderer uses standard chess legality for Chess960 roots and can discard the castling rook
 
-* **ID:** f-20261106-11 · **Status:** open · **Area:** chess-tree · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261106-11 · **Status:** handled · **Area:** chess-tree · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** Felix-requested bounded collection and supported variant review, HEAD `d2538c6b`
 * **Where:** `src/utils/chessops.ts:18-27` always calls `Chess.fromSetup(setup)` without a Chess960 mode; the shared callers include `src/components/boards/Board.tsx:208-217,324-346,585-612` (legal move construction and interactive insertion) and the engine-line move replay in `src/components/boards/Board.tsx:252-257`. Native analysis instead derives the mode from X-FEN rights in `src-tauri/src/engine/uci.rs:1-107`, so the native engine can produce a valid move that the shared renderer parser classifies differently. `FenSearch.tsx:34` recognizes a Chess960 opening and stores `headers.variant`, but the position factory cannot receive it.
@@ -21402,6 +21402,14 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 
 **Disputed by review, 2026-11-06 (records lens, build run studio-feedback, unverified by the orchestrator):** a read-only records lens reported that on chessops 0.14.0 production `positionFromFen` plus `chessgroundDests` for `7k/8/8/8/8/8/8/R6K w AHa - 0 1` yield king destinations `a1,g1,g2,h2`, that `h1b1` is illegal (`storeMakeMove` returns early at `src/state/store/tree.ts:968`), that `h1a1` plays `O-O-O` with king c1 and rook d1, and that for `1kr5/8/8/8/8/8/8/1KR5 w ACac - 0 1` `makeFen` rewrites `ACac` to `Kk` while the c-file rights still round-trip and `b1c1` is illegal. If confirmed, the Defect, Proof and the earlier correction overstate the failure; the run that picks this finding must re-measure both FENs against production code before planning a fix.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"395b4a8adadc5493fe0a2c819a749eae962188d28488b5fb14e2b7276e8948af","input_sha256":"62a67008d573db1c5fbcb54575455b32bac1699dceb0ed36a71f33851d05d454","kind":"mutation-receipt","operation":"180b535b5739591405727dffbc77b083711e2c3f69083503e908ba583459579c","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-11"],"target":"f-20261106-11","v":1} -->
+
+**Closed as not holding, 2026-11-08 (drain session 145da2cd-7b80-40cb-ab39-2cca73a7c760):** re-measured both FENs against production `positionFromFen` + `chessgroundDests` + `makeSan`/`play` on chessops 0.14.0 (ephemeral Vitest probe, removed). This confirms the records-lens dispute and refutes the Defect:
+
+* `7k/8/8/8/8/8/8/R6K w AHa - 0 1`: king dests `a1,g1,g2,h2`; `h1b1` is illegal; `h1a1` plays `O-O-O` → `7k/8/8/8/8/8/8/2KR4 b - - 1 1` (king c1, rook d1). `makeFen` writes `Q` because `H`/`a` name rooks that do not exist; the a1 right survives the round trip.
+* `1kr5/8/8/8/8/8/8/1KR5 w ACac - 0 1`: `makeFen` writes `Kk`, the X-FEN shorthand for the outermost h-side rook, which is c1/c8 here. `A`/`a` are dropped because there is no a-file rook. Re-parsing produces the same dests. `b1c1` (O-O) is illegal because the black rook on c8 attacks c1, a square the king must pass through. The rights are not lost.
+
+chessops 0.14 has one unified `Chess` with arbitrary-file rook castling: `Castles.fromSetup` reads the rook squares and castling is king-to-rook. There is no `castlingMode` option to pass, so the probe the finding cites (`Chess.fromSetup(..., {castlingMode:"chess960"})`) used an option that does not exist. `normalizeMove` maps two-square king moves onto the rook square, which only aliases otherwise-impossible king moves. No code change. The separate FenSearch variant-provenance defect remains `f-20261106-42`.
+<!-- ledger-meta {"command":"close","effect_lines":6,"effect_sha256":"0cd2d3de4abca518ed115f140ef67409d13e59483233c1d6f34173dfc8e7f626","header_sha256":"ba51a9f89dce6e825deafa047d59d99fb12908f20d871aecd2f9817745daeab5","header_status":"handled","input_sha256":"d9e76d5524a0cb64abb84f43e66aa613c583099f2fcedc872f994d9977ed6495","kind":"mutation-receipt","operation":"26f9afb4f0ec493879b74ebf8b9b561703734096e102fcb8afec62ca59b4a2ed","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-11"],"target":"f-20261106-11","v":1} -->
 
 ---
 
