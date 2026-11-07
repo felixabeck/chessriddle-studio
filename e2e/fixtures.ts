@@ -226,35 +226,43 @@ export async function wheelBoardStackTo(page: Page, target: Locator) {
 }
 
 export async function wheelColumnTo(page: Page, column: Locator, target: Locator) {
-    const columnBox = (await column.boundingBox())!;
-    const targetBox = (await target.boundingBox())!;
-    const stack = page.locator('[data-board-layout="stacked"]');
-    const stackBox = (await stack.count())
-        ? (await stack.boundingBox())!
-        : { y: 0, height: page.viewportSize()!.height };
-    const top = Math.max(columnBox.y, stackBox.y);
-    const bottom = Math.min(
-        columnBox.y + columnBox.height,
-        stackBox.y + stackBox.height,
-        page.viewportSize()!.height,
-    );
-    const centre = (top + bottom) / 2;
-    // The column's left border is outside its nested notation viewport.
-    await page.mouse.move(columnBox.x, centre);
-    await page.mouse.wheel(0, targetBox.y + targetBox.height / 2 - centre);
+    const targetCentreIsHitTestable = () =>
+        target.evaluate((element) => {
+            const box = element.getBoundingClientRect();
+            const hit = document.elementFromPoint(
+                box.left + box.width / 2,
+                box.top + box.height / 2,
+            );
+            return hit !== null && element.contains(hit);
+        });
+
+    await expect(async () => {
+        if (await targetCentreIsHitTestable()) {
+            return;
+        }
+
+        const columnBox = (await column.boundingBox())!;
+        const targetBox = (await target.boundingBox())!;
+        const stack = page.locator('[data-board-layout="stacked"]');
+        const stackBox = (await stack.count())
+            ? (await stack.boundingBox())!
+            : { y: 0, height: page.viewportSize()!.height };
+        const top = Math.max(columnBox.y, stackBox.y);
+        const bottom = Math.min(
+            columnBox.y + columnBox.height,
+            stackBox.y + stackBox.height,
+            page.viewportSize()!.height,
+        );
+        const centre = (top + bottom) / 2;
+        // The column's left border is outside its nested notation viewport.
+        await page.mouse.move(columnBox.x, centre);
+        await page.mouse.wheel(0, targetBox.y + targetBox.height / 2 - centre);
+        await expect.poll(targetCentreIsHitTestable, { timeout: 1000 }).toBe(true);
+    }).toPass({ timeout: 15_000, intervals: [100, 250, 500] });
     await expect
-        .poll(
-            () =>
-                target.evaluate((element) => {
-                    const box = element.getBoundingClientRect();
-                    const hit = document.elementFromPoint(
-                        box.left + box.width / 2,
-                        box.top + box.height / 2,
-                    );
-                    return hit !== null && element.contains(hit);
-                }),
-            { message: "target centre is hit-testable after user wheel scrolling" },
-        )
+        .poll(targetCentreIsHitTestable, {
+            message: "target centre is hit-testable after user wheel scrolling",
+        })
         .toBe(true);
 }
 
