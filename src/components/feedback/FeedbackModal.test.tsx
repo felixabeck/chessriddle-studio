@@ -872,6 +872,27 @@ test("a rejected file while capture is in flight invalidates the capture", async
   expect(container.querySelector("[role='alert']")?.textContent).toBe("Feedback.Error.ImageType");
 });
 
+test("an oversize file while capture is in flight invalidates the capture", async () => {
+  const capture = deferred<string>();
+  mocks.toPng.mockReturnValueOnce(capture.promise);
+  const file = pngFile("big.png");
+  Object.defineProperty(file, "size", { value: MAX_IMAGE_BYTES + 1 });
+  await renderModal();
+  await takeScreenshot();
+  await pickFile(file);
+  expect(container.querySelector("[role='alert']")?.textContent).toBe(
+    "Feedback.Error.ImageTooLarge",
+  );
+  await act(async () => {
+    capture.resolve(SMALL_PNG);
+    await capture.promise;
+  });
+  expect(preview()).toBeNull();
+  expect(container.querySelector("[role='alert']")?.textContent).toBe(
+    "Feedback.Error.ImageTooLarge",
+  );
+});
+
 test("passes the attached image as the fifth argument", async () => {
   await renderModal();
   await fillMessage("A useful Studio report.");
