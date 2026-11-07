@@ -113,7 +113,7 @@ test("wheelColumnTo retries after a first wheel miss", async ({ page }) => {
 test("wheelColumnTo re-reveals a column scrolled out of the stacked viewport", async ({ page }) => {
     await page.setViewportSize({ width: 800, height: 720 });
     await page.setContent(`
-        <div data-board-layout="stacked" style="height: 240px">
+        <div data-board-layout="stacked" style="width: 400px; height: 240px">
             <div style="height: 100%; overflow-y: auto; padding: 0 4px">
                 <div id="board" style="height: 2000px">board</div>
                 <div
@@ -153,20 +153,23 @@ test("wheelColumnTo re-reveals a column scrolled out of the stacked viewport", a
         .toBe(true);
 });
 
-test("wheelBoardStackTo waits for a late stacked layout", async ({ page }) => {
+test("wheelBoardStackTo waits for a late-mounted board layout", async ({ page }) => {
     // 400px at 16px root font is below 2 * 20rem * 16px + 6px, so needsTwoPaneStack is true.
     await page.setContent(`
-        <div data-board-layout="mosaic" style="width: 400px; height: 300px">
-            <div style="height: 300px; overflow-y: auto">
-                <div style="height: 1200px">above</div>
-                <div id="bottomRight" style="height: 80px">target</div>
-            </div>
-        </div>
+        <div id="placeholder">no board yet</div>
         <script>
             setTimeout(() => {
-                document
-                    .querySelector("[data-board-layout]")
-                    .setAttribute("data-board-layout", "stacked");
+                document.getElementById("placeholder").remove();
+                const layout = document.createElement("div");
+                layout.setAttribute("data-board-layout", "stacked");
+                layout.setAttribute("style", "width: 400px; height: 300px");
+                layout.innerHTML = \`
+                    <div style="height: 300px; overflow-y: auto">
+                        <div style="height: 1200px">above</div>
+                        <div id="bottomRight" style="height: 80px">target</div>
+                    </div>
+                \`;
+                document.body.appendChild(layout);
             }, 300);
         </script>
     `);

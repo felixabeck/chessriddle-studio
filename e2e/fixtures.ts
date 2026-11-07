@@ -195,7 +195,7 @@ export async function waitForScrollAreaScrollbarsHidden(page: Page) {
 }
 
 export async function wheelBoardStackTo(page: Page, target: Locator) {
-    // Layout flips after the root font is applied.
+    // The board tab can mount after the caller's last wait; act only on its settled layout.
     await expect
         .poll(
             async () => {
