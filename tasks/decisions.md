@@ -12172,8 +12172,8 @@ Former private decision identifier: d-20261029-14
 * **Rejected:** Webview fetch with CSP widening (contradicts the integration plan's token rule). Keeping telemetry as a no-op switch (a visible control that does nothing). Replacing the key with a new PostHog project now (new processor, privacy text and CSP decision without a need).
 * **Reason:** Felix, 2026-11-06, approved the recommendation including "remove the borrowed PostHog key". Reversal path: reintroduce analytics with a ChessRiddle-owned project, privacy text and CSP decision; the feedback command is one module plus its registration.
 * **Supersedes:** -
-* **Decided by:** Claude Code (Opus 5.5), build run studio-feedback, full auto, 2026-11-06; reviewed by Grok plan lenses · **Superseded-by:** -
-<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"9db91f01a6e97d9252621fb8f862e57457f866ef9e581b2e38424470611aff86","input_sha256":"cfb56bbbbf192f61a17e429ef605db77b36cad937dbeff553e2bcd331a76a6c6","kind":"mutation-receipt","operation":"787826c0a7b5c43574e2b49c9e06c587dbda6ec3791f636927eec5b757bcae09","options":{"section":null},"request_id_sha256":null,"results":["d-20261106-06"],"target":"decisions-ledger","v":1} -->
+* **Decided by:** Claude Code (Opus 5.5), build run studio-feedback, full auto, 2026-11-06; reviewed by Grok plan lenses · **Superseded-by:** d-20261107-05
+<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"9db88ccf9ac46faa6d0ed68d2f618954993741bd90372a3acfa1f7d79d891d33","input_sha256":"cfb56bbbbf192f61a17e429ef605db77b36cad937dbeff553e2bcd331a76a6c6","kind":"mutation-receipt","operation":"787826c0a7b5c43574e2b49c9e06c587dbda6ec3791f636927eec5b757bcae09","options":{"section":null},"request_id_sha256":null,"results":["d-20261106-06"],"target":"decisions-ledger","v":1} -->
 
 ### d-20261106-07 — How should CI stop a slow Ubuntu mirror from turning the Linux `rust` job red inside a test step?
 
