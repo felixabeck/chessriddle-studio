@@ -22036,7 +22036,7 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 
 ### Windows CI: the image-upload timeout test's mock server resets the connection
 
-* **ID:** f-20261107-01 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261107-01 · **Status:** handled · **Area:** native-fs · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** 0e11f3af-c8a9-406f-a5c1-51c75f5abe31
 * **Impact class:** behaviour
 * **CI run:** 42374906141
@@ -22047,3 +22047,6 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Proof:** job log `gh api repos/felixabeck/chessriddle-studio/actions/jobs/128410411333/logs`, lines 908 and 2126-2137. The previous four master runs (deb8dbfa, 793c0057, d61bdaad, 2b0945b0) passed `rust-windows-test`; the test was added in the batch ending at c818c008.
 * **Repair guard:** the mock server reads the full request (headers plus `Content-Length` body) before writing its response, in both `delayed_201` uses, so the close is graceful on every platform. Keep the test's assertion (the image path uses the upload client's timeout, not the JSON client's 80 ms read timeout). No change to production code.
 * **Found by:** Claude Code (Opus 5.5), drain session 0e11f3af-c8a9-406f-a5c1-51c75f5abe31.
+
+**Handled, 2026-11-07 (drain 0ad17dd7, push records review):** already repaired by `976258a7` — `delayed_201` now reads the full request through `read_http_request_with_limit` before its 250 ms delay, so Windows closes gracefully. The Test run on that SHA (42384771760) concluded `success`, including `rust-windows-test`. Closed so the queue stops offering the fixed entry.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"25e39ce78ea07678375181ec2957dcccd7714837d866b242b20cd39c39fb3af5","header_sha256":"3519abdc539f4f63ae1ab54001636f816748ac58af5595531832e4c91af412da","header_status":"handled","input_sha256":"a4bc27dcfd3bb9558e9912c147dddf03d9fdba981ae4a88f7a1a75b3d0d6d361","kind":"mutation-receipt","operation":"28c8c45d2dec5e1dd46804c170a118f4ab17f408f79d19960d3cd090fad87c4e","options":{"section":null},"request_id_sha256":null,"results":["f-20261107-01"],"target":"f-20261107-01","v":1} -->
