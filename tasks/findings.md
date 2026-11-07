@@ -21349,6 +21349,9 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 **Commit correction, 2026-11-07:** the release rebase rewrote fix commit `404e1588` to `995cd1c2` (same patch); `995cd1c2` is the commit on master.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"89019426d9e095c6e6694aecf9c47659fcb0913624875b470bf31445c00f3955","input_sha256":"874a84e616af9cf9dc522f7a5509c3a7ee4578760d8f2f731f00b3512f355615","kind":"mutation-receipt","operation":"df2a92312275f4a427fd47c96de5327cd7ccb18f8fe94faf901bec39d58fa832","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-09"],"target":"f-20261106-09","v":1} -->
 
+**Commit correction 2, 2026-11-07:** a second release rebase rewrote the fix again (`995cd1c2` → `6947944b`). The fix is the commit whose subject is `fix(pgn): model per-side time controls, ECO and UTCTime on parse; emit SetUp once` (find it with `git log --grep 'model per-side time controls'`). The earlier hashes `404e1588` and `995cd1c2` are not on master.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"62c145f52d11d71579fff90b0bb8f826a895cf4e8a71914bc2bb1a3600e170ab","input_sha256":"b1b95edfe4094827b1849a4c4820fa30e312ad3904760f4ec03aa0a7136435b9","kind":"mutation-receipt","operation":"7a9091cf10e55414633941fcc5657ad4bd937e2f704f9f5f26121feb44ae575e","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-09"],"target":"f-20261106-09","v":1} -->
+
 ---
 
 ## 2026-11-06 — filed through the inbox spool
