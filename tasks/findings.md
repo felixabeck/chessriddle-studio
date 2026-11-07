@@ -22021,6 +22021,9 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Proof:** `gh api repos/felixabeck/chessriddle-studio/actions/jobs/127910418512/logs` (copy at `/tmp/nf-f-20261106-06/e2e-ci.log`, lines 943-969). Fix shape: re-measure and re-wheel inside the poll (e.g. `expect(async () => { measure; wheel; assert hit })`.toPass()) so each attempt uses current geometry.
 * **Related:** f-20261105-06 (removed two other hosted-CI timing flakes), f-20261101-03 (different font-scaled-breakpoints snapshot instability). Neither covers `wheelColumnTo`.
 
+**Recurred, 2026-11-07:** Test run 42387450953, job `e2e` 128447752612, on master 7f804c32 (a one-line `tasks/build-ledger.md` change; its parent 5cb3df02 was green) failed the same test with the same `target centre is hit-testable after user wheel scrolling` timeout at `fixtures.ts:258`, 354 passed, 1 failed. This finding owns that run. Drain session 0ad17dd7 repairs it in the f-20261106-09 release because the red job refuses that push.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"cdc8969e2366d6a34b9f4e4310f175b4d4b4a2853fe9bc79a2f07d98337125be","input_sha256":"fc68366f08fd1db8e6b940d01305a1bcde462586875a553780b4ac7d7ec53298","kind":"mutation-receipt","operation":"f21892b2b57682af169b92a4072b08dd5b692a4ef84fa5af29a5a84eb237fa3d","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-48"],"target":"f-20261106-48","v":1} -->
+
 ### The board-wood-texture snapshot export test misses the second save_board_snapshot call on hosted CI
 
 * **ID:** f-20261106-49 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
