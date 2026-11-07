@@ -4292,14 +4292,14 @@ mod tests {
         for (i, query) in queries.into_iter().enumerate() {
             // A malformed sentinel makes any premature stream validation fail.
             // The same sentinel must fail replay for a metadata candidate below.
-            SEARCH_ENTRY_MOVES_OVERRIDE.set(Some(&[252, 1]));
+            SEARCH_ENTRY_MOVES_OVERRIDE.set(Some(&[crate::db::encoding::NAG_MARKER, 1]));
             let result =
                 run_position_search(&app, &handle, query, &format!("skip-stream-{i}")).unwrap();
             assert!(result.0.is_empty());
             assert!(result.1.is_empty());
         }
         assert_eq!(PROCESS_ENTRY_CALLS.load(Ordering::SeqCst), 7);
-        SEARCH_ENTRY_MOVES_OVERRIDE.set(Some(&[252, 1]));
+        SEARCH_ENTRY_MOVES_OVERRIDE.set(Some(&[crate::db::encoding::NAG_MARKER, 1]));
         assert!(matches!(
             run_position_search(&app, &handle, base, "candidate-stream"),
             Err(Error::InvalidInput(message)) if message.contains("invalid move stream")

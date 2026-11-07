@@ -1459,7 +1459,7 @@ mod tests {
         use std::sync::atomic::{AtomicUsize, Ordering};
         let dir = tempdir().unwrap();
         let path = dir.path().join("validation.ecsi");
-        let total = CHUNK_ENTRY_LIMIT * 2 + 1;
+        let total = CHUNK_ENTRY_LIMIT * 2 + 17;
         SearchIndexChunk {
             entries: (0..total)
                 .map(|id| test_entry(id as i32, vec![12, 12]))
@@ -1477,50 +1477,97 @@ mod tests {
         assert!(counts.iter().all(|count| count.load(Ordering::SeqCst) == 1));
         drop(observer);
         let original = std::fs::read(&path).unwrap();
-        for chunk in mapped.chunks.iter() {
-            let entry = mapped.get_entry_ref(chunk.first_entry).unwrap();
-            let offset = entry.moves.as_ptr() as usize - mapped.mmap.as_ptr() as usize;
-            let mut corrupt = original.clone();
-            corrupt[offset..offset + 2].copy_from_slice(&[crate::db::encoding::NAG_MARKER, 1]);
-            let broken = dir.path().join("broken.ecsi");
-            std::fs::write(&broken, corrupt).unwrap();
-            let error = MmapSearchIndex::open(&broken).unwrap_err();
-            assert_eq!(error.kind(), io::ErrorKind::InvalidData);
-            assert!(error.to_string().starts_with("invalid move stream:"));
-            assert!(matches!(
-                MmapSearchIndex::open_file_cancellable(File::open(&broken).unwrap(), &CancellationToken::new()),
-                Err(Error::Io(error)) if error.kind() == io::ErrorKind::InvalidData
-            ));
+        for (chunk_index, chunk) in mapped.chunks.iter().enumerate() {
+            assert!(chunk.entry_count >= 3);
+            for entry_offset in [0, chunk.entry_count / 2, chunk.entry_count - 1] {
+                let entry = mapped
+                    .get_entry_ref(chunk.first_entry + entry_offset)
+                    .unwrap();
+                let offset = entry.moves.as_ptr() as usize - mapped.mmap.as_ptr() as usize;
+                let mut corrupt = original.clone();
+                corrupt[offset..offset + 2].copy_from_slice(&[crate::db::encoding::NAG_MARKER, 1]);
+                let broken = dir.path().join("broken.ecsi");
+                std::fs::write(&broken, corrupt).unwrap();
+                let error = MmapSearchIndex::open(&broken).unwrap_err();
+                assert_eq!(
+                    error.kind(),
+                    io::ErrorKind::InvalidData,
+                    "chunk {chunk_index}, entry offset {entry_offset}"
+                );
+                assert!(error.to_string().starts_with("invalid move stream:"));
+                assert!(
+                    matches!(
+                        MmapSearchIndex::open_file_cancellable(File::open(&broken).unwrap(), &CancellationToken::new()),
+                        Err(Error::Io(error)) if error.kind() == io::ErrorKind::InvalidData
+                    ),
+                    "chunk {chunk_index}, entry offset {entry_offset}"
+                );
+            }
         }
     }
 
     #[test]
     fn parallel_open_cancellation_interrupts_validation_without_publishing_a_mapping() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        const CANCEL_AFTER: usize = 8;
+        let total = CHUNK_ENTRY_LIMIT * 2 + 17;
         let dir = tempdir().unwrap();
         let path = dir.path().join("cancel.ecsi");
         SearchIndexChunk {
-            entries: (0..CHUNK_ENTRY_LIMIT + 1)
+            entries: (0..total)
                 .map(|id| test_entry(id as i32, vec![12, 12]))
                 .collect(),
         }
         .write_to(&path)
         .unwrap();
-        let cancellation = CancellationToken::new();
-        let token = cancellation.clone();
-        let _observer = MoveValidationObserver::install(move |_| token.cancel());
-        let interrupted = MmapSearchIndex::open_file_inner(
-            File::open(&path).unwrap().into(),
-            Some(&cancellation),
-        )
-        .unwrap_err();
-        assert_eq!(interrupted.kind(), io::ErrorKind::Interrupted);
-        let cancellation = CancellationToken::new();
-        let token = cancellation.clone();
-        let _observer = MoveValidationObserver::install(move |_| token.cancel());
-        assert!(matches!(
-            MmapSearchIndex::open_file_cancellable(File::open(path).unwrap(), &cancellation),
-            Err(Error::Cancellation)
-        ));
+        // Fix concurrency so the work bound is independent of the host's core count.
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(2)
+            .build()
+            .unwrap();
+        for map_cancellation in [false, true] {
+            let cancellation = CancellationToken::new();
+            let token = cancellation.clone();
+            let observed = Arc::new(AtomicUsize::new(0));
+            let count = Arc::clone(&observed);
+            let result = pool.install(|| {
+                // Install on the opening thread, where open_file_inner captures
+                // the observer before passing it to the parallel validators.
+                let _observer = MoveValidationObserver::install(move |_| {
+                    if count.fetch_add(1, Ordering::SeqCst) + 1 == CANCEL_AFTER {
+                        token.cancel();
+                    }
+                });
+                if map_cancellation {
+                    MmapSearchIndex::open_file_cancellable(
+                        File::open(&path).unwrap(),
+                        &cancellation,
+                    )
+                } else {
+                    MmapSearchIndex::open_file_inner(
+                        File::open(&path).unwrap().into(),
+                        Some(&cancellation),
+                    )
+                    .map_err(Error::from)
+                }
+            });
+            if map_cancellation {
+                assert!(matches!(result, Err(Error::Cancellation)));
+            } else {
+                assert!(
+                    matches!(result, Err(Error::Io(error)) if error.kind() == io::ErrorKind::Interrupted)
+                );
+            }
+            let observed = observed.load(Ordering::SeqCst);
+            println!("Cancellation map_cancellation={map_cancellation}: observed {observed}/{total} entries, requested after {CANCEL_AFTER}");
+            assert!(observed >= CANCEL_AFTER);
+            // The observer runs before validation, so this bounds all attempted
+            // entries, including the cancelling entry and concurrent work.
+            assert!(
+                observed < total / 8,
+                "validation kept processing after cancellation: {observed}/{total} entries"
+            );
+        }
     }
 
     struct ObservedArchiveWriter {
