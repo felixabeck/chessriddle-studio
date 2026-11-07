@@ -21457,7 +21457,7 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 
 ### A game-list Elo band that includes 0 drops games with missing Elo tags that position search still counts
 
-* **ID:** f-20261106-15 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261106-15 · **Status:** handled · **Area:** db-search · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** database search/index consistency review at HEAD `842ed180`
 * **Where:** Index build coerces absent ratings with `white_elo.unwrap_or(0)` / `black_elo.unwrap_or(0)` in `src-tauri/src/db/search_index.rs:596-600`; position search then uses `elo_in_range` (`src-tauri/src/db/search.rs:506-508,913-916`), which treats that 0 as in-band for any range whose min is 0. Game-list SQL applies `games::white_elo.between(lo, hi)` / `black_elo.between` (`src-tauri/src/db/mod.rs:2410-2430,2531-2558`), and SQLite `BETWEEN` rejects `NULL`. Import leaves a missing `WhiteElo`/`BlackElo` tag as SQL `NULL` (`src-tauri/src/db/mod.rs:540-549` only writes `Some(0)` for the literal `-`), while `"-" ` becomes `0`. Frontend `normalizeRange` (`src/utils/db.ts:196-200`) only drops the full `[0, 3000]` sentinel, so a narrowed band that still starts at 0 (slider default min) is sent to both paths.
@@ -21468,6 +21468,8 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Found by:** Grok Bot database search/index consistency review (Felix authorized, 2026-11-06)
 * **Related:** Handled `f-20260905-12` added the dual Elo band without unifying NULL vs 0. Handled Elo `3000` sentinel / `normalizeRange` width finding is about the no-filter contract, not SQL NULL. No open finding covers this index/SQL representation split.
 * **Open question for the lens:** whether SQL should treat `NULL` like index `0` for bands that include 0 (`coalesce(WhiteElo, 0)`), or whether index build should keep a distinct unrated sentinel and `elo_in_range` should exclude it even when min is 0 — matching today's SQL. Recommend coalescing on the SQL side so both panels match the index comment that 0 means unrated and belongs in a band that includes 0.
+* **Closed 2026-11-07 (drain next-finding):** Decided per d-20261107-01: the index contract (missing Elo = 0) is canonical. A shared elo_band helper in db/mod.rs builds every game-list Elo term as BETWEEN, OR IS NULL only when the band contains 0, so the Elo indexes stay usable (a COALESCE draft was replaced for that reason). Regression game_list_elo_band_treats_sql_null_as_unrated_zero covers WhiteBlack, BlackWhite and Any for (0,2000), (0,0), (1,3000) and a rated-only band. Commits: dfc1465b, be84f25b, 787fa978, ad4993cc, 539f424e, f6189324.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"530326f888d3ed2373a5d0cedf992bb09003e5f37e87b420d04b3ee15e53d305","header_sha256":"6ac358f9ed777e450689b77217745f132e96acd4ae7c42a34c8088669910f77b","header_status":"handled","input_sha256":"a5f4dc649dfb29256c19bfad4df8cafe2725728022892ed4cda1acc4f42e834a","kind":"mutation-receipt","operation":"96e1534d30c0acb4ad1760de23dd3f56377f34910051c109ef53e23b1295da6b","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-15"],"target":"f-20261106-15","v":1} -->
 
 ---
 
