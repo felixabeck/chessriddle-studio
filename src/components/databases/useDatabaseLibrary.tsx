@@ -474,7 +474,11 @@ export function useDatabaseLibrary(
         <Divider variant="dashed" label={t("Databases.Settings.AdvancedTools")} />
 
         {selectedDatabase.type === "success" && (
-          <AdvancedSettings selectedDatabase={selectedDatabase} reload={revalidateDatabases} />
+          <AdvancedSettings
+            key={databaseHandleKey(selectedDatabase.file)}
+            selectedDatabase={selectedDatabase}
+            reload={revalidateDatabases}
+          />
         )}
 
         <Divider variant="dashed" label={t("Databases.Settings.Actions")} />
@@ -584,27 +588,50 @@ function GeneralSettings({
 }) {
   const { t } = useTranslation();
 
-  const [title, setTitle] = useState(selectedDatabase.title);
-  const [description, setDescription] = useState(selectedDatabase.description);
+  // An un-persisted user draft wins over concurrent external metadata for that
+  // field only; a null draft is clean and always follows props.
+  const [titleDraft, setTitleDraft] = useState<string | null>(null);
+  const [descriptionDraft, setDescriptionDraft] = useState<string | null>(null);
+  const title = titleDraft ?? selectedDatabase.title;
+  const description = descriptionDraft ?? selectedDatabase.description;
 
-  const [debouncedTitle] = useDebouncedValue(title, 300);
-  const [debouncedDescription] = useDebouncedValue(description, 300);
+  const [debouncedTitleDraft] = useDebouncedValue(titleDraft, 300);
+  const [debouncedDescriptionDraft] = useDebouncedValue(descriptionDraft, 300);
 
   useEffect(() => {
+    if (titleDraft !== null && titleDraft === selectedDatabase.title) {
+      setTitleDraft(null);
+    }
+  }, [titleDraft, selectedDatabase.title]);
+
+  useEffect(() => {
+    if (descriptionDraft !== null && descriptionDraft === selectedDatabase.description) {
+      setDescriptionDraft(null);
+    }
+  }, [descriptionDraft, selectedDatabase.description]);
+
+  useEffect(() => {
+    const titleSettled = debouncedTitleDraft === titleDraft;
+    const descriptionSettled = debouncedDescriptionDraft === descriptionDraft;
+    if (!titleSettled || !descriptionSettled) return;
+    if (debouncedTitleDraft === null && debouncedDescriptionDraft === null) return;
+    const nextTitle = debouncedTitleDraft ?? selectedDatabase.title;
+    const nextDescription = debouncedDescriptionDraft ?? selectedDatabase.description;
     if (
-      debouncedTitle === "" ||
-      (debouncedTitle === selectedDatabase.title &&
-        debouncedDescription === selectedDatabase.description)
+      nextTitle === "" ||
+      (nextTitle === selectedDatabase.title && nextDescription === selectedDatabase.description)
     ) {
       return;
     }
     tauri
-      .editDbInfo(selectedDatabase.file, debouncedTitle ?? null, debouncedDescription ?? null)
+      .editDbInfo(selectedDatabase.file, nextTitle, nextDescription)
       .then(() => mutate())
       .catch((error) => notifyUnlessCancelled(t("Common.Error"), error));
   }, [
-    debouncedTitle,
-    debouncedDescription,
+    titleDraft,
+    descriptionDraft,
+    debouncedTitleDraft,
+    debouncedDescriptionDraft,
     mutate,
     selectedDatabase.file,
     selectedDatabase.title,
@@ -617,13 +644,13 @@ function GeneralSettings({
       <TextInput
         label={t("Common.Name")}
         value={title}
-        onChange={(e) => setTitle(e.currentTarget.value)}
+        onChange={(e) => setTitleDraft(e.currentTarget.value)}
         error={title === "" && t("Common.RequireName")}
       />
       <Textarea
         label={t("Common.Description")}
         value={description}
-        onChange={(e) => setDescription(e.currentTarget.value)}
+        onChange={(e) => setDescriptionDraft(e.currentTarget.value)}
       />
     </>
   );
@@ -638,13 +665,19 @@ function AdvancedSettings({
 }) {
   return (
     <Stack>
-      <PlayerMerger selectedDatabase={selectedDatabase} />
+      <PlayerMerger selectedDatabase={selectedDatabase} reload={reload} />
       <DuplicateRemover selectedDatabase={selectedDatabase} reload={reload} />
     </Stack>
   );
 }
 
-function PlayerMerger({ selectedDatabase }: { selectedDatabase: DatabaseInfo }) {
+function PlayerMerger({
+  selectedDatabase,
+  reload,
+}: {
+  selectedDatabase: DatabaseInfo;
+  reload: () => void;
+}) {
   const { t } = useTranslation();
 
   const [player1, setPlayer1] = useState<number | undefined>(undefined);
@@ -655,11 +688,16 @@ function PlayerMerger({ selectedDatabase }: { selectedDatabase: DatabaseInfo }) 
     if (player1 === undefined || player2 === undefined) {
       return;
     }
+    const file = selectedDatabase.file;
     setLoading(true);
     try {
-      await tauri.mergePlayers(selectedDatabase.file, player1, player2);
+      await tauri.mergePlayers(file, player1, player2);
+      reload();
+      setPlayer1(undefined);
+      setPlayer2(undefined);
     } catch (error) {
       notifyUnlessCancelled(t("Common.Error"), error);
+      reload();
     } finally {
       setLoading(false);
     }
@@ -675,6 +713,7 @@ function PlayerMerger({ selectedDatabase }: { selectedDatabase: DatabaseInfo }) 
         <PlayerSearchInput
           label={t("Databases.Player.One")}
           file={selectedDatabase.file}
+          value={player1}
           setValue={setPlayer1}
         />
         <Button
@@ -688,6 +727,7 @@ function PlayerMerger({ selectedDatabase }: { selectedDatabase: DatabaseInfo }) 
         <PlayerSearchInput
           label={t("Databases.Player.Two")}
           file={selectedDatabase.file}
+          value={player2}
           setValue={setPlayer2}
         />
       </Group>

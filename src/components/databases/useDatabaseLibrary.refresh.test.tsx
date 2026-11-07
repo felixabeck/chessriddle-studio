@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   deleteDatabase: vi.fn(),
   deleteDuplicatedGames: vi.fn(),
   clearGames: vi.fn(),
+  editDbInfo: vi.fn(),
   notifyUnlessCancelled: vi.fn(),
 }));
 
@@ -114,6 +115,7 @@ beforeEach(() => {
   mocks.convertPgn.mockResolvedValue(undefined);
   mocks.deleteDatabase.mockResolvedValue(undefined);
   mocks.deleteDuplicatedGames.mockResolvedValue(undefined);
+  mocks.editDbInfo.mockResolvedValue(undefined);
   store = createStore();
   cache = new Map();
   host = document.createElement("div");
@@ -237,6 +239,114 @@ test("a failed post-delete list read preserves the committed deletion without no
   expect(store.get(referenceDbAtom)).toBeNull();
   expect(cache.get(DATABASE_LIST_KEY)?.error).toBe(failure);
   expect(mocks.notifyUnlessCancelled).not.toHaveBeenCalled();
+});
+
+async function waitForSettingsDebounce() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+  });
+}
+
+function namedField(labelText: string, elementType: "input" | "textarea") {
+  const label = [...host.querySelectorAll("label")].find((element) =>
+    (element.textContent ?? "").includes(labelText),
+  );
+  expect(label).toBeTruthy();
+  const labelled = label!.htmlFor ? host.querySelector(`[id="${label!.htmlFor}"]`) : null;
+  const field = labelled ?? label!.querySelector(elementType);
+  expect(field).toBeInstanceOf(elementType === "input" ? HTMLInputElement : HTMLTextAreaElement);
+  return field as HTMLInputElement | HTMLTextAreaElement;
+}
+
+async function editNamedField(labelText: string, elementType: "input" | "textarea", value: string) {
+  const field = namedField(labelText, elementType);
+  const prototype =
+    elementType === "input" ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(prototype, "value")!.set!.call(field, value);
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(field.value).toBe(value);
+}
+
+async function revalidateListedDatabase(next: SuccessDatabaseInfo) {
+  mocks.getDatabases.mockResolvedValue(list([next]));
+  await act(async () => {
+    await mutate(DATABASE_LIST_KEY);
+  });
+}
+
+test("a same-handle refresh with new metadata shows the new values and does not write them back", async () => {
+  await render();
+  await waitForSettingsDebounce();
+  expect(mocks.editDbInfo).not.toHaveBeenCalled();
+
+  await revalidateListedDatabase({
+    ...database,
+    title: "External",
+    description: "From disk",
+  });
+  await waitForSettingsDebounce();
+
+  expect(mocks.editDbInfo).not.toHaveBeenCalled();
+  expect(namedField("Common.Name", "input").value).toBe("External");
+  expect(namedField("Common.Description", "textarea").value).toBe("From disk");
+});
+
+test("an unchanged same-handle revalidation does not write database metadata", async () => {
+  await render();
+  await waitForSettingsDebounce();
+  mocks.getDatabases.mockResolvedValue(list([database]));
+  await act(async () => {
+    await mutate(DATABASE_LIST_KEY);
+  });
+  await waitForSettingsDebounce();
+  expect(mocks.editDbInfo).not.toHaveBeenCalled();
+  expect(namedField("Common.Name", "input").value).toBe("Games");
+});
+
+test("typing a title saves the typed title with the current description after debounce", async () => {
+  let listed = database;
+  mocks.getDatabases.mockImplementation(async () => list([listed]));
+  mocks.editDbInfo.mockImplementation(
+    async (_file: SuccessDatabaseInfo["file"], title: string, description: string) => {
+      listed = { ...listed, title, description };
+    },
+  );
+  await render();
+  await editNamedField("Common.Name", "input", "Typed");
+  expect(mocks.editDbInfo).not.toHaveBeenCalled();
+
+  await waitForSettingsDebounce();
+  expect(mocks.editDbInfo).toHaveBeenCalledExactlyOnceWith(database.file, "Typed", "");
+  expect(namedField("Common.Name", "input").value).toBe("Typed");
+});
+
+test("after a title save round-trips, a later external title is shown and not written back", async () => {
+  let listed = database;
+  mocks.getDatabases.mockImplementation(async () => list([listed]));
+  mocks.editDbInfo.mockImplementation(
+    async (_file: SuccessDatabaseInfo["file"], title: string, description: string) => {
+      listed = { ...listed, title, description };
+    },
+  );
+  await render();
+  await editNamedField("Common.Name", "input", "Mine");
+  await waitForSettingsDebounce();
+  expect(mocks.editDbInfo).toHaveBeenCalledExactlyOnceWith(database.file, "Mine", "");
+  await act(async () => {
+    await mutate(DATABASE_LIST_KEY);
+  });
+  await waitForSettingsDebounce();
+  expect(namedField("Common.Name", "input").value).toBe("Mine");
+
+  listed = { ...listed, title: "External later" };
+  await act(async () => {
+    await mutate(DATABASE_LIST_KEY);
+  });
+  await waitForSettingsDebounce();
+  expect(mocks.editDbInfo).toHaveBeenCalledOnce();
+  expect(namedField("Common.Name", "input").value).toBe("External later");
 });
 
 test("a failed post-cleanup list read preserves completed duplicate removal without notifying", async () => {

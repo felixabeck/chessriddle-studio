@@ -33,6 +33,8 @@ const mocks = vi.hoisted(() => ({
   deleteEmptyGames: vi.fn(),
   deleteDuplicatedGames: vi.fn(),
   mergePlayers: vi.fn(),
+  getPlayers: vi.fn(),
+  getPlayer: vi.fn(),
   createIndexes: vi.fn(),
   deleteIndexes: vi.fn(),
   convertProgress: vi.fn(),
@@ -70,10 +72,11 @@ vi.mock("@/platform/tauri", async () => {
       issuePgnExportDestination: vi.fn(),
       clearGames: vi.fn(),
       mergePlayers: mocks.mergePlayers,
+      getPlayers: mocks.getPlayers,
+      getPlayer: mocks.getPlayer,
       deleteDuplicatedGames: mocks.deleteDuplicatedGames,
       createIndexes: mocks.createIndexes,
       deleteIndexes: mocks.deleteIndexes,
-      getPlayer: vi.fn(),
     },
     tauriSubscriptions: {
       ...actual.tauriSubscriptions,
@@ -155,22 +158,37 @@ vi.mock("../common/IconAction", () => ({
 vi.mock("../common/ProgressButton", () => ({
   default: () => null,
 }));
-vi.mock("./PlayerSearchInput", () => ({
-  PlayerSearchInput: ({
-    label,
-    setValue,
-  }: {
-    label: string;
-    setValue: (value: number | undefined) => void;
-  }) => (
-    <button type="button" onClick={() => setValue(label === "Databases.Player.One" ? 1 : 2)}>
-      {label}
-    </button>
-  ),
-}));
 vi.mock("@/components/home/LichessLogo", () => ({ default: () => null }));
 vi.mock("@mantine/core", async () => ({
   useMatches: (await import("@/tests/matchMedia")).baseResponsiveValue,
+  Autocomplete: ({
+    value,
+    data,
+    onChange,
+    placeholder,
+  }: {
+    value: string;
+    data: string[];
+    onChange: (value: string) => void;
+    placeholder?: string;
+  }) => (
+    <div>
+      <input aria-label={placeholder} value={value} readOnly />
+      <button type="button" data-testid={`search-${placeholder}`} onClick={() => onChange("query")}>
+        {placeholder}
+      </button>
+      {data.map((name) => (
+        <button
+          type="button"
+          key={name}
+          data-testid={`option-${placeholder}-${name}`}
+          onClick={() => onChange(name)}
+        >
+          {name}
+        </button>
+      ))}
+    </div>
+  ),
   Alert: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Badge: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
   Box: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -502,6 +520,28 @@ beforeEach(() => {
   mocks.deleteEmptyGames.mockResolvedValue(undefined);
   mocks.deleteDuplicatedGames.mockResolvedValue(undefined);
   mocks.mergePlayers.mockResolvedValue(undefined);
+  mocks.getPlayers.mockImplementation(async (file: DatabaseHandle) => {
+    const players =
+      file.id.id === handleA.id.id
+        ? [
+            { id: 11, name: "AliceA", elo: null },
+            { id: 12, name: "BobA", elo: null },
+          ]
+        : [
+            { id: 21, name: "AliceB", elo: null },
+            { id: 22, name: "BobB", elo: null },
+          ];
+    return { data: players, count: players.length };
+  });
+  mocks.getPlayer.mockImplementation(async (_file: DatabaseHandle, id: number) => {
+    const names: Record<number, string> = {
+      11: "AliceA",
+      12: "BobA",
+      21: "AliceB",
+      22: "BobB",
+    };
+    return { id, name: names[id] ?? `Player${id}`, elo: null };
+  });
   mocks.createIndexes.mockResolvedValue(undefined);
   mocks.deleteIndexes.mockResolvedValue(undefined);
   let nextId = 0;
@@ -1243,22 +1283,101 @@ test.each(
   },
 );
 
-test("a failed player merge surfaces an error notification", async () => {
+async function selectLibrary(handle: DatabaseHandle) {
+  await act(async () => {
+    (
+      host.querySelector(`[data-testid='select-${databaseHandleKey(handle)}']`) as HTMLButtonElement
+    ).click();
+  });
+  await vi.waitFor(() => expect(buttonByText("Databases.Settings.AddGames")).toBeTruthy());
+}
+
+async function pickMergePlayer(label: string, name: string) {
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>(`[data-testid='search-${label}']`)!.click();
+  });
+  await vi.waitFor(() =>
+    expect(host.querySelector(`[data-testid='option-${label}-${name}']`)).toBeTruthy(),
+  );
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>(`[data-testid='option-${label}-${name}']`)!.click();
+  });
+  await vi.waitFor(() => {
+    expect(host.querySelector<HTMLInputElement>(`input[aria-label='${label}']`)?.value).toBe(name);
+  });
+}
+
+async function pickMergePair(first: string, second: string) {
+  await pickMergePlayer("Databases.Player.One", first);
+  await pickMergePlayer("Databases.Player.Two", second);
+}
+
+function listTwoLibraries() {
+  mocks.getDatabases.mockResolvedValue({
+    databases: [successDatabase(handleA, "Library A"), successDatabase(handleB, "Library B")],
+    unread: [],
+    root: { id: { id: "listing-test-root" }, kind: "databaseRoot" as const },
+  });
+}
+
+function playerSearchValue(label: string) {
+  return host.querySelector<HTMLInputElement>(`input[aria-label='${label}']`)?.value ?? "";
+}
+
+test("a failed player merge surfaces an error notification and reloads the list", async () => {
   await renderRoute();
   await selectExistingDatabase();
-  await act(async () => {
-    buttonByText("Databases.Player.One")!.click();
-    buttonByText("Databases.Player.Two")!.click();
-  });
+  await pickMergePair("AliceB", "BobB");
+  const reloads = mocks.getDatabases.mock.calls.length;
   mocks.mergePlayers.mockRejectedValueOnce(new Error("merge failed"));
   await act(async () => buttonByText("Databases.Settings.Merge")!.click());
 
-  expect(mocks.mergePlayers).toHaveBeenCalledExactlyOnceWith(handleB, 1, 2);
+  expect(mocks.mergePlayers).toHaveBeenCalledExactlyOnceWith(handleB, 21, 22);
   expect(mocks.notify).toHaveBeenCalledExactlyOnceWith({
     color: "danger",
     title: "Common.Error",
     message: "merge failed",
   });
+  expect(mocks.getDatabases).toHaveBeenCalledTimes(reloads + 1);
+});
+
+test("switching libraries drops the merge draft so Merge does not send the previous ids", async () => {
+  listTwoLibraries();
+  await renderRoute();
+  await selectLibrary(handleA);
+  await pickMergePair("AliceA", "BobA");
+  await selectLibrary(handleB);
+  expect(playerSearchValue("Databases.Player.One")).toBe("");
+  expect(playerSearchValue("Databases.Player.Two")).toBe("");
+  await act(async () => buttonByText("Databases.Settings.Merge")!.click());
+  expect(mocks.mergePlayers).not.toHaveBeenCalled();
+});
+
+test("Merge sends the selected library handle and player ids when the library is not switched", async () => {
+  listTwoLibraries();
+  await renderRoute();
+  await selectLibrary(handleA);
+  await pickMergePair("AliceA", "BobA");
+  await act(async () => buttonByText("Databases.Settings.Merge")!.click());
+  expect(mocks.mergePlayers).toHaveBeenCalledExactlyOnceWith(handleA, 11, 12);
+});
+
+test("a successful merge reloads the list, clears both player fields, and a second Merge does nothing", async () => {
+  await renderRoute();
+  await selectExistingDatabase();
+  await pickMergePair("AliceB", "BobB");
+  const reloads = mocks.getDatabases.mock.calls.length;
+  await act(async () => buttonByText("Databases.Settings.Merge")!.click());
+  await vi.waitFor(() =>
+    expect(mocks.mergePlayers).toHaveBeenCalledExactlyOnceWith(handleB, 21, 22),
+  );
+  expect(mocks.getDatabases).toHaveBeenCalledTimes(reloads + 1);
+  await vi.waitFor(() => {
+    expect(playerSearchValue("Databases.Player.One")).toBe("");
+    expect(playerSearchValue("Databases.Player.Two")).toBe("");
+  });
+  await act(async () => buttonByText("Databases.Settings.Merge")!.click());
+  expect(mocks.mergePlayers).toHaveBeenCalledOnce();
 });
 
 function indexCheckbox() {
