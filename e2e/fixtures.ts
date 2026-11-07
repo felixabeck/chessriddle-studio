@@ -11,6 +11,7 @@ import type {
     EngineInstallRequest,
     InstalledEngineResult,
 } from "../src/bindings/generated";
+import { needsTwoPaneStack } from "../src/state/paneLayout";
 import { deserializeStorageValue } from "../src/state/store/debouncedStorage";
 import type { Tab } from "../src/state/workspaceTypes";
 
@@ -194,6 +195,25 @@ export async function waitForScrollAreaScrollbarsHidden(page: Page) {
 }
 
 export async function wheelBoardStackTo(page: Page, target: Locator) {
+    // Layout flips after the root font is applied.
+    await expect
+        .poll(
+            async () => {
+                const layout = page.locator("[data-board-layout]");
+                if ((await layout.count()) !== 1) return false;
+                const snapshot = await layout.evaluate((element) => ({
+                    width: element.getBoundingClientRect().width,
+                    rootFont: parseFloat(getComputedStyle(document.documentElement).fontSize),
+                    attribute: element.getAttribute("data-board-layout"),
+                }));
+                return (
+                    snapshot.attribute ===
+                    (needsTwoPaneStack(snapshot.width, snapshot.rootFont) ? "stacked" : "mosaic")
+                );
+            },
+            { message: "board layout reflects its current width and root font" },
+        )
+        .toBe(true);
     const stack = page.locator('[data-board-layout="stacked"] > div').first();
     if ((await stack.count()) === 0) return;
     const frame = (await stack.boundingBox())!;

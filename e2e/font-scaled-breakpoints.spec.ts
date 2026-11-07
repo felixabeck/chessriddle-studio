@@ -153,6 +153,37 @@ test("wheelColumnTo re-reveals a column scrolled out of the stacked viewport", a
         .toBe(true);
 });
 
+test("wheelBoardStackTo waits for a late stacked layout", async ({ page }) => {
+    // 400px at 16px root font is below 2 * 20rem * 16px + 6px, so needsTwoPaneStack is true.
+    await page.setContent(`
+        <div data-board-layout="mosaic" style="width: 400px; height: 300px">
+            <div style="height: 300px; overflow-y: auto">
+                <div style="height: 1200px">above</div>
+                <div id="bottomRight" style="height: 80px">target</div>
+            </div>
+        </div>
+        <script>
+            setTimeout(() => {
+                document
+                    .querySelector("[data-board-layout]")
+                    .setAttribute("data-board-layout", "stacked");
+            }, 300);
+        </script>
+    `);
+
+    await wheelBoardStackTo(page, page.locator("#bottomRight"));
+
+    const stack = page.locator('[data-board-layout="stacked"] > div').first();
+    await expect.poll(() => stack.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    const frame = (await stack.boundingBox())!;
+    await expect
+        .poll(async () => {
+            const current = (await page.locator("#bottomRight").boundingBox())!;
+            return current.y < frame.y + frame.height - 20 && current.y + current.height > frame.y;
+        })
+        .toBe(true);
+});
+
 for (const host of ["analysis", "play"] as const) {
     for (const width of [1000, 800]) {
         test(`font-scaled-breakpoints: ${host} notation floor and column scrolling at ${width}px and 200%`, async ({
