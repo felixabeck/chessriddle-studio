@@ -943,7 +943,13 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
                     )? {
                         let elo_key = entry.white_elo.max(entry.black_elo);
                         let key = if date_order {
-                            (0, entry.date.map(str::to_owned), entry.id)
+                            // Match the SQL ordering below: unknown dates last,
+                            // with unknown components below known components.
+                            let date = entry
+                                .date
+                                .filter(|date| !date.is_empty() && !date.starts_with('?'))
+                                .map(|date| date.replace('?', "0"));
+                            (0, date, entry.id)
                         } else {
                             (elo_key, None, entry.id)
                         };
@@ -1019,7 +1025,13 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
                     .filter(games::id.eq_any(ids))
                     .into_boxed();
                 if date_order {
-                    query.order((games::date.desc(), games::id.desc())).load(db)
+                    let date =
+                        diesel::dsl::sql::<diesel::sql_types::Nullable<diesel::sql_types::Text>>(
+                            r#"CASE WHEN "Games"."Date" IS NULL OR "Games"."Date" = ''
+                            OR "Games"."Date" LIKE '?%' THEN NULL
+                            ELSE replace("Games"."Date", '?', '0') END"#,
+                        );
+                    query.order((date.desc(), games::id.desc())).load(db)
                 } else {
                     query
                         .order((games::white_elo.desc(), games::black_elo.desc()))
@@ -4305,6 +4317,79 @@ mod tests {
         assert_eq!(same.1.len(), 1);
         assert_eq!(PROCESS_ENTRY_CALLS.load(Ordering::SeqCst), 0);
         drop(instrument);
+    }
+
+    #[test]
+    fn date_sample_order_retains_dated_game_among_500_undated_games() {
+        let (_dir, app, handle, database) = filter_search_database(&[]);
+        let mut db = SqliteConnection::establish(database.to_str().unwrap()).unwrap();
+        let dated_id = games::table
+            .select(games::id)
+            .first::<i32>(&mut db)
+            .unwrap();
+        db.transaction::<_, Error, _>(|db| {
+            diesel::update(games::table.find(dated_id))
+                .set(games::date.eq("2026.11.07"))
+                .execute(db)?;
+            for _ in 0..500 {
+                let id = insert_white_win_e4_e5(db);
+                diesel::update(games::table.find(id))
+                    .set(games::date.eq("????.??.??"))
+                    .execute(db)?;
+            }
+            Ok(())
+        })
+        .unwrap();
+        let mut query = exact_position_query(STARTING_FEN);
+        query.sample_order = Some(super::super::SampleOrder::Date);
+        let result = run_position_search(&app, &handle, query, "sample-undated-cap").unwrap();
+        assert_eq!(result.0[0].white, 501);
+        assert_eq!(result.1.len(), 500);
+        assert_eq!(result.1[0].id, dated_id);
+        assert_eq!(result.1[0].date.as_deref(), Some("2026.11.07"));
+        assert!(result.1[1..]
+            .iter()
+            .all(|game| game.date.as_deref() == Some("????.??.??")));
+        assert!(result.1[1..].windows(2).all(|pair| pair[0].id > pair[1].id));
+    }
+
+    #[test]
+    fn date_sample_order_normalizes_partial_dates_and_ties_unknown_dates_by_id() {
+        let (_dir, app, handle, database) = filter_search_database(&[]);
+        let mut db = SqliteConnection::establish(database.to_str().unwrap()).unwrap();
+        let mut expected = vec![games::table
+            .select(games::id)
+            .first::<i32>(&mut db)
+            .unwrap()];
+        // Descending date order, with tied normalized dates and unknown dates
+        // inserted in reverse ID order to check the final SQL tie breaker.
+        for date in [
+            Some("2020.12.31"),
+            Some("2020.12.??"),
+            Some("2020.??.??"),
+            Some("2020.00.00"),
+            Some("2019.12.31"),
+            None,
+            Some(""),
+            Some("????.??.??"),
+            Some("?020.12.31"),
+        ] {
+            let id = insert_white_win_e4_e5(&mut db);
+            diesel::update(games::table.find(id))
+                .set(games::date.eq(date))
+                .execute(&mut db)
+                .unwrap();
+            expected.push(id);
+        }
+        expected[3..5].reverse();
+        expected[6..].reverse();
+        let mut query = exact_position_query(STARTING_FEN);
+        query.sample_order = Some(super::super::SampleOrder::Date);
+        let result = run_position_search(&app, &handle, query, "sample-partial-dates").unwrap();
+        assert_eq!(
+            result.1.iter().map(|game| game.id).collect::<Vec<_>>(),
+            expected
+        );
     }
 
     #[test]

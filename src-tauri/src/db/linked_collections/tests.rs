@@ -4331,8 +4331,8 @@ mod native_tests {
                     .unwrap(),
             )
             .unwrap();
-        super::super::super::phase_one_tests::assert_player_counts(
-            &mut *fixture
+        super::super::super::player_game_count_tests::assert_player_counts(
+            &mut fixture
                 .service
                 .repository
                 .connection(&target, None)
@@ -4414,8 +4414,8 @@ mod native_tests {
             )
             .is_ok());
         assert_eq!(fixture.rows(&fixture.list().pop().unwrap()).len(), 1);
-        super::super::super::phase_one_tests::assert_player_counts(
-            &mut *fixture
+        super::super::super::player_game_count_tests::assert_player_counts(
+            &mut fixture
                 .service
                 .repository
                 .connection(&target, None)

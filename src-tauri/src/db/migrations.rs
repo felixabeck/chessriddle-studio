@@ -344,7 +344,7 @@ fn migrate_player_game_counts(conn: &mut SqliteConnection) -> Result<(), Error> 
     Ok(())
 }
 
-fn validate_player_game_counts(conn: &mut SqliteConnection) -> Result<(), Error> {
+fn validate_player_game_count_schema(conn: &mut SqliteConnection) -> Result<(), Error> {
     let actual: Vec<TriggerInfo> = sql_query(
         "SELECT name, sql FROM sqlite_master WHERE name = 'players_game_count_idx' OR name LIKE 'player_game_count_%'"
     ).load(conn)?;
@@ -401,7 +401,7 @@ fn validate_schema(conn: &mut SqliteConnection) -> Result<(), Error> {
     validate_games_schema(conn)?;
     validate_reference_schema(conn)?;
     validate_sentinel_records_and_triggers(conn)?;
-    validate_player_game_counts(conn)?;
+    validate_player_game_count_schema(conn)?;
     Ok(())
 }
 
@@ -807,7 +807,7 @@ mod tests {
         )
         .unwrap();
         prepare_database(&mut conn, "unused", "unused").unwrap();
-        super::super::phase_one_tests::assert_player_counts(&mut conn);
+        super::super::player_game_count_tests::assert_player_counts(&mut conn);
         assert!(games_schema_is_canonical(&mut conn).unwrap());
         assert_eq!(
             info_value(&mut conn, "Version").unwrap().as_deref(),
@@ -885,14 +885,14 @@ mod tests {
             )
             .unwrap();
             assert!(validate_existing_database(&mut conn).unwrap());
-            super::super::phase_one_tests::assert_player_counts(&mut conn);
+            super::super::player_game_count_tests::assert_player_counts(&mut conn);
             conn.batch_execute(
                 "INSERT INTO Games(WhiteID,BlackID) VALUES(1,2);
                 UPDATE Games SET WhiteID=3 WHERE WhiteID=1;
                 DELETE FROM Games WHERE BlackID=2;",
             )
             .unwrap();
-            super::super::phase_one_tests::assert_player_counts(&mut conn);
+            super::super::player_game_count_tests::assert_player_counts(&mut conn);
             assert!(!validate_existing_database(&mut conn).unwrap());
         }
     }

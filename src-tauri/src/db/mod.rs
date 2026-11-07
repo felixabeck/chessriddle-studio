@@ -845,7 +845,7 @@ use game_cas_tests::test_game_stamp;
 #[cfg(test)]
 mod insert_db_game_tests;
 #[cfg(test)]
-mod phase_one_tests;
+mod player_game_count_tests;
 
 #[cfg(test)]
 static CONVERSION_BEFORE_REVISION: crate::infra::test_hooks::KeyedTestHooks<String> =
@@ -6526,7 +6526,7 @@ mod tests {
     }
 
     fn assert_info_counts_match_tables(db: &mut SqliteConnection) {
-        phase_one_tests::assert_player_counts(db);
+        player_game_count_tests::assert_player_counts(db);
         for (name, count) in [
             (
                 "GameCount",
