@@ -12297,3 +12297,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Triggers keep every present and future mutation path correct inside its own transaction; measured conversion overhead 3.5 %, sorted page about 110 ms with indexes deleted. Reversal path: drop the triggers, index and column in a 2.3.0 migration and compute counts live.
 * **Decided by:** Claude Code (Opus 5.5) build opponent-prep-tree, full auto, 2026-11-07 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"dd7af20287a62ed0cdb933805a269a4d642d7fed8feb8b5f93c30c94c1e53786","input_sha256":"da99d647f18a637b1a6ecc525aa64a19cb31c4aa180f3acc3cdbd2284fab0f12","kind":"mutation-receipt","operation":"f3185ece82c922c09cef35882d4aa4608b910809cc3542e4eeca6457b3e449ba","options":{"section":null},"request_id_sha256":null,"results":["d-20261107-10"],"target":"decisions-ledger","v":1} -->
+
+### d-20261107-11 — Which database does a "Prepare on board" analysis tab search?
+
+* **Question:** The analysis board's Database panel always searches the global reference database. How does a tab opened from a player card search that card's database?
+* **Governs:** -
+* **Chosen:** A runtime per-tab pinned database for the local explorer, set when the Prepare tab is created and cleaned on tab close; the panel uses it instead of the global reference. Tabs without a pin behave as before.
+* **Rejected:** Setting the global reference database (silently changes the explorer of every other tab and Felix's saved preference).
+* **Reason:** The preparation tab must search the player's database without side effects elsewhere. Reversal path: remove the pin family and its read in `DatabasePanel.tsx`.
+* **Decided by:** Claude Code (Opus 5.5) build opponent-prep-tree, full auto, 2026-11-07 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"4c78d28c238feaf7629019a39913de2070501d932ce414cb958beefac7b327a1","input_sha256":"06ae44ef792ceba8a30ce6ae46501f5d8dc091dead713de8e5615df7c8b84f63","kind":"mutation-receipt","operation":"86f84bb55f593bc490e45078c98595fbdd01d57352cb261d5413a95e019014fb","options":{"section":null},"request_id_sha256":null,"results":["d-20261107-11"],"target":"decisions-ledger","v":1} -->
