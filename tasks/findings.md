@@ -21795,7 +21795,7 @@ chessops 0.14 has one unified `Chess` with arbitrary-file rook castling: `Castle
 
 ### Accepted whitespace in a custom FEN hides the root's third repetition
 
-* **ID:** f-20261106-35 · **Status:** open · **Area:** chess-tree · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261106-35 · **Status:** handled · **Area:** chess-tree · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** Custom-FEN move execution/repetition review (Felix t22u) at HEAD `694d7a26`.
 * **Where:** `src/utils/treeReducer.ts:350-361` builds the shared identity key using `fen.split(" ").slice(0, 4)`. The accepted FEN parser (`chessops/fen.ts:131-132`) uses whitespace-aware separators. `src/utils/chess.ts:600-607` preserves internal whitespace in the imported root/header FEN; `src/state/store/tree.ts:1056-1073` compares the raw-root derived key with canonical move-node keys to count repetitions. Native lexer `src-tauri/src/lexer.rs:81-88` preserves tag-value bytes rather than rewriting internal FEN separators.
@@ -21805,6 +21805,9 @@ chessops 0.14 has one unified `Chess` with arbitrary-file rook castling: `Castle
 * **Fix:** Tokenize accepted FEN field separators consistently inside the existing shared derived-key helper, retaining logical board/turn fields and legal castling/EP normalization. Preserve raw stored root/header FENs, exact session ownership, tolerant rejected-input behavior and the existing no-rights/no-EP fast path; do not introduce a new identity helper or rewrite every stored FEN. Add import-to-store repetition regressions for accepted non-single-space separators as well as the existing canonical-root cases.
 * **Related:** `f-20261004-22` (handled uncapturable/legal EP identity) and `f-20261026-01` (handled castling aliases) govern different field-value equivalences. Their decisions `d-20261026-05`/`d-20261026-08` preserve raw storage and use the shared derived key; separator tokenization can respect those boundaries. This is not asserted to have been introduced by those fixes. `f-20261106-11`, `f-20261106-31` and `f-20261106-20` were excluded; no duplicate factory, comment-history or eval finding is filed.
 * **Found by:** Grok Bot, Felix t22u custom-FEN review, 2026-11-06.
+
+**Handled, 2026-11-08 (drain session 145da2cd-7b80-40cb-ab39-2cca73a7c760), commit `eae41707`:** `getBoardState` (`src/utils/treeReducer.ts`) now tokenizes with `/[\s_]+/`, the separator chessops `parseFen` accepts. The derived key stays inside the existing shared helper, and raw stored FENs, the no-rights/no-EP fast path and castling/EP normalization are unchanged. Two new regressions failed on `split(" ")`: a `treeReducer.test.ts` key equality for the double-space and tab variants, and a store-level threefold test where a doubled-space `setFen` root plus the eight knight moves reaches `1/2-1/2` like the single-space control.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"ae88e85b0117289f7c276595040d7fb903dab0ab53e783faffbf119c59524dde","header_sha256":"783fdb9e27bcab39e930642ecb1cbf309e25f6947095d5b09e55c9f297dca59d","header_status":"handled","input_sha256":"bed04930ab2ab6082f09e89bffa3b76953d60ac32ae6ca23e70d25d1f7f16dcd","kind":"mutation-receipt","operation":"6aec3b56cf83a2ebd2e7aa26d0e09d6e8fabe50182519d81ab40be8ab5d306c9","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-35"],"target":"f-20261106-35","v":1} -->
 
 ---
 
