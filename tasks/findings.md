@@ -22017,3 +22017,21 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Found by:** Claude Code drain session c9f01c8c-19e6-4623-b8d0-e7b0068f0ac6, 2026-11-06, at the pre-push remote check of the f-20261106-07 release.
 * **Correction (2026-11-07, records review):** the Proof bullet's precedent is misattributed. f-20261105-06 did not retry a click inside a poll. It timed a Windows bound from the worker's resume and made the compact title-bar test await `waitForTransitionsSettled`. f-20261105-07 bounded a held response and proved it with `--repeat-each` under CPU load. The proposed fix shape stays: wait until the board is interactive after the route change, and retry the "Take Snapshot" click inside the poll when no new invocation appears. But no earlier finding used that pattern. The load proof follows f-20261105-07.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"b0874bd8de2898d71f188ace43d4aa7ae231d532cfce9977c44f1b7a0445e31b","input_sha256":"b84f42cdd66f17657f2e5c4c42e908a1f281e7314850bdb03eca7e4daa0d31c6","kind":"mutation-receipt","operation":"726a0da2120e1ceee199cda3aaca7119dde7f47658fe6407447a865acc340832","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-49"],"target":"f-20261106-49","v":1} -->
+
+---
+
+## 2026-11-07 — filed through the inbox spool
+
+### Windows CI: the image-upload timeout test's mock server resets the connection
+
+* **ID:** f-20261107-01 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Filed from:** 0e11f3af-c8a9-406f-a5c1-51c75f5abe31
+* **Impact class:** behaviour
+* **CI run:** 42374906141
+* **Spotted outside diff:** drain session 0e11f3af-c8a9-406f-a5c1-51c75f5abe31 (f-20261106-30), remote-CI check before push, 2026-11-07
+* **Where:** `src-tauri/src/feedback.rs:973-1030`, test `feedback::tests::image_request_uses_the_upload_client_timeout_not_the_json_client`, helper `delayed_201`: the mock server accepts the connection, sleeps 250 ms and writes `201 Created` with `Connection: close`, then drops the stream without ever reading the request.
+* **Defect:** the multipart image request body stays unread in the server socket's receive buffer. On Windows, closing a socket with unread received data sends RST instead of FIN, so the client's send or read fails with WSAECONNRESET (10054) before reqwest sees the response. Linux closes gracefully, so the test passes locally and on Linux CI.
+* **Failure scenario:** `rust-windows-test` in run 42374906141 (head c818c008) failed with `image request result: Reqwest(... SendRequest, hyper::Error(Io, Os { code: 10054, kind: ConnectionReset ... }))` at `src\feedback.rs:1011:10`; 1886 passed, 1 failed. Every push to master is refused by `pnpm ci:remote:check` while this job is red.
+* **Proof:** job log `gh api repos/felixabeck/chessriddle-studio/actions/jobs/128410411333/logs`, lines 908 and 2126-2137. The previous four master runs (deb8dbfa, 793c0057, d61bdaad, 2b0945b0) passed `rust-windows-test`; the test was added in the batch ending at c818c008.
+* **Repair guard:** the mock server reads the full request (headers plus `Content-Length` body) before writing its response, in both `delayed_201` uses, so the close is graceful on every platform. Keep the test's assertion (the image path uses the upload client's timeout, not the JSON client's 80 ms read timeout). No change to production code.
+* **Found by:** Claude Code (Opus 5.5), drain session 0e11f3af-c8a9-406f-a5c1-51c75f5abe31.
