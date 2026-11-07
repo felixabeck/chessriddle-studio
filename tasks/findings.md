@@ -22087,7 +22087,7 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 
 ### `wheelColumnTo` wheels outside the viewport when the stacked board layout has scrolled back to the top
 
-* **ID:** f-20261107-03 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261107-03 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** build · **Blocked:** none
 * **Impact class:** tooling
 * **Follow-up of:** f-20261106-48
 * **CI run:** 42409425212
@@ -22099,3 +22099,6 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Repair guard:** inside each `toPass` attempt, when the column's visible part within the stack and viewport is empty or smaller than the target, first re-reveal the column with `wheelBoardStackTo`, then re-measure and wheel the column. Keep scrolling mouse-wheel driven and the hit-test assertion unchanged.
 * **Open question:** what resets the stacked layout's scroll position after `wheelBoardStackTo` (a re-mount of the stack container on a late layout re-measure is the likely cause); if it is the product, file it separately.
 * **Found by:** Claude Code (Opus 5.5), build opponent-prep-tree, 2026-11-07.
+
+**Handled, 2026-11-07 (build opponent-prep-tree, repaired in its release because the red e2e job refused that push):** `c6fe14f1` makes `wheelColumnTo` re-reveal the notation column through the stacked layout whenever too little of it is visible, then re-measure and wheel as before; a regression test scrolls the column fully out of view first and fails without the change. Container e2e `font-scaled-breakpoints.spec.ts --repeat-each=5`: 95 passed. The Test run on the pushed SHA (42416663158) concluded `success`, including `e2e`. The open question (what resets the stacked layout's scroll position) stays unanswered; it is harmless to users as far as observed and not filed separately.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"e9d5360077911e3f77b3045fab27749c621f90cb119e8a1990f4cf595196954f","header_sha256":"b5f7a044ec8169bf6c134657bfb4422313390ea6afb5646c5d40de04e8f26bb5","header_status":"handled","input_sha256":"697af1b068e398f8ae7e769cc537d4a7abb5ec515a298c8b30974fe7f5ff7749","kind":"mutation-receipt","operation":"e368112b0aad2d9e216f2cf99c49e88920ce1dc0a39193a129f9d12e023d0ec6","options":{"section":null},"request_id_sha256":null,"results":["f-20261107-03"],"target":"f-20261107-03","v":1} -->
