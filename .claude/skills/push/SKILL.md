@@ -82,9 +82,14 @@ returns to `repair`, commit, and the required affected final-gate rerun before p
 `pnpm gates:push` first takes agent-kit's cross-repository push lock through
 `push-lock.sh gate` (agent-kit d-20261105-01): it waits while another checkout holds it, exits 76
 without starting when `origin/master` moved since the rebase (rebase and rerun), and releases it
-after a red run. The tracked `.githooks/pre-push` releases it at the push and refuses a `master`
-push while another checkout holds it; a clone without `core.hooksPath=.githooks` gates without the
-lock and prints the remedy.
+after a red run. The tracked `.githooks/pre-push` keeps it at each push for the release's records
+follow-up and refuses a `master` push while another checkout gates or finishes its release
+(agent-kit d-20261107-01). The §4 required-CI wait runs as shell calls of at most 10 minutes
+each; start every one of them with `bash ~/.claude/scripts/push-lock.sh hold || true`, so the hold
+survives a queued run's long wait. After the last push of the release (the
+records follow-up, or none) run `bash ~/.claude/scripts/push-lock.sh release || true`; a forgotten
+release frees the lock 15 minutes after the last push. In a clone without `core.hooksPath`, the
+gate sets `core.hooksPath .githooks` itself before taking the lock (agent-kit d-20261106-01).
 `pnpm gates:push` and `pnpm checks:pre-review` run through `agent-gate`. Read
 `.claude/rules/gate-tooling.md` "Scheduling and placement" before running a gate for admission,
 worker sizing, e2e reservation, exit 125 and nesting. The shared
