@@ -66,20 +66,9 @@
   border-bottom: 1px solid var(--cf-border-strong);
 }
 
-/* Same inset as the section heading, so rows start under its text. */
+/* The heading's outer inset, so rows line up with the heading row. */
 .trashBody {
   padding: 0 var(--mantine-spacing-xs) var(--mantine-spacing-xs);
-}
-
-/* Like the section icon, shown from 24rem so a narrow row keeps its width for the name. */
-.trashRowIcon {
-  grid-area: icon;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  width: var(--library-database-icon);
-  height: var(--library-database-icon);
-  border-radius: var(--cf-radius-sm);
 }
 
 .trashRowIcon svg {
@@ -129,7 +118,8 @@
   min-width: 0;
 }
 
-.databaseIcon {
+.databaseIcon,
+.trashRowIcon {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
@@ -137,6 +127,12 @@
   width: var(--library-database-icon);
   height: var(--library-database-icon);
   border-radius: var(--cf-radius-sm);
+}
+
+/* Like the section icon, shown from 24rem so a narrow row keeps its width for the name. */
+.trashRowIcon {
+  grid-area: icon;
+  display: none;
 }
 
 .databaseStat {
