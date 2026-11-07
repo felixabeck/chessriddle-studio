@@ -22065,3 +22065,18 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 
 **Handled, 2026-11-07 (drain 0ad17dd7, push records review):** already repaired by `976258a7` — `delayed_201` now reads the full request through `read_http_request_with_limit` before its 250 ms delay, so Windows closes gracefully. The Test run on that SHA (42384771760) concluded `success`, including `rust-windows-test`. Closed so the queue stops offering the fixed entry.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"25e39ce78ea07678375181ec2957dcccd7714837d866b242b20cd39c39fb3af5","header_sha256":"3519abdc539f4f63ae1ab54001636f816748ac58af5595531832e4c91af412da","header_status":"handled","input_sha256":"a4bc27dcfd3bb9558e9912c147dddf03d9fdba981ae4a88f7a1a75b3d0d6d361","kind":"mutation-receipt","operation":"28c8c45d2dec5e1dd46804c170a118f4ab17f408f79d19960d3cd090fad87c4e","options":{"section":null},"request_id_sha256":null,"results":["f-20261107-01"],"target":"f-20261107-01","v":1} -->
+
+---
+
+## 2026-11-07 — filed through the inbox spool
+
+### Library shows only "Loading games databases…" for about a minute while a large database migrates
+
+* **ID:** f-20261107-02 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** build opponent-prep-tree, real-app verification on a copy of Mega Database 2025, 2026-11-07
+* **Where:** library database listing (`src/components/databases/useDatabaseLibrary.tsx` and the native listing that calls `validate_existing_database` → `migrate_database` in `src-tauri/src/db/migrations.rs`).
+* **Defect:** the first time a new build opens a database whose schema version is older, the listing migrates it and then runs the existing full `integrity_check` and `foreign_key_check` before returning. For an 11.4M-game database that is about 60 s in a release build, and the library shows only "Loading games databases…" for every database during that time, with no hint that a one-time upgrade is running or which database it is.
+* **Failure scenario:** release build 50fdcc36, throwaway profile seeded with a 2.1.0 copy of Mega Database 2025 (3 GB): the library listed the database after 62 s (73 s in an earlier run); screenshot `00-library-loading.png` of the run shows the generic text only. Felix's own Mega database will hit this once after the 2.2.0 schema update.
+* **Open question:** should the listing show a per-database "upgrading database (one time)" state with progress, or should the content check after an additive migration move to the existing background content validation (d-20261107-13 kept it inline)?
+* **Found by:** Claude Code (Opus 5.5), build opponent-prep-tree, 2026-11-07.
