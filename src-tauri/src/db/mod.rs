@@ -55,10 +55,11 @@ use crate::infra::fs::{entry_identity_at, remove_entry_at};
 use chrono::{NaiveDate, NaiveTime};
 use diesel::{
     connection::{DefaultLoadingMode, SimpleConnection},
-    expression::{BoxableExpression, SelectableExpression},
+    expression::{BoxableExpression, SelectableExpression, ValidGrouping},
     prelude::*,
+    query_builder::QueryFragment,
     sql_query,
-    sql_types::Text,
+    sql_types::{Integer, Nullable, Text},
     sqlite::Sqlite,
 };
 use pgn_reader::{BufferedReader, Nag, RawHeader, SanPlus, Skip, Visitor};
@@ -1425,18 +1426,8 @@ pub(crate) fn convert_pgn_blocking<R: tauri::Runtime>(
                             resolved.into_read_file()
                         })??;
                         let current_file_name = context.display_name.clone();
-                        let extension = current_file_name
-                            .as_deref()
-                            .and_then(|name| std::path::Path::new(name).extension())
-                            .map(std::ffi::OsStr::to_os_string);
-                        let uncompressed: Box<dyn std::io::Read + Send> =
-                            if extension.as_deref() == Some("bz2".as_ref()) {
-                                Box::new(bzip2::read::MultiBzDecoder::new(file))
-                            } else if extension.as_deref() == Some("zst".as_ref()) {
-                                Box::new(zstd::Decoder::new(file)?)
-                            } else {
-                                Box::new(file)
-                            };
+                        let uncompressed =
+                            decompressing_reader(current_file_name.as_deref(), file)?;
 
                         let identity = account_import
                             .as_ref()
@@ -1504,6 +1495,21 @@ pub(crate) fn convert_pgn_blocking<R: tauri::Runtime>(
     }
     .emit(&app);
     Ok(())
+}
+
+fn decompressing_reader<R: std::io::Read + Send + 'static>(
+    display_name: Option<&str>,
+    file: R,
+) -> std::io::Result<Box<dyn std::io::Read + Send>> {
+    let extension = display_name
+        .and_then(|name| std::path::Path::new(name).extension())
+        .and_then(OsStr::to_str)
+        .map(str::to_ascii_lowercase);
+    match extension.as_deref() {
+        Some("bz2") => Ok(Box::new(bzip2::read::MultiBzDecoder::new(file))),
+        Some("zst") => Ok(Box::new(zstd::Decoder::new(file)?)),
+        _ => Ok(Box::new(file)),
+    }
 }
 
 pub fn generate_search_index(
@@ -2380,19 +2386,36 @@ fn get_db_game_blocking(
     })
 }
 
-type SidesAnyEloExpr<QS> = Box<
-    dyn BoxableExpression<
-        QS,
-        Sqlite,
-        SqlType = diesel::sql_types::Nullable<diesel::sql_types::Bool>,
-    >,
->;
+type EloBandExpr<QS> =
+    Box<dyn BoxableExpression<QS, Sqlite, SqlType = Nullable<diesel::sql_types::Bool>>>;
+
+/// `col BETWEEN lo AND hi`, treating SQL NULL as unrated 0. The column is
+/// compared directly so `games_white_elo_idx` / `games_black_elo_idx` stay
+/// usable; `OR col IS NULL` is emitted only when the band contains 0.
+fn elo_band<C, QS>(col: C, (lo, hi): (i32, i32)) -> EloBandExpr<QS>
+where
+    C: diesel::expression::Expression<SqlType = Nullable<Integer>>
+        + SelectableExpression<QS>
+        + QueryFragment<Sqlite>
+        + ValidGrouping<(), IsAggregate = diesel::expression::is_aggregate::No>
+        + Copy
+        + Send
+        + 'static,
+    QS: 'static,
+{
+    let band = col.between(lo, hi);
+    if lo <= 0 && 0 <= hi {
+        Box::new(band.or(col.is_null()))
+    } else {
+        Box::new(band)
+    }
+}
 
 fn sides_any_elo_band_predicate<QS>(
     player1: Option<i32>,
     range1: Option<(i32, i32)>,
     range2: Option<(i32, i32)>,
-) -> Option<SidesAnyEloExpr<QS>>
+) -> Option<EloBandExpr<QS>>
 where
     QS: 'static,
     games::white_id: SelectableExpression<QS>,
@@ -2405,34 +2428,34 @@ where
     }
 
     let white_as_player = {
-        let mut terms: Vec<SidesAnyEloExpr<QS>> = Vec::new();
-        if let Some((lo, hi)) = range1 {
-            terms.push(Box::new(games::white_elo.between(lo, hi)));
+        let mut terms: Vec<EloBandExpr<QS>> = Vec::new();
+        if let Some(range) = range1 {
+            terms.push(elo_band(games::white_elo, range));
         }
-        if let Some((lo, hi)) = range2 {
-            terms.push(Box::new(games::black_elo.between(lo, hi)));
+        if let Some(range) = range2 {
+            terms.push(elo_band(games::black_elo, range));
         }
         let band = terms
             .into_iter()
-            .reduce(|acc, term| Box::new(acc.and(term)) as SidesAnyEloExpr<QS>)?;
+            .reduce(|acc, term| Box::new(acc.and(term)) as EloBandExpr<QS>)?;
         match player1 {
-            Some(id) => Box::new(band.and(games::white_id.eq(id))) as SidesAnyEloExpr<QS>,
+            Some(id) => Box::new(band.and(games::white_id.eq(id))) as EloBandExpr<QS>,
             None => band,
         }
     };
     let black_as_player = {
-        let mut terms: Vec<SidesAnyEloExpr<QS>> = Vec::new();
-        if let Some((lo, hi)) = range1 {
-            terms.push(Box::new(games::black_elo.between(lo, hi)));
+        let mut terms: Vec<EloBandExpr<QS>> = Vec::new();
+        if let Some(range) = range1 {
+            terms.push(elo_band(games::black_elo, range));
         }
-        if let Some((lo, hi)) = range2 {
-            terms.push(Box::new(games::white_elo.between(lo, hi)));
+        if let Some(range) = range2 {
+            terms.push(elo_band(games::white_elo, range));
         }
         let band = terms
             .into_iter()
-            .reduce(|acc, term| Box::new(acc.and(term)) as SidesAnyEloExpr<QS>)?;
+            .reduce(|acc, term| Box::new(acc.and(term)) as EloBandExpr<QS>)?;
         match player1 {
-            Some(id) => Box::new(band.and(games::black_id.eq(id))) as SidesAnyEloExpr<QS>,
+            Some(id) => Box::new(band.and(games::black_id.eq(id))) as EloBandExpr<QS>,
             None => band,
         }
     };
@@ -2529,13 +2552,13 @@ fn load_games(
                 }
 
                 if let Some(range1) = query.range1 {
-                    sql_query = sql_query.filter(games::black_elo.between(range1.0, range1.1));
-                    count_query = count_query.filter(games::black_elo.between(range1.0, range1.1));
+                    sql_query = sql_query.filter(elo_band(games::black_elo, range1));
+                    count_query = count_query.filter(elo_band(games::black_elo, range1));
                 }
 
                 if let Some(range2) = query.range2 {
-                    sql_query = sql_query.filter(games::white_elo.between(range2.0, range2.1));
-                    count_query = count_query.filter(games::white_elo.between(range2.0, range2.1));
+                    sql_query = sql_query.filter(elo_band(games::white_elo, range2));
+                    count_query = count_query.filter(elo_band(games::white_elo, range2));
                 }
             }
             Some(Sides::WhiteBlack) => {
@@ -2549,13 +2572,13 @@ fn load_games(
                 }
 
                 if let Some(range1) = query.range1 {
-                    sql_query = sql_query.filter(games::white_elo.between(range1.0, range1.1));
-                    count_query = count_query.filter(games::white_elo.between(range1.0, range1.1));
+                    sql_query = sql_query.filter(elo_band(games::white_elo, range1));
+                    count_query = count_query.filter(elo_band(games::white_elo, range1));
                 }
 
                 if let Some(range2) = query.range2 {
-                    sql_query = sql_query.filter(games::black_elo.between(range2.0, range2.1));
-                    count_query = count_query.filter(games::black_elo.between(range2.0, range2.1));
+                    sql_query = sql_query.filter(elo_band(games::black_elo, range2));
+                    count_query = count_query.filter(elo_band(games::black_elo, range2));
                 }
             }
             Some(Sides::Any) => {
@@ -5111,6 +5134,7 @@ mod tests {
     use super::*;
     use crate::{db::allocation_probe, infra::path_authority::PathClass};
     use pgn_reader::BufferedReader;
+    use std::io::Read;
     use std::path::{Path, PathBuf};
     use tauri::Manager;
 
@@ -9564,6 +9588,84 @@ mod tests {
         assert!(messages[0].contains(&format!("decompressed_offset={offset}:")));
         assert!(messages[0].contains("source read failed"));
         assert!(messages[0].contains("underlying source cause"));
+    }
+
+    fn compress_bz2_payload(payload: &[u8]) -> Vec<u8> {
+        let mut encoder = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::best());
+        encoder.write_all(payload).unwrap();
+        encoder.finish().unwrap()
+    }
+
+    fn read_decompressed(display_name: &str, path: &Path) -> String {
+        let mut decoded = String::new();
+        decompressing_reader(Some(display_name), File::open(path).unwrap())
+            .unwrap()
+            .read_to_string(&mut decoded)
+            .unwrap();
+        decoded
+    }
+
+    #[test]
+    fn decompressing_reader_accepts_uppercase_compressed_extensions() {
+        let dir = tempfile::tempdir().unwrap();
+        let pgn = REPLACEMENT_PGN.as_bytes();
+
+        let bz2_upper = dir.path().join("x.pgn.BZ2");
+        let bz2_lower = dir.path().join("x.pgn.bz2");
+        std::fs::write(&bz2_upper, compress_bz2_payload(pgn)).unwrap();
+        std::fs::write(&bz2_lower, compress_bz2_payload(pgn)).unwrap();
+        let bz2_decoded = read_decompressed("x.pgn.BZ2", &bz2_upper);
+        let bz2_control = read_decompressed("x.pgn.bz2", &bz2_lower);
+        assert_eq!(bz2_decoded, bz2_control);
+        assert_eq!(bz2_decoded, REPLACEMENT_PGN);
+
+        let zst_upper = dir.path().join("x.pgn.ZST");
+        let zst_lower = dir.path().join("x.pgn.zst");
+        std::fs::write(&zst_upper, zstd::stream::encode_all(pgn, 1).unwrap()).unwrap();
+        std::fs::write(&zst_lower, zstd::stream::encode_all(pgn, 1).unwrap()).unwrap();
+        let zst_decoded = read_decompressed("x.pgn.ZST", &zst_upper);
+        let zst_control = read_decompressed("x.pgn.zst", &zst_lower);
+        assert_eq!(zst_decoded, zst_control);
+        assert_eq!(zst_decoded, REPLACEMENT_PGN);
+    }
+
+    #[test]
+    fn convert_pgn_imports_uppercase_compressed_extensions_with_the_same_movetext() {
+        let (dir, app, handle, _database) = empty_database_case();
+        mount_convert_progress_events(&app);
+        let pgn = REPLACEMENT_PGN.as_bytes();
+        let sources = [
+            ("control.pgn.bz2", compress_bz2_payload(pgn)),
+            ("x.pgn.BZ2", compress_bz2_payload(pgn)),
+            ("control.pgn.zst", zstd::stream::encode_all(pgn, 1).unwrap()),
+            ("x.pgn.ZST", zstd::stream::encode_all(pgn, 1).unwrap()),
+        ];
+        let files = sources
+            .into_iter()
+            .map(|(name, bytes)| {
+                let path = dir.path().join(name);
+                std::fs::write(&path, bytes).unwrap();
+                grant_import_file(&app, &path)
+            })
+            .collect();
+        run_import(&app, handle.clone(), files, None).unwrap();
+        let state = app.state::<AppState>();
+        let games = get_games_blocking(
+            &state.pgn_path_authority,
+            &state.database_repository,
+            handle,
+            GameQuery::new(),
+            &CancellationToken::new(),
+        )
+        .unwrap()
+        .data;
+        assert_eq!(games.len(), 4);
+        let movetexts: Vec<&str> = games.iter().map(|game| game.moves.as_str()).collect();
+        assert!(
+            movetexts.iter().all(|text| *text == movetexts[0]),
+            "{movetexts:?}"
+        );
+        assert_eq!(movetexts[0], "1. e4 e5 1-0");
     }
 
     #[test]
