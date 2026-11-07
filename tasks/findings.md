@@ -21352,7 +21352,7 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 
 ### Custom-FEN PGN round trips emit duplicate `[SetUp "1"]` tags
 
-* **ID:** f-20261106-10 · **Status:** open · **Area:** chess-tree · **Root:** pgn-modeled-header-parse-gap · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261106-10 · **Status:** handled · **Area:** chess-tree · **Root:** pgn-modeled-header-parse-gap · **Entry:** inline · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** PGN fidelity / file-save review at HEAD `7861ffea`, beyond annotation and startup coverage
 * **Where:** `src/utils/chess.ts:659-675` leaves `SetUp` in `headers.other`; `headersToPGN` at `src/utils/chess.ts:238-242` rewrites every `other` entry including `SetUp`; `writePGN` at `src/utils/chess.ts:303-305` then unconditionally appends another `[SetUp "1"]` whenever `tree.fen !== INITIAL_FEN`.
@@ -21361,6 +21361,9 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 * **Proof:** Temporary vitest at HEAD `7861ffea` (deleted after probe): `parsePGN` of a SetUp+FEN game then `getPGN(...)` yielded `['[SetUp "1"]', '[SetUp "1"]']` instead of one tag. Fix by omitting `SetUp` from `other` on parse and/or skipping `SetUp` (and the synthesized `FEN`) when emitting `other`, matching the WhiteElo skip pattern.
 * **Found by:** Grok Bot PGN fidelity review (Felix request, 2026-11-06)
 * **Related:** Shares root `pgn-modeled-header-parse-gap` with the White/Black time-control modeled-field gap: both are headers the writer synthesizes or models that `getPgnHeaders` does not keep out of the opaque `other` bag. `f-20260914-22` / duplicate FEN sticky position is a different Rust encode path.
+
+**Handled, 2026-11-07 (drain 0ad17dd7):** `getPgnHeaders` discards a parsed `SetUp` tag, and `headersToPGN` skips `SetUp` and `FEN` in `other` (following the WhiteElo/BlackElo skip), so `writePGN` is the sole emitter of the root-position tags, including for headers persisted before this fix. New test: a SetUp+FEN game exported, reparsed and re-exported carries exactly one `[SetUp "1"]` and one `[FEN` each pass; a direct `headersToPGN` call with `other: {SetUp, FEN}` emits neither. The test fails with the fix stashed. Rejected: removing the synthesized writer tag instead — it is the only source when a FEN game was built in-app without a parsed SetUp. Commit `404e1588`.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"52807e9a34cf366d63ec3fc7b1526a172865b9c620c279c9df22c6d26f7d7885","header_sha256":"19a0e9482c2bdb1896d548f255a9f708c904d6cbc5c0de7c31ce696efbfb5a7f","header_status":"handled","input_sha256":"111b58100be14c4e861478ccde92b87d8c881cb62738dd9921189f438d1be673","kind":"mutation-receipt","operation":"db4610b8a76d5068f765c9240417a80426c6217ddbe88fe61c723e4185e23d85","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-10"],"target":"f-20261106-10","v":1} -->
 
 ---
 
