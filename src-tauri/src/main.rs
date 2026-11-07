@@ -398,12 +398,8 @@ impl SearchCache {
         }
     }
 
-    #[cfg(test)]
     pub(crate) fn get_index(&self, identity: &SearchIndexIdentity) -> Option<MmapSearchIndex> {
-        self.indexes
-            .lock()
-            .expect("search index cache poisoned")
-            .get(identity)
+        self.indexes.lock().ok()?.get(identity)
     }
 
     /// The only insert path for mapped indexes. Deduplicates under the indexes

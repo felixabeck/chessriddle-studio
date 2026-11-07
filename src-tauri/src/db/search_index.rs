@@ -624,6 +624,32 @@ struct ChunkMetadata {
     entry_count: usize,
 }
 
+#[cfg(test)]
+type MoveValidationHook = Arc<dyn Fn(i32) + Send + Sync>;
+
+#[cfg(test)]
+thread_local! {
+    static MOVE_VALIDATION_HOOK: std::cell::RefCell<Option<MoveValidationHook>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub(super) struct MoveValidationObserver(Option<MoveValidationHook>);
+
+#[cfg(test)]
+impl MoveValidationObserver {
+    pub(super) fn install(hook: impl Fn(i32) + Send + Sync + 'static) -> Self {
+        Self(MOVE_VALIDATION_HOOK.with(|slot| slot.replace(Some(Arc::new(hook)))))
+    }
+}
+
+#[cfg(test)]
+impl Drop for MoveValidationObserver {
+    fn drop(&mut self) {
+        MOVE_VALIDATION_HOOK.with(|slot| slot.replace(self.0.take()));
+    }
+}
+
 impl MmapSearchIndex {
     #[cfg(test)]
     pub fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
@@ -653,14 +679,14 @@ impl MmapSearchIndex {
         file: crate::infra::inode_ownership::OwnedFile,
         cancellation: Option<&CancellationToken>,
     ) -> io::Result<Self> {
-        let check = || {
+        let check = |cancellation: Option<&CancellationToken>| {
             if cancellation.is_some_and(CancellationToken::is_cancelled) {
                 Err(io::Error::new(io::ErrorKind::Interrupted, "cancelled"))
             } else {
                 Ok(())
             }
         };
-        check()?;
+        check(cancellation)?;
         let file_len = checked_usize(file.metadata()?.len(), "archive file length")?;
         if file_len < HEADER_SIZE {
             return Err(invalid_data("File too small for header"));
@@ -680,9 +706,10 @@ impl MmapSearchIndex {
             return Err(invalid_data("declared chunk count exceeds archive bounds"));
         }
         let mut chunks = Vec::new();
+        let mut archived_chunks = Vec::new();
         let mut counted_entries = 0_usize;
         for _ in 0..header.chunk_count {
-            check()?;
+            check(cancellation)?;
             if cursor % ARCHIVE_ALIGNMENT != 0 {
                 return Err(invalid_data("misaligned chunk header"));
             }
@@ -722,28 +749,7 @@ impl MmapSearchIndex {
             if archived.entries.len() != entry_count {
                 return Err(invalid_data("chunk entry count does not match payload"));
             }
-            for entry in archived.entries.iter() {
-                check()?;
-                let validation = match cancellation {
-                    Some(cancellation) => {
-                        crate::db::encoding::try_iter_mainline_move_bytes_cancellable(
-                            entry.moves.as_slice(),
-                            cancellation,
-                        )
-                        .map(|_| ())
-                    }
-                    None => {
-                        crate::db::encoding::try_iter_mainline_move_bytes(entry.moves.as_slice())
-                            .map(|_| ())
-                    }
-                };
-                validation.map_err(|error| match error {
-                    Error::Cancellation => {
-                        io::Error::new(io::ErrorKind::Interrupted, "search index open cancelled")
-                    }
-                    error => invalid_data(format!("invalid move stream: {error}")),
-                })?;
-            }
+            archived_chunks.push(archived);
             chunks.push(ChunkMetadata {
                 payload_offset,
                 payload_len,
@@ -768,6 +774,52 @@ impl MmapSearchIndex {
         if cursor != mmap.len() {
             return Err(invalid_data("trailing bytes after search index chunks"));
         }
+        // Rayon stays in the caller's existing blocking job. Each chunk retains
+        // sequential entry order, and find_first preserves the first failing
+        // chunk while successful opens still validate every entry.
+        #[cfg(test)]
+        let validation_hook = MOVE_VALIDATION_HOOK.with(|slot| slot.borrow().clone());
+        let failure = archived_chunks
+            .par_iter()
+            .map(|archived| -> io::Result<()> {
+                check(cancellation)?;
+                // is_cancelled locks token state. A child per active chunk keeps
+                // byte-level checks independent while retaining parent cancellation.
+                let chunk_cancellation = cancellation.map(CancellationToken::child_token);
+                for entry in archived.entries.iter() {
+                    #[cfg(test)]
+                    if let Some(hook) = &validation_hook {
+                        hook(entry.id.into());
+                    }
+                    check(chunk_cancellation.as_ref())?;
+                    let validation = match chunk_cancellation.as_ref() {
+                        Some(cancellation) => {
+                            crate::db::encoding::try_iter_mainline_move_bytes_cancellable(
+                                entry.moves.as_slice(),
+                                cancellation,
+                            )
+                            .map(|_| ())
+                        }
+                        None => crate::db::encoding::try_iter_mainline_move_bytes(
+                            entry.moves.as_slice(),
+                        )
+                        .map(|_| ()),
+                    };
+                    validation.map_err(|error| match error {
+                        Error::Cancellation => io::Error::new(
+                            io::ErrorKind::Interrupted,
+                            "search index open cancelled",
+                        ),
+                        error => invalid_data(format!("invalid move stream: {error}")),
+                    })?;
+                }
+                Ok(())
+            })
+            .find_first(Result::is_err);
+        if let Some(failure) = failure {
+            failure?;
+        }
+        check(cancellation)?;
         Ok(Self {
             mmap,
             entry_count: header.entry_count,
@@ -1400,6 +1452,75 @@ mod tests {
         let mapping =
             mapped.mmap.as_ptr() as usize..mapped.mmap.as_ptr() as usize + mapped.mmap.len();
         assert!(mapping.contains(&(borrowed.as_ptr() as usize)));
+    }
+
+    #[test]
+    fn parallel_open_validates_every_entry_and_rejects_corruption_in_every_chunk() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("validation.ecsi");
+        let total = CHUNK_ENTRY_LIMIT * 2 + 1;
+        SearchIndexChunk {
+            entries: (0..total)
+                .map(|id| test_entry(id as i32, vec![12, 12]))
+                .collect(),
+        }
+        .write_to(&path)
+        .unwrap();
+        let counts = Arc::new((0..total).map(|_| AtomicUsize::new(0)).collect::<Vec<_>>());
+        let observed = Arc::clone(&counts);
+        let observer = MoveValidationObserver::install(move |id| {
+            observed[id as usize].fetch_add(1, Ordering::SeqCst);
+        });
+        let mapped = MmapSearchIndex::open(&path).unwrap();
+        assert_eq!(mapped.chunks.len(), 3);
+        assert!(counts.iter().all(|count| count.load(Ordering::SeqCst) == 1));
+        drop(observer);
+        let original = std::fs::read(&path).unwrap();
+        for chunk in mapped.chunks.iter() {
+            let entry = mapped.get_entry_ref(chunk.first_entry).unwrap();
+            let offset = entry.moves.as_ptr() as usize - mapped.mmap.as_ptr() as usize;
+            let mut corrupt = original.clone();
+            corrupt[offset..offset + 2].copy_from_slice(&[crate::db::encoding::NAG_MARKER, 1]);
+            let broken = dir.path().join("broken.ecsi");
+            std::fs::write(&broken, corrupt).unwrap();
+            let error = MmapSearchIndex::open(&broken).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+            assert!(error.to_string().starts_with("invalid move stream:"));
+            assert!(matches!(
+                MmapSearchIndex::open_file_cancellable(File::open(&broken).unwrap(), &CancellationToken::new()),
+                Err(Error::Io(error)) if error.kind() == io::ErrorKind::InvalidData
+            ));
+        }
+    }
+
+    #[test]
+    fn parallel_open_cancellation_interrupts_validation_without_publishing_a_mapping() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("cancel.ecsi");
+        SearchIndexChunk {
+            entries: (0..CHUNK_ENTRY_LIMIT + 1)
+                .map(|id| test_entry(id as i32, vec![12, 12]))
+                .collect(),
+        }
+        .write_to(&path)
+        .unwrap();
+        let cancellation = CancellationToken::new();
+        let token = cancellation.clone();
+        let _observer = MoveValidationObserver::install(move |_| token.cancel());
+        let interrupted = MmapSearchIndex::open_file_inner(
+            File::open(&path).unwrap().into(),
+            Some(&cancellation),
+        )
+        .unwrap_err();
+        assert_eq!(interrupted.kind(), io::ErrorKind::Interrupted);
+        let cancellation = CancellationToken::new();
+        let token = cancellation.clone();
+        let _observer = MoveValidationObserver::install(move |_| token.cancel());
+        assert!(matches!(
+            MmapSearchIndex::open_file_cancellable(File::open(path).unwrap(), &cancellation),
+            Err(Error::Cancellation)
+        ));
     }
 
     struct ObservedArchiveWriter {

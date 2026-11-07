@@ -225,9 +225,12 @@ pub(crate) fn load_search_index_cancellable(
     let (read_target, invalidation_snapshot, _, expected_source) = probe_attempt()?;
     #[cfg(test)]
     run_after_fast_identity_probe_hook();
-    if let Some((identity, index)) =
-        open_valid_preferred(&read_target, &expected_source, cancellation)?
-    {
+    if let Some((identity, index)) = open_valid_preferred(
+        &read_target,
+        &expected_source,
+        cancellation,
+        Some((search_cache, invalidation_snapshot)),
+    )? {
         return cache_loaded_index(
             search_cache,
             identity,
@@ -249,9 +252,12 @@ pub(crate) fn load_search_index_cancellable(
         generation_object,
         "database changed while waiting for search generation",
     )?;
-    if let Some((identity, index)) =
-        open_valid_preferred(&read_target, &expected_source, cancellation)?
-    {
+    if let Some((identity, index)) = open_valid_preferred(
+        &read_target,
+        &expected_source,
+        cancellation,
+        Some((search_cache, invalidation_snapshot)),
+    )? {
         return cache_loaded_index(
             search_cache,
             identity,
@@ -290,9 +296,12 @@ pub(crate) fn load_search_index_cancellable(
         &db_identity,
         cancellation,
     )?;
-    if let Some((identity, index)) =
-        open_valid_preferred(&mutate_target, &expected_source, cancellation)?
-    {
+    if let Some((identity, index)) = open_valid_preferred(
+        &mutate_target,
+        &expected_source,
+        cancellation,
+        Some((search_cache, invalidation_snapshot)),
+    )? {
         return cache_loaded_index(
             search_cache,
             identity,
@@ -320,8 +329,12 @@ pub(crate) fn load_search_index_cancellable(
     };
 
     let (read_target, invalidation_snapshot, _, expected_source) = probe_attempt()?;
-    let Some((identity, index)) =
-        open_valid_preferred(&read_target, &expected_source, cancellation)?
+    let Some((identity, index)) = open_valid_preferred(
+        &read_target,
+        &expected_source,
+        cancellation,
+        Some((search_cache, invalidation_snapshot)),
+    )?
     else {
         return Err(generation_error
             .unwrap_or_else(|| Error::Conflict("search index changed while loading".into())));
@@ -354,6 +367,7 @@ fn open_valid_preferred(
     target: &DatabaseFileTarget,
     expected_source: &IndexSource,
     cancellation: &CancellationToken,
+    cache: Option<(&SearchCache, u64)>,
 ) -> Result<Option<(SearchIndexIdentity, MmapSearchIndex)>, Error> {
     let leaf = preferred_sidecar_leaf(target.leaf());
     let file = match crate::infra::fs::open_regular_at(
@@ -378,6 +392,18 @@ fn open_valid_preferred(
     });
     let identity =
         SearchIndexIdentity::from_opened_sidecar(target, expected_source.clone(), &file)?;
+    if cancellation.is_cancelled() {
+        return Err(Error::Cancellation);
+    }
+    if let Some((cache, snapshot)) = cache {
+        if let Some(index) = cache.get_index(&identity) {
+            // Check after the lookup so an invalidation that began since the
+            // database probe cannot reuse a mapping awaiting eviction.
+            if cache.invalidation_snapshot() == snapshot {
+                return Ok(Some((identity, index)));
+            }
+        }
+    }
     let index = match MmapSearchIndex::open_file_cancellable(file, cancellation) {
         Ok(index) => index,
         Err(Error::Io(error)) if error.kind() == std::io::ErrorKind::InvalidData => {
@@ -393,7 +419,7 @@ pub(crate) fn ownership_preferred_probe(
     target: &DatabaseFileTarget,
     source: &IndexSource,
 ) -> Result<(), Error> {
-    open_valid_preferred(target, source, &CancellationToken::new()).map(|_| ())
+    open_valid_preferred(target, source, &CancellationToken::new(), None).map(|_| ())
 }
 
 fn cache_loaded_index(
@@ -516,6 +542,8 @@ thread_local! {
     // Per thread, not per process: search_position_blocking reads it on the calling test's
     // thread, so a parallel search test cannot count into an instrumented test's counters.
     static SEARCH_POSITION_INSTRUMENT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    // Replaces only loop input, after the real sidecar has been fully validated.
+    static SEARCH_ENTRY_MOVES_OVERRIDE: std::cell::Cell<Option<&'static [u8]>> = const { std::cell::Cell::new(None) };
 }
 // Taken only by `mod tests`, which is unix-only; `cfg(test)` alone is dead code on Windows.
 #[cfg(all(test, unix))]
@@ -756,6 +784,8 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
     }
     #[cfg(test)]
     let instrument = SEARCH_POSITION_INSTRUMENT.get();
+    #[cfg(test)]
+    let moves_override = SEARCH_ENTRY_MOVES_OVERRIDE.take();
     // Omitted and explicit false are the same query and must share a cache key.
     let mut query = query;
     if query.exclude_fast_events == Some(false) {
@@ -850,12 +880,19 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
 
         info!("start search on {}", lease.id);
 
-        let process_entry = |entry: SearchGameEntryRef<'_>| -> Result<(), Error> {
+        let process_entry = |entry: SearchGameEntryRef<'_>,
+                             entry_cancellation: &CancellationToken|
+         -> Result<(), Error> {
+            #[cfg(test)]
+            let entry = SearchGameEntryRef {
+                moves: moves_override.unwrap_or(entry.moves),
+                ..entry
+            };
             #[cfg(test)]
             if instrument {
                 PROCESS_ENTRY_CALLS.fetch_add(1, Ordering::SeqCst);
             }
-            if cancellation.is_cancelled() {
+            if entry_cancellation.is_cancelled() {
                 return Err(Error::Cancellation);
             }
             let index = processed.fetch_add(1, Ordering::Relaxed) + 1;
@@ -884,9 +921,6 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
                     Some(cancellation),
                 )?;
             }
-
-            try_iter_mainline_move_bytes_cancellable(entry.moves, cancellation)
-                .map_err(|error| invalid_move_stream(entry.id, error))?;
 
             if let Some(white) = query.player1 {
                 if white != entry.white_id {
@@ -932,6 +966,8 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
                 return Ok(());
             }
 
+            // Open-time validation covers every stream. Only metadata candidates
+            // reach replay, which retains its own validation and error context.
             if let Some(position_query) = &parsed_position_query {
                 if position_query.can_reach(entry.pawn_home) {
                     if let Some(m) = get_move_after_match(
@@ -992,7 +1028,15 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
             Ok(())
         };
 
-        mmap_index.par_iter().try_for_each(process_entry)?;
+        // Per-job child tokens avoid sharing a mutex on every metadata check.
+        // Progress lease revocation still cancels the original operation token.
+        mmap_index
+            .par_iter()
+            .map_init(
+                || cancellation.child_token(),
+                |entry_cancellation, entry| process_entry(entry, entry_cancellation),
+            )
+            .try_for_each(|result| result)?;
 
         let openings: Vec<PositionStats> = openings
             .into_iter()
@@ -1306,9 +1350,10 @@ mod descriptor_identity_tests {
                 std::fs::rename(&replacement, &preferred_for_hook).unwrap();
             }));
         });
-        let (identity, index) = open_valid_preferred(&target, &source, &CancellationToken::new())
-            .unwrap()
-            .unwrap();
+        let (identity, index) =
+            open_valid_preferred(&target, &source, &CancellationToken::new(), None)
+                .unwrap()
+                .unwrap();
         assert_eq!(
             identity.sidecar_object, original_object,
             "identity must stamp the opened descriptor A"
@@ -1357,13 +1402,13 @@ mod descriptor_identity_tests {
     fn descriptor_stamp_failure_propagates_from_open_without_legacy_fallback() {
         let (_dir, _app, _handle, target, source) = descriptor_failure_fixture();
         crate::FAIL_NEXT_SIDECAR_STAMP.with(|fail| fail.set(true));
-        let opened = open_valid_preferred(&target, &source, &CancellationToken::new());
+        let opened = open_valid_preferred(&target, &source, &CancellationToken::new(), None);
         assert!(
             matches!(opened, Err(Error::Io(ref error)) if error.to_string() == "injected sidecar descriptor stamp failure"),
             "descriptor stamp failure must propagate from open_valid_preferred: {opened:?}"
         );
         assert!(
-            open_valid_preferred(&target, &source, &CancellationToken::new())
+            open_valid_preferred(&target, &source, &CancellationToken::new(), None)
                 .unwrap()
                 .is_some(),
             "fault injection must fail only once"
@@ -2484,6 +2529,95 @@ mod tests {
     }
 
     #[test]
+    fn queries_reuse_validation_until_invalidation_sidecar_change_or_revision_change() {
+        let (_dir, app, handle, database) = position_search_database();
+        mount_progress_test_events(&app);
+        let validations = Arc::new(AtomicUsize::new(0));
+        let observed = Arc::clone(&validations);
+        let _observer = super::super::search_index::MoveValidationObserver::install(move |_| {
+            observed.fetch_add(1, Ordering::SeqCst);
+        });
+        let query = exact_position_query(STARTING_FEN);
+        let first = run_position_search(&app, &handle, query.clone(), "validation-first").unwrap();
+        assert_eq!(validations.load(Ordering::SeqCst), 1);
+
+        // A different query forces the search loop as well as the loader to run.
+        let other = exact_position_query(AFTER_D4_FEN);
+        let empty = run_position_search(&app, &handle, other, "validation-other").unwrap();
+        assert!(empty.0.is_empty());
+        assert_eq!(validations.load(Ordering::SeqCst), 1);
+        let cached =
+            run_position_search(&app, &handle, query.clone(), "validation-cached").unwrap();
+        assert_eq!(
+            serde_json::to_value(&first).unwrap(),
+            serde_json::to_value(&cached).unwrap()
+        );
+        assert_eq!(validations.load(Ordering::SeqCst), 1);
+
+        let state = app.state::<AppState>();
+        let target = DatabaseFileTarget::for_test_path(&database).unwrap();
+        state.search_cache.invalidate_database(&target);
+        let after =
+            run_position_search(&app, &handle, query.clone(), "validation-invalidated").unwrap();
+        assert_eq!(validations.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            serde_json::to_value(&first).unwrap(),
+            serde_json::to_value(&after).unwrap()
+        );
+
+        // Atomic replacement preserves the archived provenance, but changes the
+        // sidecar descriptor identity and must still trigger full validation.
+        let sidecar = get_index_path(&database);
+        let replacement = database.with_extension("replacement");
+        std::fs::write(&replacement, std::fs::read(&sidecar).unwrap()).unwrap();
+        std::fs::rename(replacement, &sidecar).unwrap();
+        run_position_search(&app, &handle, query.clone(), "validation-replaced").unwrap();
+        assert_eq!(validations.load(Ordering::SeqCst), 3);
+
+        let mut db = SqliteConnection::establish(database.to_str().unwrap()).unwrap();
+        db.transaction::<_, Error, _>(|db| {
+            super::super::bump_revision_in_transaction(
+                db,
+                &database,
+                &CancellationToken::new(),
+                |db| {
+                    insert_white_win_e4_e5(db);
+                    Ok(())
+                },
+            )
+        })
+        .unwrap();
+        let revised = run_position_search(&app, &handle, query, "validation-revised").unwrap();
+        assert!(validations.load(Ordering::SeqCst) > 3);
+        assert_eq!(counted_games(&revised), 2);
+    }
+
+    #[test]
+    fn invalidation_after_probe_bypasses_an_already_cached_mapping() {
+        let (_dir, app, handle, database) = preferred_loader_test_case();
+        let validations = Arc::new(AtomicUsize::new(0));
+        let observed = Arc::clone(&validations);
+        let _observer = super::super::search_index::MoveValidationObserver::install(move |_| {
+            observed.fetch_add(1, Ordering::SeqCst);
+        });
+        let state = app.state::<AppState>();
+        load_search_index(
+            &state.pgn_path_authority,
+            &state.database_repository,
+            &state.search_cache,
+            &handle,
+        )
+        .unwrap();
+        let cache = Arc::clone(&state.search_cache);
+        load_preferred_after_probe(&app, &handle, move || {
+            cache.invalidate_database(&DatabaseFileTarget::for_test_path(&database).unwrap());
+        })
+        .unwrap();
+        assert_eq!(validations.load(Ordering::SeqCst), 2);
+        assert_eq!(state.search_cache.cached_index_count(), 0);
+    }
+
+    #[test]
     fn search_index_loader_other_database_invalidation_returns_mapping_uncached() {
         let (dir, app, handle, _database) = preferred_loader_test_case();
         let other = dir.path().join("other.db3");
@@ -2861,7 +2995,8 @@ mod tests {
             .database_identity_expected(&target, target.identity(), None)
             .unwrap();
         let expected_source = IndexSource::from_database_identity(&db_identity).unwrap();
-        let result = open_valid_preferred(&target, &expected_source, &CancellationToken::new());
+        let result =
+            open_valid_preferred(&target, &expected_source, &CancellationToken::new(), None);
         assert!(matches!(result, Ok(None)), "{result:?}");
         assert_eq!(std::fs::read(&outside).unwrap(), b"outside");
     }
@@ -3765,6 +3900,67 @@ mod tests {
         "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2";
     const AFTER_D4_FEN: &str = "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq d3 0 1";
 
+    /// Run against the migrated disposable Mega copy. When absent, generation
+    /// is measured alone. Invoke again in a fresh process for search timings.
+    #[test]
+    #[ignore]
+    fn benchmark_mega_player_position_search() {
+        let path = PathBuf::from(std::env::var("OPPONENT_PREP_BENCH_DB").unwrap());
+        let registry = tempfile::tempdir().unwrap();
+        let (app, handle) = super::super::database_app_with_grant(
+            registry.path(),
+            &path,
+            "Mega position benchmark",
+            super::super::full_database_operations(),
+        );
+        mount_progress_test_events(&app);
+        let state = app.state::<AppState>();
+        if !get_index_path(&path).exists() {
+            let start = Instant::now();
+            load_search_index(
+                &state.pgn_path_authority,
+                &state.database_repository,
+                &state.search_cache,
+                &handle,
+            )
+            .unwrap();
+            println!("Mega sidecar generation and initial validation: {:?}. Run again in a fresh process for timings.", start.elapsed());
+            return;
+        }
+        let mut query = exact_position_query(STARTING_FEN);
+        query.player1 = Some(411646);
+        query.include_unknown_results = Some(true);
+        query.sample_order = Some(super::super::SampleOrder::Date);
+        let mut first = None;
+        for iteration in 0..2 {
+            // Keep the mapping warm while forcing a real filtered scan on the
+            // second call, instead of measuring only a cached result clone.
+            if iteration == 1 {
+                *state.search_cache.results.lock().unwrap() = Default::default();
+            }
+            let start = Instant::now();
+            let result = run_position_search(
+                &app,
+                &handle,
+                query.clone(),
+                &format!("mega-position-{iteration}"),
+            )
+            .unwrap();
+            let elapsed = start.elapsed();
+            println!("Mega player1=411646 exact start position iteration={iteration}: {elapsed:?}, games={}, moves={}", result.1.len(), result.0.len());
+            assert!(!result.1.is_empty());
+            let mut stats = result.0.clone();
+            stats.sort_by(|a, b| a.move_.cmp(&b.move_));
+            let value = serde_json::to_value((stats, result.1)).unwrap();
+            if let Some(first) = &first {
+                assert_eq!(first, &value);
+            } else {
+                first = Some(value);
+            }
+            assert!(elapsed < std::time::Duration::from_secs(if iteration == 0 { 10 } else { 2 }));
+        }
+    }
+
     fn insert_white_win_e4_e5(connection: &mut SqliteConnection) -> i32 {
         insert_e4_e5_game(
             connection,
@@ -4050,6 +4246,64 @@ mod tests {
         fn drop(&mut self) {
             SEARCH_POSITION_INSTRUMENT.set(false);
         }
+    }
+
+    #[test]
+    fn metadata_filters_skip_move_stream_work() {
+        let (_dir, app, handle, database) = filter_search_database(&[]);
+        let mut db = SqliteConnection::establish(database.to_str().unwrap()).unwrap();
+        diesel::update(events::table.filter(events::name.eq("Candidates")))
+            .set(events::name.eq("Candidates Blitz"))
+            .execute(&mut db)
+            .unwrap();
+        // Fully validate before measuring the search loop alone.
+        let state = app.state::<AppState>();
+        load_search_index(
+            &state.pgn_path_authority,
+            &state.database_repository,
+            &state.search_cache,
+            &handle,
+        )
+        .unwrap();
+        let _instrument = SearchInstrument::start();
+        let mut queries = Vec::new();
+        let base = exact_position_query(STARTING_FEN);
+        let mut white = base.clone();
+        white.player1 = Some(-1);
+        queries.push(white);
+        let mut black = base.clone();
+        black.player2 = Some(-1);
+        queries.push(black);
+        let mut result = base.clone();
+        result.wanted_result = Some("blackwon".into());
+        queries.push(result);
+        let mut date = base.clone();
+        date.start_date = Some("2030.01.01".into());
+        queries.push(date);
+        let mut elo = base.clone();
+        elo.range1 = Some((1, 100));
+        queries.push(elo);
+        let mut black_elo = base.clone();
+        black_elo.range2 = Some((1, 100));
+        queries.push(black_elo);
+        let mut fast = base.clone();
+        fast.exclude_fast_events = Some(true);
+        queries.push(fast);
+        for (i, query) in queries.into_iter().enumerate() {
+            // A malformed sentinel makes any premature stream validation fail.
+            // The same sentinel must fail replay for a metadata candidate below.
+            SEARCH_ENTRY_MOVES_OVERRIDE.set(Some(&[252, 1]));
+            let result =
+                run_position_search(&app, &handle, query, &format!("skip-stream-{i}")).unwrap();
+            assert!(result.0.is_empty());
+            assert!(result.1.is_empty());
+        }
+        assert_eq!(PROCESS_ENTRY_CALLS.load(Ordering::SeqCst), 7);
+        SEARCH_ENTRY_MOVES_OVERRIDE.set(Some(&[252, 1]));
+        assert!(matches!(
+            run_position_search(&app, &handle, base, "candidate-stream"),
+            Err(Error::InvalidInput(message)) if message.contains("invalid move stream")
+        ));
     }
 
     #[test]
