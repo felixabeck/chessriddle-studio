@@ -12257,3 +12257,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Layers are the only mechanism that removes emission order from the cascade for every app rule, and they are Mantine's documented answer to code-split style order. Reversal path: revert the import change and the boundary rule in `scripts/check-ui-boundaries.mjs`.
 * **Decided by:** Claude Code (Opus 5.5) next-finding drain, adopting the reviewed draft plan `tasks/plans/2026-11-07-mantine-css-layers.md`, full auto, 2026-11-07 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"7ea463edf4f55247b86351f369777d3122dc31b1c4c6589fda444b32973a2fb8","input_sha256":"0c98d3acc4e89e5a76727342f60e72d2201def648771f73304ca319b6b7a558f","kind":"mutation-receipt","operation":"681dd5cf67a31ab30dc9d1269b1118c3c26279854628b1e36643c99ee565e3ed","options":{"section":null},"request_id_sha256":null,"results":["d-20261107-06"],"target":"decisions-ledger","v":1} -->
+
+### d-20261107-07 — Does the Mantine layer order need an explicit `@layer` order statement?
+
+* **Question:** Is an explicit `@layer mantine, mantine-contextmenu, mantine-datatable;` statement needed to fix the relative order of the three package layers?
+* **Governs:** f-20261106-30
+* **Chosen:** No. All three layers are first declared by imports in the single module `src/App.tsx`, so chunking cannot split their relative order.
+* **Rejected:** An inline order statement in `index.html` (a second source of truth for the same order).
+* **Reason:** One module declares all three layers. Reversal path: add the statement if a layered Mantine import ever moves to a second module; the boundary guard keeps those imports visible.
+* **Decided by:** Claude Code (Opus 5.5) next-finding drain, full auto, 2026-11-07 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"639bd3988aa5ee2f765789d91123794f488baeaf774705152b41853d55c7f019","input_sha256":"d674a3b20d88f394db9646a54a46976c490bcde21ca5ca6b24cc41c458c6e0d3","kind":"mutation-receipt","operation":"67815f6c4567161de43c6a4869df5efe5541f582126869fb085f2387883282ae","options":{"section":null},"request_id_sha256":null,"results":["d-20261107-07"],"target":"decisions-ledger","v":1} -->
