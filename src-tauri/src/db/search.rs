@@ -4354,6 +4354,48 @@ mod tests {
     }
 
     #[test]
+    fn date_sample_order_normalizes_partial_dates_before_cap() {
+        let (_dir, app, handle, database) = filter_search_database(&[]);
+        let mut db = SqliteConnection::establish(database.to_str().unwrap()).unwrap();
+        let (known_ids, newer_partial, older_partial) = db
+            .transaction::<_, Error, _>(|db| {
+                let mut known_ids = vec![games::table.select(games::id).first::<i32>(db)?];
+                for _ in 0..499 {
+                    known_ids.push(insert_white_win_e4_e5(db));
+                }
+                diesel::update(games::table)
+                    .set(games::date.eq("2020.12.31"))
+                    .execute(db)?;
+                let newer_partial = insert_white_win_e4_e5(db);
+                diesel::update(games::table.find(newer_partial))
+                    .set(games::date.eq("2021.??.??"))
+                    .execute(db)?;
+                let older_partial = insert_white_win_e4_e5(db);
+                diesel::update(games::table.find(older_partial))
+                    .set(games::date.eq("2020.??.??"))
+                    .execute(db)?;
+                Ok((known_ids, newer_partial, older_partial))
+            })
+            .unwrap();
+        let mut query = exact_position_query(STARTING_FEN);
+        query.sample_order = Some(super::super::SampleOrder::Date);
+        let result = run_position_search(&app, &handle, query, "sample-partial-cap").unwrap();
+        let retained_ids = result.1.iter().map(|game| game.id).collect::<Vec<_>>();
+        assert_eq!(result.0[0].white, 502);
+        assert_eq!(retained_ids.len(), 500);
+        assert!(
+            !retained_ids.contains(&older_partial),
+            "2020.??.?? must rank below every 2020.12.31 game before the cap"
+        );
+        assert!(!retained_ids.contains(&known_ids[0]));
+        // Retain the newer partial date, followed by the 499 highest known-date
+        // IDs in descending order. The older partial date must not displace one.
+        let mut expected_ids = vec![newer_partial];
+        expected_ids.extend(known_ids.iter().rev().take(499).copied());
+        assert_eq!(retained_ids, expected_ids);
+    }
+
+    #[test]
     fn date_sample_order_normalizes_partial_dates_and_ties_unknown_dates_by_id() {
         let (_dir, app, handle, database) = filter_search_database(&[]);
         let mut db = SqliteConnection::establish(database.to_str().unwrap()).unwrap();
