@@ -790,6 +790,19 @@ describe("bundled default catalogs", () => {
 });
 
 describe("searchPosition query mapping", () => {
+    it("forwards optional result and sample options without changing defaults", async () => {
+        const defaults = await sentQuery(localOptions());
+        expect(defaults).not.toHaveProperty("include_unknown_results");
+        expect(defaults).not.toHaveProperty("sample_order");
+        mocks.searchPosition.mockClear();
+        expect(
+            await sentQuery(localOptions({ include_unknown_results: true, sample_order: "date" })),
+        ).toMatchObject({ include_unknown_results: true, sample_order: "date" });
+        mocks.searchPosition.mockClear();
+        expect(
+            await sentQuery(localOptions({ include_unknown_results: false, sample_order: "elo" })),
+        ).toMatchObject({ include_unknown_results: false, sample_order: "elo" });
+    });
     const localOptions = (overrides: Partial<LocalOptions> = {}): LocalOptions => ({
         path: handle("local"),
         fen: "8/8/8/8/8/8/8/8 w - - 0 1",

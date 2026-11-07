@@ -124,6 +124,13 @@ function PlayerTable() {
             { accessor: "id", title: t("Common.Id"), sortable: true },
             { accessor: "name", title: t("Common.Name"), sortable: true },
             { accessor: "elo", title: t("Board.Database.Local.Elo"), sortable: true },
+            {
+              accessor: "game_count",
+              title: t("Board.Database.Games"),
+              sortable: true,
+              textAlign: "right",
+              cellsStyle: () => ({ fontVariantNumeric: "tabular-nums" }),
+            },
           ]}
           rowClassName={(r) => (r.id === selectedPlayer ? classes.selected : "")}
           noRecordsText={
@@ -150,7 +157,8 @@ function PlayerTable() {
             })
           }
           sortStatus={{
-            columnAccessor: query.options?.sort || "name",
+            columnAccessor:
+              query.options?.sort === "games" ? "game_count" : query.options?.sort || "name",
             direction: query.options?.direction || "desc",
           }}
           onSortStatusChange={(value) =>
@@ -158,7 +166,10 @@ function PlayerTable() {
               ...query,
               options: {
                 ...query.options!,
-                sort: value.columnAccessor as PlayerSort,
+                sort:
+                  value.columnAccessor === "game_count"
+                    ? "games"
+                    : (value.columnAccessor as PlayerSort),
                 direction: value.direction,
               },
             })

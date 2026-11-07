@@ -16,7 +16,6 @@ import {
     type PuzzleDatabaseInfo,
     type QueryResponse,
 } from "@/bindings";
-import type { LocalOptions } from "@/components/panels/database/DatabasePanel";
 import { capabilityKey } from "@/utils/pathCapabilities";
 import { collectSequential } from "@/utils/collectSequential";
 import { loadSignedCatalog } from "@/utils/signedCatalog";
@@ -396,7 +395,25 @@ export interface Opening {
     white: number;
     black: number;
     draw: number;
+    unknown?: number;
 }
+
+export type LocalOptions = {
+    path: DatabaseHandle | null;
+    fen: string;
+    type: "exact" | "partial";
+    player: number | null;
+    color: "white" | "black";
+    start_date?: string;
+    end_date?: string;
+    result: "any" | "whitewon" | "draw" | "blackwon";
+    /** Elo band both players must satisfy, with the full band meaning no filter. */
+    elo?: [number, number];
+    /** Drop games whose event name contains blitz, bullet, or armageddon. */
+    exclude_fast_events?: boolean;
+    include_unknown_results?: boolean;
+    sample_order?: NonNullable<GameQuery["sample_order"]>;
+};
 
 export async function getTournamentGames(file: DatabaseHandle, id: number, signal?: AbortSignal) {
     return await query_games(
@@ -430,6 +447,10 @@ export async function searchPosition(options: LocalOptions, tab: string, signal?
             ...(options.result !== "any" ? { wanted_result: options.result } : {}),
             ...(elo ? { range1: elo, range2: elo } : {}),
             ...(options.exclude_fast_events ? { exclude_fast_events: true } : {}),
+            ...(options.include_unknown_results !== undefined
+                ? { include_unknown_results: options.include_unknown_results }
+                : {}),
+            ...(options.sample_order !== undefined ? { sample_order: options.sample_order } : {}),
         },
         tab,
         { signal },

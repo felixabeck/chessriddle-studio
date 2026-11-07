@@ -16,7 +16,7 @@ import type {
     PathRef,
 } from "@/bindings";
 import type { OpponentSettings } from "@/state/opponentSettings";
-import type { LocalOptions } from "@/components/panels/database/DatabasePanel";
+import type { LocalOptions } from "@/utils/db";
 import { analysisSearch } from "@/components/panels/analysis/analysisSearch";
 import { AnalysisLineMemory } from "@/components/panels/analysis/analysisLineMemory";
 import type { SuccessDatabaseInfo } from "@/utils/db";
@@ -1043,6 +1043,10 @@ export const localOptionsFamily = atomFamily((_tab: string) =>
     }),
 );
 
+export const pinnedExplorerDatabaseFamily = atomFamily((_tab: string) =>
+    atom<DatabaseHandle | null>(null),
+);
+
 export const lichessOptionsAtom = documentPreferences.atomWithStorage<LichessGamesOptions>(
     "lichess-all-options",
     {
@@ -1400,6 +1404,7 @@ export function disposeTabAtoms(tabId: string) {
         tabFamily,
         reportModalOpenFamily,
         localOptionsFamily,
+        pinnedExplorerDatabaseFamily,
         dbTypeFamily,
         dbTabFamily,
         analysisTabFamily,

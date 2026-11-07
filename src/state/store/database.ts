@@ -196,7 +196,7 @@ const persistedPlayersSchema: z.ZodType<DatabaseViewStore["players"], z.ZodTypeD
         activeTab: z.enum(["overview", "ratings", "openings"]),
         selectedPlayer: queryIntegerSchema.nullish().transform((value) => value ?? undefined),
         query: z.object({
-            options: createQueryOptionsSchema(["id", "name", "elo"]),
+            options: createQueryOptionsSchema(["id", "name", "elo", "games"]),
             name: z.string().nullish(),
             range: queryRangeSchema,
         }),

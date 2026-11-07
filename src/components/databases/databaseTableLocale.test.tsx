@@ -28,7 +28,7 @@ vi.mock("swr", async (original) => ({
         : key[0] === "games"
           ? [game]
           : key[0] === "players"
-            ? [{ id: 1, name: "Alice", elo: 1800 }]
+            ? [{ id: 1, name: "Alice", elo: 1800, game_count: 15 }]
             : [{ id: 1, name: "Fixture" }],
       count: mocks.empty ? 0 : 1,
     },
@@ -192,7 +192,10 @@ test("TournamentCard renders German game headers and leaves the actions header e
 
 test("PlayerTable renders translated column titles", async () => {
   await render(<PlayerTable />);
-  expect(headers()).toEqual(["ID", "Name", "Elo"]);
+  expect(headers()).toEqual(["ID", "Name", "Elo", "Spiele"]);
+  const count = host.querySelectorAll<HTMLElement>("tbody td")[3];
+  expect(count.textContent).toBe("15");
+  expect(count.style.fontVariantNumeric).toBe("tabular-nums");
 });
 
 test("TournamentTable renders translated column titles", async () => {

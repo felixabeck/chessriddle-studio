@@ -15,6 +15,7 @@ import {
   tabsAtom,
   activeTabAtom,
   localOptionsFamily,
+  pinnedExplorerDatabaseFamily,
   referenceDbAtom,
 } from "@/state/atoms";
 import type { DatabaseHandle } from "@/bindings";
@@ -505,10 +506,11 @@ describe("DatabasePanel", () => {
     },
   );
 
-  async function mountLocal() {
+  async function mountLocal(pin?: DatabaseHandle) {
     const store = createJotaiStore();
     store.set(tabsAtom, [validTab]);
     store.set(activeTabAtom, tabId);
+    if (pin) store.set(pinnedExplorerDatabaseFamily(tabId), pin);
     store.set(dbTypeFamily(tabId), "local");
     store.set(dbTabFamily(tabId), "stats");
     // Hydrate the real persisted atom and seed an unrelated old per-tab search path.
@@ -587,6 +589,32 @@ describe("DatabasePanel", () => {
     );
     expect(container.textContent).not.toContain("Board.Database.NoReference1");
     expect(store.get(localOptionsFamily(tabId)).path).toEqual(reference);
+    expectSavedChoice(store);
+  });
+
+  test("local: a per-tab pin selects and searches its database while preserving the global reference", async () => {
+    mocks.getDatabases.mockResolvedValue(
+      databaseList([readable, { ...readable, file: stalePath, title: "Pinned database" }]),
+    );
+    const { store } = await mountLocal(stalePath);
+    expect(mocks.searchPosition).toHaveBeenCalled();
+    for (const call of mocks.searchPosition.mock.calls) expect(call[0]).toEqual(stalePath);
+    expect(container.querySelector<HTMLInputElement>(".mantine-Select-input")?.value).toBe(
+      "Pinned database",
+    );
+    expect(store.get(localOptionsFamily(tabId)).path).toEqual(stalePath);
+    expectSavedChoice(store);
+    await act(async () => store.set(pinnedExplorerDatabaseFamily(tabId), null));
+    expect(mocks.searchPosition.mock.lastCall?.[0]).toEqual(reference);
+    expectSavedChoice(store);
+  });
+
+  test("local: an unavailable pin never falls back to the global reference", async () => {
+    mocks.getDatabases.mockResolvedValue(databaseList([readable]));
+    const { store } = await mountLocal(stalePath);
+    expect(mocks.searchPosition).not.toHaveBeenCalled();
+    expectNoReference();
+    expect(store.get(pinnedExplorerDatabaseFamily(tabId))).toEqual(stalePath);
     expectSavedChoice(store);
   });
 

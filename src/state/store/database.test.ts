@@ -46,6 +46,23 @@ async function hydrate(state?: unknown) {
 }
 
 describe("database-view sessionStorage hydration", () => {
+    it("round trips the games player sort through validated session storage", async () => {
+        const store = await hydrate({ database: selectedDatabase });
+        store.getState().setPlayersQuery({
+            ...store.getState().players.query,
+            options: {
+                ...store.getState().players.query.options,
+                sort: "games",
+                direction: "asc",
+            },
+        });
+        const persisted = sessionStorage.getItem("database-view")!;
+        const next = await hydrate();
+        sessionStorage.setItem("database-view", persisted);
+        await next.persist.rehydrate();
+        expect(next.getState().players.query.options.sort).toBe("games");
+        expect(next.getState().players.query.options.direction).toBe("asc");
+    });
     it("retains legacy numeric selection identity while displaying fresh exact listing metadata", async () => {
         const store = await hydrate({ database: selectedDatabase });
         expect(store.getState().database).toEqual(selectedDatabase);

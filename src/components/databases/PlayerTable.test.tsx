@@ -39,11 +39,50 @@ vi.mock("@mantine/core", () => {
     },
   };
 });
-vi.mock("mantine-datatable", () => ({ DataTable: () => null }));
+vi.mock("mantine-datatable", () => ({
+  DataTable: ({
+    records,
+    columns,
+    onSortStatusChange,
+  }: {
+    records: import("@/bindings").Player[];
+    columns: { accessor: string; title: string }[];
+    onSortStatusChange: (value: { columnAccessor: string; direction: "desc" }) => void;
+  }) => (
+    <table>
+      <thead>
+        <tr>
+          {columns.map((column) => (
+            <th
+              key={column.accessor}
+              onClick={() =>
+                onSortStatusChange({ columnAccessor: column.accessor, direction: "desc" })
+              }
+            >
+              {column.title}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {records.map((record) => (
+          <tr key={record.id}>
+            <td>{record.game_count}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  ),
+}));
 vi.mock("@/components/common/IconAction", () => ({ IconAction: () => null }));
 vi.mock("./PlayerCard", () => ({ default: () => null }));
 vi.mock("./GridLayout", () => ({
-  default: ({ search }: { search: ReactNode }) => <div>{search}</div>,
+  default: ({ search, table }: { search: ReactNode; table: ReactNode }) => (
+    <div>
+      {search}
+      {table}
+    </div>
+  ),
 }));
 
 const file = { id: { id: "elo-database" }, kind: "database" } as const;
@@ -100,6 +139,34 @@ test("max Elo preserves numeric zero and an empty max restores the omitted full 
   expect(mocks.getPlayers).toHaveBeenLastCalledWith(
     file,
     expect.objectContaining({ range: undefined }),
+    { signal: expect.any(AbortSignal) },
+  );
+});
+
+test("Games header requests the games sort and renders the native player counts", async () => {
+  mocks.getPlayers.mockResolvedValue({
+    data: [{ id: 1, name: "Player", elo: 2200, game_count: 1234 }],
+    count: 1,
+  });
+  await act(async () =>
+    root.render(
+      <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false }}>
+        <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
+          <PlayerTable />
+        </DatabaseViewStateContext.Provider>
+      </SWRConfig>,
+    ),
+  );
+  expect(container.querySelector("tbody")?.textContent).toBe("1234");
+  const gamesHeader = Array.from(container.querySelectorAll("th")).find(
+    (header) => header.textContent === "Board.Database.Games",
+  )!;
+  await act(async () => gamesHeader.click());
+  expect(mocks.getPlayers).toHaveBeenLastCalledWith(
+    file,
+    expect.objectContaining({
+      options: expect.objectContaining({ sort: "games", direction: "desc", page: 1 }),
+    }),
     { signal: expect.any(AbortSignal) },
   );
 });

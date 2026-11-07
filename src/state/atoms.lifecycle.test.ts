@@ -13,6 +13,7 @@ import {
     engineProgressFamily,
     gameIdFamily,
     pendingGameStartFamily,
+    pinnedExplorerDatabaseFamily,
     tabsAtom,
     tabEngineSettingsFamily,
     tabFamily,
@@ -1200,6 +1201,7 @@ test("closing a tab removes all cached tab and per-engine atom-family entries", 
     const tabId = "closing-tab";
     const store = getDefaultStore();
     store.set(tabFamily(tabId), "practice");
+    store.set(pinnedExplorerDatabaseFamily(tabId), { id: { id: "pinned" }, kind: "database" });
     store.set(gameIdFamily(tabId), "native-game");
     store.set(pendingGameStartFamily(tabId), Promise.resolve());
     store.set(engineMovesFamily({ tab: tabId, engine: "engine" }), new Map());
@@ -1217,6 +1219,9 @@ test("closing a tab removes all cached tab and per-engine atom-family entries", 
     disposeTabAtoms(tabId);
 
     expect([...tabFamily.getParams()]).not.toContain(tabId);
+    expect([...pinnedExplorerDatabaseFamily.getParams()]).not.toContain(tabId);
+    expect(store.get(pinnedExplorerDatabaseFamily(tabId))).toBeNull();
+    pinnedExplorerDatabaseFamily.remove(tabId);
     expect([...gameIdFamily.getParams()]).not.toContain(tabId);
     expect([...pendingGameStartFamily.getParams()]).not.toContain(tabId);
     expect([...engineMovesFamily.getParams()]).not.toContainEqual({ tab: tabId, engine: "engine" });
@@ -1401,6 +1406,8 @@ test("preserves close resources on envelope failure and reclaims them on retry",
     pendingTree.headers.event = "Latest pending edit";
     tabStorage.write(tabId, { version: 1, state: pendingTree });
     store.set(tabFamily(tabId), "practice");
+    const pin = { id: { id: "pinned" }, kind: "database" } as const;
+    store.set(pinnedExplorerDatabaseFamily(tabId), pin);
     expect(store.set(tabsAtom, [tab], tabId)).toBe(true);
     const setItem = refuseWorkspaceWrites();
 
@@ -1411,6 +1418,7 @@ test("preserves close resources on envelope failure and reclaims them on retry",
     );
     expect(tabStorage.pendingCount()).toBe(1);
     expect([...tabFamily.getParams()]).toContain(tabId);
+    expect(store.get(pinnedExplorerDatabaseFamily(tabId))).toEqual(pin);
 
     setItem.mockRestore();
     expect(store.set(closeWorkspaceTabAtom, tabId)).toBe(true);
@@ -1419,6 +1427,7 @@ test("preserves close resources on envelope failure and reclaims them on retry",
     expect(tabStorage.pendingCount()).toBe(0);
     expect(sessionStorage.getItem(tabId)).toBeNull();
     expect([...tabFamily.getParams()]).not.toContain(tabId);
+    expect([...pinnedExplorerDatabaseFamily.getParams()]).not.toContain(tabId);
 });
 
 test("keeps committed close metadata and attempts atom cleanup when tree removal fails", () => {

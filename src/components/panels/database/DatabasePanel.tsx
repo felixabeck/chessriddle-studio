@@ -20,18 +20,24 @@ import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { useDatabaseList } from "@/hooks/useDatabaseList";
 import { match } from "ts-pattern";
 import { useStore } from "zustand";
-import { type DatabaseHandle, type NormalizedGame } from "@/bindings";
+import { type NormalizedGame } from "@/bindings";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import {
   dbTabFamily,
   dbTypeFamily,
   localOptionsFamily,
+  pinnedExplorerDatabaseFamily,
   lichessOptionsAtom,
   masterOptionsAtom,
   referenceDbAtom,
   sessionsAtom,
 } from "@/state/atoms";
-import { databaseHandleFromKey, databaseHandleKey, type Opening, searchPosition } from "@/utils/db";
+import {
+  databaseHandleFromKey,
+  databaseHandleKey,
+  type Opening,
+  type LocalOptions,
+} from "@/utils/db";
 import { formatNumber } from "@/utils/format";
 import {
   convertToNormalized,
@@ -48,6 +54,9 @@ import LichessOptionsPanel from "./options/LichessOptionsPanel";
 import LocalOptionsPanel from "./options/LocalOptionsPanel";
 import { useCollectionCurrency } from "@/state/linkedCollections";
 import MasterOptionsPanel from "./options/MastersOptionsPanel";
+import { fetchLocalOpening, useLocalExplorer } from "./useLocalExplorer";
+
+export type { LocalOptions } from "@/utils/db";
 
 export type DBType =
   | { type: "local"; options: LocalOptions }
@@ -63,25 +72,6 @@ export type DBType =
       fen: string;
       handle: string;
     };
-
-export type LocalOptions = {
-  path: DatabaseHandle | null;
-  fen: string;
-  type: "exact" | "partial";
-  player: number | null;
-  color: "white" | "black";
-  start_date?: string;
-  end_date?: string;
-  result: "any" | "whitewon" | "draw" | "blackwon";
-  /** Elo band both players must satisfy; `[0, ELO_FILTER_MAX]` or absent means no filter. */
-  elo?: [number, number];
-  /** Drop games whose event name contains blitz, bullet, or armageddon. */
-  exclude_fast_events?: boolean;
-};
-
-function sortOpenings(openings: Opening[]) {
-  return openings.sort((a, b) => b.black + b.draw + b.white - (a.black + a.draw + a.white));
-}
 
 type OpeningData = {
   openings: Opening[];
@@ -125,14 +115,7 @@ export async function fetchOpening(
     .with({ type: "lch_master" }, async ({ fen, options, handle }) =>
       fetchOnlineOpening(getMasterGames, fen, options, handle, signal),
     )
-    .with({ type: "local" }, async ({ options }) => {
-      if (!options.path) throw Error("Missing reference database");
-      const positionData = await searchPosition(options, tab, signal);
-      return {
-        openings: sortOpenings(positionData[0]),
-        games: positionData[1],
-      };
-    })
+    .with({ type: "local" }, ({ options }) => fetchLocalOpening(options, tab, signal))
     .exhaustive();
 }
 
@@ -142,16 +125,24 @@ function DatabasePanel() {
   const store = useContext(TreeStateContext)!;
   const fen = useStore(store, (s) => s.currentNode().fen);
   const [referenceDatabase, setReferenceDatabase] = useAtom(referenceDbAtom);
-  const currency = useCollectionCurrency(referenceDatabase);
+  const [pinnedDatabase, setPinnedDatabase] = useAtom(useTabAtom(pinnedExplorerDatabaseFamily));
+  const selectedDatabase = pinnedDatabase ?? referenceDatabase;
+  const currency = useCollectionCurrency(selectedDatabase);
   useEffect(() => {
     const current = currency.collection?.database;
     if (
       current &&
-      referenceDatabase &&
-      databaseHandleKey(current) !== databaseHandleKey(referenceDatabase)
+      selectedDatabase &&
+      databaseHandleKey(current) !== databaseHandleKey(selectedDatabase)
     )
-      setReferenceDatabase(current);
-  }, [currency.collection?.database, referenceDatabase, setReferenceDatabase]);
+      (pinnedDatabase ? setPinnedDatabase : setReferenceDatabase)(current);
+  }, [
+    currency.collection?.database,
+    selectedDatabase,
+    pinnedDatabase,
+    setPinnedDatabase,
+    setReferenceDatabase,
+  ]);
   const sessions = useAtomValue(sessionsAtom);
   const [debouncedFen] = useDebouncedValue(fen, 50);
   const [lichessOptions, setLichessOptions] = useAtom(lichessOptionsAtom);
@@ -168,7 +159,7 @@ function DatabasePanel() {
     : (databases?.databases ?? []).filter((d) => d.type === "success");
   const effectiveReferenceDatabase = databaseHandleFromKey(
     readableDatabases,
-    referenceDatabase ? databaseHandleKey(referenceDatabase) : null,
+    selectedDatabase ? databaseHandleKey(selectedDatabase) : null,
   );
   const dbSelectData = readableDatabases.map((d) => ({
     value: databaseHandleKey(d.file),
@@ -211,14 +202,13 @@ function DatabasePanel() {
 
   const [tab] = useOwnerTab();
   const [tabType, setTabType] = useAtom(useTabAtom(dbTabFamily));
-  const collectionUnavailable =
-    db === "local" &&
-    (!!currency.error || (!!currency.collection && currency.collection.status !== "ready"));
+  const localExplorer = useLocalExplorer(
+    { ...localOptions, path: effectiveReferenceDatabase },
+    db === "local" && tabType !== "options",
+    tab?.value || "",
+  );
   const openingKey =
-    tabType !== "options" &&
-    !missingExplorerAuthentication &&
-    !collectionUnavailable &&
-    (db !== "local" || !!effectiveReferenceDatabase)
+    tabType !== "options" && !missingExplorerAuthentication && db !== "local"
       ? currency.collection
         ? ([dbType, currency.collection.generation] as const)
         : dbType
@@ -226,20 +216,15 @@ function DatabasePanel() {
   const openingOwner = useNativeRequestOwner(openingKey);
 
   const {
-    data: openingData,
-    isLoading,
+    data: onlineData,
+    isLoading: onlineLoading,
     error: openingError,
   } = useSWR(openingKey, () =>
     openingOwner!.run((signal) => fetchOpening(dbType, tab?.value || "", signal)),
   );
-  const error = collectionUnavailable
-    ? new Error(
-        t("Collections.Unavailable", {
-          defaultValue:
-            "The search index is unavailable. Retry, or select the collection's source file again.",
-        }),
-      )
-    : openingError;
+  const openingData: OpeningData | undefined = db === "local" ? localExplorer : onlineData;
+  const isLoading = db === "local" ? localExplorer.loading : onlineLoading;
+  const error = db === "local" ? localExplorer.error : openingError;
 
   const grandTotal = openingData?.openings?.reduce(
     (acc, curr) => acc + curr.black + curr.white + curr.draw,
@@ -276,7 +261,9 @@ function DatabasePanel() {
               value={selectedReferenceDatabase}
               onChange={async (value) => {
                 await tauri.clearGames();
-                setReferenceDatabase(databaseHandleFromKey(readableDatabases, value));
+                (pinnedDatabase ? setPinnedDatabase : setReferenceDatabase)(
+                  databaseHandleFromKey(readableDatabases, value),
+                );
               }}
               placeholder={t("Board.Database.SelectReference")}
               size="sm"
@@ -295,7 +282,10 @@ function DatabasePanel() {
           </Text>
         )}
       </Group>
-      <DatabaseLoader isLoading={isLoading} tab={tab?.value ?? null} />
+      <DatabaseLoader
+        isLoading={isLoading}
+        tab={db === "local" ? localExplorer.progressId : (tab?.value ?? null)}
+      />
     </>
   );
 
