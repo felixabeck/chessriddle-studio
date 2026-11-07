@@ -3,7 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { SWRConfig, type Cache } from "swr";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { PositionStats } from "@/bindings";
-import type { LocalOptions } from "@/utils/db";
+import { databaseHandleKey, type LocalOptions } from "@/utils/db";
 import { useLocalExplorer } from "./useLocalExplorer";
 
 const mocks = vi.hoisted(() => ({ searchPosition: vi.fn(), generation: 1, unavailable: false }));
@@ -20,6 +20,7 @@ const options: LocalOptions = {
   fen: "start",
   type: "exact",
   player: 42,
+  player_database: databaseHandleKey({ id: { id: "database" }, kind: "database" }),
   color: "white",
   result: "any",
   include_unknown_results: true,

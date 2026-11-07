@@ -417,6 +417,15 @@ export type LocalOptions = {
     sample_order?: NonNullable<GameQuery["sample_order"]>;
 };
 
+export function getEffectiveLocalPlayer(
+    options: Pick<LocalOptions, "player" | "player_database">,
+    database: DatabaseHandle | null,
+): number | null {
+    return database && options.player_database === databaseHandleKey(database)
+        ? options.player
+        : null;
+}
+
 export async function getTournamentGames(file: DatabaseHandle, id: number, signal?: AbortSignal) {
     return await query_games(
         file,
@@ -435,11 +444,12 @@ export async function getTournamentGames(file: DatabaseHandle, id: number, signa
 export async function searchPosition(options: LocalOptions, tab: string, signal?: AbortSignal) {
     // One band applied to both colours: position search bounds White by range1, Black by range2.
     const elo = normalizeRange(options.elo);
+    const player = getEffectiveLocalPlayer(options, options.path);
     return await tauri.searchPosition(
         options.path!,
         {
-            player1: options.color === "white" ? options.player : undefined,
-            player2: options.color === "black" ? options.player : undefined,
+            player1: options.color === "white" ? player : undefined,
+            player2: options.color === "black" ? player : undefined,
             position: {
                 fen: options.fen,
                 type_: options.type,

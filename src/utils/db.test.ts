@@ -42,6 +42,7 @@ import {
     ELO_FILTER_MAX,
     databaseHandleFromKey,
     databaseHandleKey,
+    getEffectiveLocalPlayer,
     defaultDatabaseProgressId,
     defaultPuzzleDatabaseProgressId,
     getDefaultDatabases,
@@ -790,6 +791,29 @@ describe("bundled default catalogs", () => {
 });
 
 describe("searchPosition query mapping", () => {
+    it.each(["white", "black"] as const)(
+        "%s player filters require matching ownership, including equivalent handles",
+        async (color) => {
+            const owner = databaseHandleKey(handle("local"));
+            for (const [playerDatabase, expected] of [
+                [owner, 42],
+                [databaseHandleKey(handle("other")), null],
+                [undefined, null],
+            ] as const) {
+                mocks.searchPosition.mockClear();
+                const options = localOptions({
+                    player: 42,
+                    player_database: playerDatabase,
+                    color,
+                });
+                expect(getEffectiveLocalPlayer(options, handle("local"))).toBe(expected);
+                expect(getEffectiveLocalPlayer(options, null)).toBeNull();
+                const query = await sentQuery(options);
+                expect(query.player1 ?? null).toBe(color === "white" ? expected : null);
+                expect(query.player2 ?? null).toBe(color === "black" ? expected : null);
+            }
+        },
+    );
     it("forwards optional result and sample options without changing defaults", async () => {
         const defaults = await sentQuery(localOptions());
         expect(defaults).not.toHaveProperty("include_unknown_results");

@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   notify: vi.fn(),
   createTab: vi.fn(),
   openGame: vi.fn(),
+  getPlayer: vi.fn(),
 }));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => mocks.navigate, Link: () => null }));
 vi.mock("@/components/files/notifyError", () => ({ notifyUnlessCancelled: mocks.notify }));
@@ -43,7 +44,10 @@ vi.mock("@/utils/tabs", async (original) => {
 vi.mock("@/utils/databaseGame", () => ({ openDatabaseGame: mocks.openGame }));
 vi.mock("@/platform/tauri", async (original) => {
   const actual = await original<typeof import("@/platform/tauri")>();
-  return { ...actual, tauri: { ...actual.tauri, searchPosition: mocks.searchPosition } };
+  return {
+    ...actual,
+    tauri: { ...actual.tauri, searchPosition: mocks.searchPosition, getPlayer: mocks.getPlayer },
+  };
 });
 vi.mock("@/state/linkedCollections", () => ({
   useCollectionCurrency: () => ({ collection: null }),
@@ -130,6 +134,7 @@ beforeEach(async () => {
   const actual = await vi.importActual<typeof import("@/utils/tabs")>("@/utils/tabs");
   mocks.createTab.mockImplementation(actual.createTab);
   mocks.openGame.mockResolvedValue("opened-game");
+  mocks.getPlayer.mockReset().mockResolvedValue(player);
   const i18n = await catalogueI18n("en-US");
   translate = (key, options) => i18n.t(key, options);
   localStorage.clear();
@@ -332,6 +337,15 @@ test("Prepare admits the mainline and orientation, presets before navigation, th
   );
   expect(mocks.searchPosition.mock.lastCall?.[1]).not.toHaveProperty("include_unknown_results");
   expect(mocks.searchPosition.mock.lastCall?.[1]).not.toHaveProperty("sample_order");
+  await act(async () => store.set(dbTabFamily(tab.value), "options"));
+  expect(container.querySelector<HTMLInputElement>(".mantine-Autocomplete-input")?.value).toBe(
+    player.name,
+  );
+  expect(mocks.getPlayer).toHaveBeenCalledWith(file, 42);
+  for (const [database, id] of mocks.getPlayer.mock.calls) {
+    expect(database).toEqual(file);
+    expect(id).toBe(42);
+  }
   expect(store.get(referenceDbAtom)).toEqual(reference);
   expect(JSON.parse(localStorage.getItem("reference-database")!)).toEqual(reference);
 });

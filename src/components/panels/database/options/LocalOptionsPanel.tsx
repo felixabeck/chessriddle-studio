@@ -22,14 +22,22 @@ import { Chessground } from "@/chessground/Chessground";
 import PiecesGrid from "@/components/boards/PiecesGrid";
 import { PlayerSearchInput } from "@/components/databases/PlayerSearchInput";
 import { localOptionsFamily } from "@/state/atoms";
-import { databaseHandleKey, ELO_FILTER_MAX } from "@/utils/db";
+import type { DatabaseHandle } from "@/bindings";
+import { databaseHandleKey, ELO_FILTER_MAX, getEffectiveLocalPlayer } from "@/utils/db";
 
 const YEAR_PRESETS = [1, 3, 5, 10];
 
-function LocalOptionsPanel({ boardFen }: { boardFen: string }) {
+function LocalOptionsPanel({
+  boardFen,
+  database,
+}: {
+  boardFen: string;
+  database: DatabaseHandle | null;
+}) {
   const { t } = useTranslation();
   const boardRef = useRef(null);
   const [options, setOptions] = useAtom(useTabAtom(localOptionsFamily));
+  const databaseKey = database ? databaseHandleKey(database) : undefined;
 
   const setSimilarStructure = async (fen: string) => {
     const setup = parseFen(fen).unwrap();
@@ -50,17 +58,17 @@ function LocalOptionsPanel({ boardFen }: { boardFen: string }) {
           <Text fw="bold" fz="sm">
             {t("Board.Database.Local.Player")}
           </Text>
-          {options.path && (
+          {database && (
             <PlayerSearchInput
+              key={databaseKey}
               label={t("Common.Search")}
-              value={options.player ?? undefined}
-              file={options.path}
+              value={getEffectiveLocalPlayer(options, database) ?? undefined}
+              file={database}
               setValue={(v) =>
                 setOptions((q) => ({
                   ...q,
                   player: v ?? null,
-                  player_database:
-                    v !== undefined && options.path ? databaseHandleKey(options.path) : undefined,
+                  player_database: v !== undefined ? databaseKey : undefined,
                 }))
               }
             />

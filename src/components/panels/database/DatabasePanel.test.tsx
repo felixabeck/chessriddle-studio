@@ -36,6 +36,7 @@ const mocks = vi.hoisted(() => ({
   searchPosition: vi.fn(),
   collectionForDatabase: vi.fn(),
   clearGames: vi.fn(),
+  getPlayer: vi.fn(),
 }));
 
 vi.mock("react-i18next", () => ({
@@ -91,9 +92,13 @@ vi.mock("@/platform/tauri", async () => {
       searchPosition: mocks.searchPosition,
       collectionForDatabase: mocks.collectionForDatabase,
       clearGames: mocks.clearGames,
+      getPlayer: mocks.getPlayer,
     },
   };
 });
+
+vi.mock("@/chessground/Chessground", () => ({ Chessground: () => null }));
+vi.mock("@/components/boards/PiecesGrid", () => ({ default: () => null }));
 
 import DatabasePanel, { fetchOpening } from "./DatabasePanel";
 
@@ -159,6 +164,12 @@ describe("DatabasePanel", () => {
     mocks.searchPosition.mockReset().mockResolvedValue([[], []]);
     mocks.collectionForDatabase.mockReset().mockResolvedValue(null);
     mocks.clearGames.mockReset().mockResolvedValue(undefined);
+    mocks.getPlayer.mockReset().mockImplementation(async (file: DatabaseHandle, id: number) => ({
+      id,
+      name: `${file.id.id} player`,
+      elo: 2000,
+      game_count: 3,
+    }));
   });
 
   afterEach(async () => {
@@ -577,6 +588,11 @@ describe("DatabasePanel", () => {
     }).toEqual({ [value]: "" });
   }
 
+  async function showPlayerOptions(store: ReturnType<typeof createJotaiStore>, owner = tabId) {
+    await act(async () => store.set(dbTabFamily(owner), "options"));
+    return selectedPanel("options").querySelector<HTMLInputElement>(".mantine-Autocomplete-input");
+  }
+
   test("local: readable persisted handle searches with preserved filters and overrides stale tab path", async () => {
     mocks.getDatabases.mockResolvedValue(databaseList([readable]));
     const { store } = await mountLocal();
@@ -641,6 +657,8 @@ describe("DatabasePanel", () => {
       const nextDatabase = pinned ? reference : stalePath;
       expect(mocks.searchPosition.mock.lastCall?.[0]).toEqual(initialDatabase);
       expect(mocks.searchPosition.mock.lastCall?.[1].player1).toBe(42);
+      expect((await showPlayerOptions(store))?.value).toBe(`${initialDatabase.id.id} player`);
+      await act(async () => store.set(dbTabFamily(tabId), "stats"));
       mocks.searchPosition.mockClear();
 
       const selector =
@@ -663,11 +681,27 @@ describe("DatabasePanel", () => {
         expect(query.player1 ?? null).toBeNull();
         expect(query.player2 ?? null).toBeNull();
       }
+      expect((await showPlayerOptions(store))?.value).toBe("");
+      for (const [database, id] of mocks.getPlayer.mock.calls) {
+        expect(database).toEqual(initialDatabase);
+        expect(id).toBe(42);
+      }
       expect(store.get(pinnedExplorerDatabaseFamily(tabId))).toEqual(pinned ? nextDatabase : null);
       expect(store.get(referenceDbAtom)).toEqual(pinned ? reference : nextDatabase);
       expect(JSON.parse(localStorage.getItem("reference-database")!)).toEqual(
         pinned ? reference : nextDatabase,
       );
+      await act(async () =>
+        store.set(pinned ? pinnedExplorerDatabaseFamily(tabId) : referenceDbAtom, initialDatabase),
+      );
+      expect((await showPlayerOptions(store))?.value).toBe(`${initialDatabase.id.id} player`);
+      await act(async () => store.set(dbTabFamily(tabId), "stats"));
+      for (const [database, query] of mocks.searchPosition.mock.calls) {
+        const expectedPlayer =
+          databaseHandleKey(database) === databaseHandleKey(initialDatabase) ? 42 : null;
+        expect(query.player1 ?? null).toBe(expectedPlayer);
+        expect(query.player2 ?? null).toBeNull();
+      }
     },
   );
 
@@ -678,6 +712,8 @@ describe("DatabasePanel", () => {
     const { store, swrConfig } = await mountLocal(undefined, 42);
     expect(mocks.searchPosition.mock.lastCall?.[0]).toEqual(reference);
     expect(mocks.searchPosition.mock.lastCall?.[1].player1).toBe(42);
+    expect((await showPlayerOptions(store))?.value).toBe(`${reference.id.id} player`);
+    await act(async () => root.render(null));
 
     const secondTabId = "22222222-2222-4222-8222-222222222222";
     await act(async () => {
@@ -698,8 +734,12 @@ describe("DatabasePanel", () => {
     expect(store.get(referenceDbAtom)).toEqual(stalePath);
     expect(store.get(localOptionsFamily(tabId)).player).toBe(42);
     mocks.searchPosition.mockClear();
+    await act(async () => root.render(null));
 
-    await act(async () => store.set(activeTabAtom, tabId));
+    await act(async () => {
+      store.set(activeTabAtom, tabId);
+      store.set(dbTabFamily(tabId), "stats");
+    });
     await renderPanel(store, swrConfig);
     expect(mocks.searchPosition).toHaveBeenCalled();
     for (const [database, query, owner] of mocks.searchPosition.mock.calls) {
@@ -707,6 +747,11 @@ describe("DatabasePanel", () => {
       expect(database).toEqual(stalePath);
       expect(query.player1 ?? null).toBeNull();
       expect(query.player2 ?? null).toBeNull();
+    }
+    expect((await showPlayerOptions(store))?.value).toBe("");
+    for (const [database, id] of mocks.getPlayer.mock.calls) {
+      expect(database).toEqual(reference);
+      expect(id).toBe(42);
     }
     expect(store.get(localOptionsFamily(tabId)).player_database).toBe(databaseHandleKey(reference));
   });
@@ -722,7 +767,7 @@ describe("DatabasePanel", () => {
     expect(store.get(localOptionsFamily(tabId)).player_database).toBe(databaseHandleKey(reference));
   });
 
-  test("local: legacy player selections without an owner retain same-database behavior", async () => {
+  test("local: ownerless player selections are neither searched nor displayed", async () => {
     mocks.getDatabases.mockResolvedValue(databaseList([readable]));
     const { store } = await mountLocal(undefined, 42);
     await act(async () =>
@@ -732,7 +777,45 @@ describe("DatabasePanel", () => {
       })),
     );
     expect(mocks.searchPosition.mock.lastCall?.[0]).toEqual(reference);
-    expect(mocks.searchPosition.mock.lastCall?.[1].player1).toBe(42);
+    expect(mocks.searchPosition.mock.lastCall?.[1].player1 ?? null).toBeNull();
+    mocks.getPlayer.mockClear();
+    expect((await showPlayerOptions(store))?.value).toBe("");
+    expect(mocks.getPlayer).not.toHaveBeenCalled();
+  });
+
+  test("local: pending and unavailable database recovery preserves ownership and ignores a late lookup", async () => {
+    const listing = deferred<DatabaseList>();
+    const lookup = deferred<import("@/bindings").Player>();
+    mocks.getDatabases.mockReturnValueOnce(listing.promise);
+    mocks.getPlayer.mockReturnValueOnce(lookup.promise);
+    const { store, revalidate } = await mountLocal(undefined, 42);
+    expect(mocks.searchPosition).not.toHaveBeenCalled();
+    expect(await showPlayerOptions(store)).toBeNull();
+    expect(mocks.getPlayer).not.toHaveBeenCalled();
+    await act(async () => listing.resolve(databaseList([readable])));
+    expect(mocks.getPlayer).toHaveBeenCalledWith(reference, 42);
+
+    mocks.getDatabases.mockResolvedValue(databaseList([unreadable]));
+    await revalidate();
+    expect(await showPlayerOptions(store)).toBeNull();
+    await act(async () =>
+      lookup.resolve({ id: 42, name: "Late A player", elo: 2000, game_count: 3 }),
+    );
+    expect(container.textContent).not.toContain("Late A player");
+    expect(store.get(localOptionsFamily(tabId))).toMatchObject({
+      player: 42,
+      player_database: databaseHandleKey(reference),
+    });
+    mocks.getDatabases.mockResolvedValue(databaseList([readable]));
+    await revalidate();
+    expect((await showPlayerOptions(store))?.value).toBe(`${reference.id.id} player`);
+    await act(async () => store.set(dbTabFamily(tabId), "stats"));
+    expect(mocks.searchPosition).toHaveBeenCalled();
+    for (const [database, query] of mocks.searchPosition.mock.calls) {
+      expect(database).toEqual(reference);
+      expect(query.player1).toBe(42);
+      expect(query.player2 ?? null).toBeNull();
+    }
   });
 
   test("local: resolving a new handle with the same database key preserves the player filter", async () => {

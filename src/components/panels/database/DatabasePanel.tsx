@@ -35,6 +35,7 @@ import {
 import {
   databaseHandleFromKey,
   databaseHandleKey,
+  getEffectiveLocalPlayer,
   type Opening,
   type LocalOptions,
 } from "@/utils/db";
@@ -181,10 +182,15 @@ function DatabasePanel() {
     }
   }, [effectiveReferenceDatabase, setLocalOptions, db]);
 
+  const effectiveLocalOptions: LocalOptions = {
+    ...localOptions,
+    path: effectiveReferenceDatabase,
+    player: getEffectiveLocalPlayer(localOptions, effectiveReferenceDatabase),
+  };
   const dbType: DBType = match(db)
     .with("local", (v) => ({
       type: v,
-      options: { ...localOptions, path: effectiveReferenceDatabase },
+      options: effectiveLocalOptions,
     }))
     .with("lch_all", (v) => ({
       type: v,
@@ -203,17 +209,7 @@ function DatabasePanel() {
   const [tab] = useOwnerTab();
   const [tabType, setTabType] = useAtom(useTabAtom(dbTabFamily));
   const localExplorer = useLocalExplorer(
-    {
-      ...localOptions,
-      path: effectiveReferenceDatabase,
-      // Legacy in-memory selections can be valid here. Their synchronized path cannot recover
-      // their original database, so preserve them until the next explicit player selection.
-      player:
-        localOptions.player_database === undefined ||
-        localOptions.player_database === selectedReferenceDatabase
-          ? localOptions.player
-          : null,
-    },
+    effectiveLocalOptions,
     db === "local" && tabType !== "options",
     tab?.value || "",
   );
@@ -370,7 +366,9 @@ function DatabasePanel() {
         >
           <ScrollArea flex={1} offsetScrollbars pt="sm">
             {match(db)
-              .with("local", () => <LocalOptionsPanel boardFen={debouncedFen} />)
+              .with("local", () => (
+                <LocalOptionsPanel boardFen={debouncedFen} database={effectiveReferenceDatabase} />
+              ))
               .with("lch_all", () => <LichessOptionsPanel />)
               .with("lch_master", () => <MasterOptionsPanel />)
               .exhaustive()}
