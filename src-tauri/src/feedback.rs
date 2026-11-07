@@ -986,6 +986,7 @@ mod tests {
             let url = format!("http://{}/api/v1/feedback", listener.local_addr().unwrap());
             let handle = tokio::spawn(async move {
                 let (mut stream, _) = listener.accept().await.unwrap();
+                let _ = read_http_request_with_limit(&mut stream, 8192).await;
                 tokio::time::sleep(Duration::from_millis(250)).await;
                 let response =
                     b"HTTP/1.1 201 Created\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
