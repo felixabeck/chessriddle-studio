@@ -12317,3 +12317,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Felix's decision concerned the database Players view. Reversal path: render the tree in `PersonalCard.tsx` for the Accounts caller once a player-id mapping exists.
 * **Decided by:** Claude Code (Opus 5.5) build opponent-prep-tree, full auto, 2026-11-07 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"a28348e8c2e9512738f7869caa7d8426c31d34374971a24e9d0d7a95594324e3","input_sha256":"ed0b66dcd8abbfbbcde51608326cad2de0547add3db82c89c511b0a2c68f5247","kind":"mutation-receipt","operation":"314ef0b6bbf12d64016cfdda304d1b66c4f9c8f8c794508cd8204269fbb68157","options":{"section":null},"request_id_sha256":null,"results":["d-20261107-12"],"target":"decisions-ledger","v":1} -->
+
+### d-20261107-13 — Is the one-time 2.2.0 migration cost on large databases acceptable?
+
+* **Question:** Migrating Mega Database 2025 (11.4M games) to schema 2.2.0 takes about 5 s, followed by the existing post-migration integrity and foreign-key check of about 45 s (optimized SQLite). Should the game-count migration skip the content check?
+* **Governs:** -
+* **Chosen:** Keep the existing migration contract: every migration validates schema and content before commit. The cost is paid once, the first time the new build opens the database.
+* **Rejected:** Skipping content validation for this additive migration (weakens the established safety contract of every migration).
+* **Reason:** Consistency with the 2.0.0 to 2.1.0 migration and the ledger's safety rule. Reversal path: run the content check in the background after an additive migration if the one-time wait proves disruptive.
+* **Decided by:** Claude Code (Opus 5.5) build opponent-prep-tree, full auto, 2026-11-07 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"f33f4291f4620678743419482bdde077b10b1f1f5db8a21f8243195fcae1c41c","input_sha256":"45394ab97e3c2246dddb4310a19618c6563aab5110139910d63deb72fe657de1","kind":"mutation-receipt","operation":"defa122eb78e6868262740482d0f47ad5227d811b76381205c0acf6673883943","options":{"section":null},"request_id_sha256":null,"results":["d-20261107-13"],"target":"decisions-ledger","v":1} -->
