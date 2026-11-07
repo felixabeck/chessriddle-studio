@@ -26,6 +26,8 @@ const FEEDBACK_MIN_EMAIL = 3;
 const FEEDBACK_MAX_EMAIL = 254;
 const PRIVACY_URL = "https://chessriddle.com/privacy";
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_CAPTURE_PIXEL_RATIO = 2;
+const FALLBACK_CAPTURE_PIXEL_RATIO = 1;
 const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"] as const;
 
 function payloadFingerprint(
@@ -81,7 +83,7 @@ function transportMessage(error: unknown, t: (key: string) => string): string {
   return t("Feedback.Error.DeliveryFailed");
 }
 
-function decodedDataUrlBytes(dataUrl: string): number {
+function estimatedDataUrlBytes(dataUrl: string): number {
   const comma = dataUrl.indexOf(",");
   const payload = comma === -1 ? "" : dataUrl.slice(comma + 1);
   const padding = payload.endsWith("==") ? 2 : payload.endsWith("=") ? 1 : 0;
@@ -157,16 +159,16 @@ export default function FeedbackModal({
     onClose();
   }
 
-  function bumpAttachment(nextImage: string | null) {
+  function setAttachment(nextImage: string | null) {
     setImage(nextImage);
     setAttachmentId((id) => id + 1);
+    setError("");
   }
 
   function removeImage() {
     attachmentGeneration.current += 1;
     setAttaching(false);
-    bumpAttachment(null);
-    setError("");
+    setAttachment(null);
   }
 
   function captureOptions(pixelRatio: number) {
@@ -185,17 +187,17 @@ export default function FeedbackModal({
     try {
       const { toPng } = await import("html-to-image");
       const capture = (pixelRatio: number) => toPng(document.body, captureOptions(pixelRatio));
-      let dataUrl = await capture(Math.min(window.devicePixelRatio, 2));
+      let dataUrl = await capture(Math.min(window.devicePixelRatio, MAX_CAPTURE_PIXEL_RATIO));
       if (!mounted.current || generation !== attachmentGeneration.current) return;
-      if (decodedDataUrlBytes(dataUrl) > MAX_IMAGE_BYTES) {
-        dataUrl = await capture(1);
+      if (estimatedDataUrlBytes(dataUrl) > MAX_IMAGE_BYTES) {
+        dataUrl = await capture(FALLBACK_CAPTURE_PIXEL_RATIO);
         if (!mounted.current || generation !== attachmentGeneration.current) return;
-        if (decodedDataUrlBytes(dataUrl) > MAX_IMAGE_BYTES) {
+        if (estimatedDataUrlBytes(dataUrl) > MAX_IMAGE_BYTES) {
           setError(t("Feedback.Error.ImageTooLarge"));
           return;
         }
       }
-      bumpAttachment(dataUrl);
+      setAttachment(dataUrl);
     } catch {
       if (!mounted.current || generation !== attachmentGeneration.current) return;
       setError(t("Feedback.Error.ScreenshotFailed"));
@@ -206,10 +208,14 @@ export default function FeedbackModal({
 
   function acceptImageFile(file: File) {
     if (!(ACCEPTED_IMAGE_TYPES as readonly string[]).includes(file.type)) {
+      attachmentGeneration.current += 1;
+      setAttaching(false);
       setError(t("Feedback.Error.ImageType"));
       return;
     }
     if (file.size > MAX_IMAGE_BYTES) {
+      attachmentGeneration.current += 1;
+      setAttaching(false);
       setError(t("Feedback.Error.ImageTooLarge"));
       return;
     }
@@ -228,7 +234,7 @@ export default function FeedbackModal({
           setAttaching(false);
           return;
         }
-        bumpAttachment(reader.result);
+        setAttachment(reader.result);
         setAttaching(false);
       });
     };
@@ -359,7 +365,7 @@ export default function FeedbackModal({
                 onChange={(file) => {
                   if (file) acceptImageFile(file);
                 }}
-                accept="image/png,image/jpeg,image/webp"
+                accept={ACCEPTED_IMAGE_TYPES.join(",")}
                 disabled={pending}
               >
                 {(props) => (

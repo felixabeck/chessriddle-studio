@@ -22,6 +22,7 @@ const MAX_EMAIL_LOCAL_PART_CHARS: usize = 64;
 const MAX_OS_VERSION_CHARS: usize = 64;
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
 const MAX_IMAGE_BYTES: usize = 5 * 1024 * 1024;
+const MAX_IMAGE_BASE64_CHARS: usize = 4 * MAX_IMAGE_BYTES.div_ceil(3);
 const PNG_SIGNATURE: &[u8] = &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 const JPEG_SIGNATURE: &[u8] = &[0xFF, 0xD8, 0xFF];
 const WEBP_RIFF: &[u8] = b"RIFF";
@@ -184,6 +185,9 @@ fn valid_feedback_image(data_url: &str) -> bool {
     if !matches!(mime, "png" | "jpeg" | "webp") {
         return false;
     }
+    if payload.len() > MAX_IMAGE_BASE64_CHARS {
+        return false;
+    }
     let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(payload) else {
         return false;
     };
@@ -283,7 +287,7 @@ pub(crate) fn map_feedback_response(status: u16, body: &[u8]) -> FeedbackOutcome
         422 => FeedbackOutcome::InvalidInput,
         429 => FeedbackOutcome::RateLimited,
         401 => FeedbackOutcome::ServiceUnavailable,
-        400 | 413 | 500..=599 => FeedbackOutcome::DeliveryFailed,
+        400 | 500..=599 => FeedbackOutcome::DeliveryFailed,
         _ => FeedbackOutcome::DeliveryFailed,
     }
 }
@@ -326,24 +330,21 @@ async fn submit_feedback_request(
     submission: FeedbackSubmission,
     identity: FeedbackIdentity<'_>,
 ) -> Result<FeedbackOutcome, Error> {
-    let mut request = build_feedback_request(
-        FeedbackInput {
-            feedback_type: submission.feedback_type,
-            message: &submission.message,
-            contact_email: submission.contact_email.as_deref(),
-            idempotency_key: &submission.idempotency_key,
-            image_base64: None,
-        },
-        identity,
-    )?;
     let image_base64 = match submission.image.as_deref() {
         None => None,
         Some(data_url) if valid_feedback_image(data_url) => Some(data_url),
         Some(_) => return Ok(FeedbackOutcome::InvalidImage),
     };
-    if let Some(data_url) = image_base64 {
-        request.body["image_base64"] = serde_json::Value::String(data_url.to_owned());
-    }
+    let request = build_feedback_request(
+        FeedbackInput {
+            feedback_type: submission.feedback_type,
+            message: &submission.message,
+            contact_email: submission.contact_email.as_deref(),
+            idempotency_key: &submission.idempotency_key,
+            image_base64,
+        },
+        identity,
+    )?;
     let client = if image_base64.is_some() {
         upload_client
     } else {
@@ -926,6 +927,15 @@ mod tests {
         let body = captured.split_once("\r\n\r\n").expect("request body").1;
         let parsed: serde_json::Value = serde_json::from_str(body).expect("json body");
         assert!(parsed.get("image_base64").is_none());
+    }
+
+    #[test]
+    fn valid_feedback_image_rejects_before_decode_when_the_payload_exceeds_the_encoded_bound() {
+        let data_url = format!(
+            "data:image/png;base64,{}",
+            "A".repeat(MAX_IMAGE_BASE64_CHARS + 1)
+        );
+        assert!(!valid_feedback_image(&data_url));
     }
 
     #[tokio::test]

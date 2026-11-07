@@ -604,7 +604,7 @@
     "Feedback.Error.KeyMismatch": "Bitte sende die Nachricht erneut.",
     "Feedback.Error.Network": "Der Server konnte nicht erreicht werden. Prüfe deine Verbindung und versuche es erneut.",
     "Feedback.Error.RateLimited": "Zu viele Nachrichten. Bitte versuche es später erneut.",
-    "Feedback.Error.ScreenshotFailed": "Screenshot fehlgeschlagen",
+    "Feedback.Error.ScreenshotFailed": "Screenshot fehlgeschlagen.",
     "Feedback.Error.ServiceUnavailable": "Feedback ist vorübergehend nicht verfügbar. Bitte versuche es später erneut.",
     "Feedback.Image": "Bild anhängen (optional)",
     "Feedback.ImagePreview": "Bildvorschau",

@@ -269,6 +269,7 @@ const IPC_PROBE_TIMEOUT_MS = 5_000;
 const INSTANCE_PROBE_TIMEOUT_MS = 15_000;
 const CSP_PROBE_TIMEOUT_MS = 4_000;
 const FILES_PROBE_TIMEOUT_MS = 20_000;
+const FEEDBACK_CAPTURE_TIMEOUT_MS = 30_000;
 const PRACTICE_RENDERER_TIMEOUT_MS = 600_000;
 // Keep aligned with FILE_REVISION_INTERVAL_MS in src/state/fileFreshness.ts.
 const FILE_FRESHNESS_POLL_INTERVAL_MS = 2_000;
@@ -2237,7 +2238,7 @@ async function verifyProgressContract(session) {
  * reachable entry. Never click Send: this scenario must not reach the network.
  */
 async function verifyFeedbackScreenshot(session) {
-  const wait = (label, probe) => waitFor(label, probe, { timeoutMs: FILES_PROBE_TIMEOUT_MS });
+  const wait = (label, probe) => waitFor(label, probe, { timeoutMs: FEEDBACK_CAPTURE_TIMEOUT_MS });
   const assertion = async (label, action) => {
     try {
       await action();
@@ -2292,7 +2293,7 @@ async function verifyFeedbackScreenshot(session) {
       "Take screenshot attaches a decodable preview with more than one colour",
       async () => {
         await clickButton(session, "Take screenshot");
-        await waitFor("the feedback image preview", () =>
+        await wait("the feedback image preview", () =>
           session
             .execute(
               `const img = document.querySelector('[role="dialog"] img[alt="Image preview"]');
@@ -2303,7 +2304,7 @@ async function verifyFeedbackScreenshot(session) {
         const path = `${screenshotPath ?? join(tmpdir(), `chessfable-feedback-${process.pid}`)}.feedback-preview.png`;
         await writeFile(path, Buffer.from(await session.screenshot(), "base64"));
         console.log(`  .. feedback-preview screenshot: ${path}`);
-        const decoded = await waitFor("feedback screenshot preview to decode", async () => {
+        const decoded = await wait("feedback screenshot preview to decode", async () => {
           const failure = await session.execute(`
             const alert = document.querySelector('[role="dialog"] [role="alert"]');
             return alert && alert.textContent

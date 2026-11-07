@@ -597,7 +597,7 @@
     "Feedback.Error.KeyMismatch": "請重新傳送該訊息。",
     "Feedback.Error.Network": "無法連線到伺服器。請檢查網路後重試。",
     "Feedback.Error.RateLimited": "傳送次數過多。請稍後再試。",
-    "Feedback.Error.ScreenshotFailed": "截圖失敗",
+    "Feedback.Error.ScreenshotFailed": "截圖失敗。",
     "Feedback.Error.ServiceUnavailable": "回饋功能暫時無法使用。請稍後再試。",
     "Feedback.Image": "附加圖片（選填）",
     "Feedback.ImagePreview": "圖片預覽",

@@ -611,7 +611,7 @@
     "Feedback.Error.KeyMismatch": "Vuelve a enviar el mensaje.",
     "Feedback.Error.Network": "No se ha podido contactar con el servidor. Comprueba la conexión e inténtalo de nuevo.",
     "Feedback.Error.RateLimited": "Demasiados mensajes. Inténtalo de nuevo más tarde.",
-    "Feedback.Error.ScreenshotFailed": "La captura ha fallado",
+    "Feedback.Error.ScreenshotFailed": "La captura ha fallado.",
     "Feedback.Error.ServiceUnavailable": "Los comentarios no están disponibles temporalmente. Inténtalo de nuevo más tarde.",
     "Feedback.Image": "Adjuntar imagen (opcional)",
     "Feedback.ImagePreview": "Vista previa de la imagen",

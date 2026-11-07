@@ -611,7 +611,7 @@
     "Feedback.Error.KeyMismatch": "Veuillez renvoyer le message.",
     "Feedback.Error.Network": "Impossible de joindre le serveur. Vérifiez votre connexion et réessayez.",
     "Feedback.Error.RateLimited": "Trop de messages. Veuillez réessayer plus tard.",
-    "Feedback.Error.ScreenshotFailed": "La capture d’écran a échoué",
+    "Feedback.Error.ScreenshotFailed": "La capture d’écran a échoué.",
     "Feedback.Error.ServiceUnavailable": "Les retours sont temporairement indisponibles. Veuillez réessayer plus tard.",
     "Feedback.Image": "Joindre une image (facultatif)",
     "Feedback.ImagePreview": "Aperçu de l’image",

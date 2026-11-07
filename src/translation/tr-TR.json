@@ -604,7 +604,7 @@
     "Feedback.Error.KeyMismatch": "Lütfen iletiyi yeniden gönderin.",
     "Feedback.Error.Network": "Sunucuya ulaşılamadı. Bağlantınızı kontrol edip yeniden deneyin.",
     "Feedback.Error.RateLimited": "Çok fazla ileti. Lütfen daha sonra yeniden deneyin.",
-    "Feedback.Error.ScreenshotFailed": "Ekran görüntüsü alınamadı",
+    "Feedback.Error.ScreenshotFailed": "Ekran görüntüsü alınamadı.",
     "Feedback.Error.ServiceUnavailable": "Geri bildirim geçici olarak kullanılamıyor. Lütfen daha sonra yeniden deneyin.",
     "Feedback.Image": "Görüntü ekle (isteğe bağlı)",
     "Feedback.ImagePreview": "Görüntü önizlemesi",

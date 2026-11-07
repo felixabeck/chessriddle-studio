@@ -618,7 +618,7 @@
     "Feedback.Error.KeyMismatch": "Wyślij wiadomość ponownie.",
     "Feedback.Error.Network": "Nie udało się połączyć z serwerem. Sprawdź połączenie i spróbuj ponownie.",
     "Feedback.Error.RateLimited": "Zbyt wiele wiadomości. Spróbuj ponownie później.",
-    "Feedback.Error.ScreenshotFailed": "Zrzut ekranu nie powiódł się",
+    "Feedback.Error.ScreenshotFailed": "Zrzut ekranu nie powiódł się.",
     "Feedback.Error.ServiceUnavailable": "Opinie są tymczasowo niedostępne. Spróbuj ponownie później.",
     "Feedback.Image": "Dołącz obraz (opcjonalnie)",
     "Feedback.ImagePreview": "Podgląd obrazu",

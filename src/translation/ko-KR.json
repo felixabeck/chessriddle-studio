@@ -597,7 +597,7 @@
     "Feedback.Error.KeyMismatch": "메시지를 다시 보내 주세요.",
     "Feedback.Error.Network": "서버에 연결할 수 없습니다. 연결을 확인한 뒤 다시 시도하세요.",
     "Feedback.Error.RateLimited": "메시지가 너무 많습니다. 나중에 다시 시도하세요.",
-    "Feedback.Error.ScreenshotFailed": "스크린샷에 실패했습니다",
+    "Feedback.Error.ScreenshotFailed": "스크린샷에 실패했습니다.",
     "Feedback.Error.ServiceUnavailable": "의견 보내기가 일시적으로 사용할 수 없습니다. 나중에 다시 시도하세요.",
     "Feedback.Image": "이미지 첨부 (선택 사항)",
     "Feedback.ImagePreview": "이미지 미리보기",

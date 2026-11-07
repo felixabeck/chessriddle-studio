@@ -597,7 +597,7 @@
     "Feedback.Error.KeyMismatch": "请重新发送该消息。",
     "Feedback.Error.Network": "无法连接服务器。请检查网络后重试。",
     "Feedback.Error.RateLimited": "发送次数过多。请稍后再试。",
-    "Feedback.Error.ScreenshotFailed": "截图失败",
+    "Feedback.Error.ScreenshotFailed": "截图失败。",
     "Feedback.Error.ServiceUnavailable": "反馈功能暂时不可用。请稍后再试。",
     "Feedback.Image": "附加图片（可选）",
     "Feedback.ImagePreview": "图片预览",

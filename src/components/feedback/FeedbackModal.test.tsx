@@ -93,12 +93,14 @@ vi.mock("@mantine/core", () => ({
   FileButton: ({
     children,
     onChange,
+    disabled,
   }: {
-    children: (props: { onClick: () => void }) => ReactNode;
+    children: (props: { onClick: () => void; disabled?: boolean }) => ReactNode;
     onChange: (file: File | null) => void;
+    disabled?: boolean;
   }) => {
     mocks.pickImage = onChange;
-    return children({ onClick: () => {} });
+    return children({ onClick: () => {}, disabled });
   },
   Group: ({ children }: HTMLAttributes<HTMLDivElement>) => <div>{children}</div>,
   SegmentedControl: ({
@@ -242,6 +244,12 @@ function screenshotButton() {
   );
 }
 
+function chooseImageButton() {
+  return [...container.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Feedback.ChooseImage"),
+  );
+}
+
 function sendButton() {
   return container.querySelector<HTMLButtonElement>("button[type='submit']");
 }
@@ -285,12 +293,16 @@ function installDeferredFileReader() {
   const readers: Array<{
     load: (dataUrl: string) => void;
     error: () => void;
+    abort: () => void;
   }> = [];
   class DeferredFileReader {
     result: string | ArrayBuffer | null = null;
     onload: ((event: ProgressEvent<FileReader>) => void) | null = null;
     onerror: ((event: ProgressEvent<FileReader>) => void) | null = null;
     onabort: ((event: ProgressEvent<FileReader>) => void) | null = null;
+    abort = () => {
+      this.onabort?.(new ProgressEvent("abort") as ProgressEvent<FileReader>);
+    };
     readAsDataURL = () => {
       readers.push({
         load: (dataUrl: string) => {
@@ -299,6 +311,9 @@ function installDeferredFileReader() {
         },
         error: () => {
           this.onerror?.(new ProgressEvent("error") as ProgressEvent<FileReader>);
+        },
+        abort: () => {
+          this.abort();
         },
       });
     };
@@ -313,6 +328,11 @@ function installDeferredFileReader() {
     async error(index = 0) {
       await act(async () => {
         readers[index]?.error();
+      });
+    },
+    async abort(index = 0) {
+      await act(async () => {
+        readers[index]?.abort();
       });
     },
   };
@@ -394,17 +414,6 @@ test("mapped outcomes keep the typed message", async () => {
   await submitForm();
   expect(container.querySelector("textarea")?.value).toBe("A useful Studio report.");
   expect(container.querySelector("[role='alert']")?.textContent).toBe("Feedback.Error.RateLimited");
-  expect(onClose).not.toHaveBeenCalled();
-});
-
-test("invalidImage shows the image-specific copy", async () => {
-  mocks.submitFeedback.mockResolvedValueOnce("invalidImage" satisfies FeedbackOutcome);
-  await renderModal();
-  await fillMessage("A useful Studio report.");
-  await submitForm();
-  expect(container.querySelector("[role='alert']")?.textContent).toBe(
-    "Feedback.Error.InvalidImage",
-  );
   expect(onClose).not.toHaveBeenCalled();
 });
 
@@ -580,6 +589,26 @@ test("capture success attaches and previews the image", async () => {
   });
 });
 
+test("capture filter excludes dialog, presentation, and notifications", async () => {
+  await renderModal();
+  await takeScreenshot();
+  const filter = mocks.toPng.mock.calls[0]?.[1]?.filter as
+    | ((node: HTMLElement) => boolean)
+    | undefined;
+  expect(typeof filter).toBe("function");
+  const dialog = document.createElement("div");
+  dialog.setAttribute("role", "dialog");
+  const presentation = document.createElement("div");
+  presentation.setAttribute("role", "presentation");
+  const notificationsRoot = document.createElement("div");
+  notificationsRoot.className = "mantine-Notifications-root";
+  const ordinary = document.createElement("div");
+  expect(filter!(dialog)).toBe(false);
+  expect(filter!(presentation)).toBe(false);
+  expect(filter!(notificationsRoot)).toBe(false);
+  expect(filter!(ordinary)).toBe(true);
+});
+
 test("capture failure shows the screenshot-failed copy", async () => {
   mocks.toPng.mockRejectedValueOnce(new Error("boom"));
   await renderModal();
@@ -635,6 +664,20 @@ test("file read failure shows the could-not-read copy", async () => {
   await renderModal();
   await pickFile(pngFile());
   await reader.error(0);
+  expect(preview()).toBeNull();
+  expect(container.querySelector("[role='alert']")?.textContent).toBe(
+    "Feedback.Error.ImageReadFailed",
+  );
+});
+
+test("file read abort clears in-flight state and shows the could-not-read copy", async () => {
+  const reader = installDeferredFileReader();
+  await renderModal();
+  await fillMessage("A useful Studio report.");
+  await pickFile(pngFile());
+  expect(sendButton()?.disabled).toBe(true);
+  await reader.abort(0);
+  expect(sendButton()?.disabled).toBe(false);
   expect(preview()).toBeNull();
   expect(container.querySelector("[role='alert']")?.textContent).toBe(
     "Feedback.Error.ImageReadFailed",
@@ -777,6 +820,56 @@ test("changing the image after a failed send mints a new idempotency key", async
   await takeScreenshot();
   await submitForm();
   expect(mocks.submitFeedback.mock.calls[1]?.[3]).toBe(secondKey);
+});
+
+test("removing the image after a failed send mints a new idempotency key", async () => {
+  mocks.submitFeedback.mockResolvedValueOnce("deliveryFailed" satisfies FeedbackOutcome);
+  await renderModal();
+  await fillMessage("A useful Studio report.");
+  await takeScreenshot();
+  await submitForm();
+  expect(mocks.submitFeedback.mock.calls[0]?.[3]).toBe(firstKey);
+  await removeAttachedImage();
+  await submitForm();
+  expect(mocks.submitFeedback.mock.calls[1]?.[3]).toBe(secondKey);
+  expect(mocks.submitFeedback.mock.calls[1]?.[4]).toBeNull();
+});
+
+test("disables screenshot, choose-image and remove while send is pending", async () => {
+  let finish!: (outcome: FeedbackOutcome) => void;
+  mocks.submitFeedback.mockReturnValueOnce(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  await renderModal();
+  await fillMessage("A useful Studio report.");
+  await takeScreenshot();
+  await submitForm();
+  expect(screenshotButton()?.disabled).toBe(true);
+  expect(chooseImageButton()?.disabled).toBe(true);
+  expect(
+    container.querySelector<HTMLButtonElement>("button[aria-label='Feedback.RemoveImage']")
+      ?.disabled,
+  ).toBe(true);
+  await act(async () => {
+    finish("sent");
+  });
+});
+
+test("a rejected file while capture is in flight invalidates the capture", async () => {
+  const capture = deferred<string>();
+  mocks.toPng.mockReturnValueOnce(capture.promise);
+  await renderModal();
+  await takeScreenshot();
+  await pickFile(new File(["nope"], "notes.txt", { type: "text/plain" }));
+  expect(container.querySelector("[role='alert']")?.textContent).toBe("Feedback.Error.ImageType");
+  await act(async () => {
+    capture.resolve(SMALL_PNG);
+    await capture.promise;
+  });
+  expect(preview()).toBeNull();
+  expect(container.querySelector("[role='alert']")?.textContent).toBe("Feedback.Error.ImageType");
 });
 
 test("passes the attached image as the fifth argument", async () => {

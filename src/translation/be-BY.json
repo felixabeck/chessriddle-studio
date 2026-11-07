@@ -618,7 +618,7 @@
     "Feedback.Error.KeyMismatch": "Адпраўце паведамленне яшчэ раз.",
     "Feedback.Error.Network": "Не ўдалося звязацца з серверам. Праверце злучэнне і паўтарыце спробу.",
     "Feedback.Error.RateLimited": "Занадта шмат паведамленняў. Паўтарыце спробу пазней.",
-    "Feedback.Error.ScreenshotFailed": "Не ўдалося зрабіць здымак экрана",
+    "Feedback.Error.ScreenshotFailed": "Не ўдалося зрабіць здымак экрана.",
     "Feedback.Error.ServiceUnavailable": "Адпраўка водгукаў часова недаступная. Паўтарыце спробу пазней.",
     "Feedback.Image": "Прымацаваць відарыс (неабавязкова)",
     "Feedback.ImagePreview": "Папярэдні прагляд відарыса",

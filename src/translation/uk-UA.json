@@ -618,7 +618,7 @@
     "Feedback.Error.KeyMismatch": "Надішліть повідомлення ще раз.",
     "Feedback.Error.Network": "Не вдалося зв’язатися із сервером. Перевірте з’єднання й спробуйте знову.",
     "Feedback.Error.RateLimited": "Забагато повідомлень. Спробуйте пізніше.",
-    "Feedback.Error.ScreenshotFailed": "Не вдалося зробити знімок екрана",
+    "Feedback.Error.ScreenshotFailed": "Не вдалося зробити знімок екрана.",
     "Feedback.Error.ServiceUnavailable": "Надсилання відгуків тимчасово недоступне. Спробуйте пізніше.",
     "Feedback.Image": "Прикріпити зображення (необов’язково)",
     "Feedback.ImagePreview": "Попередній перегляд зображення",

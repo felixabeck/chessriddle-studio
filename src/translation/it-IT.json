@@ -611,7 +611,7 @@
     "Feedback.Error.KeyMismatch": "Invia di nuovo il messaggio.",
     "Feedback.Error.Network": "Impossibile raggiungere il server. Controlla la connessione e riprova.",
     "Feedback.Error.RateLimited": "Troppi messaggi. Riprova più tardi.",
-    "Feedback.Error.ScreenshotFailed": "Acquisizione schermata non riuscita",
+    "Feedback.Error.ScreenshotFailed": "Acquisizione schermata non riuscita.",
     "Feedback.Error.ServiceUnavailable": "I feedback sono temporaneamente non disponibili. Riprova più tardi.",
     "Feedback.Image": "Allega immagine (facoltativa)",
     "Feedback.ImagePreview": "Anteprima dell’immagine",

@@ -618,7 +618,7 @@
     "Feedback.Error.KeyMismatch": "Отправьте сообщение ещё раз.",
     "Feedback.Error.Network": "Не удалось связаться с сервером. Проверьте подключение и повторите попытку.",
     "Feedback.Error.RateLimited": "Слишком много сообщений. Повторите попытку позже.",
-    "Feedback.Error.ScreenshotFailed": "Не удалось сделать снимок экрана",
+    "Feedback.Error.ScreenshotFailed": "Не удалось сделать снимок экрана.",
     "Feedback.Error.ServiceUnavailable": "Отправка отзывов временно недоступна. Повторите попытку позже.",
     "Feedback.Image": "Прикрепить изображение (необязательно)",
     "Feedback.ImagePreview": "Предпросмотр изображения",

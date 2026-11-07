@@ -79,8 +79,7 @@ pub fn native_json_http_client(
     )
 }
 
-/// Feedback image-upload client: [`safe_http_client`] with a 10 s connect timeout
-/// and 120 s read and total timeouts.
+/// Process-lifetime client for feedback image uploads.
 pub fn native_upload_http_client(
     builder: reqwest::ClientBuilder,
 ) -> Result<reqwest::Client, reqwest::Error> {
