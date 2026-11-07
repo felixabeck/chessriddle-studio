@@ -9947,8 +9947,10 @@ impl PathAuthority {
         require_durable(self.save()?)?;
         Ok(self.persistent.len())
     }
-    /// An id that is neither persistent nor a live grant is reported as a missing resource so
-    /// renderer owners (recent files) can drop it.
+    /// Consumes one use of a live dialog grant. A missing (never issued, consumed or
+    /// evicted-as-expired) grant is `Error::UnknownPathCapability`, a missing resource: `resolve`
+    /// reaches this only after the persistent lookup failed, so renderer owners such as recent
+    /// files can drop the id.
     fn take_dialog(
         &mut self,
         id: &PathRef,
@@ -14021,6 +14023,8 @@ pub(crate) mod portable_tests {
     #[test]
     fn resolve_never_issued_id_reports_unknown_path_capability() {
         let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("revoked.pgn");
+        fs::write(&file, b"*").unwrap();
         let mut authority = authority(&dir, Arc::new(TestClock::new(1)));
         let error = authority
             .resolve(
@@ -14033,14 +14037,7 @@ pub(crate) mod portable_tests {
             .err()
             .expect("never-issued id must fail");
         assert_unknown_path_capability(error);
-    }
 
-    #[test]
-    fn resolve_removed_persistent_pgn_id_reports_unknown_path_capability() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("revoked.pgn");
-        fs::write(&file, b"*").unwrap();
-        let mut authority = authority(&dir, Arc::new(TestClock::new(1)));
         let stored = StoredEntry {
             id: PathRef {
                 id: "revoked".into(),
@@ -14062,7 +14059,7 @@ pub(crate) mod portable_tests {
             },
         );
         authority.persistent.remove("revoked");
-        let error = authority
+        let removed = authority
             .resolve(
                 &PathRef {
                     id: "revoked".into(),
@@ -14072,7 +14069,7 @@ pub(crate) mod portable_tests {
             )
             .err()
             .expect("removed persistent id must fail");
-        assert_unknown_path_capability(error);
+        assert_unknown_path_capability(removed);
     }
 
     #[test]
@@ -17043,7 +17040,15 @@ mod tests {
                 1,
             )
             .unwrap();
-        assert!(a.resolve(&id, PathOperation::WritePgn, &[]).is_err());
+        let disallowed = a
+            .resolve(&id, PathOperation::WritePgn, &[])
+            .err()
+            .expect("disallowed operation on a live grant must fail");
+        assert!(
+            matches!(disallowed, Error::InvalidInput(_)),
+            "{disallowed:?}"
+        );
+        assert_eq!(disallowed.category(), ErrorCategory::InvalidInput);
         assert!(a.resolve(&id, PathOperation::ReadPgn, &[]).is_ok());
         assert!(a.resolve(&id, PathOperation::ReadPgn, &[]).is_err());
         let exp = a

@@ -2910,7 +2910,7 @@ fn resolve_engine_binary_for_inspection(
     ) {
         Ok(resolved) => Ok(Some(resolved)),
         Err(error) if error.is_missing_entry() => Ok(None),
-        Err(Error::InvalidInput(_)) => Err(Error::InvalidInput(
+        Err(Error::InvalidInput(_) | Error::UnknownPathCapability) => Err(Error::InvalidInput(
             "engine binary inspection could not be authorized".into(),
         )),
         Err(error) => {
@@ -4482,6 +4482,27 @@ mod tests {
         assert!(!serialized.contains(&executable.display().to_string()));
         assert!(!serialized.contains("Permission denied"));
         assert!(!serialized.contains("os error"));
+    }
+
+    #[test]
+    fn engine_binary_inspection_rejects_a_never_issued_id_as_unauthorized() {
+        let dir = tempdir().unwrap();
+        let mut authority = test_path_authority(&dir);
+        let error = file_exists_with_authority(
+            &mut authority,
+            &crate::infra::path_authority::PathRef {
+                id: "never-issued".into(),
+            },
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                error,
+                Error::InvalidInput(ref message)
+                    if message == "engine binary inspection could not be authorized"
+            ),
+            "{error:?}"
+        );
     }
 
     #[test]
