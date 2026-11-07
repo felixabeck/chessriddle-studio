@@ -56,6 +56,8 @@ import {
     DEFAULT_PIECE_SET,
     boardImageSchema,
     pieceSetSchema,
+    type BoardImage,
+    type PieceSet,
 } from "./artworkCatalog";
 import { createExpandedDirectoriesAtom } from "./expandedDirectories";
 import {
@@ -592,15 +594,15 @@ export const soundVolumeAtom = documentPreferences.atomWithStorage<number>(
     createPreferenceStorage(0.8),
 );
 
-export const pieceSetAtom = atomWithStorage<string>(
+export const pieceSetAtom = atomWithStorage<PieceSet>(
     "piece-set",
     DEFAULT_PIECE_SET,
-    createZodStorage(pieceSetSchema as z.ZodType<string>, localStorage),
+    createZodStorage(pieceSetSchema, localStorage),
 );
-export const boardImageAtom = atomWithStorage<string>(
+export const boardImageAtom = atomWithStorage<BoardImage>(
     "board-image",
     DEFAULT_BOARD_IMAGE,
-    createZodStorage(boardImageSchema as z.ZodType<string>, localStorage),
+    createZodStorage(boardImageSchema, localStorage),
 );
 export const boardWoodTextureAtom = atomWithStorage<boolean>(
     "board-wood-texture",

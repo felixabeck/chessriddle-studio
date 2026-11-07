@@ -68,8 +68,10 @@ test("rejects an unlayered Mantine stylesheet import", async () => {
   });
 
   assert.notEqual(result.status, 0, result.stderr);
-  assert.match(result.stderr, /unlayered Mantine stylesheet import '@mantine\/core\/styles\.css'/);
-  assert.match(result.stderr, /styles\.layer\.css/);
+  assert.match(
+    result.stderr,
+    /unlayered Mantine stylesheet import '@mantine\/core\/styles\.css'; use @mantine\/core\/styles\.layer\.css/,
+  );
 });
 
 test("accepts a layered Mantine stylesheet import", async () => {
@@ -89,9 +91,8 @@ test("rejects an unlayered per-component Mantine stylesheet import", async () =>
   assert.notEqual(result.status, 0, result.stderr);
   assert.match(
     result.stderr,
-    /unlayered Mantine stylesheet import '@mantine\/core\/styles\/Button\.css'/,
+    /unlayered Mantine stylesheet import '@mantine\/core\/styles\/Button\.css'; use @mantine\/core\/styles\/Button\.layer\.css/,
   );
-  assert.match(result.stderr, /styles\.layer\.css/);
 });
 
 test("accepts a layered per-component Mantine stylesheet import", async () => {

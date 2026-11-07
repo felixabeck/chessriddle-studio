@@ -32,8 +32,9 @@ function inspectLine(file, line) {
   }
   const stylesheet = line.match(mantineStylesheetSpec);
   if (stylesheet && !stylesheet[1].endsWith(".layer.css")) {
+    const layered = `${stylesheet[1].slice(0, -".css".length)}.layer.css`;
     violations.push(
-      `${file}: unlayered Mantine stylesheet import '${stylesheet[1]}'; use styles.layer.css`,
+      `${file}: unlayered Mantine stylesheet import '${stylesheet[1]}'; use ${layered}`,
     );
   }
 }

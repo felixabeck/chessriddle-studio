@@ -66,12 +66,10 @@ export const BOARD_IMAGES = [
     "gray.svg",
 ] as const;
 
-type PieceSetValue = (typeof PIECE_SETS)[number]["value"];
+export type PieceSet = (typeof PIECE_SETS)[number]["value"];
+export type BoardImage = (typeof BOARD_IMAGES)[number];
 
-export const PIECE_SET_VALUES = [
-    PIECE_SETS[0].value,
-    ...PIECE_SETS.slice(1).map((item) => item.value),
-] as [PieceSetValue, ...PieceSetValue[]];
+export const PIECE_SET_VALUES = PIECE_SETS.map((item) => item.value) as [PieceSet, ...PieceSet[]];
 
 export const pieceSetSchema = z.enum(PIECE_SET_VALUES);
 export const boardImageSchema = z.enum(BOARD_IMAGES);

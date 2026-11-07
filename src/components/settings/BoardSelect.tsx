@@ -2,7 +2,7 @@ import { Box, Group, Text } from "@mantine/core";
 import { useAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { boardImageAtom } from "@/state/atoms";
-import { BOARD_IMAGES } from "@/state/artworkCatalog";
+import { BOARD_IMAGES, type BoardImage } from "@/state/artworkCatalog";
 import { SettingsCombobox } from "./SettingsCombobox";
 
 function SelectOption({ label }: { label: string }) {
@@ -48,7 +48,7 @@ export default function BoardSelect() {
   const [board, setBoard] = useAtom(boardImageAtom);
 
   return (
-    <SettingsCombobox
+    <SettingsCombobox<BoardImage>
       ariaLabel={t("Settings.Appearance.BoardImage")}
       value={board}
       data={BOARD_IMAGES.map((item) => ({

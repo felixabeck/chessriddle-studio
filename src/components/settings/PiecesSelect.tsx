@@ -2,7 +2,7 @@ import { Box, Flex, Text } from "@mantine/core";
 import { useAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { pieceSetAtom } from "@/state/atoms";
-import { PIECE_SETS } from "@/state/artworkCatalog";
+import { PIECE_SETS, type PieceSet } from "@/state/artworkCatalog";
 import PieceComponent from "../common/Piece";
 import { SettingsCombobox } from "./SettingsCombobox";
 
@@ -26,7 +26,7 @@ export default function PiecesSelect() {
   return (
     <Flex justify="space-between" align="center" gap="md" wrap="wrap">
       <DisplayPieces />
-      <SettingsCombobox
+      <SettingsCombobox<PieceSet>
         ariaLabel={t("Settings.Appearance.PieceSet")}
         value={pieceSet}
         width="10rem"
