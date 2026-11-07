@@ -348,7 +348,7 @@ export interface ReportState {
 }
 
 export function getBoardState(fen: string): string {
-    const fields = fen.split(" ").slice(0, 4);
+    const fields = fen.split(/[\s_]+/).slice(0, 4);
     if ((fields[2] && fields[2] !== "-") || (fields[3] && fields[3] !== "-")) {
         const [position] = positionFromFen(fen);
         // Compare actual rights through the library, retaining raw fields for rejected positions.

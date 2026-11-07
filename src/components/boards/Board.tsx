@@ -608,7 +608,7 @@ function Board({
                             pos?.board.get(parseSquare(square)!),
                             keyboardSource === square,
                           )}
-                          aria-selected={keyboardSquare === square}
+                          aria-selected={keyboardSource === square}
                         />
                       ))}
                     </div>

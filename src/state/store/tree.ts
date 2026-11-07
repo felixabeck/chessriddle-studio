@@ -768,15 +768,7 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
                         if (node.nags.some((code) => nagGlyph(code) === payload)) {
                             node.nags = node.nags.filter((code) => nagGlyph(code) !== payload);
                         } else {
-                            node.nags = node.nags.filter((code) => {
-                                const glyph = nagGlyph(code);
-                                return (
-                                    !glyph ||
-                                    !ANNOTATION_INFO[glyph].group ||
-                                    ANNOTATION_INFO[glyph].group !== ANNOTATION_INFO[payload].group
-                                );
-                            });
-                            node.nags.push(ANNOTATION_INFO[payload].nag);
+                            node.nags = replaceInGroup(node.nags, payload);
                         }
                     }
                 }),
@@ -1174,6 +1166,19 @@ function setShapes(state: TreeState, shapes: DrawShape[]) {
 
 const MAX_GENERATED_ANALYSIS_VARIATION_PLIES = 10;
 
+function replaceInGroup(nags: readonly number[], annotation: Annotation): number[] {
+    const next = nags.filter((code) => {
+        const glyph = nagGlyph(code);
+        return (
+            !glyph ||
+            !ANNOTATION_INFO[glyph].group ||
+            ANNOTATION_INFO[glyph].group !== ANNOTATION_INFO[annotation].group
+        );
+    });
+    next.push(ANNOTATION_INFO[annotation].nag);
+    return next;
+}
+
 function addAnalysis(
     state: TreeState,
     analysis: {
@@ -1215,7 +1220,9 @@ function addAnalysis(
             );
             if (annotation) {
                 const code = ANNOTATION_INFO[annotation].nag;
-                if (!cur.nags.includes(code)) cur.nags.push(code);
+                if (!cur.nags.includes(code)) {
+                    cur.nags = replaceInGroup(cur.nags, annotation);
+                }
 
                 if (
                     options?.showVariations &&

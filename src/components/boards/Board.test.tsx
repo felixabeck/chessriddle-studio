@@ -217,6 +217,14 @@ test("a legal live keyboard move reaches onMove", async () => {
   expect(onMove).toHaveBeenCalledExactlyOnceWith("e2e4");
 });
 
+test("keyboard source stays aria-selected after the focus square moves", async () => {
+  const { grid } = await render();
+  await press(grid, "Enter", "ArrowUp", "ArrowUp");
+  expect(grid.getAttribute("aria-activedescendant")).toBe("board-square-e4");
+  expect(host.querySelector("#board-square-e2")?.getAttribute("aria-selected")).toBe("true");
+  expect(host.querySelector("#board-square-e4")?.getAttribute("aria-selected")).toBe("false");
+});
+
 async function typeMove(move: string) {
   const input = host.querySelector<HTMLInputElement>('input[placeholder="MoveInput.EnterMove"]')!;
   expect(input).not.toBeNull();

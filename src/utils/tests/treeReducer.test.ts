@@ -247,6 +247,13 @@ test("board-state identity excludes clocks even for incomplete positions", () =>
     expect(getBoardState("8/8/8/8/8/8/8/8 w - - 17 42")).toBe("8/8/8/8/8/8/8/8 w - -");
 });
 
+test("board-state identity tokenizes FEN fields the same way chessops does", () => {
+    const single = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 17";
+    const key = getBoardState(single);
+    expect(getBoardState("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR  b KQkq - 0 17")).toBe(key);
+    expect(getBoardState("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR\tb KQkq - 0 17")).toBe(key);
+});
+
 test("board-state identity skips construction only when castling and EP are both absent", () => {
     const parse = vi.spyOn(chessops, "positionFromFen");
     try {

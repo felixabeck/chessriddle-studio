@@ -501,6 +501,24 @@ test("counts the actual custom root for threefold repetition", () => {
     expect(store.getState().headers.result).toBe("1/2-1/2");
 });
 
+test("counts a custom root for threefold even when its FEN has doubled spaces", () => {
+    const single = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 17";
+    const doubled = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR  b KQkq - 0 17";
+    const moves = ["Nf6", "Nf3", "Ng8", "Ng1", "Nf6", "Nf3", "Ng8", "Ng1"];
+
+    store.getState().setFen(single);
+    expect(store.getState().root.fen).toBe(single);
+    store.getState().makeMoves({ payload: moves });
+    const singleResult = store.getState().headers.result;
+    expect(singleResult).toBe("1/2-1/2");
+
+    store.getState().setState(defaultTree());
+    store.getState().setFen(doubled);
+    expect(store.getState().root.fen).toBe(doubled);
+    store.getState().makeMoves({ payload: moves });
+    expect(store.getState().headers.result).toBe(singleResult);
+});
+
 test("setScore clears a depth that described the replaced score", () => {
     const tree = treeE4D5();
     tree.root.children[0].depth = 61;
@@ -682,6 +700,18 @@ test.each([
     expect(store.getState().root.children[0].nags).toEqual([8, 8, 220, code, 146]);
     store.getState().addAnalysis(analysis);
     expect(store.getState().root.children[0].nags).toEqual([8, 8, 220, code, 146]);
+});
+
+test.each([
+    { nags: [1], expected: [4] },
+    { nags: [2], expected: [4] },
+    { nags: [1, 220], expected: [220, 4] },
+])("analysis report replaces basic NAGs of the same group with a blunder", ({ nags, expected }) => {
+    const tree = treeE4D5();
+    tree.root.children[0].nags = nags;
+    store.getState().setState(tree);
+    store.getState().addAnalysis([line(0, "e4", "e2e4"), line(-400, "d5", "d7d5")]);
+    expect(store.getState().root.children[0].nags).toEqual(expected);
 });
 
 test("addAnalysis annotates a ply whose predecessor has no lines without inventing a score", () => {
