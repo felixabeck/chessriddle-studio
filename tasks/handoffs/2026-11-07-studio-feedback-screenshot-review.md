@@ -2,7 +2,7 @@
 
 Build run studio-feedback-screenshot, Claude Code (Opus 5.5) orchestrator, Grok executor (leaves and lenses), full auto from Felix's "Do this full auto from here on" after plan approval. Two repositories: this one (Studio) and chess-tactics-app (backend, privacy); the backend half has its own record in that repository's build ledger. Separation: Claude orchestrator with Grok leaves and Grok lenses — no family separation between code author and reviewer (both Grok); plan authorship and arbitration shared one Claude context.
 
-Mandate: Felix, 2026-11-07, asked why Studio's feedback has no screenshot option although ChessRiddle has one, and chose "Build it now (Recommended)". Decisions: d-20261107-05 (supersedes the screenshot clause of d-20261106-06), chess-tactics-app d-20261107-08.
+Mandate: Felix, 2026-11-07, asked why Studio's feedback has no screenshot option although ChessRiddle has one, and chose "Build it now (Recommended)". Decisions: d-20261107-05 (supersedes the screenshot clause of d-20261106-06), chess-tactics-app d-20261107-14 (recorded as d-20261107-08 before the rebase; that ID was taken upstream).
 
 ## Plan (final reviewed revision)
 
