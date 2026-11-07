@@ -22011,7 +22011,7 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 
 ### `wheelColumnTo` sends one wheel from pre-scroll geometry and fails the 800px/200% analysis notation test on CI
 
-* **ID:** f-20261106-48 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261106-48 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **Renumbered:** first published as f-20261106-09 in the unpushed drain inbox merge 2e8804af. Another checkout pushed a different f-20261106-09 (PGN time-control tags) first, so this entry was re-filed through the ledger tool on 2026-11-06 by drain session c9f01c8c during the f-20261106-07 release rebase. The handoff tasks/handoffs/2026-11-06-f-20261106-07-review.md refers to it by its old id.
 * **Filed from:** edfec60a-861e-49e9-905b-2d4ad6ba8af1
@@ -22023,6 +22023,9 @@ Correction to the previous annotation: `capture_staged_pgn_bytes` runs twice per
 
 **Recurred, 2026-11-07:** Test run 42387450953, job `e2e` 128447752612, on master 7f804c32 (a one-line `tasks/build-ledger.md` change; its parent 5cb3df02 was green) failed the same test with the same `target centre is hit-testable after user wheel scrolling` timeout at `fixtures.ts:258`, 354 passed, 1 failed. This finding owns that run. Drain session 0ad17dd7 repairs it in the f-20261106-09 release because the red job refuses that push.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"cdc8969e2366d6a34b9f4e4310f175b4d4b4a2853fe9bc79a2f07d98337125be","input_sha256":"fc68366f08fd1db8e6b940d01305a1bcde462586875a553780b4ac7d7ec53298","kind":"mutation-receipt","operation":"f21892b2b57682af169b92a4072b08dd5b692a4ef84fa5af29a5a84eb237fa3d","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-48"],"target":"f-20261106-48","v":1} -->
+
+**Handled, 2026-11-07 (drain 0ad17dd7, repaired in the f-20261106-09 release because its red e2e job refused that push):** `wheelColumnTo` now re-measures the column, target and stack inside `expect(...).toPass({ timeout: 15_000 })`, wheels by the current delta, and waits up to 1 s for that scroll before the next attempt. Scrolling stays mouse-wheel driven, and the CI failure message moved onto the in-attempt poll. New test `wheelColumnTo retries after a first wheel miss` (`e2e/font-scaled-breakpoints.spec.ts`): a self-contained page swallows the first wheel event. With the pre-repair helper restored it fails with `target centre is hit-testable after user wheel scrolling … Timeout 8000ms`, and with the retry it passes; the font-scaled-breakpoints and notation-hierarchy container specs are 25/25 green. The fix is in the commits with subjects `test(e2e): re-measure and re-wheel in wheelColumnTo until the target is hit-testable` and `test(e2e): pin wheelColumnTo's retry with a swallowed first wheel`. Hosted-CI confirmation is the post-push Test run.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"543599adbcf72be0ae07d51affb20b725536d6918e176e14a671dcd211a3c1f6","header_sha256":"65c18bbae2e11e796fa57634bc4372092f8187fc63c9b4b6bfc477fa417aa7da","header_status":"handled","input_sha256":"61b7069c698c6d13928902be8e6685ef1778e0c1bfccac99bc677c9cae19c9e7","kind":"mutation-receipt","operation":"a654929ae17688f981927226e2b4e7d9c7d40e31f05147964e71d332c0dbf538","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-48"],"target":"f-20261106-48","v":1} -->
 
 ### The board-wood-texture snapshot export test misses the second save_board_snapshot call on hosted CI
 
