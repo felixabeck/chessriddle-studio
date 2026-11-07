@@ -19,7 +19,7 @@ import {
   referenceDbAtom,
 } from "@/state/atoms";
 import type { DatabaseHandle } from "@/bindings";
-import { type DatabaseList, type ManagedDatabaseInfo } from "@/utils/db";
+import { databaseHandleKey, type DatabaseList, type ManagedDatabaseInfo } from "@/utils/db";
 import { DATABASE_LIST_KEY } from "@/hooks/useDatabaseList";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { catalogueI18n, shippedCatalogues } from "@/tests/catalogues";
@@ -355,13 +355,14 @@ describe("DatabasePanel", () => {
     store: ReturnType<typeof createJotaiStore>,
     swrConfig: SWRConfiguration,
     children?: ReactNode,
+    panelTabId = tabId,
   ) {
     await act(async () => {
       root.render(
         <MantineProvider>
           <JotaiProvider store={store}>
             <TreeStateContext.Provider value={treeStore}>
-              <WorkspaceTabScope tabId={tabId}>
+              <WorkspaceTabScope tabId={panelTabId}>
                 <SWRConfig value={swrConfig}>
                   {children}
                   <DatabasePanel />
@@ -529,6 +530,7 @@ describe("DatabasePanel", () => {
       ...store.get(localOptionsFamily(tabId)),
       path: stalePath,
       player,
+      player_database: player !== null ? databaseHandleKey(pin ?? reference) : undefined,
       fen: treeStore.getState().currentNode().fen,
       result: "draw",
       elo: [1800, 2400],
@@ -539,19 +541,17 @@ describe("DatabasePanel", () => {
       mutate = useSWRConfig().mutate;
       return null;
     }
-    await renderPanel(
-      store,
-      {
-        provider: () => new Map(),
-        dedupingInterval: 0,
-        shouldRetryOnError: false,
-        revalidateOnFocus: false,
-        revalidateOnReconnect: false,
-      },
-      <CacheControl />,
-    );
+    const swrConfig: SWRConfiguration = {
+      provider: () => new Map(),
+      dedupingInterval: 0,
+      shouldRetryOnError: false,
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+    };
+    await renderPanel(store, swrConfig, <CacheControl />);
     return {
       store,
+      swrConfig,
       revalidate: async () => {
         await act(async () => {
           await mutate(DATABASE_LIST_KEY);
@@ -630,7 +630,7 @@ describe("DatabasePanel", () => {
   });
 
   test.each(["pinned", "global"] as const)(
-    "local: %s database selector clears the database-local player before searching another database",
+    "local: %s database selector suppresses a player owned by another database",
     async (selection) => {
       mocks.getDatabases.mockResolvedValue(
         databaseList([readable, { ...readable, file: stalePath, title: "Other database" }]),
@@ -653,7 +653,10 @@ describe("DatabasePanel", () => {
       await act(async () => option!.click());
 
       expect(mocks.clearGames).toHaveBeenCalledOnce();
-      expect(store.get(localOptionsFamily(tabId)).player).toBeNull();
+      expect(store.get(localOptionsFamily(tabId)).player).toBe(42);
+      expect(store.get(localOptionsFamily(tabId)).player_database).toBe(
+        databaseHandleKey(initialDatabase),
+      );
       expect(mocks.searchPosition).toHaveBeenCalled();
       for (const [database, query] of mocks.searchPosition.mock.calls) {
         expect(database).toEqual(nextDatabase);
@@ -667,6 +670,70 @@ describe("DatabasePanel", () => {
       );
     },
   );
+
+  test("local: a second unpinned tab changes the global reference without sending the first tab's player to it", async () => {
+    mocks.getDatabases.mockResolvedValue(
+      databaseList([readable, { ...readable, file: stalePath, title: "Other database" }]),
+    );
+    const { store, swrConfig } = await mountLocal(undefined, 42);
+    expect(mocks.searchPosition.mock.lastCall?.[0]).toEqual(reference);
+    expect(mocks.searchPosition.mock.lastCall?.[1].player1).toBe(42);
+
+    const secondTabId = "22222222-2222-4222-8222-222222222222";
+    await act(async () => {
+      store.set(tabsAtom, [validTab, { ...validTab, value: secondTabId, name: "Tab 2" }]);
+      store.set(dbTypeFamily(secondTabId), "local");
+      store.set(dbTabFamily(secondTabId), "stats");
+      store.set(activeTabAtom, secondTabId);
+    });
+    await renderPanel(store, swrConfig, undefined, secondTabId);
+    const selector =
+      selectedPanel("stats").querySelector<HTMLInputElement>(".mantine-Select-input")!;
+    await act(async () => selector.click());
+    const option = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(
+      (item) => item.textContent === "Other database",
+    );
+    expect(option).toBeDefined();
+    await act(async () => option!.click());
+    expect(store.get(referenceDbAtom)).toEqual(stalePath);
+    expect(store.get(localOptionsFamily(tabId)).player).toBe(42);
+    mocks.searchPosition.mockClear();
+
+    await act(async () => store.set(activeTabAtom, tabId));
+    await renderPanel(store, swrConfig);
+    expect(mocks.searchPosition).toHaveBeenCalled();
+    for (const [database, query, owner] of mocks.searchPosition.mock.calls) {
+      expect(owner).toBe(tabId);
+      expect(database).toEqual(stalePath);
+      expect(query.player1 ?? null).toBeNull();
+      expect(query.player2 ?? null).toBeNull();
+    }
+    expect(store.get(localOptionsFamily(tabId)).player_database).toBe(databaseHandleKey(reference));
+  });
+
+  test("local: a pinned player remains scoped to its database when the global reference changes", async () => {
+    mocks.getDatabases.mockResolvedValue(
+      databaseList([readable, { ...readable, file: stalePath }]),
+    );
+    const { store } = await mountLocal(reference, 42);
+    await act(async () => store.set(referenceDbAtom, stalePath));
+    expect(mocks.searchPosition.mock.lastCall?.[0]).toEqual(reference);
+    expect(mocks.searchPosition.mock.lastCall?.[1].player1).toBe(42);
+    expect(store.get(localOptionsFamily(tabId)).player_database).toBe(databaseHandleKey(reference));
+  });
+
+  test("local: legacy player selections without an owner retain same-database behavior", async () => {
+    mocks.getDatabases.mockResolvedValue(databaseList([readable]));
+    const { store } = await mountLocal(undefined, 42);
+    await act(async () =>
+      store.set(localOptionsFamily(tabId), (options) => ({
+        ...options,
+        player_database: undefined,
+      })),
+    );
+    expect(mocks.searchPosition.mock.lastCall?.[0]).toEqual(reference);
+    expect(mocks.searchPosition.mock.lastCall?.[1].player1).toBe(42);
+  });
 
   test("local: resolving a new handle with the same database key preserves the player filter", async () => {
     mocks.getDatabases.mockResolvedValue(databaseList([readable]));

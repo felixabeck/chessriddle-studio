@@ -44,6 +44,7 @@ function OpeningTree({ player, file }: { player: Player; file: DatabaseHandle })
   const options: LocalOptions = {
     path: file,
     player: player.id,
+    player_database: databaseHandleKey(file),
     color,
     fen: line.fen,
     type: "exact",
@@ -91,6 +92,7 @@ function OpeningTree({ player, file }: { player: Player; file: DatabaseHandle })
             fen: line.fen,
             type: "exact",
             player: player.id,
+            player_database: databaseHandleKey(file),
             color,
             result: "any",
           });

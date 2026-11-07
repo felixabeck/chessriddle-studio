@@ -403,6 +403,8 @@ export type LocalOptions = {
     fen: string;
     type: "exact" | "partial";
     player: number | null;
+    /** Database identity that owns the database-local player id. */
+    player_database?: string;
     color: "white" | "black";
     start_date?: string;
     end_date?: string;

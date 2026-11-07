@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { activeTabAtom, localOptionsFamily, tabsAtom } from "@/state/atoms";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 
-const mocks = vi.hoisted(() => ({ searchPosition: vi.fn() }));
+const mocks = vi.hoisted(() => ({ searchPosition: vi.fn(), playerSearch: vi.fn() }));
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -20,14 +20,16 @@ vi.mock("react-i18next", () => ({
 // The board widgets are irrelevant to the filter controls and need a real layout engine.
 vi.mock("@/chessground/Chessground", () => ({ Chessground: () => null }));
 vi.mock("@/components/boards/PiecesGrid", () => ({ default: () => null }));
-vi.mock("@/components/databases/PlayerSearchInput", () => ({ PlayerSearchInput: () => null }));
+vi.mock("@/components/databases/PlayerSearchInput", () => ({
+  PlayerSearchInput: mocks.playerSearch,
+}));
 
 vi.mock("@/platform/tauri", async () => {
   const actual = await vi.importActual<typeof import("@/platform/tauri")>("@/platform/tauri");
   return { ...actual, tauri: { ...actual.tauri, searchPosition: mocks.searchPosition } };
 });
 
-import { searchPosition } from "@/utils/db";
+import { databaseHandleKey, searchPosition } from "@/utils/db";
 import LocalOptionsPanel from "./LocalOptionsPanel";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -56,6 +58,7 @@ describe("LocalOptionsPanel explorer filters", () => {
   beforeEach(async () => {
     sessionStorage.clear();
     mocks.searchPosition.mockReset().mockResolvedValue([[], []]);
+    mocks.playerSearch.mockReset().mockReturnValue(null);
     store = createJotaiStore();
     store.set(tabsAtom, [tab]);
     store.set(activeTabAtom, tabId);
@@ -90,6 +93,30 @@ describe("LocalOptionsPanel explorer filters", () => {
   test("captions the Elo band as applying to both players", () => {
     expect(container.textContent).toContain("Board.Database.Local.Elo.BothPlayers");
     expect(container.querySelectorAll(".mantine-RangeSlider-root")).toHaveLength(1);
+  });
+
+  test("player selection records its database owner and clearing removes the selection", async () => {
+    const file = store.get(localOptionsFamily(tabId)).path!;
+    expect(mocks.playerSearch.mock.lastCall?.[0].file).toEqual(file);
+    await act(async () => mocks.playerSearch.mock.lastCall?.[0].setValue(42));
+    expect(store.get(localOptionsFamily(tabId))).toMatchObject({
+      player: 42,
+      player_database: databaseHandleKey(file),
+    });
+
+    const otherFile = { ...file, id: { id: "other-database" } };
+    await act(async () =>
+      store.set(localOptionsFamily(tabId), (options) => ({ ...options, path: otherFile })),
+    );
+    await act(async () => mocks.playerSearch.mock.lastCall?.[0].setValue(42));
+    expect(store.get(localOptionsFamily(tabId))).toMatchObject({
+      player: 42,
+      player_database: databaseHandleKey(otherFile),
+    });
+
+    await act(async () => mocks.playerSearch.mock.lastCall?.[0].setValue(undefined));
+    expect(store.get(localOptionsFamily(tabId)).player).toBeNull();
+    expect(store.get(localOptionsFamily(tabId)).player_database).toBeUndefined();
   });
 
   test("labels the exclude switch without rapid, shows name-based helper, and sends true", async () => {

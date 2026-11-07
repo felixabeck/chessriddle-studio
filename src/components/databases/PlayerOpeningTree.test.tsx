@@ -23,6 +23,7 @@ import { installMatchMediaStub } from "@/tests/matchMedia";
 import { catalogueI18n, shippedCatalogues } from "@/tests/catalogues";
 import type { SupportedLocale } from "@/i18n";
 import { getNodeAtPath } from "@/utils/treeReducer";
+import { databaseHandleKey } from "@/utils/db";
 import PlayerOpeningTree from "./PlayerOpeningTree";
 
 const mocks = vi.hoisted(() => ({
@@ -291,6 +292,7 @@ test("Prepare admits the mainline and orientation, presets before navigation, th
     expect(store.get(localOptionsFamily(id))).toEqual({
       path: file,
       player: 42,
+      player_database: databaseHandleKey(file),
       color: "black",
       fen: endFen,
       type: "exact",

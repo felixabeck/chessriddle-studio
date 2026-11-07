@@ -203,7 +203,17 @@ function DatabasePanel() {
   const [tab] = useOwnerTab();
   const [tabType, setTabType] = useAtom(useTabAtom(dbTabFamily));
   const localExplorer = useLocalExplorer(
-    { ...localOptions, path: effectiveReferenceDatabase },
+    {
+      ...localOptions,
+      path: effectiveReferenceDatabase,
+      // Legacy in-memory selections can be valid here. Their synchronized path cannot recover
+      // their original database, so preserve them until the next explicit player selection.
+      player:
+        localOptions.player_database === undefined ||
+        localOptions.player_database === selectedReferenceDatabase
+          ? localOptions.player
+          : null,
+    },
     db === "local" && tabType !== "options",
     tab?.value || "",
   );
@@ -262,12 +272,6 @@ function DatabasePanel() {
               onChange={async (value) => {
                 await tauri.clearGames();
                 const nextDatabase = databaseHandleFromKey(readableDatabases, value);
-                if (
-                  (nextDatabase ? databaseHandleKey(nextDatabase) : null) !==
-                  (selectedDatabase ? databaseHandleKey(selectedDatabase) : null)
-                ) {
-                  setLocalOptions((options) => ({ ...options, player: null }));
-                }
                 (pinnedDatabase ? setPinnedDatabase : setReferenceDatabase)(nextDatabase);
               }}
               placeholder={t("Board.Database.SelectReference")}

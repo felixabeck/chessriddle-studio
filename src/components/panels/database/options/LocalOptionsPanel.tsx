@@ -22,7 +22,7 @@ import { Chessground } from "@/chessground/Chessground";
 import PiecesGrid from "@/components/boards/PiecesGrid";
 import { PlayerSearchInput } from "@/components/databases/PlayerSearchInput";
 import { localOptionsFamily } from "@/state/atoms";
-import { ELO_FILTER_MAX } from "@/utils/db";
+import { databaseHandleKey, ELO_FILTER_MAX } from "@/utils/db";
 
 const YEAR_PRESETS = [1, 3, 5, 10];
 
@@ -55,7 +55,14 @@ function LocalOptionsPanel({ boardFen }: { boardFen: string }) {
               label={t("Common.Search")}
               value={options.player ?? undefined}
               file={options.path}
-              setValue={(v) => setOptions((q) => ({ ...q, player: v || null }))}
+              setValue={(v) =>
+                setOptions((q) => ({
+                  ...q,
+                  player: v ?? null,
+                  player_database:
+                    v !== undefined && options.path ? databaseHandleKey(options.path) : undefined,
+                }))
+              }
             />
           )}
         </Stack>
