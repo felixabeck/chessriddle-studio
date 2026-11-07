@@ -133,10 +133,13 @@ test.each(["forward", "reverse"] as const)(
         const firstMove = { move: "e4", white: 10, draw: 2, black: 3 };
         const secondMove = { move: "d4", white: 4, draw: 5, black: 6 };
         const firstData: SearchResult = [
-            [firstMove, { move: "*", white: 1, draw: 2, black: 3 }],
+            [
+                { ...firstMove, unknown: 0 },
+                { move: "*", white: 1, draw: 2, black: 3, unknown: 0 },
+            ],
             [],
         ];
-        const secondData: SearchResult = [[secondMove], []];
+        const secondData: SearchResult = [[{ ...secondMove, unknown: 0 }], []];
         const firstOperation = {
             resolve: resolveFirst,
             data: firstData,

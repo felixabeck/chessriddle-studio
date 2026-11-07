@@ -579,6 +579,7 @@ pub struct PositionStats {
     pub white: i32,
     pub draw: i32,
     pub black: i32,
+    pub unknown: i32,
 }
 
 fn invalid_move_stream(game_id: i32, error: Error) -> Error {
@@ -760,6 +761,12 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
     if query.exclude_fast_events == Some(false) {
         query.exclude_fast_events = None;
     }
+    if query.include_unknown_results == Some(false) {
+        query.include_unknown_results = None;
+    }
+    if query.sample_order == Some(super::SampleOrder::Elo) {
+        query.sample_order = None;
+    }
     let database_handle = file;
     let target = super::resolve_database(authority, &database_handle, PathOperation::DatabaseRead)?;
     let collision_lease = search_cache.collision_lock(query.clone(), &target);
@@ -808,10 +815,11 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
 
         let openings: DashMap<String, PositionStats> = DashMap::new();
         const MAX_SAMPLES: usize = 500;
-        // Min-heap of (elo_key, game_id) to track top-rated sample games.
-        // Using Reverse so peek() returns the entry with the lowest ELO,
-        // which we can evict when a higher-rated game is found.
-        let top_games: Mutex<BinaryHeap<Reverse<(i16, i32)>>> =
+        let date_order = query.sample_order == Some(super::SampleOrder::Date);
+        // The least preferred sample is evicted before the fixed cap is applied.
+        // Elo mode retains the existing selection, including its tie behaviour.
+        type SampleKey = (i16, Option<String>, i32);
+        let top_games: Mutex<BinaryHeap<Reverse<SampleKey>>> =
             Mutex::new(BinaryHeap::with_capacity(MAX_SAMPLES + 1));
 
         let processed = AtomicUsize::new(0);
@@ -896,9 +904,9 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
                 if entry.result != wanted {
                     return Ok(());
                 }
-            } else if matches!(entry.result, GameResult::None | GameResult::Other) {
-                // Unknown and non-standard results are neither draws nor wins.
-                // PositionStats has no unknown bucket, so omit them explicitly.
+            } else if query.include_unknown_results != Some(true)
+                && matches!(entry.result, GameResult::None | GameResult::Other)
+            {
                 return Ok(());
             }
 
@@ -934,13 +942,22 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
                         cancellation,
                     )? {
                         let elo_key = entry.white_elo.max(entry.black_elo);
-                        let mut heap = top_games.lock().unwrap();
+                        let key = if date_order {
+                            (0, entry.date.map(str::to_owned), entry.id)
+                        } else {
+                            (elo_key, None, entry.id)
+                        };
+                        let mut heap = top_games
+                            .lock()
+                            .map_err(|_| Error::InvalidInput("Sample heap lock poisoned".into()))?;
                         if heap.len() < MAX_SAMPLES {
-                            heap.push(Reverse((elo_key, entry.id)));
-                        } else if let Some(&Reverse((min_elo, _))) = heap.peek() {
-                            if elo_key > min_elo {
+                            heap.push(Reverse(key));
+                        } else if let Some(Reverse(minimum)) = heap.peek() {
+                            if (date_order && key > *minimum)
+                                || (!date_order && elo_key > minimum.0)
+                            {
                                 heap.pop();
-                                heap.push(Reverse((elo_key, entry.id)));
+                                heap.push(Reverse(key));
                             }
                         }
                         drop(heap);
@@ -951,12 +968,16 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
                                 GameResult::WhiteWin => opening.white += 1,
                                 GameResult::BlackWin => opening.black += 1,
                                 GameResult::Draw => opening.draw += 1,
-                                GameResult::Other | GameResult::None => {}
+                                GameResult::Other | GameResult::None => opening.unknown += 1,
                             })
                             .or_insert_with(|| PositionStats {
                                 black: i32::from(entry.result == GameResult::BlackWin),
                                 white: i32::from(entry.result == GameResult::WhiteWin),
                                 draw: i32::from(entry.result == GameResult::Draw),
+                                unknown: i32::from(matches!(
+                                    entry.result,
+                                    GameResult::None | GameResult::Other
+                                )),
                                 move_: String::new(),
                             });
                     }
@@ -976,9 +997,9 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
             .collect();
         let ids: Vec<i32> = top_games
             .into_inner()
-            .unwrap()
+            .map_err(|_| Error::InvalidInput("Sample heap lock poisoned".into()))?
             .into_iter()
-            .map(|Reverse((_, id))| id)
+            .map(|Reverse((_, _, id))| id)
             .collect();
 
         info!("finished search in {:?}", start.elapsed());
@@ -986,7 +1007,7 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
         let (white_players, black_players) = diesel::alias!(players as white, players as black);
         let games: Vec<(Game, Player, Player, Event, Site)> =
             super::sqlite_cancellation::with_sqlite_cancellation(cancellation, || {
-                games::table
+                let query = games::table
                     .inner_join(
                         white_players.on(games::white_id.eq(white_players.field(players::id))),
                     )
@@ -996,8 +1017,14 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
                     .inner_join(events::table.on(games::event_id.eq(events::id)))
                     .inner_join(sites::table.on(games::site_id.eq(sites::id)))
                     .filter(games::id.eq_any(ids))
-                    .order((games::white_elo.desc(), games::black_elo.desc()))
-                    .load(db)
+                    .into_boxed();
+                if date_order {
+                    query.order((games::date.desc(), games::id.desc())).load(db)
+                } else {
+                    query
+                        .order((games::white_elo.desc(), games::black_elo.desc()))
+                        .load(db)
+                }
             })?;
         if cancellation.is_cancelled() {
             return Err(Error::Cancellation);
@@ -2326,6 +2353,7 @@ mod tests {
         },
         infra::fs::set_test_atomic_file_injector,
     };
+    use diesel::connection::SimpleConnection;
     use diesel::Connection;
     use parking_lot::Mutex as ParkingMutex;
     use shakmaty::FromSetup;
@@ -4233,5 +4261,99 @@ mod tests {
         assert_eq!(counted_games(&cached), 1);
         assert_eq!(PROCESS_ENTRY_CALLS.load(Ordering::SeqCst), 0);
         drop(instrument);
+    }
+
+    #[test]
+    fn unknown_results_are_opt_in_counted_and_separate_cached_queries() {
+        let (_dir, app, handle, database) = filter_search_database(&[]);
+        let mut db = SqliteConnection::establish(database.to_str().unwrap()).unwrap();
+        for result in [Some("*"), None, Some("abandoned")] {
+            let id = insert_white_win_e4_e5(&mut db);
+            db.batch_execute("PRAGMA ignore_check_constraints=ON")
+                .unwrap();
+            diesel::update(games::table.find(id))
+                .set(games::result.eq(result))
+                .execute(&mut db)
+                .unwrap();
+            db.batch_execute("PRAGMA ignore_check_constraints=OFF")
+                .unwrap();
+        }
+        let query = exact_position_query(STARTING_FEN);
+        let default = run_position_search(&app, &handle, query.clone(), "unknown-default").unwrap();
+        assert_eq!(
+            (default.0[0].white, default.0[0].unknown, default.1.len()),
+            (1, 0, 1)
+        );
+        let mut included = query.clone();
+        included.include_unknown_results = Some(true);
+        let all = run_position_search(&app, &handle, included.clone(), "unknown-included").unwrap();
+        assert_eq!((all.0[0].white, all.0[0].unknown, all.1.len()), (1, 3, 4));
+        let cached =
+            run_position_search(&app, &handle, included.clone(), "unknown-cached").unwrap();
+        assert_eq!((cached.0[0].unknown, cached.1.len()), (3, 4));
+        included.wanted_result = Some("whitewon".into());
+        let explicit = run_position_search(&app, &handle, included, "unknown-filtered").unwrap();
+        assert_eq!(
+            (explicit.0[0].white, explicit.0[0].unknown, explicit.1.len()),
+            (1, 0, 1)
+        );
+        let instrument = SearchInstrument::start();
+        let mut defaults = query;
+        defaults.include_unknown_results = Some(false);
+        defaults.sample_order = Some(super::super::SampleOrder::Elo);
+        let same = run_position_search(&app, &handle, defaults, "unknown-false").unwrap();
+        assert_eq!(same.1.len(), 1);
+        assert_eq!(PROCESS_ENTRY_CALLS.load(Ordering::SeqCst), 0);
+        drop(instrument);
+    }
+
+    #[test]
+    fn date_sample_order_selects_before_cap_and_orders_date_then_id() {
+        let (_dir, app, handle, database) = filter_search_database(&[]);
+        let mut db = SqliteConnection::establish(database.to_str().unwrap()).unwrap();
+        let latest = db
+            .transaction::<_, Error, _>(|db| {
+                for _ in 0..501 {
+                    insert_white_win_e4_e5(db);
+                }
+                let latest = insert_white_win_e4_e5(db);
+                let tied = insert_white_win_e4_e5(db);
+                diesel::update(games::table.find(latest))
+                    .set((
+                        games::date.eq("2030.01.01"),
+                        games::white_elo.eq(100),
+                        games::black_elo.eq(100),
+                    ))
+                    .execute(db)?;
+                diesel::update(games::table.find(tied))
+                    .set((
+                        games::date.eq("2030.01.01"),
+                        games::white_elo.eq(100),
+                        games::black_elo.eq(100),
+                    ))
+                    .execute(db)?;
+                Ok((latest, tied))
+            })
+            .unwrap();
+        let mut query = exact_position_query(STARTING_FEN);
+        let elo = run_position_search(&app, &handle, query.clone(), "sample-elo").unwrap();
+        assert_eq!(elo.1.len(), 500);
+        assert_eq!(elo.0[0].white, 504);
+        assert!(!elo.1.iter().any(|g| g.id == latest.0 || g.id == latest.1));
+        query.sample_order = Some(super::super::SampleOrder::Date);
+        let dated = run_position_search(&app, &handle, query.clone(), "sample-date").unwrap();
+        assert_eq!(dated.1.len(), 500);
+        assert_eq!(dated.0[0].white, 504);
+        assert_eq!((dated.1[0].id, dated.1[1].id), (latest.1, latest.0));
+        assert!(dated
+            .1
+            .windows(2)
+            .all(|pair| (pair[0].date.as_deref(), pair[0].id)
+                >= (pair[1].date.as_deref(), pair[1].id)));
+        let cached = run_position_search(&app, &handle, query, "sample-date-cached").unwrap();
+        assert_eq!(
+            cached.1.iter().map(|g| g.id).collect::<Vec<_>>(),
+            dated.1.iter().map(|g| g.id).collect::<Vec<_>>()
+        );
     }
 }

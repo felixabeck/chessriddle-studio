@@ -99,8 +99,8 @@ function setup() {
         query_players: vi.fn(async (_database, query) => ({
             data: [
                 query.name === "Beerdsen"
-                    ? { id: 11, name: game.white, elo: 2520 }
-                    : { id: 22, name: game.black, elo: 2651 },
+                    ? { id: 11, name: game.white, game_count: 0, elo: 2520 }
+                    : { id: 22, name: game.black, game_count: 0, elo: 2651 },
             ],
             count: 1,
         })),
@@ -431,8 +431,8 @@ test("both screenshot citations retain hard constraints and verified lookup", as
         const api = querySensitiveSource([candidate]);
         api.query_players.mockResolvedValue({
             data: [
-                { id: 11, name: candidate.white, elo: candidate.white_elo! },
-                { id: 22, name: candidate.black, elo: candidate.black_elo! },
+                { id: 11, name: candidate.white, game_count: 0, elo: candidate.white_elo! },
+                { id: 22, name: candidate.black, game_count: 0, elo: candidate.black_elo! },
             ],
             count: 2,
         });
@@ -1142,8 +1142,8 @@ test.each(["Smith, JOHN", "Smith, John", "Smith, john", "JOHN Smith", "John Smit
         api.query_players.mockImplementation(async (_database, query) => ({
             data:
                 query.name === "Smith"
-                    ? [{ id: 11, name, elo: null }]
-                    : [{ id: 22, name: game.black, elo: null }],
+                    ? [{ id: 11, name, game_count: 0, elo: null }]
+                    : [{ id: 22, name: game.black, game_count: 0, elo: null }],
             count: 1,
         }));
         api.query_games.mockResolvedValue({ data: [{ ...game, white: name }], count: 1 });
@@ -1184,8 +1184,8 @@ test.each([
         api.query_players.mockImplementation(async (_database, query) => ({
             data:
                 query.name === "Smith"
-                    ? [{ id: 11, name, elo: null }]
-                    : [{ id: 22, name: game.black, elo: null }],
+                    ? [{ id: 11, name, game_count: 0, elo: null }]
+                    : [{ id: 22, name: game.black, game_count: 0, elo: null }],
             count: 1,
         }));
         const label = "0-1 Smith,JK-Bluebaum,M";
@@ -1325,7 +1325,7 @@ test("reads later player and game pages before establishing uniqueness", async (
     const { api, search } = setup();
     api.query_players.mockImplementation(async (_db, query) =>
         query.name === "Bluebaum"
-            ? { data: [{ id: 22, name: game.black, elo: 2651 }], count: 1 }
+            ? { data: [{ id: 22, name: game.black, game_count: 0, elo: 2651 }], count: 1 }
             : {
                   data:
                       query.options.page === 1
@@ -1334,10 +1334,11 @@ test("reads later player and game pages before establishing uniqueness", async (
                                 (_, id): Player => ({
                                     id: id + 100,
                                     name: "Beerdsenberg, Thomas",
+                                    game_count: 0,
                                     elo: 2520,
                                 }),
                             )
-                          : [{ id: 11, name: game.white, elo: 2520 }],
+                          : [{ id: 11, name: game.white, game_count: 0, elo: 2520 }],
                   count: 101,
               },
     );
@@ -1485,8 +1486,8 @@ test("Unicode discovery uses invariant ASCII fragments and supports stored dotte
     const unicode = recognizeGameReferences("1-0 Šarić,I.K.-O'Kelly,A 2022 (3)")[0];
     api.query_players.mockResolvedValue({
         data: [
-            { id: 1, name: "Šarić,I.K.", elo: null },
-            { id: 2, name: "O’Kelly, Andrew", elo: null },
+            { id: 1, name: "Šarić,I.K.", game_count: 0, elo: null },
+            { id: 2, name: "O’Kelly, Andrew", game_count: 0, elo: null },
         ],
         count: 2,
     });
@@ -1505,8 +1506,13 @@ test.each(["Tõnisson", "To\u0303nisson", "TÕNISSON"])(
     async (surname) => {
         const { library, api } = setup();
         const targetId = REFERENCE_SEARCH_LIMITS.requests * REFERENCE_SEARCH_LIMITS.pageSize + 1;
-        const white = { id: targetId, name: "TÕNISSON, Tõnu".normalize("NFD"), elo: 2520 };
-        const black = { id: targetId + 1, name: game.black, elo: 2651 };
+        const white = {
+            id: targetId,
+            name: "TÕNISSON, Tõnu".normalize("NFD"),
+            game_count: 0,
+            elo: 2520,
+        };
+        const black = { id: targetId + 1, name: game.black, game_count: 0, elo: 2651 };
         const largeGame = { ...game, white: white.name, white_id: white.id, black_id: black.id };
         if (library.databases[0].type === "success")
             library.databases[0].player_count = targetId + 1;
@@ -1527,7 +1533,7 @@ test.each(["Tõnisson", "To\u0303nisson", "TÕNISSON"])(
                             ? white
                             : id === black.id
                               ? black
-                              : { id, name: "Unrelated, A", elo: null };
+                              : { id, name: "Unrelated, A", game_count: 0, elo: null };
                     },
                 ),
                 count: targetId + 1,
@@ -1564,8 +1570,8 @@ test("surnames without an ASCII run fall back to bounded full player queries", a
     const { api } = setup();
     api.query_players.mockResolvedValue({
         data: [
-            { id: 1, name: "李, Lin", elo: null },
-            { id: 2, name: "王, Wei", elo: null },
+            { id: 1, name: "李, Lin", game_count: 0, elo: null },
+            { id: 2, name: "王, Wei", game_count: 0, elo: null },
         ],
         count: 2,
     });
@@ -1598,7 +1604,12 @@ test("bounded failure retention never hides an incomplete search", async () => {
 test("request and retention limits remain visibly incomplete", async () => {
     const { api, search } = setup();
     api.query_players.mockResolvedValue({
-        data: Array.from({ length: 100 }, (_, id) => ({ id, name: "Unrelated, A", elo: null })),
+        data: Array.from({ length: 100 }, (_, id) => ({
+            id,
+            name: "Unrelated, A",
+            game_count: 0,
+            elo: null,
+        })),
         count: null,
     });
     const result = await search();
@@ -1698,6 +1709,7 @@ test("more than 256 matching player IDs stop retention and visibly preserve inco
     const players: Player[] = Array.from({ length: 401 }, (_, index) => ({
         id: index + 1,
         name: "Beerdsen, Thomas",
+        game_count: 0,
         elo: null,
     }));
     api.query_players.mockImplementation(async (file, query) => {
@@ -1707,8 +1719,8 @@ test("more than 256 matching player IDs stop retention and visibly preserve inco
                     ? players
                     : []
                 : [
-                      { id: 11, name: game.white, elo: null },
-                      { id: 22, name: game.black, elo: null },
+                      { id: 11, name: game.white, game_count: 0, elo: null },
+                      { id: 22, name: game.black, game_count: 0, elo: null },
                   ].filter((player) => player.name.includes(query.name!));
         const start = ((query.options.page ?? 1) - 1) * query.options.pageSize!;
         return {

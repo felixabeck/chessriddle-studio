@@ -1470,7 +1470,7 @@ export type GameMove = { uci: string; san: string; fenAfter: string; clock: bigi
 export type GameMoveEvent = { gameId: string; session: bigint; revision: bigint; moves: GameMove[]; fen: string; whiteTime: bigint | null; blackTime: bigint | null }
 export type GameOmission = "tooLarge"
 export type GameOverEvent = { gameId: string; session: bigint; revision: bigint; result: GameResult; moves: GameMove[] }
-export type GameQuery = { options?: QueryOptions<GameSort> | null; player1?: number | null; player2?: number | null; tournament_id?: number | null; start_date?: string | null; end_date?: string | null; range1?: [number, number] | null; range2?: [number, number] | null; sides?: Sides | null; outcome?: string | null; position?: PositionQueryJs | null; wanted_result?: string | null; exclude_fast_events?: boolean | null }
+export type GameQuery = { options?: QueryOptions<GameSort> | null; player1?: number | null; player2?: number | null; tournament_id?: number | null; start_date?: string | null; end_date?: string | null; range1?: [number, number] | null; range2?: [number, number] | null; sides?: Sides | null; outcome?: string | null; position?: PositionQueryJs | null; wanted_result?: string | null; exclude_fast_events?: boolean | null; include_unknown_results?: boolean | null; sample_order?: SampleOrder | null }
 export type GameResult = { type: "whiteWins"; reason: GameEndReason } | { type: "blackWins"; reason: GameEndReason } | { type: "draw"; reason: DrawReason } | { type: "interrupted"; reason: GameInterruptionReason; snapshot?: EngineTerminalSnapshot | null }
 export type GameSignature = { white: string | null; black: string | null; event: string | null; site: string | null; date: string | null; round: string | null }
 export type GameSort = "id" | "date" | "whiteElo" | "blackElo" | "ply_count"
@@ -1507,15 +1507,15 @@ export type PathOwnerFamily = "engines" | "downloadDestination" | "fileWorkspace
  * Opaque renderer-safe identifier. It deliberately has no path parsing API.
  */
 export type PathRef = { id: string }
-export type Player = { id: number; name: string | null; elo: number | null }
+export type Player = { id: number; name: string | null; elo: number | null; game_count: number }
 export type PlayerConfig = { type: "human"; name: string } | { type: "engine"; name: string; engineId: string; handle: EngineHandle; options?: EngineOption[]; go: GoMode | null }
 export type PlayerGameInfo = { site_stats_data: SiteStatsData[] }
 export type PlayerNameMatch = "contains" | "exact"
 export type PlayerQuery = { options: QueryOptions<PlayerSort>; name?: string | null; nameMatch?: PlayerNameMatch | null; range?: [number, number] | null }
-export type PlayerSort = "id" | "name" | "elo"
+export type PlayerSort = "id" | "name" | "elo" | "games"
 export type PlayersTime = { white: number; black: number; winc: number; binc: number }
 export type PositionQueryJs = { fen: string; type_: string }
-export type PositionStats = { move: string; white: number; draw: number; black: number }
+export type PositionStats = { move: string; white: number; draw: number; black: number; unknown: number }
 export type PracticeDeckIdentity = { fileId: string; game: number }
 export type PracticeDeckInventory = { decks: PracticeDeckIdentity[]; anomalies: PracticeStoreAnomaly[] }
 export type PracticeDeckLoad = { epoch: string; deck: PracticeDeckSnapshot | null }
@@ -1574,6 +1574,7 @@ export type QueryOptions<SortT> = { skipCount: boolean; page?: number | null; pa
 export type QueryResponse<T> = { data: T; count: number | null }
 export type RemoteHttpRejection = { status: number; authorizationSent: boolean }
 export type RootFailure = "changed" | "missing" | "unusable" | "permission" | "too-large"
+export type SampleOrder = "elo" | "date"
 export type Score = { value: ScoreValue; 
 /**
  * The probability of each result (win, draw, loss).

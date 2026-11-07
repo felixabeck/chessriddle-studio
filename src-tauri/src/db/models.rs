@@ -24,6 +24,7 @@ pub struct Player {
     pub id: i32,
     pub name: Option<String>,
     pub elo: Option<i32>,
+    pub game_count: i32,
 }
 
 #[derive(Insertable, Debug)]

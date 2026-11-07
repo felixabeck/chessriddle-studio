@@ -4331,6 +4331,13 @@ mod native_tests {
                     .unwrap(),
             )
             .unwrap();
+        super::super::super::phase_one_tests::assert_player_counts(
+            &mut *fixture
+                .service
+                .repository
+                .connection(&target, None)
+                .unwrap(),
+        );
         std::fs::write(fixture.path("games"), game(Some("456"), "d4 d5", "second")).unwrap();
         *fixture.service.rebuild_hook.lock().unwrap() = Some(Box::new(|| {
             Err(Error::ResourceLimit(
@@ -4407,6 +4414,13 @@ mod native_tests {
             )
             .is_ok());
         assert_eq!(fixture.rows(&fixture.list().pop().unwrap()).len(), 1);
+        super::super::super::phase_one_tests::assert_player_counts(
+            &mut *fixture
+                .service
+                .repository
+                .connection(&target, None)
+                .unwrap(),
+        );
     }
 
     #[test]

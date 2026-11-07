@@ -222,8 +222,18 @@ async function useRealLookup(candidate: NormalizedGame) {
     }),
     query_players: async () => ({
       data: [
-        { id: candidate.white_id, name: candidate.white, elo: candidate.white_elo ?? null },
-        { id: candidate.black_id, name: candidate.black, elo: candidate.black_elo ?? null },
+        {
+          id: candidate.white_id,
+          name: candidate.white,
+          elo: candidate.white_elo ?? null,
+          game_count: 1,
+        },
+        {
+          id: candidate.black_id,
+          name: candidate.black,
+          elo: candidate.black_elo ?? null,
+          game_count: 1,
+        },
       ],
       count: 2,
     }),

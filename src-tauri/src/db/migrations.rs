@@ -6,7 +6,8 @@ use diesel::{
     sql_types::{BigInt, Integer, Nullable, Text},
 };
 
-const CURRENT_DATABASE_VERSION: &str = "2.1.0";
+const CURRENT_DATABASE_VERSION: &str = "2.2.0";
+const PRE_GAME_COUNT_DATABASE_VERSION: &str = "2.1.0";
 const PRE_ORIENTATION_DATABASE_VERSION: &str = "2.0.0";
 const LEGACY_DATABASE_VERSION: &str = "1.0.0";
 const CREATE_TABLES_SQL: &str = include_str!("create.sql");
@@ -203,14 +204,23 @@ fn migrate_database(conn: &mut SqliteConnection) -> Result<bool, Error> {
     match (version.as_str(), canonical) {
         (CURRENT_DATABASE_VERSION, true) => validate_schema(conn).map(|()| false),
         (LEGACY_DATABASE_VERSION, _) => migrate_legacy_database(conn).map(|()| true),
+        (PRE_GAME_COUNT_DATABASE_VERSION, true) => conn.transaction::<_, Error, _>(|conn| {
+            validate_reference_schema_version(conn, false)?;
+            validate_sentinel_records_and_triggers(conn)?;
+            migrate_player_game_counts(conn)?;
+            insert_info(conn, "Version", CURRENT_DATABASE_VERSION)?;
+            validate_database(conn)?;
+            Ok(true)
+        }),
         (PRE_ORIENTATION_DATABASE_VERSION, _) => conn.transaction::<_, Error, _>(|conn| {
             validate_games_schema_version(conn, false)?;
-            validate_reference_schema(conn)?;
+            validate_reference_schema_version(conn, false)?;
             validate_sentinel_records_and_triggers(conn)?;
             conn.batch_execute(
                 "ALTER TABLE Games ADD COLUMN Orientation TEXT \
                  CHECK(Orientation IN ('white', 'black') OR Orientation IS NULL);",
             )?;
+            migrate_player_game_counts(conn)?;
             insert_info(conn, "Version", CURRENT_DATABASE_VERSION)?;
             validate_database(conn)?;
             Ok(true)
@@ -283,6 +293,7 @@ fn migrate_legacy_database(conn: &mut SqliteConnection) -> Result<(), Error> {
             ALTER TABLE Games__canonical RENAME TO Games;",
         )?;
         create_sentinel_triggers(conn)?;
+        migrate_player_game_counts(conn)?;
         if restore_required_indexes {
             conn.batch_execute(super::INDEXES_SQL)?;
         }
@@ -299,6 +310,63 @@ fn table_exists(conn: &mut SqliteConnection, name: &str) -> Result<bool, Error> 
             .count
             == 1,
     )
+}
+
+fn player_game_counts_sql() -> Result<&'static str, Error> {
+    CREATE_TABLES_SQL
+        .split_once("-- Player game counts\n")
+        .map(|(_, sql)| sql)
+        .ok_or_else(|| Error::InvalidInput("Missing player game count schema".into()))
+}
+
+pub(super) fn backfill_player_game_counts(conn: &mut SqliteConnection) -> Result<(), Error> {
+    // Aggregate once, independent of the optional Games indexes. The primary key
+    // makes updating every player a lookup rather than a correlated Games scan.
+    conn.batch_execute(
+        "CREATE TEMP TABLE player_game_counts_backfill (ID INTEGER PRIMARY KEY, GameCount INTEGER NOT NULL);
+         INSERT INTO player_game_counts_backfill
+         SELECT ID, COUNT(*) FROM (
+             SELECT WhiteID AS ID FROM Games WHERE WhiteID != 0
+             UNION ALL
+             SELECT BlackID AS ID FROM Games WHERE BlackID != 0 AND BlackID != WhiteID
+         ) GROUP BY ID;
+         UPDATE Players SET GameCount = COALESCE(
+             (SELECT GameCount FROM player_game_counts_backfill WHERE ID = Players.ID), 0);
+         DROP TABLE player_game_counts_backfill;"
+    )?;
+    Ok(())
+}
+
+fn migrate_player_game_counts(conn: &mut SqliteConnection) -> Result<(), Error> {
+    conn.batch_execute("ALTER TABLE Players ADD COLUMN GameCount INTEGER NOT NULL DEFAULT 0;")?;
+    backfill_player_game_counts(conn)?;
+    conn.batch_execute(player_game_counts_sql()?)?;
+    Ok(())
+}
+
+fn validate_player_game_counts(conn: &mut SqliteConnection) -> Result<(), Error> {
+    let actual: Vec<TriggerInfo> = sql_query(
+        "SELECT name, sql FROM sqlite_master WHERE name = 'players_game_count_idx' OR name LIKE 'player_game_count_%'"
+    ).load(conn)?;
+    let mut canonical =
+        SqliteConnection::establish(":memory:").map_err(crate::error::map_sqlite_establish)?;
+    canonical.batch_execute(CREATE_TABLES_SQL)?;
+    let expected: Vec<TriggerInfo> = sql_query(
+        "SELECT name, sql FROM sqlite_master WHERE name = 'players_game_count_idx' OR name LIKE 'player_game_count_%'"
+    ).load(&mut canonical)?;
+    if actual.len() != expected.len()
+        || expected.iter().any(|expected| {
+            !actual.iter().any(|actual| {
+                actual.name == expected.name
+                    && normalize_sql(&actual.sql) == normalize_sql(&expected.sql)
+            })
+        })
+    {
+        return Err(Error::InvalidInput(
+            "Player game count index or triggers are not canonical".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn info_value(conn: &mut SqliteConnection, name: &str) -> Result<Option<String>, Error> {
@@ -333,6 +401,7 @@ fn validate_schema(conn: &mut SqliteConnection) -> Result<(), Error> {
     validate_games_schema(conn)?;
     validate_reference_schema(conn)?;
     validate_sentinel_records_and_triggers(conn)?;
+    validate_player_game_counts(conn)?;
     Ok(())
 }
 
@@ -481,6 +550,13 @@ fn validate_games_schema_version(
 type ColumnContract = (&'static str, &'static str, bool, Option<&'static str>, i32);
 
 fn validate_reference_schema(conn: &mut SqliteConnection) -> Result<(), Error> {
+    validate_reference_schema_version(conn, true)
+}
+
+fn validate_reference_schema_version(
+    conn: &mut SqliteConnection,
+    with_game_count: bool,
+) -> Result<(), Error> {
     validate_exact_columns(
         conn,
         "Info",
@@ -489,15 +565,15 @@ fn validate_reference_schema(conn: &mut SqliteConnection) -> Result<(), Error> {
             ("Value", "TEXT", false, None, 0),
         ],
     )?;
-    validate_exact_columns(
-        conn,
-        "Players",
-        &[
-            ("ID", "INTEGER", false, None, 1),
-            ("Name", "TEXT", false, None, 0),
-            ("Elo", "INTEGER", false, None, 0),
-        ],
-    )?;
+    let mut player_columns = vec![
+        ("ID", "INTEGER", false, None, 1),
+        ("Name", "TEXT", false, None, 0),
+        ("Elo", "INTEGER", false, None, 0),
+    ];
+    if with_game_count {
+        player_columns.push(("GameCount", "INTEGER", true, Some("0"), 0));
+    }
+    validate_exact_columns(conn, "Players", &player_columns)?;
     for table in ["Events", "Sites"] {
         validate_exact_columns(
             conn,
@@ -725,7 +801,13 @@ mod tests {
         )
         .unwrap();
 
+        conn.batch_execute(
+            "INSERT INTO Players(ID,Name) VALUES(1,'One'),(2,'Two');
+            INSERT INTO Games(WhiteID,BlackID) VALUES(1,1),(1,2),(0,2);",
+        )
+        .unwrap();
         prepare_database(&mut conn, "unused", "unused").unwrap();
+        super::super::phase_one_tests::assert_player_counts(&mut conn);
         assert!(games_schema_is_canonical(&mut conn).unwrap());
         assert_eq!(
             info_value(&mut conn, "Version").unwrap().as_deref(),
@@ -763,13 +845,70 @@ mod tests {
 
     fn pre_orientation_connection() -> SqliteConnection {
         let mut conn = connection();
-        let old_schema = CREATE_TABLES_SQL.replace(
+        let old_schema = pre_game_count_schema().replace(
             "    Orientation TEXT CHECK(Orientation IN ('white', 'black') OR Orientation IS NULL),\n",
             "",
         );
         conn.batch_execute(&old_schema).unwrap();
         insert_info(&mut conn, "Version", PRE_ORIENTATION_DATABASE_VERSION).unwrap();
         conn
+    }
+
+    fn pre_game_count_schema() -> String {
+        CREATE_TABLES_SQL
+            .split("-- Player game counts\n")
+            .next()
+            .unwrap()
+            .replace(
+                "    Elo INTEGER,\n    GameCount INTEGER NOT NULL DEFAULT 0",
+                "    Elo INTEGER",
+            )
+    }
+
+    #[test]
+    fn game_counts_migrate_from_both_version_two_schemas_and_remain_maintained() {
+        for version in [
+            PRE_ORIENTATION_DATABASE_VERSION,
+            PRE_GAME_COUNT_DATABASE_VERSION,
+        ] {
+            let mut conn = connection();
+            let schema = if version == PRE_ORIENTATION_DATABASE_VERSION {
+                pre_game_count_schema().replace("    Orientation TEXT CHECK(Orientation IN ('white', 'black') OR Orientation IS NULL),\n", "")
+            } else {
+                pre_game_count_schema()
+            };
+            conn.batch_execute(&schema).unwrap();
+            insert_info(&mut conn, "Version", version).unwrap();
+            conn.batch_execute(
+                "INSERT INTO Players(ID,Name) VALUES(1,'One'),(2,'Two'),(3,'Unused');
+                INSERT INTO Games(WhiteID,BlackID) VALUES(1,1),(1,2),(0,2),(0,0);",
+            )
+            .unwrap();
+            assert!(validate_existing_database(&mut conn).unwrap());
+            super::super::phase_one_tests::assert_player_counts(&mut conn);
+            conn.batch_execute(
+                "INSERT INTO Games(WhiteID,BlackID) VALUES(1,2);
+                UPDATE Games SET WhiteID=3 WHERE WhiteID=1;
+                DELETE FROM Games WHERE BlackID=2;",
+            )
+            .unwrap();
+            super::super::phase_one_tests::assert_player_counts(&mut conn);
+            assert!(!validate_existing_database(&mut conn).unwrap());
+        }
+    }
+
+    #[test]
+    fn game_count_schema_drift_is_rejected() {
+        for mutation in [
+            "DROP INDEX players_game_count_idx",
+            "DROP TRIGGER player_game_count_insert",
+            "DROP TRIGGER player_game_count_update; CREATE TRIGGER player_game_count_update AFTER UPDATE ON Games BEGIN SELECT 1; END",
+        ] {
+            let mut conn = connection();
+            prepare_database(&mut conn,"","").unwrap();
+            conn.batch_execute(mutation).unwrap();
+            assert!(validate_existing_database(&mut conn).is_err());
+        }
     }
 
     #[test]
@@ -879,6 +1018,9 @@ mod tests {
         conn.batch_execute(
             "CREATE TABLE Players__wrong (ID INTEGER PRIMARY KEY, Name TEXT, Elo INTEGER, UNIQUE(Elo));
              INSERT INTO Players__wrong SELECT ID, Name, Elo FROM Players;
+             DROP TRIGGER player_game_count_insert;
+             DROP TRIGGER player_game_count_delete;
+             DROP TRIGGER player_game_count_update;
              DROP TABLE Players;
              ALTER TABLE Players__wrong RENAME TO Players;",
         )

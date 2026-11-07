@@ -16,7 +16,8 @@ CREATE TABLE Sites (
 CREATE TABLE Players (
     ID INTEGER PRIMARY KEY,
     Name TEXT UNIQUE,
-    Elo INTEGER
+    Elo INTEGER,
+    GameCount INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE Games (
@@ -71,3 +72,25 @@ CREATE TRIGGER protect_unknown_site_update
 BEFORE UPDATE ON Sites WHEN OLD.ID = 0
   AND (NEW.ID != 0 OR NEW.Name IS NOT 'Unknown')
 BEGIN SELECT RAISE(ABORT, 'cannot modify the Unknown site'); END;
+
+-- Player game counts
+CREATE INDEX players_game_count_idx ON Players(GameCount DESC, Name ASC, ID ASC);
+CREATE TRIGGER player_game_count_insert AFTER INSERT ON Games
+BEGIN
+    UPDATE Players SET GameCount = GameCount + 1
+    WHERE ID != 0 AND ID IN (NEW.WhiteID, NEW.BlackID);
+END;
+CREATE TRIGGER player_game_count_delete AFTER DELETE ON Games
+BEGIN
+    UPDATE Players SET GameCount = GameCount - 1
+    WHERE ID != 0 AND ID IN (OLD.WhiteID, OLD.BlackID);
+END;
+CREATE TRIGGER player_game_count_update AFTER UPDATE OF WhiteID, BlackID ON Games
+BEGIN
+    UPDATE Players SET GameCount = GameCount - 1
+    WHERE ID != 0 AND ID IN (OLD.WhiteID, OLD.BlackID)
+      AND ID NOT IN (NEW.WhiteID, NEW.BlackID);
+    UPDATE Players SET GameCount = GameCount + 1
+    WHERE ID != 0 AND ID IN (NEW.WhiteID, NEW.BlackID)
+      AND ID NOT IN (OLD.WhiteID, OLD.BlackID);
+END;

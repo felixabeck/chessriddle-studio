@@ -29,7 +29,7 @@ import PlayerCard from "./PlayerCard";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-const player: Player = { id: 7, name: "Magnus", elo: null };
+const player: Player = { id: 7, name: "Magnus", game_count: 0, elo: null };
 const file: DatabaseHandle = { id: { id: "db-1" }, kind: "database" };
 
 let container: HTMLDivElement;

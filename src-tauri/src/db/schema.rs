@@ -37,6 +37,8 @@ diesel::table! {
         name -> Nullable<Text>,
         #[sql_name = "Elo"]
         elo -> Nullable<Integer>,
+        #[sql_name = "GameCount"]
+        game_count -> Integer,
     }
 }
 

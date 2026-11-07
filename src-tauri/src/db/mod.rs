@@ -844,6 +844,8 @@ mod game_cas_tests;
 use game_cas_tests::test_game_stamp;
 #[cfg(test)]
 mod insert_db_game_tests;
+#[cfg(test)]
+mod phase_one_tests;
 
 #[cfg(test)]
 static CONVERSION_BEFORE_REVISION: crate::infra::test_hooks::KeyedTestHooks<String> =
@@ -869,7 +871,7 @@ pub(crate) fn schema_database_case(
     let mut connection = diesel::SqliteConnection::establish(database.to_str().unwrap()).unwrap();
     connection.batch_execute(CREATE_TABLES_SQL).unwrap();
     connection
-        .batch_execute("INSERT INTO Info (Name, Value) VALUES ('Version', '2.1.0');")
+        .batch_execute("INSERT INTO Info (Name, Value) VALUES ('Version', '2.2.0');")
         .unwrap();
     drop(connection);
 
@@ -2151,6 +2153,17 @@ pub struct GameQuery {
     pub wanted_result: Option<String>,
     #[specta(optional)]
     pub exclude_fast_events: Option<bool>,
+    #[specta(optional)]
+    pub include_unknown_results: Option<bool>,
+    #[specta(optional)]
+    pub sample_order: Option<SampleOrder>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Hash, Type)]
+#[serde(rename_all = "lowercase")]
+pub enum SampleOrder {
+    Elo,
+    Date,
 }
 
 impl GameQuery {
@@ -2908,6 +2921,8 @@ pub enum PlayerSort {
     Name,
     #[serde(rename = "elo")]
     Elo,
+    #[serde(rename = "games")]
+    Games,
 }
 
 #[tauri::command]
@@ -2985,30 +3000,39 @@ fn get_players_blocking(
 
         let mut sql_query = players::table.into_boxed();
         let mut count_query = players::table.into_boxed();
+        let mut count_with_rows = false;
         sql_query = sql_query.filter(players::name.is_not("Unknown"));
         count_query = count_query.filter(players::name.is_not("Unknown"));
 
         if let Some(name) = query.name {
-            let (predicate, value) = match query.name_match {
-                Some(PlayerNameMatch::Exact) => ("Name COLLATE NOCASE = ", name),
-                _ => ("Name LIKE ", format!("%{}%", name)),
-            };
-            let name_filter = diesel::dsl::sql::<diesel::sql_types::Bool>(predicate)
-                .bind::<diesel::sql_types::Text, _>(value);
-            sql_query = sql_query.filter(name_filter.clone());
-            count_query = count_query.filter(name_filter);
+            if name.is_empty() && !matches!(query.name_match, Some(PlayerNameMatch::Exact)) {
+                sql_query = sql_query.filter(players::name.is_not_null());
+                count_query = count_query.filter(players::name.is_not_null());
+            } else {
+                count_with_rows = !query.options.skip_count;
+                let (predicate, value) = match query.name_match {
+                    Some(PlayerNameMatch::Exact) => ("Name COLLATE NOCASE = ", name),
+                    _ => ("Name LIKE ", format!("%{}%", name)),
+                };
+                let name_filter = diesel::dsl::sql::<diesel::sql_types::Bool>(predicate)
+                    .bind::<diesel::sql_types::Text, _>(value);
+                // Resolve matching IDs through the narrow Name index before sorting.
+                // Otherwise SQLite scans the entire game-count index even for one match.
+                let matching_players = diesel::alias!(players as matching_players);
+                sql_query = sql_query.filter(
+                    players::id.eq_any(
+                        matching_players
+                            .select(matching_players.field(players::id))
+                            .filter(name_filter.clone()),
+                    ),
+                );
+                count_query = count_query.filter(name_filter);
+            }
         }
 
         if let Some(range) = query.range {
             sql_query = sql_query.filter(players::elo.between(range.0, range.1));
             count_query = count_query.filter(players::elo.between(range.0, range.1));
-        }
-
-        if !query.options.skip_count {
-            count = Some(sqlite_cancellation::with_sqlite_cancellation(
-                cancellation,
-                || count_query.count().get_result(db),
-            )?);
         }
 
         let (limit, offset) = pagination_limit_offset(query.options.page, query.options.page_size)?;
@@ -3033,11 +3057,47 @@ fn get_players_blocking(
                 SortDirection::Asc => sql_query.order(players::elo.asc()),
                 SortDirection::Desc => sql_query.order(players::elo.desc()),
             },
+            PlayerSort::Games => match query.options.direction {
+                SortDirection::Asc => sql_query.order((
+                    players::game_count.asc(),
+                    players::name.asc(),
+                    players::id.asc(),
+                )),
+                SortDirection::Desc => sql_query.order((
+                    players::game_count.desc(),
+                    players::name.asc(),
+                    players::id.asc(),
+                )),
+            },
         };
 
-        let players = sqlite_cancellation::with_sqlite_cancellation(cancellation, || {
-            sql_query.load::<Player>(db)
-        })?;
+        let players = if count_with_rows {
+            // Share the filtered scan with pagination's count. Keep the separate
+            // count for unfiltered pages so their LIMIT can use the count index.
+            let rows = sqlite_cancellation::with_sqlite_cancellation(cancellation, || {
+                sql_query
+                    .select((
+                        players::all_columns,
+                        diesel::dsl::sql::<diesel::sql_types::BigInt>("COUNT(*) OVER ()"),
+                    ))
+                    .load::<(Player, i64)>(db)
+            })?;
+            count = rows.first().map(|(_, total)| *total);
+            if rows.is_empty() && offset.unwrap_or(0) == 0 {
+                count = Some(0);
+            }
+            rows.into_iter().map(|(player, _)| player).collect()
+        } else {
+            sqlite_cancellation::with_sqlite_cancellation(cancellation, || {
+                sql_query.load::<Player>(db)
+            })?
+        };
+        if !query.options.skip_count && count.is_none() {
+            count = Some(sqlite_cancellation::with_sqlite_cancellation(
+                cancellation,
+                || count_query.count().get_result(db),
+            )?);
+        }
         cancellation_check(cancellation)?;
 
         Ok(QueryResponse {
@@ -6466,6 +6526,7 @@ mod tests {
     }
 
     fn assert_info_counts_match_tables(db: &mut SqliteConnection) {
+        phase_one_tests::assert_player_counts(db);
         for (name, count) in [
             (
                 "GameCount",
@@ -8698,11 +8759,13 @@ mod tests {
                 id: 1,
                 name: Some("White".into()),
                 elo: None,
+                game_count: 0,
             },
             Player {
                 id: 2,
                 name: Some("Black".into()),
                 elo: None,
+                game_count: 0,
             },
             Event {
                 id: 1,
@@ -15399,7 +15462,7 @@ mod deletion_tests {
         let mut connection = SqliteConnection::establish(database.to_str().unwrap()).unwrap();
         connection.batch_execute(CREATE_TABLES_SQL).unwrap();
         connection
-            .batch_execute("INSERT INTO Info (Name, Value) VALUES ('Version', '2.1.0');")
+            .batch_execute("INSERT INTO Info (Name, Value) VALUES ('Version', '2.2.0');")
             .unwrap();
         connection.batch_execute(
             "INSERT INTO Games (ID, Result, Moves, PawnHome, WhiteMaterial, BlackMaterial) VALUES (1, '*', X'', 0, 0, 0);"
