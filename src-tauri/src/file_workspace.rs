@@ -11388,7 +11388,10 @@ mod tests {
             id: "unknown-source".into(),
         });
 
-        for (name, source) in [("unknown", unknown), ("directory", directory_handle)] {
+        for (name, source, missing_capability) in [
+            ("unknown", unknown, true),
+            ("directory", directory_handle, false),
+        ] {
             let result = create_workspace_file_blocking(
                 workspace.clone(),
                 workspace.clone(),
@@ -11403,7 +11406,14 @@ mod tests {
                 &state.pgn_repository,
                 &CancellationToken::new(),
             );
-            assert!(matches!(result, Err(Error::InvalidInput(_))), "{result:?}");
+            if missing_capability {
+                assert!(
+                    matches!(result, Err(Error::UnknownPathCapability)),
+                    "{result:?}"
+                );
+            } else {
+                assert!(matches!(result, Err(Error::InvalidInput(_))), "{result:?}");
+            }
             assert!(!root.join(format!("{name}.pgn")).exists());
             assert!(!root.join(format!("{name}.info")).exists());
             assert_workspace_entry_names(&root, &["not-pgn"]);
