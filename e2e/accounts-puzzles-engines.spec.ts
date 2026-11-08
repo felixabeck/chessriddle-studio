@@ -822,6 +822,28 @@ const summaryStatistics = {
                     max_player_elo: 1500,
                 },
             ],
+            colors: [
+                {
+                    time_control: "600+0",
+                    is_player_white: true,
+                    won: 5,
+                    drawn: 2,
+                    lost: 1,
+                    rated_won: 5,
+                    rated_drawn: 2,
+                    rated_lost: 1,
+                    opponent_elo_sum: 11_200,
+                },
+            ],
+            latest: [
+                {
+                    time_control: "600+0",
+                    date: "2026.10.04",
+                    time: null,
+                    game_id: 1,
+                    player_elo: 1500,
+                },
+            ],
             openings: [],
         },
     ],
@@ -833,6 +855,18 @@ const homeSummaryPlayerStatisticsFixture = (player: string, won: number) => ({
             ...summaryStatistics.site_stats_data[0],
             player,
             daily: [{ ...summaryStatistics.site_stats_data[0].daily[0], won, drawn: 0, lost: 0 }],
+            colors: [
+                {
+                    ...summaryStatistics.site_stats_data[0].colors[0],
+                    won,
+                    drawn: 0,
+                    lost: 0,
+                    rated_won: won,
+                    rated_drawn: 0,
+                    rated_lost: 0,
+                    opponent_elo_sum: won * 1400,
+                },
+            ],
         },
     ],
 });

@@ -1353,6 +1353,12 @@ export type ClockUpdateEvent = { gameId: string; session: bigint; revision: bigi
 export type CollectionDescriptor = { id: string; name: string; file: FileWorkspaceHandle; database: DatabaseHandle | null; account: AccountIdentity | null; status: CollectionStatus; generation: string; omitted: number; retiredDatabase: DatabaseHandle | null; fetchSinceMs: string | null; pendingBatch?: FileWorkspaceHandle | null }
 export type CollectionEdit = { kind: "delete"; games: LinkedGameLocator[] } | { kind: "cleanup"; empty: boolean; duplicates: boolean } | { kind: "renamePlayer"; from: string; to: string }
 export type CollectionStatus = "ready" | "stale" | "missing" | "retired" | "preservedOriginal" | "unavailable" | "trashed"
+export type ColorStatsData = { time_control: string; is_player_white: boolean; won: number; drawn: number; lost: number; rated_won: number; rated_drawn: number; rated_lost: number; 
+/**
+ * f64 exports as a TS number. Positive integer ratings are added with saturation at
+ * JavaScript's maximum safe integer (2^53 - 1), avoiding overflow and inexact integer sums.
+ */
+opponent_elo_sum: number }
 /**
  * Persistence result paired with a committed path identifier. `DurabilityUncertain` means the
  * replacement happened but syncing its parent directory failed; callers must not retry.
@@ -1479,6 +1485,7 @@ export type GameStatus = "playing" | { finished: { result: GameResult } }
 export type GoMode = { t: "PlayersTime"; c: PlayersTime } | { t: "Depth"; c: number } | { t: "Time"; c: number } | { t: "Nodes"; c: number } | { t: "Infinite" }
 export type InsertedDbGame = { id: number; stamp: string }
 export type InstalledEngineResult = { handle: EngineHandle; config: EngineConfig; filename: string }
+export type LatestRatingData = { time_control: string; date: string; time: string | null; game_id: number; player_elo: number }
 export type LichessAccountHandle = string
 export type LichessAccountMetadata = { handle: LichessAccountHandle; username: string }
 export type LichessAccountRemoval = { state: "not_found" } | { state: "removed"; revocation_pending: boolean; revocation_outcome: LichessRevocationOutcome | null; durability_uncertain: boolean }
@@ -1590,7 +1597,7 @@ export type ScoreValue =
  */
 { type: "mate"; value: number }
 export type Sides = "BlackWhite" | "WhiteBlack" | "Any"
-export type SiteStatsData = { site: string; player: string; daily: DailyStatsData[]; openings: OpeningStatsData[] }
+export type SiteStatsData = { site: string; player: string; daily: DailyStatsData[]; openings: OpeningStatsData[]; colors: ColorStatsData[]; latest: LatestRatingData[] }
 export type SortDirection = "asc" | "desc"
 export type StampedGame = { pgn: string; stamp: string; revision: string; present: boolean; omission?: GameOmission | null; linked?: LinkedGameLocator | null }
 export type StartupPathOwners = { retainedIds: PathRef[]; trustedFamilies: PathOwnerFamily[] }

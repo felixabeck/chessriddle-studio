@@ -3293,6 +3293,8 @@ pub struct SiteStatsData {
     pub player: String,
     pub daily: Vec<DailyStatsData>,
     pub openings: Vec<OpeningStatsData>,
+    pub colors: Vec<ColorStatsData>,
+    pub latest: Vec<LatestRatingData>,
 }
 
 #[derive(Debug, Clone, Serialize, Type, Default)]
@@ -3313,6 +3315,36 @@ pub struct OpeningStatsData {
     pub won: u32,
     pub drawn: u32,
     pub lost: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Type, Default)]
+pub struct ColorStatsData {
+    pub time_control: String,
+    pub is_player_white: bool,
+    pub won: u32,
+    pub drawn: u32,
+    pub lost: u32,
+    pub rated_won: u32,
+    pub rated_drawn: u32,
+    pub rated_lost: u32,
+    /// f64 exports as a TS number. Positive integer ratings are added with saturation at
+    /// JavaScript's maximum safe integer (2^53 - 1), avoiding overflow and inexact integer sums.
+    pub opponent_elo_sum: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Type, Default)]
+pub struct LatestRatingData {
+    pub time_control: String,
+    pub date: String,
+    pub time: Option<String>,
+    pub game_id: i32,
+    pub player_elo: i32,
+}
+
+impl LatestRatingData {
+    fn chronology(&self) -> (&str, &Option<String>, i32) {
+        (&self.date, &self.time, self.game_id)
+    }
 }
 
 /// Import progress for a PGN-to-database conversion. A conversion has no total
@@ -3444,6 +3476,8 @@ fn get_players_game_info_blocking<R: tauri::Runtime>(
                 games::time_control,
                 sites::name,
                 players::name,
+                games::id,
+                games::time,
             ));
             let rows = sql_query.load_iter::<PlayerStatisticsRow, DefaultLoadingMode>(db)?;
             process_player_statistics_batches(
@@ -3502,6 +3536,8 @@ struct PlayerStatisticsRow {
     time_control: Option<String>,
     site: Option<String>,
     player: Option<String>,
+    game_id: i32,
+    time: Option<String>,
 }
 
 impl PlayerStatisticsRow {
@@ -3510,6 +3546,7 @@ impl PlayerStatisticsRow {
             .len()
             .saturating_add(self.outcome.as_ref().map_or(0, String::len))
             .saturating_add(self.date.as_ref().map_or(0, String::len))
+            .saturating_add(self.time.as_ref().map_or(0, String::len))
             .saturating_add(self.time_control.as_ref().map_or(0, String::len))
             .saturating_add(self.site.as_ref().map_or(0, String::len))
             .saturating_add(self.player.as_ref().map_or(0, String::len))
@@ -3525,6 +3562,9 @@ struct EvaluatedPlayerStatisticsRow {
     result: GameOutcome,
     time_control: String,
     opening: String,
+    opponent_elo: Option<i32>,
+    game_id: i32,
+    time: Option<String>,
 }
 
 #[derive(Default)]
@@ -3549,14 +3589,24 @@ struct PlayerStatisticsDailyAccumulator {
     max_player_elo: i32,
 }
 
+#[derive(Default)]
+struct PlayerStatisticsColorAccumulator {
+    outcomes: PlayerStatisticsOutcomeCounts,
+    rated_outcomes: PlayerStatisticsOutcomeCounts,
+    opponent_elo_sum: f64,
+}
+
 /// The result holds one record per distinct (site, player, time_control, date) and per distinct
-/// (site, player, time_control, colour, opening). Apart from the Lichess URL normalisation,
+/// (site, player, time_control, colour, opening), plus per-colour totals and the latest rating
+/// per time control. Apart from the Lichess URL normalisation,
 /// site and time_control are kept verbatim, so a database whose games carry per-game Site or
 /// TimeControl strings yields one small record per game. Move blobs are never retained.
 #[derive(Default)]
 struct PlayerStatisticsAccumulator {
     daily: HashMap<(String, String, String, String), PlayerStatisticsDailyAccumulator>,
     openings: HashMap<(String, String, String, bool, String), PlayerStatisticsOutcomeCounts>,
+    colors: HashMap<(String, String, String, bool), PlayerStatisticsColorAccumulator>,
+    latest: HashMap<(String, String, String), LatestRatingData>,
 }
 
 impl PlayerStatisticsAccumulator {
@@ -3570,7 +3620,53 @@ impl PlayerStatisticsAccumulator {
             result,
             time_control,
             opening,
+            opponent_elo,
+            game_id,
+            time,
         } = row;
+
+        // Only complete, valid calendar dates participate in chronological rating selection.
+        if date.len() == 10
+            && date.bytes().enumerate().all(|(index, byte)| {
+                if index == 4 || index == 7 {
+                    byte == b'.'
+                } else {
+                    byte.is_ascii_digit()
+                }
+            })
+            && NaiveDate::parse_from_str(&date, "%Y.%m.%d").is_ok()
+        {
+            let candidate = LatestRatingData {
+                time_control: time_control.clone(),
+                date: date.clone(),
+                time,
+                game_id,
+                player_elo,
+            };
+            let latest = self
+                .latest
+                .entry((site.clone(), player.clone(), time_control.clone()))
+                .or_insert_with(|| candidate.clone());
+            if candidate.chronology() > latest.chronology() {
+                *latest = candidate;
+            }
+        }
+
+        let color = self
+            .colors
+            .entry((
+                site.clone(),
+                player.clone(),
+                time_control.clone(),
+                is_player_white,
+            ))
+            .or_default();
+        color.outcomes.add(&result);
+        if let Some(opponent_elo) = opponent_elo.filter(|rating| *rating > 0) {
+            color.rated_outcomes.add(&result);
+            color.opponent_elo_sum =
+                (color.opponent_elo_sum + f64::from(opponent_elo)).min(9_007_199_254_740_991.0);
+        }
 
         let daily = self
             .daily
@@ -3615,6 +3711,26 @@ impl PlayerStatisticsAccumulator {
             });
         }
 
+        for ((site, player, time_control, is_player_white), color) in self.colors {
+            let group = player_statistics_site_group(&mut grouped, &site, &player);
+            group.colors.push(ColorStatsData {
+                time_control,
+                is_player_white,
+                won: color.outcomes.won,
+                drawn: color.outcomes.drawn,
+                lost: color.outcomes.lost,
+                rated_won: color.rated_outcomes.won,
+                rated_drawn: color.rated_outcomes.drawn,
+                rated_lost: color.rated_outcomes.lost,
+                opponent_elo_sum: color.opponent_elo_sum,
+            });
+        }
+        for ((site, player, _), latest) in self.latest {
+            player_statistics_site_group(&mut grouped, &site, &player)
+                .latest
+                .push(latest);
+        }
+
         let mut site_stats_data: Vec<_> = grouped.into_values().collect();
         for group in &mut site_stats_data {
             group.daily.sort_unstable_by(|left, right| {
@@ -3628,6 +3744,14 @@ impl PlayerStatisticsAccumulator {
                     .then_with(|| left.is_player_white.cmp(&right.is_player_white))
                     .then_with(|| left.opening.cmp(&right.opening))
             });
+            group.colors.sort_unstable_by(|left, right| {
+                left.time_control
+                    .cmp(&right.time_control)
+                    .then_with(|| left.is_player_white.cmp(&right.is_player_white))
+            });
+            group
+                .latest
+                .sort_unstable_by(|left, right| left.time_control.cmp(&right.time_control));
         }
         site_stats_data.sort_unstable_by(|left, right| {
             left.site
@@ -3735,6 +3859,13 @@ fn evaluate_player_statistics_row(
         result,
         time_control: row.time_control.clone().unwrap_or_default(),
         opening,
+        opponent_elo: if is_white {
+            row.black_elo
+        } else {
+            row.white_elo
+        },
+        game_id: row.game_id,
+        time: row.time.clone(),
     }))
 }
 
@@ -11434,7 +11565,10 @@ mod tests {
         fen: Option<&'a str>,
     }
 
-    fn insert_player_statistics_game(db: &mut SqliteConnection, fixture: PlayerStatisticsGame<'_>) {
+    fn insert_player_statistics_game(
+        db: &mut SqliteConnection,
+        fixture: PlayerStatisticsGame<'_>,
+    ) -> i32 {
         let (white_id, black_id, white_elo, black_elo) = if fixture.is_player_white {
             (
                 fixture.player_id,
@@ -11474,7 +11608,8 @@ mod tests {
                 orientation: None,
             },
         )
-        .unwrap();
+        .unwrap()
+        .id
     }
 
     fn insert_kept_player_game(
@@ -11519,6 +11654,196 @@ mod tests {
             None,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn player_statistics_colors_key_results_and_positive_opponent_ratings() {
+        let (_dir, app, handle, database) = blocking_database_case();
+        let player_id = {
+            let state = app.state::<AppState>();
+            let mut db = state
+                .database_repository
+                .connection(&test_target(&database), None)
+                .unwrap();
+            let player = create_player(&mut db, "Player").unwrap();
+            let opponent = create_player(&mut db, "Opponent").unwrap();
+            let event = create_event(&mut db, "Event").unwrap();
+            let site = create_site(&mut db, "Site").unwrap();
+            let base = PlayerStatisticsGame {
+                player_id: player.id,
+                opponent_id: opponent.id,
+                event_id: event.id,
+                site_id: site.id,
+                is_player_white: true,
+                player_elo: Some(1800),
+                opponent_elo: Some(1700),
+                moves: Vec::new(),
+                date: Some("2026.11.08"),
+                result: Some("1-0"),
+                time_control: Some("600+0"),
+                fen: None,
+            };
+            for is_player_white in [true, false] {
+                for (result, opponent_elo) in [
+                    ("1-0", Some(1700)),
+                    ("1/2-1/2", Some(1800)),
+                    ("0-1", Some(1900)),
+                    ("1-0", None),
+                    ("1/2-1/2", Some(0)),
+                    ("0-1", Some(-100)),
+                ] {
+                    insert_player_statistics_game(
+                        &mut db,
+                        PlayerStatisticsGame {
+                            is_player_white,
+                            result: Some(result),
+                            opponent_elo,
+                            ..base.clone()
+                        },
+                    );
+                }
+            }
+            // Self-play still contributes once from White's perspective, using Black's rating.
+            insert_player_statistics_game(
+                &mut db,
+                PlayerStatisticsGame {
+                    opponent_id: player.id,
+                    opponent_elo: Some(2000),
+                    ..base.clone()
+                },
+            );
+            for _ in 0..3 {
+                insert_player_statistics_game(
+                    &mut db,
+                    PlayerStatisticsGame {
+                        time_control: Some("300+0"),
+                        opponent_elo: Some(i32::MAX),
+                        ..base.clone()
+                    },
+                );
+            }
+            player.id
+        };
+
+        let info = load_player_statistics(&app, handle, player_id);
+        let colors = &info.site_stats_data[0].colors;
+        let actual: Vec<_> = colors
+            .iter()
+            .map(|color| {
+                (
+                    color.time_control.as_str(),
+                    color.is_player_white,
+                    (color.won, color.drawn, color.lost),
+                    (color.rated_won, color.rated_drawn, color.rated_lost),
+                    color.opponent_elo_sum,
+                )
+            })
+            .collect();
+        assert_eq!(
+            actual,
+            [
+                ("300+0", true, (3, 0, 0), (3, 0, 0), 6_442_450_941.0),
+                ("600+0", false, (2, 2, 2), (1, 1, 1), 5400.0),
+                ("600+0", true, (3, 2, 2), (2, 1, 1), 7400.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn player_statistics_latest_uses_date_time_and_id_and_ignores_partial_dates() {
+        let (_dir, app, handle, database) = blocking_database_case();
+        let (player_id, timed_latest_id, untimed_latest_id) = {
+            let state = app.state::<AppState>();
+            let mut db = state
+                .database_repository
+                .connection(&test_target(&database), None)
+                .unwrap();
+            let player = create_player(&mut db, "Player").unwrap();
+            let opponent = create_player(&mut db, "Opponent").unwrap();
+            let event = create_event(&mut db, "Event").unwrap();
+            let site = create_site(&mut db, "Site").unwrap();
+            let mut insert = |time_control, date, time: Option<&str>, player_elo| {
+                let game_id = insert_player_statistics_game(
+                    &mut db,
+                    PlayerStatisticsGame {
+                        player_id: player.id,
+                        opponent_id: opponent.id,
+                        event_id: event.id,
+                        site_id: site.id,
+                        is_player_white: false,
+                        player_elo: Some(player_elo),
+                        opponent_elo: None,
+                        moves: Vec::new(),
+                        date: Some(date),
+                        result: Some("0-1"),
+                        time_control: Some(time_control),
+                        fen: None,
+                    },
+                );
+                diesel::update(games::table.find(game_id))
+                    .set(games::time.eq(time))
+                    .execute(&mut *db)
+                    .unwrap();
+                game_id
+            };
+            insert("600+0", "2026.11.08", None, 1650);
+            let untimed_latest_id = insert("600+0", "2026.11.08", None, 1600);
+            insert("300+0", "2026.11.08", Some("09:00:00"), 1800);
+            insert("300+0", "2026.11.08", Some("12:00:00"), 1750);
+            let timed_latest_id = insert("300+0", "2026.11.08", Some("12:00:00"), 1700);
+            insert("300+0", "2026.11.08", Some("11:00:00"), 1900);
+            insert("300+0", "2026.11.08", None, 2000);
+            insert("300+0", "2026.11.07", Some("23:59:59"), 2100);
+            for date in ["2099.??.??", "2099.11.??", "2099.1.01", "2099.02.30", ""] {
+                insert("300+0", date, Some("23:59:59"), 2500);
+            }
+            insert("partial-only", "2099.??.??", None, 2600);
+            (player.id, timed_latest_id, untimed_latest_id)
+        };
+
+        let info = load_player_statistics(&app, handle.clone(), player_id);
+        let group = &info.site_stats_data[0];
+        let actual: Vec<_> = group
+            .latest
+            .iter()
+            .map(|latest| {
+                (
+                    latest.time_control.as_str(),
+                    latest.date.as_str(),
+                    latest.time.as_deref(),
+                    latest.game_id,
+                    latest.player_elo,
+                )
+            })
+            .collect();
+        assert_eq!(
+            actual,
+            [
+                (
+                    "300+0",
+                    "2026.11.08",
+                    Some("12:00:00"),
+                    timed_latest_id,
+                    1700
+                ),
+                ("600+0", "2026.11.08", None, untimed_latest_id, 1600),
+            ]
+        );
+        assert_eq!(
+            group
+                .daily
+                .iter()
+                .find(|day| day.time_control == "300+0" && day.date == "2026.11.08")
+                .unwrap()
+                .max_player_elo,
+            2000
+        );
+        assert!(group.daily.iter().any(|day| day.date == "2099.??.??"));
+        let repeated = load_player_statistics(&app, handle, player_id);
+        assert_eq!(
+            serde_json::to_value(info).unwrap(),
+            serde_json::to_value(repeated).unwrap()
+        );
     }
 
     #[test]
@@ -11875,6 +12200,8 @@ mod tests {
 
     fn player_statistics_batch_row(moves: Vec<u8>) -> PlayerStatisticsRow {
         PlayerStatisticsRow {
+            game_id: 1,
+            time: None,
             white_id: 1,
             black_id: 2,
             outcome: None,
@@ -11922,6 +12249,7 @@ mod tests {
             let mut row = player_statistics_batch_row(vec![0]);
             row.outcome = Some("r".repeat(10));
             row.date = Some("d".repeat(10));
+            row.time = Some("t".repeat(10));
             row.time_control = Some("t".repeat(10));
             row.site = Some("s".repeat(10));
             row.player = Some("p".repeat(10));

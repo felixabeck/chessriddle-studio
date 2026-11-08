@@ -913,6 +913,28 @@ export const databaseLayoutCommands: NonNullable<MockScenario["commands"]> = {
                         },
                     ],
                     openings: [],
+                    colors: [
+                        {
+                            time_control: "600",
+                            is_player_white: true,
+                            won: 1,
+                            drawn: 0,
+                            lost: 0,
+                            rated_won: 1,
+                            rated_drawn: 0,
+                            rated_lost: 0,
+                            opponent_elo_sum: 1400,
+                        },
+                    ],
+                    latest: [
+                        {
+                            time_control: "600",
+                            date: "2026.10.01",
+                            time: null,
+                            game_id: 101,
+                            player_elo: 1500,
+                        },
+                    ],
                 },
             ],
         },

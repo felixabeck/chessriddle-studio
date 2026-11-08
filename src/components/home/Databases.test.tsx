@@ -165,6 +165,8 @@ function exactOwnerScenario(ownerPresent = true) {
         site: "Lichess",
         player: rows.find((row) => row.id === id)!.name,
         daily: [{ won: id, drawn: 0, lost: 0 }],
+        colors: [],
+        latest: [],
         openings: [{ name: `opening-${id}` }],
       },
     ],
@@ -216,6 +218,8 @@ test("exact account lookup combines every casing variant under session spelling 
       site: "Lichess",
       player: "Magnus",
       daily: [{ won: id, drawn: 0, lost: 0 }],
+      colors: [],
+      latest: [],
       openings: [{ name: `opening-${id}` }],
     })),
   });
@@ -235,6 +239,8 @@ test("a large owner response preserves all 200000 distinct site groups under ses
       site: `https://example.com/game/${index}`,
       player: "MAGNUS",
       daily: [],
+      colors: [],
+      latest: [],
       openings: [],
     })),
   });
@@ -289,7 +295,14 @@ test("a later casing variant failure discards that database and preserves its na
     root: { id: { id: "root" }, kind: "databaseRoot" },
   });
   const original = mocks.getPlayersGameInfo.getMockImplementation()!;
-  const sibling = { site: "Chess.com", player: "Magnus", daily: [{ won: 42 }], openings: [] };
+  const sibling = {
+    site: "Chess.com",
+    player: "Magnus",
+    daily: [{ won: 42 }],
+    colors: [],
+    latest: [],
+    openings: [],
+  };
   mocks.getPlayersGameInfo.mockImplementation(async (progress, file, id, options) => {
     if (file.id.id === "db-2") return { site_stats_data: id === 7 ? [sibling] : [] };
     if (id === 8) throw new Error("later variant unreadable");
@@ -448,6 +461,28 @@ test("merges aggregate records from two databases without dropping duplicate key
         max_player_elo: 2_850,
       },
     ],
+    colors: [
+      {
+        time_control: "600+0",
+        is_player_white: true,
+        won: 2,
+        drawn: 1,
+        lost: 0,
+        rated_won: 2,
+        rated_drawn: 1,
+        rated_lost: 0,
+        opponent_elo_sum: 8_400,
+      },
+    ],
+    latest: [
+      {
+        time_control: "600+0",
+        date: "2026.09.01",
+        time: "12:00:00",
+        game_id: 1,
+        player_elo: 2_840,
+      },
+    ],
     openings: [
       {
         time_control: "600+0",
@@ -470,6 +505,28 @@ test("merges aggregate records from two databases without dropping duplicate key
         drawn: 0,
         lost: 2,
         max_player_elo: 2_860,
+      },
+    ],
+    colors: [
+      {
+        time_control: "600+0",
+        is_player_white: true,
+        won: 1,
+        drawn: 0,
+        lost: 2,
+        rated_won: 1,
+        rated_drawn: 0,
+        rated_lost: 1,
+        opponent_elo_sum: 5_500,
+      },
+    ],
+    latest: [
+      {
+        time_control: "600+0",
+        date: "2026.09.01",
+        time: null,
+        game_id: 2,
+        player_elo: 2_860,
       },
     ],
     openings: [
@@ -656,7 +713,14 @@ test.each([1, 2])(
 );
 
 test("a failed statistics read visibly marks partial statistics and retains only the healthy records", async () => {
-  const firstRecord = { site: "Lichess", player: "Magnus", daily: [], openings: [] };
+  const firstRecord = {
+    site: "Lichess",
+    player: "Magnus",
+    daily: [],
+    colors: [],
+    latest: [],
+    openings: [],
+  };
   mocks.getDatabases.mockResolvedValue({
     databases: [Object.freeze(database("db-1")), Object.freeze(database("db-2"))],
     unread: [],
@@ -708,7 +772,14 @@ function metadataError(id: string) {
 }
 
 test("a metadata failure names its filename beside the healthy statistics without another log", async () => {
-  const firstRecord = { site: "Lichess", player: "Magnus", daily: [], openings: [] };
+  const firstRecord = {
+    site: "Lichess",
+    player: "Magnus",
+    daily: [],
+    colors: [],
+    latest: [],
+    openings: [],
+  };
   mocks.getDatabases.mockResolvedValue({
     databases: [database("db-1"), metadataError("db-2")],
     unread: [],
@@ -787,7 +858,14 @@ test("the default player uses the session username when account username casing 
     },
   ]);
   const accountDatabase = { ...database("db-1"), filename: "Magnus_lichess.db3" };
-  const record = { site: "Lichess", player: "Magnus", daily: [], openings: [] };
+  const record = {
+    site: "Lichess",
+    player: "Magnus",
+    daily: [],
+    colors: [],
+    latest: [],
+    openings: [],
+  };
   mocks.getDatabases.mockResolvedValue({
     databases: [accountDatabase],
     unread: [],
@@ -832,8 +910,22 @@ test.each([false, true])(
     ]);
     const aliceDatabase = { ...database("db-1"), title: "", filename: "bob_lichess.db3" };
     const bobDatabase = { ...database("db-2"), title: "", filename: "carol_lichess.db3" };
-    const aliceRecord = { site: "Lichess", player: "bob", daily: [], openings: [] };
-    const bobRecord = { site: "Lichess", player: "carol", daily: [], openings: [] };
+    const aliceRecord = {
+      site: "Lichess",
+      player: "bob",
+      daily: [],
+      colors: [],
+      latest: [],
+      openings: [],
+    };
+    const bobRecord = {
+      site: "Lichess",
+      player: "carol",
+      daily: [],
+      colors: [],
+      latest: [],
+      openings: [],
+    };
     mocks.getDatabases.mockResolvedValue({
       databases: [aliceDatabase, bobDatabase],
       unread: [],
@@ -891,8 +983,22 @@ test("changing session membership refetches the selected player's summary with u
   getDefaultStore().set(sessionsAtom, [bobSession, aliceSession]);
   const bobDatabase = { ...database("db-1"), filename: "bob_lichess.db3" };
   const aliceDatabase = { ...database("db-2"), filename: "alice_chesscom.db3" };
-  const bobRecord = { site: "Lichess", player: "bob", daily: [], openings: [] };
-  const aliceRecord = { site: "Chess.com", player: "alice", daily: [], openings: [] };
+  const bobRecord = {
+    site: "Lichess",
+    player: "bob",
+    daily: [],
+    colors: [],
+    latest: [],
+    openings: [],
+  };
+  const aliceRecord = {
+    site: "Chess.com",
+    player: "alice",
+    daily: [],
+    colors: [],
+    latest: [],
+    openings: [],
+  };
   mocks.getDatabases.mockResolvedValue({
     databases: [bobDatabase, aliceDatabase],
     unread: [],
@@ -984,7 +1090,14 @@ test("an aborted database listing logs no late failure", async () => {
 
 test("a username-less session does not prevent a healthy account summary from loading", async () => {
   getDefaultStore().set(sessionsAtom, [{ player: "Magnus", updatedAt: 1 }, session]);
-  const record = { site: "Lichess", player: "Magnus", daily: [], openings: [] };
+  const record = {
+    site: "Lichess",
+    player: "Magnus",
+    daily: [],
+    colors: [],
+    latest: [],
+    openings: [],
+  };
   mocks.getPlayersGameInfo.mockResolvedValue({ site_stats_data: [record] });
 
   await renderDatabases();
@@ -1041,8 +1154,22 @@ test.each([false, true])(
       unread: [],
       root: { id: { id: "linked-root" }, kind: "databaseRoot" },
     });
-    const lichessRecord = { site: "Lichess", player: "Felix", daily: [], openings: [] };
-    const chesscomRecord = { site: "Chess.com", player: "FELIX", daily: [], openings: [] };
+    const lichessRecord = {
+      site: "Lichess",
+      player: "Felix",
+      daily: [],
+      colors: [],
+      latest: [],
+      openings: [],
+    };
+    const chesscomRecord = {
+      site: "Chess.com",
+      player: "FELIX",
+      daily: [],
+      colors: [],
+      latest: [],
+      openings: [],
+    };
     mocks.getPlayersGameInfo.mockImplementation(async (_progress, file) => ({
       site_stats_data: [file.id.id === "coach-lichess" ? lichessRecord : chesscomRecord],
     }));
@@ -1140,9 +1267,30 @@ test.each(
       unread: [],
       root: { id: { id: "canonical-root" }, kind: "databaseRoot" },
     });
-    const canonicalRecord = { site: "Lichess", player: "e2e-player", daily: [], openings: [] };
-    const peerRecord = { site: "Chess.com", player: "e2e-player", daily: [], openings: [] };
-    const foreignRecord = { site: "Lichess", player: "other-player", daily: [], openings: [] };
+    const canonicalRecord = {
+      site: "Lichess",
+      player: "e2e-player",
+      daily: [],
+      colors: [],
+      latest: [],
+      openings: [],
+    };
+    const peerRecord = {
+      site: "Chess.com",
+      player: "e2e-player",
+      daily: [],
+      colors: [],
+      latest: [],
+      openings: [],
+    };
+    const foreignRecord = {
+      site: "Lichess",
+      player: "other-player",
+      daily: [],
+      colors: [],
+      latest: [],
+      openings: [],
+    };
     mocks.getPlayersGameInfo.mockImplementation(async (_progress, file) => ({
       site_stats_data: [
         file.id.id === "canonical"
@@ -1223,7 +1371,14 @@ test.each([{}, { perfs: { blitz: { games: 2 } } }, { username: "foreign" }])(
       unread: [],
       root: { id: { id: "legacy-root" }, kind: "databaseRoot" },
     });
-    const record = { site: "Lichess", player: "Magnus", daily: [], openings: [] };
+    const record = {
+      site: "Lichess",
+      player: "Magnus",
+      daily: [],
+      colors: [],
+      latest: [],
+      openings: [],
+    };
     mocks.getPlayersGameInfo.mockResolvedValue({ site_stats_data: [record] });
     await renderDatabases();
     await vi.waitFor(() =>
