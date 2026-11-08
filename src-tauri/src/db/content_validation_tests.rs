@@ -163,6 +163,7 @@ fn seed_version_two_file(path: &Path, version: &str, corrupt_content: bool) {
     let schema = match version {
         migrations::PRE_ORIENTATION_DATABASE_VERSION => migrations::pre_orientation_schema(),
         migrations::PRE_GAME_COUNT_DATABASE_VERSION => migrations::pre_game_count_schema(),
+        migrations::PRE_EVENT_EDITION_DATABASE_VERSION => migrations::pre_event_edition_schema(),
         migrations::PRE_EVENT_SUMMARY_DATABASE_VERSION => migrations::pre_event_summary_schema(),
         other => {
             panic!("seed_version_two_file is a test helper for version-two schemas, got {other}")
@@ -773,6 +774,7 @@ async fn content_validation_create_and_migration_run_both_pragmas_and_publish_pa
 async fn content_validation_additive_migration_defers_content_scan() {
     let _serial = SERIAL.lock().await;
     for version in [
+        migrations::PRE_EVENT_EDITION_DATABASE_VERSION,
         migrations::PRE_GAME_COUNT_DATABASE_VERSION,
         migrations::PRE_EVENT_SUMMARY_DATABASE_VERSION,
         migrations::PRE_ORIENTATION_DATABASE_VERSION,

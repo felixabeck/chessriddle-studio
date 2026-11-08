@@ -7,7 +7,7 @@ use diesel::{
 };
 
 pub(super) const CURRENT_DATABASE_VERSION: &str = "2.4.0";
-const PRE_EVENT_EDITION_DATABASE_VERSION: &str = "2.3.0";
+pub(super) const PRE_EVENT_EDITION_DATABASE_VERSION: &str = "2.3.0";
 pub(super) const PRE_EVENT_SUMMARY_DATABASE_VERSION: &str = "2.2.0";
 pub(super) const PRE_GAME_COUNT_DATABASE_VERSION: &str = "2.1.0";
 pub(super) const PRE_ORIENTATION_DATABASE_VERSION: &str = "2.0.0";

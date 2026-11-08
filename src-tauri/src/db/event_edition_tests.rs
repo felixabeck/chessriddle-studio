@@ -165,7 +165,7 @@ fn upgrade_case() -> (
     (dir, app, handle, path)
 }
 
-fn assert_upgrade_result(path: &Path, succeeds: bool, game_count: i64) {
+fn assert_upgrade_result(path: &Path, upgraded: bool, game_count: i64, data_revision: u64) {
     let mut db = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
     let version = info::table
         .filter(info::name.eq("Version"))
@@ -174,13 +174,17 @@ fn assert_upgrade_result(path: &Path, succeeds: bool, game_count: i64) {
         .unwrap();
     assert_eq!(
         version.as_deref(),
-        Some(if succeeds { "2.4.0" } else { "2.3.0" })
+        Some(if upgraded { "2.4.0" } else { "2.3.0" })
     );
     assert_eq!(
         games::table.count().get_result::<i64>(&mut db).unwrap(),
         game_count
     );
-    if succeeds {
+    assert_eq!(
+        repository::read_data_revision(&mut db).unwrap(),
+        data_revision
+    );
+    if upgraded {
         assert_eq!(
             events::table
                 .filter(events::name.eq("Annual"))
@@ -198,9 +202,7 @@ fn assert_upgrade_result(path: &Path, succeeds: bool, game_count: i64) {
             .unwrap(),
             0
         );
-        assert_eq!(repository::read_data_revision(&mut db).unwrap(), 1);
     } else {
-        assert_eq!(repository::read_data_revision(&mut db).unwrap(), 0);
         assert_eq!(
             diesel::select(diesel::dsl::sql::<diesel::sql_types::BigInt>(
                 "(SELECT COUNT(*) FROM pragma_table_info('Events') WHERE name='Year')"
@@ -213,7 +215,7 @@ fn assert_upgrade_result(path: &Path, succeeds: bool, game_count: i64) {
 }
 
 #[test]
-fn upgrade_inside_validated_mutation_commits_or_rolls_back_with_caller() {
+fn validated_mutation_keeps_the_committed_upgrade_when_it_fails() {
     for succeeds in [false, true] {
         let (_dir, app, handle, path) = upgrade_case();
         let state = app.state::<AppState>();
@@ -258,18 +260,63 @@ fn upgrade_inside_validated_mutation_commits_or_rolls_back_with_caller() {
                 matches!(result,Err(Error::Conflict(message)) if message=="injected caller failure")
             );
         }
-        assert_upgrade_result(&path, succeeds, 2);
+        assert_upgrade_result(&path, true, 2, u64::from(succeeds));
     }
 }
 
 #[test]
-fn upgrade_inside_pgn_conversion_commits_or_rolls_back_with_caller() {
-    #[cfg(unix)]
-    upgrade_inside_pgn_conversion_case(false);
-    upgrade_inside_pgn_conversion_case(true);
+fn failed_upgrade_rolls_back_every_step_and_can_be_retried() {
+    let (_dir, app, handle, path) = upgrade_case();
+    let mut db = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+    // The Version marker is the last write, so every earlier step has run.
+    db.batch_execute(
+        "CREATE TRIGGER fail_upgrade_insert BEFORE INSERT ON Info WHEN NEW.Name='Version'
+         BEGIN SELECT RAISE(ABORT,'injected upgrade failure'); END;
+         CREATE TRIGGER fail_upgrade_update BEFORE UPDATE ON Info WHEN NEW.Name='Version'
+         BEGIN SELECT RAISE(ABORT,'injected upgrade failure'); END;",
+    )
+    .unwrap();
+    drop(db);
+    let state = app.state::<AppState>();
+    let target = resolve_database(
+        &state.pgn_path_authority,
+        &handle,
+        PathOperation::DatabaseMutate,
+    )
+    .unwrap();
+    let error = state
+        .database_repository
+        .connection(&target, None)
+        .map(|_| ())
+        .unwrap_err();
+    assert!(
+        format!("{error:?}").contains("injected upgrade failure"),
+        "{error:?}"
+    );
+    assert_upgrade_result(&path, false, 2, 0);
+
+    let mut db = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+    db.batch_execute(
+        "PRAGMA foreign_keys=ON;
+         DROP TRIGGER fail_upgrade_insert;
+         DROP TRIGGER fail_upgrade_update;",
+    )
+    .unwrap();
+    // The repository keeps reporting this failed job, so retry on a fresh connection.
+    db.immediate_transaction::<_, Error, _>(migrations::validate_existing_database)
+        .unwrap();
+    drop(db);
+    assert_upgrade_result(&path, true, 2, 0);
 }
 
-fn upgrade_inside_pgn_conversion_case(succeeds: bool) {
+#[test]
+fn pgn_conversion_keeps_the_committed_upgrade_when_it_fails() {
+    #[cfg(unix)]
+    pgn_conversion_after_upgrade_case(false);
+    pgn_conversion_after_upgrade_case(true);
+}
+
+fn pgn_conversion_after_upgrade_case(succeeds: bool) {
     let (dir, app, handle, path) = upgrade_case();
     tauri_specta::Builder::<tauri::test::MockRuntime>::new()
         .events(tauri_specta::collect_events!(ConvertProgress))
@@ -303,5 +350,10 @@ fn upgrade_inside_pgn_conversion_case(succeeds: bool) {
             matches!(result,Err(Error::Conflict(message)) if message=="injected revision bump failure")
         );
     }
-    assert_upgrade_result(&path, succeeds, if succeeds { 3 } else { 2 });
+    assert_upgrade_result(
+        &path,
+        true,
+        if succeeds { 3 } else { 2 },
+        u64::from(succeeds),
+    );
 }

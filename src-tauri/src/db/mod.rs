@@ -11770,7 +11770,7 @@ mod tests {
                 .unwrap();
             let player = create_player(&mut db, "Player").unwrap();
             let opponent = create_player(&mut db, "Opponent").unwrap();
-            let event = create_event(&mut db, "Event").unwrap();
+            let event = create_event(&mut db, "Event", None).unwrap();
             let site = create_site(&mut db, "Site").unwrap();
             let base = PlayerStatisticsGame {
                 player_id: player.id,
@@ -11863,7 +11863,7 @@ mod tests {
                 .unwrap();
             let player = create_player(&mut db, "Player").unwrap();
             let opponent = create_player(&mut db, "Opponent").unwrap();
-            let event = create_event(&mut db, "Event").unwrap();
+            let event = create_event(&mut db, "Event", None).unwrap();
             let site = create_site(&mut db, "Site").unwrap();
             let mut insert = |time_control, date, time: Option<&str>, player_elo| {
                 let game_id = insert_player_statistics_game(
