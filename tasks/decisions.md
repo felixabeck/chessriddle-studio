@@ -12484,3 +12484,14 @@ Former private decision identifier: d-20261029-14
 * **Supersedes:** -
 * **Decided by:** Claude Code (Opus 5.5) next-finding drain, adopted reviewed plan, full auto, 2026-11-08 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"e2c0e334f2e6881cfe0edac792398bfda46fb12a25373f0b3355f9d2d7664f31","input_sha256":"d6d3cf8eec1d76a1f4b0221122c3846cd618e017d074481969c5e7827576864a","kind":"mutation-receipt","operation":"623a1e14fab7e7fa605d3c01b47cc091155b426235cfba009029381e30c39f07","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-17"],"target":"decisions-ledger","v":1} -->
+
+### d-20261108-18 — Is the event-summary refresh one SQL recomputation or one streamed Rust aggregation?
+
+* **Question:** d-20261108-11 chose one set-based SQL recomputation over the dirty IDs. The 28 s backfill measured for f-20261108-05 is dominated by that script's sorts. Should the recomputation stay in SQL?
+* **Governs:** f-20261108-05
+* **Chosen:** One streamed Rust aggregation over the same dirty set and triggers, shared by the migration backfill and every write path. Dirty tracking, the choke point at `refresh_derived_database_data` (named `update_database_counts` when d-20261108-11 was written), `games_event_idx` and every summary definition stay.
+* **Rejected:** A Rust path for the migration alongside the SQL for incremental writes (two implementations of one definition). Tuning the SQL (materialized CTEs, table scan with dirty lookup, a 1 GB page cache and `PRAGMA threads` all stayed at 23.8 to 28.6 s).
+* **Reason:** Only a streamed pass removes the sort cost, new evidence d-20261108-11 did not have. Known limit: peak memory grows with the distinct (event, player) and (event, site) pairs, up to three per game, with no cap in the implementation. The measured peak on the generated 11,441,614-game database was 572 MB. Reversal path: restore the SQL body of `refresh_event_summaries`.
+* **Supersedes:** d-20261108-11, as to its "one set-based recomputation" clause only. The rest of that entry stands.
+* **Decided by:** Claude Code (Opus 5.5) next-finding drain, adopted reviewed plan, full auto, 2026-11-08 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"50fb7117a65f70a5f4a619c620caff9e09a89e616d999cb602f3f1eb05819dea","input_sha256":"c73d84b902e2ea20eb6928b5261c5fe3408c7cb753cdefb0a68c0658365bcb4b","kind":"mutation-receipt","operation":"e70ca1c0f6d39c2cee0fa2f56111c870005bff3fc12c0ed5a1ec1e09778dcdae","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-18"],"target":"decisions-ledger","v":1} -->
