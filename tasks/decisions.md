@@ -12473,3 +12473,14 @@ Former private decision identifier: d-20261029-14
 * **Supersedes:** -
 * **Decided by:** Claude Code (Opus 5.5) build run db-migration-lock-state, full auto, 2026-11-08 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"e0b8cdffeb624e6c0b5ec225bb0307fefb0b186b5c63da8d64c0527eb1a66133","input_sha256":"7bdf0d160719d5575e09cb609bc66b048358484048e39d606957d9008a171c7f","kind":"mutation-receipt","operation":"e69e0e1e95ca2120cf53d47ac1c29a683f0ca5bcfcd41c0c0f2c74af589375c5","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-09"],"target":"decisions-ledger","v":1} -->
+
+### d-20261108-17 — Should the one-time 2.3.0 event-summary backfill still be made faster now that the Library has an upgrade state?
+
+* **Question:** f-20261108-05 asked whether the listing needs a per-database upgrade state or whether a wait of about 24 s is acceptable. d-20261108-08 has since added an `upgrading` status and moved the upgrade to a background owner, which answers the state half. Is there anything left to change?
+* **Governs:** f-20261108-05
+* **Chosen:** Yes. Replace the sort-heavy backfill so the Upgrading state lasts less time, and add no further event, binding or renderer state.
+* **Rejected:** Closing f-20261108-05 as settled by d-20261108-08 alone (that decision reports the wait and does not shorten it). A second background backfill after the upgrade (Events would show blank summaries, plus a new long-lived write job).
+* **Reason:** On a generated 11.4M-game database the upgrade reaches Ready in 8.3 to 9.6 s on fast cores and about 12.6 s on slow cores, against about 31 s for the SQL script when the plan measured it on the earlier inline path. Reversal path: restore the SQL body of `refresh_event_summaries` from git.
+* **Supersedes:** -
+* **Decided by:** Claude Code (Opus 5.5) next-finding drain, adopted reviewed plan, full auto, 2026-11-08 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"e2c0e334f2e6881cfe0edac792398bfda46fb12a25373f0b3355f9d2d7664f31","input_sha256":"d6d3cf8eec1d76a1f4b0221122c3846cd618e017d074481969c5e7827576864a","kind":"mutation-receipt","operation":"623a1e14fab7e7fa605d3c01b47cc091155b426235cfba009029381e30c39f07","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-17"],"target":"decisions-ledger","v":1} -->
