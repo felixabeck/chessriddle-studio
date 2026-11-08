@@ -48,7 +48,13 @@ test("the tree's 20% threshold shows a 25% label and omits a 15% label", async (
     act(async () =>
       root.render(
         <MantineProvider>
-          <ResultsChart won={12} draw={5} lost={3} size="1.125rem" labelThreshold={labelThreshold} />
+          <ResultsChart
+            won={12}
+            draw={5}
+            lost={3}
+            size="1.125rem"
+            labelThreshold={labelThreshold}
+          />
         </MantineProvider>,
       ),
     );
