@@ -3426,6 +3426,14 @@ async function verifyDatabaseOrientation(session) {
   );
 }
 
+// Staged 2026-11-08 by breaking the product one change at a time in a disposable release build;
+// each run printed the named FAIL line and `pnpm verify:app` exited 1, the documented failure status.
+// PO1: renaming the overview-headline test id -> "timed out waiting for player overview statistics loaded".
+// PO2: the White row given Black's statistics -> PO2 FAIL. PO3: performance without dp -> PO3 FAIL.
+// PO4: the last-games query without sides "Any" -> "unexpected last-games list" with the unrelated games.
+// PO6: a row click whose tab creation throws -> PO6 FAIL, with PO1-PO5 still ok.
+// PO5 is argued, not staged: it fails only if the screenshot write fails, and the shared --screenshot
+// prefix is written by earlier journeys first, so an unwritable path stops the suite before PO5.
 async function verifyPlayerOverview(session) {
   const invoke = (command, args) => invokeIpc(session, "__verifyPlayerOverviewIPC", command, args);
   const wait = (label, probe) => waitFor(label, probe, { timeoutMs: FILES_PROBE_TIMEOUT_MS });
