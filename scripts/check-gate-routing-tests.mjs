@@ -1065,7 +1065,7 @@ function ciWorkflowContracts(texts) {
   forbid(
     "no push save or combined cache",
     texts.test,
-    /uses: actions\/cache(?:\/save)?@[^\n]*\n(?!\s+with:\n\s+path: ~\/\.github-actionlint\/bin\n)/u,
+    /uses:\s*["']?actions\/cache(?:\/save)?@[^\n]*\n(?!\s+with:\n\s+path: ~\/\.github-actionlint\/bin\n)/u,
   );
   requireText(
     "unmatched restore key",
@@ -1883,6 +1883,13 @@ test("CI workflow wiring rejects removed selectors, checkout, freshness, publica
       "test",
       "path: ~/.github-actionlint/bin",
       "path: .frontend-mutation-incremental",
+      "no push save or combined cache",
+    ],
+    [
+      "forbid quoted push save",
+      "test",
+      "uses: actions/cache@v4\n        with:\n          path: ~/.github-actionlint/bin",
+      'uses: "actions/cache@v4"\n        with:\n          path: .frontend-mutation-incremental',
       "no push save or combined cache",
     ],
     ["forced sweep", "sweep", '      FRONTEND_MUTATION_FORCE: "1"\n'],
