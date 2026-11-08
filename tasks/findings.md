@@ -21804,6 +21804,9 @@ All probes were removed; the tree stayed clean.
 * **Closed 2026-11-08 (drain next-finding, co-located joiner):** `BoardControls` takes the owning `boardRef` (passed by `BoardAnalysis` and `BoardGame`) and resolves `.cg-wrap` inside it synchronously at click time; the document-global query is gone. Regressions in `BoardControls.test.tsx`: an unrelated `.cg-wrap` placed before the owned board is not exported; a null ref exports nothing. Both failed against the old query. Commit: 33fdc134.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"3ed154dc0e636bd46f18c59b7fd40308f7c852bbca2aa4a55895b90fce6bf814","header_sha256":"d4fd98dde88e526e3629cd6f9808ee57677afec6fbc0e0a0a5559a270b91a7c1","header_status":"handled","input_sha256":"ee53e8a069d1214559a442847dc7bae007ecc38cd139e3757d0ea74565f64b83","kind":"mutation-receipt","operation":"446f497f6a63e810f2ccc1bc7e4504fa9d88a4825f8ea55b29b54f57fa236e90","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-32"],"target":"f-20261106-32","v":1} -->
 
+* **Published commit (2026-11-08):** after rebasing onto master the closing note's commit 33fdc134 landed as 38e231e9.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"6dbbfb6e39b8c3df15ecf5f43cb47ae290aa363d81addc748bd7fd1a36d7bc36","input_sha256":"dccef45ae9830f70334e3e797f0cc7195d58011de0eddfdf1bc9fe5bcffeffe4","kind":"mutation-receipt","operation":"df10dc10fa3154eb8a1fccd3df63286181088353b0e17daef156369ac7896be9","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-32"],"target":"f-20261106-32","v":1} -->
+
 ### MoveControls Delete shortcut removes the background game while a modal owns keyboard focus
 
 * **ID:** f-20261106-33 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
