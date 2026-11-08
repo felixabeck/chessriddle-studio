@@ -22222,13 +22222,16 @@ All probes were removed; the tree stayed clean.
 
 ### One-time 2.3.0 event-summary migration holds the library on the generic loading line for about 24 s on Mega Database 2025
 
-* **ID:** f-20261108-05 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261108-05 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** build · **Blocked:** none
 * **Impact class:** behaviour
 * **Where:** `migrate_event_summaries` in `src-tauri/src/db/migrations.rs` (Games(EventID) index build plus full backfill) during `validate_existing_database`, shown through the library listing in `src/components/databases/useDatabaseLibrary.tsx`.
 * **Defect:** the 2.2.0 to 2.3.0 upgrade runs synchronously when a database is first opened by a build containing it, and the library shows only its generic loading line meanwhile. d-20261108-02 accepted a wait of about 5 s and named filing a finding as its reversal path if a measured wait noticeably exceeds an ordinary listing.
 * **Failure scenario:** release-profile benchmark `db::event_summary_tests::benchmark_mega_event_summaries` on a copy of Mega Database 2025 (11,441,614 games, 70,039 events, schema 2.2.0), 2026-11-08, machine load average about 42: migration plus acquisition took 23.55 s, once per database.
 * **Open question:** should the listing show a per-database one-time upgrade state, or is a wait of this size acceptable for databases of this size?
 * **Found by:** Claude Code (Opus 5.5), build event-summary-columns, 2026-11-08.
+
+Resolved by the f-20261108-04 fix in 0b63a012. The Open question is answered by Felix's order to show "Upgrading…" for a database during its upgrade (decision d-20261108-08 supersedes d-20261108-02). The 2.2.0 to 2.3.0 upgrade now runs in the background job and the row shows Upgrading at once. Proof on the release build against a copy of Mega Database 2025 at schema 2.2.0: Upgrading at 0.3 s, Ready at 18.5 s, no generic loading wait for the listing.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"4d6f31ef5f5d4aff1f2c34417a403317eb1badd0fcd733a3a7d50ce795fc8011","header_sha256":"bf17664ddfe79af907dd58fb1660fe9ffc8e9a1bbf457c74fe832c1dc54622e3","header_status":"handled","input_sha256":"ae133faf5ae78f5db378da9f93522ed0cd757b082ddde27310188aa7487406a6","kind":"mutation-receipt","operation":"eef7915960f8de5b94f58705e8e66346d782000d72491e5ab305d2d27e73900b","options":{"section":null},"request_id_sha256":null,"results":["f-20261108-05"],"target":"f-20261108-05","v":1} -->
 
 ---
 
