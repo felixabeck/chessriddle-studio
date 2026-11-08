@@ -22203,7 +22203,7 @@ All probes were removed; the tree stayed clean.
 
 ### Hosted macos-26-intel rust-platform job hit the 45-minute limit during Clippy on fc49383e, so remote CI is red
 
-* **ID:** f-20261108-02 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261108-02 · **Status:** handled · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 8b655619-b5c3-4691-9ef2-f9c8ad40cf23
 * **Impact class:** tooling
 * **CI run:** 42436165203
@@ -22212,6 +22212,9 @@ All probes were removed; the tree stayed clean.
 * **Failure scenario:** every push stops at `pnpm ci:remote:check` (exit 1) until a rerun of this job succeeds.
 * **Fix shape:** `gh run rerun 42436165203 --failed -R felixabeck/chessriddle-studio` and confirm the job succeeds; close with the new job id. Investigate the workflow only if the rerun hangs again.
 * **Proof:** `pnpm ci:remote:check` no longer lists `rust-platform (macos-26-intel, x86_64-apple-darwin)`.
+
+**Closed 2026-11-08 by drain session 228a549b as no longer holding (pickup re-check).** The finding's named remedy had already happened: on run 42436165203 (`fc49383e`) the job `rust-platform (macos-26-intel, x86_64-apple-darwin)` is now job 128611366953 with conclusion `success`, and the run concludes `success`. The finding's proof is met: `pnpm ci:remote:check` on 2026-11-08 no longer lists this job. Its only remaining red job is `frontend` on run 42465714377, owned by f-20261108-06. No code changed for this finding and the workflow was not investigated, because the rerun did not hang.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"af6fea854096c175a36070c363fb7ed5bb99b3953ebf39f952879418b4877a40","header_sha256":"8c56b217bb0a0ad1f3c317884c67ebf55221ea3f82aa943b4d80d99398322db9","header_status":"handled","input_sha256":"26eb27db0790bc1951fedb94c616371b1387566a71b1ba67bb55b8b16c836430","kind":"mutation-receipt","operation":"ed55de2cf54ff011218e5ac4054c623a68afed74c3b4e1a9d8fab1c10f2e7f8a","options":{"section":null},"request_id_sha256":null,"results":["f-20261108-02"],"target":"f-20261108-02","v":1} -->
 
 ---
 
