@@ -109,7 +109,8 @@ vi.mock("@/state/practiceStorage", () => ({
   PRACTICE_LOG_PAGE_SIZE: 100,
   loadPracticeReviews: fixtures.loadPracticeReviews,
 }));
-vi.mock("@/components/files/opening", () => ({
+vi.mock("@/components/files/opening", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/components/files/opening")>()),
   buildFromTree: fixtures.buildFromTree,
   formatReviewInterval: () => "",
   getCardForReview: fixtures.getCardForReview,

@@ -20,6 +20,7 @@ import { WorkspaceTabScope } from "@/state/tabScope";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { defaultTree, getNodeAtPath } from "@/utils/treeReducer";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
+import { getTabFile } from "@/utils/tabs";
 import { Chess } from "chessops/chess";
 import { parseFen } from "chessops/fen";
 import { parseSan } from "chessops/san";
@@ -138,7 +139,12 @@ afterEach(async () => {
   localStorage.clear();
 });
 
-async function mountStudy(spec = cases[0], variation?: string[], full = false) {
+async function mountStudy(
+  spec = cases[0],
+  variation?: string[],
+  full = false,
+  options: { reviewedDue?: Date; startPractice?: boolean } = {},
+) {
   tree = createTreeStore(undefined, defaultTree(spec.fen));
   for (const payload of variation ? [spec.moves, variation] : [spec.moves]) {
     tree.getState().goToStart();
@@ -149,6 +155,9 @@ async function mountStudy(spec = cases[0], variation?: string[], full = false) {
   tree.getState().save("a".repeat(64));
   const cards = buildFromTree(tree.getState().root, spec.orientation, []);
   expect(cards).toHaveLength(variation ? 3 : 1);
+  if (options.reviewedDue) {
+    cards[0].card = { ...cards[0].card, reps: 1, due: options.reviewedDue };
+  }
   mocks.native.loadPracticeDeck.mockResolvedValue({
     epoch: "no-map",
     deck: {
@@ -194,9 +203,15 @@ async function mountStudy(spec = cases[0], variation?: string[], full = false) {
       </MantineProvider>,
     ),
   );
-  await click(full ? "Board.Practice.PracticeFullRepertoire" : "Board.Practice.StartPractice");
-  expect(atoms.get(practiceStateFamily(owner.value)).phase).toBe("waiting");
-  expect(tree.getState().currentNode().fen).toBe(cards[0].fen);
+  if (options.startPractice !== false) {
+    await click(full ? "Board.Practice.PracticeFullRepertoire" : "Board.Practice.StartPractice");
+  }
+  expect(atoms.get(practiceStateFamily(owner.value)).phase).toBe(
+    options.startPractice === false ? "idle" : "waiting",
+  );
+  expect(tree.getState().currentNode().fen).toBe(
+    options.startPractice === false ? spec.fen : cards[0].fen,
+  );
   return cards[0];
 }
 async function click(label: string) {
@@ -206,6 +221,44 @@ async function click(label: string) {
   expect(button).toBeDefined();
   await act(async () => button!.click());
 }
+
+test("Show All marks a reviewed card hydrated with a past ISO due as Due", async () => {
+  const due = new Date(Date.now() - 1_000);
+  await mountStudy(cases[0], undefined, false, { reviewedDue: due, startPractice: false });
+  const hydrated = atoms.get(
+    deckAtomFamily({ file: fileWorkspaceKey(getTabFile(owner)!.handle), game: 0 }),
+  );
+  expect(hydrated.positions[0].card.due).toBe(due.toISOString());
+
+  await click("Board.Practice.ShowAll");
+
+  const badge = document.querySelector('[role="dialog"] .mantine-Badge-root');
+  expect(badge?.textContent).toBe("Board.Practice.Due");
+});
+
+test.each([
+  { name: "near future", delay: 1_000 },
+  { name: "beyond the maximum timer delay", delay: 2_147_484_647 },
+])("idle practice becomes available at a due boundary in the $name", async ({ delay }) => {
+  const due = new Date(Date.now() + delay);
+  await mountStudy(cases[0], undefined, false, { reviewedDue: due, startPractice: false });
+  expect(host.textContent).toContain("Board.Practice.PracticedAll1");
+  expect(host.textContent).not.toContain("Board.Practice.StartPractice");
+
+  const firstDelay = Math.min(delay - 1, 2_147_483_647);
+  await act(async () => vi.advanceTimersByTimeAsync(firstDelay));
+  expect(host.textContent).toContain("Board.Practice.PracticedAll1");
+  expect(host.textContent).not.toContain("Board.Practice.StartPractice");
+  await act(async () => vi.advanceTimersByTimeAsync(delay - firstDelay + 1));
+
+  expect(host.textContent).not.toContain("Board.Practice.PracticedAll1");
+  const start = [...host.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Board.Practice.StartPractice"),
+  );
+  expect(start).toBeDefined();
+  expect(start?.disabled).toBe(false);
+});
+
 async function wrongAnswer(spec = cases[0]) {
   const card = await mountStudy(spec);
   const position = Chess.fromSetup(parseFen(card.fen).unwrap()).unwrap();

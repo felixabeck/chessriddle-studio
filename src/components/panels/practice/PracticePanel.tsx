@@ -35,6 +35,7 @@ import {
   buildFromTree,
   formatReviewInterval,
   getCardForReview,
+  getCardStatus,
   getNextReviewTimes,
   getStats,
   syncDeck,
@@ -176,6 +177,15 @@ function PracticePanel() {
   }, [root, headers, setDeck, deck.status, deckIdentity.file, treeViewDeferred]);
 
   const stats = getStats(deck.positions);
+  const nextDueTime = stats.nextDue?.getTime();
+  const [dueTick, setDueTick] = useState(0);
+
+  useEffect(() => {
+    if (nextDueTime === undefined) return;
+    const delay = Math.min(Math.max(nextDueTime - Date.now() + 1, 1), 2_147_483_647);
+    const timer = setTimeout(() => setDueTick((tick) => tick + 1), delay);
+    return () => clearTimeout(timer);
+  }, [nextDueTime, dueTick, deckIdentity.file, deckIdentity.game, currentTab?.value]);
 
   const setInvisible = useSetAtom(useTabAtom(invisibleFamily));
   const setShowComments = useSetAtom(useTabAtom(showCommentsFamily));
@@ -1306,6 +1316,7 @@ function PositionsModal({
           const frame = findPracticeCardFrame(c, root);
           if (!frame) return null;
           const node = frame.node;
+          const status = getCardStatus(c.card);
           return (
             <Card key={c.fen}>
               <Text>{`${formatMoveNumber(node.halfMoves + 1)} ${c.answer}`}</Text>
@@ -1316,13 +1327,11 @@ function PositionsModal({
                     {t("Board.Practice.Status")}
                   </Text>
                   <Badge
-                    color={
-                      c.card.reps === 0 ? "gray" : c.card.due < new Date() ? "warning" : "gold"
-                    }
+                    color={status === "unseen" ? "gray" : status === "due" ? "warning" : "gold"}
                   >
-                    {c.card.reps === 0
+                    {status === "unseen"
                       ? t("Board.Practice.Unseen")
-                      : c.card.due < new Date()
+                      : status === "due"
                         ? t("Board.Practice.Due")
                         : t("Board.Practice.Practiced")}
                   </Badge>

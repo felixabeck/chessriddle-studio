@@ -31,11 +31,12 @@ export function buildFromTree(tree: TreeNode, color: "white" | "black", start: n
     const seenBoardStates = new Set<string>();
     const iterator = treeIterator(tree);
     for (const item of iterator) {
-        if (
-            item.node.children.length === 0 ||
-            isPrefix(item.position, start) ||
-            !item.node.children[0].san
-        ) {
+        // Skip the root for an empty Start, and only strict ancestors for a non-empty Start.
+        const beforeStart =
+            start.length === 0
+                ? item.position.length === 0
+                : item.position.length < start.length && isPrefix(item.position, start);
+        if (item.node.children.length === 0 || beforeStart || !item.node.children[0].san) {
             continue;
         }
         const boardState = getBoardState(item.node.fen);
@@ -63,6 +64,13 @@ type Stats = {
     total: number;
 };
 
+export type CardStatus = "unseen" | "due" | "practiced";
+
+export function getCardStatus(card: Card, now: Date = new Date()): CardStatus {
+    if (card.reps === 0) return "unseen";
+    return new Date(card.due) <= now ? "due" : "practiced";
+}
+
 export function getStats(positions: Position[]) {
     const stats: Stats = {
         unseen: 0,
@@ -73,13 +81,10 @@ export function getStats(positions: Position[]) {
     };
     const now = new Date();
     for (const card of positions) {
-        const dueDate = new Date(card.card.due);
-        if (card.card.reps === 0) {
-            stats.unseen++;
-        } else if (dueDate <= now) {
-            stats.due++;
-        } else {
-            stats.practiced++;
+        const status = getCardStatus(card.card, now);
+        stats[status]++;
+        if (status === "practiced") {
+            const dueDate = new Date(card.card.due);
             if (!stats.nextDue || dueDate < stats.nextDue) {
                 stats.nextDue = dueDate;
             }

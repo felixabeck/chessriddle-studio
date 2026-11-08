@@ -1,7 +1,91 @@
 import { parseUci } from "chessops";
+import { Chess } from "chessops/chess";
+import { makeFen } from "chessops/fen";
+import { parseSan } from "chessops/san";
+import { type Card, createEmptyCard } from "ts-fsrs";
 import { expect, test } from "vitest";
-import { buildFromTree, syncDeck, updateCardPerformance } from "./opening";
+import { buildFromTree, getCardStatus, syncDeck, updateCardPerformance } from "./opening";
 import { createNode, defaultTree, type TreeNode } from "@/utils/treeReducer";
+
+function openingLine(moves: string[]): TreeNode {
+    const root = defaultTree().root;
+    const position = Chess.default();
+    let node = root;
+    for (const san of moves) {
+        const move = parseSan(position, san)!;
+        expect(move).toBeDefined();
+        position.play(move);
+        const child = createNode({
+            fen: makeFen(position.toSetup()),
+            move,
+            san,
+            halfMoves: node.halfMoves + 1,
+        });
+        node.children.push(child);
+        node = child;
+    }
+    return root;
+}
+
+test.each([
+    {
+        name: "empty Start keeps the root skipped",
+        start: [],
+        moves: ["e4", "e5", "Nf3"],
+        answers: ["Nf3"],
+    },
+    {
+        name: "White-to-move Start includes its answer",
+        start: [0, 0],
+        moves: ["e4", "e5", "Nf3"],
+        answers: ["Nf3"],
+    },
+    {
+        name: "Black-to-move Start excludes earlier White answers",
+        start: [0, 0, 0],
+        moves: ["e4", "e5", "Nf3", "Nc6", "Bb5"],
+        answers: ["Bb5"],
+    },
+])("practice $name", ({ start, moves, answers }) => {
+    const root = openingLine(moves);
+
+    expect(buildFromTree(root, "white", start).map(({ answer }) => answer)).toEqual(answers);
+});
+
+test("deck synchronization creates and retains the White-to-move Start card", () => {
+    const root = openingLine(["e4", "e5", "Nf3"]);
+    const created = syncDeck([], root, "white", [0, 0]);
+    expect(created.positions.map(({ answer }) => answer)).toEqual(["Nf3"]);
+    expect(created.added).toBe(1);
+
+    const [existing] = buildFromTree(root, "white", []);
+    existing.card.reps = 4;
+    const retained = syncDeck([existing], root, "white", [0, 0]);
+    expect(retained.positions).toEqual([existing]);
+    expect(retained.positions[0].card).toBe(existing.card);
+    expect(retained).toMatchObject({ added: 0, removed: 0, updated: 0 });
+});
+
+const statusNow = new Date("2026-11-08T12:00:00.000Z");
+test.each([
+    { name: "past ISO due", due: "2026-11-08T11:59:59.000Z", reps: 1, status: "due" },
+    { name: "future ISO due", due: "2026-11-08T12:00:01.000Z", reps: 1, status: "practiced" },
+    { name: "past Date due", due: new Date("2026-11-08T11:59:59.000Z"), reps: 1, status: "due" },
+    {
+        name: "future Date due",
+        due: new Date("2026-11-08T12:00:01.000Z"),
+        reps: 1,
+        status: "practiced",
+    },
+    { name: "exact ISO due instant", due: statusNow.toISOString(), reps: 1, status: "due" },
+    { name: "exact Date due instant", due: statusNow, reps: 1, status: "due" },
+    { name: "unseen past due", due: "2026-11-08T11:59:59.000Z", reps: 0, status: "unseen" },
+    { name: "unseen future due", due: "2026-11-08T12:00:01.000Z", reps: 0, status: "unseen" },
+])("classifies a card with $name", ({ due, reps, status }) => {
+    const card = { ...createEmptyCard(), due, reps } as Card;
+
+    expect(getCardStatus(card, statusNow)).toBe(status);
+});
 
 function practiceNode(fen: string, answer: string): TreeNode {
     const position = createNode({
