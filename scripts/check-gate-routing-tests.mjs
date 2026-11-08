@@ -1060,7 +1060,13 @@ function ciWorkflowContracts(texts) {
     'echo "yesterday=$(date -u -d "$today -1 day" +%Y%m%d)" >> "$GITHUB_OUTPUT"',
   );
   requireText("restore only", matrix, "uses: actions/cache/restore@v4");
-  forbid("no push save or combined cache", texts.test, /uses: actions\/cache(?:\/save)?@/u);
+  // d-20261101-06 bars per-push runs from publishing mutation results. The pinned actionlint
+  // binary is the one permitted exception (f-20261108-06), matched by its exact path.
+  forbid(
+    "no push save or combined cache",
+    texts.test,
+    /uses: actions\/cache(?:\/save)?@[^\n]*\n(?!\s+with:\n\s+path: ~\/\.github-actionlint\/bin\n)/u,
+  );
   requireText(
     "unmatched restore key",
     matrix,
@@ -1872,6 +1878,13 @@ test("CI workflow wiring rejects removed selectors, checkout, freshness, publica
       "frontend-mutation-full-${{ matrix.package }}-${{ steps.dates.outputs.yesterday }}-",
     ],
     ["forbid push save", "test", "uses: actions/cache/restore@v4", "uses: actions/cache/save@v4"],
+    [
+      "forbid push save of any other path",
+      "test",
+      "path: ~/.github-actionlint/bin",
+      "path: .frontend-mutation-incremental",
+      "no push save or combined cache",
+    ],
     ["forced sweep", "sweep", '      FRONTEND_MUTATION_FORCE: "1"\n'],
     ["success-only publication", "sweep", "        if: success()\n"],
     [
