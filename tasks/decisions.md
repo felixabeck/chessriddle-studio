@@ -12538,3 +12538,33 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Both lists are requested by the query builder and paid for by the response; the tab is a reference-game sample, so showing every returned game in one table without a new surface is the smallest faithful fix. Reversal path: replace the merged list in `fetchOnlineOpening` (`src/components/panels/database/DatabasePanel.tsx`) with `topGames` only and drop the merge regressions in `DatabasePanel.test.tsx`.
 * **Decided by:** Claude Code (Opus 5.5) drain next-finding, full auto, 2026-11-08 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"0a6c9d366418cd3c564dd5922f81894a56ee9e094ec98673a8a4c7b33e068ba0","input_sha256":"c49603ac5ccd4d11e06105af6d3fd5f46ddf98a9c1787a873bdf76bbed1159dc","kind":"mutation-receipt","operation":"e30561e629543684a7cd86c323df92148850775ed0778b461d06dc3894e88cb5","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-21"],"target":"decisions-ledger","v":1} -->
+
+## 2026-11-09 — recorded through the decisions lock
+
+### d-20261109-01 — Where does a move's recency get bucketed into years?
+
+* **Question:** The Openings tab shows the last 8 calendar years plus an older cell per move. Does the search return those cells or the raw years?
+* **Governs:** -
+* **Chosen:** The search returns `last_played` and sparse `year_counts`; the renderer forms the nine cells from its local current year. Years later than the current year and games without a usable year sit in no cell and are counted in the strip's summary.
+* **Rejected:** Bucketing in Rust (a clock and presentation constants in the search, and cached results that go stale at a year change).
+* **Reason:** Keeps the search result cacheable across a year change and the backend free of display rules. Reversal path: move the bucketing into `PositionStats` construction.
+* **Decided by:** Claude Code (Opus 5.5) build run player-openings-recency, full auto, 2026-11-09 · **Superseded-by:** -
+
+### d-20261109-02 — Does the Openings "Since" filter change how malformed dates are handled?
+
+* **Question:** `matches_date` passes a non-PGN-shaped value such as `[Date "????"]` through a start-only bound lexically. Should the Since filter exclude such games?
+* **Governs:** -
+* **Chosen:** No. The filter uses the shared predicate unchanged. PGN-shaped unknown years and absent dates are excluded; the non-standard shape is a known limit.
+* **Rejected:** Changing `matches_date`, which `search.rs` pins for every search surface, and a Since-only query flag, which widens the command contract for a non-standard, unobserved shape.
+* **Reason:** Outside the request and no observed failure. Reversal path: reject unknown years in `matches_date` and update its case table.
+* **Decided by:** Claude Code (Opus 5.5) build run player-openings-recency, full auto, 2026-11-09 · **Superseded-by:** -
+
+### d-20261109-03 — Does the Openings recency and clarity work raise the total bundle budget?
+
+* **Question:** The candidate exceeds the 1,720,000 B total ceiling by 2,761 B. Cut features or raise the ceiling?
+* **Governs:** -
+* **Chosen:** Raise only total by the established 10,000 B step to 1,730,000 B. Exact published base `47a19d8dd92277494c27d3eb81d2c836791cee42` measured 508,744 B Entry, 517,668 B largest lazy and 1,715,662 B total; candidate `1f1cb90afb4432b55acb619b85b05ee39b1dcdc6` measured 508,977 B Entry, 517,853 B largest lazy and 1,722,761 B total, all gzip, both with `pnpm build-vite` and production `buildBundleReport`, with byte-identical `package.json`, `pnpm-lock.yaml` and `vite.config.ts`. Whole-build deltas are +233 B Entry, +185 B largest lazy and +7,099 B total. Entry stays at 565,000 B and largest lazy at 550,000 B; 7,239 B of total margin remains.
+* **Rejected:** Dropping strings or controls Felix asked for. Every one of the 18 new strings in the 16 catalogues has a production consumer, and total counts every emitted asset once, so lazy-loading cannot reduce it.
+* **Reason:** The growth is the requested Openings loading message, colour wording, Since filter and recency display. Same procedure as d-20261105-19. Reversal path: tighten total against a future smaller production build. This decision is the forward pointer for the ceilings.
+* **Decided by:** Claude Code (Opus 5.5) build run player-openings-recency, full auto, 2026-11-09 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":26,"effect_sha256":"133949497b1424dc07dd2a09da01986e6de2ef5bb3fd7f3596fd4b50eb5ea57f","input_sha256":"a8f6fb365fff4c05d66052e55e34ef32f8d7703a5e4c6e7bf9e7c7d0d3a48b83","kind":"mutation-receipt","operation":"9fa301396a0fcc7ca786874077b83ef80ee72cf1eef07f8ca76f023a6f20a29e","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-01","d-20261109-02","d-20261109-03"],"target":"decisions-ledger","v":1} -->
