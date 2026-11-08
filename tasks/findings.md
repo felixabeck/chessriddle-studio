@@ -22087,7 +22087,7 @@ All probes were removed; the tree stayed clean.
 
 ### The board-wood-texture snapshot export test misses the second save_board_snapshot call on hosted CI
 
-* **ID:** f-20261106-49 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261106-49 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 42247376577
 * **Filed from:** c9f01c8c-19e6-4623-b8d0-e7b0068f0ac6
@@ -22099,6 +22099,15 @@ All probes were removed; the tree stayed clean.
 * **Found by:** Claude Code drain session c9f01c8c-19e6-4623-b8d0-e7b0068f0ac6, 2026-11-06, at the pre-push remote check of the f-20261106-07 release.
 * **Correction (2026-11-07, records review):** the Proof bullet's precedent is misattributed. f-20261105-06 did not retry a click inside a poll. It timed a Windows bound from the worker's resume and made the compact title-bar test await `waitForTransitionsSettled`. f-20261105-07 bounded a held response and proved it with `--repeat-each` under CPU load. The proposed fix shape stays: wait until the board is interactive after the route change, and retry the "Take Snapshot" click inside the poll when no new invocation appears. But no earlier finding used that pattern. The load proof follows f-20261105-07.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"b0874bd8de2898d71f188ace43d4aa7ae231d532cfce9977c44f1b7a0445e31b","input_sha256":"b84f42cdd66f17657f2e5c4c42e908a1f281e7314850bdb03eca7e4daa0d31c6","kind":"mutation-receipt","operation":"726a0da2120e1ceee199cda3aaca7119dde7f47658fe6407447a865acc340832","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-49"],"target":"f-20261106-49","v":1} -->
+
+**Closed 2026-11-08 by drain session da2f5271, commit subject `test(e2e): make the wood-texture snapshot export survive a lost click`.** The same failure reddened CI run 42487713845 on records-only commit `98f61632`, and that run's owner is this finding. `exportedBytes` in `e2e/board-wood-texture.spec.ts` now records a per-export baseline, waits 6 s for a new `save_board_snapshot` call, retries the click once if none appears, and returns the newest export.
+
+**Rejected first design:** a retry on a 100 ms interval failed 10 of 10 repeats under load with `different = 0`, because a slow first export was duplicated and read as the second.
+
+**Proof, committed design:** `--repeat-each=10` of this spec file under 20 CPU busy loops, 90 of 90 passed, and 9 of 9 without load. Logs were at `/tmp/f-20261106-49-proof-qxuFQr1o/`. This was reproduced locally in the container, not on a hosted runner, so hosted-CI behaviour is confirmed only by this push's own run.
+
+**Known limit:** an export slower than 6 s can overlap the retry. A duplicate is not asserted against, because a legitimate retry produces one, and the on/off pixel comparison is the check that catches a wrong export.
+<!-- ledger-meta {"command":"close","effect_lines":7,"effect_sha256":"e16c6ba8cbc53b786f84e52b091907d7d9e277bdd838b5791ec5ffb5742a9d32","header_sha256":"b8e67023986a2fee3d4cc73c2bfba2ab2563f07df3b7562aab8af87a4f898dcb","header_status":"handled","input_sha256":"232f3eb57f8358d4cc3b25c7bf2257d85a67554ba101a45dd5f8fcfae5b53cdb","kind":"mutation-receipt","operation":"7d46d13f128e8ea534d1d52ce63f118bc24347a4338e48fce9d40be0f6ae3092","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-49"],"target":"f-20261106-49","v":1} -->
 
 ---
 
