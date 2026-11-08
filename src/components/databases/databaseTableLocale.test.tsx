@@ -205,8 +205,8 @@ test("TournamentCard renders German game headers and leaves the actions header e
 
 test("PlayerTable renders translated column titles", async () => {
   await render(<PlayerTable />);
-  expect(headers()).toEqual(["ID", "Name", "Elo", "Spiele"]);
-  const count = host.querySelectorAll<HTMLElement>("tbody td")[3];
+  expect(headers()).toEqual(["Name", "Elo", "Spiele"]);
+  const count = host.querySelectorAll<HTMLElement>("tbody td")[2];
   expect(count.textContent).toBe("15");
   expect(count.style.fontVariantNumeric).toBe("tabular-nums");
 });
@@ -263,8 +263,8 @@ test("TournamentTable renders the shared date, site and numeric presets", async 
 test("PlayerTable renders Elo and Games with the shared numeric preset", async () => {
   await render(<PlayerTable />);
   const cells = host.querySelectorAll<HTMLElement>("tbody tr:first-child td");
+  expectNumeric(cells[1]);
   expectNumeric(cells[2]);
-  expectNumeric(cells[3]);
 });
 
 test("GameTable renders shared date, plies, event and site presets without reformatting dates", async () => {
@@ -333,7 +333,7 @@ test.each(["en-US", "de-DE"] as const)(
 test.each(["players", "tournaments"])("%s renders French headers", async (view) => {
   locale = await catalogueI18n("fr-FR");
   await render(view === "players" ? <PlayerTable /> : <TournamentTable />);
-  expect(headers().slice(0, 2)).toEqual(view === "players" ? ["ID", "Nom"] : ["Nom", "Date"]);
+  expect(headers().slice(0, 2)).toEqual(view === "players" ? ["Nom", "Elo"] : ["Nom", "Date"]);
 });
 
 test("TournamentCard renders the German empty leaderboard", async () => {

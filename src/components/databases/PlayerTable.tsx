@@ -122,7 +122,6 @@ function PlayerTable() {
           records={players}
           fetching={isLoading}
           columns={[
-            { accessor: "id", title: t("Common.Id"), sortable: true },
             { accessor: "name", title: t("Common.Name"), sortable: true },
             {
               ...numericColumn,

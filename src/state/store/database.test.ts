@@ -407,7 +407,7 @@ describe("database-view panel hydration", () => {
         },
     );
 
-    it.each(["id", "name", "elo"])("preserves the supported player sort %s", async (sort) => {
+    it.each(["name", "elo", "games"])("preserves the supported player sort %s", async (sort) => {
         const players = {
             ...validPlayers,
             activeTab: "openings",
@@ -415,6 +415,27 @@ describe("database-view panel hydration", () => {
         };
         const store = await hydrate({ players });
         expect(store.getState().players).toEqual(players);
+    });
+
+    it("falls back from the retired player ID sort to name descending independently", async () => {
+        const store = await hydrate({
+            games: validGames,
+            players: {
+                ...validPlayers,
+                query: {
+                    ...validPlayers.query,
+                    options: { ...validPlayers.query.options, sort: "id" },
+                },
+            },
+            tournaments: validTournaments,
+        });
+        expect(store.getState().players).toEqual(store.getInitialState().players);
+        expect(store.getState().players.query.options).toMatchObject({
+            sort: "name",
+            direction: "desc",
+        });
+        expect(store.getState().games).toEqual(validGames);
+        expect(store.getState().tournaments).toEqual(validTournaments);
     });
 
     it.each(["name", "date", "players", "games", "avgElo"])(

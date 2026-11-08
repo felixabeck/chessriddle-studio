@@ -163,7 +163,7 @@ test("max Elo preserves numeric zero and an empty max restores the omitted full 
   );
 });
 
-test("sortable Games header requests both games sort directions and renders the native player counts", async () => {
+test("headers omit ID and sortable Games requests both directions with native player counts", async () => {
   mocks.getPlayers.mockResolvedValue({
     data: [{ id: 1, name: "Player", elo: 2200, game_count: 1234 }],
     count: 1,
@@ -178,6 +178,11 @@ test("sortable Games header requests both games sort directions and renders the 
     ),
   );
   expect(container.querySelector("tbody")?.textContent).toBe("1234");
+  expect(Array.from(container.querySelectorAll("th"), (header) => header.textContent)).toEqual([
+    "Common.Name",
+    "Board.Database.Local.Elo",
+    "Board.Database.Games",
+  ]);
   const gamesHeader = Array.from(container.querySelectorAll("th")).find(
     (header) => header.textContent === "Board.Database.Games",
   )!;

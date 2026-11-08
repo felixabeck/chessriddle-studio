@@ -47,6 +47,10 @@ for (const width of [1920, 320]) {
         await page.goto(`/databases/${gameOpeningFixture.databaseId}`);
         await page.getByRole("tab", { name: "Players", exact: true }).click();
         const players = page.getByRole("tabpanel", { name: "Players", exact: true });
+        const table = players.locator('[data-database-pane="table"]');
+        const headers = table.locator("thead");
+        await expect(headers.getByRole("button", { name: /^Name(\s|$)/ })).toBeVisible();
+        await expect(headers.getByRole("button", { name: /^ID(\s|$)/ })).toHaveCount(0);
         await players
             .locator('[data-database-pane="table"] tbody tr')
             .filter({ hasText: "First White" })
