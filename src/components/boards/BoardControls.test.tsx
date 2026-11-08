@@ -85,6 +85,7 @@ describe("BoardControls tab type durability", () => {
   let root: Root;
   let jotaiStore: ReturnType<typeof createJotaiStore>;
   let treeStore: TreeStore;
+  let boardRef: React.RefObject<HTMLDivElement | null>;
 
   beforeEach(async () => {
     sessionStorage.clear();
@@ -102,13 +103,19 @@ describe("BoardControls tab type durability", () => {
 
     container = document.createElement("div");
     document.body.append(container);
+    boardRef = { current: container };
     root = createRoot(container);
     await act(async () => {
       root.render(
         <JotaiProvider store={jotaiStore}>
           <TreeStateContext.Provider value={treeStore}>
             <WorkspaceTabScope tabId={tabId}>
-              <BoardControls editingMode={false} toggleEditingMode={vi.fn()} dirty={false} />
+              <BoardControls
+                boardRef={boardRef}
+                editingMode={false}
+                toggleEditingMode={vi.fn()}
+                dirty={false}
+              />
             </WorkspaceTabScope>
           </TreeStateContext.Provider>
         </JotaiProvider>,
@@ -132,6 +139,44 @@ describe("BoardControls tab type durability", () => {
         return originalSetItem.call(this, key, value);
       });
   }
+
+  test("snapshots the owned board when an unrelated board appears first", async () => {
+    const unrelatedBoard = document.createElement("div");
+    unrelatedBoard.className = "cg-wrap";
+    document.body.insertBefore(unrelatedBoard, container);
+    const snapshotTarget = document.createElement("div");
+    snapshotTarget.className = "cg-wrap";
+    container.append(snapshotTarget);
+
+    try {
+      await act(async () => {
+        container
+          .querySelector<HTMLButtonElement>('[aria-label="Board.Action.TakeSnapshot"]')!
+          .click();
+      });
+
+      expect(domtoimage.toBlob).toHaveBeenCalledOnce();
+      expect(vi.mocked(domtoimage.toBlob).mock.calls[0][0]).toBe(snapshotTarget);
+    } finally {
+      unrelatedBoard.remove();
+    }
+  });
+
+  test("does not snapshot when the owning board ref is null", async () => {
+    const unrelatedBoard = document.createElement("div");
+    unrelatedBoard.className = "cg-wrap";
+    container.append(unrelatedBoard);
+    boardRef.current = null;
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Board.Action.TakeSnapshot"]')!
+        .click();
+    });
+
+    expect(domtoimage.toBlob).not.toHaveBeenCalled();
+    expect(mocks.saveBoardSnapshot).not.toHaveBeenCalled();
+  });
 
   test("surfaces snapshot save failures without an unhandled rejection", async () => {
     const failure = new Error("snapshot save failed");

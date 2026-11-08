@@ -25,6 +25,7 @@ import { autoSaveAtom, gameStateFamily, eraseDrawablesOnClickAtom } from "@/stat
 import { keyMapAtom } from "@/state/keybinds";
 
 interface BoardControlsProps {
+  boardRef: React.RefObject<HTMLDivElement | null>;
   editingMode: boolean;
   toggleEditingMode: () => void;
   dirty: boolean;
@@ -38,6 +39,7 @@ interface BoardControlsProps {
 }
 
 function BoardControls({
+  boardRef,
   editingMode,
   toggleEditingMode,
   dirty,
@@ -82,7 +84,7 @@ function BoardControls({
   }
 
   const takeSnapshot = async () => {
-    const snapshotTarget = document.querySelector(".cg-wrap") as HTMLElement | null;
+    const snapshotTarget = boardRef.current?.querySelector<HTMLElement>(".cg-wrap") ?? null;
     if (!snapshotTarget) return;
 
     try {
