@@ -4,5 +4,5 @@ import { SettingLabelContext } from "./SettingsLayout";
 
 export default function SettingsSelect(props: SelectProps) {
   const inheritedLabel = useContext(SettingLabelContext);
-  return <Select {...props} aria-label={props["aria-label"] || inheritedLabel} />;
+  return <Select aria-label={inheritedLabel} {...props} />;
 }

@@ -20,6 +20,7 @@ test("security-consent: keeps storage free of credential fields and sends no tel
         .not.toContain("accessToken");
     expect(telemetryRequests).toBe(0);
 
+    await expect(page.getByRole("tabpanel", { name: /board/i })).toBeVisible();
     await assertAccessible();
 
     await page.getByRole("tab", { name: /appearance/i }).click();

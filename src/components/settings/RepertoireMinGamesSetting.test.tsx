@@ -122,6 +122,21 @@ test("gives the preset select the SettingRow title as its accessible name", asyn
   );
 });
 
+test("gives the custom min-games input the SettingRow title as its accessible name", async () => {
+  minGames.current = 37;
+  await act(async () =>
+    root.render(
+      <SettingRow title="Minimum games" description="d">
+        <RepertoireMinGamesSetting />
+      </SettingRow>,
+    ),
+  );
+
+  expect(host.querySelector("[data-testid=custom]")?.getAttribute("aria-label")).toBe(
+    "Minimum games",
+  );
+});
+
 test("keeps the stored value when switching to custom", async () => {
   await act(async () => root.render(<RepertoireMinGamesSetting />));
 
