@@ -12349,8 +12349,8 @@ Former private decision identifier: d-20261029-14
 * **Rejected:** A dedicated upgrade indicator (new event and renderer state for a one-time wait comparable to an ordinary large-folder listing).
 * **Reason:** Rule 6d: machinery must remove an observed cost, and the observed cost was the ~45 s content check. Reversal path: file a finding if a measured migration wait noticeably exceeds the ordinary listing time.
 * **Supersedes:** -
-* **Decided by:** Claude Code (Opus 5.5) next-finding drain, adopted reviewed plan, full auto, 2026-11-08 · **Superseded-by:** -
-<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"625e350b6bc27313b9f862c91ec80ee9b27c0f714f3c526392ad848d0b758cc6","input_sha256":"e6e29401c1ca99cd2ec9dab461acac9a547a1447806b946ce03233134ffa5332","kind":"mutation-receipt","operation":"f77330fa80c14384ed818682c2940714c22330eec7440cf6b10c17796dedde1c","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-02"],"target":"decisions-ledger","v":1} -->
+* **Decided by:** Claude Code (Opus 5.5) next-finding drain, adopted reviewed plan, full auto, 2026-11-08 · **Superseded-by:** d-20261108-08
+<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"62be2f66bee33ca394f9c002f077d3e503013f4a7af36b90213cf44a9161eb71","input_sha256":"e6e29401c1ca99cd2ec9dab461acac9a547a1447806b946ce03233134ffa5332","kind":"mutation-receipt","operation":"f77330fa80c14384ed818682c2940714c22330eec7440cf6b10c17796dedde1c","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-02"],"target":"decisions-ledger","v":1} -->
 
 ### d-20261108-03 — How does Chess.com account staging treat an allowed-rules game without usable PGN?
 
