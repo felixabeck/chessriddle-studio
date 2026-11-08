@@ -733,10 +733,17 @@ test("an abort signal stops and removes the active container", async (t) => {
   const harness = await makeHarness(t, { FAKE_DOCKER_RUN_MODE: "hold" });
   const moduleUrl = pathToFileURL(launcherPath).href;
   const source = [
+    `import { readFileSync } from "node:fs";`,
     `import { runE2eContainer } from ${JSON.stringify(moduleUrl)};`,
     "const controller = new AbortController();",
-    "setTimeout(() => controller.abort(), 250);",
+    // A fixed delay lost to the fake docker's start under gate load and aborted before `run` was recorded.
+    "const abortOnceRunning = setInterval(() => {",
+    `  if (!readFileSync(process.env.FAKE_DOCKER_RECORD, "utf8").includes('"action":"run"')) return;`,
+    "  clearInterval(abortOnceRunning);",
+    "  controller.abort();",
+    "}, 10);",
     "const result = await runE2eContainer([], { abortSignal: controller.signal });",
+    "clearInterval(abortOnceRunning);",
     "process.exitCode = result.exitCode;",
   ].join("\n");
   const running = startNode(["--input-type=module", "-e", source], harness.env);
