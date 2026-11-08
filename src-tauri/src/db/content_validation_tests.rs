@@ -743,7 +743,10 @@ async fn content_validation_additive_migration_defers_content_scan() {
                 &CancellationToken::new(),
             );
             outcome.result.unwrap();
-            assert_eq!(scan_path, path);
+            assert_eq!(
+                std::fs::canonicalize(&scan_path).unwrap(),
+                std::fs::canonicalize(&path).unwrap()
+            );
             if corrupt_content {
                 assert_eq!(
                     outcome.event.as_ref().map(|event| event.message.as_str()),
