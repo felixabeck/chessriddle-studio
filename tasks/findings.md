@@ -21420,7 +21420,7 @@ chessops 0.14 has one unified `Chess` with arbitrary-file rook castling: `Castle
 
 ### The Settings Board tab's select controls have no accessible label and fail axe
 
-* **ID:** f-20261106-13 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261106-13 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** build run studio-feedback, phase S1 (telemetry removal), 2026-11-06
 * **Where:** `src/components/settings/SettingsPage.tsx` Board tab (the default tab) renders Mantine `Select` controls, including `src/components/settings/BoardSelect.tsx`, without an associated label.
@@ -21432,6 +21432,9 @@ chessops 0.14 has one unified `Chess` with arbitrary-file rook castling: `Castle
 
 **Review correction, 2026-11-06 (records lens, build run studio-feedback):** `BoardSelect` and `PiecesSelect` live on the Appearance tab and already pass `ariaLabel`. The unlabelled Mantine `Select`s on the default Board tab are move notation, move method, coordinates and material display (`src/components/settings/SettingsPage.tsx` around lines 184, 202, 253 and 333). The e2e change that moved `assertAccessible()` to Appearance landed as `f5e22519` after rebase (originally `79dd8999`).
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"e50a3053fbff1a92e0e6f32a87fedb40b2925405b976b10ae2764c6980bca8ac","input_sha256":"4c5c440551e3053f96e02b2c0b720a49214aa2e74914d6412bb55c3cc6bbb07a","kind":"mutation-receipt","operation":"cf5cca1534e476b3a85e970e279192246a2a4fb2093836bb42e6bffa0783ff34","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-13"],"target":"f-20261106-13","v":1} -->
+
+**Handled, 2026-11-08 (drain, next-finding inline):** the four unlabelled Board-tab selects (move notation, move method, coordinates, material display) plus the repertoire auto-difficulty and minimum-games preset selects now take their accessible name from the row title. New `src/components/settings/SettingsSelect.tsx` reads `SettingLabelContext` exactly as `SettingsSwitch` does; every settings-row `Select` goes through it, and the custom minimum-games `NumberInput` takes the same name. `e2e/security-consent.spec.ts` runs `assertAccessible()` on the default Board tab again (Appearance check kept). Proof: container e2e `security-consent` green; with the `SettingsPage.tsx` change stashed it failed axe `label` on the four Board selects; unit tests `SettingsSelect.test.tsx` and a `RepertoireMinGamesSetting` row-name case. Commit `c3e2d06b`. Rejected: per-control `aria-label` on each Select — it leaves the next new settings select unlabelled, which is how these four slipped.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"03104a93043bacec0fa2ebe131f36c4fed5fb662a18e577abf6498d616f11d09","header_sha256":"2ecaa72478890cdad3ebd1a177e34727eb3ebe8551efab882f4a747f7e91134c","header_status":"handled","input_sha256":"fdf866c10b80a8824e8c1248725b91f2cc301648271b645723ee9815c9eb05ec","kind":"mutation-receipt","operation":"018e7344abccbceba948bb3708b5f268c7bf2994b65268c6365843f1dd3b6dc7","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-13"],"target":"f-20261106-13","v":1} -->
 
 ---
 
