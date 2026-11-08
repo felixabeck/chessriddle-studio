@@ -4881,7 +4881,7 @@ shape (`**Question:**` / `**Reason:**`); `record-decision` validates it.
 * **Chosen:** No. Ordinary open keeps the cheap schema checks, including rejection of an uninitialized file. `PRAGMA integrity_check` and `PRAGMA foreign_key_check` stay on create and migration. A missing or stale stamp schedules one background read-only scan that does not block `get_db_info`.
 * **Rejected:** Keep both pragmas on ordinary open and cache the pass only in memory.
 * **Reason:** The in-memory `DatabaseSchemaIdentity` dies with the process, so a relaunch of Mega Database 2025 waits about two minutes again. The stored Info row already supplies the card counts.
-* **Decided by:** Grok build 2026-10-02 database-list-integrity · **Superseded-by:** -
+* **Decided by:** Grok build 2026-10-02 database-list-integrity · **Superseded-by:** d-20261108-01
 
 ### d-20261002-05 — Should a failed content scan use a new error sentence?
 
@@ -4891,7 +4891,7 @@ shape (`**Question:**` / `**Reason:**`); `record-decision` validates it.
 * **Rejected:** A new explanation of the background scan.
 * **Reason:** The existing card already says the database could not be loaded. The accepted window is that a corrupt file may show its stored title until the scan fails.
 * **Decided by:** Grok build 2026-10-02 database-list-integrity · **Superseded-by:** -
-<!-- ledger-meta {"command":"record-decision","effect_lines":17,"effect_sha256":"28db97e75b34aee28c1a43b27c666be33810ef5635779f74c4cdc372bfde8c06","input_sha256":"66efe29497453e1f8bf471df1a40a5183be62744047c40240b8b58b991f502a2","kind":"mutation-receipt","operation":"54d7579e61b85c45ac6c599fbeb473efe795cf38099a0b65b0155d5ca86c00b4","options":{"section":null},"request_id_sha256":null,"results":["d-20261002-04","d-20261002-05"],"target":"decisions-ledger","v":1} -->
+<!-- ledger-meta {"command":"record-decision","effect_lines":17,"effect_sha256":"373dadf0f293b24db8024096fce728628c9add913114ae9b0b4fe81553b573ab","input_sha256":"66efe29497453e1f8bf471df1a40a5183be62744047c40240b8b58b991f502a2","kind":"mutation-receipt","operation":"54d7579e61b85c45ac6c599fbeb473efe795cf38099a0b65b0155d5ca86c00b4","options":{"section":null},"request_id_sha256":null,"results":["d-20261002-04","d-20261002-05"],"target":"decisions-ledger","v":1} -->
 
 ### d-20261002-06 — What closes the preferred-sidecar deletion window: reorder, or a provenance check?
 
