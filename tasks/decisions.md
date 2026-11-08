@@ -12371,3 +12371,14 @@ Former private decision identifier: d-20261029-14
 * **Reason:** "Set as Start" marks where the chapter begins; the sibling surface (coverage) already treats that position as part of the chapter, and an exclusive bound produced an empty deck for a line whose only player move sits at Start. Reversal path: restore `isPrefix(item.position, start)` as the skip in `buildFromTree`.
 * **Decided by:** drain session 44944477 (next-finding, lens), 2026-11-08 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"e6901e982637d993273cf19deb24fe960ab25be7465f625da6a942a596c229f4","input_sha256":"2a718ba67f44fbe8604f56277bad976b7805c13818f57fa242fd60e623bd71e3","kind":"mutation-receipt","operation":"35f5d290eee0dd2e6cd174ea6b958f5bffc1c032acc7dbdc3c04deadf76316c8","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-04"],"target":"decisions-ledger","v":1} -->
+
+### d-20261108-05 — Which positions does a non-empty practice Start admit?
+
+* **Question:** With a non-empty `headers.start`, which tree positions may become practice cards?
+* **Governs:** f-20261106-14
+* **Chosen:** The Start node and its descendants only (`isPrefix(start, item.position)` in `buildFromTree`), the same set repertoire coverage and start-state moves in `RepertoireInfo.tsx` use. The Start node's own move is a card when it is the player's turn. With no Start (`start=[]`) the root stays skipped and every other position is admitted, as before.
+* **Rejected:** Skipping only strict ancestors of Start (d-20261108-04 as first written): sibling branches outside the chapter, e.g. `1.d4 d5 2.c4` beside a Start after `1.e4 e5`, still entered the deck while coverage excluded them (push review, chess-semantics and correctness lenses). Making coverage exclusive instead. Adding a root card for an empty Start in this change.
+* **Reason:** "Set as Start" marks the chapter; practice and coverage must describe the same chapter. Reversal path: restore the skip predicate `isPrefix(item.position, start)` in `buildFromTree`.
+* **Supersedes:** d-20261108-04
+* **Decided by:** drain session 44944477 (next-finding, lens), 2026-11-08 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"49bec2f9b68112f6e63d40d968bc670448821c269cd80ec4b9f0fa7baecb1f53","input_sha256":"a68a94e46d382b9807f5ed4f38485bac5c6c139b147968d1193a830a32529fae","kind":"mutation-receipt","operation":"6c74114e972ba60402db933e48400b629cc976138e2ff072c731d71bbbbf9083","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-05"],"target":"decisions-ledger","v":1} -->
