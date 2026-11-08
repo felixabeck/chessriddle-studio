@@ -22236,7 +22236,7 @@ All probes were removed; the tree stayed clean.
 
 ### The contract gate's live actionlint download turns a GitHub Releases outage into a red required CI job
 
-* **ID:** f-20261108-06 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261108-06 · **Status:** handled · **Area:** gate-scripts · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** 6f34ab95-4aa5-4bf3-aa66-0d8104c59717
 * **Impact class:** tooling
 * **Spotted outside diff:** post-push CI wait for the records-only push `2d5d2525` (rejection of `f-20261106-20`).
@@ -22246,3 +22246,12 @@ All probes were removed; the tree stayed clean.
 * **Failure scenario:** Observed 2026-11-08 on run 42465714377. Attempt 1 at 09:08 UTC and the rerun attempt 2 at 09:28 UTC both ended with `github-actionlint: Download failed: 504 Gateway Time-out for https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz`, and the `frontend` job went red on a commit that changed only `tasks/findings.md`. A `curl` of the same URL from the development machine right after attempt 2 also returned 504, so the asset host itself was failing. The local contract gate passed on the same tree 2026-11-08, and a local `pnpm dlx` store is the likely reason, which was not separately measured.
 * **Fix:** Remove the live single-attempt dependency without weakening the check: cache the actionlint binary in CI keyed on the pinned version, or add a bounded retry around the fetch. Do not use `--allow-missing-actionlint` in the required gate, because that silently drops the workflow lint. Prove it with a failing fetch that retries or uses the cache, and keep a genuine actionlint finding red.
 * **Found by:** Claude Code drain session, required-CI wait.
+
+**Closed 2026-11-08 by drain session 228a549b, commit `1a432d3b`.** The `frontend` job in `.github/workflows/test.yml` now restores `~/.github-actionlint/bin` through `actions/cache@v4` before `Run the contract gate`. `github-actionlint` returns a binary already present at `bin/<version>/actionlint` without any download (`dist/lib/download.js`, `download()`), so a restored cache removes the live fetch. The cache key hashes `scripts/check-workflow-permissions.mjs`, which holds the version pin, so the workflow carries no second pin. A checker edit falls back through `restore-keys` and keeps the binary.
+
+**Proof, taken during the live outage (2026-11-08 09:33 UTC, the release asset URL returned 504):** with an empty `ACTIONLINT_CACHE_DIR`, `node scripts/check-workflow-permissions.mjs --actionlint` exited 1 with `Download failed: 504`. With the populated cache and the same host state it exited 0 with `actionlint: OK`. With the populated cache and a workflow whose job needs a missing job, it exited 1 and printed the `[job-needs]` error, so a genuine actionlint finding stays red. `--allow-missing-actionlint` is not used.
+
+**Rejected:** a bounded retry around the fetch, because the observed outage outlasted attempt 1 and the rerun 20 minutes later, so no reasonable retry would have survived it. Also rejected: a static test asserting the workflow step, because the failure is at runtime and rule 6d asks for no new tooling test without an observed cost it removes.
+
+**Remaining limit:** the cache protects a run only once a green `frontend` job has saved it, because `actions/cache` saves in its post step on job success. A cold cache during an outage still fails, which is correct because the lint cannot run. The CI seeding was not yet observed when this note was written.
+<!-- ledger-meta {"command":"close","effect_lines":7,"effect_sha256":"c9baa944b0ab0f14da643873e7a2763c304aedb15cf654bc6a336766eab2a844","header_sha256":"5ef1bc321d39cc9405d47c22323b71bdc6dffa51f202dca605e6451f7c16dae1","header_status":"handled","input_sha256":"f1f4ef40e2db1e10ed4adb3f946d49a7a7c5dd99e54884a47fb2c438db77444e","kind":"mutation-receipt","operation":"31c7fa0582135205666981239036ff555f0891c71a1241dc9f7ad159696056b0","options":{"section":null},"request_id_sha256":null,"results":["f-20261108-06"],"target":"f-20261108-06","v":1} -->
