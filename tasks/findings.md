@@ -22261,3 +22261,18 @@ All probes were removed; the tree stayed clean.
 
 **Addendum 2026-11-08 (final-gate repair, drain session 228a549b).** The first final gate went red on the contract `no push save or combined cache` in `scripts/check-gate-routing-tests.mjs`, which forbade every saving cache step in `test.yml`. d-20261108-12 narrows it to admit exactly `~/.github-actionlint/bin`, in commit `2ea9bbf3`. A save of the mutation directory stays red and is proven by the new table row `forbid push save of any other path`. The closing note's sentence about adding no static test still holds for the cache step itself; this row covers the guard's narrowed reach.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"f7f91ef2abe43caab0257e724f21e1082d357736fdaad71c80f5d21f48e68789","input_sha256":"980fe06a13fa9af6bf3ff007922724fbefb0ac4c18eadc467f71c08eac0c6317","kind":"mutation-receipt","operation":"b9b1c6e19f88fc4e62ae25b2a636d9f85c96db54395fdddb302742693963be33","options":{"section":null},"request_id_sha256":null,"results":["f-20261108-06"],"target":"f-20261108-06","v":1} -->
+
+---
+
+## 2026-11-08 — filed through the inbox spool
+
+### GameCard.test.tsx leaves a Mantine transition timer that fires after jsdom teardown and fails Vitest intermittently
+
+* **ID:** f-20261108-03 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 84122ac1-515b-49cf-8abe-1ccdf130b1b0
+* **Impact class:** tooling
+* **Where:** `src/components/databases/GameCard.test.tsx`; Mantine `Transition` (`@mantine/core/esm/components/Transition/use-transition.mjs:61`).
+* **Defect:** on 2026-11-08 a `pnpm exec vitest related --run` over the player-statistics files (180 files, 5269 tests, all passed) exited 1 with one unhandled "ReferenceError: window is not defined" from `use-transition.mjs:61` → React `dispatchSetState` → `resolveUpdatePriority`, attributed to `GameCard.test.tsx`. A Mantine transition timer armed during a GameCard test fires after the file's jsdom environment is torn down. The identical rerun on the same tree passed with no error, so it is timing-dependent. Same class as the tab-storage timer of f-20260922-14 / RepertoireInfo, different source.
+* **Failure scenario:** any frontend gate or phase proof whose Vitest run includes `GameCard.test.tsx` can go red with all tests passing, depending on scheduling.
+* **Fix shape:** unmount the rendered card and flush or fake the Mantine transition timers before each GameCard test ends (or disable transitions in its theme wrapper), so no timer outlives the environment.
+* **Proof:** a loop of `pnpm exec vitest run src/components/databases/GameCard.test.tsx` (e.g. 30 runs) shows no unhandled error.
