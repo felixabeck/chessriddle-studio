@@ -155,6 +155,38 @@ fn corrupt_connection(connection: &mut SqliteConnection, foreign_key: bool) {
     connection.batch_execute("INSERT OR REPLACE INTO Info VALUES ('Title', 'Stored title'), ('GameCount', '42'), ('PlayerCount', '9'), ('EventCount', '3');").unwrap();
 }
 
+fn seed_version_two_file(path: &Path, version: &str, stored_check_violation: bool) {
+    let mut connection = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+    connection
+        .batch_execute("PRAGMA foreign_keys = ON;")
+        .unwrap();
+    let schema = if version == "2.0.0" {
+        migrations::pre_orientation_schema()
+    } else {
+        migrations::pre_game_count_schema()
+    };
+    connection.batch_execute(&schema).unwrap();
+    sql_query("INSERT INTO Info (Name, Value) VALUES ('Version', ?)")
+        .bind::<Text, _>(version)
+        .execute(&mut connection)
+        .unwrap();
+    if stored_check_violation {
+        if version == "2.0.0" {
+            // ADD COLUMN Orientation rebuilds Games and would abort on a stored
+            // Games.Result CHECK; use the auxiliary integrity_check fixture.
+            corrupt_connection(&mut connection, false);
+        } else {
+            connection
+                .batch_execute(
+                    "PRAGMA ignore_check_constraints = ON;
+                     INSERT INTO Games (Result) VALUES ('invalid');
+                     PRAGMA ignore_check_constraints = OFF;",
+                )
+                .unwrap();
+        }
+    }
+}
+
 fn frames(app: &App) -> Arc<std::sync::Mutex<Vec<DatabaseContentFailure>>> {
     tauri_specta::Builder::<tauri::test::MockRuntime>::new()
         .events(tauri_specta::collect_events!(
@@ -668,6 +700,67 @@ async fn content_validation_create_and_migration_run_both_pragmas_and_publish_pa
     .unwrap()
     .scan
     .is_none());
+}
+
+#[tokio::test]
+async fn content_validation_additive_migration_defers_content_scan() {
+    let _serial = SERIAL.lock().await;
+    for version in ["2.1.0", "2.0.0"] {
+        for stored_check_violation in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("games.db3");
+            seed_version_two_file(&path, version, stored_check_violation);
+            let (app, handle) =
+                database_app_with_grant(dir.path(), &path, "games", full_database_operations());
+            let state = app.state::<AppState>();
+            migrations::take_content_pragma_counts();
+            {
+                let _connection = state
+                    .database_repository
+                    .connection(&target(&app, &handle), None)
+                    .unwrap();
+            }
+            assert_eq!(migrations::take_content_pragma_counts(), (0, 0));
+            assert!(!stamp_path(&path).exists());
+            let metadata = get_db_info_blocking(
+                &state.pgn_path_authority,
+                &state.database_repository,
+                handle.clone(),
+            )
+            .unwrap();
+            assert!(metadata.scan.is_some());
+            assert!(!stamp_path(&path).exists());
+            let (scan_path, identity) = metadata.scan.unwrap();
+            let outcome = content_validation::scan_worker(
+                &state.database_repository,
+                &target(&app, &handle),
+                &identity,
+                &CancellationToken::new(),
+            );
+            outcome.result.unwrap();
+            assert_eq!(scan_path, path);
+            if stored_check_violation {
+                assert_eq!(
+                    outcome.event.as_ref().map(|event| event.message.as_str()),
+                    Some("SQLite integrity_check failed")
+                );
+                assert!(
+                    matches!(get_db_info_blocking(&state.pgn_path_authority, &state.database_repository, handle), Err(Error::InvalidInput(message)) if message == "SQLite integrity_check failed")
+                );
+            } else {
+                assert!(outcome.event.is_none());
+                assert!(stamp_path(&path).is_file());
+                assert!(get_db_info_blocking(
+                    &state.pgn_path_authority,
+                    &state.database_repository,
+                    handle
+                )
+                .unwrap()
+                .scan
+                .is_none());
+            }
+        }
+    }
 }
 
 #[tokio::test]

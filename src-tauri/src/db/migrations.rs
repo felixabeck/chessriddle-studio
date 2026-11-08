@@ -131,6 +131,9 @@ pub fn prepare_database(
 
 /// Returns (created, content_validated). The second flag is true only when both
 /// content pragmas ran, so publication can follow the outermost commit.
+/// Additive 2.0.0 and 2.1.0 migrations return false and leave content to the
+/// background scan (`content_validation::schedule` from `get_db_info`;
+/// f-20261107-02). Create and the 1.0.0 rewrite still return true.
 pub fn prepare_database_with_validation(
     conn: &mut SqliteConnection,
     title: &str,
@@ -153,7 +156,9 @@ pub(super) fn uninitialized_database_error() -> Error {
 /// Creation is intentionally excluded: only the import command has the title
 /// and description required to initialize a new database.
 /// Returns true only when migration ran both content pragmas; false means only
-/// the cheap schema contract was checked.
+/// the cheap schema contract was checked. Additive 2.0.0 and 2.1.0 migrations
+/// return false and leave content to the background scan
+/// (`content_validation::schedule` from `get_db_info`; f-20261107-02).
 pub fn validate_existing_database(conn: &mut SqliteConnection) -> Result<bool, Error> {
     if non_internal_table_count(conn)? == 0 {
         return Err(uninitialized_database_error());
@@ -209,8 +214,10 @@ fn migrate_database(conn: &mut SqliteConnection) -> Result<bool, Error> {
             validate_sentinel_records_and_triggers(conn)?;
             migrate_player_game_counts(conn)?;
             insert_info(conn, "Version", CURRENT_DATABASE_VERSION)?;
-            validate_database(conn)?;
-            Ok(true)
+            // Additive: commit on the schema contract; content is scanned in the
+            // background (f-20261107-02).
+            validate_schema(conn)?;
+            Ok(false)
         }),
         (PRE_ORIENTATION_DATABASE_VERSION, _) => conn.transaction::<_, Error, _>(|conn| {
             validate_games_schema_version(conn, false)?;
@@ -222,8 +229,10 @@ fn migrate_database(conn: &mut SqliteConnection) -> Result<bool, Error> {
             )?;
             migrate_player_game_counts(conn)?;
             insert_info(conn, "Version", CURRENT_DATABASE_VERSION)?;
-            validate_database(conn)?;
-            Ok(true)
+            // Additive: commit on the schema contract; content is scanned in the
+            // background (f-20261107-02).
+            validate_schema(conn)?;
+            Ok(false)
         }),
         (CURRENT_DATABASE_VERSION, false) => Err(Error::InvalidInput(
             "Database Version does not match its Games schema".into(),
@@ -738,6 +747,26 @@ fn validate_sentinel_records_and_triggers(conn: &mut SqliteConnection) -> Result
     Ok(())
 }
 
+#[cfg(test)]
+pub(super) fn pre_game_count_schema() -> String {
+    CREATE_TABLES_SQL
+        .split("-- Player game counts\n")
+        .next()
+        .unwrap()
+        .replace(
+            "    Elo INTEGER,\n    GameCount INTEGER NOT NULL DEFAULT 0",
+            "    Elo INTEGER",
+        )
+}
+
+#[cfg(test)]
+pub(super) fn pre_orientation_schema() -> String {
+    pre_game_count_schema().replace(
+        "    Orientation TEXT CHECK(Orientation IN ('white', 'black') OR Orientation IS NULL),\n",
+        "",
+    )
+}
+
 fn create_sentinel_triggers(conn: &mut SqliteConnection) -> Result<(), Error> {
     conn.batch_execute(
         "CREATE TRIGGER IF NOT EXISTS protect_unknown_player_delete BEFORE DELETE ON Players WHEN OLD.ID = 0 BEGIN SELECT RAISE(ABORT, 'cannot delete the Unknown player'); END;
@@ -763,7 +792,16 @@ mod tests {
     #[test]
     fn initialization_binds_metadata_and_leaves_a_canonical_database() {
         let mut conn = connection();
-        prepare_database(&mut conn, "quoted ' title", "x'); DROP TABLE Games; --").unwrap();
+        take_content_pragma_counts();
+        let (created, content_validated) = prepare_database_with_validation(
+            &mut conn,
+            "quoted ' title",
+            "x'); DROP TABLE Games; --",
+        )
+        .unwrap();
+        assert!(created);
+        assert!(content_validated);
+        assert_eq!(take_content_pragma_counts(), (1, 1));
 
         assert_eq!(
             info_value(&mut conn, "Title").unwrap().as_deref(),
@@ -806,7 +844,12 @@ mod tests {
             INSERT INTO Games(WhiteID,BlackID) VALUES(1,1),(1,2),(0,2);",
         )
         .unwrap();
-        prepare_database(&mut conn, "unused", "unused").unwrap();
+        take_content_pragma_counts();
+        let (created, content_validated) =
+            prepare_database_with_validation(&mut conn, "unused", "unused").unwrap();
+        assert!(!created);
+        assert!(content_validated);
+        assert_eq!(take_content_pragma_counts(), (1, 1));
         super::super::player_game_count_tests::assert_player_counts(&mut conn);
         assert!(games_schema_is_canonical(&mut conn).unwrap());
         assert_eq!(
@@ -845,24 +888,9 @@ mod tests {
 
     fn pre_orientation_connection() -> SqliteConnection {
         let mut conn = connection();
-        let old_schema = pre_game_count_schema().replace(
-            "    Orientation TEXT CHECK(Orientation IN ('white', 'black') OR Orientation IS NULL),\n",
-            "",
-        );
-        conn.batch_execute(&old_schema).unwrap();
+        conn.batch_execute(&pre_orientation_schema()).unwrap();
         insert_info(&mut conn, "Version", PRE_ORIENTATION_DATABASE_VERSION).unwrap();
         conn
-    }
-
-    fn pre_game_count_schema() -> String {
-        CREATE_TABLES_SQL
-            .split("-- Player game counts\n")
-            .next()
-            .unwrap()
-            .replace(
-                "    Elo INTEGER,\n    GameCount INTEGER NOT NULL DEFAULT 0",
-                "    Elo INTEGER",
-            )
     }
 
     #[test]
@@ -873,7 +901,7 @@ mod tests {
         ] {
             let mut conn = connection();
             let schema = if version == PRE_ORIENTATION_DATABASE_VERSION {
-                pre_game_count_schema().replace("    Orientation TEXT CHECK(Orientation IN ('white', 'black') OR Orientation IS NULL),\n", "")
+                pre_orientation_schema()
             } else {
                 pre_game_count_schema()
             };
@@ -884,7 +912,14 @@ mod tests {
                 INSERT INTO Games(WhiteID,BlackID) VALUES(1,1),(1,2),(0,2),(0,0);",
             )
             .unwrap();
-            assert!(validate_existing_database(&mut conn).unwrap());
+            take_content_pragma_counts();
+            assert!(!validate_existing_database(&mut conn).unwrap());
+            assert_eq!(take_content_pragma_counts(), (0, 0));
+            assert_eq!(
+                info_value(&mut conn, "Version").unwrap().as_deref(),
+                Some(CURRENT_DATABASE_VERSION)
+            );
+            assert!(games_schema_is_canonical(&mut conn).unwrap());
             super::super::player_game_count_tests::assert_player_counts(&mut conn);
             conn.batch_execute(
                 "INSERT INTO Games(WhiteID,BlackID) VALUES(1,2);
@@ -920,11 +955,14 @@ mod tests {
              CREATE INDEX retained_game_index ON Games(Date);",
         )
         .unwrap();
-        assert!(validate_existing_database(&mut conn).unwrap());
+        take_content_pragma_counts();
+        assert!(!validate_existing_database(&mut conn).unwrap());
+        assert_eq!(take_content_pragma_counts(), (0, 0));
         assert_eq!(
             info_value(&mut conn, "Version").unwrap().as_deref(),
             Some(CURRENT_DATABASE_VERSION)
         );
+        assert!(games_schema_is_canonical(&mut conn).unwrap());
         assert_migrated_orientation_and_stamp(&mut conn);
         assert_eq!(
             sql_query(
@@ -942,6 +980,32 @@ mod tests {
     }
 
     #[test]
+    fn stored_check_violation_does_not_block_orientation_upgrade() {
+        let mut conn = pre_orientation_connection();
+        // Auxiliary NOT NULL CHECK that integrity_check reports. A stored
+        // Games.Result CHECK is re-evaluated when SQLite rebuilds Games to add
+        // Orientation, so it cannot reach the post-migration schema contract.
+        conn.batch_execute(
+            "CREATE TABLE ContentValidationCorruption (Value TEXT);
+             INSERT INTO ContentValidationCorruption VALUES (NULL);
+             PRAGMA writable_schema=ON;
+             UPDATE sqlite_master
+                SET sql='CREATE TABLE ContentValidationCorruption (Value TEXT NOT NULL)'
+              WHERE type='table' AND name='ContentValidationCorruption';
+             PRAGMA writable_schema=RESET;",
+        )
+        .unwrap();
+        take_content_pragma_counts();
+        assert!(!validate_existing_database(&mut conn).unwrap());
+        assert_eq!(take_content_pragma_counts(), (0, 0));
+        assert_eq!(
+            info_value(&mut conn, "Version").unwrap().as_deref(),
+            Some(CURRENT_DATABASE_VERSION)
+        );
+        assert!(games_schema_is_canonical(&mut conn).unwrap());
+    }
+
+    #[test]
     fn failed_orientation_upgrade_rolls_back_column_and_version() {
         let mut conn = pre_orientation_connection();
         conn.batch_execute(
@@ -950,6 +1014,7 @@ mod tests {
             PRAGMA ignore_check_constraints = OFF;",
         )
         .unwrap();
+        // The abort now comes from the ADD COLUMN CHECK re-evaluation, not the content pragmas.
         assert!(validate_existing_database(&mut conn).is_err());
         assert_eq!(
             info_value(&mut conn, "Version").unwrap().as_deref(),
