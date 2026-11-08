@@ -208,6 +208,11 @@ impl ResolvedPath {
         self.directory.take()
     }
 
+    /// Closes the retained directory so its own handle cannot hold a pending deletion open.
+    pub(super) fn release_directory(&mut self) {
+        self.directory = None;
+    }
+
     // The descriptor that observed a resolved file's leaf; registration doors record its identity
     // as the entry's authorized parent (`f-20260912-05`).
     pub(super) fn parent(&self) -> Option<&fs::File> {

@@ -814,7 +814,7 @@ impl PathAuthority {
             return Ok(false);
         }
         let path = resolved.target().ok_or_else(invalid_record)?;
-        let leaf = path.file_name().ok_or_else(invalid_record)?;
+        let leaf = path.file_name().ok_or_else(invalid_record)?.to_os_string();
         let mut components = vec![leaf.to_os_string()];
         components.extend(engine_relative_components(executable)?);
         match self.resolve_with_engine_probe(
@@ -842,12 +842,13 @@ impl PathAuthority {
         }
         let root = self.catalog_destination_root(destination, path)?;
         let directory = probe.filesystem(engine_install_directory(&root))?;
-        let Some(identity) = probe.filesystem(catalog_directory_identity(&directory, leaf))? else {
+        let Some(identity) = probe.filesystem(catalog_directory_identity(&directory, &leaf))?
+        else {
             return Ok(false);
         };
         let empty = {
             let tree = probe
-                .filesystem(open_removal_directory_at(&directory, leaf, identity))?
+                .filesystem(open_removal_directory_at(&directory, &leaf, identity))?
                 .into_file();
             probe
                 .filesystem(read_directory_entries_at(
@@ -863,13 +864,14 @@ impl PathAuthority {
                 "archive destination does not contain the expected engine".into(),
             ));
         }
+        resolved.release_directory();
         probe.filesystem(crate::infra::fs::remove_empty_directory_at(
-            &directory, leaf, identity,
+            &directory, &leaf, identity,
         ))?;
         let cleared = self.resolve_with_engine_probe(
             destination,
             PathOperation::DownloadArchive,
-            &[leaf.to_os_string()],
+            std::slice::from_ref(&leaf),
             probe,
         )?;
         *resolved = cleared;
