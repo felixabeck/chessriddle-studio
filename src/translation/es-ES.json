@@ -533,6 +533,7 @@
     "Databases.Tournament.Points": "Puntos",
     "Databases.Tournament.Rank": "Clasificación",
     "Databases.UpgradeFailed.Description": "No se pudo actualizar esta base de datos. El archivo no se modificó.",
+    "Databases.UpgradeFailed.DiskFull": "No hay suficiente espacio en disco para actualizar esta base de datos. Libera espacio en disco y reinicia la aplicación.",
     "Databases.Upgrading.Description": "Esta base de datos se está actualizando al formato actual. Las bases de datos grandes pueden tardar varios minutos.",
     "Databases.Upgrading.Label": "Actualizando…",
     "Engine.MoveAboveNotation": "Mover sobre la notación",

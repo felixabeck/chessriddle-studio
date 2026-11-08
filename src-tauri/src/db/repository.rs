@@ -79,6 +79,7 @@ const MAX_CONNECTIONS_PER_DATABASE: u32 = 16;
 const POOL_WORKER_THREADS: usize = 3;
 // Ordinary lazy pools need the same establishment budget in every build.
 const POOL_CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
+const METADATA_READ_BUSY_TIMEOUT_MS: u64 = 1000;
 #[cfg(all(test, unix))]
 const SHORT_POOL_CONNECTION_TIMEOUT: Duration = Duration::from_secs(2);
 // Must exceed `PRAGMA busy_timeout = 30000` in `db/mod.rs` so an ordinary
@@ -594,7 +595,6 @@ struct EntryState {
     schema_identity: Option<DatabaseSchemaIdentity>,
     passed_stamp_due: Option<DatabaseIdentity>,
     last_used: u64,
-    upgrade_pass_due: bool,
 }
 
 struct UpgradeRecord {
@@ -700,7 +700,8 @@ pub(super) enum SchemaAccess {
 }
 
 #[cfg(test)]
-type UpgradeTestHook = Arc<dyn Fn(&CancellationToken) -> Result<(), Error> + Send + Sync>;
+type UpgradeTestHook =
+    Arc<dyn Fn(&mut SqliteConnection, &CancellationToken) -> Result<(), Error> + Send + Sync>;
 
 #[cfg(test)]
 type SchemaProbeTestHook = Arc<dyn Fn() + Send + Sync>;
@@ -1036,7 +1037,9 @@ impl DatabaseRepository {
                             )
                         })?;
                 let mut connection = lifetime.wrap(connection);
-                connection.batch_execute("PRAGMA busy_timeout = 1000;")?;
+                connection.batch_execute(&format!(
+                    "PRAGMA busy_timeout = {METADATA_READ_BUSY_TIMEOUT_MS};"
+                ))?;
                 drop(admission);
                 let needs_upgrade = match migrations::needs_upgrade(&mut connection) {
                     Ok(needs_upgrade) => needs_upgrade,
@@ -1133,7 +1136,7 @@ impl DatabaseRepository {
                                 let count = sql_query("SELECT COUNT(*) AS count FROM pragma_table_info('Players') WHERE name='GameCount'")
                                     .get_result::<CountRow>(connection)?.count;
                                 assert_eq!(count, 1, "the migration must have written the new column before this checkpoint");
-                                hook(&cancellation)
+                                hook(connection, &cancellation)
                             })
                         });
                         #[cfg(test)]
@@ -1146,30 +1149,51 @@ impl DatabaseRepository {
                                         || {
                                             #[cfg(test)]
                                             if let Some(hook) = hook {
-                                                hook(&cancellation)?;
+                                                hook(connection, &cancellation)?;
                                             }
                                             migrations::validate_existing_database(connection)
                                         },
                                     )?;
                                 super::cancellation_check(&cancellation)?;
-                                Ok(validated)
+                                // Bind the revision to the content validation snapshot. Failure
+                                // to capture a stamp must not roll back a successful upgrade.
+                                Ok(validated.then(|| read_data_revision(connection)))
                             });
                         #[cfg(test)]
                         { *worker_job.content_pragma_counts.lock() = migrations::take_content_pragma_counts(); }
-                        if let Ok(probe) = crate::infra::fs::probe_regular_file_at(&parent, &leaf) {
+                        let committed_probe = crate::infra::fs::probe_regular_file_at(&parent, &leaf);
+                        if let Ok(probe) = &committed_probe {
                             if let Some(record) = worker_entry.upgrade.lock().as_mut() {
-                                record.identity = DatabaseSchemaIdentity::from_probe(&probe);
+                                record.identity = DatabaseSchemaIdentity::from_probe(probe);
                             }
                         }
                         match result {
-                            Ok(validated) => {
-                                worker_entry
-                                    .state
-                                    .lock()
-                                    .map_err(repository_state_poisoned)?
-                                    .upgrade_pass_due |= validated;
+                            Ok(Some(Ok(data_revision))) => {
+                                match committed_probe {
+                                    Ok(probe) => {
+                                        worker_entry.state.lock().map_err(repository_state_poisoned)?
+                                            .passed_stamp_due = Some(DatabaseIdentity {
+                                                data_revision,
+                                                object: probe.identity,
+                                                length: probe.length,
+                                                modified: probe.modified,
+                                            });
+                                    }
+                                    Err(error) => log::warn!(
+                                        "passed content validation identity lookup failed for {:?}: {}",
+                                        leaf, error.diagnostic()
+                                    ),
+                                }
                                 Ok(())
                             }
+                            Ok(Some(Err(error))) => {
+                                log::warn!(
+                                    "passed content validation identity lookup failed for {:?}: {}",
+                                    leaf, error.diagnostic()
+                                );
+                                Ok(())
+                            }
+                            Ok(None) => Ok(()),
                             Err(_) if cancellation.is_cancelled() => Err(Error::Cancellation),
                             Err(error) => Err(error),
                         }
@@ -1303,22 +1327,7 @@ impl DatabaseRepository {
             .as_ref()
             != Some(&identity);
         if requires_validation {
-            if migrations::check_current_database(&mut connection)? {
-                match self.database_identity(target) {
-                    Ok(validated_identity) => {
-                        entry
-                            .state
-                            .lock()
-                            .map_err(repository_state_poisoned)?
-                            .passed_stamp_due = Some(validated_identity)
-                    }
-                    Err(error) => log::warn!(
-                        "passed content validation identity lookup failed for {:?}: {}",
-                        target.leaf(),
-                        error.diagnostic()
-                    ),
-                }
-            }
+            migrations::check_current_database(&mut connection)?;
             self.mark_schema_validated_entry(&entry, identity)?;
         }
         Ok(DatabaseConnection {
@@ -1344,17 +1353,6 @@ impl DatabaseRepository {
         let Some(entry) = entry else {
             return Ok(None);
         };
-        let upgrade_due = entry
-            .state
-            .lock()
-            .map_err(repository_state_poisoned)?
-            .upgrade_pass_due;
-        if upgrade_due {
-            let identity = self.database_identity(target)?;
-            let mut state = entry.state.lock().map_err(repository_state_poisoned)?;
-            state.upgrade_pass_due = false;
-            state.passed_stamp_due = Some(identity);
-        }
         let due = entry
             .state
             .lock()
@@ -3298,7 +3296,7 @@ mod upgrade_tests {
             let (send, entered) = std::sync::mpsc::channel();
             let calls = Arc::new(AtomicUsize::new(0));
             let seen = Arc::clone(&calls);
-            let hook: UpgradeTestHook = Arc::new(move |token| {
+            let hook: UpgradeTestHook = Arc::new(move |_, token| {
                 seen.fetch_add(1, Ordering::SeqCst);
                 send.send(()).unwrap();
                 let (lock, changed) = &*held;
@@ -3348,6 +3346,121 @@ mod upgrade_tests {
             assert!(Instant::now() < deadline, "upgrade checkpoint timed out");
             std::thread::sleep(Duration::from_millis(5));
         }
+    }
+
+    #[test]
+    fn upgrade_owner_interrupts_a_running_sqlite_statement() {
+        let case = Case::new(true);
+        let repository = case.repository();
+        let (entered, running) = std::sync::mpsc::channel();
+        *repository.upgrade_test_hook.lock() = Some(Arc::new(move |connection, _| {
+            entered.send(()).unwrap();
+            // This hook never polls the token. Only the worker's SQLite wrapper can stop it.
+            sql_query("WITH RECURSIVE numbers(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM numbers WHERE n<100000000) SELECT COUNT(*) AS count FROM numbers")
+                .get_result::<CountRow>(connection)?;
+            Ok(())
+        }));
+        assert!(matches!(case.info(), DatabaseInfoResult::Upgrading { .. }));
+        running.recv_timeout(Duration::from_secs(5)).unwrap();
+        let job = case.job();
+        let token = job.cancellation.clone();
+        let canceller = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            token.cancel();
+        });
+        let started = Instant::now();
+        let error = job.wait(None).unwrap_err();
+        canceller.join().unwrap();
+        assert_eq!(error.category(), crate::error::ErrorCategory::Cancellation);
+        assert_eq!(case.version(), "2.1.0");
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "running SQLite cancellation took {:?}",
+            started.elapsed()
+        );
+    }
+
+    fn count_upgrade_calls(repository: &DatabaseRepository) -> Arc<AtomicUsize> {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let seen = Arc::clone(&calls);
+        *repository.upgrade_test_hook.lock() = Some(Arc::new(move |_, _| {
+            seen.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }));
+        calls
+    }
+
+    #[test]
+    fn convert_pgn_upgrades_version_2_1_through_owner_before_import() {
+        let case = Case::new(true);
+        let repository = case.repository();
+        let calls = count_upgrade_calls(&repository);
+        tauri_specta::Builder::<tauri::test::MockRuntime>::new()
+            .events(tauri_specta::collect_events!(crate::db::ConvertProgress))
+            .mount_events(&case.app);
+        let source = case._directory.path().join("upgrade-import.pgn");
+        std::fs::write(
+            &source,
+            "[White \"Player\"]\n[Black \"Opponent\"]\n\n1. e4 e5 *\n",
+        )
+        .unwrap();
+        let file = crate::db::grant_pgn_file(
+            &case.app,
+            &source,
+            "upgrade-import.pgn",
+            vec![crate::infra::path_authority::PathOperation::ReadPgn],
+        );
+        let state = case.app.state::<crate::AppState>();
+        crate::db::convert_pgn_blocking(
+            &state.pgn_path_authority,
+            &repository,
+            &state.search_cache,
+            vec![file],
+            case.handle.clone(),
+            None,
+            case.app.clone(),
+            "Imported".into(),
+            None,
+            "upgrade-import".into(),
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(case.version(), "2.2.0");
+        let raw = rusqlite::Connection::open(&case.path).unwrap();
+        assert_eq!(
+            raw.query_row("SELECT COUNT(*) FROM Games", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            raw.query_row("SELECT SUM(GameCount) FROM Players", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            2
+        );
+    }
+
+    #[test]
+    fn account_sync_cursor_upgrades_version_2_1_through_owner_before_read() {
+        let case = Case::new(true);
+        let repository = case.repository();
+        let calls = count_upgrade_calls(&repository);
+        rusqlite::Connection::open(&case.path)
+            .unwrap()
+            .execute_batch("INSERT INTO Info VALUES('AccountSyncCursor','123456789');")
+            .unwrap();
+        let state = case.app.state::<crate::AppState>();
+        let cursor = crate::db::account_sync_cursor_blocking(
+            &state.pgn_path_authority,
+            &repository,
+            &case.handle,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert_eq!(cursor, Some(123456789));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(case.version(), "2.2.0");
     }
 
     #[test]
@@ -3819,12 +3932,33 @@ mod upgrade_tests {
     }
 
     #[test]
+    fn disk_full_upgrade_failure_has_a_typed_reason_and_safe_message() {
+        let case = Case::new(true);
+        let repository = case.repository();
+        *repository.upgrade_test_hook.lock() = Some(Arc::new(|_, _| {
+            Err(Error::Shared(Arc::new(Error::from(
+                diesel::result::Error::DatabaseError(
+                    diesel::result::DatabaseErrorKind::Unknown,
+                    Box::new("database or disk is full".to_owned()),
+                ),
+            ))))
+        }));
+        assert!(matches!(case.info(), DatabaseInfoResult::Upgrading { .. }));
+        assert!(case.job().wait(None).unwrap_err().is_database_disk_full());
+        let wire = serde_json::to_value(case.info()).unwrap();
+        assert_eq!(wire["status"], "upgrade-failed");
+        assert_eq!(wire["reason"], "disk-full");
+        assert_eq!(wire["message"], "database failure");
+        assert_eq!(case.version(), "2.1.0");
+    }
+
+    #[test]
     fn busy_upgrade_is_reported_once_then_a_new_owner_is_admitted() {
         let case = Case::new(true);
         let repository = case.repository();
         let calls = Arc::new(AtomicUsize::new(0));
         let seen = Arc::clone(&calls);
-        *repository.upgrade_test_hook.lock() = Some(Arc::new(move |_| {
+        *repository.upgrade_test_hook.lock() = Some(Arc::new(move |_, _| {
             seen.fetch_add(1, Ordering::SeqCst);
             Err(diesel::result::Error::DatabaseError(
                 diesel::result::DatabaseErrorKind::Unknown,

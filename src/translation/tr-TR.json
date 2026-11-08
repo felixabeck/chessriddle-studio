@@ -527,6 +527,7 @@
     "Databases.Tournament.Points": "Puan",
     "Databases.Tournament.Rank": "Sıra",
     "Databases.UpgradeFailed.Description": "Bu veritabanı yükseltilemedi. Dosya değiştirilmedi.",
+    "Databases.UpgradeFailed.DiskFull": "Bu veritabanını yükseltmek için yeterli disk alanı yok. Disk alanı boşaltıp uygulamayı yeniden başlatın.",
     "Databases.Upgrading.Description": "Bu veritabanı güncel biçime yükseltiliyor. Büyük veritabanlarında bu işlem birkaç dakika sürebilir.",
     "Databases.Upgrading.Label": "Yükseltiliyor…",
     "Engine.MoveAboveNotation": "Notasyonun üstüne taşı",

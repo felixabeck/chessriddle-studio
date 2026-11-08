@@ -183,13 +183,13 @@ pub(super) fn needs_upgrade(conn: &mut SqliteConnection) -> Result<bool, Error> 
 }
 
 /// Caller-owned transactions must never migrate, even if the file changed after admission.
-pub(super) fn check_current_database(conn: &mut SqliteConnection) -> Result<bool, Error> {
+pub(super) fn check_current_database(conn: &mut SqliteConnection) -> Result<(), Error> {
     if needs_upgrade(conn)? {
         return Err(Error::Conflict(
             crate::error::DATABASE_SCHEMA_NOT_CURRENT.into(),
         ));
     }
-    Ok(false)
+    Ok(())
 }
 
 pub(super) fn uninitialized_database_error() -> Error {

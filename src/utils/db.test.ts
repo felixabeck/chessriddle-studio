@@ -170,33 +170,40 @@ describe("database capability UI mapping", () => {
         expect(mocks.logError).not.toHaveBeenCalled();
     });
 
-    it("maps upgrade-failed metadata to a permanent upgrade error row", async () => {
-        mocks.listWorkspaceDatabases.mockResolvedValue({
-            entries: [
-                { handle: handle("failed"), filename: "failed.db3", availability: "available" },
-            ],
-            unread: [],
-        });
-        mocks.getDbInfo.mockResolvedValue({
-            status: "upgrade-failed",
-            filename: "failed.db3",
-            message: "Upgrade could not finish",
-        });
-        expect((await getDatabases()).databases).toEqual([
-            {
-                type: "error",
-                file: handle("failed"),
+    it.each(["other", "disk-full"] as const)(
+        "maps %s upgrade failure metadata to a permanent upgrade error row",
+        async (reason) => {
+            mocks.listWorkspaceDatabases.mockResolvedValue({
+                entries: [
+                    { handle: handle("failed"), filename: "failed.db3", availability: "available" },
+                ],
+                unread: [],
+            });
+            mocks.getDbInfo.mockResolvedValue({
+                status: "upgrade-failed",
                 filename: "failed.db3",
-                indexed: false,
-                upgradeFailed: true,
-                error: "Upgrade could not finish",
-            },
-        ]);
-        expect(mocks.logError).not.toHaveBeenCalled();
-    });
+                message: "Upgrade could not finish",
+                reason,
+            });
+            expect((await getDatabases()).databases).toEqual([
+                {
+                    type: "error",
+                    file: handle("failed"),
+                    filename: "failed.db3",
+                    indexed: false,
+                    upgradeFailed: true,
+                    error:
+                        reason === "disk-full"
+                            ? i18n.t("Databases.UpgradeFailed.DiskFull")
+                            : "Upgrade could not finish",
+                },
+            ]);
+            expect(mocks.logError).not.toHaveBeenCalled();
+        },
+    );
 
     it.each(supportedLocales)(
-        "localizes transient metadata in the shipped %s catalogue without fallback",
+        "localizes transient and disk-full metadata in the shipped %s catalogue without fallback",
         async (locale) => {
             const { default: catalogue } = await import(`../translation/${locale}.json`);
             const translator = i18n.createInstance();
@@ -220,8 +227,14 @@ describe("database capability UI mapping", () => {
                 for (const [status, key] of [
                     ["upgrading", "Databases.Upgrading.Description"],
                     ["busy", "Databases.Busy.Description"],
+                    ["upgrade-failed", "Databases.UpgradeFailed.DiskFull"],
                 ] as const) {
-                    mocks.getDbInfo.mockResolvedValue({ status, filename: "pending.db3" });
+                    mocks.getDbInfo.mockResolvedValue({
+                        status,
+                        filename: "pending.db3",
+                        reason: "disk-full",
+                        message: "database failure",
+                    });
                     const [row] = (await getDatabases()).databases;
                     expect(row.type === "error" && row.error).toBe(catalogue.translation[key]);
                     expect(catalogue.translation[key]).toBeTruthy();

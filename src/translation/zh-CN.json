@@ -521,6 +521,7 @@
     "Databases.Tournament.Points": "积分",
     "Databases.Tournament.Rank": "排名",
     "Databases.UpgradeFailed.Description": "无法升级此数据库。文件未被更改。",
+    "Databases.UpgradeFailed.DiskFull": "磁盘空间不足，无法升级此数据库。请释放磁盘空间并重启应用。",
     "Databases.Upgrading.Description": "此数据库正在升级到当前格式。大型数据库可能需要几分钟。",
     "Databases.Upgrading.Label": "正在升级…",
     "Engine.MoveAboveNotation": "移到棋谱上方",

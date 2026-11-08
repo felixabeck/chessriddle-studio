@@ -527,6 +527,7 @@
     "Databases.Tournament.Points": "Poeng",
     "Databases.Tournament.Rank": "Rangering",
     "Databases.UpgradeFailed.Description": "Denne databasen kunne ikke oppgraderes. Filen ble ikke endret.",
+    "Databases.UpgradeFailed.DiskFull": "Det er ikke nok diskplass til å oppgradere denne databasen. Frigjør diskplass og start appen på nytt.",
     "Databases.Upgrading.Description": "Denne databasen oppgraderes til gjeldende format. Store databaser kan ta flere minutter.",
     "Databases.Upgrading.Label": "Oppgraderer…",
     "Engine.MoveAboveNotation": "Flytt over notasjonen",

@@ -2,6 +2,8 @@ import { act, useEffect, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { SWRConfig, useSWRConfig } from "swr";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import i18n from "i18next";
+import english from "@/translation/en-US.json";
 import type { RootFailure } from "@/bindings";
 import type { SuccessDatabaseInfo } from "@/utils/db";
 import { useDatabaseLibrary } from "./useDatabaseLibrary";
@@ -328,6 +330,7 @@ test("upgrade failure detail keeps Delete and shows the unchanged-file explanati
   mocks.listWorkspaceDatabases.mockResolvedValue({ entries: [entry], unread: [] });
   mocks.getDbInfo.mockResolvedValue({
     status: "upgrade-failed",
+    reason: "other",
     message: "Insufficient disk space",
   });
   await render();
@@ -387,7 +390,8 @@ test.each([true, false])(
   },
 );
 
-beforeEach(() => {
+beforeEach(async () => {
+  await i18n.init({ lng: "en-US", fallbackLng: false, resources: { "en-US": english } });
   vi.resetAllMocks();
   cache = new Map();
   host = document.createElement("div");

@@ -527,6 +527,7 @@
     "Databases.Tournament.Points": "Points",
     "Databases.Tournament.Rank": "#",
     "Databases.UpgradeFailed.Description": "This database could not be upgraded. The file was not changed.",
+    "Databases.UpgradeFailed.DiskFull": "There is not enough disk space to upgrade this database. Free up disk space and restart the app.",
     "Databases.Upgrading.Description": "This database is being upgraded to the current format. Large databases can take several minutes.",
     "Databases.Upgrading.Label": "Upgrading…",
     "Engine.MoveAboveNotation": "Move above the notation",

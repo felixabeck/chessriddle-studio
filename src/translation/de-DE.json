@@ -527,6 +527,7 @@
     "Databases.Tournament.Points": "Punkte",
     "Databases.Tournament.Rank": "Rang",
     "Databases.UpgradeFailed.Description": "Diese Datenbank konnte nicht aktualisiert werden. Die Datei wurde nicht verändert.",
+    "Databases.UpgradeFailed.DiskFull": "Es ist nicht genügend Speicherplatz vorhanden, um diese Datenbank zu aktualisieren. Gib Speicherplatz frei und starte die App neu.",
     "Databases.Upgrading.Description": "Diese Datenbank wird auf das aktuelle Format aktualisiert. Bei großen Datenbanken kann dies mehrere Minuten dauern.",
     "Databases.Upgrading.Label": "Wird aktualisiert…",
     "Engine.MoveAboveNotation": "Über die Notation verschieben",

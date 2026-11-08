@@ -1387,7 +1387,7 @@ export type DatabaseDescriptor = { handle: DatabaseHandle; filename: string; ava
 export type DatabaseHandle = { id: PathRef; kind: DatabaseHandleKind }
 export type DatabaseHandleKind = "database"
 export type DatabaseInfo = { title: string; description: string; player_count: number; event_count: number; game_count: number; storage_size: string; filename: string; indexed: boolean }
-export type DatabaseInfoResult = ({ status: "ready" } & DatabaseInfo) | { status: "upgrading"; filename: string; title: string | null } | { status: "busy"; filename: string } | { status: "upgrade-failed"; filename: string; message: string }
+export type DatabaseInfoResult = ({ status: "ready" } & DatabaseInfo) | { status: "upgrading"; filename: string; title: string | null } | { status: "busy"; filename: string } | { status: "upgrade-failed"; filename: string; message: string; reason: DatabaseUpgradeFailureReason }
 export type DatabaseListing = { entries: DatabaseDescriptor[]; unread: DatabaseUnread[] }
 /**
  * Opaque handle for a database root.  A root is the only capability that may
@@ -1397,6 +1397,7 @@ export type DatabaseListing = { entries: DatabaseDescriptor[]; unread: DatabaseU
 export type DatabaseRootHandle = { id: PathRef; kind: DatabaseRootHandleKind }
 export type DatabaseRootHandleKind = "databaseRoot"
 export type DatabaseUnread = { filename: string; category: ErrorCategory }
+export type DatabaseUpgradeFailureReason = "disk-full" | "other"
 export type DbGameLookup = { kind: "found"; game: NormalizedGame } | { kind: "missing" }
 export type DrawReason = "stalemate" | "insufficientMaterial" | "threefoldRepetition" | "fiftyMoveRule" | "agreement"
 export type DurabilityStage = "ArchiveCommitMarker" | "ArchiveReservationJournal" | "DatabasePgnReplacement" | "DirectoryInstall" | "DownloadTargetReplacement" | "NativeExport" | "OldDirectoryCleanup" | "OldDirectoryCleanupSync" | "PgnEdit" | "PgnCacheInvalidation" | "CollectionIndexRefresh" | "PgnCapabilityRebind" | "RegistryReplacement" | "SearchIndexReplacement" | "WorkspaceDirectoryCreation" | "WorkspacePgnCreation" | "WorkspaceRemoval" | "WorkspaceRename" | "WorkspaceSidecarCreation" | "WorkspaceSidecarReplacement" | "PracticePositions" | "PracticeReviewShard" | "PracticeState"

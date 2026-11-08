@@ -12,6 +12,7 @@ import {
 
 export const DATABASE_LIST_KEY = "databases" as const;
 export const DATABASE_LIST_MAX_RETRIES = 3;
+export const DATABASE_LIST_TRANSIENT_REFRESH_INTERVAL_MS = 3000;
 
 let latestReferenceListing: object | undefined;
 
@@ -78,7 +79,7 @@ export function useDatabaseList(enabled = true) {
     const transient = swr.data?.databases.some((row) => row.type === "error" && row.transient);
     // A zero SWR interval stops scheduling. Restart it when a later listing becomes transient.
     useEffect(() => {
-        setRefreshInterval(enabled && transient ? 3000 : 0);
+        setRefreshInterval(enabled && transient ? DATABASE_LIST_TRANSIENT_REFRESH_INTERVAL_MS : 0);
     }, [enabled, transient]);
     return Object.assign(swr, { owner });
 }

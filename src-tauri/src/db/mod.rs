@@ -339,7 +339,6 @@ fn with_validated_mutation(
     file: &DatabaseHandle,
     operation: impl FnOnce(&mut SqliteConnection) -> Result<(), Error>,
 ) -> Result<(), Error> {
-    let mut content_validated = false;
     #[cfg(test)]
     database_command_checkpoint("mutation_owner", file);
     let result = repository.with_write_lock_cancellable(target, cancellation, || {
@@ -350,13 +349,10 @@ fn with_validated_mutation(
         let mut connection = repository.initialization_connection(target, Some(cancellation))?;
         connection.transaction::<_, Error, _>(|db| {
             bump_revision_in_transaction(db, target.path(), cancellation, |db| {
-                content_validated = migrations::check_current_database(db)?;
+                migrations::check_current_database(db)?;
                 operation(db)
             })
         })?;
-        if content_validated {
-            content_validation::publish_committed_pass(repository, authority, file, target);
-        }
         Ok(())
     });
     finish_search_cache_after_transaction(result, search_cache, target)
@@ -1700,6 +1696,13 @@ pub struct DatabaseInfo {
 }
 
 #[derive(Serialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum DatabaseUpgradeFailureReason {
+    DiskFull,
+    Other,
+}
+
+#[derive(Serialize, Type)]
 #[serde(tag = "status", rename_all = "kebab-case")]
 pub enum DatabaseInfoResult {
     Ready(DatabaseInfo),
@@ -1713,6 +1716,7 @@ pub enum DatabaseInfoResult {
     UpgradeFailed {
         filename: String,
         message: String,
+        reason: DatabaseUpgradeFailureReason,
     },
 }
 
@@ -1897,6 +1901,11 @@ fn get_db_info_blocking(
             return unavailable(DatabaseInfoResult::UpgradeFailed {
                 filename,
                 message: error.to_string(),
+                reason: if error.is_database_disk_full() {
+                    DatabaseUpgradeFailureReason::DiskFull
+                } else {
+                    DatabaseUpgradeFailureReason::Other
+                },
             })
         }
         Err(error) if error.is_database_busy() => {

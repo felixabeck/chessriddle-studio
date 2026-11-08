@@ -539,6 +539,7 @@
     "Databases.Tournament.Points": "Очки",
     "Databases.Tournament.Rank": "Место",
     "Databases.UpgradeFailed.Description": "Не удалось обновить эту базу данных. Файл не был изменён.",
+    "Databases.UpgradeFailed.DiskFull": "Недостаточно места на диске для обновления этой базы данных. Освободите место на диске и перезапустите приложение.",
     "Databases.Upgrading.Description": "Эта база данных обновляется до текущего формата. Для больших баз данных это может занять несколько минут.",
     "Databases.Upgrading.Label": "Обновление…",
     "Engine.MoveAboveNotation": "Переместить над нотацией",

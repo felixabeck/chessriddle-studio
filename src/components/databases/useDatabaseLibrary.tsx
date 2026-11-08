@@ -408,11 +408,7 @@ export function useDatabaseLibrary(
                   ? t("Databases.Upgrading.Label")
                   : t("Databases.Busy.Label")}
               </Text>
-              <Text className="wrap-anywhere">
-                {selectedDatabase.transient === "upgrading"
-                  ? t("Databases.Upgrading.Description")
-                  : t("Databases.Busy.Description")}
-              </Text>
+              <Text className="wrap-anywhere">{selectedDatabase.error}</Text>
             </>
           ) : selectedDatabase.upgradeFailed ? (
             <>

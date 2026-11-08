@@ -409,6 +409,17 @@ pub fn sanitized_io_error(error: &std::io::Error, message: String) -> std::io::E
 }
 
 impl Error {
+    pub(crate) fn is_database_disk_full(&self) -> bool {
+        match self.unlabelled() {
+            Self::Diesel(error) => {
+                matches!(error.as_ref(), diesel::result::Error::DatabaseError(_, information)
+                    if information.message() == "database or disk is full")
+            }
+            Self::Io(error) => error.raw_os_error() == Some(libc::ENOSPC),
+            _ => false,
+        }
+    }
+
     pub(crate) fn is_database_busy(&self) -> bool {
         match self.unlabelled() {
             Self::Diesel(error) => {
@@ -1287,6 +1298,46 @@ mod tests {
         ] {
             let payload = serde_json::to_value(error).expect("other payload");
             assert!(payload.get("nameTaken").is_none());
+        }
+    }
+
+    #[test]
+    fn database_disk_full_classification_preserves_shared_causes() {
+        for (error, expected) in [
+            (
+                Error::from(diesel::result::Error::DatabaseError(
+                    diesel::result::DatabaseErrorKind::Unknown,
+                    Box::new("database or disk is full".to_owned()),
+                )),
+                true,
+            ),
+            (
+                Error::from(std::io::Error::from_raw_os_error(libc::ENOSPC)),
+                true,
+            ),
+            (
+                Error::from(diesel::result::Error::DatabaseError(
+                    diesel::result::DatabaseErrorKind::Unknown,
+                    Box::new("database is locked".to_owned()),
+                )),
+                false,
+            ),
+            (
+                Error::from(std::io::Error::from_raw_os_error(libc::EACCES)),
+                false,
+            ),
+            (
+                Error::InvalidInput("database or disk is full".into()),
+                false,
+            ),
+        ] {
+            assert_eq!(error.is_database_disk_full(), expected);
+            let shared = Error::Shared(std::sync::Arc::new(error));
+            assert_eq!(shared.is_database_disk_full(), expected);
+            assert_eq!(
+                Error::Shared(std::sync::Arc::new(shared)).is_database_disk_full(),
+                expected
+            );
         }
     }
 

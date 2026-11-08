@@ -344,7 +344,10 @@ async function getDatabase(
                 filename,
                 indexed: false,
                 upgradeFailed: true,
-                error: metadata.message,
+                error:
+                    metadata.reason === "disk-full"
+                        ? i18n.t("Databases.UpgradeFailed.DiskFull")
+                        : metadata.message,
             };
         const { status: _status, ...info } = metadata;
         return { type: "success", ...info, file };

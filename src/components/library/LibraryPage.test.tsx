@@ -815,6 +815,7 @@ test.each(["upgrading", "busy"] as const)(
     });
     expect(button("Open database")).toBeUndefined();
     expect(button("Delete")).toBeUndefined();
+    expect(host.textContent).toContain("Transient explanation");
     expect(mocks.navigate).not.toHaveBeenCalled();
     expect(activeDatabaseViewStore.getState().database).toBeUndefined();
     await input(search, "Transient explanation");

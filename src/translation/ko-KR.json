@@ -521,6 +521,7 @@
     "Databases.Tournament.Points": "점수",
     "Databases.Tournament.Rank": "순위",
     "Databases.UpgradeFailed.Description": "이 데이터베이스를 업그레이드할 수 없습니다. 파일은 변경되지 않았습니다.",
+    "Databases.UpgradeFailed.DiskFull": "이 데이터베이스를 업그레이드할 디스크 공간이 부족합니다. 디스크 공간을 확보한 후 앱을 다시 시작하세요.",
     "Databases.Upgrading.Description": "이 데이터베이스를 현재 형식으로 업그레이드하고 있습니다. 대용량 데이터베이스는 몇 분 정도 걸릴 수 있습니다.",
     "Databases.Upgrading.Label": "업그레이드 중…",
     "Engine.MoveAboveNotation": "기보 위로 이동",

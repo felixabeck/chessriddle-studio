@@ -652,6 +652,62 @@ async fn content_validation_pre_epoch_modified_time_round_trips_and_pass_stamp_s
     }
 }
 
+fn seed_legacy_file(path: &Path) {
+    let mut connection = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+    connection.batch_execute("CREATE TABLE Info (Name TEXT UNIQUE NOT NULL, Value TEXT);
+        CREATE TABLE Players (ID INTEGER PRIMARY KEY, Name TEXT UNIQUE, Elo INTEGER);
+        CREATE TABLE Events (ID INTEGER PRIMARY KEY AUTOINCREMENT, Name TEXT UNIQUE);
+        CREATE TABLE Sites (ID INTEGER PRIMARY KEY AUTOINCREMENT, Name TEXT UNIQUE);
+        CREATE TABLE Games (ID INTEGER PRIMARY KEY AUTOINCREMENT, EventID INTEGER, SiteID INTEGER, Date TEXT, UTCTime TEXT, Round INTEGER, WhiteID INTEGER, WhiteElo INTEGER, BlackID INTEGER, BlackElo INTEGER, WhiteMaterial INTEGER, BlackMaterial INTEGER, Result INTEGER, TimeControl TEXT, ECO TEXT, PlyCount INTEGER, FEN TEXT, Moves BLOB, PawnHome BLOB);
+        INSERT INTO Info VALUES ('Version', '1.0.0');").unwrap();
+}
+
+#[tokio::test]
+async fn content_validation_changed_identity_after_upgrade_publishes_no_stamp() {
+    let _serial = SERIAL.lock().await;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("legacy.db3");
+    seed_legacy_file(&path);
+    let (app, handle) =
+        database_app_with_grant(dir.path(), &path, "legacy", full_database_operations());
+    let state = app.state::<AppState>();
+    let repository = Arc::clone(&state.database_repository);
+    let upgrade_target = target(&app, &handle);
+    tokio::task::spawn_blocking(move || repository.ensure_schema_current(&upgrade_target, None))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!stamp_path(&path).exists());
+    let before = state
+        .database_repository
+        .database_identity(&target(&app, &handle))
+        .unwrap();
+    let raw = rusqlite::Connection::open(&path).unwrap();
+    raw.execute_batch("INSERT INTO Info VALUES('DataRevision', '1');")
+        .unwrap();
+    assert_ne!(
+        state
+            .database_repository
+            .database_identity(&target(&app, &handle))
+            .unwrap(),
+        before
+    );
+    let metadata = get_db_info_blocking(
+        &state.pgn_path_authority,
+        &state.database_repository,
+        handle,
+    )
+    .unwrap();
+    assert!(
+        !stamp_path(&path).exists(),
+        "changed content must not inherit the upgrade's Passed stamp"
+    );
+    assert!(
+        metadata.scan.is_some(),
+        "changed content needs its own validation"
+    );
+}
+
 #[tokio::test]
 async fn content_validation_create_and_migration_run_both_pragmas_and_publish_passed_stamps() {
     let _serial = SERIAL.lock().await;
@@ -675,14 +731,7 @@ async fn content_validation_create_and_migration_run_both_pragmas_and_publish_pa
     assert!(stamp_path(&path).exists());
 
     let legacy = dir.path().join("legacy.db3");
-    let mut connection = SqliteConnection::establish(legacy.to_str().unwrap()).unwrap();
-    connection.batch_execute("CREATE TABLE Info (Name TEXT UNIQUE NOT NULL, Value TEXT);
-        CREATE TABLE Players (ID INTEGER PRIMARY KEY, Name TEXT UNIQUE, Elo INTEGER);
-        CREATE TABLE Events (ID INTEGER PRIMARY KEY AUTOINCREMENT, Name TEXT UNIQUE);
-        CREATE TABLE Sites (ID INTEGER PRIMARY KEY AUTOINCREMENT, Name TEXT UNIQUE);
-        CREATE TABLE Games (ID INTEGER PRIMARY KEY AUTOINCREMENT, EventID INTEGER, SiteID INTEGER, Date TEXT, UTCTime TEXT, Round INTEGER, WhiteID INTEGER, WhiteElo INTEGER, BlackID INTEGER, BlackElo INTEGER, WhiteMaterial INTEGER, BlackMaterial INTEGER, Result INTEGER, TimeControl TEXT, ECO TEXT, PlyCount INTEGER, FEN TEXT, Moves BLOB, PawnHome BLOB);
-        INSERT INTO Info VALUES ('Version', '1.0.0');").unwrap();
-    drop(connection);
+    seed_legacy_file(&legacy);
     let (legacy_app, legacy_handle) =
         database_app_with_grant(dir.path(), &legacy, "legacy", full_database_operations());
     migrations::take_content_pragma_counts();

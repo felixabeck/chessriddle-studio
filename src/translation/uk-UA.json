@@ -539,6 +539,7 @@
     "Databases.Tournament.Points": "Очки",
     "Databases.Tournament.Rank": "Місце",
     "Databases.UpgradeFailed.Description": "Не вдалося оновити цю базу даних. Файл не було змінено.",
+    "Databases.UpgradeFailed.DiskFull": "Недостатньо місця на диску для оновлення цієї бази даних. Звільніть місце на диску та перезапустіть застосунок.",
     "Databases.Upgrading.Description": "Ця база даних оновлюється до поточного формату. Для великих баз даних це може тривати кілька хвилин.",
     "Databases.Upgrading.Label": "Оновлення…",
     "Engine.MoveAboveNotation": "Перемістити над нотацією",

@@ -533,6 +533,7 @@
     "Databases.Tournament.Points": "Points",
     "Databases.Tournament.Rank": "Rang",
     "Databases.UpgradeFailed.Description": "Cette base de données n’a pas pu être mise à niveau. Le fichier n’a pas été modifié.",
+    "Databases.UpgradeFailed.DiskFull": "L’espace disque est insuffisant pour mettre à niveau cette base de données. Libérez de l’espace disque et redémarrez l’application.",
     "Databases.Upgrading.Description": "Cette base de données est en cours de mise à niveau vers le format actuel. Les grandes bases peuvent nécessiter plusieurs minutes.",
     "Databases.Upgrading.Label": "Mise à niveau…",
     "Engine.MoveAboveNotation": "Déplacer au-dessus de la notation",
