@@ -825,9 +825,20 @@ impl PathAuthority {
         ) {
             Ok(found) if found.is_regular_file() => return Ok(true),
             Ok(_) => {}
-            Err(error) if matches!(error.unlabelled(), Error::Io(error) if error.kind() == std::io::ErrorKind::NotFound) =>
-                {}
-            Err(error) => return Err(error),
+            // Same preservation as publication confirmation: only these outcomes outrank the refusal.
+            Err(error)
+                if error.root_failure().is_some()
+                    || matches!(
+                        error.unlabelled(),
+                        Error::ResourceLimit(_) | Error::CommittedDurabilityUncertain(_)
+                    ) =>
+            {
+                return Err(error);
+            }
+            Err(error) => log::warn!(
+                "catalog archive executable could not be confirmed: {}",
+                error.diagnostic()
+            ),
         }
         let root = self.catalog_destination_root(destination, path)?;
         let directory = probe.filesystem(engine_install_directory(&root))?;
@@ -1625,6 +1636,14 @@ mod tests {
             f.adopt_archive("managed", "data"),
             Err(Error::Conflict(_))
         ));
+        assert!(matches!(
+            f.adopt_archive("managed", "engine/child"),
+            Err(Error::Conflict(_))
+        ));
+        assert_eq!(
+            fs::read(f.root.join("managed/engine")).unwrap(),
+            b"managed engine"
+        );
     }
 
     #[test]
@@ -1655,7 +1674,7 @@ mod tests {
         std::os::unix::fs::symlink(f.root.join("foreign-engine"), &executable).unwrap();
         assert!(matches!(
             f.adopt_archive("engine.tar.gz-digest", "engine"),
-            Err(Error::InvalidInput(_))
+            Err(Error::Conflict(_))
         ));
         assert!(fs::symlink_metadata(&executable)
             .unwrap()
