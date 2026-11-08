@@ -3,14 +3,17 @@ import { useTranslation } from "react-i18next";
 import type { PositionStats } from "@/bindings";
 import classes from "./PlayerOpeningTree.module.css";
 
+const VISIBLE_YEAR_COUNT = 8;
+const MINIMUM_COLOUR_SHARE = 25;
+
 export default function PlayerOpeningRecency({ row }: { row: PositionStats }) {
   // The compiler otherwise caches Date construction for the lifetime of this mount.
   "use no memo";
 
   const { t } = useTranslation();
   const currentYear = new Date().getFullYear();
-  const firstYear = currentYear - 7;
-  const counts = Array<number>(9).fill(0);
+  const firstYear = currentYear - VISIBLE_YEAR_COUNT + 1;
+  const counts = Array<number>(VISIBLE_YEAR_COUNT + 1).fill(0);
   for (const { year, count } of row.year_counts) {
     if (year > 0 && year <= currentYear) {
       counts[year < firstYear ? 0 : year - firstYear + 1] += count;
@@ -73,7 +76,7 @@ export default function PlayerOpeningRecency({ row }: { row: PositionStats }) {
               style={{
                 background:
                   count > 0
-                    ? `color-mix(in srgb, var(--cf-primary) ${25 + (count / maximum) * 75}%, var(--cf-interactive))`
+                    ? `color-mix(in srgb, var(--cf-primary) ${MINIMUM_COLOUR_SHARE + (count / maximum) * (100 - MINIMUM_COLOUR_SHARE)}%, var(--cf-interactive))`
                     : "var(--cf-interactive)",
               }}
             />

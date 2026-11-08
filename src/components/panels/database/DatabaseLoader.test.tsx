@@ -108,6 +108,23 @@ describe("DatabaseLoader", () => {
     expect(status()?.textContent).toBe("Searching Imnadze's games… 25%");
   });
 
+  test("the label hides a previous successful search's terminal percentage", async () => {
+    mocks.getProgress.mockResolvedValue({
+      id: "tab-1",
+      generation: "1",
+      progress: 100,
+      finished: true,
+      state: "succeeded",
+      cleared: false,
+    });
+    await renderLoader(true, "tab-1", "Searching Imnadze's games…");
+
+    expect(container.querySelector('[role="status"]')?.textContent).toBe(
+      "Searching Imnadze's games…",
+    );
+    expect(barValue()).toBe(100);
+  });
+
   test.each(["failed", "cancelled"] as const)(
     "the label discards stale progress when %s",
     async (state) => {

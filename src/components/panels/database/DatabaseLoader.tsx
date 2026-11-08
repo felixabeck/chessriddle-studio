@@ -32,7 +32,7 @@ function DatabaseLoader({
     <>
       <Text role="status" aria-live="polite" size="sm" className="wrap-anywhere">
         {label}
-        {!endedWithoutResult && progress > 0 ? ` ${Math.round(progress)}%` : ""}
+        {isActive && progress > 0 ? ` ${Math.round(progress)}%` : ""}
       </Text>
       {bar}
     </>

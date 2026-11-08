@@ -87,6 +87,31 @@ test("eight local calendar years, older, future and unusable dates account for e
   expect(summary()).toContain("1 without a usable year");
 });
 
+test("the largest cell reaches full intensity independently of the move's total games", async () => {
+  await render({
+    ...base,
+    year_counts: [
+      { year: 2024, count: 3 },
+      { year: 2025, count: 6 },
+      { year: 2026, count: 3 },
+    ],
+  });
+  const largestCellBackground = () =>
+    container.querySelectorAll<HTMLElement>("[data-count]")[7].style.background;
+  expect(largestCellBackground()).toContain("var(--cf-primary) 100%");
+
+  await render({
+    ...base,
+    white: 18,
+    year_counts: [
+      { year: 2024, count: 6 },
+      { year: 2025, count: 6 },
+      { year: 2026, count: 6 },
+    ],
+  });
+  expect(largestCellBackground()).toContain("var(--cf-primary) 100%");
+});
+
 test.each([
   ["2026.11.08", "2026-11"],
   ["2026.03.??", "2026-03"],
