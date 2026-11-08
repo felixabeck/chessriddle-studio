@@ -22357,3 +22357,33 @@ Fixed in 0b63a012 (pushed to master; hosted Test 13/13 green; installed locally)
 * **Failure scenario:** a push to master runs `rust-macos-test` on a slow hosted runner, a reader takes longer than 2 seconds to connect, the job fails and `pnpm ci:remote:check` then refuses later pushes until a rerun or fix.
 * **Fix shape:** first read the reader timings on macOS to separate a slow runner from a real stall. If slow, replace the 2-second wall-clock limit with a generous bound (a passing run does not wait for it) and keep the concurrency assertion.
 * **Proof:** the job stays green over repeated macOS runs, and the test still fails when readers are forced to serialize.
+
+---
+
+## 2026-11-08 — filed through the inbox spool
+
+### Hosted macOS runner lost communication during rust-macos-test on 70623fb4, so remote CI is red
+
+* **ID:** f-20261108-09 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** bac61282-2a31-49d1-9463-391344df08c6
+* **Impact class:** tooling
+* **CI run:** 42503537612
+* **Where:** GitHub Test run 42503537612 on 70623fb49a1cada6e545e546fcace67c746fb12b (master), job `rust-macos-test` 128801194112; `.github/workflows/test.yml`.
+* **Defect:** the job ran from 17:09:34Z to 18:02:37Z and concluded failure during "Run Rust tests" (step started 17:10:46Z, never completed) with the check-run annotation "The hosted runner lost communication with the server. Anything in your workflow that terminates the runner process, starves it for CPU/Memory, or blocks its network access can cause this error." The job log is unavailable (BlobNotFound). Every earlier step and every other job of the run succeeded.
+* **Failure scenario:** every drain push stops at `pnpm ci:remote:check` (exit 1) although its own diff is green, until a rerun of this job succeeds. Observed at the pre-push check of the f-20261106-21 release.
+* **Fix shape:** rerun the failed job (`gh run rerun 42503537612 --failed -R felixabeck/chessriddle-studio`) and confirm it succeeds; close with the job id. Same external hosted-runner class as handled f-20261106-02 and f-20261105-01; investigate the workflow only if the rerun loses the runner again.
+* **Proof:** `pnpm ci:remote:check` exits 0 with `rust-macos-test` of the newest master run concluded success.
+* **Found by:** Claude Code drain session bac61282-2a31-49d1-9463-391344df08c6, 2026-11-08.
+
+### validated_connections_skip_schema_probes_and_reprobe_changed_files fails on the macOS runner when readers take over 2 s to connect
+
+* **ID:** f-20261108-10 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Filed from:** bac61282-2a31-49d1-9463-391344df08c6
+* **Impact class:** tooling
+* **CI run:** 42512756399
+* **Where:** `src-tauri/src/db/repository.rs:3557-3593` (`upgrade_tests::validated_connections_skip_schema_probes_and_reprobe_changed_files`), the `connected.recv_timeout(Duration::from_secs(2))` collection of the four reader outcomes and the assert at :3590.
+* **Defect:** the test measures "all validated readers connect while their siblings still hold connections" with a 2 s wall-clock budget per reader. On a loaded hosted macOS runner the readers connect, but later than the budget: every `reader.join().unwrap().unwrap()` succeeded (each connection was `Ok`), yet `outcomes` held a timeout, so the assert at :3590 panicked with "all validated readers must connect while their siblings still hold connections". The same Rust tree passed this job minutes earlier (run 42503537612 rerun, job 128826179840 on 70623fb4; dc30b9b3 changes no Rust file), so the failure is the wall-clock race, not a product regression.
+* **Failure scenario:** Test run 42512756399 on dc30b9b32c4afc23e28aca9fc8c1195b1c3956ba (master), job `rust-macos-test` 128829194534: 3124 passed, 1 failed, failing at src/db/repository.rs:3590:13 after 483.74 s of tests. `pnpm ci:remote:check` then refuses every drain push until a green rerun or a fix.
+* **Fix shape:** prove the concurrency property without a wall-clock deadline on success: e.g. have each reader signal after connecting and block until all four have signalled (a `Barrier` with a generous outer bound used only to fail a genuine deadlock, such as 30 s), so a slow-but-correct runner cannot fail it while a reader that cannot connect while siblings hold connections still does. Keep the schema-probe-count assertions. Rejected in advance: simply raising 2 s to a larger number without separating the deadlock bound from the success path.
+* **Proof:** the test still fails when the validated-connection path serializes readers (e.g. temporarily hold the entry lock across the connection), passes under CPU load locally (`stress`-style busy loops), and `rust-macos-test` passes on the fix commit.
+* **Found by:** Claude Code drain session bac61282-2a31-49d1-9463-391344df08c6, 2026-11-08, in the post-push CI wait of the f-20261106-21 release.
