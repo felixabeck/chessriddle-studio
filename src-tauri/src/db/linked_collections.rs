@@ -2403,6 +2403,7 @@ impl CollectionService {
         }
         let target = self.target(&record)?;
         self.repository.with_write_lock_cancellable(&target, cancellation, || {
+            self.repository.ensure_schema_if_initialized(&target, cancellation)?;
             let mut db = self.repository.initialization_connection(&target, Some(cancellation))?;
             for attempt in 0..SOURCE_REBUILD_ATTEMPTS {
                 let snapshot = Self::snapshot(&record, authority)?;

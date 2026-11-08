@@ -503,8 +503,11 @@ impl AppState {
     ) -> Result<Self, Error> {
         let http_transport = Arc::new(crate::infra::net::ProdTransport::new(download_builder)?);
         let json_http_client = Arc::new(crate::infra::net::native_json_http_client(json_builder)?);
+        let operations = OperationRegistry::default();
         Ok(Self {
-            database_repository: Arc::new(db::DatabaseRepository::default()),
+            database_repository: Arc::new(db::DatabaseRepository::with_operations(
+                operations.clone(),
+            )),
             new_request: Arc::new(Semaphore::new(2)),
             search_cache: Arc::new(SearchCache::default()),
             pgn_repository: Default::default(),
@@ -515,7 +518,7 @@ impl AppState {
             credentials,
             game_manager: Arc::new(GameManager::default()),
             progress_state: Default::default(),
-            operations: Default::default(),
+            operations,
             puzzle_cache: Arc::new(tokio::sync::Mutex::new(crate::puzzle::PuzzleCache::new())),
             http_transport,
             json_http_client,

@@ -32,6 +32,7 @@ pub(crate) fn fail_next_revision_bump() -> RevisionBumpFailureGuard {
 
 use diesel::sql_types::{Nullable, Text};
 use diesel::{
+    connection::SimpleConnection,
     prelude::*,
     r2d2::{CustomizeConnection, ManageConnection, Pool, PooledConnection},
     sql_query, Connection, OptionalExtension, SqliteConnection,
@@ -449,6 +450,7 @@ pub struct DatabaseConnection {
 enum DatabaseConnectionInner {
     Pooled(PooledConnection<BoundConnectionManager>),
     Pinned(SqliteConnection),
+    BoundRead(super::bound_sqlite::BoundConnection<SqliteConnection>),
 }
 
 impl Deref for DatabaseConnection {
@@ -457,6 +459,7 @@ impl Deref for DatabaseConnection {
         match &self.connection {
             DatabaseConnectionInner::Pooled(connection) => connection,
             DatabaseConnectionInner::Pinned(connection) => connection,
+            DatabaseConnectionInner::BoundRead(connection) => connection,
         }
     }
 }
@@ -466,6 +469,7 @@ impl DerefMut for DatabaseConnection {
         match &mut self.connection {
             DatabaseConnectionInner::Pooled(connection) => connection,
             DatabaseConnectionInner::Pinned(connection) => connection,
+            DatabaseConnectionInner::BoundRead(connection) => connection,
         }
     }
 }
@@ -491,6 +495,11 @@ struct DatabaseEntry {
     pool_wake: Arc<PoolWake>,
     write_lock: Arc<ParkingMutex<()>>,
     index_lock: Arc<ParkingMutex<()>>,
+    upgrade: ParkingMutex<Option<UpgradeRecord>>,
+    upgrade_generation: std::sync::atomic::AtomicU64,
+    retain_upgrade_failure: std::sync::atomic::AtomicBool,
+    #[cfg(test)]
+    schema_probe_count: std::sync::atomic::AtomicUsize,
     state: Mutex<EntryState>,
     leases: Arc<DrainGate>,
 }
@@ -585,7 +594,116 @@ struct EntryState {
     schema_identity: Option<DatabaseSchemaIdentity>,
     passed_stamp_due: Option<DatabaseIdentity>,
     last_used: u64,
+    upgrade_pass_due: bool,
 }
+
+struct UpgradeRecord {
+    identity: DatabaseSchemaIdentity,
+    job: Arc<UpgradeJob>,
+}
+
+impl UpgradeRecord {
+    fn access(
+        state: &mut Option<Self>,
+        identity: &DatabaseSchemaIdentity,
+        report_busy: bool,
+    ) -> Option<SchemaAccess> {
+        let record = state.as_ref()?;
+        let outcome = record.job.outcome.lock().clone();
+        match outcome {
+            None => Some(SchemaAccess::Upgrade(Arc::clone(&record.job))),
+            Some(Err(error)) if error.is_database_busy() => {
+                if report_busy {
+                    *state = None;
+                }
+                Some(SchemaAccess::Failed(error))
+            }
+            Some(Err(error))
+                if error.category() != crate::error::ErrorCategory::Cancellation
+                    && &record.identity == identity =>
+            {
+                Some(SchemaAccess::Failed(error))
+            }
+            _ => {
+                *state = None;
+                None
+            }
+        }
+    }
+}
+
+/// One outcome per admitted owner. A waiter's token never cancels this shared token.
+pub(super) struct UpgradeJob {
+    cancellation: CancellationToken,
+    outcome: ParkingMutex<Option<Result<(), Arc<Error>>>>,
+    changed: ParkingCondvar,
+    #[cfg(test)]
+    waiters: std::sync::atomic::AtomicUsize,
+    #[cfg(test)]
+    content_pragma_counts: ParkingMutex<(usize, usize)>,
+}
+
+impl UpgradeJob {
+    fn wait(&self, cancellation: Option<&CancellationToken>) -> Result<(), Error> {
+        #[cfg(test)]
+        self.waiters
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let mut outcome = self.outcome.lock();
+        loop {
+            if cancellation.is_some_and(CancellationToken::is_cancelled) {
+                return Err(Error::Cancellation);
+            }
+            if let Some(result) = outcome.as_ref() {
+                return result.clone().map_err(Error::Shared);
+            }
+            self.changed
+                .wait_for(&mut outcome, RETIRE_CANCELLATION_POLL);
+        }
+    }
+}
+
+struct UpgradeGuard(Arc<UpgradeJob>, Arc<DatabaseEntry>);
+impl UpgradeGuard {
+    fn finish(&self, result: Result<(), Error>) -> Result<(), Error> {
+        let result = result.map_err(Arc::new);
+        self.1.retain_upgrade_failure.store(
+            result.as_ref().is_err_and(|error| {
+                !error.is_database_busy()
+                    && error.category() != crate::error::ErrorCategory::Cancellation
+            }),
+            std::sync::atomic::Ordering::Release,
+        );
+        *self.0.outcome.lock() = Some(result.clone());
+        self.0.changed.notify_all();
+        result.map_err(Error::Shared)
+    }
+}
+impl Drop for UpgradeGuard {
+    fn drop(&mut self) {
+        let mut outcome = self.0.outcome.lock();
+        if outcome.is_none() {
+            *outcome = Some(Err(Arc::new(Error::Conflict(
+                "database upgrade owner stopped unexpectedly".into(),
+            ))));
+            self.1
+                .retain_upgrade_failure
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
+        self.0.changed.notify_all();
+    }
+}
+
+pub(super) enum SchemaAccess {
+    Current(Box<DatabaseConnection>),
+    Upgrade(Arc<UpgradeJob>),
+    Failed(Arc<Error>),
+}
+
+#[cfg(test)]
+type UpgradeTestHook = Arc<dyn Fn(&CancellationToken) -> Result<(), Error> + Send + Sync>;
+
+#[cfg(test)]
+type SchemaProbeTestHook = Arc<dyn Fn() + Send + Sync>;
 
 #[derive(Default)]
 struct RepositoryState {
@@ -812,6 +930,13 @@ pub struct DatabaseRepository {
     build_changed: Condvar,
     retire_wait: Duration,
     pool_connection_timeout: Duration,
+    operations: crate::infra::operations::OperationRegistry,
+    #[cfg(test)]
+    upgrade_test_hook: ParkingMutex<Option<UpgradeTestHook>>,
+    #[cfg(test)]
+    upgrade_after_write_test_hook: ParkingMutex<Option<UpgradeTestHook>>,
+    #[cfg(test)]
+    schema_probe_test_hook: ParkingMutex<Option<SchemaProbeTestHook>>,
     #[cfg(test)]
     fail_next_deletion_release: std::sync::atomic::AtomicBool,
     #[cfg(test)]
@@ -826,6 +951,13 @@ impl Default for DatabaseRepository {
             build_changed: Condvar::new(),
             retire_wait: RETIRE_WAIT_TIMEOUT,
             pool_connection_timeout: POOL_CONNECTION_TIMEOUT,
+            operations: Default::default(),
+            #[cfg(test)]
+            upgrade_test_hook: Default::default(),
+            #[cfg(test)]
+            upgrade_after_write_test_hook: Default::default(),
+            #[cfg(test)]
+            schema_probe_test_hook: Default::default(),
             #[cfg(test)]
             fail_next_deletion_release: std::sync::atomic::AtomicBool::new(false),
             #[cfg(test)]
@@ -835,6 +967,288 @@ impl Default for DatabaseRepository {
 }
 
 impl DatabaseRepository {
+    pub(crate) fn with_operations(operations: crate::infra::operations::OperationRegistry) -> Self {
+        Self {
+            operations,
+            ..Self::default()
+        }
+    }
+
+    /// The job never acquires write_lock or index_lock. Their holders may wait on it.
+    /// Entry leases bound ownership and make deletion/replacement cancel and drain the job.
+    pub(super) fn schema_access(
+        &self,
+        target: &crate::infra::path_authority::DatabaseFileTarget,
+        cancellation: Option<&CancellationToken>,
+    ) -> Result<SchemaAccess, Error> {
+        self.schema_access_inner(target, cancellation, true)
+    }
+
+    fn schema_access_inner(
+        &self,
+        target: &crate::infra::path_authority::DatabaseFileTarget,
+        cancellation: Option<&CancellationToken>,
+        report_busy: bool,
+    ) -> Result<SchemaAccess, Error> {
+        loop {
+            let token = cancellation.cloned().unwrap_or_default();
+            if self.identity_from_probe(target, &token, false)?.length == 0 {
+                return Err(migrations::uninitialized_database_error());
+            }
+            let (key, entry, probe) = self.entry(target, cancellation)?;
+            let identity = DatabaseSchemaIdentity::from_probe(&probe);
+            let generation = {
+                let mut state = entry.upgrade.lock();
+                if let Some(access) = UpgradeRecord::access(&mut state, &identity, report_busy) {
+                    return Ok(access);
+                }
+                entry
+                    .retain_upgrade_failure
+                    .store(false, std::sync::atomic::Ordering::Release);
+                entry
+                    .upgrade_generation
+                    .load(std::sync::atomic::Ordering::Relaxed)
+            };
+            let lease = entry.acquire()?;
+            let admission = self.predecessor_admission_for(target, &token)?;
+            let probe_result = (|| {
+                let refusal_count = entry.bound.refusal_count();
+                let lifetime = entry.bound.connection_lifetime()?;
+                #[cfg(test)]
+                {
+                    entry
+                        .schema_probe_count
+                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    let hook = self.schema_probe_test_hook.lock().clone();
+                    if let Some(hook) = hook {
+                        hook();
+                    }
+                }
+                let connection =
+                    SqliteConnection::establish(&entry.bound.uri(SqliteMode::ReadOnly)?)
+                        .map_err(crate::error::map_sqlite_establish)
+                        .map_err(|error| {
+                            self.classify_bound_open_error(
+                                target,
+                                &entry.bound,
+                                refusal_count,
+                                error,
+                            )
+                        })?;
+                let mut connection = lifetime.wrap(connection);
+                connection.batch_execute("PRAGMA busy_timeout = 1000;")?;
+                drop(admission);
+                let needs_upgrade = match migrations::needs_upgrade(&mut connection) {
+                    Ok(needs_upgrade) => needs_upgrade,
+                    Err(Error::InvalidInput(message))
+                        if message != "Database has not been initialized yet" =>
+                    {
+                        true
+                    }
+                    Err(error) => return Err(error),
+                };
+                Ok((connection, needs_upgrade))
+            })();
+            let mut state = entry.upgrade.lock();
+            // Another owner may have finished and its record may already have been consumed.
+            // Re-probe that generation rather than admitting a job from an obsolete SQLite read.
+            if entry
+                .upgrade_generation
+                .load(std::sync::atomic::Ordering::Relaxed)
+                != generation
+            {
+                drop(state);
+                continue;
+            }
+            if entry.leases.snapshot().closed {
+                return Err(Error::Conflict(
+                    "database is being replaced or deleted".into(),
+                ));
+            }
+            let (connection, needs_upgrade) = probe_result?;
+            if !needs_upgrade {
+                drop(state);
+                return Ok(SchemaAccess::Current(Box::new(DatabaseConnection {
+                    connection: DatabaseConnectionInner::BoundRead(connection),
+                    _lease: Some(lease),
+                    _pinned_file: None,
+                    _authority_snapshot: None,
+                })));
+            }
+            let parent = target.parent().try_clone()?;
+            let leaf = target.leaf().to_owned();
+            let operation = self.operations.accept("database_schema_upgrade")?;
+            let job = Arc::new(UpgradeJob {
+                cancellation: operation.token(),
+                outcome: ParkingMutex::new(None),
+                changed: ParkingCondvar::new(),
+                #[cfg(test)]
+                waiters: std::sync::atomic::AtomicUsize::new(0),
+                #[cfg(test)]
+                content_pragma_counts: ParkingMutex::new((0, 0)),
+            });
+            let guard = UpgradeGuard(Arc::clone(&job), Arc::clone(&entry));
+            *state = Some(UpgradeRecord {
+                identity,
+                job: Arc::clone(&job),
+            });
+            entry
+                .upgrade_generation
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            drop(state);
+            drop(connection);
+            let worker_entry = Arc::clone(&entry);
+            let repository_state = Arc::clone(&self.state);
+            let cancellation = job.cancellation.clone();
+            #[cfg(test)]
+            let hook = self.upgrade_test_hook.lock().clone();
+            #[cfg(test)]
+            let after_write_hook = self.upgrade_after_write_test_hook.lock().clone();
+            #[cfg(test)]
+            let worker_job = Arc::clone(&job);
+            let workflow = async move {
+                let _ = crate::infra::operations::run_native_operation(
+                operation,
+                "database_schema_upgrade",
+                async move {
+                    // Waiters can occupy every gateway permit. This worker must stay outside it.
+                    let outcome = tokio::task::spawn_blocking(move || {
+                        let _lease = lease;
+                        let mut connection = worker_entry.get_connection_cancellable(
+                            &repository_state,
+                            &key,
+                            Instant::now() + RETIRE_WAIT_TIMEOUT,
+                            Some(&cancellation),
+                        )?;
+                        super::cancellation_check(&cancellation)?;
+                        if !worker_entry.bound.retained_name_is_current()? {
+                            return Err(Error::Conflict(
+                                "database changed after capability resolution".into(),
+                            ));
+                        }
+                        #[cfg(test)]
+                        let _after_write_hook = after_write_hook.map(|hook| {
+                            let cancellation = cancellation.clone();
+                            migrations::after_first_write_hook(move |connection| {
+                                let count = sql_query("SELECT COUNT(*) AS count FROM pragma_table_info('Players') WHERE name='GameCount'")
+                                    .get_result::<CountRow>(connection)?.count;
+                                assert_eq!(count, 1, "the migration must have written the new column before this checkpoint");
+                                hook(&cancellation)
+                            })
+                        });
+                        #[cfg(test)]
+                        migrations::take_content_pragma_counts();
+                        let result =
+                            connection.immediate_transaction::<_, Error, _>(|connection| {
+                                let validated =
+                                    super::sqlite_cancellation::with_sqlite_cancellation(
+                                        &cancellation,
+                                        || {
+                                            #[cfg(test)]
+                                            if let Some(hook) = hook {
+                                                hook(&cancellation)?;
+                                            }
+                                            migrations::validate_existing_database(connection)
+                                        },
+                                    )?;
+                                super::cancellation_check(&cancellation)?;
+                                Ok(validated)
+                            });
+                        #[cfg(test)]
+                        { *worker_job.content_pragma_counts.lock() = migrations::take_content_pragma_counts(); }
+                        if let Ok(probe) = crate::infra::fs::probe_regular_file_at(&parent, &leaf) {
+                            if let Some(record) = worker_entry.upgrade.lock().as_mut() {
+                                record.identity = DatabaseSchemaIdentity::from_probe(&probe);
+                            }
+                        }
+                        match result {
+                            Ok(validated) => {
+                                worker_entry
+                                    .state
+                                    .lock()
+                                    .map_err(repository_state_poisoned)?
+                                    .upgrade_pass_due |= validated;
+                                Ok(())
+                            }
+                            Err(_) if cancellation.is_cancelled() => Err(Error::Cancellation),
+                            Err(error) => Err(error),
+                        }
+                    })
+                    .await
+                    .map_err(|error| {
+                        Error::task_join(
+                            "database upgrade worker failed",
+                            &error,
+                            "database_schema_upgrade",
+                        )
+                    })
+                    .and_then(|result| result);
+                    guard.finish(outcome)
+                },
+            )
+            .await;
+            };
+            match tokio::runtime::Handle::try_current() {
+                Ok(runtime) => {
+                    runtime.spawn(workflow);
+                }
+                Err(_) => {
+                    tauri::async_runtime::spawn(workflow);
+                }
+            }
+            return Ok(SchemaAccess::Upgrade(job));
+        }
+    }
+
+    pub(super) fn ensure_schema_current(
+        &self,
+        target: &crate::infra::path_authority::DatabaseFileTarget,
+        cancellation: Option<&CancellationToken>,
+    ) -> Result<(), Error> {
+        match self.schema_access_inner(target, cancellation, false)? {
+            SchemaAccess::Current(_) => Ok(()),
+            SchemaAccess::Upgrade(job) => job.wait(cancellation),
+            SchemaAccess::Failed(error) => Err(Error::Shared(error)),
+        }
+    }
+
+    /// Reads the existing pragma-count witness on the thread that now owns migration.
+    #[cfg(test)]
+    pub(super) fn upgrade_content_pragma_counts_for_test(
+        &self,
+        target: &crate::infra::path_authority::DatabaseFileTarget,
+    ) -> Result<(usize, usize), Error> {
+        let (_, entry, _) = self.entry(target, None)?;
+        let upgrade = entry.upgrade.lock();
+        let record = upgrade
+            .as_ref()
+            .ok_or_else(|| Error::Conflict("test expected an upgrade record".into()))?;
+        let counts = *record.job.content_pragma_counts.lock();
+        Ok(counts)
+    }
+
+    pub(super) fn ensure_schema_if_initialized(
+        &self,
+        target: &crate::infra::path_authority::DatabaseFileTarget,
+        cancellation: &CancellationToken,
+    ) -> Result<(), Error> {
+        if self
+            .identity_from_probe(target, cancellation, false)?
+            .length
+            == 0
+        {
+            return Ok(());
+        }
+        // An empty SQLite header is also an import destination, not an existing schema.
+        match self.ensure_schema_current(target, Some(cancellation)) {
+            Err(Error::InvalidInput(message))
+                if message == "Database has not been initialized yet" =>
+            {
+                Ok(())
+            }
+            result => result,
+        }
+    }
     #[cfg(test)]
     fn with_retire_wait(retire_wait: Duration) -> Self {
         Self {
@@ -856,19 +1270,28 @@ impl DatabaseRepository {
         target: &crate::infra::path_authority::DatabaseFileTarget,
         cancellation: Option<&CancellationToken>,
     ) -> Result<DatabaseConnection, Error> {
-        // Ordinary reads must not let the pool's WAL PRAGMA initialize a raw-empty
-        // destination. The metadata-only identity probe preserves lifecycle refusals.
-        if self
-            .identity_from_probe(
-                target,
-                cancellation.unwrap_or(&CancellationToken::new()),
-                false,
-            )?
-            .length
-            == 0
-        {
+        let token = cancellation.cloned().unwrap_or_default();
+        if self.identity_from_probe(target, &token, false)?.length == 0 {
             return Err(migrations::uninitialized_database_error());
         }
+        let (_, cached_entry, probe) = self.entry(target, cancellation)?;
+        let cached_identity = DatabaseSchemaIdentity::from_probe(&probe);
+        let cached = {
+            let upgrade = cached_entry.upgrade.lock();
+            upgrade.is_none()
+                && cached_entry
+                    .state
+                    .lock()
+                    .map_err(repository_state_poisoned)?
+                    .schema_identity
+                    .as_ref()
+                    == Some(&cached_identity)
+        };
+        // Neither admission nor schema-state locks extend into pool acquisition or SQLite.
+        if !cached {
+            self.ensure_schema_current(target, cancellation)?;
+        }
+        drop(cached_entry);
         super::sqlite_cancellation::install()?;
         let (entry, lease, mut connection, probe) = self.acquire_probed(target, cancellation)?;
         let identity = DatabaseSchemaIdentity::from_probe(&probe);
@@ -880,7 +1303,7 @@ impl DatabaseRepository {
             .as_ref()
             != Some(&identity);
         if requires_validation {
-            if migrations::validate_existing_database(&mut connection)? {
+            if migrations::check_current_database(&mut connection)? {
                 match self.database_identity(target) {
                     Ok(validated_identity) => {
                         entry
@@ -921,6 +1344,17 @@ impl DatabaseRepository {
         let Some(entry) = entry else {
             return Ok(None);
         };
+        let upgrade_due = entry
+            .state
+            .lock()
+            .map_err(repository_state_poisoned)?
+            .upgrade_pass_due;
+        if upgrade_due {
+            let identity = self.database_identity(target)?;
+            let mut state = entry.state.lock().map_err(repository_state_poisoned)?;
+            state.upgrade_pass_due = false;
+            state.passed_stamp_due = Some(identity);
+        }
         let due = entry
             .state
             .lock()
@@ -1635,6 +2069,11 @@ impl DatabaseRepository {
                 pool_wake,
                 write_lock: Arc::new(ParkingMutex::new(())),
                 index_lock: Arc::new(ParkingMutex::new(())),
+                upgrade: ParkingMutex::new(None),
+                upgrade_generation: std::sync::atomic::AtomicU64::new(0),
+                retain_upgrade_failure: std::sync::atomic::AtomicBool::new(false),
+                #[cfg(test)]
+                schema_probe_count: std::sync::atomic::AtomicUsize::new(0),
                 state: Mutex::new(EntryState {
                     last_used: state.clock,
                     ..EntryState::default()
@@ -2739,6 +3178,9 @@ impl DatabaseEntry {
         cancellation: Option<&CancellationToken>,
     ) -> Result<(), Error> {
         self.leases.close();
+        if let Some(record) = self.upgrade.lock().as_ref() {
+            record.job.cancellation.cancel();
+        }
         let result =
             self.leases
                 .wait_drained(timeout, cancellation, "database retirement timed out");
@@ -2756,7 +3198,700 @@ impl DatabaseEntry {
 
     fn is_idle(&self) -> bool {
         let snapshot = self.leases.snapshot();
-        snapshot.outstanding == 0 && !snapshot.closed
+        snapshot.outstanding == 0
+            && !snapshot.closed
+            && !self
+                .retain_upgrade_failure
+                .load(std::sync::atomic::Ordering::Acquire)
+    }
+}
+
+#[cfg(test)]
+mod upgrade_tests {
+    use super::*;
+    use crate::db::{blocking_database_case, get_db_info_blocking, DatabaseInfoResult};
+    use crate::infra::path_authority::DatabaseHandle;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tauri::Manager;
+
+    struct Case {
+        _directory: tempfile::TempDir,
+        app: tauri::AppHandle<tauri::test::MockRuntime>,
+        handle: DatabaseHandle,
+        path: PathBuf,
+    }
+
+    impl Case {
+        fn new(old: bool) -> Self {
+            let (directory, app, handle, path) = blocking_database_case();
+            if old {
+                let connection = rusqlite::Connection::open(&path).unwrap();
+                connection
+                    .execute_batch(
+                        "DROP TRIGGER player_game_count_insert;
+                     DROP TRIGGER player_game_count_delete;
+                     DROP TRIGGER player_game_count_update;
+                     DROP INDEX players_game_count_idx;
+                     ALTER TABLE Players DROP COLUMN GameCount;
+                     UPDATE Info SET Value='2.1.0' WHERE Name='Version';",
+                    )
+                    .unwrap();
+            }
+            Self {
+                _directory: directory,
+                app,
+                handle,
+                path,
+            }
+        }
+
+        fn repository(&self) -> Arc<DatabaseRepository> {
+            Arc::clone(&self.app.state::<crate::AppState>().database_repository)
+        }
+
+        fn info(&self) -> DatabaseInfoResult {
+            let state = self.app.state::<crate::AppState>();
+            get_db_info_blocking(
+                &state.pgn_path_authority,
+                &state.database_repository,
+                self.handle.clone(),
+            )
+            .unwrap()
+            .info
+        }
+
+        fn job(&self) -> Arc<UpgradeJob> {
+            let repository = self.repository();
+            let (_, entry, _) = repository.entry(&test_target(&self.path), None).unwrap();
+            let state = entry.upgrade.lock();
+            Arc::clone(&state.as_ref().unwrap().job)
+        }
+
+        fn version(&self) -> String {
+            rusqlite::Connection::open(&self.path)
+                .unwrap()
+                .query_row("SELECT Value FROM Info WHERE Name='Version'", [], |row| {
+                    row.get(0)
+                })
+                .unwrap()
+        }
+    }
+
+    struct Hold {
+        released: Arc<(ParkingMutex<bool>, ParkingCondvar)>,
+        entered: std::sync::mpsc::Receiver<()>,
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl Hold {
+        fn install(repository: &DatabaseRepository, failure: bool) -> Self {
+            Self::install_at(repository, failure, false)
+        }
+
+        fn after_first_write(repository: &DatabaseRepository) -> Self {
+            Self::install_at(repository, false, true)
+        }
+
+        fn install_at(repository: &DatabaseRepository, failure: bool, after_write: bool) -> Self {
+            let released = Arc::new((ParkingMutex::new(false), ParkingCondvar::new()));
+            let held = Arc::clone(&released);
+            let (send, entered) = std::sync::mpsc::channel();
+            let calls = Arc::new(AtomicUsize::new(0));
+            let seen = Arc::clone(&calls);
+            let hook: UpgradeTestHook = Arc::new(move |token| {
+                seen.fetch_add(1, Ordering::SeqCst);
+                send.send(()).unwrap();
+                let (lock, changed) = &*held;
+                let mut released = lock.lock();
+                while !*released && !token.is_cancelled() {
+                    changed.wait_for(&mut released, Duration::from_millis(10));
+                }
+                super::super::cancellation_check(token)?;
+                if failure {
+                    return Err(Error::InvalidInput(
+                        "injected permanent upgrade failure".into(),
+                    ));
+                }
+                Ok(())
+            });
+            if after_write {
+                *repository.upgrade_after_write_test_hook.lock() = Some(hook);
+            } else {
+                *repository.upgrade_test_hook.lock() = Some(hook);
+            }
+            Self {
+                released,
+                entered,
+                calls,
+            }
+        }
+
+        fn entered(&self) {
+            self.entered.recv_timeout(Duration::from_secs(5)).unwrap();
+        }
+
+        fn release(&self) {
+            *self.released.0.lock() = true;
+            self.released.1.notify_all();
+        }
+    }
+
+    impl Drop for Hold {
+        fn drop(&mut self) {
+            self.release();
+        }
+    }
+
+    fn until(mut predicate: impl FnMut() -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !predicate() {
+            assert!(Instant::now() < deadline, "upgrade checkpoint timed out");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn retirement_during_a_schema_probe_refuses_late_upgrade_admission() {
+        let case = Case::new(true);
+        let repository = case.repository();
+        let target = test_target(&case.path);
+        let (_, entry, _) = repository.entry(&target, None).unwrap();
+        let hold = Hold::install(&repository, false);
+        let (entered, probing) = std::sync::mpsc::channel();
+        let (release, released) = std::sync::mpsc::channel();
+        let released = ParkingMutex::new(released);
+        *repository.schema_probe_test_hook.lock() = Some(Arc::new(move || {
+            entered.send(()).unwrap();
+            let _ = released.lock().recv_timeout(Duration::from_secs(5));
+        }));
+        let reader = {
+            let repository = Arc::clone(&repository);
+            let path = case.path.clone();
+            std::thread::spawn(move || {
+                repository
+                    .schema_access(&test_target(&path), None)
+                    .map(|_| ())
+            })
+        };
+        probing.recv_timeout(Duration::from_secs(5)).unwrap();
+        let deletion = {
+            let repository = Arc::clone(&repository);
+            let path = case.path.clone();
+            std::thread::spawn(move || repository.close_and_invalidate(&test_target(&path)))
+        };
+        until(|| entry.leases.snapshot().closed);
+        release.send(()).unwrap();
+        let result = reader.join().unwrap();
+        // Also release an incorrectly admitted owner so a failing regression never strands deletion.
+        if let Some(record) = entry.upgrade.lock().as_ref() {
+            record.job.cancellation.cancel();
+        }
+        hold.release();
+        deletion.join().unwrap().unwrap();
+        assert!(
+            matches!(result, Err(Error::Conflict(message)) if message == "database is being replaced or deleted")
+        );
+        assert_eq!(hold.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(case.version(), "2.1.0");
+    }
+
+    #[test]
+    fn validated_connections_skip_schema_probes_and_reprobe_changed_files() {
+        let case = Case::new(false);
+        let repository = case.repository();
+        let target = test_target(&case.path);
+        drop(repository.connection(&target, None).unwrap());
+        let (_, entry, before) = repository.entry(&target, None).unwrap();
+        assert_eq!(entry.schema_probe_count.load(Ordering::SeqCst), 1);
+        std::thread::scope(|scope| {
+            let (entered, connected) = std::sync::mpsc::channel();
+            let mut releases = Vec::new();
+            let mut readers = Vec::new();
+            for _ in 0..4 {
+                let repository = Arc::clone(&repository);
+                let path = case.path.clone();
+                let entered = entered.clone();
+                let (release, released) = std::sync::mpsc::channel();
+                releases.push(release);
+                readers.push(scope.spawn(move || {
+                    let connection = repository.connection(&test_target(&path), None);
+                    entered.send(connection.is_ok()).unwrap();
+                    let _ = released.recv_timeout(Duration::from_secs(5));
+                    connection.map(|_| ())
+                }));
+            }
+            let outcomes: Vec<_> = (0..4)
+                .map(|_| connected.recv_timeout(Duration::from_secs(2)))
+                .collect();
+            for release in releases {
+                let _ = release.send(());
+            }
+            for reader in readers {
+                reader.join().unwrap().unwrap();
+            }
+            assert!(
+                outcomes.into_iter().all(|result| result == Ok(true)),
+                "all validated readers must connect while their siblings still hold connections"
+            );
+        });
+        assert_eq!(
+            entry.schema_probe_count.load(Ordering::SeqCst),
+            1,
+            "validated reads must not open a schema-probe connection"
+        );
+        let mut writer = repository.initialization_connection(&target, None).unwrap();
+        sql_query("INSERT OR REPLACE INTO Info(Name,Value) VALUES('Title',?)")
+            .bind::<Text, _>("changed".repeat(4096))
+            .execute(&mut *writer)
+            .unwrap();
+        writer
+            .batch_execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            .unwrap();
+        drop(writer);
+        assert!(
+            target.probe_current().unwrap().length > before.length,
+            "the fixture must change the cached file identity"
+        );
+        drop(repository.connection(&target, None).unwrap());
+        assert_eq!(
+            entry.schema_probe_count.load(Ordering::SeqCst),
+            2,
+            "changed files must be re-probed"
+        );
+    }
+
+    #[test]
+    fn slow_schema_probes_do_not_hold_the_upgrade_admission_lock() {
+        let case = Case::new(false);
+        let repository = case.repository();
+        let entered = Arc::new((ParkingMutex::new(0usize), ParkingCondvar::new()));
+        let timed_out = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let held = Arc::clone(&entered);
+        let failed = Arc::clone(&timed_out);
+        *repository.schema_probe_test_hook.lock() = Some(Arc::new(move || {
+            let (lock, changed) = &*held;
+            let mut count = lock.lock();
+            *count += 1;
+            changed.notify_all();
+            let deadline = Instant::now() + Duration::from_secs(2);
+            while *count < 2 {
+                if Instant::now() >= deadline {
+                    failed.store(true, Ordering::SeqCst);
+                    break;
+                }
+                changed.wait_for(
+                    &mut count,
+                    deadline.saturating_duration_since(Instant::now()),
+                );
+            }
+        }));
+        std::thread::scope(|scope| {
+            let readers: Vec<_> = (0..2)
+                .map(|_| {
+                    let repository = Arc::clone(&repository);
+                    let path = case.path.clone();
+                    scope
+                        .spawn(move || repository.connection(&test_target(&path), None).map(|_| ()))
+                })
+                .collect();
+            for reader in readers {
+                reader.join().unwrap().unwrap();
+            }
+        });
+        assert_eq!(*entered.0.lock(), 2);
+        assert!(
+            !timed_out.load(Ordering::SeqCst),
+            "a schema probe must not exclude another probe through the admission lock"
+        );
+    }
+
+    #[test]
+    fn simultaneous_initial_metadata_admissions_and_connection_start_one_upgrade() {
+        let case = Case::new(true);
+        let repository = case.repository();
+        let hold = Hold::install(&repository, false);
+        let start = Arc::new(std::sync::Barrier::new(4));
+        let metadata: Vec<_> = (0..2)
+            .map(|_| {
+                let start = Arc::clone(&start);
+                let repository = Arc::clone(&repository);
+                let authority = case
+                    .app
+                    .state::<crate::AppState>()
+                    .pgn_path_authority
+                    .clone();
+                let handle = case.handle.clone();
+                std::thread::spawn(move || {
+                    start.wait();
+                    get_db_info_blocking(&authority, &repository, handle)
+                        .map(|metadata| metadata.info)
+                })
+            })
+            .collect();
+        let waiter = {
+            let start = Arc::clone(&start);
+            let repository = Arc::clone(&repository);
+            let path = case.path.clone();
+            std::thread::spawn(move || {
+                start.wait();
+                repository.connection(&test_target(&path), None).map(|_| ())
+            })
+        };
+        start.wait();
+        for metadata in metadata {
+            assert!(matches!(
+                metadata.join().unwrap().unwrap(),
+                DatabaseInfoResult::Upgrading { .. }
+            ));
+        }
+        hold.entered();
+        let job = case.job();
+        until(|| job.waiters.load(Ordering::SeqCst) == 1);
+        assert_eq!(hold.calls.load(Ordering::SeqCst), 1);
+        assert!(!waiter.is_finished());
+        hold.release();
+        waiter.join().unwrap().unwrap();
+        assert_eq!(hold.calls.load(Ordering::SeqCst), 1);
+        assert!(matches!(case.info(), DatabaseInfoResult::Ready(_)));
+    }
+
+    #[test]
+    fn real_pool_customization_busy_is_shared_and_marks_the_renderer_payload() {
+        let case = Case::new(false);
+        let raw = rusqlite::Connection::open(&case.path).unwrap();
+        assert_eq!(
+            raw.pragma_query_value(None, "journal_mode", |row| row.get::<_, String>(0))
+                .unwrap(),
+            "delete"
+        );
+        raw.execute_batch("BEGIN IMMEDIATE; UPDATE Info SET Value=Value WHERE Name='Version';")
+            .unwrap();
+        // The production customizer installs a 30 s busy timeout. Keep acquisition open long
+        // enough to observe its actual query failure rather than a generic pool timeout.
+        let repository = DatabaseRepository {
+            pool_connection_timeout: Duration::from_secs(35),
+            ..DatabaseRepository::with_operations(Default::default())
+        };
+        let target = test_target(&case.path);
+        let error = repository
+            .initialization_connection(&target, None)
+            .err()
+            .expect("foreign writer must refuse the pool's WAL customization");
+        let Error::Shared(cause) = &error else {
+            panic!("customization failure must survive acquisition as Error::Shared: {error:?}");
+        };
+        assert!(matches!(cause.as_ref(), Error::Diesel(_)));
+        assert!(cause.diagnostic().contains("database is locked"));
+        let (_, entry, _) = repository.entry(&target, None).unwrap();
+        let cached = entry.pool_wake.failure.lock().latest.clone().unwrap();
+        assert!(
+            !cached.native_open,
+            "failure must come from customization after establishment"
+        );
+        assert!(Arc::ptr_eq(&cached.error, cause));
+        assert_eq!(serde_json::to_value(&error).unwrap()["databaseBusy"], true);
+        raw.execute_batch("ROLLBACK").unwrap();
+        repository.close_and_invalidate(&target).unwrap();
+    }
+
+    #[test]
+    fn overlapping_metadata_connection_and_mutation_join_one_immediate_upgrade() {
+        let case = Case::new(true);
+        let repository = case.repository();
+        let hold = Hold::install(&repository, false);
+        assert!(matches!(case.info(), DatabaseInfoResult::Upgrading { .. }));
+        hold.entered();
+        let job = case.job();
+        let started = Instant::now();
+        assert!(matches!(case.info(), DatabaseInfoResult::Upgrading { .. }));
+        assert!(started.elapsed() < Duration::from_secs(1));
+        // This runs before the owner's first statement. Only BEGIN IMMEDIATE can exclude it.
+        let raw = rusqlite::Connection::open(&case.path).unwrap();
+        raw.busy_timeout(Duration::ZERO).unwrap();
+        assert!(
+            matches!(raw.execute_batch("BEGIN IMMEDIATE"), Err(rusqlite::Error::SqliteFailure(error, _)) if error.code == rusqlite::ErrorCode::DatabaseBusy)
+        );
+        let reader_path = case.path.clone();
+        let reader_repository = Arc::clone(&repository);
+        let reader = std::thread::spawn(move || {
+            reader_repository
+                .connection(&test_target(&reader_path), None)
+                .map(|_| ())
+        });
+        let mutation_repository = Arc::clone(&repository);
+        let authority = case
+            .app
+            .state::<crate::AppState>()
+            .pgn_path_authority
+            .clone();
+        let handle = case.handle.clone();
+        let path = case.path.clone();
+        let mutation = std::thread::spawn(move || {
+            super::super::with_validated_mutation(
+                &mutation_repository,
+                &crate::SearchCache::default(),
+                &test_target(&path),
+                &CancellationToken::new(),
+                &authority,
+                &handle,
+                |connection| {
+                    connection
+                        .batch_execute("INSERT INTO Info VALUES('UpgradeMutation','done')")?;
+                    Ok(())
+                },
+            )
+        });
+        until(|| job.waiters.load(Ordering::SeqCst) == 2);
+        assert!(!reader.is_finished());
+        assert!(!mutation.is_finished());
+        hold.release();
+        reader.join().unwrap().unwrap();
+        mutation.join().unwrap().unwrap();
+        assert_eq!(hold.calls.load(Ordering::SeqCst), 1);
+        assert!(matches!(case.info(), DatabaseInfoResult::Ready(_)));
+        assert_eq!(case.version(), "2.2.0");
+        let raw = rusqlite::Connection::open(&case.path).unwrap();
+        assert_eq!(
+            raw.query_row(
+                "SELECT Value FROM Info WHERE Name='UpgradeMutation'",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+            "done"
+        );
+    }
+
+    #[test]
+    fn shutdown_cancels_rolls_back_and_a_later_owner_upgrades() {
+        let case = Case::new(true);
+        let repository = case.repository();
+        let hold = Hold::after_first_write(&repository);
+        assert!(matches!(case.info(), DatabaseInfoResult::Upgrading { .. }));
+        hold.entered();
+        let job = case.job();
+        case.app
+            .state::<crate::AppState>()
+            .operations
+            .seal_and_request_cancellation()
+            .unwrap();
+        assert!(
+            matches!(job.wait(None), Err(error) if error.category() == crate::error::ErrorCategory::Cancellation)
+        );
+        assert_eq!(case.version(), "2.1.0");
+        let raw = rusqlite::Connection::open(&case.path).unwrap();
+        assert_eq!(
+            raw.query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('Players') WHERE name='GameCount'",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0,
+            "rollback must remove the column written by the migration"
+        );
+        drop(raw);
+        assert!(case
+            .app
+            .state::<crate::AppState>()
+            .operations
+            .wait_for_drain(Duration::from_secs(5))
+            .unwrap());
+        drop(repository);
+        // A restart supplies a fresh application owner and retries the unchanged old schema.
+        let restarted = DatabaseRepository::with_operations(Default::default());
+        restarted
+            .connection(&test_target(&case.path), None)
+            .unwrap();
+        assert_eq!(case.version(), "2.2.0");
+    }
+
+    #[test]
+    fn deletion_cancels_the_owner_before_draining_and_allows_a_later_upgrade() {
+        let case = Case::new(true);
+        let repository = case.repository();
+        let hold = Hold::after_first_write(&repository);
+        assert!(matches!(case.info(), DatabaseInfoResult::Upgrading { .. }));
+        hold.entered();
+        let job = case.job();
+        repository
+            .delete_exclusive_cancellable(
+                &test_target(&case.path),
+                &CancellationToken::new(),
+                || Ok(()),
+            )
+            .unwrap();
+        assert!(
+            matches!(job.wait(None), Err(error) if error.category() == crate::error::ErrorCategory::Cancellation)
+        );
+        assert_eq!(case.version(), "2.1.0");
+        *repository.upgrade_test_hook.lock() = None;
+        *repository.upgrade_after_write_test_hook.lock() = None;
+        repository
+            .connection(&test_target(&case.path), None)
+            .unwrap();
+        assert_eq!(case.version(), "2.2.0");
+    }
+
+    #[test]
+    fn permanent_failure_is_retained_for_metadata_and_three_joined_waiters() {
+        let case = Case::new(true);
+        let repository = case.repository();
+        let hold = Hold::install(&repository, true);
+        assert!(matches!(case.info(), DatabaseInfoResult::Upgrading { .. }));
+        hold.entered();
+        let job = case.job();
+        let readers: Vec<_> = (0..3)
+            .map(|_| {
+                let repository = Arc::clone(&repository);
+                let path = case.path.clone();
+                std::thread::spawn(move || {
+                    repository.connection(&test_target(&path), None).map(|_| ())
+                })
+            })
+            .collect();
+        until(|| job.waiters.load(Ordering::SeqCst) == 3);
+        hold.release();
+        for reader in readers {
+            let error = reader.join().unwrap().unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "Invalid input: injected permanent upgrade failure"
+            );
+        }
+        for _ in 0..2 {
+            assert!(
+                matches!(case.info(), DatabaseInfoResult::UpgradeFailed { message, .. } if message.contains("injected permanent upgrade failure"))
+            );
+        }
+        assert!(
+            matches!(repository.connection(&test_target(&case.path), None), Err(error) if error.to_string().contains("injected permanent upgrade failure"))
+        );
+        assert_eq!(hold.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(case.version(), "2.1.0");
+    }
+
+    #[test]
+    fn cancelling_a_waiter_leaves_the_shared_owner_running() {
+        let case = Case::new(true);
+        let repository = case.repository();
+        let hold = Hold::install(&repository, false);
+        assert!(matches!(case.info(), DatabaseInfoResult::Upgrading { .. }));
+        hold.entered();
+        let job = case.job();
+        let token = CancellationToken::new();
+        let waiter_token = token.clone();
+        let path = case.path.clone();
+        let waiter_repository = Arc::clone(&repository);
+        let waiter = std::thread::spawn(move || {
+            waiter_repository
+                .connection(&test_target(&path), Some(&waiter_token))
+                .map(|_| ())
+        });
+        until(|| job.waiters.load(Ordering::SeqCst) == 1);
+        token.cancel();
+        assert!(matches!(waiter.join().unwrap(), Err(Error::Cancellation)));
+        assert!(!job.cancellation.is_cancelled());
+        assert!(job.outcome.lock().is_none());
+        hold.release();
+        job.wait(None).unwrap();
+        assert!(matches!(case.info(), DatabaseInfoResult::Ready(_)));
+    }
+
+    #[test]
+    fn metadata_returns_admission_refusal_instead_of_upgrading() {
+        let case = Case::new(true);
+        case.app
+            .state::<crate::AppState>()
+            .operations
+            .seal_and_request_cancellation()
+            .unwrap();
+        let state = case.app.state::<crate::AppState>();
+        let result = get_db_info_blocking(
+            &state.pgn_path_authority,
+            &state.database_repository,
+            case.handle.clone(),
+        );
+        assert!(
+            matches!(result, Err(Error::Conflict(message)) if message == "native operation admission is sealed")
+        );
+        assert_eq!(case.version(), "2.1.0");
+    }
+
+    #[test]
+    fn busy_upgrade_is_reported_once_then_a_new_owner_is_admitted() {
+        let case = Case::new(true);
+        let repository = case.repository();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let seen = Arc::clone(&calls);
+        *repository.upgrade_test_hook.lock() = Some(Arc::new(move |_| {
+            seen.fetch_add(1, Ordering::SeqCst);
+            Err(diesel::result::Error::DatabaseError(
+                diesel::result::DatabaseErrorKind::Unknown,
+                Box::new("database is locked".to_string()),
+            )
+            .into())
+        }));
+        assert!(matches!(case.info(), DatabaseInfoResult::Upgrading { .. }));
+        assert!(case.job().wait(None).unwrap_err().is_database_busy());
+        assert!(matches!(case.info(), DatabaseInfoResult::Busy { .. }));
+        *repository.upgrade_test_hook.lock() = None;
+        assert!(matches!(case.info(), DatabaseInfoResult::Upgrading { .. }));
+        case.job().wait(None).unwrap();
+        assert!(matches!(case.info(), DatabaseInfoResult::Ready(_)));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn current_schema_foreign_exclusive_lock_returns_busy_within_two_seconds() {
+        let case = Case::new(false);
+        let raw = rusqlite::Connection::open(&case.path).unwrap();
+        raw.execute_batch("BEGIN EXCLUSIVE").unwrap();
+        let started = Instant::now();
+        assert!(matches!(case.info(), DatabaseInfoResult::Busy { .. }));
+        assert!(started.elapsed() < Duration::from_secs(2));
+        raw.execute_batch("ROLLBACK").unwrap();
+        assert!(matches!(case.info(), DatabaseInfoResult::Ready(_)));
+    }
+
+    #[test]
+    fn empty_metadata_still_returns_the_uninitialized_error_without_a_job() {
+        let (_dir, app, handle, _path) = super::super::arbitrary_database_case(b"");
+        let state = app.state::<crate::AppState>();
+        assert!(
+            matches!(get_db_info_blocking(&state.pgn_path_authority, &state.database_repository, handle), Err(Error::InvalidInput(message)) if message == "Database has not been initialized yet")
+        );
+        assert!(state
+            .database_repository
+            .state
+            .lock()
+            .unwrap()
+            .entries
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn upgrade_completes_with_every_awaiting_thread_gateway_permit_held() {
+        use crate::infra::blocking::{
+            tests::park_global_gateway_holders, BLOCKING_GATEWAY_PERMITS,
+        };
+        let case = Case::new(true);
+        let (releases, holders) = park_global_gateway_holders(BLOCKING_GATEWAY_PERMITS).await;
+        assert!(matches!(case.info(), DatabaseInfoResult::Upgrading { .. }));
+        let job = case.job();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while job.outcome.lock().is_none() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("upgrade must run without a gateway permit on this awaiting thread");
+        job.wait(None).unwrap();
+        assert!(matches!(case.info(), DatabaseInfoResult::Ready(_)));
+        drop(releases);
+        for holder in holders {
+            holder.await.unwrap().unwrap();
+        }
     }
 }
 
@@ -7158,7 +8293,6 @@ mod bound_sqlite_witnesses {
         db::bound_sqlite::{BoundDatabase, SqliteMode},
         infra::path_authority::database_test_support::replace_parent_with_same_inode_hard_link,
     };
-    use diesel::connection::SimpleConnection as _;
     use diesel::Connection as _;
     use rusqlite::Connection;
     use std::{

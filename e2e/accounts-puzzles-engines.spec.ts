@@ -790,6 +790,7 @@ const summaryChessComDatabase = {
     availability: "available",
 };
 const summaryDatabaseInfo = {
+    status: "ready",
     description: "",
     player_count: 1,
     event_count: 1,

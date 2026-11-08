@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use shakmaty::Chess;
 use specta::Type;
 
+pub(crate) const DATABASE_SCHEMA_NOT_CURRENT: &str = "database schema upgrade is required";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Type)]
 pub enum DurabilityStage {
     ArchiveCommitMarker,
@@ -166,6 +168,9 @@ pub struct ErrorPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[specta(optional)]
     pub database_admission: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub database_busy: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[specta(optional)]
     pub progress_generation: Option<crate::progress::ProgressGeneration>,
@@ -403,8 +408,31 @@ pub fn sanitized_io_error(error: &std::io::Error, message: String) -> std::io::E
     std::io::Error::new(kind, message)
 }
 
-#[cfg(test)]
 impl Error {
+    pub(crate) fn is_database_busy(&self) -> bool {
+        match self.unlabelled() {
+            Self::Diesel(error) => {
+                matches!(error.as_ref(), diesel::result::Error::DatabaseError(_, information)
+                if matches!(information.message(), "database is locked" | "database table is locked" | "database schema is locked")
+                    || information.message().starts_with("database table is locked:")
+                    || information.message().starts_with("database schema is locked:"))
+            }
+            Self::R2d2(error) => {
+                let message = error.to_string();
+                message == "timed out waiting for connection"
+                    || message.contains("database is locked")
+                    || message.contains("database table is locked")
+                    || message.contains("database schema is locked")
+            }
+            Self::Conflict(message) => matches!(
+                message.as_str(),
+                "database connection acquisition timed out" | DATABASE_SCHEMA_NOT_CURRENT
+            ),
+            _ => false,
+        }
+    }
+
+    #[cfg(test)]
     pub(crate) fn without_shared(&self) -> &Self {
         let mut error = self;
         while let Self::Shared(inner) = error {
@@ -1072,6 +1100,7 @@ impl Error {
                 if message == DATABASE_OPEN_THROUGH_ANOTHER_DIRECTORY
                     || message == DATABASE_OPEN_THROUGH_ANOTHER_NAME)
             .then_some(true),
+            database_busy: self.is_database_busy().then_some(true),
             progress_generation: None,
         }
     }
@@ -1258,6 +1287,46 @@ mod tests {
         ] {
             let payload = serde_json::to_value(error).expect("other payload");
             assert!(payload.get("nameTaken").is_none());
+        }
+    }
+
+    #[test]
+    fn real_sqlite_busy_is_flagged_directly_and_through_the_shared_pool_error() {
+        use diesel::{connection::SimpleConnection, Connection, RunQueryDsl};
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("busy.db3");
+        let writer = rusqlite::Connection::open(&path).unwrap();
+        writer
+            .execute_batch("CREATE TABLE Busy(Value INTEGER); BEGIN IMMEDIATE;")
+            .unwrap();
+        let mut connection = diesel::SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+        connection.batch_execute("PRAGMA busy_timeout=0").unwrap();
+        let error = Error::from(
+            diesel::sql_query("INSERT INTO Busy VALUES(1)")
+                .execute(&mut connection)
+                .unwrap_err(),
+        );
+        assert_eq!(serde_json::to_value(&error).unwrap()["databaseBusy"], true);
+        let shared = Error::Shared(std::sync::Arc::new(error));
+        assert_eq!(serde_json::to_value(shared).unwrap()["databaseBusy"], true);
+    }
+
+    #[test]
+    fn only_busy_owned_conflicts_and_sqlite_lock_errors_receive_database_busy() {
+        for error in [
+            Error::Conflict(DATABASE_SCHEMA_NOT_CURRENT.into()),
+            Error::Conflict("database connection acquisition timed out".into()),
+        ] {
+            assert_eq!(serde_json::to_value(error).unwrap()["databaseBusy"], true);
+        }
+        for error in [
+            Error::Conflict("other conflict".into()),
+            Error::InvalidInput("database is locked".into()),
+        ] {
+            assert!(serde_json::to_value(error)
+                .unwrap()
+                .get("databaseBusy")
+                .is_none());
         }
     }
 

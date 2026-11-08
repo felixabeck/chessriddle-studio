@@ -206,6 +206,17 @@ pub(crate) fn get_db_or_create(
     authority: &crate::infra::path_authority::SharedPathAuthority,
     file: &DatabaseHandle,
 ) -> Result<repository::DatabaseConnection, Error> {
+    resolve_collection_read(authority, file, cancellation)?;
+    let connection = repository.connection(target, cancellation)?;
+    publish_pending_content_stamp(repository, target, authority, file);
+    Ok(connection)
+}
+
+fn resolve_collection_read(
+    authority: &crate::infra::path_authority::SharedPathAuthority,
+    file: &DatabaseHandle,
+    cancellation: Option<&CancellationToken>,
+) -> Result<(), Error> {
     if let Some(collections) = authority.collections()? {
         collections.resolve_database(
             authority,
@@ -214,7 +225,15 @@ pub(crate) fn get_db_or_create(
             cancellation.unwrap_or(&CancellationToken::new()),
         )?;
     }
-    let connection = repository.connection(target, cancellation)?;
+    Ok(())
+}
+
+fn publish_pending_content_stamp(
+    repository: &DatabaseRepository,
+    target: &DatabaseFileTarget,
+    authority: &crate::infra::path_authority::SharedPathAuthority,
+    file: &DatabaseHandle,
+) {
     match repository.take_passed_stamp_due(target) {
         Ok(Some(identity)) => {
             content_validation::publish_passed_stamp(repository, authority, file, &identity)
@@ -226,7 +245,6 @@ pub(crate) fn get_db_or_create(
             error.diagnostic()
         ),
     }
-    Ok(connection)
 }
 
 /// The sole database capability boundary.  Native repository code receives a
@@ -328,10 +346,11 @@ fn with_validated_mutation(
         guard_database_mutation(authority, file, PathOperation::DatabaseMutate)?;
         #[cfg(test)]
         database_command_checkpoint("mutation_owned", file);
+        repository.ensure_schema_current(target, Some(cancellation))?;
         let mut connection = repository.initialization_connection(target, Some(cancellation))?;
         connection.transaction::<_, Error, _>(|db| {
             bump_revision_in_transaction(db, target.path(), cancellation, |db| {
-                content_validated = migrations::validate_existing_database(db)?;
+                content_validated = migrations::check_current_database(db)?;
                 operation(db)
             })
         })?;
@@ -1291,6 +1310,7 @@ pub(crate) fn account_sync_cursor_blocking(
 ) -> Result<Option<i64>, Error> {
     let target = resolve_database(authority, database, PathOperation::DatabaseCreate)?;
     repository.with_write_lock_cancellable(&target, cancellation, || {
+        repository.ensure_schema_if_initialized(&target, cancellation)?;
         let mut connection = repository.initialization_connection(&target, Some(cancellation))?;
         // New account targets are empty files. Reading their cursor must not initialize them
         // outside the eventual import transaction.
@@ -1305,7 +1325,7 @@ pub(crate) fn account_sync_cursor_blocking(
         if tables == 0 {
             return Ok(None);
         }
-        migrations::validate_existing_database(&mut connection)?;
+        migrations::check_current_database(&mut connection)?;
         let value = info::table
             .filter(info::name.eq("AccountSyncCursor"))
             .select(info::value)
@@ -1396,6 +1416,7 @@ pub(crate) fn convert_pgn_blocking<R: tauri::Runtime>(
     let mut content_validated = false;
     let result = repository.with_write_lock_cancellable(&target, cancellation, || {
         guard_database_mutation(authority, &database, PathOperation::DatabaseCreate)?;
+        repository.ensure_schema_if_initialized(&target, cancellation)?;
         if let Some(collections) = authority.collections()? {
             for source in &files {
                 collections.guard_conversion_source(authority, source, cancellation)?;
@@ -1678,6 +1699,23 @@ pub struct DatabaseInfo {
     indexed: bool,
 }
 
+#[derive(Serialize, Type)]
+#[serde(tag = "status", rename_all = "kebab-case")]
+pub enum DatabaseInfoResult {
+    Ready(DatabaseInfo),
+    Upgrading {
+        filename: String,
+        title: Option<String>,
+    },
+    Busy {
+        filename: String,
+    },
+    UpgradeFailed {
+        filename: String,
+        message: String,
+    },
+}
+
 #[derive(QueryableByName, Debug, Serialize)]
 struct IndexInfo {
     #[diesel(sql_type = Text, column_name = "name")]
@@ -1786,7 +1824,7 @@ pub async fn get_db_info<R: tauri::Runtime>(
     file: DatabaseHandle,
     app: tauri::AppHandle<R>,
     state: tauri::State<'_, AppState>,
-) -> Result<DatabaseInfo, Error> {
+) -> Result<DatabaseInfoResult, Error> {
     let authority = state.pgn_path_authority.clone();
     let repository = Arc::clone(&state.database_repository);
     let read_file = file.clone();
@@ -1814,14 +1852,18 @@ pub async fn get_db_info<R: tauri::Runtime>(
 }
 
 struct DatabaseMetadata {
-    info: DatabaseInfo,
+    info: DatabaseInfoResult,
     scan: Option<(std::path::PathBuf, DatabaseIdentity)>,
 }
 
+#[cfg(test)]
 impl std::ops::Deref for DatabaseMetadata {
     type Target = DatabaseInfo;
     fn deref(&self) -> &Self::Target {
-        &self.info
+        match &self.info {
+            DatabaseInfoResult::Ready(info) => info,
+            _ => panic!("test expected ready database metadata"),
+        }
     }
 }
 
@@ -1834,9 +1876,37 @@ fn get_db_info_blocking(
 
     info!("get_db_info {:?}", target.path());
 
-    let mut database_connection = get_db_or_create(repository, &target, None, authority, &file)?;
+    let filename = target.leaf().to_string_lossy().into_owned();
+    let unavailable = |info| Ok(DatabaseMetadata { info, scan: None });
+    #[cfg(test)]
+    database_command_checkpoint("get_db_info_resolved", &file);
+    let access = resolve_collection_read(authority, &file, None)
+        .and_then(|()| repository.schema_access(&target, None));
+    let mut database_connection = match access {
+        Ok(repository::SchemaAccess::Current(connection)) => *connection,
+        Ok(repository::SchemaAccess::Upgrade(_)) => {
+            return unavailable(DatabaseInfoResult::Upgrading {
+                filename,
+                title: None,
+            })
+        }
+        Ok(repository::SchemaAccess::Failed(error)) if error.is_database_busy() => {
+            return unavailable(DatabaseInfoResult::Busy { filename })
+        }
+        Ok(repository::SchemaAccess::Failed(error)) => {
+            return unavailable(DatabaseInfoResult::UpgradeFailed {
+                filename,
+                message: error.to_string(),
+            })
+        }
+        Err(error) if error.is_database_busy() => {
+            return unavailable(DatabaseInfoResult::Busy { filename })
+        }
+        Err(error) => return Err(error),
+    };
     let db = &mut *database_connection;
-    linked_collections::read_snapshot(db, authority, &file, |db| {
+    publish_pending_content_stamp(repository, &target, authority, &file);
+    let result = linked_collections::read_snapshot(db, authority, &file, |db| {
         let info_records: Vec<Info> = info::table.load(db)?;
 
         let get_info_value = |key: &str| -> Option<String> {
@@ -1871,7 +1941,7 @@ fn get_db_info_blocking(
         let is_indexed = check_index_exists(db)?;
         Ok(DatabaseMetadata {
             scan,
-            info: DatabaseInfo {
+            info: DatabaseInfoResult::Ready(DatabaseInfo {
                 title,
                 description,
                 player_count,
@@ -1880,9 +1950,15 @@ fn get_db_info_blocking(
                 storage_size,
                 filename: filename.to_string(),
                 indexed: is_indexed,
-            },
+            }),
         })
-    })
+    });
+    match result {
+        Err(error) if error.is_database_busy() => {
+            unavailable(DatabaseInfoResult::Busy { filename })
+        }
+        result => result,
+    }
 }
 
 #[tauri::command]

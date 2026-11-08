@@ -16,6 +16,28 @@ const CREATE_TABLES_SQL: &str = include_str!("create.sql");
 #[cfg(test)]
 thread_local! {
     static CONTENT_PRAGMA_COUNTS: std::cell::Cell<(usize, usize)> = const { std::cell::Cell::new((0, 0)) };
+    static AFTER_FIRST_WRITE: std::cell::RefCell<Option<UpgradeWriteHook>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+type UpgradeWriteHook = Box<dyn FnOnce(&mut SqliteConnection) -> Result<(), Error>>;
+
+#[cfg(test)]
+pub(super) struct UpgradeWriteHookGuard;
+
+#[cfg(test)]
+impl Drop for UpgradeWriteHookGuard {
+    fn drop(&mut self) {
+        AFTER_FIRST_WRITE.with(|hook| *hook.borrow_mut() = None);
+    }
+}
+
+#[cfg(test)]
+pub(super) fn after_first_write_hook(
+    hook: impl FnOnce(&mut SqliteConnection) -> Result<(), Error> + 'static,
+) -> UpgradeWriteHookGuard {
+    AFTER_FIRST_WRITE.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+    UpgradeWriteHookGuard
 }
 
 #[cfg(test)]
@@ -132,9 +154,8 @@ pub fn prepare_database(
 
 /// Returns (created, content_validated). The second flag is true only when both
 /// content pragmas ran, so publication can follow the outermost commit.
-/// Additive 2.0.0, 2.1.0 and 2.2.0 migrations return false and leave content to the
-/// background scan (`content_validation::schedule` from `get_db_info`;
-/// f-20261107-02). Create and the 1.0.0 rewrite still return true.
+/// Existing databases must have joined their repository upgrade owner before
+/// entering the caller's transaction. Only creation validates content here.
 pub fn prepare_database_with_validation(
     conn: &mut SqliteConnection,
     title: &str,
@@ -146,7 +167,29 @@ pub fn prepare_database_with_validation(
         return Ok((true, true));
     }
 
-    Ok((false, migrate_database(conn)?))
+    check_current_database(conn)?;
+    Ok((false, false))
+}
+
+/// Write-free schema decision shared by metadata probes and the upgrade owner.
+pub(super) fn needs_upgrade(conn: &mut SqliteConnection) -> Result<bool, Error> {
+    if non_internal_table_count(conn)? == 0 {
+        return Err(uninitialized_database_error());
+    }
+    match schema_version(conn)? {
+        SchemaVersion::Current => validate_schema(conn).map(|()| false),
+        _ => Ok(true),
+    }
+}
+
+/// Caller-owned transactions must never migrate, even if the file changed after admission.
+pub(super) fn check_current_database(conn: &mut SqliteConnection) -> Result<bool, Error> {
+    if needs_upgrade(conn)? {
+        return Err(Error::Conflict(
+            crate::error::DATABASE_SCHEMA_NOT_CURRENT.into(),
+        ));
+    }
+    Ok(false)
 }
 
 pub(super) fn uninitialized_database_error() -> Error {
@@ -194,23 +237,10 @@ fn initialize_database(
 }
 
 fn migrate_database(conn: &mut SqliteConnection) -> Result<bool, Error> {
-    if !table_exists(conn, "Info")? || !table_exists(conn, "Games")? {
-        return Err(Error::InvalidInput(
-            "Database schema is incomplete; refusing to use a partial database".into(),
-        ));
-    }
-
-    let version = info_value(conn, "Version")?.ok_or_else(|| {
-        Error::InvalidInput(
-            "Database schema has no Version marker; refusing partial database".into(),
-        )
-    })?;
-    let canonical = games_schema_is_canonical(conn)?;
-
-    match (version.as_str(), canonical) {
-        (CURRENT_DATABASE_VERSION, true) => validate_schema(conn).map(|()| false),
-        (LEGACY_DATABASE_VERSION, _) => migrate_legacy_database(conn).map(|()| true),
-        (PRE_EVENT_SUMMARY_DATABASE_VERSION, true) => conn.transaction::<_, Error, _>(|conn| {
+    match schema_version(conn)? {
+        SchemaVersion::Current => validate_schema(conn).map(|()| false),
+        SchemaVersion::Legacy => migrate_legacy_database(conn).map(|()| true),
+        SchemaVersion::BeforeEventSummaries => conn.transaction::<_, Error, _>(|conn| {
             validate_reference_schema_version(conn, true, false)?;
             validate_sentinel_records_and_triggers(conn)?;
             validate_player_game_count_schema(conn)?;
@@ -219,7 +249,7 @@ fn migrate_database(conn: &mut SqliteConnection) -> Result<bool, Error> {
             validate_schema(conn)?;
             Ok(false)
         }),
-        (PRE_GAME_COUNT_DATABASE_VERSION, true) => conn.transaction::<_, Error, _>(|conn| {
+        SchemaVersion::BeforeGameCounts => conn.transaction::<_, Error, _>(|conn| {
             validate_reference_schema_version(conn, false, false)?;
             validate_sentinel_records_and_triggers(conn)?;
             migrate_player_game_counts(conn)?;
@@ -230,7 +260,7 @@ fn migrate_database(conn: &mut SqliteConnection) -> Result<bool, Error> {
             validate_schema(conn)?;
             Ok(false)
         }),
-        (PRE_ORIENTATION_DATABASE_VERSION, _) => conn.transaction::<_, Error, _>(|conn| {
+        SchemaVersion::BeforeOrientation => conn.transaction::<_, Error, _>(|conn| {
             validate_games_schema_version(conn, false)?;
             validate_reference_schema_version(conn, false, false)?;
             validate_sentinel_records_and_triggers(conn)?;
@@ -246,6 +276,37 @@ fn migrate_database(conn: &mut SqliteConnection) -> Result<bool, Error> {
             validate_schema(conn)?;
             Ok(false)
         }),
+    }
+}
+
+enum SchemaVersion {
+    Current,
+    Legacy,
+    BeforeEventSummaries,
+    BeforeGameCounts,
+    BeforeOrientation,
+}
+
+fn schema_version(conn: &mut SqliteConnection) -> Result<SchemaVersion, Error> {
+    if !table_exists(conn, "Info")? || !table_exists(conn, "Games")? {
+        return Err(Error::InvalidInput(
+            "Database schema is incomplete; refusing to use a partial database".into(),
+        ));
+    }
+
+    let version = info_value(conn, "Version")?.ok_or_else(|| {
+        Error::InvalidInput(
+            "Database schema has no Version marker; refusing partial database".into(),
+        )
+    })?;
+    let canonical = games_schema_is_canonical(conn)?;
+
+    match (version.as_str(), canonical) {
+        (CURRENT_DATABASE_VERSION, true) => Ok(SchemaVersion::Current),
+        (LEGACY_DATABASE_VERSION, _) => Ok(SchemaVersion::Legacy),
+        (PRE_EVENT_SUMMARY_DATABASE_VERSION, true) => Ok(SchemaVersion::BeforeEventSummaries),
+        (PRE_GAME_COUNT_DATABASE_VERSION, true) => Ok(SchemaVersion::BeforeGameCounts),
+        (PRE_ORIENTATION_DATABASE_VERSION, _) => Ok(SchemaVersion::BeforeOrientation),
         (CURRENT_DATABASE_VERSION, false) => Err(Error::InvalidInput(
             "Database Version does not match its Games schema".into(),
         )),
@@ -414,6 +475,11 @@ pub(super) fn backfill_player_game_counts(conn: &mut SqliteConnection) -> Result
 
 fn migrate_player_game_counts(conn: &mut SqliteConnection) -> Result<(), Error> {
     conn.batch_execute("ALTER TABLE Players ADD COLUMN GameCount INTEGER NOT NULL DEFAULT 0;")?;
+    #[cfg(test)]
+    AFTER_FIRST_WRITE.with(|slot| {
+        let hook = slot.borrow_mut().take();
+        hook.map_or(Ok(()), |hook| hook(conn))
+    })?;
     backfill_player_game_counts(conn)?;
     conn.batch_execute(player_game_counts_sql()?)?;
     Ok(())
@@ -860,6 +926,26 @@ mod tests {
     }
 
     #[test]
+    fn caller_transaction_refuses_an_old_schema_without_migrating_it() {
+        let mut conn = connection();
+        prepare_database(&mut conn, "title", "description").unwrap();
+        conn.batch_execute("UPDATE Info SET Value='2.1.0' WHERE Name='Version';")
+            .unwrap();
+        let result = conn.transaction::<_, Error, _>(|conn| {
+            prepare_database_with_validation(conn, "unused", "unused")
+        });
+        let error = result.unwrap_err();
+        assert!(
+            matches!(&error, Error::Conflict(message) if message == crate::error::DATABASE_SCHEMA_NOT_CURRENT)
+        );
+        assert!(error.is_database_busy());
+        assert_eq!(
+            info_value(&mut conn, "Version").unwrap().as_deref(),
+            Some("2.1.0")
+        );
+    }
+
+    #[test]
     fn initialization_binds_metadata_and_leaves_a_canonical_database() {
         let mut conn = connection();
         take_content_pragma_counts();
@@ -929,9 +1015,7 @@ mod tests {
         conn.batch_execute("DROP TABLE event_summary_refresh;")
             .unwrap();
         take_content_pragma_counts();
-        let (created, content_validated) =
-            prepare_database_with_validation(&mut conn, "unused", "unused").unwrap();
-        assert!(!created);
+        let content_validated = validate_existing_database(&mut conn).unwrap();
         assert!(content_validated);
         assert_eq!(take_content_pragma_counts(), (1, 1));
         super::super::player_game_count_tests::assert_player_counts(&mut conn);

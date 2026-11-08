@@ -1112,7 +1112,7 @@ async getTournaments(file: DatabaseHandle, query: TournamentQuery, ticket: strin
     else return { status: "error", error: e  as any };
 }
 },
-async getDbInfo(file: DatabaseHandle) : Promise<Result<DatabaseInfo, ErrorPayload>> {
+async getDbInfo(file: DatabaseHandle) : Promise<Result<DatabaseInfoResult, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_db_info", { file }) };
 } catch (e) {
@@ -1387,6 +1387,7 @@ export type DatabaseDescriptor = { handle: DatabaseHandle; filename: string; ava
 export type DatabaseHandle = { id: PathRef; kind: DatabaseHandleKind }
 export type DatabaseHandleKind = "database"
 export type DatabaseInfo = { title: string; description: string; player_count: number; event_count: number; game_count: number; storage_size: string; filename: string; indexed: boolean }
+export type DatabaseInfoResult = ({ status: "ready" } & DatabaseInfo) | { status: "upgrading"; filename: string; title: string | null } | { status: "busy"; filename: string } | { status: "upgrade-failed"; filename: string; message: string }
 export type DatabaseListing = { entries: DatabaseDescriptor[]; unread: DatabaseUnread[] }
 /**
  * Opaque handle for a database root.  A root is the only capability that may
@@ -1458,7 +1459,7 @@ export type EngineTerminalEntry = { type: "infoString"; value: string } | { type
  */
 export type EngineTerminalSnapshot = { kind: EngineFailureKind; exitStatus: EngineExitStatus | null; reason: string | null; entries: EngineTerminalEntry[] }
 export type ErrorCategory = "io" | "parsing" | "platform" | "network" | "chess-data" | "database" | "invalid-input" | "stale-game" | "missing-resource" | "conflict" | "resource-limit" | "authentication" | "credential" | "cancellation" | "durability" | "partial-removal" | "operation-and-cleanup" | "engine-timeout" | "engine-position-rejected" | "engine-retired" | "engine-failure" | "permission" | "puzzle-themes-unavailable"
-export type ErrorPayload = { tag: ErrorPayloadTag; category: ErrorCategory; message: string; rootFailure?: RootFailure | null; engineFailure?: EngineTerminalSnapshot | null; remoteHttpRejection?: RemoteHttpRejection | null; nameTaken?: boolean | null; databaseAdmission?: boolean | null; progressGeneration?: string | null }
+export type ErrorPayload = { tag: ErrorPayloadTag; category: ErrorCategory; message: string; rootFailure?: RootFailure | null; engineFailure?: EngineTerminalSnapshot | null; remoteHttpRejection?: RemoteHttpRejection | null; nameTaken?: boolean | null; databaseAdmission?: boolean | null; databaseBusy?: boolean | null; progressGeneration?: string | null }
 export type ErrorPayloadTag = "backend-error" | "engine-failure"
 export type Event = { id: number; name: string | null; start_date: string | null; end_date: string | null; site: string | null; player_count: number; game_count: number; avg_elo: number | null }
 export type FeedbackOutcome = "sent" | "inProgress" | "keyMismatch" | "invalidInput" | "invalidImage" | "rateLimited" | "deliveryFailed" | "serviceUnavailable"

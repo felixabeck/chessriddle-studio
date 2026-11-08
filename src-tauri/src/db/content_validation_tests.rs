@@ -216,7 +216,10 @@ async fn fetch(app: &App, handle: &DatabaseHandle) -> Result<DatabaseInfo, Error
         .unwrap()
         .iter()
         .any(|label| label == "get_db_info"));
-    result
+    result.map(|metadata| match metadata {
+        DatabaseInfoResult::Ready(info) => info,
+        _ => panic!("content validation fixture must return ready metadata"),
+    })
 }
 
 async fn wait_until(mut ready: impl FnMut() -> bool) {
@@ -685,14 +688,26 @@ async fn content_validation_create_and_migration_run_both_pragmas_and_publish_pa
     migrations::take_content_pragma_counts();
     {
         let state = legacy_app.state::<AppState>();
-        let _connection = state
-            .database_repository
-            .connection(&target(&legacy_app, &legacy_handle), None)
-            .unwrap();
+        let repository = Arc::clone(&state.database_repository);
+        let upgrade_target = target(&legacy_app, &legacy_handle);
+        let count_target = target(&legacy_app, &legacy_handle);
+        tokio::task::spawn_blocking(move || {
+            repository.connection(&upgrade_target, None).map(|_| ())
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            state
+                .database_repository
+                .upgrade_content_pragma_counts_for_test(&count_target)
+                .unwrap(),
+            (1, 1)
+        );
         assert!(!stamp_path(&legacy).exists());
     }
     warm(&legacy_app, &legacy_handle);
-    assert_eq!(migrations::take_content_pragma_counts(), (1, 1));
+    assert_eq!(migrations::take_content_pragma_counts(), (0, 0));
     assert!(stamp_path(&legacy).exists());
     let state = legacy_app.state::<AppState>();
     assert!(get_db_info_blocking(
@@ -722,10 +737,21 @@ async fn content_validation_additive_migration_defers_content_scan() {
             let state = app.state::<AppState>();
             migrations::take_content_pragma_counts();
             {
-                let _connection = state
-                    .database_repository
-                    .connection(&target(&app, &handle), None)
-                    .unwrap();
+                let repository = Arc::clone(&state.database_repository);
+                let upgrade_target = target(&app, &handle);
+                tokio::task::spawn_blocking(move || {
+                    repository.connection(&upgrade_target, None).map(|_| ())
+                })
+                .await
+                .unwrap()
+                .unwrap();
+                assert_eq!(
+                    state
+                        .database_repository
+                        .upgrade_content_pragma_counts_for_test(&target(&app, &handle))
+                        .unwrap(),
+                    (0, 0)
+                );
             }
             assert_eq!(migrations::take_content_pragma_counts(), (0, 0));
             assert!(!stamp_path(&path).exists());

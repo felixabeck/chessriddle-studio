@@ -115,6 +115,124 @@ const database = (id: string, filename = `${id}.db3`): ManagedDatabaseInfo => ({
 });
 
 describe("database capability UI mapping", () => {
+    it.each(["upgrading", "busy"] as const)(
+        "maps %s metadata to a transient row without logging",
+        async (status) => {
+            mocks.listWorkspaceDatabases.mockResolvedValue({
+                entries: [
+                    {
+                        handle: handle("pending"),
+                        filename: "pending.db3",
+                        availability: "available",
+                    },
+                ],
+                unread: [],
+            });
+            mocks.getDbInfo.mockResolvedValue({ status, filename: "pending.db3", title: null });
+            expect((await getDatabases()).databases).toEqual([
+                {
+                    type: "error",
+                    file: handle("pending"),
+                    filename: "pending.db3",
+                    indexed: false,
+                    transient: status,
+                    error:
+                        status === "upgrading"
+                            ? i18n.t("Databases.Upgrading.Description")
+                            : i18n.t("Databases.Busy.Description"),
+                },
+            ]);
+            expect(mocks.logError).not.toHaveBeenCalled();
+        },
+    );
+
+    it("maps a databaseBusy command rejection through real normalization without logging", async () => {
+        mocks.listWorkspaceDatabases.mockResolvedValue({
+            entries: [{ handle: handle("busy"), filename: "busy.db3", availability: "available" }],
+            unread: [],
+        });
+        mocks.getDbInfo.mockRejectedValueOnce({
+            tag: "backend-error",
+            category: "database",
+            message: "database failure",
+            databaseBusy: true,
+        });
+        expect((await getDatabases()).databases).toEqual([
+            {
+                type: "error",
+                file: handle("busy"),
+                filename: "busy.db3",
+                indexed: false,
+                transient: "busy",
+                error: i18n.t("Databases.Busy.Description"),
+            },
+        ]);
+        expect(mocks.logError).not.toHaveBeenCalled();
+    });
+
+    it("maps upgrade-failed metadata to a permanent upgrade error row", async () => {
+        mocks.listWorkspaceDatabases.mockResolvedValue({
+            entries: [
+                { handle: handle("failed"), filename: "failed.db3", availability: "available" },
+            ],
+            unread: [],
+        });
+        mocks.getDbInfo.mockResolvedValue({
+            status: "upgrade-failed",
+            filename: "failed.db3",
+            message: "Upgrade could not finish",
+        });
+        expect((await getDatabases()).databases).toEqual([
+            {
+                type: "error",
+                file: handle("failed"),
+                filename: "failed.db3",
+                indexed: false,
+                upgradeFailed: true,
+                error: "Upgrade could not finish",
+            },
+        ]);
+        expect(mocks.logError).not.toHaveBeenCalled();
+    });
+
+    it.each(supportedLocales)(
+        "localizes transient metadata in the shipped %s catalogue without fallback",
+        async (locale) => {
+            const { default: catalogue } = await import(`../translation/${locale}.json`);
+            const translator = i18n.createInstance();
+            await translator.init({
+                lng: locale,
+                fallbackLng: false,
+                resources: { [locale]: catalogue },
+            });
+            const t = vi.spyOn(i18n, "t").mockImplementation(translator.t);
+            try {
+                mocks.listWorkspaceDatabases.mockResolvedValue({
+                    entries: [
+                        {
+                            handle: handle("pending"),
+                            filename: "pending.db3",
+                            availability: "available",
+                        },
+                    ],
+                    unread: [],
+                });
+                for (const [status, key] of [
+                    ["upgrading", "Databases.Upgrading.Description"],
+                    ["busy", "Databases.Busy.Description"],
+                ] as const) {
+                    mocks.getDbInfo.mockResolvedValue({ status, filename: "pending.db3" });
+                    const [row] = (await getDatabases()).databases;
+                    expect(row.type === "error" && row.error).toBe(catalogue.translation[key]);
+                    expect(catalogue.translation[key]).toBeTruthy();
+                    expect(catalogue.translation[key]).not.toBe(key);
+                }
+            } finally {
+                t.mockRestore();
+            }
+        },
+    );
+
     it("hides trashed non-account databases, retains account errors, and reconciles only the removed reference owner", async () => {
         const controller = new AbortController();
         const load = () =>
@@ -315,6 +433,7 @@ describe("production database metadata pipeline", () => {
     });
     it("persists and rehydrates exact native decimal metadata through the compressed envelope", async () => {
         const metadata: Awaited<ReturnType<typeof tauri.getDbInfo>> = {
+            status: "ready",
             filename: "exact.db3",
             title: "Exact byte count",
             description: "",
@@ -332,7 +451,8 @@ describe("production database metadata pipeline", () => {
         });
         mocks.getDbInfo.mockResolvedValue(metadata);
         const [managed] = (await getDatabases()).databases;
-        expect(managed).toEqual({ ...metadata, type: "success", file: handle("exact") });
+        const { status: _status, ...readyInfo } = metadata;
+        expect(managed).toEqual({ ...readyInfo, type: "success", file: handle("exact") });
         if (managed?.type !== "success") throw new Error("expected successful managed metadata");
 
         const { activeDatabaseViewStore: store } = await import("@/state/store/database");

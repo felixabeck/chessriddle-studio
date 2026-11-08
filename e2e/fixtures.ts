@@ -1008,7 +1008,7 @@ export function databaseCommands(
                 unread: [],
             },
         },
-        get_db_info: { result: { filename, ...info } },
+        get_db_info: { result: { status: "ready", filename, ...info } },
     };
 }
 

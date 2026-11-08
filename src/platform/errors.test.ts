@@ -19,6 +19,32 @@ vi.mock("./native", async (importOriginal) => ({
     warn: native.warn,
 }));
 
+describe("database busy discriminator", () => {
+    test("preserves exact true through the command error and normalization", () => {
+        const payload = {
+            tag: "backend-error",
+            category: "database",
+            message: "database failure",
+            databaseBusy: true,
+        };
+        expect(normalizeError(payload)).toMatchObject({ databaseBusy: true });
+        expect(normalizeError(new TauriCommandError(payload))).toMatchObject({
+            databaseBusy: true,
+        });
+        expect(safeFailureContext(payload)).not.toHaveProperty("databaseBusy");
+    });
+    test.each([undefined, false, null, 1, "true"])("omits non-true value %j", (databaseBusy) => {
+        expect(
+            normalizeError({
+                tag: "backend-error",
+                category: "database",
+                message: "database failure",
+                databaseBusy,
+            }),
+        ).not.toHaveProperty("databaseBusy");
+    });
+});
+
 describe("database admission discriminator", () => {
     test("copies exact true without adding it to safe failure context", () => {
         const payload = {

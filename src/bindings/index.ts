@@ -32,5 +32,7 @@ export type DatabaseInfo =
           filename: string;
           error: string;
           databaseAdmission?: true;
+          transient?: "upgrading" | "busy";
+          upgradeFailed?: true;
           indexed: boolean;
       };

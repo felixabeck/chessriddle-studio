@@ -27,6 +27,7 @@ export type AppError = {
     remoteHttpRejection?: RemoteHttpRejection;
     nameTaken?: true;
     databaseAdmission?: true;
+    databaseBusy?: true;
     progress_generation?: string;
 };
 
@@ -245,6 +246,7 @@ export function normalizeError(error: unknown): AppError {
             message: redact(error.message),
             ...(error.nameTaken === true ? { nameTaken: true } : {}),
             ...(error.databaseAdmission === true ? { databaseAdmission: true } : {}),
+            ...(error.databaseBusy === true ? { databaseBusy: true } : {}),
             ...(typeof error.progressGeneration === "string"
                 ? { progress_generation: error.progressGeneration }
                 : {}),

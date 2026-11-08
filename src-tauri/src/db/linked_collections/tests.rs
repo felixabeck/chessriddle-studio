@@ -4489,9 +4489,12 @@ mod native_tests {
             collection.database.unwrap(),
         )
         .unwrap();
-        assert_eq!(metadata.info.game_count, 3);
+        let DatabaseInfoResult::Ready(info) = metadata.info else {
+            panic!("linked collection fixture must return ready metadata");
+        };
+        assert_eq!(info.game_count, 3);
         assert_eq!(
-            metadata.info.player_count, 3,
+            info.player_count, 3,
             "counts include the reserved Unknown player"
         );
         assert_eq!(
@@ -7041,6 +7044,118 @@ mod native_tests {
         .unwrap();
         assert_eq!(fixture.rows(&linked).len(), 1);
         assert_eq!(fixture.list().len(), 1);
+    }
+
+    #[test]
+    fn get_db_info_refuses_a_database_retired_after_handle_resolution() {
+        let fixture = Fixture::new();
+        let database = fixture.reference("retired", &game(None, "e4 e5", "original"));
+        let target = crate::db::resolve_database(
+            &fixture.state.pgn_path_authority,
+            &database,
+            PathOperation::DatabaseRead,
+        )
+        .unwrap();
+        let (entered, release) =
+            crate::db::install_database_command_checkpoint("get_db_info_resolved", &database);
+        let authority = fixture.state.pgn_path_authority.clone();
+        let repository = Arc::clone(&fixture.state.database_repository);
+        let metadata_handle = database.clone();
+        let worker = std::thread::spawn(move || {
+            crate::db::get_db_info_blocking(&authority, &repository, metadata_handle)
+                .map(|metadata| metadata.info)
+        });
+        entered.recv_timeout(Duration::from_secs(5)).unwrap();
+        fixture
+            .service
+            .insert_retired_database_for_test(database.clone());
+        let prior_path_error = crate::db::get_db_or_create(
+            &fixture.state.database_repository,
+            &target,
+            None,
+            &fixture.state.pgn_path_authority,
+            &database,
+        )
+        .err()
+        .unwrap();
+        release.send(()).unwrap();
+        let metadata_error = worker
+            .join()
+            .unwrap()
+            .err()
+            .expect("metadata must refuse the now-retired database");
+        assert!(
+            matches!(&metadata_error, Error::Conflict(message) if message == "database was linked and is no longer an independent edit source")
+        );
+        assert_eq!(metadata_error.to_string(), prior_path_error.to_string());
+        assert!(
+            matches!(crate::db::get_db_info_blocking(&fixture.state.pgn_path_authority, &fixture.state.database_repository, database), Err(Error::Conflict(message)) if message == "database is an index or a retired independent copy")
+        );
+    }
+
+    #[test]
+    fn get_db_info_refreshes_linked_collection_before_reading_counts() {
+        let fixture = Fixture::new();
+        let first = game(Some("123"), "e4 e5", "first");
+        fixture.create("source", &first, WorkspaceFileType::Game);
+        let collection = fixture.list().pop().unwrap();
+        let database = collection.database.unwrap();
+        let metadata = crate::db::get_db_info_blocking(
+            &fixture.state.pgn_path_authority,
+            &fixture.state.database_repository,
+            database.clone(),
+        )
+        .unwrap();
+        assert_eq!(metadata.game_count, 1);
+        std::fs::write(
+            fixture.path("source"),
+            format!("{first}{}", game(Some("456"), "d4 d5", "second")),
+        )
+        .unwrap();
+        let metadata = crate::db::get_db_info_blocking(
+            &fixture.state.pgn_path_authority,
+            &fixture.state.database_repository,
+            database,
+        )
+        .unwrap();
+        let crate::db::DatabaseInfoResult::Ready(info) = metadata.info else {
+            panic!("refreshed linked metadata must be ready");
+        };
+        assert_eq!(
+            info.game_count, 2,
+            "metadata must describe the refreshed PGN source"
+        );
+    }
+
+    #[test]
+    fn get_db_info_maps_busy_from_linked_refresh_to_busy_status() {
+        let fixture = Fixture::new();
+        let first = game(Some("123"), "e4 e5", "first");
+        fixture.create("source", &first, WorkspaceFileType::Game);
+        let database = fixture.list().pop().unwrap().database.unwrap();
+        std::fs::write(
+            fixture.path("source"),
+            format!("{first}{}", game(Some("456"), "d4 d5", "second")),
+        )
+        .unwrap();
+        *fixture.service.rebuild_hook.lock().unwrap() = Some(Box::new(|| {
+            Err(Error::Shared(Arc::new(Error::from(
+                diesel::result::Error::DatabaseError(
+                    diesel::result::DatabaseErrorKind::Unknown,
+                    Box::new("database is locked".to_string()),
+                ),
+            ))))
+        }));
+        let metadata = crate::db::get_db_info_blocking(
+            &fixture.state.pgn_path_authority,
+            &fixture.state.database_repository,
+            database,
+        )
+        .unwrap();
+        assert!(matches!(
+            metadata.info,
+            crate::db::DatabaseInfoResult::Busy { .. }
+        ));
     }
 
     #[test]

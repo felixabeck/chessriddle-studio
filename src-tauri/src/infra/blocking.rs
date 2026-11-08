@@ -7,7 +7,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio_util::sync::CancellationToken;
 
 /// Bounds the number of concurrently running production blocking tasks.
-const BLOCKING_GATEWAY_PERMITS: usize = 4;
+pub(crate) const BLOCKING_GATEWAY_PERMITS: usize = 4;
 
 /// In the shipped app the gateway is one process-wide semaphore of `BLOCKING_GATEWAY_PERMITS`
 /// (4) permits, so four nested acquisitions hang the process with no error. Test builds admit
@@ -646,7 +646,7 @@ impl BlockingGateway {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::{Arc, Barrier, Condvar, Mutex};
@@ -685,7 +685,7 @@ mod tests {
         }
     }
 
-    struct ReleaseOnDrop(WorkerHold);
+    pub(crate) struct ReleaseOnDrop(WorkerHold);
 
     /// Panic-free in Drop so a failing assertion cannot abort the test process on Windows.
     impl Drop for ReleaseOnDrop {
@@ -1369,7 +1369,7 @@ mod tests {
         }
     }
 
-    async fn park_global_gateway_holders(
+    pub(crate) async fn park_global_gateway_holders(
         count: usize,
     ) -> (
         Vec<ReleaseOnDrop>,

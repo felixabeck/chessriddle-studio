@@ -3935,6 +3935,8 @@ async function verifyGameOpening(session, ownedRoot, filesWorkspace) {
     async () => {
       requireSeed();
       const metadata = await invoke("get_db_info", { file: database, ticket: null });
+      if (metadata.status !== "ready")
+        throw new Error(`expected ready database metadata, received ${JSON.stringify(metadata)}`);
       const expected = (
         await stat(join(ownedRoot, "verify-game-opening.db3"), { bigint: true })
       ).size.toString();

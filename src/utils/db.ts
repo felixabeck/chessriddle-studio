@@ -322,12 +322,38 @@ async function getDatabase(
     itemIndex: number,
     signal?: AbortSignal,
 ): Promise<ManagedDatabaseInfo> {
+    const transientRow = (transient: "upgrading" | "busy"): ManagedDatabaseInfo => ({
+        type: "error",
+        file,
+        filename,
+        indexed: false,
+        transient,
+        error:
+            transient === "upgrading"
+                ? i18n.t("Databases.Upgrading.Description")
+                : i18n.t("Databases.Busy.Description"),
+    });
     try {
-        return { type: "success", ...(await tauri.getDbInfo(file)), file };
+        const metadata = await tauri.getDbInfo(file);
+        if (metadata.status === "upgrading") return transientRow("upgrading");
+        if (metadata.status === "busy") return transientRow("busy");
+        if (metadata.status === "upgrade-failed")
+            return {
+                type: "error",
+                file,
+                filename,
+                indexed: false,
+                upgradeFailed: true,
+                error: metadata.message,
+            };
+        const { status: _status, ...info } = metadata;
+        return { type: "success", ...info, file };
     } catch (cause) {
-        const databaseAdmission = normalizeError(cause).databaseAdmission === true;
+        const normalized = normalizeError(cause);
+        const databaseAdmission = normalized.databaseAdmission === true;
         const primaryFailure = safeFailureContext(cause);
         if (signal?.aborted || primaryFailure.category === "cancelled") throw cause;
+        if (normalized.databaseBusy === true) return transientRow("busy");
         const logContext = {
             operation: "getDatabases metadata",
             itemIndex,
