@@ -265,6 +265,42 @@ fn production_read_dto_all_sorts_nulls_ties_pages_and_filter() {
 }
 
 #[test]
+fn production_read_date_sort_uses_latest_end_and_earliest_start() {
+    let (_dir, app, handle, path) = blocking_database_case();
+    let mut db = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+    db.batch_execute(
+        "INSERT INTO Events(ID,Name) VALUES(1,'A'),(2,'B'),(3,'C');
+         INSERT INTO Games(EventID,Date) VALUES
+         (1,'2000.01.01'),(1,'2025.01.01'),
+         (2,'2024.01.01'),(2,'2024.02.01'),
+         (3,'2010.01.01'),(3,'2010.01.02');",
+    )
+    .unwrap();
+    db.transaction::<_, Error, _>(refresh_derived_database_data)
+        .unwrap();
+    let state = app.state::<AppState>();
+    for (direction, expected) in [
+        (SortDirection::Desc, vec![1, 2, 3]),
+        (SortDirection::Asc, vec![1, 3, 2]),
+    ] {
+        let mut ids = Vec::new();
+        for page in 1..=2 {
+            let result = get_tournaments_blocking(
+                &state.pgn_path_authority,
+                &state.database_repository,
+                handle.clone(),
+                query(TournamentSort::Date, direction.clone(), page),
+                &CancellationToken::new(),
+            )
+            .unwrap();
+            assert_eq!(result.count, Some(3));
+            ids.extend(result.data.into_iter().map(|event| event.id));
+        }
+        assert_eq!(ids, expected, "{direction:?}");
+    }
+}
+
+#[test]
 fn summary_failure_propagates_from_insert_and_rolls_back_games_and_summaries() {
     let (_dir, app, handle, path) = blocking_database_case();
     let state = app.state::<AppState>();

@@ -3232,7 +3232,11 @@ fn get_tournaments_blocking(
         }
         sql_query = match query.options.sort {
             TournamentSort::Name => order_by!(events::name),
-            TournamentSort::Date => order_by!(events::start_date),
+            TournamentSort::Date => match query.options.direction {
+                SortDirection::Asc => order_by!(events::start_date),
+                // Recurring events are newest at their latest game, not their first.
+                SortDirection::Desc => order_by!(events::end_date),
+            },
             TournamentSort::Players => order_by!(events::player_count),
             TournamentSort::Games => order_by!(events::game_count),
             TournamentSort::AvgElo => order_by!(events::avg_elo),
