@@ -4539,7 +4539,7 @@ fn delete_orphaned_data(db: &mut SqliteConnection) -> Result<(), Error> {
 }
 
 fn refresh_derived_database_data(db: &mut SqliteConnection) -> Result<(), Error> {
-    event_summaries::refresh_event_summaries(db)?;
+    event_summaries::refresh_event_summaries(db, event_summaries::RowSource::IndexedDirtyEvents)?;
     let game_count: i64 = games::table.count().get_result(db)?;
     update_info_count(db, "GameCount", game_count)?;
 

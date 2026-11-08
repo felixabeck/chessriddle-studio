@@ -1,54 +1,157 @@
 use super::*;
+use diesel::sql_types::{BigInt, Double};
+use std::collections::HashSet;
 
-/// Refresh only the dirty events. The caller owns the write transaction, including
-/// temporary-table cleanup on failure, so no partial summaries can be published.
-pub(super) fn refresh_event_summaries(conn: &mut SqliteConnection) -> Result<(), Error> {
-    conn.batch_execute(
-        "CREATE TEMP TABLE event_summary_refresh (
-            ID INTEGER PRIMARY KEY, StartDate TEXT, EndDate TEXT,
-            SiteID INTEGER NOT NULL, GameCount INTEGER NOT NULL,
-            PlayerCount INTEGER NOT NULL, AvgElo INTEGER
-         );
-         INSERT INTO event_summary_refresh
-         WITH dirty_games AS NOT MATERIALIZED (
-             SELECT g.* FROM EventSummaryDirty d
-             CROSS JOIN Games g INDEXED BY games_event_idx ON g.EventID = d.ID
-             WHERE d.ID != 0
-         ), totals AS (
-             SELECT EventID, COUNT(*) AS GameCount,
-                 MIN(CASE WHEN Date NOT LIKE '?%' THEN Date END) AS StartDate,
-                 MAX(CASE WHEN Date NOT LIKE '?%' THEN Date END) AS EndDate,
-                 CAST(ROUND(
-                     SUM(CASE WHEN WhiteElo > 0 THEN CAST(WhiteElo AS REAL) ELSE 0 END
-                         + CASE WHEN BlackElo > 0 THEN CAST(BlackElo AS REAL) ELSE 0 END)
-                     / NULLIF(SUM((CASE WHEN WhiteElo > 0 THEN 1 ELSE 0 END)
-                         + (CASE WHEN BlackElo > 0 THEN 1 ELSE 0 END)), 0)
-                 ) AS INTEGER) AS AvgElo
-             FROM dirty_games GROUP BY EventID
-         ), participants AS (
-             SELECT EventID, COUNT(*) AS PlayerCount FROM (
-                 SELECT EventID, WhiteID AS PlayerID FROM dirty_games WHERE WhiteID != 0
-                 UNION
-                 SELECT EventID, BlackID AS PlayerID FROM dirty_games WHERE BlackID != 0
-             ) GROUP BY EventID
-         ), ranked_sites AS (
-             SELECT EventID, SiteID,
-                 ROW_NUMBER() OVER (PARTITION BY EventID ORDER BY COUNT(*) DESC, SiteID) AS rank
-             FROM dirty_games WHERE SiteID != 0 GROUP BY EventID, SiteID
-         )
-         SELECT d.ID, t.StartDate, t.EndDate, COALESCE(s.SiteID, 0),
-             COALESCE(t.GameCount, 0), COALESCE(p.PlayerCount, 0), t.AvgElo
-         FROM EventSummaryDirty d
-         LEFT JOIN totals t ON t.EventID = d.ID
-         LEFT JOIN participants p ON p.EventID = d.ID
-         LEFT JOIN ranked_sites s ON s.EventID = d.ID AND s.rank = 1
-         WHERE d.ID != 0;
-         UPDATE Events SET (StartDate, EndDate, SiteID, GameCount, PlayerCount, AvgElo) = (
-             SELECT StartDate, EndDate, SiteID, GameCount, PlayerCount, AvgElo
-             FROM event_summary_refresh WHERE ID = Events.ID
-         ) WHERE ID IN (SELECT ID FROM event_summary_refresh);
-         DELETE FROM EventSummaryDirty;
-         DROP TABLE event_summary_refresh;",
-    )?;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum RowSource {
+    IndexedDirtyEvents,
+    FullScan,
+}
+
+impl RowSource {
+    pub(super) fn sql(self) -> &'static str {
+        match self {
+            Self::IndexedDirtyEvents => {
+                "SELECT g.EventID, g.SiteID, g.Date, g.WhiteID, g.BlackID, g.WhiteElo, g.BlackElo
+                 FROM EventSummaryDirty d
+                 CROSS JOIN Games g INDEXED BY games_event_idx ON g.EventID = d.ID
+                 WHERE d.ID != 0"
+            }
+            Self::FullScan => {
+                "SELECT EventID, SiteID, Date, WhiteID, BlackID, WhiteElo, BlackElo
+                 FROM Games NOT INDEXED ORDER BY rowid"
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static LAST_ROW_SOURCE: std::cell::Cell<Option<RowSource>> = const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+pub(super) fn take_row_source() -> Option<RowSource> {
+    LAST_ROW_SOURCE.with(|source| source.take())
+}
+
+#[derive(QueryableByName)]
+struct DirtyEvent {
+    #[diesel(sql_type = BigInt, column_name = ID)]
+    id: i64,
+}
+
+#[derive(QueryableByName)]
+struct SummaryGame {
+    #[diesel(sql_type = BigInt, column_name = EventID)]
+    event_id: i64,
+    #[diesel(sql_type = BigInt, column_name = SiteID)]
+    site_id: i64,
+    #[diesel(sql_type = Nullable<Text>, column_name = Date)]
+    date: Option<String>,
+    #[diesel(sql_type = BigInt, column_name = WhiteID)]
+    white_id: i64,
+    #[diesel(sql_type = BigInt, column_name = BlackID)]
+    black_id: i64,
+    #[diesel(sql_type = Nullable<Double>, column_name = WhiteElo)]
+    white_elo: Option<f64>,
+    #[diesel(sql_type = Nullable<Double>, column_name = BlackElo)]
+    black_elo: Option<f64>,
+}
+
+#[derive(Default)]
+struct Summary {
+    game_count: i64,
+    start_date: Option<String>,
+    end_date: Option<String>,
+    players: HashSet<i64>,
+    sites: HashMap<i64, i64>,
+    rating_sum: f64,
+    rating_count: i64,
+}
+
+impl Summary {
+    fn add(&mut self, game: SummaryGame) {
+        self.game_count += 1;
+        if let Some(date) = game.date.filter(|date| !date.starts_with('?')) {
+            // Rust string ordering compares UTF-8 bytes, matching SQLite BINARY.
+            if self.start_date.as_ref().is_none_or(|start| date < *start) {
+                self.start_date = Some(date.clone());
+            }
+            if self.end_date.as_ref().is_none_or(|end| date > *end) {
+                self.end_date = Some(date);
+            }
+        }
+        for id in [game.white_id, game.black_id] {
+            if id != 0 {
+                self.players.insert(id);
+            }
+        }
+        if game.site_id != 0 {
+            *self.sites.entry(game.site_id).or_default() += 1;
+        }
+        let mut row_rating = 0.0;
+        for rating in [game.white_elo, game.black_elo].into_iter().flatten() {
+            if rating > 0.0 {
+                row_rating += rating;
+                self.rating_count += 1;
+            }
+        }
+        self.rating_sum += row_rating;
+    }
+}
+
+/// Refresh exactly the dirty non-zero events in the caller's write transaction.
+/// Retain only per-event counters, date bounds and distinct players and sites.
+pub(super) fn refresh_event_summaries(
+    conn: &mut SqliteConnection,
+    source: RowSource,
+) -> Result<(), Error> {
+    #[cfg(test)]
+    LAST_ROW_SOURCE.with(|record| record.set(Some(source)));
+
+    let mut summaries: HashMap<i64, Summary> =
+        sql_query("SELECT ID FROM EventSummaryDirty WHERE ID != 0")
+            .load::<DirtyEvent>(conn)?
+            .into_iter()
+            .map(|event| (event.id, Summary::default()))
+            .collect();
+
+    if !summaries.is_empty() {
+        // The iterator releases its statement and connection borrow before any writes.
+        {
+            let rows =
+                sql_query(source.sql()).load_iter::<SummaryGame, DefaultLoadingMode>(conn)?;
+            for game in rows {
+                let game = game?;
+                if let Some(summary) = summaries.get_mut(&game.event_id) {
+                    summary.add(game);
+                }
+            }
+        }
+        for (id, summary) in summaries {
+            let site_id = summary
+                .sites
+                .iter()
+                .max_by_key(|(id, count)| (**count, std::cmp::Reverse(**id)))
+                .map_or(0, |(id, _)| *id);
+            // Float-to-integer conversion saturates like SQLite's CAST AS INTEGER.
+            let avg_elo = (summary.rating_count != 0)
+                .then(|| (summary.rating_sum / summary.rating_count as f64).round() as i64);
+            sql_query(
+                "UPDATE Events SET StartDate = ?, EndDate = ?, SiteID = ?,
+                 GameCount = ?, PlayerCount = ?, AvgElo = ? WHERE ID = ?",
+            )
+            .bind::<Nullable<Text>, _>(summary.start_date)
+            .bind::<Nullable<Text>, _>(summary.end_date)
+            .bind::<BigInt, _>(site_id)
+            .bind::<BigInt, _>(summary.game_count)
+            .bind::<BigInt, _>(summary.players.len() as i64)
+            .bind::<Nullable<BigInt>, _>(avg_elo)
+            .bind::<BigInt, _>(id)
+            .execute(conn)?;
+        }
+    }
+    conn.batch_execute("DELETE FROM EventSummaryDirty;")?;
     Ok(())
 }

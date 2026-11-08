@@ -1,6 +1,30 @@
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 
+#[derive(Debug, PartialEq, QueryableByName)]
+struct SummarySnapshot {
+    #[diesel(sql_type = diesel::sql_types::BigInt, column_name = ID)]
+    id: i64,
+    #[diesel(sql_type = Nullable<Text>, column_name = StartDate)]
+    start_date: Option<String>,
+    #[diesel(sql_type = Nullable<Text>, column_name = EndDate)]
+    end_date: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::BigInt, column_name = SiteID)]
+    site_id: i64,
+    #[diesel(sql_type = diesel::sql_types::BigInt, column_name = GameCount)]
+    game_count: i64,
+    #[diesel(sql_type = diesel::sql_types::BigInt, column_name = PlayerCount)]
+    player_count: i64,
+    #[diesel(sql_type = Nullable<diesel::sql_types::BigInt>, column_name = AvgElo)]
+    avg_elo: Option<i64>,
+}
+
+fn summary_snapshots(db: &mut SqliteConnection) -> Vec<SummarySnapshot> {
+    sql_query("SELECT ID, StartDate, EndDate, SiteID, GameCount, PlayerCount, AvgElo FROM Events ORDER BY ID")
+        .load(db)
+        .unwrap()
+}
+
 /// Independent Rust aggregation of O1, shared by production write-path tests.
 pub(super) fn assert_event_summaries(db: &mut SqliteConnection) {
     let rows = games::table
@@ -10,19 +34,19 @@ pub(super) fn assert_event_summaries(db: &mut SqliteConnection) {
             games::date,
             games::white_id,
             games::black_id,
-            games::white_elo,
-            games::black_elo,
+            diesel::dsl::sql::<Nullable<diesel::sql_types::Double>>("WhiteElo"),
+            diesel::dsl::sql::<Nullable<diesel::sql_types::Double>>("BlackElo"),
         ))
-        .load::<(i32, i32, Option<String>, i32, i32, Option<i32>, Option<i32>)>(db)
+        .load::<(i32, i32, Option<String>, i32, i32, Option<f64>, Option<f64>)>(db)
         .unwrap();
-    for event in events::table.load::<Event>(db).unwrap() {
+    for event in summary_snapshots(db) {
         let mut dates = Vec::new();
         let mut participants = BTreeSet::new();
         let mut sites = BTreeMap::<i32, usize>::new();
         let mut ratings = Vec::new();
         let mut count = 0;
         for (id, site, date, white, black, white_elo, black_elo) in &rows {
-            if event.id == 0 || *id != event.id {
+            if event.id == 0 || i64::from(*id) != event.id {
                 continue;
             }
             count += 1;
@@ -37,7 +61,7 @@ pub(super) fn assert_event_summaries(db: &mut SqliteConnection) {
                 [*white_elo, *black_elo]
                     .into_iter()
                     .flatten()
-                    .filter(|elo| *elo > 0),
+                    .filter(|elo| *elo > 0.0),
             );
         }
         dates.sort();
@@ -45,10 +69,8 @@ pub(super) fn assert_event_summaries(db: &mut SqliteConnection) {
             .iter()
             .max_by_key(|(id, count)| (**count, std::cmp::Reverse(**id)))
             .map_or(0, |(id, _)| *id);
-        let avg = (!ratings.is_empty()).then(|| {
-            (ratings.iter().map(|elo| f64::from(*elo)).sum::<f64>() / ratings.len() as f64).round()
-                as i32
-        });
+        let avg = (!ratings.is_empty())
+            .then(|| (ratings.iter().sum::<f64>() / ratings.len() as f64).round() as i64);
         assert_eq!(
             (
                 event.start_date,
@@ -61,9 +83,9 @@ pub(super) fn assert_event_summaries(db: &mut SqliteConnection) {
             (
                 dates.first().cloned(),
                 dates.last().cloned(),
-                site,
+                i64::from(site),
                 count,
-                participants.len() as i32,
+                participants.len() as i64,
                 avg
             ),
             "event {}",
@@ -78,6 +100,160 @@ pub(super) fn assert_event_summaries(db: &mut SqliteConnection) {
         .unwrap(),
         0
     );
+}
+
+#[test]
+fn both_summary_sources_match_the_oracle_on_edge_rows() {
+    use event_summaries::{refresh_event_summaries, RowSource};
+
+    let mut results = Vec::new();
+    for source in [RowSource::IndexedDirtyEvents, RowSource::FullScan] {
+        let mut db = SqliteConnection::establish(":memory:").unwrap();
+        db.batch_execute(CREATE_TABLES_SQL).unwrap();
+        db.batch_execute(
+            "INSERT INTO Events(ID,Name) VALUES(1,'Partial'),(2,'Unknown only'),(3,'Empty'),(4,'Wide ratings'),(5,'Binary dates');
+             INSERT INTO Sites(ID,Name) VALUES(1,'Low'),(2,'High');
+             INSERT INTO Players(ID,Name) VALUES(1,'One'),(2,'Two'),(3,'Three');
+             INSERT INTO Games(EventID,SiteID,Date,WhiteID,BlackID,WhiteElo,BlackElo) VALUES
+             (1,2,'2016.08.01',1,1,2000,0),
+             (2,0,NULL,0,0,0,NULL),
+             (1,1,'2016.??.??',1,2,NULL,2001),
+             (1,0,'????.??.??',0,3,-1,NULL),
+             (0,1,'2026.01.01',1,2,3000,3000),
+             (4,0,NULL,1,2,9223372036854775807,9223372036854775807),
+             (5,0,'a',0,0,0.5,0.5),
+             (5,0,'Z',0,0,NULL,0),
+             (5,0,'ä',0,0,-1,NULL);
+             UPDATE Events SET GameCount=99, PlayerCount=99, SiteID=2, StartDate='stale', EndDate='stale', AvgElo=99 WHERE ID=3;
+             INSERT INTO EventSummaryDirty VALUES(0),(3);",
+        )
+        .unwrap();
+        db.transaction::<_, Error, _>(|db| refresh_event_summaries(db, source))
+            .unwrap();
+        assert_event_summaries(&mut db);
+        results.push(summary_snapshots(&mut db));
+
+        // Both sources must leave non-dirty events and Unknown untouched, even
+        // when the full scan encounters games belonging to those events.
+        db.batch_execute(
+            "UPDATE Events SET GameCount=123 WHERE ID IN (0,4);
+             INSERT INTO EventSummaryDirty VALUES(0),(3);",
+        )
+        .unwrap();
+        db.transaction::<_, Error, _>(|db| refresh_event_summaries(db, source))
+            .unwrap();
+        let snapshots = summary_snapshots(&mut db);
+        assert_eq!(snapshots[0].game_count, 123);
+        assert_eq!(snapshots[4].game_count, 123);
+        assert_eq!(snapshots[3].game_count, 0);
+        assert_eq!(snapshots[3].avg_elo, None);
+        assert_eq!(
+            diesel::select(diesel::dsl::sql::<diesel::sql_types::BigInt>(
+                "(SELECT COUNT(*) FROM EventSummaryDirty)"
+            ))
+            .get_result::<i64>(&mut db)
+            .unwrap(),
+            0
+        );
+    }
+    assert_eq!(results[0], results[1]);
+}
+
+#[test]
+fn both_summary_sources_propagate_row_errors_and_preserve_dirty_summaries() {
+    use event_summaries::{refresh_event_summaries, RowSource};
+
+    for source in [RowSource::IndexedDirtyEvents, RowSource::FullScan] {
+        let mut db = SqliteConnection::establish(":memory:").unwrap();
+        db.batch_execute(
+            "CREATE TABLE Events (
+                 ID INTEGER PRIMARY KEY, StartDate TEXT, EndDate TEXT,
+                 SiteID INTEGER NOT NULL DEFAULT 0, GameCount INTEGER NOT NULL DEFAULT 0,
+                 PlayerCount INTEGER NOT NULL DEFAULT 0, AvgElo INTEGER
+             );
+             CREATE TABLE Games (
+                 ID INTEGER PRIMARY KEY, EventID INTEGER NOT NULL, SiteID INTEGER,
+                 Date TEXT, WhiteID INTEGER NOT NULL, BlackID INTEGER NOT NULL,
+                 WhiteElo INTEGER, BlackElo INTEGER
+             );
+             CREATE TABLE EventSummaryDirty (ID INTEGER PRIMARY KEY);
+             CREATE INDEX games_event_idx ON Games(EventID);
+             INSERT INTO Events(ID,GameCount) VALUES(1,37);
+             INSERT INTO EventSummaryDirty(ID) VALUES(1);
+             INSERT INTO Games(ID,EventID,SiteID,WhiteID,BlackID) VALUES(1,1,NULL,0,0);",
+        )
+        .unwrap();
+
+        let result = db.transaction::<_, Error, _>(|db| refresh_event_summaries(db, source));
+        assert!(
+            matches!(&result, Err(Error::Diesel(error)) if matches!(
+                error.as_ref(), diesel::result::Error::DeserializationError(_)
+            )),
+            "{source:?}: expected a row deserialization error, got {result:?}"
+        );
+        assert_eq!(summary_snapshots(&mut db)[0].game_count, 37, "{source:?}");
+        assert_eq!(
+            diesel::select(diesel::dsl::sql::<diesel::sql_types::BigInt>(
+                "(SELECT COUNT(*) FROM EventSummaryDirty WHERE ID = 1)"
+            ))
+            .get_result::<i64>(&mut db)
+            .unwrap(),
+            1,
+            "{source:?}"
+        );
+    }
+}
+
+#[test]
+fn production_summary_callers_choose_indexed_refresh_and_full_migration_scan() {
+    use event_summaries::{take_row_source, RowSource};
+
+    let mut db = SqliteConnection::establish(":memory:").unwrap();
+    db.batch_execute(CREATE_TABLES_SQL).unwrap();
+    db.batch_execute(
+        "INSERT INTO Events(ID,Name) VALUES(1,'Event'); INSERT INTO Games(EventID) VALUES(1);",
+    )
+    .unwrap();
+    take_row_source();
+    db.transaction::<_, Error, _>(refresh_derived_database_data)
+        .unwrap();
+    assert_eq!(take_row_source(), Some(RowSource::IndexedDirtyEvents));
+    assert_event_summaries(&mut db);
+
+    #[derive(QueryableByName)]
+    struct QueryPlan {
+        #[diesel(sql_type = Text)]
+        detail: String,
+    }
+    let plan = sql_query(format!(
+        "EXPLAIN QUERY PLAN {}",
+        RowSource::IndexedDirtyEvents.sql()
+    ))
+    .load::<QueryPlan>(&mut db)
+    .unwrap();
+    let details: Vec<_> = plan.iter().map(|step| step.detail.as_str()).collect();
+    assert!(
+        details
+            .iter()
+            .any(|detail| detail.contains("SEARCH g USING INDEX games_event_idx (EventID=?)")),
+        "{details:?}"
+    );
+    assert!(
+        !details
+            .iter()
+            .any(|detail| detail.starts_with("SCAN g") || detail.starts_with("SCAN Games")),
+        "{details:?}"
+    );
+
+    let mut legacy = SqliteConnection::establish(":memory:").unwrap();
+    legacy
+        .batch_execute(&migrations::pre_event_summary_schema())
+        .unwrap();
+    legacy.batch_execute("INSERT INTO Info(Name,Value) VALUES('Version','2.2.0'); INSERT INTO Events(ID,Name) VALUES(1,'Event'); INSERT INTO Games(EventID) VALUES(1);")
+        .unwrap();
+    migrations::validate_existing_database(&mut legacy).unwrap();
+    assert_eq!(take_row_source(), Some(RowSource::FullScan));
+    assert_event_summaries(&mut legacy);
 }
 
 #[test]
@@ -394,6 +570,121 @@ fn production_edit_reassigns_every_summary_input_and_refreshes_both_events() {
                 .unwrap(),
             2
         );
+    }
+}
+
+/// Reuse an immutable 2.2.0 seed, but migrate a fresh disposable copy every run.
+#[test]
+#[ignore]
+fn event_summary_migration_scale() {
+    let seed = std::path::PathBuf::from(std::env::var("EVENT_SUMMARY_BENCH_SEED").unwrap());
+    let parent = seed.parent().unwrap();
+    std::fs::create_dir_all(parent).unwrap();
+    if !seed.exists() {
+        let staging = tempfile::NamedTempFile::new_in(parent).unwrap();
+        {
+            let mut db = SqliteConnection::establish(staging.path().to_str().unwrap()).unwrap();
+            db.batch_execute(&migrations::pre_event_summary_schema())
+                .unwrap();
+            // Populate Games before Players so random per-game player-count index
+            // writes do not dominate seed creation. Restore exact counts below.
+            // Disable foreign keys only on this seed connection to allow that order.
+            // It is dropped before persist, so migration uses normal enforcement.
+            db.batch_execute("PRAGMA foreign_keys = OFF;").unwrap();
+            db.transaction::<_, Error, _>(|db| {
+                db.batch_execute(
+                    "WITH RECURSIVE n(id) AS (VALUES(1) UNION ALL SELECT id+1 FROM n WHERE id<70038)
+                     INSERT INTO Events(ID,Name) SELECT id, 'Event ' || id FROM n;
+                     WITH RECURSIVE n(id) AS (VALUES(1) UNION ALL SELECT id+1 FROM n WHERE id<128)
+                     INSERT INTO Sites(ID,Name) SELECT id, 'Site ' || id FROM n;
+                     WITH RECURSIVE n(id) AS (VALUES(1) UNION ALL SELECT id+1 FROM n WHERE id<11441614)
+                     INSERT INTO Games(ID,EventID,SiteID,Date,WhiteID,BlackID,WhiteElo,BlackElo)
+                     SELECT id, ((id-1)/200)%70038+1, id%128+1, '2016.01.01',
+                         (random() & 2147483647)%1000000+1,
+                         (random() & 2147483647)%1000000+1,
+                         2000+id%800, 2000+(id+1)%800 FROM n;
+                     INSERT INTO Players(ID,Name,GameCount)
+                     SELECT PlayerID, 'Player ' || PlayerID, COUNT(*) FROM (
+                         SELECT WhiteID AS PlayerID FROM Games
+                         UNION ALL SELECT BlackID AS PlayerID FROM Games WHERE BlackID != WhiteID
+                     ) GROUP BY PlayerID;
+                     INSERT INTO Info(Name,Value) VALUES('Version','2.2.0'),('Title','Event summary scale');
+                     INSERT INTO Info(Name,Value) SELECT 'GameCount', COUNT(*) FROM Games;
+                     INSERT INTO Info(Name,Value) SELECT 'PlayerCount', COUNT(*) FROM Players;
+                     INSERT INTO Info(Name,Value) SELECT 'EventCount', COUNT(*) FROM Events;
+                     INSERT INTO Info(Name,Value) SELECT 'SiteCount', COUNT(*) FROM Sites;",
+                )?;
+                Ok(())
+            })
+            .unwrap();
+        }
+        staging.persist_noclobber(&seed).unwrap();
+        println!("Generated immutable 2.2.0 seed: {}", seed.display());
+    }
+
+    let copy = tempfile::Builder::new()
+        .prefix("event-summary-migration-")
+        .suffix(".db3")
+        .tempfile_in(parent)
+        .unwrap();
+    std::fs::copy(&seed, copy.path()).unwrap();
+    let version = |path: &std::path::Path| {
+        let mut db = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+        info::table
+            .filter(info::name.eq("Version"))
+            .select(info::value)
+            .first::<Option<String>>(&mut db)
+            .unwrap()
+    };
+    assert_eq!(version(copy.path()).as_deref(), Some("2.2.0"));
+    let registry = tempfile::tempdir().unwrap();
+    let (app, handle) = database_app_with_grant(
+        registry.path(),
+        copy.path(),
+        "Event summary migration scale",
+        full_database_operations(),
+    );
+    let state = app.state::<AppState>();
+    let start = Instant::now();
+    let ready = loop {
+        let metadata = get_db_info_blocking(
+            &state.pgn_path_authority,
+            &state.database_repository,
+            handle.clone(),
+        )
+        .unwrap();
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(180),
+            "event_summary_migration_scale upgrade did not become ready within 180 s"
+        );
+        match metadata.info {
+            DatabaseInfoResult::Ready(info) => break info,
+            DatabaseInfoResult::Upgrading { .. } | DatabaseInfoResult::Busy { .. } => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            DatabaseInfoResult::UpgradeFailed { message, .. } => {
+                panic!("event_summary_migration_scale upgrade failed: {message}");
+            }
+        }
+    };
+    let elapsed = start.elapsed();
+    println!("event_summary_migration_scale upgrade to ready: {elapsed:?}");
+    assert_eq!(version(copy.path()).as_deref(), Some("2.3.0"));
+    assert_eq!(ready.game_count, 11_441_614);
+    assert_eq!(ready.event_count, 70_039);
+    drop(app);
+    let copy_path = copy.path().to_path_buf();
+    copy.close().unwrap();
+    for suffix in ["-wal", "-shm"] {
+        let mut sidecar = copy_path.as_os_str().to_os_string();
+        sidecar.push(suffix);
+        if let Err(error) = std::fs::remove_file(&sidecar) {
+            assert_eq!(
+                error.kind(),
+                std::io::ErrorKind::NotFound,
+                "failed to remove {sidecar:?}: {error}"
+            );
+        }
     }
 }
 
