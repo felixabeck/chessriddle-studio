@@ -21620,7 +21620,7 @@ All probes were removed; the tree stayed clean.
 
 ### DetachedEval score chips stay on CP and ignore the engine's shared WDL toggle
 
-* **ID:** f-20261106-21 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261106-21 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** DetachedEval/EvalBar score–WDL sync review at HEAD `6df505a9`
 * **Where:** `src/components/common/DetachedEval.tsx:228` renders `<ScoreBubble size="sm" score={line.score} />` with neither `evalDisplay` nor `setEvalDisplay`. Analysis lines wire the same chip through `scoreTypeFamily(engineId)` in `src/components/panels/analysis/AnalysisRow.tsx:50-58`. `scoreTypeFamily` (`src/state/atoms.ts:994`) is keyed only by engine id, so one toggle is meant to cover that engine's score chips. The compact summary chip in `AnalysisPanel.tsx` (`EngineSummary` ScoreBubble) has the same omission. Related handled (different defects): `f-20261029-08` (ScoreBubble WDL per-mille/aria on the wired chip). Not `f-20261106-20` (deferred `setScore` onto the live cursor).
@@ -21631,6 +21631,9 @@ All probes were removed; the tree stayed clean.
 
 **Citation correction (2026-11-06, push records review):** `scoreTypeFamily` is at `src/state/atoms.ts:1007`, not `:994` (that line range is `coverageMinGamesAtom`). The DetachedEval and AnalysisRow citations stand.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"aae37f8d882696b8cfc793d059902d375d3e0a7fafb338f80b5c69d7bb9a75ae","input_sha256":"f2fb3b015a73ce2d8cdbb7cf4b786e2d73ea6bd8419943c6c615837aac09cd52","kind":"mutation-receipt","operation":"483d82096d75809a3c9c08b78b5c8da7498a0c455d1d921aa3bd1fa63fc4ece9","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-21"],"target":"f-20261106-21","v":1} -->
+
+**Closed (2026-11-08, drain bac61282-2a31-49d1-9463-391344df08c6):** Added `EngineScoreBubble` in `src/components/panels/analysis/ScoreBubble.tsx`, which owns the per-engine `scoreTypeFamily(engineId)` read/write and the inert guard. `AnalysisRow`, `DetachedEval`'s `DetachedLine` (now given `engineId`) and `AnalysisPanel`'s `EngineSummary` (inert while dimmed) all route through it, so every score chip of one engine shows and toggles the same CP/WDL mode (rule 11 extraction instead of a third inline copy). Commits `2e0479fa` (fix + DetachedEval/EngineSummary/ScoreBubble regressions) and `c5838158` (AnalysisRow inert-click anchor, adopted from the push tests lens). Proof: DetachedEval regressions red with only the DetachedEval wiring reverted (2 failed), green restored; AnalysisRow test red with `inert={inert}` removed, green restored. Push lenses correctness, root-cause, tests (r1 should-fix adopted, r2 closed), code-quality, minimalism approved; engine-protocol not applicable. Rejected: wiring `useAtom` inline at each call site (third duplicate of the same contract). EvalBar's per-tab `evalBarDisplayFamily` stays out of scope as the entry states.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"fb80c3640d91721019e887fbfabaf5af850a2e0e86c6f455dc155bdd7064119b","header_sha256":"067f3be18947e87f78319a3ae2de8d148725c5265320da176e2224ac8f80af28","header_status":"handled","input_sha256":"f12bcedcbb47f057eff5c70c27bc61feec87c0c5a6fb6ed3a18d6a6ff1f685ef","kind":"mutation-receipt","operation":"44c23b316ef8cb4de89e931226f0d9f950121ce8d7e1cbd1e40b18289cf679ad","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-21"],"target":"f-20261106-21","v":1} -->
 
 ---
 
