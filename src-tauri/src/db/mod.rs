@@ -3317,6 +3317,10 @@ pub struct OpeningStatsData {
     pub lost: u32,
 }
 
+/// `rated_won`, `rated_drawn` and `rated_lost` count only games whose opponent rating is
+/// present and positive. `opponent_elo_sum` sums those ratings as f64, which exports as a
+/// TS number, saturating at JavaScript's maximum safe integer (2^53 - 1) to avoid overflow
+/// and inexact integer sums.
 #[derive(Debug, Clone, Serialize, Type, Default)]
 pub struct ColorStatsData {
     pub time_control: String,
@@ -3327,8 +3331,6 @@ pub struct ColorStatsData {
     pub rated_won: u32,
     pub rated_drawn: u32,
     pub rated_lost: u32,
-    /// f64 exports as a TS number. Positive integer ratings are added with saturation at
-    /// JavaScript's maximum safe integer (2^53 - 1), avoiding overflow and inexact integer sums.
     pub opponent_elo_sum: f64,
 }
 

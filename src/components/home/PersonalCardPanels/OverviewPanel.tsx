@@ -27,7 +27,7 @@ import {
   formatScorePercent,
 } from "./overviewStatistics";
 
-export function fillMissingMonths<T extends { name: string }>(data: T[]): T[] {
+export function fillMissingMonths(data: MonthResults[]): MonthResults[] {
   const validData = data.filter(({ name }) => /^\d{4}-(0[1-9]|1[0-2])$/.test(name));
   if (validData.length === 0) return [];
 
@@ -47,17 +47,9 @@ export function fillMissingMonths<T extends { name: string }>(data: T[]): T[] {
   }
 
   const dataMap = new Map(validData.map((item) => [item.name, item]));
-  return monthStrings.map((month) => dataMap.get(month) ?? zeroMonth(month, validData[0]));
-}
-
-function zeroMonth<T extends { name: string }>(name: string, sample: T): T {
-  const empty = { ...sample, name };
-  for (const key of Object.keys(empty) as (keyof T)[]) {
-    if (key !== "name" && typeof empty[key] === "number") {
-      (empty[key] as number) = 0;
-    }
-  }
-  return empty;
+  return monthStrings.map(
+    (month) => dataMap.get(month) ?? { name: month, count: 0, won: 0, drawn: 0, lost: 0 },
+  );
 }
 
 function mergeYears(data: MonthResults[]): MonthResults[] {

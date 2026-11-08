@@ -10,6 +10,7 @@ import {
     aggregateOpenings,
     compareLatestRating,
     deriveOverviewStatistics,
+    extractMonthlyResults,
     fideDp,
     fidePerformanceRating,
     filterPlayerStats,
@@ -122,6 +123,15 @@ describe("mixed-result fixture", () => {
             "+2 =1 −1",
         );
         expect(stats.white.games).toBe(4);
+        expect(stats.white).toEqual({
+            games: 4,
+            won: 2,
+            drawn: 1,
+            lost: 1,
+            ratedGames: 0,
+            averageOpponent: null,
+            performance: null,
+        });
         expect(formatScorePercent(stats.black.won, stats.black.drawn, stats.black.lost)).toBe(
             "25%",
         );
@@ -262,6 +272,55 @@ describe("latest rating chronology", () => {
 });
 
 describe("filtering", () => {
+    test("All websites rapid classifies all four aggregates by their own site", () => {
+        const info = {
+            site_stats_data: ["Chess.com", "Lichess"].map((website) =>
+                site({
+                    site: website,
+                    daily: [
+                        daily({
+                            date: "2026.01.01",
+                            time_control: "1800+0",
+                            won: 2,
+                            max_player_elo: 1800,
+                        }),
+                    ],
+                    openings: [
+                        opening({
+                            opening: `${website} Opening`,
+                            is_player_white: true,
+                            time_control: "1800+0",
+                            won: 2,
+                        }),
+                    ],
+                    colors: [color({ is_player_white: true, time_control: "1800+0", won: 2 })],
+                    latest: [
+                        latest({
+                            date: "2026.01.01",
+                            game_id: 1,
+                            player_elo: 1800,
+                            time_control: "1800+0",
+                        }),
+                    ],
+                }),
+            ),
+        };
+        const filtered = filterPlayerStats(info, {
+            website: "All websites",
+            account: "All accounts",
+            timeControl: "rapid",
+        });
+        for (const key of ["daily", "openings", "colors", "latest"] as const) {
+            expect(filtered[0][key]).toEqual(info.site_stats_data[0][key]);
+            expect(filtered[1][key]).toEqual([]);
+        }
+        const stats = deriveOverviewStatistics(filtered);
+        expect(stats.total.games).toBe(2);
+        expect(stats.months).toEqual([{ name: "2026-01", count: 2, won: 2, drawn: 0, lost: 0 }]);
+        expect(stats.whiteOpenings.map((row) => row.name)).toEqual(["Chess.com Opening"]);
+        expect(stats.latestRating).toBe(1800);
+    });
+
     test("applies website, account and time control once to daily, openings, colors and latest", () => {
         const info = {
             site_stats_data: [
@@ -342,6 +401,32 @@ describe("filtering", () => {
 });
 
 describe("aggregateOpenings", () => {
+    test("Overview returns exactly the three most-played openings in order per colour", () => {
+        const stats = deriveOverviewStatistics([
+            site({
+                openings: [true, false].flatMap((is_player_white) =>
+                    [2, 5, 1, 4, 3].map((games) =>
+                        opening({
+                            is_player_white,
+                            opening: `${is_player_white ? "White" : "Black"} Opening ${games}`,
+                            won: games,
+                        }),
+                    ),
+                ),
+            }),
+        ]);
+        expect(stats.whiteOpenings.map(({ name, games }) => ({ name, games }))).toEqual([
+            { name: "White Opening 5", games: 5 },
+            { name: "White Opening 4", games: 4 },
+            { name: "White Opening 3", games: 3 },
+        ]);
+        expect(stats.blackOpenings.map(({ name, games }) => ({ name, games }))).toEqual([
+            { name: "Black Opening 5", games: 5 },
+            { name: "Black Opening 4", games: 4 },
+            { name: "Black Opening 3", games: 3 },
+        ]);
+    });
+
     test("sums duplicate names and keeps colours apart", () => {
         const rows = [
             opening({ is_player_white: true, opening: "Sicilian Defense", won: 2, drawn: 1 }),
@@ -355,4 +440,17 @@ describe("aggregateOpenings", () => {
             { name: "Sicilian Defense", games: 3, won: 0, draw: 0, lost: 3 },
         ]);
     });
+});
+
+test("extractMonthlyResults sums wins, draws and losses separately per month", () => {
+    expect(
+        extractMonthlyResults([
+            daily({ date: "2026.01.01", won: 2, drawn: 1, lost: 3 }),
+            daily({ date: "2026.01.15", won: 1, drawn: 4, lost: 1 }),
+            daily({ date: "2026.02.01", won: 5, drawn: 2, lost: 1 }),
+        ]),
+    ).toEqual([
+        { name: "2026-01", count: 12, won: 3, drawn: 5, lost: 4 },
+        { name: "2026-02", count: 8, won: 5, drawn: 2, lost: 1 },
+    ]);
 });

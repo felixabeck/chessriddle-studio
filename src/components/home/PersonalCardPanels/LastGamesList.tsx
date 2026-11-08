@@ -13,6 +13,8 @@ import { query_games } from "@/utils/db";
 import { runTabCreation } from "@/utils/tabs";
 import classes from "./LastGamesList.module.css";
 
+const LAST_GAMES_LIMIT = 10;
+
 function LastGamesList({ player, file }: { player: Player; file: DatabaseHandle }) {
   const { t } = useTranslation();
   const requestKey = ["player-last-games", file, player.id] as const;
@@ -29,7 +31,7 @@ function LastGamesList({ player, file }: { player: Player; file: DatabaseHandle 
             options: {
               sort: "date",
               direction: "desc",
-              pageSize: 10,
+              pageSize: LAST_GAMES_LIMIT,
               page: 1,
               skipCount: true,
             },

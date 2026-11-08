@@ -22,9 +22,14 @@ vi.mock("@mantine/core", () => {
   };
 });
 vi.mock("recharts", () => ({
-  Bar: () => null,
-  BarChart: ({ data }: { data: { name: string; count: number }[] }) => (
-    <div data-testid="month-data">{data.map((row) => `${row.name}:${row.count}`).join("|")}</div>
+  Bar: ({ dataKey, stackId }: { dataKey: string; stackId?: string }) => (
+    <div data-testid="activity-bar" data-key={dataKey} data-stack={stackId} />
+  ),
+  BarChart: ({ data, children }: { data: MonthResults[]; children: React.ReactNode }) => (
+    <>
+      <div data-testid="month-data">{JSON.stringify(data)}</div>
+      {children}
+    </>
   ),
   Area: () => null,
   AreaChart: ({ data }: { data: { date: number; player_elo: number }[] }) => (
@@ -57,8 +62,20 @@ vi.mock("./ResultsChart", () => ({
 vi.mock("./LastGamesList", () => ({
   default: () => <div data-testid="last-games">last-games</div>,
 }));
-vi.mock("./TimeControlSelector", () => ({ default: () => null }));
-vi.mock("./WebsiteAccountSelector", () => ({ default: () => null }));
+vi.mock("./TimeControlSelector", () => ({
+  default: ({ onTimeControlChange }: { onTimeControlChange: (value: string) => void }) => (
+    <button data-testid="select-rapid" onClick={() => onTimeControlChange("rapid")}>
+      Rapid
+    </button>
+  ),
+}));
+vi.mock("./WebsiteAccountSelector", () => ({
+  default: ({ onWebsiteChange }: { onWebsiteChange: (value: string) => void }) => (
+    <button data-testid="select-all-websites" onClick={() => onWebsiteChange("All websites")}>
+      All websites
+    </button>
+  ),
+}));
 vi.mock("./DateRangeTabs", () => ({
   DateRange: {
     SevenDays: "7d",
@@ -119,6 +136,7 @@ vi.mock("@/utils/treeReducer", () => ({ countMainPly: vi.fn(), defaultTree: vi.f
 import OpeningsPanel from "./OpeningsPanel";
 import OverviewPanel, { fillMissingMonths } from "./OverviewPanel";
 import RatingsPanel from "./RatingsPanel";
+import type { MonthResults } from "./overviewStatistics";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -365,7 +383,9 @@ describe.each(["America/New_York", "Europe/Berlin"])("fillMissingMonths in %s", 
   ])("$name", ({ input, expected }) => {
     vi.stubEnv("TZ", timezone);
     try {
-      expect(fillMissingMonths(input)).toEqual(expected);
+      const results = (rows: { name: string; count: number }[]): MonthResults[] =>
+        rows.map((row) => ({ ...row, won: row.count, drawn: 0, lost: 0 }));
+      expect(fillMissingMonths(results(input))).toEqual(results(expected));
     } finally {
       vi.unstubAllEnvs();
     }
@@ -377,10 +397,133 @@ test("Overview sums duplicate daily keys into result totals and month buckets", 
 
   expect(container.textContent).toContain("6 Common.Games");
   expect(container.querySelector("[data-testid='result-counts']")?.textContent).toContain("3:1:2");
-  expect(container.querySelector("[data-testid='month-data']")?.textContent).toBe(
-    "2026-09:5|2026-10:1",
-  );
+  expect(JSON.parse(container.querySelector("[data-testid='month-data']")!.textContent!)).toEqual([
+    { name: "2026-09", count: 5, won: 3, drawn: 1, lost: 1 },
+    { name: "2026-10", count: 1, won: 0, drawn: 0, lost: 1 },
+  ]);
+  expect(
+    Array.from(container.querySelectorAll("[data-testid='activity-bar']"), (bar) => ({
+      key: bar.getAttribute("data-key"),
+      stack: bar.getAttribute("data-stack"),
+    })),
+  ).toEqual([
+    { key: "won", stack: "result" },
+    { key: "drawn", stack: "result" },
+    { key: "lost", stack: "result" },
+  ]);
 });
+
+test("Overview year aggregation beyond 36 months preserves each result sum", async () => {
+  const info: PlayerGameInfo = {
+    site_stats_data: [
+      {
+        ...duplicatedDailyStatistics.site_stats_data[0],
+        daily: [
+          {
+            date: "2022.01.01",
+            time_control: "600+0",
+            won: 2,
+            drawn: 1,
+            lost: 3,
+            max_player_elo: 1800,
+          },
+          {
+            date: "2022.12.01",
+            time_control: "600+0",
+            won: 1,
+            drawn: 4,
+            lost: 1,
+            max_player_elo: 1800,
+          },
+          {
+            date: "2025.01.01",
+            time_control: "600+0",
+            won: 5,
+            drawn: 2,
+            lost: 1,
+            max_player_elo: 1800,
+          },
+        ],
+      },
+    ],
+  };
+  await render(<OverviewPanel playerName="Magnus" info={info} isDatabase />);
+  expect(JSON.parse(container.querySelector("[data-testid='month-data']")!.textContent!)).toEqual([
+    { name: "2022", count: 12, won: 3, drawn: 5, lost: 4 },
+    { name: "2023", count: 0, won: 0, drawn: 0, lost: 0 },
+    { name: "2024", count: 0, won: 0, drawn: 0, lost: 0 },
+    { name: "2025", count: 8, won: 5, drawn: 2, lost: 1 },
+  ]);
+});
+
+test("fillMissingMonths preserves result fields and fills every result with zero", () => {
+  expect(
+    fillMissingMonths([
+      { name: "2026-01", count: 6, won: 1, drawn: 2, lost: 3 },
+      { name: "2026-03", count: 9, won: 4, drawn: 3, lost: 2 },
+    ]),
+  ).toEqual([
+    { name: "2026-01", count: 6, won: 1, drawn: 2, lost: 3 },
+    { name: "2026-02", count: 0, won: 0, drawn: 0, lost: 0 },
+    { name: "2026-03", count: 9, won: 4, drawn: 3, lost: 2 },
+  ]);
+});
+
+test.each([RatingsPanel, OpeningsPanel])(
+  "%s filters All websites rapid by each row's site",
+  async (Panel) => {
+    const info: PlayerGameInfo = {
+      site_stats_data: ["Chess.com", "Lichess"].map((site, index) => ({
+        site,
+        player: "Magnus",
+        colors: [],
+        latest: [],
+        daily: [
+          {
+            date: index === 0 ? "2026.09.01" : "2026.10.01",
+            time_control: "1800+0",
+            won: index === 0 ? 2 : 7,
+            drawn: 0,
+            lost: 0,
+            max_player_elo: index === 0 ? 1800 : 2200,
+          },
+        ],
+        openings: [
+          {
+            time_control: "1800+0",
+            is_player_white: true,
+            opening: `${site} Opening`,
+            won: index === 0 ? 2 : 7,
+            drawn: 0,
+            lost: 0,
+          },
+        ],
+      })),
+    };
+    await render(<Panel playerName="Magnus" info={info} />);
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>("[data-testid='select-all-websites']")!.click();
+      container.querySelector<HTMLButtonElement>("[data-testid='select-rapid']")!.click();
+    });
+    expect(container.querySelector("[data-testid='result-counts']")?.textContent).toContain(
+      "2:0:0",
+    );
+    if (Panel === RatingsPanel) {
+      expect(container.textContent).toContain("2 Common.Games");
+      expect(container.querySelector("[data-testid='rating-data']")?.textContent).toBe("1800");
+      expect(container.querySelector("[data-testid='rating-dates']")?.textContent).toBe(
+        [
+          // Daily dates are parsed in local time, like parseCompleteDailyDate does.
+          dayjs("2026.09.01", "YYYY.MM.DD", true).valueOf(),
+          new Date("2026-10-02T00:00:00Z").getTime(),
+        ].join("|"),
+      );
+    } else {
+      expect(container.textContent).toContain("Chess.com Opening");
+      expect(container.textContent).not.toContain("Lichess Opening");
+    }
+  },
+);
 
 test("Ratings sums duplicate daily keys and takes the highest rating for each date", async () => {
   await render(<RatingsPanel playerName="Magnus" info={duplicatedDailyStatistics} isDatabase />);

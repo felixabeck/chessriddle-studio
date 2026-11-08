@@ -1353,12 +1353,13 @@ export type ClockUpdateEvent = { gameId: string; session: bigint; revision: bigi
 export type CollectionDescriptor = { id: string; name: string; file: FileWorkspaceHandle; database: DatabaseHandle | null; account: AccountIdentity | null; status: CollectionStatus; generation: string; omitted: number; retiredDatabase: DatabaseHandle | null; fetchSinceMs: string | null; pendingBatch?: FileWorkspaceHandle | null }
 export type CollectionEdit = { kind: "delete"; games: LinkedGameLocator[] } | { kind: "cleanup"; empty: boolean; duplicates: boolean } | { kind: "renamePlayer"; from: string; to: string }
 export type CollectionStatus = "ready" | "stale" | "missing" | "retired" | "preservedOriginal" | "unavailable" | "trashed"
-export type ColorStatsData = { time_control: string; is_player_white: boolean; won: number; drawn: number; lost: number; rated_won: number; rated_drawn: number; rated_lost: number; 
 /**
- * f64 exports as a TS number. Positive integer ratings are added with saturation at
- * JavaScript's maximum safe integer (2^53 - 1), avoiding overflow and inexact integer sums.
+ * `rated_won`, `rated_drawn` and `rated_lost` count only games whose opponent rating is
+ * present and positive. `opponent_elo_sum` sums those ratings as f64, which exports as a
+ * TS number, saturating at JavaScript's maximum safe integer (2^53 - 1) to avoid overflow
+ * and inexact integer sums.
  */
-opponent_elo_sum: number }
+export type ColorStatsData = { time_control: string; is_player_white: boolean; won: number; drawn: number; lost: number; rated_won: number; rated_drawn: number; rated_lost: number; opponent_elo_sum: number }
 /**
  * Persistence result paired with a committed path identifier. `DurabilityUncertain` means the
  * replacement happened but syncing its parent directory failed; callers must not retry.

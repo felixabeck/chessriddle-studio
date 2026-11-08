@@ -11,10 +11,9 @@ import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { fontSizeAtom, tabsAtom } from "@/state/atoms";
 import { parsePGN } from "@/utils/chess";
 import { createTab, runTabCreation } from "@/utils/tabs";
-import { getTimeControl } from "@/utils/timeControl";
 import { countMainPly, defaultTree } from "@/utils/treeReducer";
 import classes from "./OpeningsPanel.module.css";
-import { aggregateOpenings, type OpeningStats } from "./overviewStatistics";
+import { aggregateOpenings, filterPlayerStats, type OpeningStats } from "./overviewStatistics";
 import ResultsChart from "./ResultsChart";
 import filterClasses from "./StatisticsFilters.module.css";
 import TimeControlSelector from "./TimeControlSelector";
@@ -34,17 +33,9 @@ function OpeningsPanel({
   const [account, setAccount] = useState<string | null>("All accounts");
   const [timeControl, setTimeControl] = useState<string | null>(null);
 
-  const openingData =
-    info?.site_stats_data
-      .filter((d) => website === "All websites" || d.site === website)
-      .filter((d) => account === "All accounts" || d.player === account)
-      .flatMap((d) => d.openings)
-      .filter(
-        (g) =>
-          !timeControl ||
-          timeControl === "any" ||
-          getTimeControl(website!, g.time_control) === timeControl,
-      ) ?? [];
+  const openingData = filterPlayerStats(info, { website, account, timeControl }).flatMap(
+    (site) => site.openings,
+  );
 
   const whiteOpenings = aggregateOpenings(openingData, "white");
   const blackOpenings = aggregateOpenings(openingData, "black");

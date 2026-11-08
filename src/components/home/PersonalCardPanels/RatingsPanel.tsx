@@ -11,9 +11,9 @@ import {
   YAxis,
 } from "recharts";
 import type { PlayerGameInfo } from "@/bindings";
-import { getTimeControl } from "@/utils/timeControl";
 import DateRangeTabs, { DateRange } from "./DateRangeTabs";
 import { parseCompleteDailyDate, summarizeDailyStats } from "./dailyStatsSummary";
+import { filterPlayerStats } from "./overviewStatistics";
 import {
   gradientStops,
   linearGradientProps,
@@ -58,6 +58,14 @@ function RatingsPanel({
   const [account, setAccount] = useState<string | null>("All accounts");
   const [timeRange, setTimeRange] = useState({ start: 0, end: 0 });
 
+  const dailyStats = useMemo(
+    () =>
+      filterPlayerStats(info, { website: website || "All websites", account, timeControl }).flatMap(
+        (site) => site.daily,
+      ),
+    [info, website, account, timeControl],
+  );
+
   const dates = useMemo(() => {
     const timezoneOffset = new Date().getTimezoneOffset() * 60 * 1000; // milliseconds
     const localDate = new Date(Date.now() - timezoneOffset);
@@ -66,18 +74,12 @@ function RatingsPanel({
     return Array.from(
       new Set([
         today,
-        ...info.site_stats_data
-          .filter((games) => !website || games.site === website)
-          .filter((games) => account === "All accounts" || games.player === account)
-          .flatMap((games) => games.daily)
-          .filter(
-            (day) => !timeControl || getTimeControl(website, day.time_control) === timeControl,
-          )
+        ...dailyStats
           .map((day) => parseCompleteDailyDate(day.date))
           .filter((date): date is number => date !== null),
       ]),
     ).sort((a, b) => a - b);
-  }, [info.site_stats_data, website, account, timeControl]);
+  }, [dailyStats]);
 
   useEffect(() => {
     if (dateRange) {
@@ -90,26 +92,18 @@ function RatingsPanel({
   }, [dateRange, dates]);
 
   const [summary, ratingData] = useMemo(() => {
-    const filteredDailyStats =
-      info.site_stats_data
-        .filter((games) => !website || games.site === website)
-        .filter((games) => account === "All accounts" || games.player === account)
-        .flatMap((games) => games.daily)
-        .filter((day) => !timeControl || getTimeControl(website!, day.time_control) === timeControl)
-        .filter((day) => {
-          const gameDate = parseCompleteDailyDate(day.date);
-          // Incomplete dates cannot be placed on the slider; count them only for
-          // All time, or a manual slider covering the whole timeline.
-          if (gameDate === null) {
-            return (
-              dateRange === DateRange.AllTime ||
-              (dateRange === null && timeRange.start === 0 && timeRange.end === dates.length - 1)
-            );
-          }
-          return (
-            gameDate >= (dates[timeRange.start] || 0) && gameDate <= (dates[timeRange.end] || 0)
-          );
-        }) ?? [];
+    const filteredDailyStats = dailyStats.filter((day) => {
+      const gameDate = parseCompleteDailyDate(day.date);
+      // Incomplete dates cannot be placed on the slider; count them only for
+      // All time, or a manual slider covering the whole timeline.
+      if (gameDate === null) {
+        return (
+          dateRange === DateRange.AllTime ||
+          (dateRange === null && timeRange.start === 0 && timeRange.end === dates.length - 1)
+        );
+      }
+      return gameDate >= (dates[timeRange.start] || 0) && gameDate <= (dates[timeRange.end] || 0);
+    });
 
     const summary = summarizeDailyStats(filteredDailyStats);
 
@@ -129,7 +123,7 @@ function RatingsPanel({
       { games: summary.total, won: summary.won, draw: summary.draw, lost: summary.lost },
       ratingData,
     ];
-  }, [info.site_stats_data, website, account, timeControl, timeRange, dates, dateRange]);
+  }, [dailyStats, timeRange, dates, dateRange]);
 
   const playerEloDomain =
     ratingData.length === 0

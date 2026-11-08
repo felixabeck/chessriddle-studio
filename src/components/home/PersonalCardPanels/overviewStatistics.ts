@@ -30,7 +30,6 @@ export type ColorOverview = {
     won: number;
     drawn: number;
     lost: number;
-    score: number;
     ratedGames: number;
     averageOpponent: number | null;
     performance: number | null;
@@ -138,16 +137,16 @@ export function filterPlayerStats(info: PlayerGameInfo, filters: OverviewFilters
         .map((site) => ({
             ...site,
             daily: site.daily.filter((row) =>
-                matchesTimeControl(filters.website, filters.timeControl, row.time_control),
+                matchesTimeControl(site.site, filters.timeControl, row.time_control),
             ),
             openings: site.openings.filter((row) =>
-                matchesTimeControl(filters.website, filters.timeControl, row.time_control),
+                matchesTimeControl(site.site, filters.timeControl, row.time_control),
             ),
             colors: site.colors.filter((row) =>
-                matchesTimeControl(filters.website, filters.timeControl, row.time_control),
+                matchesTimeControl(site.site, filters.timeControl, row.time_control),
             ),
             latest: site.latest.filter((row) =>
-                matchesTimeControl(filters.website, filters.timeControl, row.time_control),
+                matchesTimeControl(site.site, filters.timeControl, row.time_control),
             ),
         }));
 }
@@ -260,7 +259,6 @@ function summarizeColor(accum: ColorAccum): ColorOverview {
         won: accum.won,
         drawn: accum.drawn,
         lost: accum.lost,
-        score: scoreFraction(accum.won, accum.drawn, accum.lost),
         ratedGames,
         averageOpponent,
         performance:
