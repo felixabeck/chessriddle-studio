@@ -31,11 +31,9 @@ export function buildFromTree(tree: TreeNode, color: "white" | "black", start: n
     const seenBoardStates = new Set<string>();
     const iterator = treeIterator(tree);
     for (const item of iterator) {
-        // Skip the root for an empty Start, and only strict ancestors for a non-empty Start.
+        // Empty Start skips the root. Non-empty Start keeps only its node and descendants.
         const beforeStart =
-            start.length === 0
-                ? item.position.length === 0
-                : item.position.length < start.length && isPrefix(item.position, start);
+            start.length === 0 ? item.position.length === 0 : !isPrefix(start, item.position);
         if (item.node.children.length === 0 || beforeStart || !item.node.children[0].san) {
             continue;
         }

@@ -66,6 +66,27 @@ test("deck synchronization creates and retains the White-to-move Start card", ()
     expect(retained).toMatchObject({ added: 0, removed: 0, updated: 0 });
 });
 
+test("non-empty Start excludes sibling branches from practice", () => {
+    const root = openingLine(["e4", "e5", "Nf3"]);
+    root.children.push(...openingLine(["d4", "d5", "c4"]).children);
+
+    expect(buildFromTree(root, "white", []).map(({ answer }) => answer)).toEqual(["Nf3", "c4"]);
+    expect(buildFromTree(root, "white", [0, 0]).map(({ answer }) => answer)).toEqual(["Nf3"]);
+});
+
+test("setting Start removes a sibling-branch card during deck synchronization", () => {
+    const root = openingLine(["e4", "e5", "Nf3"]);
+    root.children.push(...openingLine(["d4", "d5", "c4"]).children);
+    const existing = buildFromTree(root, "white", []);
+    existing[0].card.reps = 4;
+
+    const result = syncDeck(existing, root, "white", [0, 0]);
+
+    expect(result.positions.map(({ answer }) => answer)).toEqual(["Nf3"]);
+    expect(result.positions[0].card).toBe(existing[0].card);
+    expect(result).toMatchObject({ added: 0, removed: 1, updated: 0 });
+});
+
 const statusNow = new Date("2026-11-08T12:00:00.000Z");
 test.each([
     { name: "past ISO due", due: "2026-11-08T11:59:59.000Z", reps: 1, status: "due" },

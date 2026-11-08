@@ -17,7 +17,7 @@ import {
 import { atom, useAtom, useSetAtom } from "jotai";
 import equal from "fast-deep-equal";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { PracticeDeckValue } from "@/state/practiceStorage";
+import { useDueBoundaryRerender } from "@/components/panels/practice/useDueBoundaryRerender";
 import {
   addRecentFileAtom,
   updateRecentFilesAtom,
@@ -54,12 +54,6 @@ import { FileIcon } from "@/components/files/FileIcon";
 dayjs.extend(relativeTime);
 
 const recentFileDateFormat = "YYYY-MM-DD HH:mm";
-
-function dueCount(deck: PracticeDeckValue) {
-  if (deck.status !== "ready" && deck.status !== "write-pending") return null;
-  const stats = getStats(deck.positions);
-  return stats.due + stats.unseen;
-}
 
 function RecentFileDuePositions({ count }: { count: number | null }) {
   const { t } = useTranslation();
@@ -156,16 +150,35 @@ export default function NewTabHome({ id }: { id: string }) {
           )
           .map((file) => {
             const deck = get(deckAtomFamily({ file: fileWorkspaceKey(file.handle), game: 0 }));
-            const failed =
-              deck.status === "read-failed" ||
-              deck.status === "write-blocked" ||
-              (deck.status !== "loading" && deck.status !== "write-pending" && !!deck.error);
-            return { file, count: failed ? null : dueCount(deck), failed };
+            return { file, deck };
           }),
       ),
     [recentFiles],
   );
-  const [deckRows] = useAtom(deckRowsAtom);
+  const [decks] = useAtom(deckRowsAtom);
+  // Atoms cache deck data. Time-dependent counts must refresh on the due-boundary render.
+  const deckRows = decks.map(({ file, deck }) => {
+    const failed =
+      deck.status === "read-failed" ||
+      deck.status === "write-blocked" ||
+      (deck.status !== "loading" && deck.status !== "write-pending" && !!deck.error);
+    const stats =
+      !failed && (deck.status === "ready" || deck.status === "write-pending")
+        ? getStats(deck.positions)
+        : null;
+    return {
+      file,
+      count: stats ? stats.due + stats.unseen : null,
+      nextDue: stats?.nextDue,
+      failed,
+    };
+  });
+  const nextDue = deckRows.reduce<Date | null>(
+    (earliest, row) =>
+      row.nextDue && (!earliest || row.nextDue < earliest) ? row.nextDue : earliest,
+    null,
+  );
+  useDueBoundaryRerender(nextDue, id);
   const dueRows = deckRows
     .filter((row) => row.failed || (row.count ?? 0) > 0)
     .sort((a, b) => (b.count ?? 0) - (a.count ?? 0) || b.file.lastOpened - a.file.lastOpened);

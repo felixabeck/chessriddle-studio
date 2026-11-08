@@ -143,7 +143,7 @@ async function mountStudy(
   spec = cases[0],
   variation?: string[],
   full = false,
-  options: { reviewedDue?: Date; startPractice?: boolean } = {},
+  options: { reviewedDue?: Date; reviewedDues?: Date[]; startPractice?: boolean } = {},
 ) {
   tree = createTreeStore(undefined, defaultTree(spec.fen));
   for (const payload of variation ? [spec.moves, variation] : [spec.moves]) {
@@ -154,10 +154,13 @@ async function mountStudy(
   tree.getState().goToMove([]);
   tree.getState().save("a".repeat(64));
   const cards = buildFromTree(tree.getState().root, spec.orientation, []);
-  expect(cards).toHaveLength(variation ? 3 : 1);
+  expect(cards).toHaveLength(options.reviewedDues?.length ?? (variation ? 3 : 1));
   if (options.reviewedDue) {
     cards[0].card = { ...cards[0].card, reps: 1, due: options.reviewedDue };
   }
+  options.reviewedDues?.forEach((due, index) => {
+    cards[index].card = { ...cards[index].card, reps: 1, due };
+  });
   mocks.native.loadPracticeDeck.mockResolvedValue({
     epoch: "no-map",
     deck: {
@@ -257,6 +260,45 @@ test.each([
   );
   expect(start).toBeDefined();
   expect(start?.disabled).toBe(false);
+});
+
+test("idle practice becomes available at the earlier of two future dues", async () => {
+  await mountStudy({ ...cases[0], moves: ["e4", "e5", "Nf3", "Nc6", "Bb5"] }, undefined, false, {
+    reviewedDues: [new Date(Date.now() + 5_000), new Date(Date.now() + 1_000)],
+    startPractice: false,
+  });
+  await act(async () => vi.advanceTimersByTimeAsync(999));
+  expect(host.textContent).not.toContain("Board.Practice.StartPractice");
+  await act(async () => vi.advanceTimersByTimeAsync(2));
+  expect(host.textContent).toContain("Board.Practice.StartPractice");
+  await click("Board.Practice.StartPractice");
+  expect(tree.getState().currentNode().children[0].san).toBe("Bb5");
+});
+
+test("adding an earlier reviewed card re-arms the idle practice due timer", async () => {
+  const card = await mountStudy(cases[0], undefined, false, {
+    reviewedDue: new Date(Date.now() + 10_000),
+    startPractice: false,
+  });
+  const earlier = {
+    ...card,
+    fen: tree.getState().root.fen,
+    answer: "e4",
+    card: { ...card.card, due: new Date(Date.now() + 1_000) },
+  };
+  await act(async () => {
+    const writing = atoms.set(
+      deckAtomFamily({ file: fileWorkspaceKey(getTabFile(owner)!.handle), game: 0 }),
+      { type: "sync", positions: [card, earlier] },
+    );
+    await vi.advanceTimersByTimeAsync(PRACTICE_SYNC_DEBOUNCE_MS);
+    await writing;
+  });
+  expect(host.textContent).not.toContain("Board.Practice.StartPractice");
+  await act(async () => vi.advanceTimersByTimeAsync(1_001 - PRACTICE_SYNC_DEBOUNCE_MS));
+  expect(host.textContent).toContain("Board.Practice.StartPractice");
+  await click("Board.Practice.StartPractice");
+  expect(tree.getState().position).toEqual([]);
 });
 
 async function wrongAnswer(spec = cases[0]) {

@@ -72,6 +72,7 @@ import {
   type TreeNode,
 } from "@/utils/treeReducer";
 import RepertoireInfo from "./RepertoireInfo";
+import { useDueBoundaryRerender } from "./useDueBoundaryRerender";
 import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
 import paneClasses from "@/components/common/PaneTabs.module.css";
 import { COMPACT_PANE_TABS_WIDTH_EM } from "@/components/boards/paneTabs";
@@ -177,15 +178,10 @@ function PracticePanel() {
   }, [root, headers, setDeck, deck.status, deckIdentity.file, treeViewDeferred]);
 
   const stats = getStats(deck.positions);
-  const nextDueTime = stats.nextDue?.getTime();
-  const [dueTick, setDueTick] = useState(0);
-
-  useEffect(() => {
-    if (nextDueTime === undefined) return;
-    const delay = Math.min(Math.max(nextDueTime - Date.now() + 1, 1), 2_147_483_647);
-    const timer = setTimeout(() => setDueTick((tick) => tick + 1), delay);
-    return () => clearTimeout(timer);
-  }, [nextDueTime, dueTick, deckIdentity.file, deckIdentity.game, currentTab?.value]);
+  useDueBoundaryRerender(
+    stats.nextDue,
+    JSON.stringify([deckIdentity.file, deckIdentity.game, currentTab?.value]),
+  );
 
   const setInvisible = useSetAtom(useTabAtom(invisibleFamily));
   const setShowComments = useSetAtom(useTabAtom(showCommentsFamily));

@@ -3,11 +3,14 @@ import { Provider, createStore } from "jotai";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { createEmptyCard } from "ts-fsrs";
 import type { NormalizedGame } from "@/bindings";
 import { normalizeError } from "@/platform/errors";
-import { recentFilesAtom, tabsAtom, type RecentDatabaseGame } from "@/state/atoms";
+import { deckAtomFamily, recentFilesAtom, tabsAtom, type RecentDatabaseGame } from "@/state/atoms";
+import { resetPracticeMigrationForTests } from "@/state/practiceStorage";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { defaultTree } from "@/utils/treeReducer";
+import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import NewTabHome from "./NewTabHome";
 
 const mocks = vi.hoisted(() => ({
@@ -16,9 +19,16 @@ const mocks = vi.hoisted(() => ({
   createTab: vi.fn(),
   navigate: vi.fn(),
   notify: vi.fn(),
+  loadPracticeDeck: vi.fn(),
+  listPracticeDecks: vi.fn(),
 }));
 vi.mock("@/platform/tauri", () => ({
-  tauri: { getDbGame: mocks.getDbGame, countPgnGames: mocks.countPgnGames },
+  tauri: {
+    getDbGame: mocks.getDbGame,
+    countPgnGames: mocks.countPgnGames,
+    loadPracticeDeck: mocks.loadPracticeDeck,
+    listPracticeDecks: mocks.listPracticeDecks,
+  },
 }));
 vi.mock("@/utils/tabs", async (original) => ({
   ...(await original<typeof import("@/utils/tabs")>()),
@@ -106,6 +116,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 async function render() {
   await act(async () =>
@@ -121,6 +132,62 @@ async function render() {
 async function open() {
   await act(async () => host.querySelector<HTMLButtonElement>("[data-recent-file]")!.click());
 }
+
+test("idle Home lists reviewed repertoire cards as their future due boundaries pass", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-11-08T12:00:00Z"));
+  resetPracticeMigrationForTests();
+  const files = ["later", "earlier"].map((name) => ({
+    name,
+    type: "repertoire" as const,
+    handle: { id: { id: crypto.randomUUID() }, kind: "fileWorkspace" as const },
+    lastOpened: 1,
+  }));
+  mocks.countPgnGames.mockResolvedValue(1);
+  mocks.listPracticeDecks.mockResolvedValue({ decks: [], anomalies: [] });
+  mocks.loadPracticeDeck.mockImplementation(async (file: string) => ({
+    epoch: "no-map",
+    deck: {
+      positionsDocument: JSON.stringify({
+        positions: [
+          {
+            fen: defaultTree().root.fen,
+            answer: "e4",
+            card: {
+              ...createEmptyCard(),
+              reps: 1,
+              due: new Date(
+                Date.now() + (file === fileWorkspaceKey(files[0].handle) ? 5_000 : 1_000),
+              ),
+            },
+          },
+        ],
+      }),
+      revision: 1,
+      generation: 0,
+      migrated: false,
+      unappliedReviews: 0,
+      orphansAcknowledged: true,
+    },
+  }));
+  workspace.set(recentFilesAtom, files);
+  await render();
+  for (const file of files) {
+    expect(
+      workspace.get(deckAtomFamily({ file: fileWorkspaceKey(file.handle), game: 0 })).status,
+    ).toBe("ready");
+  }
+  const panel = host.querySelector("[data-home-due]")!;
+  expect(panel.textContent).toContain("Home.DuePractice.NothingDue");
+  await act(async () => vi.advanceTimersByTimeAsync(999));
+  expect(panel.querySelectorAll("[data-due-file]")).toHaveLength(0);
+  await act(async () => vi.advanceTimersByTimeAsync(2));
+  expect(panel.querySelectorAll("[data-due-file]")).toHaveLength(1);
+  expect(panel.querySelector("[data-due-file]")?.textContent).toContain("earlier");
+  expect(panel.textContent).not.toContain("Home.DuePractice.NothingDue");
+  await act(async () => vi.advanceTimersByTimeAsync(4_000));
+  expect(panel.querySelectorAll("[data-due-file]")).toHaveLength(2);
+});
 
 test("database row renders context and forwards stored identity during pruning and reopening", async () => {
   const stored = workspace.get(recentFilesAtom)[0] as RecentDatabaseGame;
