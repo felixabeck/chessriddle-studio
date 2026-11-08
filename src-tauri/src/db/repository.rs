@@ -3424,7 +3424,7 @@ mod upgrade_tests {
         until(|| job.outcome.lock().is_some());
         job.wait(None).unwrap();
         assert!(matches!(case.info(), DatabaseInfoResult::Ready(_)));
-        assert_eq!(case.version(), "2.3.0");
+        assert_eq!(case.version(), migrations::CURRENT_DATABASE_VERSION);
         assert_eq!(
             rusqlite::Connection::open(&case.path)
                 .unwrap()
@@ -3471,7 +3471,7 @@ mod upgrade_tests {
         )
         .unwrap();
         assert_eq!(calls.load(Ordering::SeqCst), 1);
-        assert_eq!(case.version(), "2.3.0");
+        assert_eq!(case.version(), migrations::CURRENT_DATABASE_VERSION);
         let raw = rusqlite::Connection::open(&case.path).unwrap();
         assert_eq!(
             raw.query_row("SELECT COUNT(*) FROM Games", [], |row| row.get::<_, i64>(0))
@@ -3505,7 +3505,7 @@ mod upgrade_tests {
         .unwrap();
         assert_eq!(cursor, Some(123456789));
         assert_eq!(calls.load(Ordering::SeqCst), 1);
-        assert_eq!(case.version(), "2.3.0");
+        assert_eq!(case.version(), migrations::CURRENT_DATABASE_VERSION);
     }
 
     #[test]
@@ -3807,7 +3807,7 @@ mod upgrade_tests {
         mutation.join().unwrap().unwrap();
         assert_eq!(hold.calls.load(Ordering::SeqCst), 1);
         assert!(matches!(case.info(), DatabaseInfoResult::Ready(_)));
-        assert_eq!(case.version(), "2.3.0");
+        assert_eq!(case.version(), migrations::CURRENT_DATABASE_VERSION);
         let raw = rusqlite::Connection::open(&case.path).unwrap();
         assert_eq!(
             raw.query_row(
@@ -3861,7 +3861,7 @@ mod upgrade_tests {
         restarted
             .connection(&test_target(&case.path), None)
             .unwrap();
-        assert_eq!(case.version(), "2.3.0");
+        assert_eq!(case.version(), migrations::CURRENT_DATABASE_VERSION);
     }
 
     #[test]
@@ -3888,7 +3888,7 @@ mod upgrade_tests {
         repository
             .connection(&test_target(&case.path), None)
             .unwrap();
-        assert_eq!(case.version(), "2.3.0");
+        assert_eq!(case.version(), migrations::CURRENT_DATABASE_VERSION);
     }
 
     #[test]

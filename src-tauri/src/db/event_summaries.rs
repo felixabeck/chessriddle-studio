@@ -28,11 +28,17 @@ impl RowSource {
 #[cfg(test)]
 thread_local! {
     static LAST_ROW_SOURCE: std::cell::Cell<Option<RowSource>> = const { std::cell::Cell::new(None) };
+    static REFRESH_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 #[cfg(test)]
 pub(super) fn take_row_source() -> Option<RowSource> {
     LAST_ROW_SOURCE.with(|source| source.take())
+}
+
+#[cfg(test)]
+pub(super) fn take_refresh_count() -> usize {
+    REFRESH_COUNT.with(|count| count.replace(0))
 }
 
 #[derive(QueryableByName)]
@@ -109,6 +115,8 @@ pub(super) fn refresh_event_summaries(
 ) -> Result<(), Error> {
     #[cfg(test)]
     LAST_ROW_SOURCE.with(|record| record.set(Some(source)));
+    #[cfg(test)]
+    REFRESH_COUNT.with(|count| count.set(count.get() + 1));
 
     let mut summaries: HashMap<i64, Summary> =
         sql_query("SELECT ID FROM EventSummaryDirty WHERE ID != 0")

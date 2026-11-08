@@ -110,6 +110,7 @@ pub struct Event {
     pub game_count: i32,
     pub player_count: i32,
     pub avg_elo: Option<i32>,
+    pub year: i32,
 }
 
 #[derive(Debug, Queryable, Serialize, Deserialize, Clone, Type)]
@@ -129,6 +130,7 @@ pub struct TournamentEvent {
 #[diesel(table_name = events)]
 pub struct NewEvent<'a> {
     pub name: &'a str,
+    pub year: i32,
 }
 
 #[derive(Queryable, Serialize, Deserialize)]

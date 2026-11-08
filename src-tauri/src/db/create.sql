@@ -5,13 +5,15 @@ CREATE TABLE Info (
 
 CREATE TABLE Events (
     ID INTEGER PRIMARY KEY AUTOINCREMENT,
-    Name TEXT UNIQUE,
+    Name TEXT,
     StartDate TEXT,
     EndDate TEXT,
     SiteID INTEGER NOT NULL DEFAULT 0,
     GameCount INTEGER NOT NULL DEFAULT 0,
     PlayerCount INTEGER NOT NULL DEFAULT 0,
-    AvgElo INTEGER
+    AvgElo INTEGER,
+    Year INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(Name, Year)
 );
 
 CREATE TABLE Sites (
@@ -69,7 +71,7 @@ BEFORE DELETE ON Events WHEN OLD.ID = 0
 BEGIN SELECT RAISE(ABORT, 'cannot delete the Unknown event'); END;
 CREATE TRIGGER protect_unknown_event_update
 BEFORE UPDATE ON Events WHEN OLD.ID = 0
-  AND (NEW.ID != 0 OR NEW.Name IS NOT 'Unknown')
+  AND (NEW.ID != 0 OR NEW.Name IS NOT 'Unknown' OR NEW.Year != 0)
 BEGIN SELECT RAISE(ABORT, 'cannot modify the Unknown event'); END;
 CREATE TRIGGER protect_unknown_site_delete
 BEFORE DELETE ON Sites WHEN OLD.ID = 0

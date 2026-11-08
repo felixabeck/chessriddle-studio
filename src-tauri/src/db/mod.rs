@@ -439,7 +439,7 @@ impl TempGame {
         };
 
         let event_id = if let Some(name) = &self.event_name {
-            create_event(db, name)?.id
+            create_event(db, name, self.date.as_deref())?.id
         } else {
             0
         };
@@ -860,6 +860,9 @@ mod game_cas_tests;
 use game_cas_tests::test_game_stamp;
 #[cfg(test)]
 mod event_summary_tests;
+
+#[cfg(test)]
+mod event_edition_tests;
 #[cfg(test)]
 mod insert_db_game_tests;
 #[cfg(test)]
@@ -889,7 +892,7 @@ pub(crate) fn schema_database_case(
     let mut connection = diesel::SqliteConnection::establish(database.to_str().unwrap()).unwrap();
     connection.batch_execute(CREATE_TABLES_SQL).unwrap();
     connection
-        .batch_execute("INSERT INTO Info (Name, Value) VALUES ('Version', '2.3.0');")
+        .batch_execute("INSERT INTO Info (Name, Value) VALUES ('Version', '2.4.0');")
         .unwrap();
     drop(connection);
 
@@ -3293,8 +3296,8 @@ fn get_tournaments_blocking(
             sql_query = sql_query.offset(offset);
         }
 
-        // Every sort keeps NULL last in either direction and uses the same
-        // ascending Name/ID tie-breaks across page boundaries.
+        // Every sort keeps NULL last in either direction. Numeric and date
+        // sorts use ascending Name/ID ties across page boundaries.
         macro_rules! order_by {
             ($column:expr) => {
                 match query.options.direction {
@@ -3316,7 +3319,20 @@ fn get_tournaments_blocking(
             };
         }
         sql_query = match query.options.sort {
-            TournamentSort::Name => order_by!(events::name),
+            TournamentSort::Name => match query.options.direction {
+                SortDirection::Asc => sql_query.order((
+                    events::name.is_null().asc(),
+                    events::name.asc(),
+                    events::year.desc(),
+                    events::id.asc(),
+                )),
+                SortDirection::Desc => sql_query.order((
+                    events::name.is_null().asc(),
+                    events::name.desc(),
+                    events::year.desc(),
+                    events::id.asc(),
+                )),
+            },
             TournamentSort::Date => match query.options.direction {
                 SortDirection::Asc => order_by!(events::start_date),
                 // Recurring events are newest at their latest game, not their first.
@@ -5204,7 +5220,7 @@ fn write_parsed_db_game(
         0
     };
     let event_id = if let Some(name) = temp_game.event_name.as_deref() {
-        create_event(db, name)?.id
+        create_event(db, name, temp_game.date.as_deref())?.id
     } else {
         0
     };
@@ -6566,7 +6582,7 @@ mod tests {
         // Create players, events, sites
         let player1 = create_player(db, "Magnus").unwrap();
         let player2 = create_player(db, "Hikaru").unwrap();
-        let event = create_event(db, "World Championship").unwrap();
+        let event = create_event(db, "World Championship", None).unwrap();
         let site = create_site(db, "Reykjavik").unwrap();
 
         // Insert a game referencing them
@@ -6641,8 +6657,8 @@ mod tests {
         let magnus = create_player(db, "Magnus").unwrap();
         let hikaru = create_player(db, "Hikaru").unwrap();
         let fabiano = create_player(db, "Fabiano").unwrap();
-        let event1 = create_event(db, "World Championship").unwrap();
-        let event2 = create_event(db, "Candidates").unwrap();
+        let event1 = create_event(db, "World Championship", None).unwrap();
+        let event2 = create_event(db, "Candidates", None).unwrap();
         let site1 = create_site(db, "Reykjavik").unwrap();
         let site2 = create_site(db, "Toronto").unwrap();
 
@@ -6826,7 +6842,7 @@ mod tests {
         let db = &mut setup_test_db();
         let white = create_player(db, "White").unwrap();
         let black = create_player(db, "Black").unwrap();
-        let event = create_event(db, "Event").unwrap();
+        let event = create_event(db, "Event", None).unwrap();
         let site = create_site(db, "Site").unwrap();
         let empty_game = insert_test_game(db, white.id, black.id, event.id, site.id);
         insert_test_game(db, white.id, black.id, event.id, site.id);
@@ -6846,7 +6862,7 @@ mod tests {
         let db = &mut setup_test_db();
         let white = create_player(db, "White").unwrap();
         let black = create_player(db, "Black").unwrap();
-        let event = create_event(db, "Event").unwrap();
+        let event = create_event(db, "Event", None).unwrap();
         let site = create_site(db, "Site").unwrap();
         let deleted_game = insert_test_game(db, white.id, black.id, event.id, site.id);
         insert_test_game(db, white.id, black.id, event.id, site.id);
@@ -6863,7 +6879,7 @@ mod tests {
         let db = &mut setup_test_db();
         let white = create_player(db, "White").unwrap();
         let black = create_player(db, "Black").unwrap();
-        let event = create_event(db, "Event").unwrap();
+        let event = create_event(db, "Event", None).unwrap();
         let site = create_site(db, "Site").unwrap();
         insert_test_game(db, white.id, black.id, event.id, site.id);
         insert_test_game(db, white.id, black.id, event.id, site.id);
@@ -6883,7 +6899,7 @@ mod tests {
             let db = &mut setup_test_db();
             let white = create_player(db, "White").unwrap();
             let black = create_player(db, "Black").unwrap();
-            let event = create_event(db, "Event").unwrap();
+            let event = create_event(db, "Event", None).unwrap();
             let site = create_site(db, "Site").unwrap();
             let first = insert_test_game(db, white.id, black.id, event.id, site.id);
             let second = insert_test_game(db, white.id, black.id, event.id, site.id);
@@ -7018,7 +7034,7 @@ mod tests {
         let db = &mut setup_test_db();
         let white = create_player(db, "White").unwrap();
         let black = create_player(db, "Black").unwrap();
-        let event = create_event(db, "Event").unwrap();
+        let event = create_event(db, "Event", None).unwrap();
         let site = create_site(db, "Site").unwrap();
         match create_game(
             db,
@@ -7079,7 +7095,7 @@ mod tests {
         let db = &mut setup_test_db();
         let white = create_player(db, "White").unwrap();
         let black = create_player(db, "Black").unwrap();
-        let event = create_event(db, "Event").unwrap();
+        let event = create_event(db, "Event", None).unwrap();
         let site = create_site(db, "Site").unwrap();
         let empty_game = insert_test_game(db, white.id, black.id, event.id, site.id);
         diesel::update(games::table.find(empty_game.id))
@@ -7131,7 +7147,7 @@ mod tests {
         let db = &mut setup_test_db();
         let old_white = create_player(db, "Old White").unwrap();
         let old_black = create_player(db, "Old Black").unwrap();
-        let old_event = create_event(db, "Old Event").unwrap();
+        let old_event = create_event(db, "Old Event", None).unwrap();
         let old_site = create_site(db, "Old Site").unwrap();
         let game = insert_test_game(db, old_white.id, old_black.id, old_event.id, old_site.id);
         let replacement = parsed_game(&test_game_pgn(
@@ -7194,7 +7210,7 @@ mod tests {
         let db = &mut setup_test_db();
         let old_white = create_player(db, "Old White").unwrap();
         let old_black = create_player(db, "Old Black").unwrap();
-        let old_event = create_event(db, "Old Event").unwrap();
+        let old_event = create_event(db, "Old Event", None).unwrap();
         let old_site = create_site(db, "Old Site").unwrap();
         let game = insert_test_game(db, old_white.id, old_black.id, old_event.id, old_site.id);
         remove_orphans_and_refresh_derived_data(db).unwrap();
@@ -7228,7 +7244,7 @@ mod tests {
         let source = create_player(db, "Source").unwrap();
         let target = create_player(db, "Target").unwrap();
         let opponent = create_player(db, "Opponent").unwrap();
-        let event = create_event(db, "Event").unwrap();
+        let event = create_event(db, "Event", None).unwrap();
         let site = create_site(db, "Site").unwrap();
         insert_test_game(db, source.id, opponent.id, event.id, site.id);
         insert_test_game(db, target.id, opponent.id, event.id, site.id);
@@ -7261,7 +7277,7 @@ mod tests {
             let db = &mut setup_test_db();
             let source = create_player(db, "Source").unwrap();
             let target = create_player(db, "Target").unwrap();
-            let event = create_event(db, "Event").unwrap();
+            let event = create_event(db, "Event", None).unwrap();
             let site = create_site(db, "Site").unwrap();
             let (white_id, black_id) = if white_is_source {
                 (source.id, target.id)
@@ -7286,7 +7302,7 @@ mod tests {
         let source = create_player(db, "Source").unwrap();
         let target = create_player(db, "Target").unwrap();
         let opponent = create_player(db, "Opponent").unwrap();
-        let event = create_event(db, "Event").unwrap();
+        let event = create_event(db, "Event", None).unwrap();
         let site = create_site(db, "Site").unwrap();
         let white_game = insert_test_game(db, source.id, opponent.id, event.id, site.id);
         let black_game = insert_test_game(db, opponent.id, source.id, event.id, site.id);
@@ -8585,7 +8601,7 @@ mod tests {
                 let source = create_player(&mut db, "Source").unwrap();
                 let target = create_player(&mut db, "Target").unwrap();
                 let opponent = create_player(&mut db, "Opponent").unwrap();
-                let event = create_event(&mut db, "Event").unwrap();
+                let event = create_event(&mut db, "Event", None).unwrap();
                 let site = create_site(&mut db, "Site").unwrap();
                 inputs.game_id =
                     insert_test_game(&mut db, source.id, opponent.id, event.id, site.id).id;
@@ -8887,7 +8903,7 @@ mod tests {
             .unwrap();
         let white = create_player(&mut db, white).unwrap();
         let black = create_player(&mut db, black).unwrap();
-        let event = create_event(&mut db, event).unwrap();
+        let event = create_event(&mut db, event, None).unwrap();
         let site = create_site(&mut db, site).unwrap();
         insert_test_game(&mut db, white.id, black.id, event.id, site.id).id
     }
@@ -8907,7 +8923,7 @@ mod tests {
             .unwrap();
         let white = create_player(&mut db, "White").unwrap();
         let black = create_player(&mut db, "Black").unwrap();
-        let event = create_event(&mut db, "Heap evidence").unwrap();
+        let event = create_event(&mut db, "Heap evidence", None).unwrap();
         let site = create_site(&mut db, "Disk").unwrap();
         let comment = "x".repeat(HEAP_ROW_COMMENT_BYTES);
         let mut moves = Vec::with_capacity(comment.len() + 6);
@@ -8957,7 +8973,7 @@ mod tests {
             .unwrap();
         let player = create_player(&mut db, "Statistics player").unwrap();
         let opponent = create_player(&mut db, "Statistics opponent").unwrap();
-        let event = create_event(&mut db, "Statistics heap evidence").unwrap();
+        let event = create_event(&mut db, "Statistics heap evidence", None).unwrap();
         let site = create_site(&mut db, "Statistics heap site").unwrap();
         let moves: Vec<u8> = Vec::new();
 
@@ -11944,7 +11960,7 @@ mod tests {
                 .unwrap();
             let player = create_player(&mut db, "Player").unwrap();
             let opponent = create_player(&mut db, "Opponent").unwrap();
-            let event = create_event(&mut db, "Event").unwrap();
+            let event = create_event(&mut db, "Event", None).unwrap();
             let site = create_site(&mut db, "https://lichess.org/abcdef").unwrap();
             let base = PlayerStatisticsGame {
                 player_id: player.id,
@@ -12084,7 +12100,7 @@ mod tests {
             let player = create_player(&mut db, "Player").unwrap();
             let opponent = create_player(&mut db, "Opponent").unwrap();
             let nameless_player = create_player(&mut db, "Nameless").unwrap();
-            let event = create_event(&mut db, "Event").unwrap();
+            let event = create_event(&mut db, "Event", None).unwrap();
             let site = create_site(&mut db, "Site").unwrap();
             let nameless_site = create_site(&mut db, "Nameless site").unwrap();
             diesel::update(sites::table.find(nameless_site.id))
@@ -12201,7 +12217,7 @@ mod tests {
                 .unwrap();
             let player = create_player(&mut db, "Player").unwrap();
             let opponent = create_player(&mut db, "Opponent").unwrap();
-            let event = create_event(&mut db, "Event").unwrap();
+            let event = create_event(&mut db, "Event", None).unwrap();
             let site = create_site(&mut db, "Site").unwrap();
             let base = PlayerStatisticsGame {
                 player_id: player.id,
@@ -12501,7 +12517,7 @@ mod tests {
                 .unwrap();
             let player = create_player(&mut db, "Player").unwrap();
             let opponent = create_player(&mut db, "Opponent").unwrap();
-            let event = create_event(&mut db, "Event").unwrap();
+            let event = create_event(&mut db, "Event", None).unwrap();
             let site = create_site(&mut db, "Site").unwrap();
             let mut moves = Vec::new();
             encode_comment(&"x".repeat(5 * 1024), &mut moves);
@@ -12638,7 +12654,7 @@ mod tests {
                 .unwrap();
             let player = create_player(&mut db, "Player").unwrap();
             let opponent = create_player(&mut db, "Opponent").unwrap();
-            let event = create_event(&mut db, "Event").unwrap();
+            let event = create_event(&mut db, "Event", None).unwrap();
             let site = create_site(&mut db, "Site").unwrap();
             let game = insert_test_game(&mut db, player.id, opponent.id, event.id, site.id);
             let mut moves = Vec::new();
@@ -12702,7 +12718,7 @@ mod tests {
                 .unwrap();
             let white = create_player(&mut db, "White").unwrap();
             let black = create_player(&mut db, "Black").unwrap();
-            let event = create_event(&mut db, "Event").unwrap();
+            let event = create_event(&mut db, "Event", None).unwrap();
             let site = create_site(&mut db, "Site").unwrap();
             db.transaction::<_, diesel::result::Error, _>(|db| {
                 for _ in 0..row_count {
@@ -12948,7 +12964,7 @@ mod tests {
                 .unwrap();
             let white = create_player(&mut db, "White").unwrap();
             let black = create_player(&mut db, "Black").unwrap();
-            let event = create_event(&mut db, "Event").unwrap();
+            let event = create_event(&mut db, "Event", None).unwrap();
             let site = create_site(&mut db, "Site").unwrap();
             insert_test_game(&mut db, white.id, black.id, event.id, site.id);
             insert_test_game(&mut db, white.id, black.id, event.id, site.id);
@@ -12995,7 +13011,7 @@ mod tests {
                 .unwrap();
             let white = create_player(&mut db, "White").unwrap();
             let black = create_player(&mut db, "Black").unwrap();
-            let event = create_event(&mut db, "Event").unwrap();
+            let event = create_event(&mut db, "Event", None).unwrap();
             let site = create_site(&mut db, "Site").unwrap();
             insert_kept_player_game(&mut db, white.id, black.id, event.id, site.id);
             insert_kept_player_game(&mut db, white.id, black.id, event.id, site.id);
@@ -14040,7 +14056,7 @@ mod tests {
                 .unwrap();
             let white = create_player(&mut db, "White").unwrap();
             let black = create_player(&mut db, "Black").unwrap();
-            let event = create_event(&mut db, "Event").unwrap();
+            let event = create_event(&mut db, "Event", None).unwrap();
             let site = create_site(&mut db, "Site").unwrap();
             insert_test_game(&mut db, white.id, black.id, event.id, site.id);
             insert_test_game(&mut db, white.id, black.id, event.id, site.id);
@@ -14069,7 +14085,7 @@ mod tests {
                 .unwrap();
             let white = create_player(&mut db, "White").unwrap();
             let black = create_player(&mut db, "Black").unwrap();
-            let event = create_event(&mut db, "Event").unwrap();
+            let event = create_event(&mut db, "Event", None).unwrap();
             let site = create_site(&mut db, "Site").unwrap();
             insert_test_game(&mut db, white.id, black.id, event.id, site.id);
         }
@@ -15951,7 +15967,7 @@ mod deletion_tests {
         let mut connection = SqliteConnection::establish(database.to_str().unwrap()).unwrap();
         connection.batch_execute(CREATE_TABLES_SQL).unwrap();
         connection
-            .batch_execute("INSERT INTO Info (Name, Value) VALUES ('Version', '2.3.0');")
+            .batch_execute("INSERT INTO Info (Name, Value) VALUES ('Version', '2.4.0');")
             .unwrap();
         connection.batch_execute(
             "INSERT INTO Games (ID, Result, Moves, PawnHome, WhiteMaterial, BlackMaterial) VALUES (1, '*', X'', 0, 0, 0);"

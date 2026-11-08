@@ -121,6 +121,8 @@ diesel::table! {
         player_count -> Integer,
         #[sql_name = "AvgElo"]
         avg_elo -> Nullable<Integer>,
+        #[sql_name = "Year"]
+        year -> Integer,
     }
 }
 

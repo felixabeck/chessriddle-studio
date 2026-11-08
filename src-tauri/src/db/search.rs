@@ -3980,7 +3980,7 @@ mod tests {
     ) -> i32 {
         let white = create_player(connection, white_name).unwrap();
         let black = create_player(connection, black_name).unwrap();
-        let event = create_event(connection, event_name).unwrap();
+        let event = create_event(connection, event_name, Some("2026.08.09")).unwrap();
         let site = create_site(connection, "Madrid").unwrap();
 
         let mut chess = Chess::default();

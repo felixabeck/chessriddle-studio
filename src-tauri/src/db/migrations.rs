@@ -6,7 +6,8 @@ use diesel::{
     sql_types::{BigInt, Integer, Nullable, Text},
 };
 
-const CURRENT_DATABASE_VERSION: &str = "2.3.0";
+pub(super) const CURRENT_DATABASE_VERSION: &str = "2.4.0";
+const PRE_EVENT_EDITION_DATABASE_VERSION: &str = "2.3.0";
 pub(super) const PRE_EVENT_SUMMARY_DATABASE_VERSION: &str = "2.2.0";
 pub(super) const PRE_GAME_COUNT_DATABASE_VERSION: &str = "2.1.0";
 pub(super) const PRE_ORIENTATION_DATABASE_VERSION: &str = "2.0.0";
@@ -200,7 +201,7 @@ pub(super) fn uninitialized_database_error() -> Error {
 /// Creation is intentionally excluded: only the import command has the title
 /// and description required to initialize a new database.
 /// Returns true only when migration ran both content pragmas; false means only
-/// the cheap schema contract was checked. Additive 2.0.0, 2.1.0 and 2.2.0 migrations
+/// the cheap schema contract was checked. Edition upgrades from 2.x
 /// return false and leave content to the background scan
 /// (`content_validation::schedule` from `get_db_info`; f-20261107-02).
 pub fn validate_existing_database(conn: &mut SqliteConnection) -> Result<bool, Error> {
@@ -240,38 +241,51 @@ fn migrate_database(conn: &mut SqliteConnection) -> Result<bool, Error> {
     match schema_version(conn)? {
         SchemaVersion::Current => validate_schema(conn).map(|()| false),
         SchemaVersion::Legacy => migrate_legacy_database(conn).map(|()| true),
+        SchemaVersion::BeforeEventEditions => conn.transaction::<_, Error, _>(|conn| {
+            validate_reference_schema_version(conn, true, true, false)?;
+            validate_sentinel_records_and_triggers_version(conn, false)?;
+            validate_player_game_count_schema(conn)?;
+            validate_event_summary_schema(conn)?;
+            migrate_event_editions(conn)?;
+            insert_info(conn, "Version", CURRENT_DATABASE_VERSION)?;
+            validate_schema(conn)?;
+            Ok(false)
+        }),
         SchemaVersion::BeforeEventSummaries => conn.transaction::<_, Error, _>(|conn| {
-            validate_reference_schema_version(conn, true, false)?;
-            validate_sentinel_records_and_triggers(conn)?;
+            validate_reference_schema_version(conn, true, false, false)?;
+            validate_sentinel_records_and_triggers_version(conn, false)?;
             validate_player_game_count_schema(conn)?;
             migrate_event_summaries(conn)?;
+            migrate_event_editions(conn)?;
             insert_info(conn, "Version", CURRENT_DATABASE_VERSION)?;
             validate_schema(conn)?;
             Ok(false)
         }),
         SchemaVersion::BeforeGameCounts => conn.transaction::<_, Error, _>(|conn| {
-            validate_reference_schema_version(conn, false, false)?;
-            validate_sentinel_records_and_triggers(conn)?;
+            validate_reference_schema_version(conn, false, false, false)?;
+            validate_sentinel_records_and_triggers_version(conn, false)?;
             migrate_player_game_counts(conn)?;
             migrate_event_summaries(conn)?;
+            migrate_event_editions(conn)?;
             insert_info(conn, "Version", CURRENT_DATABASE_VERSION)?;
-            // Additive: commit on the schema contract only. get_db_info finds no
+            // Commit on the schema contract only. get_db_info finds no
             // content stamp and schedules content_validation (f-20261107-02).
             validate_schema(conn)?;
             Ok(false)
         }),
         SchemaVersion::BeforeOrientation => conn.transaction::<_, Error, _>(|conn| {
             validate_games_schema_version(conn, false)?;
-            validate_reference_schema_version(conn, false, false)?;
-            validate_sentinel_records_and_triggers(conn)?;
+            validate_reference_schema_version(conn, false, false, false)?;
+            validate_sentinel_records_and_triggers_version(conn, false)?;
             conn.batch_execute(
                 "ALTER TABLE Games ADD COLUMN Orientation TEXT \
                  CHECK(Orientation IN ('white', 'black') OR Orientation IS NULL);",
             )?;
             migrate_player_game_counts(conn)?;
             migrate_event_summaries(conn)?;
+            migrate_event_editions(conn)?;
             insert_info(conn, "Version", CURRENT_DATABASE_VERSION)?;
-            // Additive: commit on the schema contract only. get_db_info finds no
+            // Commit on the schema contract only. get_db_info finds no
             // content stamp and schedules content_validation (f-20261107-02).
             validate_schema(conn)?;
             Ok(false)
@@ -282,6 +296,7 @@ fn migrate_database(conn: &mut SqliteConnection) -> Result<bool, Error> {
 enum SchemaVersion {
     Current,
     Legacy,
+    BeforeEventEditions,
     BeforeEventSummaries,
     BeforeGameCounts,
     BeforeOrientation,
@@ -304,6 +319,7 @@ fn schema_version(conn: &mut SqliteConnection) -> Result<SchemaVersion, Error> {
     match (version.as_str(), canonical) {
         (CURRENT_DATABASE_VERSION, true) => Ok(SchemaVersion::Current),
         (LEGACY_DATABASE_VERSION, _) => Ok(SchemaVersion::Legacy),
+        (PRE_EVENT_EDITION_DATABASE_VERSION, true) => Ok(SchemaVersion::BeforeEventEditions),
         (PRE_EVENT_SUMMARY_DATABASE_VERSION, true) => Ok(SchemaVersion::BeforeEventSummaries),
         (PRE_GAME_COUNT_DATABASE_VERSION, true) => Ok(SchemaVersion::BeforeGameCounts),
         (PRE_ORIENTATION_DATABASE_VERSION, _) => Ok(SchemaVersion::BeforeOrientation),
@@ -377,6 +393,7 @@ fn migrate_legacy_database(conn: &mut SqliteConnection) -> Result<(), Error> {
         create_sentinel_triggers(conn)?;
         migrate_player_game_counts(conn)?;
         migrate_event_summaries(conn)?;
+        migrate_event_editions(conn)?;
         if restore_required_indexes {
             conn.batch_execute(super::INDEXES_SQL)?;
         }
@@ -419,11 +436,7 @@ fn migrate_event_summaries(conn: &mut SqliteConnection) -> Result<(), Error> {
          ALTER TABLE Events ADD COLUMN AvgElo INTEGER;",
     )?;
     conn.batch_execute(event_summaries_sql()?)?;
-    conn.batch_execute("INSERT INTO EventSummaryDirty SELECT ID FROM Events WHERE ID != 0;")?;
-    super::event_summaries::refresh_event_summaries(
-        conn,
-        super::event_summaries::RowSource::FullScan,
-    )
+    Ok(())
 }
 
 fn validate_event_summary_schema(conn: &mut SqliteConnection) -> Result<(), Error> {
@@ -433,6 +446,83 @@ fn validate_event_summary_schema(conn: &mut SqliteConnection) -> Result<(), Erro
         OR name = 'EventSummaryDirty' OR name LIKE 'event_summary_%'",
         "Event summary table, index or triggers are not canonical",
     )
+}
+
+/// Rebuild in the caller's transaction. Foreign keys remain enabled, and the
+/// outermost commit verifies the refilled parent table before publishing it.
+fn migrate_event_editions(conn: &mut SqliteConnection) -> Result<(), Error> {
+    conn.batch_execute(
+        "PRAGMA defer_foreign_keys = ON;
+        CREATE INDEX IF NOT EXISTS games_event_idx ON Games(EventID);
+        CREATE TEMP TABLE event_edition_sequence AS
+            SELECT MAX(COALESCE((SELECT seq FROM sqlite_sequence WHERE name='Events'),0),
+                       COALESCE((SELECT MAX(ID) FROM Events),0)) AS seq;",
+    )?;
+    conn.batch_execute(&format!(
+        "CREATE TEMP TABLE event_edition_map (
+            OriginalID INTEGER NOT NULL, Year INTEGER NOT NULL, ID INTEGER NOT NULL,
+            PRIMARY KEY(OriginalID, Year));
+         INSERT INTO event_edition_map
+         WITH counts AS (
+             SELECT e.ID AS OriginalID, {} AS Year, COUNT(g.ID) AS GameCount
+             FROM Events e LEFT JOIN Games g INDEXED BY games_event_idx ON g.EventID=e.ID
+             GROUP BY e.ID, Year
+         ), ranked AS (
+             SELECT *, ROW_NUMBER() OVER (
+                 PARTITION BY OriginalID ORDER BY GameCount DESC, Year ASC) AS rank
+             FROM counts
+         ), additions AS (
+             SELECT OriginalID, Year,
+                 (SELECT seq FROM event_edition_sequence) +
+                 ROW_NUMBER() OVER (ORDER BY OriginalID, Year) AS ID
+             FROM ranked WHERE rank != 1
+         )
+         SELECT OriginalID, Year, OriginalID FROM ranked WHERE rank=1
+         UNION ALL SELECT OriginalID, Year, ID FROM additions;
+         CREATE TEMP TABLE event_edition_rows AS
+         SELECT m.ID, e.Name, e.StartDate, e.EndDate, e.SiteID,
+             e.GameCount, e.PlayerCount, e.AvgElo, m.Year
+         FROM event_edition_map m JOIN Events e ON e.ID=m.OriginalID;
+         UPDATE Games AS g SET EventID = (
+             SELECT m.ID FROM event_edition_map m JOIN Events e ON e.ID=m.OriginalID
+             WHERE m.OriginalID=g.EventID AND m.Year=({})
+         ) WHERE ID IN (
+             SELECT g.ID FROM Games g JOIN Events e ON e.ID=g.EventID
+             JOIN event_edition_map m ON m.OriginalID=e.ID AND m.Year=({})
+             WHERE m.ID != g.EventID
+         );
+         DROP TABLE Events;",
+        super::ops::EVENT_YEAR_SQL,
+        super::ops::EVENT_YEAR_SQL,
+        super::ops::EVENT_YEAR_SQL
+    ))?;
+    let event_ddl = CREATE_TABLES_SQL
+        .split_once("CREATE TABLE Events (")
+        .and_then(|(_, rest)| rest.split_once("CREATE TABLE Sites (").map(|(ddl, _)| ddl))
+        .ok_or_else(|| Error::InvalidInput("Missing canonical Events schema".into()))?;
+    conn.batch_execute(&format!("CREATE TABLE Events ({event_ddl}"))?;
+    conn.batch_execute(
+        "INSERT INTO Events SELECT * FROM event_edition_rows;
+         UPDATE sqlite_sequence SET seq=MAX(seq,(SELECT seq FROM event_edition_sequence))
+             WHERE name='Events';
+         DROP TABLE event_edition_rows;
+         DROP TABLE event_edition_map;
+         DROP TABLE event_edition_sequence;",
+    )?;
+    let event_triggers = CREATE_TABLES_SQL
+        .split_once("CREATE TRIGGER protect_unknown_event_delete")
+        .and_then(|(_, rest)| {
+            rest.split_once("CREATE TRIGGER protect_unknown_site_delete")
+                .map(|(ddl, _)| ddl)
+        })
+        .ok_or_else(|| Error::InvalidInput("Missing canonical event protection triggers".into()))?;
+    conn.batch_execute(&format!(
+        "CREATE TRIGGER protect_unknown_event_delete{event_triggers}"
+    ))?;
+    conn.batch_execute(
+        "INSERT OR IGNORE INTO EventSummaryDirty SELECT ID FROM Events WHERE ID != 0;",
+    )?;
+    super::refresh_derived_database_data(conn)
 }
 
 fn validate_canonical_objects(
@@ -678,13 +768,14 @@ fn validate_games_schema_version(
 type ColumnContract = (&'static str, &'static str, bool, Option<&'static str>, i32);
 
 fn validate_reference_schema(conn: &mut SqliteConnection) -> Result<(), Error> {
-    validate_reference_schema_version(conn, true, true)
+    validate_reference_schema_version(conn, true, true, true)
 }
 
 fn validate_reference_schema_version(
     conn: &mut SqliteConnection,
     with_game_count: bool,
     with_event_summaries: bool,
+    with_event_editions: bool,
 ) -> Result<(), Error> {
     validate_exact_columns(
         conn,
@@ -719,8 +810,29 @@ fn validate_reference_schema_version(
             ("AvgElo", "INTEGER", false, None, 0),
         ]);
     }
+    if with_event_editions {
+        event_columns.push(("Year", "INTEGER", true, Some("0"), 0));
+    }
     validate_exact_columns(conn, "Events", &event_columns)?;
-    for table in ["Info", "Players", "Events", "Sites"] {
+    if with_event_editions {
+        validate_canonical_objects(
+            conn,
+            "SELECT name, sql FROM sqlite_master WHERE type='table' AND name='Events'",
+            "Events edition identity is not canonical",
+        )?;
+        // Extra unique indexes can silently restore the old name-only identity.
+        let indexes: Vec<IndexListInfo> = sql_query(
+            "SELECT name, \"unique\" AS is_unique, origin AS origin_name FROM pragma_index_list('Events')"
+        ).load(conn)?;
+        if indexes.iter().filter(|index| index.unique != 0).count() != 1 {
+            return Err(Error::InvalidInput(
+                "Events has an extra UNIQUE constraint".into(),
+            ));
+        }
+    } else {
+        validate_single_column_unique(conn, "Events", "Name")?;
+    }
+    for table in ["Info", "Players", "Sites"] {
         validate_single_column_unique(conn, table, "Name")?;
     }
     for table in ["Events", "Sites"] {
@@ -817,6 +929,23 @@ fn validate_exact_columns(
 }
 
 fn validate_sentinel_records_and_triggers(conn: &mut SqliteConnection) -> Result<(), Error> {
+    validate_sentinel_records_and_triggers_version(conn, true)
+}
+
+fn validate_sentinel_records_and_triggers_version(
+    conn: &mut SqliteConnection,
+    with_event_editions: bool,
+) -> Result<(), Error> {
+    if with_event_editions
+        && sql_query("SELECT COUNT(*) AS count FROM Events WHERE ID=0 AND Year=0")
+            .get_result::<CountRow>(conn)?
+            .count
+            != 1
+    {
+        return Err(Error::InvalidInput(
+            "Unknown event must retain Year 0".into(),
+        ));
+    }
     let sentinel_count = sql_query(
         "SELECT
             (SELECT COUNT(*) FROM Players WHERE ID = 0 AND Name = 'Unknown' AND Elo IS NULL) +
@@ -862,9 +991,17 @@ fn validate_sentinel_records_and_triggers(conn: &mut SqliteConnection) -> Result
     ];
     if triggers.len() != required.len()
         || required.iter().any(|(name, contract)| {
-            !triggers
-                .iter()
-                .any(|trigger| trigger.name == *name && normalize_sql(&trigger.sql) == *contract)
+            !triggers.iter().any(|trigger| {
+                let contract = if with_event_editions && *name == "protect_unknown_event_update" {
+                    contract.replace(
+                        "NEW.NAMEISNOT'UNKNOWN')",
+                        "NEW.NAMEISNOT'UNKNOWN'ORNEW.YEAR!=0)",
+                    )
+                } else {
+                    (*contract).to_owned()
+                };
+                trigger.name == *name && normalize_sql(&trigger.sql) == contract
+            })
         })
     {
         return Err(Error::InvalidInput(
@@ -875,8 +1012,22 @@ fn validate_sentinel_records_and_triggers(conn: &mut SqliteConnection) -> Result
 }
 
 #[cfg(test)]
-pub(super) fn pre_event_summary_schema() -> String {
+pub(super) fn pre_event_edition_schema() -> String {
     CREATE_TABLES_SQL
+        .replace(
+            "    Name TEXT,\n    StartDate TEXT,",
+            "    Name TEXT UNIQUE,\n    StartDate TEXT,",
+        )
+        .replace(
+            "    AvgElo INTEGER,\n    Year INTEGER NOT NULL DEFAULT 0,\n    UNIQUE(Name, Year)",
+            "    AvgElo INTEGER",
+        )
+        .replace(" OR NEW.Year != 0", "")
+}
+
+#[cfg(test)]
+pub(super) fn pre_event_summary_schema() -> String {
+    pre_event_edition_schema()
         .split("-- Event summaries\n")
         .next()
         .unwrap()
@@ -921,6 +1072,213 @@ fn create_sentinel_triggers(conn: &mut SqliteConnection) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn edition_origin(version: &str) -> String {
+        match version {
+            LEGACY_DATABASE_VERSION | PRE_ORIENTATION_DATABASE_VERSION => pre_orientation_schema(),
+            PRE_GAME_COUNT_DATABASE_VERSION => pre_game_count_schema(),
+            PRE_EVENT_SUMMARY_DATABASE_VERSION => pre_event_summary_schema(),
+            PRE_EVENT_EDITION_DATABASE_VERSION => pre_event_edition_schema(),
+            _ => panic!("unsupported test origin"),
+        }
+    }
+
+    fn seed_editions(conn: &mut SqliteConnection, version: &str) {
+        conn.batch_execute(&edition_origin(version)).unwrap();
+        insert_info(conn, "Version", version).unwrap();
+        conn.batch_execute(
+            "INSERT INTO Events(ID,Name) VALUES(7,'Annual'),(8,'Tied'),(9,'Idle'),(10,''),(1000,'Deleted');
+             DELETE FROM Events WHERE ID=1000;
+             INSERT INTO Players(ID,Name) VALUES(1,'One'),(2,'Two');
+             INSERT INTO Sites(ID,Name) VALUES(1,'Here');
+             INSERT INTO Games(ID,EventID,Date,WhiteID,BlackID,WhiteElo,BlackElo,SiteID) VALUES
+                (1,7,'2024.05.06',1,2,2000,2200,1),
+                (2,7,'2024.??.??',2,1,1800,2000,1),
+                (3,7,'2023.01.01',1,1,1000,0,0),
+                (4,7,NULL,0,2,0,1600,0),
+                (5,8,'2025.01.01',1,2,2000,2000,1),
+                (6,8,'2022.01.01',1,2,2000,2000,1),
+                (7,0,'2024.01.01',0,0,NULL,NULL,0),
+                (8,10,'2024.01.01',0,0,NULL,NULL,0),
+                (9,10,'2025.01.01',0,0,NULL,NULL,0);",
+        ).unwrap();
+    }
+
+    #[test]
+    fn editions_upgrade_every_supported_version_once_preserving_ids_and_sequence() {
+        for version in [
+            LEGACY_DATABASE_VERSION,
+            PRE_ORIENTATION_DATABASE_VERSION,
+            PRE_GAME_COUNT_DATABASE_VERSION,
+            PRE_EVENT_SUMMARY_DATABASE_VERSION,
+            PRE_EVENT_EDITION_DATABASE_VERSION,
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("upgrade.db3");
+            let mut conn = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+            conn.batch_execute("PRAGMA foreign_keys=ON").unwrap();
+            seed_editions(&mut conn, version);
+            super::super::event_summaries::take_refresh_count();
+            validate_existing_database(&mut conn).unwrap();
+            assert_eq!(
+                super::super::event_summaries::take_refresh_count(),
+                1,
+                "{version}"
+            );
+            assert_eq!(
+                info_value(&mut conn, "Version").unwrap().as_deref(),
+                Some(CURRENT_DATABASE_VERSION)
+            );
+            use super::super::{models::Event, schema::events};
+            let editions = events::table
+                .order(events::id)
+                .load::<Event>(&mut conn)
+                .unwrap();
+            assert_eq!(editions.len(), 8);
+            assert_eq!(
+                editions.iter().find(|event| event.id == 7).unwrap().year,
+                2024
+            );
+            assert_eq!(
+                editions.iter().find(|event| event.id == 8).unwrap().year,
+                2022
+            );
+            assert_eq!(editions.iter().find(|event| event.id == 9).unwrap().year, 0);
+            assert_eq!(
+                editions
+                    .iter()
+                    .filter(|event| event.name.as_deref() == Some("Annual"))
+                    .map(|event| event.year)
+                    .collect::<std::collections::BTreeSet<_>>(),
+                [0, 2023, 2024].into()
+            );
+            assert_eq!(
+                editions.iter().find(|event| event.id == 10).unwrap().year,
+                0
+            );
+            use super::super::schema::games;
+            for (event_id, date) in games::table
+                .select((games::event_id, games::date))
+                .load::<(i32, Option<String>)>(&mut conn)
+                .unwrap()
+            {
+                let event = editions.iter().find(|event| event.id == event_id).unwrap();
+                assert_eq!(
+                    event.year,
+                    super::super::ops::event_year(
+                        event.name.as_deref().unwrap_or_default(),
+                        date.as_deref()
+                    )
+                );
+            }
+            assert_eq!(
+                super::super::ops::create_event(&mut conn, "Unknown", Some("2026.01.01"))
+                    .unwrap()
+                    .id,
+                0
+            );
+            assert_eq!(
+                info_value(&mut conn, "EventCount").unwrap().as_deref(),
+                Some("8")
+            );
+            super::super::event_summary_tests::assert_event_summaries(&mut conn);
+            validate_content(&mut conn).unwrap();
+            assert!(conn.batch_execute("DELETE FROM Events WHERE ID=0").is_err());
+            assert!(conn
+                .batch_execute("UPDATE Events SET Name='Changed' WHERE ID=0")
+                .is_err());
+            assert!(conn
+                .batch_execute("UPDATE Events SET Year=2024 WHERE ID=0")
+                .is_err());
+            drop(conn);
+            let mut conn = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+            conn.batch_execute("PRAGMA foreign_keys=ON").unwrap();
+            let before = sql_query("SELECT total_changes() AS count")
+                .get_result::<CountRow>(&mut conn)
+                .unwrap()
+                .count;
+            assert!(!validate_existing_database(&mut conn).unwrap());
+            assert_eq!(super::super::event_summaries::take_refresh_count(), 0);
+            let after = sql_query("SELECT total_changes() AS count")
+                .get_result::<CountRow>(&mut conn)
+                .unwrap()
+                .count;
+            assert_eq!(before, after);
+            assert!(
+                super::super::ops::create_event(&mut conn, "New", Some("2026.01.01"))
+                    .unwrap()
+                    .id
+                    > 1000
+            );
+        }
+    }
+
+    #[test]
+    fn editions_failure_rolls_back_every_supported_origin() {
+        for version in [
+            LEGACY_DATABASE_VERSION,
+            PRE_ORIENTATION_DATABASE_VERSION,
+            PRE_GAME_COUNT_DATABASE_VERSION,
+            PRE_EVENT_SUMMARY_DATABASE_VERSION,
+            PRE_EVENT_EDITION_DATABASE_VERSION,
+        ] {
+            let mut conn = connection();
+            seed_editions(&mut conn, version);
+            let before = sql_query("SELECT sql AS value FROM sqlite_master WHERE name='Events'")
+                .get_result::<TextRow>(&mut conn)
+                .unwrap()
+                .value;
+            conn.batch_execute("CREATE TEMP TABLE event_summary_refresh(ID INTEGER PRIMARY KEY)")
+                .unwrap();
+            assert!(validate_existing_database(&mut conn).is_err());
+            assert_eq!(
+                info_value(&mut conn, "Version").unwrap().as_deref(),
+                Some(version)
+            );
+            assert_eq!(
+                sql_query("SELECT sql AS value FROM sqlite_master WHERE name='Events'")
+                    .get_result::<TextRow>(&mut conn)
+                    .unwrap()
+                    .value,
+                before
+            );
+            assert_eq!(
+                sql_query("SELECT COUNT(*) AS count FROM Games WHERE EventID=7")
+                    .get_result::<CountRow>(&mut conn)
+                    .unwrap()
+                    .count,
+                4
+            );
+            assert_eq!(
+                sql_query("SELECT seq AS count FROM sqlite_sequence WHERE name='Events'")
+                    .get_result::<CountRow>(&mut conn)
+                    .unwrap()
+                    .count,
+                1000
+            );
+            conn.batch_execute("DROP TABLE event_summary_refresh")
+                .unwrap();
+            validate_existing_database(&mut conn).unwrap();
+        }
+    }
+
+    #[test]
+    fn edition_validator_rejects_name_only_identity_and_extra_unique_index() {
+        for schema in [
+            CREATE_TABLES_SQL.replace(
+                "    Name TEXT,\n    StartDate",
+                "    Name TEXT UNIQUE,\n    StartDate",
+            ),
+            format!(
+                "{CREATE_TABLES_SQL}\nCREATE UNIQUE INDEX wrong_event_identity ON Events(Name);"
+            ),
+        ] {
+            let mut conn = connection();
+            conn.batch_execute(&schema).unwrap();
+            insert_info(&mut conn, "Version", CURRENT_DATABASE_VERSION).unwrap();
+            assert!(validate_existing_database(&mut conn).is_err());
+        }
+    }
 
     fn connection() -> SqliteConnection {
         let mut conn = SqliteConnection::establish(":memory:").unwrap();
@@ -1014,7 +1372,7 @@ mod tests {
             info_value(&mut conn, "Version").unwrap().as_deref(),
             Some(LEGACY_DATABASE_VERSION)
         );
-        validate_reference_schema_version(&mut conn, false, false).unwrap();
+        validate_reference_schema_version(&mut conn, false, false, false).unwrap();
         assert!(!table_exists(&mut conn, "EventSummaryDirty").unwrap());
         conn.batch_execute("DROP TRIGGER reject_summary_write;")
             .unwrap();
@@ -1143,7 +1501,7 @@ mod tests {
                 info_value(&mut conn, "Version").unwrap().as_deref(),
                 Some(version)
             );
-            validate_reference_schema_version(&mut conn, with_counts, false).unwrap();
+            validate_reference_schema_version(&mut conn, with_counts, false, false).unwrap();
             assert!(!table_exists(&mut conn, "EventSummaryDirty").unwrap());
             conn.batch_execute("DROP TRIGGER reject_summary_write;")
                 .unwrap();
