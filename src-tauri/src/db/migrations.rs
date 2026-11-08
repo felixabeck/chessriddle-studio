@@ -241,55 +241,45 @@ fn migrate_database(conn: &mut SqliteConnection) -> Result<bool, Error> {
     match schema_version(conn)? {
         SchemaVersion::Current => validate_schema(conn).map(|()| false),
         SchemaVersion::Legacy => migrate_legacy_database(conn).map(|()| true),
-        SchemaVersion::BeforeEventEditions => conn.transaction::<_, Error, _>(|conn| {
-            validate_reference_schema_version(conn, true, true, false)?;
-            validate_sentinel_records_and_triggers_version(conn, false)?;
-            validate_player_game_count_schema(conn)?;
-            validate_event_summary_schema(conn)?;
-            migrate_event_editions(conn)?;
-            insert_info(conn, "Version", CURRENT_DATABASE_VERSION)?;
-            validate_schema(conn)?;
-            Ok(false)
-        }),
-        SchemaVersion::BeforeEventSummaries => conn.transaction::<_, Error, _>(|conn| {
-            validate_reference_schema_version(conn, true, false, false)?;
-            validate_sentinel_records_and_triggers_version(conn, false)?;
-            validate_player_game_count_schema(conn)?;
-            migrate_event_summaries(conn)?;
-            migrate_event_editions(conn)?;
-            insert_info(conn, "Version", CURRENT_DATABASE_VERSION)?;
-            validate_schema(conn)?;
-            Ok(false)
-        }),
-        SchemaVersion::BeforeGameCounts => conn.transaction::<_, Error, _>(|conn| {
-            validate_reference_schema_version(conn, false, false, false)?;
-            validate_sentinel_records_and_triggers_version(conn, false)?;
-            migrate_player_game_counts(conn)?;
-            migrate_event_summaries(conn)?;
-            migrate_event_editions(conn)?;
-            insert_info(conn, "Version", CURRENT_DATABASE_VERSION)?;
-            // Commit on the schema contract only. get_db_info finds no
-            // content stamp and schedules content_validation (f-20261107-02).
-            validate_schema(conn)?;
-            Ok(false)
-        }),
-        SchemaVersion::BeforeOrientation => conn.transaction::<_, Error, _>(|conn| {
-            validate_games_schema_version(conn, false)?;
-            validate_reference_schema_version(conn, false, false, false)?;
-            validate_sentinel_records_and_triggers_version(conn, false)?;
-            conn.batch_execute(
-                "ALTER TABLE Games ADD COLUMN Orientation TEXT \
-                 CHECK(Orientation IN ('white', 'black') OR Orientation IS NULL);",
-            )?;
-            migrate_player_game_counts(conn)?;
-            migrate_event_summaries(conn)?;
-            migrate_event_editions(conn)?;
-            insert_info(conn, "Version", CURRENT_DATABASE_VERSION)?;
-            // Commit on the schema contract only. get_db_info finds no
-            // content stamp and schedules content_validation (f-20261107-02).
-            validate_schema(conn)?;
-            Ok(false)
-        }),
+        SchemaVersion::BeforeEventEditions => upgrade_to_event_editions(
+            conn,
+            |conn| validate_reference_schema_version(conn, true, true, false),
+            |conn| {
+                validate_player_game_count_schema(conn)?;
+                validate_event_summary_schema(conn)
+            },
+        ),
+        SchemaVersion::BeforeEventSummaries => upgrade_to_event_editions(
+            conn,
+            |conn| validate_reference_schema_version(conn, true, false, false),
+            |conn| {
+                validate_player_game_count_schema(conn)?;
+                migrate_event_summaries(conn)
+            },
+        ),
+        SchemaVersion::BeforeGameCounts => upgrade_to_event_editions(
+            conn,
+            |conn| validate_reference_schema_version(conn, false, false, false),
+            |conn| {
+                migrate_player_game_counts(conn)?;
+                migrate_event_summaries(conn)
+            },
+        ),
+        SchemaVersion::BeforeOrientation => upgrade_to_event_editions(
+            conn,
+            |conn| {
+                validate_games_schema_version(conn, false)?;
+                validate_reference_schema_version(conn, false, false, false)
+            },
+            |conn| {
+                conn.batch_execute(
+                    "ALTER TABLE Games ADD COLUMN Orientation TEXT \
+                     CHECK(Orientation IN ('white', 'black') OR Orientation IS NULL);",
+                )?;
+                migrate_player_game_counts(conn)?;
+                migrate_event_summaries(conn)
+            },
+        ),
     }
 }
 
@@ -330,6 +320,24 @@ fn schema_version(conn: &mut SqliteConnection) -> Result<SchemaVersion, Error> {
             "Unsupported database version {version}"
         ))),
     }
+}
+
+fn upgrade_to_event_editions(
+    conn: &mut SqliteConnection,
+    validate_previous_schema: impl FnOnce(&mut SqliteConnection) -> Result<(), Error>,
+    migrate_prerequisites: impl FnOnce(&mut SqliteConnection) -> Result<(), Error>,
+) -> Result<bool, Error> {
+    conn.transaction::<_, Error, _>(|conn| {
+        validate_previous_schema(conn)?;
+        validate_sentinel_records_and_triggers_version(conn, false)?;
+        migrate_prerequisites(conn)?;
+        migrate_event_editions(conn)?;
+        insert_info(conn, "Version", CURRENT_DATABASE_VERSION)?;
+        // Commit on the schema contract only. get_db_info finds no
+        // content stamp and schedules content_validation (f-20261107-02).
+        validate_schema(conn)?;
+        Ok(false)
+    })
 }
 
 fn migrate_legacy_database(conn: &mut SqliteConnection) -> Result<(), Error> {
@@ -1209,6 +1217,55 @@ mod tests {
                     .unwrap()
                     .id
                     > 1000
+            );
+        }
+    }
+
+    #[test]
+    fn editions_upgrade_without_splits_preserves_deleted_highest_id() {
+        for version in [
+            LEGACY_DATABASE_VERSION,
+            PRE_ORIENTATION_DATABASE_VERSION,
+            PRE_GAME_COUNT_DATABASE_VERSION,
+            PRE_EVENT_SUMMARY_DATABASE_VERSION,
+            PRE_EVENT_EDITION_DATABASE_VERSION,
+        ] {
+            let mut conn = connection();
+            conn.batch_execute(&edition_origin(version)).unwrap();
+            insert_info(&mut conn, "Version", version).unwrap();
+            conn.batch_execute(
+                "INSERT INTO Events(ID,Name) VALUES(7,'Annual'),(1000,'Deleted');
+                 DELETE FROM Events WHERE ID=1000;
+                 INSERT INTO Games(EventID,Date) VALUES(7,'2024.01.01'),(7,'2024.05.06');",
+            )
+            .unwrap();
+            assert_eq!(
+                sql_query("SELECT seq AS count FROM sqlite_sequence WHERE name='Events'")
+                    .get_result::<CountRow>(&mut conn)
+                    .unwrap()
+                    .count,
+                1000
+            );
+            assert_eq!(
+                sql_query("SELECT MAX(ID) AS count FROM Events")
+                    .get_result::<CountRow>(&mut conn)
+                    .unwrap()
+                    .count,
+                7
+            );
+
+            validate_existing_database(&mut conn).unwrap();
+            use super::super::schema::events;
+            assert_eq!(
+                events::table.count().get_result::<i64>(&mut conn).unwrap(),
+                2
+            );
+            let edition =
+                super::super::ops::create_event(&mut conn, "Annual", Some("2025.01.01")).unwrap();
+            assert!(
+                edition.id > 1000,
+                "{version}: new edition ID {}",
+                edition.id
             );
         }
     }

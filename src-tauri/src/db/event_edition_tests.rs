@@ -263,46 +263,45 @@ fn upgrade_inside_validated_mutation_commits_or_rolls_back_with_caller() {
 }
 
 #[test]
-#[cfg_attr(not(unix), allow(clippy::single_element_loop))]
 fn upgrade_inside_pgn_conversion_commits_or_rolls_back_with_caller() {
-    for succeeds in [
-        #[cfg(unix)]
-        false,
-        true,
-    ] {
-        let (dir, app, handle, path) = upgrade_case();
-        tauri_specta::Builder::<tauri::test::MockRuntime>::new()
-            .events(tauri_specta::collect_events!(ConvertProgress))
-            .mount_events(&app);
-        let source = dir.path().join("import.pgn");
-        std::fs::write(
-            &source,
-            "[Event \"Annual\"]\n[Date \"2024.05.06\"]\n\n1. e4 *",
-        )
-        .unwrap();
-        let file = grant_pgn_file(&app, &source, "import.pgn", vec![PathOperation::ReadPgn]);
-        let state = app.state::<AppState>();
-        #[cfg(unix)]
-        let _failure = (!succeeds).then(repository::fail_next_revision_bump);
-        let result = convert_pgn_blocking(
-            &state.pgn_path_authority,
-            &state.database_repository,
-            &state.search_cache,
-            vec![file],
-            handle.clone(),
-            None,
-            app.clone(),
-            "Upgrade".into(),
-            None,
-            handle.path_ref().id.clone(),
-            &CancellationToken::new(),
+    #[cfg(unix)]
+    upgrade_inside_pgn_conversion_case(false);
+    upgrade_inside_pgn_conversion_case(true);
+}
+
+fn upgrade_inside_pgn_conversion_case(succeeds: bool) {
+    let (dir, app, handle, path) = upgrade_case();
+    tauri_specta::Builder::<tauri::test::MockRuntime>::new()
+        .events(tauri_specta::collect_events!(ConvertProgress))
+        .mount_events(&app);
+    let source = dir.path().join("import.pgn");
+    std::fs::write(
+        &source,
+        "[Event \"Annual\"]\n[Date \"2024.05.06\"]\n\n1. e4 *",
+    )
+    .unwrap();
+    let file = grant_pgn_file(&app, &source, "import.pgn", vec![PathOperation::ReadPgn]);
+    let state = app.state::<AppState>();
+    #[cfg(unix)]
+    let _failure = (!succeeds).then(repository::fail_next_revision_bump);
+    let result = convert_pgn_blocking(
+        &state.pgn_path_authority,
+        &state.database_repository,
+        &state.search_cache,
+        vec![file],
+        handle.clone(),
+        None,
+        app.clone(),
+        "Upgrade".into(),
+        None,
+        handle.path_ref().id.clone(),
+        &CancellationToken::new(),
+    );
+    assert_eq!(result.is_ok(), succeeds, "{result:?}");
+    if !succeeds {
+        assert!(
+            matches!(result,Err(Error::Conflict(message)) if message=="injected revision bump failure")
         );
-        assert_eq!(result.is_ok(), succeeds, "{result:?}");
-        if !succeeds {
-            assert!(
-                matches!(result,Err(Error::Conflict(message)) if message=="injected revision bump failure")
-            );
-        }
-        assert_upgrade_result(&path, succeeds, if succeeds { 3 } else { 2 });
     }
+    assert_upgrade_result(&path, succeeds, if succeeds { 3 } else { 2 });
 }

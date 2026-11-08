@@ -100,12 +100,46 @@ pub fn create_game(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use diesel::connection::SimpleConnection;
     use diesel::sql_types::{Integer, Nullable, Text};
 
     #[derive(QueryableByName)]
     struct EditionYear {
         #[diesel(sql_type = Integer)]
         year: i32,
+    }
+
+    #[test]
+    fn create_event_keeps_unknown_and_empty_names_in_year_zero() {
+        use crate::db::schema::events;
+
+        let mut conn = SqliteConnection::establish(":memory:").unwrap();
+        conn.batch_execute(include_str!("create.sql")).unwrap();
+        let unknown = create_event(&mut conn, "Unknown", Some("2020.01.01")).unwrap();
+        assert_eq!((unknown.id, unknown.year), (0, 0));
+        assert_eq!(
+            events::table.count().get_result::<i64>(&mut conn).unwrap(),
+            1
+        );
+        assert_eq!(
+            events::table
+                .filter(events::name.eq("Unknown"))
+                .count()
+                .get_result::<i64>(&mut conn)
+                .unwrap(),
+            1
+        );
+
+        let empty = create_event(&mut conn, "", Some("2020.01.01")).unwrap();
+        assert_eq!(empty.year, 0);
+        assert_eq!(
+            create_event(&mut conn, "", Some("2021.01.01")).unwrap().id,
+            empty.id
+        );
+        assert_eq!(
+            events::table.count().get_result::<i64>(&mut conn).unwrap(),
+            2
+        );
     }
 
     #[test]
