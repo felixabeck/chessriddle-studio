@@ -21845,7 +21845,7 @@ chessops 0.14 has one unified `Chess` with arbitrary-file rook castling: `Castle
 ## 2026-11-06 — filed through the inbox spool
 
 ### Reloaded overdue practice cards show Practiced instead of Due in Show All
-* **ID:** f-20261106-37 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261106-37 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** Repertoire card/scheduling review (Felix t22u), HEAD `2e256a5c`.
 * **Where:** `src/components/panels/practice/PracticePanel.tsx:1318-1327` compares `c.card.due < new Date()` directly for the Show All status badge; `src/state/practiceStorage.ts:797-800` hydrates positions with JSON.parse and a passthrough card schema, retaining serialized due strings. `src/components/files/opening.ts` getStats/getCardForReview already wrap these due values with new Date.
@@ -21855,6 +21855,8 @@ chessops 0.14 has one unified `Chess` with arbitrary-file rook castling: `Castle
 * **Repair guard:** Normalize due to an instant consistently with getStats/getCardForReview and use the same inclusive due boundary, rather than relying on the TypeScript Date annotation after JSON hydration. Cover actual persisted ISO strings plus future/unseen controls.
 * **Related:** related queries across frontend-ui/frontend-state and affected files found no same mechanism. Existing practice-log move-number/key findings and Start-path omission are unrelated; missing idle clock invalidation cannot fix this fresh-render coercion error.
 * **Found by:** GrokBot, targeted t22u review with the actual portal modal and persisted payload shape.
+* **Handled 2026-11-08 (drain 44944477, joiner of f-20261106-14):** `getCardStatus(card, now)` in `src/components/files/opening.ts` is the one unseen/due/practiced classifier (`new Date(card.due) <= now`, inclusive, same as `getCardForReview`). `getStats` and the Show All badge colour and label use it, so a JSON-hydrated ISO due string is compared as an instant. Commit c636dc06. Tests: `getCardStatus` with past/future/exact ISO strings and Dates plus unseen controls, and a gameplay test that hydrates a past ISO due and reads `Board.Practice.Due` on the Show All badge; red with the fix reverted.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"2626fb7acc4f80a29966d2b631ce8f1ea5c19a6d7e26e04ecf3524674400bcf7","header_sha256":"86a88568952d1efeed9461b00377930a778b40cf6fccfd86ca570dc14ae72f69","header_status":"handled","input_sha256":"e1e78de3a8a1620eccab07198719949558141685f3c529fc33a853238c3b51d1","kind":"mutation-receipt","operation":"6a8428253ff88077d3f45ce24b159672f12cbd3b8b72b652066da8599edbba40","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-37"],"target":"f-20261106-37","v":1} -->
 
 ---
 
