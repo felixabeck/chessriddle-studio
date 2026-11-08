@@ -12351,3 +12351,13 @@ Former private decision identifier: d-20261029-14
 * **Supersedes:** -
 * **Decided by:** Claude Code (Opus 5.5) next-finding drain, adopted reviewed plan, full auto, 2026-11-08 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"625e350b6bc27313b9f862c91ec80ee9b27c0f714f3c526392ad848d0b758cc6","input_sha256":"e6e29401c1ca99cd2ec9dab461acac9a547a1447806b946ce03233134ffa5332","kind":"mutation-receipt","operation":"f77330fa80c14384ed818682c2940714c22330eec7440cf6b10c17796dedde1c","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-02"],"target":"decisions-ledger","v":1} -->
+
+### d-20261108-03 — How does Chess.com account staging treat an allowed-rules game without usable PGN?
+
+* **Question:** Does an allowlisted (`chess`, `chess960`, absent `rules`) Chess.com archive game whose `pgn` is absent, empty or whitespace fail the month, or is it skipped?
+* **Governs:** f-20261106-12
+* **Chosen:** Skip it, like a disallowed `rules` game, and log one `log::warn!` per month naming the archive year/month and the skipped count, never PGN content. A month whose games are all skipped stages an empty month and advances the coverage floor exactly like a variant-only month.
+* **Rejected:** Keep the hard `InvalidInput` (one record blocks the account's sync permanently). A typed skip surfaced to the renderer (needs a binding and UI copy for a case `d-20261103-20` already decided to log only).
+* **Reason:** Same class as `d-20261103-17`'s unparsable-game omission; there is no game to import. Reversal path: restore the `InvalidInput` return in the staging loop.
+* **Decided by:** drain session 8b655619 (next-finding, inline), 2026-11-08 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"d31b9c59f146f2010bd1828a304a83d3bcd085fea96da347558460984078887f","input_sha256":"e480df179d3a3351248f570b396d351463120c5d662fb355128924c25a4754c5","kind":"mutation-receipt","operation":"dd276fc7600aee63d7863122e4e5aea7777e50cc30d936be54da7ae7896d0ecb","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-03"],"target":"decisions-ledger","v":1} -->
