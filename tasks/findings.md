@@ -21681,7 +21681,7 @@ All probes were removed; the tree stayed clean.
 
 ### TournamentCard sorts the SWR games array in place
 
-* **ID:** f-20261106-24 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261106-24 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** Database player/tournament statistics review (t20u area 2/5) at HEAD `868bf535`
 * **Where:** `src/components/databases/TournamentCard.tsx:71-80` assigns `sortedGames = games?.sort(...)`, mutating the `useSWRImmutable(["tournament-games", file, id])` cache value. Leaderboard reduce follows on the same `games` reference. Related handled (different defect): `f-20261010-03` (page-size vs slice). Same immutability rule as the tablebase fix that copies before sort in `TablebaseInfo.tsx`.
@@ -21689,6 +21689,8 @@ All probes were removed; the tree stayed clean.
 * **Failure scenario:** Open a tournament Games tab, sort by plies descending, leave and re-enter the tournament card (or remount the view). The cached array is already reversed; default "date asc" then re-sorts the mutated list. With `Object.freeze` on the fetcher result the card crashes on render instead of showing games.
 * **Fix:** Copy before sort (`[...games].sort(...)` or `toSorted`), matching `TablebaseInfo`. Add a TournamentCard regression that freezes the mock `data` array and asserts the Games table still renders after a sort click without throw, and that the frozen array's order is unchanged.
 * **Proof:** Ephemeral Vitest on HEAD `868bf535` in `TournamentCard.test.tsx`: `getTournamentGames` resolved `{ data: Object.freeze(games(3)) }`; render threw `TypeError: Cannot assign to read only property '0'` at `TournamentCard.tsx:72` `games?.sort`. Probe removed; tree clean for that path.
+* **Handled (2026-11-08, drain dce5ff9e):** `TournamentCard` now sorts a copy (`[...games].sort(...)`), so the `useSWRImmutable` cache array is never reordered and a frozen payload no longer throws. Regression `sorting frozen tournament games preserves the cached array order` in `TournamentCard.test.tsx` freezes a 60-game payload, sorts by plies descending and asserts both the displayed page and the unchanged cached order. Fix-revert proof: with the source fix stashed the new test fails with `TypeError: Cannot assign to read only property '0'` (13 passed, 1 failed); restored, 14 passed. Commit `e1fcfbfc`. Rejected: `Array.prototype.toSorted`, equivalent but the spread copy matches `TablebaseInfo.tsx`.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"a4ff495630bca3aec49660eeae485f2e5ab7d96bf130fa53bc8960f4bb4b896c","header_sha256":"91385a9198a0f7b5ef5b0c81b2ec281898bd442bf77eeb156704389e0b133405","header_status":"handled","input_sha256":"245b30d02e8a3c28e2769f8c2f9e1d96c47835bf488f8bacef7e6f676823503f","kind":"mutation-receipt","operation":"15b4710968e542cccaec05576c31f0dd4e7d3cf6907256baf87734f6f601b0fc","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-24"],"target":"f-20261106-24","v":1} -->
 
 ---
 
