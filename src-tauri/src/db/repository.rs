@@ -3876,6 +3876,16 @@ mod upgrade_tests {
             assert!(
                 matches!(case.info(), DatabaseInfoResult::UpgradeFailed { message, .. } if message.contains("injected permanent upgrade failure"))
             );
+            assert!(
+                matches!(
+                    case.info(),
+                    DatabaseInfoResult::UpgradeFailed {
+                        reason: crate::db::DatabaseUpgradeFailureReason::Other,
+                        ..
+                    }
+                ),
+                "non-disk upgrade failures must report reason Other"
+            );
         }
         assert!(
             matches!(repository.connection(&test_target(&case.path), None), Err(error) if error.to_string().contains("injected permanent upgrade failure"))
