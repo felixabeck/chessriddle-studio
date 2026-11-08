@@ -21827,7 +21827,7 @@ chessops 0.14 has one unified `Chess` with arbitrary-file rook castling: `Castle
 ## 2026-11-06 — filed through the inbox spool
 
 ### Idle practice never makes newly due cards available until another interaction re-renders the panel
-* **ID:** f-20261106-36 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261106-36 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** Repertoire card/scheduling review (Felix t22u), HEAD `2e256a5c`.
 * **Where:** `src/components/panels/practice/PracticePanel.tsx:178` computes `getStats(deck.positions)` only during React renders; `:959-991` hides Start Practice whenever that snapshot has zero due/unseen. `src/components/files/opening.ts` evaluates due against the current Date correctly, but the panel has no due-boundary clock subscription or invalidation.
@@ -21837,6 +21837,8 @@ chessops 0.14 has one unified `Chess` with arbitrary-file rook castling: `Castle
 * **Repair guard:** Invalidate the displayed stats at the earliest future due instant and on resume as appropriate, clean up/rekey timers on deck/owner changes, and retain absolute timestamp comparison. Add a real idle-boundary regression rather than requiring unrelated input to refresh the queue.
 * **Related:** related queries over the affected files and frontend-state/frontend-ui found no same mechanism. Existing f-20261106-14 is the deliberately excluded Start-path card-generation bug; earlier stale-FEN and completion-retry findings are distinct.
 * **Found by:** GrokBot, targeted t22u review with a real mounted consumer probe.
+* **Handled 2026-11-08 (drain 44944477, joiner of f-20261106-14):** new `useDueBoundaryRerender` (`src/components/panels/practice/useDueBoundaryRerender.ts`) arms one timer at the earliest future due instant + 1 ms, clamped to the platform setTimeout maximum and re-armed after firing, cleared on cleanup and on owner/deck key change. `PracticePanel` uses it with `getStats(...).nextDue`; the Home due list (`NewTabHome.tsx`), which had the same cause (stats cached in a derived atom with no clock input, found by the root-cause lens), now computes stats at render and uses the same hook with the earliest nextDue across decks. Commits c636dc06, 8d35aabd. Tests: hook test (re-arm, clamp, cleanup), gameplay idle-boundary with two cards (earliest due wins, re-arm after an earlier card), Home idle-boundary test; each red with its source hunk reverted.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"6aa19f5d045d7298e36fc3151d3778a029b0156cb71fe790609767005a4c3ab0","header_sha256":"0d9f907e5b6674b556694296d59add837843c6019759641899a535bee6ab1dc8","header_status":"handled","input_sha256":"23346677bf6dc5cad6befa7cd73fd3d5854af713701a9b215a4c69c6a9e50c75","kind":"mutation-receipt","operation":"facbca5edc72786f68f21fa045d68104a8c421611f6208af83756910547d7d35","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-36"],"target":"f-20261106-36","v":1} -->
 
 ---
 
