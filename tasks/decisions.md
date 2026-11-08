@@ -12528,3 +12528,13 @@ Former private decision identifier: d-20261029-14
 * **Reversal path:** Make `main()` in `scripts/run-frontend-mutation.mjs` always call `runFrontendMutation()`, delete `scripts/frontend-mutation-baseline.mjs` and the publish step in `mutation.yml`.
 * **Decided by:** Felix (the trade-off), Claude Code (mechanism), 2026-11-08 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"2cc89bbf1917988ad07f9ec0bdeaf3bd7eefe4f7ed59b5b330b73e53c51b5b33","input_sha256":"f46485409f9b946d5dc7cdbb37bcfdb487e5fa79fd563ddc22dda1a4db62eabe","kind":"mutation-receipt","operation":"d6f6b93601cafce189d3898918b307a7bd785a808f67ec048120dda3dd325f7c","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-20"],"target":"decisions-ledger","v":1} -->
+
+### d-20261108-21 — Which explorer games does the Lichess Games tab list when the response carries both topGames and recentGames?
+
+* **Question:** The Lichess explorer response carries `topGames` and `recentGames`; the Games tab kept only `topGames` because `[] || recentGames` never falls through. Which games should the tab list?
+* **Governs:** f-20261106-22
+* **Chosen:** Both lists in one table, top games first, then recent games, deduplicated by game id (first occurrence wins). Masters responses carry only `topGames` and are unchanged. The Lichess sample grows from at most 4 to at most 8 rows; the Matches floor (`d-20261027-06`) counts the combined list.
+* **Rejected:** Preferring `recentGames` only when `topGames` is empty (still drops the recent games the request asked for in the common case); separate Top/Recent sections (new UI and copy for a sample of at most 8 rows).
+* **Reason:** Both lists are requested by the query builder and paid for by the response; the tab is a reference-game sample, so showing every returned game in one table without a new surface is the smallest faithful fix. Reversal path: replace the merged list in `fetchOnlineOpening` (`src/components/panels/database/DatabasePanel.tsx`) with `topGames` only and drop the merge regressions in `DatabasePanel.test.tsx`.
+* **Decided by:** Claude Code (Opus 5.5) drain next-finding, full auto, 2026-11-08 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"0a6c9d366418cd3c564dd5922f81894a56ee9e094ec98673a8a4c7b33e068ba0","input_sha256":"c49603ac5ccd4d11e06105af6d3fd5f46ddf98a9c1787a873bdf76bbed1159dc","kind":"mutation-receipt","operation":"e30561e629543684a7cd86c323df92148850775ed0778b461d06dc3894e88cb5","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-21"],"target":"decisions-ledger","v":1} -->
