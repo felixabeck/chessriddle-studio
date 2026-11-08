@@ -235,7 +235,19 @@ describe("DatabasePanel", () => {
     {
       scenario: "duplicate game ids appear once with the first occurrence retained",
       topGames: [topGame],
-      recentGames: [recentGame, topGame, recentGame],
+      recentGames: [
+        recentGame,
+        {
+          ...topGame,
+          white: { name: "DupTopWhite", rating: 1 },
+          black: { name: "DupTopBlack", rating: 1 },
+        },
+        {
+          ...recentGame,
+          white: { name: "DupRecentWhite", rating: 1 },
+          black: { name: "DupRecentBlack", rating: 1 },
+        },
+      ],
       expectedGames: [topGame, recentGame],
     },
   ])("lch_all: $scenario", async ({ topGames, recentGames, expectedGames }) => {
