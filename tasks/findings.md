@@ -22388,7 +22388,7 @@ Fixed in 0b63a012 (pushed to master; hosted Test 13/13 green; installed locally)
 
 ### validated_connections_skip_schema_probes_and_reprobe_changed_files fails on the macOS runner when readers take over 2 s to connect
 
-* **ID:** f-20261108-10 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261108-10 · **Status:** handled · **Area:** db-search · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** bac61282-2a31-49d1-9463-391344df08c6
 * **Impact class:** tooling
 * **CI run:** 42512756399
@@ -22398,3 +22398,5 @@ Fixed in 0b63a012 (pushed to master; hosted Test 13/13 green; installed locally)
 * **Fix shape:** prove the concurrency property without a wall-clock deadline on success: e.g. have each reader signal after connecting and block until all four have signalled (a `Barrier` with a generous outer bound used only to fail a genuine deadlock, such as 30 s), so a slow-but-correct runner cannot fail it while a reader that cannot connect while siblings hold connections still does. Keep the schema-probe-count assertions. Rejected in advance: simply raising 2 s to a larger number without separating the deadlock bound from the success path.
 * **Proof:** the test still fails when the validated-connection path serializes readers (e.g. temporarily hold the entry lock across the connection), passes under CPU load locally (`stress`-style busy loops), and `rust-macos-test` passes on the fix commit.
 * **Found by:** Claude Code drain session bac61282-2a31-49d1-9463-391344df08c6, 2026-11-08, in the post-push CI wait of the f-20261106-21 release.
+* **Closed 2026-11-08 as a duplicate of f-20261108-08 (drain push review, records lens):** same test, same assertion at `src-tauri/src/db/repository.rs:3590`, same run 42512756399. Its Barrier fix shape and the rejected bare-timeout increase are carried into f-20261108-08. Correction: the claim that the failure "is the wall-clock race, not a product regression" was not established, since the job logs carry no per-reader timings; f-20261108-08 keeps that question open.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"effa7f3848adc4266ebe37ca047dd54effe300e1420099ab0584eaf80a25ffb7","header_sha256":"4a688da2946e347f81352c883a6f10b1b17a35f26294be00e2c387a6cab6afea","header_status":"handled","input_sha256":"9a7d57a81f14f03b211a11fae07c14359704401fb9b829267792689ae26bee18","kind":"mutation-receipt","operation":"2f304b0b97ba546227b572e5b97fdc91b5e4e1518de2e9672b138a198dd77a9d","options":{"section":null},"request_id_sha256":null,"results":["f-20261108-10"],"target":"f-20261108-10","v":1} -->
