@@ -251,13 +251,17 @@ test.each([
   });
 });
 
-test("the tree enlarges W/D/L labels and hides shares below its raised threshold", async () => {
+test("the tree enlarges W/D/L labels, shows 25% and hides 15%", async () => {
+  mocks.searchPosition.mockResolvedValueOnce([
+    [{ ...startRows[0], white: 12, draw: 5, black: 3 }],
+    [first],
+  ]);
   await render();
   const chart = row("e4").cells[3].querySelector<HTMLElement>(".mantine-Progress-root")!;
   expect(chart.style.getPropertyValue("--progress-size")).toBe("1.125rem");
   expect(
     [...chart.querySelectorAll(".mantine-Progress-label")].map((label) => label.textContent),
-  ).toEqual(["60.0%", "", ""]);
+  ).toEqual(["60.0%", "25.0%", ""]);
 });
 
 test("moves and the terminal row show their own last played date and year strip", async () => {

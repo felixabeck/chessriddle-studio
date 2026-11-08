@@ -339,7 +339,7 @@ function OpeningTree({ player, file }: { player: Player; file: DatabaseHandle })
                                 lost={lost}
                                 size="1.125rem"
                                 playerPerspective
-                                labelThreshold={0.3}
+                                labelThreshold={0.2}
                               />
                             </td>
                             <td className={classes.recencyColumn}>
