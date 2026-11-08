@@ -22299,3 +22299,19 @@ Resolved by the f-20261108-04 fix in 0b63a012. The Open question is answered by 
 
 Fixed in 0b63a012 (pushed to master; hosted Test 13/13 green; installed locally). Schema upgrades now run in one background job per database. `get_db_info` reports ready, upgrading, busy or upgrade-failed without migrating inline, BUSY and LOCKED errors are flagged as busy, and transient rows offer neither Open nor Delete. Real-app proof on the release build of 0b63a012 against a copy of Mega Database 2025 at schema 2.2.0: both rows within 3.4 s, Upgrading at 0.3 s, upgrade finished at 18.5 s, no Delete, no "database is locked" and no failed `get_db_info` in the app log. Negative control on the previously installed release c6fe14f1: no list for 111 s.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"03f11d17f1d96aacefb8d65e231b9016980c343a2271c595e6842eadb3ceccc8","header_sha256":"158e7b372d8acd4f60860d176dda1079b89b42d4d8339c296d65413985944aac","header_status":"handled","input_sha256":"e7765f95376652f03beb76fdf1489b2ffdc8acc5c31cba11af2e23969b8b7b6e","kind":"mutation-receipt","operation":"a7bd61611c18e9567c4438e5a22c820c6f30396cbba3b1a237a24180514e9994","options":{"section":null},"request_id_sha256":null,"results":["f-20261108-04"],"target":"f-20261108-04","v":1} -->
+
+---
+
+## 2026-11-08 — filed through the inbox spool
+
+### The database detail Delete button is below AA contrast in the dark theme
+
+* **ID:** f-20261108-07 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** ux
+* **Where:** `src/components/databases/useDatabaseLibrary.tsx:590`, the filled danger Delete action of the database detail pane.
+* **Defect:** in dark mode at 100 percent font size, Axe reports the Delete label `#e8e4dc` on `#c45c5c` at 3.29:1, below the 4.5:1 AA minimum for 14 px text.
+* **Failure scenario:** a dark-theme user selecting a database sees a low-contrast label on the most destructive action in the pane.
+* **Related:** f-20261030-14 (handled) fixed the same colour pair locally for the file-detail Trash action only.
+* **Fix shape:** use the default danger presentation that f-20261030-14 used for the file-detail action, keeping the label, action, focus and confirmation.
+* **Proof:** an Axe colour-contrast pass over the database detail pane in the dark theme reports no violation for the Delete action.
+* **Found by:** Codex phase 2 leaf, build db-upgrade-state, 2026-11-08, retained Axe output of an additional accessibility run.
