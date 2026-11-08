@@ -448,6 +448,7 @@ async fn download_chess_com_games_core<R: tauri::Runtime>(
                         }
                         let mut staged = tempfile::NamedTempFile::new()?;
                         let mut month_bytes = 0usize;
+                        let mut skipped_without_pgn = 0usize;
                         for game in games.games {
                             if token.is_cancelled() {
                                 return Err(Error::Cancellation);
@@ -459,14 +460,10 @@ async fn download_chess_com_games_core<R: tauri::Runtime>(
                             {
                                 continue;
                             }
-                            let pgn =
-                                game.pgn
-                                    .filter(|pgn| !pgn.trim().is_empty())
-                                    .ok_or_else(|| {
-                                        Error::InvalidInput(
-                                            "Chess.com returned a game without PGN".into(),
-                                        )
-                                    })?;
+                            let Some(pgn) = game.pgn.filter(|pgn| !pgn.trim().is_empty()) else {
+                                skipped_without_pgn = skipped_without_pgn.saturating_add(1);
+                                continue;
+                            };
                             month_bytes = month_bytes.saturating_add(pgn.len()).saturating_add(1);
                             if total_pgn_bytes.saturating_add(month_bytes) > limits.pgn_bytes {
                                 return Ok(None);
@@ -477,6 +474,11 @@ async fn download_chess_com_games_core<R: tauri::Runtime>(
                             staged.write_all(b"\n")?;
                             #[cfg(test)]
                             capture_staged_pgn_bytes(b"\n");
+                        }
+                        if skipped_without_pgn != 0 {
+                            log::warn!(
+                                "Chess.com archive {year}-{month:02} skipped {skipped_without_pgn} game(s) without PGN"
+                            );
                         }
                         staged.flush()?;
                         Ok(Some((staged, month_bytes)))
@@ -1243,6 +1245,67 @@ mod tests {
             );
         }
         assert_eq!(staged.matches("[Event ").count(), 3);
+    }
+
+    #[tokio::test]
+    async fn staging_skips_allowed_games_without_pgn() {
+        let archive = br#"{"games":[{"rules":"chess","pgn":"[Event \"good\"]\n\n1. e4 e5 *\n"},{"rules":"chess","pgn":""},{"rules":"chess960"},{"pgn":"  \n "}]}"#;
+        let transport = Arc::new(ExportTransport {
+            responses: Mutex::new(VecDeque::from([response(INDEX), response(archive)])),
+        });
+        let (_dir, state, destination, root, app) = export_fixture(transport);
+        let job = state.operations.prepare_download("test").unwrap();
+        let downloaded = run_owned_export(
+            destination,
+            "skipped.pgn".into(),
+            job,
+            app.handle().clone(),
+            state,
+            Duration::from_secs(30),
+        )
+        .await
+        .unwrap();
+        assert!(downloaded.receipt_error.is_none());
+        assert_eq!(
+            std::fs::read_to_string(root.join("skipped.pgn")).unwrap(),
+            "[Event \"good\"]\n\n1. e4 e5 *\n\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn staging_month_of_only_pgnless_games_publishes_empty_pgn() {
+        let archive =
+            br#"{"games":[{"rules":"chess","pgn":""},{"rules":"chess960"},{"pgn":"  \n "}]}"#;
+        let transport = Arc::new(ExportTransport {
+            responses: Mutex::new(VecDeque::from([response(INDEX), response(archive)])),
+        });
+        let (_dir, state, destination, root, app) = export_fixture(transport);
+        let job = state.operations.prepare_download("test").unwrap();
+        let downloaded = run_owned_export(
+            destination,
+            "empty.pgn".into(),
+            job,
+            app.handle().clone(),
+            state.clone(),
+            Duration::from_secs(30),
+        )
+        .await
+        .unwrap();
+        assert!(downloaded.receipt_error.is_none());
+        assert!(state
+            .pgn_path_authority
+            .raw_for_test()
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .has_persistent_id(&downloaded.publication.handle.id.id));
+        let staged = std::fs::read(root.join("empty.pgn")).unwrap();
+        assert_eq!(
+            staged.len(),
+            0,
+            "pgnless-only publication must have zero bytes"
+        );
     }
 
     #[tokio::test]
