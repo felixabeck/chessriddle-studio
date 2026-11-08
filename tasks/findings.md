@@ -22370,7 +22370,7 @@ Fixed in 0b63a012 (pushed to master; hosted Test 13/13 green; installed locally)
 
 ### Hosted macOS runner lost communication during rust-macos-test on 70623fb4, so remote CI is red
 
-* **ID:** f-20261108-09 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261108-09 · **Status:** handled · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** bac61282-2a31-49d1-9463-391344df08c6
 * **Impact class:** tooling
 * **CI run:** 42503537612
@@ -22380,6 +22380,8 @@ Fixed in 0b63a012 (pushed to master; hosted Test 13/13 green; installed locally)
 * **Fix shape:** rerun the failed job (`gh run rerun 42503537612 --failed -R felixabeck/chessriddle-studio`) and confirm it succeeds; close with the job id. Same external hosted-runner class as handled f-20261106-02 and f-20261105-01; investigate the workflow only if the rerun loses the runner again.
 * **Proof:** `pnpm ci:remote:check` exits 0 with `rust-macos-test` of the newest master run concluded success.
 * **Found by:** Claude Code drain session bac61282-2a31-49d1-9463-391344df08c6, 2026-11-08.
+* **Closed 2026-11-08 (drain next-finding push review, records lens):** the rerun this entry asked for already succeeded. GitHub Test run 42503537612 attempt 2, job `rust-macos-test` 128826179840, concluded success at 2026-11-08T18:59:21Z (attempt 1 job 128801194112 was the lost-runner failure). External hosted-runner loss, no workflow change. The later red `rust-macos-test` on dc30b9b3 is the separate test-timing defect f-20261108-08.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"3fd570382766ce4b46d1a77b52f74c8b0cced5198587292c9a69987615901df9","header_sha256":"764b378417f80a37ddad1b2c6c330f9f445c9cee6d1d95a3c2a49e1a67e6cdca","header_status":"handled","input_sha256":"5466386e1b9cb168b719bf0a4e7af42513562ce541277f93b5e1674ed73f99a1","kind":"mutation-receipt","operation":"374c016dcc12a0818bf86d7bcd963cfde8e5fdc6aa2564e91172b3ec4c04f6ec","options":{"section":null},"request_id_sha256":null,"results":["f-20261108-09"],"target":"f-20261108-09","v":1} -->
 
 ### validated_connections_skip_schema_probes_and_reprobe_changed_files fails on the macOS runner when readers take over 2 s to connect
 
