@@ -52,7 +52,7 @@ export type OverviewFilters = {
     timeControl: string | null;
 };
 
-/** FIDE table 8.1(a) dp values for p = 0.50 … 1.00 (d-20261108-14). */
+/** FIDE table 8.1(a) dp values for p = 0.50 … 1.00 (d-20261108-15). */
 const DP_FROM_EQUAL: readonly number[] = [
     0, 7, 14, 21, 29, 36, 43, 50, 57, 65, 72, 80, 87, 95, 102, 110, 117, 125, 133, 141, 149, 158,
     166, 175, 184, 193, 202, 211, 220, 230, 240, 251, 262, 273, 284, 296, 309, 322, 336, 351, 366,
