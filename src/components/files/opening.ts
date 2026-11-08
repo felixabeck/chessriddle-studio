@@ -26,15 +26,21 @@ export type Position = {
     card: Card;
 };
 
+/** Empty Start excludes the root. Otherwise, practice includes Start and its descendants. */
+export function isInPracticeScope(position: number[], start: number[]): boolean {
+    return start.length === 0 ? position.length > 0 : isPrefix(start, position);
+}
+
 export function buildFromTree(tree: TreeNode, color: "white" | "black", start: number[]) {
     const cards: Position[] = [];
     const seenBoardStates = new Set<string>();
     const iterator = treeIterator(tree);
     for (const item of iterator) {
-        // Empty Start skips the root. Non-empty Start keeps only its node and descendants.
-        const beforeStart =
-            start.length === 0 ? item.position.length === 0 : !isPrefix(start, item.position);
-        if (item.node.children.length === 0 || beforeStart || !item.node.children[0].san) {
+        if (
+            item.node.children.length === 0 ||
+            !isInPracticeScope(item.position, start) ||
+            !item.node.children[0].san
+        ) {
             continue;
         }
         const boardState = getBoardState(item.node.fen);

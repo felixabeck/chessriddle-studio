@@ -38,6 +38,7 @@ import {
   getCardStatus,
   getNextReviewTimes,
   getStats,
+  isInPracticeScope,
   syncDeck,
   updateCardPerformance,
   type Position,
@@ -69,6 +70,7 @@ import {
   getBoardState,
   getNodeAtPath,
   treeIterator,
+  type ListNode,
   type TreeNode,
 } from "@/utils/treeReducer";
 import RepertoireInfo from "./RepertoireInfo";
@@ -87,16 +89,23 @@ import {
 const PRACTICE_ADVANCE_DELAY_MS = 300;
 const PRACTICE_INCORRECT_DELAY_MS = 500;
 
-function findPracticeCardFrame(card: Pick<Position, "fen" | "answer">, root: TreeNode) {
+function findPracticeCardFrame(
+  card: Pick<Position, "fen" | "answer">,
+  root: TreeNode,
+  start: number[],
+) {
+  let firstOutOfScope: ListNode | undefined;
+  // Prefer the Start subtree for transpositions. Out-of-scope stored cards keep their exact frame.
   for (const frame of treeIterator(root)) {
     if (
       frame.node.fen === card.fen &&
       frame.node.children.some((child) => child.san === card.answer)
     ) {
-      return frame;
+      if (isInPracticeScope(frame.position, start)) return frame;
+      firstOutOfScope ??= frame;
     }
   }
-  return undefined;
+  return firstOutOfScope;
 }
 
 function PracticePanel() {
@@ -201,8 +210,6 @@ function PracticePanel() {
   const scheduledAdvanceTokensRef = useRef(new Set<number>());
   const deckRef = useRef(deck);
   deckRef.current = deck;
-  const rootRef = useRef(root);
-  rootRef.current = root;
   const sessionStatsRef = useRef(sessionStats);
   sessionStatsRef.current = sessionStats;
   const autoDifficultyRef = useRef(practiceAutoDifficulty);
@@ -338,7 +345,8 @@ function PracticePanel() {
         completePracticeSession(currentStats);
         return;
       }
-      const path = findPracticeCardFrame(card, rootRef.current)?.position;
+      const state = store.getState();
+      const path = findPracticeCardFrame(card, state.root, state.headers.start || [])?.position;
       if (!path) {
         setDeck({
           type: "sync",
@@ -391,6 +399,7 @@ function PracticePanel() {
       setSession,
       setSessionStats,
       scheduleForSession,
+      store,
     ],
   );
 
@@ -563,7 +572,7 @@ function PracticePanel() {
             return;
           // Resolve the answer in the current tree. Drill arrows remain bounded at the card,
           // and feedback never creates a move or reuses a path across a source change.
-          const frame = findPracticeCardFrame(card, state.root);
+          const frame = findPracticeCardFrame(card, state.root, state.headers.start || []);
           if (!frame) return;
           const answerIndex = frame.node.children.findIndex((child) => child.san === card.answer);
           if (answerIndex !== -1) state.goToMove([...frame.position, answerIndex]);
@@ -691,10 +700,14 @@ function PracticePanel() {
     if (!fen) return;
     const card = deck.positions.find((position) => position.fen === fen);
     const currentCard = card ?? (session.answer ? { fen, answer: session.answer } : undefined);
-    if (currentCard ? !findPracticeCardFrame(currentCard, root) : !findFen(fen, root)) {
+    if (
+      currentCard
+        ? !findPracticeCardFrame(currentCard, root, headers.start || [])
+        : !findFen(fen, root)
+    ) {
       completePracticeSession();
     }
-  }, [completePracticeSession, deck.positions, root]);
+  }, [completePracticeSession, deck.positions, headers.start, root]);
 
   return (
     <>
@@ -1030,8 +1043,13 @@ function PracticePanel() {
                                 const card = deckRef.current.positions.find(
                                   (position) => position.fen === practiceState.currentFen,
                                 );
+                                const state = store.getState();
                                 const frame = card
-                                  ? findPracticeCardFrame(card, store.getState().root)
+                                  ? findPracticeCardFrame(
+                                      card,
+                                      state.root,
+                                      state.headers.start || [],
+                                    )
                                   : undefined;
                                 if (!frame) {
                                   completePracticeSession();
@@ -1298,6 +1316,7 @@ function PositionsModal({
 
   const store = useContext(TreeStateContext)!;
   const root = useStore(store, (s) => s.root);
+  const headers = useStore(store, (s) => s.headers);
   const goToMove = useStore(store, (s) => s.goToMove);
   return (
     <AppModal
@@ -1309,7 +1328,7 @@ function PositionsModal({
       {deck.positions.length === 0 && <Text>{t("Board.Practice.NoPositionsYet")}</Text>}
       <SimpleGrid cols={2}>
         {deck.positions.map((c) => {
-          const frame = findPracticeCardFrame(c, root);
+          const frame = findPracticeCardFrame(c, root, headers.start || []);
           if (!frame) return null;
           const node = frame.node;
           const status = getCardStatus(c.card);
@@ -1342,7 +1361,8 @@ function PositionsModal({
                   label={t("Board.Practice.GoBackToPosition")}
                   variant="subtle"
                   onClick={() => {
-                    const current = findPracticeCardFrame(c, store.getState().root);
+                    const state = store.getState();
+                    const current = findPracticeCardFrame(c, state.root, state.headers.start || []);
                     if (!current) return;
                     goToMove(current.position);
                     setOpen(false);

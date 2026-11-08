@@ -4,8 +4,23 @@ import { makeFen } from "chessops/fen";
 import { parseSan } from "chessops/san";
 import { type Card, createEmptyCard } from "ts-fsrs";
 import { expect, test } from "vitest";
-import { buildFromTree, getCardStatus, syncDeck, updateCardPerformance } from "./opening";
+import {
+    buildFromTree,
+    getCardStatus,
+    isInPracticeScope,
+    syncDeck,
+    updateCardPerformance,
+} from "./opening";
 import { createNode, defaultTree, type TreeNode } from "@/utils/treeReducer";
+
+test("practice scope includes only non-root positions or the Start subtree", () => {
+    expect(isInPracticeScope([], [])).toBe(false);
+    expect(isInPracticeScope([1], [])).toBe(true);
+    expect(isInPracticeScope([1, 0], [1, 0])).toBe(true);
+    expect(isInPracticeScope([1, 0, 0], [1, 0])).toBe(true);
+    expect(isInPracticeScope([1], [1, 0])).toBe(false);
+    expect(isInPracticeScope([1, 1], [1, 0])).toBe(false);
+});
 
 function openingLine(moves: string[]): TreeNode {
     const root = defaultTree().root;

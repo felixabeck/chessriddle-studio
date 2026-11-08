@@ -143,18 +143,27 @@ async function mountStudy(
   spec = cases[0],
   variation?: string[],
   full = false,
-  options: { reviewedDue?: Date; reviewedDues?: Date[]; startPractice?: boolean } = {},
+  options: {
+    reviewedDue?: Date;
+    reviewedDues?: Date[];
+    startPractice?: boolean;
+    start?: number[];
+  } = {},
 ) {
   tree = createTreeStore(undefined, defaultTree(spec.fen));
   for (const payload of variation ? [spec.moves, variation] : [spec.moves]) {
     tree.getState().goToStart();
     expect(tree.getState().makeMoves({ payload }).success).toBe(true);
   }
-  tree.getState().setHeaders({ ...tree.getState().headers, orientation: spec.orientation });
+  tree.getState().setHeaders({
+    ...tree.getState().headers,
+    orientation: spec.orientation,
+    start: options.start,
+  });
   tree.getState().goToMove([]);
   tree.getState().save("a".repeat(64));
-  const cards = buildFromTree(tree.getState().root, spec.orientation, []);
-  expect(cards).toHaveLength(options.reviewedDues?.length ?? (variation ? 3 : 1));
+  const cards = buildFromTree(tree.getState().root, spec.orientation, options.start || []);
+  expect(cards).toHaveLength(options.reviewedDues?.length ?? (variation && !options.start ? 3 : 1));
   if (options.reviewedDue) {
     cards[0].card = { ...cards[0].card, reps: 1, due: options.reviewedDue };
   }
@@ -462,6 +471,42 @@ test("actual log writer retains repeated FEN IDs and root or missing-node fallba
 
 const transposedFen = "r1bqkb1r/pppppppp/2n2n2/8/8/2N2N2/PPPPPPPP/R1BQKB1R w KQkq - 4 3";
 const answerFrame = [1, 0, 0, 0];
+
+test("practice navigation stays inside Start when an earlier branch has the same FEN and answer", async () => {
+  const start = [1, 0, 0, 0, 0];
+  const mainlineFrame = [0, 0, 0, 0, 0];
+  const card = await mountStudy(
+    { ...cases[1], moves: ["Nf3", "Nf6", "g3", "g6", "d4", "d5"] },
+    ["g3", "g6", "Nf3", "Nf6", "d4", "d5"],
+    false,
+    { start },
+  );
+  expect(card.answer).toBe("d5");
+  expect(getNodeAtPath(tree.getState().root, mainlineFrame).fen).toBe(card.fen);
+  expect(getNodeAtPath(tree.getState().root, mainlineFrame).children[0].san).toBe(card.answer);
+  expect(tree.getState().position.slice(0, start.length)).toEqual(start);
+  expect(tree.getState().practicePath?.slice(0, start.length)).toEqual(start);
+  expect(tree.getState().position).not.toEqual(mainlineFrame);
+
+  await act(async () => tree.getState().goToMove([]));
+  await click("Board.Practice.GoBackToPosition");
+  expect(tree.getState().position).toEqual(start);
+  expect(tree.getState().practicePath).toEqual(start);
+
+  await act(async () => tree.getState().goToMove([]));
+  await click("Board.Practice.ShowAll");
+  const positionCard = document.querySelector('[role="dialog"] .mantine-Card-root');
+  expect(positionCard?.textContent).toContain("3... d5");
+  await act(async () => positionCard!.querySelector<HTMLButtonElement>("button")!.click());
+  expect(tree.getState().position).toEqual(start);
+
+  await act(async () => atoms.get(practiceMoveControllerFamily(owner.value))!.submitMove("e5"));
+  expect(atoms.get(practiceStateFamily(owner.value)).phase).toBe("incorrect");
+  await act(async () => vi.advanceTimersByTimeAsync(500));
+  expect(tree.getState().position).toEqual([...start, 0]);
+  expect(tree.getState().currentNode().san).toBe("d5");
+  expect(tree.getState().practicePath).toEqual(start);
+});
 
 async function startTransposedCard() {
   await mountStudy(
