@@ -21652,6 +21652,9 @@ All probes were removed; the tree stayed clean.
 * **Closed 2026-11-08 (drain next-finding):** `fetchOnlineOpening` now merges `topGames` then `recentGames`, deduplicated by id, before normalization (d-20261108-20); Masters is unchanged. Regressions in `DatabasePanel.test.tsx`: top+recent both listed in order, empty top with recent lists the recent game, duplicate ids appear once; each failed on the old `||` line. Rejected: prefer recent only when top is empty (still drops recent games in the common case). Commit: b3971b12.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"58591d2f0d4fe1f6aee258e9fda0e345298800d90f9be92fea7f669d40f3c24a","header_sha256":"499babca5c99620325fdc89890b1abeeef27738fdbc664d56b6f60027cde249f","header_status":"handled","input_sha256":"8918f566a142c2f2e5e17d415c847479681f9c89a27869fa101aeb8165c66b3a","kind":"mutation-receipt","operation":"f3974b0b3a30db6d27f658c8e92fdb8d0eb5af4096de600728813b0a10085f9a","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-22"],"target":"f-20261106-22","v":1} -->
 
+* **Decision id correction (2026-11-08):** the closing note above cites d-20261108-20; a concurrent session allocated that id on master first (local frontend mutation gate), so this finding's explorer-games decision is recorded as d-20261108-21.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"46b8fb2d9158c89ad69209f3104d48a43ca78fdffd0473e52c973b2793411277","input_sha256":"eba306e282239104eee54295beab181539c695eb1543f84c73c34c33327d5211","kind":"mutation-receipt","operation":"a6fdacd1334bbfb7b79eb71cd4259d2be34b3feed67d018eba4d16d0abbdb59b","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-22"],"target":"f-20261106-22","v":1} -->
+
 ---
 
 ## 2026-11-06 — filed through the inbox spool
