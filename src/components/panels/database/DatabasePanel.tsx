@@ -91,7 +91,13 @@ export async function fetchOnlineOpening<T>(
   if (signal?.aborted) {
     throw new DOMException("Cancellation", "AbortError");
   }
-  const normalized = await convertToNormalized(data.topGames || data.recentGames || [], { signal });
+  const seen = new Set<string>();
+  const games = [...(data.topGames ?? []), ...(data.recentGames ?? [])].filter((game) => {
+    if (seen.has(game.id)) return false;
+    seen.add(game.id);
+    return true;
+  });
+  const normalized = await convertToNormalized(games, { signal });
   return {
     openings: data.moves.map((move) => ({
       move: move.san,

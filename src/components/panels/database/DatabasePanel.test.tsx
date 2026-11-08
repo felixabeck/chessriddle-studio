@@ -25,6 +25,7 @@ import { installMatchMediaStub } from "@/tests/matchMedia";
 import { catalogueI18n, shippedCatalogues } from "@/tests/catalogues";
 import type { SupportedLocale } from "@/i18n";
 import { formatNumber } from "@/utils/format";
+import type { PositionData } from "@/utils/lichess/api";
 
 const mocks = vi.hoisted(() => ({
   logError: vi.fn(),
@@ -203,6 +204,67 @@ describe("DatabasePanel", () => {
       },
     ],
   };
+
+  const topGame: NonNullable<PositionData["topGames"]>[number] = {
+    ...mockExplorerData.topGames[0],
+    uci: "e2e4",
+    winner: null,
+    speed: "blitz",
+    mode: "rated",
+  };
+  const recentGame = {
+    ...topGame,
+    id: "r1",
+    white: { name: "RecentWhite", rating: 2100 },
+    black: { name: "RecentBlack", rating: 2100 },
+  };
+
+  test.each([
+    {
+      scenario: "top games precede recent games",
+      topGames: [topGame],
+      recentGames: [recentGame],
+      expectedGames: [topGame, recentGame],
+    },
+    {
+      scenario: "recent games survive an empty top games list",
+      topGames: [],
+      recentGames: [recentGame],
+      expectedGames: [recentGame],
+    },
+    {
+      scenario: "duplicate game ids appear once with the first occurrence retained",
+      topGames: [topGame],
+      recentGames: [recentGame, topGame, recentGame],
+      expectedGames: [topGame, recentGame],
+    },
+  ])("lch_all: $scenario", async ({ topGames, recentGames, expectedGames }) => {
+    const data: PositionData = { ...mockExplorerData, topGames, recentGames };
+    mocks.getLichessGames.mockResolvedValue(data);
+    mocks.getPublicLichessJson.mockImplementation(async ({ game_id }: { game_id: string }) => {
+      const game = expectedGames.find((game) => game.id === game_id)!;
+      return `[White "${game.white.name}"]\n[Black "${game.black.name}"]\n\n1. e4 e5 *`;
+    });
+    mocks.lexPgn.mockImplementation(async (pgn: string) =>
+      [...pgn.matchAll(/\[(White|Black) "([^"]*)"\]/g)].map(([, tag, value]) => ({
+        type: "Header",
+        value: { tag, value },
+      })),
+    );
+
+    const result = await fetchOpening(
+      { type: "lch_all", fen: "startpos", options: { color: "white" }, handle: "token-1" },
+      "tab-1",
+    );
+
+    expect(result.games.map(({ id, white, black }) => ({ id, white, black }))).toEqual(
+      expectedGames.map((game, id) => ({ id, white: game.white.name, black: game.black.name })),
+    );
+    expect(mocks.getPublicLichessJson.mock.calls.map(([query]) => query.game_id)).toEqual(
+      expectedGames.map((game) => game.id),
+    );
+    expect(result.gameFailures).toEqual([]);
+  });
 
   test("lch_all: checkpoint 1 stops after explorer fetch before normalization when signal is aborted", async () => {
     const controller = new AbortController();
