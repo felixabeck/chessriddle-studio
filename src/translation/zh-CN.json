@@ -511,6 +511,7 @@
     "Databases.Settings.RemoveDup": "删除重复对局",
     "Databases.Settings.RemoveEmpty": "删除空对局",
     "Databases.Title": "数据库",
+    "Databases.Tournament.AvgElo": "平均 Elo",
     "Databases.Tournament.Leaderboard": "排行榜",
     "Databases.Tournament.NoneFound": "未找到锦标赛",
     "Databases.Tournament.NoSelection": "未选择锦标赛",

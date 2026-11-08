@@ -517,6 +517,7 @@
     "Databases.Settings.RemoveDup": "Kopyaları Sil",
     "Databases.Settings.RemoveEmpty": "Boş Oyunları Sil",
     "Databases.Title": "Veritabanlarınız",
+    "Databases.Tournament.AvgElo": "Ortalama Elo",
     "Databases.Tournament.Leaderboard": "Puan durumu",
     "Databases.Tournament.NoneFound": "Turnuva bulunamadı",
     "Databases.Tournament.NoSelection": "Turnuva seçilmedi",

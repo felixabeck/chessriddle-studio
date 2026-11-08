@@ -18,6 +18,7 @@ import { getTournamentGames } from "@/utils/db";
 import { runTabCreation } from "@/utils/tabs";
 import { openDatabaseGame } from "@/utils/databaseGame";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
+import { dateColumn, numericColumn } from "./databaseColumns";
 import PlayerRatingCell from "./PlayerRatingCell";
 
 const gamePoints = (game: NormalizedGame, player: string) => {
@@ -197,9 +198,14 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
                     <PlayerRatingCell name={black} elo={black_elo} />
                   ),
                 },
-                { accessor: "date", title: t("Common.Date"), sortable: true },
+                { ...dateColumn, accessor: "date", title: t("Common.Date"), sortable: true },
                 { accessor: "result", title: t("Board.Database.Local.Result") },
-                { accessor: "ply_count", title: t("Databases.Game.Plies"), sortable: true },
+                {
+                  ...numericColumn,
+                  accessor: "ply_count",
+                  title: t("Databases.Game.Plies"),
+                  sortable: true,
+                },
               ]}
               noRecordsText={t("Databases.Game.NoGamesFound")}
             />
@@ -212,9 +218,9 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
               records={players}
               columns={[
                 {
+                  ...numericColumn,
                   accessor: "rank",
                   title: t("Databases.Tournament.Rank"),
-                  width: "2.5rem",
                   render: (player, index) => (
                     <Text size="sm" fw={500}>
                       {index + 1}
@@ -231,6 +237,7 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
                   ),
                 },
                 {
+                  ...numericColumn,
                   accessor: "points",
                   title: t("Databases.Tournament.Points"),
                   render: (player) => (

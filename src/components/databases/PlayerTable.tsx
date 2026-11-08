@@ -11,6 +11,7 @@ import { IconAction } from "@/components/common/IconAction";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { ELO_FILTER_MAX, query_players } from "@/utils/db";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
+import { numericColumn } from "./databaseColumns";
 import GridLayout from "./GridLayout";
 import { getAdjacentRecordId } from "./pageSelection";
 import PlayerCard from "./PlayerCard";
@@ -123,13 +124,17 @@ function PlayerTable() {
           columns={[
             { accessor: "id", title: t("Common.Id"), sortable: true },
             { accessor: "name", title: t("Common.Name"), sortable: true },
-            { accessor: "elo", title: t("Board.Database.Local.Elo"), sortable: true },
             {
+              ...numericColumn,
+              accessor: "elo",
+              title: t("Board.Database.Local.Elo"),
+              sortable: true,
+            },
+            {
+              ...numericColumn,
               accessor: "game_count",
               title: t("Board.Database.Games"),
               sortable: true,
-              textAlign: "right",
-              cellsStyle: () => ({ fontVariantNumeric: "tabular-nums" }),
             },
           ]}
           rowClassName={(r) => (r.id === selectedPlayer ? classes.selected : "")}

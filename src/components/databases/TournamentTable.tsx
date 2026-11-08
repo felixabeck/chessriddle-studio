@@ -10,6 +10,12 @@ import { useStore } from "zustand";
 import { type Event, type TournamentSort } from "@/bindings";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
+import {
+  dateColumn,
+  formatEventDateRange,
+  numericColumn,
+  truncatedTextColumn,
+} from "./databaseColumns";
 import GridLayout from "./GridLayout";
 import { getAdjacentRecordId } from "./pageSelection";
 import classes from "./styles.module.css";
@@ -71,7 +77,39 @@ function TournamentTable() {
           highlightOnHover
           records={tournaments}
           fetching={isLoading}
-          columns={[{ accessor: "name", title: t("Common.Name"), sortable: true }]}
+          columns={[
+            { accessor: "name", title: t("Common.Name"), sortable: true },
+            {
+              ...dateColumn,
+              accessor: "start_date",
+              title: t("Common.Date"),
+              sortable: true,
+              render: ({ start_date, end_date }) => formatEventDateRange(start_date, end_date),
+            },
+            {
+              ...truncatedTextColumn<Event>((event) => event.site),
+              accessor: "site",
+              title: t("Databases.Game.Site"),
+            },
+            {
+              ...numericColumn,
+              accessor: "player_count",
+              title: t("Databases.Card.Players"),
+              sortable: true,
+            },
+            {
+              ...numericColumn,
+              accessor: "game_count",
+              title: t("Common.Games"),
+              sortable: true,
+            },
+            {
+              ...numericColumn,
+              accessor: "avg_elo",
+              title: t("Databases.Tournament.AvgElo"),
+              sortable: true,
+            },
+          ]}
           rowClassName={(t) => (t.id === selected ? classes.selected : "")}
           noRecordsText={
             error

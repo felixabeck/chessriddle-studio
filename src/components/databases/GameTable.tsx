@@ -29,6 +29,7 @@ import { ELO_FILTER_MAX, query_games, sameDatabaseHandle } from "@/utils/db";
 import { runTabCreation } from "@/utils/tabs";
 import { openDatabaseGame } from "@/utils/databaseGame";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
+import { dateColumn, numericColumn, truncatedTextColumn } from "./databaseColumns";
 import GameCard from "./GameCard";
 import GridLayout from "./GridLayout";
 import layoutClasses from "./GridLayout.module.css";
@@ -254,15 +255,28 @@ function GameTable() {
               title: t("Fen.Black"),
               render: ({ black, black_elo }) => <PlayerRatingCell name={black} elo={black_elo} />,
             },
-            { accessor: "date", title: t("Common.Date"), sortable: true },
+            { ...dateColumn, accessor: "date", title: t("Common.Date"), sortable: true },
             {
               accessor: "result",
               title: t("Board.Database.Local.Result"),
               render: ({ result }) => result?.replaceAll("1/2", "½"),
             },
-            { accessor: "ply_count", title: t("Databases.Game.Plies"), sortable: true },
-            { accessor: "event", title: t("Databases.Game.Event") },
-            { accessor: "site", title: t("Databases.Game.Site") },
+            {
+              ...numericColumn,
+              accessor: "ply_count",
+              title: t("Databases.Game.Plies"),
+              sortable: true,
+            },
+            {
+              ...truncatedTextColumn<NormalizedGame>((game) => game.event),
+              accessor: "event",
+              title: t("Databases.Game.Event"),
+            },
+            {
+              ...truncatedTextColumn<NormalizedGame>((game) => game.site),
+              accessor: "site",
+              title: t("Databases.Game.Site"),
+            },
           ]}
           rowClassName={(record) => (record.id === selectedGameId ? classes.selected : "")}
           noRecordsText={

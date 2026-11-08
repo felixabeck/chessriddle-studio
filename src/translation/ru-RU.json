@@ -529,6 +529,7 @@
     "Databases.Settings.RemoveDup": "Удалить дубликаты",
     "Databases.Settings.RemoveEmpty": "Удалить пустые игры",
     "Databases.Title": "Базы данных",
+    "Databases.Tournament.AvgElo": "Средний Elo",
     "Databases.Tournament.Leaderboard": "Таблица лидеров",
     "Databases.Tournament.NoneFound": "Турниры не найдены",
     "Databases.Tournament.NoSelection": "Турнир не выбран",

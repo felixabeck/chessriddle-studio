@@ -10,6 +10,7 @@ import PanelGamesTable from "@/components/panels/database/GamesTable";
 import { activeDatabaseViewStore } from "@/state/store/database";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { catalogueI18n } from "@/tests/catalogues";
+import { supportedLocales } from "@/i18n";
 import type { SuccessDatabaseInfo } from "@/utils/db";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
 import GameTable from "./GameTable";
@@ -33,12 +34,12 @@ vi.mock("swr", async (original) => ({
                 {
                   id: 1,
                   name: "Fixture",
-                  start_date: null,
-                  end_date: null,
-                  site: null,
-                  player_count: 0,
-                  game_count: 0,
-                  avg_elo: null,
+                  start_date: "2025.01.17",
+                  end_date: "2025.02.02",
+                  site: "Berlin",
+                  player_count: 12,
+                  game_count: 30,
+                  avg_elo: 2250,
                 },
               ],
       count: mocks.empty ? 0 : 1,
@@ -261,13 +262,132 @@ test("PlayerTable renders translated column titles", async () => {
 
 test("TournamentTable renders translated column titles", async () => {
   await render(<TournamentTable />);
-  expect(headers()).toEqual(["Name"]);
+  expect(headers()).toEqual(["Name", "Datum", "Ort", "Spieler", "Spiele", "Ø Elo"]);
 });
+
+function expectDate(cell: HTMLElement) {
+  expect(cell.classList.contains("mantine-datatable-nowrap")).toBe(true);
+  expect(cell.style.width).toBe("");
+}
+
+function expectNumeric(cell: HTMLElement) {
+  expectDate(cell);
+  expect(cell.classList.contains("mantine-datatable-text-align-right")).toBe(true);
+  expect(cell.style.fontVariantNumeric).toBe("tabular-nums");
+}
+
+function expectTruncated(cell: HTMLElement, value: string) {
+  const text = cell.querySelector("span")!;
+  expect(text.textContent).toBe(value);
+  expect(text.title).toBe(value);
+  expect(text.style.whiteSpace).toBe("nowrap");
+  expect(text.style.textOverflow).toBe("ellipsis");
+  expect(text.style.overflow).toBe("hidden");
+  expect(text.style.maxWidth).toBe("16rem");
+}
+
+test("TournamentTable renders the shared date, site and numeric presets", async () => {
+  await render(<TournamentTable />);
+  const cells = host.querySelectorAll<HTMLElement>("tbody tr:first-child td");
+  expect(cells[0].textContent).toBe("Fixture");
+  expect(cells[0].style.maxWidth).toBe("");
+  expect(cells[1].textContent).toBe("2025.01.17 – 02.02");
+  expectDate(cells[1]);
+  expectTruncated(cells[2], "Berlin");
+  for (const index of [3, 4, 5]) expectNumeric(cells[index]);
+  expect([...cells].map((cell) => cell.textContent)).toEqual([
+    "Fixture",
+    "2025.01.17 – 02.02",
+    "Berlin",
+    "12",
+    "30",
+    "2250",
+  ]);
+  const columns = [...host.querySelectorAll("th")];
+  expect(
+    columns.map((column) => column.classList.contains("mantine-datatable-header-cell-sortable")),
+  ).toEqual([true, true, false, true, true, true]);
+});
+
+test("PlayerTable renders Elo and Games with the shared numeric preset", async () => {
+  await render(<PlayerTable />);
+  const cells = host.querySelectorAll<HTMLElement>("tbody tr:first-child td");
+  expectNumeric(cells[2]);
+  expectNumeric(cells[3]);
+});
+
+test("GameTable renders shared date, plies, event and site presets without reformatting dates", async () => {
+  await render(<GameTable />);
+  const cells = host.querySelectorAll<HTMLElement>("tbody tr:first-child td");
+  expectDate(cells[2]);
+  expect(cells[2].textContent).toBe(game.date);
+  expectNumeric(cells[4]);
+  expectTruncated(cells[5], game.event);
+  expectTruncated(cells[6], game.site);
+});
+
+test("board-panel GamesTable renders the shared date and numeric presets", async () => {
+  await render(<PanelGamesTable games={[game]} loading={false} databasePath={file} />);
+  const cells = host.querySelectorAll<HTMLElement>("tbody tr:first-child td");
+  expectDate(cells[2]);
+  expect(cells[2].textContent).toBe(game.date);
+  expectNumeric(cells[4]);
+});
+
+test("TournamentCard renders shared Games and Leaderboard presets", async () => {
+  await render(
+    <TournamentCard
+      tournament={{
+        id: 1,
+        name: "Fixture",
+        start_date: null,
+        end_date: null,
+        site: null,
+        player_count: 2,
+        game_count: 1,
+        avg_elo: null,
+      }}
+      file={file}
+    />,
+  );
+  const cells = host.querySelectorAll<HTMLElement>("table:first-of-type tbody tr:first-child td");
+  expectDate(cells[3]);
+  expect(cells[3].textContent).toBe(game.date);
+  expectNumeric(cells[5]);
+  await act(async () => activeDatabaseViewStore.getState().setTournamentsActiveTab("leaderboard"));
+  const leaderboard = host.querySelector('[role="tabpanel"][id$="-panel-leaderboard"]')!;
+  const ranks = leaderboard.querySelectorAll<HTMLElement>("tbody tr");
+  expect(ranks.length).toBe(2);
+  for (const row of ranks) {
+    expectNumeric(row.children[0] as HTMLElement);
+    expectNumeric(row.children[2] as HTMLElement);
+  }
+});
+
+test.each(supportedLocales)(
+  "Events Avg Elo header is translated in %s without fallback",
+  async (language) => {
+    const translated = await catalogueI18n(language);
+    expect(translated.exists("Databases.Tournament.AvgElo")).toBe(true);
+    expect(translated.t("Databases.Tournament.AvgElo")).not.toBe("");
+    expect(translated.t("Databases.Tournament.AvgElo")).not.toBe("Databases.Tournament.AvgElo");
+  },
+);
+
+test.each(["en-US", "de-DE"] as const)(
+  "Events Avg Elo uses the specified %s title",
+  async (language) => {
+    const translated = await catalogueI18n(language);
+    expect(translated.t("Databases.Tournament.AvgElo")).toBe(
+      { "en-US": "Avg Elo", "de-DE": "Ø Elo" }[language],
+    );
+  },
+);
 
 test.each(["players", "tournaments"])("%s renders French headers", async (view) => {
   locale = await catalogueI18n("fr-FR");
   await render(view === "players" ? <PlayerTable /> : <TournamentTable />);
-  expect(headers().slice(0, 2)).toEqual(view === "players" ? ["ID", "Nom"] : ["Nom"]);
+  expect(headers().slice(0, 2)).toEqual(view === "players" ? ["ID", "Nom"] : ["Nom", "Date"]);
 });
 
 test("TournamentCard renders the German empty leaderboard", async () => {

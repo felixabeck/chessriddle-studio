@@ -876,19 +876,21 @@ export const gameOpeningCommands: NonNullable<MockScenario["commands"]> = {
 /** Populated split-layout coverage without changing the opening journeys' empty tab replies. */
 export const databaseLayoutCommands: NonNullable<MockScenario["commands"]> = {
     ...gameOpeningCommands,
-    get_players: { result: { data: [{ id: 1, name: "First White", elo: 1500 }], count: 1 } },
+    get_players: {
+        result: { data: [{ id: 1, name: "First White", elo: 1500, game_count: 1 }], count: 1 },
+    },
     get_tournaments: {
         result: {
             data: [
                 {
                     id: 1,
                     name: "First event",
-                    start_date: null,
-                    end_date: null,
-                    site: null,
-                    player_count: 0,
-                    game_count: 0,
-                    avg_elo: null,
+                    start_date: "2026.10.01",
+                    end_date: "2026.10.03",
+                    site: "Berlin International Chess Centre, Germany",
+                    player_count: 4,
+                    game_count: 2,
+                    avg_elo: 1750,
                 },
             ],
             count: 1,

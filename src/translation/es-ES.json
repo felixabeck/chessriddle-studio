@@ -523,6 +523,7 @@
     "Databases.Settings.RemoveDup": "Eliminar duplicados",
     "Databases.Settings.RemoveEmpty": "Eliminar partidas vacías",
     "Databases.Title": "Tus bases de datos",
+    "Databases.Tournament.AvgElo": "Elo medio",
     "Databases.Tournament.Leaderboard": "Clasificación",
     "Databases.Tournament.NoneFound": "No se encontraron torneos",
     "Databases.Tournament.NoSelection": "No hay torneo seleccionado",

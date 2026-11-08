@@ -4,6 +4,7 @@ import { DataTable } from "mantine-datatable";
 import { memo, useEffect, useState } from "react";
 import type { DatabaseHandle, NormalizedGame } from "@/bindings";
 import PlayerRatingCell from "@/components/databases/PlayerRatingCell";
+import { dateColumn, numericColumn } from "@/components/databases/databaseColumns";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { addRecentFileAtom, tabsAtom } from "@/state/atoms";
 import { runTabCreation } from "@/utils/tabs";
@@ -60,9 +61,9 @@ function GamesTable({
           title: t("Fen.Black"),
           render: ({ black, black_elo }) => <PlayerRatingCell name={black} elo={black_elo} />,
         },
-        { accessor: "date", title: t("Common.Date") },
+        { ...dateColumn, accessor: "date", title: t("Common.Date") },
         { accessor: "result", title: t("Board.Database.Local.Result") },
-        { accessor: "ply_count", title: t("Databases.Game.Plies") },
+        { ...numericColumn, accessor: "ply_count", title: t("Databases.Game.Plies") },
       ]}
       noRecordsText={t("Databases.Game.NoGamesFound")}
     />

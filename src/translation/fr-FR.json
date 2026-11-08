@@ -523,6 +523,7 @@
     "Databases.Settings.RemoveDup": "Supprimer les doublons",
     "Databases.Settings.RemoveEmpty": "Supprimer les parties vides",
     "Databases.Title": "Vos bases de données",
+    "Databases.Tournament.AvgElo": "Elo moyen",
     "Databases.Tournament.Leaderboard": "Classement",
     "Databases.Tournament.NoneFound": "Aucun tournoi trouvé",
     "Databases.Tournament.NoSelection": "Aucun tournoi sélectionné",

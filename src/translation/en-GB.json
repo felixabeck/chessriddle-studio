@@ -517,6 +517,7 @@
     "Databases.Settings.RemoveDup": "Remove Duplicates",
     "Databases.Settings.RemoveEmpty": "Remove Empty Games",
     "Databases.Title": "Databases",
+    "Databases.Tournament.AvgElo": "Avg Elo",
     "Databases.Tournament.Leaderboard": "Leaderboard",
     "Databases.Tournament.NoneFound": "No tournaments found",
     "Databases.Tournament.NoSelection": "No tournament selected",

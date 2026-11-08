@@ -517,6 +517,7 @@
     "Databases.Settings.RemoveDup": "Fjern duplicater",
     "Databases.Settings.RemoveEmpty": "Slett tomme partier",
     "Databases.Title": "Dine databaser",
+    "Databases.Tournament.AvgElo": "Snitt-Elo",
     "Databases.Tournament.Leaderboard": "Resultatliste",
     "Databases.Tournament.NoneFound": "Ingen turneringer funnet",
     "Databases.Tournament.NoSelection": "Ingen turnering valgt",
