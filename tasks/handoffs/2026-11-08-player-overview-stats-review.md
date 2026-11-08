@@ -1,6 +1,6 @@
 # Player Overview statistics — review record (2026-11-08)
 
-Plan and diff review history of the build run that added score by colour, ratings, opponents, openings and last games to the player card Overview. Commits a922bc8f..HEAD on master. Decisions d-20261108-04 to -07.
+Plan and diff review history of the build run that added score by colour, ratings, opponents, openings and last games to the player card Overview. Landed on master. Decisions d-20261108-12 to -15.
 
 Executors: phase 1 and phase 4, all review lenses and fix-1 to fix-3 on Codex; phases 2 and 3 on Grok (Felix switched executor mid-run, then switched back when Grok's balance ran out during phase 3's fix round). Orchestrator and arbiter: Claude Code (Opus 5.5). Lenses shared a model family with the phase 1 and 4 and fix authors, and the arbiter also wrote the plan.
 
