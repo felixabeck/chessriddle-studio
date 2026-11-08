@@ -22202,3 +22202,17 @@ chessops 0.14 has one unified `Chess` with arbitrary-file rook castling: `Castle
 * **Failure scenario:** every push stops at `pnpm ci:remote:check` (exit 1) until a rerun of this job succeeds.
 * **Fix shape:** `gh run rerun 42436165203 --failed -R felixabeck/chessriddle-studio` and confirm the job succeeds; close with the new job id. Investigate the workflow only if the rerun hangs again.
 * **Proof:** `pnpm ci:remote:check` no longer lists `rust-platform (macos-26-intel, x86_64-apple-darwin)`.
+
+---
+
+## 2026-11-08 — filed through the inbox spool
+
+### One-time 2.3.0 event-summary migration holds the library on the generic loading line for about 24 s on Mega Database 2025
+
+* **ID:** f-20261108-05 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** behaviour
+* **Where:** `migrate_event_summaries` in `src-tauri/src/db/migrations.rs` (Games(EventID) index build plus full backfill) during `validate_existing_database`, shown through the library listing in `src/components/databases/useDatabaseLibrary.tsx`.
+* **Defect:** the 2.2.0 to 2.3.0 upgrade runs synchronously when a database is first opened by a build containing it, and the library shows only its generic loading line meanwhile. d-20261108-02 accepted a wait of about 5 s and named filing a finding as its reversal path if a measured wait noticeably exceeds an ordinary listing.
+* **Failure scenario:** release-profile benchmark `db::event_summary_tests::benchmark_mega_event_summaries` on a copy of Mega Database 2025 (11,441,614 games, 70,039 events, schema 2.2.0), 2026-11-08, machine load average about 42: migration plus acquisition took 23.55 s, once per database.
+* **Open question:** should the listing show a per-database one-time upgrade state, or is a wait of this size acceptable for databases of this size?
+* **Found by:** Claude Code (Opus 5.5), build event-summary-columns, 2026-11-08.
