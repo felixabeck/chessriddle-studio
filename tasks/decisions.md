@@ -12462,3 +12462,14 @@ Former private decision identifier: d-20261029-14
 * **Supersedes:** d-20261108-02
 * **Decided by:** Claude Code (Opus 5.5) build run db-migration-lock-state, full auto, 2026-11-08 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"cd6293369d49d61726eb04e963d5d5b064e0827b9f59a24c243fb861dc0cea89","input_sha256":"3a4756c58d8d787e1d8c6b7b18f8ae67bd177ac02d25d7fd9cedec62d5788323","kind":"mutation-receipt","operation":"487f281d19f321c867dc6e41dad3b622aed0b134e7fdc3ca833211aa94421d93","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-08"],"target":"decisions-ledger","v":1} -->
+
+### d-20261108-09 — How are lock contention and failed schema upgrades represented to the renderer?
+
+* **Question:** Should SQLite lock contention and a failed upgrade be new renderer union members or new error categories, and which upgrade failures are retried?
+* **Governs:** f-20261108-04
+* **Chosen:** `get_db_info` returns `ready | upgrading | busy | upgrade-failed` as an internally tagged result; every other command flags SQLite BUSY/LOCKED (also through `Error::Shared` and the pool acquisition timeout) with a `databaseBusy` payload flag following the `databaseAdmission` precedent. The renderer keeps `success | error` and marks transient rows with `transient: "upgrading" | "busy"`, a failed upgrade with `upgradeFailed`. BUSY/LOCKED and cancellation are transient (a BUSY job is reported once as busy, then retried); every other upgrade failure, disk full included, is retained per identity until restart and keeps Delete behind its confirm dialog, with copy saying the file was not changed.
+* **Rejected:** New `ErrorCategory` (exhaustive `BACKEND_CATEGORY` map, unmapped in r1 review); new renderer union members (every `type` switch changes); retrying disk-full upgrades every 3 s.
+* **Reason:** Smallest typed path that keeps lock contention out of the corruption UI. Reversal path: replace the flag with an `ErrorCategory` if a second command family needs category-level handling.
+* **Supersedes:** -
+* **Decided by:** Claude Code (Opus 5.5) build run db-migration-lock-state, full auto, 2026-11-08 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"e0b8cdffeb624e6c0b5ec225bb0307fefb0b186b5c63da8d64c0527eb1a66133","input_sha256":"7bdf0d160719d5575e09cb609bc66b048358484048e39d606957d9008a171c7f","kind":"mutation-receipt","operation":"e69e0e1e95ca2120cf53d47ac1c29a683f0ca5bcfcd41c0c0f2c74af589375c5","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-09"],"target":"decisions-ledger","v":1} -->
