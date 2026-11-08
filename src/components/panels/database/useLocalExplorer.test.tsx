@@ -91,10 +91,36 @@ test("replacement aborts the old request and discards its late result", async ()
   await render(true, false, "next");
   expect(signal.aborted).toBe(true);
   await act(async () =>
-    fresh.resolve([[{ move: "fresh", white: 1, draw: 0, black: 0, unknown: 0 }], []]),
+    fresh.resolve([
+      [
+        {
+          move: "fresh",
+          white: 1,
+          draw: 0,
+          black: 0,
+          unknown: 0,
+          last_played: null,
+          year_counts: [],
+        },
+      ],
+      [],
+    ]),
   );
   await act(async () =>
-    old.resolve([[{ move: "stale", white: 999, draw: 0, black: 0, unknown: 0 }], []]),
+    old.resolve([
+      [
+        {
+          move: "stale",
+          white: 999,
+          draw: 0,
+          black: 0,
+          unknown: 0,
+          last_played: null,
+          year_counts: [],
+        },
+      ],
+      [],
+    ]),
   );
   expect(container.textContent).toContain("fresh");
   expect(container.textContent).not.toContain("stale");
@@ -115,8 +141,8 @@ test("a surviving subscriber retains the shared native request and its sorted un
   await act(async () =>
     pending.resolve([
       [
-        { move: "e4", white: 1, draw: 0, black: 0, unknown: 0 },
-        { move: "d4", white: 0, draw: 0, black: 0, unknown: 5 },
+        { move: "e4", white: 1, draw: 0, black: 0, unknown: 0, last_played: null, year_counts: [] },
+        { move: "d4", white: 0, draw: 0, black: 0, unknown: 5, last_played: null, year_counts: [] },
       ],
       [],
     ]),

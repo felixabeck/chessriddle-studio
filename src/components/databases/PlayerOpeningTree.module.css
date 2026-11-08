@@ -1,3 +1,12 @@
+.root:global(.mantine-Stack-root) {
+  /* The shared compact preview card can be wider than its scrollport. */
+  max-width: calc(100cqw - var(--mantine-spacing-md) - 1px);
+}
+
+:global([data-database-pane="preview"]):has(.root) {
+  container-type: inline-size;
+}
+
 .root {
   container-type: inline-size;
   min-width: 0;
@@ -9,6 +18,11 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--mantine-spacing-xs);
+}
+
+.toolbar > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .notation {
@@ -28,6 +42,12 @@
 
 .prepare {
   margin-left: auto;
+  height: auto;
+  min-height: var(--button-height);
+}
+
+.prepare :global(.mantine-Button-label) {
+  white-space: normal;
 }
 
 .body {
@@ -70,6 +90,8 @@
 .table th {
   color: var(--cf-muted-foreground);
   font-weight: 500;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .table .number {
@@ -106,8 +128,175 @@
   overflow-y: auto;
 }
 
+.games th:nth-child(1) {
+  width: 25%;
+}
+
+.games th:nth-child(2) {
+  width: 33%;
+}
+
+.games th:nth-child(3) {
+  width: 22%;
+}
+
+.games th:nth-child(4) {
+  width: 20%;
+}
+
 .preview {
   height: 18rem;
   min-width: 0;
   margin-top: var(--mantine-spacing-sm);
+}
+
+.movesTable th:nth-child(1) {
+  width: 14%;
+}
+
+.movesTable th:nth-child(2),
+.movesTable th:nth-child(3) {
+  width: 12%;
+}
+
+.movesTable th:nth-child(4) {
+  width: 38%;
+}
+
+.movesTable th:nth-child(5) {
+  width: 24%;
+}
+
+.results :global(.mantine-Progress-section) {
+  container-type: inline-size;
+  container-name: opening-result;
+}
+
+@container opening-result (max-width: 3rem) {
+  .results :global(.mantine-Progress-label) {
+    visibility: hidden;
+  }
+}
+
+.compactColumnLabel {
+  display: none;
+}
+
+.recency {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+  font-family: var(--mantine-font-family);
+}
+
+.yearStrip {
+  display: grid;
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  gap: 2px;
+  max-width: 10rem;
+}
+
+.yearCell {
+  height: 0.5rem;
+  border: 1px solid var(--cf-border-strong);
+  border-radius: 2px;
+}
+
+.compactRecencyLabel {
+  display: none;
+  color: var(--cf-muted-foreground);
+}
+
+@container (max-width: 35.999rem) {
+  .movesTable thead tr,
+  .movesTable tbody tr {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .movesTable th:nth-child(n),
+  .movesTable td {
+    min-width: 0;
+    width: auto;
+  }
+
+  .movesTable thead .recencyColumn {
+    display: none;
+  }
+
+  .movesTable tbody .recencyColumn {
+    grid-column: 1 / -1;
+  }
+
+  .movesTable th:nth-child(4),
+  .movesTable td:nth-child(4) {
+    grid-column: 1 / -1;
+  }
+
+  .since {
+    flex-direction: column;
+    align-items: start;
+  }
+
+  .since :global(.mantine-NativeSelect-wrapper) {
+    max-width: 100%;
+  }
+
+  .recency {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.5rem;
+  }
+
+  .yearStrip {
+    flex: 1 1 6rem;
+  }
+
+  .compactRecencyLabel {
+    display: inline;
+  }
+}
+
+@container (max-width: 12rem) {
+  .toolbar :global(.mantine-SegmentedControl-root) {
+    --sc-font-size: var(--mantine-font-size-xs);
+    --sc-padding: var(--sc-padding-xs);
+  }
+
+  .inset {
+    padding-inline: 0;
+  }
+
+  .movesTable thead {
+    display: none;
+  }
+
+  .movesTable tbody tr,
+  .table:not(.movesTable) tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .table:not(.movesTable) thead tr {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .games th:nth-child(n) {
+    width: auto;
+  }
+
+  .table .number {
+    text-align: left;
+  }
+
+  .compactColumnLabel {
+    display: block;
+    overflow-wrap: normal;
+    word-break: normal;
+    color: var(--cf-muted-foreground);
+    font-family: var(--mantine-font-family);
+  }
 }

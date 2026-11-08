@@ -36,6 +36,7 @@ import { openDatabaseGame } from "@/utils/databaseGame";
 import { databaseHandleKey, type LocalOptions } from "@/utils/db";
 import { createTab, runTabCreation } from "@/utils/tabs";
 import GamePreview from "./GamePreview";
+import PlayerOpeningRecency from "./PlayerOpeningRecency";
 import { playerOpeningLine } from "./playerOpeningLine";
 import classes from "./PlayerOpeningTree.module.css";
 
@@ -252,7 +253,7 @@ function OpeningTree({ player, file }: { player: Player; file: DatabaseHandle })
                     })}
                   </Text>
                 ) : (
-                  <table className={classes.table} data-opening-moves>
+                  <table className={`${classes.table} ${classes.movesTable}`} data-opening-moves>
                     <thead>
                       <tr>
                         <th>{t("Databases.OpeningTree.Move", { defaultValue: "Move" })}</th>
@@ -261,6 +262,9 @@ function OpeningTree({ player, file }: { player: Player; file: DatabaseHandle })
                           {t("Databases.OpeningTree.Score", { defaultValue: "Score" })}
                         </th>
                         <th>{t("Databases.OpeningTree.WDL", { defaultValue: "W/D/L" })}</th>
+                        <th className={classes.recencyColumn}>
+                          {t("Databases.OpeningTree.LastPlayed", { defaultValue: "Last played" })}
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -290,26 +294,56 @@ function OpeningTree({ player, file }: { player: Player; file: DatabaseHandle })
                                   : "var(--mantine-font-family-monospace)",
                               }}
                             >
+                              <span
+                                className={classes.compactColumnLabel}
+                                data-opening-column-label
+                              >
+                                {t("Databases.OpeningTree.Move", { defaultValue: "Move" })}
+                              </span>
                               {terminal
                                 ? t("Databases.OpeningTree.Ended", {
                                     defaultValue: "Game ended here",
                                   })
                                 : row.move}
                             </td>
-                            <td className={classes.number}>{scored + row.unknown}</td>
                             <td className={classes.number}>
+                              <span
+                                className={classes.compactColumnLabel}
+                                data-opening-column-label
+                              >
+                                {t("Common.Games")}
+                              </span>
+                              {scored + row.unknown}
+                            </td>
+                            <td className={classes.number}>
+                              <span
+                                className={classes.compactColumnLabel}
+                                data-opening-column-label
+                              >
+                                {t("Databases.OpeningTree.Score", { defaultValue: "Score" })}
+                              </span>
                               {scored
                                 ? `${(((won + row.draw / 2) / scored) * 100).toFixed(1)}%`
                                 : "–"}
                             </td>
-                            <td>
+                            <td className={classes.results}>
+                              <span
+                                className={classes.compactColumnLabel}
+                                data-opening-column-label
+                              >
+                                {t("Databases.OpeningTree.WDL", { defaultValue: "W/D/L" })}
+                              </span>
                               <ResultsChart
                                 won={won}
                                 draw={row.draw}
                                 lost={lost}
                                 size="1.125rem"
                                 playerPerspective
+                                labelThreshold={0.3}
                               />
+                            </td>
+                            <td className={classes.recencyColumn}>
+                              <PlayerOpeningRecency row={row} />
                             </td>
                           </tr>
                         );

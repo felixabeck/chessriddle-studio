@@ -159,7 +159,9 @@ fn estimated_search_result_bytes(value: &SearchResult) -> usize {
     let position_bytes = value
         .0
         .iter()
-        .map(|item| item.move_.len() + std::mem::size_of::<PositionStats>())
+        .map(|item| {
+            item.move_.len() + std::mem::size_of::<PositionStats>() + item.recency_heap_bytes()
+        })
         .sum::<usize>();
     let game_bytes = value
         .1
@@ -3311,6 +3313,37 @@ mod native_window_operation_wiring_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn estimated_search_result_includes_recency_allocations(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut result = (
+            vec![PositionStats {
+                move_: "e4".into(),
+                white: 3,
+                draw: 0,
+                black: 0,
+                unknown: 0,
+                last_played: None,
+                year_counts: vec![],
+            }],
+            vec![],
+        );
+        let empty_recency = estimated_search_result_bytes(&result);
+        let mut date = String::with_capacity(32);
+        date.push_str("2026.11.08");
+        result.0[0].last_played = Some(date);
+        assert_eq!(estimated_search_result_bytes(&result), empty_recency + 32);
+        result.0[0].year_counts = serde_json::from_str(r#"[{"year":2026,"count":3}]"#)?;
+        result.0[0].year_counts.reserve(5);
+        let year_bytes =
+            result.0[0].year_counts.capacity() * std::mem::size_of_val(&result.0[0].year_counts[0]);
+        assert_eq!(
+            estimated_search_result_bytes(&result),
+            empty_recency + 32 + year_bytes
+        );
+        Ok(())
+    }
 
     #[test]
     fn database_and_engine_workspace_bodies_default_only_without_a_selection() {

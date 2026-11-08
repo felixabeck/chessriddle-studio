@@ -600,6 +600,31 @@ fn parse_wanted_result(value: Option<&str>) -> Result<Option<GameResult>, Error>
         .map(Option::flatten)
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Type)]
+pub struct YearCount {
+    pub year: i32,
+    pub count: i32,
+}
+
+// PGN unknown components sort below known components, as in the SQL sample order.
+fn date_order_components(date: &str) -> impl Iterator<Item = char> + '_ {
+    date.chars()
+        .map(|value| if value == '?' { '0' } else { value })
+}
+
+fn recency_year(date: &str) -> Option<i32> {
+    let digits = date.as_bytes().get(..4)?;
+    if !digits.iter().all(u8::is_ascii_digit)
+        || !matches!(date.as_bytes().get(4), None | Some(b'.'))
+    {
+        return None;
+    }
+    let year = digits
+        .iter()
+        .fold(0, |year, digit| year * 10 + i32::from(digit - b'0'));
+    (year > 0).then_some(year)
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Type)]
 pub struct PositionStats {
     #[serde(rename = "move")]
@@ -608,6 +633,36 @@ pub struct PositionStats {
     pub draw: i32,
     pub black: i32,
     pub unknown: i32,
+    pub last_played: Option<String>,
+    pub year_counts: Vec<YearCount>,
+}
+
+impl PositionStats {
+    pub(crate) fn recency_heap_bytes(&self) -> usize {
+        self.last_played.as_ref().map_or(0, String::capacity)
+            + self.year_counts.capacity() * std::mem::size_of::<YearCount>()
+    }
+
+    fn record_date(&mut self, date: Option<&str>) {
+        let Some((date, year)) = date.and_then(|date| recency_year(date).map(|year| (date, year)))
+        else {
+            return;
+        };
+        match self
+            .year_counts
+            .binary_search_by_key(&year, |item| item.year)
+        {
+            Ok(index) => self.year_counts[index].count += 1,
+            Err(index) => self.year_counts.insert(index, YearCount { year, count: 1 }),
+        }
+        if self.last_played.as_deref().is_none_or(|last| {
+            date_order_components(date)
+                .cmp(date_order_components(last))
+                .is_gt()
+        }) {
+            self.last_played = Some(date.to_owned());
+        }
+    }
 }
 
 fn invalid_move_stream(game_id: i32, error: Error) -> Error {
@@ -984,7 +1039,7 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
                             let date = entry
                                 .date
                                 .filter(|date| !date.is_empty() && !date.starts_with('?'))
-                                .map(|date| date.replace('?', "0"));
+                                .map(|date| date_order_components(date).collect::<String>());
                             (0, date, entry.id)
                         } else {
                             (elo_key, None, entry.id)
@@ -1004,24 +1059,22 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
                         }
                         drop(heap);
 
-                        openings
-                            .entry(m)
-                            .and_modify(|opening| match entry.result {
-                                GameResult::WhiteWin => opening.white += 1,
-                                GameResult::BlackWin => opening.black += 1,
-                                GameResult::Draw => opening.draw += 1,
-                                GameResult::Other | GameResult::None => opening.unknown += 1,
-                            })
-                            .or_insert_with(|| PositionStats {
-                                black: i32::from(entry.result == GameResult::BlackWin),
-                                white: i32::from(entry.result == GameResult::WhiteWin),
-                                draw: i32::from(entry.result == GameResult::Draw),
-                                unknown: i32::from(matches!(
-                                    entry.result,
-                                    GameResult::None | GameResult::Other
-                                )),
-                                move_: String::new(),
-                            });
+                        let mut opening = openings.entry(m).or_insert_with(|| PositionStats {
+                            black: 0,
+                            white: 0,
+                            draw: 0,
+                            unknown: 0,
+                            move_: String::new(),
+                            last_played: None,
+                            year_counts: Vec::new(),
+                        });
+                        match entry.result {
+                            GameResult::WhiteWin => opening.white += 1,
+                            GameResult::BlackWin => opening.black += 1,
+                            GameResult::Draw => opening.draw += 1,
+                            GameResult::Other | GameResult::None => opening.unknown += 1,
+                        }
+                        opening.record_date(entry.date);
                     }
                 }
             }
@@ -4571,6 +4624,114 @@ mod tests {
         assert_eq!(same.1.len(), 1);
         assert_eq!(PROCESS_ENTRY_CALLS.load(Ordering::SeqCst), 0);
         drop(instrument);
+    }
+
+    #[test]
+    fn position_recency_counts_only_usable_years_and_orders_partial_dates(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (_dir, app, handle, database) = filter_search_database(&[]);
+        let mut db = SqliteConnection::establish(database.to_str().ok_or("non-UTF-8 test path")?)?;
+        // The fixture's game ends at the root, exercising the terminal move too.
+        diesel::update(games::table)
+            .set((games::date.eq("2018"), games::moves.eq(Vec::<u8>::new())))
+            .execute(&mut db)?;
+        let dates = [
+            Some("2025.??.??"),
+            Some("2024.12.31"),
+            Some("2025.06.??"),
+            Some("2025.06.15"),
+            Some("2025"),
+            Some("2023.03.??"),
+            Some("2001"),
+            Some("2022.garbage"),
+            Some("????.??.??"),
+            None,
+            Some(""),
+            Some("202"),
+            Some("2024x.01.01"),
+            Some("0000.01.01"),
+            Some("éé.01.01"),
+            Some("２０２６.01.01"),
+        ];
+        for date in dates {
+            let id = insert_white_win_e4_e5(&mut db);
+            diesel::update(games::table.find(id))
+                .set(games::date.eq(date))
+                .execute(&mut db)?;
+        }
+        let result = run_position_search(
+            &app,
+            &handle,
+            exact_position_query(STARTING_FEN),
+            "recency-mixed",
+        )?;
+        let e4 = result
+            .0
+            .iter()
+            .find(|row| row.move_ == "e4")
+            .ok_or("missing e4")?;
+        assert_eq!(e4.white, dates.len() as i32);
+        assert_eq!(e4.last_played.as_deref(), Some("2025.06.15"));
+        assert_eq!(
+            e4.year_counts,
+            vec![
+                YearCount {
+                    year: 2001,
+                    count: 1
+                },
+                YearCount {
+                    year: 2022,
+                    count: 1
+                },
+                YearCount {
+                    year: 2023,
+                    count: 1
+                },
+                YearCount {
+                    year: 2024,
+                    count: 1
+                },
+                YearCount {
+                    year: 2025,
+                    count: 4
+                },
+            ]
+        );
+        let terminal = result
+            .0
+            .iter()
+            .find(|row| row.move_ == "*")
+            .ok_or("missing terminal")?;
+        assert_eq!(terminal.last_played.as_deref(), Some("2018"));
+        assert_eq!(
+            terminal.year_counts,
+            vec![YearCount {
+                year: 2018,
+                count: 1
+            }]
+        );
+
+        let mut unknown = PositionStats {
+            move_: String::new(),
+            white: 0,
+            black: 0,
+            draw: 0,
+            unknown: 1,
+            last_played: None,
+            year_counts: vec![],
+        };
+        for date in [
+            None,
+            Some("????.??.??"),
+            Some("2024x"),
+            Some("0000"),
+            Some("éé"),
+        ] {
+            unknown.record_date(date);
+        }
+        assert!(unknown.last_played.is_none());
+        assert!(unknown.year_counts.is_empty());
+        Ok(())
     }
 
     #[test]

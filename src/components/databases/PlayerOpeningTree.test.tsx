@@ -111,9 +111,9 @@ const first: NormalizedGame = {
 };
 const next: NormalizedGame = { ...first, id: 2, black: "Next opponent", date: "2026.11.02" };
 const startRows: PositionStats[] = [
-  { move: "e4", white: 3, draw: 1, black: 1, unknown: 1 },
-  { move: "d4", white: 0, draw: 0, black: 0, unknown: 2 },
-  { move: "*", white: 0, draw: 1, black: 0, unknown: 0 },
+  { move: "e4", white: 3, draw: 1, black: 1, unknown: 1, last_played: null, year_counts: [] },
+  { move: "d4", white: 0, draw: 0, black: 0, unknown: 2, last_played: null, year_counts: [] },
+  { move: "*", white: 0, draw: 1, black: 0, unknown: 0, last_played: null, year_counts: [] },
 ];
 const e4Fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
 const endFen = "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2";
@@ -151,7 +151,20 @@ beforeEach(async () => {
   mocks.searchPosition.mockImplementation(async (_path: DatabaseHandle, query: GameQuery) =>
     query.position?.fen === INITIAL_FEN
       ? [startRows, [first]]
-      : [[{ move: "e5", white: 3, draw: 1, black: 1, unknown: 1 }], [next]],
+      : [
+          [
+            {
+              move: "e5",
+              white: 3,
+              draw: 1,
+              black: 1,
+              unknown: 1,
+              last_played: null,
+              year_counts: [],
+            },
+          ],
+          [next],
+        ],
   );
 });
 afterEach(async () => {
@@ -188,7 +201,7 @@ async function render(playerOverride = player, fileOverride = file, panelId?: st
 }
 function row(move: string) {
   return [...container.querySelectorAll<HTMLTableRowElement>("[data-opening-moves] tbody tr")].find(
-    (item) => item.cells[0].textContent === move,
+    (item) => item.cells[0].lastChild?.textContent === move,
   )!;
 }
 async function click(element: Element) {
@@ -238,10 +251,39 @@ test.each([
   });
 });
 
-test("the tree enlarges W/D/L labels without changing the chart API", async () => {
+test("the tree enlarges W/D/L labels and hides shares below its raised threshold", async () => {
   await render();
   const chart = row("e4").cells[3].querySelector<HTMLElement>(".mantine-Progress-root")!;
   expect(chart.style.getPropertyValue("--progress-size")).toBe("1.125rem");
+  expect(
+    [...chart.querySelectorAll(".mantine-Progress-label")].map((label) => label.textContent),
+  ).toEqual(["60.0%", "", ""]);
+});
+
+test("moves and the terminal row show their own last played date and year strip", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(2026, 10, 8, 12));
+  mocks.searchPosition.mockResolvedValueOnce([
+    startRows.map((row, index) => ({
+      ...row,
+      last_played: index === 0 ? "2026.11.01" : index === 2 ? "2024.??.??" : null,
+      year_counts:
+        index === 0 ? [{ year: 2026, count: 6 }] : index === 2 ? [{ year: 2024, count: 1 }] : [],
+    })),
+    [first],
+  ]);
+  await render();
+  expect(container.querySelector("[data-opening-moves] thead")?.textContent).toContain(
+    "Last played",
+  );
+  expect(row("e4").querySelector("[data-opening-last-played]")?.textContent).toContain("2026-11");
+  expect(row("d4").querySelector("[data-opening-last-played]")?.textContent).toContain("–");
+  const terminal = row("Game ended here");
+  expect(terminal.querySelector("[data-opening-last-played]")?.textContent).toContain("2024");
+  expect(terminal.querySelectorAll("[data-count]")).toHaveLength(9);
+  expect(terminal.querySelector('[role="img"]')?.getAttribute("aria-label")).toContain(
+    "2024: 1 game",
+  );
 });
 
 test("Since keeps one rolling cutoff for the search and Prepare, retains moves and clears selection", async () => {
@@ -299,11 +341,11 @@ test("native query, scores, terminal row and navigation follow the player's exac
     { signal: expect.any(AbortSignal) },
   );
   expect(container.textContent).toContain("9 games in this position");
-  expect(row("e4").cells[1].textContent).toBe("6");
-  expect(row("e4").cells[2].textContent).toBe("70.0%");
+  expect(row("e4").cells[1].lastChild?.textContent).toBe("6");
+  expect(row("e4").cells[2].lastChild?.textContent).toBe("70.0%");
   expect(row("e4").querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow")).toBe("60");
-  expect(row("d4").cells[1].textContent).toBe("2");
-  expect(row("d4").cells[2].textContent).toBe("–");
+  expect(row("d4").cells[1].lastChild?.textContent).toBe("2");
+  expect(row("d4").cells[2].lastChild?.textContent).toBe("–");
   expect(row("d4").querySelectorAll('[role="progressbar"]')).toHaveLength(0);
   const terminal = row("Game ended here");
   expect(terminal.hasAttribute("tabindex")).toBe(false);
@@ -314,7 +356,7 @@ test("native query, scores, terminal row and navigation follow the player's exac
     player1: undefined,
     player2: 42,
   });
-  expect(row("e4").cells[2].textContent).toBe("30.0%");
+  expect(row("e4").cells[2].lastChild?.textContent).toBe("30.0%");
   expect(row("e4").querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow")).toBe("20");
   expect(container.querySelector("[data-board-fen]")?.getAttribute("data-orientation")).toBe(
     "black",
@@ -342,7 +384,7 @@ test("native query, scores, terminal row and navigation follow the player's exac
       (call) => call[1].position.fen === INITIAL_FEN && call[1].player2 === 42,
     ),
   ).toBe(true);
-  expect(row("e4").cells[1].textContent).toBe("6");
+  expect(row("e4").cells[1].lastChild?.textContent).toBe("6");
 });
 
 test("game selection previews within the card, Open and double-click use the established opening flow", async () => {
@@ -498,7 +540,7 @@ test("loading, empty, failure and truncated samples retain in-card feedback", as
   await black();
   expect(container.querySelector('[role="alert"]')).not.toBeNull();
   mocks.searchPosition.mockResolvedValueOnce([
-    [{ move: "e4", white: 501, draw: 0, black: 0, unknown: 0 }],
+    [{ move: "e4", white: 501, draw: 0, black: 0, unknown: 0, last_played: null, year_counts: [] }],
     Array.from({ length: 500 }, (_, index) => ({ ...first, id: index })),
   ]);
   await render({ ...player, id: 45 });

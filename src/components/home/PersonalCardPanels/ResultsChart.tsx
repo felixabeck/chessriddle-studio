@@ -7,12 +7,14 @@ function ResultsChart({
   lost,
   size,
   playerPerspective = false,
+  labelThreshold = 0.15,
 }: {
   won: number;
   draw: number;
   lost: number;
   size: string;
   playerPerspective?: boolean;
+  labelThreshold?: number;
 }) {
   const { t } = useTranslation();
   const total = won + draw + lost;
@@ -24,7 +26,7 @@ function ResultsChart({
       >
         <Progress.Section value={(won / total) * 100} color="success">
           <Progress.Label style={{ textOverflow: "clip" }}>
-            {won / total > 0.15 ? `${((won / total) * 100).toFixed(1)}%` : undefined}
+            {won / total > labelThreshold ? `${((won / total) * 100).toFixed(1)}%` : undefined}
           </Progress.Label>
         </Progress.Section>
       </MTTooltip>
@@ -32,7 +34,7 @@ function ResultsChart({
       <MTTooltip label={`${draw} ${t("Board.Analysis.Tablebase.Draw")}`}>
         <Progress.Section value={(draw / total) * 100} color="gray">
           <Progress.Label style={{ textOverflow: "clip" }}>
-            {draw / total > 0.15 ? `${((draw / total) * 100).toFixed(1)}%` : undefined}
+            {draw / total > labelThreshold ? `${((draw / total) * 100).toFixed(1)}%` : undefined}
           </Progress.Label>
         </Progress.Section>
       </MTTooltip>
@@ -42,7 +44,7 @@ function ResultsChart({
       >
         <Progress.Section value={(lost / total) * 100} color="danger">
           <Progress.Label style={{ textOverflow: "clip" }}>
-            {lost / total > 0.15 ? `${((lost / total) * 100).toFixed(1)}%` : undefined}
+            {lost / total > labelThreshold ? `${((lost / total) * 100).toFixed(1)}%` : undefined}
           </Progress.Label>
         </Progress.Section>
       </MTTooltip>

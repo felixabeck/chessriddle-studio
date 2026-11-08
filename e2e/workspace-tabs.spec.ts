@@ -397,7 +397,20 @@ for (const surface of [
             ...filesWorkspaceFixture.pgnFile,
             metadata: { type: "repertoire" as const, tags: [] },
         };
-        const stats = (move: string) => [[{ move, white: 100, draw: 0, black: 0 }], []];
+        const stats = (move: string) => [
+            [
+                {
+                    move,
+                    white: 100,
+                    draw: 0,
+                    black: 0,
+                    unknown: 0,
+                    last_played: null,
+                    year_counts: [],
+                },
+            ],
+            [],
+        ];
         await mockScenario({
             commands: filesWorkspaceCommands([[repertoireFile]], {
                 ...pgnFileCommands,
@@ -918,7 +931,10 @@ test("workspace-tabs: successful Italian marked-start coverage with a missing co
         revision: "italian-start",
         present: true,
     };
-    const stats = (move: string) => [[{ move, white: 100, draw: 0, black: 0 }], []];
+    const stats = (move: string) => [
+        [{ move, white: 100, draw: 0, black: 0, unknown: 0, last_played: null, year_counts: [] }],
+        [],
+    ];
     const commands = filesWorkspaceCommands([[repertoireFile]], {
         ...pgnFileCommands,
         read_game: { result: game },

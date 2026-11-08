@@ -1525,7 +1525,7 @@ export type PlayerQuery = { options: QueryOptions<PlayerSort>; name?: string | n
 export type PlayerSort = "id" | "name" | "elo" | "games"
 export type PlayersTime = { white: number; black: number; winc: number; binc: number }
 export type PositionQueryJs = { fen: string; type_: string }
-export type PositionStats = { move: string; white: number; draw: number; black: number; unknown: number }
+export type PositionStats = { move: string; white: number; draw: number; black: number; unknown: number; last_played: string | null; year_counts: YearCount[] }
 export type PracticeDeckIdentity = { fileId: string; game: number }
 export type PracticeDeckInventory = { decks: PracticeDeckIdentity[]; anomalies: PracticeStoreAnomaly[] }
 export type PracticeDeckLoad = { epoch: string; deck: PracticeDeckSnapshot | null }
@@ -1693,6 +1693,7 @@ export type WorkspaceTrashPage = { items: WorkspaceTrashItem[]; olderCount: bigi
 export type WorkspaceUnread = { name: string; kind: WorkspaceEntryKind | null; category: ErrorCategory; parent: FileWorkspaceHandle | null }
 export type WriteExpectation = { kind: "game"; stamp: string } | { kind: "linkedGame"; stamp: string; revision: string } | { kind: "append" }
 export type WriteStamp = { stamp: string | null; revision: string | null; linked?: LinkedGameLocator | null }
+export type YearCount = { year: number; count: number }
 
 /** tauri-specta globals **/
 

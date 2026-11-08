@@ -22,6 +22,244 @@ import {
 } from "./fixtures";
 import type { Locator, Page } from "@playwright/test";
 
+async function openingLayout(tree: Locator) {
+    return tree.evaluate((element) => {
+        const bounds = (node: Element) => {
+            const rect = node.getBoundingClientRect();
+            return { left: rect.left, right: rect.right, width: rect.width };
+        };
+        const ancestors = [];
+        for (let node = element.parentElement; node; node = node.parentElement) {
+            const style = getComputedStyle(node);
+            ancestors.push({
+                name: `${node.tagName}.${node.className}`,
+                ...bounds(node),
+                clipLeft: node.getBoundingClientRect().left + node.clientLeft,
+                clipRight: node.getBoundingClientRect().left + node.clientLeft + node.clientWidth,
+                overflowX: style.overflowX,
+                scrollLeft: node.scrollLeft,
+            });
+        }
+        const outside: string[] = [];
+        const targets = [
+            element,
+            ...element.querySelectorAll(
+                'table, .mantine-Progress-root, [data-opening-recency] [role="img"]',
+            ),
+        ];
+        for (const node of targets) {
+            const rect = bounds(node);
+            const name = node === element ? "tree" : node.tagName + "." + node.className;
+            if (rect.left < -1 || rect.right > innerWidth + 1)
+                outside.push(`${name}: viewport ${JSON.stringify(rect)}`);
+            for (let ancestor = node.parentElement; ancestor; ancestor = ancestor.parentElement) {
+                if (getComputedStyle(ancestor).overflowX === "visible") continue;
+                const left = ancestor.getBoundingClientRect().left + ancestor.clientLeft;
+                const right = left + ancestor.clientWidth;
+                if (rect.left < left - 1 || rect.right > right + 1)
+                    outside.push(
+                        `${name}: clipped by ${ancestor.tagName}.${ancestor.className} ${JSON.stringify(rect)}`,
+                    );
+            }
+        }
+        const brokenWords: string[] = [];
+        for (const header of element.querySelectorAll("th, [data-opening-column-label]")) {
+            if (!header.getBoundingClientRect().width) continue;
+            const walker = document.createTreeWalker(header, NodeFilter.SHOW_TEXT);
+            while (walker.nextNode()) {
+                const node = walker.currentNode;
+                for (const match of (node.textContent ?? "").matchAll(/\S+/g)) {
+                    const range = document.createRange();
+                    range.setStart(node, match.index);
+                    range.setEnd(node, match.index + match[0].length);
+                    if (range.getClientRects().length > 1) brokenWords.push(match[0]);
+                }
+            }
+        }
+        const clippedLabels: string[] = [];
+        for (const label of element.querySelectorAll(".mantine-Progress-label")) {
+            if (!label.textContent) continue;
+            if (getComputedStyle(label).visibility === "hidden") continue;
+            const range = document.createRange();
+            range.selectNodeContents(label);
+            const text = range.getBoundingClientRect();
+            const section = label.closest(".mantine-Progress-section")!.getBoundingClientRect();
+            if (text.left < section.left - 1 || text.right > section.right + 1)
+                clippedLabels.push(label.textContent);
+        }
+        return {
+            viewport: innerWidth,
+            tree: bounds(element),
+            card: bounds(element.closest(".mantine-Paper-root")!),
+            ancestors,
+            outside,
+            brokenWords,
+            clippedLabels,
+        };
+    });
+}
+
+test("database-files: player opening recency fits narrow and font-scaled Openings in both themes", async ({
+    page,
+    mockScenario,
+    assertNoHorizontalOverflow,
+    capture,
+}) => {
+    await page.clock.setFixedTime(new Date("2026-11-08T12:00:00Z"));
+    const game = gameOpeningFixture.games[0];
+    const recency = {
+        last_played: "2026.11.01",
+        year_counts: [
+            { year: 2018, count: 1 },
+            { year: 2019, count: 1 },
+            { year: 2023, count: 2 },
+            { year: 2026, count: 3 },
+            { year: 2027, count: 1 },
+        ],
+    };
+    await mockScenario({
+        commands: {
+            ...databaseLayoutCommands,
+            get_progress: { result: null },
+            search_position: {
+                result: [
+                    [
+                        { move: "e4", white: 5, draw: 2, black: 1, unknown: 1, ...recency },
+                        {
+                            move: "d4",
+                            white: 0,
+                            draw: 0,
+                            black: 0,
+                            unknown: 2,
+                            last_played: null,
+                            year_counts: [],
+                        },
+                        {
+                            move: "*",
+                            white: 1,
+                            draw: 0,
+                            black: 0,
+                            unknown: 0,
+                            last_played: "2024.??.??",
+                            year_counts: [{ year: 2024, count: 1 }],
+                        },
+                    ],
+                    [game],
+                ],
+            },
+        },
+    });
+    await page.goto(`/databases/${gameOpeningFixture.databaseId}`);
+    for (const surface of [
+        { width: 320, scale: "100", scheme: "light" },
+        { width: 320, scale: "200", scheme: "dark" },
+        { width: 1920, scale: "100", scheme: "dark" },
+        { width: 1920, scale: "100", scheme: "light" },
+    ] as const) {
+        await page.evaluate(({ scale, scheme }) => {
+            localStorage.setItem("font-size", scale);
+            localStorage.setItem("mantine-color-scheme", scheme);
+            sessionStorage.setItem("__E2E_PRESERVE_STORAGE_ONCE__", "1");
+        }, surface);
+        await page.emulateMedia({ colorScheme: surface.scheme });
+        await page.setViewportSize({ width: surface.width, height: 1000 });
+        await page.goto(`/databases/${gameOpeningFixture.databaseId}`);
+        await page.getByRole("tab", { name: "Players", exact: true }).click();
+        const players = page.getByRole("tabpanel", { name: "Players", exact: true });
+        await players
+            .locator('[data-database-pane="table"] tbody tr')
+            .filter({ hasText: "First White" })
+            .click();
+        const preview = players.locator('[data-database-pane="preview"]');
+        await preview.getByRole("tab", { name: "Openings", exact: true }).click();
+        const tree = preview.locator("[data-player-opening-tree]");
+        const moves = tree.locator("[data-opening-moves]");
+        await expect(page.locator("html")).toHaveCSS(
+            "font-size",
+            surface.scale === "200" ? "32px" : "16px",
+        );
+        await expect(page.locator("html")).toHaveAttribute(
+            "data-mantine-color-scheme",
+            surface.scheme,
+        );
+        await expect(moves.locator("[data-opening-recency]")).toHaveCount(3);
+        const e4 = moves.locator("tbody tr").filter({ hasText: "e4" });
+        await expect(e4.locator("[data-opening-last-played]")).toContainText("2026-11");
+        await expect(e4.getByRole("img")).toHaveAttribute(
+            "aria-label",
+            /Before 2019: 1 game.*2026: 3 games, 2 without a usable year/,
+        );
+        await expect(e4.locator("[data-count]")).toHaveCount(9);
+        await tree.evaluate((element) => {
+            for (let node: HTMLElement | null = element; node; node = node.parentElement)
+                node.scrollLeft = 0;
+        });
+        const beforeHover = await openingLayout(tree);
+        await e4.locator("[data-count]").last().hover();
+        await expect(page.getByRole("tooltip")).toHaveText("2026: 3 games");
+        await page.mouse.move(0, 0);
+        const afterHover = await openingLayout(tree);
+        await tree.evaluate((element) => {
+            for (let node: HTMLElement | null = element; node; node = node.parentElement)
+                node.scrollLeft = 0;
+        });
+        const origin = await openingLayout(tree);
+        await test
+            .info()
+            .attach(`opening-layout-${surface.width}-${surface.scale}-${surface.scheme}`, {
+                body: JSON.stringify({ surface, beforeHover, afterHover, origin }, null, 2),
+                contentType: "application/json",
+            });
+        console.log(
+            JSON.stringify({
+                surface,
+                viewport: origin.viewport,
+                tree: origin.tree,
+                card: origin.card,
+            }),
+        );
+        expect
+            .soft(
+                origin.ancestors.every((ancestor) => ancestor.scrollLeft === 0),
+                "all horizontal scroll offsets reset after hover",
+            )
+            .toBe(true);
+        expect.soft(origin.outside, JSON.stringify(surface)).toEqual([]);
+        expect.soft(origin.brokenWords, JSON.stringify(surface)).toEqual([]);
+        expect.soft(origin.clippedLabels, JSON.stringify(surface)).toEqual([]);
+        await expect(
+            moves
+                .locator("tbody tr")
+                .filter({ hasText: "Game ended here" })
+                .locator("[data-opening-last-played]"),
+        ).toContainText("2024");
+        await assertNoHorizontalOverflow();
+        const geometry = await tree.evaluate((element) => ({
+            width: element.clientWidth,
+            scroll: element.scrollWidth,
+            tables: [...element.querySelectorAll("table")].map((table) => ({
+                width: table.clientWidth,
+                scroll: table.scrollWidth,
+            })),
+            strips: [...element.querySelectorAll('[role="img"]')].map((strip) => ({
+                width: strip.getBoundingClientRect().width,
+                cells: [...strip.children].map((cell) => cell.getBoundingClientRect().width),
+            })),
+        }));
+        expect(geometry.scroll).toBeLessThanOrEqual(geometry.width + 1);
+        for (const table of geometry.tables)
+            expect(table.scroll).toBeLessThanOrEqual(table.width + 1);
+        for (const strip of geometry.strips) {
+            expect(strip.width).toBeGreaterThan(0);
+            for (const width of strip.cells) expect(width).toBeGreaterThan(0);
+        }
+        await capture(
+            `player-openings-recency-${surface.width}-${surface.scale}-${surface.scheme}`,
+        );
+    }
+    await expect(page).toHaveScreenshot("player-openings-recency.png", { fullPage: true });
+});
+
 for (const width of [1920, 320]) {
     test(`database-files: player opening tree previews and prepares two moves at ${width}px`, async ({
         page,
@@ -37,10 +275,49 @@ for (const width of [1920, 320]) {
                 get_progress: { result: null },
                 search_position: {
                     results: [
-                        [[{ move: "e4", white: 3, draw: 1, black: 1, unknown: 1 }], [game]],
-                        [[{ move: "e5", white: 3, draw: 1, black: 1, unknown: 1 }], [game]],
+                        [
+                            [
+                                {
+                                    move: "e4",
+                                    white: 3,
+                                    draw: 1,
+                                    black: 1,
+                                    unknown: 1,
+                                    last_played: null,
+                                    year_counts: [],
+                                },
+                            ],
+                            [game],
+                        ],
+                        [
+                            [
+                                {
+                                    move: "e5",
+                                    white: 3,
+                                    draw: 1,
+                                    black: 1,
+                                    unknown: 1,
+                                    last_played: null,
+                                    year_counts: [],
+                                },
+                            ],
+                            [game],
+                        ],
                     ],
-                    result: [[{ move: "*", white: 3, draw: 1, black: 1, unknown: 1 }], [game]],
+                    result: [
+                        [
+                            {
+                                move: "*",
+                                white: 3,
+                                draw: 1,
+                                black: 1,
+                                unknown: 1,
+                                last_played: null,
+                                year_counts: [],
+                            },
+                        ],
+                        [game],
+                    ],
                 },
             },
         });
@@ -233,7 +510,22 @@ test("database-files: unreadable saved reference stays unselected and resumes se
         get_progress: { result: null },
         linked_collections_supported: { result: true },
         list_linked_collections: { result: [] },
-        search_position: { result: [[{ move: "e4", white: 10, black: 5, draw: 2 }], []] },
+        search_position: {
+            result: [
+                [
+                    {
+                        move: "e4",
+                        white: 10,
+                        black: 5,
+                        draw: 2,
+                        unknown: 0,
+                        last_played: null,
+                        year_counts: [],
+                    },
+                ],
+                [],
+            ],
+        },
     });
     await mockScenario({
         commands: {
