@@ -2246,11 +2246,11 @@ test("database-files: long player metadata leaves nested preview tabs and charts
     await expect(lastGameRows).toHaveCount(playerOverviewLastGames.length);
     await expect(lastGameRows.nth(0)).toContainText("2026.10.03");
     await expect(lastGameRows.nth(0)).toContainText("Latest Opponent (1480)");
-    await expect(lastGameRows.nth(0)).toContainText("Win");
+    await expect(lastGameRows.nth(0)).toContainText(/Win(?!s)/);
     await expect(lastGameRows.nth(0)).toContainText("A20");
     await expect(lastGameRows.nth(1)).toContainText("2026.10.01");
     await expect(lastGameRows.nth(1)).toContainText("First Black (1400)");
-    await expect(lastGameRows.nth(1)).toContainText("Win");
+    await expect(lastGameRows.nth(1)).toContainText(/Win(?!s)/);
     await expect(lastGameRows.nth(1)).toContainText("C50");
     await expect
         .poll(async () =>

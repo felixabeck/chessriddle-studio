@@ -469,61 +469,64 @@ test("fillMissingMonths preserves result fields and fills every result with zero
   ]);
 });
 
-test.each([RatingsPanel, OpeningsPanel])(
-  "%s filters All websites rapid by each row's site",
-  async (Panel) => {
-    const info: PlayerGameInfo = {
-      site_stats_data: ["Chess.com", "Lichess"].map((site, index) => ({
-        site,
-        player: "Magnus",
-        colors: [],
-        latest: [],
-        daily: [
-          {
-            date: index === 0 ? "2026.09.01" : "2026.10.01",
-            time_control: "1800+0",
-            won: index === 0 ? 2 : 7,
-            drawn: 0,
-            lost: 0,
-            max_player_elo: index === 0 ? 1800 : 2200,
-          },
-        ],
-        openings: [
-          {
-            time_control: "1800+0",
-            is_player_white: true,
-            opening: `${site} Opening`,
-            won: index === 0 ? 2 : 7,
-            drawn: 0,
-            lost: 0,
-          },
-        ],
-      })),
-    };
-    await render(<Panel playerName="Magnus" info={info} />);
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>("[data-testid='select-all-websites']")!.click();
-      container.querySelector<HTMLButtonElement>("[data-testid='select-rapid']")!.click();
-    });
-    expect(container.querySelector("[data-testid='result-counts']")?.textContent).toContain(
-      "2:0:0",
-    );
-    if (Panel === RatingsPanel) {
-      expect(container.textContent).toContain("2 Common.Games");
-      expect(container.querySelector("[data-testid='rating-data']")?.textContent).toBe("1800");
-      expect(container.querySelector("[data-testid='rating-dates']")?.textContent).toBe(
-        [
-          // Daily dates are parsed in local time, like parseCompleteDailyDate does.
-          dayjs("2026.09.01", "YYYY.MM.DD", true).valueOf(),
-          new Date("2026-10-02T00:00:00Z").getTime(),
-        ].join("|"),
-      );
-    } else {
-      expect(container.textContent).toContain("Chess.com Opening");
-      expect(container.textContent).not.toContain("Lichess Opening");
-    }
-  },
-);
+async function renderAllWebsitesRapid(Panel: typeof RatingsPanel | typeof OpeningsPanel) {
+  const info: PlayerGameInfo = {
+    site_stats_data: ["Chess.com", "Lichess"].map((site, index) => ({
+      site,
+      player: "Magnus",
+      colors: [],
+      latest: [],
+      daily: [
+        {
+          date: index === 0 ? "2026.09.01" : "2026.10.01",
+          time_control: "1800+0",
+          won: index === 0 ? 2 : 7,
+          drawn: 0,
+          lost: 0,
+          max_player_elo: index === 0 ? 1800 : 2200,
+        },
+      ],
+      openings: [
+        {
+          time_control: "1800+0",
+          is_player_white: true,
+          opening: `${site} Opening`,
+          won: index === 0 ? 2 : 7,
+          drawn: 0,
+          lost: 0,
+        },
+      ],
+    })),
+  };
+  await render(<Panel playerName="Magnus" info={info} />);
+  await act(async () => {
+    container.querySelector<HTMLButtonElement>("[data-testid='select-all-websites']")!.click();
+    container.querySelector<HTMLButtonElement>("[data-testid='select-rapid']")!.click();
+  });
+}
+
+test("RatingsPanel filters All websites rapid by each row's site", async () => {
+  await renderAllWebsitesRapid(RatingsPanel);
+
+  expect(container.querySelector("[data-testid='result-counts']")?.textContent).toContain("2:0:0");
+  expect(container.textContent).toContain("2 Common.Games");
+  expect(container.querySelector("[data-testid='rating-data']")?.textContent).toBe("1800");
+  expect(container.querySelector("[data-testid='rating-dates']")?.textContent).toBe(
+    [
+      // Daily dates are parsed in local time, like parseCompleteDailyDate does.
+      dayjs("2026.09.01", "YYYY.MM.DD", true).valueOf(),
+      new Date("2026-10-02T00:00:00Z").getTime(),
+    ].join("|"),
+  );
+});
+
+test("OpeningsPanel filters All websites rapid by each row's site", async () => {
+  await renderAllWebsitesRapid(OpeningsPanel);
+
+  expect(container.querySelector("[data-testid='result-counts']")?.textContent).toContain("2:0:0");
+  expect(container.textContent).toContain("Chess.com Opening");
+  expect(container.textContent).not.toContain("Lichess Opening");
+});
 
 test("Ratings sums duplicate daily keys and takes the highest rating for each date", async () => {
   await render(<RatingsPanel playerName="Magnus" info={duplicatedDailyStatistics} isDatabase />);
