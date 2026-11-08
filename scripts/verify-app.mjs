@@ -3426,6 +3426,282 @@ async function verifyDatabaseOrientation(session) {
   );
 }
 
+async function verifyPlayerOverview(session) {
+  const invoke = (command, args) => invokeIpc(session, "__verifyPlayerOverviewIPC", command, args);
+  const wait = (label, probe) => waitFor(label, probe, { timeoutMs: FILES_PROBE_TIMEOUT_MS });
+  const pointer = (label, script, args = []) =>
+    reachableStableCoordinates(session, label, script, args);
+  const assertion = async (label, prerequisite, action) => {
+    if (prerequisite.error) {
+      check(false, label, prerequisite.error);
+      return prerequisite;
+    }
+    try {
+      const value = await action();
+      check(true, label);
+      return { value };
+    } catch (error) {
+      check(false, label, error.message);
+      return { error: `not attempted: ${label}: ${error.message}` };
+    }
+  };
+  const player = "Overview Player";
+  const title = "verify player overview database";
+  // Import out of date order so descending IDs cannot masquerade as newest first.
+  const games = [
+    {
+      day: "03",
+      white: player,
+      black: "Overview Opponent C",
+      whiteElo: 1800,
+      blackElo: 1600,
+      result: "1/2-1/2",
+    },
+    {
+      day: "06",
+      white: "Overview Opponent F",
+      black: player,
+      whiteElo: 1900,
+      blackElo: 1800,
+      result: "1-0",
+    },
+    {
+      day: "01",
+      white: player,
+      black: "Overview Opponent A",
+      whiteElo: 1800,
+      blackElo: 1400,
+      result: "1-0",
+    },
+    {
+      day: "05",
+      white: "Overview Opponent E",
+      black: player,
+      whiteElo: 1800,
+      blackElo: 1800,
+      result: "1/2-1/2",
+    },
+    {
+      day: "02",
+      white: player,
+      black: "Overview Opponent B",
+      whiteElo: 1800,
+      blackElo: 1500,
+      result: "1-0",
+    },
+    {
+      day: "04",
+      white: player,
+      black: "Overview Opponent D",
+      whiteElo: 1800,
+      blackElo: 1700,
+      result: "0-1",
+    },
+    ...["07", "08", "09"].map((day) => ({
+      day,
+      white: "Unrelated White",
+      black: "Unrelated Black",
+      whiteElo: 2100,
+      blackElo: 2200,
+      result: "1-0",
+    })),
+  ];
+  let database;
+  const opened = await assertion(
+    "PO1 verifyPlayerOverview seeds nine native games and opens Players → Overview Player → Overview",
+    {},
+    async () => {
+      const pgn = games
+        .map(
+          (game) =>
+            `[Event "Overview ${game.day}"]\n[Site "Overview fixture"]\n[Date "2026.10.${game.day}"]\n[Round "${Number(game.day)}"]\n[White "${game.white}"]\n[Black "${game.black}"]\n[WhiteElo "${game.whiteElo}"]\n[BlackElo "${game.blackElo}"]\n[Result "${game.result}"]\n\n1. e4 e5 ${game.result}\n`,
+        )
+        .join("\n");
+      const workspace = { id: { id: filesWorkspaceId }, kind: "fileWorkspace" };
+      const source = await createWorkspacePgnFixture(
+        invoke,
+        workspace,
+        "verify-player-overview",
+        pgn,
+      );
+      const root = await invoke("get_database_workspace", {});
+      database = await invoke("create_workspace_database", {
+        root,
+        filename: "verify-player-overview.db3",
+      });
+      await invoke("convert_pgn", {
+        progressId: `verify-player-overview:${randomUUID()}`,
+        files: [source.handle],
+        database,
+        title,
+        description: "Player Overview proof",
+        ticket: null,
+      });
+      const imported = await invoke("get_games", {
+        file: database,
+        query: {
+          options: { page: 1, pageSize: 25, sort: "id", direction: "asc", skipCount: false },
+        },
+        ticket: null,
+      });
+      if (imported.count !== 9 || imported.data.length !== 9)
+        throw new Error(`expected nine imported games: ${JSON.stringify(imported)}`);
+      await showLibraryOverview(session);
+      await wait("player overview database in Library", () =>
+        session.execute(
+          `window.dispatchEvent(new Event('focus')); return [...document.querySelectorAll('[role="treeitem"]')].some(node => node.getAttribute('aria-label') === arguments[0])`,
+          [title],
+        ),
+      );
+      const opener = await pointer(
+        "player overview database opener",
+        `[...[...document.querySelectorAll('[role="treeitem"]')].find(node => node.getAttribute('aria-label') === arguments[0]).querySelectorAll('button')].find(node => node.textContent.trim() === 'Open database')`,
+        [title],
+      );
+      await clickAt(session, opener.x, opener.y);
+      await wait("player overview database route", () =>
+        session.execute("return location.pathname === arguments[0]", [
+          `/databases/${database.id.id}`,
+        ]),
+      );
+      const players = await pointer(
+        "player overview Players tab",
+        `[...document.querySelectorAll('[role="tab"]')].find(node => node.textContent.trim() === 'Players')`,
+      );
+      await clickAt(session, players.x, players.y);
+      const row = await pointer(
+        "player overview player row",
+        `[...document.querySelectorAll('[data-database-pane="table"] tbody tr')].find(node => [...node.querySelectorAll('td')].some(cell => cell.textContent.trim() === arguments[0]))`,
+        [player],
+      );
+      await clickAt(session, row.x, row.y);
+      const overview = await pointer(
+        "player overview Overview tab",
+        `[...document.querySelectorAll('[data-database-pane="preview"] [role="tab"]')].find(node => node.textContent.trim() === 'Overview')`,
+      );
+      await clickAt(session, overview.x, overview.y);
+      await wait("player overview statistics loaded", () =>
+        session.execute(
+          `return !!document.querySelector('[data-testid="overview-headline"]') && !!document.querySelector('[data-testid="overview-opponents"]')`,
+        ),
+      );
+    },
+  );
+  await assertion(
+    "PO2 verifyPlayerOverview shows White 4 Games 62.5% +2 =1 −1, Black 2 Games 25% +0 =1 −1 and total 6 Games 50%",
+    opened,
+    async () => {
+      const text =
+        await session.execute(`return Object.fromEntries(['headline', 'white', 'black'].map(key =>
+        [key, document.querySelector('[data-testid="overview-' + key + '"]')?.innerText.replace(/\\s+/g, ' ').trim()]));`);
+      if (
+        !text.white?.includes("As White") ||
+        !text.white.includes("4 Games 62.5% +2 =1 −1") ||
+        !text.black?.includes("As Black") ||
+        !text.black.includes("2 Games 25% +0 =1 −1") ||
+        !text.headline?.includes("6 Games 50% +2 =2 −2")
+      )
+        throw new Error(`unexpected Overview results: ${JSON.stringify(text)}`);
+    },
+  );
+  await assertion(
+    "PO3 verifyPlayerOverview shows hand-computed average opponent and FIDE performance for total and both colours",
+    opened,
+    async () => {
+      // Rp = Ra + dp(p), p rounded to 2 decimals, FIDE table 8.1(a).
+      // White: Ra = (1400+1500+1600+1700)/4 = 1550, p = (2+0.5)/4 = 0.625 → 0.63,
+      // dp(0.63) = +95, Rp = 1645. Black: Ra = (1800+1900)/2 = 1850,
+      // p = (0+0.5)/2 = 0.25, dp(0.25) = −193, Rp = 1657.
+      // Total: Ra = 9900/6 = 1650, p = (2+2*0.5)/6 = 0.50, dp(0.50) = 0, Rp = 1650.
+      const lines =
+        await session.execute(`return [...document.querySelectorAll('[data-testid="overview-opponents"] p')]
+        .map(node => node.innerText.replace(/\\s+/g, ' ').trim());`);
+      const expected = [
+        "Avg. opponent 1650 · Performance 1650 · 6 rated",
+        "As White: Avg. opponent 1550 · Performance 1645 · 4 rated",
+        "As Black: Avg. opponent 1850 · Performance 1657 · 2 rated",
+      ];
+      if (JSON.stringify(lines) !== JSON.stringify(expected))
+        throw new Error(
+          `unexpected opponent lines: ${JSON.stringify(lines)}, expected ${JSON.stringify(expected)}`,
+        );
+    },
+  );
+  const listed = await assertion(
+    "PO4 verifyPlayerOverview last games contains exactly six selected-player opponents newest first and no unrelated players",
+    opened,
+    async () => {
+      await wait("player overview last-games rows loaded", () =>
+        session.execute(`return document.querySelectorAll('[data-last-games] button').length > 0`),
+      );
+      const observed = await session.execute(`return {
+        heading: document.querySelector('[data-last-games]')?.innerText,
+        rows: [...document.querySelectorAll('[data-last-games] button')].map(node => node.innerText.replace(/\\s+/g, ' ').trim()),
+      };`);
+      const expected = games
+        .filter((game) => game.white === player || game.black === player)
+        .sort((a, b) => b.day.localeCompare(a.day))
+        .map((game) => ({
+          date: `2026.10.${game.day}`,
+          opponent: game.white === player ? game.black : game.white,
+          elo: game.white === player ? game.blackElo : game.whiteElo,
+        }));
+      if (
+        !observed.heading?.includes("Last games") ||
+        observed.rows.length !== 6 ||
+        observed.rows.some(
+          (row, index) =>
+            !row.includes(expected[index].date) ||
+            !row.includes(`${expected[index].opponent} (${expected[index].elo})`) ||
+            row.includes("Unrelated"),
+        )
+      )
+        throw new Error(
+          `unexpected last-games list: ${JSON.stringify(observed)}, expected ${JSON.stringify(expected)}`,
+        );
+    },
+  );
+  await assertion("PO5 verifyPlayerOverview saves the Overview screenshot", opened, async () => {
+    await session.execute(
+      `document.querySelector('[data-testid="overview-headline"]').scrollIntoView({ block: 'start' }); return true;`,
+    );
+    const path = `${screenshotPath ?? join(tmpdir(), `chessfable-player-overview-${process.pid}`)}.player-overview.png`;
+    await writeFile(path, Buffer.from(await session.screenshot(), "base64"));
+    console.log(`  .. verifyPlayerOverview screenshot: ${path}`);
+  });
+  const analysis = await assertion(
+    "PO6 verifyPlayerOverview clicking the newest last-game row opens that game's analysis tab",
+    listed,
+    async () => {
+      const before = (await readActiveTabTree(session)).workspace;
+      if (!before) throw new Error("player overview workspace snapshot is unreadable");
+      const row = await pointer(
+        "player overview newest game",
+        `document.querySelector('[data-last-games] button')`,
+      );
+      await clickAt(session, row.x, row.y);
+      await wait("player overview analysis route and players", () =>
+        session.execute(
+          `return location.pathname === '/' && !!document.querySelector('cg-board') && document.body.innerText.includes('Overview Opponent F') && document.body.innerText.includes(arguments[0])`,
+          [player],
+        ),
+      );
+      await wait("player overview analysis tab identity", async () => {
+        const snapshot = await readActiveTabTree(session);
+        return (
+          snapshot.tab?.name === `Overview Opponent F - ${player}` &&
+          !before.tabs.some((tab) => tab.value === snapshot.tab.value) &&
+          snapshot.tree?.headers.white === "Overview Opponent F" &&
+          snapshot.tree?.headers.black === player &&
+          snapshot.tree?.headers.date === "2026.10.06"
+        );
+      });
+    },
+  );
+  if (!analysis.error) await clickButton(session, "Close tab", true);
+  await showLibraryOverview(session);
+}
+
 async function verifyNewGameToDatabase(session) {
   const invoke = (command, args) => invokeIpc(session, "__verifyNewGameIPC", command, args);
   const wait = (label, probe) => waitFor(label, probe, { timeoutMs: FILES_PROBE_TIMEOUT_MS });
@@ -5987,6 +6263,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
   await verifyGameOpening(session, ownedRoot, filesWorkspace);
   await verifyNewGameToDatabase(session);
   await verifyDatabaseOrientation(session);
+  await verifyPlayerOverview(session);
   await verifyLinkedCollections(session, filesWorkspace, profileDirectory);
   await verifyConversionCancellation(session, ownedRoot);
 
