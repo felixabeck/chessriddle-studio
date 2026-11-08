@@ -22226,3 +22226,20 @@ All probes were removed; the tree stayed clean.
 * **Failure scenario:** release-profile benchmark `db::event_summary_tests::benchmark_mega_event_summaries` on a copy of Mega Database 2025 (11,441,614 games, 70,039 events, schema 2.2.0), 2026-11-08, machine load average about 42: migration plus acquisition took 23.55 s, once per database.
 * **Open question:** should the listing show a per-database one-time upgrade state, or is a wait of this size acceptable for databases of this size?
 * **Found by:** Claude Code (Opus 5.5), build event-summary-columns, 2026-11-08.
+
+---
+
+## 2026-11-08 — filed through the inbox spool
+
+### The contract gate's live actionlint download turns a GitHub Releases outage into a red required CI job
+
+* **ID:** f-20261108-06 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Filed from:** 6f34ab95-4aa5-4bf3-aa66-0d8104c59717
+* **Impact class:** tooling
+* **Spotted outside diff:** post-push CI wait for the records-only push `2d5d2525` (rejection of `f-20261106-20`).
+* **CI run:** 42465714377
+* **Where:** `scripts/check-workflow-permissions.mjs:315-325` (`actionlint`) runs `pnpm dlx github-actionlint@1.7.12 --version`. That package downloads its binary from GitHub Releases at install time, with no retry and no CI cache. `package.json:36` `workflows:check` runs it inside the contract gate, which is the `Run the contract gate` step of the `frontend` job in `.github/workflows/test.yml`.
+* **Defect:** A required repository gate depends on one unretried live download of a third-party release asset. A transient failure of that host fails the gate with no defect in the pushed commit. The failure also makes `pnpm ci:remote:check` refuse later pushes until the job is green or owned.
+* **Failure scenario:** Observed 2026-11-08 on run 42465714377. Attempt 1 at 09:08 UTC and the rerun attempt 2 at 09:28 UTC both ended with `github-actionlint: Download failed: 504 Gateway Time-out for https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz`, and the `frontend` job went red on a commit that changed only `tasks/findings.md`. A `curl` of the same URL from the development machine right after attempt 2 also returned 504, so the asset host itself was failing. The local contract gate passed on the same tree 2026-11-08, and a local `pnpm dlx` store is the likely reason, which was not separately measured.
+* **Fix:** Remove the live single-attempt dependency without weakening the check: cache the actionlint binary in CI keyed on the pinned version, or add a bounded retry around the fetch. Do not use `--allow-missing-actionlint` in the required gate, because that silently drops the workflow lint. Prove it with a failing fetch that retries or uses the cache, and keep a genuine actionlint finding red.
+* **Found by:** Claude Code drain session, required-CI wait.
