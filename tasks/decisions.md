@@ -12096,8 +12096,8 @@ Former private decision identifier: d-20261029-14
 * **Rejected:** Cutting the growth: it is the marker parse/export, the load default, the inline end row, the analysis styling, the move-menu entries, the Termination field and four new strings in each of the 16 locale catalogues, all required by Felix's accepted design; the result-label mapping is already shared and there is no unused string or duplicated helper. Shaving 28 B (for example inlining a CSS custom property) would leave the next change over the ceiling with no real saving. Lazy-loading: total counts every emitted asset once.
 * **Reason:** Same procedure as d-20261105-06 and d-20261102-11; 9,972 B of margin remains. Reversal path: tighten total against a future smaller production build. This decision is the forward pointer for the ceilings.
 * **Supersedes:** d-20261105-06.
-* **Decided by:** Claude Code (Opus 5.5) build run game-end-marker, full auto, 2026-11-05 · **Superseded-by:** -
-<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"6f370704a11e2809be10781582208fb8078be78775a0a234ac7dcb38e0aeda57","input_sha256":"69bc58bbca40bd5658c011c856650b9356545730e9a040db726c9d91ebf18572","kind":"mutation-receipt","operation":"cdaca45e38894af0d5da6e2a752fb5a1704d7c30e361bd874a8c70ed3adb28d3","options":{"section":null},"request_id_sha256":null,"results":["d-20261105-19"],"target":"decisions-ledger","v":1} -->
+* **Decided by:** Claude Code (Opus 5.5) build run game-end-marker, full auto, 2026-11-05 · **Superseded-by:** d-20261109-03
+<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"57c9a13fba448522724885ec57261c7bfbbc89f79796efd771781086aa5c00db","input_sha256":"69bc58bbca40bd5658c011c856650b9356545730e9a040db726c9d91ebf18572","kind":"mutation-receipt","operation":"cdaca45e38894af0d5da6e2a752fb5a1704d7c30e361bd874a8c70ed3adb28d3","options":{"section":null},"request_id_sha256":null,"results":["d-20261105-19"],"target":"decisions-ledger","v":1} -->
 
 ### d-20261105-15 — Is the linked New game databaseDraft flake (f-20261104-02) a renderer race or a test race, and where is it fixed?
 
