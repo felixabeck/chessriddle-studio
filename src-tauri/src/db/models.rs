@@ -100,10 +100,29 @@ pub struct NewSite<'a> {
     pub name: &'a str,
 }
 
-#[derive(Default, Debug, Queryable, Serialize, Deserialize, Identifiable, Clone, Type)]
+#[derive(Default, Debug, Queryable, Serialize, Deserialize, Identifiable, Clone)]
 pub struct Event {
     pub id: i32,
     pub name: Option<String>,
+    pub start_date: Option<String>,
+    pub end_date: Option<String>,
+    pub site_id: i32,
+    pub game_count: i32,
+    pub player_count: i32,
+    pub avg_elo: Option<i32>,
+}
+
+#[derive(Debug, Queryable, Serialize, Deserialize, Clone, Type)]
+#[specta(rename = "Event")]
+pub struct TournamentEvent {
+    pub id: i32,
+    pub name: Option<String>,
+    pub start_date: Option<String>,
+    pub end_date: Option<String>,
+    pub site: Option<String>,
+    pub player_count: i32,
+    pub game_count: i32,
+    pub avg_elo: Option<i32>,
 }
 
 #[derive(Insertable, Debug)]

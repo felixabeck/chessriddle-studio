@@ -371,7 +371,7 @@ const validPlayers = {
 const validTournaments = {
     activeTab: "leaderboard",
     selectedTournament: 9,
-    query: { name: null, options: { skipCount: true, sort: "id", direction: "asc" } },
+    query: { name: null, options: { skipCount: true, sort: "name", direction: "asc" } },
 };
 
 describe("database-view panel hydration", () => {
@@ -417,16 +417,40 @@ describe("database-view panel hydration", () => {
         expect(store.getState().players).toEqual(players);
     });
 
-    it.each(["id", "name"])("preserves the supported tournament sort %s", async (sort) => {
-        const tournaments = {
-            ...validTournaments,
-            query: {
-                ...validTournaments.query,
-                options: { ...validTournaments.query.options, sort },
+    it.each(["name", "date", "players", "games", "avgElo"])(
+        "preserves the supported tournament sort %s",
+        async (sort) => {
+            const tournaments = {
+                ...validTournaments,
+                query: {
+                    ...validTournaments.query,
+                    options: { ...validTournaments.query.options, sort },
+                },
+            };
+            const store = await hydrate({ tournaments });
+            expect(store.getState().tournaments).toEqual(tournaments);
+        },
+    );
+
+    it("falls back from the retired ID sort to date descending independently", async () => {
+        const store = await hydrate({
+            games: validGames,
+            players: validPlayers,
+            tournaments: {
+                ...validTournaments,
+                query: {
+                    ...validTournaments.query,
+                    options: { ...validTournaments.query.options, sort: "id" },
+                },
             },
-        };
-        const store = await hydrate({ tournaments });
-        expect(store.getState().tournaments).toEqual(tournaments);
+        });
+        expect(store.getState().tournaments).toEqual(store.getInitialState().tournaments);
+        expect(store.getState().tournaments.query.options).toMatchObject({
+            sort: "date",
+            direction: "desc",
+        });
+        expect(store.getState().games).toEqual(validGames);
+        expect(store.getState().players).toEqual(validPlayers);
     });
 
     it.each(["BlackWhite", "WhiteBlack", "Any"])(

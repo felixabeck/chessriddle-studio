@@ -877,7 +877,23 @@ export const gameOpeningCommands: NonNullable<MockScenario["commands"]> = {
 export const databaseLayoutCommands: NonNullable<MockScenario["commands"]> = {
     ...gameOpeningCommands,
     get_players: { result: { data: [{ id: 1, name: "First White", elo: 1500 }], count: 1 } },
-    get_tournaments: { result: { data: [{ id: 1, name: "First event" }], count: 1 } },
+    get_tournaments: {
+        result: {
+            data: [
+                {
+                    id: 1,
+                    name: "First event",
+                    start_date: null,
+                    end_date: null,
+                    site: null,
+                    player_count: 0,
+                    game_count: 0,
+                    avg_elo: null,
+                },
+            ],
+            count: 1,
+        },
+    },
     get_players_game_info: {
         result: {
             site_stats_data: [

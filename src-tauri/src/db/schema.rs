@@ -109,6 +109,18 @@ diesel::table! {
         id -> Integer,
         #[sql_name = "Name"]
         name -> Nullable<Text>,
+        #[sql_name = "StartDate"]
+        start_date -> Nullable<Text>,
+        #[sql_name = "EndDate"]
+        end_date -> Nullable<Text>,
+        #[sql_name = "SiteID"]
+        site_id -> Integer,
+        #[sql_name = "GameCount"]
+        game_count -> Integer,
+        #[sql_name = "PlayerCount"]
+        player_count -> Integer,
+        #[sql_name = "AvgElo"]
+        avg_elo -> Nullable<Integer>,
     }
 }
 

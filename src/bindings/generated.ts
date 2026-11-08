@@ -1453,7 +1453,7 @@ export type EngineTerminalSnapshot = { kind: EngineFailureKind; exitStatus: Engi
 export type ErrorCategory = "io" | "parsing" | "platform" | "network" | "chess-data" | "database" | "invalid-input" | "stale-game" | "missing-resource" | "conflict" | "resource-limit" | "authentication" | "credential" | "cancellation" | "durability" | "partial-removal" | "operation-and-cleanup" | "engine-timeout" | "engine-position-rejected" | "engine-retired" | "engine-failure" | "permission" | "puzzle-themes-unavailable"
 export type ErrorPayload = { tag: ErrorPayloadTag; category: ErrorCategory; message: string; rootFailure?: RootFailure | null; engineFailure?: EngineTerminalSnapshot | null; remoteHttpRejection?: RemoteHttpRejection | null; nameTaken?: boolean | null; databaseAdmission?: boolean | null; progressGeneration?: string | null }
 export type ErrorPayloadTag = "backend-error" | "engine-failure"
-export type Event = { id: number; name: string | null }
+export type Event = { id: number; name: string | null; start_date: string | null; end_date: string | null; site: string | null; player_count: number; game_count: number; avg_elo: number | null }
 export type FeedbackOutcome = "sent" | "inProgress" | "keyMismatch" | "invalidInput" | "invalidImage" | "rateLimited" | "deliveryFailed" | "serviceUnavailable"
 export type FeedbackType = "bug" | "suggestion" | "praise" | "other"
 export type FileWorkspaceDescriptor = { handle: FileWorkspaceHandle; displayName: string; availability: PathAvailability }
@@ -1597,7 +1597,7 @@ export type StartupPathOwners = { retainedIds: PathRef[]; trustedFamilies: PathO
 export type TimeControl = { initialTime: bigint; increment: bigint }
 export type Token = { type: "ParenOpen" } | { type: "ParenClose" } | { type: "Comment"; value: string } | { type: "Unparsed"; value: string } | { type: "San"; value: string } | { type: "Header"; value: { tag: string; value: string } } | { type: "Nag"; value: string } | { type: "Outcome"; value: string }
 export type TournamentQuery = { options: QueryOptions<TournamentSort>; name: string | null }
-export type TournamentSort = "id" | "name"
+export type TournamentSort = "name" | "date" | "players" | "games" | "avgElo"
 export type TrashCursor = { seconds: bigint; item: string }
 export type TrashItemId = string
 /**

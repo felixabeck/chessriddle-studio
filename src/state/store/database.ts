@@ -82,7 +82,7 @@ const defaultPlayersQueryOptions: QueryOptions<PlayerSort> = {
 const defaultTournamentsQueryOptions: QueryOptions<TournamentSort> = {
     page: 1,
     pageSize: 25,
-    sort: "name",
+    sort: "date",
     direction: "desc",
     skipCount: false,
 };
@@ -210,7 +210,7 @@ const persistedTournamentsSchema: z.ZodType<
     activeTab: z.enum(["games", "leaderboard"]),
     selectedTournament: queryIntegerSchema.nullish().transform((value) => value ?? undefined),
     query: z.object({
-        options: createQueryOptionsSchema(["id", "name"]),
+        options: createQueryOptionsSchema(["name", "date", "players", "games", "avgElo"]),
         name: z.string().nullable(),
     }),
 });

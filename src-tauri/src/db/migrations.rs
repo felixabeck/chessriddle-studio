@@ -6,7 +6,8 @@ use diesel::{
     sql_types::{BigInt, Integer, Nullable, Text},
 };
 
-const CURRENT_DATABASE_VERSION: &str = "2.2.0";
+const CURRENT_DATABASE_VERSION: &str = "2.3.0";
+pub(super) const PRE_EVENT_SUMMARY_DATABASE_VERSION: &str = "2.2.0";
 pub(super) const PRE_GAME_COUNT_DATABASE_VERSION: &str = "2.1.0";
 pub(super) const PRE_ORIENTATION_DATABASE_VERSION: &str = "2.0.0";
 const LEGACY_DATABASE_VERSION: &str = "1.0.0";
@@ -131,7 +132,7 @@ pub fn prepare_database(
 
 /// Returns (created, content_validated). The second flag is true only when both
 /// content pragmas ran, so publication can follow the outermost commit.
-/// Additive 2.0.0 and 2.1.0 migrations return false and leave content to the
+/// Additive 2.0.0, 2.1.0 and 2.2.0 migrations return false and leave content to the
 /// background scan (`content_validation::schedule` from `get_db_info`;
 /// f-20261107-02). Create and the 1.0.0 rewrite still return true.
 pub fn prepare_database_with_validation(
@@ -156,7 +157,7 @@ pub(super) fn uninitialized_database_error() -> Error {
 /// Creation is intentionally excluded: only the import command has the title
 /// and description required to initialize a new database.
 /// Returns true only when migration ran both content pragmas; false means only
-/// the cheap schema contract was checked. Additive 2.0.0 and 2.1.0 migrations
+/// the cheap schema contract was checked. Additive 2.0.0, 2.1.0 and 2.2.0 migrations
 /// return false and leave content to the background scan
 /// (`content_validation::schedule` from `get_db_info`; f-20261107-02).
 pub fn validate_existing_database(conn: &mut SqliteConnection) -> Result<bool, Error> {
@@ -209,10 +210,20 @@ fn migrate_database(conn: &mut SqliteConnection) -> Result<bool, Error> {
     match (version.as_str(), canonical) {
         (CURRENT_DATABASE_VERSION, true) => validate_schema(conn).map(|()| false),
         (LEGACY_DATABASE_VERSION, _) => migrate_legacy_database(conn).map(|()| true),
+        (PRE_EVENT_SUMMARY_DATABASE_VERSION, true) => conn.transaction::<_, Error, _>(|conn| {
+            validate_reference_schema_version(conn, true, false)?;
+            validate_sentinel_records_and_triggers(conn)?;
+            validate_player_game_count_schema(conn)?;
+            migrate_event_summaries(conn)?;
+            insert_info(conn, "Version", CURRENT_DATABASE_VERSION)?;
+            validate_schema(conn)?;
+            Ok(false)
+        }),
         (PRE_GAME_COUNT_DATABASE_VERSION, true) => conn.transaction::<_, Error, _>(|conn| {
-            validate_reference_schema_version(conn, false)?;
+            validate_reference_schema_version(conn, false, false)?;
             validate_sentinel_records_and_triggers(conn)?;
             migrate_player_game_counts(conn)?;
+            migrate_event_summaries(conn)?;
             insert_info(conn, "Version", CURRENT_DATABASE_VERSION)?;
             // Additive: commit on the schema contract only. get_db_info finds no
             // content stamp and schedules content_validation (f-20261107-02).
@@ -221,13 +232,14 @@ fn migrate_database(conn: &mut SqliteConnection) -> Result<bool, Error> {
         }),
         (PRE_ORIENTATION_DATABASE_VERSION, _) => conn.transaction::<_, Error, _>(|conn| {
             validate_games_schema_version(conn, false)?;
-            validate_reference_schema_version(conn, false)?;
+            validate_reference_schema_version(conn, false, false)?;
             validate_sentinel_records_and_triggers(conn)?;
             conn.batch_execute(
                 "ALTER TABLE Games ADD COLUMN Orientation TEXT \
                  CHECK(Orientation IN ('white', 'black') OR Orientation IS NULL);",
             )?;
             migrate_player_game_counts(conn)?;
+            migrate_event_summaries(conn)?;
             insert_info(conn, "Version", CURRENT_DATABASE_VERSION)?;
             // Additive: commit on the schema contract only. get_db_info finds no
             // content stamp and schedules content_validation (f-20261107-02).
@@ -303,6 +315,7 @@ fn migrate_legacy_database(conn: &mut SqliteConnection) -> Result<(), Error> {
         )?;
         create_sentinel_triggers(conn)?;
         migrate_player_game_counts(conn)?;
+        migrate_event_summaries(conn)?;
         if restore_required_indexes {
             conn.batch_execute(super::INDEXES_SQL)?;
         }
@@ -324,8 +337,52 @@ fn table_exists(conn: &mut SqliteConnection, name: &str) -> Result<bool, Error> 
 fn player_game_counts_sql() -> Result<&'static str, Error> {
     CREATE_TABLES_SQL
         .split_once("-- Player game counts\n")
-        .map(|(_, sql)| sql)
+        .and_then(|(_, sql)| sql.split_once("-- Event summaries\n").map(|(sql, _)| sql))
         .ok_or_else(|| Error::InvalidInput("Missing player game count schema".into()))
+}
+
+fn event_summaries_sql() -> Result<&'static str, Error> {
+    CREATE_TABLES_SQL
+        .split_once("-- Event summaries\n")
+        .map(|(_, sql)| sql)
+        .ok_or_else(|| Error::InvalidInput("Missing event summary schema".into()))
+}
+
+fn migrate_event_summaries(conn: &mut SqliteConnection) -> Result<(), Error> {
+    conn.batch_execute(
+        "ALTER TABLE Events ADD COLUMN StartDate TEXT;
+         ALTER TABLE Events ADD COLUMN EndDate TEXT;
+         ALTER TABLE Events ADD COLUMN SiteID INTEGER NOT NULL DEFAULT 0;
+         ALTER TABLE Events ADD COLUMN GameCount INTEGER NOT NULL DEFAULT 0;
+         ALTER TABLE Events ADD COLUMN PlayerCount INTEGER NOT NULL DEFAULT 0;
+         ALTER TABLE Events ADD COLUMN AvgElo INTEGER;",
+    )?;
+    conn.batch_execute(event_summaries_sql()?)?;
+    conn.batch_execute("INSERT INTO EventSummaryDirty SELECT ID FROM Events WHERE ID != 0;")?;
+    super::event_summaries::refresh_event_summaries(conn)
+}
+
+fn validate_event_summary_schema(conn: &mut SqliteConnection) -> Result<(), Error> {
+    let query = "SELECT name, sql FROM sqlite_master WHERE name = 'games_event_idx'
+        OR name = 'EventSummaryDirty' OR name LIKE 'event_summary_%'";
+    let actual: Vec<TriggerInfo> = sql_query(query).load(conn)?;
+    let mut canonical =
+        SqliteConnection::establish(":memory:").map_err(crate::error::map_sqlite_establish)?;
+    canonical.batch_execute(CREATE_TABLES_SQL)?;
+    let expected: Vec<TriggerInfo> = sql_query(query).load(&mut canonical)?;
+    if actual.len() != expected.len()
+        || expected.iter().any(|expected| {
+            !actual.iter().any(|actual| {
+                actual.name == expected.name
+                    && normalize_sql(&actual.sql) == normalize_sql(&expected.sql)
+            })
+        })
+    {
+        return Err(Error::InvalidInput(
+            "Event summary table, index or triggers are not canonical".into(),
+        ));
+    }
+    Ok(())
 }
 
 pub(super) fn backfill_player_game_counts(conn: &mut SqliteConnection) -> Result<(), Error> {
@@ -411,6 +468,7 @@ fn validate_schema(conn: &mut SqliteConnection) -> Result<(), Error> {
     validate_reference_schema(conn)?;
     validate_sentinel_records_and_triggers(conn)?;
     validate_player_game_count_schema(conn)?;
+    validate_event_summary_schema(conn)?;
     Ok(())
 }
 
@@ -559,12 +617,13 @@ fn validate_games_schema_version(
 type ColumnContract = (&'static str, &'static str, bool, Option<&'static str>, i32);
 
 fn validate_reference_schema(conn: &mut SqliteConnection) -> Result<(), Error> {
-    validate_reference_schema_version(conn, true)
+    validate_reference_schema_version(conn, true, true)
 }
 
 fn validate_reference_schema_version(
     conn: &mut SqliteConnection,
     with_game_count: bool,
+    with_event_summaries: bool,
 ) -> Result<(), Error> {
     validate_exact_columns(
         conn,
@@ -583,16 +642,23 @@ fn validate_reference_schema_version(
         player_columns.push(("GameCount", "INTEGER", true, Some("0"), 0));
     }
     validate_exact_columns(conn, "Players", &player_columns)?;
-    for table in ["Events", "Sites"] {
-        validate_exact_columns(
-            conn,
-            table,
-            &[
-                ("ID", "INTEGER", false, None, 1),
-                ("Name", "TEXT", false, None, 0),
-            ],
-        )?;
+    let reference_columns = [
+        ("ID", "INTEGER", false, None, 1),
+        ("Name", "TEXT", false, None, 0),
+    ];
+    validate_exact_columns(conn, "Sites", &reference_columns)?;
+    let mut event_columns = reference_columns.to_vec();
+    if with_event_summaries {
+        event_columns.extend([
+            ("StartDate", "TEXT", false, None, 0),
+            ("EndDate", "TEXT", false, None, 0),
+            ("SiteID", "INTEGER", true, Some("0"), 0),
+            ("GameCount", "INTEGER", true, Some("0"), 0),
+            ("PlayerCount", "INTEGER", true, Some("0"), 0),
+            ("AvgElo", "INTEGER", false, None, 0),
+        ]);
     }
+    validate_exact_columns(conn, "Events", &event_columns)?;
     for table in ["Info", "Players", "Events", "Sites"] {
         validate_single_column_unique(conn, table, "Name")?;
     }
@@ -748,8 +814,20 @@ fn validate_sentinel_records_and_triggers(conn: &mut SqliteConnection) -> Result
 }
 
 #[cfg(test)]
-pub(super) fn pre_game_count_schema() -> String {
+pub(super) fn pre_event_summary_schema() -> String {
     CREATE_TABLES_SQL
+        .split("-- Event summaries\n")
+        .next()
+        .unwrap()
+        .replace(
+            "    Name TEXT UNIQUE,\n    StartDate TEXT,\n    EndDate TEXT,\n    SiteID INTEGER NOT NULL DEFAULT 0,\n    GameCount INTEGER NOT NULL DEFAULT 0,\n    PlayerCount INTEGER NOT NULL DEFAULT 0,\n    AvgElo INTEGER",
+            "    Name TEXT UNIQUE",
+        )
+}
+
+#[cfg(test)]
+pub(super) fn pre_game_count_schema() -> String {
+    pre_event_summary_schema()
         .split("-- Player game counts\n")
         .next()
         .unwrap()
@@ -841,9 +919,23 @@ mod tests {
 
         conn.batch_execute(
             "INSERT INTO Players(ID,Name) VALUES(1,'One'),(2,'Two');
-            INSERT INTO Games(WhiteID,BlackID) VALUES(1,1),(1,2),(0,2);",
+            INSERT INTO Events(ID,Name) VALUES(1,'Legacy event');
+            INSERT INTO Sites(ID,Name) VALUES(1,'Legacy site');
+            INSERT INTO Games(EventID,SiteID,Date,WhiteID,BlackID,WhiteElo,BlackElo)
+            VALUES(1,1,'2016.??.??',1,1,2000,0),(1,0,'2016.08.01',1,2,NULL,2001),(1,0,'????.??.??',0,2,NULL,NULL);",
         )
         .unwrap();
+        conn.batch_execute("CREATE TEMP TABLE event_summary_refresh(ID INTEGER PRIMARY KEY);")
+            .unwrap();
+        assert!(validate_existing_database(&mut conn).is_err());
+        assert_eq!(
+            info_value(&mut conn, "Version").unwrap().as_deref(),
+            Some(LEGACY_DATABASE_VERSION)
+        );
+        validate_reference_schema_version(&mut conn, false, false).unwrap();
+        assert!(!table_exists(&mut conn, "EventSummaryDirty").unwrap());
+        conn.batch_execute("DROP TABLE event_summary_refresh;")
+            .unwrap();
         take_content_pragma_counts();
         let (created, content_validated) =
             prepare_database_with_validation(&mut conn, "unused", "unused").unwrap();
@@ -851,6 +943,8 @@ mod tests {
         assert!(content_validated);
         assert_eq!(take_content_pragma_counts(), (1, 1));
         super::super::player_game_count_tests::assert_player_counts(&mut conn);
+        super::super::event_summary_tests::assert_event_summaries(&mut conn);
+        assert!(!validate_existing_database(&mut conn).unwrap());
         assert!(games_schema_is_canonical(&mut conn).unwrap());
         assert_eq!(
             info_value(&mut conn, "Version").unwrap().as_deref(),
@@ -898,18 +992,24 @@ mod tests {
         for version in [
             PRE_ORIENTATION_DATABASE_VERSION,
             PRE_GAME_COUNT_DATABASE_VERSION,
+            PRE_EVENT_SUMMARY_DATABASE_VERSION,
         ] {
             let mut conn = connection();
             let schema = if version == PRE_ORIENTATION_DATABASE_VERSION {
                 pre_orientation_schema()
-            } else {
+            } else if version == PRE_GAME_COUNT_DATABASE_VERSION {
                 pre_game_count_schema()
+            } else {
+                pre_event_summary_schema()
             };
             conn.batch_execute(&schema).unwrap();
             insert_info(&mut conn, "Version", version).unwrap();
             conn.batch_execute(
                 "INSERT INTO Players(ID,Name) VALUES(1,'One'),(2,'Two'),(3,'Unused');
-                INSERT INTO Games(WhiteID,BlackID) VALUES(1,1),(1,2),(0,2),(0,0);",
+                INSERT INTO Events(ID,Name) VALUES(1,'Event');
+                INSERT INTO Sites(ID,Name) VALUES(1,'Site');
+                INSERT INTO Games(EventID,SiteID,Date,WhiteID,BlackID,WhiteElo,BlackElo)
+                VALUES(1,1,'2016.??.??',1,1,2000,0),(1,0,'2016.08.01',1,2,NULL,2001),(1,0,'????.??.??',0,2,NULL,NULL),(0,0,NULL,0,0,NULL,NULL);",
             )
             .unwrap();
             take_content_pragma_counts();
@@ -921,6 +1021,8 @@ mod tests {
             );
             assert!(games_schema_is_canonical(&mut conn).unwrap());
             super::super::player_game_count_tests::assert_player_counts(&mut conn);
+            super::super::event_summary_tests::assert_event_summaries(&mut conn);
+            assert!(!validate_existing_database(&mut conn).unwrap());
             conn.batch_execute(
                 "INSERT INTO Games(WhiteID,BlackID) VALUES(1,2);
                 UPDATE Games SET WhiteID=3 WHERE WhiteID=1;
@@ -929,6 +1031,61 @@ mod tests {
             .unwrap();
             super::super::player_game_count_tests::assert_player_counts(&mut conn);
             assert!(!validate_existing_database(&mut conn).unwrap());
+        }
+    }
+
+    #[test]
+    fn failed_summary_upgrade_rolls_back_every_additive_origin() {
+        for (version, schema, with_counts) in [
+            (
+                PRE_ORIENTATION_DATABASE_VERSION,
+                pre_orientation_schema(),
+                false,
+            ),
+            (
+                PRE_GAME_COUNT_DATABASE_VERSION,
+                pre_game_count_schema(),
+                false,
+            ),
+            (
+                PRE_EVENT_SUMMARY_DATABASE_VERSION,
+                pre_event_summary_schema(),
+                true,
+            ),
+        ] {
+            let mut conn = connection();
+            conn.batch_execute(&schema).unwrap();
+            insert_info(&mut conn, "Version", version).unwrap();
+            conn.batch_execute("INSERT INTO Events(ID,Name) VALUES(1,'Event'); INSERT INTO Games(EventID) VALUES(1); CREATE TEMP TABLE event_summary_refresh(ID INTEGER PRIMARY KEY);").unwrap();
+            assert!(validate_existing_database(&mut conn).is_err());
+            assert_eq!(
+                info_value(&mut conn, "Version").unwrap().as_deref(),
+                Some(version)
+            );
+            validate_reference_schema_version(&mut conn, with_counts, false).unwrap();
+            assert!(!table_exists(&mut conn, "EventSummaryDirty").unwrap());
+            conn.batch_execute("DROP TABLE event_summary_refresh;")
+                .unwrap();
+            assert!(!validate_existing_database(&mut conn).unwrap());
+            super::super::event_summary_tests::assert_event_summaries(&mut conn);
+        }
+    }
+
+    #[test]
+    fn event_summary_schema_drift_is_rejected() {
+        for mutation in [
+            "DROP INDEX games_event_idx",
+            "DROP INDEX games_event_idx; CREATE INDEX games_event_idx ON Games(SiteID)",
+            "DROP TRIGGER event_summary_insert",
+            "DROP TRIGGER event_summary_update; CREATE TRIGGER event_summary_update AFTER UPDATE ON Games BEGIN SELECT 1; END",
+            "ALTER TABLE Events RENAME COLUMN StartDate TO WrongDate",
+            "DROP TABLE EventSummaryDirty",
+            "DROP TABLE EventSummaryDirty; CREATE TABLE EventSummaryDirty(ID TEXT PRIMARY KEY)",
+        ] {
+            let mut conn=connection();
+            prepare_database(&mut conn,"","").unwrap();
+            conn.batch_execute(mutation).unwrap();
+            assert!(validate_existing_database(&mut conn).is_err(),"{mutation}");
         }
     }
 

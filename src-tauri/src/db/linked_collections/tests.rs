@@ -469,6 +469,47 @@ mod native_tests {
         format!("[Event \"Collection fixture\"]\n[Site \"https://www.chess.com\"]\n[Date \"2026.10.01\"]\n[UTCTime \"12:00:00\"]\n[White \"Player\"]\n[Black \"Opponent\"]\n[Result \"1-0\"]\n{}[Custom \"keep this tag\"]\n\n1. {moves} {{{note}}} 1-0\n\n", id.map(|id| format!("[Link \"https://www.chess.com/game/live/{id}\"]\n")).unwrap_or_default())
     }
 
+    #[test]
+    fn linked_refresh_keeps_event_summaries_current() {
+        let fixture = Fixture::new();
+        let first = game(None, "e4 e5", "first");
+        fixture.create("summaries", &first, WorkspaceFileType::Game);
+        let collection = fixture.list().pop().unwrap();
+        let id = Uuid::parse_str(&collection.id).unwrap();
+        for body in [
+            first.clone(),
+            format!(
+                "{first}{}",
+                game(None, "d4 d5", "second")
+                    .replace("Collection fixture", "Other event")
+                    .replace("2026.10.01", "2016.??.??")
+            ),
+        ] {
+            std::fs::write(fixture.path("summaries"), body).unwrap();
+            fixture
+                .service
+                .refresh(
+                    &fixture.state.pgn_path_authority,
+                    id,
+                    &CancellationToken::new(),
+                )
+                .unwrap();
+            let handle = collection.database.as_ref().unwrap();
+            let target = resolve_database(
+                &fixture.state.pgn_path_authority,
+                handle,
+                PathOperation::DatabaseRead,
+            )
+            .unwrap();
+            let mut db = fixture
+                .state
+                .database_repository
+                .connection(&target, None)
+                .unwrap();
+            crate::db::event_summary_tests::assert_event_summaries(&mut db);
+        }
+    }
+
     fn recent_identity(game: &NormalizedGame) -> LinkedGameIdentity {
         LinkedGameIdentity {
             locator: game.linked.clone().unwrap(),

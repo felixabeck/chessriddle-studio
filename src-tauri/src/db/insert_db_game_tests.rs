@@ -190,6 +190,10 @@ fn insert_db_game_round_trip_then_update_keeps_one_row_and_updates_counts() {
     assert_eq!(games.data[0].event, "New game");
     assert_eq!(games.data[0].site, "Berlin");
     assert_eq!(games.data[0].moves, "1. e4 e5 *");
+    {
+        let mut db = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+        event_summary_tests::assert_event_summaries(&mut db);
+    }
     write_db_game_blocking(
         &state.pgn_path_authority,
         &state.database_repository,
@@ -212,6 +216,7 @@ fn insert_db_game_round_trip_then_update_keeps_one_row_and_updates_counts() {
     )
     .unwrap();
     let mut db = state.database_repository.connection(&target, None).unwrap();
+    event_summary_tests::assert_event_summaries(&mut db);
     for (name, expected) in [
         ("GameCount", "1"),
         ("PlayerCount", "3"),
@@ -401,7 +406,7 @@ fn insert_db_game_failed_revision_bump_rolls_back_and_preserves_cache() {
 
 #[tokio::test]
 async fn insert_db_game_convert_pgn_uses_the_shared_insert() {
-    let (dir, app, handle, _) = blocking_database_case();
+    let (dir, app, handle, database) = blocking_database_case();
     tauri_specta::Builder::<tauri::test::MockRuntime>::new()
         .events(tauri_specta::collect_events!(ConvertProgress))
         .mount_events(&app);
@@ -422,6 +427,10 @@ async fn insert_db_game_convert_pgn_uses_the_shared_insert() {
     )
     .await
     .unwrap();
+    {
+        let mut db = SqliteConnection::establish(database.to_str().unwrap()).unwrap();
+        event_summary_tests::assert_event_summaries(&mut db);
+    }
     let id = insert(&app, handle.clone(), PGN, &CancellationToken::new())
         .unwrap()
         .id;

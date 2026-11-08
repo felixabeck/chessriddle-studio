@@ -7,6 +7,7 @@ pub(crate) mod allocation_probe;
 pub(crate) mod bound_sqlite;
 mod content_validation;
 mod encoding;
+mod event_summaries;
 pub(crate) mod linked_collections;
 mod migrations;
 mod models;
@@ -843,6 +844,8 @@ mod game_cas_tests;
 #[cfg(test)]
 use game_cas_tests::test_game_stamp;
 #[cfg(test)]
+mod event_summary_tests;
+#[cfg(test)]
 mod insert_db_game_tests;
 #[cfg(test)]
 mod player_game_count_tests;
@@ -871,7 +874,7 @@ pub(crate) fn schema_database_case(
     let mut connection = diesel::SqliteConnection::establish(database.to_str().unwrap()).unwrap();
     connection.batch_execute(CREATE_TABLES_SQL).unwrap();
     connection
-        .batch_execute("INSERT INTO Info (Name, Value) VALUES ('Version', '2.2.0');")
+        .batch_execute("INSERT INTO Info (Name, Value) VALUES ('Version', '2.3.0');")
         .unwrap();
     drop(connection);
 
@@ -3109,10 +3112,16 @@ fn get_players_blocking(
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub enum TournamentSort {
-    #[serde(rename = "id")]
-    Id,
     #[serde(rename = "name")]
     Name,
+    #[serde(rename = "date")]
+    Date,
+    #[serde(rename = "players")]
+    Players,
+    #[serde(rename = "games")]
+    Games,
+    #[serde(rename = "avgElo")]
+    AvgElo,
 }
 
 #[derive(Debug, Clone, Deserialize, Type)]
@@ -3129,7 +3138,7 @@ pub async fn get_tournaments(
     ticket: Option<String>,
     window: tauri::WebviewWindow,
     state: tauri::State<'_, AppState>,
-) -> Result<QueryResponse<Vec<Event>>, Error> {
+) -> Result<QueryResponse<Vec<TournamentEvent>>, Error> {
     let operation = crate::native_read_operation(ticket, &window, &state, "get_tournaments")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();
@@ -3150,7 +3159,7 @@ fn get_tournaments_blocking(
     file: DatabaseHandle,
     query: TournamentQuery,
     cancellation: &CancellationToken,
-) -> Result<QueryResponse<Vec<Event>>, Error> {
+) -> Result<QueryResponse<Vec<TournamentEvent>>, Error> {
     cancellation_check(cancellation)?;
     let target = resolve_database(authority, &file, PathOperation::DatabaseRead)?;
 
@@ -3160,7 +3169,19 @@ fn get_tournaments_blocking(
     linked_collections::read_snapshot(db, authority, &file, |db| {
         let mut count: Option<i64> = None;
 
-        let mut sql_query = events::table.into_boxed();
+        let mut sql_query = events::table
+            .left_join(sites::table.on(events::site_id.eq(sites::id).and(sites::id.ne(0))))
+            .select((
+                events::id,
+                events::name,
+                events::start_date,
+                events::end_date,
+                sites::name.nullable(),
+                events::player_count,
+                events::game_count,
+                events::avg_elo,
+            ))
+            .into_boxed();
         let mut count_query = events::table.into_boxed();
         sql_query = sql_query.filter(events::name.is_not("Unknown").and(events::name.is_not("")));
         count_query =
@@ -3187,19 +3208,38 @@ fn get_tournaments_blocking(
             sql_query = sql_query.offset(offset);
         }
 
+        // Every sort keeps NULL last in either direction and uses the same
+        // ascending Name/ID tie-breaks across page boundaries.
+        macro_rules! order_by {
+            ($column:expr) => {
+                match query.options.direction {
+                    SortDirection::Asc => sql_query.order((
+                        $column.is_null().asc(),
+                        $column.asc(),
+                        events::name.is_null().asc(),
+                        events::name.asc(),
+                        events::id.asc(),
+                    )),
+                    SortDirection::Desc => sql_query.order((
+                        $column.is_null().asc(),
+                        $column.desc(),
+                        events::name.is_null().asc(),
+                        events::name.asc(),
+                        events::id.asc(),
+                    )),
+                }
+            };
+        }
         sql_query = match query.options.sort {
-            TournamentSort::Id => match query.options.direction {
-                SortDirection::Asc => sql_query.order(events::id.asc()),
-                SortDirection::Desc => sql_query.order(events::id.desc()),
-            },
-            TournamentSort::Name => match query.options.direction {
-                SortDirection::Asc => sql_query.order(events::name.asc()),
-                SortDirection::Desc => sql_query.order(events::name.desc()),
-            },
+            TournamentSort::Name => order_by!(events::name),
+            TournamentSort::Date => order_by!(events::start_date),
+            TournamentSort::Players => order_by!(events::player_count),
+            TournamentSort::Games => order_by!(events::game_count),
+            TournamentSort::AvgElo => order_by!(events::avg_elo),
         };
 
         let events = sqlite_cancellation::with_sqlite_cancellation(cancellation, || {
-            sql_query.load::<Event>(db)
+            sql_query.load::<TournamentEvent>(db)
         })?;
         cancellation_check(cancellation)?;
 
@@ -4277,6 +4317,7 @@ fn delete_orphaned_data(db: &mut SqliteConnection) -> Result<(), Error> {
 }
 
 fn update_database_counts(db: &mut SqliteConnection) -> Result<(), Error> {
+    event_summaries::refresh_event_summaries(db)?;
     let game_count: i64 = games::table.count().get_result(db)?;
     update_info_count(db, "GameCount", game_count)?;
 
@@ -6527,6 +6568,7 @@ mod tests {
 
     fn assert_info_counts_match_tables(db: &mut SqliteConnection) {
         player_game_count_tests::assert_player_counts(db);
+        event_summary_tests::assert_event_summaries(db);
         for (name, count) in [
             (
                 "GameCount",
@@ -7026,6 +7068,8 @@ mod tests {
         let site = create_site(db, "Site").unwrap();
         let white_game = insert_test_game(db, source.id, opponent.id, event.id, site.id);
         let black_game = insert_test_game(db, opponent.id, source.id, event.id, site.id);
+        // Self-play remains one distinct participant after merging the source.
+        insert_test_game(db, source.id, source.id, event.id, site.id);
 
         db.transaction(|db| merge_players_transaction(db, source.id, target.id))
             .unwrap();
@@ -8770,6 +8814,7 @@ mod tests {
             Event {
                 id: 1,
                 name: Some(event_name),
+                ..Event::default()
             },
             Site {
                 id: 1,
@@ -10463,7 +10508,7 @@ mod tests {
             .connection(&test_target(&database), None)
             .unwrap();
         let indexes: Vec<IndexInfo> = sql_query(
-            "SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'games_%_idx'",
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'games_%_idx' AND name != 'games_event_idx'",
         )
         .load(&mut *db)
         .unwrap();
@@ -10502,7 +10547,7 @@ mod tests {
             .unwrap();
         assert_eq!(games::table.count().get_result::<i64>(&mut *db).unwrap(), 1);
         let indexes: Vec<IndexInfo> = sql_query(
-            "SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'games_%_idx'",
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'games_%_idx' AND name != 'games_event_idx'",
         )
         .load(&mut *db)
         .unwrap();
@@ -10847,7 +10892,7 @@ mod tests {
                     skip_count: true,
                     page: Some(1),
                     page_size: Some(5),
-                    sort: TournamentSort::Id,
+                    sort: TournamentSort::Name,
                     direction: SortDirection::Desc,
                 },
                 name: None,
@@ -12654,7 +12699,7 @@ mod tests {
                         skip_count: false,
                         page: None,
                         page_size: None,
-                        sort: TournamentSort::Id,
+                        sort: TournamentSort::Name,
                         direction: SortDirection::Asc,
                     },
                     name: None,
@@ -14226,7 +14271,7 @@ mod unlinked_account_tests {
                 vec![PathOperation::ReadPgn],
             );
             let state = self.app.state::<AppState>();
-            convert_pgn_blocking(
+            let result = convert_pgn_blocking(
                 &state.pgn_path_authority,
                 &state.database_repository,
                 &state.search_cache,
@@ -14238,7 +14283,12 @@ mod unlinked_account_tests {
                 None,
                 self.database.path_ref().id.clone(),
                 cancellation,
-            )
+            );
+            if result.is_ok() {
+                let mut db = SqliteConnection::establish(self.path.to_str().unwrap()).unwrap();
+                event_summary_tests::assert_event_summaries(&mut db);
+            }
+            result
         }
 
         fn count(&self, table: &str) -> i64 {
@@ -15462,7 +15512,7 @@ mod deletion_tests {
         let mut connection = SqliteConnection::establish(database.to_str().unwrap()).unwrap();
         connection.batch_execute(CREATE_TABLES_SQL).unwrap();
         connection
-            .batch_execute("INSERT INTO Info (Name, Value) VALUES ('Version', '2.2.0');")
+            .batch_execute("INSERT INTO Info (Name, Value) VALUES ('Version', '2.3.0');")
             .unwrap();
         connection.batch_execute(
             "INSERT INTO Games (ID, Result, Moves, PawnHome, WhiteMaterial, BlackMaterial) VALUES (1, '*', X'', 0, 0, 0);"

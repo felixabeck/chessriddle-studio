@@ -71,10 +71,7 @@ function TournamentTable() {
           highlightOnHover
           records={tournaments}
           fetching={isLoading}
-          columns={[
-            { accessor: "id", title: t("Common.Id"), sortable: true },
-            { accessor: "name", title: t("Common.Name"), sortable: true },
-          ]}
+          columns={[{ accessor: "name", title: t("Common.Name"), sortable: true }]}
           rowClassName={(t) => (t.id === selected ? classes.selected : "")}
           noRecordsText={
             error
@@ -100,7 +97,15 @@ function TournamentTable() {
             })
           }
           sortStatus={{
-            columnAccessor: query.options?.sort || "name",
+            columnAccessor: (
+              {
+                date: "start_date",
+                players: "player_count",
+                games: "game_count",
+                avgElo: "avg_elo",
+                name: "name",
+              } as const
+            )[query.options.sort],
             direction: query.options?.direction || "desc",
           }}
           onSortStatusChange={(value) =>
@@ -108,7 +113,16 @@ function TournamentTable() {
               ...query,
               options: {
                 ...query.options!,
-                sort: value.columnAccessor as TournamentSort,
+                sort:
+                  (
+                    {
+                      start_date: "date",
+                      player_count: "players",
+                      game_count: "games",
+                      avg_elo: "avgElo",
+                      name: "name",
+                    } as Record<string, TournamentSort>
+                  )[value.columnAccessor] ?? "date",
                 direction: value.direction,
               },
             })

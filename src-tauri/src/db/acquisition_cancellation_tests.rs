@@ -286,7 +286,7 @@ mod tests {
                         skip_count: false,
                         page: None,
                         page_size: None,
-                        sort: TournamentSort::Id,
+                        sort: TournamentSort::Name,
                         direction: SortDirection::Asc,
                     },
                     name: None,

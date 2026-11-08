@@ -119,7 +119,16 @@ vi.mock("@mantine/core", () => ({
 
 import TournamentCard from "./TournamentCard";
 
-const tournament = { id: 7, name: "Candidates" } as Tournament;
+const tournament = {
+  id: 7,
+  name: "Candidates",
+  start_date: null,
+  end_date: null,
+  site: null,
+  player_count: 0,
+  game_count: 0,
+  avg_elo: null,
+} satisfies Tournament;
 const file = (id: string): DatabaseHandle => ({ id: { id }, kind: "database" });
 let root: Root;
 let container: HTMLDivElement;

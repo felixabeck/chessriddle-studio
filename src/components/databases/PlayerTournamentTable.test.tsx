@@ -10,7 +10,13 @@ import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
 import PlayerTable from "./PlayerTable";
 import TournamentTable from "./TournamentTable";
 
-const mocks = vi.hoisted(() => ({ hotkeys: new Map<string, () => void>() }));
+const mocks = vi.hoisted(() => ({
+  hotkeys: new Map<string, () => void>(),
+  table: null as null | {
+    sortStatus: { columnAccessor: string; direction: "asc" | "desc" };
+    onSortStatusChange: (value: { columnAccessor: string; direction: "asc" | "desc" }) => void;
+  },
+}));
 vi.mock("react-hotkeys-hook", () => ({
   useHotkeys: (key: string, callback: () => void) => mocks.hotkeys.set(key, callback),
 }));
@@ -39,24 +45,37 @@ vi.mock("mantine-datatable", () => ({
   DataTable: ({
     records,
     onRowClick,
+    sortStatus,
+    onSortStatusChange,
   }: {
     records: Array<{ id: number }>;
     onRowClick: (row: { index: number }) => void;
-  }) => (
-    <div>
-      {records.map((record, index) => (
-        <button key={record.id} onClick={() => onRowClick({ index })}>
-          {record.id}
-        </button>
-      ))}
-    </div>
-  ),
+    sortStatus: { columnAccessor: string; direction: "asc" | "desc" };
+    onSortStatusChange: (value: { columnAccessor: string; direction: "asc" | "desc" }) => void;
+  }) => {
+    mocks.table = { sortStatus, onSortStatusChange };
+    return (
+      <div>
+        {records.map((record, index) => (
+          <button key={record.id} onClick={() => onRowClick({ index })}>
+            {record.id}
+          </button>
+        ))}
+      </div>
+    );
+  },
 }));
 
 const page = Array.from({ length: 25 }, (_, index) => ({
   id: index * 11,
   name: `Record ${index}`,
   elo: 2000,
+  start_date: null,
+  end_date: null,
+  site: null,
+  player_count: 0,
+  game_count: 0,
+  avg_elo: null,
 }));
 let records = page;
 let host: HTMLDivElement;
@@ -80,6 +99,33 @@ afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
   activeDatabaseViewStore.getState().clearDatabase();
+});
+
+test("TournamentTable maps summary accessors to API sorts and defaults to date descending", async () => {
+  await act(async () =>
+    root.render(
+      <MantineProvider>
+        <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
+          <TournamentTable />
+        </DatabaseViewStateContext.Provider>
+      </MantineProvider>,
+    ),
+  );
+  expect(mocks.table?.sortStatus).toEqual({ columnAccessor: "start_date", direction: "desc" });
+  for (const [columnAccessor, sort] of [
+    ["name", "name"],
+    ["start_date", "date"],
+    ["player_count", "players"],
+    ["game_count", "games"],
+    ["avg_elo", "avgElo"],
+  ]) {
+    await act(async () => mocks.table!.onSortStatusChange({ columnAccessor, direction: "asc" }));
+    expect(activeDatabaseViewStore.getState().tournaments.query.options).toMatchObject({
+      sort,
+      direction: "asc",
+    });
+    expect(mocks.table?.sortStatus).toEqual({ columnAccessor, direction: "asc" });
+  }
 });
 
 describe.each([

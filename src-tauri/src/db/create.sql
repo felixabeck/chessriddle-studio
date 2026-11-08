@@ -5,7 +5,13 @@ CREATE TABLE Info (
 
 CREATE TABLE Events (
     ID INTEGER PRIMARY KEY AUTOINCREMENT,
-    Name TEXT UNIQUE
+    Name TEXT UNIQUE,
+    StartDate TEXT,
+    EndDate TEXT,
+    SiteID INTEGER NOT NULL DEFAULT 0,
+    GameCount INTEGER NOT NULL DEFAULT 0,
+    PlayerCount INTEGER NOT NULL DEFAULT 0,
+    AvgElo INTEGER
 );
 
 CREATE TABLE Sites (
@@ -80,6 +86,7 @@ BEGIN
     UPDATE Players SET GameCount = GameCount + 1
     WHERE ID != 0 AND ID IN (NEW.WhiteID, NEW.BlackID);
 END;
+
 CREATE TRIGGER player_game_count_delete AFTER DELETE ON Games
 BEGIN
     UPDATE Players SET GameCount = GameCount - 1
@@ -93,4 +100,22 @@ BEGIN
     UPDATE Players SET GameCount = GameCount + 1
     WHERE ID != 0 AND ID IN (NEW.WhiteID, NEW.BlackID)
       AND ID NOT IN (OLD.WhiteID, OLD.BlackID);
+END;
+
+-- Event summaries
+CREATE INDEX games_event_idx ON Games(EventID);
+CREATE TABLE EventSummaryDirty (ID INTEGER PRIMARY KEY);
+CREATE TRIGGER event_summary_insert AFTER INSERT ON Games
+BEGIN
+    INSERT OR IGNORE INTO EventSummaryDirty SELECT NEW.EventID WHERE NEW.EventID != 0;
+END;
+CREATE TRIGGER event_summary_delete AFTER DELETE ON Games
+BEGIN
+    INSERT OR IGNORE INTO EventSummaryDirty SELECT OLD.EventID WHERE OLD.EventID != 0;
+END;
+CREATE TRIGGER event_summary_update
+AFTER UPDATE OF EventID, SiteID, Date, WhiteID, BlackID, WhiteElo, BlackElo ON Games
+BEGIN
+    INSERT OR IGNORE INTO EventSummaryDirty SELECT OLD.EventID WHERE OLD.EventID != 0;
+    INSERT OR IGNORE INTO EventSummaryDirty SELECT NEW.EventID WHERE NEW.EventID != 0;
 END;
