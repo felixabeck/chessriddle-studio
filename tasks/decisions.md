@@ -12414,3 +12414,40 @@ Former private decision identifier: d-20261029-14
 * **Reversal path:** Remove the step from `test.yml` and restore the regular expression `/uses: actions\/cache(?:\/save)?@/u`, along with its table row.
 * **Decided by:** Claude Code (Opus 5.5) next-finding drain, final-gate repair, full auto, 2026-11-08 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"ac5ea6c5c32107d0678dbb1b0e8bdb26f0a7954d326d721e237f5998921af22e","input_sha256":"b6f7342b4d17890946dbaa1d86bd6529ee34a1c5d82f8a437f9a92277efac91a","kind":"mutation-receipt","operation":"38413b30f6dee73624461c2f8327712723510b59cd2b548a6d97a404270bf3c5","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-12"],"target":"decisions-ledger","v":1} -->
+
+### d-20261108-13 — Where does the player Overview get its per-colour statistics and opponent ratings?
+
+* **Question:** Should the Overview's White/Black split be summed client-side from the existing per-opening aggregates, or come from a new backend aggregate that also carries opponent ratings?
+* **Governs:** -
+* **Chosen:** A new `SiteStatsData.colors` aggregate, one record per (time control, colour) with won/drawn/lost, the same counts restricted to games with a positive opponent rating, and the sum of those opponent ratings, accumulated in the existing single statistics pass. Statistics eligibility (d-20260907-05) is unchanged.
+* **Rejected:** Summing `openings` client-side, because it cannot carry opponent ratings without bloating every opening record and it ties the totals to opening detection.
+* **Reason:** Felix approved average opponent rating and performance rating (2026-11-08), which need the opponent rating in the same pass. Bounded by time controls x 2, so d-20260926-02 holds. Reversal path: derive colour counts from `openings` in the renderer and drop `colors`.
+* **Decided by:** Claude Code (Opus 5.5), autonomously under full auto, build run 2026-11-08 · **Superseded-by:** -
+
+### d-20261108-14 — How does the player Overview determine the latest rating?
+
+* **Question:** The daily aggregate keeps only the maximum rating per (time control, date). How is the "latest rating" Felix approved obtained?
+* **Governs:** -
+* **Chosen:** A `SiteStatsData.latest` record per time control holding the selected player's rating in the chronologically latest eligible game under the order (complete `YYYY.MM.DD` date, time with missing before present, game id). Partial dates never update it. The renderer picks the greatest record under the same order across the active filters.
+* **Rejected:** Taking the maximum of the latest day, which reports 1800 for a day that ended at 1750.
+* **Reason:** Correct "latest" needs chronology the daily maximum discards; one record per time control keeps the result bounded. Reversal path: remove `latest` and show peak only.
+* **Decided by:** Claude Code (Opus 5.5), autonomously under full auto, build run 2026-11-08 · **Superseded-by:** -
+
+### d-20261108-15 — Which performance-rating formula does the player Overview use?
+
+* **Question:** How is the performance rating computed from games against rated opponents?
+* **Governs:** -
+* **Chosen:** FIDE rating regulations table 8.1(a): Rp = Ra + dp(p), Ra the average opponent rating, p the score fraction over games with a rated opponent rounded to two decimals, dp(1.00) = +800 and dp(0.00) = -800. The count of rated games is shown beside it.
+* **Rejected:** The linear rule Ra + 400*(W-L)/N, which diverges from FIDE at extreme scores.
+* **Reason:** FIDE's table is the reference chess players know from tournament reports. Reversal path: swap the pure function in the statistics module.
+* **Decided by:** Claude Code (Opus 5.5), autonomously under full auto, build run 2026-11-08 · **Superseded-by:** -
+
+### d-20261108-16 — Where does the player Overview show the last games?
+
+* **Question:** Should the last-games list appear on the personal account card as well as the database player card?
+* **Governs:** -
+* **Chosen:** Only on the database player card, which has one database handle and player id. The query passes `sides: "Any"` so `player1` is applied, sorts by date descending and takes 10; clicking opens the game through `openDatabaseGame`.
+* **Rejected:** Per-database queries merged on the personal card, which needs a multi-database list and open path nobody asked for.
+* **Reason:** The personal card merges several databases' statistics per username and has no single handle. Reversal path: add a merged query on the personal card.
+* **Decided by:** Claude Code (Opus 5.5), autonomously under full auto, build run 2026-11-08 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":35,"effect_sha256":"17e5b134802bdb645a43fb0575712dce2622dc9d5134821dea8fbe6c6a57e92a","input_sha256":"f7407b9d8a3799726d804915f2ac2a95e314545eaeb0418e4f81f3f2c56cdc2f","kind":"mutation-receipt","operation":"b3a0f441ee1db54a8c8cb545d80b0b579fc4cb4803c25df8b40c9be9bb3fad3d","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-13","d-20261108-14","d-20261108-15","d-20261108-16"],"target":"decisions-ledger","v":1} -->
