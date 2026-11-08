@@ -22283,7 +22283,7 @@ All probes were removed; the tree stayed clean.
 
 ### A Library refresh during a schema upgrade races it, gets "database is locked" and shows the intact database as corrupt with a Delete button
 
-* **ID:** f-20261108-04 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261108-04 · **Status:** handled · **Area:** db-search · **Root:** - · **Entry:** build · **Blocked:** none
 * **Impact class:** behaviour
 * **Found by:** Felix's report with screenshots, 2026-11-08 (installed release c6fe14f1-20261107T225216), diagnosed by Claude Code
 * **Related:** f-20261107-02 (handled: moved the content check out of the additive migration; this is the remaining race and UI)
@@ -22293,3 +22293,6 @@ All probes were removed; the tree stayed clean.
 * **Proof:** `~/.local/share/com.chessriddle.studio/logs/chessriddle-studio.log` 2026-11-08 04:54:59–04:56:23 UTC; Felix's screenshots of the empty list and of the error card.
 * **Open question:** who owns a schema upgrade so that listings, opens and mutations never run or race a second migration, and how the Library shows a database while its upgrade runs.
 * **Fix shape:** reviewed plan `tasks/plans/2026-11-08-db-upgrade-state.md` (build run, worktree `db-migration-lock-state`): one upgrade owner per database, `get_db_info` returns an upgrading/busy status instead of migrating inline, BUSY/LOCKED flagged as busy, transient rows without Delete.
+
+Fixed in 0b63a012 (pushed to master; hosted Test 13/13 green; installed locally). Schema upgrades now run in one background job per database. `get_db_info` reports ready, upgrading, busy or upgrade-failed without migrating inline, BUSY and LOCKED errors are flagged as busy, and transient rows offer neither Open nor Delete. Real-app proof on the release build of 0b63a012 against a copy of Mega Database 2025 at schema 2.2.0: both rows within 3.4 s, Upgrading at 0.3 s, upgrade finished at 18.5 s, no Delete, no "database is locked" and no failed `get_db_info` in the app log. Negative control on the previously installed release c6fe14f1: no list for 111 s.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"03f11d17f1d96aacefb8d65e231b9016980c343a2271c595e6842eadb3ceccc8","header_sha256":"158e7b372d8acd4f60860d176dda1079b89b42d4d8339c296d65413985944aac","header_status":"handled","input_sha256":"e7765f95376652f03beb76fdf1489b2ffdc8acc5c31cba11af2e23969b8b7b6e","kind":"mutation-receipt","operation":"a7bd61611c18e9567c4438e5a22c820c6f30396cbba3b1a237a24180514e9994","options":{"section":null},"request_id_sha256":null,"results":["f-20261108-04"],"target":"f-20261108-04","v":1} -->
