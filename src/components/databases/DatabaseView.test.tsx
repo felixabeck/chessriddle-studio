@@ -1,4 +1,4 @@
-import { act, useEffect, type ReactNode } from "react";
+import { act, useEffect, type ComponentProps, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import useSWR, { SWRConfig, useSWRConfig } from "swr";
 import { getDefaultStore } from "jotai";
@@ -9,6 +9,7 @@ import { installResizeObserverStub } from "@/tests/resizeObserver";
 import type { SuccessDatabaseInfo } from "@/utils/db";
 
 installResizeObserverStub();
+const defaultResizeObserver = globalThis.ResizeObserver;
 
 const mocks = vi.hoisted(() => ({
   getDatabases: vi.fn(),
@@ -39,15 +40,29 @@ vi.mock("lucide-react", () => ({
   User: () => null,
 }));
 vi.mock("@mantine/core", () => ({
-  Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Box: ({
+    children,
+    "data-database-view": view,
+    "data-compact": compact,
+  }: {
+    children: ReactNode;
+    "data-database-view"?: boolean;
+    "data-compact"?: boolean;
+  }) => (
+    <div data-database-view={view} data-compact={compact}>
+      {children}
+    </div>
+  ),
   Button: ({ children, onClick }: { children: ReactNode; onClick: () => void }) => (
     <button onClick={onClick}>{children}</button>
   ),
-  Center: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Center: ({ children, ref }: ComponentProps<"div">) => <div ref={ref}>{children}</div>,
   Group: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Loader: () => <span>loading</span>,
-  Stack: ({ children, role }: { children: ReactNode; role?: string }) => (
-    <div role={role}>{children}</div>
+  Stack: ({ children, role, ref }: ComponentProps<"div">) => (
+    <div role={role} ref={ref}>
+      {children}
+    </div>
   ),
   Tabs: Object.assign(({ children }: { children: ReactNode }) => <div>{children}</div>, {
     List: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -146,6 +161,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   vi.restoreAllMocks();
+  globalThis.ResizeObserver = defaultResizeObserver;
   if (mocks.realStore) {
     const actual =
       await vi.importActual<typeof import("@/state/store/database")>("@/state/store/database");
@@ -172,6 +188,63 @@ const selectedDatabase: SuccessDatabaseInfo = {
   storage_size: "0",
   indexed: false,
 };
+
+test("observes the mounted view after loading ends without a resize from the detached loader", async () => {
+  const observed = new Map<Element, ResizeObserverCallback>();
+  const disconnected = vi.fn();
+  globalThis.ResizeObserver = class {
+    constructor(private readonly callback: ResizeObserverCallback) {}
+    observe(target: Element) {
+      observed.set(target, this.callback);
+    }
+    unobserve(target: Element) {
+      observed.delete(target);
+    }
+    disconnect() {
+      for (const [target, callback] of observed) {
+        if (callback === this.callback) {
+          disconnected(target);
+          observed.delete(target);
+        }
+      }
+    }
+  };
+  mocks.database = selectedDatabase;
+  let resolveListing!: (value: { databases: SuccessDatabaseInfo[]; unread: [] }) => void;
+  mocks.getDatabases.mockImplementation(() => new Promise((resolve) => (resolveListing = resolve)));
+  await render(true, false);
+  const loading = container.querySelector("span")!.parentElement!;
+  expect(loading.textContent).toBe("loading");
+  expect(observed.has(loading)).toBe(true);
+
+  // Render once more while loading, before any observer notification. The old hook's
+  // effect now depends on the loading node, which is still ref.current in the ready render.
+  await render(true, false);
+  expect(observed.has(loading)).toBe(true);
+  await act(async () => resolveListing({ databases: [selectedDatabase], unread: [] }));
+
+  const view = container.querySelector("[data-database-view]")!;
+  const measured = view.firstElementChild!;
+  expect(loading.isConnected).toBe(false);
+  expect(measured.isConnected).toBe(true);
+  expect(view.getAttribute("data-compact")).toBe("true");
+  expect([...observed.keys()]).toEqual([measured]);
+  expect(disconnected).toHaveBeenCalledWith(loading);
+
+  // Only the mounted view delivers its initial size. The detached loader never does.
+  await act(async () => {
+    observed.get(measured)!(
+      [{ target: measured, contentRect: { width: 2000 } } as ResizeObserverEntry],
+      {} as ResizeObserver,
+    );
+    await new Promise(requestAnimationFrame);
+  });
+  expect(view.hasAttribute("data-compact")).toBe(false);
+
+  await render(false, false);
+  expect(disconnected).toHaveBeenCalledWith(measured);
+  expect(observed.size).toBe(0);
+});
 
 test.each([
   {

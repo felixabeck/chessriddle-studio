@@ -2,7 +2,7 @@ import { Box, Button, Center, Group, Loader, Stack, Tabs, Text, Title } from "@m
 import { ArrowLeft, ChessKnight, Trophy, User } from "lucide-react";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useCollectionCurrency } from "@/state/linkedCollections";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import GameTable from "@/components/databases/GameTable";
 import { IconAction } from "@/components/common/IconAction";
@@ -19,14 +19,41 @@ import { resolveDatabaseRoute } from "./databaseRoute";
 import { listingFailure } from "@/components/files/listingFailure";
 import { databaseLoadFailureMessage } from "./databaseLoadFailure";
 import { databaseHandleKey } from "@/utils/db";
-import { useElementSize } from "@mantine/hooks";
 import { useRootFontPx } from "@/hooks/useRootFontPx";
 import { databasePaneGeometry, DatabaseLayoutContext } from "@/state/databaseLayout";
 import classes from "./GridLayout.module.css";
 
+function useViewWidth() {
+  const [node, ref] = useState<HTMLDivElement | null>(null);
+  const [width, setWidth] = useState(0);
+
+  useEffect(() => {
+    if (!node) return;
+    let active = true;
+    const observer = new ResizeObserver((entries) => {
+      if (!active) return;
+      const entry = entries.find((entry) => entry.target === node);
+      if (entry) {
+        setWidth(
+          entry.borderBoxSize?.[0]?.inlineSize ??
+            entry.contentBoxSize?.[0]?.inlineSize ??
+            entry.contentRect.width,
+        );
+      }
+    });
+    observer.observe(node);
+    return () => {
+      active = false;
+      observer.disconnect();
+    };
+  }, [node]);
+
+  return { ref, width };
+}
+
 function DatabaseView() {
   const { t } = useTranslation();
-  const { ref, width } = useElementSize();
+  const { ref, width } = useViewWidth();
   const rootFont = useRootFontPx();
   const geometry = { ...databasePaneGeometry(width, rootFont), rootFont };
   const { compact } = geometry;
