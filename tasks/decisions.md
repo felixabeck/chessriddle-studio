@@ -12451,3 +12451,14 @@ Former private decision identifier: d-20261029-14
 * **Reason:** The personal card merges several databases' statistics per username and has no single handle. Reversal path: add a merged query on the personal card.
 * **Decided by:** Claude Code (Opus 5.5), autonomously under full auto, build run 2026-11-08 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":35,"effect_sha256":"17e5b134802bdb645a43fb0575712dce2622dc9d5134821dea8fbe6c6a57e92a","input_sha256":"f7407b9d8a3799726d804915f2ac2a95e314545eaeb0418e4f81f3f2c56cdc2f","kind":"mutation-receipt","operation":"b3a0f441ee1db54a8c8cb545d80b0b579fc4cb4803c25df8b40c9be9bb3fad3d","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-13","d-20261108-14","d-20261108-15","d-20261108-16"],"target":"decisions-ledger","v":1} -->
+
+### d-20261108-08 — How does the Library show a database while its schema upgrade runs?
+
+* **Question:** d-20261108-02 decided the one-time additive migration needs no library hint, assuming a ~5 s generic loading line. Felix's 2026-11-08 report shows listings during the upgrade racing it into `database is locked` and an intact database shown as corrupt with Delete. Does the upgrade now get its own state?
+* **Governs:** f-20261108-04
+* **Chosen:** Yes. `get_db_info` admits one background upgrade job per database and returns an `upgrading` status; the Library shows "Upgrading…" without Open or Delete and revalidates the list every 3 s while a transient row exists. No progress percentage and no per-row progressive loading.
+* **Rejected:** A registered upgrade-finished event (more IPC surface and listener ownership for no gain at minute-scale upgrades); a progress percentage (the backfill is two set-based statements with no row total); per-row progressive list loading (the root cause, the inline migration, is removed instead).
+* **Reason:** New evidence d-20261108-02 did not consider: the upgrade window is when concurrent listings fail and the destructive error UI appears. Reversal path: drop the `upgrading` status and run the migration inline again only together with a per-database upgrade owner that prevents the race.
+* **Supersedes:** d-20261108-02
+* **Decided by:** Claude Code (Opus 5.5) build run db-migration-lock-state, full auto, 2026-11-08 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"cd6293369d49d61726eb04e963d5d5b064e0827b9f59a24c243fb861dc0cea89","input_sha256":"3a4756c58d8d787e1d8c6b7b18f8ae67bd177ac02d25d7fd9cedec62d5788323","kind":"mutation-receipt","operation":"487f281d19f321c867dc6e41dad3b622aed0b134e7fdc3ca833211aa94421d93","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-08"],"target":"decisions-ledger","v":1} -->
