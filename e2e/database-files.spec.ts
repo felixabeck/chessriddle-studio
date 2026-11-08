@@ -14,6 +14,7 @@ import {
     gameOpeningCommands,
     activeWorkspaceTab,
     databaseLayoutCommands,
+    playerOverviewLastGames,
     preserveStorageForReload,
     whitePawnSquares,
     waitForScrollAreaScrollbarsHidden,
@@ -2194,6 +2195,7 @@ test("database-files: long player metadata leaves nested preview tabs and charts
     page,
     mockScenario,
     assertNoHorizontalOverflow,
+    capture,
 }) => {
     const longName = `First White ${"Long ".repeat(100)}`;
     await page.addInitScript(() => localStorage.setItem("font-size", "200"));
@@ -2217,6 +2219,71 @@ test("database-files: long player metadata leaves nested preview tabs and charts
     await overview.click();
     await assertNothingClipped(overview, { mode: "reachable" });
     await expect(preview.locator(".recharts-surface")).not.toHaveCount(0);
+
+    const headline = preview.getByTestId("overview-headline");
+    await expect(headline).toContainText("1 Games");
+    await expect(headline).toContainText("100%");
+    await expect(headline).toContainText("+1 =0 −0");
+    await expect(preview.getByTestId("overview-white")).toContainText("1 Games 100% +1 =0 −0");
+    await expect(preview.getByTestId("overview-black")).toContainText("No games as Black");
+    const ratings = preview.getByTestId("overview-ratings");
+    await expect(ratings).toContainText("Peak: 1500");
+    await expect(ratings).toContainText("Latest: 1500");
+    const opponents = preview.getByTestId("overview-opponents");
+    await expect(opponents).toContainText("Avg. opponent 1400 · Performance 2200 · 1 rated");
+    await expect(opponents).toContainText(
+        "As White: Avg. opponent 1400 · Performance 2200 · 1 rated",
+    );
+    const whiteOpenings = preview.getByTestId("overview-openings-white");
+    await expect(whiteOpenings).toContainText("Italian Game");
+    await expect(whiteOpenings).toContainText("1 100%");
+    const blackOpenings = preview.getByTestId("overview-openings-black");
+    await expect(blackOpenings).toBeVisible();
+    await expect(blackOpenings).toHaveText("Black");
+
+    const lastGames = preview.locator("[data-last-games]");
+    await expect(lastGames.getByText("Last games", { exact: true })).toBeVisible();
+    const lastGameRows = lastGames.getByRole("button");
+    await expect(lastGameRows).toHaveCount(playerOverviewLastGames.length);
+    await expect(lastGameRows.nth(0)).toContainText("2026.10.03");
+    await expect(lastGameRows.nth(0)).toContainText("Latest Opponent (1480)");
+    await expect(lastGameRows.nth(0)).toContainText("Wins");
+    await expect(lastGameRows.nth(0)).toContainText("A20");
+    await expect(lastGameRows.nth(1)).toContainText("2026.10.01");
+    await expect(lastGameRows.nth(1)).toContainText("First Black (1400)");
+    await expect(lastGameRows.nth(1)).toContainText("Wins");
+    await expect(lastGameRows.nth(1)).toContainText("C50");
+    await expect
+        .poll(async () =>
+            page.evaluate(
+                () =>
+                    window.__E2E_TAURI__.invocations().find((call) => {
+                        if (call.command !== "get_games") return false;
+                        const query = (
+                            call.args as {
+                                query?: {
+                                    player1?: unknown;
+                                    sides?: unknown;
+                                    options?: {
+                                        sort?: unknown;
+                                        direction?: unknown;
+                                        pageSize?: unknown;
+                                    };
+                                };
+                            }
+                        ).query;
+                        return (
+                            query?.player1 === 1 &&
+                            query.sides === "Any" &&
+                            query.options?.sort === "date" &&
+                            query.options?.direction === "desc" &&
+                            query.options?.pageSize === 10
+                        );
+                    }) !== undefined,
+            ),
+        )
+        .toBe(true);
+
     await assertNothingClipped(preview, { mode: "reachable" });
     await assertNoHorizontalOverflow();
 });

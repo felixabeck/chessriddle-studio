@@ -32,6 +32,11 @@ type MockCommand = {
     results?: unknown[];
     /** Sequential command outcomes model successful calls followed by failures. */
     outcomes?: ({ result: unknown } | { error: string | ErrorPayload })[];
+    /**
+     * Last-games query reply for `get_games` (`player1`, `sides: "Any"`, date desc,
+     * pageSize 10). The Games table keeps `result`.
+     */
+    lastGames?: unknown;
 };
 
 export type MockScenario = {
@@ -873,9 +878,43 @@ export const gameOpeningCommands: NonNullable<MockScenario["commands"]> = {
     lex_pgn: { pgnTokens: openingTokens },
 };
 
+/** Last-games Overview list for player id 1, newest first, distinct from the Games table. */
+export const playerOverviewLastGames = [
+    {
+        id: 303,
+        stamp: "c".repeat(64),
+        fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        white: "Latest Opponent",
+        white_id: 5,
+        black: "First White",
+        black_id: 1,
+        event: "Latest event",
+        event_id: 3,
+        site: "?",
+        site_id: 1,
+        date: "2026.10.03",
+        round: "3",
+        result: "0-1",
+        white_elo: 1480,
+        black_elo: 1500,
+        ply_count: 2,
+        moves: "1. c4 e5 *",
+        eco: "A20",
+    },
+    {
+        ...gameOpeningFixture.games[0],
+        result: "1-0",
+        eco: "C50",
+    },
+] satisfies NormalizedGame[];
+
 /** Populated split-layout coverage without changing the opening journeys' empty tab replies. */
 export const databaseLayoutCommands: NonNullable<MockScenario["commands"]> = {
     ...gameOpeningCommands,
+    get_games: {
+        result: { data: gameOpeningFixture.games, count: 2 },
+        lastGames: { data: playerOverviewLastGames, count: playerOverviewLastGames.length },
+    },
     get_players: {
         result: { data: [{ id: 1, name: "First White", elo: 1500, game_count: 1 }], count: 1 },
     },
@@ -912,7 +951,16 @@ export const databaseLayoutCommands: NonNullable<MockScenario["commands"]> = {
                             max_player_elo: 1500,
                         },
                     ],
-                    openings: [],
+                    openings: [
+                        {
+                            time_control: "600",
+                            is_player_white: true,
+                            opening: "Italian Game",
+                            won: 1,
+                            drawn: 0,
+                            lost: 0,
+                        },
+                    ],
                     colors: [
                         {
                             time_control: "600",
@@ -1169,6 +1217,23 @@ const tauriBootstrap = () => {
             throw failure.error;
         }
         if (outcome) return outcome.result;
+        if (command === "get_games" && response.lastGames) {
+            const query = args.query as {
+                player1?: unknown;
+                sides?: unknown;
+                options?: { sort?: unknown; direction?: unknown; pageSize?: unknown };
+            } | null;
+            if (
+                query != null &&
+                query.player1 != null &&
+                query.sides === "Any" &&
+                query.options?.sort === "date" &&
+                query.options?.direction === "desc" &&
+                query.options?.pageSize === 10
+            ) {
+                return response.lastGames;
+            }
+        }
         if (command === "get_db_game" && response.databaseGames) {
             const game = response.databaseGames.find((row) => row.id === args.gameId);
             return game ? { kind: "found", game } : { kind: "missing" };
