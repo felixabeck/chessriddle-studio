@@ -168,7 +168,7 @@ test("default-true check disable stays false through pending save and hydration 
     options: [{ type: "check", value: { name: "Ponder", default: true } }],
   });
   await mount([engine]);
-  const check = input("Ponder");
+  const check = input("Think on your time");
   expect(check.checked).toBe(true);
   const bytes = localStorage.getItem("engines");
   let release!: () => void;
@@ -206,19 +206,19 @@ test("default-true check disable stays false through pending save and hydration 
   await act(async () => {
     await router.navigate({ to: "/engines", search: { selected: 0 } });
   });
-  expect(input("Ponder").checked).toBe(false);
-  await act(async () => input("Ponder").click());
+  expect(input("Think on your time").checked).toBe(false);
+  await act(async () => input("Think on your time").click());
   await act(async () => {
     await store.set(enginesAtom, (current) => current);
   });
-  expect(input("Ponder").checked).toBe(true);
+  expect(input("Think on your time").checked).toBe(true);
   const refusal = refuseStorage();
-  await act(async () => input("Ponder").click());
+  await act(async () => input("Think on your time").click());
   await vi.waitFor(() => expect(mocks.report).toHaveBeenCalledOnce());
   await act(async () => {
     await store.set(enginesAtom, (current) => current);
   });
-  expect(input("Ponder").checked).toBe(true);
+  expect(input("Think on your time").checked).toBe(true);
   refusal.mockRestore();
 });
 

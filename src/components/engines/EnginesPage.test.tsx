@@ -47,14 +47,22 @@ vi.mock("@/hooks/useScaledMaxWidth", () => ({ useScaledMaxWidth: () => false }))
 vi.mock("@/routes/engines", () => ({
   Route: { useSearch: () => ({ selected: mocks.selected }) },
 }));
-vi.mock("react-i18next", () => ({
-  useTranslation: () => ({
-    t: (key: string, options?: { defaultValue?: string }) =>
-      options?.defaultValue ??
-      { "Common.Error": "Error", "Engines.FileMissing": "(file missing)" }[key] ??
-      key,
-  }),
-}));
+vi.mock("react-i18next", async () => {
+  const { default: catalogue } = await import("../../translation/en-US.json");
+  return {
+    useTranslation: () => ({
+      t: (key: string, options?: { defaultValue?: string; count?: number }) =>
+        options?.defaultValue ??
+        { "Common.Error": "Error", "Engines.FileMissing": "(file missing)" }[key] ??
+        (key.startsWith("Engines.Options.") || key === "Engines.Settings.ExpertSettings"
+          ? (catalogue.translation as Record<string, string>)[
+              options?.count === undefined ? key : `${key}_${options.count === 1 ? "one" : "other"}`
+            ]?.replace("{{count}}", String(options?.count))
+          : undefined) ??
+        key,
+    }),
+  };
+});
 vi.mock("@mantine/core", () => ({
   Button: ({ children, onClick, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
     <button type="button" onClick={onClick} {...props}>
@@ -62,27 +70,109 @@ vi.mock("@mantine/core", () => ({
     </button>
   ),
   Center: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  Checkbox: () => <input type="checkbox" />,
+  Checkbox: ({
+    label,
+    description,
+    ...props
+  }: React.InputHTMLAttributes<HTMLInputElement> & {
+    label: string;
+    description?: React.ReactNode;
+  }) => (
+    <label>
+      <span>{label}</span>
+      <input type="checkbox" aria-label={label} {...props} />
+      {description}
+    </label>
+  ),
+  Collapse: ({
+    children,
+    in: opened,
+    id,
+  }: {
+    children: React.ReactNode;
+    in: boolean;
+    id: string;
+  }) => (opened ? <div id={id}>{children}</div> : null),
   Divider: () => <hr />,
   Group: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  Input: () => <input />,
+  Input: Object.assign(() => <input />, {
+    Wrapper: ({
+      children,
+      label,
+      description,
+    }: {
+      children: React.ReactNode;
+      label: string;
+      description?: React.ReactNode;
+    }) => (
+      <div data-option-label={label}>
+        {label}
+        {description}
+        {children}
+      </div>
+    ),
+  }),
   JsonInput: () => <textarea />,
-  NumberInput: () => <input type="number" />,
+  NumberInput: ({
+    label,
+    description,
+    value,
+    onChange,
+    min,
+    max,
+  }: {
+    label: string;
+    description?: React.ReactNode;
+    value: number;
+    onChange: (value: number) => void;
+    min?: number;
+    max?: number;
+  }) => (
+    <label>
+      <span>{label}</span>
+      <input
+        type="number"
+        aria-label={label}
+        value={value}
+        min={min}
+        max={max}
+        onChange={(event) => onChange(Number(event.currentTarget.value))}
+      />
+      {description}
+    </label>
+  ),
   Paper: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   ScrollArea: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  Select: () => <select />,
+  Select: ({ label }: { label: string }) => <select aria-label={label} />,
   SimpleGrid: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Space: () => null,
   Stack: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Text: ({ children, c }: { children: React.ReactNode; c?: string }) => (
     <span data-color={c}>{children}</span>
   ),
-  TextInput: () => <input />,
+  TextInput: ({
+    label,
+    description,
+    value,
+    readOnly,
+    onChange,
+  }: React.InputHTMLAttributes<HTMLInputElement> & {
+    label: string;
+    description?: React.ReactNode;
+  }) => (
+    <label>
+      <span>{label}</span>
+      <input aria-label={label} value={value} readOnly={readOnly} onChange={onChange} />
+      {description}
+    </label>
+  ),
   ThemeIcon: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Title: ({ children }: { children: React.ReactNode }) => <h1>{children}</h1>,
   UnstyledButton: ({ children }: { children: React.ReactNode }) => <button>{children}</button>,
 }));
 vi.mock("lucide-react", () => ({
+  ChevronDown: () => null,
+  ChevronRight: () => null,
   Cloud: () => <svg aria-label="cloud" />,
   Copy: () => null,
   Brain: () => <svg aria-label="cpu" />,
@@ -215,8 +305,16 @@ function resource(id: string, kind: "file" | "directory") {
 
 function resourceButton(label: string) {
   return [...host.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent === label,
+    (button) => button.getAttribute("aria-label") === label || button.textContent === label,
   );
+}
+
+async function expandExpert() {
+  await act(async () => {
+    const toggle = host.querySelector<HTMLButtonElement>('button[aria-expanded="false"]');
+    expect(toggle).not.toBeNull();
+    toggle!.click();
+  });
 }
 
 beforeEach(() => {
@@ -326,6 +424,7 @@ test("directory resource picker stores a real path option", async () => {
   atomEngines = [engine];
   mocks.issueEngineResource.mockResolvedValue(selected);
   await renderSettings();
+  await expandExpert();
 
   await act(async () => {
     resourceButton("Common.Open")?.click();
@@ -345,9 +444,10 @@ test("file resource picker stores a replacement resource", async () => {
   atomEngines = [engine];
   mocks.issueEngineResource.mockResolvedValueOnce(first).mockResolvedValueOnce(replacement);
   await renderSettings();
+  await expandExpert();
 
   await act(async () => {
-    resourceButton("EvalFile")?.click();
+    resourceButton("Evaluation network")?.click();
     await vi.waitFor(() => expect(mocks.issueEngineResource).toHaveBeenCalledOnce());
   });
   await act(async () => {
@@ -355,7 +455,7 @@ test("file resource picker stores a replacement resource", async () => {
     await Promise.resolve();
   });
   await act(async () => {
-    resourceButton("EvalFile")?.click();
+    resourceButton("Evaluation network")?.click();
     await vi.waitFor(() => expect(mocks.issueEngineResource).toHaveBeenCalledTimes(2));
   });
 
@@ -373,6 +473,7 @@ test("path resource picker appends multiple directory handles", async () => {
   atomEngines = [engine];
   mocks.issueEngineResource.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
   await renderSettings();
+  await expandExpert();
 
   await act(async () => {
     resourceButton("Common.Open")?.click();
@@ -399,6 +500,7 @@ test("resource picker errors and cancellation do not adopt handles", async () =>
   atomEngines = [engine];
   mocks.issueEngineResource.mockRejectedValueOnce(new Error("permission denied"));
   await renderSettings();
+  await expandExpert();
 
   await act(async () => {
     resourceButton("Common.Open")?.click();
@@ -437,6 +539,7 @@ test("stale directory resource picker result is abandoned after unmount", async 
     }),
   );
   await renderSettings();
+  await expandExpert();
   resourceButton("Common.Open")?.click();
   await vi.waitFor(() => expect(mocks.issueEngineResource).toHaveBeenCalledOnce());
 
@@ -682,4 +785,114 @@ test("changing the selected engine closes the former immutable-owner draft", asy
     );
   });
   expect(setAtomEngines).not.toHaveBeenCalled();
+});
+
+function strengthConfig(defaultLimit: boolean, withLimit = true) {
+  return {
+    name: "Stockfish",
+    options: [
+      { type: "spin", value: { name: "Threads", default: 1, min: 1, max: 32 } },
+      { type: "spin", value: { name: "Hash", default: 16, min: 1, max: 1024 } },
+      { type: "spin", value: { name: "MultiPV", default: 1, min: 1, max: 256 } },
+      { type: "check", value: { name: "uci_showwdl", default: false } },
+      { type: "spin", value: { name: "Unknown Option", default: 7, min: 0, max: 10 } },
+      { type: "check", value: { name: "UCI_Chess960", default: false } },
+      { type: "spin", value: { name: "uci_elo", default: 1500, min: 1000, max: 3000 } },
+      ...(withLimit
+        ? [{ type: "check", value: { name: "uci_limitstrength", default: defaultLimit } }]
+        : []),
+      { type: "button", value: { name: "Clear Hash" } },
+    ],
+  };
+}
+
+function optionInput(label: string) {
+  return host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
+}
+
+test("essential and unknown settings stay visible, experts toggle and button options stay omitted", async () => {
+  atomEngines = [makeEngine("engine-sections")];
+  mocks.getEngineConfig.mockResolvedValue(strengthConfig(false));
+  await renderSettings();
+  for (const label of [
+    "CPU threads",
+    "Memory (MB)",
+    "Number of lines",
+    "Show win/draw/loss chances",
+    "Unknown Option",
+  ]) {
+    expect(optionInput(label)).not.toBeNull();
+  }
+  expect(host.textContent).toContain(
+    "How many processor cores the engine uses. More cores make analysis faster.",
+  );
+  expect(host.textContent).toContain("Threads");
+  expect(optionInput("Chess960")).toBeNull();
+  expect(optionInput("Limit strength to an Elo rating")).toBeNull();
+  expect(host.textContent).not.toContain("Clear Hash");
+  await expandExpert();
+  expect(optionInput("Chess960")?.disabled).toBe(true);
+  expect(optionInput("Limit strength to an Elo rating")).not.toBeNull();
+  expect(optionInput("Target Elo")).toBeNull();
+  const toggle = host.querySelector<HTMLButtonElement>('button[aria-expanded="true"]')!;
+  expect(toggle.textContent).toBe("Expert settings (2)");
+  await act(async () => toggle.click());
+  expect(optionInput("Chess960")).toBeNull();
+  expect(optionInput("Unknown Option")).not.toBeNull();
+});
+
+test.each([false, true])(
+  "target Elo follows the current limit and preserves its saved value (initial: %s)",
+  async (initial) => {
+    const engine = makeEngine(`engine-strength-${initial}`);
+    engine.settings!.push(
+      { type: "string", name: "uci_elo", value: "1725" },
+      { type: "string", name: "uci_limitstrength", value: String(initial) },
+    );
+    atomEngines = [engine];
+    // Stored settings take precedence over the opposite reported default.
+    mocks.getEngineConfig.mockResolvedValue(strengthConfig(!initial));
+    await renderSettings();
+    await expandExpert();
+    const eloSetting = { type: "string", name: "uci_elo", value: "1725" };
+    expect(optionInput("Target Elo")?.value ?? null).toBe(initial ? "1725" : null);
+    for (const checked of [!initial, initial]) {
+      await act(async () => {
+        optionInput("Limit strength to an Elo rating")!.click();
+        await Promise.resolve();
+      });
+      expect(optionInput("Target Elo")?.value ?? null).toBe(checked ? "1725" : null);
+      expect(atomEngines[0].settings).toContainEqual(eloSetting);
+    }
+  },
+);
+
+test.each([false, true])("unstored strength limit uses its default (%s)", async (defaultLimit) => {
+  atomEngines = [makeEngine(`engine-strength-default-${defaultLimit}`)];
+  mocks.getEngineConfig.mockResolvedValue(strengthConfig(defaultLimit));
+  await renderSettings();
+  await expandExpert();
+  expect(optionInput("Limit strength to an Elo rating")?.checked).toBe(defaultLimit);
+  expect(optionInput("Target Elo")?.value ?? null).toBe(defaultLimit ? "1500" : null);
+  expect(setAtomEngines).not.toHaveBeenCalled();
+});
+
+test("target Elo stays available if the engine has no strength limit option", async () => {
+  atomEngines = [makeEngine("engine-no-strength-limit")];
+  mocks.getEngineConfig.mockResolvedValue(strengthConfig(false, false));
+  await renderSettings();
+  await expandExpert();
+  expect(optionInput("Target Elo")?.value).toBe("1500");
+  expect(setAtomEngines).not.toHaveBeenCalled();
+});
+
+test("no expert toggle appears for an engine with only essential or unknown options", async () => {
+  atomEngines = [makeEngine("engine-essential-only")];
+  mocks.getEngineConfig.mockResolvedValue({
+    name: "Other engine",
+    options: strengthConfig(false).options.slice(0, 5),
+  });
+  await renderSettings();
+  expect(host.querySelector("button[aria-expanded]")).toBeNull();
+  expect(optionInput("Unknown Option")).not.toBeNull();
 });

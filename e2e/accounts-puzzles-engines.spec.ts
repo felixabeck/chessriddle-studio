@@ -2172,6 +2172,123 @@ for (const [outcome, reason] of [
     });
 }
 
+test("accounts-puzzles-engines: explains known settings and reveals experts and target Elo", async ({
+    page,
+    mockScenario,
+    capture,
+}) => {
+    await page.addInitScript(() => {
+        localStorage.setItem("font-size", "100");
+        localStorage.setItem(
+            "engines",
+            JSON.stringify([
+                {
+                    type: "local",
+                    id: "stockfish-explained",
+                    name: "Stockfish 18",
+                    version: "18",
+                    handle: { id: { id: "stockfish-explained" }, kind: "engine" },
+                    filename: "Stockfish 18",
+                    loaded: true,
+                    go: { t: "Infinite" },
+                    settings: [
+                        { type: "string", name: "Threads", value: "4" },
+                        { type: "string", name: "Hash", value: "256" },
+                        { type: "string", name: "MultiPV", value: "3" },
+                    ],
+                },
+            ]),
+        );
+    });
+    await mockScenario({
+        commands: {
+            is_bmi2_compatible: { result: false },
+            file_exists: { result: true },
+            verify_signed_bytes: { result: null },
+            get_progress: { result: null },
+            get_engine_config: {
+                result: {
+                    name: "Stockfish 18",
+                    options: [
+                        { type: "string", value: { name: "Debug Log File", default: null } },
+                        { type: "string", value: { name: "NumaPolicy", default: "auto" } },
+                        { type: "spin", value: { name: "Threads", default: 1, min: 1, max: 1024 } },
+                        {
+                            type: "spin",
+                            value: { name: "Hash", default: 16, min: 1, max: 33554432 },
+                        },
+                        { type: "button", value: { name: "Clear Hash" } },
+                        { type: "check", value: { name: "Ponder", default: false } },
+                        { type: "spin", value: { name: "MultiPV", default: 1, min: 1, max: 256 } },
+                        {
+                            type: "spin",
+                            value: { name: "Skill Level", default: 20, min: 0, max: 20 },
+                        },
+                        {
+                            type: "spin",
+                            value: { name: "Move Overhead", default: 10, min: 0, max: 5000 },
+                        },
+                        {
+                            type: "spin",
+                            value: { name: "nodestime", default: 0, min: 0, max: 10000 },
+                        },
+                        { type: "check", value: { name: "UCI_Chess960", default: false } },
+                        { type: "check", value: { name: "UCI_LimitStrength", default: false } },
+                        {
+                            type: "spin",
+                            value: { name: "UCI_Elo", default: 1320, min: 1320, max: 3190 },
+                        },
+                        { type: "check", value: { name: "UCI_ShowWDL", default: true } },
+                        { type: "string", value: { name: "SyzygyPath", default: null } },
+                        {
+                            type: "spin",
+                            value: { name: "SyzygyProbeDepth", default: 1, min: 1, max: 100 },
+                        },
+                        { type: "check", value: { name: "Syzygy50MoveRule", default: true } },
+                        {
+                            type: "spin",
+                            value: { name: "SyzygyProbeLimit", default: 7, min: 0, max: 7 },
+                        },
+                        { type: "string", value: { name: "EvalFile", default: "nn-big.nnue" } },
+                        {
+                            type: "string",
+                            value: { name: "EvalFileSmall", default: "nn-small.nnue" },
+                        },
+                    ],
+                },
+            },
+        },
+    });
+    await page.goto("/engines?selected=0");
+    await expect(page.getByRole("spinbutton", { name: "CPU threads", exact: true })).toBeVisible();
+    const expert = page.getByRole("button", { name: /^Expert settings/ });
+    await expect(expert).toHaveAttribute("aria-expanded", "false");
+    await expect(
+        page.getByRole("checkbox", { name: "Limit strength to an Elo rating", exact: true }),
+    ).not.toBeVisible();
+    await capture("engine-settings-explained-collapsed");
+    await expect(page).toHaveScreenshot("engine-settings-explained-collapsed.png", {
+        fullPage: true,
+    });
+    await expert.click();
+    await expect(expert).toHaveAttribute("aria-expanded", "true");
+    const limit = page.getByRole("checkbox", {
+        name: "Limit strength to an Elo rating",
+        exact: true,
+    });
+    await expect(limit).toBeVisible();
+    await expect(limit).not.toBeChecked();
+    await expect(
+        page.getByRole("spinbutton", { name: "Target Elo", exact: true }),
+    ).not.toBeVisible();
+    await capture("engine-settings-explained-expanded");
+    await expect(page).toHaveScreenshot("engine-settings-explained-expanded.png", {
+        fullPage: true,
+    });
+    await limit.check();
+    await expect(page.getByRole("spinbutton", { name: "Target Elo", exact: true })).toBeVisible();
+});
+
 test("accounts-puzzles-engines: local settings and catalog upgrade modal", async ({
     page,
     mockScenario,
