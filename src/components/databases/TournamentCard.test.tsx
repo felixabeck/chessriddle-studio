@@ -317,6 +317,18 @@ test("sorting orders the games before selecting the displayed page", async () =>
   expectPage(2, 10, ids(41, 50).reverse());
 });
 
+test("sorting frozen tournament games preserves the cached array order", async () => {
+  const frozenGames = Object.freeze(games(60));
+  const originalIds = frozenGames.map((game) => game.id);
+  mocks.getTournamentGames.mockResolvedValue({ data: frozenGames });
+  await render(file("frozen-games"));
+  await vi.waitFor(() => expectPage(1, 25, ids(1, 25)));
+  expect(container.querySelector('[data-testid="games"]')).not.toBeNull();
+  await click("Sort plies descending");
+  expectPage(1, 25, ids(36, 60).reverse());
+  expect(frozenGames.map((game) => game.id)).toEqual(originalIds);
+});
+
 test.each([
   { count: 40, page: 2, displayed: ids(26, 40) },
   { count: 0, page: 1, displayed: [] },

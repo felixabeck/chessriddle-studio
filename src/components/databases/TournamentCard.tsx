@@ -69,16 +69,17 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
     direction: "asc",
   });
 
-  const sortedGames =
-    games?.sort((a, b) => {
-      const key = sort.columnAccessor;
-      if (sort.direction === "asc") {
+  const sortedGames = games
+    ? [...games].sort((a, b) => {
+        const key = sort.columnAccessor;
+        if (sort.direction === "asc") {
+          /// @ts-expect-error we know they're the same type
+          return a[key] > b[key] ? 1 : -1;
+        }
         /// @ts-expect-error we know they're the same type
-        return a[key] > b[key] ? 1 : -1;
-      }
-      /// @ts-expect-error we know they're the same type
-      return a[key] < b[key] ? 1 : -1;
-    }) || [];
+        return a[key] < b[key] ? 1 : -1;
+      })
+    : [];
 
   const players =
     games?.reduce(
