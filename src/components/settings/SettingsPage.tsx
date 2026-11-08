@@ -1,16 +1,5 @@
 import { tauri } from "@/platform/tauri";
-import {
-  Card,
-  Group,
-  ScrollArea,
-  Select,
-  Stack,
-  Table,
-  Tabs,
-  Text,
-  TextInput,
-  Title,
-} from "@mantine/core";
+import { Card, Group, ScrollArea, Stack, Table, Tabs, Text, TextInput, Title } from "@mantine/core";
 import { useHotkeys } from "@mantine/hooks";
 import {
   BookOpen,
@@ -74,6 +63,7 @@ import RepertoireMinGamesSetting from "./RepertoireMinGamesSetting";
 import { DirectorySetting } from "./DirectorySetting";
 import classes from "./SettingsPage.module.css";
 import { SettingRow } from "./SettingsLayout";
+import SettingsSelect from "./SettingsSelect";
 import SettingsSwitch from "./SettingsSwitch";
 import SoundSelect from "./SoundSelect";
 import ThemeButton from "./ThemeButton";
@@ -181,7 +171,7 @@ export default function Page() {
         description: t("Settings.MoveNotation.Desc"),
         keywords: ["notation", "letters", "symbols", "pieces"],
         render: () => (
-          <Select
+          <SettingsSelect
             data={[
               { label: t("Settings.MoveNotation.Letters"), value: "letters" },
               { label: t("Settings.MoveNotation.Symbols"), value: "symbols" },
@@ -199,7 +189,7 @@ export default function Page() {
         description: t("Settings.MoveMethod.Desc"),
         keywords: ["drag", "click", "move", "pieces"],
         render: () => (
-          <Select
+          <SettingsSelect
             data={[
               { label: t("Settings.MoveMethod.Drag"), value: "drag" },
               { label: t("Settings.MoveMethod.Click"), value: "select" },
@@ -250,7 +240,7 @@ export default function Page() {
         description: t("Settings.Coordinates.Desc"),
         keywords: ["coordinates", "a-h", "1-8"],
         render: () => (
-          <Select
+          <SettingsSelect
             data={[
               { label: t("Settings.Coordinates.None"), value: "no" },
               { label: t("Settings.Coordinates.Edge"), value: "edge" },
@@ -269,8 +259,7 @@ export default function Page() {
         description: t("Settings.AnimationSpeed.Desc"),
         keywords: ["animation", "speed", "duration", "move"],
         render: () => (
-          <Select
-            aria-label={t("Settings.AnimationSpeed")}
+          <SettingsSelect
             data={[
               { label: t("Settings.AnimationSpeed.Off"), value: "off" },
               { label: t("Settings.AnimationSpeed.Fast"), value: "fast" },
@@ -330,7 +319,7 @@ export default function Page() {
         description: t("Settings.MaterialDisplay.Desc"),
         keywords: ["material", "captured", "pieces", "difference"],
         render: () => (
-          <Select
+          <SettingsSelect
             data={[
               { label: t("Settings.MaterialDisplay.Diff"), value: "diff" },
               { label: t("Settings.MaterialDisplay.All"), value: "all" },
@@ -374,8 +363,7 @@ export default function Page() {
         description: t("Settings.Appearance.Language.Desc"),
         keywords: ["language", "locale", "translation"],
         render: () => (
-          <Select
-            aria-label={t("Settings.Appearance.Language")}
+          <SettingsSelect
             allowDeselect={false}
             data={[
               { value: "be_BY", label: "Belarusian" },
@@ -411,8 +399,7 @@ export default function Page() {
               description: t("Settings.Appearance.TitleBar.Desc"),
               keywords: ["title", "bar", "native", "custom"],
               render: () => (
-                <Select
-                  aria-label={t("Settings.Appearance.TitleBar")}
+                <SettingsSelect
                   allowDeselect={false}
                   data={[
                     {
@@ -505,7 +492,7 @@ export default function Page() {
         description: t("Settings.Repertoire.AutoDifficulty.Desc"),
         keywords: ["repertoire", "auto", "difficulty", "select", "anki"],
         render: () => (
-          <Select
+          <SettingsSelect
             allowDeselect={false}
             data={[
               { label: t("Settings.Repertoire.AutoDifficulty.None"), value: "none" },

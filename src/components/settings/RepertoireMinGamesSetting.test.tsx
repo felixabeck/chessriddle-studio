@@ -2,6 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import RepertoireMinGamesSetting from "./RepertoireMinGamesSetting";
+import { SettingRow } from "./SettingsLayout";
 
 const language = vi.hoisted(() => ({ current: "en-US" }));
 const minGames = vi.hoisted(() => ({ current: 50, set: vi.fn() }));
@@ -18,8 +19,14 @@ vi.mock("jotai", () => ({
 vi.mock("@/state/atoms", () => ({ coverageMinGamesAtom: {} }));
 vi.mock("@mantine/core", () => ({
   Group: ({ children }: any) => <div>{children}</div>,
-  Select: ({ data, value, onChange }: any) => (
-    <select data-testid="preset" value={value} onChange={(event) => onChange(event.target.value)}>
+  Text: ({ children }: any) => <span>{children}</span>,
+  Select: ({ data, value, onChange, "aria-label": ariaLabel }: any) => (
+    <select
+      data-testid="preset"
+      aria-label={ariaLabel}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    >
       {data.map((option: { value: string; label: string }) => (
         <option key={option.value} value={option.value}>
           {option.label}
@@ -27,8 +34,13 @@ vi.mock("@mantine/core", () => ({
       ))}
     </select>
   ),
-  NumberInput: ({ value, onChange }: any) => (
-    <input data-testid="custom" value={value} onChange={(event) => onChange(event.target.value)} />
+  NumberInput: ({ value, onChange, "aria-label": ariaLabel }: any) => (
+    <input
+      data-testid="custom"
+      aria-label={ariaLabel}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    />
   ),
 }));
 
@@ -94,6 +106,20 @@ test("writes the preset's game count when a preset is chosen", async () => {
   });
 
   expect(minGames.set).toHaveBeenCalledWith(20);
+});
+
+test("gives the preset select the SettingRow title as its accessible name", async () => {
+  await act(async () =>
+    root.render(
+      <SettingRow title="Minimum games" description="d">
+        <RepertoireMinGamesSetting />
+      </SettingRow>,
+    ),
+  );
+
+  expect(host.querySelector("[data-testid=preset]")?.getAttribute("aria-label")).toBe(
+    "Minimum games",
+  );
 });
 
 test("keeps the stored value when switching to custom", async () => {

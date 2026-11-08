@@ -1,8 +1,10 @@
-import { Group, NumberInput, Select } from "@mantine/core";
+import { Group, NumberInput } from "@mantine/core";
 import { useAtom } from "jotai";
-import { useEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { coverageMinGamesAtom } from "@/state/atoms";
+import { SettingLabelContext } from "./SettingsLayout";
+import SettingsSelect from "./SettingsSelect";
 
 const PRESET_MIN_GAMES = { essential: 200, standard: 50, deep: 20 } as const;
 type Preset = keyof typeof PRESET_MIN_GAMES | "custom";
@@ -16,6 +18,7 @@ function presetFor(minGames: number): Preset {
 
 export default function RepertoireMinGamesSetting() {
   const { t, i18n } = useTranslation();
+  const inheritedLabel = useContext(SettingLabelContext);
   const [minGames, setMinGames] = useAtom(coverageMinGamesAtom);
   const [preset, setPreset] = useState<Preset>(() => presetFor(minGames));
 
@@ -48,7 +51,7 @@ export default function RepertoireMinGamesSetting() {
 
   return (
     <Group wrap="nowrap">
-      <Select
+      <SettingsSelect
         w={200}
         allowDeselect={false}
         data={data}
@@ -62,6 +65,7 @@ export default function RepertoireMinGamesSetting() {
       {preset === "custom" && (
         <NumberInput
           w={100}
+          aria-label={inheritedLabel}
           value={minGames}
           onChange={(val) => setMinGames(Number(val) || 50)}
           min={1}
