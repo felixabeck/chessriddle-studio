@@ -37,7 +37,7 @@ Other lenses APPROVED without findings. Records lens APPROVED; it could not run 
 All APPROVED; F1-F6 CLOSED. diff_adopted_per_round: r1=6 r2=0.
 
 ### Repair after real-data verification (orchestrator finding)
-- F7 Date sort desc ordered recurring events by their first date; 13,395 of 70,038 Mega events span more than one calendar year. Date desc now uses EndDate, asc keeps StartDate; red-proved. This amends plan O4 (Date sorts by StartDate). Reviewed in closure round d3.
+- F7 Date sort desc ordered recurring events by their first date; 13,395 of 70,038 Mega events span more than one calendar year. Date desc now uses EndDate, asc keeps StartDate; red-proved. This amends plan O4 (Date sorts by StartDate). Reviewed in closure round d3 (correctness, root-cause, tests, pgn-index): all APPROVED, F7 CLOSED. diff_adopted_per_round: r1=6 r2=0 r3=1.
 
 ## Verification
 - Mega benchmark, release profile, copy of Mega Database 2025 (11,441,614 games, 70,039 events, schema 2.2.0): migration plus acquisition 23.55 s at load average about 42; sum(GameCount) over events equals games with EventID != 0; dirty set empty. Queries: first page at most 62 ms, last page at most 207 ms on the clean run; one 352 ms last-page spike in the first run at load about 42.
