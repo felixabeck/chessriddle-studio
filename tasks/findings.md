@@ -22340,3 +22340,20 @@ Fixed in 0b63a012 (pushed to master; hosted Test 13/13 green; installed locally)
 * **Fix shape:** use the default danger presentation that f-20261030-14 used for the file-detail action, keeping the label, action, focus and confirmation.
 * **Proof:** an Axe colour-contrast pass over the database detail pane in the dark theme reports no violation for the Delete action.
 * **Found by:** Codex phase 2 leaf, build db-upgrade-state, 2026-11-08, retained Axe output of an additional accessibility run.
+
+---
+
+## 2026-11-08 — filed through the inbox spool
+
+### Hosted macOS rust test gives four concurrent database readers a fixed 2 seconds and turned master CI red on dc30b9b3
+
+* **ID:** f-20261108-08 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 1d862ab3-2e69-45a4-b112-6e67bb2050e3
+* **Impact class:** tooling
+* **CI run:** 42512756399
+* **Where:** `src-tauri/src/db/repository.rs:3590`, test `db::repository::upgrade_tests::validated_connections_skip_schema_probes_and_reprobe_changed_files`, job `rust-macos-test`.
+* **Defect:** the test waits `recv_timeout(Duration::from_secs(2))` for each of four reader threads to connect, and each reader holds its connection for at most 5 seconds. On run 42512756399 (dc30b9b3) the assertion "all validated readers must connect while their siblings still hold connections" failed, with 3124 tests passing. The same job passed on the five preceding master runs, so the failure is intermittent. Cause not reproduced: a slow hosted macOS runner is the likely explanation, a real connection stall is not excluded.
+* **Spotted outside diff:** seen while checking master CI during the event-editions release.
+* **Failure scenario:** a push to master runs `rust-macos-test` on a slow hosted runner, a reader takes longer than 2 seconds to connect, the job fails and `pnpm ci:remote:check` then refuses later pushes until a rerun or fix.
+* **Fix shape:** first read the reader timings on macOS to separate a slow runner from a real stall. If slow, replace the 2-second wall-clock limit with a generous bound (a passing run does not wait for it) and keep the concurrency assertion.
+* **Proof:** the job stays green over repeated macOS runs, and the test still fails when readers are forced to serialize.
