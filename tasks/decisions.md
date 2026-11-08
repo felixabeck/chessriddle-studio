@@ -12361,3 +12361,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Same class as `d-20261103-17`'s unparsable-game omission; there is no game to import. Reversal path: restore the `InvalidInput` return in the staging loop.
 * **Decided by:** drain session 8b655619 (next-finding, inline), 2026-11-08 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"d31b9c59f146f2010bd1828a304a83d3bcd085fea96da347558460984078887f","input_sha256":"e480df179d3a3351248f570b396d351463120c5d662fb355128924c25a4754c5","kind":"mutation-receipt","operation":"dd276fc7600aee63d7863122e4e5aea7777e50cc30d936be54da7ae7896d0ecb","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-03"],"target":"decisions-ledger","v":1} -->
+
+### d-20261108-04 — Is a non-empty practice Start inclusive of the Start position's own move?
+
+* **Question:** With a non-empty `headers.start`, does practice drill the move from the Start position itself when it is the player's turn, or only positions strictly after it?
+* **Governs:** f-20261106-14
+* **Chosen:** Inclusive. `buildFromTree` skips only strict ancestors of a non-empty Start, so the Start node's move is a card, matching repertoire coverage and start-state moves in `RepertoireInfo.tsx`, which already keep paths with `isPrefix(startPath, path)`. With no Start (`start=[]`) the root stays skipped exactly as before.
+* **Rejected:** Making coverage exclusive instead (coverage would stop counting the move the user marked Start to learn, and practice would still never drill it). Including the root card for an empty Start in the same change (adds a first-move card to every existing White deck; out of this finding's scope and left as a separate question).
+* **Reason:** "Set as Start" marks where the chapter begins; the sibling surface (coverage) already treats that position as part of the chapter, and an exclusive bound produced an empty deck for a line whose only player move sits at Start. Reversal path: restore `isPrefix(item.position, start)` as the skip in `buildFromTree`.
+* **Decided by:** drain session 44944477 (next-finding, lens), 2026-11-08 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"e6901e982637d993273cf19deb24fe960ab25be7465f625da6a942a596c229f4","input_sha256":"2a718ba67f44fbe8604f56277bad976b7805c13818f57fa242fd60e623bd71e3","kind":"mutation-receipt","operation":"35f5d290eee0dd2e6cd174ea6b958f5bffc1c032acc7dbdc3c04deadf76316c8","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-04"],"target":"decisions-ledger","v":1} -->
