@@ -838,6 +838,20 @@ function optionInput(label: string) {
   return host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
 }
 
+test("a lowercase Chess960 option renders its checkbox disabled", async () => {
+  atomEngines = [makeEngine("engine-lowercase-chess960")];
+  mocks.getEngineConfig.mockResolvedValue({
+    name: "Stockfish",
+    options: [{ type: "check", value: { name: "uci_chess960", default: false } }],
+  });
+  await renderSettings();
+  await expandExpert();
+
+  const chess960 = optionInput("Chess960");
+  expect(chess960).not.toBeNull();
+  expect(chess960!.disabled).toBe(true);
+});
+
 test("essential and unknown settings stay visible, experts toggle and button options stay omitted", async () => {
   atomEngines = [makeEngine("engine-sections")];
   mocks.getEngineConfig.mockResolvedValue(strengthConfig(false));

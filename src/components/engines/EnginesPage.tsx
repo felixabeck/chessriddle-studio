@@ -651,7 +651,7 @@ function EngineSettings({
                     label={label}
                     description={renderDescription(o.value.name, label, description)}
                     checked={o.value.value === true || o.value.value === "true"}
-                    disabled={o.value.name === "UCI_Chess960"}
+                    disabled={o.value.name.toLowerCase() === "uci_chess960"}
                     onChange={(e) =>
                       setSetting(o.value.name, e.currentTarget.checked, o.value.default as boolean)
                     }
