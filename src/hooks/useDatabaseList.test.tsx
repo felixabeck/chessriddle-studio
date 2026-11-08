@@ -215,6 +215,130 @@ function list(rootId: string): DatabaseList {
   };
 }
 
+test.each(["ready", "upgradeFailed", "empty"] as const)(
+  "revalidates transient rows every 3 seconds across subscribers and stops at %s",
+  async (terminal) => {
+    const row = {
+      type: "error" as const,
+      file: { id: { id: "held" }, kind: "database" as const },
+      filename: "held.db3",
+      indexed: false,
+      error: "Transient explanation",
+    };
+    const upgrading: DatabaseList = {
+      ...list("root"),
+      databases: [{ ...row, transient: "upgrading" }],
+    };
+    const busy: DatabaseList = { ...upgrading, databases: [{ ...row, transient: "busy" }] };
+    const settled: DatabaseList = {
+      ...upgrading,
+      databases:
+        terminal === "empty"
+          ? []
+          : terminal === "upgradeFailed"
+            ? [{ ...row, upgradeFailed: true }]
+            : [
+                {
+                  type: "success",
+                  file: row.file,
+                  filename: row.filename,
+                  title: "Ready",
+                  description: "",
+                  indexed: false,
+                  game_count: 1,
+                  player_count: 2,
+                  event_count: 1,
+                  storage_size: "1",
+                },
+              ],
+    };
+    vi.mocked(getDatabases)
+      .mockResolvedValueOnce(upgrading)
+      .mockResolvedValueOnce(busy)
+      .mockResolvedValue(settled);
+    await render(
+      <>
+        <Consumer />
+        <Consumer />
+      </>,
+    );
+    expect(getDatabases).toHaveBeenCalledTimes(1);
+    await advance(2999);
+    expect(getDatabases).toHaveBeenCalledTimes(1);
+    await advance(1);
+    expect(getDatabases).toHaveBeenCalledTimes(2);
+    await advance(2999);
+    expect(getDatabases).toHaveBeenCalledTimes(2);
+    await advance(1);
+    expect(getDatabases).toHaveBeenCalledTimes(3);
+    await advance(60_000);
+    expect(getDatabases).toHaveBeenCalledTimes(3);
+  },
+);
+
+test("transient polling never overlaps a slow read and stops after final unsubscribe", async () => {
+  const held = deferred<DatabaseList>();
+  const upgrading: DatabaseList = {
+    ...list("root"),
+    databases: [
+      {
+        type: "error",
+        file: { id: { id: "held" }, kind: "database" },
+        filename: "held.db3",
+        error: "Upgrading",
+        indexed: false,
+        transient: "upgrading",
+      },
+    ],
+  };
+  vi.mocked(getDatabases).mockResolvedValueOnce(upgrading).mockReturnValue(held.promise);
+  await render(<Consumer />);
+  await advance(3000);
+  expect(getDatabases).toHaveBeenCalledTimes(2);
+  const signal = vi.mocked(getDatabases).mock.calls[1][0]?.signal;
+  await advance(30_000);
+  expect(getDatabases).toHaveBeenCalledTimes(2);
+  expect(signal?.aborted).toBe(false);
+  await act(async () => root.render(null));
+  expect(signal?.aborted).toBe(true);
+  await act(async () => held.resolve(upgrading));
+  await advance(30_000);
+  expect(getDatabases).toHaveBeenCalledTimes(2);
+});
+
+test("polling restarts when a later cache update introduces a transient row", async () => {
+  let publish!: (value: DatabaseList) => Promise<unknown>;
+  function UpdatingConsumer() {
+    const { mutate } = useSWRConfig();
+    publish = (value) => mutate(DATABASE_LIST_KEY, value, { revalidate: false });
+    return <Consumer />;
+  }
+  vi.mocked(getDatabases).mockResolvedValue(list("root"));
+  await render(<UpdatingConsumer />);
+  await advance(30_000);
+  expect(getDatabases).toHaveBeenCalledTimes(1);
+  const transient: DatabaseList = {
+    ...list("root"),
+    databases: [
+      {
+        type: "error",
+        file: { id: { id: "held" }, kind: "database" },
+        filename: "held.db3",
+        indexed: false,
+        transient: "upgrading",
+        error: "Upgrading",
+      },
+    ],
+  };
+  await act(async () => publish(transient));
+  await advance(2999);
+  expect(getDatabases).toHaveBeenCalledTimes(1);
+  await advance(1);
+  expect(getDatabases).toHaveBeenCalledTimes(2);
+  await advance(30_000);
+  expect(getDatabases).toHaveBeenCalledTimes(2);
+});
+
 async function writeRefreshHarness() {
   const cache = new Map();
   let owner!: NativeRequestOwner;

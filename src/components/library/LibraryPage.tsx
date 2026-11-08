@@ -178,7 +178,7 @@ export default function LibraryPage() {
           (!normalizedSearch ||
             [
               item.filename,
-              item.type === "success" ? item.title : item.error,
+              item.type === "success" ? item.title : item.transient ? item.filename : item.error,
               item.type === "success" ? item.description : "",
             ].some((value) => value.toLowerCase().includes(normalizedSearch))),
       )

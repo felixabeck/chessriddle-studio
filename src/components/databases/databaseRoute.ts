@@ -22,6 +22,7 @@ export function databaseRouteTarget(
 export type DatabaseRouteResolution =
     | { status: "loading" }
     | { status: "not_found" }
+    | { status: "unavailable"; database: Extract<ManagedDatabaseInfo, { type: "error" }> }
     | { status: "synchronizing"; database: SuccessDatabaseInfo }
     | { status: "ready"; database: SuccessDatabaseInfo };
 
@@ -35,11 +36,13 @@ export function resolveDatabaseRoute(
     active: SuccessDatabaseInfo | undefined,
 ): DatabaseRouteResolution {
     if (!databases) return { status: "loading" };
-    const database = databases.find(
-        (candidate): candidate is SuccessDatabaseInfo =>
-            candidate.type === "success" && databaseHandleKey(candidate.file) === routeKey,
-    );
+    const database = databases.find((candidate) => databaseHandleKey(candidate.file) === routeKey);
     if (!database) return { status: "not_found" };
+    if (database.type === "error") {
+        return database.transient || database.upgradeFailed
+            ? { status: "unavailable", database }
+            : { status: "not_found" };
+    }
     return sameDatabaseHandle(database.file, active?.file)
         ? { status: "ready", database }
         : { status: "synchronizing", database };

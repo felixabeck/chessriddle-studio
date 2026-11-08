@@ -271,6 +271,7 @@ function Databases() {
         return {
           entries: values.filter((entry): entry is PersonalInfo => entry !== null),
           failed: candidates
+            .filter((item) => !(item.db.type === "error" && item.db.transient))
             .filter(
               (item) =>
                 item.db.type !== "success" ||

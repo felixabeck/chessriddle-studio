@@ -37,6 +37,26 @@ const database = (id: string, title = "Same title"): SuccessDatabaseInfo => ({
 });
 
 describe("database route resolution", () => {
+    it.each([
+        { transient: "upgrading" as const },
+        { transient: "busy" as const },
+        { upgradeFailed: true as const },
+    ])("keeps an unavailable route for %j even without a persisted selection", (state) => {
+        const row: ManagedDatabaseInfo = {
+            type: "error",
+            file: handle("held"),
+            filename: "held.db3",
+            error: "Unavailable explanation",
+            indexed: false,
+            ...state,
+        };
+        for (const active of [undefined, database("held"), database("other")]) {
+            expect(resolveDatabaseRoute([row], "held", active)).toEqual({
+                status: "unavailable",
+                database: row,
+            });
+        }
+    });
     it("does not open an error entry even when its route key and persisted handle match", () => {
         const staleDatabase = database("broken");
         expect(

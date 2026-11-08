@@ -788,6 +788,63 @@ test("error metadata remains selectable with delete and without healthy-only ope
   expect(button("Open database")).toBeUndefined();
 });
 
+test.each(["upgrading", "busy"] as const)(
+  "%s rows are searchable by filename and cannot be opened with Enter or double-click",
+  async (transient) => {
+    mocks.databases = [
+      {
+        type: "error",
+        file: database.file,
+        filename: "Large archive.db3",
+        indexed: false,
+        transient,
+        error: "Transient explanation",
+      },
+    ];
+    await render();
+    const search = host.querySelector<HTMLInputElement>('input[aria-label="Search"]')!;
+    await input(search, "Large archive");
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0].getAttribute("aria-label")).toBe("Large archive.db3");
+    await click(rows()[0]);
+    await act(async () => {
+      rows()[0].dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      rows()[0]
+        .querySelector("button")!
+        .dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    });
+    expect(button("Open database")).toBeUndefined();
+    expect(button("Delete")).toBeUndefined();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(activeDatabaseViewStore.getState().database).toBeUndefined();
+    await input(search, "Transient explanation");
+    expect(rows()).toHaveLength(0);
+  },
+);
+
+test("a pending Delete confirmation is retired when its selected row becomes transient", async () => {
+  await click(rows()[1]);
+  await click(button("Delete"));
+  expect(host.querySelector('[role="dialog"]')).not.toBeNull();
+  mocks.databases = [
+    {
+      type: "error",
+      file: database.file,
+      filename: "same.db3",
+      indexed: false,
+      transient: "upgrading",
+      error: "Upgrade underway",
+    },
+  ];
+  await render();
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+  expect(button("Delete")).toBeUndefined();
+  mocks.databases = [database];
+  await render();
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+  expect(button("Delete")).toBeDefined();
+});
+
 test("empty success differs from loading and source failure", async () => {
   mocks.files = [];
   mocks.databases = [];

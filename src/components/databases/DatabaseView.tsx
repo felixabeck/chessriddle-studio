@@ -100,6 +100,22 @@ function DatabaseView() {
     );
   }
 
+  if (resolution.status === "unavailable") {
+    return (
+      <Box p="sm" h="100%">
+        <Center ref={ref} h="100%">
+          <Stack align="center" role="status">
+            {resolution.database.upgradeFailed && (
+              <Text className="wrap-anywhere">{t("Databases.UpgradeFailed.Description")}</Text>
+            )}
+            <Text className="wrap-anywhere">{resolution.database.error}</Text>
+            <Link to="/library">{t("Library.Title")}</Link>
+          </Stack>
+        </Center>
+      </Box>
+    );
+  }
+
   if (resolution.status === "not_found") {
     return (
       <Box p="sm" h="100%">

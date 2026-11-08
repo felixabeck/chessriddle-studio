@@ -1,4 +1,5 @@
 import useSWR, { type ScopedMutator, type SWRConfiguration } from "swr";
+import { useEffect, useState } from "react";
 import { listingFailure } from "@/components/files/listingFailure";
 import { type NativeRequestOwner, useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { getDatabases } from "@/utils/db";
@@ -60,8 +61,24 @@ export const databaseListRetry: NonNullable<SWRConfiguration["onErrorRetry"]> = 
 
 export function useDatabaseList(enabled = true) {
     const owner = useNativeRequestOwner(enabled ? DATABASE_LIST_KEY : null);
-    const swr = useSWR(enabled ? DATABASE_LIST_KEY : null, () => fetchDatabaseList(owner!), {
-        onErrorRetry: databaseListRetry,
-    });
+    const [refreshInterval, setRefreshInterval] = useState(0);
+    const swr = useSWR(
+        enabled ? DATABASE_LIST_KEY : null,
+        async () => {
+            await owner!.supersede();
+            return fetchDatabaseList(owner!);
+        },
+        {
+            onErrorRetry: databaseListRetry,
+            refreshWhenHidden: true,
+            refreshWhenOffline: true,
+            refreshInterval,
+        },
+    );
+    const transient = swr.data?.databases.some((row) => row.type === "error" && row.transient);
+    // A zero SWR interval stops scheduling. Restart it when a later listing becomes transient.
+    useEffect(() => {
+        setRefreshInterval(enabled && transient ? 3000 : 0);
+    }, [enabled, transient]);
     return Object.assign(swr, { owner });
 }

@@ -60,17 +60,22 @@ test("cleanup create does not run account database recovery", async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.progress.mockResolvedValue(vi.fn());
   getDefaultStore().set(accountDownloadsInFlightAtom, new Map());
 });
 
-async function renderAccount(root: Root, cache = new Map()) {
+async function renderAccount(
+  root: Root,
+  cache = new Map(),
+  database: import("@/utils/db").ManagedDatabaseInfo | null = null,
+) {
   await act(async () => {
     root.render(
       <MantineProvider>
         <SWRConfig value={{ provider: () => cache }}>
           <AccountCard
             type="lichess"
-            database={null}
+            database={database}
             title="Felix"
             updatedAt={0}
             total={0}
@@ -83,6 +88,35 @@ async function renderAccount(root: Root, cache = new Map()) {
     );
   });
 }
+
+test.each(["upgrading", "busy"] as const)(
+  "a %s row displays its transient message and unknown count",
+  async (transient) => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    const error =
+      transient === "upgrading"
+        ? "This database is being upgraded to the current format. Large databases can take several minutes."
+        : "This database is in use and cannot be read right now. It is retried automatically.";
+    try {
+      await renderAccount(root, new Map(), {
+        type: "error",
+        file: { id: { id: "held" }, kind: "database" },
+        filename: "Felix_lichess.db3",
+        indexed: false,
+        transient,
+        error,
+      });
+      expect(host.querySelector('[role="alert"]')?.textContent).toContain(error);
+      expect(host.textContent).toContain("Common.Unknown");
+      expect(host.textContent).not.toContain("0 / 0");
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+    }
+  },
+);
 
 test.each([
   {

@@ -1,6 +1,8 @@
 import { act, useEffect, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import useSWR, { SWRConfig } from "swr";
+import useSWR, { SWRConfig, useSWRConfig } from "swr";
+import { getDefaultStore } from "jotai";
+import { referenceDbAtom } from "@/state/atoms";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
@@ -13,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   setDatabase: vi.fn(),
   clearDatabase: vi.fn(),
   database: undefined as SuccessDatabaseInfo | undefined,
+  realStore: false,
 }));
 
 vi.mock("@/utils/db", async () => {
@@ -60,23 +63,39 @@ vi.mock("@/components/common/IconAction", () => ({
 vi.mock("./GameTable", () => ({ default: () => <div>games table</div> }));
 vi.mock("./PlayerTable", () => ({ default: () => <div>players table</div> }));
 vi.mock("./TournamentTable", () => ({ default: () => <div>tournaments table</div> }));
-vi.mock("@/state/store/database", () => {
+vi.mock("@/state/store/database", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/state/store/database")>("@/state/store/database");
   const state = {
     get database() {
       return mocks.database;
     },
-    activeTab: "games",
+    activeTab: "games" as const,
     clearDatabase: mocks.clearDatabase,
     setActiveTab: vi.fn(),
     setDatabase: mocks.setDatabase,
   };
   return {
-    activeDatabaseViewStore: { getState: () => state },
-    useActiveDatabaseViewStore: (selector: (value: typeof state) => unknown) => selector(state),
+    activeDatabaseViewStore: {
+      getState: () => (mocks.realStore ? actual.activeDatabaseViewStore.getState() : state),
+    },
+    useActiveDatabaseViewStore: (
+      selector: (value: import("@/state/store/database").DatabaseViewStore) => unknown,
+    ) =>
+      mocks.realStore
+        ? actual.useActiveDatabaseViewStore(selector)
+        : selector({ ...actual.activeDatabaseViewStore.getState(), ...state }),
   };
 });
 
 import DatabaseView from "./DatabaseView";
+
+let revalidate!: () => Promise<unknown>;
+function CaptureRevalidation() {
+  const { mutate } = useSWRConfig();
+  revalidate = () => mutate("databases");
+  return null;
+}
 
 function Peer({ onData }: { onData: (value: unknown) => void }) {
   const owner = useNativeRequestOwner("databases");
@@ -100,6 +119,7 @@ function Tree({
 }) {
   return (
     <SWRConfig value={{ provider: () => cache, shouldRetryOnError: false }}>
+      <CaptureRevalidation />
       {view && <DatabaseView />}
       {peer && <Peer onData={onData} />}
     </SWRConfig>
@@ -116,6 +136,7 @@ beforeEach(() => {
   mocks.setDatabase.mockReset();
   mocks.clearDatabase.mockReset();
   mocks.database = undefined;
+  mocks.realStore = false;
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -124,6 +145,15 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  vi.restoreAllMocks();
+  if (mocks.realStore) {
+    const actual =
+      await vi.importActual<typeof import("@/state/store/database")>("@/state/store/database");
+    actual.activeDatabaseViewStore.getState().clearDatabase();
+    getDefaultStore().set(referenceDbAtom, null);
+    sessionStorage.clear();
+    localStorage.clear();
+  }
 });
 
 async function render(view: boolean, peer: boolean, onData = vi.fn()) {
@@ -142,6 +172,76 @@ const selectedDatabase: SuccessDatabaseInfo = {
   storage_size: "0",
   indexed: false,
 };
+
+test.each([
+  {
+    transient: "upgrading" as const,
+    error:
+      "This database is being upgraded to the current format. Large databases can take several minutes.",
+  },
+  {
+    transient: "busy" as const,
+    error: "This database is in use and cannot be read right now. It is retried automatically.",
+  },
+  { upgradeFailed: true as const, error: "Insufficient disk space" },
+])(
+  "unavailable route shows $error without tables and preserves stored view and reference bytes through ready",
+  async (unavailable) => {
+    mocks.realStore = true;
+    const { activeDatabaseViewStore: store } =
+      await vi.importActual<typeof import("@/state/store/database")>("@/state/store/database");
+    store.getState().setDatabase(selectedDatabase);
+    store.getState().setGamesQuery({ ...store.getState().games.query, player1: 42 });
+    store.getState().setGamesSelectedGameId(7);
+    store.getState().setActiveTab("players");
+    store.getState().setPlayersSelectedPlayer(42);
+    getDefaultStore().set(referenceDbAtom, selectedDatabase.file);
+    const before = sessionStorage.getItem("database-view");
+    const referenceBefore = localStorage.getItem("reference-database");
+    expect(before).not.toBeNull();
+    expect(referenceBefore).not.toBeNull();
+    const clear = vi.spyOn(store.getState(), "clearDatabase");
+    const seed = vi.spyOn(store.getState(), "setDatabase");
+    const listing = (databases: import("@/utils/db").ManagedDatabaseInfo[]) => ({
+      databases,
+      unread: [],
+    });
+    mocks.getDatabases.mockResolvedValue(listing([selectedDatabase]));
+    await render(true, false);
+    expect(container.textContent).toContain("games table");
+    expect(sessionStorage.getItem("database-view")).toBe(before);
+
+    mocks.getDatabases.mockResolvedValue(
+      listing([
+        {
+          type: "error",
+          file: selectedDatabase.file,
+          filename: selectedDatabase.filename,
+          indexed: false,
+          ...unavailable,
+        },
+      ]),
+    );
+    await act(async () => revalidate());
+    expect(container.querySelector('[role="status"]')?.textContent).toContain(unavailable.error);
+    expect(container.textContent).not.toMatch(/games table|players table|tournaments table/);
+    expect(container.querySelector('a[href="/library"]')).not.toBeNull();
+    expect(sessionStorage.getItem("database-view")).toBe(before);
+    expect(localStorage.getItem("reference-database")).toBe(referenceBefore);
+    expect(clear).not.toHaveBeenCalled();
+
+    mocks.getDatabases.mockResolvedValue(
+      listing([{ ...selectedDatabase, title: "Fresh ready metadata", game_count: 123 }]),
+    );
+    await act(async () => revalidate());
+    expect(container.textContent).toContain("Fresh ready metadata");
+    expect(container.textContent).toContain("games table");
+    expect(sessionStorage.getItem("database-view")).toBe(before);
+    expect(localStorage.getItem("reference-database")).toBe(referenceBefore);
+    expect(clear).not.toHaveBeenCalled();
+    expect(seed).not.toHaveBeenCalled();
+  },
+);
 
 test("a preserved original index route retires its old active explorer without rendering stale tables", async () => {
   mocks.database = selectedDatabase;

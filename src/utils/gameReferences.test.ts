@@ -1438,6 +1438,35 @@ test("preserves unread, unavailable and omitted source guidance alongside succes
     );
 });
 
+test.each(["upgrading", "busy"] as const)(
+    "retains the %s message as unavailable without querying the transient source",
+    async (transient) => {
+        const { library, api, search } = setup();
+        const error =
+            transient === "upgrading"
+                ? "This database is being upgraded to the current format. Large databases can take several minutes."
+                : "This database is in use and cannot be read right now. It is retried automatically.";
+        library.databases = [
+            {
+                type: "error",
+                file: database,
+                filename: "held.db3",
+                indexed: false,
+                transient,
+                error,
+            },
+        ];
+        const result = await search();
+        expect(result.complete).toBe(false);
+        expect(result.candidates).toEqual([]);
+        expect(result.failures).toEqual([
+            { source: "held.db3", category: "unavailable", message: error },
+        ]);
+        expect(api.query_players).not.toHaveBeenCalled();
+        expect(api.query_games).not.toHaveBeenCalled();
+    },
+);
+
 test.each(["permission", "missing-resource", "database"] as const)(
     "retains safe %s category without exposing native diagnostics",
     async (category) => {

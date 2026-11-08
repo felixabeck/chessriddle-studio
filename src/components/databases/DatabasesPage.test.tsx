@@ -284,6 +284,68 @@ test("selected error detail chooses admission recovery with databaseAdmission=tr
   expect(detail.textContent).not.toContain(corruption);
 });
 
+test.each([
+  [
+    "upgrading",
+    "Upgrading…",
+    "This database is being upgraded to the current format. Large databases can take several minutes.",
+  ],
+  [
+    "busy",
+    "Busy",
+    "This database is in use and cannot be read right now. It is retried automatically.",
+  ],
+])(
+  "%s row shows its status and explanation without Open, Delete or corruption copy",
+  async (status, label, description) => {
+    mocks.listWorkspaceDatabases.mockResolvedValue({ entries: [entry], unread: [] });
+    mocks.getDbInfo.mockResolvedValue({ status });
+    await render();
+    const card = host.querySelector<HTMLButtonElement>("[data-card]")!;
+    expect(card.textContent).toContain("new.db3");
+    expect(card.textContent).toContain(label);
+    expect(card.textContent).not.toContain("???");
+    await act(async () => {
+      card.click();
+      card.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    });
+    const detail = host.querySelector('[data-testid="selected-detail"]')!;
+    expect(detail.textContent).toContain(description);
+    expect(detail.textContent).not.toContain("There was an error loading this database");
+    expect(detail.textContent).not.toContain(
+      "Check if the file exists and that it is not corrupted.",
+    );
+    expect([...host.querySelectorAll("button")].map((button) => button.textContent)).not.toEqual(
+      expect.arrayContaining(["Delete"]),
+    );
+    expect(host.textContent).not.toContain("Open database");
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(mocks.setDatabase).not.toHaveBeenCalled();
+  },
+);
+
+test("upgrade failure detail keeps Delete and shows the unchanged-file explanation and job message", async () => {
+  mocks.listWorkspaceDatabases.mockResolvedValue({ entries: [entry], unread: [] });
+  mocks.getDbInfo.mockResolvedValue({
+    status: "upgrade-failed",
+    message: "Insufficient disk space",
+  });
+  await render();
+  await act(async () => host.querySelector<HTMLButtonElement>("[data-card]")!.click());
+  const detail = host.querySelector('[data-testid="selected-detail"]')!;
+  expect(detail.textContent).toContain(
+    "This database could not be upgraded. The file was not changed.",
+  );
+  expect(detail.textContent).toContain("Insufficient disk space");
+  expect(detail.textContent).not.toContain("There was an error loading this database");
+  expect(detail.textContent).not.toContain(
+    "Check if the file exists and that it is not corrupted.",
+  );
+  expect(
+    [...detail.querySelectorAll("button")].some((button) => button.textContent === "Delete"),
+  ).toBe(true);
+});
+
 test("selected error detail chooses generic recovery without databaseAdmission", async () => {
   mocks.listWorkspaceDatabases.mockResolvedValue({ entries: [entry], unread: [] });
   mocks.getDbInfo.mockRejectedValueOnce({
@@ -304,6 +366,9 @@ test("selected error detail chooses generic recovery without databaseAdmission",
   expect(detail.textContent).toContain(corruption);
   expect(detail.textContent).not.toContain(admission);
   expect(detail.textContent).not.toContain(recovery);
+  expect(
+    [...detail.querySelectorAll("button")].some((button) => button.textContent === "Delete"),
+  ).toBe(true);
 });
 
 test.each([true, false])(

@@ -143,6 +143,10 @@ export function useDatabaseLibrary(
 
   const [deleteModal, setDeleteModal] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
+  const selectedIsTransient = selectedDatabase?.type === "error" && !!selectedDatabase.transient;
+  useEffect(() => {
+    if (selectedIsTransient) setDeleteModal(false);
+  }, [selectedIsTransient]);
 
   function invalidateDeletedDatabaseState(deleted: DatabaseHandle) {
     setSelected(
@@ -225,7 +229,7 @@ export function useDatabaseLibrary(
         key={databaseHandleKey(item.file)}
         isSelected={sameDatabaseHandle(selectedDatabase?.file, item.file)}
         setSelected={setSelected}
-        error={item.type === "error" ? item.error : ""}
+        error={item.type === "error" && !item.transient ? item.error : ""}
         orientation="horizontal"
         className={libraryClasses.databaseCard}
         onDoubleClick={() => {
@@ -240,25 +244,44 @@ export function useDatabaseLibrary(
               </span>
               <Box miw={0}>
                 <Text fw={600} fz="sm" className="wrap-anywhere">
-                  {item.type === "success" ? item.title : item.error}
+                  {item.type === "success"
+                    ? item.title
+                    : item.transient
+                      ? item.filename
+                      : item.error}
                 </Text>
-                <Text size="xs" c="dimmed" className="wrap-anywhere">
-                  {item.type === "error" ? item.filename : item.description}
-                </Text>
+                {!(item.type === "error" && item.transient) && (
+                  <Text size="xs" c="dimmed" className="wrap-anywhere">
+                    {item.type === "error" ? item.filename : item.description}
+                  </Text>
+                )}
               </Box>
             </div>
-            <div className={libraryClasses.databaseStat}>
-              <span className={libraryClasses.statLabel}>{t("Databases.Card.Games")}</span>
-              <Text fz="sm" fw={600}>
-                {item.type === "success" ? formatNumber(item.game_count) : "???"}
-              </Text>
-            </div>
-            <div className={libraryClasses.databaseStat}>
-              <span className={libraryClasses.statLabel}>{t("Databases.Card.Storage")}</span>
-              <Text fz="sm" c="dimmed">
-                {item.type === "success" ? formatBytes(item.storage_size ?? 0) : "???"}
-              </Text>
-            </div>
+            {item.type === "error" && item.transient ? (
+              <Group gap="xs" role="status" miw={0} style={{ gridColumn: "2 / -1" }}>
+                <Loader size="xs" />
+                <Text size="sm" className="wrap-anywhere" miw={0}>
+                  {item.transient === "upgrading"
+                    ? t("Databases.Upgrading.Label")
+                    : t("Databases.Busy.Label")}
+                </Text>
+              </Group>
+            ) : (
+              <>
+                <div className={libraryClasses.databaseStat}>
+                  <span className={libraryClasses.statLabel}>{t("Databases.Card.Games")}</span>
+                  <Text fz="sm" fw={600}>
+                    {item.type === "success" ? formatNumber(item.game_count) : "???"}
+                  </Text>
+                </div>
+                <div className={libraryClasses.databaseStat}>
+                  <span className={libraryClasses.statLabel}>{t("Databases.Card.Storage")}</span>
+                  <Text fz="sm" c="dimmed">
+                    {item.type === "success" ? formatBytes(item.storage_size ?? 0) : "???"}
+                  </Text>
+                </div>
+              </>
+            )}
           </div>
         }
         footer={
@@ -378,7 +401,27 @@ export function useDatabaseLibrary(
     detail: selectedDatabase ? (
       <Stack>
         {selectedDatabase.type === "error" ? (
-          selectedDatabase.databaseAdmission === true ? (
+          selectedDatabase.transient ? (
+            <>
+              <Text fz="lg" fw="bold" className="wrap-anywhere">
+                {selectedDatabase.transient === "upgrading"
+                  ? t("Databases.Upgrading.Label")
+                  : t("Databases.Busy.Label")}
+              </Text>
+              <Text className="wrap-anywhere">
+                {selectedDatabase.transient === "upgrading"
+                  ? t("Databases.Upgrading.Description")
+                  : t("Databases.Busy.Description")}
+              </Text>
+            </>
+          ) : selectedDatabase.upgradeFailed ? (
+            <>
+              <Text fz="lg" fw="bold" className="wrap-anywhere">
+                {t("Databases.UpgradeFailed.Description")}
+              </Text>
+              <Text className="wrap-anywhere">{selectedDatabase.error}</Text>
+            </>
+          ) : selectedDatabase.databaseAdmission === true ? (
             <>
               <Text fz="lg" fw="bold">
                 {t("Databases.LoadError.Admission")}
@@ -471,83 +514,88 @@ export function useDatabaseLibrary(
           </>
         )}
 
-        <Divider variant="dashed" label={t("Databases.Settings.AdvancedTools")} />
+        {!selectedIsTransient && (
+          <>
+            <Divider variant="dashed" label={t("Databases.Settings.AdvancedTools")} />
 
-        {selectedDatabase.type === "success" && (
-          <AdvancedSettings
-            key={databaseHandleKey(selectedDatabase.file)}
-            selectedDatabase={selectedDatabase}
-            reload={revalidateDatabases}
-          />
-        )}
+            {selectedDatabase.type === "success" && (
+              <AdvancedSettings
+                key={databaseHandleKey(selectedDatabase.file)}
+                selectedDatabase={selectedDatabase}
+                reload={revalidateDatabases}
+              />
+            )}
 
-        <Divider variant="dashed" label={t("Databases.Settings.Actions")} />
-        <Group justify="space-between">
-          {selectedDatabase.type === "success" && (
-            <Group>
-              <NewDatabaseGameButton database={selectedDatabase.file} />
-              <Button
-                {...libraryButtonProps}
-                variant="default"
-                rightSection={<Plus size="1rem" />}
-                onClick={() => {
-                  const dest = selectedDatabase.file;
-                  void runAddGamesToDatabase({
-                    pickPgnFile,
-                    convertPgn: async (progressId, files, destination, ticket) => {
-                      await refreshAfterDatabaseConversion(
-                        () => tauri.convertPgn(progressId, files, destination, "", null, ticket),
-                        async () => {
-                          await refreshDatabaseList(databaseOwner!, mutateCache);
+            <Divider variant="dashed" label={t("Databases.Settings.Actions")} />
+            <Group justify="space-between">
+              {selectedDatabase.type === "success" && (
+                <Group>
+                  <NewDatabaseGameButton database={selectedDatabase.file} />
+                  <Button
+                    {...libraryButtonProps}
+                    variant="default"
+                    rightSection={<Plus size="1rem" />}
+                    onClick={() => {
+                      const dest = selectedDatabase.file;
+                      void runAddGamesToDatabase({
+                        pickPgnFile,
+                        convertPgn: async (progressId, files, destination, ticket) => {
+                          await refreshAfterDatabaseConversion(
+                            () =>
+                              tauri.convertPgn(progressId, files, destination, "", null, ticket),
+                            async () => {
+                              await refreshDatabaseList(databaseOwner!, mutateCache);
+                            },
+                            setImportRefreshFailed,
+                            t("Common.Error"),
+                          );
                         },
-                        setImportRefreshFailed,
-                        t("Common.Error"),
-                      );
-                    },
-                    dest,
-                    notifyTitle: t("Common.Error"),
-                    runConversion: (sourceFileName, convert) =>
-                      runDatabaseConversion(
-                        setConversionState,
-                        {
-                          targetDatabase: dest,
-                          targetDatabaseTitle: selectedDatabase.title,
-                          sourceFileName,
-                        },
-                        convert,
-                        {
-                          onCancelError: (cause) =>
-                            notifyUnlessCancelled(t("Common.Error"), cause, "database"),
-                        },
-                      ),
-                  });
-                }}
-              >
-                {t("Databases.Settings.AddGames")}
-              </Button>
-              <Button
-                {...libraryButtonProps}
-                rightSection={<ArrowRight size="1rem" />}
-                variant="default"
-                loading={exportLoading}
-                onClick={() => {
-                  void runPgnExport({
-                    issueDestination: () => tauri.issuePgnExportDestination(),
-                    exportToPgn: (file, handle) => tauri.exportToPgn(file, handle),
-                    file: selectedDatabase.file,
-                    notifyTitle: t("Common.Error"),
-                    setLoading: setExportLoading,
-                  });
-                }}
-              >
-                {t("Databases.Settings.ExportPGN")}
+                        dest,
+                        notifyTitle: t("Common.Error"),
+                        runConversion: (sourceFileName, convert) =>
+                          runDatabaseConversion(
+                            setConversionState,
+                            {
+                              targetDatabase: dest,
+                              targetDatabaseTitle: selectedDatabase.title,
+                              sourceFileName,
+                            },
+                            convert,
+                            {
+                              onCancelError: (cause) =>
+                                notifyUnlessCancelled(t("Common.Error"), cause, "database"),
+                            },
+                          ),
+                      });
+                    }}
+                  >
+                    {t("Databases.Settings.AddGames")}
+                  </Button>
+                  <Button
+                    {...libraryButtonProps}
+                    rightSection={<ArrowRight size="1rem" />}
+                    variant="default"
+                    loading={exportLoading}
+                    onClick={() => {
+                      void runPgnExport({
+                        issueDestination: () => tauri.issuePgnExportDestination(),
+                        exportToPgn: (file, handle) => tauri.exportToPgn(file, handle),
+                        file: selectedDatabase.file,
+                        notifyTitle: t("Common.Error"),
+                        setLoading: setExportLoading,
+                      });
+                    }}
+                  >
+                    {t("Databases.Settings.ExportPGN")}
+                  </Button>
+                </Group>
+              )}
+              <Button {...libraryButtonProps} onClick={() => setDeleteModal(true)} color="danger">
+                {t("Common.Delete")}
               </Button>
             </Group>
-          )}
-          <Button {...libraryButtonProps} onClick={() => setDeleteModal(true)} color="danger">
-            {t("Common.Delete")}
-          </Button>
-        </Group>
+          </>
+        )}
       </Stack>
     ) : null,
     dialogs: (
@@ -555,10 +603,10 @@ export function useDatabaseLibrary(
         <ConfirmModal
           title={t("Databases.Delete.Title")}
           description={t("Databases.Delete.Message")}
-          opened={deleteModal}
+          opened={deleteModal && !selectedIsTransient}
           onClose={() => setDeleteModal(false)}
           onConfirm={async () => {
-            if (!selectedDatabase) return;
+            if (!selectedDatabase || selectedIsTransient) return;
             await deleteDatabaseAndInvalidate(
               selectedDatabase.file,
               tauri.deleteDatabase,

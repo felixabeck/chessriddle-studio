@@ -771,6 +771,29 @@ function metadataError(id: string) {
   return { type: "error" as const, file, filename, indexed: false, error: "unreadable" };
 }
 
+test.each(["upgrading", "busy"] as const)(
+  "a %s row is omitted from unreadable statistics while healthy siblings remain usable",
+  async (transient) => {
+    const record = { site: "Lichess", player: "Magnus", daily: [], openings: [] };
+    mocks.getDatabases.mockResolvedValue({
+      databases: [database("db-1"), { ...metadataError("db-2"), transient }],
+      unread: [],
+      root: { id: { id: "transient-root" }, kind: "databaseRoot" },
+    });
+    mocks.getPlayersGameInfo.mockResolvedValue({ site_stats_data: [record] });
+    await renderDatabases();
+    await vi.waitFor(() =>
+      expect(mocks.personalCardInfo).toHaveBeenLastCalledWith({ site_stats_data: [record] }),
+    );
+    expect(mocks.query_players).toHaveBeenCalledOnce();
+    expect(mocks.getPlayersGameInfo).toHaveBeenCalledOnce();
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.textContent).not.toContain("Magnus_chesscom.db3");
+    expect(mocks.personalCardNotice).toHaveBeenLastCalledWith(undefined);
+    expect(mocks.logError).not.toHaveBeenCalled();
+  },
+);
+
 test("a metadata failure names its filename beside the healthy statistics without another log", async () => {
   const firstRecord = {
     site: "Lichess",
