@@ -12401,8 +12401,8 @@ Former private decision identifier: d-20261029-14
 * **Rejected:** Incremental per-column triggers (distinct players, min/max after delete and most frequent site are not incrementally maintainable; per-row EXISTS checks make imports into huge events quadratic). First game's site (order-dependent).
 * **Reason:** One choke point and O(1) trigger work keep bulk imports bounded and correctness provable per write path. Known limit: a single-game write into an event with millions of games rescans that event once via the index. Reversal path: replace the dirty set and refresh with incremental triggers in a later schema version; add Events indexes if the Mega benchmark exceeds 250 ms per query.
 * **Supersedes:** -
-* **Decided by:** Claude Code (Opus 5.5) build, full auto, 2026-11-08 · **Superseded-by:** -
-<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"4f50384ac4a3219c74dfe42832230b9c59c1d35bad6d9e89590ed0556cd8797f","input_sha256":"3e3f57de81edfcbda9e5a5c6aea810ed7f348ae0d5d1ae2b737949dae464a7c9","kind":"mutation-receipt","operation":"6a5b730869ad76aa004d0a74304f20cebf50a0b40d55f929ac0d7dcc07a97407","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-11"],"target":"decisions-ledger","v":1} -->
+* **Decided by:** Claude Code (Opus 5.5) build, full auto, 2026-11-08 · **Superseded-by:** d-20261108-18
+<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"9692a9b2024ba8436fdb9d55185f1845f353c2e78694821308d08f0287a80673","input_sha256":"3e3f57de81edfcbda9e5a5c6aea810ed7f348ae0d5d1ae2b737949dae464a7c9","kind":"mutation-receipt","operation":"6a5b730869ad76aa004d0a74304f20cebf50a0b40d55f929ac0d7dcc07a97407","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-11"],"target":"decisions-ledger","v":1} -->
 
 ### d-20261108-12 — May per-push CI save the actionlint binary cache although test.yml forbids saving caches?
 
