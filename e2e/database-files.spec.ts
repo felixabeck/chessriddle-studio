@@ -2195,7 +2195,6 @@ test("database-files: long player metadata leaves nested preview tabs and charts
     page,
     mockScenario,
     assertNoHorizontalOverflow,
-    capture,
 }) => {
     const longName = `First White ${"Long ".repeat(100)}`;
     await page.addInitScript(() => localStorage.setItem("font-size", "200"));
