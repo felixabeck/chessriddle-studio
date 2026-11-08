@@ -295,6 +295,53 @@ export async function wheelColumnTo(page: Page, column: Locator, target: Locator
     }).toPass({ timeout: 15_000, intervals: [100, 250, 500] });
 }
 
+type Rgb = [number, number, number];
+
+/** Parses a computed CSS colour (`rgb()`, `rgba()` or `color(srgb …)`) into 0-255 channels and alpha. */
+export function parseCssColor(color: string): [number, number, number, number] {
+    const rgb = color.match(
+        /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+))?\s*\)$/,
+    );
+    if (rgb) return [+rgb[1], +rgb[2], +rgb[3], rgb[4] === undefined ? 1 : +rgb[4]];
+    const srgb = color.match(
+        /^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\)$/,
+    );
+    if (srgb) {
+        const alpha = srgb[4] === undefined ? 1 : +srgb[4];
+        return [+srgb[1] * 255, +srgb[2] * 255, +srgb[3] * 255, alpha];
+    }
+    throw new Error(`unparsed color ${color}`);
+}
+
+function paintOver(color: string, below: Rgb): Rgb {
+    const [r, g, b, a] = parseCssColor(color);
+    return [r * a + below[0] * (1 - a), g * a + below[1] * (1 - a), b * a + below[2] * (1 - a)];
+}
+
+function relativeLuminance([r, g, b]: Rgb): number {
+    const channel = (value: number) => {
+        const scaled = value / 255;
+        return scaled <= 0.03928 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+}
+
+/**
+ * WCAG contrast of `foreground` text against `backgroundLayers`, painted bottom-to-top over white.
+ * Pass every translucent ancestor background, or one opaque background.
+ */
+export function contrastRatio(foreground: string, backgroundLayers: readonly string[]): number {
+    const background = backgroundLayers.reduce<Rgb>(
+        (below, layer) => paintOver(layer, below),
+        [255, 255, 255],
+    );
+    const [lighter, darker] = [
+        relativeLuminance(paintOver(foreground, background)),
+        relativeLuminance(background),
+    ].sort((a, b) => b - a);
+    return (lighter + 0.05) / (darker + 0.05);
+}
+
 export async function waitForFontsSettled(page: Page) {
     // One frame lets faces needed by just-rendered text enter loading before the first read, otherwise an empty set already reads as "loaded".
     await page.evaluate(

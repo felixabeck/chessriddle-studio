@@ -1,6 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 import type { Token } from "../src/bindings/generated";
 import {
+    contrastRatio,
     expect,
     filesWorkspaceCommands,
     filesWorkspaceFixture,
@@ -77,7 +78,6 @@ type HierarchyMetrics = {
     variationSanColor: string;
     dimmed: string;
     mainSanColor: string;
-    contrast: number;
     nagVariationColor: string;
     nagMainColor: string;
     opacities: string[];
@@ -261,39 +261,6 @@ async function measureHierarchy(notation: Locator): Promise<HierarchyMetrics> {
             probe.remove();
             return value;
         };
-        const parseRgb = (color: string): [number, number, number] => {
-            const comma = color.match(
-                /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*[\d.]+)?\s*\)$/,
-            );
-            if (comma) return [Number(comma[1]), Number(comma[2]), Number(comma[3])];
-            const space = color.match(
-                /^rgba?\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*[\d.]+)?\s*\)$/,
-            );
-            if (space) return [Number(space[1]), Number(space[2]), Number(space[3])];
-            const srgb = color.match(
-                /^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*[\d.]+)?\)$/,
-            );
-            if (srgb) {
-                return [Number(srgb[1]) * 255, Number(srgb[2]) * 255, Number(srgb[3]) * 255];
-            }
-            throw new Error(`unparsed color ${color}`);
-        };
-        const luminance = (color: string) => {
-            const channel = (value: number) => {
-                const scaled = value / 255;
-                return scaled <= 0.03928 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4;
-            };
-            const [r, g, b] = parseRgb(color);
-            return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
-        };
-        const contrastRatio = (foreground: string, background: string) => {
-            const first = luminance(foreground);
-            const second = luminance(background);
-            const lighter = Math.max(first, second);
-            const darker = Math.min(first, second);
-            return (lighter + 0.05) / (darker + 0.05);
-        };
-
         const mainSan = buttonByName(names.mainSan);
         const variationSan = buttonByName(names.variationSan);
         const currentSan = buttonByName(names.currentVariationSan);
@@ -342,7 +309,6 @@ async function measureHierarchy(notation: Locator): Promise<HierarchyMetrics> {
             variationSanColor,
             dimmed: resolveVar("--mantine-color-dimmed", "color"),
             mainSanColor: getComputedStyle(mainSan).color,
-            contrast: contrastRatio(variationSanColor, blockBackground),
             nagVariationColor: getComputedStyle(nagVariation).color,
             nagMainColor: getComputedStyle(nagMain).color,
             opacities: chain,
@@ -374,7 +340,10 @@ function assertHierarchyStyles(metrics: HierarchyMetrics, view: "inline" | "tabl
     expect(metrics.variationSanColor, `${view} variation SAN differs from main-line SAN`).not.toBe(
         metrics.mainSanColor,
     );
-    expect(metrics.contrast, `${view} variation SAN contrast`).toBeGreaterThanOrEqual(4.5);
+    expect(
+        contrastRatio(metrics.variationSanColor, [metrics.blockBackground]),
+        `${view} variation SAN contrast`,
+    ).toBeGreaterThanOrEqual(4.5);
     expect(metrics.nagVariationColor, `${view} NAG $2 variation SAN`).toBe(metrics.nagMainColor);
     expect(metrics.opacities, `${view} variation block opacity chain`).toEqual(
         metrics.opacities.map(() => "1"),

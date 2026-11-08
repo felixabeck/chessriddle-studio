@@ -18,10 +18,18 @@
 }
 
 .item[aria-selected="true"],
-.item[aria-checked="true"] {
+.item[aria-checked="true"],
+.item:global(.mantine-datatable-page-size-selector-active) {
   background: color-mix(in srgb, var(--cf-primary) 10%, transparent);
   color: var(--cf-primary);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cf-primary) 20%, transparent);
+}
+
+/* mantine-datatable renders the current page size as a disabled item; it is the
+   checked value, not an unavailable one, so it keeps full opacity. */
+.item:global(.mantine-datatable-page-size-selector-active) {
+  opacity: 1;
+  cursor: default;
 }
 
 .divider {

@@ -1,4 +1,5 @@
 import {
+    contrastRatio,
     databaseCommands,
     expect,
     filesWorkspaceCommands,
@@ -2800,3 +2801,41 @@ test("database-files: the sidebar resumes the active database view", async ({
     await expect(page.getByRole("heading", { name: databaseTitle, exact: true })).toBeVisible();
     await expect(databasesLink).toHaveAttribute("aria-current", "page");
 });
+
+for (const scheme of ["dark", "light"] as const) {
+    test(`database-files: the current records-per-page size stays legible in ${scheme} mode`, async ({
+        page,
+        mockScenario,
+    }) => {
+        await page.addInitScript((value) => {
+            localStorage.setItem("mantine-color-scheme", value);
+        }, scheme);
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await mockScenario({ commands: databaseLayoutCommands });
+        await page.goto(`/databases/${gameOpeningFixture.databaseId}`);
+        await expect(page.locator("html")).toHaveAttribute("data-mantine-color-scheme", scheme);
+        await page.getByRole("tab", { name: "Events", exact: true }).click();
+        const events = page.getByRole("tabpanel", { name: "Events", exact: true });
+        await events.getByRole("button", { name: "25", exact: true }).click();
+        const current = page.getByRole("menuitem", { name: "25", exact: true });
+        await expect(current).toBeVisible();
+
+        const metrics = await current.evaluate((element) => {
+            // Every background from the document root down to the item, painted in that order.
+            const layers: string[] = [];
+            for (let node: Element | null = element; node; node = node.parentElement) {
+                layers.unshift(getComputedStyle(node).backgroundColor);
+            }
+            const style = getComputedStyle(element);
+            return { layers, color: style.color, opacity: Number(style.opacity) };
+        });
+        expect(metrics.opacity, "the current size is not drawn as unavailable").toBe(1);
+        expect(
+            contrastRatio(metrics.color, metrics.layers),
+            "current page size contrast",
+        ).toBeGreaterThanOrEqual(4.5);
+        await expect(page.locator(".mantine-Menu-dropdown")).toHaveScreenshot(
+            `records-per-page-menu-${scheme}.png`,
+        );
+    });
+}
