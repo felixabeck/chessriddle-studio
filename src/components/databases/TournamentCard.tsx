@@ -84,7 +84,6 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
     games?.reduce(
       (acc, game) => {
         const whitePlayer = acc.find((p) => p.name === game.white);
-        const blackPlayer = acc.find((p) => p.name === game.black);
         if (!whitePlayer) {
           acc.push({
             name: game.white,
@@ -94,6 +93,9 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
           whitePlayer.points += gamePoints(game, game.white);
         }
 
+        if (game.white === game.black) return acc;
+
+        const blackPlayer = acc.find((p) => p.name === game.black);
         if (!blackPlayer) {
           acc.push({
             name: game.black,

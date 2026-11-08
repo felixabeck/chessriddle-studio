@@ -41,7 +41,7 @@ vi.mock("@tanstack/react-router", () => ({ useNavigate: () => mocks.navigate }))
 vi.mock("lucide-react", () => ({ Eye: () => null }));
 // Keep the table boundary interactive and render the records supplied by TournamentCard.
 vi.mock("mantine-datatable", () => ({
-  DataTable: ({
+  DataTable: <Record extends { id?: number; white?: string; name?: string; points?: number }>({
     records,
     columns,
     page,
@@ -52,8 +52,8 @@ vi.mock("mantine-datatable", () => ({
     onPageChange,
     onSortStatusChange,
   }: {
-    records: NormalizedGame[];
-    columns?: { accessor: string; render?: (game: NormalizedGame) => ReactNode }[];
+    records: Record[];
+    columns?: { accessor: string; render?: (game: Record) => ReactNode }[];
     page?: number;
     totalRecords: number;
     recordsPerPage: number;
@@ -62,9 +62,20 @@ vi.mock("mantine-datatable", () => ({
     onPageChange: (page: number) => void;
     onSortStatusChange: (sort: { columnAccessor: string; direction: "desc" }) => void;
   }) =>
-    page === undefined ? null : (
+    page === undefined ? (
+      <table data-testid="leaderboard">
+        <tbody>
+          {records.map((player, index) => (
+            <tr key={index}>
+              <td>{player.name}</td>
+              <td>{player.points}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    ) : (
       <div>
-        <table>
+        <table data-testid="games">
           <tbody>
             {records.map((game) => (
               <tr key={game.id}>
@@ -230,9 +241,12 @@ async function click(label: string) {
 }
 
 function expectPage(page: number, size: number, ids: number[], total = 60) {
-  expect(Array.from(container.querySelectorAll("tbody tr"), (row) => row.textContent)).toEqual(
-    ids.map((id) => `White ${id}`),
-  );
+  expect(
+    Array.from(
+      container.querySelectorAll('[data-testid="games"] tbody tr'),
+      (row) => row.textContent,
+    ),
+  ).toEqual(ids.map((id) => `White ${id}`));
   expect(container.querySelector("output")?.textContent).toBe(
     `Page ${page} of ${Math.max(1, Math.ceil(total / size))}, size ${size}, total ${total}`,
   );
@@ -246,6 +260,27 @@ async function renderGames() {
   await render(file("pagination"));
   await vi.waitFor(() => expectPage(1, 25, ids(1, 25)));
 }
+
+test.each([
+  { result: "1-0", points: 1 },
+  { result: "0-1", points: 0 },
+  { result: "1/2-1/2", points: 0.5 },
+])(
+  "a self-play game with result $result yields one leaderboard row with $points points",
+  async ({ result, points }) => {
+    const game = { ...games(1)[0], white: "Solo", black: "Solo", result };
+    mocks.getTournamentGames.mockResolvedValue({ data: [game] });
+    await render(file("self-play"));
+    await vi.waitFor(() => {
+      const rows = container.querySelectorAll('[data-testid="leaderboard"] tbody tr');
+      expect(rows).toHaveLength(1);
+      expect(Array.from(rows[0].querySelectorAll("td"), (cell) => cell.textContent)).toEqual([
+        "Solo",
+        String(points),
+      ]);
+    });
+  },
+);
 
 test("page size 10 displays games 11–20 on the second page", async () => {
   await renderGames();

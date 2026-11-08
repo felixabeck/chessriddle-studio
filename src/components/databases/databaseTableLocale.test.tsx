@@ -5,7 +5,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { NormalizedGame } from "@/bindings";
+import type { Event as Tournament, NormalizedGame } from "@/bindings";
 import PanelGamesTable from "@/components/panels/database/GamesTable";
 import { activeDatabaseViewStore } from "@/state/store/database";
 import { installMatchMediaStub } from "@/tests/matchMedia";
@@ -32,8 +32,7 @@ vi.mock("swr", async (original) => ({
             ? [{ id: 1, name: "Alice", elo: 1800, game_count: 15 }]
             : [
                 {
-                  id: 1,
-                  name: "Fixture",
+                  ...tournament,
                   start_date: "2025.01.17",
                   end_date: "2025.02.02",
                   site: "Berlin",
@@ -56,6 +55,16 @@ vi.mock("./GameCard", () => ({ default: () => null }));
 vi.mock("./PlayerCard", () => ({ default: () => null }));
 
 const file = { id: { id: "locale-database" }, kind: "database" } as const;
+const tournament = {
+  id: 1,
+  name: "Fixture",
+  start_date: null,
+  end_date: null,
+  site: null,
+  player_count: 0,
+  game_count: 0,
+  avg_elo: null,
+} satisfies Tournament;
 const game = {
   id: 1,
   white: "Alice",
@@ -154,23 +163,7 @@ test("board-panel games render the German empty state", async () => {
 
 test.each(["games", "tournament"])("%s renders both German unrated labels", async (view) => {
   await render(
-    view === "games" ? (
-      <GameTable />
-    ) : (
-      <TournamentCard
-        tournament={{
-          id: 1,
-          name: "Fixture",
-          start_date: null,
-          end_date: null,
-          site: null,
-          player_count: 0,
-          game_count: 0,
-          avg_elo: null,
-        }}
-        file={file}
-      />
-    ),
+    view === "games" ? <GameTable /> : <TournamentCard tournament={tournament} file={file} />,
   );
   expect(
     [...host.querySelectorAll("tbody td")].filter((cell) =>
@@ -182,23 +175,7 @@ test.each(["games", "tournament"])("%s renders both German unrated labels", asyn
 test.each(["games", "tournament"])("%s renders its German empty state", async (view) => {
   mocks.empty = true;
   await render(
-    view === "games" ? (
-      <GameTable />
-    ) : (
-      <TournamentCard
-        tournament={{
-          id: 1,
-          name: "Fixture",
-          start_date: null,
-          end_date: null,
-          site: null,
-          player_count: 0,
-          game_count: 0,
-          avg_elo: null,
-        }}
-        file={file}
-      />
-    ),
+    view === "games" ? <GameTable /> : <TournamentCard tournament={tournament} file={file} />,
   );
   expect(host.textContent).toContain("Keine Partien gefunden");
 });
@@ -214,19 +191,7 @@ test.each(["games", "players", "tournaments", "tournament"])(
       ) : view === "tournaments" ? (
         <TournamentTable />
       ) : (
-        <TournamentCard
-          tournament={{
-            id: 1,
-            name: "Fixture",
-            start_date: null,
-            end_date: null,
-            site: null,
-            player_count: 0,
-            game_count: 0,
-            avg_elo: null,
-          }}
-          file={file}
-        />
+        <TournamentCard tournament={tournament} file={file} />
       ),
     );
     expect(host.textContent).toContain("Einträge pro Seite");
@@ -234,21 +199,7 @@ test.each(["games", "players", "tournaments", "tournament"])(
 );
 
 test("TournamentCard renders German game headers and leaves the actions header empty", async () => {
-  await render(
-    <TournamentCard
-      tournament={{
-        id: 1,
-        name: "Fixture",
-        start_date: null,
-        end_date: null,
-        site: null,
-        player_count: 0,
-        game_count: 0,
-        avg_elo: null,
-      }}
-      file={file}
-    />,
-  );
+  await render(<TournamentCard tournament={tournament} file={file} />);
   expect(headers()).toEqual(["", "Weiß", "Schwarz", "Datum", "Ergebnis", "Halbzüge"]);
 });
 
@@ -338,14 +289,9 @@ test("TournamentCard renders shared Games and Leaderboard presets", async () => 
   await render(
     <TournamentCard
       tournament={{
-        id: 1,
-        name: "Fixture",
-        start_date: null,
-        end_date: null,
-        site: null,
+        ...tournament,
         player_count: 2,
         game_count: 1,
-        avg_elo: null,
       }}
       file={file}
     />,
@@ -393,21 +339,7 @@ test.each(["players", "tournaments"])("%s renders French headers", async (view) 
 test("TournamentCard renders the German empty leaderboard", async () => {
   mocks.empty = true;
   activeDatabaseViewStore.getState().setTournamentsActiveTab("leaderboard");
-  await render(
-    <TournamentCard
-      tournament={{
-        id: 1,
-        name: "Fixture",
-        start_date: null,
-        end_date: null,
-        site: null,
-        player_count: 0,
-        game_count: 0,
-        avg_elo: null,
-      }}
-      file={file}
-    />,
-  );
+  await render(<TournamentCard tournament={tournament} file={file} />);
   expect(host.querySelector('[role="tabpanel"][id$="-panel-leaderboard"]')?.textContent).toContain(
     "Keine Spieler gefunden",
   );
