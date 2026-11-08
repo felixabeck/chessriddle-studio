@@ -1,6 +1,15 @@
-import { Button, Group, SegmentedControl, Stack, Text } from "@mantine/core";
+import {
+  Button,
+  Group,
+  NativeSelect,
+  SegmentedControl,
+  Skeleton,
+  Stack,
+  Text,
+} from "@mantine/core";
 import { useNavigate } from "@tanstack/react-router";
 import type { Color } from "chessops";
+import dayjs from "dayjs";
 import { useSetAtom, useStore } from "jotai";
 import { ChevronLeft, RotateCcw } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -37,10 +46,18 @@ export default function PlayerOpeningTree(props: { player: Player; file: Databas
 function OpeningTree({ player, file }: { player: Player; file: DatabaseHandle }) {
   const { t } = useTranslation();
   const [color, setColor] = useState<Color>("white");
+  const [since, setSince] = useState({ preset: "all", startDate: undefined as string | undefined });
   const [moves, setMoves] = useState<string[]>([]);
   const [selected, setSelected] = useState<NormalizedGame | null>(null);
   const [preparing, setPreparing] = useState(false);
   const line = useMemo(() => playerOpeningLine(moves, color), [moves, color]);
+  const name =
+    player.name?.split(",")[0].trim() ||
+    t("Databases.OpeningTree.Player", { defaultValue: "Player" });
+  const colorLabel = t("Databases.OpeningTree.PlayerPlays", {
+    defaultValue: "{{name}} plays:",
+    name,
+  });
   const options: LocalOptions = {
     path: file,
     player: player.id,
@@ -49,10 +66,12 @@ function OpeningTree({ player, file }: { player: Player; file: DatabaseHandle })
     fen: line.fen,
     type: "exact",
     result: "any",
-    include_unknown_results: true,
-    sample_order: "date",
+    ...(since.startDate ? { start_date: since.startDate } : {}),
   };
-  const { openings, games, loading, error, progressId } = useLocalExplorer(options, true);
+  const { openings, games, loading, error, progressId } = useLocalExplorer(
+    { ...options, include_unknown_results: true, sample_order: "date" },
+    true,
+  );
   const total = openings.reduce(
     (sum, row) => sum + row.white + row.draw + row.black + row.unknown,
     0,
@@ -87,15 +106,7 @@ function OpeningTree({ player, file }: { player: Player; file: DatabaseHandle })
             initialTree: line.tree,
           }),
         onSuccess: (id) => {
-          atoms.set(localOptionsFamily(id), {
-            path: file,
-            fen: line.fen,
-            type: "exact",
-            player: player.id,
-            player_database: databaseHandleKey(file),
-            color,
-            result: "any",
-          });
+          atoms.set(localOptionsFamily(id), options);
           atoms.set(pinnedExplorerDatabaseFamily(id), file);
           atoms.set(dbTypeFamily(id), "local");
           atoms.set(dbTabFamily(id), "stats");
@@ -111,8 +122,12 @@ function OpeningTree({ player, file }: { player: Player; file: DatabaseHandle })
 
   return (
     <Stack className={classes.root} gap="sm" data-player-opening-tree>
-      <div className={classes.toolbar}>
+      <div className={classes.toolbar} data-opening-toolbar>
+        <Text size="sm" className="wrap-anywhere">
+          {colorLabel}
+        </Text>
         <SegmentedControl
+          aria-label={colorLabel}
           value={color}
           onChange={(value) => {
             setColor(value as Color);
@@ -121,6 +136,35 @@ function OpeningTree({ player, file }: { player: Player; file: DatabaseHandle })
           data={[
             { value: "white", label: t("Fen.White") },
             { value: "black", label: t("Fen.Black") },
+          ]}
+        />
+        <NativeSelect
+          className={classes.since}
+          size="xs"
+          label={t("Databases.OpeningTree.Since", { defaultValue: "Since" })}
+          value={since.preset}
+          onChange={(event) => {
+            const preset = event.currentTarget.value;
+            setSince({
+              preset,
+              startDate:
+                preset === "all"
+                  ? undefined
+                  : dayjs().subtract(Number(preset), "year").format("YYYY.MM.DD"),
+            });
+            setSelected(null);
+          }}
+          data={[
+            {
+              value: "all",
+              label: t("Databases.OpeningTree.AllGames", { defaultValue: "All games" }),
+            },
+            {
+              value: "5",
+              label: t("Databases.OpeningTree.FiveYears", { defaultValue: "5 years" }),
+            },
+            { value: "2", label: t("Databases.OpeningTree.TwoYears", { defaultValue: "2 years" }) },
+            { value: "1", label: t("Databases.OpeningTree.OneYear", { defaultValue: "1 year" }) },
           ]}
         />
         <Text size="sm" className={classes.notation} data-opening-sequence>
@@ -149,6 +193,17 @@ function OpeningTree({ player, file }: { player: Player; file: DatabaseHandle })
           {t("Databases.OpeningTree.Prepare", { defaultValue: "Prepare on board" })}
         </Button>
       </div>
+      <Text size="sm" c="dimmed" className="wrap-anywhere">
+        {color === "white"
+          ? t("Databases.OpeningTree.WhiteHint", {
+              defaultValue: "Showing games where {{name}} has White. You prepare with Black.",
+              name,
+            })
+          : t("Databases.OpeningTree.BlackHint", {
+              defaultValue: "Showing games where {{name}} has Black. You prepare with White.",
+              name,
+            })}
+      </Text>
       <div className={classes.body}>
         <div className={classes.board} data-opening-board data-fen={line.fen}>
           <Chessground
@@ -160,7 +215,23 @@ function OpeningTree({ player, file }: { player: Player; file: DatabaseHandle })
           />
         </div>
         <div className={classes.inset}>
-          {loading && <DatabaseLoader isLoading tab={progressId} />}
+          {loading && (
+            <>
+              <DatabaseLoader
+                isLoading
+                tab={progressId}
+                label={t("Databases.OpeningTree.Searching", {
+                  defaultValue: "Searching {{name}}'s games…",
+                  name,
+                })}
+              />
+              <Stack gap="xs" mt="sm" aria-hidden="true" data-opening-skeleton>
+                {Array.from({ length: 5 }, (_, index) => (
+                  <Skeleton key={index} height="1.5rem" />
+                ))}
+              </Stack>
+            </>
+          )}
           {error ? (
             <Text role="alert" c="danger">
               {t("Home.Databases.ErrorLoading", { error })}
@@ -236,7 +307,7 @@ function OpeningTree({ player, file }: { player: Player; file: DatabaseHandle })
                                 won={won}
                                 draw={row.draw}
                                 lost={lost}
-                                size="0.6rem"
+                                size="1.125rem"
                                 playerPerspective
                               />
                             </td>
@@ -302,7 +373,12 @@ function OpeningTree({ player, file }: { player: Player; file: DatabaseHandle })
           {selected && (
             <div data-opening-preview>
               <Group justify="end">
-                <Button size="xs" variant="default" onClick={() => open(selected)}>
+                <Button
+                  size="xs"
+                  variant="default"
+                  onClick={() => open(selected)}
+                  data-opening-open
+                >
                   {t("Databases.OpeningTree.Open", { defaultValue: "Open on board" })}
                 </Button>
               </Group>

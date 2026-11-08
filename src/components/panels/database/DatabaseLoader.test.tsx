@@ -25,11 +25,11 @@ import DatabaseLoader from "./DatabaseLoader";
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 installMatchMediaStub();
 
-function renderLoader(isLoading: boolean, tab: string | null) {
+function renderLoader(isLoading: boolean, tab: string | null, label?: string) {
   return act(async () => {
     root.render(
       <MantineProvider>
-        <DatabaseLoader isLoading={isLoading} tab={tab} />
+        <DatabaseLoader isLoading={isLoading} tab={tab} label={label} />
       </MantineProvider>,
     );
   });
@@ -90,6 +90,42 @@ afterEach(async () => {
 });
 
 describe("DatabaseLoader", () => {
+  test("the default loader renders only the existing bar without status text", async () => {
+    await renderLoader(true, "tab-1");
+    const content = container.cloneNode(true) as HTMLElement;
+    for (const style of content.querySelectorAll("style")) style.remove();
+    expect(content.textContent?.trim()).toBe("");
+    expect(container.querySelector('[role="status"]')).toBeNull();
+    expect(container.querySelectorAll('[role="progressbar"]')).toHaveLength(1);
+  });
+
+  test("an optional live label shows a whole percentage only after reported progress", async () => {
+    await renderLoader(true, "tab-1", "Searching Imnadze's games…");
+    const status = () => container.querySelector('[role="status"]');
+    expect(status()?.getAttribute("aria-live")).toBe("polite");
+    expect(status()?.textContent).toBe("Searching Imnadze's games…");
+    await emit({ progress: 24.6 });
+    expect(status()?.textContent).toBe("Searching Imnadze's games… 25%");
+  });
+
+  test.each(["failed", "cancelled"] as const)(
+    "the label discards stale progress when %s",
+    async (state) => {
+      await renderLoader(true, "tab-1", "Searching Imnadze's games…");
+      await emit({ progress: 75 });
+      expect(container.querySelector('[role="status"]')?.textContent).toContain("75%");
+      await emit({ progress: 75, finished: true, state });
+      expect(container.querySelector('[role="status"]')?.textContent).toBe(
+        "Searching Imnadze's games…",
+      );
+      await renderLoader(false, "tab-1", "Searching Imnadze's games…");
+      expect(barValue()).toBe(0);
+      expect(container.querySelector('[role="status"]')?.textContent).toBe(
+        "Searching Imnadze's games…",
+      );
+    },
+  );
+
   test("shows the reported percentage while a search is running", async () => {
     await renderLoader(true, "tab-1");
     await emit({ progress: 75 });

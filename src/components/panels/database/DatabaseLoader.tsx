@@ -1,7 +1,15 @@
-import { Progress } from "@mantine/core";
+import { Progress, Text } from "@mantine/core";
 import { useProgress } from "@/hooks/useProgress";
 
-function DatabaseLoader({ isLoading, tab }: { isLoading: boolean; tab: string | null }) {
+function DatabaseLoader({
+  isLoading,
+  tab,
+  label,
+}: {
+  isLoading: boolean;
+  tab: string | null;
+  label?: string;
+}) {
   const { progress, isActive, item } = useProgress(tab ?? "");
   const isLoadingFromMemory = isLoading && (!isActive || progress === 0);
   // Reported progress is monotonic in the progress store, so a search that
@@ -10,13 +18,24 @@ function DatabaseLoader({ isLoading, tab }: { isLoading: boolean; tab: string | 
   // entry expires.
   const endedWithoutResult = item !== null && item.finished && item.state !== "succeeded";
 
-  return (
+  const bar = (
     <Progress
       animated={isLoadingFromMemory}
       value={isLoadingFromMemory ? 100 : endedWithoutResult ? 0 : progress}
       size="xs"
       mt="xs"
     />
+  );
+  return label === undefined ? (
+    bar
+  ) : (
+    <>
+      <Text role="status" aria-live="polite" size="sm" className="wrap-anywhere">
+        {label}
+        {!endedWithoutResult && progress > 0 ? ` ${Math.round(progress)}%` : ""}
+      </Text>
+      {bar}
+    </>
   );
 }
 

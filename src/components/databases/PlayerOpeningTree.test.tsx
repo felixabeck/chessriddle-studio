@@ -77,7 +77,9 @@ vi.mock("./GamePreview", () => ({
   default: ({ pgn }: { pgn: string }) => <div data-game-preview>{pgn}</div>,
 }));
 vi.mock("@/components/panels/database/DatabaseLoader", () => ({
-  default: ({ tab }: { tab: string }) => <div data-progress={tab} />,
+  default: ({ tab, label }: { tab: string; label?: string }) => (
+    <div data-progress={tab}>{label}</div>
+  ),
 }));
 
 // Use real catalogue interpolation for totals, scores and accessible controls.
@@ -157,6 +159,7 @@ afterEach(async () => {
   treeStore?.dispose();
   treeStore = undefined;
   container.remove();
+  vi.useRealTimers();
 });
 
 async function render(playerOverride = player, fileOverride = file, panelId?: string) {
@@ -200,6 +203,86 @@ function button(label: string) {
 async function black() {
   await click(container.querySelector('input[value="black"]')!);
 }
+
+async function since(value: string) {
+  const select = container.querySelector("select")!;
+  await act(async () => {
+    select.value = value;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+test.each([
+  ["Imnadze, Giorgi", "Imnadze"],
+  ["Selected player", "Selected player"],
+  ["", "Player"],
+])("the colour switch names %s and explains both preparation sides", async (fullName, name) => {
+  await render({ ...player, name: fullName });
+  const switchControl = container.querySelector('[role="radiogroup"]');
+  expect(switchControl?.getAttribute("aria-label")).toBe(`${name} plays:`);
+  expect(container.textContent).toContain(`${name} plays:`);
+  expect(container.textContent).toContain(
+    `Showing games where ${name} has White. You prepare with Black.`,
+  );
+  expect(mocks.searchPosition.mock.lastCall?.[1]).toMatchObject({
+    player1: 42,
+    player2: undefined,
+  });
+  await black();
+  expect(container.textContent).toContain(
+    `Showing games where ${name} has Black. You prepare with White.`,
+  );
+  expect(mocks.searchPosition.mock.lastCall?.[1]).toMatchObject({
+    player1: undefined,
+    player2: 42,
+  });
+});
+
+test("the tree enlarges W/D/L labels without changing the chart API", async () => {
+  await render();
+  const chart = row("e4").cells[3].querySelector<HTMLElement>(".mantine-Progress-root")!;
+  expect(chart.style.getPropertyValue("--progress-size")).toBe("1.125rem");
+});
+
+test("Since keeps one rolling cutoff for the search and Prepare, retains moves and clears selection", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(2026, 10, 8, 12));
+  await render();
+  expect(container.querySelector("select")?.value).toBe("all");
+  expect(mocks.searchPosition.mock.lastCall?.[1].start_date).toBeUndefined();
+  await click(row("e4"));
+  await click(container.querySelector("[data-opening-games] tbody tr")!);
+  expect(container.querySelector("[data-opening-preview]")).not.toBeNull();
+  await since("1");
+  expect(mocks.searchPosition.mock.lastCall?.[1]).toMatchObject({
+    start_date: "2025.11.08",
+    position: { fen: e4Fen },
+  });
+  expect(container.querySelector("[data-opening-games]")?.textContent).toContain("Next opponent");
+  expect(container.querySelector("[data-opening-preview]")).toBeNull();
+  expect(container.querySelector("[data-opening-sequence]")?.textContent).toBe("1. e4");
+  vi.setSystemTime(new Date(2026, 10, 9, 12));
+  await black();
+  expect(mocks.searchPosition.mock.lastCall?.[1].start_date).toBe("2025.11.08");
+  await click(button("Prepare on board"));
+  const id = store.get(tabsAtom).at(-1)!.value;
+  expect(store.get(localOptionsFamily(id))).toMatchObject({
+    start_date: "2025.11.08",
+    color: "black",
+    fen: e4Fen,
+  });
+  await since("5");
+  expect(mocks.searchPosition.mock.lastCall?.[1].start_date).toBe("2021.11.09");
+  await since("2");
+  expect(mocks.searchPosition.mock.lastCall?.[1].start_date).toBe("2024.11.09");
+  mocks.searchPosition.mockResolvedValueOnce([[], []]);
+  await since("all");
+  expect(mocks.searchPosition.mock.lastCall?.[1].start_date).toBeUndefined();
+  expect(container.textContent).toContain("No games in this position");
+  await click(button("Prepare on board"));
+  const allId = store.get(tabsAtom).at(-1)!.value;
+  expect(store.get(localOptionsFamily(allId))).not.toHaveProperty("start_date");
+});
 
 test("native query, scores, terminal row and navigation follow the player's exact position", async () => {
   await render();
@@ -398,7 +481,18 @@ test("loading, empty, failure and truncated samples retain in-card feedback", as
   expect(container.querySelector("[data-progress]")?.getAttribute("data-progress")).toMatch(
     /^local-explorer:/,
   );
+  expect(container.querySelector("[data-progress]")?.textContent).toBe(
+    "Searching Selected player's games…",
+  );
+  expect(container.querySelector("[data-opening-skeleton]")?.getAttribute("aria-hidden")).toBe(
+    "true",
+  );
+  expect(container.querySelectorAll("[data-opening-skeleton] .mantine-Skeleton-root")).toHaveLength(
+    5,
+  );
+  expect(container.querySelector("[data-opening-moves]")).toBeNull();
   await act(async () => complete([[], []]));
+  expect(container.querySelector("[data-opening-skeleton]")).toBeNull();
   expect(container.textContent).toContain("No games in this position");
   mocks.searchPosition.mockRejectedValueOnce(new Error("unavailable"));
   await black();

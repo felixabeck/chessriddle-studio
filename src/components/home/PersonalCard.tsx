@@ -115,7 +115,13 @@ function PersonalPlayerCard({
           value="openings"
           style={
             isDatabase && databasePlayer
-              ? { flex: 1, minHeight: 0, overflowY: "auto" }
+              ? {
+                  flex: 1,
+                  minHeight: 0,
+                  overflowY: "auto",
+                  scrollbarGutter: "stable",
+                  paddingRight: "1.25rem",
+                }
               : { overflow: "hidden" }
           }
         >

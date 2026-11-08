@@ -89,6 +89,29 @@ for (const width of [1920, 320]) {
             };
         });
         expect(layout.scroll).toBeLessThanOrEqual(layout.width + 1);
+        const clearance = await tree.evaluate((element) => {
+            const panel = element.closest<HTMLElement>('[role="tabpanel"]')!;
+            const style = getComputedStyle(panel);
+            const padding = Number.parseFloat(style.paddingRight);
+            const contentRight =
+                panel.getBoundingClientRect().left + panel.clientLeft + panel.clientWidth - padding;
+            return {
+                padding,
+                gutter: style.scrollbarGutter,
+                contentRight,
+                rightEdges: [
+                    ...element.querySelectorAll(
+                        "[data-opening-toolbar], [data-opening-moves], [data-opening-games], [data-opening-open]",
+                    ),
+                ].map((item) => item.getBoundingClientRect().right),
+            };
+        });
+        expect(clearance.gutter).toBe("stable");
+        // Explicit padding also protects content when an overlay scrollbar reserves no gutter.
+        expect(clearance.padding).toBeGreaterThanOrEqual(20);
+        expect(clearance.rightEdges).toHaveLength(4);
+        for (const right of clearance.rightEdges)
+            expect(right).toBeLessThanOrEqual(clearance.contentRight + 1);
         expect(Math.abs(layout.board.width - layout.board.height)).toBeLessThan(1);
         if (width === 320) expect(layout.table.y).toBeGreaterThanOrEqual(layout.board.bottom);
         if (layout.width >= 576) expect(layout.table.x).toBeGreaterThan(layout.board.x);
