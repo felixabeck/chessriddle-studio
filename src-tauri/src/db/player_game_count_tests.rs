@@ -283,7 +283,7 @@ fn benchmark_conversion_count_triggers() {
                 Ok(())
             })?;
             create_required_indexes(db)?;
-            update_database_counts(db)?;
+            refresh_derived_database_data(db)?;
             Ok(())
         }).unwrap();
         let elapsed = start.elapsed();

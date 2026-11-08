@@ -363,8 +363,19 @@ fn migrate_event_summaries(conn: &mut SqliteConnection) -> Result<(), Error> {
 }
 
 fn validate_event_summary_schema(conn: &mut SqliteConnection) -> Result<(), Error> {
-    let query = "SELECT name, sql FROM sqlite_master WHERE name = 'games_event_idx'
-        OR name = 'EventSummaryDirty' OR name LIKE 'event_summary_%'";
+    validate_canonical_objects(
+        conn,
+        "SELECT name, sql FROM sqlite_master WHERE name = 'games_event_idx'
+        OR name = 'EventSummaryDirty' OR name LIKE 'event_summary_%'",
+        "Event summary table, index or triggers are not canonical",
+    )
+}
+
+fn validate_canonical_objects(
+    conn: &mut SqliteConnection,
+    query: &str,
+    mismatch_message: &str,
+) -> Result<(), Error> {
     let actual: Vec<TriggerInfo> = sql_query(query).load(conn)?;
     let mut canonical =
         SqliteConnection::establish(":memory:").map_err(crate::error::map_sqlite_establish)?;
@@ -378,9 +389,7 @@ fn validate_event_summary_schema(conn: &mut SqliteConnection) -> Result<(), Erro
             })
         })
     {
-        return Err(Error::InvalidInput(
-            "Event summary table, index or triggers are not canonical".into(),
-        ));
+        return Err(Error::InvalidInput(mismatch_message.into()));
     }
     Ok(())
 }
@@ -411,28 +420,11 @@ fn migrate_player_game_counts(conn: &mut SqliteConnection) -> Result<(), Error> 
 }
 
 fn validate_player_game_count_schema(conn: &mut SqliteConnection) -> Result<(), Error> {
-    let actual: Vec<TriggerInfo> = sql_query(
-        "SELECT name, sql FROM sqlite_master WHERE name = 'players_game_count_idx' OR name LIKE 'player_game_count_%'"
-    ).load(conn)?;
-    let mut canonical =
-        SqliteConnection::establish(":memory:").map_err(crate::error::map_sqlite_establish)?;
-    canonical.batch_execute(CREATE_TABLES_SQL)?;
-    let expected: Vec<TriggerInfo> = sql_query(
-        "SELECT name, sql FROM sqlite_master WHERE name = 'players_game_count_idx' OR name LIKE 'player_game_count_%'"
-    ).load(&mut canonical)?;
-    if actual.len() != expected.len()
-        || expected.iter().any(|expected| {
-            !actual.iter().any(|actual| {
-                actual.name == expected.name
-                    && normalize_sql(&actual.sql) == normalize_sql(&expected.sql)
-            })
-        })
-    {
-        return Err(Error::InvalidInput(
-            "Player game count index or triggers are not canonical".into(),
-        ));
-    }
-    Ok(())
+    validate_canonical_objects(
+        conn,
+        "SELECT name, sql FROM sqlite_master WHERE name = 'players_game_count_idx' OR name LIKE 'player_game_count_%'",
+        "Player game count index or triggers are not canonical",
+    )
 }
 
 fn info_value(conn: &mut SqliteConnection, name: &str) -> Result<Option<String>, Error> {

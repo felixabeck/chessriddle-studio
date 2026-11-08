@@ -1476,7 +1476,7 @@ pub(crate) fn convert_pgn_blocking<R: tauri::Runtime>(
                 if database_was_created {
                     create_required_indexes(db)?;
                 }
-                update_database_counts(db)?;
+                refresh_derived_database_data(db)?;
                 #[cfg(test)]
                 CONVERSION_BEFORE_REVISION.run(&progress_id);
                 Ok(())
@@ -4316,7 +4316,7 @@ fn delete_orphaned_data(db: &mut SqliteConnection) -> Result<(), Error> {
     Ok(())
 }
 
-fn update_database_counts(db: &mut SqliteConnection) -> Result<(), Error> {
+fn refresh_derived_database_data(db: &mut SqliteConnection) -> Result<(), Error> {
     event_summaries::refresh_event_summaries(db)?;
     let game_count: i64 = games::table.count().get_result(db)?;
     update_info_count(db, "GameCount", game_count)?;
@@ -4333,9 +4333,9 @@ fn update_database_counts(db: &mut SqliteConnection) -> Result<(), Error> {
     Ok(())
 }
 
-fn remove_orphans_and_update_counts(db: &mut SqliteConnection) -> Result<(), Error> {
+fn remove_orphans_and_refresh_derived_data(db: &mut SqliteConnection) -> Result<(), Error> {
     delete_orphaned_data(db)?;
-    update_database_counts(db)
+    refresh_derived_database_data(db)
 }
 
 #[tauri::command]
@@ -4407,7 +4407,7 @@ fn delete_duplicated_games_transaction(db: &mut SqliteConnection) -> Result<(), 
         ",
     )?;
 
-    remove_orphans_and_update_counts(db)?;
+    remove_orphans_and_refresh_derived_data(db)?;
 
     Ok(())
 }
@@ -4458,7 +4458,7 @@ pub(crate) fn delete_empty_games_blocking(
 fn delete_empty_games_transaction(db: &mut SqliteConnection) -> Result<(), Error> {
     diesel::delete(games::table.filter(games::ply_count.eq(0))).execute(db)?;
 
-    remove_orphans_and_update_counts(db)?;
+    remove_orphans_and_refresh_derived_data(db)?;
 
     Ok(())
 }
@@ -4800,7 +4800,7 @@ fn delete_db_game_blocking(
 fn delete_db_game_transaction(db: &mut SqliteConnection, game_id: i32) -> Result<(), Error> {
     diesel::delete(games::table.filter(games::id.eq(game_id))).execute(db)?;
 
-    remove_orphans_and_update_counts(db)?;
+    remove_orphans_and_refresh_derived_data(db)?;
 
     Ok(())
 }
@@ -4869,7 +4869,7 @@ fn insert_db_game_from_reader(
         &file,
         |db| {
             let id = game.insert_to_db(db)?;
-            update_database_counts(db)?;
+            refresh_derived_database_data(db)?;
             let row = games::table.find(id).first::<Game>(db)?;
             inserted = Some(InsertedDbGame {
                 id,
@@ -4946,7 +4946,7 @@ fn write_db_game_blocking(
                 game_id,
                 &temp_game,
                 &expected_stamp,
-                remove_orphans_and_update_counts,
+                remove_orphans_and_refresh_derived_data,
             )?);
             Ok(())
         },
@@ -5164,7 +5164,7 @@ fn merge_players_transaction(
         )));
     }
 
-    remove_orphans_and_update_counts(db)?;
+    remove_orphans_and_refresh_derived_data(db)?;
 
     Ok(())
 }
@@ -6388,7 +6388,7 @@ mod tests {
             .unwrap();
 
         // Before fix: orphans would remain. Call our cleanup function.
-        remove_orphans_and_update_counts(db).unwrap();
+        remove_orphans_and_refresh_derived_data(db).unwrap();
 
         // Players: only the sentinel "Unknown" (ID=0) should remain
         let player_count: i64 = players::table.count().get_result(db).unwrap();
@@ -6461,7 +6461,7 @@ mod tests {
         diesel::delete(games::table.filter(games::id.eq(game1.id)))
             .execute(db)
             .unwrap();
-        remove_orphans_and_update_counts(db).unwrap();
+        remove_orphans_and_refresh_derived_data(db).unwrap();
 
         // Magnus should be gone (only in game 1), but Hikaru and Fabiano should remain
         let player_count: i64 = players::table.count().get_result(db).unwrap();
@@ -6486,7 +6486,7 @@ mod tests {
         diesel::delete(games::table.filter(games::id.eq(game2.id)))
             .execute(db)
             .unwrap();
-        remove_orphans_and_update_counts(db).unwrap();
+        remove_orphans_and_refresh_derived_data(db).unwrap();
 
         let player_count: i64 = players::table.count().get_result(db).unwrap();
         assert_eq!(player_count, 1, "Only Unknown should remain");
@@ -6864,7 +6864,7 @@ mod tests {
             .set(games::ply_count.eq(0))
             .execute(db)
             .unwrap();
-        remove_orphans_and_update_counts(db).unwrap();
+        remove_orphans_and_refresh_derived_data(db).unwrap();
         let before = database_state(db);
 
         let result: Result<(), Error> = db.transaction(|db| {
@@ -6881,7 +6881,7 @@ mod tests {
     #[test]
     fn writing_nonexistent_game_leaves_database_unchanged() {
         let db = &mut setup_test_db();
-        remove_orphans_and_update_counts(db).unwrap();
+        remove_orphans_and_refresh_derived_data(db).unwrap();
         let before = database_state(db);
         let replacement = parsed_game(&test_game_pgn(
             "New White",
@@ -6896,7 +6896,7 @@ mod tests {
                 404,
                 &replacement,
                 "missing",
-                remove_orphans_and_update_counts,
+                remove_orphans_and_refresh_derived_data,
             )
         });
 
@@ -6925,7 +6925,7 @@ mod tests {
                 game.id,
                 &replacement,
                 &game_row_stamp(&game),
-                remove_orphans_and_update_counts,
+                remove_orphans_and_refresh_derived_data,
             )
         })
         .unwrap();
@@ -6975,7 +6975,7 @@ mod tests {
         let old_event = create_event(db, "Old Event").unwrap();
         let old_site = create_site(db, "Old Site").unwrap();
         let game = insert_test_game(db, old_white.id, old_black.id, old_event.id, old_site.id);
-        remove_orphans_and_update_counts(db).unwrap();
+        remove_orphans_and_refresh_derived_data(db).unwrap();
         let before = database_state(db);
         let replacement = parsed_game(&test_game_pgn(
             "New White",
@@ -7010,7 +7010,7 @@ mod tests {
         let site = create_site(db, "Site").unwrap();
         insert_test_game(db, source.id, opponent.id, event.id, site.id);
         insert_test_game(db, target.id, opponent.id, event.id, site.id);
-        remove_orphans_and_update_counts(db).unwrap();
+        remove_orphans_and_refresh_derived_data(db).unwrap();
         let before = database_state(db);
 
         for (source_id, target_id, expected_message) in [
@@ -7048,7 +7048,7 @@ mod tests {
             };
             assert_ne!(white_is_source, black_is_source);
             insert_test_game(db, white_id, black_id, event.id, site.id);
-            remove_orphans_and_update_counts(db).unwrap();
+            remove_orphans_and_refresh_derived_data(db).unwrap();
             let before = database_state(db);
 
             let result = db.transaction(|db| merge_players_transaction(db, source.id, target.id));
@@ -7070,10 +7070,30 @@ mod tests {
         let black_game = insert_test_game(db, opponent.id, source.id, event.id, site.id);
         // Self-play remains one distinct participant after merging the source.
         insert_test_game(db, source.id, source.id, event.id, site.id);
+        insert_test_game(db, target.id, opponent.id, event.id, site.id);
+        db.transaction::<_, Error, _>(refresh_derived_database_data)
+            .unwrap();
+        event_summary_tests::assert_event_summaries(db);
+        assert_eq!(
+            events::table
+                .find(event.id)
+                .select(events::player_count)
+                .first::<i32>(db)
+                .unwrap(),
+            3
+        );
 
         db.transaction(|db| merge_players_transaction(db, source.id, target.id))
             .unwrap();
 
+        assert_eq!(
+            events::table
+                .find(event.id)
+                .select(events::player_count)
+                .first::<i32>(db)
+                .unwrap(),
+            2
+        );
         assert_eq!(
             games::table
                 .find(white_game.id)
@@ -10270,7 +10290,7 @@ mod tests {
                 .database_repository
                 .connection(&test_target(&database), None)
                 .unwrap();
-            update_database_counts(&mut db).unwrap();
+            refresh_derived_database_data(&mut db).unwrap();
             db.batch_execute(
                 "CREATE TRIGGER fail_count_update BEFORE UPDATE ON Info
                  WHEN NEW.Name = 'GameCount'

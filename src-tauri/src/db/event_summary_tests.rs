@@ -97,7 +97,7 @@ fn summaries_cover_edges_dirty_reassignment_and_last_game_deletion() {
     )
     .unwrap();
     db.transaction::<_, Error, _>(|db| {
-        update_database_counts(db)?;
+        refresh_derived_database_data(db)?;
         Ok(())
     })
     .unwrap();
@@ -112,7 +112,7 @@ fn summaries_cover_edges_dirty_reassignment_and_last_game_deletion() {
         .unwrap();
     db.transaction::<_,Error,_>(|db| {
         db.batch_execute("UPDATE Games SET EventID=2, SiteID=1, Date='2020.??.??', WhiteID=2, BlackID=2, WhiteElo=1700, BlackElo=NULL WHERE ID=1;")?;
-        update_database_counts(db)
+        refresh_derived_database_data(db)
     }).unwrap();
     assert_eq!(
         events::table
@@ -131,11 +131,35 @@ fn summaries_cover_edges_dirty_reassignment_and_last_game_deletion() {
     ] {
         db.transaction::<_, Error, _>(|db| {
             db.batch_execute(sql)?;
-            update_database_counts(db)
+            refresh_derived_database_data(db)
         })
         .unwrap();
         assert_event_summaries(&mut db);
     }
+}
+
+#[test]
+fn summary_site_prefers_frequency_over_lowest_site_id() {
+    let mut db = SqliteConnection::establish(":memory:").unwrap();
+    db.batch_execute(CREATE_TABLES_SQL).unwrap();
+    db.batch_execute(
+        "INSERT INTO Events(ID,Name) VALUES(1,'Event');
+         INSERT INTO Sites(ID,Name) VALUES(1,'Low'),(2,'High');
+         INSERT INTO Games(EventID,SiteID) VALUES(1,1),(1,2),(1,2);",
+    )
+    .unwrap();
+    db.transaction::<_, Error, _>(refresh_derived_database_data)
+        .unwrap();
+
+    assert_eq!(
+        events::table
+            .find(1)
+            .select(events::site_id)
+            .first::<i32>(&mut db)
+            .unwrap(),
+        2
+    );
+    assert_event_summaries(&mut db);
 }
 
 fn query(sort: TournamentSort, direction: SortDirection, page: i32) -> TournamentQuery {
@@ -165,7 +189,7 @@ fn production_read_dto_all_sorts_nulls_ties_pages_and_filter() {
          INSERT INTO Games(EventID,SiteID,Date,WhiteID,BlackID,WhiteElo)
          SELECT ID,1,'2025.01.01',1,2,2000 FROM Events WHERE ID IN(2,3,6,7);"
     ).unwrap();
-    db.transaction::<_, Error, _>(update_database_counts)
+    db.transaction::<_, Error, _>(refresh_derived_database_data)
         .unwrap();
     let state = app.state::<AppState>();
     let run = |query| {

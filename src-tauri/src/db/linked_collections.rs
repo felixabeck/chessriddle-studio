@@ -2438,7 +2438,7 @@ impl CollectionService {
                         sql_query("INSERT INTO Info(Name,Value) VALUES(?,?) ON CONFLICT(Name) DO UPDATE SET Value=excluded.Value").bind::<Text,_>(name).bind::<Text,_>(value).execute(db)?;
                     }
                     db.batch_execute("DELETE FROM Players WHERE ID != 0 AND NOT EXISTS(SELECT 1 FROM Games WHERE WhiteID=Players.ID OR BlackID=Players.ID); DELETE FROM Events WHERE ID != 0 AND NOT EXISTS(SELECT 1 FROM Games WHERE EventID=Events.ID); DELETE FROM Sites WHERE ID != 0 AND NOT EXISTS(SELECT 1 FROM Games WHERE SiteID=Sites.ID);")?;
-                    update_database_counts(db)?; create_required_indexes(db)?;
+                    refresh_derived_database_data(db)?; create_required_indexes(db)?;
                     cancellation_check(cancellation)?;
                     Ok((generation.clone(), omitted))
                 });
