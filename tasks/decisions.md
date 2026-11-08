@@ -12505,3 +12505,15 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Felix approved the recommendation on 2026-11-08 ("Let's do everything as you recommend"); the remaining choices are technical. Reversal path: revert the engine option catalogue commit; persisted state can be added later if users repeatedly reopen the section.
 * **Decided by:** Claude Code (Opus 5.5) build run, full auto, 2026-11-08 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"32c12bb3d8e854ff5bb2365c73550dc66c49b7bddd7abec787a96f91a18436d1","input_sha256":"28c194ae88a5bd3b0bd9a9ed3d94887de2c2174e845cfc162ebbbc3282c79aef","kind":"mutation-receipt","operation":"ffe415f9da49c501eaf1069646d3b914826a3c6928d2faf3bff5998ab525fc25","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-10"],"target":"decisions-ledger","v":1} -->
+
+### d-20261108-19 — How is a recurring event split into editions?
+
+* **Question:** A reused event name merged every year into one row (13,395 of 70,038 Mega events, Felix asked for yearly editions on 2026-11-08). What identifies an edition, and how does the upgrade run?
+* **Governs:** -
+* **Chosen:** Identity is (Name, Year), Year being the leading four digits of the game date, 0 when absent or for the names "Unknown" and "". Each event's largest edition keeps its old ID. The upgrade rebuilds Events inside the repository's per-database upgrade job and its immediate transaction, with foreign keys on and deferred, creating `games_event_idx` first. End dates and the Date sort treat an unknown date part as lowest.
+* **Rejected:** Date-gap clustering (result depends on import order and needs live summaries during import). Switching foreign keys off around the rebuild (`PRAGMA foreign_keys` is ignored inside a transaction, and the upgrade job already holds one). Deferred foreign keys without the index (`DROP TABLE Events` did not finish in over ten minutes on Mega).
+* **Reason:** A calendar year is the same across import, edit and upgrade. Known limits, shown to Felix before the build: an event crossing New Year becomes two editions (2,675 adjacent pairs on Mega), and a name reused twice within one year stays one edition.
+* **Reversal path:** Add a schema version that merges editions by Name, reassigning Games.EventID to each name's largest edition and restoring UNIQUE(Name).
+* **Supersedes:** -
+* **Decided by:** Claude Code (Opus 5.5) build, plan approved by Felix 2026-11-08 ("Build it") · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":10,"effect_sha256":"37a521c47dce22684efc453f2740c13f5223595ff073ec8c5c9c66b361171739","input_sha256":"09e16d5fb52de2e31228e96323885da03e2422ff30ee2787a91e3ad577111354","kind":"mutation-receipt","operation":"3f4558778c98e72d909f544e838be5ef544ba3a1d486121c91ca008c6b9dd592","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-19"],"target":"decisions-ledger","v":1} -->
