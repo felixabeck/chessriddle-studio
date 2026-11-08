@@ -70,10 +70,25 @@ struct Summary {
     game_count: i64,
     start_date: Option<String>,
     end_date: Option<String>,
+    end_key: [u8; 10],
     players: HashSet<i64>,
     sites: HashMap<i64, i64>,
     rating_sum: f64,
     rating_count: i64,
+}
+
+/// A fixed-width date key. Unknown parts rank lowest, so a partial date never
+/// outranks a known date in the same period, whatever the stored date's length.
+fn end_date_key(date: &str) -> [u8; 10] {
+    let mut key = [0; 10];
+    let bytes = date
+        .bytes()
+        .map(|byte| if byte == b'?' { b'0' } else { byte })
+        .chain(b".00.000000".iter().copied());
+    for (slot, byte) in key.iter_mut().zip(bytes) {
+        *slot = byte;
+    }
+    key
 }
 
 impl Summary {
@@ -84,7 +99,13 @@ impl Summary {
             if self.start_date.as_ref().is_none_or(|start| date < *start) {
                 self.start_date = Some(date.clone());
             }
-            if self.end_date.as_ref().is_none_or(|end| date > *end) {
+            let end_key = end_date_key(&date);
+            if self
+                .end_date
+                .as_ref()
+                .is_none_or(|end| (end_key, date.as_str()) > (self.end_key, end.as_str()))
+            {
+                self.end_key = end_key;
                 self.end_date = Some(date);
             }
         }

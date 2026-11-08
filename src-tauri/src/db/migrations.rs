@@ -530,7 +530,7 @@ fn migrate_event_editions(conn: &mut SqliteConnection) -> Result<(), Error> {
     conn.batch_execute(
         "INSERT OR IGNORE INTO EventSummaryDirty SELECT ID FROM Events WHERE ID != 0;",
     )?;
-    super::refresh_derived_database_data(conn)
+    super::refresh_derived_database_data_from(conn, super::event_summaries::RowSource::FullScan)
 }
 
 fn validate_canonical_objects(
@@ -1285,7 +1285,7 @@ mod tests {
                 .get_result::<TextRow>(&mut conn)
                 .unwrap()
                 .value;
-            conn.batch_execute("CREATE TEMP TABLE event_summary_refresh(ID INTEGER PRIMARY KEY)")
+            conn.batch_execute("CREATE TEMP TRIGGER reject_summary_write BEFORE INSERT ON Info WHEN NEW.Name = 'Version' BEGIN SELECT RAISE(ABORT, 'injected summary write failure'); END;")
                 .unwrap();
             assert!(validate_existing_database(&mut conn).is_err());
             assert_eq!(
@@ -1313,7 +1313,7 @@ mod tests {
                     .count,
                 1000
             );
-            conn.batch_execute("DROP TABLE event_summary_refresh")
+            conn.batch_execute("DROP TRIGGER reject_summary_write;")
                 .unwrap();
             validate_existing_database(&mut conn).unwrap();
         }
@@ -1421,7 +1421,7 @@ mod tests {
             VALUES(1,1,'2016.??.??',1,1,2000,0),(1,0,'2016.08.01',1,2,NULL,2001),(1,0,'????.??.??',0,2,NULL,NULL);",
         )
         .unwrap();
-        conn.batch_execute("CREATE TEMP TRIGGER reject_summary_write BEFORE UPDATE ON Events BEGIN SELECT RAISE(ABORT, 'injected summary write failure'); END;")
+        conn.batch_execute("CREATE TEMP TRIGGER reject_summary_write BEFORE INSERT ON Info WHEN NEW.Name = 'Version' BEGIN SELECT RAISE(ABORT, 'injected summary write failure'); END;")
             .unwrap();
         let error = validate_existing_database(&mut conn).unwrap_err();
         assert!(format!("{error:?}").contains("injected summary write failure"));
@@ -1551,7 +1551,7 @@ mod tests {
             let mut conn = connection();
             conn.batch_execute(&schema).unwrap();
             insert_info(&mut conn, "Version", version).unwrap();
-            conn.batch_execute("INSERT INTO Events(ID,Name) VALUES(1,'Event'); INSERT INTO Games(EventID) VALUES(1); CREATE TEMP TRIGGER reject_summary_write BEFORE UPDATE ON Events BEGIN SELECT RAISE(ABORT, 'injected summary write failure'); END;").unwrap();
+            conn.batch_execute("INSERT INTO Events(ID,Name) VALUES(1,'Event'); INSERT INTO Games(EventID) VALUES(1); CREATE TEMP TRIGGER reject_summary_write BEFORE INSERT ON Info WHEN NEW.Name = 'Version' BEGIN SELECT RAISE(ABORT, 'injected summary write failure'); END;").unwrap();
             let error = validate_existing_database(&mut conn).unwrap_err();
             assert!(format!("{error:?}").contains("injected summary write failure"));
             assert_eq!(

@@ -82,7 +82,16 @@ pub(super) fn assert_event_summaries(db: &mut SqliteConnection) {
             ),
             (
                 dates.first().cloned(),
-                dates.last().cloned(),
+                dates
+                    .iter()
+                    .max_by_key(|date| {
+                        let key = format!("{}.00.000000", date.replace('?', "0"))
+                            .chars()
+                            .take(10)
+                            .collect::<String>();
+                        (key, date.as_str())
+                    })
+                    .cloned(),
                 i64::from(site),
                 count,
                 participants.len() as i64,
@@ -280,7 +289,7 @@ fn summaries_cover_edges_dirty_reassignment_and_last_game_deletion() {
     assert_event_summaries(&mut db);
     let partial = events::table.find(1).first::<Event>(&mut db).unwrap();
     assert_eq!(partial.start_date.as_deref(), Some("2016.08.01"));
-    assert_eq!(partial.end_date.as_deref(), Some("2016.??.??"));
+    assert_eq!(partial.end_date.as_deref(), Some("2016.08.01"));
     assert_eq!(partial.avg_elo, Some(2001));
     assert_eq!(partial.site_id, 1);
     // An unrelated event is deliberately poisoned to prove refresh is dirty-only.
@@ -312,6 +321,88 @@ fn summaries_cover_edges_dirty_reassignment_and_last_game_deletion() {
         .unwrap();
         assert_event_summaries(&mut db);
     }
+}
+
+#[test]
+fn summaries_order_unknown_date_parts_before_known_parts_and_preserve_raw_values() {
+    let mut db = SqliteConnection::establish(":memory:").unwrap();
+    db.batch_execute(CREATE_TABLES_SQL).unwrap();
+    db.batch_execute(
+        "INSERT INTO Events(ID,Name) VALUES
+         (1,'Mixed'),(2,'Partial only'),(3,'Undated'),(4,'Later month'),(5,'Later year');
+         INSERT INTO Games(EventID,Date) VALUES
+         (1,'2025.05.04'),(1,'2025.??.??'),
+         (2,'2024.??.??'),(2,'2025.05.??'),(2,'2025.??.??'),
+         (3,NULL),(3,'????.??.??'),
+         (4,'2025.05.03'),(4,'2025.06.??'),
+         (5,'2025.05.04'),(5,'2026.??.??');",
+    )
+    .unwrap();
+    db.transaction::<_, Error, _>(refresh_derived_database_data)
+        .unwrap();
+
+    for (id, start, end) in [
+        (1, Some("2025.05.04"), Some("2025.05.04")),
+        (2, Some("2024.??.??"), Some("2025.05.??")),
+        (3, None, None),
+        (4, Some("2025.05.03"), Some("2025.06.??")),
+        (5, Some("2025.05.04"), Some("2026.??.??")),
+    ] {
+        let event = events::table.find(id).first::<Event>(&mut db).unwrap();
+        assert_eq!(event.start_date.as_deref(), start, "event {id}");
+        assert_eq!(event.end_date.as_deref(), end, "event {id}");
+    }
+    assert_event_summaries(&mut db);
+}
+
+#[test]
+fn summaries_compare_dates_of_different_lengths_and_preserve_raw_end_dates() {
+    let mut db = SqliteConnection::establish(":memory:").unwrap();
+    db.batch_execute(CREATE_TABLES_SQL).unwrap();
+    db.batch_execute(
+        "INSERT INTO Events(ID,Name) VALUES
+         (1,'Year and day'),(2,'Month and day'),(3,'Later month'),(4,'Year only');
+         INSERT INTO Games(EventID,Date) VALUES
+         (1,'2025'),(1,'2025.01.01'),
+         (2,'2025.05'),(2,'2025.05.20'),
+         (3,'2025.06'),(3,'2025.05.20'),
+         (4,'2025');",
+    )
+    .unwrap();
+    db.transaction::<_, Error, _>(refresh_derived_database_data)
+        .unwrap();
+
+    for (id, end) in [
+        (1, "2025.01.01"),
+        (2, "2025.05.20"),
+        (3, "2025.06"),
+        (4, "2025"),
+    ] {
+        let event = events::table.find(id).first::<Event>(&mut db).unwrap();
+        assert_eq!(event.end_date.as_deref(), Some(end), "event {id}");
+    }
+    assert_event_summaries(&mut db);
+}
+
+#[test]
+fn summaries_preserve_malformed_and_empty_dates_with_padded_keys() {
+    let mut db = SqliteConnection::establish(":memory:").unwrap();
+    db.batch_execute(CREATE_TABLES_SQL).unwrap();
+    db.batch_execute(
+        "INSERT INTO Events(ID,Name) VALUES
+         (1,'Malformed only'),(2,'Empty date'),(3,'Mixed');
+         INSERT INTO Games(EventID,Date) VALUES
+         (1,'N/A'),(2,''),(3,'N/A'),(3,'2025.05.20');",
+    )
+    .unwrap();
+    db.transaction::<_, Error, _>(refresh_derived_database_data)
+        .unwrap();
+
+    for (id, end) in [(1, "N/A"), (2, ""), (3, "N/A")] {
+        let event = events::table.find(id).first::<Event>(&mut db).unwrap();
+        assert_eq!(event.end_date.as_deref(), Some(end), "event {id}");
+    }
+    assert_event_summaries(&mut db);
 }
 
 #[test]
@@ -473,6 +564,55 @@ fn production_read_date_sort_uses_latest_end_and_earliest_start() {
             ids.extend(result.data.into_iter().map(|event| event.id));
         }
         assert_eq!(ids, expected, "{direction:?}");
+    }
+}
+
+#[test]
+fn production_read_date_sort_normalizes_unknown_parts_and_preserves_raw_dates() {
+    let (_dir, app, handle, path) = blocking_database_case();
+    let mut db = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+    db.batch_execute(
+        "INSERT INTO Events(ID,Name) VALUES
+         (1,'Year only'),(2,'December'),(3,'June'),(4,'May'),
+         (5,'Undated'),(6,'Alpha'),(8,'January');
+         INSERT INTO Events(ID,Name,Year) VALUES(7,'Alpha',2024);
+         INSERT INTO Games(EventID,Date) VALUES
+         (1,'2025.??.??'),(2,'2025.12.31'),
+         (3,'2025.05.03'),(3,'2025.06.??'),(4,'2025.05.20'),
+         (5,NULL),(5,'????.??.??'),(6,'2025.06.??'),(7,'2025.06.??'),
+         (8,'2025.01.01');",
+    )
+    .unwrap();
+    db.transaction::<_, Error, _>(refresh_derived_database_data)
+        .unwrap();
+    assert_event_summaries(&mut db);
+    let state = app.state::<AppState>();
+    for (direction, expected) in [
+        (SortDirection::Desc, vec![2, 6, 7, 3, 4, 8, 1, 5]),
+        (SortDirection::Asc, vec![1, 8, 3, 4, 6, 7, 2, 5]),
+    ] {
+        let mut events = Vec::new();
+        for page in 1..=4 {
+            let result = get_tournaments_blocking(
+                &state.pgn_path_authority,
+                &state.database_repository,
+                handle.clone(),
+                query(TournamentSort::Date, direction.clone(), page),
+                &CancellationToken::new(),
+            )
+            .unwrap();
+            assert_eq!(result.count, Some(8));
+            events.extend(result.data);
+        }
+        assert_eq!(
+            events.iter().map(|event| event.id).collect::<Vec<_>>(),
+            expected,
+            "{direction:?}"
+        );
+        for (id, end) in [(1, "2025.??.??"), (3, "2025.06.??")] {
+            let event = events.iter().find(|event| event.id == id).unwrap();
+            assert_eq!(event.end_date.as_deref(), Some(end));
+        }
     }
 }
 

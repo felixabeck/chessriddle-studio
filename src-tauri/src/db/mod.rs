@@ -3299,6 +3299,13 @@ fn get_tournaments_blocking(
         // Every sort keeps NULL last in either direction. Numeric and date
         // sorts use ascending Name/ID ties across page boundaries.
         macro_rules! order_by {
+            (date $column:literal) => {
+                order_by!(diesel::dsl::sql::<Nullable<Text>>(concat!(
+                    "REPLACE(",
+                    $column,
+                    ", '?', '0')"
+                )))
+            };
             ($column:expr) => {
                 match query.options.direction {
                     SortDirection::Asc => sql_query.order((
@@ -3334,9 +3341,9 @@ fn get_tournaments_blocking(
                 )),
             },
             TournamentSort::Date => match query.options.direction {
-                SortDirection::Asc => order_by!(events::start_date),
+                SortDirection::Asc => order_by!(date "Events.StartDate"),
                 // Recurring events are newest at their latest game, not their first.
-                SortDirection::Desc => order_by!(events::end_date),
+                SortDirection::Desc => order_by!(date "Events.EndDate"),
             },
             TournamentSort::Players => order_by!(events::player_count),
             TournamentSort::Games => order_by!(events::game_count),
@@ -4555,7 +4562,14 @@ fn delete_orphaned_data(db: &mut SqliteConnection) -> Result<(), Error> {
 }
 
 fn refresh_derived_database_data(db: &mut SqliteConnection) -> Result<(), Error> {
-    event_summaries::refresh_event_summaries(db, event_summaries::RowSource::IndexedDirtyEvents)?;
+    refresh_derived_database_data_from(db, event_summaries::RowSource::IndexedDirtyEvents)
+}
+
+fn refresh_derived_database_data_from(
+    db: &mut SqliteConnection,
+    source: event_summaries::RowSource,
+) -> Result<(), Error> {
+    event_summaries::refresh_event_summaries(db, source)?;
     let game_count: i64 = games::table.count().get_result(db)?;
     update_info_count(db, "GameCount", game_count)?;
 
