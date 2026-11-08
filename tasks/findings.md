@@ -21641,7 +21641,7 @@ All probes were removed; the tree stayed clean.
 
 ### Lichess explorer Games tab never shows recentGames when topGames is present
 
-* **ID:** f-20261106-22 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261106-22 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** Opening explorer deep review (t19u) at HEAD `28ca865a`
 * **Where:** `src/components/panels/database/DatabasePanel.tsx:103` in `fetchOnlineOpening`: `convertToNormalized(data.topGames || data.recentGames || [], { signal })`. Query builders in `src/utils/lichess/explorer.ts:91-98` can request both `topGames` and `recentGames` (Lichess defaults both to 4). Related handled (different defects): `f-20261007-10` (per-game fetch/parse failures after the list is chosen); `f-20260905-12` (local rating/recent filter composition). Not a Zod/`f-04`-class issue.
@@ -21649,6 +21649,8 @@ All probes were removed; the tree stayed clean.
 * **Failure scenario:** Open Database → Lichess All on a common opening. The explorer JSON contains both `topGames` and `recentGames`. The Games tab lists only the top-rated sample. Setting or relying on `recentGames` in options (schema supports 0–4) cannot surface those rows while `topGames` is a non-null array. With `topGames: []` and non-empty `recentGames`, the tab still shows the genuine empty state instead of the recent games.
 * **Fix:** Choose references without `||` on arrays — e.g. concatenate `topGames` and `recentGames` and dedupe by `id`, or prefer recent when top is empty via `(data.topGames?.length ? data.topGames : data.recentGames) ?? []` if product wants a single list. Add a `fetchOpening` regression with both arrays populated (and one with empty `topGames` + non-empty `recentGames`) asserting the recent ids are normalized.
 * **Proof:** Ephemeral Vitest on HEAD `28ca865a` in `DatabasePanel.test.tsx`: `getLichessGames` resolved `{ topGames: [], recentGames: [{ id: "recent1", white: { name: "RW", ...}, ...}], moves: [...] }`; `fetchOpening` returned `games` that did not contain `"RW"` (`expected [] to include 'RW'`). Node check: `([] || [{id:"r"}])` is `[]`; `([{id:"t"}] || [{id:"r"}])` is only `t`. Probe removed (`cp` restore of `DatabasePanel.test.tsx`); tree clean for that path.
+* **Closed 2026-11-08 (drain next-finding):** `fetchOnlineOpening` now merges `topGames` then `recentGames`, deduplicated by id, before normalization (d-20261108-20); Masters is unchanged. Regressions in `DatabasePanel.test.tsx`: top+recent both listed in order, empty top with recent lists the recent game, duplicate ids appear once; each failed on the old `||` line. Rejected: prefer recent only when top is empty (still drops recent games in the common case). Commit: b3971b12.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"58591d2f0d4fe1f6aee258e9fda0e345298800d90f9be92fea7f669d40f3c24a","header_sha256":"499babca5c99620325fdc89890b1abeeef27738fdbc664d56b6f60027cde249f","header_status":"handled","input_sha256":"8918f566a142c2f2e5e17d415c847479681f9c89a27869fa101aeb8165c66b3a","kind":"mutation-receipt","operation":"f3974b0b3a30db6d27f658c8e92fdb8d0eb5af4096de600728813b0a10085f9a","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-22"],"target":"f-20261106-22","v":1} -->
 
 ---
 
