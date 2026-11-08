@@ -22233,6 +22233,19 @@ All probes were removed; the tree stayed clean.
 Resolved by the f-20261108-04 fix in 0b63a012. The Open question is answered by Felix's order to show "Upgrading…" for a database during its upgrade (decision d-20261108-08 supersedes d-20261108-02). The 2.2.0 to 2.3.0 upgrade now runs in the background job and the row shows Upgrading at once. Proof on the release build against a copy of Mega Database 2025 at schema 2.2.0: Upgrading at 0.3 s, Ready at 18.5 s, no generic loading wait for the listing.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"4d6f31ef5f5d4aff1f2c34417a403317eb1badd0fcd733a3a7d50ce795fc8011","header_sha256":"bf17664ddfe79af907dd58fb1660fe9ffc8e9a1bbf457c74fe832c1dc54622e3","header_status":"handled","input_sha256":"ae133faf5ae78f5db378da9f93522ed0cd757b082ddde27310188aa7487406a6","kind":"mutation-receipt","operation":"eef7915960f8de5b94f58705e8e66346d782000d72491e5ab305d2d27e73900b","options":{"section":null},"request_id_sha256":null,"results":["f-20261108-05"],"target":"f-20261108-05","v":1} -->
 
+**Follow-up 2026-11-08 (drain session da2f5271), commit subject `perf(db): stream event summaries instead of sorting them in SQL`.** The closure above answers the upgrade-state half of the open question. This change shortens the wait itself (d-20261108-17). `refresh_event_summaries` is now one streamed Rust aggregation instead of an SQL script (d-20261108-18). The migration backfill reads Games once in rowid order, and every ordinary write refresh keeps reading through `games_event_idx`. Summary definitions, dirty tracking and the caller's transaction are unchanged.
+
+**Measured on a generated 2.2.0 database of 11,441,614 games and 70,038 non-zero events on tmpfs, polling `get_db_info_blocking` until Ready through the background owner:** 8.3 to 9.6 s pinned to a fast core and about 12.6 s pinned to a slow core, with a peak of 572 MB. The plan measured about 31 s for the SQL script on the earlier inline path, on this data shape.
+
+**The real wait on Mega Database 2025 after this change was not measured, because no copy exists on this machine.** The closure above records 18.5 s to Ready with the SQL script. The plan's 7 s rule for real Mega was not applied. File a finding if a measured upgrade wait still noticeably exceeds an ordinary listing.
+
+**Scale limit:** the plan's 10 s limit holds on fast cores and is missed on slow ones. The number was not changed, and the arbitration is in the review handoff.
+
+**Known divergence:** a non-numeric text rating is now excluded from `AvgElo`, where the removed SQL counted it as zero. No production writer stores one.
+
+**Rejected:** a second background backfill and keeping the SQL for write paths, as recorded in d-20261108-17 and d-20261108-18. Review history: `tasks/handoffs/2026-11-08-event-summary-migration-wait-review.md`.
+<!-- ledger-meta {"command":"annotate","effect_lines":11,"effect_sha256":"476e47364a0db7adbfb5f5157a89cb1d020b3d2b2dd36e43b1d3fb0100d45091","input_sha256":"3d005106771bdcfe54c0cd7daf843f03930505bb45480970b1a48a1a2e649c47","kind":"mutation-receipt","operation":"9d9ec17229c188370be9bc169f2b64c6deb6f6ea6fee1eecac0ae621549cbe99","options":{"section":null},"request_id_sha256":null,"results":["f-20261108-05"],"target":"f-20261108-05","v":1} -->
+
 ---
 
 ## 2026-11-08 — filed through the inbox spool
