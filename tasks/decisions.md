@@ -12325,8 +12325,8 @@ Former private decision identifier: d-20261029-14
 * **Chosen:** Keep the existing migration contract: every migration validates schema and content before commit. The cost is paid once, the first time the new build opens the database.
 * **Rejected:** Skipping content validation for this additive migration (weakens the established safety contract of every migration).
 * **Reason:** Consistency with the 2.0.0 to 2.1.0 migration and the ledger's safety rule. Reversal path: run the content check in the background after an additive migration if the one-time wait proves disruptive.
-* **Decided by:** Claude Code (Opus 5.5) build opponent-prep-tree, full auto, 2026-11-07 · **Superseded-by:** -
-<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"f33f4291f4620678743419482bdde077b10b1f1f5db8a21f8243195fcae1c41c","input_sha256":"45394ab97e3c2246dddb4310a19618c6563aab5110139910d63deb72fe657de1","kind":"mutation-receipt","operation":"defa122eb78e6868262740482d0f47ad5227d811b76381205c0acf6673883943","options":{"section":null},"request_id_sha256":null,"results":["d-20261107-13"],"target":"decisions-ledger","v":1} -->
+* **Decided by:** Claude Code (Opus 5.5) build opponent-prep-tree, full auto, 2026-11-07 · **Superseded-by:** d-20261108-01
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"5ed7500eef7164e9077ec37eaab933b68e6408c10073412b80c244644c53a16d","input_sha256":"45394ab97e3c2246dddb4310a19618c6563aab5110139910d63deb72fe657de1","kind":"mutation-receipt","operation":"defa122eb78e6868262740482d0f47ad5227d811b76381205c0acf6673883943","options":{"section":null},"request_id_sha256":null,"results":["d-20261107-13"],"target":"decisions-ledger","v":1} -->
 
 ## 2026-11-08 — recorded through the decisions lock
 
