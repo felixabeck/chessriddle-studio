@@ -38,7 +38,7 @@ import {
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom, useStore } from "jotai";
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import useSWRImmutable from "swr/immutable";
 import { match, P } from "ts-pattern";
@@ -484,128 +484,161 @@ function EngineSettings({
       <>
         {description}
         {name !== label && (
-          <Text component="span" c="dimmed" size="xs">
+          <>
             {" "}
-            {name}
-          </Text>
+            <Text component="span" c="dimmed" size="xs" style={{ whiteSpace: "nowrap" }}>
+              {"· "}
+              <Text component="span" ff="monospace">
+                {name}
+              </Text>
+            </Text>
+          </>
         )}
       </>
     );
+  }
+
+  function renderOption(option: (typeof completeOptions)[number]) {
+    const { label, description } = getEngineOptionPresentation(option.value.name, t);
+    const fieldId = `${optionsId}-${encodeURIComponent(option.value.name)}`;
+    const note = renderDescription(option.value.name, label, description);
+    return match(option)
+      .with({ type: "spin", value: P.select() }, (v: any) => {
+        return (
+          <NumberInput
+            key={v.name}
+            label={label}
+            description={note}
+            inputWrapperOrder={["label", "input", "description", "error"]}
+            min={Number(v.min)}
+            max={Number(v.max)}
+            value={Number(v.value)}
+            onChange={(e) => setSetting(v.name, e, Number(v.default))}
+          />
+        );
+      })
+      .with({ type: "combo", value: P.select() }, (v: any) => {
+        return (
+          <Select
+            key={v.name}
+            label={label}
+            description={note}
+            inputWrapperOrder={["label", "input", "description", "error"]}
+            data={v.var}
+            value={v.value}
+            onChange={(e) => setSetting(v.name, e, v.default)}
+          />
+        );
+      })
+      .with({ type: "string", value: P.select() }, (v: any) => {
+        if (isEngineResourcePathOptionName(v.name)) {
+          return (
+            <Input.Wrapper
+              key={v.name}
+              id={fieldId}
+              label={label}
+              description={note}
+              inputWrapperOrder={["label", "input", "description", "error"]}
+            >
+              <Group align="center" wrap={compact ? "wrap" : "nowrap"}>
+                <TextInput
+                  id={fieldId}
+                  aria-describedby={note ? `${fieldId}-description` : undefined}
+                  flex={1}
+                  miw={0}
+                  style={compact ? { flexBasis: "100%" } : undefined}
+                  placeholder={t("Engines.Settings.SyzygyPathPlaceholder", {
+                    separator: ":",
+                  })}
+                  value={v.value || ""}
+                  readOnly
+                />
+                <Button
+                  variant="default"
+                  leftSection={<Folder size="1rem" />}
+                  onClick={() => {
+                    void runUnlessCancelled(t("Common.Error"), async () => {
+                      const draft = attachmentDraft.current;
+                      return draft.issue(
+                        `resource:${v.name}`,
+                        () => tauri.issueEngineResource(true),
+                        (resource, isCurrent) =>
+                          setResourceSetting(v.name, resource, true, isCurrent, draft),
+                      );
+                    });
+                  }}
+                >
+                  {t("Common.Open")}
+                </Button>
+              </Group>
+            </Input.Wrapper>
+          );
+        }
+        if (isEngineResourceFileOptionName(v.name)) {
+          return (
+            <Input.Wrapper
+              key={v.name}
+              id={fieldId}
+              label={label}
+              description={note}
+              inputWrapperOrder={["label", "input", "description", "error"]}
+            >
+              <Group>
+                <Button
+                  id={fieldId}
+                  aria-label={label}
+                  aria-describedby={note ? `${fieldId}-description` : undefined}
+                  variant="default"
+                  leftSection={<Folder size="1rem" />}
+                  onClick={() => {
+                    void runUnlessCancelled(t("Common.Error"), async () => {
+                      const draft = attachmentDraft.current;
+                      return draft.issue(
+                        `resource:${v.name}`,
+                        () => tauri.issueEngineResource(false),
+                        (resource, isCurrent) =>
+                          setResourceSetting(v.name, resource, false, isCurrent, draft),
+                      );
+                    });
+                  }}
+                >
+                  {t("Common.Open")}
+                </Button>
+              </Group>
+            </Input.Wrapper>
+          );
+        }
+        return (
+          <TextInput
+            key={v.name}
+            label={label}
+            description={note}
+            inputWrapperOrder={["label", "input", "description", "error"]}
+            value={v.value || ""}
+            onChange={(e) => setSetting(v.name, e.currentTarget.value, v.default)}
+          />
+        );
+      })
+      .otherwise(() => null);
   }
 
   function renderOptions(tier: "essential" | "expert") {
     const tierOptions = visibleOptions.filter(
       (option) => getEngineOptionPresentation(option.value.name, t).tier === tier,
     );
+    const targetElo = limitStrength
+      ? visibleOptions.find((option) => option.value.name.toLowerCase() === "uci_elo")
+      : undefined;
     return (
       <>
         <SimpleGrid cols={compact ? 1 : 2}>
           {tierOptions
-            .filter((option: { type: string }) => option.type !== "check")
-            .map((option: any) => {
-              const { label, description } = getEngineOptionPresentation(option.value.name, t);
-              const fieldId = `${optionsId}-${encodeURIComponent(option.value.name)}`;
-              const note = renderDescription(option.value.name, label, description);
-              return match(option)
-                .with({ type: "spin", value: P.select() }, (v: any) => {
-                  return (
-                    <NumberInput
-                      key={v.name}
-                      label={label}
-                      description={note}
-                      min={Number(v.min)}
-                      max={Number(v.max)}
-                      value={Number(v.value)}
-                      onChange={(e) => setSetting(v.name, e, Number(v.default))}
-                    />
-                  );
-                })
-                .with({ type: "combo", value: P.select() }, (v: any) => {
-                  return (
-                    <Select
-                      key={v.name}
-                      label={label}
-                      description={note}
-                      data={v.var}
-                      value={v.value}
-                      onChange={(e) => setSetting(v.name, e, v.default)}
-                    />
-                  );
-                })
-                .with({ type: "string", value: P.select() }, (v: any) => {
-                  if (isEngineResourcePathOptionName(v.name)) {
-                    return (
-                      <Group key={v.name} align="end" wrap={compact ? "wrap" : "nowrap"}>
-                        <TextInput
-                          flex={1}
-                          miw={0}
-                          style={compact ? { flexBasis: "100%" } : undefined}
-                          label={label}
-                          description={note}
-                          placeholder={t("Engines.Settings.SyzygyPathPlaceholder", {
-                            separator: ":",
-                          })}
-                          value={v.value || ""}
-                          readOnly
-                        />
-                        <Button
-                          variant="default"
-                          leftSection={<Folder size="1rem" />}
-                          onClick={() => {
-                            void runUnlessCancelled(t("Common.Error"), async () => {
-                              const draft = attachmentDraft.current;
-                              return draft.issue(
-                                `resource:${v.name}`,
-                                () => tauri.issueEngineResource(true),
-                                (resource, isCurrent) =>
-                                  setResourceSetting(v.name, resource, true, isCurrent, draft),
-                              );
-                            });
-                          }}
-                        >
-                          {t("Common.Open")}
-                        </Button>
-                      </Group>
-                    );
-                  }
-                  if (isEngineResourceFileOptionName(v.name)) {
-                    return (
-                      <Input.Wrapper key={v.name} id={fieldId} label={label} description={note}>
-                        <Button
-                          id={fieldId}
-                          aria-label={label}
-                          aria-describedby={note ? `${fieldId}-description` : undefined}
-                          variant="default"
-                          leftSection={<Folder size="1rem" />}
-                          onClick={() => {
-                            void runUnlessCancelled(t("Common.Error"), async () => {
-                              const draft = attachmentDraft.current;
-                              return draft.issue(
-                                `resource:${v.name}`,
-                                () => tauri.issueEngineResource(false),
-                                (resource, isCurrent) =>
-                                  setResourceSetting(v.name, resource, false, isCurrent, draft),
-                              );
-                            });
-                          }}
-                        >
-                          {t("Common.Open")}
-                        </Button>
-                      </Input.Wrapper>
-                    );
-                  }
-                  return (
-                    <TextInput
-                      key={v.name}
-                      label={label}
-                      description={note}
-                      value={v.value || ""}
-                      onChange={(e) => setSetting(v.name, e.currentTarget.value, v.default)}
-                    />
-                  );
-                })
-                .otherwise(() => null);
-            })}
+            .filter(
+              (option) =>
+                option.type !== "check" &&
+                !(limitStrength && option.value.name.toLowerCase() === "uci_elo"),
+            )
+            .map(renderOption)}
         </SimpleGrid>
         <SimpleGrid cols={compact ? 1 : 2}>
           {tierOptions
@@ -613,16 +646,20 @@ function EngineSettings({
             .map((o) => {
               const { label, description } = getEngineOptionPresentation(o.value.name, t);
               return (
-                <Checkbox
-                  key={o.value.name}
-                  label={label}
-                  description={renderDescription(o.value.name, label, description)}
-                  checked={o.value.value === true || o.value.value === "true"}
-                  disabled={o.value.name === "UCI_Chess960"}
-                  onChange={(e) =>
-                    setSetting(o.value.name, e.currentTarget.checked, o.value.default as boolean)
-                  }
-                />
+                <Fragment key={o.value.name}>
+                  <Checkbox
+                    label={label}
+                    description={renderDescription(o.value.name, label, description)}
+                    checked={o.value.value === true || o.value.value === "true"}
+                    disabled={o.value.name === "UCI_Chess960"}
+                    onChange={(e) =>
+                      setSetting(o.value.name, e.currentTarget.checked, o.value.default as boolean)
+                    }
+                  />
+                  {o.value.name.toLowerCase() === "uci_limitstrength" && targetElo
+                    ? renderOption(targetElo)
+                    : null}
+                </Fragment>
               );
             })}
         </SimpleGrid>

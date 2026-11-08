@@ -623,7 +623,7 @@
     "Engines.Options.UCI_Chess960.Label": "Chess960",
     "Engines.Options.UCI_Elo.Description": "Сіла гульні, да якой імкнецца рухавік пры ўключаным абмежаванні.",
     "Engines.Options.UCI_Elo.Label": "Мэтавы Elo",
-    "Engines.Options.UCI_LimitStrength.Description": "Рухавік гуляе на мэтавым узроўні Elo, пазначаным ніжэй. Уплывае толькі на гульню супраць цябе.",
+    "Engines.Options.UCI_LimitStrength.Description": "Рухавік гуляе на зададзеным табой мэтавым узроўні Elo. Уплывае толькі на гульню супраць цябе.",
     "Engines.Options.UCI_LimitStrength.Label": "Абмежаваць сілу рэйтынгам Elo",
     "Engines.Options.UCI_ShowWDL.Description": "Паказвае шанцы перамогі, нічыёй або паражэння побач з ацэнкай.",
     "Engines.Options.UCI_ShowWDL.Label": "Паказваць шанцы перамогі, нічыёй і паражэння",

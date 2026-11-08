@@ -607,7 +607,7 @@
     "Engines.Options.UCI_Chess960.Label": "Chess960",
     "Engines.Options.UCI_Elo.Description": "Die Spielstärke, die die Engine bei aktiver Begrenzung anstrebt.",
     "Engines.Options.UCI_Elo.Label": "Ziel-Elo",
-    "Engines.Options.UCI_LimitStrength.Description": "Lässt die Engine mit der Ziel-Elo darunter spielen. Wirkt nur, wenn sie gegen dich spielt.",
+    "Engines.Options.UCI_LimitStrength.Description": "Lässt die Engine mit der eingestellten Ziel-Elo spielen. Wirkt nur, wenn sie gegen dich spielt.",
     "Engines.Options.UCI_LimitStrength.Label": "Spielstärke auf eine Elo-Zahl begrenzen",
     "Engines.Options.UCI_ShowWDL.Description": "Zeigt neben der Bewertung die Chancen auf Gewinn, Remis oder Verlust.",
     "Engines.Options.UCI_ShowWDL.Label": "Gewinn-/Remis-/Verlustchancen zeigen",

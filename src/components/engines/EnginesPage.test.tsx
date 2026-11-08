@@ -143,7 +143,13 @@ vi.mock("@mantine/core", () => ({
   ),
   Paper: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   ScrollArea: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  Select: ({ label }: { label: string }) => <select aria-label={label} />,
+  Select: ({ label, description }: { label: string; description?: React.ReactNode }) => (
+    <label>
+      <span>{label}</span>
+      <select aria-label={label} />
+      {description}
+    </label>
+  ),
   SimpleGrid: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Space: () => null,
   Stack: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -379,6 +385,28 @@ describe("EngineName binary inspection state", () => {
     expect(host.textContent).not.toContain("(file missing)");
     expect(host.querySelector('[data-color="danger"]')).not.toBeNull();
   });
+});
+
+test("combo settings render their catalogue label, description and raw UCI name", async () => {
+  atomEngines = [makeEngine("engine-combo-presentation")];
+  mocks.getEngineConfig.mockResolvedValue({
+    name: "Stockfish",
+    options: [
+      { type: "combo", value: { name: "NumaPolicy", default: "auto", var: ["auto", "none"] } },
+    ],
+  });
+  await renderSettings();
+  await expandExpert();
+
+  const field = host.querySelector<HTMLSelectElement>(
+    'select[aria-label="Processor memory policy"]',
+  );
+  expect(field).not.toBeNull();
+  expect(field!.parentElement?.textContent).toContain("Processor memory policy");
+  expect(field!.parentElement?.textContent).toContain(
+    "How threads are spread across processors on machines with several CPUs. Keep “auto”.",
+  );
+  expect(field!.parentElement?.textContent).toContain("NumaPolicy");
 });
 
 test.each([false, true])(
@@ -866,6 +894,23 @@ test.each([false, true])(
     }
   },
 );
+
+test("target Elo renders directly after the strength limit checkbox when ticked", async () => {
+  atomEngines = [makeEngine("engine-strength-dom-order")];
+  mocks.getEngineConfig.mockResolvedValue(strengthConfig(false));
+  await renderSettings();
+  await expandExpert();
+  const limit = optionInput("Limit strength to an Elo rating")!;
+  await act(async () => {
+    limit.click();
+    await Promise.resolve();
+  });
+
+  expect(limit.checked).toBe(true);
+  const elo = optionInput("Target Elo");
+  expect(elo).not.toBeNull();
+  expect(limit.closest("label")!.nextElementSibling).toBe(elo!.closest("label"));
+});
 
 test.each([false, true])("unstored strength limit uses its default (%s)", async (defaultLimit) => {
   atomEngines = [makeEngine(`engine-strength-default-${defaultLimit}`)];

@@ -83,9 +83,9 @@ const expected = [
     [
         "UCI_LimitStrength",
         "Limit strength to an Elo rating",
-        "Makes the engine play at the target Elo below. Only matters when it plays against you.",
+        "Makes the engine play at the Target Elo you set. Only matters when it plays against you.",
         "Spielstärke auf eine Elo-Zahl begrenzen",
-        "Lässt die Engine mit der Ziel-Elo darunter spielen. Wirkt nur, wenn sie gegen dich spielt.",
+        "Lässt die Engine mit der eingestellten Ziel-Elo spielen. Wirkt nur, wenn sie gegen dich spielt.",
     ],
     [
         "UCI_Elo",

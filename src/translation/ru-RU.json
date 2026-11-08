@@ -623,7 +623,7 @@
     "Engines.Options.UCI_Chess960.Label": "Chess960",
     "Engines.Options.UCI_Elo.Description": "Сила игры, к которой стремится движок при включённом ограничении.",
     "Engines.Options.UCI_Elo.Label": "Целевой Elo",
-    "Engines.Options.UCI_LimitStrength.Description": "Движок играет на указанном ниже уровне Elo. Влияет только на игру против тебя.",
+    "Engines.Options.UCI_LimitStrength.Description": "Движок играет на заданном тобой целевом уровне Elo. Влияет только на игру против тебя.",
     "Engines.Options.UCI_LimitStrength.Label": "Ограничить силу рейтингом Elo",
     "Engines.Options.UCI_ShowWDL.Description": "Показывает шансы победы, ничьей или поражения рядом с оценкой.",
     "Engines.Options.UCI_ShowWDL.Label": "Показывать шансы победы, ничьей и поражения",

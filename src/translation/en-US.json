@@ -607,7 +607,7 @@
     "Engines.Options.UCI_Chess960.Label": "Chess960",
     "Engines.Options.UCI_Elo.Description": "The playing strength the engine aims for while the limit is on.",
     "Engines.Options.UCI_Elo.Label": "Target Elo",
-    "Engines.Options.UCI_LimitStrength.Description": "Makes the engine play at the target Elo below. Only matters when it plays against you.",
+    "Engines.Options.UCI_LimitStrength.Description": "Makes the engine play at the Target Elo you set. Only matters when it plays against you.",
     "Engines.Options.UCI_LimitStrength.Label": "Limit strength to an Elo rating",
     "Engines.Options.UCI_ShowWDL.Description": "Shows the chances of a win, draw or loss next to the evaluation.",
     "Engines.Options.UCI_ShowWDL.Label": "Show win/draw/loss chances",

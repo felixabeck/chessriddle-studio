@@ -599,7 +599,7 @@
     "Engines.Options.UCI_Chess960.Label": "Chess960",
     "Engines.Options.UCI_Elo.Description": "开启棋力限制时，引擎力求达到的棋力。",
     "Engines.Options.UCI_Elo.Label": "目标 Elo",
-    "Engines.Options.UCI_LimitStrength.Description": "让引擎以下方的目标 Elo 棋力对弈。仅在引擎与你对弈时有效。",
+    "Engines.Options.UCI_LimitStrength.Description": "让引擎以你设置的目标 Elo 棋力对弈。仅在引擎与你对弈时有效。",
     "Engines.Options.UCI_LimitStrength.Label": "将棋力限制为 Elo 等级分",
     "Engines.Options.UCI_ShowWDL.Description": "在评估旁显示获胜、和棋或失利的概率。",
     "Engines.Options.UCI_ShowWDL.Label": "显示胜和负概率",

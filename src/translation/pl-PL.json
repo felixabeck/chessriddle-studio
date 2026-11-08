@@ -623,7 +623,7 @@
     "Engines.Options.UCI_Chess960.Label": "Chess960",
     "Engines.Options.UCI_Elo.Description": "Siła gry, do której dąży silnik przy włączonym ograniczeniu.",
     "Engines.Options.UCI_Elo.Label": "Docelowe Elo",
-    "Engines.Options.UCI_LimitStrength.Description": "Silnik gra na docelowym poziomie Elo podanym poniżej. Ma znaczenie tylko podczas gry przeciwko tobie.",
+    "Engines.Options.UCI_LimitStrength.Description": "Silnik gra na ustawionym przez ciebie docelowym poziomie Elo. Ma znaczenie tylko podczas gry przeciwko tobie.",
     "Engines.Options.UCI_LimitStrength.Label": "Ogranicz siłę do rankingu Elo",
     "Engines.Options.UCI_ShowWDL.Description": "Pokazuje szanse wygranej, remisu lub przegranej obok oceny.",
     "Engines.Options.UCI_ShowWDL.Label": "Pokaż szanse wygranej, remisu i przegranej",

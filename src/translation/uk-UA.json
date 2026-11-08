@@ -623,7 +623,7 @@
     "Engines.Options.UCI_Chess960.Label": "Chess960",
     "Engines.Options.UCI_Elo.Description": "Сила гри, до якої прагне рушій за ввімкненого обмеження.",
     "Engines.Options.UCI_Elo.Label": "Цільовий Elo",
-    "Engines.Options.UCI_LimitStrength.Description": "Рушій грає на цільовому рівні Elo, вказаному нижче. Впливає лише на гру проти тебе.",
+    "Engines.Options.UCI_LimitStrength.Description": "Рушій грає на встановленому тобою цільовому рівні Elo. Впливає лише на гру проти тебе.",
     "Engines.Options.UCI_LimitStrength.Label": "Обмежити силу рейтингом Elo",
     "Engines.Options.UCI_ShowWDL.Description": "Показує шанси перемоги, нічиєї або поразки поруч з оцінкою.",
     "Engines.Options.UCI_ShowWDL.Label": "Показувати шанси перемоги, нічиєї та поразки",

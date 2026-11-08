@@ -607,7 +607,7 @@
     "Engines.Options.UCI_Chess960.Label": "Chess960",
     "Engines.Options.UCI_Elo.Description": "Spillestyrken motoren sikter mot når begrensningen er på.",
     "Engines.Options.UCI_Elo.Label": "Ønsket Elo",
-    "Engines.Options.UCI_LimitStrength.Description": "Får motoren til å spille på Elo-nivået nedenfor. Gjelder bare når den spiller mot deg.",
+    "Engines.Options.UCI_LimitStrength.Description": "Får motoren til å spille på det ønskede Elo-nivået du angir. Gjelder bare når den spiller mot deg.",
     "Engines.Options.UCI_LimitStrength.Label": "Begrens styrken til en Elo-rating",
     "Engines.Options.UCI_ShowWDL.Description": "Viser sjansene for seier, remis eller tap ved siden av vurderingen.",
     "Engines.Options.UCI_ShowWDL.Label": "Vis sjanser for seier, remis og tap",

@@ -694,7 +694,9 @@ test("accounts-puzzles-engines: default-true check stays disabled after save and
         },
     });
     await page.goto("/engines?selected=0");
-    const ponder = page.getByRole("checkbox", { name: "Ponder", exact: true });
+    const expert = page.getByRole("button", { name: /^Expert settings/ });
+    if ((await expert.getAttribute("aria-expanded")) === "false") await expert.click();
+    const ponder = page.getByRole("checkbox", { name: "Think on your time", exact: true });
     await expect(ponder).toBeChecked();
     const bytes = await page.evaluate(() => localStorage.getItem("engines"));
     await ponder.uncheck();
@@ -708,6 +710,7 @@ test("accounts-puzzles-engines: default-true check stays disabled after save and
     await expect(ponder).not.toBeChecked();
     await page.evaluate(() => sessionStorage.setItem("__E2E_PRESERVE_STORAGE_ONCE__", "1"));
     await page.reload();
+    if ((await expert.getAttribute("aria-expanded")) === "false") await expert.click();
     await expect(ponder).not.toBeChecked();
     await capture("engine-check-false-rehydrated");
     const falseBytes = await page.evaluate(() => localStorage.getItem("engines"));
@@ -2260,7 +2263,7 @@ test("accounts-puzzles-engines: explains known settings and reveals experts and 
         },
     });
     await page.goto("/engines?selected=0");
-    await expect(page.getByRole("spinbutton", { name: "CPU threads", exact: true })).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "CPU threads", exact: true })).toBeVisible();
     const expert = page.getByRole("button", { name: /^Expert settings/ });
     await expect(expert).toHaveAttribute("aria-expanded", "false");
     await expect(
@@ -2272,21 +2275,20 @@ test("accounts-puzzles-engines: explains known settings and reveals experts and 
     });
     await expert.click();
     await expect(expert).toHaveAttribute("aria-expanded", "true");
+    await page.setViewportSize({ width: 1440, height: 1900 });
     const limit = page.getByRole("checkbox", {
         name: "Limit strength to an Elo rating",
         exact: true,
     });
     await expect(limit).toBeVisible();
     await expect(limit).not.toBeChecked();
-    await expect(
-        page.getByRole("spinbutton", { name: "Target Elo", exact: true }),
-    ).not.toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Target Elo", exact: true })).not.toBeVisible();
     await capture("engine-settings-explained-expanded");
     await expect(page).toHaveScreenshot("engine-settings-explained-expanded.png", {
         fullPage: true,
     });
     await limit.check();
-    await expect(page.getByRole("spinbutton", { name: "Target Elo", exact: true })).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Target Elo", exact: true })).toBeVisible();
 });
 
 test("accounts-puzzles-engines: local settings and catalog upgrade modal", async ({
@@ -2419,6 +2421,12 @@ test("accounts-puzzles-engines: local settings and catalog upgrade modal", async
     await expect(page.getByText("Saved publication (Copy)", { exact: true })).toHaveCount(0);
     await expect(card).toHaveText("Saved publication");
     await capture("engine-publication-refused-edit-duplicate");
+    const notifications = page.locator(".mantine-Notification-root");
+    for (let remaining = await notifications.count(); remaining > 0; remaining--) {
+        await notifications.first().locator(".mantine-Notification-closeButton").click();
+        await expect(notifications).toHaveCount(remaining - 1);
+    }
+    await expect(notifications).toHaveCount(0);
     await page.getByRole("button", { name: "Remove", exact: true }).click();
     const removal = page.getByRole("dialog");
     await removal.getByRole("button", { name: "Remove", exact: true }).click();

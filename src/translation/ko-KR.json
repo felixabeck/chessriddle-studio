@@ -599,7 +599,7 @@
     "Engines.Options.UCI_Chess960.Label": "Chess960",
     "Engines.Options.UCI_Elo.Description": "실력 제한이 켜져 있을 때 엔진이 목표로 하는 실력입니다.",
     "Engines.Options.UCI_Elo.Label": "목표 Elo",
-    "Engines.Options.UCI_LimitStrength.Description": "엔진이 아래의 목표 Elo 수준으로 대국하게 합니다. 사용자와 대국할 때만 영향을 줍니다.",
+    "Engines.Options.UCI_LimitStrength.Description": "엔진이 설정한 목표 Elo 수준으로 대국하게 합니다. 사용자와 대국할 때만 영향을 줍니다.",
     "Engines.Options.UCI_LimitStrength.Label": "실력을 Elo 레이팅으로 제한",
     "Engines.Options.UCI_ShowWDL.Description": "평가 옆에 승리, 무승부, 패배 확률을 표시합니다.",
     "Engines.Options.UCI_ShowWDL.Label": "승리·무승부·패배 확률 표시",

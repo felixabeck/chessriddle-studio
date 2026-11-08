@@ -607,7 +607,7 @@
     "Engines.Options.UCI_Chess960.Label": "Chess960",
     "Engines.Options.UCI_Elo.Description": "Sınır açıkken motorun ulaşmaya çalıştığı oyun gücü.",
     "Engines.Options.UCI_Elo.Label": "Hedef Elo",
-    "Engines.Options.UCI_LimitStrength.Description": "Motorun aşağıdaki hedef Elo düzeyinde oynamasını sağlar. Yalnızca sana karşı oynarken etkilidir.",
+    "Engines.Options.UCI_LimitStrength.Description": "Motorun belirlediğin hedef Elo düzeyinde oynamasını sağlar. Yalnızca sana karşı oynarken etkilidir.",
     "Engines.Options.UCI_LimitStrength.Label": "Gücü bir Elo puanıyla sınırla",
     "Engines.Options.UCI_ShowWDL.Description": "Değerlendirmenin yanında kazanç, beraberlik veya kayıp olasılıklarını gösterir.",
     "Engines.Options.UCI_ShowWDL.Label": "Kazanç, beraberlik ve kayıp olasılıklarını göster",

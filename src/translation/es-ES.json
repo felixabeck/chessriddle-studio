@@ -615,7 +615,7 @@
     "Engines.Options.UCI_Chess960.Label": "Chess960",
     "Engines.Options.UCI_Elo.Description": "La fuerza de juego que busca el motor mientras el límite está activado.",
     "Engines.Options.UCI_Elo.Label": "Elo objetivo",
-    "Engines.Options.UCI_LimitStrength.Description": "Hace que el motor juegue al Elo objetivo de abajo. Solo importa cuando juega contra ti.",
+    "Engines.Options.UCI_LimitStrength.Description": "Hace que el motor juegue al Elo objetivo que establezcas. Solo importa cuando juega contra ti.",
     "Engines.Options.UCI_LimitStrength.Label": "Limitar la fuerza a una puntuación Elo",
     "Engines.Options.UCI_ShowWDL.Description": "Muestra las probabilidades de victoria, tablas o derrota junto a la evaluación.",
     "Engines.Options.UCI_ShowWDL.Label": "Mostrar probabilidades de victoria, tablas y derrota",
