@@ -22,6 +22,7 @@ import {
 import { gateBudgetBytes, strykerSlots } from "./gate-parallelism.mjs";
 import { fsyncDirectory } from "./fsync-directory.mjs";
 import { durableWrite } from "./durable-write.mjs";
+import { fetchDailySweepResults } from "./frontend-mutation-baseline.mjs";
 import { mutationPackages } from "./frontend-mutation-packages.mjs";
 import { isEntrypoint } from "./entrypoint.mjs";
 import { selectMutationPackages } from "./mutation-package-selection.mjs";
@@ -450,7 +451,7 @@ async function runPackage(
 }
 
 /** Run frontend mutation packages; `spawnChild` is injectable for deterministic scheduler tests. */
-export async function runFrontendMutation(spawnChild = spawn) {
+export async function runFrontendMutation(spawnChild = spawn, { resultsDirectory } = {}) {
   const packageId = process.env.FRONTEND_MUTATION_PACKAGE;
   const selectedPackages = selectMutationPackages(
     packageRecords,
@@ -458,7 +459,9 @@ export async function runFrontendMutation(spawnChild = spawn) {
     "FRONTEND_MUTATION_PACKAGE",
   );
   if (selectedPackages.length === 0) return 0;
-  const incrementalDir = incrementalDirectory(process.env.FRONTEND_MUTATION_INCREMENTAL_DIR);
+  const incrementalDir = incrementalDirectory(
+    resultsDirectory ?? process.env.FRONTEND_MUTATION_INCREMENTAL_DIR,
+  );
   const base = process.env.FRONTEND_MUTATION_CHANGED_SINCE;
   if (await canSkipFrontendMutation(base)) {
     console.log(`Frontend mutation skipped: no mutation inputs changed since ${base}`);
@@ -635,7 +638,34 @@ async function main() {
     console.log(JSON.stringify(Object.keys(mutationPackages)));
     return 0;
   }
-  return runFrontendMutation();
+  // CI brings its own bounded cache, and an explicit directory or --full names its own proof.
+  if (
+    process.env.CI ||
+    process.env.FRONTEND_MUTATION_INCREMENTAL_DIR ||
+    process.argv.includes("--full")
+  )
+    return runFrontendMutation();
+  // The runner installs its own forwarding only once it starts, so a signal during the
+  // download is handled here: it stops the commands and the directory is still removed.
+  const controller = new AbortController();
+  let requestedSignal;
+  const onSignal = (signal) => {
+    requestedSignal = signal;
+    controller.abort();
+  };
+  process.once("SIGINT", onSignal);
+  process.once("SIGTERM", onSignal);
+  const resultsDirectory = await fetchDailySweepResults(Object.keys(mutationPackages), {
+    signal: controller.signal,
+  });
+  process.off("SIGINT", onSignal);
+  process.off("SIGTERM", onSignal);
+  try {
+    if (requestedSignal) return requestedSignal === "SIGINT" ? 130 : 143;
+    return await runFrontendMutation(spawn, { resultsDirectory });
+  } finally {
+    rmSync(resultsDirectory, { recursive: true, force: true });
+  }
 }
 
 if (isEntrypoint(import.meta.url)) {

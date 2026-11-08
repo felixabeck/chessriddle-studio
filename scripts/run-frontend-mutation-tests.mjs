@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { availableParallelism, tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
@@ -23,6 +23,7 @@ import {
   waitUntil,
   writeShim,
 } from "./mutation-runner-test-harness.mjs";
+import { fetchDailySweepResults, isRecentSweep } from "./frontend-mutation-baseline.mjs";
 import { currentIdentity, identityForPid } from "./process-identity.mjs";
 import {
   canSkipFrontendMutation,
@@ -144,6 +145,7 @@ async function fixture(t = undefined) {
 function environment({ state, mode = "normal", failPackage, requestedSlots = 3, ...extra }) {
   const env = {
     ...process.env,
+    CI: "1",
     GATE_MEMORY_BYTES: String(budgetBytes),
     GATE_CPU_SHARE: cpuShareForSlots(requestedSlots),
     SHIM_MODE: mode,
@@ -1281,4 +1283,210 @@ test("the existing per-package budget is consumed by workerCount without a hard-
     }),
     3,
   );
+});
+
+const SWEEP_NOW = new Date("2026-11-08T12:00:00Z");
+
+function sweepArtifact(overrides = {}) {
+  const { head_branch = "master", id = 7, ...artifact } = overrides;
+  return {
+    expired: false,
+    created_at: "2026-11-08T09:00:00Z",
+    workflow_run: { id, head_branch },
+    ...artifact,
+  };
+}
+
+/** Fake git and gh: `download` writes the file a real artifact would contain. */
+function sweepCommands({ artifacts, download, remote = "git@github.com:owner/repo.git" }) {
+  const calls = [];
+  const runCommand = (command, args) => {
+    calls.push([command, ...args]);
+    if (command === "git") return { status: 0, stdout: `${remote}\n` };
+    if (args[0] === "api") return { status: 0, stdout: JSON.stringify({ artifacts }) };
+    const directory = args[args.indexOf("-D") + 1];
+    const name = args[args.indexOf("-n") + 1].replace("frontend-mutation-baseline-", "");
+    writeFileSync(join(directory, `${name}.json`), download);
+    return { status: 0, stdout: "" };
+  };
+  return { calls, runCommand };
+}
+
+const SWEEP_REPORT = JSON.stringify({ schemaVersion: "1.7", files: {} });
+
+async function fetchSweep(t, commands, packageIds = ["tree-path"]) {
+  const lines = [];
+  const directory = await fetchDailySweepResults(packageIds, {
+    now: SWEEP_NOW,
+    runCommand: commands,
+    log: (line) => lines.push(line),
+  });
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  return { directory, lines };
+}
+
+test("only sweeps from today or yesterday by UTC date are recent", () => {
+  assert.equal(isRecentSweep("2026-11-07T00:00:00Z", SWEEP_NOW), true);
+  assert.equal(isRecentSweep("2026-11-08T23:59:59Z", SWEEP_NOW), true);
+  assert.equal(isRecentSweep("2026-11-06T23:59:59Z", SWEEP_NOW), false);
+  assert.equal(isRecentSweep("2026-11-09T00:00:00Z", SWEEP_NOW), false);
+  assert.equal(isRecentSweep("not a date", SWEEP_NOW), false);
+});
+
+test("the newest recent master sweep is downloaded for each package", async (t) => {
+  const { calls, runCommand } = sweepCommands({
+    artifacts: [
+      sweepArtifact({ id: 1, created_at: "2026-11-07T09:00:00Z" }),
+      sweepArtifact({ id: 2 }),
+      sweepArtifact({ id: 3, created_at: "2026-11-08T10:00:00Z", head_branch: "feature" }),
+      sweepArtifact({ id: 4, created_at: "2026-11-08T11:00:00Z", expired: true }),
+      sweepArtifact({ id: 5, created_at: "2026-11-05T09:00:00Z" }),
+    ],
+    download: SWEEP_REPORT,
+  });
+  const { directory, lines } = await fetchSweep(t, runCommand);
+  assert.equal(readFileSync(join(directory, "tree-path.json"), "utf8"), SWEEP_REPORT);
+  assert.deepEqual(lines, ["Frontend mutation: tree-path reuses daily sweep run 2"]);
+  assert.deepEqual(calls.at(-1), [
+    "gh",
+    "run",
+    "download",
+    "2",
+    "-R",
+    "owner/repo",
+    "-n",
+    "frontend-mutation-baseline-tree-path",
+    "-D",
+    directory,
+  ]);
+});
+
+test("every failure leaves that package without results, so it runs in full", async (t) => {
+  const cases = [
+    ["no artifact", sweepCommands({ artifacts: [], download: SWEEP_REPORT }).runCommand],
+    [
+      "only old artifacts",
+      sweepCommands({
+        artifacts: [sweepArtifact({ created_at: "2026-11-01T09:00:00Z" })],
+        download: SWEEP_REPORT,
+      }).runCommand,
+    ],
+    [
+      "not GitHub",
+      sweepCommands({
+        artifacts: [sweepArtifact()],
+        download: SWEEP_REPORT,
+        remote: "git@example.com:owner/repo.git",
+      }).runCommand,
+    ],
+    [
+      "unparsable report",
+      sweepCommands({ artifacts: [sweepArtifact()], download: "{" }).runCommand,
+    ],
+    ["not a report", sweepCommands({ artifacts: [sweepArtifact()], download: "{}" }).runCommand],
+    [
+      "download fails after writing part of the file",
+      (() => {
+        const { runCommand } = sweepCommands({ artifacts: [sweepArtifact()], download: "{" });
+        return (command, args, options) => {
+          const result = runCommand(command, args, options);
+          return args[0] === "run" ? { status: 1, stdout: "" } : result;
+        };
+      })(),
+    ],
+    ["gh is missing", () => ({ error: new Error("ENOENT") })],
+    ["command fails", () => ({ status: 1, stdout: "" })],
+  ];
+  for (const [name, commands] of cases) {
+    const { directory, lines } = await fetchSweep(t, commands, ["tree-path", "game-practice"]);
+    assert.deepEqual(await readdir(directory), [], name);
+    assert.equal(lines.length, 2, name);
+    for (const line of lines) assert.match(line, /runs in full \(.+\)$/u, name);
+  }
+});
+
+test("a package with results keeps them when another package has none", async (t) => {
+  const { runCommand } = sweepCommands({ artifacts: [sweepArtifact()], download: SWEEP_REPORT });
+  const commands = (command, args, options) =>
+    args.some((arg) => String(arg).includes("game-practice"))
+      ? { status: 1, stdout: "" }
+      : runCommand(command, args, options);
+  const { directory, lines } = await fetchSweep(t, commands, ["tree-path", "game-practice"]);
+  assert.equal(existsSync(join(directory, "tree-path.json")), true);
+  assert.equal(existsSync(join(directory, "game-practice.json")), false);
+  assert.match(lines[0], /tree-path reuses/u);
+  assert.match(lines[1], /game-practice runs in full/u);
+});
+
+test("outside CI each package gets a results file and the directory is removed afterwards", async (t) => {
+  const { root, state } = await fixture(t);
+  const bin = join(root, "bin");
+  await mkdir(bin);
+  await writeShim(join(bin, "gh"), "#!/bin/sh\nexit 1\n");
+  const result = run(
+    root,
+    environment({ state, mode: "record", CI: "", PATH: `${bin}:${process.env.PATH}` }),
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /runs in full/u);
+  const directories = new Set();
+  for (const name of packageNames) {
+    const { incrementalFile } = JSON.parse(await readFile(join(state, `env-${name}`), "utf8"));
+    assert.equal(basename(incrementalFile), `${name}.json`);
+    directories.add(dirname(incrementalFile));
+  }
+  assert.equal(directories.size, 1);
+  assert.equal(existsSync([...directories][0]), false);
+});
+
+test("--full and CI never contact GitHub or use an incremental file", async (t) => {
+  for (const [ci, args] of [
+    ["", ["--full"]],
+    ["1", []],
+  ]) {
+    const { root, state } = await fixture(t);
+    const bin = join(root, "bin");
+    await mkdir(bin);
+    const marker = join(root, "gh-called");
+    await writeShim(join(bin, "gh"), `#!/bin/sh\ntouch ${marker}\nexit 1\n`);
+    const result = run(
+      root,
+      environment({ state, mode: "record", CI: ci, PATH: `${bin}:${process.env.PATH}` }),
+      args,
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(existsSync(marker), false);
+    for (const name of packageNames) {
+      const childEnv = JSON.parse(await readFile(join(state, `env-${name}`), "utf8"));
+      assert.equal(childEnv.incrementalFile, undefined);
+    }
+  }
+});
+
+test("a signal during the sweep download stops it, starts no package and removes the directory", async (t) => {
+  const { root, state } = await fixture(t);
+  const bin = join(root, "bin");
+  const temporary = join(root, "temporary");
+  const started = join(root, "gh-started");
+  await mkdir(bin);
+  await mkdir(temporary);
+  await writeShim(join(bin, "git"), "#!/bin/sh\necho git@github.com:owner/repo.git\n");
+  await writeShim(join(bin, "gh"), `#!/bin/sh\ntouch ${started}\nexec sleep 30\n`);
+  const running = start(
+    t,
+    root,
+    environment({
+      state,
+      mode: "record",
+      CI: "",
+      TMPDIR: temporary,
+      PATH: `${bin}:${process.env.PATH}`,
+    }),
+  );
+  await waitFor(started);
+  running.child.kill("SIGTERM");
+  const { code } = await running.done;
+  assert.equal(code, 143);
+  assert.deepEqual(await readdir(temporary), []);
+  for (const name of packageNames) assert.equal(existsSync(join(state, `env-${name}`)), false);
 });

@@ -76,8 +76,13 @@ replaces only the concurrent Rust and Rust-related frontend-share clauses of `d-
 
 ## Mutation gate routing
 
-Decision id: `d-20261101-06`. The local push gate runs the full frontend suite (receipt-backed,
-unchanged). Per-push CI (`test.yml` job `frontend-mutation`) runs one package per matrix job via
+Decision ids: `d-20261101-06`, and `d-20261108-20` for the local gate. The local push gate
+(receipt-backed) runs `pnpm mutation:frontend`, which outside CI reuses results (`--full` opts out): each package reuses the results
+of its last successful daily sweep from today or yesterday (UTC), and Stryker retests only mutants
+whose source or covering tests changed. Missing, old or unreadable results run that package in
+full. No push therefore runs a complete proof unless it falls back. A change that only moves a score through a
+non-mutated dependency surfaces at the next daily sweep, and a failing sweep publishes nothing, so
+the local gate returns to full runs once results age out. Per-push CI (`test.yml` job `frontend-mutation`) runs one package per matrix job via
 `FRONTEND_MUTATION_PACKAGE`, skips when no path in the frontend mutation input superset changed
 since `FRONTEND_MUTATION_CHANGED_SINCE` (any doubt runs), and reuses Stryker incremental results
 only from a forced full sweep of today or yesterday (restore-only cache). `mutation.yml` runs that

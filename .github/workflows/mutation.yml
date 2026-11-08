@@ -165,6 +165,18 @@ jobs:
           path: .frontend-mutation-incremental
           key: frontend-mutation-full-${{ matrix.package }}-${{ steps.dates.outputs.today }}-${{ github.run_id }}
 
+      # The local push gate downloads these to retest only what changed. A failed sweep
+      # publishes nothing, so once results age out the local gate runs in full again.
+      - name: Publish successful full mutation results for the local gate
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-mutation-baseline-${{ matrix.package }}
+          path: .frontend-mutation-incremental/${{ matrix.package }}.json
+          include-hidden-files: true
+          retention-days: 3
+          if-no-files-found: error
+
       - name: Upload frontend mutation report
         if: always()
         uses: actions/upload-artifact@v4

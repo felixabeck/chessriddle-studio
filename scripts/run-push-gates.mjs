@@ -183,6 +183,7 @@ export const FRONTEND_INPUTS = Object.freeze([
   "stryker.config.mjs",
   "scripts/run-frontend-mutation.mjs",
   "scripts/frontend-mutation-packages.mjs",
+  "scripts/frontend-mutation-baseline.mjs",
   "i18next.config.*",
   "src/translation/**",
   "src/catalogs/**",
