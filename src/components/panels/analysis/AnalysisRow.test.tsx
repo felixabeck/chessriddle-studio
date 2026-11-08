@@ -51,7 +51,6 @@ vi.mock("@/components/common/IconAction", () => ({
     </button>
   ),
 }));
-vi.mock("./ScoreBubble", () => ({ default: () => null }));
 vi.mock("@/components/common/MoveCell", () => ({
   default: ({ move, onClick, onContextMenu }: any) => (
     <button onClick={onClick} onContextMenu={onContextMenu}>
@@ -149,7 +148,7 @@ test.each([
     );
     const annotation = host.querySelector("[title]");
     expect(annotation?.getAttribute("title")).toBe(note);
-    expect(annotation?.textContent).toBe([mark, rate].filter(Boolean).join(""));
+    expect(annotation?.textContent).toBe(["+0.34", mark, rate].filter(Boolean).join(""));
   },
 );
 

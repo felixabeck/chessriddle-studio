@@ -21,7 +21,7 @@ import AssessmentSymbol from "../panels/analysis/AssessmentSymbol";
 import { engineLinePositions, PreviewEngineLineMove } from "../panels/analysis/EngineLinePreview";
 import LinesSlider, { LINE_COUNT_OPTIONS } from "../panels/analysis/LinesSlider";
 import { useDisplayedEngineLines } from "../panels/analysis/useDisplayedEngineLines";
-import ScoreBubble from "../panels/analysis/ScoreBubble";
+import { EngineScoreBubble } from "../panels/analysis/ScoreBubble";
 import classes from "./DetachedEval.module.css";
 import IconAction from "./IconAction";
 import { TreeStateContext } from "./TreeStateContext";
@@ -191,6 +191,7 @@ const DetachedEvalInner = memo(function DetachedEvalInner({
           {shownLines.map((line, lineIndex) => (
             <DetachedLine
               key={lineIndex}
+              engineId={engine.id}
               line={line}
               fen={lineFen}
               halfMoves={halfMoves}
@@ -207,6 +208,7 @@ const DetachedEvalInner = memo(function DetachedEvalInner({
 
 /** One pinned engine line: its score and moves, each previewing its position on hover. */
 function DetachedLine({
+  engineId,
   line,
   fen,
   halfMoves,
@@ -214,6 +216,7 @@ function DetachedLine({
   orientation,
   inert,
 }: {
+  engineId: string;
   line: BestMoves;
   fen: string;
   halfMoves: number;
@@ -225,7 +228,7 @@ function DetachedLine({
   const positions = engineLinePositions(fen, line.sanMoves.slice(0, MOVES_PER_LINE));
   return (
     <Group ref={ref} gap="xs" wrap="nowrap">
-      <ScoreBubble size="sm" score={line.score} />
+      <EngineScoreBubble engineId={engineId} size="sm" score={line.score} inert={inert} />
       <Box className={classes.moves}>
         {positions.map((move, index) => (
           <PreviewEngineLineMove

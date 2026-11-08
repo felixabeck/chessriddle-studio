@@ -1,15 +1,13 @@
 import { CopyButton, Flex, rem, Table, Text, Tooltip } from "@mantine/core";
 import { IconAction } from "@/components/common/IconAction";
 import { Check, ChevronDown, Copy } from "lucide-react";
-import { useAtom } from "jotai";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Score } from "@/bindings";
-import { scoreTypeFamily } from "@/state/atoms";
 import type { ChessDBLine } from "@/utils/chessdb/api";
 import { formatScore } from "@/utils/score";
 import { engineLinePositions, PreviewEngineLineMove } from "./EngineLinePreview";
-import ScoreBubble from "./ScoreBubble";
+import { EngineScoreBubble } from "./ScoreBubble";
 import classes from "./BestMoves.module.css";
 
 function AnalysisRow({
@@ -47,16 +45,10 @@ function AnalysisRow({
   const moveInfo = engineLinePositions(fen, visibleMoves);
   const ref = useRef<HTMLTableRowElement>(null);
 
-  const [evalDisplay, setEvalDisplay] = useAtom(scoreTypeFamily(engineId));
   const mark = chessdb?.note.match(/^[^\p{L}\p{N}\s()]+/u)?.[0];
   const winrate = chessdb?.winrate?.trim() ? Number(chessdb.winrate) : Number.NaN;
   const scoreBubble = (
-    <ScoreBubble
-      size="md"
-      score={score}
-      evalDisplay={evalDisplay}
-      setEvalDisplay={inert ? undefined : setEvalDisplay}
-    />
+    <EngineScoreBubble engineId={engineId} size="md" score={score} inert={inert} />
   );
 
   return (

@@ -1,8 +1,33 @@
 import { Box, Progress, Text } from "@mantine/core";
+import { useAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import type { Score } from "@/bindings";
+import { scoreTypeFamily } from "@/state/atoms";
 import { formatScore } from "@/utils/score";
 import classes from "./ScoreBubble.module.css";
+
+/** One toggle per engine covers all of that engine's score chips. */
+export function EngineScoreBubble({
+  engineId,
+  size,
+  score,
+  inert = false,
+}: {
+  engineId: string;
+  size: "sm" | "md";
+  score: Score;
+  inert?: boolean;
+}) {
+  const [evalDisplay, setEvalDisplay] = useAtom(scoreTypeFamily(engineId));
+  return (
+    <ScoreBubble
+      size={size}
+      score={score}
+      evalDisplay={evalDisplay}
+      setEvalDisplay={inert ? undefined : setEvalDisplay}
+    />
+  );
+}
 
 function ScoreBubble({
   size,

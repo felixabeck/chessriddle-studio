@@ -38,7 +38,7 @@ import BestMoves, { arrowColors } from "./BestMoves";
 import EngineSelection from "./EngineSelection";
 import LogsPanel from "./LogsPanel";
 import ReportPanel from "./ReportPanel";
-import ScoreBubble from "./ScoreBubble";
+import { EngineScoreBubble } from "./ScoreBubble";
 import TablebaseInfo from "./TablebaseInfo";
 import { useDisplayedEngineLines } from "./useDisplayedEngineLines";
 import classes from "./AnalysisPanel.module.css";
@@ -337,7 +337,7 @@ export function EngineSummary({
         )}
         {score ? (
           <Group opacity={dimmed ? 0.5 : 1} inert={dimmed}>
-            <ScoreBubble size="sm" score={score} />
+            <EngineScoreBubble engineId={engine.id} size="sm" score={score} inert={dimmed} />
           </Group>
         ) : (
           <Text fz="sm" c="dimmed">

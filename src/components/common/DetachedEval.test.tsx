@@ -8,6 +8,7 @@ import {
   enginesAtom,
   engineTerminalFamily,
   previewBoardOnHoverAtom,
+  scoreTypeFamily,
   threatFamily,
 } from "@/state/atoms";
 import { INITIAL_FEN } from "chessops/fen";
@@ -17,6 +18,7 @@ import { installResizeObserverStub } from "@/tests/resizeObserver";
 import { TreeStateContext } from "./TreeStateContext";
 import DetachedEval from "./DetachedEval";
 import { analysisSearch } from "../panels/analysis/analysisSearch";
+import scoreBubbleClasses from "../panels/analysis/ScoreBubble.module.css";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
@@ -164,6 +166,30 @@ async function renderPinned(multiPv: string | null, lines = threeLines) {
 
 const lineCountInput = (count: number) =>
   h.host.querySelector<HTMLInputElement>(`input[type="radio"][value="${count}"]`);
+
+test("DetachedEval displays the pinned engine's shared WDL preference", async () => {
+  const tree = await renderPinned(null, [
+    { ...displayLines[0], score: { ...displayLines[0].score, wdl: [450, 300, 250] } },
+  ]);
+  await act(async () => h.store.set(scoreTypeFamily(displayEngine.id), "wdl"));
+  expect(h.host.querySelector('[aria-label="Board.Analysis.Tablebase.WhiteWins"]')).not.toBeNull();
+  tree.dispose();
+});
+
+test("DetachedEval toggles the engine's score preference only for current lines", async () => {
+  const tree = await renderPinned(null, [
+    { ...displayLines[0], score: { ...displayLines[0].score, wdl: [450, 300, 250] } },
+  ]);
+  const chip = () => h.host.querySelector<HTMLElement>(`.${scoreBubbleClasses.bubble}`)!;
+  expect(chip().textContent).toBe("+0.34");
+  await act(async () => chip().click());
+  expect(h.store.get(scoreTypeFamily(displayEngine.id))).toBe("wdl");
+  await act(async () => tree.getState().makeMoves({ payload: ["d4"] }));
+  expect(chip().closest("[inert]")).not.toBeNull();
+  await act(async () => chip().click());
+  expect(h.store.get(scoreTypeFamily(displayEngine.id))).toBe("wdl");
+  tree.dispose();
+});
 
 test("DetachedEval shows every computed line until a cap is chosen, and never more than computed", async () => {
   const tree = await renderPinned("3");
