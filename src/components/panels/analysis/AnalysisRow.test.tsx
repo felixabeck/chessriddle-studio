@@ -5,10 +5,12 @@ import { INITIAL_FEN } from "chessops/fen";
 
 const mocks = vi.hoisted(() => ({
   scoreTypeFamily: vi.fn((_engineId: string) => Symbol("scoreType")),
+  setEvalDisplay: vi.fn(),
   makeMoves: vi.fn(),
 }));
 
 import AnalysisRow from "./AnalysisRow";
+import scoreBubbleClasses from "./ScoreBubble.module.css";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("@/state/atoms", () => ({
@@ -17,7 +19,7 @@ vi.mock("@/state/atoms", () => ({
   scoreTypeFamily: mocks.scoreTypeFamily,
 }));
 vi.mock("jotai", () => ({
-  useAtom: () => ["cp", vi.fn()],
+  useAtom: () => ["cp", mocks.setEvalDisplay],
   useAtomValue: () => true,
 }));
 vi.mock("zustand", () => ({ useStore: () => mocks.makeMoves }));
@@ -194,14 +196,21 @@ test("inert previous rows ignore insertion, hover preview, context and expansion
   });
   expect(mocks.makeMoves).toHaveBeenCalledWith({ payload: ["e4"] });
   expect(host.querySelector("[data-preview]")).not.toBeNull();
+  await act(async () => {
+    (host.querySelector(`.${scoreBubbleClasses.bubble}`) as HTMLDivElement).click();
+  });
+  expect(mocks.setEvalDisplay).toHaveBeenCalledWith("wdl");
+  mocks.setEvalDisplay.mockClear();
   mocks.makeMoves.mockClear();
   await act(async () => root.render(row(true)));
   await act(async () => {
+    (host.querySelector(`.${scoreBubbleClasses.bubble}`) as HTMLDivElement).click();
     move.click();
     move.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
     move.parentElement!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
     (host.querySelector('[aria-label="Board.Analysis.Expand"]') as HTMLButtonElement).click();
   });
+  expect(mocks.setEvalDisplay).not.toHaveBeenCalled();
   expect(mocks.makeMoves).not.toHaveBeenCalled();
   expect(host.querySelector("[data-preview]")).toBeNull();
   expect(host.querySelector('[aria-label="Board.Analysis.Expand"]')?.hasAttribute("disabled")).toBe(
