@@ -9,6 +9,7 @@ import {
     playBoardMove,
     bestMovesPayload,
     seedAnalysisEngines,
+    waitForScrollAreaScrollbarsHidden,
     type AnalysisRequest,
     type MockScenario,
 } from "./fixtures";
@@ -600,6 +601,7 @@ test("engine-gap: pinned engine shows up to its own line count and swaps between
     const moveBox = (await move.boundingBox())!;
     await page.mouse.move(moveBox.x + moveBox.width - 2, moveBox.y + moveBox.height / 2);
     await expect(preview).toBeVisible();
+    await waitForScrollAreaScrollbarsHidden(page);
     await expect(page).toHaveScreenshot("pinned-engine-hover-preview-dark.png", {
         animations: "disabled",
     });
