@@ -12495,3 +12495,13 @@ Former private decision identifier: d-20261029-14
 * **Supersedes:** d-20261108-11, as to its "one set-based recomputation" clause only. The rest of that entry stands.
 * **Decided by:** Claude Code (Opus 5.5) next-finding drain, adopted reviewed plan, full auto, 2026-11-08 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"50fb7117a65f70a5f4a619c620caff9e09a89e616d999cb602f3f1eb05819dea","input_sha256":"c73d84b902e2ea20eb6928b5261c5fe3408c7cb753cdefb0a68c0658365bcb4b","kind":"mutation-receipt","operation":"e70ca1c0f6d39c2cee0fa2f56111c870005bff3fc12c0ed5a1ec1e09778dcdae","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-18"],"target":"decisions-ledger","v":1} -->
+
+### d-20261108-10 — How are engine settings explained and grouped on the Engines page?
+
+* **Question:** The Engines page lists raw UCI option names. Which form do explanations take, which options are collapsed, and is the collapse state kept?
+* **Governs:** -
+* **Chosen:** A curated catalogue gives known UCI options a translated label and an always-visible one-line description, with the raw UCI name as dimmed secondary text. Threads, Hash, MultiPV, UCI_ShowWDL and every unknown option stay visible; all other known options sit in an "Expert settings" section collapsed by default, with non-persisted local state. UCI_Elo renders only while UCI_LimitStrength is ticked; its stored value is kept. All 16 locales are translated because `pnpm i18n:check` requires them.
+* **Rejected:** Per-field ⓘ tooltips (hidden until hovered, poor on touchpads). Collapsing unknown options (contradicts the approved promise that nothing is hidden). Persisting the open state (adds persisted state for a rarely used section).
+* **Reason:** Felix approved the recommendation on 2026-11-08 ("Let's do everything as you recommend"); the remaining choices are technical. Reversal path: revert the engine option catalogue commit; persisted state can be added later if users repeatedly reopen the section.
+* **Decided by:** Claude Code (Opus 5.5) build run, full auto, 2026-11-08 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"32c12bb3d8e854ff5bb2365c73550dc66c49b7bddd7abec787a96f91a18436d1","input_sha256":"28c194ae88a5bd3b0bd9a9ed3d94887de2c2174e845cfc162ebbbc3282c79aef","kind":"mutation-receipt","operation":"ffe415f9da49c501eaf1069646d3b914826a3c6928d2faf3bff5998ab525fc25","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-10"],"target":"decisions-ledger","v":1} -->
