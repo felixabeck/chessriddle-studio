@@ -798,6 +798,73 @@ impl PathAuthority {
         }
     }
 
+    /// Adoption is valid only when registration's own resolver finds the executable. An empty
+    /// leaf holds nothing to preserve, so it is cleared for a fresh install. Any other tree without
+    /// the executable stays untouched and refuses, because it may hold foreign content.
+    /// When it clears the leaf, it replaces `resolved` with a fresh resolution of the absent
+    /// destination so the caller can publish through its retained parent.
+    pub(crate) fn adopt_catalog_archive_with_probe(
+        &mut self,
+        destination: &PathRef,
+        resolved: &mut ResolvedPath,
+        executable: &str,
+        probe: &mut EngineRootProbe,
+    ) -> Result<bool, Error> {
+        if !self.confirm_catalog_archive_adoption_with_probe(destination, resolved, probe)? {
+            return Ok(false);
+        }
+        let path = resolved.target().ok_or_else(invalid_record)?;
+        let leaf = path.file_name().ok_or_else(invalid_record)?;
+        let mut components = vec![leaf.to_os_string()];
+        components.extend(engine_relative_components(executable)?);
+        match self.resolve_with_engine_probe(
+            destination,
+            PathOperation::EngineInstall,
+            &components,
+            probe,
+        ) {
+            Ok(found) if found.is_regular_file() => return Ok(true),
+            Ok(_) => {}
+            Err(error) if matches!(error.unlabelled(), Error::Io(error) if error.kind() == std::io::ErrorKind::NotFound) =>
+                {}
+            Err(error) => return Err(error),
+        }
+        let root = self.catalog_destination_root(destination, path)?;
+        let directory = probe.filesystem(engine_install_directory(&root))?;
+        let Some(identity) = probe.filesystem(catalog_directory_identity(&directory, leaf))? else {
+            return Ok(false);
+        };
+        let empty = {
+            let tree = probe
+                .filesystem(open_removal_directory_at(&directory, leaf, identity))?
+                .into_file();
+            probe
+                .filesystem(read_directory_entries_at(
+                    &tree,
+                    &CancellationToken::new(),
+                    Some(MAX_INVENTORY_ENTRIES),
+                    &mut |_| true,
+                ))?
+                .is_empty()
+        };
+        if !empty {
+            return Err(Error::Conflict(
+                "archive destination does not contain the expected engine".into(),
+            ));
+        }
+        probe.filesystem(crate::infra::fs::remove_empty_directory_at(
+            &directory, leaf, identity,
+        ))?;
+        let cleared = self.resolve_with_engine_probe(
+            destination,
+            PathOperation::DownloadArchive,
+            &[leaf.to_os_string()],
+            probe,
+        )?;
+        *resolved = cleared;
+        Ok(false)
+    }
+
     /// Retain the root during the existing precheck, without consuming the terminal resolver's
     /// one-shot boundary. The post-resolution handoff must use this same native directory.
     pub(super) fn prepare_catalog_engine_registration(
@@ -1450,6 +1517,20 @@ mod tests {
                 .confirm_catalog_archive_adoption(self.handle.path_ref(), &resolved)
         }
 
+        fn adopt_archive(&mut self, name: &str, executable: &str) -> Result<bool, Error> {
+            let mut resolved = self.authority.resolve(
+                self.handle.path_ref(),
+                PathOperation::DownloadArchive,
+                &[OsString::from(name)],
+            )?;
+            self.authority.adopt_catalog_archive_with_probe(
+                self.handle.path_ref(),
+                &mut resolved,
+                executable,
+                &mut EngineRootProbe::default(),
+            )
+        }
+
         fn engine(&mut self, name: &str) -> EngineHandle {
             self.authority
                 .register_installed_engine_for_test(&self.handle, &format!("{name}/engine"))
@@ -1524,6 +1605,62 @@ mod tests {
                 Ok(())
             }
         }
+    }
+
+    #[test]
+    fn archive_adoption_requires_the_executable_of_a_published_tree() {
+        let mut f = Fixture::new();
+        f.install("managed");
+        assert!(f.adopt_archive("managed", "engine").unwrap());
+        assert!(!f.adopt_archive("missing", "engine").unwrap());
+        assert!(matches!(
+            f.adopt_archive("managed", "absent"),
+            Err(Error::Conflict(_))
+        ));
+        assert_eq!(
+            fs::read(f.root.join("managed/engine")).unwrap(),
+            b"managed engine"
+        );
+        assert!(matches!(
+            f.adopt_archive("managed", "data"),
+            Err(Error::Conflict(_))
+        ));
+    }
+
+    #[test]
+    fn archive_adoption_clears_an_emptied_published_tree() {
+        let mut f = Fixture::new();
+        f.install("managed");
+        fs::remove_file(f.root.join("managed/engine")).unwrap();
+        fs::remove_dir_all(f.root.join("managed/data")).unwrap();
+        assert!(!f.adopt_archive("managed", "engine").unwrap());
+        assert!(!f.root.join("managed").exists());
+        let mut stage = f.stage();
+        f.publish_stage("managed", &mut stage).unwrap();
+        assert_eq!(
+            fs::read(f.root.join("managed/engine")).unwrap(),
+            b"managed engine"
+        );
+        assert_eq!(f.authority.catalog_installs.len(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn archive_adoption_refuses_a_symlinked_executable() {
+        let mut f = Fixture::new();
+        let directory = f.root.join("engine.tar.gz-digest");
+        fs::create_dir(&directory).unwrap();
+        fs::write(f.root.join("foreign-engine"), b"foreign engine").unwrap();
+        let executable = directory.join("engine");
+        std::os::unix::fs::symlink(f.root.join("foreign-engine"), &executable).unwrap();
+        assert!(matches!(
+            f.adopt_archive("engine.tar.gz-digest", "engine"),
+            Err(Error::InvalidInput(_))
+        ));
+        assert!(fs::symlink_metadata(&executable)
+            .unwrap()
+            .file_type()
+            .is_symlink());
     }
 
     #[test]

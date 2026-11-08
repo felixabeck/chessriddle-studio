@@ -1672,6 +1672,7 @@ async fn download_engine_archive_core<R: tauri::Runtime>(
     url: String,
     destination: crate::infra::path_authority::PathRef,
     directory_name: String,
+    executable: String,
     job_id: String,
     integrity: ArtifactIntegrity,
     app: tauri::AppHandle<R>,
@@ -1685,7 +1686,7 @@ async fn download_engine_archive_core<R: tauri::Runtime>(
         let resolution_state = state.clone();
         let resolution_destination = destination.clone();
         let resolution_cancellation = cancellation.clone();
-        let (op, resolved) = crate::infra::blocking::BLOCKING_GATEWAY
+        let (op, mut resolved) = crate::infra::blocking::BLOCKING_GATEWAY
             .spawn(move || {
                 resolve_engine_archive_destination_cancellable(
                     &resolution_state,
@@ -1699,8 +1700,8 @@ async fn download_engine_archive_core<R: tauri::Runtime>(
         if cancellation.is_cancelled() {
             return Err(Error::Cancellation);
         }
-        // A verified artefact has a stable directory name. Never replace an existing tree:
-        // it may be registered already, and an engine may still be executing from it.
+        // Adopt an existing tree only when it holds the expected executable. Never replace
+        // a registered tree because an engine may still be executing from it.
         let adoption_authority = state.pgn_path_authority.clone();
         let adoption_destination = destination.clone();
         let adoption_cancellation = cancellation.clone();
@@ -1712,9 +1713,10 @@ async fn download_engine_archive_core<R: tauri::Runtime>(
                     crate::infra::path_authority::PathOperation::DownloadArchive,
                     &adoption_cancellation,
                     |authority, probe| {
-                        authority.confirm_catalog_archive_adoption_with_probe(
+                        authority.adopt_catalog_archive_with_probe(
                             &adoption_destination,
-                            &resolved,
+                            &mut resolved,
+                            &executable,
                             probe,
                         )
                     },
@@ -1969,6 +1971,7 @@ async fn engine_install_workflow_core<R: tauri::Runtime>(
         request.url.clone(),
         destination,
         directory.clone(),
+        request.relative_path.clone(),
         id.to_owned(),
         ArtifactIntegrity {
             sha256: request.sha256.clone(),
@@ -3353,6 +3356,7 @@ mod tests {
                         entry.download_link.clone(),
                         destination,
                         directory.clone(),
+                        entry.path.clone(),
                         job,
                         ArtifactIntegrity {
                             sha256: entry.sha256.clone(),
@@ -7037,6 +7041,7 @@ mod tests {
                 "https://example.com/engine.zip".into(),
                 destination.clone(),
                 "managed".into(),
+                "stockfish/engine".to_string(),
                 job,
                 integrity.clone(),
                 app.handle().clone(),
@@ -7161,6 +7166,7 @@ mod tests {
             "https://example.com/engine.zip".into(),
             destination,
             name.into(),
+            "stockfish/engine".to_string(),
             job,
             integrity,
             app,
@@ -8365,6 +8371,7 @@ mod tests {
                 "https://example.com/engine.archive".into(),
                 destination,
                 "installed".into(),
+                "stockfish/engine".to_string(),
                 job,
                 integrity,
                 app.handle().clone(),
@@ -8524,6 +8531,7 @@ mod tests {
                 "https://example.com/engine.zip".into(),
                 destination,
                 "installed".into(),
+                "stockfish/engine".to_string(),
                 job,
                 integrity,
                 app.handle().clone(),
@@ -8571,6 +8579,7 @@ mod tests {
                 "https://example.com/engine.zip".into(),
                 destination,
                 "installed".into(),
+                "stockfish/engine".to_string(),
                 job,
                 integrity,
                 app.handle().clone(),
@@ -8643,6 +8652,7 @@ mod tests {
             "https://example.com/engine.zip".into(),
             destination,
             "installed".into(),
+            "stockfish/engine".to_string(),
             job,
             integrity,
             app.handle().clone(),
@@ -8709,6 +8719,7 @@ mod tests {
                     "https://example.com/engine.zip".into(),
                     destination,
                     "installed".into(),
+                    "stockfish/engine".to_string(),
                     job,
                     integrity,
                     app.handle().clone(),
@@ -8781,6 +8792,7 @@ mod tests {
             "https://example.com/engine.tar.gz".into(),
             destination,
             directory.clone(),
+            "stockfish/engine".to_string(),
             job,
             integrity,
             app.handle().clone(),
@@ -8870,6 +8882,7 @@ mod tests {
                     "https://example.com/engine.tar.gz".into(),
                     destination,
                     directory.clone(),
+                    "stockfish/engine".to_string(),
                     job,
                     integrity,
                     app.handle().clone(),
@@ -8949,6 +8962,7 @@ mod tests {
                 "https://example.com/engine.tar.gz".into(),
                 destination.clone(),
                 directory.clone(),
+                "stockfish/engine".to_string(),
                 job,
                 integrity.clone(),
                 app.handle().clone(),
@@ -8997,6 +9011,7 @@ mod tests {
                 "https://example.com/engine.tar.gz".into(),
                 destination.clone(),
                 directory.clone(),
+                "stockfish/engine".to_string(),
                 job,
                 integrity,
                 app.handle().clone(),
@@ -9036,6 +9051,147 @@ mod tests {
         assert_ne!(handles[0], handles[1]);
         assert_eq!(std::fs::read(&paths[0]).unwrap(), b"first executable");
         assert_eq!(std::fs::read(&paths[1]).unwrap(), b"second executable");
+    }
+
+    #[tokio::test]
+    async fn empty_digest_directory_is_cleared_and_the_archive_installed() {
+        let dir = tempdir().unwrap();
+        let (authority, destination, engine_root, root) = engine_destination(&dir);
+        let content = b"installed executable";
+        let payload = gzip_tar_payload(content);
+        let integrity = unsigned_test_integrity(&payload);
+        let directory = format!("engine.tar.gz-{}", integrity.sha256);
+        std::fs::create_dir(engine_root.join(&directory)).unwrap();
+        let state = AppState {
+            http_transport: Arc::new(zip_response(payload)),
+            ..AppState::default()
+        };
+        state.pgn_path_authority.install(authority).unwrap();
+        let app = test_progress_app();
+        let (job, lease) = test_download_lease(&state);
+        download_engine_archive_core(
+            begin_progress(&state.progress_state, &app.handle().clone(), job.clone()).unwrap(),
+            "https://example.com/engine.tar.gz".into(),
+            destination,
+            directory.clone(),
+            "stockfish/engine".to_string(),
+            job,
+            integrity,
+            app.handle().clone(),
+            state.clone(),
+            lease.token(),
+            lease.commit_gate(),
+            Box::new(accept_any_integrity),
+        )
+        .await
+        .unwrap();
+        let relative = format!("{directory}/stockfish/engine");
+        assert_eq!(std::fs::read(engine_root.join(&relative)).unwrap(), content);
+        state
+            .pgn_path_authority
+            .raw_for_test()
+            .lock()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .register_installed_engine_for_test(&root, &relative)
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn foreign_digest_directory_without_the_executable_refuses_without_download() {
+        let dir = tempdir().unwrap();
+        let (authority, destination, engine_root, _) = engine_destination(&dir);
+        let integrity = unsigned_test_integrity(&gzip_tar_payload(b"expected engine"));
+        let directory = format!("engine.tar.gz-{}", integrity.sha256);
+        let tree = engine_root.join(&directory);
+        std::fs::create_dir(&tree).unwrap();
+        std::fs::write(tree.join("foreign"), b"foreign content").unwrap();
+        let transport = Arc::new(MockTransport {
+            responses: Mutex::new(vec![]),
+            requests_seen: Mutex::new(vec![]),
+        });
+        let state = AppState {
+            http_transport: transport.clone(),
+            ..AppState::default()
+        };
+        state.pgn_path_authority.install(authority).unwrap();
+        let app = test_progress_app();
+        for _ in 0..2 {
+            let (job, lease) = test_download_lease(&state);
+            let result = download_engine_archive_core(
+                begin_progress(&state.progress_state, &app.handle().clone(), job.clone()).unwrap(),
+                "https://example.com/engine.tar.gz".into(),
+                destination.clone(),
+                directory.clone(),
+                "stockfish/engine".to_string(),
+                job,
+                integrity.clone(),
+                app.handle().clone(),
+                state.clone(),
+                lease.token(),
+                lease.commit_gate(),
+                Box::new(accept_any_integrity),
+            )
+            .await;
+            assert!(matches!(result, Err(Error::Conflict(_))), "{result:?}");
+            assert_eq!(
+                std::fs::read(tree.join("foreign")).unwrap(),
+                b"foreign content"
+            );
+            assert!(!tree.join("stockfish").exists());
+            assert!(transport.requests_seen.lock().unwrap().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn legacy_digest_tree_holding_the_executable_is_adopted_without_download() {
+        let dir = tempdir().unwrap();
+        let (authority, destination, engine_root, root) = engine_destination(&dir);
+        let content = b"legacy executable";
+        let integrity = unsigned_test_integrity(&gzip_tar_payload(content));
+        let directory = format!("engine.tar.gz-{}", integrity.sha256);
+        let relative = format!("{directory}/stockfish/engine");
+        std::fs::create_dir_all(engine_root.join(&directory).join("stockfish")).unwrap();
+        std::fs::write(engine_root.join(&relative), content).unwrap();
+        let transport = Arc::new(MockTransport {
+            responses: Mutex::new(vec![]),
+            requests_seen: Mutex::new(vec![]),
+        });
+        let state = AppState {
+            http_transport: transport.clone(),
+            ..AppState::default()
+        };
+        state.pgn_path_authority.install(authority).unwrap();
+        let app = test_progress_app();
+        let (job, lease) = test_download_lease(&state);
+        download_engine_archive_core(
+            begin_progress(&state.progress_state, &app.handle().clone(), job.clone()).unwrap(),
+            "https://example.com/engine.tar.gz".into(),
+            destination,
+            directory,
+            "stockfish/engine".to_string(),
+            job,
+            integrity,
+            app.handle().clone(),
+            state.clone(),
+            lease.token(),
+            lease.commit_gate(),
+            Box::new(accept_any_integrity),
+        )
+        .await
+        .unwrap();
+        assert_eq!(std::fs::read(engine_root.join(&relative)).unwrap(), content);
+        assert!(transport.requests_seen.lock().unwrap().is_empty());
+        state
+            .pgn_path_authority
+            .raw_for_test()
+            .lock()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .register_installed_engine_for_test(&root, &relative)
+            .unwrap();
     }
 
     async fn download_zip_with_staging(path: &Path, staging: Option<PathBuf>) -> Error {
@@ -9237,6 +9393,7 @@ mod tests {
                 "https://example.com/engine.zip".into(),
                 destination,
                 "engine".into(),
+                "stockfish/engine".to_string(),
                 task_job_id,
                 integrity,
                 task_app,
@@ -9397,6 +9554,7 @@ mod tests {
                     "https://example.com/engine.zip".into(),
                     destination,
                     "engine".into(),
+                    "stockfish/engine".to_string(),
                     job_id,
                     unsigned_test_integrity(&payload),
                     app.handle().clone(),
@@ -9448,6 +9606,7 @@ mod tests {
                     "https://example.com/engine.zip".into(),
                     destination,
                     "engine".into(),
+                    "stockfish/engine".to_string(),
                     job_id,
                     unsigned_test_integrity(&payload),
                     app.handle().clone(),
@@ -10001,6 +10160,7 @@ mod tests {
             "https://example.com/engine.zip".into(),
             destination,
             "engine".into(),
+            "stockfish/engine".to_string(),
             job,
             integrity.clone(),
             app.handle().clone(),

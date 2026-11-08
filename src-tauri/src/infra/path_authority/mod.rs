@@ -5033,6 +5033,23 @@ fn relative_components(relative: &Path) -> Vec<OsString> {
         .collect()
 }
 
+fn engine_relative_components(relative_path: &str) -> Result<Vec<OsString>, Error> {
+    let components: Vec<OsString> = Path::new(relative_path)
+        .components()
+        .map(|component| match component {
+            std::path::Component::Normal(value) => Ok(value.to_os_string()),
+            _ => Err(Error::InvalidInput(
+                "engine path must be a relative file path".into(),
+            )),
+        })
+        .collect::<Result<_, _>>()?;
+    if components.is_empty() {
+        return Err(Error::InvalidInput("engine path is required".into()));
+    }
+    validate_components(&components)?;
+    Ok(components)
+}
+
 fn validate_components(components: &[OsString]) -> Result<(), Error> {
     for name in components {
         let component = name.as_os_str();
@@ -7393,19 +7410,7 @@ impl PathAuthority {
         relative_path: &str,
         probe: &mut EngineRootProbe,
     ) -> Result<EngineHandle, Error> {
-        let components: Vec<OsString> = Path::new(relative_path)
-            .components()
-            .map(|component| match component {
-                std::path::Component::Normal(value) => Ok(value.to_os_string()),
-                _ => Err(Error::InvalidInput(
-                    "engine path must be a relative file path".into(),
-                )),
-            })
-            .collect::<Result<_, _>>()?;
-        if components.is_empty() {
-            return Err(Error::InvalidInput("engine path is required".into()));
-        }
-        validate_components(&components)?;
+        let components = engine_relative_components(relative_path)?;
         let (catalog_root, catalog_path, root_directory) =
             self.prepare_catalog_engine_registration(root, &components, probe)?;
         let resolved = self.resolve_with_engine_probe(
