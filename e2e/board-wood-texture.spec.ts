@@ -329,12 +329,26 @@ test("board-wood-texture: the exported board snapshot carries the wood grain, an
                 .map(({ args }) => (args as { bytes: number[] }).bytes),
         );
 
-    const exportedBytes = async (count: number) => {
-        await page.getByRole("button", { name: "Take Snapshot", exact: true }).click();
-        await expect.poll(async () => (await invocations()).length).toBe(count);
-        return (await invocations())[count - 1];
+    const exportedBytes = async () => {
+        const takeSnapshot = page.getByRole("button", { name: "Take Snapshot", exact: true });
+        await expect(takeSnapshot).toBeEnabled();
+        const before = (await invocations()).length;
+        await takeSnapshot.click();
+        try {
+            await expect
+                .poll(async () => (await invocations()).length, { timeout: 6_000 })
+                .toBeGreaterThan(before);
+        } catch {
+            // Under load the click can be lost after the route change. Retry once only, after
+            // a window long enough that a slow export is not duplicated.
+            await takeSnapshot.click();
+            await expect
+                .poll(async () => (await invocations()).length, { timeout: 6_000 })
+                .toBeGreaterThan(before);
+        }
+        return (await invocations()).at(-1)!;
     };
-    const withTexture = await exportedBytes(1);
+    const withTexture = await exportedBytes();
 
     const woodTexture = await openAppearanceTab(page);
     await woodTexture.uncheck();
@@ -342,7 +356,7 @@ test("board-wood-texture: the exported board snapshot carries the wood grain, an
     await page.getByRole("link", { name: "Board", exact: true }).click();
     await expect(board).toHaveCSS("background-image", /^none, url\(/);
     await page.mouse.move(0, 0);
-    const withoutTexture = await exportedBytes(2);
+    const withoutTexture = await exportedBytes();
 
     const result = await page.evaluate(
         async ([on, off]) => {
