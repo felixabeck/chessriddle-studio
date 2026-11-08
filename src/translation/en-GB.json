@@ -827,6 +827,8 @@
     "Home.Personal.Overview.PeakRating": "Peak",
     "Home.Personal.Overview.Performance": "Performance",
     "Home.Personal.Overview.RatedGames": "{{rated}} rated",
+    "Home.Personal.Overview.ResultLoss": "Loss",
+    "Home.Personal.Overview.ResultWin": "Win",
     "Home.Personal.Overview.TopOpenings": "Top openings",
     "Home.Personal.Ratings": "Ratings",
     "Home.PuzzleTraining": "Puzzle Training",

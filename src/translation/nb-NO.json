@@ -827,6 +827,8 @@
     "Home.Personal.Overview.PeakRating": "Topp",
     "Home.Personal.Overview.Performance": "Prestasjon",
     "Home.Personal.Overview.RatedGames": "{{rated}} ratet",
+    "Home.Personal.Overview.ResultLoss": "Tap",
+    "Home.Personal.Overview.ResultWin": "Seier",
     "Home.Personal.Overview.TopOpenings": "Vanligste åpninger",
     "Home.Personal.Ratings": "Rangeringer",
     "Home.PuzzleTraining": "Oppgavetrening",

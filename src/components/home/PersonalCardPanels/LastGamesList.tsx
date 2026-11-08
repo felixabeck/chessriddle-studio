@@ -87,11 +87,11 @@ function LastGameRow({
   const result = playerPerspectiveResult(game, isWhite);
   const resultLabel =
     result === "win"
-      ? t("Databases.OpeningTree.Wins")
+      ? t("Home.Personal.Overview.ResultWin")
       : result === "draw"
         ? t("Board.Analysis.Tablebase.Draw")
         : result === "loss"
-          ? t("Databases.OpeningTree.Losses")
+          ? t("Home.Personal.Overview.ResultLoss")
           : "*";
   const opening = game.eco ?? "";
 

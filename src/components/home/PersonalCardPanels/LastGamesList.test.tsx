@@ -14,8 +14,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { error?: string }) =>
-      options?.error !== undefined ? `${key}: ${options.error}` : key,
+    t: (key: string, options?: { error?: string }) => {
+      if (key === "Home.Personal.Overview.ResultWin") return "Win";
+      if (key === "Home.Personal.Overview.ResultLoss") return "Loss";
+      return options?.error !== undefined ? `${key}: ${options.error}` : key;
+    },
   }),
 }));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => mocks.navigate }));
@@ -168,10 +171,10 @@ test("renders returned games in order and opens the clicked row", async () => {
   expect(rows[0].textContent).toContain("2026.02.02");
   expect(rows[0].textContent).toContain("Hikaru");
   expect(rows[0].textContent).toContain("2800");
-  expect(rows[0].textContent).toContain("Databases.OpeningTree.Wins");
+  expect(rows[0].textContent).toContain("Win");
   expect(rows[0].textContent).toContain("B90");
   expect(rows[1].textContent).toContain("Nepo");
-  expect(rows[1].textContent).toContain("Databases.OpeningTree.Losses");
+  expect(rows[1].textContent).toContain("Loss");
 
   await act(async () => {
     rows[0].click();

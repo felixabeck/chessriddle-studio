@@ -847,6 +847,8 @@
     "Home.Personal.Overview.PeakRating": "Szczyt",
     "Home.Personal.Overview.Performance": "Performance",
     "Home.Personal.Overview.RatedGames": "{{rated}} rankingowych",
+    "Home.Personal.Overview.ResultLoss": "Przegrana",
+    "Home.Personal.Overview.ResultWin": "Wygrana",
     "Home.Personal.Overview.TopOpenings": "Najczęstsze debiuty",
     "Home.Personal.Ratings": "Rankingi",
     "Home.PuzzleTraining": "Trening zadań",

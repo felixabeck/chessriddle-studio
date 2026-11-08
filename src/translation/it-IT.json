@@ -837,6 +837,8 @@
     "Home.Personal.Overview.PeakRating": "Picco",
     "Home.Personal.Overview.Performance": "Prestazione",
     "Home.Personal.Overview.RatedGames": "{{rated}} classificate",
+    "Home.Personal.Overview.ResultLoss": "Sconfitta",
+    "Home.Personal.Overview.ResultWin": "Vittoria",
     "Home.Personal.Overview.TopOpenings": "Aperture principali",
     "Home.Personal.Ratings": "Punteggi",
     "Home.PuzzleTraining": "Allenamento puzzles",

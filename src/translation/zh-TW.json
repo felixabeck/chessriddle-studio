@@ -817,6 +817,8 @@
     "Home.Personal.Overview.PeakRating": "峰值",
     "Home.Personal.Overview.Performance": "表現分",
     "Home.Personal.Overview.RatedGames": "{{rated}} 盤有等級分",
+    "Home.Personal.Overview.ResultLoss": "負",
+    "Home.Personal.Overview.ResultWin": "勝",
     "Home.Personal.Overview.TopOpenings": "常用開局",
     "Home.Personal.Ratings": "等级分",
     "Home.PuzzleTraining": "谜题训练",

@@ -837,6 +837,8 @@
     "Home.Personal.Overview.PeakRating": "Máxima",
     "Home.Personal.Overview.Performance": "Performance",
     "Home.Personal.Overview.RatedGames": "{{rated}} valoradas",
+    "Home.Personal.Overview.ResultLoss": "Derrota",
+    "Home.Personal.Overview.ResultWin": "Victoria",
     "Home.Personal.Overview.TopOpenings": "Aperturas principales",
     "Home.Personal.Ratings": "Valoraciones",
     "Home.PuzzleTraining": "Entrenamiento de puzles",

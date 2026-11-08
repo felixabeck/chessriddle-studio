@@ -827,6 +827,8 @@
     "Home.Personal.Overview.PeakRating": "Zirve",
     "Home.Personal.Overview.Performance": "Performans",
     "Home.Personal.Overview.RatedGames": "{{rated}} dereceli",
+    "Home.Personal.Overview.ResultLoss": "Yenilgi",
+    "Home.Personal.Overview.ResultWin": "Galibiyet",
     "Home.Personal.Overview.TopOpenings": "En sık açılışlar",
     "Home.Personal.Ratings": "Puanlar",
     "Home.PuzzleTraining": "Bulmaca çalışması",

@@ -837,6 +837,8 @@
     "Home.Personal.Overview.PeakRating": "Máximo",
     "Home.Personal.Overview.Performance": "Performance",
     "Home.Personal.Overview.RatedGames": "{{rated}} classificadas",
+    "Home.Personal.Overview.ResultLoss": "Derrota",
+    "Home.Personal.Overview.ResultWin": "Vitória",
     "Home.Personal.Overview.TopOpenings": "Aberturas principais",
     "Home.Personal.Ratings": "Classificações",
     "Home.PuzzleTraining": "Treino de problemas",

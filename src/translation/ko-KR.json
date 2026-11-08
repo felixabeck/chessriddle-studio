@@ -817,6 +817,8 @@
     "Home.Personal.Overview.PeakRating": "최고",
     "Home.Personal.Overview.Performance": "퍼포먼스",
     "Home.Personal.Overview.RatedGames": "레이팅 {{rated}}국",
+    "Home.Personal.Overview.ResultLoss": "패배",
+    "Home.Personal.Overview.ResultWin": "승리",
     "Home.Personal.Overview.TopOpenings": "주요 오프닝",
     "Home.Personal.Ratings": "레이팅",
     "Home.PuzzleTraining": "퍼즐 훈련",

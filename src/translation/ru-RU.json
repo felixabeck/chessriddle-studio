@@ -847,6 +847,8 @@
     "Home.Personal.Overview.PeakRating": "Пик",
     "Home.Personal.Overview.Performance": "Перфоманс",
     "Home.Personal.Overview.RatedGames": "{{rated}} рейтинговых",
+    "Home.Personal.Overview.ResultLoss": "Поражение",
+    "Home.Personal.Overview.ResultWin": "Победа",
     "Home.Personal.Overview.TopOpenings": "Частые дебюты",
     "Home.Personal.Ratings": "Рейтинги",
     "Home.PuzzleTraining": "Тренировка задач",
