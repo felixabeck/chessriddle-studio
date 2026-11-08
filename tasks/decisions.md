@@ -12392,3 +12392,14 @@ Former private decision identifier: d-20261029-14
 * **Reason:** The adoption check and registration now share one definition of "the engine is there", so an adopted tree cannot fail registration for a missing binary. Reversal path: restore the `confirm_catalog_archive_adoption_with_probe` call in `download_engine_archive_core` and delete `adopt_catalog_archive_with_probe`.
 * **Decided by:** drain session 5df17b36 (next-finding, lens), 2026-11-08 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"92452aec1e2a10140be3953ddfe542ec38384a5f0abdada008d6b6b76695b3e9","input_sha256":"0bc37476ff705532df78ac3d48c8d6dacb4cb42b6161420b182cd67fd75d1ef9","kind":"mutation-receipt","operation":"511e21f035c74768c2136aac1f9d54d61443af503477a7fa42d2152e9e8f7db5","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-06"],"target":"decisions-ledger","v":1} -->
+
+### d-20261108-11 — How are the new per-event summary columns kept correct on every write?
+
+* **Question:** Events gains StartDate, EndDate, SiteID, GameCount, PlayerCount and AvgElo for the Events tab (Felix, 2026-11-08). Are they maintained incrementally per row or recomputed?
+* **Governs:** -
+* **Chosen:** Row triggers on Games only mark affected non-zero event IDs in `EventSummaryDirty`; one set-based recomputation over exactly the dirty IDs runs from `update_database_counts`, which every production write path already calls before commit, and the 2.3.0 backfill reuses it. A mandatory `games_event_idx ON Games(EventID)` supports it. Representative site = most frequent non-zero site (ties lowest ID); Ø Elo = mean of all positive rating slots; event 0 is never summarised; no indexes on the new Events columns.
+* **Rejected:** Incremental per-column triggers (distinct players, min/max after delete and most frequent site are not incrementally maintainable; per-row EXISTS checks make imports into huge events quadratic). First game's site (order-dependent).
+* **Reason:** One choke point and O(1) trigger work keep bulk imports bounded and correctness provable per write path. Known limit: a single-game write into an event with millions of games rescans that event once via the index. Reversal path: replace the dirty set and refresh with incremental triggers in a later schema version; add Events indexes if the Mega benchmark exceeds 250 ms per query.
+* **Supersedes:** -
+* **Decided by:** Claude Code (Opus 5.5) build, full auto, 2026-11-08 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"4f50384ac4a3219c74dfe42832230b9c59c1d35bad6d9e89590ed0556cd8797f","input_sha256":"3e3f57de81edfcbda9e5a5c6aea810ed7f348ae0d5d1ae2b737949dae464a7c9","kind":"mutation-receipt","operation":"6a5b730869ad76aa004d0a74304f20cebf50a0b40d55f929ac0d7dcc07a97407","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-11"],"target":"decisions-ledger","v":1} -->
