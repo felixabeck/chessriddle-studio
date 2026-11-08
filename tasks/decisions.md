@@ -12340,3 +12340,14 @@ Former private decision identifier: d-20261029-14
 * **Supersedes:** d-20261107-13. Narrows d-20261002-04's "stay on create and migration" clause to creation and the 1.0.0 rewrite; the rest of that entry stands.
 * **Decided by:** Claude Code (Opus 5.5) next-finding drain, adopted reviewed plan, full auto, 2026-11-08 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"d46f4445c1cee4ef7700f1f85d9f915b813af24c603c7846f29889da78335c5f","input_sha256":"31684807945cbadc765d32a5108052230a4a5b3263da59950dd2090a7101ec61","kind":"mutation-receipt","operation":"16c548cdba3bfc6e7863f1a9905b30adab743d58a96504f0247500d3c658a846","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-01"],"target":"decisions-ledger","v":1} -->
+
+### d-20261108-02 — Does the remaining one-time additive migration wait need a library hint?
+
+* **Question:** After the content check moves to the background scan, the 2.2.0 migration of an 11.4M-game database still takes about 5 s during which the library shows the generic loading line. Does that need a dedicated upgrade indicator?
+* **Governs:** f-20261107-02
+* **Chosen:** No. Known limit: the listing shows the generic loading line during the one-time ~5 s migration.
+* **Rejected:** A dedicated upgrade indicator (new event and renderer state for a one-time wait comparable to an ordinary large-folder listing).
+* **Reason:** Rule 6d: machinery must remove an observed cost, and the observed cost was the ~45 s content check. Reversal path: file a finding if a measured migration wait noticeably exceeds the ordinary listing time.
+* **Supersedes:** -
+* **Decided by:** Claude Code (Opus 5.5) next-finding drain, adopted reviewed plan, full auto, 2026-11-08 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"625e350b6bc27313b9f862c91ec80ee9b27c0f714f3c526392ad848d0b758cc6","input_sha256":"e6e29401c1ca99cd2ec9dab461acac9a547a1447806b946ce03233134ffa5332","kind":"mutation-receipt","operation":"f77330fa80c14384ed818682c2940714c22330eec7440cf6b10c17796dedde1c","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-02"],"target":"decisions-ledger","v":1} -->
