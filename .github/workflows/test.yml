@@ -183,6 +183,17 @@ jobs:
         with:
           workspaces: src-tauri -> target
 
+      - name: Cache the actionlint binary
+        # The contract gate's actionlint otherwise downloads from GitHub Releases on every
+        # run, so an outage of that host would fail the job (f-20261108-06). The key hashes
+        # the checker that holds the version pin, so the workflow carries no second pin.
+        uses: actions/cache@v4
+        with:
+          path: ~/.github-actionlint/bin
+          key: actionlint-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/check-workflow-permissions.mjs') }}
+          restore-keys: |
+            actionlint-${{ runner.os }}-${{ runner.arch }}-
+
       - name: Run the contract gate
         run: pnpm gates:contract:check
 
