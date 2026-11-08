@@ -15,7 +15,9 @@ vi.mock("@mantine/core", () => {
     Divider: () => <hr />,
     Group: Container,
     ScrollArea: Container,
-    Stack: Container,
+    Stack: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
+      <div {...props}>{children}</div>
+    ),
     Text: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
   };
 });
@@ -35,11 +37,25 @@ vi.mock("recharts", () => ({
   YAxis: () => null,
 }));
 vi.mock("./ResultsChart", () => ({
-  default: ({ won, draw, lost }: { won: number; draw: number; lost: number }) => (
-    <div data-testid="result-counts">
+  default: ({
+    won,
+    draw,
+    lost,
+    playerPerspective,
+  }: {
+    won: number;
+    draw: number;
+    lost: number;
+    playerPerspective?: boolean;
+  }) => (
+    <div data-testid="result-counts" data-perspective={playerPerspective ? "player" : "board"}>
       {won}:{draw}:{lost}
+      {playerPerspective ? " Wins/Losses" : " WhiteWon/BlackWon"}
     </div>
   ),
+}));
+vi.mock("./LastGamesList", () => ({
+  default: () => <div data-testid="last-games">last-games</div>,
 }));
 vi.mock("./TimeControlSelector", () => ({ default: () => null }));
 vi.mock("./WebsiteAccountSelector", () => ({ default: () => null }));
@@ -129,7 +145,30 @@ const duplicatedDailyStatistics: PlayerGameInfo = {
           max_player_elo: 2_810,
         },
       ],
-      colors: [],
+      colors: [
+        {
+          time_control: "600+0",
+          is_player_white: true,
+          won: 2,
+          drawn: 1,
+          lost: 0,
+          rated_won: 0,
+          rated_drawn: 0,
+          rated_lost: 0,
+          opponent_elo_sum: 0,
+        },
+        {
+          time_control: "600+0",
+          is_player_white: false,
+          won: 0,
+          drawn: 0,
+          lost: 1,
+          rated_won: 0,
+          rated_drawn: 0,
+          rated_lost: 0,
+          opponent_elo_sum: 0,
+        },
+      ],
       latest: [],
       openings: [],
     },
@@ -146,7 +185,19 @@ const duplicatedDailyStatistics: PlayerGameInfo = {
           max_player_elo: 2_820,
         },
       ],
-      colors: [],
+      colors: [
+        {
+          time_control: "600+0",
+          is_player_white: true,
+          won: 1,
+          drawn: 0,
+          lost: 1,
+          rated_won: 0,
+          rated_drawn: 0,
+          rated_lost: 0,
+          opponent_elo_sum: 0,
+        },
+      ],
       latest: [],
       openings: [],
     },
@@ -325,7 +376,7 @@ test("Overview sums duplicate daily keys into result totals and month buckets", 
   await render(<OverviewPanel playerName="Magnus" info={duplicatedDailyStatistics} isDatabase />);
 
   expect(container.textContent).toContain("6 Common.Games");
-  expect(container.querySelector("[data-testid='result-counts']")?.textContent).toBe("3:1:2");
+  expect(container.querySelector("[data-testid='result-counts']")?.textContent).toContain("3:1:2");
   expect(container.querySelector("[data-testid='month-data']")?.textContent).toBe(
     "2026-09:5|2026-10:1",
   );
@@ -335,7 +386,7 @@ test("Ratings sums duplicate daily keys and takes the highest rating for each da
   await render(<RatingsPanel playerName="Magnus" info={duplicatedDailyStatistics} isDatabase />);
 
   expect(container.textContent).toContain("6 Common.Games");
-  expect(container.querySelector("[data-testid='result-counts']")?.textContent).toBe("3:1:2");
+  expect(container.querySelector("[data-testid='result-counts']")?.textContent).toContain("3:1:2");
   expect(container.querySelector("[data-testid='rating-data']")?.textContent).toBe("2820|2810");
 });
 
@@ -347,7 +398,7 @@ test("Ratings excludes out-of-range days from the summary and rating series", as
   });
 
   expect(container.textContent).toContain("1 Common.Games");
-  expect(container.querySelector("[data-testid='result-counts']")?.textContent).toBe("0:0:1");
+  expect(container.querySelector("[data-testid='result-counts']")?.textContent).toContain("0:0:1");
   expect(container.querySelector("[data-testid='rating-data']")?.textContent).toBe("2810");
 });
 
@@ -375,7 +426,19 @@ test("Overview and Ratings All-time both count games on incomplete daily dates",
             max_player_elo: 2_710,
           },
         ],
-        colors: [],
+        colors: [
+          {
+            time_control: "600+0",
+            is_player_white: true,
+            won: 2,
+            drawn: 0,
+            lost: 1,
+            rated_won: 0,
+            rated_drawn: 0,
+            rated_lost: 0,
+            opponent_elo_sum: 0,
+          },
+        ],
         latest: [],
         openings: [],
       },
@@ -423,7 +486,19 @@ test("Ratings Seven Days excludes incomplete dates that All time includes", asyn
             max_player_elo: 2_650,
           },
         ],
-        colors: [],
+        colors: [
+          {
+            time_control: "600+0",
+            is_player_white: true,
+            won: 2,
+            drawn: 0,
+            lost: 1,
+            rated_won: 0,
+            rated_drawn: 0,
+            rated_lost: 0,
+            opponent_elo_sum: 0,
+          },
+        ],
         latest: [],
         openings: [],
       },
@@ -508,5 +583,121 @@ test("Openings sums duplicate opening keys and retains each colour's results", a
       container.querySelectorAll("[data-testid='result-counts']"),
       (node) => node.textContent,
     ),
-  ).toEqual(["3:1:1", "1:1:2", "0:1:0"]);
+  ).toEqual(["3:1:1 Wins/Losses", "1:1:2 Wins/Losses", "0:1:0 Wins/Losses"]);
+});
+
+const mixedResultOverview: PlayerGameInfo = {
+  site_stats_data: [
+    {
+      site: "Lichess",
+      player: "Magnus",
+      daily: [
+        {
+          date: "2026.01.01",
+          time_control: "600+0",
+          won: 2,
+          drawn: 2,
+          lost: 2,
+          max_player_elo: 1800,
+        },
+      ],
+      colors: [
+        {
+          time_control: "600+0",
+          is_player_white: true,
+          won: 2,
+          drawn: 1,
+          lost: 1,
+          rated_won: 2,
+          rated_drawn: 1,
+          rated_lost: 1,
+          opponent_elo_sum: 7200,
+        },
+        {
+          time_control: "600+0",
+          is_player_white: false,
+          won: 0,
+          drawn: 1,
+          lost: 1,
+          rated_won: 0,
+          rated_drawn: 1,
+          rated_lost: 1,
+          opponent_elo_sum: 3400,
+        },
+      ],
+      latest: [
+        {
+          time_control: "600+0",
+          date: "2026.01.01",
+          time: "18:00:00",
+          game_id: 2,
+          player_elo: 1750,
+        },
+      ],
+      openings: [
+        {
+          time_control: "600+0",
+          is_player_white: true,
+          opening: "Sicilian Defense",
+          won: 2,
+          drawn: 1,
+          lost: 0,
+        },
+        {
+          time_control: "600+0",
+          is_player_white: false,
+          opening: "Caro-Kann Defense",
+          won: 0,
+          drawn: 1,
+          lost: 1,
+        },
+      ],
+    },
+  ],
+};
+
+test("Overview mixed results keep per-colour games, score and W/D/L distinct", async () => {
+  await render(<OverviewPanel playerName="Magnus" info={mixedResultOverview} isDatabase />);
+
+  const headline = container.querySelector("[data-testid='overview-headline']")?.textContent ?? "";
+  expect(headline).toContain("6 Common.Games");
+  expect(headline).toContain("50%");
+  expect(headline).toContain("+2 =2 −2");
+  expect(headline).toContain("Wins/Losses");
+  expect(headline).not.toContain("WhiteWon");
+  expect(headline).not.toContain("BlackWon");
+
+  const white = container.querySelector("[data-testid='overview-white']")?.textContent ?? "";
+  expect(white).toContain("4 Common.Games");
+  expect(white).toContain("62.5%");
+  expect(white).toContain("+2 =1 −1");
+
+  const black = container.querySelector("[data-testid='overview-black']")?.textContent ?? "";
+  expect(black).toContain("2 Common.Games");
+  expect(black).toContain("25%");
+  expect(black).toContain("+0 =1 −1");
+
+  expect(
+    Array.from(container.querySelectorAll("[data-testid='result-counts']"), (node) =>
+      node.getAttribute("data-perspective"),
+    ),
+  ).toEqual(["player", "player", "player"]);
+});
+
+test("Overview last games appear only when a database player is passed", async () => {
+  await render(<OverviewPanel playerName="Magnus" info={mixedResultOverview} isDatabase />);
+  expect(container.querySelector("[data-testid='last-games']")).toBeNull();
+
+  await render(
+    <OverviewPanel
+      playerName="Magnus"
+      info={mixedResultOverview}
+      isDatabase
+      databasePlayer={{
+        player: { id: 1, name: "Magnus", elo: null, game_count: 6 },
+        file: { id: { id: "db-1" }, kind: "database" },
+      }}
+    />,
+  );
+  expect(container.querySelector("[data-testid='last-games']")?.textContent).toBe("last-games");
 });

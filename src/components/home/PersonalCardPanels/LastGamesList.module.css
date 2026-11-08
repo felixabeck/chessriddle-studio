@@ -1,0 +1,19 @@
+.row {
+  cursor: pointer;
+  width: 100%;
+  text-align: start;
+  padding: var(--mantine-spacing-xs);
+  border-radius: var(--mantine-radius-sm);
+}
+
+.row:hover {
+  background: var(--cf-interactive-hover);
+}
+
+.swatch {
+  flex-shrink: 0;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: var(--mantine-radius-xs);
+  border: 1px solid var(--cf-border);
+}

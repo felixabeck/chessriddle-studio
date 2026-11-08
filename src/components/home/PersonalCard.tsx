@@ -104,7 +104,12 @@ function PersonalPlayerCard({
           <Tabs.Tab value="openings">{t("Home.Personal.Openings")}</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="overview" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
-          <OverviewPanel playerName={name} info={info} isDatabase={isDatabase} />
+          <OverviewPanel
+            playerName={name}
+            info={info}
+            isDatabase={isDatabase}
+            databasePlayer={databasePlayer}
+          />
         </Tabs.Panel>
         <Tabs.Panel
           value="openings"

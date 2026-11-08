@@ -1,4 +1,4 @@
-import { Stack, Text } from "@mantine/core";
+import { Group, Stack, Text } from "@mantine/core";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -12,17 +12,22 @@ import {
   YAxis,
 } from "recharts";
 import type { NameType, ValueType } from "recharts/types/component/DefaultTooltipContent";
-import type { DailyStatsData, PlayerGameInfo } from "@/bindings";
-import { getTimeControl } from "@/utils/timeControl";
+import type { DatabaseHandle, Player, PlayerGameInfo } from "@/bindings";
+import LastGamesList from "./LastGamesList";
 import ResultsChart from "./ResultsChart";
 import filterClasses from "./StatisticsFilters.module.css";
-import { summarizeDailyStats } from "./dailyStatsSummary";
 import TimeControlSelector from "./TimeControlSelector";
 import WebsiteAccountSelector from "./WebsiteAccountSelector";
+import {
+  type ColorOverview,
+  type MonthResults,
+  deriveOverviewStatistics,
+  filterPlayerStats,
+  formatResultCounts,
+  formatScorePercent,
+} from "./overviewStatistics";
 
-export function fillMissingMonths(
-  data: { name: string; count: number }[],
-): { name: string; count: number }[] {
+export function fillMissingMonths<T extends { name: string }>(data: T[]): T[] {
   const validData = data.filter(({ name }) => /^\d{4}-(0[1-9]|1[0-2])$/.test(name));
   if (validData.length === 0) return [];
 
@@ -41,69 +46,61 @@ export function fillMissingMonths(
     );
   }
 
-  const dataMap = new Map(data.map((item) => [item.name, item.count]));
-  const filledData = monthStrings.map((month) => ({
-    name: month,
-    count: dataMap.get(month) || 0,
-  }));
-
-  return filledData;
+  const dataMap = new Map(validData.map((item) => [item.name, item]));
+  return monthStrings.map((month) => dataMap.get(month) ?? zeroMonth(month, validData[0]));
 }
 
-function mergeYears(data: { name: string; count: number }[]): { name: string; count: number }[] {
-  const yearCounts: { [year: string]: number } = {};
-
-  for (const { name, count } of data) {
-    const year = name.slice(0, 4);
-    yearCounts[year] = (yearCounts[year] || 0) + count;
+function zeroMonth<T extends { name: string }>(name: string, sample: T): T {
+  const empty = { ...sample, name };
+  for (const key of Object.keys(empty) as (keyof T)[]) {
+    if (key !== "name" && typeof empty[key] === "number") {
+      (empty[key] as number) = 0;
+    }
   }
-
-  return Object.entries(yearCounts).map(([year, count]) => ({
-    name: year,
-    count,
-  }));
+  return empty;
 }
 
-function extractMonthlyStats(dailyStats: DailyStatsData[]) {
-  const monthCounts: { [key: string]: number } = {};
-  for (const day of dailyStats) {
-    const monthString = day.date.slice(0, 7).replace(".", "-");
-    monthCounts[monthString] = (monthCounts[monthString] || 0) + day.won + day.drawn + day.lost;
+function mergeYears(data: MonthResults[]): MonthResults[] {
+  const yearCounts = new Map<string, MonthResults>();
+
+  for (const item of data) {
+    const year = item.name.slice(0, 4);
+    const previous = yearCounts.get(year);
+    if (!previous) {
+      yearCounts.set(year, { ...item, name: year });
+      continue;
+    }
+    yearCounts.set(year, {
+      name: year,
+      count: previous.count + item.count,
+      won: previous.won + item.won,
+      drawn: previous.drawn + item.drawn,
+      lost: previous.lost + item.lost,
+    });
   }
 
-  return Object.entries(monthCounts).map(([month, count]) => ({
-    name: month,
-    count,
-  }));
+  return Array.from(yearCounts.values());
 }
 
 function OverviewPanel({
   playerName,
   info,
   isDatabase,
+  databasePlayer,
 }: {
   playerName: string;
   info: PlayerGameInfo;
   isDatabase?: boolean;
+  databasePlayer?: { player: Player; file: DatabaseHandle };
 }) {
   const { t } = useTranslation();
   const [website, setWebsite] = useState<string | null>("All websites");
   const [account, setAccount] = useState<string | null>("All accounts");
   const [timeControl, setTimeControl] = useState<string | null>(null);
 
-  const dailyStats =
-    info?.site_stats_data
-      .filter((d) => website === "All websites" || d.site === website)
-      .filter((d) => account === "All accounts" || d.player === account)
-      .flatMap((d) => d.daily)
-      .filter(
-        (day) =>
-          !timeControl ||
-          timeControl === "any" ||
-          getTimeControl(website, day.time_control) === timeControl,
-      ) ?? [];
-  const { total, won, draw, lost } = summarizeDailyStats(dailyStats);
-  const dataPerMonth = extractMonthlyStats(dailyStats);
+  const stats = deriveOverviewStatistics(
+    filterPlayerStats(info, { website, account, timeControl }),
+  );
 
   return (
     <Stack>
@@ -123,16 +120,176 @@ function OverviewPanel({
         />
       </div>
 
-      <Text pt="md" fw="bold" fz="lg" ta="center">
-        {total} {t("Common.Games")}
-      </Text>
+      <Stack gap="xs" data-testid="overview-headline" pt="md">
+        <Text fw="bold" fz="lg" ta="center">
+          {stats.total.games} {t("Common.Games")}
+        </Text>
+        {stats.total.games > 0 && (
+          <>
+            <Group justify="center" gap="md" wrap="wrap">
+              <Text fw={500}>
+                {formatScorePercent(stats.total.won, stats.total.drawn, stats.total.lost)}
+              </Text>
+              <Text>
+                {formatResultCounts(stats.total.won, stats.total.drawn, stats.total.lost)}
+              </Text>
+            </Group>
+            <ResultsChart
+              won={stats.total.won}
+              draw={stats.total.drawn}
+              lost={stats.total.lost}
+              size="2rem"
+              playerPerspective
+            />
+          </>
+        )}
+      </Stack>
 
-      {total > 0 && (
-        <>
-          <ResultsChart won={won} draw={draw} lost={lost} size="2rem" />
-          <DateChart dataPerMonth={dataPerMonth} />
-        </>
+      <ColorRow
+        testId="overview-white"
+        label={t("Home.Personal.Overview.AsWhite")}
+        empty={t("Home.Personal.Overview.NoGamesAsWhite")}
+        color={stats.white}
+        gamesLabel={t("Common.Games")}
+      />
+      <ColorRow
+        testId="overview-black"
+        label={t("Home.Personal.Overview.AsBlack")}
+        empty={t("Home.Personal.Overview.NoGamesAsBlack")}
+        color={stats.black}
+        gamesLabel={t("Common.Games")}
+      />
+
+      {(stats.peakRating !== null || stats.latestRating !== null) && (
+        <Group justify="center" gap="lg" wrap="wrap" data-testid="overview-ratings">
+          {stats.peakRating !== null && (
+            <Text size="sm">
+              {t("Home.Personal.Overview.PeakRating")}: {stats.peakRating}
+            </Text>
+          )}
+          {stats.latestRating !== null && (
+            <Text size="sm">
+              {t("Home.Personal.Overview.LatestRating")}: {stats.latestRating}
+            </Text>
+          )}
+        </Group>
       )}
+
+      {stats.total.ratedGames > 0 && (
+        <Stack gap={4} data-testid="overview-opponents">
+          <OpponentLine color={stats.total} />
+          {stats.white.ratedGames > 0 && (
+            <OpponentLine color={stats.white} prefix={t("Home.Personal.Overview.AsWhite")} />
+          )}
+          {stats.black.ratedGames > 0 && (
+            <OpponentLine color={stats.black} prefix={t("Home.Personal.Overview.AsBlack")} />
+          )}
+        </Stack>
+      )}
+
+      {stats.total.games > 0 && <DateChart dataPerMonth={stats.months} />}
+
+      {(stats.whiteOpenings.length > 0 || stats.blackOpenings.length > 0) && (
+        <Stack gap="xs">
+          <Text fw={500} ta="center">
+            {t("Home.Personal.Overview.TopOpenings")}
+          </Text>
+          <Group grow align="flex-start" wrap="wrap">
+            <OpeningColumn
+              testId="overview-openings-white"
+              title={t("Fen.White")}
+              openings={stats.whiteOpenings}
+            />
+            <OpeningColumn
+              testId="overview-openings-black"
+              title={t("Fen.Black")}
+              openings={stats.blackOpenings}
+            />
+          </Group>
+        </Stack>
+      )}
+
+      {databasePlayer && <LastGamesList {...databasePlayer} />}
+    </Stack>
+  );
+}
+
+function ColorRow({
+  testId,
+  label,
+  empty,
+  color,
+  gamesLabel,
+}: {
+  testId: string;
+  label: string;
+  empty: string;
+  color: ColorOverview;
+  gamesLabel: string;
+}) {
+  return (
+    <Stack gap={4} data-testid={testId}>
+      <Group justify="space-between" wrap="wrap" gap="xs">
+        <Text fw={500}>{label}</Text>
+        {color.games === 0 ? (
+          <Text size="sm" c="dimmed">
+            {empty}
+          </Text>
+        ) : (
+          <Text size="sm">
+            {color.games} {gamesLabel} {formatScorePercent(color.won, color.drawn, color.lost)}{" "}
+            {formatResultCounts(color.won, color.drawn, color.lost)}
+          </Text>
+        )}
+      </Group>
+      {color.games > 0 && (
+        <ResultsChart
+          won={color.won}
+          draw={color.drawn}
+          lost={color.lost}
+          size="1rem"
+          playerPerspective
+        />
+      )}
+    </Stack>
+  );
+}
+
+function OpponentLine({ color, prefix }: { color: ColorOverview; prefix?: string }) {
+  const { t } = useTranslation();
+  if (color.averageOpponent === null || color.performance === null) return null;
+  const body = `${t("Home.Personal.Overview.AverageOpponent")} ${Math.round(color.averageOpponent)} · ${t("Home.Personal.Overview.Performance")} ${Math.round(color.performance)} · ${t("Home.Personal.Overview.RatedGames", { rated: color.ratedGames })}`;
+  return (
+    <Text size="sm" ta="center">
+      {prefix ? `${prefix}: ${body}` : body}
+    </Text>
+  );
+}
+
+function OpeningColumn({
+  testId,
+  title,
+  openings,
+}: {
+  testId: string;
+  title: string;
+  openings: { name: string; games: number; won: number; draw: number; lost: number }[];
+}) {
+  return (
+    <Stack gap={4} data-testid={testId} style={{ minWidth: 0 }}>
+      <Text ta="center" fw={500}>
+        {title}
+      </Text>
+      {openings.map((opening) => (
+        <Group key={opening.name} justify="space-between" wrap="nowrap" gap="xs">
+          <Text size="sm" lineClamp={2} style={{ minWidth: 0 }}>
+            {opening.name}
+          </Text>
+          <Text size="sm" style={{ flexShrink: 0 }}>
+            {opening.games} {formatScorePercent(opening.won, opening.draw, opening.lost)}
+          </Text>
+        </Group>
+      ))}
     </Stack>
   );
 }
@@ -156,12 +313,16 @@ const DateChartTooltip = ({
         }}
       >
         <p style={{ margin: "0" }}>{`${label}`}</p>
-        <p
-          style={{
-            color: "var(--cf-primary)",
-            marginTop: "8px",
-          }}
-        >{`${payload?.[0].name} : ${payload?.[0].value}`}</p>
+        {payload.map((entry) => (
+          <p
+            key={String(entry.dataKey)}
+            style={{
+              color: typeof entry.color === "string" ? entry.color : "var(--cf-primary)",
+              marginTop: "8px",
+              marginBottom: "0",
+            }}
+          >{`${entry.name} : ${entry.value}`}</p>
+        ))}
         <p style={{ fontSize: "0.75rem", margin: "0", color: "var(--mantine-color-dimmed)" }}>
           {t(isYearSelected ? "Home.Personal.Chart.OpenMonths" : "Home.Personal.Chart.OpenYears")}
         </p>
@@ -172,7 +333,7 @@ const DateChartTooltip = ({
   return null;
 };
 
-function DateChart({ dataPerMonth }: { dataPerMonth: { name: string; count: number }[] }) {
+function DateChart({ dataPerMonth }: { dataPerMonth: MonthResults[] }) {
   const { t } = useTranslation();
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
 
@@ -207,7 +368,24 @@ function DateChart({ dataPerMonth }: { dataPerMonth: { name: string; count: numb
             stroke: "1px solid var(--chart-grid-color)",
           }}
         />
-        <Bar dataKey="count" fill="var(--cf-primary)" name={t("Common.Games")} />
+        <Bar
+          dataKey="won"
+          stackId="result"
+          fill="var(--mantine-color-success-filled)"
+          name={t("Databases.OpeningTree.Wins")}
+        />
+        <Bar
+          dataKey="drawn"
+          stackId="result"
+          fill="var(--mantine-color-gray-filled)"
+          name={t("Board.Analysis.Tablebase.Draw")}
+        />
+        <Bar
+          dataKey="lost"
+          stackId="result"
+          fill="var(--mantine-color-danger-filled)"
+          name={t("Databases.OpeningTree.Losses")}
+        />
       </BarChart>
     </ResponsiveContainer>
   );

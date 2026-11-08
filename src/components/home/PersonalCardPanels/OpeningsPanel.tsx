@@ -7,7 +7,6 @@ import { useAtom, useAtomValue } from "jotai";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { PlayerGameInfo } from "@/bindings";
-import type { OpeningStatsData } from "@/bindings";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { fontSizeAtom, tabsAtom } from "@/state/atoms";
 import { parsePGN } from "@/utils/chess";
@@ -15,38 +14,11 @@ import { createTab, runTabCreation } from "@/utils/tabs";
 import { getTimeControl } from "@/utils/timeControl";
 import { countMainPly, defaultTree } from "@/utils/treeReducer";
 import classes from "./OpeningsPanel.module.css";
+import { aggregateOpenings, type OpeningStats } from "./overviewStatistics";
 import ResultsChart from "./ResultsChart";
 import filterClasses from "./StatisticsFilters.module.css";
 import TimeControlSelector from "./TimeControlSelector";
 import WebsiteAccountSelector from "./WebsiteAccountSelector";
-
-type OpeningStats = {
-  name: string;
-  games: number;
-  won: number;
-  draw: number;
-  lost: number;
-};
-
-function aggregateOpenings(data: OpeningStatsData[], color: Color): OpeningStats[] {
-  const openings = new Map<string, OpeningStats>();
-  for (const row of data) {
-    if (row.is_player_white !== (color === "white")) continue;
-    const previous = openings.get(row.opening) ?? {
-      name: row.opening,
-      games: 0,
-      won: 0,
-      draw: 0,
-      lost: 0,
-    };
-    previous.won += row.won;
-    previous.draw += row.drawn;
-    previous.lost += row.lost;
-    previous.games += row.won + row.drawn + row.lost;
-    openings.set(row.opening, previous);
-  }
-  return Array.from(openings.values()).sort((a, b) => b.games - a.games);
-}
 
 function OpeningsPanel({
   playerName,
@@ -206,7 +178,13 @@ function OpeningDetail({
         </Text>
         <Text>{(openingRate * 100).toFixed(2)}%</Text>
       </Group>
-      <ResultsChart won={opening.won} draw={opening.draw} lost={opening.lost} size="1.5rem" />
+      <ResultsChart
+        won={opening.won}
+        draw={opening.draw}
+        lost={opening.lost}
+        size="1.5rem"
+        playerPerspective
+      />
     </Stack>
   );
 }
