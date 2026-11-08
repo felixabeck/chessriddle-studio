@@ -155,23 +155,25 @@ fn corrupt_connection(connection: &mut SqliteConnection, foreign_key: bool) {
     connection.batch_execute("INSERT OR REPLACE INTO Info VALUES ('Title', 'Stored title'), ('GameCount', '42'), ('PlayerCount', '9'), ('EventCount', '3');").unwrap();
 }
 
-fn seed_version_two_file(path: &Path, version: &str, stored_check_violation: bool) {
+fn seed_version_two_file(path: &Path, version: &str, corrupt_content: bool) {
     let mut connection = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
     connection
         .batch_execute("PRAGMA foreign_keys = ON;")
         .unwrap();
-    let schema = if version == "2.0.0" {
-        migrations::pre_orientation_schema()
-    } else {
-        migrations::pre_game_count_schema()
+    let schema = match version {
+        migrations::PRE_ORIENTATION_DATABASE_VERSION => migrations::pre_orientation_schema(),
+        migrations::PRE_GAME_COUNT_DATABASE_VERSION => migrations::pre_game_count_schema(),
+        other => {
+            panic!("seed_version_two_file is a test helper for version-two schemas, got {other}")
+        }
     };
     connection.batch_execute(&schema).unwrap();
     sql_query("INSERT INTO Info (Name, Value) VALUES ('Version', ?)")
         .bind::<Text, _>(version)
         .execute(&mut connection)
         .unwrap();
-    if stored_check_violation {
-        if version == "2.0.0" {
+    if corrupt_content {
+        if version == migrations::PRE_ORIENTATION_DATABASE_VERSION {
             // ADD COLUMN Orientation rebuilds Games and would abort on a stored
             // Games.Result CHECK; use the auxiliary integrity_check fixture.
             corrupt_connection(&mut connection, false);
@@ -705,11 +707,14 @@ async fn content_validation_create_and_migration_run_both_pragmas_and_publish_pa
 #[tokio::test]
 async fn content_validation_additive_migration_defers_content_scan() {
     let _serial = SERIAL.lock().await;
-    for version in ["2.1.0", "2.0.0"] {
-        for stored_check_violation in [false, true] {
+    for version in [
+        migrations::PRE_GAME_COUNT_DATABASE_VERSION,
+        migrations::PRE_ORIENTATION_DATABASE_VERSION,
+    ] {
+        for corrupt_content in [false, true] {
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("games.db3");
-            seed_version_two_file(&path, version, stored_check_violation);
+            seed_version_two_file(&path, version, corrupt_content);
             let (app, handle) =
                 database_app_with_grant(dir.path(), &path, "games", full_database_operations());
             let state = app.state::<AppState>();
@@ -739,7 +744,7 @@ async fn content_validation_additive_migration_defers_content_scan() {
             );
             outcome.result.unwrap();
             assert_eq!(scan_path, path);
-            if stored_check_violation {
+            if corrupt_content {
                 assert_eq!(
                     outcome.event.as_ref().map(|event| event.message.as_str()),
                     Some("SQLite integrity_check failed")

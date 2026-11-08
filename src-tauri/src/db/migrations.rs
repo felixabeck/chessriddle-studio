@@ -7,8 +7,8 @@ use diesel::{
 };
 
 const CURRENT_DATABASE_VERSION: &str = "2.2.0";
-const PRE_GAME_COUNT_DATABASE_VERSION: &str = "2.1.0";
-const PRE_ORIENTATION_DATABASE_VERSION: &str = "2.0.0";
+pub(super) const PRE_GAME_COUNT_DATABASE_VERSION: &str = "2.1.0";
+pub(super) const PRE_ORIENTATION_DATABASE_VERSION: &str = "2.0.0";
 const LEGACY_DATABASE_VERSION: &str = "1.0.0";
 const CREATE_TABLES_SQL: &str = include_str!("create.sql");
 
@@ -214,8 +214,8 @@ fn migrate_database(conn: &mut SqliteConnection) -> Result<bool, Error> {
             validate_sentinel_records_and_triggers(conn)?;
             migrate_player_game_counts(conn)?;
             insert_info(conn, "Version", CURRENT_DATABASE_VERSION)?;
-            // Additive: commit on the schema contract; content is scanned in the
-            // background (f-20261107-02).
+            // Additive: commit on the schema contract only. get_db_info finds no
+            // content stamp and schedules content_validation (f-20261107-02).
             validate_schema(conn)?;
             Ok(false)
         }),
@@ -229,8 +229,8 @@ fn migrate_database(conn: &mut SqliteConnection) -> Result<bool, Error> {
             )?;
             migrate_player_game_counts(conn)?;
             insert_info(conn, "Version", CURRENT_DATABASE_VERSION)?;
-            // Additive: commit on the schema contract; content is scanned in the
-            // background (f-20261107-02).
+            // Additive: commit on the schema contract only. get_db_info finds no
+            // content stamp and schedules content_validation (f-20261107-02).
             validate_schema(conn)?;
             Ok(false)
         }),
@@ -980,32 +980,6 @@ mod tests {
     }
 
     #[test]
-    fn stored_check_violation_does_not_block_orientation_upgrade() {
-        let mut conn = pre_orientation_connection();
-        // Auxiliary NOT NULL CHECK that integrity_check reports. A stored
-        // Games.Result CHECK is re-evaluated when SQLite rebuilds Games to add
-        // Orientation, so it cannot reach the post-migration schema contract.
-        conn.batch_execute(
-            "CREATE TABLE ContentValidationCorruption (Value TEXT);
-             INSERT INTO ContentValidationCorruption VALUES (NULL);
-             PRAGMA writable_schema=ON;
-             UPDATE sqlite_master
-                SET sql='CREATE TABLE ContentValidationCorruption (Value TEXT NOT NULL)'
-              WHERE type='table' AND name='ContentValidationCorruption';
-             PRAGMA writable_schema=RESET;",
-        )
-        .unwrap();
-        take_content_pragma_counts();
-        assert!(!validate_existing_database(&mut conn).unwrap());
-        assert_eq!(take_content_pragma_counts(), (0, 0));
-        assert_eq!(
-            info_value(&mut conn, "Version").unwrap().as_deref(),
-            Some(CURRENT_DATABASE_VERSION)
-        );
-        assert!(games_schema_is_canonical(&mut conn).unwrap());
-    }
-
-    #[test]
     fn failed_orientation_upgrade_rolls_back_column_and_version() {
         let mut conn = pre_orientation_connection();
         conn.batch_execute(
@@ -1014,7 +988,8 @@ mod tests {
             PRAGMA ignore_check_constraints = OFF;",
         )
         .unwrap();
-        // The abort now comes from the ADD COLUMN CHECK re-evaluation, not the content pragmas.
+        // ADD COLUMN re-evaluates stored CHECK constraints on Games, so the
+        // upgrade aborts and rolls back.
         assert!(validate_existing_database(&mut conn).is_err());
         assert_eq!(
             info_value(&mut conn, "Version").unwrap().as_deref(),
