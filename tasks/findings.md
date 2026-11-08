@@ -22276,3 +22276,20 @@ All probes were removed; the tree stayed clean.
 * **Failure scenario:** any frontend gate or phase proof whose Vitest run includes `GameCard.test.tsx` can go red with all tests passing, depending on scheduling.
 * **Fix shape:** unmount the rendered card and flush or fake the Mantine transition timers before each GameCard test ends (or disable transitions in its theme wrapper), so no timer outlives the environment.
 * **Proof:** a loop of `pnpm exec vitest run src/components/databases/GameCard.test.tsx` (e.g. 30 runs) shows no unhandled error.
+
+---
+
+## 2026-11-08 — filed through the inbox spool
+
+### A Library refresh during a schema upgrade races it, gets "database is locked" and shows the intact database as corrupt with a Delete button
+
+* **ID:** f-20261108-04 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** behaviour
+* **Found by:** Felix's report with screenshots, 2026-11-08 (installed release c6fe14f1-20261107T225216), diagnosed by Claude Code
+* **Related:** f-20261107-02 (handled: moved the content check out of the additive migration; this is the remaining race and UI)
+* **Where:** `DatabaseRepository::connection` (`src-tauri/src/db/repository.rs`) runs `migrations::validate_existing_database` → `migrate_database` inline with no per-database owner; `get_db_info` (`src-tauri/src/db/mod.rs`) reaches it on every Library listing; `getDatabase` in `src/utils/db.ts` maps any failure to `Databases.LoadError.Title`; `useDatabaseLibrary.tsx` offers Delete on error rows.
+* **Defect:** the first listing after the 2.2.0 schema starts the Players.GameCount backfill inline inside `get_db_info`, so the Library shows "Loading games databases…" with Databases 0 until it ends. A second listing (04:55:55 and 04:56:10 UTC in the app log) enters a second migration attempt for the same database and fails at once with `database failure: database is locked`. The renderer then shows "There was an error loading this database — check that the file exists and is not corrupted", `???` games and a red Delete button for Mega Database 2025, which was intact (`quick_check` ok, Version 2.2.0 after the first attempt committed).
+* **Failure scenario:** a user who believes the message and presses Delete permanently deletes a healthy 3 GB / 11.4 M-game database.
+* **Proof:** `~/.local/share/com.chessriddle.studio/logs/chessriddle-studio.log` 2026-11-08 04:54:59–04:56:23 UTC; Felix's screenshots of the empty list and of the error card.
+* **Open question:** who owns a schema upgrade so that listings, opens and mutations never run or race a second migration, and how the Library shows a database while its upgrade runs.
+* **Fix shape:** reviewed plan `tasks/plans/2026-11-08-db-upgrade-state.md` (build run, worktree `db-migration-lock-state`): one upgrade owner per database, `get_db_info` returns an upgrading/busy status instead of migrating inline, BUSY/LOCKED flagged as busy, transient rows without Delete.
