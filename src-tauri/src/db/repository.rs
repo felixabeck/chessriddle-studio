@@ -3221,20 +3221,31 @@ mod upgrade_tests {
 
     impl Case {
         fn new(old: bool) -> Self {
-            let (directory, app, handle, path) = blocking_database_case();
             if old {
-                let connection = rusqlite::Connection::open(&path).unwrap();
-                connection
-                    .execute_batch(
-                        "DROP TRIGGER player_game_count_insert;
-                     DROP TRIGGER player_game_count_delete;
-                     DROP TRIGGER player_game_count_update;
-                     DROP INDEX players_game_count_idx;
-                     ALTER TABLE Players DROP COLUMN GameCount;
-                     UPDATE Info SET Value='2.1.0' WHERE Name='Version';",
-                    )
-                    .unwrap();
+                return Self::with_schema(
+                    &migrations::pre_game_count_schema(),
+                    migrations::PRE_GAME_COUNT_DATABASE_VERSION,
+                );
             }
+            let (directory, app, handle, path) = blocking_database_case();
+            Self {
+                _directory: directory,
+                app,
+                handle,
+                path,
+            }
+        }
+
+        fn with_schema(schema: &str, version: &str) -> Self {
+            let (directory, app, handle, path) = super::super::arbitrary_database_case(b"");
+            let connection = rusqlite::Connection::open(&path).unwrap();
+            connection.execute_batch(schema).unwrap();
+            connection
+                .execute(
+                    "INSERT INTO Info (Name, Value) VALUES ('Version', ?)",
+                    [version],
+                )
+                .unwrap();
             Self {
                 _directory: directory,
                 app,
@@ -3391,6 +3402,40 @@ mod upgrade_tests {
     }
 
     #[test]
+    fn version_2_2_background_upgrade_populates_event_game_count() {
+        let case = Case::with_schema(
+            &migrations::pre_event_summary_schema(),
+            migrations::PRE_EVENT_SUMMARY_DATABASE_VERSION,
+        );
+        rusqlite::Connection::open(&case.path)
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO Events(ID, Name) VALUES(1, 'Event');
+                 INSERT INTO Games(EventID) VALUES(1);",
+            )
+            .unwrap();
+        let repository = case.repository();
+        let hold = Hold::install(&repository, false);
+        assert!(matches!(case.info(), DatabaseInfoResult::Upgrading { .. }));
+        hold.entered();
+        let job = case.job();
+        assert_eq!(case.version(), "2.2.0");
+        hold.release();
+        until(|| job.outcome.lock().is_some());
+        job.wait(None).unwrap();
+        assert!(matches!(case.info(), DatabaseInfoResult::Ready(_)));
+        assert_eq!(case.version(), "2.3.0");
+        assert_eq!(
+            rusqlite::Connection::open(&case.path)
+                .unwrap()
+                .query_row("SELECT GameCount FROM Events WHERE ID=1", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+    }
+
+    #[test]
     fn convert_pgn_upgrades_version_2_1_through_owner_before_import() {
         let case = Case::new(true);
         let repository = case.repository();
@@ -3426,7 +3471,7 @@ mod upgrade_tests {
         )
         .unwrap();
         assert_eq!(calls.load(Ordering::SeqCst), 1);
-        assert_eq!(case.version(), "2.2.0");
+        assert_eq!(case.version(), "2.3.0");
         let raw = rusqlite::Connection::open(&case.path).unwrap();
         assert_eq!(
             raw.query_row("SELECT COUNT(*) FROM Games", [], |row| row.get::<_, i64>(0))
@@ -3460,7 +3505,7 @@ mod upgrade_tests {
         .unwrap();
         assert_eq!(cursor, Some(123456789));
         assert_eq!(calls.load(Ordering::SeqCst), 1);
-        assert_eq!(case.version(), "2.2.0");
+        assert_eq!(case.version(), "2.3.0");
     }
 
     #[test]
@@ -3762,7 +3807,7 @@ mod upgrade_tests {
         mutation.join().unwrap().unwrap();
         assert_eq!(hold.calls.load(Ordering::SeqCst), 1);
         assert!(matches!(case.info(), DatabaseInfoResult::Ready(_)));
-        assert_eq!(case.version(), "2.2.0");
+        assert_eq!(case.version(), "2.3.0");
         let raw = rusqlite::Connection::open(&case.path).unwrap();
         assert_eq!(
             raw.query_row(
@@ -3816,7 +3861,7 @@ mod upgrade_tests {
         restarted
             .connection(&test_target(&case.path), None)
             .unwrap();
-        assert_eq!(case.version(), "2.2.0");
+        assert_eq!(case.version(), "2.3.0");
     }
 
     #[test]
@@ -3843,7 +3888,7 @@ mod upgrade_tests {
         repository
             .connection(&test_target(&case.path), None)
             .unwrap();
-        assert_eq!(case.version(), "2.2.0");
+        assert_eq!(case.version(), "2.3.0");
     }
 
     #[test]
