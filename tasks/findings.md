@@ -22157,3 +22157,31 @@ chessops 0.14 has one unified `Chess` with arbitrary-file rook castling: `Castle
 
 **Handled, 2026-11-07 (drain 217ddd6d, inline; filed by the drain as provisional f-20261107-02 and renumbered by `merge-inbox` because master had already published a different f-20261107-02):** cause from run 42409425212's trace: `wheelBoardStackTo` counted `[data-board-layout="stacked"] > div` once at t≈400898 ms, when the DOM snapshot held no `[data-board-layout]` element at all; the board tab mounted about 1.3 s later, already stacked. The helper had returned without scrolling, so `#bottomRight` stayed below the 720px viewport and every `wheelColumnTo` retry wheeled at y=1160 (the failure screenshot shows the stack at the top). This answers f-20261107-03's open question: nothing reset the stack's scroll position; it was never scrolled. Fix (commit `test(e2e): wait for the settled board layout before wheeling the stack`): `wheelBoardStackTo` polls until exactly one `[data-board-layout]` exists and its value equals `needsTwoPaneStack(width, rootFont)` before choosing its branch. Test `wheelBoardStackTo waits for a late-mounted board layout` mounts the layout after 300 ms. It fails on the pre-fix helper (scrollTop 0) and passes with the fix. f-20261107-03's `c6fe14f1` re-reveal stays as the downstream defence. Its fixture got a 400px width so its declared stacked layout agrees with `needsTwoPaneStack` (commit `test(e2e): model the late-mounted board layout in the wheelBoardStackTo test`). On the rebased tree the font-scaled-breakpoints, notation-hierarchy and notation-hierarchy-scaled container projects pass 27/27. The pre-fix CI test had passed 12/12 locally, so the post-push hosted Test run is the confirmation.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"3cc2c47e07959caa4047e609a8f113efb9f13f4bba2968e306015da51c14543f","header_sha256":"01a808b76d6757bfe4508f98c43902ce075886bab9bc3cc97cc7f7142341a31e","header_status":"handled","input_sha256":"94322ed1fa473b60d1cd20f7b2d3d8bcb083b5211fdf58f83473089ba930d94b","kind":"mutation-receipt","operation":"5278b97b96cd274dda953926db3e1eeeef6a8cc3d33e6a5c40c8d3fe855731ba","options":{"section":null},"request_id_sha256":null,"results":["f-20261107-04"],"target":"f-20261107-04","v":1} -->
+
+---
+
+## 2026-11-08 — filed through the inbox spool
+
+### Pinned-engine hover-preview screenshot captures a transient ScrollArea scrollbar on slow runners
+
+* **ID:** f-20261108-01 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 8b655619-b5c3-4691-9ef2-f9c8ad40cf23
+* **Impact class:** tooling
+* **CI run:** 42436165203 (job 128595345671, `e2e`, head `fc49383e`, a records-only commit on top of green `023f316e`)
+* **Where:** `e2e/engine-gap.spec.ts:603` — page-wide `toHaveScreenshot("pinned-engine-hover-preview-dark.png")` runs without waiting for Mantine ScrollArea scrollbars to hide.
+* **Defect:** the analysis panel's ScrollArea shows its scrollbar thumb on a timer after a scroll (`data-state="visible"` until the hide delay elapses). `animations: "disabled"` does not control that timer, so on a loaded runner the screenshot lands while the thumb is visible. CI diff: 444 pixels (ratio 0.01), a single vertical strip at x≈1308, y≈295–350; the actual frame shows the scrollbar thumb, the baseline does not. The spec already imports from `e2e/fixtures.ts`, which provides `waitForScrollAreaScrollbarsHidden(page)` for exactly this and is used before screenshots in `database-files.spec.ts` and `font-scaled-breakpoints.spec.ts`.
+* **Failure scenario:** any push whose CI e2e job runs on a slow runner fails `engine-gap: pinned engine shows up to its own line count…` (CI duration 25.9 s vs 7.6 s locally); `ci:remote:check` then refuses every push from every checkout.
+* **Proof:** artefact `frontend-browser-audit` 13600002026, entries `…pinn-d96d8…/pinned-engine-hover-preview-dark-{actual,expected,diff}.png`, range-fetched and cropped at (1240,270)-(1340,380). Eight local container repeats (`--repeat-each 8`) all passed, consistent with a timing-only race.
+* **Fix:** call `await waitForScrollAreaScrollbarsHidden(page);` immediately before the hover-preview screenshot (the pointer stays on the move, so the preview stays visible).
+
+### Hosted macos-26-intel rust-platform job hit the 45-minute limit during Clippy on fc49383e, so remote CI is red
+
+* **ID:** f-20261108-02 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 8b655619-b5c3-4691-9ef2-f9c8ad40cf23
+* **Impact class:** tooling
+* **CI run:** 42436165203
+* **Where:** GitHub Test run 42436165203 on fc49383edb3939f2ef9b6f892aae7937469c1a33 (master), job `rust-platform (macos-26-intel, x86_64-apple-darwin)` 128595345735; `.github/workflows/test.yml`.
+* **Defect:** the job started 01:53:17Z, entered "Clippy all Rust targets" at 01:54:26Z and was cancelled at 02:48:18Z with the annotation "The job has exceeded the maximum execution time of 45m0s". The job log is unavailable (BlobNotFound). The same job passed on the parent `023f316e` and on the seven runs before it; `fc49383e` changes only `tasks/build-ledger.md`. Same external hosted-runner class as handled f-20261105-01 (lost communication during Clippy) and f-20261104-05.
+* **Failure scenario:** every push stops at `pnpm ci:remote:check` (exit 1) until a rerun of this job succeeds.
+* **Fix shape:** `gh run rerun 42436165203 --failed -R felixabeck/chessriddle-studio` and confirm the job succeeds; close with the new job id. Investigate the workflow only if the rerun hangs again.
+* **Proof:** `pnpm ci:remote:check` no longer lists `rust-platform (macos-26-intel, x86_64-apple-darwin)`.
