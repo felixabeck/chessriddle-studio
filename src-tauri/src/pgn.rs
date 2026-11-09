@@ -923,9 +923,8 @@ fn opening_tag_pairs(text: &str) -> Vec<TagPair> {
 
 fn starts_with_tag_header(text: &str) -> bool {
     let first_line = text
-        .trim_start_matches(tag_whitespace)
         .split('\n')
-        .next()
+        .find(|line| !line.as_bytes().iter().all(u8::is_ascii_whitespace))
         .unwrap_or("");
     tag_value_spans(first_line.as_bytes()).is_some()
 }
@@ -3063,6 +3062,21 @@ mod tests {
         "[Event \"D\"]\n\n1. Nf3 *\n\n",
     ];
 
+    const UNCLOSED_COMMENT_GAMES: [&str; 2] = [
+        "[Event \"A\"]\n\n1. e4 *\n\n[Event \"B\"]\n\n1. d4 { open\n",
+        "[Event \"A\"]\n\n1. e4 } *\n\n[Event \"B\"]\n\n1. d4 { open\n",
+    ];
+
+    fn ranges_with_closed_final_comment(input: &str) -> Vec<GameRange> {
+        let mut closed = input.as_bytes().to_vec();
+        assert_eq!(closed.pop(), Some(b'\n'));
+        closed.push(b'}');
+        let games = scan_games(std::io::Cursor::new(closed)).unwrap();
+        assert_eq!(games.len(), 2);
+        assert_eq!(games[1].end, input.len() as u64);
+        games
+    }
+
     fn movement(kind: GameMoveKind, source: i32, before: i32, below_heading: bool) -> PgnLineMove {
         PgnLineMove {
             kind,
@@ -3268,6 +3282,18 @@ mod tests {
     }
 
     #[test]
+    fn move_preserves_non_ascii_whitespace_before_a_header() {
+        let input = "\u{00a0}[Event \"A\"]\n\n1. e4 *\n\n[Event \"B\"]\n\n1. d4 *\n";
+        let (result, output) =
+            moved_bytes(input.as_bytes(), movement(GameMoveKind::Line, 0, 2, false));
+        assert_eq!(result.order, vec![1, 0]);
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "[Event \"B\"]\n\n1. d4 *\n\n[Event \"?\"]\n\u{00a0}[Event \"A\"]\n\n1. e4 *\n\n"
+        );
+    }
+
+    #[test]
     fn prepare_section_move_preserves_every_game_in_each_section() {
         let (result, output) = moved_bytes(
             SECTION_GAMES.concat().as_bytes(),
@@ -3300,35 +3326,72 @@ mod tests {
     }
 
     #[test]
-    fn move_boundary_validation_refuses_missing_or_shifted_games() {
-        let games = [
-            GameRange { start: 0, end: 10 },
-            GameRange { start: 10, end: 20 },
-            GameRange { start: 20, end: 30 },
-            GameRange { start: 30, end: 40 },
-        ];
-        let target = GameRange { start: 10, end: 30 };
-        let actual = [
-            GameRange { start: 0, end: 10 },
-            GameRange { start: 10, end: 23 },
-            GameRange { start: 23, end: 35 },
-            GameRange { start: 35, end: 45 },
-        ];
-        let validate = |actual: &[GameRange]| {
-            validate_move_boundaries(actual, &games, 1, &[10, 23], target, 25)
-        };
-        validate(&actual).unwrap();
-        assert!(matches!(
-            validate(&actual[..3]),
-            Err(Error::InvalidInput(_))
-        ));
-        for index in 0..actual.len() {
-            let mut shifted = actual;
-            shifted[index].start += 1;
-            assert!(matches!(
-                validate(&shifted),
-                Err(Error::InvalidInput(message)) if message == "move would change PGN game boundaries"
-            ));
+    fn prepare_move_refuses_unclosed_or_swallowed_game_boundaries() {
+        for (index, input) in UNCLOSED_COMMENT_GAMES.iter().enumerate() {
+            let games = ranges_with_closed_final_comment(input);
+            let mut source = std::io::Cursor::new(input.as_bytes());
+            let result = prepare_move(
+                &mut source,
+                &games,
+                &movement(GameMoveKind::Line, 1, 0, false),
+                &CancellationToken::new(),
+            );
+            if index == 0 {
+                assert!(
+                    matches!(result, Err(Error::Io(error)) if error.kind() == io::ErrorKind::InvalidData)
+                );
+            } else {
+                assert!(
+                    matches!(result, Err(Error::InvalidInput(message)) if message == "move would change PGN game boundaries")
+                );
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn move_command_refuses_unclosed_or_swallowed_boundaries_without_publication() {
+        use crate::infra::path_authority::{PathAuthority, PathOperation};
+
+        for (index, input) in UNCLOSED_COMMENT_GAMES.iter().enumerate() {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("boundaries.pgn");
+            std::fs::write(&path, input).unwrap();
+            let mut authority =
+                PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap();
+            let handle = promote_pgn_file(&mut authority, &path);
+            let app = mock_app();
+            let state = app.state::<AppState>();
+            state.pgn_path_authority.install(authority).unwrap();
+            let resolved = resolve_pgn(&state, &handle, PathOperation::WritePgn).unwrap();
+            let snapshot = resolved.pgn_snapshot().unwrap();
+            let revision = revision_string(&snapshot);
+            state
+                .pgn_repository
+                .retain_if_within_budget(
+                    snapshot_key(&snapshot),
+                    ranges_with_closed_final_comment(input).into(),
+                )
+                .unwrap();
+            let result = move_games_core(
+                state.operations.accept("move_games").unwrap(),
+                resolved,
+                movement(GameMoveKind::Line, 1, 0, false),
+                revision,
+                state.pgn_repository.clone(),
+                PgnCapabilityRebind::new(state.pgn_path_authority.clone(), &handle),
+            )
+            .await;
+            if index == 0 {
+                assert!(
+                    matches!(result, Err(Error::Io(error)) if error.kind() == io::ErrorKind::InvalidData)
+                );
+            } else {
+                assert!(
+                    matches!(result, Err(Error::InvalidInput(message)) if message == "move would change PGN game boundaries")
+                );
+            }
+            assert_eq!(std::fs::read(&path).unwrap(), input.as_bytes());
         }
     }
 
