@@ -91,6 +91,20 @@ test("failed card operations keep their error and do not request training", asyn
   expect(onConnected).not.toHaveBeenCalled();
 });
 
+test.each(["Connect", "Refresh"])(
+  "%s with uncertain durability keeps the warning without notifying training",
+  async (action) => {
+    const onConnected = vi.fn();
+    await render(onConnected);
+    const uncertain = { ...connected, durability_uncertain: true };
+    mocks.connectChessriddle.mockResolvedValue(uncertain);
+    mocks.chessriddleAccount.mockResolvedValue(uncertain);
+    await click(action);
+    expect(host.textContent).toContain("Home.ChessRiddle.ConnectionDurabilityUncertain");
+    expect(onConnected).not.toHaveBeenCalled();
+  },
+);
+
 function button(key: string) {
   const found = [...host.querySelectorAll("button")].find((node) => node.textContent === key);
   expect(found).toBeDefined();

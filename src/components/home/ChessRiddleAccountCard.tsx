@@ -32,7 +32,7 @@ export function ChessRiddleAccountCard({ onConnected }: { onConnected?: () => vo
       const accept = (next: AccountStatus) => {
         if (!current()) return;
         setStatus(next);
-        connected = next.status === "connected";
+        connected = next.status === "connected" && !next.durability_uncertain;
       };
       const report = (cause: unknown) => {
         if (!current()) return;

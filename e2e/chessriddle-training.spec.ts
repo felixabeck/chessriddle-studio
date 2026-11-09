@@ -172,6 +172,16 @@ for (const layout of ["desktop", "narrow"] as const) {
             .click();
         await page.getByRole("button", { name: "New Puzzle", exact: true }).click();
         await expect(page.locator("#left cg-board piece")).toHaveCount(32);
+        const offlinePanel = page.locator("#topRight .mantine-Paper-root").first();
+        await expect(
+            offlinePanel.getByRole("radio", { name: "Offline databases", exact: true }),
+        ).toBeChecked();
+        await assertControlLabelsFit(offlinePanel);
+        await assertNoHorizontalOverflow();
+        await captureTraining(page, page, `en-US-${layout}-offline.png`);
+        await playTrainingMove(page, page.locator("#left cg-board"), "e7", "e5");
+        const offlineMove = page.locator("#bottomRight").getByText("e5", { exact: true });
+        await expect(offlineMove).toBeVisible();
         await page
             .locator(".mantine-SegmentedControl-label")
             .filter({ hasText: /^ChessRiddle$/ })
@@ -184,14 +194,13 @@ for (const layout of ["desktop", "narrow"] as const) {
             .filter({ hasText: /^Offline databases$/ })
             .click();
         await expect(page.locator("#left cg-board piece")).toHaveCount(32);
+        await expect(offlineMove).toBeVisible();
         expect((await activeWorkspaceTab(page))!.value).toBe(owner.value);
-        const offlinePanel = page.locator("#topRight .mantine-Paper-root").first();
         await expect(
             offlinePanel.getByRole("radio", { name: "Offline databases", exact: true }),
         ).toBeChecked();
         await assertControlLabelsFit(offlinePanel);
         await assertNoHorizontalOverflow();
-        await captureTraining(page, page, `en-US-${layout}-offline.png`);
         expect(
             await page.evaluate(() =>
                 window.__E2E_TAURI__.invocations().filter((call) => call.command === "get_puzzle"),

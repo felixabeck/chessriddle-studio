@@ -7,6 +7,8 @@ import classes from "./PuzzleSourceControl.module.css";
 
 export type PuzzleSource = NonNullable<Tab["puzzleSource"]>;
 
+const SOURCE_CONTROL_MIN_WIDTH_REM = 28;
+
 export default function PuzzleSourceControl({
   source,
   disabled,
@@ -24,7 +26,7 @@ export default function PuzzleSourceControl({
       <SegmentedControl
         fullWidth
         size="xs"
-        orientation={width >= 28 * rootFont ? "horizontal" : "vertical"}
+        orientation={width >= SOURCE_CONTROL_MIN_WIDTH_REM * rootFont ? "horizontal" : "vertical"}
         className={classes.control}
         aria-label={t("Puzzle.Source.Label")}
         value={source}

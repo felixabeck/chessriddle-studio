@@ -291,10 +291,20 @@ test.each([undefined, "offline", "chessriddle"] as const)(
 
 test("ChessRiddle is usable after offline restore fails, and switching keeps both sessions", async () => {
   mocks.chessriddleTrainingAvailable.mockResolvedValue(true);
+  mocks.getPuzzle.mockResolvedValue({
+    id: 7,
+    fen: INITIAL_FEN,
+    moves: "e2e4 e7e5",
+    rating: 1200,
+    rating_deviation: 50,
+    popularity: 1,
+    nb_plays: 1,
+  });
   const restore = vi.spyOn(puzzleSessions, "restorePuzzleSession").mockImplementation(() => {
     throw new Error("offline restore refused");
   });
   const atoms = await renderSource("offline");
+  await act(async () => atoms.set(jumpToNextPuzzleAtom, false));
   expect(document.body.textContent).toContain("TreeRecovery.Retry");
   const restoreAttempts = restore.mock.calls.length;
   await act(async () =>
@@ -309,13 +319,24 @@ test("ChessRiddle is usable after offline restore fails, and switching keeps bot
   await act(async () =>
     document.querySelector<HTMLInputElement>('input[value="offline"]')!.click(),
   );
+  await act(async () =>
+    document.querySelector<HTMLButtonElement>('[aria-label="Puzzle.NewPuzzle"]')!.click(),
+  );
+  await act(async () => mocks.board!.movable!.events!.after!("e7", "e5", { premove: false }));
   const offline = treeStore.getState().puzzleSession;
+  expect(offline?.attempts).toHaveLength(1);
+  expect(offline?.attempts[0].puzzle.completion).toBe("correct");
   await act(async () =>
     document.querySelector<HTMLInputElement>('input[value="chessriddle"]')!.click(),
   );
   expect(atoms.get(tabsAtom)[0].puzzleSource).toBe("chessriddle");
   expect(sessions.get("puzzles-test")).toBe(training);
   expect(treeStore.getState().puzzleSession).toBe(offline);
+  await act(async () =>
+    document.querySelector<HTMLInputElement>('input[value="offline"]')!.click(),
+  );
+  expect(treeStore.getState().puzzleSession).toEqual(offline);
+  expect(treeStore.getState().currentNode().san).toBe("e5");
   expect(mocks.chessriddleTrainingNext).toHaveBeenCalledOnce();
 });
 
@@ -401,6 +422,23 @@ test.each(["notConnected", "authentication", "invalidGrant"])(
     expect(sessions.get("puzzles-test")?.phase).toBe("solving");
   },
 );
+
+test("an uncertain connection keeps its warning until Try again loads a puzzle", async () => {
+  mocks.chessriddleTrainingAvailable.mockResolvedValue(true);
+  mocks.chessriddleTrainingNext.mockRejectedValueOnce("notConnected");
+  mocks.connectChessriddle.mockResolvedValue({ ...connectedAccount, durability_uncertain: true });
+  await renderSource("chessriddle");
+  const panel = document.querySelector("[data-training-panel]")!;
+  await clickTraining("Home.ChessRiddle.Connect");
+  expect(panel.textContent).toContain("Home.ChessRiddle.ConnectionDurabilityUncertain");
+  expect(panel.textContent).toContain("Training.TryAgain");
+  expect(mocks.chessriddleTrainingNext).toHaveBeenCalledOnce();
+  expect(mocks.chessriddleMistakeCount).toHaveBeenCalledOnce();
+  await clickTraining("Training.TryAgain");
+  expect(mocks.chessriddleTrainingNext).toHaveBeenCalledTimes(2);
+  expect(sessions.get("puzzles-test")?.phase).toBe("solving");
+  expect(sessions.get("puzzles-test")?.puzzle).toEqual(trainingPuzzle);
+});
 
 test("account errors after submission hide the retained puzzle details in the prompt", async () => {
   mocks.chessriddleTrainingAvailable.mockResolvedValue(true);

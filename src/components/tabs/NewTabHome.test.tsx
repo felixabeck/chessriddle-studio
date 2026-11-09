@@ -719,20 +719,25 @@ test.each([true, false])(
   },
 );
 
-test("a late puzzle opening cannot replace another action or a retired home owner", async () => {
-  let finish!: (value: boolean) => void;
-  mocks.available.mockImplementation(
-    () =>
-      new Promise<boolean>((resolve) => {
-        finish = resolve;
-      }),
-  );
-  await render();
-  await click("Home.Card.Puzzle.Title");
-  await click("Home.Card.AnalysisBoard.Title");
-  await act(async () => finish(true));
-  expect(store.get(tabsAtom)[0].type).toBe("analysis");
-});
+test.each(["another action", "a retired home owner"])(
+  "a late puzzle opening cannot replace %s",
+  async (replacement) => {
+    let finish!: (value: boolean) => void;
+    mocks.available.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await render();
+    await click("Home.Card.Puzzle.Title");
+    expect(store.get(tabsAtom)[0].type).toBe("new");
+    if (replacement === "another action") await click("Home.Card.AnalysisBoard.Title");
+    else await act(async () => root.render(null));
+    await act(async () => finish(true));
+    expect(store.get(tabsAtom)[0].type).toBe(replacement === "another action" ? "analysis" : "new");
+  },
+);
 
 test.each(shippedCatalogues())(
   "every new Home key resolves in $locale without fallback",
