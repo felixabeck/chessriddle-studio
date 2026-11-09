@@ -56,11 +56,18 @@
   user-select: none;
 }
 
-.deleteBtn {
+.rowAction {
   opacity: 0;
 }
 
-.row:hover .deleteBtn,
-.active .deleteBtn {
+.row:hover .rowAction,
+.active .rowAction,
+.rowAction:focus-visible {
   opacity: 1;
+}
+
+@media (hover: none) {
+  .rowAction {
+    opacity: 1;
+  }
 }

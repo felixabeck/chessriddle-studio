@@ -25,6 +25,8 @@ export type LineSectionTarget = {
   revision: string;
   x: number;
   y: number;
+  /** Starts at the name dialog, for a gesture that already chose what to do. */
+  nameFirst: boolean;
 };
 
 type Mode = "menu" | "name" | "removing";
@@ -45,7 +47,7 @@ export default function LineSectionEditor({
 }) {
   const { t } = useTranslation();
   const tabs = useAtomValue(tabsAtom);
-  const [mode, setMode] = useState<Mode>("menu");
+  const [mode, setMode] = useState<Mode>(target.nameFirst ? "name" : "menu");
   const [name, setName] = useState(target.section ?? "");
   const [pending, setPending] = useState(false);
 

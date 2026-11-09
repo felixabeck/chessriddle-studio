@@ -827,7 +827,59 @@ test("right-clicking a loaded line opens the section editor where allowed", asyn
     revision: "r1",
     x: 40,
     y: 50,
+    nameFirst: false,
   });
+});
+
+function sectionButton() {
+  return host.querySelector<HTMLButtonElement>('[role="option"] button');
+}
+
+test.each([
+  ["without a section goes straight to naming", undefined, "Abschnitt hier beginnen", true],
+  ["that starts a section opens the choices", "mit g3", "Abschnitt", false],
+])("the icon on a line %s", async (_name, section, label, nameFirst) => {
+  await renderSections([[0, { name: "First", section, identity }]]);
+  const button = sectionButton()!;
+  expect(button.getAttribute("aria-label")).toBe(label);
+  button.getBoundingClientRect = () => ({ left: 11, bottom: 22 }) as DOMRect;
+  await act(async () => button.click());
+  expect(editorTarget()).toMatchObject({ index: 0, x: 11, y: 22, nameFirst });
+  expect(editorTarget().section).toBe(section);
+});
+
+test("clicking the icon does not select or open the line", async () => {
+  const setPage = vi.fn();
+  const activate = vi.fn();
+  await act(async () => {
+    root.render(
+      <GameSelector
+        games={new Map([[0, { name: "First", identity }]])}
+        setGames={vi.fn()}
+        setPage={setPage}
+        onActivate={activate}
+        total={1}
+        path={path}
+        activePage={0}
+        editableSections
+      />,
+    );
+  });
+  const button = sectionButton()!;
+  await act(async () => {
+    button.click();
+    button.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+  });
+  expect(setPage).not.toHaveBeenCalled();
+  expect(activate).not.toHaveBeenCalled();
+});
+
+test.each([
+  ["a list without section editing", { name: "First", identity }, false],
+  ["a line that has no identity yet", { name: "First" }, true],
+])("%s shows no section icon", async (_name, row, editable) => {
+  await renderSections([[0, row as GameSelectorRow]], editable as boolean);
+  expect(sectionButton()).toBeNull();
 });
 
 test.each([

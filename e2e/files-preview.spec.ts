@@ -246,6 +246,64 @@ test("files-preview: a dragged row's preview keeps the row's real size and layou
     expect(measured.removed).toBe(true);
 });
 
+test("files-preview: a repertoire line shows its section icon where it can be found", async ({
+    page,
+    mockScenario,
+    capture,
+}) => {
+    const file = { ...repertoireFile, metadata: { type: "repertoire" as const, tags: [] } };
+    await mockScenario({ commands: filesWorkspaceCommands([[file]], pgnFileCommands) });
+    await page.goto("/library");
+    await page.getByRole("button", { name: /choose collection/i }).click();
+    await selectFilesTreeRow(page, file.name);
+    const rows = page.getByRole("option");
+    const iconOf = (row: Locator) =>
+        row.getByRole("button", { name: "Start section here", exact: true });
+    await expect(iconOf(rows.nth(0))).toHaveCSS("opacity", "1");
+    await expect(iconOf(rows.nth(1))).toHaveCSS("opacity", "0");
+    await capture("files-section-icon");
+
+    await rows.nth(1).hover();
+    await expect(iconOf(rows.nth(1))).toHaveCSS("opacity", "1");
+    await iconOf(rows.nth(1)).click();
+    const dialog = page.getByRole("dialog", { name: "Section", exact: true });
+    await expect(dialog.getByRole("textbox", { name: "Name" })).toBeVisible();
+    await capture("files-section-dialog");
+    await expect(rows.nth(0)).toHaveAttribute("aria-selected", "true");
+    await expect(rows.nth(1)).toHaveAttribute("aria-selected", "false");
+});
+
+test("files-preview: a section's icon opens its choices inside the window", async ({
+    page,
+    mockScenario,
+}) => {
+    const file = { ...repertoireFile, metadata: { type: "repertoire" as const, tags: [] } };
+    const tokens = [
+        { type: "Header", value: { tag: "Section", value: "mit g3" } },
+        ...(pgnFileCommands.lex_pgn.result as unknown[]),
+    ];
+    await mockScenario({
+        commands: filesWorkspaceCommands([[file]], {
+            ...pgnFileCommands,
+            lex_pgn: { result: tokens },
+        }),
+    });
+    await page.goto("/library");
+    await page.getByRole("button", { name: /choose collection/i }).click();
+    await selectFilesTreeRow(page, file.name);
+    await expect(page.getByText("mit g3").first()).toBeVisible();
+    await page
+        .getByRole("option")
+        .first()
+        .getByRole("button", { name: "Section", exact: true })
+        .click();
+    for (const name of ["Rename section", "Remove section"]) {
+        await expect(page.getByRole("menuitem", { name, exact: true })).toBeInViewport({
+            ratio: 1,
+        });
+    }
+});
+
 test("files-preview: the card fills the window and shows the whole board and its controls", async ({
     page,
     mockScenario,

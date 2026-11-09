@@ -1,7 +1,7 @@
 import { tauri } from "@/platform/tauri";
 import { Box, Group, ScrollArea, Text } from "@mantine/core";
 import { useToggle } from "@mantine/hooks";
-import { Trash2 } from "lucide-react";
+import { SeparatorHorizontal, Trash2 } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import cx from "clsx";
 import { useAtomValue } from "jotai";
@@ -261,6 +261,19 @@ function GameRow({
   const omitted = game?.omission === "tooLarge";
   const section = game?.section;
   const identity = game?.identity;
+  const openSectionEditor =
+    onSectionMenu && identity
+      ? (x: number, y: number, nameFirst: boolean) =>
+          onSectionMenu({
+            index,
+            section,
+            stamp: identity.stamp,
+            revision: identity.revision,
+            x,
+            y,
+            nameFirst,
+          })
+      : undefined;
 
   return (
     <div
@@ -268,19 +281,16 @@ function GameRow({
       className={classes.slot}
       style={style}
       onContextMenu={
-        onSectionMenu && identity
+        openSectionEditor
           ? (event) => {
               event.preventDefault();
               const bounds = event.currentTarget.getBoundingClientRect();
               const keyboard = event.clientX === 0 && event.clientY === 0;
-              onSectionMenu({
-                index,
-                section,
-                stamp: identity.stamp,
-                revision: identity.revision,
-                x: keyboard ? bounds.left : event.clientX,
-                y: keyboard ? bounds.bottom : event.clientY,
-              });
+              openSectionEditor(
+                keyboard ? bounds.left : event.clientX,
+                keyboard ? bounds.bottom : event.clientY,
+                false,
+              );
             }
           : undefined
       }
@@ -346,9 +356,29 @@ function GameRow({
             color="danger"
             size="xs"
             mr="xs"
-            className={classes.deleteBtn}
+            className={classes.rowAction}
           >
             <Trash2 size={12} />
+          </IconAction>
+        )}
+        {openSectionEditor && (
+          <IconAction
+            label={
+              section === undefined
+                ? t("Files.LineSection.Start", { defaultValue: "Start section here" })
+                : t("Files.LineSection.Title", { defaultValue: "Section" })
+            }
+            onClick={(event) => {
+              event.stopPropagation();
+              const bounds = event.currentTarget.getBoundingClientRect();
+              openSectionEditor(bounds.left, bounds.bottom, section === undefined);
+            }}
+            variant="subtle"
+            size="sm"
+            mr="xs"
+            className={classes.rowAction}
+          >
+            <SeparatorHorizontal size={14} />
           </IconAction>
         )}
       </Group>

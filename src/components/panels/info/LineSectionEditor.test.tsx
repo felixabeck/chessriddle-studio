@@ -67,6 +67,7 @@ const target: LineSectionTarget = {
   revision: "r1",
   x: 1,
   y: 2,
+  nameFirst: false,
 };
 
 let host: HTMLDivElement;
@@ -133,6 +134,14 @@ test("a line without a section only offers starting one", async () => {
 test("a line with a section offers renaming and removal", async () => {
   await render({ ...target, section: "" });
   expect(host.textContent).toBe("Files.LineSection.RenameFiles.LineSection.Remove");
+});
+
+test("a gesture that already chose to start a section opens the name dialog directly", async () => {
+  await render({ ...target, nameFirst: true });
+  expect(host.textContent).not.toContain("Files.LineSection.Start");
+  await typeName("mit g3");
+  await submit();
+  expect(mocks.writeFileGame.mock.calls[0][2]).toContain('[Section "mit g3"]');
 });
 
 test("saving writes the tag against the stamp it read and reports the new identity", async () => {

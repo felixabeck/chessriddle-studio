@@ -118,6 +118,7 @@ and meaning. Entries marked closest by meaning have no exact reference slot.
 | First, previous, next, last move | `ChevronFirst`, `ChevronLeft`, `ChevronRight`, `ChevronLast` | `web/src/components/analysis/ControlButtons.tsx:39`, `web/src/components/analysis/ControlButtons.tsx:48`, `web/src/components/analysis/ControlButtons.tsx:57`, `web/src/components/analysis/ControlButtons.tsx:66` |
 | Start and pause one or all engines | `Play`, `Pause` | `web/src/components/puzzle/MoveAnnouncerControls.tsx:149`, `web/src/components/puzzle/MoveAnnouncerControls.tsx:149` |
 | Delete move, game, file, database or account | `Trash2` | `web/src/components/puzzle/DeleteMoveAffordance.tsx:30` |
+| Line section in a repertoire | `SeparatorHorizontal` | Closest by meaning |
 | Close tab, cancel and clear session | `X` | `web/src/components/ui/Modal.tsx:188` |
 | Copy and copy confirmation | `Copy`, `Check` | `web/src/components/entityEditor/EntityEditorHeader.tsx:161`, `web/src/components/puzzle/MoveInputPanel.tsx:261` |
 | Challenge results: correct, incorrect and incomplete | `CircleCheckBig`, `CircleX`, `CircleEllipsis` | `web/src/components/puzzle/PuzzleFeedbackCard.tsx:61` |
