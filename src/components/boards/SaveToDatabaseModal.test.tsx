@@ -1,6 +1,6 @@
 import { MantineProvider } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { act, type ReactNode } from "react";
+import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { StoreApi } from "zustand";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -17,21 +17,8 @@ vi.mock("@/utils/tabs", () => ({
   useTabActions: () => ({ getTab: vi.fn(), updateTab: vi.fn() }),
   saveToDatabase: vi.fn(),
 }));
-vi.mock("@/components/common/AppModal", () => ({
-  default: ({
-    children,
-    pending = false,
-    onClose,
-  }: {
-    children: ReactNode;
-    pending?: boolean;
-    onClose: () => void;
-  }) => (
-    <div role="dialog" data-pending={pending}>
-      {!pending && <button type="button" aria-label="Close dialog" onClick={onClose} />}
-      {children}
-    </div>
-  ),
+vi.mock("@/components/common/AppModal", async () => ({
+  default: (await import("@/tests/appModal")).PendingAppModal,
 }));
 vi.mock("@mantine/notifications", () => ({ notifications: { show: vi.fn() } }));
 vi.mock("react-i18next", () => ({

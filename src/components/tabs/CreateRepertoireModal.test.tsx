@@ -42,21 +42,8 @@ vi.mock("react-i18next", async () => {
     }),
   };
 });
-vi.mock("../common/AppModal", () => ({
-  default: ({
-    children,
-    pending = false,
-    onClose,
-  }: {
-    children: React.ReactNode;
-    pending?: boolean;
-    onClose: () => void;
-  }) => (
-    <div role="dialog" data-pending={pending}>
-      {!pending && <button type="button" aria-label="Close dialog" onClick={onClose} />}
-      {children}
-    </div>
-  ),
+vi.mock("../common/AppModal", async () => ({
+  default: (await import("@/tests/appModal")).PendingAppModal,
 }));
 vi.mock("@mantine/core", () => ({
   Button: ({
