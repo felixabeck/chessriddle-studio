@@ -1,6 +1,6 @@
 # Review record: one Puzzles entry with ChessRiddle as the default source
 
-Build run puzzles-one-entry, 2026-11-09, executor Codex, orchestrator Claude Code. Plan: `tasks/plans/2026-11-09-puzzles-one-entry.md` (local, ignored). Commits are named in the build ledger row of this run. The code author and every lens are Codex; Claude Code arbitrated. Model-family separation between author and reviewer is absent and disclosed.
+Build run puzzles-one-entry, 2026-11-09, executor Codex, orchestrator Claude Code. Plan: `tasks/plans/2026-11-09-puzzles-one-entry.md` (local, ignored). The build ledger row of this run, added after the push, names the commits. The code author and every lens are Codex; Claude Code arbitrated. Model-family separation between author and reviewer is absent and disclosed.
 
 ## MANDATE
 
@@ -69,3 +69,7 @@ Raw verdicts: all APPROVED. D2 and D3 CLOSED by review-tests, D4 by review-code-
 ## Open items
 
 None from this run. The integration roadmap continues in `tasks/handoffs/2026-11-06-chessriddle-integration-plan.md`.
+
+### Records round 1 (records lens over the record commits)
+
+Raw verdict: REVISE, six should-fix and one nit. All Fix: this record no longer claims a ledger row that does not exist yet; `d-20261109-39` got its Superseded-by trailer; the integration roadmap's statements about the branch hold, the unpushed ChessRiddle branch, the allowlist "today", the untested `pg_cron` item and the retained solution were stale against the ChessRiddle run studio-release and CR-5 and are corrected, and its heading carries the update date. The lens could not verify the production deployment state and the orchestrator's two proof reruns.

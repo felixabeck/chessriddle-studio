@@ -2,22 +2,22 @@
 
 Status: **Phases A and B built (2026-11-09). Phases C to E not built.** Product choices marked "Felix" are his; technical choices are recommendations. Each phase gets its own detailed `build` plan and review in the repository it changes.
 
-## Roadmap and current state (recorded 2026-11-09)
+## Roadmap and current state (recorded 2026-11-09, updated 2026-11-10)
 
 This section overrides the phase order further down. It is the agent's recommendation, which Felix asked to have recorded on 2026-11-09. He has not yet decided the signing question below.
 
 ### Where phase A stands
 
 * **Studio:** on `master` since `bc4695aa`. The account card stays hidden in release builds until the constant `RELEASE_AVAILABLE` in `src-tauri/src/chessriddle.rs` is switched at release. The `.dev` identifier can use it now, with compile-time `CHESSRIDDLE_API_ORIGIN` and `CHESSRIDDLE_WEB_ORIGIN` overrides limited to literal `127.0.0.1`.
-* **ChessRiddle:** local branch `build/studio-account-20261109` in `/home/felixb/Projekte/chess-tactics-app.worktrees/studio-account`, base `develop` at `ed84c20ce5`, reviewed and fully gated at `5118e54dc0`. It is **not pushed and not deployed**.
-* **Branch hold, Felix 2026-11-09:** "I only want to push it when I'm ready to deploy and when the studio is complete to release ... I don't want to deploy the connection if Chessriddle Studio is not ready yet. So leave this in a branch but don't push it to develop." ChessRiddle work for later phases stacks on this branch under the same hold. Keep the worktree.
+* **ChessRiddle:** local branch `build/studio-account-20261109` in `/home/felixb/Projekte/chess-tactics-app.worktrees/studio-account`, base `develop` at `ed84c20ce5`, reviewed and fully gated at `5118e54dc0`. Until 2026-11-09 it was not pushed and not deployed. Since then the ChessRiddle build run studio-release has been rebasing, re-reviewing and releasing it, and its commit ids changed with the rebase. Its record, `tasks/handoffs/2026-11-09-studio-release-review.md` in the ChessRiddle repository, holds the current state. Observed on 2026-11-10: the rebased branch was 22 commits ahead of `origin/develop`, not yet pushed.
+* **Branch hold, lifted.** Felix lifted it on 2026-11-09: "I lift the branch hold from 2026-11-09: this work may now go to develop and to production." (ChessRiddle `d-20261109-06`). The hold as he first gave it, Felix 2026-11-09: "I only want to push it when I'm ready to deploy and when the studio is complete to release ... I don't want to deploy the connection if Chessriddle Studio is not ready yet. So leave this in a branch but don't push it to develop." ChessRiddle work for later phases stacks on this branch under the same hold. Keep the worktree.
 * **Review record:** `tasks/handoffs/2026-11-09-chessriddle-account-connection-review.md`; detailed plan: `tasks/plans/2026-11-09-chessriddle-account-connection.md`.
 
 ### Order
 
-1. **Tactics in Studio (phase B), built 2026-11-09.** Standard tactics plus retry-your-mistakes. Studio is on `master`, hidden in release builds by `RELEASE_AVAILABLE`. The ChessRiddle side stacks on `build/studio-account-20261109` as commits `21d30a65d2`, `7ce3d60015` and `8605a3d044`, unpushed and undeployed. Review record: `tasks/handoffs/2026-11-09-chessriddle-tactics-phase-b-review.md`. Since 2026-11-10 the training has no New Tab action of its own: it opens from the one Puzzles entry as the default source of a puzzle tab, beside the offline databases (`d-20261110-01`, review record `tasks/handoffs/2026-11-09-puzzles-one-entry-review.md`).
+1. **Tactics in Studio (phase B), built 2026-11-09.** Standard tactics plus retry-your-mistakes. Studio is on `master`, hidden in release builds by `RELEASE_AVAILABLE`. The ChessRiddle side stacks on `build/studio-account-20261109` as commits `21d30a65d2`, `7ce3d60015` and `8605a3d044` (ids before the release rebase). Their release is the ChessRiddle run studio-release named above. Review record: `tasks/handoffs/2026-11-09-chessriddle-tactics-phase-b-review.md`. Since 2026-11-10 the training has no New Tab action of its own: it opens from the one Puzzles entry as the default source of a puzzle tab, beside the offline databases (`d-20261110-01`, review record `tasks/handoffs/2026-11-09-puzzles-one-entry-review.md`).
 2. **Release preparation, in parallel:** Windows check, code signing, download page on chessriddle.com.
-3. **First public release:** rebase the ChessRiddle branch onto `develop`, re-review, run full gates, push and deploy on Felix's go, switch `RELEASE_AVAILABLE`, publish Studio. The branch hold ends here.
+3. **First public release:** rebase the ChessRiddle branch onto `develop`, re-review, run full gates, push and deploy on Felix's go, switch `RELEASE_AVAILABLE`, publish Studio. The ChessRiddle part of this step started on 2026-11-09 when Felix lifted the hold (see above); switching `RELEASE_AVAILABLE` and publishing Studio still wait for his go.
 4. **Send to a trainer collection (phase C), as an update.** Small, but only Gold trainers use it.
 5. **Repertoire (phases D1, D2, D3):** website first, then Studio sync, then the phone app through Philipp. It is the most valuable feature and the largest. Felix's design work can start during steps 1 to 3.
 6. **Own-game puzzles (phase E):** left out unless Felix asks.
@@ -28,15 +28,15 @@ Reasons: repertoire must not hold the first release, because it is the largest i
 
 * **Felix decides:** buy code-signing certificates, or launch unsigned with a warning on the download page. `src-tauri/tauri.conf.json` has `certificateThumbprint: null` on Windows and an ad-hoc `signingIdentity: "-"` on macOS.
 * **Untested:** the connection on real Windows, meaning Credential Manager and the browser round trip. It needs a Windows machine.
-* **Untested on a disposable database:** `pg_cron` scheduling for desktop-credential cleanup. The ChessRiddle deploy guard checks it.
+* **`pg_cron` scheduling for desktop-credential cleanup:** verified on a local database by the ChessRiddle run studio-release (its review record, "Proof before the gates"). Verification in production follows its deploy.
 * **Not built:** the chessriddle.com download page.
 
 ### What tactics needs on the ChessRiddle side
 
-* Add each puzzle route to `DESKTOP_ROUTE_ALLOWLIST` in `backend/app/core/auth.py` (exact method and served path template). Today it holds only `GET /api/v1/users/me` and `POST /api/v1/desktop-auth/revoke`.
+* Add each puzzle route to `DESKTOP_ROUTE_ALLOWLIST` in `backend/app/core/auth.py` (exact method and served path template). Before phase B it held only `GET /api/v1/users/me` and `POST /api/v1/desktop-auth/revoke`; phase B added the four training routes.
 * Attribution already accepts surface `desktop` and platforms `linux`, `macos`, `windows`. `_is_native_app_client` deliberately excludes desktop, so `puzzle_client_compatibility.py` needs an explicit decision about which puzzle types desktop receives.
 * Carried obligations CR-5, CR-6 and CR-7 below still bind phase B.
-* ChessRiddle commits stack on `build/studio-account-20261109`, because they need its credentials and allowlist. Never push to `develop`.
+* Until the hold was lifted, ChessRiddle commits stacked on `build/studio-account-20261109`, because they need its credentials and allowlist, and were never pushed to `develop`.
 
 ### Proving the real flow locally
 
@@ -91,7 +91,7 @@ Felix, in chat 2026-11-05/06: the most interesting use is "review my opening, my
 
 ### B. Training inside the desktop app (Studio plus ChessRiddle)
 
-* The Train panel shows one puzzle at a time on the existing board. The native module fetches the next puzzle and **strips `principal_variation` and every other solution field before returning it to the renderer**; the renderer receives position, side to move and display metadata only. The native module keeps the solution only to show it after the server's verdict.
+* The Train panel shows one puzzle at a time on the existing board. The native module fetches the next puzzle and **strips `principal_variation` and every other solution field before returning it to the renderer**; the renderer receives position, side to move and display metadata only. The native module keeps the solution only to show it after the server's verdict. (Superseded by CR-5 below: as built, the native module keeps no solution copy and the verdict's `correct_variation` supplies the line.)
 * The panel builds the `variation_tree` the submit contract requires (with `time_taken_ms`, `is_rated`, `solution_shown`) and shows the server's verdict, rating change and solution. Gold-only modes appear only when the server allows them; a refusal shows a Studio string plus an allowlisted chessriddle.com upgrade link.
 * ChessRiddle side: the attribution and compatibility consumers from A, so a desktop client receives only types it renders (start with standard tactics, which are already ungated).
 * Proof includes a contract check of the native request/response types against the ChessRiddle OpenAPI schema, because mocked-IPC e2e cannot catch wire drift.
