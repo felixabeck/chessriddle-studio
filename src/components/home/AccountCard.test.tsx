@@ -8,6 +8,7 @@ import { installMatchMediaStub } from "@/tests/matchMedia";
 import { accountDownloadsInFlightAtom } from "@/state/atoms";
 
 const mocks = vi.hoisted(() => ({
+  language: "en-US",
   linkedCollectionsSupported: vi.fn(async () => false),
   getDatabaseWorkspace: vi.fn(),
   createWorkspaceDatabase: vi.fn(),
@@ -37,7 +38,11 @@ vi.mock("@/components/files/notifyError", async () => {
 });
 vi.mock("@mantine/notifications", () => ({ notifications: { show: vi.fn() } }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key, i18n: { language: "en-US" } }),
+  useTranslation: () => ({
+    t: (key: string, options?: { date?: string }) =>
+      key === "Home.Accounts.LastUpdate" ? `${key}: ${options?.date}` : key,
+    i18n: { language: mocks.language },
+  }),
 }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -65,6 +70,7 @@ test("cleanup create does not run account database recovery", async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.language = "en-US";
   mocks.progress.mockResolvedValue(vi.fn());
   getDefaultStore().set(accountDownloadsInFlightAtom, new Map());
 });
@@ -73,6 +79,7 @@ async function renderAccount(
   root: Root,
   cache = new Map(),
   database: import("@/utils/db").ManagedDatabaseInfo | null = null,
+  updatedAt = 0,
 ) {
   await act(async () => {
     root.render(
@@ -82,7 +89,7 @@ async function renderAccount(
             type="lichess"
             database={database}
             title="Felix"
-            updatedAt={0}
+            updatedAt={updatedAt}
             total={0}
             stats={[]}
             logout={vi.fn()}
@@ -93,6 +100,22 @@ async function renderAccount(
     );
   });
 }
+
+test("account last update uses the interface language", async () => {
+  mocks.language = "de-DE";
+  const updatedAt = new Date("2024-06-22T12:00:00Z").getTime();
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await renderAccount(root, new Map(), null, updatedAt);
+    expect(host.textContent).toContain(new Date(updatedAt).toLocaleDateString("de-DE"));
+    expect(host.textContent).not.toContain(new Date(updatedAt).toLocaleDateString("en-US"));
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
 
 test.each(["upgrading", "busy"] as const)(
   "a %s row displays its transient message and unknown count",

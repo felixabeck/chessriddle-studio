@@ -7,6 +7,7 @@ import type { ErrorCategory } from "@/bindings";
 import englishCatalogue from "@/translation/en-US.json";
 
 const mocks = vi.hoisted(() => ({
+  language: "en-US",
   mutate: vi.fn(),
   mutateTrash: vi.fn(),
   trashData: { items: [] as Array<unknown>, olderCount: 0, cursor: null as unknown },
@@ -89,7 +90,7 @@ vi.mock("react-i18next", async () => {
   const { default: catalogue } = await import("@/translation/en-US.json");
   return {
     useTranslation: () => ({
-      i18n: { language: "en-US" },
+      i18n: { language: mocks.language },
       t: (key: string, options?: { defaultValue?: string; name?: string }) =>
         key === "Common.NameAlreadyUsed" || key.startsWith("Files.Refusal.")
           ? catalogue.translation[key as keyof typeof catalogue.translation]
@@ -1235,6 +1236,7 @@ async function completeTrash() {
 
 beforeEach(async () => {
   vi.resetAllMocks();
+  mocks.language = "en-US";
   mocks.realSWR = false;
   mocks.workspace = undefined;
   mocks.data = [entry, destination];
@@ -1292,6 +1294,25 @@ describe("native trash view", () => {
     const trash = container.querySelector('[data-section="trash"]')!;
     expect(tree.compareDocumentPosition(trash) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(trash.textContent).toContain("older.pgn");
+  });
+
+  test("trash timestamp uses the interface language", async () => {
+    mocks.language = "de-DE";
+    const trashedAt = new Date("2024-06-22T12:00:00Z");
+    mocks.trashData.items = [
+      {
+        item,
+        name: "older.pgn",
+        kind: "file",
+        originalFolder: "Archive",
+        trashedSeconds: trashedAt.getTime() / 1000,
+        category: null,
+      },
+    ];
+    await act(async () => root.render(<FilesPage />));
+    const trash = container.querySelector('[data-section="trash"]')!;
+    expect(trash.textContent).toContain(trashedAt.toLocaleString("de-DE"));
+    expect(trash.textContent).not.toContain(trashedAt.toLocaleString("en-US"));
   });
 
   test("a failure renders the view even without trash rows", async () => {

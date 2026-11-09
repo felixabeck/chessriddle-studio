@@ -11,7 +11,7 @@ const locale = vi.hoisted(() => ({ language: "de-DE" }));
 const date = new Date("2024-06-22T12:00:00Z").getTime();
 
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key, i18n: locale }),
+  useTranslation: () => ({ t: (key: string) => key, i18n: { language: locale.language } }),
 }));
 vi.mock("@mantine/core", () => ({
   Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -83,23 +83,37 @@ afterEach(async () => {
   container.remove();
 });
 
-function expectGermanDate(testId: string) {
+function expectLocalizedDate(testId: string, language: string, otherLanguage: string) {
   const text = container.querySelector(`[data-testid="${testId}"]`)?.textContent;
-  expect(text).toBe(new Date(date).toLocaleDateString("de-DE"));
-  expect(text).not.toBe(new Date(date).toLocaleDateString("en-US"));
+  expect(text).toBe(new Date(date).toLocaleDateString(language));
+  expect(text).not.toBe(new Date(date).toLocaleDateString(otherLanguage));
 }
 
 test("slider label uses the interface language", async () => {
+  const props = { ratingDates: [date], onDateRangeChange: vi.fn() };
   await act(async () => {
-    root.render(<TimeRangeSlider ratingDates={[date]} onDateRangeChange={vi.fn()} />);
+    root.render(<TimeRangeSlider {...props} />);
   });
-  expectGermanDate("slider-label");
+  expectLocalizedDate("slider-label", "de-DE", "en-US");
+
+  locale.language = "en-US";
+  await act(async () => {
+    root.render(<TimeRangeSlider {...props} />);
+  });
+  expectLocalizedDate("slider-label", "en-US", "de-DE");
 });
 
 test("rating ticks and tooltip labels use the interface language", async () => {
   await act(async () => {
     root.render(<RatingsPanel playerName="Ada" info={info} isDatabase />);
   });
-  expectGermanDate("rating-tick");
-  expectGermanDate("rating-tooltip");
+  expectLocalizedDate("rating-tick", "de-DE", "en-US");
+  expectLocalizedDate("rating-tooltip", "de-DE", "en-US");
+
+  locale.language = "en-US";
+  await act(async () => {
+    root.render(<RatingsPanel playerName="Ada" info={info} isDatabase />);
+  });
+  expectLocalizedDate("rating-tick", "en-US", "de-DE");
+  expectLocalizedDate("rating-tooltip", "en-US", "de-DE");
 });
