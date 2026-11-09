@@ -68,8 +68,9 @@ now does (proof 2 below).
    window decorations and every file dialog are drawn by GTK, not by the page,
    and WebDriver only sees the page. `issue_engine_binary`
    (`src-tauri/src/main.rs`) always opens a native picker and takes no path
-   argument, so **no engine can be registered from here** — any check that needs
-   a live engine child is still Felix's.
+   argument, so that picker route cannot be driven. A catalog install through the
+   fallback button can be driven with `pnpm verify:app --fallback-engine-install`,
+   which performs a real download and registers the engine.
 
    Prerequisites, both one-off and named in the failure message if missing:
    `sudo apt install webkit2gtk-driver` (must match the installed
@@ -132,8 +133,9 @@ in the actual product: it drives the real window off-screen through `kwin_waylan
 
 What remains Felix's is now only **native GTK chrome** — menus, file dialogs, window decorations.
 WebDriver sees the page, not the GTK widgets around it, and `issue_engine_binary` always opens a
-native picker, so registering an engine (and therefore any check needing a live engine child)
-cannot be automated this way.
+native picker, so that picker route cannot be driven. A catalog install through the fallback
+button can be driven with `pnpm verify:app --fallback-engine-install`, which performs a real
+download and registers the engine.
 
 
 ## Other-agent UI verification

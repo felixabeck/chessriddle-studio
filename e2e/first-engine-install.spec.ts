@@ -16,10 +16,9 @@ const commands = {
     cancel_download: { result: true },
     clear_progress: { result: "8" },
     get_engine_workspace: { result: { id: { id: "engine-root" }, kind: "engineRoot" } },
-    // Keep the accepted command observable while screenshots and the cancel interaction run.
-    // The real job wrapper waits for settlement before acknowledging cancellation.
+    // Natural settlement is beyond the test's 45-second timeout. Only cancel ends this job.
     install_engine_workflow: {
-        delay: 15_000,
+        delay: 120_000,
         error: { tag: "backend-error", category: "cancellation", message: "Cancelled" },
     },
 } satisfies NonNullable<MockScenario["commands"]>;
@@ -99,16 +98,18 @@ test("automatic install stays visible across routes, cancels, and never starts a
     await page.getByRole("link", { name: "Engines", exact: true }).click();
     await expect(notice).toBeVisible();
     await expect(page.getByRole("button", { name: /Downloading/ })).toHaveCount(2);
+    await expect(notice).toBeVisible();
     await notice.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect
         .poll(() =>
             page.evaluate(() =>
                 window.__E2E_TAURI__
                     .invocations()
-                    .some(({ command }) => command === "cancel_download"),
+                    .filter(({ command }) => command === "cancel_download")
+                    .map(({ args }) => args),
             ),
         )
-        .toBe(true);
+        .toEqual([{ ticket: "first-stockfish-ticket" }]);
     await expect(notice).not.toBeVisible({ timeout: 20_000 });
     const button = page.getByRole("button", { name: "Install Stockfish", exact: true });
     await expect(button).toBeEnabled();

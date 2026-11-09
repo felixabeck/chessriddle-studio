@@ -603,6 +603,17 @@ const check = (condition, description, detail) => {
   }
 };
 
+async function assertion(label, action) {
+  try {
+    await action();
+    check(true, label);
+    return true;
+  } catch (error) {
+    check(false, label, error.message);
+    return false;
+  }
+}
+
 const PRACTICE_STORAGE_VERSION = 1;
 const PRACTICE_SHARD_SEAL_BYTES = 128 * 1024;
 const practiceStateKey = (fen) => fen.split(" ").slice(0, 4).join(" ");
@@ -1471,16 +1482,6 @@ async function verifyLosslessFileGameSave(session, filesWorkspace) {
     await writeFile(path, Buffer.from(await session.screenshot(), "base64"));
     console.log(`  .. lossless-save screenshot: ${path}`);
   };
-  const assertion = async (label, action) => {
-    try {
-      await action();
-      check(true, label);
-      return true;
-    } catch (error) {
-      check(false, label, error.message);
-      return false;
-    }
-  };
   for (const [index, fixture] of fixtures.entries()) {
     const path = join(filesWorkspace, `${fixture.name}.pgn`);
     const editedEvent = `verify:edited-${fixture.event}`;
@@ -2240,16 +2241,6 @@ async function verifyProgressContract(session) {
  */
 async function verifyFeedbackScreenshot(session) {
   const wait = (label, probe) => waitFor(label, probe, { timeoutMs: FEEDBACK_CAPTURE_TIMEOUT_MS });
-  const assertion = async (label, action) => {
-    try {
-      await action();
-      check(true, label);
-      return true;
-    } catch (error) {
-      check(false, label, error.message);
-      return false;
-    }
-  };
   const feedbackDialogOpen = () =>
     session.execute(`
       return [...document.querySelectorAll('[role="dialog"]')].some((dialog) =>
@@ -3315,16 +3306,6 @@ async function verifyDatabaseOrientation(session) {
     await wait("orientation analysis route", () =>
       session.execute("return location.pathname === '/' && !!document.querySelector('cg-board')"),
     );
-  };
-  const assertion = async (label, action) => {
-    try {
-      await action();
-      check(true, label);
-      return true;
-    } catch (error) {
-      check(false, label, error.message);
-      return false;
-    }
   };
   const seeded = await assertion(
     "AO1 an owner's Black game opens Black without dirtying or writing the native row",
@@ -7081,16 +7062,6 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
 }
 
 async function verifyFallbackEngineInstall(session) {
-  const assertion = async (description, run) => {
-    try {
-      await run();
-      check(true, description);
-      return true;
-    } catch (error) {
-      check(false, description, error.message);
-      return false;
-    }
-  };
   const startup = await assertion(
     "FE1 fallback install renderer starts on the unseeded profile",
     () => waitFor("fallback install renderer startup", () => session.execute(closeControlProbe)),

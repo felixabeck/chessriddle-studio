@@ -6,10 +6,8 @@ import type { DefaultEngine, LocalEngine } from "@/utils/engines";
 import UpgradeEngineModal from "./UpgradeEngineModal";
 
 const mocks = vi.hoisted(() => ({
-  complete: vi.fn(),
   installJob: vi.fn(),
   cancel: vi.fn(),
-  notify: vi.fn(),
   pending: undefined as { completion: EngineCompletion; applying: boolean } | undefined,
   catalogError: undefined as unknown,
 }));
@@ -18,11 +16,9 @@ vi.mock("@/state/catalogEngineCompletion", () => ({
   usePendingEngineCompletion: () => mocks.pending,
 }));
 vi.mock("@/hooks/downloadJobs", () => ({
-  runDownloadJob: (_id: string, run: (ticket: string) => Promise<void>) => run("ticket"),
   useDownloadJob: () => false,
   cancelDownloadJob: mocks.cancel,
 }));
-vi.mock("@/components/files/notifyError", () => ({ notifyUnlessCancelled: mocks.notify }));
 vi.mock("@/utils/files", () => ({ usePlatform: () => ({ os: "linux" }) }));
 vi.mock("@/utils/engines", async (original) => ({
   ...(await original<typeof import("@/utils/engines")>()),
@@ -51,16 +47,19 @@ vi.mock("./CatalogEngineCard", () => ({
     initInstalled,
     recovery,
     disabled,
+    inProgress,
     onClick,
     labels,
   }: {
     initInstalled: boolean;
     recovery?: { busy: boolean; retry: () => void };
     disabled?: boolean;
+    inProgress: boolean;
     onClick: () => void;
-    labels: { completed: string; action: string };
+    labels: { completed: string; action: string; inProgress: string };
   }) => (
     <button
+      data-in-progress={inProgress}
       disabled={recovery ? recovery.busy : disabled || initInstalled}
       onClick={recovery ? recovery.retry : onClick}
     >
@@ -70,7 +69,9 @@ vi.mock("./CatalogEngineCard", () => ({
           : "Common.Install"
         : initInstalled
           ? labels.completed
-          : labels.action}
+          : inProgress
+            ? labels.inProgress
+            : labels.action}
     </button>
   ),
 }));
@@ -101,17 +102,7 @@ let root: Root;
 let host: HTMLDivElement;
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 beforeEach(() => {
-  mocks.complete.mockReset().mockResolvedValue(undefined);
-  mocks.installJob.mockReset().mockImplementation(async (entry, id, upgrade, store) => {
-    try {
-      await mocks.complete(entry, id, "ticket", upgrade, store);
-      return true;
-    } catch (error) {
-      mocks.notify("Common.Error", error, "engine");
-      return false;
-    }
-  });
-  mocks.notify.mockReset();
+  mocks.installJob.mockReset().mockResolvedValue(true);
   mocks.pending = undefined;
   mocks.catalogError = undefined;
   host = document.createElement("div");
@@ -129,6 +120,12 @@ const render = async (engine = old) =>
 const click = async () => act(async () => host.querySelector("button")!.click());
 
 test("submits the immutable engine target and becomes current after full application", async () => {
+  let finish!: (result: boolean) => void;
+  mocks.installJob.mockReturnValue(
+    new Promise<boolean>((resolve) => {
+      finish = resolve;
+    }),
+  );
   await render();
   await click();
   expect(mocks.installJob).toHaveBeenCalledExactlyOnceWith(
@@ -137,25 +134,32 @@ test("submits the immutable engine target and becomes current after full applica
     old,
     expect.anything(),
   );
-  expect(mocks.complete).toHaveBeenCalledWith(
-    catalog,
-    progressId,
-    "ticket",
-    old,
-    expect.anything(),
-  );
+  expect(host.querySelector("button")!.dataset.inProgress).toBe("true");
+  expect(host.textContent).toContain("Common.Downloading");
+  expect(host.textContent).not.toContain("Engines.Upgrade.Current");
+  expect(host.querySelector("button")!.disabled).toBe(true);
+  await act(async () => finish(true));
   expect(host.textContent).toContain("Engines.Upgrade.Current");
   expect(host.querySelector("button")!.disabled).toBe(true);
+  expect(host.querySelector("button")!.dataset.inProgress).toBe("false");
+  expect(old.downloadLink).toBe("https://example.com/old.zip");
 });
 
-test("application failure keeps Install available and uses the localized error path", async () => {
-  const failure = new Error("Engines.Upgrade.SnapshotSaveError");
-  mocks.complete.mockRejectedValue(failure);
+test("an unsuccessful shared action clears progress and keeps the original catalog choice available", async () => {
+  let finish!: (result: boolean) => void;
+  mocks.installJob.mockReturnValue(
+    new Promise<boolean>((resolve) => {
+      finish = resolve;
+    }),
+  );
   await render();
   await click();
-  expect(mocks.notify).toHaveBeenCalledWith("Common.Error", failure, "engine");
+  expect(host.querySelector("button")!.dataset.inProgress).toBe("true");
+  await act(async () => finish(false));
   expect(host.textContent).toContain("Common.Install");
   expect(host.querySelector("button")!.disabled).toBe(false);
+  expect(host.querySelector("button")!.dataset.inProgress).toBe("false");
+  expect(old.downloadLink).toBe("https://example.com/old.zip");
 });
 
 test("a partially applied current binary still exposes Install to rejoin its original completion", async () => {
@@ -187,11 +191,17 @@ test("a partially applied current binary still exposes Install to rejoin its ori
       },
     },
   };
-  await render({ ...old, downloadLink: catalog.downloadLink });
+  const current = { ...old, downloadLink: catalog.downloadLink };
+  await render(current);
   expect(host.textContent).toContain("Common.Install");
   expect(host.querySelector("button")!.disabled).toBe(false);
   await click();
-  expect(mocks.complete).toHaveBeenCalledOnce();
+  expect(mocks.installJob).toHaveBeenCalledExactlyOnceWith(
+    catalog,
+    progressId,
+    current,
+    expect.anything(),
+  );
 });
 
 test("the current catalog choice remains disabled with no pending completion", async () => {

@@ -1174,6 +1174,8 @@ const tauriBootstrap = () => {
         JSON.parse(sessionStorage.getItem(completionKey) ?? "[]");
     const writeCompletions = (records: EngineCompletion[]) =>
         sessionStorage.setItem(completionKey, JSON.stringify(records));
+    // Delayed workflow replies belong to their prepared download ticket until settlement.
+    const pendingInstalls = new Map<string, () => void>();
     const accountCompletionKey = "__E2E_ACCOUNT_COMPLETIONS__";
     const readAccountCompletions = (): { id?: string; deletionPending?: boolean }[] =>
         JSON.parse(sessionStorage.getItem(accountCompletionKey) ?? "[]");
@@ -1213,8 +1215,28 @@ const tauriBootstrap = () => {
         if (!response) {
             throw new Error(`Unexpected Tauri IPC command: ${command}`);
         }
-        if (response.delay)
-            await new Promise((resolve) => window.setTimeout(resolve, response.delay));
+        if (response.delay) {
+            if (command === "install_engine_workflow") {
+                const ticket = String(args.ticket);
+                try {
+                    await new Promise<void>((resolve, reject) => {
+                        const timer = window.setTimeout(resolve, response.delay);
+                        pendingInstalls.set(ticket, () => {
+                            window.clearTimeout(timer);
+                            reject({
+                                tag: "backend-error",
+                                category: "cancellation",
+                                message: "Cancelled",
+                            });
+                        });
+                    });
+                } finally {
+                    pendingInstalls.delete(ticket);
+                }
+            } else {
+                await new Promise((resolve) => window.setTimeout(resolve, response.delay));
+            }
+        }
         const outcome = response.outcomes?.shift();
         const failure = outcome
             ? "error" in outcome
@@ -1304,6 +1326,9 @@ const tauriBootstrap = () => {
                 : response.results?.length
                   ? response.results.shift()
                   : response.result;
+        if (command === "cancel_download" && result === true) {
+            pendingInstalls.get(String(args.ticket))?.();
+        }
         if (command === "pending_engine_completions" && !state.commands[command])
             return readCompletions();
         if (command === "pending_account_completions" && !state.commands[command])

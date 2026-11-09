@@ -394,7 +394,7 @@ test.each(["prerequisites", "hydration"])(
         setEngines(store, []);
         await flush();
         expect(mocks.install).not.toHaveBeenCalled();
-        if (pending === "hydration") expect(unsubscribe).toHaveBeenCalled();
+        expect(unsubscribe.mock.calls.length > 0).toBe(pending === "hydration");
     },
 );
 
@@ -411,7 +411,7 @@ test.each(["success", "cancel", "failure", "busy"])(
             await flush();
             expect(store.get(automaticStockfishJobAtom)).toBeNull();
             expect(localStorage.getItem(FIRST_LAUNCH_STOCKFISH_KEY)).not.toBeNull();
-            if (outcome === "busy") expect(listener).not.toHaveBeenCalled();
+            expect(listener).toHaveBeenCalledTimes(outcome === "busy" ? 0 : 2);
             start(store);
             await flush();
             expect(mocks.install).toHaveBeenCalledOnce();

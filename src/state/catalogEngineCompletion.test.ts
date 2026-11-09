@@ -81,13 +81,12 @@ test.each([false, true])(
         );
         expect(mocks.run).toHaveBeenCalledExactlyOnceWith("progress", expect.any(Function));
         expect(mocks.initialize).toHaveBeenCalledExactlyOnceWith(store);
+        const addIntent = { kind: "add", engine_id: expect.any(String) };
         expect(mocks.install).toHaveBeenCalledExactlyOnceWith(
             engine,
             "progress",
             "ticket",
-            target
-                ? { kind: "upgrade", engine_id: target.id, expected: target.handle }
-                : { kind: "add", engine_id: expect.any(String) },
+            target ? { kind: "upgrade", engine_id: target.id, expected: target.handle } : addIntent,
         );
         expect(mocks.apply).toHaveBeenCalledExactlyOnceWith(completion, store);
         expect(mocks.notify).not.toHaveBeenCalled();
