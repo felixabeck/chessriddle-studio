@@ -3928,6 +3928,33 @@ test("an unchanged-workspace download refresh publishes the new inventory", asyn
   expect(store.get(selectedPuzzleDbAtom)).toEqual(selectedDb);
 });
 
+test("an aborted child refresh cannot publish its database inventory", async () => {
+  const store = await renderPuzzles();
+  await vi.waitFor(() => {
+    expect(document.querySelector('[data-testid="puzzle-database-count"]')?.textContent).toBe("1");
+    expect(
+      document.querySelector('[data-testid="puzzle-state"]')?.getAttribute("data-database"),
+    ).toBe(selectedDb.id);
+  });
+
+  const listing = deferred<PuzzleDatabaseInfo[]>();
+  mocks.listPuzzleDatabases.mockReturnValueOnce(listing.promise);
+  const controller = new AbortController();
+  const refresh = mocks.addPuzzleProps!.refreshPuzzleDbs(controller.signal);
+  expect(mocks.listPuzzleDatabases).toHaveBeenLastCalledWith({ signal: controller.signal });
+  controller.abort();
+  await act(async () => {
+    listing.resolve([selectedDatabase, otherDatabase]);
+    await refresh;
+  });
+
+  expect(document.querySelector('[data-testid="puzzle-database-count"]')?.textContent).toBe("1");
+  expect(
+    document.querySelector('[data-testid="puzzle-state"]')?.getAttribute("data-database"),
+  ).toBe(selectedDb.id);
+  expect(store.get(selectedPuzzleDbAtom)).toEqual(selectedDb);
+});
+
 test("successful deletion clears the selected puzzle session and closes the modal", async () => {
   sessionStorage.setItem(
     "puzzles-test-puzzles",
