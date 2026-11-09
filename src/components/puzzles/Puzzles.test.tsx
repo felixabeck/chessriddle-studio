@@ -26,6 +26,7 @@ import type { Key } from "@lichess-org/chessground/types";
 import { positionFromFen } from "@/utils/chessops";
 import { INITIAL_FEN } from "chessops/fen";
 import { getPuzzleProgress, type Puzzle } from "@/utils/puzzles";
+import { defaultPuzzleDatabaseProgressId } from "@/utils/db";
 import { defaultTree, getNodeAtPath, type TreeState } from "@/utils/treeReducer";
 import {
   puzzleTimerFamily,
@@ -78,6 +79,17 @@ const mocks = vi.hoisted(() => ({
   board: null as Config | null,
   selectedDatabase: null as string | null,
   addPuzzleProps: null as ComponentProps<typeof AddPuzzle> | null,
+  realAddPuzzle: false,
+  getDefaultPuzzleDatabases: vi.fn(),
+  issuePuzzleWorkspace: vi.fn(),
+  issuePuzzleDownloadDestination: vi.fn(),
+  downloadFile: vi.fn(),
+  withDownloadTicket: vi.fn(),
+  cancelDownload: vi.fn(),
+  cancelDownloadForProgress: vi.fn(),
+  getProgress: vi.fn(),
+  clearProgress: vi.fn(),
+  subscribeProgress: vi.fn(),
 }));
 
 vi.mock("@/utils/sound", () => ({ playSound: mocks.playSound }));
@@ -97,6 +109,8 @@ vi.mock("@/platform/tauri", async () => {
   const actual = await vi.importActual<typeof import("@/platform/tauri")>("@/platform/tauri");
   return {
     ...actual,
+    withDownloadTicket: mocks.withDownloadTicket,
+    tauriSubscriptions: { ...actual.tauriSubscriptions, progress: mocks.subscribeProgress },
     tauri: {
       chessriddleTrainingAvailable: mocks.chessriddleTrainingAvailable,
       chessriddleTrainingNext: mocks.chessriddleTrainingNext,
@@ -111,9 +125,20 @@ vi.mock("@/platform/tauri", async () => {
       getSoundServerPort: mocks.getSoundServerPort,
       deletePuzzleDatabase: mocks.deletePuzzleDatabase,
       getThemesForPuzzle: mocks.getThemesForPuzzle,
+      issuePuzzleWorkspace: mocks.issuePuzzleWorkspace,
+      issuePuzzleDownloadDestination: mocks.issuePuzzleDownloadDestination,
+      downloadFile: mocks.downloadFile,
+      cancelDownload: mocks.cancelDownload,
+      cancelDownloadForProgress: mocks.cancelDownloadForProgress,
+      getProgress: mocks.getProgress,
+      clearProgress: mocks.clearProgress,
     },
   };
 });
+vi.mock("@/utils/db", async (original) => ({
+  ...(await original<typeof import("@/utils/db")>()),
+  getDefaultPuzzleDatabases: mocks.getDefaultPuzzleDatabases,
+}));
 vi.mock("@mantine/notifications", () => ({
   notifications: { show: mocks.notificationShow },
 }));
@@ -143,12 +168,20 @@ vi.mock("@mantine/core", async (original) => {
     },
   };
 });
-vi.mock("./AddPuzzle", () => ({
-  default: (props: ComponentProps<typeof AddPuzzle>) => {
-    mocks.addPuzzleProps = props;
-    return <div data-testid="puzzle-database-count">{props.puzzleDbs.length}</div>;
-  },
-}));
+vi.mock("./AddPuzzle", async (original) => {
+  const { default: ActualAddPuzzle } = await original<typeof import("./AddPuzzle")>();
+  return {
+    default: (props: ComponentProps<typeof AddPuzzle>) => {
+      mocks.addPuzzleProps = props;
+      return (
+        <>
+          <div data-testid="puzzle-database-count">{props.puzzleDbs.length}</div>
+          {mocks.realAddPuzzle && <ActualAddPuzzle {...props} />}
+        </>
+      );
+    },
+  };
+});
 vi.mock("../common/ConfirmModal", () => ({
   default: ({ opened, onConfirm }: { opened: boolean; onConfirm: () => Promise<void> }) =>
     opened ? (
@@ -2307,6 +2340,16 @@ beforeEach(() => {
   mocks.board = null;
   mocks.selectedDatabase = null;
   mocks.addPuzzleProps = null;
+  mocks.realAddPuzzle = false;
+  mocks.getDefaultPuzzleDatabases.mockResolvedValue([]);
+  mocks.getProgress.mockResolvedValue(null);
+  mocks.clearProgress.mockResolvedValue(1n);
+  mocks.cancelDownload.mockResolvedValue(true);
+  mocks.cancelDownloadForProgress.mockResolvedValue(true);
+  mocks.subscribeProgress.mockResolvedValue(vi.fn());
+  mocks.withDownloadTicket.mockImplementation((run: (ticket: string) => Promise<unknown>) =>
+    run("prepared-ticket"),
+  );
   localStorage.clear();
   sessionStorage.clear();
   localStorage.setItem("puzzle-db", JSON.stringify(selectedDb));
@@ -2370,7 +2413,7 @@ async function renderPuzzles({
   if (initial) tabStorage.seed("puzzles-test", initial);
   await act(async () => {
     root.render(
-      <MantineProvider>
+      <MantineProvider env={mocks.realAddPuzzle ? "test" : undefined}>
         <Provider store={store}>
           <WorkspaceTabScope tabId="puzzles-test">
             <TreeStateProvider id="puzzles-test" initial={initial}>
@@ -3756,7 +3799,21 @@ test("ignores a stale workspace listing after a newer generation restores the se
   expect(store.get(selectedPuzzleDbAtom)).toEqual(selectedDb);
 });
 
-test("a late download inventory from the previous workspace cannot reactivate its database", async () => {
+test("the real download and picker keep the new workspace inventory when an old download listing arrives", async () => {
+  mocks.realAddPuzzle = true;
+  const manifest = {
+    title: "Lichess",
+    description: "Tactics catalogue",
+    storageSize: 42,
+    puzzleCount: 3,
+    downloadLink: "https://example.test/tactics.db3",
+    sha256: "a".repeat(64),
+    signature: "signature",
+  };
+  const destination = { id: { id: "destination-in-a" }, kind: "path" };
+  mocks.getDefaultPuzzleDatabases.mockResolvedValue([manifest]);
+  mocks.issuePuzzleDownloadDestination.mockResolvedValue(destination);
+  mocks.downloadFile.mockResolvedValue(undefined);
   const store = await renderPuzzles();
   await vi.waitFor(() => {
     expect(
@@ -3765,41 +3822,92 @@ test("a late download inventory from the previous workspace cannot reactivate it
   });
 
   const staleListing = deferred<PuzzleDatabaseInfo[]>();
-  mocks.listPuzzleDatabases.mockReturnValueOnce(staleListing.promise);
-  const refresh = mocks.addPuzzleProps!.refreshPuzzleDbs();
+  const previewListing = deferred<PuzzleDatabaseInfo[]>();
+  const parentListing = deferred<PuzzleDatabaseInfo[]>();
+  const databaseSelect = () =>
+    document.querySelector<HTMLInputElement>('[placeholder="Puzzle.SelectDatabase"]')!;
+  const options = () =>
+    [...document.querySelectorAll<HTMLElement>('[role="option"]')].map(
+      (option) => option.textContent,
+    );
+  const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
 
-  mocks.getPuzzleWorkspace.mockResolvedValue(otherWorkspace);
-  mocks.listPuzzleDatabases.mockResolvedValue([otherDatabase]);
-  await act(async () => mocks.addPuzzleProps!.onWorkspaceChanged());
-  await vi.waitFor(() => {
+  try {
+    await act(async () => databaseSelect().click());
+    await act(async () => {
+      document.querySelector<HTMLElement>('[role="option"][value="add"]')!.click();
+    });
+    await vi.waitFor(() => {
+      expect(mocks.addPuzzleProps?.opened).toBe(true);
+      expect(mocks.getDefaultPuzzleDatabases).toHaveBeenCalledOnce();
+      expect(dialog()?.textContent).toContain("Common.Install");
+    });
+    mocks.listPuzzleDatabases.mockReturnValueOnce(staleListing.promise);
+    await act(async () => {
+      [...dialog()!.querySelectorAll<HTMLButtonElement>("button")]
+        .find((button) => button.textContent === "Common.Install")!
+        .click();
+    });
+    await vi.waitFor(() => expect(mocks.listPuzzleDatabases).toHaveBeenCalledTimes(2));
+    expect(mocks.downloadFile).toHaveBeenCalledExactlyOnceWith(
+      defaultPuzzleDatabaseProgressId(manifest.downloadLink),
+      manifest.downloadLink,
+      destination,
+      "Lichess.db3",
+      null,
+      "prepared-ticket",
+      { sha256: manifest.sha256, signature: manifest.signature },
+    );
+
+    mocks.issuePuzzleWorkspace.mockResolvedValue(otherWorkspace);
+    mocks.getPuzzleWorkspace.mockResolvedValue(otherWorkspace);
+    // The picker preview starts synchronously before the parent's generation effect lists B.
+    // Hold both so the preview must publish B after the new generation has rendered.
+    mocks.listPuzzleDatabases
+      .mockReturnValueOnce(previewListing.promise)
+      .mockReturnValueOnce(parentListing.promise);
+    await act(async () => {
+      [...dialog()!.querySelectorAll<HTMLButtonElement>("button")]
+        .find((button) => button.textContent === "Puzzle.ChooseLocalFolder")!
+        .click();
+    });
+    await vi.waitFor(() => expect(mocks.listPuzzleDatabases).toHaveBeenCalledTimes(4));
+    expect(mocks.issuePuzzleWorkspace).toHaveBeenCalledOnce();
+    await act(async () => previewListing.resolve([otherDatabase]));
+    await vi.waitFor(() => expect(dialog()).toBeNull());
     expect(document.querySelector('[data-testid="puzzle-database-count"]')?.textContent).toBe("1");
+    await act(async () => databaseSelect().click());
+    expect(options()).toContain("Other");
+    expect(options()).not.toContain("Tactics");
     expect(
       document.querySelector('[data-testid="puzzle-state"]')?.getAttribute("data-database"),
     ).toBe("none");
-  });
 
-  await act(async () => {
-    staleListing.resolve([selectedDatabase]);
-    await refresh;
-  });
-  expect(
-    document.querySelector('[data-testid="puzzle-state"]')?.getAttribute("data-database"),
-  ).toBe("none");
-  expect(store.get(selectedPuzzleDbAtom)).toEqual(selectedDb);
-  expect(document.querySelector('[data-testid="puzzle-database-count"]')?.textContent).toBe("1");
-  await act(async () =>
-    document.querySelector<HTMLInputElement>('[placeholder="Puzzle.SelectDatabase"]')!.click(),
-  );
-  const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')].map(
-    (option) => option.textContent,
-  );
-  expect(options).toContain("Other");
-  expect(options).not.toContain("Tactics");
-  expect(
-    document.querySelector<HTMLButtonElement>('[aria-label="Puzzle.NewPuzzle"]')?.disabled,
-  ).toBe(true);
-  await newPuzzle();
-  expect(mocks.getPuzzle).not.toHaveBeenCalled();
+    await act(async () => parentListing.resolve([otherDatabase]));
+    await act(async () => staleListing.resolve([selectedDatabase]));
+    expect(
+      document.querySelector('[data-testid="puzzle-state"]')?.getAttribute("data-database"),
+    ).toBe("none");
+    expect(store.get(selectedPuzzleDbAtom)).toEqual(selectedDb);
+    expect(document.querySelector('[data-testid="puzzle-database-count"]')?.textContent).toBe("1");
+    expect(options()).toContain("Other");
+    expect(options()).not.toContain("Tactics");
+    expect(
+      document.querySelector<HTMLButtonElement>('[aria-label="Puzzle.NewPuzzle"]')?.disabled,
+    ).toBe(true);
+    await newPuzzle();
+    expect(mocks.getPuzzle).not.toHaveBeenCalled();
+    expect(mocks.notificationShow).not.toHaveBeenCalled();
+    expect(mocks.cancelDownload).not.toHaveBeenCalled();
+    expect(mocks.cancelDownloadForProgress).not.toHaveBeenCalled();
+  } finally {
+    // Settle the real download job and pending native adapters even if an assertion fails.
+    await act(async () => {
+      previewListing.resolve([otherDatabase]);
+      parentListing.resolve([otherDatabase]);
+      staleListing.resolve([selectedDatabase]);
+    });
+  }
 });
 
 test("an unchanged-workspace download refresh publishes the new inventory", async () => {
