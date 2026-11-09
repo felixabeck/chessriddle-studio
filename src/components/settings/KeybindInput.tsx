@@ -2,7 +2,7 @@ import { Button, Group, Kbd } from "@mantine/core";
 import { Check, X } from "lucide-react";
 import cx from "clsx";
 import { useAtom } from "jotai";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRecordHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
 import { keyMapAtom } from "@/state/keybinds";
@@ -23,6 +23,25 @@ function KeybindInput({
   const [hovering, setHovering] = useState(false);
 
   const [keys, { start, stop, isRecording }] = useRecordHotkeys();
+
+  // The recorder's document listener is only removed by stop().
+  useEffect(() => stop, [stop]);
+
+  useEffect(() => {
+    if (!isRecording) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        stop();
+      }
+    };
+
+    // Capture Escape before the recorder's document bubble listener adds it.
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [isRecording, stop]);
 
   return (
     <>
