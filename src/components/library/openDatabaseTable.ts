@@ -5,7 +5,7 @@ import {
 import { activeDatabaseViewStore } from "@/state/store/database";
 import type { SuccessDatabaseInfo } from "@/utils/db";
 
-export function openStandaloneDatabase(
+export function openDatabaseTable(
     database: SuccessDatabaseInfo,
     navigate: (target: DatabaseRouteTarget) => unknown,
 ): boolean {

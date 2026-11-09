@@ -1,6 +1,6 @@
 import { expect, test, vi } from "vitest";
 import type { SuccessDatabaseInfo } from "@/utils/db";
-import { openStandaloneDatabase } from "./openStandaloneDatabase";
+import { openDatabaseTable } from "./openDatabaseTable";
 
 const mocks = vi.hoisted(() => ({
     setDatabase: vi.fn(),
@@ -19,10 +19,10 @@ test("uses the shared table-opening admission and navigates only when admitted",
     } as SuccessDatabaseInfo;
     const navigate = vi.fn();
     mocks.setDatabase.mockReturnValue(false);
-    expect(openStandaloneDatabase(database, navigate)).toBe(false);
+    expect(openDatabaseTable(database, navigate)).toBe(false);
     expect(navigate).not.toHaveBeenCalled();
     mocks.setDatabase.mockReturnValue(true);
-    expect(openStandaloneDatabase(database, navigate)).toBe(true);
+    expect(openDatabaseTable(database, navigate)).toBe(true);
     expect(mocks.setDatabase).toHaveBeenLastCalledWith(database);
     expect(navigate).toHaveBeenCalledWith(mocks.target);
 });

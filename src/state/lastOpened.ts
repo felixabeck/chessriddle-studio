@@ -6,6 +6,8 @@ import { deserializeStorageValue, serializeStorageValue } from "./store/debounce
 import { reportPreferenceStorageFailure } from "./utils";
 
 export const MAX_LAST_OPENED = 1000;
+// Allow composite game keys containing an opaque database capability and a numeric game id.
+const MAX_LAST_OPENED_KEY_LENGTH = 1024;
 export type LastOpened = Record<string, number>;
 
 export function boundLastOpened(record: LastOpened): LastOpened {
@@ -18,7 +20,10 @@ export function boundLastOpened(record: LastOpened): LastOpened {
 
 const storedLastOpenedSchema = z.object({
     version: z.literal(1),
-    items: z.record(z.string().min(1).max(1024), z.number().finite().nonnegative()),
+    items: z.record(
+        z.string().min(1).max(MAX_LAST_OPENED_KEY_LENGTH),
+        z.number().finite().nonnegative(),
+    ),
 });
 
 /** A game key contains only native authority and the database-local game id, never headers. */

@@ -7,6 +7,7 @@ import { z } from "zod";
 import useSWR, { type Arguments, type ScopedMutator } from "swr";
 import {
     type DatabaseInfo,
+    type DatabaseInfoResult,
     type DatabaseHandle,
     type DatabaseRootHandle,
     type GameQuery,
@@ -317,6 +318,16 @@ export async function getDatabases(options: { signal?: AbortSignal } = {}): Prom
     };
 }
 
+export function databaseMetadataFailureMessage(
+    metadata: Exclude<DatabaseInfoResult, { status: "ready" }>,
+): string {
+    if (metadata.status === "upgrading") return i18n.t("Databases.Upgrading.Description");
+    if (metadata.status === "busy") return i18n.t("Databases.Busy.Description");
+    return metadata.reason === "disk-full"
+        ? i18n.t("Databases.UpgradeFailed.DiskFull")
+        : metadata.message;
+}
+
 async function getDatabase(
     file: DatabaseHandle,
     filename: string,
@@ -329,10 +340,7 @@ async function getDatabase(
         filename,
         indexed: false,
         transient,
-        error:
-            transient === "upgrading"
-                ? i18n.t("Databases.Upgrading.Description")
-                : i18n.t("Databases.Busy.Description"),
+        error: databaseMetadataFailureMessage({ status: transient, filename, title: null }),
     });
     try {
         const metadata = await tauri.getDbInfo(file);
@@ -345,10 +353,7 @@ async function getDatabase(
                 filename,
                 indexed: false,
                 upgradeFailed: true,
-                error:
-                    metadata.reason === "disk-full"
-                        ? i18n.t("Databases.UpgradeFailed.DiskFull")
-                        : metadata.message,
+                error: databaseMetadataFailureMessage(metadata),
             };
         const { status: _status, ...info } = metadata;
         return { type: "success", ...info, file };

@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
     remoteGet: vi.fn(),
     searchPosition: vi.fn(),
     getPlayers: vi.fn(),
+    getGames: vi.fn(),
 }));
 vi.mock("@/platform/tauri", () => ({
     tauri: {
@@ -26,6 +27,7 @@ vi.mock("@/platform/tauri", () => ({
         verifySignedBytes: mocks.verifySignedBytes,
         searchPosition: mocks.searchPosition,
         getPlayers: mocks.getPlayers,
+        getGames: mocks.getGames,
         linkedCollectionsSupported: vi.fn(async () => false),
         listLinkedCollections: vi.fn(async () => []),
     },
@@ -53,6 +55,7 @@ import {
     sameDatabaseHandle,
     searchPosition,
     query_players,
+    query_games,
     type ManagedDatabaseInfo,
 } from "./db";
 
@@ -67,6 +70,20 @@ beforeEach(() => {
 });
 
 const handle = (id: string): DatabaseHandle => ({ id: { id }, kind: "database" });
+
+it("forwards player_name to the native game query", async () => {
+    const response = { data: [], count: 0 };
+    mocks.getGames.mockResolvedValue(response);
+    const signal = new AbortController().signal;
+    expect(await query_games(handle("owner"), { player_name: "Magnus Carlsen" }, { signal })).toBe(
+        response,
+    );
+    expect(mocks.getGames).toHaveBeenCalledExactlyOnceWith(
+        handle("owner"),
+        expect.objectContaining({ player_name: "Magnus Carlsen" }),
+        { signal },
+    );
+});
 
 it.each([undefined, "contains", "exact"] as const)(
     "forwards player nameMatch %s through the real wrapper",

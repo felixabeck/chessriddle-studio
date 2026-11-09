@@ -1,11 +1,12 @@
 import { MantineProvider } from "@mantine/core";
+import i18n from "i18next";
 import { Provider, createStore } from "jotai";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { catalogueI18n, shippedCatalogues } from "@/tests/catalogues";
 import type { SupportedLocale } from "@/i18n";
-import type { CollectionDescriptor, NormalizedGame } from "@/bindings";
+import type { CollectionDescriptor, DatabaseInfoResult, NormalizedGame } from "@/bindings";
 import type { Entry, FileMetadata } from "@/components/files/file";
 import type { DatabaseList } from "@/utils/db";
 import type { OwnGame } from "@/components/library/ownGamesFeed";
@@ -77,8 +78,8 @@ vi.mock("@/utils/databaseGame", async (original) => ({
   ...(await original<typeof import("@/utils/databaseGame")>()),
   openDatabaseGame: mocks.openGame,
 }));
-vi.mock("@/components/library/openStandaloneDatabase", () => ({
-  openStandaloneDatabase: mocks.openDatabase,
+vi.mock("@/components/library/openDatabaseTable", () => ({
+  openDatabaseTable: mocks.openDatabase,
 }));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => mocks.navigate }));
 vi.mock("@/components/files/notifyError", () => ({ notifyUnlessCancelled: mocks.notify }));
@@ -169,6 +170,7 @@ async function open(name: string) {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
+  vi.spyOn(i18n, "t").mockImplementation((...args: Parameters<typeof i18n.t>) => String(args[0]));
   localStorage.clear();
   sessionStorage.clear();
   store = createStore();
@@ -189,6 +191,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -289,6 +292,38 @@ test("Due sorts overdue counts, includes failed decks, and keeps their whole row
   expect(mocks.openFile.mock.calls[0][2].panel).toBe("practice");
 });
 
+test.each(["listing", "unreadable", "metadata"])(
+  "Due treats %s discovery failure as incomplete with both empty and partial results",
+  async (failure) => {
+    const entries: Entry[] =
+      failure === "unreadable"
+        ? [{ type: "unreadable", name: "Unreadable", category: "permission", key: "unreadable" }]
+        : failure === "metadata"
+          ? [{ ...file("Unreadable", "repertoire"), readError: "permission" }]
+          : [];
+    mocks.listing = {
+      data: entries,
+      isLoading: false,
+      error: failure === "listing" ? new Error("Workspace listing failed") : undefined,
+    };
+    await render();
+    await filter("due");
+    expect(rows()).toHaveLength(0);
+    expect(host.textContent).toContain("Home.Library.LoadFailed");
+    expect(host.textContent).not.toContain("Home.DuePractice.NothingDue");
+
+    mocks.listing.data = [...entries, file("Known", "repertoire")];
+    mocks.due.Known = { count: 3, failed: false };
+    await render();
+    expect(rows()).toHaveLength(1);
+    const total = [...host.querySelectorAll("p")].find((item) =>
+      item.textContent?.includes("Home.DuePractice.Total"),
+    );
+    expect(total?.textContent).toContain('Home.DuePractice.Total{"positions":3,"repertoires":1}');
+    expect(total?.textContent).toContain("Home.DuePractice.Incomplete");
+  },
+);
+
 test("search finds a Library file absent from recents and activates player search only where required", async () => {
   mocks.listing = {
     data: [file("Sicilian", "repertoire"), file("French", "repertoire")],
@@ -360,6 +395,73 @@ test("Games puts reference databases first, then own games, and opens each by ki
   await click("Home.Library.ShowMore");
   expect(mocks.showMore).toHaveBeenCalledOnce();
 });
+
+test.each([
+  "Databases.LoadError.Permission",
+  "Databases.LoadError.Admission",
+  "Databases.UpgradeFailed.DiskFull",
+])("opening a failed database retains its %s guidance", async (key) => {
+  const message = i18n.t(key);
+  mocks.databases.data = {
+    databases: [
+      { type: "error", file: database, filename: "Failed.db3", error: message, indexed: false },
+    ],
+    unread: [],
+    root: { kind: "databaseRoot", id: { id: "root" } },
+  };
+  await render();
+  await open("Failed");
+  expect(mocks.notify).toHaveBeenCalledExactlyOnceWith(
+    "Home.Library.OpenFailed",
+    expect.objectContaining({ message }),
+  );
+  expect(mocks.openDatabase).not.toHaveBeenCalled();
+});
+
+test.each<{ metadata: DatabaseInfoResult; message: string }>([
+  { metadata: { status: "busy", filename: "own.db3" }, message: "Databases.Busy.Description" },
+  {
+    metadata: { status: "upgrading", filename: "own.db3", title: null },
+    message: "Databases.Upgrading.Description",
+  },
+  {
+    metadata: {
+      status: "upgrade-failed",
+      filename: "own.db3",
+      reason: "disk-full",
+      message: "Upgrade failed",
+    },
+    message: "Databases.UpgradeFailed.DiskFull",
+  },
+  {
+    metadata: {
+      status: "upgrade-failed",
+      filename: "own.db3",
+      reason: "other",
+      message: "Upgrade could not finish",
+    },
+    message: "Upgrade could not finish",
+  },
+])(
+  "opening a collection retains the $metadata.status metadata reason: $message",
+  async ({ metadata, message }) => {
+    mocks.databases.data = {
+      collections: [collection],
+      databases: [],
+      unread: [],
+      root: { kind: "databaseRoot", id: { id: "root" } },
+    };
+    mocks.info.mockResolvedValue(metadata);
+    await render();
+    await open("Own games");
+    expect(mocks.notify).toHaveBeenCalledExactlyOnceWith(
+      "Home.Library.OpenFailed",
+      expect.objectContaining({ message }),
+    );
+    expect(mocks.openGame).not.toHaveBeenCalled();
+    expect(mocks.openDatabase).not.toHaveBeenCalled();
+  },
+);
 
 test.each(["2026.11.08", "2026.??.??"])(
   "an own-game row shows its recorded PGN date %s instead of its last-opened time",
@@ -482,6 +584,15 @@ test("transient validation failures retain recents and refused opening does not 
 test("compact actions replace their own tab and pass import ownership", async () => {
   await render();
   expect(host.querySelectorAll("[data-home-action]")).toHaveLength(5);
+  expect(
+    [...host.querySelectorAll("[data-home-action]")].map((action) => action.textContent),
+  ).toEqual([
+    "Home.Card.PlayChess.Button",
+    "Home.Card.AnalysisBoard.Title",
+    "Home.Card.Puzzle.Title",
+    "Home.Card.NewRepertoire.Title",
+    "Home.Card.ImportGame.Button",
+  ]);
   for (const [label, type] of [
     ["Home.Card.PlayChess.Button", "play"],
     ["Home.Card.AnalysisBoard.Title", "analysis"],
@@ -508,7 +619,7 @@ test.each(shippedCatalogues())(
   async ({ locale, translation }) => {
     const instance = await catalogueI18n(locale as SupportedLocale);
     const english = shippedCatalogues().find((entry) => entry.locale === "en-US")!.translation;
-    for (const key of [
+    const homeKeys = [
       "Home.Library.All",
       "Home.Library.Repertoires",
       "Home.Library.Games",
@@ -523,27 +634,13 @@ test.each(shippedCatalogues())(
       "Home.Library.ShowMore",
       "Home.Library.OpenLibrary",
       "Home.Library.OpenFailed",
-    ]) {
+    ];
+    for (const key of homeKeys) {
       expect(instance.exists(key)).toBe(true);
       expect(instance.t(key, { collections: 2 }).trim()).not.toBe("");
       expect(instance.t(key)).not.toBe(key);
     }
-    const translatedKeys = [
-      "Home.Library.All",
-      "Home.Library.Repertoires",
-      "Home.Library.Games",
-      "Home.Library.Due",
-      "Home.Library.Search",
-      "Home.Library.NoWorkspace",
-      "Home.Library.LoadFailed",
-      "Home.Library.GamesIncomplete",
-      "Home.Library.GameFiles",
-      "Home.Library.CollectionUnavailable",
-      "Home.Library.Empty",
-      "Home.Library.ShowMore",
-      "Home.Library.OpenLibrary",
-      "Home.Library.OpenFailed",
-    ].filter(
+    const translatedKeys = homeKeys.filter(
       (key) =>
         !locale.startsWith("en-") && !(locale === "de-DE" && key === "Home.Library.Repertoires"),
     );

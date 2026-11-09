@@ -4,6 +4,7 @@ import { createStore, Provider } from "jotai";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { Entry } from "@/components/files/file";
 import type { RecentFile } from "@/state/recentFiles";
+import type { DatabaseList } from "@/utils/db";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import { useLibraryData } from "./useLibraryData";
 
@@ -11,6 +12,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const mocks = vi.hoisted(() => ({
   listing: { data: undefined as Entry[] | undefined, error: undefined as unknown, isLoading: true },
+  databases: { data: undefined as DatabaseList | undefined, isLoading: true },
   mutate: vi.fn(),
   clear: vi.fn(),
 }));
@@ -25,7 +27,7 @@ vi.mock("@/state/atoms", async () => {
 });
 vi.mock("./useWorkspaceListing", () => ({ useWorkspaceListing: () => mocks.listing }));
 vi.mock("@/hooks/useDatabaseList", () => ({
-  useDatabaseList: () => ({ data: undefined, isLoading: true }),
+  useDatabaseList: () => mocks.databases,
 }));
 vi.mock("swr", () => ({ useSWRConfig: () => ({ mutate: mocks.mutate }) }));
 vi.mock("@/state/store/database", () => ({
@@ -54,8 +56,45 @@ beforeEach(() => {
   root = createRoot(host);
   store = createStore();
   mocks.listing = { data: undefined, error: undefined, isLoading: true };
+  mocks.databases = { data: undefined, isLoading: true };
+  mocks.mutate.mockClear();
   mocks.clear.mockClear();
 });
+
+test.each([true, false])(
+  "fresh listing data refreshes databases only with linked collections support: %s",
+  async (supported) => {
+    const expectedCalls = supported ? [["databases"]] : [];
+    mocks.databases = {
+      data: {
+        databases: [],
+        unread: [],
+        root: { kind: "databaseRoot", id: { id: "root" } },
+        collections: supported ? [] : undefined,
+      },
+      isLoading: false,
+    };
+    const render = () =>
+      act(async () =>
+        root.render(
+          <Provider store={store}>
+            <Consumer />
+          </Provider>,
+        ),
+      );
+    await render();
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    mocks.listing = { data: [], error: undefined, isLoading: false };
+    await render();
+    expect(mocks.mutate.mock.calls).toEqual(expectedCalls);
+    mocks.mutate.mockClear();
+    await render();
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    mocks.listing.data = [];
+    await render();
+    expect(mocks.mutate.mock.calls).toEqual(expectedCalls);
+  },
+);
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();

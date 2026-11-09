@@ -55,12 +55,12 @@ import { FileIcon } from "@/components/files/FileIcon";
 import { useLibraryData } from "@/components/library/useLibraryData";
 import { useLibraryDueCounts } from "@/components/library/useLibraryDueCounts";
 import { useOwnGamesFeed } from "@/components/library/useOwnGamesFeed";
-import { openStandaloneDatabase } from "@/components/library/openStandaloneDatabase";
+import { openDatabaseTable } from "@/components/library/openDatabaseTable";
 import { compareLibraryRows, type LibraryRow } from "@/components/library/libraryData";
 import type { OwnGame } from "@/components/library/ownGamesFeed";
 import type { FileMetadata, FileType } from "@/components/files/file";
 import { databaseGameOpenedKey } from "@/state/lastOpened";
-import { query_games } from "@/utils/db";
+import { databaseMetadataFailureMessage, query_games } from "@/utils/db";
 
 dayjs.extend(relativeTime);
 
@@ -329,13 +329,13 @@ export default function NewTabHome({ id }: { id: string }) {
     opening.current = controller;
     try {
       if (row.kind === "database") {
-        if (row.database.type !== "success") throw new Error(t("Home.Library.OpenFailed"));
-        openStandaloneDatabase(row.database, navigate);
+        if (row.database.type !== "success") throw new Error(row.database.error);
+        openDatabaseTable(row.database, navigate);
       } else if (row.kind === "collection" && row.collection.database) {
         const database = row.collection.database;
         const metadata = await tauri.getDbInfo(database);
         if (controller.signal.aborted) return;
-        if (metadata.status !== "ready") throw new Error(t("Home.Library.OpenFailed"));
+        if (metadata.status !== "ready") throw new Error(databaseMetadataFailureMessage(metadata));
         if (metadata.game_count === 1) {
           const result = await query_games(
             database,
@@ -358,7 +358,7 @@ export default function NewTabHome({ id }: { id: string }) {
           });
           if (tabId !== null) navigate({ to: "/" });
         } else
-          openStandaloneDatabase(
+          openDatabaseTable(
             { ...metadata, type: "success", file: database, collection: row.collection },
             navigate,
           );
@@ -436,62 +436,72 @@ export default function NewTabHome({ id }: { id: string }) {
       }
     }
   }
-  const incomplete = library.loading || due.incomplete;
-  const cards = [
-    {
-      icon: <ChessKnight size={18} />,
-      description: t("Home.Card.PlayChess.Desc"),
-      label: t("Home.Card.PlayChess.Button"),
-      onClick: () => {
-        setTabs((prev: Tab[]) =>
-          prev.map((tab) =>
-            tab.value === id ? { ...tab, name: t("Home.NewGame"), type: "play" } : tab,
-          ),
-        );
+  const discoveryFailed =
+    !!library.listingError ||
+    !!library.databaseError ||
+    library.unread.length > 0 ||
+    library.failedFiles.length > 0 ||
+    library.unreadDatabases.length > 0;
+  const incomplete = library.loading || due.incomplete || discoveryFailed;
+  const actionGroups = [
+    [
+      {
+        icon: <ChessKnight size={18} />,
+        description: t("Home.Card.PlayChess.Desc"),
+        label: t("Home.Card.PlayChess.Button"),
+        onClick: () => {
+          setTabs((prev: Tab[]) =>
+            prev.map((tab) =>
+              tab.value === id ? { ...tab, name: t("Home.NewGame"), type: "play" } : tab,
+            ),
+          );
+        },
       },
-    },
-    {
-      icon: <ScanSearch size={18} />,
-      description: t("Home.Card.AnalysisBoard.Desc"),
-      label: t("Home.Card.AnalysisBoard.Title"),
-      onClick: () => {
-        setTabs((prev: Tab[]) =>
-          prev.map((tab) =>
-            tab.value === id
-              ? { ...tab, name: t("Home.Card.AnalysisBoard.Title"), type: "analysis" }
-              : tab,
-          ),
-        );
+      {
+        icon: <ScanSearch size={18} />,
+        description: t("Home.Card.AnalysisBoard.Desc"),
+        label: t("Home.Card.AnalysisBoard.Title"),
+        onClick: () => {
+          setTabs((prev: Tab[]) =>
+            prev.map((tab) =>
+              tab.value === id
+                ? { ...tab, name: t("Home.Card.AnalysisBoard.Title"), type: "analysis" }
+                : tab,
+            ),
+          );
+        },
       },
-    },
-    {
-      icon: <Crosshair size={18} />,
-      description: t("Home.Card.NewRepertoire.Desc"),
-      label: t("Home.Card.NewRepertoire.Title"),
-      onClick: () => {
-        setOpenRepertoireModal(true);
+      {
+        icon: <Puzzle size={18} />,
+        description: t("Home.Card.Puzzle.Desc"),
+        label: t("Home.Card.Puzzle.Title"),
+        onClick: () => {
+          setTabs((prev) =>
+            prev.map((tab) =>
+              tab.value === id ? { ...tab, name: t("Home.PuzzleTraining"), type: "puzzles" } : tab,
+            ),
+          );
+        },
       },
-    },
-    {
-      icon: <FileInputIcon size={18} />,
-      description: t("Home.Card.ImportGame.Desc"),
-      label: t("Home.Card.ImportGame.Button"),
-      onClick: () => {
-        setOpenModal(true);
+    ],
+    [
+      {
+        icon: <Crosshair size={18} />,
+        description: t("Home.Card.NewRepertoire.Desc"),
+        label: t("Home.Card.NewRepertoire.Title"),
+        onClick: () => {
+          setOpenRepertoireModal(true);
+        },
       },
-    },
-    {
-      icon: <Puzzle size={18} />,
-      description: t("Home.Card.Puzzle.Desc"),
-      label: t("Home.Card.Puzzle.Title"),
-      onClick: () => {
-        setTabs((prev) =>
-          prev.map((tab) =>
-            tab.value === id ? { ...tab, name: t("Home.PuzzleTraining"), type: "puzzles" } : tab,
-          ),
-        );
+      {
+        icon: <FileInputIcon size={18} />,
+        description: t("Home.Card.ImportGame.Desc"),
+        label: t("Home.Card.ImportGame.Button"),
+        onClick: () => {
+          setOpenModal(true);
+        },
       },
-    },
+    ],
   ];
 
   return (
@@ -505,10 +515,7 @@ export default function NewTabHome({ id }: { id: string }) {
       <CreateRepertoireModal opened={openRepertoireModal} setOpened={setOpenRepertoireModal} />
       <Stack gap="md" className={classes.home}>
         <Group gap="md" className={classes.actions} data-home-actions>
-          {[
-            [cards[0], cards[1], cards[4]],
-            [cards[2], cards[3]],
-          ].map((group, index) => (
+          {actionGroups.map((group, index) => (
             <Group gap="md" key={index}>
               {group.map((action) => (
                 <Tooltip label={action.description} key={action.label}>
@@ -555,11 +562,7 @@ export default function NewTabHome({ id }: { id: string }) {
                 {t("Home.Library.NoWorkspace")}
               </Text>
             )}
-            {(library.listingError ||
-              library.databaseError ||
-              library.unread.length > 0 ||
-              library.failedFiles.length > 0 ||
-              library.unreadDatabases.length > 0) && (
+            {discoveryFailed && (
               <Text size="sm" role="status">
                 {t("Home.Library.LoadFailed")}
               </Text>

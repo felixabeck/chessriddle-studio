@@ -64,7 +64,7 @@ import { databaseRouteTarget, type DatabaseRouteTarget } from "./databaseRoute";
 import { databaseLoadFailureMessage } from "./databaseLoadFailure";
 import { capabilityKey } from "@/utils/pathCapabilities";
 import { standaloneDatabases } from "@/components/library/libraryData";
-import { openStandaloneDatabase } from "@/components/library/openStandaloneDatabase";
+import { openDatabaseTable } from "@/components/library/openDatabaseTable";
 
 export function useDatabaseLibrary(
   selected: string | null,
@@ -188,7 +188,7 @@ export function useDatabaseLibrary(
   const navigate = useNavigate();
 
   function openDatabase(database: SuccessDatabaseInfo) {
-    openStandaloneDatabase(database, navigate);
+    openDatabaseTable(database, navigate);
   }
 
   return {
