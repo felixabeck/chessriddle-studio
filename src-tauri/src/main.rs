@@ -8,6 +8,7 @@ mod cancellable_read;
 mod chess;
 mod chesscom;
 mod chessriddle;
+mod chessriddle_training;
 mod credentials;
 mod db;
 mod engine;
@@ -2103,6 +2104,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             chessriddle::chessriddle_account,
             chessriddle::connect_chessriddle,
             chessriddle::disconnect_chessriddle,
+            chessriddle::chessriddle_training_available,
+            chessriddle::chessriddle_training_next,
+            chessriddle::chessriddle_mistake_count,
+            chessriddle::chessriddle_training_submit,
+            chessriddle::chessriddle_open_upgrade,
             close_splashscreen,
             verify_signed_bytes,
             prepare_native_read,

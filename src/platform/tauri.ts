@@ -18,6 +18,11 @@ import { error as logError, getCurrentWindow } from "./native";
 
 const MAX_SAFE_COUNTER = BigInt(Number.MAX_SAFE_INTEGER);
 const CHESSRIDDLE_COMMANDS = new Set<PropertyKey>([
+    "chessriddleTrainingAvailable",
+    "chessriddleTrainingNext",
+    "chessriddleMistakeCount",
+    "chessriddleTrainingSubmit",
+    "chessriddleOpenUpgrade",
     "chessriddleAccount",
     "connectChessriddle",
     "disconnectChessriddle",

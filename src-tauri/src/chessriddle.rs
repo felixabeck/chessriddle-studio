@@ -1,6 +1,9 @@
 //! Native ChessRiddle connection. The bounded owner queue is the only token consumer.
 
 use crate::{
+    chessriddle_training::{
+        self as training, TrainingPuzzle, TrainingSource, TrainingSubmission, TrainingVerdict,
+    },
     credentials::{ChessRiddleAccountHandle, ChessRiddleAccountMetadata, ChessRiddleCredentials},
     error::Error,
     infra::{blocking::BLOCKING_GATEWAY, path_authority::AppDataDir},
@@ -124,6 +127,10 @@ fn platform() -> Result<&'static str, AccountError> {
 }
 
 fn http_client() -> Result<reqwest::Client, AccountError> {
+    attributed_client(false)
+}
+
+fn attributed_client(submit: bool) -> Result<reqwest::Client, AccountError> {
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(
         "x-client-surface",
@@ -133,13 +140,26 @@ fn http_client() -> Result<reqwest::Client, AccountError> {
         "x-client-platform",
         reqwest::header::HeaderValue::from_static(platform()?),
     );
-    crate::infra::net::native_json_http_client(reqwest::Client::builder().default_headers(headers))
-        .map_err(|_| AccountError::Network)
+    let builder = reqwest::Client::builder().default_headers(headers);
+    if submit {
+        crate::infra::net::native_upload_http_client(builder)
+    } else {
+        crate::infra::net::native_json_http_client(builder)
+    }
+    .map_err(|_| AccountError::Network)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum AccountError {
+    NotConnected,
+    DailyLimit,
+    UpdateRequired,
+    InvalidRequest,
+    SubmissionInProgress,
+    EngineTimeout,
+    EngineBusy,
+    EngineUnavailable,
     Unavailable,
     Busy,
     Storage,
@@ -278,11 +298,21 @@ fn token_response(status: u16, body: &[u8]) -> Result<Tokens, AccountError> {
 
 type BrowserOpener = Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
 enum Action {
+    Available,
+    Next(TrainingSource, Vec<i32>),
+    MistakeCount,
+    Submit(TrainingSubmission),
+    OpenUpgrade(BrowserOpener),
     Status,
     Connect(BrowserOpener),
     Disconnect,
 }
 enum Reply {
+    Available(bool),
+    Puzzle(Option<TrainingPuzzle>),
+    MistakeCount(u32),
+    Verdict(TrainingVerdict),
+    Opened,
     Status(AccountStatus),
     Disconnect(DisconnectOutcome),
 }
@@ -299,6 +329,7 @@ struct Worker {
     credentials: Arc<ChessRiddleCredentials>,
     endpoints: Endpoints,
     http: reqwest::Client,
+    submit_http: Result<reqwest::Client, AccountError>,
     attempts: Arc<AttemptRegistry>,
     session: Option<Session>,
     loaded: bool,
@@ -319,6 +350,7 @@ impl AccountOwner {
                 credentials,
                 endpoints,
                 http,
+                submit_http: attributed_client(true),
                 attempts: Arc::new(AttemptRegistry::default()),
                 session: None,
                 loaded: false,
@@ -461,28 +493,25 @@ impl Worker {
         }
     }
 
-    async fn read_status(&mut self) -> Result<AccountStatus, AccountError> {
-        match self.refresh().await {
-            Err(AccountError::InvalidGrant) => return Ok(AccountStatus::ReconnectNeeded),
-            Err(error) => return Err(error),
-            Ok(()) => {}
-        }
+    async fn authenticated(
+        &mut self,
+        http: reqwest::Client,
+        build: impl Fn(&reqwest::Client) -> reqwest::RequestBuilder,
+    ) -> Result<(u16, Vec<u8>), AccountError> {
+        self.refresh().await?;
         for retry in [false, true] {
             let Some(session) = self.session.as_ref() else {
-                return Ok(if self.reconnect_needed {
-                    AccountStatus::ReconnectNeeded
+                return Err(if self.reconnect_needed {
+                    AccountError::InvalidGrant
                 } else {
-                    AccountStatus::Disconnected
+                    AccountError::NotConnected
                 });
             };
-            let account = session.account.as_ref().ok_or(AccountError::Storage)?;
             let (access, _) = session
                 .access
                 .as_ref()
                 .ok_or(AccountError::Authentication)?;
-            let response = self
-                .http
-                .get(self.endpoints.api("/users/me"))
+            let response = build(&http)
                 .bearer_auth(access)
                 .send()
                 .await
@@ -493,30 +522,107 @@ impl Worker {
                 if let Some(session) = self.session.as_mut() {
                     session.access = None;
                 }
-                match self.refresh().await {
-                    Err(AccountError::InvalidGrant) => return Ok(AccountStatus::ReconnectNeeded),
-                    Err(error) => return Err(error),
-                    Ok(()) => continue,
-                }
+                self.refresh().await?;
+                continue;
             }
-            if status == 429 {
-                return Err(AccountError::RateLimited);
-            }
-            if status != 200 {
-                return Err(AccountError::Server);
-            }
-            let profile: UserResponse =
-                serde_json::from_slice(&body).map_err(|_| AccountError::Server)?;
-            return Ok(AccountStatus::Connected {
-                account: AccountProfile {
-                    handle: account.handle.clone(),
-                    username: profile.username,
-                    plan: profile.permissions.tier,
-                },
-                durability_uncertain: session.durability_uncertain,
-            });
+            return Ok((status, body));
         }
         Err(AccountError::Server)
+    }
+
+    async fn read_status(&mut self) -> Result<AccountStatus, AccountError> {
+        let url = self.endpoints.api("/users/me");
+        let (status, body) = match self
+            .authenticated(self.http.clone(), |http| http.get(&url))
+            .await
+        {
+            Err(AccountError::InvalidGrant) => return Ok(AccountStatus::ReconnectNeeded),
+            Err(AccountError::NotConnected) => return Ok(AccountStatus::Disconnected),
+            result => result?,
+        };
+        if status == 429 {
+            return Err(AccountError::RateLimited);
+        }
+        if status != 200 {
+            return Err(AccountError::Server);
+        }
+        let profile: UserResponse =
+            serde_json::from_slice(&body).map_err(|_| AccountError::Server)?;
+        let session = self.session.as_ref().ok_or(AccountError::Storage)?;
+        let account = session.account.as_ref().ok_or(AccountError::Storage)?;
+        Ok(AccountStatus::Connected {
+            account: AccountProfile {
+                handle: account.handle.clone(),
+                username: profile.username,
+                plan: profile.permissions.tier,
+            },
+            durability_uncertain: session.durability_uncertain,
+        })
+    }
+
+    async fn next(
+        &mut self,
+        source: TrainingSource,
+        exclusions: Vec<i32>,
+    ) -> Result<Reply, AccountError> {
+        if exclusions.len() > 50 || exclusions.iter().any(|id| *id <= 0) {
+            return Err(AccountError::InvalidRequest);
+        }
+        let url = self.endpoints.api(match source {
+            TrainingSource::Tactics => "/puzzles/next",
+            TrainingSource::Mistakes => "/puzzles/mistakes/next",
+        });
+        let (status, body) = self
+            .authenticated(self.http.clone(), |http| {
+                let request = http.get(&url).header("X-Puzzle-Payload-Protocol-Max", "2");
+                match source {
+                    TrainingSource::Tactics => request.query(&[("mode", "tactic")]),
+                    TrainingSource::Mistakes => request.query(
+                        &exclusions
+                            .iter()
+                            .map(|id| ("exclude_ids", *id))
+                            .collect::<Vec<_>>(),
+                    ),
+                }
+            })
+            .await?;
+        if status != 200 {
+            return Err(training::server_error(status, &body));
+        }
+        let puzzle = training::puzzle(&body, source)?;
+        Ok(Reply::Puzzle(puzzle))
+    }
+
+    async fn mistake_count(&mut self) -> Result<Reply, AccountError> {
+        let url = self.endpoints.api("/puzzles/mistakes/count");
+        let (status, body) = self
+            .authenticated(self.http.clone(), |http| {
+                http.get(&url).header("X-Puzzle-Payload-Protocol-Max", "2")
+            })
+            .await?;
+        if status != 200 {
+            return Err(training::server_error(status, &body));
+        }
+        training::mistake_count(&body).map(Reply::MistakeCount)
+    }
+
+    async fn submit(&mut self, request: TrainingSubmission) -> Result<Reply, AccountError> {
+        let body = training::submit_body(&request)?;
+        let url = self
+            .endpoints
+            .api(&format!("/puzzles/{}/submit", request.puzzle_id));
+        let (status, response) = self
+            .authenticated(self.submit_http.clone()?, |http| {
+                http.post(&url)
+                    .header("X-Puzzle-Payload-Protocol-Max", "2")
+                    .header("Idempotency-Key", &request.idempotency_key)
+                    .json(&body)
+            })
+            .await?;
+        if status != 201 {
+            return Err(training::server_error(status, &response));
+        }
+        training::verdict(&response, &request.decision_fen).map(Reply::Verdict)
     }
 
     async fn connect(&mut self, opener: BrowserOpener) -> Result<AccountStatus, AccountError> {
@@ -664,11 +770,25 @@ impl Worker {
     }
 
     async fn execute(&mut self, action: Action) -> Result<Reply, AccountError> {
+        if matches!(action, Action::Available) {
+            return Ok(Reply::Available(self.endpoints.available));
+        }
         if !self.endpoints.available {
             return Err(AccountError::Unavailable);
         }
         self.load().await?;
         match action {
+            Action::Available => Ok(Reply::Available(self.endpoints.available)),
+            Action::Next(source, exclusions) => self.next(source, exclusions).await,
+            Action::MistakeCount => self.mistake_count().await,
+            Action::Submit(request) => self.submit(request).await,
+            Action::OpenUpgrade(opener) => {
+                self.endpoints.open_link(
+                    &format!("{}/subscription", self.endpoints.web_origin),
+                    opener.as_ref(),
+                )?;
+                Ok(Reply::Opened)
+            }
             Action::Status => self.status().await.map(Reply::Status),
             Action::Connect(opener) => self.connect(opener).await.map(Reply::Status),
             Action::Disconnect => self.disconnect().await.map(Reply::Disconnect),
@@ -698,6 +818,79 @@ fn owner(state: &crate::AppState) -> Result<&AccountOwner, AccountError> {
 
 #[tauri::command]
 #[specta::specta]
+pub(crate) async fn chessriddle_training_available(
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<bool, AccountError> {
+    match owner(&state)?.request(Action::Available).await? {
+        Reply::Available(value) => Ok(value),
+        _ => Err(AccountError::Server),
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn chessriddle_training_next(
+    state: tauri::State<'_, crate::AppState>,
+    source: TrainingSource,
+    exclude_ids: Vec<i32>,
+) -> Result<Option<TrainingPuzzle>, AccountError> {
+    match owner(&state)?
+        .request(Action::Next(source, exclude_ids))
+        .await?
+    {
+        Reply::Puzzle(value) => Ok(value),
+        _ => Err(AccountError::Server),
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn chessriddle_mistake_count(
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<u32, AccountError> {
+    match owner(&state)?.request(Action::MistakeCount).await? {
+        Reply::MistakeCount(value) => Ok(value),
+        _ => Err(AccountError::Server),
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn chessriddle_training_submit(
+    state: tauri::State<'_, crate::AppState>,
+    request: TrainingSubmission,
+) -> Result<TrainingVerdict, AccountError> {
+    match owner(&state)?.request(Action::Submit(request)).await? {
+        Reply::Verdict(value) => Ok(value),
+        _ => Err(AccountError::Server),
+    }
+}
+
+fn browser_opener(app: tauri::AppHandle) -> BrowserOpener {
+    Arc::new(move |url: &str| {
+        app.opener()
+            .open_url(url, None::<&str>)
+            .map_err(|_| "ChessRiddle browser failed".into())
+    })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn chessriddle_open_upgrade(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<(), AccountError> {
+    match owner(&state)?
+        .request(Action::OpenUpgrade(browser_opener(app)))
+        .await?
+    {
+        Reply::Opened => Ok(()),
+        _ => Err(AccountError::Server),
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
 pub(crate) async fn chessriddle_account(
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<AccountStatus, AccountError> {
@@ -713,11 +906,7 @@ pub(crate) async fn connect_chessriddle(
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<AccountStatus, AccountError> {
-    let opener = Arc::new(move |url: &str| {
-        app.opener()
-            .open_url(url, None::<&str>)
-            .map_err(|_| "ChessRiddle browser failed".into())
-    });
+    let opener = browser_opener(app);
     match owner(&state)?.request(Action::Connect(opener)).await? {
         Reply::Status(status) => Ok(status),
         _ => Err(AccountError::Server),
@@ -740,7 +929,7 @@ mod tests {
     use super::*;
     use crate::credentials::{CredentialStore, MemoryCredentialStore};
     use axum::{
-        extract::{Form, State},
+        extract::{Form, OriginalUri, State},
         http::{HeaderMap, StatusCode},
         response::{IntoResponse, Response},
         routing::{get, post},
@@ -818,6 +1007,8 @@ mod tests {
         profiles: AtomicUsize,
         revokes: AtomicUsize,
         forms: Mutex<Vec<HashMap<String, String>>>,
+        training_queries: Mutex<Vec<String>>,
+        delayed_submit: AtomicBool,
         credentials: Arc<ChessRiddleCredentials>,
     }
 
@@ -827,6 +1018,85 @@ mod tests {
             headers.get("X-Client-Platform").unwrap(),
             platform().unwrap()
         );
+    }
+
+    fn training_headers(headers: &HeaderMap) {
+        attribution(headers);
+        assert_eq!(headers.get("X-Puzzle-Payload-Protocol-Max").unwrap(), "2");
+        assert!(headers
+            .get("Authorization")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .starts_with("Bearer access-"));
+    }
+
+    fn training_submission() -> TrainingSubmission {
+        TrainingSubmission {
+            puzzle_id: 1,
+            source: TrainingSource::Tactics,
+            decision_fen: training::puzzle(
+                include_str!("chessriddle_training_samples/puzzle_response.json").as_bytes(),
+                TrainingSource::Tactics,
+            )
+            .unwrap()
+            .unwrap()
+            .decision_fen,
+            line: vec!["e7e5".into(), "g1f3".into()],
+            elapsed_ms: 30000,
+            solution_shown: false,
+            idempotency_key: uuid::Uuid::new_v4().to_string(),
+        }
+    }
+
+    async fn training_next(
+        State(state): State<Arc<ServerState>>,
+        OriginalUri(uri): OriginalUri,
+        headers: HeaderMap,
+    ) -> impl IntoResponse {
+        training_headers(&headers);
+        state.training_queries.lock().unwrap().push(uri.to_string());
+        if state
+            .profile_unauthorized_once
+            .swap(false, Ordering::SeqCst)
+        {
+            return (StatusCode::UNAUTHORIZED, "{}");
+        }
+        (
+            StatusCode::OK,
+            include_str!("chessriddle_training_samples/puzzle_response.json"),
+        )
+    }
+
+    async fn training_count(headers: HeaderMap) -> &'static str {
+        training_headers(&headers);
+        include_str!("chessriddle_training_samples/mistake_count.json")
+    }
+
+    async fn training_submit(
+        State(state): State<Arc<ServerState>>,
+        headers: HeaderMap,
+        Json(body): Json<serde_json::Value>,
+    ) -> impl IntoResponse {
+        training_headers(&headers);
+        assert!(
+            uuid::Uuid::parse_str(headers.get("Idempotency-Key").unwrap().to_str().unwrap())
+                .is_ok()
+        );
+        assert_eq!(
+            body,
+            serde_json::from_str::<serde_json::Value>(include_str!(
+                "chessriddle_training_samples/submit_request_line.json"
+            ))
+            .unwrap()
+        );
+        if state.delayed_submit.load(Ordering::SeqCst) {
+            tokio::time::sleep(Duration::from_secs(31)).await;
+        }
+        (
+            StatusCode::CREATED,
+            include_str!("chessriddle_training_samples/verdict_correct.json"),
+        )
     }
 
     async fn token(
@@ -932,6 +1202,8 @@ mod tests {
                 profiles: AtomicUsize::new(0),
                 revokes: AtomicUsize::new(0),
                 forms: Mutex::new(Vec::new()),
+                training_queries: Mutex::new(Vec::new()),
+                delayed_submit: AtomicBool::new(false),
                 credentials,
             });
             let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -941,6 +1213,10 @@ mod tests {
                 .route("/api/v1/desktop-auth/token", post(token))
                 .route("/api/v1/users/me", get(profile))
                 .route("/api/v1/desktop-auth/revoke", post(revoke))
+                .route("/api/v1/puzzles/next", get(training_next))
+                .route("/api/v1/puzzles/mistakes/next", get(training_next))
+                .route("/api/v1/puzzles/mistakes/count", get(training_count))
+                .route("/api/v1/puzzles/1/submit", post(training_submit))
                 .with_state(state.clone());
             let (shutdown, stopped) = oneshot::channel();
             let task = tokio::spawn(async move {
@@ -997,6 +1273,185 @@ mod tests {
             Reply::Status(AccountStatus::Connected { account, .. }) => account,
             _ => panic!("expected connected"),
         }
+    }
+
+    #[tokio::test]
+    async fn training_query_repeats_exclusions_and_shares_authentication_retry() {
+        let (_temp, credentials) = credentials(Arc::new(TestStore::default()), false).await;
+        credentials
+            .store("user".into(), "initial-refresh".into())
+            .await
+            .unwrap();
+        let fixture = Fixture::new(credentials);
+        let owner = fixture.owner();
+        fixture
+            .state
+            .profile_unauthorized_once
+            .store(true, Ordering::SeqCst);
+        assert!(matches!(
+            owner
+                .request(Action::Next(TrainingSource::Mistakes, vec![9, 10]))
+                .await
+                .unwrap(),
+            Reply::Puzzle(Some(_))
+        ));
+        let query = fixture
+            .state
+            .training_queries
+            .lock()
+            .unwrap()
+            .last()
+            .unwrap()
+            .clone();
+        let url = url::Url::parse(&format!("http://127.0.0.1{query}")).unwrap();
+        assert_eq!(
+            url.query_pairs().collect::<Vec<_>>(),
+            [
+                ("exclude_ids".into(), "9".into()),
+                ("exclude_ids".into(), "10".into())
+            ]
+        );
+        assert_eq!(fixture.state.refreshes.load(Ordering::SeqCst), 2);
+        assert!(matches!(
+            owner.request(Action::MistakeCount).await.unwrap(),
+            Reply::MistakeCount(1)
+        ));
+        assert!(matches!(
+            owner
+                .request(Action::Next(TrainingSource::Tactics, vec![]))
+                .await
+                .unwrap(),
+            Reply::Puzzle(Some(_))
+        ));
+        assert_eq!(
+            fixture
+                .state
+                .training_queries
+                .lock()
+                .unwrap()
+                .last()
+                .unwrap(),
+            "/api/v1/puzzles/next?mode=tactic"
+        );
+        assert!(matches!(
+            owner
+                .request(Action::Next(TrainingSource::Mistakes, vec![1; 51]))
+                .await,
+            Err(AccountError::InvalidRequest)
+        ));
+        fixture.stop().await;
+    }
+
+    #[tokio::test]
+    async fn training_submit_uses_supplied_decision_without_a_previous_fetch() {
+        let (_temp, credentials) = credentials(Arc::new(TestStore::default()), false).await;
+        credentials
+            .store("user".into(), "initial-refresh".into())
+            .await
+            .unwrap();
+        let fixture = Fixture::new(credentials);
+        let owner = fixture.owner();
+        let reply = owner
+            .request(Action::Submit(training_submission()))
+            .await
+            .unwrap();
+        assert!(matches!(
+            reply,
+            Reply::Verdict(TrainingVerdict {
+                is_correct: true,
+                ..
+            })
+        ));
+        assert!(fixture.state.training_queries.lock().unwrap().is_empty());
+        fixture.stop().await;
+    }
+
+    #[tokio::test]
+    async fn training_submit_accepts_verdict_after_thirty_seconds() {
+        let (_temp, credentials) = credentials(Arc::new(TestStore::default()), false).await;
+        credentials
+            .store("user".into(), "initial-refresh".into())
+            .await
+            .unwrap();
+        let fixture = Fixture::new(credentials);
+        let owner = fixture.owner();
+        owner
+            .request(Action::Next(TrainingSource::Tactics, vec![]))
+            .await
+            .unwrap();
+        fixture.state.delayed_submit.store(true, Ordering::SeqCst);
+        let started = Instant::now();
+        let reply = owner
+            .request(Action::Submit(training_submission()))
+            .await
+            .unwrap();
+        assert!(started.elapsed() > Duration::from_secs(30));
+        assert!(matches!(
+            reply,
+            Reply::Verdict(TrainingVerdict {
+                is_correct: true,
+                ..
+            })
+        ));
+        fixture.stop().await;
+    }
+
+    #[tokio::test]
+    async fn training_availability_and_all_actions_are_release_gated() {
+        let (_temp, credentials) = credentials(Arc::new(TestStore::default()), false).await;
+        let fixture = Fixture::new(credentials.clone());
+        let mut endpoints = fixture.endpoints.clone();
+        endpoints.available = false;
+        let owner = AccountOwner::start(credentials, endpoints, http_client().unwrap());
+        assert!(matches!(
+            owner.request(Action::Available).await.unwrap(),
+            Reply::Available(false)
+        ));
+        for action in [
+            Action::Next(TrainingSource::Tactics, vec![]),
+            Action::MistakeCount,
+            Action::Submit(TrainingSubmission {
+                line: vec![],
+                elapsed_ms: 0,
+                solution_shown: true,
+                ..training_submission()
+            }),
+            Action::OpenUpgrade(Arc::new(|_| panic!("release opener must not run"))),
+        ] {
+            assert!(matches!(
+                owner.request(action).await,
+                Err(AccountError::Unavailable)
+            ));
+        }
+        assert_eq!(fixture.state.refreshes.load(Ordering::SeqCst), 0);
+        fixture.stop().await;
+    }
+
+    #[tokio::test]
+    async fn training_availability_needs_no_token_and_upgrade_is_fixed() {
+        let (_temp, credentials) = credentials(Arc::new(TestStore::default()), false).await;
+        let fixture = Fixture::new(credentials);
+        let owner = fixture.owner();
+        assert!(matches!(
+            owner.request(Action::Available).await.unwrap(),
+            Reply::Available(true)
+        ));
+        assert!(matches!(
+            owner
+                .request(Action::Next(TrainingSource::Tactics, vec![]))
+                .await,
+            Err(AccountError::NotConnected)
+        ));
+        let expected = format!("{}/subscription", fixture.endpoints.web_origin);
+        owner
+            .request(Action::OpenUpgrade(Arc::new(move |url| {
+                assert_eq!(url, expected);
+                Ok(())
+            })))
+            .await
+            .unwrap();
+        assert_eq!(fixture.state.refreshes.load(Ordering::SeqCst), 0);
+        fixture.stop().await;
     }
 
     #[test]
@@ -1541,6 +1996,7 @@ mod tests {
             credentials: credentials.clone(),
             endpoints: fixture.endpoints.clone(),
             http: http_client().unwrap(),
+            submit_http: attributed_client(true),
             attempts: Arc::new(AttemptRegistry::default()),
             session: None,
             loaded: false,

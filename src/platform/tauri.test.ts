@@ -4,6 +4,11 @@ const mocks = vi.hoisted(() => ({
     chessriddleAccount: vi.fn(),
     connectChessriddle: vi.fn(),
     disconnectChessriddle: vi.fn(),
+    chessriddleTrainingAvailable: vi.fn(),
+    chessriddleTrainingNext: vi.fn(),
+    chessriddleMistakeCount: vi.fn(),
+    chessriddleTrainingSubmit: vi.fn(),
+    chessriddleOpenUpgrade: vi.fn(),
     closeSplashscreen: vi.fn(),
     releasePreviousDocumentOperations: vi.fn(),
     startGame: vi.fn(),
@@ -69,6 +74,14 @@ test.each(["chessriddleAccount", "connectChessriddle", "disconnectChessriddle"] 
             "invalidLink",
             "browser",
             "alreadyConnected",
+            "notConnected",
+            "dailyLimit",
+            "updateRequired",
+            "invalidRequest",
+            "submissionInProgress",
+            "engineTimeout",
+            "engineBusy",
+            "engineUnavailable",
         ]) {
             mocks[command].mockResolvedValue({ status: "error", error: code });
             await expect(tauri[command]()).rejects.toMatchObject({
@@ -82,6 +95,56 @@ test.each(["chessriddleAccount", "connectChessriddle", "disconnectChessriddle"] 
         await expect(tauri[command]()).rejects.toEqual(new ChessRiddleCommandError("server"));
     },
 );
+
+test.each([
+    "chessriddleTrainingAvailable",
+    "chessriddleTrainingNext",
+    "chessriddleMistakeCount",
+    "chessriddleTrainingSubmit",
+    "chessriddleOpenUpgrade",
+] as const)("%s uses the closed ChessRiddle boundary", async (command) => {
+    const { tauri } = await import("./tauri");
+    // Each command has its own public arity. The native mock tests the common adapter.
+    const invoke = async () => {
+        switch (command) {
+            case "chessriddleTrainingAvailable":
+                return tauri.chessriddleTrainingAvailable();
+            case "chessriddleTrainingNext":
+                return tauri.chessriddleTrainingNext("tactics", []);
+            case "chessriddleMistakeCount":
+                return tauri.chessriddleMistakeCount();
+            case "chessriddleTrainingSubmit":
+                return tauri.chessriddleTrainingSubmit({
+                    puzzleId: 1,
+                    source: "tactics",
+                    decisionFen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+                    line: [],
+                    elapsedMs: 0,
+                    solutionShown: true,
+                    idempotencyKey: "00000000-0000-4000-8000-000000000001",
+                });
+            case "chessriddleOpenUpgrade":
+                return tauri.chessriddleOpenUpgrade();
+        }
+    };
+    mocks[command].mockResolvedValue({ status: "ok", data: null });
+    await expect(invoke()).resolves.toBeNull();
+    for (const code of [
+        "notConnected",
+        "dailyLimit",
+        "updateRequired",
+        "invalidRequest",
+        "submissionInProgress",
+        "engineTimeout",
+        "engineBusy",
+        "engineUnavailable",
+    ]) {
+        mocks[command].mockResolvedValue({ status: "error", error: code });
+        await expect(invoke()).rejects.toMatchObject({ name: "ChessRiddleCommandError", code });
+    }
+    mocks[command].mockRejectedValue(new Error("private diagnostic"));
+    await expect(invoke()).rejects.toMatchObject({ code: "server", message: "server" });
+});
 
 test("getDbGame forwards identity as the third argument and owns its abort ticket", async () => {
     const { tauri } = await import("./tauri");
@@ -127,6 +190,11 @@ vi.mock("@/bindings/generated", () => ({
         chessriddleAccount: mocks.chessriddleAccount,
         connectChessriddle: mocks.connectChessriddle,
         disconnectChessriddle: mocks.disconnectChessriddle,
+        chessriddleTrainingAvailable: mocks.chessriddleTrainingAvailable,
+        chessriddleTrainingNext: mocks.chessriddleTrainingNext,
+        chessriddleMistakeCount: mocks.chessriddleMistakeCount,
+        chessriddleTrainingSubmit: mocks.chessriddleTrainingSubmit,
+        chessriddleOpenUpgrade: mocks.chessriddleOpenUpgrade,
         closeSplashscreen: mocks.closeSplashscreen,
         releasePreviousDocumentOperations: mocks.releasePreviousDocumentOperations,
         startGame: mocks.startGame,

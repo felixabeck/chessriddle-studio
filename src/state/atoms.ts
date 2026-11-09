@@ -1,6 +1,7 @@
 import type { SetStateAction } from "react";
 import { atom } from "jotai";
 import { atomFamily, atomWithStorage, unwrap } from "jotai/utils";
+import { chessRiddleTrainingSessions } from "./chessRiddleTraining";
 import { z } from "zod";
 import { normalizeGameSignature } from "./gameSignature";
 import { recentFileSchema, type RecentFile, type RecentEntryInput } from "./recentFiles";
@@ -1422,6 +1423,7 @@ export const enableAllFamily = atomFamily((tab: string) =>
 
 /** Remove every runtime atom whose identity is a closed tab, including per-engine entries. */
 export function disposeTabAtoms(tabId: string) {
+    chessRiddleTrainingSessions.remove(tabId);
     for (const family of [
         allEnabledFamily,
         enableAllFamily,

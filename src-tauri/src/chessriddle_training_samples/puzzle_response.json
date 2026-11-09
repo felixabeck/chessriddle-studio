@@ -1,0 +1,13 @@
+{
+  "id": 1,
+  "puzzle_type": "TACTIC",
+  "explanation": "Find the best continuation.",
+  "tactic_puzzle": {
+    "tactic_rating": 1500,
+    "fen_position": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    "principal_variation": "e2e4 e7e5 g1f3 b8c6",
+    "rating_deviation": 76,
+    "popularity": 90
+  },
+  "future_field": "ignored"
+}

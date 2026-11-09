@@ -1,0 +1,6 @@
+{
+  "variation_tree": {"move": "e7e5", "children": [{"move": "g1f3", "children": []}]},
+  "time_taken_ms": 30000,
+  "is_rated": true,
+  "solution_shown": false
+}

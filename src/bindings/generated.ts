@@ -29,6 +29,46 @@ async disconnectChessriddle() : Promise<Result<DisconnectOutcome, AccountError>>
     else return { status: "error", error: e  as any };
 }
 },
+async chessriddleTrainingAvailable() : Promise<Result<boolean, AccountError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("chessriddle_training_available") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async chessriddleTrainingNext(source: TrainingSource, excludeIds: number[]) : Promise<Result<TrainingPuzzle | null, AccountError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("chessriddle_training_next", { source, excludeIds }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async chessriddleMistakeCount() : Promise<Result<number, AccountError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("chessriddle_mistake_count") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async chessriddleTrainingSubmit(request: TrainingSubmission) : Promise<Result<TrainingVerdict, AccountError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("chessriddle_training_submit", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async chessriddleOpenUpgrade() : Promise<Result<null, AccountError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("chessriddle_open_upgrade") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async closeSplashscreen() : Promise<Result<null, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("close_splashscreen") };
@@ -1369,7 +1409,7 @@ progressEvent: "progress-event"
 
 export type AccountCollectionPreparation = { collection: CollectionDescriptor | null; migrationRequired: boolean; destination: PathRef; pendingBatch: FileWorkspaceHandle | null }
 export type AccountCompletion = { id: string; request: AccountImportRequest; progressId: string; attempt: number; outcome: CompletionOutcome<AccountImportResult>; publication: ArtifactPublication | null; committedDatabase: DatabaseHandle | null; deletionPending: boolean; importing: boolean }
-export type AccountError = "unavailable" | "busy" | "storage" | "network" | "rateLimited" | "server" | "invalidGrant" | "authentication" | "invalidLink" | "browser" | "alreadyConnected"
+export type AccountError = "notConnected" | "dailyLimit" | "updateRequired" | "invalidRequest" | "submissionInProgress" | "engineTimeout" | "engineBusy" | "engineUnavailable" | "unavailable" | "busy" | "storage" | "network" | "rateLimited" | "server" | "invalidGrant" | "authentication" | "invalidLink" | "browser" | "alreadyConnected"
 export type AccountIdentity = { provider: string; account: string }
 export type AccountImportRequest = { provider: string; account: string; accountHandle: LichessAccountHandle | null; destination: PathRef; pendingBatch: FileWorkspaceHandle | null; sinceMs: bigint | null; target: AccountImportTarget }
 export type AccountImportResult = { collectionNotice: boolean }
@@ -1666,6 +1706,13 @@ export type TimeControl = { initialTime: bigint; increment: bigint }
 export type Token = { type: "ParenOpen" } | { type: "ParenClose" } | { type: "Comment"; value: string } | { type: "Unparsed"; value: string } | { type: "San"; value: string } | { type: "Header"; value: { tag: string; value: string } } | { type: "Nag"; value: string } | { type: "Outcome"; value: string }
 export type TournamentQuery = { options: QueryOptions<TournamentSort>; name: string | null }
 export type TournamentSort = "name" | "date" | "players" | "games" | "avgElo"
+export type TrainingFeedbackCode = "correct" | "incorrect" | "lineTooShort"
+export type TrainingFeedbackContext = "analysis" | "retry"
+export type TrainingPuzzle = { id: number; source: TrainingSource; preEntranceFen: string; entranceMove: string; decisionFen: string; sideToMove: TrainingSide; puzzleRating: number; solutionPlyCount: number }
+export type TrainingSide = "white" | "black"
+export type TrainingSource = "tactics" | "mistakes"
+export type TrainingSubmission = { puzzleId: number; source: TrainingSource; decisionFen: string; line: string[]; elapsedMs: number; solutionShown: boolean; idempotencyKey: string }
+export type TrainingVerdict = { isCorrect: boolean; tooShort: boolean; ratingChange: number; playerRating: number | null; puzzleRating: number; rated: boolean; ratingPending: boolean; feedbackCode: TrainingFeedbackCode; feedbackContext: TrainingFeedbackContext | null; correctVariation: string[]; incorrectMove: string | null; correctMove: string | null }
 export type TrashCursor = { seconds: bigint; item: string }
 export type TrashItemId = string
 /**

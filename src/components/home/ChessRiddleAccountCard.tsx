@@ -82,6 +82,14 @@ export function ChessRiddleAccountCard() {
   }, []);
 
   const errors: Record<AccountError, string> = {
+    notConnected: t("Home.ChessRiddle.Error.Server"),
+    dailyLimit: t("Home.ChessRiddle.Error.Server"),
+    updateRequired: t("Home.ChessRiddle.Error.Server"),
+    invalidRequest: t("Home.ChessRiddle.Error.Server"),
+    submissionInProgress: t("Home.ChessRiddle.Error.Server"),
+    engineTimeout: t("Home.ChessRiddle.Error.Server"),
+    engineBusy: t("Home.ChessRiddle.Error.Server"),
+    engineUnavailable: t("Home.ChessRiddle.Error.Server"),
     unavailable: t("Home.ChessRiddle.Error.Server"),
     busy: t("Home.ChessRiddle.Error.Busy"),
     storage: t("Home.ChessRiddle.Error.Storage"),

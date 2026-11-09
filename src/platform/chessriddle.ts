@@ -1,6 +1,14 @@
 import type { AccountError } from "@/bindings";
 
 const accountErrors: Record<AccountError, true> = {
+    notConnected: true,
+    dailyLimit: true,
+    updateRequired: true,
+    invalidRequest: true,
+    submissionInProgress: true,
+    engineTimeout: true,
+    engineBusy: true,
+    engineUnavailable: true,
     unavailable: true,
     busy: true,
     storage: true,

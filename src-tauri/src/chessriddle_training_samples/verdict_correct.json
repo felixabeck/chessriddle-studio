@@ -1,0 +1,16 @@
+{
+  "is_correct": true,
+  "is_on_path_too_short": false,
+  "rating_change": 8,
+  "player_rating": 1508,
+  "puzzle_rating": 1500,
+  "rated": true,
+  "rating_pending": false,
+  "feedback_descriptor": {"code": "correct", "params": {"context": "analysis"}},
+  "feedback_message": "Correct! Well done.",
+  "correct_variation": "e7e5 g1f3 b8c6",
+  "incorrect_move_uci": null,
+  "correct_move_uci": null,
+  "coach_explanation": {"puzzle_id": 1, "puzzle_type": "TACTIC", "locale": "en", "text": "Develop the pieces.", "revision": "1"},
+  "source_game_url": "https://lichess.org/abcdefgh"
+}

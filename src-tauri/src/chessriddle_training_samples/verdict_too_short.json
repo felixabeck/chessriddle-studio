@@ -1,0 +1,14 @@
+{
+  "is_correct": false,
+  "is_on_path_too_short": true,
+  "rating_change": 0,
+  "player_rating": null,
+  "puzzle_rating": 1500,
+  "rated": true,
+  "rating_pending": false,
+  "feedback_descriptor": {"code": "line_too_short", "params": {"context": "retry"}},
+  "feedback_message": "",
+  "correct_variation": "",
+  "incorrect_move_uci": null,
+  "correct_move_uci": null
+}
