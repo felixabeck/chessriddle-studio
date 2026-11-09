@@ -1,11 +1,14 @@
 import { EphemeralTabScope } from "@/state/tabScope";
-import { Box, Group, Stack } from "@mantine/core";
+import { Box, Group, Menu, Stack } from "@mantine/core";
 import { useElementSize } from "@mantine/hooks";
-import { useContext, useMemo } from "react";
+import { notifications } from "@mantine/notifications";
+import { ArrowUpDown, Copy } from "lucide-react";
+import { useContext, useMemo, useState } from "react";
 import useSWRImmutable from "swr/immutable";
 import { useStore } from "zustand";
 import BoardFrame from "@/components/boards/BoardFrame";
 import { chooserArrows, continuationBrushes } from "@/components/boards/continuationArrows";
+import PointerContextMenu, { type PointerMenuPoint } from "@/components/common/PointerContextMenu";
 import { useVariationChooser } from "@/components/common/TreeStateContext";
 import { Chessground } from "@/chessground/Chessground";
 import { useTranslation } from "react-i18next";
@@ -17,6 +20,7 @@ import {
   fitPreviewSquare,
 } from "@/state/databaseLayout";
 import { parsePGN, parseStartHeader } from "@/utils/chess";
+import { writeClipboardText } from "@/utils/clipboard";
 import {
   applyGameEndLoadDefault,
   type GameHeaders,
@@ -28,6 +32,8 @@ import MoveControls from "../common/MoveControls";
 import OpeningName from "../common/OpeningName";
 import { TreeStateContext, TreeStateProvider } from "../common/TreeStateContext";
 import classes from "./GridLayout.module.css";
+
+type BoardSide = "white" | "black";
 
 type PreviewLayout = {
   hideControls?: boolean;
@@ -47,6 +53,8 @@ function GamePreviewWrapper({
   headers?: GameHeaders;
 } & PreviewLayout) {
   const { t } = useTranslation();
+  // Held above the per-game key, so the board keeps its side while moving between games.
+  const [flippedTo, setFlippedTo] = useState<BoardSide | null>(null);
   const requestKey = [pgn, headers?.fen] as const;
   const requestOwner = useNativeRequestOwner(requestKey);
   const { data: parsedGame } = useSWRImmutable(requestKey, async ([p, fen]) => {
@@ -95,7 +103,19 @@ function GamePreviewWrapper({
     );
   }, [parsedGame, gameKey]);
 
-  return <>{game && <GamePreview key={gameKey} game={game} {...layout} />}</>;
+  return (
+    <>
+      {game && (
+        <GamePreview
+          key={gameKey}
+          game={game}
+          flippedTo={flippedTo}
+          onFlip={setFlippedTo}
+          {...layout}
+        />
+      )}
+    </>
+  );
 }
 
 function GamePreview({
@@ -104,7 +124,13 @@ function GamePreview({
   showOpening,
   fitHeight,
   adaptive,
-}: { game: TreeState } & PreviewLayout) {
+  flippedTo,
+  onFlip,
+}: {
+  game: TreeState;
+  flippedTo: BoardSide | null;
+  onFlip: (side: BoardSide) => void;
+} & PreviewLayout) {
   const { compact, rootFont } = useContext(DatabaseLayoutContext);
   const { ref: boardRef, height } = useElementSize();
   const { ref: frameRef, width: frameWidth, height: frameHeight } = useElementSize();
@@ -148,7 +174,7 @@ function GamePreview({
               // at a 200% font scale.
               style={fitHeight || adaptive ? { width: boardSide, flex: "none" } : undefined}
             >
-              <PreviewBoard />
+              <PreviewBoard flippedTo={flippedTo} onFlip={onFlip} />
             </Box>
             {!hideControls && (
               <Stack
@@ -191,7 +217,14 @@ function GamePreview({
   );
 }
 
-function PreviewBoard() {
+function PreviewBoard({
+  flippedTo,
+  onFlip,
+}: {
+  flippedTo: BoardSide | null;
+  onFlip: (side: BoardSide) => void;
+}) {
+  const { t } = useTranslation();
   const store = useContext(TreeStateContext)!;
   const goToNext = useStore(store, (s) => s.goToNext);
   const goToPrevious = useStore(store, (s) => s.goToPrevious);
@@ -201,31 +234,64 @@ function PreviewBoard() {
   const node = getNodeAtPath(root, position);
   const fen = node.fen;
   const { choice } = useVariationChooser();
+  const [menuPoint, setMenuPoint] = useState<PointerMenuPoint | null>(null);
+  const orientation = flippedTo || headers.orientation || "white";
+
+  const copyFen = async () => {
+    try {
+      await writeClipboardText(fen);
+    } catch {
+      notifications.show({ message: t("Board.Preview.CopyFenFailed"), color: "danger" });
+    }
+  };
 
   return (
-    <BoardFrame>
-      <Box
-        w="100%"
-        onWheel={(e) => {
-          if (e.deltaY > 0) {
-            goToNext();
-          } else {
-            goToPrevious();
-          }
-        }}
-      >
-        <Chessground
-          coordinates={false}
-          viewOnly={true}
-          drawable={{
-            autoShapes: [...chooserArrows(choice), ...node.shapes],
-            brushes: continuationBrushes,
+    <>
+      <BoardFrame>
+        <Box
+          w="100%"
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setMenuPoint({ x: e.clientX, y: e.clientY });
           }}
-          fen={fen}
-          orientation={headers.orientation || "white"}
-        />
-      </Box>
-    </BoardFrame>
+          onWheel={(e) => {
+            if (e.deltaY > 0) {
+              goToNext();
+            } else {
+              goToPrevious();
+            }
+          }}
+        >
+          <Chessground
+            coordinates={false}
+            viewOnly={true}
+            drawable={{
+              autoShapes: [...chooserArrows(choice), ...node.shapes],
+              brushes: continuationBrushes,
+            }}
+            fen={fen}
+            orientation={orientation}
+          />
+        </Box>
+      </BoardFrame>
+      {menuPoint && (
+        <PointerContextMenu
+          key={`${menuPoint.x}:${menuPoint.y}`}
+          point={menuPoint}
+          onClose={() => setMenuPoint(null)}
+        >
+          <Menu.Item
+            leftSection={<ArrowUpDown size="0.875rem" />}
+            onClick={() => onFlip(orientation === "black" ? "white" : "black")}
+          >
+            {t("Board.Preview.FlipBoard")}
+          </Menu.Item>
+          <Menu.Item leftSection={<Copy size="0.875rem" />} onClick={() => void copyFen()}>
+            {t("Board.Preview.CopyFen")}
+          </Menu.Item>
+        </PointerContextMenu>
+      )}
+    </>
   );
 }
 

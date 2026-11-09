@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { FileWorkspaceHandle, WriteStamp } from "@/bindings";
 import AppModal from "@/components/common/AppModal";
+import PointerContextMenu from "@/components/common/PointerContextMenu";
 import {
   LINE_SECTION_MAX_LENGTH,
   normalizeLineSection,
@@ -106,55 +107,27 @@ export default function LineSectionEditor({
 
   if (mode === "menu") {
     return (
-      <Menu
-        opened
-        onChange={(opened) => {
-          if (!opened) onClose();
-        }}
-        shadow="md"
-        width={200}
-        position="bottom-start"
-        offset={0}
-        floatingStrategy="fixed"
-        hideDetached={false}
-        returnFocus={false}
-        closeOnItemClick={false}
-      >
-        <Menu.Target>
-          <span
-            aria-hidden
-            style={{
-              position: "fixed",
-              left: target.x,
-              top: target.y,
-              width: 0,
-              height: 0,
-              pointerEvents: "none",
-            }}
-          />
-        </Menu.Target>
-        <Menu.Dropdown>
-          {target.section === undefined ? (
+      <PointerContextMenu point={target} onClose={onClose} closeOnItemClick={false}>
+        {target.section === undefined ? (
+          <Menu.Item onClick={() => setMode("name")}>
+            {t("Files.LineSection.Start", { defaultValue: "Start section here" })}
+          </Menu.Item>
+        ) : (
+          <>
             <Menu.Item onClick={() => setMode("name")}>
-              {t("Files.LineSection.Start", { defaultValue: "Start section here" })}
+              {t("Files.LineSection.Rename", { defaultValue: "Rename section" })}
             </Menu.Item>
-          ) : (
-            <>
-              <Menu.Item onClick={() => setMode("name")}>
-                {t("Files.LineSection.Rename", { defaultValue: "Rename section" })}
-              </Menu.Item>
-              <Menu.Item
-                onClick={() => {
-                  setMode("removing");
-                  void save(null);
-                }}
-              >
-                {t("Files.LineSection.Remove", { defaultValue: "Remove section" })}
-              </Menu.Item>
-            </>
-          )}
-        </Menu.Dropdown>
-      </Menu>
+            <Menu.Item
+              onClick={() => {
+                setMode("removing");
+                void save(null);
+              }}
+            >
+              {t("Files.LineSection.Remove", { defaultValue: "Remove section" })}
+            </Menu.Item>
+          </>
+        )}
+      </PointerContextMenu>
     );
   }
   if (mode === "removing") return null;

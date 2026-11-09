@@ -428,6 +428,71 @@ test("files-preview: the card fills the window and shows the whole board and its
     await expect(page).toHaveScreenshot("files-preview.png");
 });
 
+test("files-preview: a right click on the board offers flip and copy FEN", async ({
+    page,
+    mockScenario,
+    assertNoHorizontalOverflow,
+    capture,
+}) => {
+    await mockScenario({ commands: filesWorkspaceCommands([[repertoireFile]], pgnFileCommands) });
+    await page.addInitScript(() => {
+        const copied: string[] = [];
+        Object.assign(window, { __copied: copied });
+        Object.defineProperty(navigator, "clipboard", {
+            value: { writeText: async (text: string) => void copied.push(text) },
+        });
+    });
+    await page.goto("/library");
+    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await selectFilesTreeRow(page, repertoireFile.name);
+    const board = page.locator("cg-board");
+    await expect(board).toBeVisible();
+    const flip = page.getByRole("menuitem", { name: "Flip board", exact: true });
+    const copy = page.getByRole("menuitem", { name: "Copy FEN", exact: true });
+    const boardBox = (await board.boundingBox())!;
+    const orientation = page.locator(".cg-wrap");
+    const menu = page.getByRole("menu");
+    const menuLeft = async () => Math.round((await menu.boundingBox())?.x ?? -1);
+
+    await board.click({ button: "right" });
+    await expect(flip).toBeInViewport({ ratio: 1 });
+    await expect(copy).toBeInViewport({ ratio: 1 });
+    await expect(page.getByRole("menuitem")).toHaveCount(2);
+    await assertNoHorizontalOverflow();
+    await capture("files-preview-board-menu");
+    await expect.poll(menuLeft).toBeGreaterThan(0);
+    const centreLeft = await menuLeft();
+
+    await page.getByRole("heading", { name: "Library", exact: true }).click();
+    await expect(flip).toHaveCount(0);
+
+    // Opens where the pointer is, also close to the window's lower edge.
+    // By coordinates: Chessground's shape layer covers the corner, and a real click bubbles past it.
+    await page.mouse.click(boardBox.x + boardBox.width - 4, boardBox.y + boardBox.height - 4, {
+        button: "right",
+    });
+    await expect(flip).toBeInViewport({ ratio: 1 });
+    await expect(copy).toBeInViewport({ ratio: 1 });
+    await expect.poll(menuLeft).toBeGreaterThan(centreLeft);
+
+    // A right click elsewhere moves the open menu there.
+    await board.click({ button: "right" });
+    await expect.poll(menuLeft).toBe(centreLeft);
+
+    await expect(orientation).toHaveClass(/orientation-white/);
+    await flip.click();
+    await expect(flip).toHaveCount(0);
+    await expect(orientation).toHaveClass(/orientation-black/);
+
+    await board.click({ button: "right" });
+    await copy.click();
+    await expect(copy).toHaveCount(0);
+    expect(
+        await page.evaluate(() => (window as unknown as { __copied: string[] }).__copied),
+    ).toEqual(["rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"]);
+    await expect(page.locator("svg.cg-shapes g[cgHash] circle")).toHaveCount(0);
+});
+
 test("files-preview: variation chooser lies inside the preview board at its top edge", async ({
     page,
     mockScenario,

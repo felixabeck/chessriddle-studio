@@ -7,6 +7,7 @@ import { Ellipsis, Plus, X } from "lucide-react";
 import { getDefaultStore, useAtom, useAtomValue, useSetAtom } from "jotai";
 import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import PointerContextMenu from "@/components/common/PointerContextMenu";
 import BoardTabLayout from "./BoardTabLayout";
 import {
   activeTabAtom,
@@ -432,42 +433,18 @@ export default function BoardsPage() {
         </IconAction>
       </div>
       {contextMenu && tabs.some((tab) => tab.value === contextMenu.tabId) && (
-        <Menu
+        <PointerContextMenu
           key={`${contextMenu.tabId}:${contextMenu.x}:${contextMenu.y}`}
-          opened
-          onChange={(opened) => {
-            if (!opened) setContextMenu(null);
-          }}
-          shadow="md"
-          width={200}
-          position="bottom-start"
-          offset={0}
-          floatingStrategy="fixed"
-          hideDetached={false}
-          returnFocus={false}
+          point={contextMenu}
+          onClose={() => setContextMenu(null)}
         >
-          <Menu.Target>
-            <span
-              aria-hidden
-              style={{
-                position: "fixed",
-                left: contextMenu.x,
-                top: contextMenu.y,
-                width: 0,
-                height: 0,
-                pointerEvents: "none",
-              }}
-            />
-          </Menu.Target>
-          <Menu.Dropdown>
-            <TabActionsMenu
-              tabId={contextMenu.tabId}
-              onDuplicate={duplicateTab}
-              onRename={openRename}
-              onClose={(id) => void closeTab(id)}
-            />
-          </Menu.Dropdown>
-        </Menu>
+          <TabActionsMenu
+            tabId={contextMenu.tabId}
+            onDuplicate={duplicateTab}
+            onRename={openRename}
+            onClose={(id) => void closeTab(id)}
+          />
+        </PointerContextMenu>
       )}
       <AppModal
         opened={renameTarget !== null}

@@ -71,6 +71,7 @@
         "src/components/common/NotationColumn.tsx",
         "src/components/common/OpeningName.tsx",
         "src/components/common/Piece.tsx",
+        "src/components/common/PointerContextMenu.tsx",
         "src/components/common/ShowMaterial.tsx",
         "src/components/common/TreeStateContext.tsx",
         "src/components/common/notationRows.ts",

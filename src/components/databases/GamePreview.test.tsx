@@ -1,4 +1,5 @@
 import { MantineProvider } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { createStore, Provider } from "jotai";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -775,5 +776,98 @@ describe("GamePreview board sizing", () => {
       { orig: "e2", dest: "e4", brush: "continuationSelected" },
       { orig: "d2", dest: "d4", brush: "continuationOther" },
     ]);
+  });
+
+  describe("board context menu", () => {
+    function rightClickBoard(clientX = 40, clientY = 50) {
+      const event = new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX,
+        clientY,
+      });
+      selectedBoard().parentElement!.dispatchEvent(event);
+      return event;
+    }
+
+    function menuItem(label: string) {
+      const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+        (candidate) => candidate.textContent === label,
+      );
+      if (!item) throw new Error(`Missing menu item: ${label}`);
+      return item;
+    }
+
+    async function openMenu() {
+      let event!: MouseEvent;
+      await act(async () => {
+        event = rightClickBoard();
+      });
+      await vi.waitFor(() => expect(document.querySelector('[role="menu"]')).not.toBeNull());
+      expect(event.defaultPrevented).toBe(true);
+    }
+
+    async function choose(label: string) {
+      await act(async () => menuItem(label).click());
+      await vi.waitFor(() => expect(document.querySelector('[role="menu"]')).toBeNull());
+    }
+
+    test("offers exactly flip and copy", async () => {
+      await renderRecord(recordA);
+      await openMenu();
+      expect(
+        [...document.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent),
+      ).toEqual(["Board.Preview.FlipBoard", "Board.Preview.CopyFen"]);
+    });
+
+    test("flips from the saved side and back without changing the game's headers", async () => {
+      await renderRecord(recordB);
+      expect(selectedBoard().dataset.orientation).toBe("black");
+      await openMenu();
+      await choose("Board.Preview.FlipBoard");
+      expect(selectedBoard().dataset.orientation).toBe("white");
+      expect(selectedHeaders().orientation).toBe("black");
+      await openMenu();
+      await choose("Board.Preview.FlipBoard");
+      expect(selectedBoard().dataset.orientation).toBe("black");
+    });
+
+    test("the flipped side stays while another game is selected in the same preview", async () => {
+      await renderRecord(recordA);
+      await openMenu();
+      await choose("Board.Preview.FlipBoard");
+      expect(selectedBoard().dataset.orientation).toBe("black");
+      await renderRecord({ ...recordA, id: 3, white: "Other", orientation: "white" });
+      expect(selectedHeaders().white).toBe("Other");
+      expect(selectedBoard().dataset.orientation).toBe("black");
+    });
+
+    test("copies the FEN of the position on the board", async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+      await renderRecord(recordA);
+      await wheelNext();
+      const shown = selectedBoard().dataset.fen;
+      expect(shown).toContain("4P3");
+      await openMenu();
+      await choose("Board.Preview.CopyFen");
+      expect(writeText).toHaveBeenCalledExactlyOnceWith(shown);
+    });
+
+    test("reports a failed copy", async () => {
+      const show = vi.spyOn(notifications, "show");
+      const writeText = vi.fn().mockRejectedValue(new Error("denied"));
+      vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+      await renderRecord(recordA);
+      await openMenu();
+      await choose("Board.Preview.CopyFen");
+      await vi.waitFor(() =>
+        expect(show).toHaveBeenCalledWith({
+          message: "Board.Preview.CopyFenFailed",
+          color: "danger",
+        }),
+      );
+      show.mockRestore();
+    });
   });
 });
