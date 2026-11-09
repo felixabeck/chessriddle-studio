@@ -57,6 +57,8 @@
         "src-tauri/src/credentials.rs",
         "src-tauri/src/chesscom.rs",
         "src-tauri/src/oauth.rs",
+        "src-tauri/src/oauth_pkce.rs",
+        "src-tauri/src/chessriddle.rs",
         "src-tauri/src/lichess.rs"
       ]
     },
