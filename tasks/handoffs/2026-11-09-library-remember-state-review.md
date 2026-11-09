@@ -42,6 +42,9 @@ Verdicts: correctness APPROVED, tests APPROVED, minimalism APPROVED. D1, D2, D3 
 
 diff_adopted_per_round: r1=4 r2=0.
 
+### Gate repair (Codex, closure reviewed by correctness and tests)
+- **D5** (final e2e gate): `e2e/database-files.spec.ts` pinned the old blank panel after a return to Library. Fix: the test expects the converting message for the remembered database. Snapshots `conversion-active-database-files.png` and `conversion-cancel-pending-database-files.png` moved in the detail panel text, plus sidebar icon anti-aliasing of at most 9/255.
+
 ## Verification evidence
 - Removing `revealActivePage` from FileCard turns the new Playwright test red.
 - Setting the prop default to true fails the omitted-prop test, and removing `onFocusCapture` fails the focusin case.
