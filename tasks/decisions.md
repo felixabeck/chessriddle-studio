@@ -12765,3 +12765,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** It is the smallest complete route on the existing cancellable `getGames` path. Reversal path: drop the query field and sort value and replace the feed hook.
 * **Decided by:** Claude Code (Opus 5.5) build run 2026-11-09-new-tab-library, full auto, 2026-11-09 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"e59bcbb3918445b701685e217d54435d8f2a8cdbc4c57205cced8680f2f178ef","input_sha256":"04526d970459d9512605c391bc145631938a4cff2b457caf8eb0e3d15aaecf4a","kind":"mutation-receipt","operation":"7a8d8e34a6f66d1d8eaa33d46424209468ab9aebb8a59dfabc884e3cebc39dba","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-25"],"target":"decisions-ledger","v":1} -->
+
+### d-20261109-26 — How does New Tab count overdue positions across every Library repertoire without overloading native admission?
+
+* **Question:** Native operations admit 128 reads with four blocking permits, and a Library can hold more repertoires than that. How are all decks counted?
+* **Governs:** tasks/plans/2026-11-09-new-tab-library.md (New Tab as one Library list)
+* **Chosen:** A bounded gate subscribes to the existing deck atoms with at most four hydrating at once. Subscriptions end when the page unmounts. Count is `stats.due` alone, at game 0 as before.
+* **Rejected:** A native deck summary command, which would duplicate due classification in Rust. Subscribing to every deck at once, which can be refused at admission.
+* **Reason:** It reuses one due classification and existing deck state. Accepted: positions stay in memory while the page is mounted. Reversal path: replace the hook's source.
+* **Decided by:** Claude Code (Opus 5.5) build run 2026-11-09-new-tab-library, full auto, 2026-11-09 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"f741940b7a7b0ef956e921cb0fd6952e9838daa3f2d074e22aa22734e6002ce3","input_sha256":"f66f95f67ac89a122c2f32c9444fc790394dd2d3f5b1b479d08b546ea33e6745","kind":"mutation-receipt","operation":"c30597a6d62ec2ec95d2a81536dccfd7295ff6f1728b21360749b63856839da7","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-26"],"target":"decisions-ledger","v":1} -->
