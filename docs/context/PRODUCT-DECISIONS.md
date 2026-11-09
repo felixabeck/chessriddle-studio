@@ -71,3 +71,24 @@ finding ids and date.
   Because when I review a game I open it several times and then I have to do this every time.
   That's what's annoying, not the first time."
 - **Date:** 2026-11-05.
+
+## 2026-11-09 — New Tab is one searchable Library list
+
+- **Question:** New Tab showed only the last ten files and a separate due card, so
+  opening anything else meant a detour through the Library. How should the page work?
+- **Choice:** A compact row of actions, then one list of the whole Library sorted by
+  last opened, with a search field and the filters All, Repertoires, Games and Due. Every
+  row has the same layout and is clickable across its full width.
+  - The Games filter lists each game from the user's own collections, newest first, and a
+    player's name finds them. Large reference databases stay one row each and open their
+    game table. All shows each collection as one row plus recently opened games.
+  - Clicking a row turns this New Tab into that file.
+  - Due counts only overdue positions across every repertoire, never untrained ones.
+  - A repertoire opens on Practice only from the Due filter, otherwise on Info.
+- **Ruled out:** Three cards (Library, Recent, Due), and two cards with Recent and Due
+  merged, both of which keep two starting points. Collections only under Games, which
+  keeps the detour.
+- **Felix's reason:** "because currently I can't really use the feature new tab, because
+  new tab doesn't help me, because anyway I have to click on library and then open the
+  files there." The two old cards "doesn't feel consistent".
+- **Date:** 2026-11-09.
