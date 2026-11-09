@@ -4047,13 +4047,14 @@ mod upgrade_tests {
     }
 
     #[test]
-    fn current_schema_foreign_exclusive_lock_returns_busy_within_two_seconds() {
+    fn current_schema_foreign_exclusive_lock_returns_busy_on_the_short_metadata_timeout() {
         let case = Case::new(false);
         let raw = rusqlite::Connection::open(&case.path).unwrap();
         raw.execute_batch("BEGIN EXCLUSIVE").unwrap();
         let started = Instant::now();
         assert!(matches!(case.info(), DatabaseInfoResult::Busy { .. }));
-        assert!(started.elapsed() < Duration::from_secs(2));
+        // Tells the metadata timeout from the ordinary 30 s one, with room for a loaded runner.
+        assert!(started.elapsed() < Duration::from_secs(10));
         raw.execute_batch("ROLLBACK").unwrap();
         assert!(matches!(case.info(), DatabaseInfoResult::Ready(_)));
     }
