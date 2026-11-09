@@ -8,6 +8,7 @@ import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import { createVariationChooserStore } from "@/state/store/variationChooser";
 import { moveInputAtom } from "@/state/atoms";
 import { installMatchMediaStub } from "@/tests/matchMedia";
+import { press as pressKey } from "@/tests/keyboard";
 import Board from "./Board";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -41,10 +42,9 @@ vi.mock("@/state/atoms", async () => {
 });
 vi.mock("@/state/keybinds", async () => {
   const { atom } = await import("jotai");
-  return { keyMapAtom: atom({ SWAP_ORIENTATION: { keys: [] }, TOGGLE_EVAL_BAR: { keys: [] } }) };
+  return { keyMapAtom: atom({ SWAP_ORIENTATION: { keys: "f" }, TOGGLE_EVAL_BAR: { keys: "b" } }) };
 });
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock("react-hotkeys-hook", () => ({ useHotkeys: () => {} }));
 vi.mock("@/chessground/Chessground", () => ({ Chessground: () => null }));
 vi.mock("@/chessground/useNodeDrawables", () => ({ useNodeDrawables: () => ({}) }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
@@ -118,6 +118,29 @@ async function press(grid: HTMLDivElement, ...keys: string[]) {
     });
   }
 }
+
+test("swap orientation ignores a focused modal button and still flips outside the dialog", async () => {
+  const { grid } = await render();
+  const dialog = document.createElement("section");
+  dialog.setAttribute("aria-modal", "true");
+  const button = document.createElement("button");
+  dialog.append(button);
+  host.append(dialog);
+  button.focus();
+  expect(document.activeElement).toBe(button);
+  const before = tree.getState();
+  expect(before.dirty).toBe(false);
+
+  const event = pressKey("f", { target: button });
+
+  expect(tree.getState().headers.orientation).toBe(before.headers.orientation);
+  expect(tree.getState().dirty).toBe(false);
+  expect(event.defaultPrevented).toBe(false);
+  grid.focus();
+  pressKey("f", { target: grid });
+  expect(tree.getState().headers.orientation).toBe("black");
+  expect(tree.getState().dirty).toBe(true);
+});
 
 test("pointer-focused grid yields Space without a selection and preserves Enter selection", async () => {
   const { grid, onMove } = await render();

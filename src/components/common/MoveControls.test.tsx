@@ -4,6 +4,7 @@ import { act, useContext } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createTreeStore, type TreeStore } from "@/state/store/tree";
+import { EphemeralTabScope } from "@/state/tabScope";
 import { press } from "@/tests/keyboard";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
@@ -12,6 +13,10 @@ import { defaultTree } from "@/utils/treeReducer";
 import { TreeStateContext, TreeStateProvider } from "@/components/common/TreeStateContext";
 import BoardFrame from "@/components/boards/BoardFrame";
 import AppModal from "./AppModal";
+import Comment from "./Comment";
+import { GameReferenceProvider } from "./GameReference";
+
+const citationMocks = vi.hoisted(() => ({ lookup: vi.fn(), navigate: vi.fn() }));
 
 const settings = vi.hoisted(() => ({
   chooseVariation: true,
@@ -30,9 +35,10 @@ const settings = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@/state/atoms", async () => {
+vi.mock("@/state/atoms", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/state/atoms")>();
   const { atom } = await import("jotai");
-  return { chooseVariationAtom: atom(() => settings.chooseVariation) };
+  return { ...original, chooseVariationAtom: atom(() => settings.chooseVariation) };
 });
 vi.mock("@/state/keybinds", async () => {
   const { atom } = await import("jotai");
@@ -46,6 +52,11 @@ vi.mock("@/state/keybinds", async () => {
 });
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
+vi.mock("@/utils/gameReferences", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/utils/gameReferences")>()),
+  lookupGameReference: citationMocks.lookup,
+}));
+vi.mock("@tanstack/react-router", () => ({ useNavigate: () => citationMocks.navigate }));
 
 import MoveControls from "./MoveControls";
 
@@ -91,7 +102,12 @@ function CaptureStore() {
   return null;
 }
 
-function render({ modal = false, controlsInModal = false } = {}) {
+function render({
+  modal = false,
+  controlsInModal = false,
+  readOnly = false,
+  citation = false,
+} = {}) {
   act(() => {
     root.render(
       // A fresh jotai store per render, so the setting is read anew in every case.
@@ -102,7 +118,14 @@ function render({ modal = false, controlsInModal = false } = {}) {
             <BoardFrame>
               <div role="grid" />
             </BoardFrame>
-            {!controlsInModal && <MoveControls />}
+            {!controlsInModal && <MoveControls readOnly={readOnly} />}
+            {citation && (
+              <EphemeralTabScope>
+                <GameReferenceProvider>
+                  <Comment comment={store.getState().currentNode().comment} />
+                </GameReferenceProvider>
+              </EphemeralTabScope>
+            )}
             {modal && (
               <AppModal opened onClose={vi.fn()} title="Citation" transitionProps={{ duration: 0 }}>
                 <button type="button">Dialog action</button>
@@ -117,6 +140,9 @@ function render({ modal = false, controlsInModal = false } = {}) {
 }
 
 beforeEach(() => {
+  citationMocks.lookup
+    .mockReset()
+    .mockResolvedValue({ candidates: [], complete: true, failures: [] });
   settings.chooseVariation = true;
   settings.keys.GO_TO_BRANCH_START = "arrowup";
   settings.keys.GO_TO_BRANCH_END = "arrowdown";
@@ -406,20 +432,6 @@ function focusDialogButton() {
   return button;
 }
 
-function pressOn(target: Element, key: string) {
-  const keydown = new KeyboardEvent("keydown", {
-    key,
-    code: key,
-    bubbles: true,
-    cancelable: true,
-  });
-  act(() => {
-    target.dispatchEvent(keydown);
-    target.dispatchEvent(new KeyboardEvent("keyup", { key, code: key, bubbles: true }));
-  });
-  return keydown;
-}
-
 test("Delete from a focused modal button preserves the background move and its subtree", () => {
   store = middleGameStore();
   render({ modal: true });
@@ -427,7 +439,7 @@ test("Delete from a focused modal button preserves the background move and its s
   const before = store.getState();
   expect(before.dirty).toBe(false);
 
-  pressOn(button, "Delete");
+  press("Delete", { target: button });
 
   expect(store.getState().root).toBe(before.root);
   expect(store.getState().root.children).toBe(before.root.children);
@@ -443,7 +455,7 @@ test.each(["ArrowLeft", "ArrowRight"])(
     render({ modal: true });
     const button = focusDialogButton();
 
-    pressOn(button, key);
+    press(key, { target: button });
 
     expect(store.getState().position).toEqual([0]);
   },
@@ -489,9 +501,9 @@ test("MoveControls inside the owning modal still navigate from a focused modal b
   render({ modal: true, controlsInModal: true });
   const button = focusDialogButton();
 
-  pressOn(button, "ArrowRight");
+  press("ArrowRight", { target: button });
   expect(store.getState().position).toEqual([0, 0]);
-  pressOn(button, "ArrowLeft");
+  press("ArrowLeft", { target: button });
   expect(store.getState().position).toEqual([0]);
 });
 
@@ -502,9 +514,55 @@ test.each(["ArrowUp", "ArrowDown"])(
     render({ modal: true });
     const button = focusDialogButton();
 
-    const event = pressOn(button, key);
+    const event = press(key, { target: button });
 
     expect(event.defaultPrevented).toBe(false);
     expect(store.getState().position).toEqual([0]);
   },
 );
+
+test("readOnly keeps Delete harmless while ArrowLeft still navigates", () => {
+  store = middleGameStore();
+  render({ readOnly: true });
+  const before = store.getState();
+
+  press("Delete");
+
+  expect(store.getState().root).toBe(before.root);
+  expect(store.getState().position).toEqual([0]);
+  expect(store.getState().dirty).toBe(false);
+  press("ArrowLeft");
+  expect(store.getState().position).toEqual([]);
+  expect(store.getState().root).toBe(before.root);
+  expect(store.getState().dirty).toBe(false);
+});
+
+test("opening a real commentary citation suspends background Delete and ArrowLeft", async () => {
+  store = middleGameStore();
+  store
+    .getState()
+    .setComment("0-1 Beerdsen,T (2520)-Bluebaum,M (2651) Elllobregat op 3rd 2022 (3)");
+  store.setState({ dirty: false });
+  render({ citation: true });
+  const reference = host.querySelector<HTMLButtonElement>("[data-game-reference]");
+  expect(reference).not.toBeNull();
+  await act(async () => reference!.click());
+  expect(citationMocks.lookup).toHaveBeenCalledOnce();
+  const retry = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
+    (button) => button.textContent === "GameReferences.Retry",
+  );
+  expect(retry).toBeDefined();
+  await act(async () => retry!.click());
+  expect(citationMocks.lookup).toHaveBeenCalledTimes(2);
+  const button = focusDialogButton();
+  expect(button.closest('[aria-modal="true"]')).not.toBeNull();
+  const before = store.getState();
+
+  press("Delete", { target: button });
+  press("ArrowLeft", { target: button });
+
+  expect(store.getState().root).toBe(before.root);
+  expect(store.getState().root.children).toBe(before.root.children);
+  expect(store.getState().position).toEqual([0]);
+  expect(store.getState().dirty).toBe(false);
+});

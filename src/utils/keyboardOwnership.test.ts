@@ -1,14 +1,29 @@
-import { afterEach, beforeEach, expect, test } from "vitest";
-import { isKeyboardOwnedElsewhere, keyboardOwner } from "./keyboardOwnership";
+import { useHotkeys, type HotkeyItem } from "@mantine/hooks";
+import { act, createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { press } from "@/tests/keyboard";
+import {
+    isKeyboardOwnedElsewhere,
+    keyboardOwner,
+    withKeyboardOwnership,
+} from "./keyboardOwnership";
 
 let host: HTMLDivElement;
+let root: Root | undefined;
+
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 beforeEach(() => {
     host = document.createElement("div");
     document.body.append(host);
 });
 
-afterEach(() => host.remove());
+afterEach(() => {
+    act(() => root?.unmount());
+    root = undefined;
+    host.remove();
+});
 
 function dialog() {
     const element = document.createElement("section");
@@ -76,4 +91,48 @@ test("only surfaces inside the owner keep their shortcuts", () => {
     expect(isKeyboardOwnedElsewhere(event, null)).toBe(true);
     expect(isKeyboardOwnedElsewhere(event, button)).toBe(false);
     expect(isKeyboardOwnedElsewhere(event, element)).toBe(false);
+});
+
+function Shortcuts({ hotkeys }: { hotkeys: HotkeyItem[] }) {
+    useHotkeys(withKeyboardOwnership(hotkeys));
+    return null;
+}
+
+function renderShortcut(options?: HotkeyItem[2]) {
+    const handler = vi.fn();
+    root = createRoot(host);
+    act(() => root!.render(createElement(Shortcuts, { hotkeys: [["k", handler, options]] })));
+    return handler;
+}
+
+test("real Mantine hotkeys leave a focused dialog button's key and default untouched", () => {
+    const handler = renderShortcut();
+    const { button } = dialog();
+    button.focus();
+    expect(document.activeElement).toBe(button);
+
+    const event = press("k", { target: button });
+
+    expect(handler).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+});
+
+test.each([
+    { options: undefined, prevented: true },
+    { options: { preventDefault: true }, prevented: true },
+    { options: { preventDefault: false }, prevented: false },
+    { options: {}, prevented: false },
+    { options: { usePhysicalKeys: false }, prevented: false },
+])("real Mantine hotkeys preserve outside-key options $options", ({ options, prevented }) => {
+    const handler = renderShortcut(options);
+    dialog();
+    const button = document.createElement("button");
+    host.append(button);
+    button.focus();
+    expect(document.activeElement).toBe(button);
+
+    const event = press("k", { target: button });
+
+    expect(handler).toHaveBeenCalledExactlyOnceWith(event);
+    expect(event.defaultPrevented).toBe(prevented);
 });

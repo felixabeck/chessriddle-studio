@@ -24,7 +24,7 @@ import {
 } from "@/state/atoms";
 import { getVariationLine } from "@/utils/chess";
 import { positionFromFen } from "@/utils/chessops";
-import { isKeyboardOwnedElsewhere } from "@/utils/keyboardOwnership";
+import { withKeyboardOwnership } from "@/utils/keyboardOwnership";
 import { readEngineLines } from "../panels/analysis/useDisplayedEngineLines";
 import { keyMapAtom } from "@/state/keybinds";
 import type { Annotation } from "@/utils/annotation";
@@ -54,17 +54,6 @@ import ConfirmChangesModal from "@/components/tabs/ConfirmChangesModal";
 import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
 import paneClasses from "../common/PaneTabs.module.css";
 import { COMPACT_PANE_TABS_WIDTH_EM } from "./paneTabs";
-
-function withKeyboardOwnership(hotkeys: HotkeyItem[]): HotkeyItem[] {
-  return hotkeys.map(([keys, handler, options]) => [
-    keys,
-    (event) => {
-      if (isKeyboardOwnedElsewhere(event, null)) return;
-      return handler(event);
-    },
-    options,
-  ]);
-}
 
 function BoardAnalysis() {
   const { t } = useTranslation();

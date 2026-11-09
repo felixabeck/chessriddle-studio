@@ -24,6 +24,7 @@ import {
   tabEngineSettingsFamily,
 } from "@/state/atoms";
 import { displayEngine, displayLines } from "@/tests/engineDisplay";
+import { press } from "@/tests/keyboard";
 import { analysisSearch } from "../panels/analysis/analysisSearch";
 import { AnalysisLineMemory } from "../panels/analysis/analysisLineMemory";
 import { engineIdentity, engineLineContext } from "../panels/analysis/analysisLineContext";
@@ -383,6 +384,29 @@ describe("BoardAnalysis", () => {
     vi.unstubAllGlobals();
   });
 
+  async function modalShortcut(keys: string, key: string, ctrlKey = false) {
+    const binding = hotkeys.mock.calls
+      .flatMap(([bindings]) => bindings)
+      .findLast(([bound]) => bound === keys)!;
+    const { getHotkeyHandler } =
+      await vi.importActual<typeof import("@mantine/hooks")>("@mantine/hooks");
+    const handler = getHotkeyHandler([binding]);
+    const dialog = document.createElement("section");
+    dialog.setAttribute("aria-modal", "true");
+    const button = document.createElement("button");
+    dialog.append(button);
+    container.append(dialog);
+    button.focus();
+    expect(document.activeElement).toBe(button);
+    document.documentElement.addEventListener("keydown", handler);
+    try {
+      return press(key, { target: button, ctrlKey });
+    } finally {
+      document.documentElement.removeEventListener("keydown", handler);
+      dialog.remove();
+    }
+  }
+
   describe("engine hotkeys", () => {
     function engineLines(engine: Engine = displayEngine, uci = "e2e4", key?: string) {
       const settingsAtom = tabEngineSettingsFamily({ tab: tabId, engineId: engine.id });
@@ -438,6 +462,26 @@ describe("BoardAnalysis", () => {
         expect(treeStore.getState().root.children).toHaveLength(2);
       },
     );
+
+    test("Space from a focused blocking dialog leaves the tree and native default unchanged", async () => {
+      await act(async () => {
+        treeStore.getState().makeMove({ payload: "d4" });
+        treeStore.getState().goToStart();
+        treeStore.setState({ dirty: false });
+        await jotaiStore.set(enginesAtom, [displayEngine]);
+        engineLines();
+      });
+      const before = treeStore.getState();
+
+      const event = await modalShortcut(jotaiStore.get(keyMapAtom).PLAY_BEST_ENGINE_MOVE.keys, " ");
+
+      expect(treeStore.getState().root).toBe(before.root);
+      expect(treeStore.getState().position).toEqual(before.position);
+      expect(treeStore.getState().dirty).toBe(false);
+      expect(event.defaultPrevented).toBe(false);
+      await engineKey("PLAY_BEST_ENGINE_MOVE");
+      expect(treeStore.getState().root.children.map((child) => child.san)).toEqual(["d4", "e4"]);
+    });
 
     test.each([
       "stale-key",
@@ -590,28 +634,33 @@ describe("BoardAnalysis", () => {
     const binding = hotkeys.mock.calls
       .flatMap(([bindings]) => bindings)
       .findLast(([bound]) => bound === key)!;
-    const dialog = document.createElement("section");
-    dialog.setAttribute("aria-modal", "true");
-    const button = document.createElement("button");
-    dialog.append(button);
-    container.append(dialog);
-    button.focus();
-    expect(document.activeElement).toBe(button);
     const before = treeStore.getState();
-    button.addEventListener("keydown", binding[1]);
 
-    await act(async () => {
-      button.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
-    });
+    const event = await modalShortcut(key, "1");
 
     expect(treeStore.getState().root).toBe(before.root);
     expect(treeStore.getState().root.nags).toEqual([]);
     expect(treeStore.getState().dirty).toBe(false);
-    button.removeEventListener("keydown", binding[1]);
-    dialog.remove();
+    expect(event.defaultPrevented).toBe(false);
     await act(async () => binding[1](new KeyboardEvent("keydown", { key })));
     expect(treeStore.getState().root.nags).toEqual([3]);
     expect(treeStore.getState().dirty).toBe(true);
+  });
+
+  test("Clear Shapes from a focused blocking dialog preserves shapes and the native default", async () => {
+    const shapes = [{ orig: "a1", dest: "a3", brush: "green" }] as const;
+    await act(async () => {
+      treeStore.getState().setShapes([...shapes]);
+      treeStore.setState({ dirty: false });
+    });
+    const before = treeStore.getState();
+
+    const event = await modalShortcut(jotaiStore.get(keyMapAtom).CLEAR_SHAPES.keys, "l", true);
+
+    expect(treeStore.getState().root).toBe(before.root);
+    expect(treeStore.getState().currentNode().shapes).toEqual(shapes);
+    expect(treeStore.getState().dirty).toBe(false);
+    expect(event.defaultPrevented).toBe(false);
   });
 
   test("annotation shortcuts preserve all six glyphs and the practice rating boundary", async () => {
