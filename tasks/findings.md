@@ -22460,3 +22460,20 @@ Fixed in 0b63a012 (pushed to master; hosted Test 13/13 green; installed locally)
 * **Failure scenario:** A slow hosted runner makes the `e2e` job red on a commit that does not touch context menus, and `pnpm ci:remote:check` then refuses later pushes.
 * **Related:** Run 42571912257 on 6d794f89 failed job `e2e` with a different test, `wheelColumnTo re-reveals a column scrolled out of the stacked` in `e2e/font-scaled-breakpoints.spec.ts`, which also looks like hosted-runner timing. f-20261105-06 removed two other hosted-CI timing flakes.
 * **Fix direction:** Wait until the dialog geometry settles before clicking, then confirm with repeated hosted runs. Inspect the font-scaled failure in the same pass.
+
+---
+
+## 2026-11-09 — filed through the inbox spool
+
+### `wheelBoardStackTo` sends one wheel from pre-scroll geometry and fails its own fixture test on hosted CI
+
+* **ID:** f-20261109-02 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** c6378528-f959-40b1-89ab-54e6a35fe5f1
+* **Impact class:** tooling
+* **CI run:** 42571912257
+* **Where:** `e2e/fixtures.ts:225-250` (`wheelBoardStackTo`, single `page.mouse.wheel` then `expect.poll(... scrollTop ...).toBeLessThanOrEqual(1)` at :239), failing in `e2e/font-scaled-breakpoints.spec.ts:113` "wheelColumnTo re-reveals a column scrolled out of the stacked viewport" at its first `wheelBoardStackTo(page, column)` call (:134).
+* **Defect:** `wheelBoardStackTo` measures the stack and target once, sends one wheel with a delta from that snapshot, then only polls `scrollTop` for 8 s. If that wheel is not applied (or applied short) on a slow hosted runner, nothing re-wheels, so the poll cannot turn true. f-20261106-48 fixed the identical pattern in `wheelColumnTo` by re-measuring and re-wheeling inside `toPass`; `wheelBoardStackTo` kept the one-shot form.
+* **Failure scenario:** Test run 42571912257, job `e2e` 129010968942, on master push 6d794f89 (f-20261109-01: native game clocks, no e2e or fixture change): `Expected: <= 1, Received: 1992`, `Timeout 8000ms exceeded while waiting on the predicate` at `fixtures.ts:239`, 363 passed, 1 failed. The scroll stayed at 0 against an expected ~1992. The same tree passed the local `pnpm gates:push -- --rust --frontend` e2e container lane, and the parent 7b55a5a2's e2e job was green, so the push's remote CI is red on an intermittent helper race and `pnpm ci:remote:check` refuses later pushes until a rerun or fix.
+* **Fix shape:** mirror f-20261106-48: inside `expect(async () => { measure; wheel by current delta; assert scrollTop within 1 }).toPass({ timeout: 15_000 })`, keeping scrolling mouse-wheel driven and the reveal assertion unchanged.
+* **Proof:** the fixture test fails when the wheel is dropped once (e.g. skip the first wheel) on the old helper and passes with the fix; the font-scaled-breakpoints container project stays green.
+* **Related:** f-20261106-48 (same one-shot defect in `wheelColumnTo`, handled), f-20261107-03 and f-20261107-04 (handled, `wheelBoardStackTo` settled-layout wait). None covers the one-shot wheel in `wheelBoardStackTo`.
