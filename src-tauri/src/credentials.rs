@@ -74,6 +74,11 @@ pub(crate) struct ChessRiddleAccountMetadata {
 /// Its manager and Lichess-shaped records never leave the credential subsystem.
 pub(crate) struct ChessRiddleCredentials(CredentialManager);
 
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct ChessRiddleRemoval {
+    pub durability_uncertain: bool,
+}
+
 impl ChessRiddleCredentials {
     #[cfg(test)]
     pub(crate) fn with_uncertain_store(store: Arc<dyn CredentialStore>) -> Self {
@@ -176,14 +181,16 @@ impl ChessRiddleCredentials {
     pub(crate) async fn remove(
         self: &Arc<Self>,
         handle: ChessRiddleAccountHandle,
-    ) -> Result<Option<bool>, Error> {
+    ) -> Result<Option<ChessRiddleRemoval>, Error> {
         let manager = self.clone();
         BLOCKING_GATEWAY
             .spawn_cancellable(CancellationToken::new(), move |_| {
                 Ok(manager
                     .0
                     .remove(&LichessAccountHandle(handle.0))?
-                    .map(|result| result.durability_uncertain))
+                    .map(|result| ChessRiddleRemoval {
+                        durability_uncertain: result.durability_uncertain,
+                    }))
             })
             .await
     }
@@ -1188,7 +1195,9 @@ mod tests {
         );
         assert_eq!(
             credentials.remove(account.handle).await.unwrap(),
-            Some(true)
+            Some(ChessRiddleRemoval {
+                durability_uncertain: true
+            })
         );
         assert!(credentials.list().await.unwrap().is_empty());
         let restarted = Arc::new(ChessRiddleCredentials::with_store(store));
@@ -1210,7 +1219,9 @@ mod tests {
             .unwrap();
         assert_eq!(
             credentials.remove(account.handle).await.unwrap(),
-            Some(false)
+            Some(ChessRiddleRemoval {
+                durability_uncertain: false
+            })
         );
         assert!(credentials.list().await.unwrap().is_empty());
         assert!(

@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createInstance } from "i18next";
-import type { AccountError, AccountStatus } from "@/bindings";
+import type { AccountStatus } from "@/bindings";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { ChessRiddleCommandError } from "@/platform/chessriddle";
 import { ChessRiddleAccountCard } from "./ChessRiddleAccountCard";
@@ -146,6 +146,26 @@ test("failure before local removal keeps connected status and safe error", async
   expect(mocks.chessriddleAccount).toHaveBeenCalledOnce();
 });
 
+test.each(["network", "rateLimited", "server"] as const)(
+  "a stored account with unreadable status (%s) can disconnect offline",
+  async (error) => {
+    mocks.chessriddleAccount.mockResolvedValueOnce({ status: "statusUnreadable", error });
+    mocks.disconnectChessriddle.mockResolvedValue({
+      status: "removed",
+      revocation_pending: true,
+      durability_uncertain: false,
+    });
+    await render();
+    expect(host.textContent).toContain("Home.ChessRiddle.StatusUnreadable");
+    expect(host.textContent).toContain(`Home.ChessRiddle.Error.${errorKeys[error]}`);
+    expect(button("Home.ChessRiddle.Refresh").disabled).toBe(false);
+    await click("Disconnect");
+    expect(mocks.disconnectChessriddle).toHaveBeenCalledOnce();
+    expect(host.textContent).toContain("Home.ChessRiddle.Disconnected");
+    expect(host.textContent).toContain("Home.ChessRiddle.RevocationPending");
+  },
+);
+
 test("not-found disconnect still takes its next state from native", async () => {
   mocks.chessriddleAccount.mockResolvedValue(connected);
   mocks.disconnectChessriddle.mockResolvedValue({ status: "notFound" });
@@ -225,21 +245,18 @@ test("a connect rejection after unmount does not start another native read", asy
   expect(host.textContent).toBe("");
 });
 
-const errorKeys: Record<AccountError, string> = {
-  unavailable: "Unavailable",
+const errorKeys = {
   busy: "Busy",
   storage: "Storage",
   network: "Network",
   rateLimited: "RateLimited",
   server: "Server",
-  invalidGrant: "InvalidGrant",
   authentication: "Authentication",
-  invalidLink: "InvalidLink",
   browser: "Browser",
   alreadyConnected: "AlreadyConnected",
 };
 
-test.each(Object.entries(errorKeys).filter(([code]) => code !== "unavailable"))(
+test.each(Object.entries(errorKeys))(
   "native %s becomes its closed translated error",
   async (code, key) => {
     mocks.chessriddleAccount.mockRejectedValue(new ChessRiddleCommandError(code));
@@ -273,7 +290,7 @@ test.each(Object.entries(catalogues))(
     });
     const primary = catalogues["../../translation/en-US.json"].translation;
     const keys = Object.keys(primary).filter((key) => key.startsWith("Home.ChessRiddle."));
-    expect(keys).toHaveLength(26);
+    expect(keys).toHaveLength(24);
     for (const key of keys) {
       expect(i18n.t(key)).not.toBe(key);
       expect(i18n.t(key).trim()).not.toBe("");

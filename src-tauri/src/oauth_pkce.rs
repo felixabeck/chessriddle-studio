@@ -252,20 +252,55 @@ pub(crate) fn start_listener_and_server(
     })
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ExchangeCause {
+    Network,
+    RateLimited,
+    Server,
+    Authentication,
+}
+
+pub(crate) struct ExchangeFailure {
+    pub cause: ExchangeCause,
+    pub diagnostic: oauth2::RequestTokenError<
+        oauth2::reqwest::Error<reqwest::Error>,
+        oauth2::StandardErrorResponse<oauth2::basic::BasicErrorResponseType>,
+    >,
+}
+
 pub(crate) async fn exchange_code(
     http_client: &reqwest::Client,
     client: &BasicClient,
     code: AuthorizationCode,
     verifier: PkceCodeVerifier,
-) -> Result<BasicTokenResponse, Error> {
+) -> Result<BasicTokenResponse, ExchangeFailure> {
+    let status = std::sync::atomic::AtomicU16::new(0);
     client
         .exchange_code(code)
         .set_pkce_verifier(verifier)
-        .request_async(|request| safe_oauth_http_client(http_client, request))
+        .request_async(|request| async {
+            let response = safe_oauth_http_client(http_client, request).await?;
+            status.store(response.status_code.as_u16(), Ordering::Relaxed);
+            Ok(response)
+        })
         .await
         .map_err(|source| {
-            error!("OAuth token exchange failed: {source}");
-            Error::OAuthFailure(OAUTH_FAILURE.into())
+            let cause = match (status.load(Ordering::Relaxed), &source) {
+                (429, _) => ExchangeCause::RateLimited,
+                (400, oauth2::RequestTokenError::ServerResponse(response))
+                    if *response.error() == oauth2::basic::BasicErrorResponseType::InvalidGrant =>
+                {
+                    ExchangeCause::Authentication
+                }
+                (_, oauth2::RequestTokenError::Request(oauth2::reqwest::Error::Reqwest(_))) => {
+                    ExchangeCause::Network
+                }
+                _ => ExchangeCause::Server,
+            };
+            ExchangeFailure {
+                cause,
+                diagnostic: source,
+            }
         })
 }
 
@@ -540,7 +575,9 @@ mod tests {
             },
             move |client, code, verifier| async move {
                 let http = reqwest::Client::builder().no_proxy().build().unwrap();
-                let token = exchange_code(&http, &client, code, verifier).await?;
+                let token = exchange_code(&http, &client, code, verifier)
+                    .await
+                    .map_err(|_| Error::OAuthFailure(OAUTH_FAILURE.into()))?;
                 assert_eq!(token.access_token().secret(), name);
                 Ok(())
             },
@@ -627,7 +664,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn exchange_errors_return_no_provider_response_or_credential_data() {
+    async fn exchange_errors_separate_the_closed_cause_from_provider_diagnostics() {
         let fixture = TokenFixture::new(
             axum::http::StatusCode::BAD_REQUEST,
             serde_json::json!({"error": "invalid_grant", "error_description": "private-token"}),
@@ -648,7 +685,13 @@ mod tests {
             PkceCodeVerifier::new("private-verifier".into()),
         )
         .await;
-        assert!(matches!(result, Err(Error::OAuthFailure(message)) if message == OAUTH_FAILURE));
+        assert!(matches!(
+            result,
+            Err(ExchangeFailure {
+                cause: ExchangeCause::Authentication,
+                ..
+            })
+        ));
         fixture.stop().await;
     }
 }

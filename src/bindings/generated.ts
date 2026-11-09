@@ -1359,7 +1359,7 @@ export type AccountImportRequest = { provider: string; account: string; accountH
 export type AccountImportResult = { collectionNotice: boolean }
 export type AccountImportTarget = { kind: "linked"; collection: string } | { kind: "unlinked"; database: DatabaseHandle; title: string }
 export type AccountProfile = { handle: ChessRiddleAccountHandle; username: string | null; plan: Plan }
-export type AccountStatus = { status: "disconnected" } | { status: "reconnectNeeded" } | { status: "connected"; account: AccountProfile; durability_uncertain: boolean }
+export type AccountStatus = { status: "disconnected" } | { status: "reconnectNeeded" } | { status: "statusUnreadable"; error: AccountError } | { status: "connected"; account: AccountProfile; durability_uncertain: boolean }
 export type AnalysisOptions = { fen: string; moves: string[]; annotateNovelties: boolean; referenceDb: DatabaseHandle | null; reversed: boolean }
 export type AppendOutcome = { appended: number; committed: boolean; indexReady: boolean; durabilityConfirmed: boolean }
 /**

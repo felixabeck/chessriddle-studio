@@ -247,8 +247,12 @@ impl OAuthServices for ProdOAuthServices {
         code: AuthorizationCode,
         verifier: PkceCodeVerifier,
     ) -> Result<String, Error> {
-        let token_response =
-            oauth_pkce::exchange_code(&self.http_client, client, code, verifier).await?;
+        let token_response = oauth_pkce::exchange_code(&self.http_client, client, code, verifier)
+            .await
+            .map_err(|failure| {
+                error!("OAuth token exchange failed: {}", failure.diagnostic);
+                Error::OAuthFailure(OAUTH_FAILURE.into())
+            })?;
         Ok(token_response.access_token().secret().clone())
     }
 

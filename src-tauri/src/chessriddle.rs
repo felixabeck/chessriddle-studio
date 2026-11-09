@@ -24,6 +24,12 @@ pub(crate) const RELEASE_AVAILABLE: bool = false;
 const DEV_API_ORIGIN: Option<&str> = option_env!("CHESSRIDDLE_API_ORIGIN");
 const DEV_WEB_ORIGIN: Option<&str> = option_env!("CHESSRIDDLE_WEB_ORIGIN");
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
+const MAX_ACCESS_TOKEN_BYTES: usize = 4096;
+// Windows Credential Manager limits a credential blob to 2560 bytes of UTF-16.
+const MAX_REFRESH_TOKEN_UTF16_UNITS: usize = 1280;
+const MAX_EXPIRES_IN_SECONDS: u64 = 3600;
+const OWNER_QUEUE_CAPACITY: usize = 8;
+const AUTHENTICATION_TIMEOUT: Duration = Duration::from_secs(180);
 const REFRESH_MARGIN: Duration = Duration::from_secs(60);
 
 #[derive(Clone)]
@@ -166,6 +172,9 @@ pub(crate) struct AccountProfile {
 pub(crate) enum AccountStatus {
     Disconnected,
     ReconnectNeeded,
+    StatusUnreadable {
+        error: AccountError,
+    },
     Connected {
         account: AccountProfile,
         durability_uncertain: bool,
@@ -194,11 +203,11 @@ struct Tokens {
 impl Tokens {
     fn valid(&self) -> bool {
         !self.access_token.is_empty()
-            && self.access_token.len() <= 4096
+            && self.access_token.len() <= MAX_ACCESS_TOKEN_BYTES
             && !self.refresh_token.is_empty()
-            && self.refresh_token.encode_utf16().count() <= 1280
+            && self.refresh_token.encode_utf16().count() <= MAX_REFRESH_TOKEN_UTF16_UNITS
             && self.token_type.eq_ignore_ascii_case("bearer")
-            && (1..=3600).contains(&self.expires_in)
+            && (1..=MAX_EXPIRES_IN_SECONDS).contains(&self.expires_in)
     }
 }
 
@@ -302,7 +311,7 @@ impl AccountOwner {
         endpoints: Endpoints,
         http: reqwest::Client,
     ) -> Self {
-        let (sender, mut receiver) = mpsc::channel::<Request>(8);
+        let (sender, mut receiver) = mpsc::channel::<Request>(OWNER_QUEUE_CAPACITY);
         // The worker owns every accepted request through its terminal state even if IPC is dropped.
         // Dropping the final sender drains the bounded queue, then drops all native tokens.
         tauri::async_runtime::spawn(async move {
@@ -444,6 +453,15 @@ impl Worker {
     }
 
     async fn status(&mut self) -> Result<AccountStatus, AccountError> {
+        match self.read_status().await {
+            Err(
+                error @ (AccountError::Network | AccountError::RateLimited | AccountError::Server),
+            ) if self.session.is_some() => Ok(AccountStatus::StatusUnreadable { error }),
+            result => result,
+        }
+    }
+
+    async fn read_status(&mut self) -> Result<AccountStatus, AccountError> {
         match self.refresh().await {
             Err(AccountError::InvalidGrant) => return Ok(AccountStatus::ReconnectNeeded),
             Err(error) => return Err(error),
@@ -519,25 +537,43 @@ impl Worker {
         let http = self.http.clone();
         let mut received = None;
         let received_ref = &mut received;
+        // Closed causes live outside the helper's sanitized lifecycle error. No token or
+        // provider diagnostic is recorded here, including when the deadline drops the exchange.
+        let cause = std::sync::Mutex::new(AccountError::Authentication);
+        let browser_cause = &cause;
+        let exchange_cause = &cause;
         oauth_pkce::authenticate(
             provider,
             attempts.clone(),
-            Duration::from_secs(180),
+            AUTHENTICATION_TIMEOUT,
             move || oauth_pkce::start_listener_and_server(attempts),
             move |url| {
-                endpoints
-                    .open_link(url, opener.as_ref())
-                    .map_err(|_| "ChessRiddle browser refused".into())
+                endpoints.open_link(url, opener.as_ref()).map_err(|error| {
+                    if let Ok(mut cause) = browser_cause.lock() {
+                        *cause = error;
+                    }
+                    "ChessRiddle browser refused".into()
+                })
             },
             |client, code, verifier| async move {
-                // The helper binds this code and verifier to this provider. Unlike the Lichess
-                // exchange, this path never logs a token endpoint's diagnostic body.
-                let token = client
-                    .exchange_code(code)
-                    .set_pkce_verifier(verifier)
-                    .request_async(|request| oauth_pkce::safe_oauth_http_client(&http, request))
+                let token = oauth_pkce::exchange_code(&http, &client, code, verifier)
                     .await
-                    .map_err(|_| Error::OAuthFailure("ChessRiddle authentication failed".into()))?;
+                    .map_err(|failure| {
+                        if let Ok(mut cause) = exchange_cause.lock() {
+                            *cause = match failure.cause {
+                                oauth_pkce::ExchangeCause::Network => AccountError::Network,
+                                oauth_pkce::ExchangeCause::RateLimited => AccountError::RateLimited,
+                                oauth_pkce::ExchangeCause::Server => AccountError::Server,
+                                oauth_pkce::ExchangeCause::Authentication => {
+                                    AccountError::Authentication
+                                }
+                            };
+                        }
+                        Error::OAuthFailure("ChessRiddle authentication failed".into())
+                    })?;
+                if let Ok(mut cause) = exchange_cause.lock() {
+                    *cause = AccountError::Server;
+                }
                 let refresh = token.refresh_token().ok_or_else(|| {
                     Error::OAuthFailure("ChessRiddle authentication failed".into())
                 })?;
@@ -557,7 +593,7 @@ impl Worker {
             },
         )
         .await
-        .map_err(|_| AccountError::Authentication)?;
+        .map_err(|_| cause.into_inner().unwrap_or(AccountError::Authentication))?;
         let tokens = received.ok_or(AccountError::Authentication)?;
         let mut session = Session {
             account: None,
@@ -583,7 +619,7 @@ impl Worker {
                 .remove(account.handle.clone())
                 .await
                 .map_err(|_| AccountError::Storage)?
-                .unwrap_or(false),
+                .is_some_and(|result| result.durability_uncertain),
             None => {
                 // Complete an interrupted initial keyring write before journalling its deletion.
                 self.persist().await?;
@@ -596,7 +632,7 @@ impl Worker {
                     .remove(account.handle.clone())
                     .await
                     .map_err(|_| AccountError::Storage)?
-                    .unwrap_or(false)
+                    .is_some_and(|result| result.durability_uncertain)
             }
         };
         let session = self.session.take().ok_or(AccountError::Storage)?;
@@ -772,6 +808,7 @@ mod tests {
     struct ServerState {
         token_status: AtomicU16,
         profile_status: AtomicU16,
+        profile_unauthorized_once: AtomicBool,
         revoke_status: AtomicU16,
         refresh_after_removal: AtomicBool,
         token_network_failure: AtomicBool,
@@ -833,7 +870,14 @@ mod tests {
             .starts_with("Bearer access-"));
         state.profiles.fetch_add(1, Ordering::SeqCst);
         (
-            StatusCode::from_u16(state.profile_status.load(Ordering::SeqCst)).unwrap(),
+            if state
+                .profile_unauthorized_once
+                .swap(false, Ordering::SeqCst)
+            {
+                StatusCode::UNAUTHORIZED
+            } else {
+                StatusCode::from_u16(state.profile_status.load(Ordering::SeqCst)).unwrap()
+            },
             Json(serde_json::json!({"username":"Player", "permissions":{"tier":"gold"}})),
         )
     }
@@ -878,6 +922,7 @@ mod tests {
             let state = Arc::new(ServerState {
                 token_status: AtomicU16::new(200),
                 profile_status: AtomicU16::new(200),
+                profile_unauthorized_once: AtomicBool::new(false),
                 revoke_status: AtomicU16::new(204),
                 refresh_after_removal: AtomicBool::new(false),
                 token_network_failure: AtomicBool::new(false),
@@ -1169,7 +1214,9 @@ mod tests {
             let fixture = Fixture::new(credentials.clone());
             fixture.state.token_status.store(status, Ordering::SeqCst);
             let owner = fixture.owner();
-            assert!(matches!(owner.request(Action::Status).await, Err(error) if error == expected));
+            assert!(
+                matches!(owner.request(Action::Status).await.unwrap(), Reply::Status(AccountStatus::StatusUnreadable { error }) if error == expected)
+            );
             assert_eq!(
                 credentials.token(account.handle).await.unwrap().as_deref(),
                 Some("initial-refresh")
@@ -1197,8 +1244,10 @@ mod tests {
             http_client().unwrap(),
         );
         assert!(matches!(
-            owner.request(Action::Status).await,
-            Err(AccountError::Network)
+            owner.request(Action::Status).await.unwrap(),
+            Reply::Status(AccountStatus::StatusUnreadable {
+                error: AccountError::Network
+            })
         ));
         assert_eq!(
             credentials.token(account.handle).await.unwrap().as_deref(),
@@ -1228,6 +1277,163 @@ mod tests {
         ));
         assert!(credentials.list().await.unwrap().is_empty());
         fixture.stop().await;
+    }
+
+    #[tokio::test]
+    async fn profile_401_recovers_with_refresh_and_keeps_the_credential() {
+        let (_temp, credentials) = credentials(Arc::new(TestStore::default()), false).await;
+        let (account, _) = credentials
+            .store("user".into(), "initial-refresh".into())
+            .await
+            .unwrap();
+        let fixture = Fixture::new(credentials.clone());
+        fixture
+            .state
+            .profile_unauthorized_once
+            .store(true, Ordering::SeqCst);
+        let owner = fixture.owner();
+        assert_eq!(
+            connected(owner.request(Action::Status).await.unwrap()).handle,
+            account.handle
+        );
+        assert_eq!(
+            credentials.token(account.handle).await.unwrap().as_deref(),
+            Some("refresh-2")
+        );
+        assert_eq!(fixture.state.refreshes.load(Ordering::SeqCst), 2);
+        assert_eq!(fixture.state.profiles.load(Ordering::SeqCst), 2);
+        fixture.stop().await;
+    }
+
+    #[tokio::test]
+    async fn profile_401_with_transient_refresh_failure_keeps_the_credential() {
+        for (status, broken, expected) in [
+            (200, true, AccountError::Network),
+            (429, false, AccountError::RateLimited),
+            (503, false, AccountError::Server),
+        ] {
+            let (_temp, credentials) = credentials(Arc::new(TestStore::default()), false).await;
+            credentials
+                .store("user".into(), "initial-refresh".into())
+                .await
+                .unwrap();
+            let fixture = Fixture::new(credentials.clone());
+            let owner = fixture.owner();
+            let account = connected(owner.request(Action::Status).await.unwrap());
+            fixture.state.profile_status.store(401, Ordering::SeqCst);
+            fixture.state.token_status.store(status, Ordering::SeqCst);
+            fixture
+                .state
+                .token_network_failure
+                .store(broken, Ordering::SeqCst);
+            assert!(
+                matches!(owner.request(Action::Status).await.unwrap(), Reply::Status(AccountStatus::StatusUnreadable { error }) if error == expected)
+            );
+            assert_eq!(
+                credentials.token(account.handle).await.unwrap().as_deref(),
+                Some("refresh-1")
+            );
+            assert_eq!(fixture.state.refreshes.load(Ordering::SeqCst), 2);
+            fixture.stop().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn unreadable_stored_account_disconnects_offline_with_revocation_pending() {
+        let (_temp, credentials) = credentials(Arc::new(TestStore::default()), false).await;
+        credentials
+            .store("user".into(), "initial-refresh".into())
+            .await
+            .unwrap();
+        let owner = AccountOwner::start(
+            credentials.clone(),
+            Endpoints::new("app.dev", Some("http://127.0.0.1:1"), None).unwrap(),
+            http_client().unwrap(),
+        );
+        assert!(matches!(
+            owner.request(Action::Status).await.unwrap(),
+            Reply::Status(AccountStatus::StatusUnreadable {
+                error: AccountError::Network
+            })
+        ));
+        assert!(matches!(
+            owner.request(Action::Disconnect).await.unwrap(),
+            Reply::Disconnect(DisconnectOutcome::Removed {
+                revocation_pending: true,
+                durability_uncertain: false
+            })
+        ));
+        assert!(credentials.list().await.unwrap().is_empty());
+        assert!(matches!(
+            owner.request(Action::Status).await.unwrap(),
+            Reply::Status(AccountStatus::Disconnected)
+        ));
+    }
+
+    #[tokio::test]
+    async fn connect_browser_failure_keeps_its_typed_cause() {
+        let (_temp, credentials) = credentials(Arc::new(TestStore::default()), false).await;
+        let fixture = Fixture::new(credentials);
+        assert!(matches!(
+            fixture
+                .owner()
+                .request(Action::Connect(Arc::new(|_| Err(
+                    "private diagnostic".into()
+                ))))
+                .await,
+            Err(AccountError::Browser)
+        ));
+        fixture.stop().await;
+    }
+
+    #[tokio::test]
+    async fn connect_exchange_and_cancel_failures_keep_their_typed_causes() {
+        for (status, broken, cancel, expected) in [
+            (200, true, false, AccountError::Network),
+            (429, false, false, AccountError::RateLimited),
+            (401, false, false, AccountError::Server),
+            (503, false, false, AccountError::Server),
+            (400, false, false, AccountError::Authentication),
+            (200, false, true, AccountError::Authentication),
+        ] {
+            let (_temp, credentials) = credentials(Arc::new(TestStore::default()), false).await;
+            let fixture = Fixture::new(credentials.clone());
+            fixture.state.token_status.store(status, Ordering::SeqCst);
+            fixture
+                .state
+                .token_network_failure
+                .store(broken, Ordering::SeqCst);
+            let (opened, mut browser) = mpsc::unbounded_channel::<String>();
+            let opener: BrowserOpener =
+                Arc::new(move |url| opened.send(url.into()).map_err(|_| "closed".into()));
+            let owner = fixture.owner();
+            let callback = async {
+                let opened = browser.recv().await.unwrap();
+                let url = url::Url::parse(&opened).unwrap();
+                let query: HashMap<String, String> = url.query_pairs().into_owned().collect();
+                reqwest::Client::new()
+                    .get(&query["redirect_uri"])
+                    .query(&[
+                        ("state", query["state"].as_str()),
+                        if cancel {
+                            ("error", "access_denied")
+                        } else {
+                            ("code", "private-code")
+                        },
+                    ])
+                    .send()
+                    .await
+                    .unwrap();
+            };
+            let (result, ()) = tokio::time::timeout(Duration::from_secs(10), async {
+                tokio::join!(owner.request(Action::Connect(opener)), callback)
+            })
+            .await
+            .unwrap();
+            assert!(matches!(result, Err(error) if error == expected));
+            assert!(credentials.list().await.unwrap().is_empty());
+            fixture.stop().await;
+        }
     }
 
     #[tokio::test]

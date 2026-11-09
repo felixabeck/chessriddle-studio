@@ -75,6 +75,11 @@ for (const corner of [
         await expect(
             page.getByText(copy["Home.ChessRiddle.PlanGold"], { exact: true }),
         ).toBeVisible();
+        if (corner.locale === "en-US") {
+            await expect(
+                page.getByRole("region", { name: copy["Home.ChessRiddle.Title"], exact: true }),
+            ).toHaveScreenshot("chessriddle-account-connected-en-US.png");
+        }
         await page
             .getByRole("button", { name: copy["Home.ChessRiddle.Refresh"], exact: true })
             .click();
@@ -217,6 +222,40 @@ test("failed local disconnect keeps the account and raw diagnostics stay hidden"
         page.getByText(english.translation["Home.ChessRiddle.Error.Server"]),
     ).toBeVisible();
     await expect(page.getByText("private server diagnostic")).toHaveCount(0);
+});
+
+test("stored account can disconnect while offline", async ({ page, mockScenario }) => {
+    await mockScenario({
+        commands: {
+            chessriddle_account: {
+                results: [
+                    { status: "statusUnreadable", error: "network" },
+                    { status: "disconnected" },
+                ],
+            },
+            disconnect_chessriddle: {
+                result: {
+                    status: "removed",
+                    revocation_pending: true,
+                    durability_uncertain: false,
+                },
+            },
+        },
+    });
+    await page.goto("/accounts");
+    await expect(
+        page.getByText(english.translation["Home.ChessRiddle.StatusUnreadable"]),
+    ).toBeVisible();
+    await expect(
+        page.getByText(english.translation["Home.ChessRiddle.Error.Network"]),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Disconnect", exact: true }).click();
+    await expect(
+        page.getByText(english.translation["Home.ChessRiddle.RevocationPending"]),
+    ).toBeVisible();
+    await expect(
+        page.getByText(english.translation["Home.ChessRiddle.Disconnected"], { exact: true }),
+    ).toBeVisible();
 });
 
 test("leaving Accounts during connect retires only the view", async ({ page, mockScenario }) => {

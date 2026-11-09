@@ -82,20 +82,22 @@ export function ChessRiddleAccountCard() {
   }, []);
 
   const errors: Record<AccountError, string> = {
-    unavailable: t("Home.ChessRiddle.Error.Unavailable"),
+    unavailable: t("Home.ChessRiddle.Error.Server"),
     busy: t("Home.ChessRiddle.Error.Busy"),
     storage: t("Home.ChessRiddle.Error.Storage"),
     network: t("Home.ChessRiddle.Error.Network"),
     rateLimited: t("Home.ChessRiddle.Error.RateLimited"),
     server: t("Home.ChessRiddle.Error.Server"),
-    invalidGrant: t("Home.ChessRiddle.Error.InvalidGrant"),
+    invalidGrant: t("Home.ChessRiddle.Error.Server"),
     authentication: t("Home.ChessRiddle.Error.Authentication"),
-    invalidLink: t("Home.ChessRiddle.Error.InvalidLink"),
+    invalidLink: t("Home.ChessRiddle.Error.Server"),
     browser: t("Home.ChessRiddle.Error.Browser"),
     alreadyConnected: t("Home.ChessRiddle.Error.AlreadyConnected"),
   };
 
   if (unavailable || (!status && !error)) return null;
+  const hasAccount = status?.status === "connected" || status?.status === "statusUnreadable";
+  const visibleError = error ?? (status?.status === "statusUnreadable" ? status.error : null);
 
   return (
     <Card
@@ -130,15 +132,17 @@ export function ChessRiddleAccountCard() {
                   : t("Home.ChessRiddle.PlanFree")}
               </Text>
             </Stack>
+          ) : status?.status === "statusUnreadable" ? (
+            <Text size="sm">{t("Home.ChessRiddle.StatusUnreadable")}</Text>
           ) : status?.status === "reconnectNeeded" ? (
             <Text size="sm">{t("Home.ChessRiddle.ReconnectNeeded")}</Text>
           ) : status?.status === "disconnected" ? (
             <Text size="sm">{t("Home.ChessRiddle.Disconnected")}</Text>
           ) : null}
         </div>
-        {error && (
+        {visibleError && (
           <Alert color="danger" px="xs">
-            {errors[error]}
+            {errors[visibleError]}
           </Alert>
         )}
         {removed?.revocation_pending && (
@@ -162,12 +166,12 @@ export function ChessRiddleAccountCard() {
               className="wrap-button"
               miw={0}
               maw="100%"
-              variant={status.status === "connected" ? "default" : "filled"}
+              variant={hasAccount ? "default" : "filled"}
               disabled={pending !== null}
               loading={pending === "connect" || pending === "disconnect"}
-              onClick={() => void run(status.status === "connected" ? "disconnect" : "connect")}
+              onClick={() => void run(hasAccount ? "disconnect" : "connect")}
             >
-              {status.status === "connected"
+              {hasAccount
                 ? t("Home.ChessRiddle.Disconnect")
                 : status.status === "reconnectNeeded"
                   ? t("Home.ChessRiddle.Reconnect")
