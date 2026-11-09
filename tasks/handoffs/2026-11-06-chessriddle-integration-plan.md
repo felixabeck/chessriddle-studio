@@ -1,6 +1,6 @@
 # Plan: Connect ChessRiddle Studio to ChessRiddle accounts
 
-Status: **Phase A built (2026-11-09). Phases B to E not built.** Product choices marked "Felix" are his; technical choices are recommendations. Each phase gets its own detailed `build` plan and review in the repository it changes.
+Status: **Phases A and B built (2026-11-09). Phases C to E not built.** Product choices marked "Felix" are his; technical choices are recommendations. Each phase gets its own detailed `build` plan and review in the repository it changes.
 
 ## Roadmap and current state (recorded 2026-11-09)
 
@@ -15,7 +15,7 @@ This section overrides the phase order further down. It is the agent's recommend
 
 ### Order
 
-1. **Tactics in Studio (phase B), next.** Standard tactics plus retry-your-mistakes (`backend/app/api/routes/puzzles/mistakes.py`, which already exists). Mistakes are the part that is better beside an engine and database than on the web.
+1. **Tactics in Studio (phase B), built 2026-11-09.** Standard tactics plus retry-your-mistakes. Studio is on `master`, hidden in release builds by `RELEASE_AVAILABLE`. The ChessRiddle side stacks on `build/studio-account-20261109` as commits `21d30a65d2`, `7ce3d60015` and `8605a3d044`, unpushed and undeployed. Review record: `tasks/handoffs/2026-11-09-chessriddle-tactics-phase-b-review.md`.
 2. **Release preparation, in parallel:** Windows check, code signing, download page on chessriddle.com.
 3. **First public release:** rebase the ChessRiddle branch onto `develop`, re-review, run full gates, push and deploy on Felix's go, switch `RELEASE_AVAILABLE`, publish Studio. The branch hold ends here.
 4. **Send to a trainer collection (phase C), as an update.** Small, but only Gold trainers use it.
