@@ -30,7 +30,7 @@ Round 3, correctness and tests over the repairs: CR-T1 reopened, the 200% analys
 ## Defects found by browser verification
 - Install Stockfish wrapped onto two lines in centered empty states, then overflowed at 320px. Fixed.
 - Mock used the wrong cancel argument and cancellation message. Fixed.
-- Deferred: f-20261109-02, the Manage Engines row is clipped at 320px and 200% font scale. It predates this change.
+- Deferred: f-20261109-04, the Manage Engines row is clipped at 320px and 200% font scale. It predates this change.
 
 ## Real-app proof
 `pnpm verify:app --fallback-engine-install`: FE1 to FE9 passed, including a real download, verification and registration of Stockfish 19, and `navigator.webdriver` true. Staged against a build without the button, exit 1. Recorded in `scripts/verify-app.mjs`.
