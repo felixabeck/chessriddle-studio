@@ -22418,3 +22418,20 @@ Fixed in 0b63a012 (pushed to master; hosted Test 13/13 green; installed locally)
 * **Found by:** Claude Code drain session bac61282-2a31-49d1-9463-391344df08c6, 2026-11-08, in the post-push CI wait of the f-20261106-21 release.
 * **Closed 2026-11-08 as a duplicate of f-20261108-08 (drain push review, records lens):** same test, same assertion at `src-tauri/src/db/repository.rs:3590`, same run 42512756399. Its Barrier fix shape and the rejected bare-timeout increase are carried into f-20261108-08. Correction: the claim that the failure "is the wall-clock race, not a product regression" was not established, since the job logs carry no per-reader timings; f-20261108-08 keeps that question open.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"effa7f3848adc4266ebe37ca047dd54effe300e1420099ab0584eaf80a25ffb7","header_sha256":"4a688da2946e347f81352c883a6f10b1b17a35f26294be00e2c387a6cab6afea","header_status":"handled","input_sha256":"9a7d57a81f14f03b211a11fae07c14359704401fb9b829267792689ae26bee18","kind":"mutation-receipt","operation":"2f304b0b97ba546227b572e5b97fdc91b5e4e1518de2e9672b138a198dd77a9d","options":{"section":null},"request_id_sha256":null,"results":["f-20261108-10"],"target":"f-20261108-10","v":1} -->
+
+---
+
+## 2026-11-09 — filed through the inbox spool
+
+### Mixed timed and unlimited players pass the Start button and are refused natively
+
+* **ID:** f-20261109-01 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** build · **Blocked:** none
+* **Filed from:** 80dbe00d-ea31-48fe-b96d-190a846539fe
+* **Impact class:** behaviour
+* **Spotted outside diff:** push review (review-correctness) of commit `21794a96` (f-20261106-26/27), 2026-11-09
+* **Where:** `src/components/boards/OpponentForm.tsx` time SegmentedControl lets each player choose Time or Unlimited independently when Same time control is unchecked; `src/components/boards/BoardGame.tsx` `startGame` (~637-648) sends one `null` time control; `src-tauri/src/game.rs` `validate_time_controls` (~74-84) rejects with `both players must provide a time control`.
+* **Defect:** The setup form offers a configuration the backend never accepts. Start stays enabled, the user clicks it, and the game refuses to start with a command error instead of the form preventing or supporting the choice.
+* **Failure scenario:** Uncheck Same time control, set White to Unlimited and Black to Time 3+2, click Start. The native call returns InvalidInput and the board shows the start error; no game begins.
+* **Fix:** Decide whether asymmetric timed/unlimited games are supported (clock state and engine `go` mode for the unlimited side) or blocked in the form with a visible reason, then align renderer and native validation and add a rendered Start-button test.
+* **Open question:** Support one-sided clocks natively, or block the configuration in the form?
+* **Proof:** Read at HEAD `2d99c36f`: `hasStartableTimeControl` returns true for an unlimited side, and `validate_time_controls` returns the `both players must provide a time control` error when exactly one side has a `TimeControl`. Not reproduced in the app.
