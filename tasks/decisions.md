@@ -12825,3 +12825,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Felix asked that each line keeps its progress even if the app crashes mid-move. Reversal path: remove `pending_reorder` after confirming no map holds one; a map without it reads unchanged.
 * **Decided by:** Claude Code (Opus 5.5) session a43b1706-2c72-4e7b-99fe-a8e648bef2bd, after plan review · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"f83d58d1f57d2b3a29583ba5c3edfce0c99024c523a7cdd5a2fb75d1ada545f9","input_sha256":"b6fd55b005111155e2f78687f0c1eeba6c140f6998e2ad93482693736b578b46","kind":"mutation-receipt","operation":"d87828ade20ed5e3fff7b0d844feea2a0e2c308fcf56a2e4184942ea3f3cb660","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-32"],"target":"decisions-ledger","v":1} -->
+
+### d-20261109-33 — How is a tab kept on the right line while its file is being reordered?
+
+* **Question:** A move rebinds the tabs it can see, and a tab starting concurrently is invisible to it.
+* **Governs:** `beginFileOpen` and `hasFileOpenInFlight` in `src/state/fileStructureChange.ts`, `openFile` in `src/utils/files.ts`, `ImportModal.tsx`
+* **Chosen:** Opening a line and moving lines of the same file exclude each other, with the open held from its first read through tab admission. A Library row carries its stamp and revision into the open, which refuses on any difference, and the rows stay until fresh ones replace them.
+* **Rejected:** Waiting for the move to finish, which keeps a stale position. Comparing the stamp alone, because identical lines share a stamp but own different practice decks.
+* **Reason:** Felix asked that open tabs follow their line. A focused plan review judged this the simplest correct mechanism after the same area reopened twice. Reversal path: remove the lease and the `expected` option from `openFile`.
+* **Decided by:** Claude Code (Opus 5.5) session a43b1706-2c72-4e7b-99fe-a8e648bef2bd, after focused review · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"af33ce05f099ea53f0b00f3e780d6f25dd7518be2d58a2bf72aa0e044eba37a3","input_sha256":"c8a4bf954840c6281d08cb48ec16a967b561b06362b5e19cf5b1ce8c0cd46e96","kind":"mutation-receipt","operation":"1672e4a0c81ee09b0c99760d7818dc22e6c108d67cfff300953408793137a8ae","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-33"],"target":"decisions-ledger","v":1} -->
