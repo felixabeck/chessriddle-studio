@@ -603,13 +603,13 @@ const check = (condition, description, detail) => {
   }
 };
 
-async function assertion(label, action) {
+async function assertion(label, action, report = check) {
   try {
     await action();
-    check(true, label);
+    report(true, label);
     return true;
   } catch (error) {
-    check(false, label, error.message);
+    report(false, label, error.message);
     return false;
   }
 }
@@ -1893,16 +1893,6 @@ export async function verifyConversionCancellationContract({
   database,
   report = check,
 }) {
-  const assertion = async (label, action) => {
-    try {
-      await action();
-      report(true, label);
-      return true;
-    } catch (cause) {
-      report(false, label, cause.message);
-      return false;
-    }
-  };
   const importArgs = (file, ticket) => ({
     progressId: `verify-conversion:${randomUUID()}`,
     files: [file],
@@ -1922,6 +1912,7 @@ export async function verifyConversionCancellationContract({
       if (before.count !== 1 || before.revision !== 1)
         throw new Error(`unexpected seed: ${JSON.stringify(before)}`);
     },
+    report,
   );
   const requireSeed = () => {
     if (!seeded) throw new Error("conversion seed failed");
@@ -1946,6 +1937,7 @@ export async function verifyConversionCancellationContract({
         await invoke("release_conversion", { ticket });
       }
     },
+    report,
   );
   let pair;
   await assertion(
@@ -1962,6 +1954,7 @@ export async function verifyConversionCancellationContract({
       )
         throw new Error(`wrong running/queued outcome: ${JSON.stringify(pair)}`);
     },
+    report,
   );
   await assertion(
     "CC3 cancelled native imports preserve existing content and DataRevision",
@@ -1972,6 +1965,7 @@ export async function verifyConversionCancellationContract({
       if (JSON.stringify(after) !== JSON.stringify(before))
         throw new Error(`rollback mismatch: ${JSON.stringify({ before, after })}`);
     },
+    report,
   );
   await assertion(
     "CC4 a fresh conversion ticket retries successfully after cancellation",
@@ -1987,17 +1981,22 @@ export async function verifyConversionCancellationContract({
       if (after.count !== 2 || after.revision !== 2)
         throw new Error(`retry mismatch: ${JSON.stringify(after)}`);
     },
+    report,
   );
-  await assertion("CC5 settled native conversion tickets are retired", async () => {
-    if (!pair) throw new Error("running/queued import did not settle");
-    if (pair.tickets?.length !== 2 || pair.tickets[0] === pair.tickets[1])
-      throw new Error("two distinct conversion tickets were not retained");
-    for (const ticket of pair.tickets) {
-      await invoke("release_conversion", { ticket });
-      if ((await invoke("cancel_conversion", { ticket })) !== false)
-        throw new Error("completed ticket remained active");
-    }
-  });
+  await assertion(
+    "CC5 settled native conversion tickets are retired",
+    async () => {
+      if (!pair) throw new Error("running/queued import did not settle");
+      if (pair.tickets?.length !== 2 || pair.tickets[0] === pair.tickets[1])
+        throw new Error("two distinct conversion tickets were not retained");
+      for (const ticket of pair.tickets) {
+        await invoke("release_conversion", { ticket });
+        if ((await invoke("cancel_conversion", { ticket })) !== false)
+          throw new Error("completed ticket remained active");
+      }
+    },
+    report,
+  );
 }
 
 async function verifyConversionCancellation(session, ownedRoot) {
