@@ -12875,3 +12875,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Felix asked to be asked about product questions and then chose "Full Auto", so this is the agent's recommendation, reported to him in the run's completion report. The feature is hidden in release builds until he releases. Reversal path: move the action in `NewTabHome.tsx`, or change the rules in the training module.
 * **Decided by:** Claude Code (Opus 5.5) build run tactics-phase-b, full auto, 2026-11-09 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"7eb39ce2e7b3dc1b9679e39c387e67607cfa6b414c1f7de753b89803b36b8dbc","input_sha256":"2b6042bf1688a362996586bd75b5094f0b770d997c8aded66a8f291176d3ed89","kind":"mutation-receipt","operation":"62ca359db35f043318b6db51f93ca63139bad3f86c8e8421121bbb43c5e19b43","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-39"],"target":"decisions-ledger","v":1} -->
+
+### d-20261109-24 — How does the New repertoire dialog bound a slow creation against close and reopen?
+
+* **Question:** A slow repertoire create could be dismissed and the dialog reopened. The old completion then navigated to the old repertoire, reset the form and closed the newer draft (f-20261106-34). Should the dialog block dismissal while the create is pending, or allow dismissal and gate the old continuation by dialog generation?
+* **Governs:** f-20261106-34
+* **Chosen:** Block dismissal while pending, through the shared `AppModal pending` contract plus a single-flight ref and unmount guards. This matches `SaveToDatabaseModal`. The already-created file is kept.
+* **Rejected:** A dialog-generation guard that permits dismissal mid-create. It needs a second ownership mechanism for one modal, and the dismissed create would still open a tab with no visible feedback.
+* **Reason:** The pending contract is the existing local precedent, and it removes the overlap between dialog sessions instead of arbitrating it. Reversal path: if native creation ever becomes long enough that blocking the dialog is unacceptable, replace `pending` with a generation token checked after each await in `handleCreate`.
+* **Decided by:** Claude Code (Opus 5.5) drain session 1b8508c6, 2026-11-09, full auto · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"ee87f18e43157419112ff4987dd4b3250a9e5d9d8d8cbf62dbcd7dacc8b73678","input_sha256":"95be2ed4336b79285599e991a9544b0e3f8d1e15cb2be1ab097e2220aade5f81","kind":"mutation-receipt","operation":"28f23c46f71b7b131562668dc774cddfcb714f82204ed5058307ae6fd8959c95","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-24"],"target":"decisions-ledger","v":1} -->
