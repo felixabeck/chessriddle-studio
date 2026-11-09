@@ -84,6 +84,10 @@ function rowFileType(row: HomeRow): FileType {
     : "game";
 }
 
+function stripPgnExtension(name: string): string {
+  return name.replace(/\.pgn$/i, "");
+}
+
 const recentFileDateFormat = "YYYY-MM-DD HH:mm";
 
 function RecentFileDuePositions({ count }: { count: number | null }) {
@@ -117,7 +121,7 @@ function LibraryItemRow({
   const name =
     row.name === "Unknown"
       ? `${t("Home.RecentFiles.UntitledGame")} · ${new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium" }).format(time)}`
-      : row.name.replace(/\.pgn$/i, "");
+      : stripPgnExtension(row.name);
   return (
     <UnstyledButton
       className={classes.libraryRow}
@@ -350,7 +354,7 @@ export default function NewTabHome({ id }: { id: string }) {
           const tabId = await openDatabaseGame({
             game,
             database,
-            databaseTitle: row.name,
+            databaseTitle: stripPgnExtension(row.name),
             setTabs,
             addRecentFile,
             ownerId: id,
@@ -366,7 +370,7 @@ export default function NewTabHome({ id }: { id: string }) {
         const tabId = await openDatabaseGame({
           game: row.own.game,
           database: row.own.collection.database,
-          databaseTitle: row.own.collection.name,
+          databaseTitle: stripPgnExtension(row.own.collection.name),
           setTabs,
           addRecentFile,
           ownerId: id,
@@ -598,7 +602,9 @@ export default function NewTabHome({ id }: { id: string }) {
                     : practice?.failed
                       ? t("Home.DuePractice.LoadFailed")
                       : row.kind === "game"
-                        ? (row.recent?.databaseTitle ?? row.own?.collection.name)
+                        ? stripPgnExtension(
+                            row.recent?.databaseTitle ?? row.own?.collection.name ?? "",
+                          )
                         : row.kind === "database"
                           ? t("Library.GamesDatabase")
                           : undefined;

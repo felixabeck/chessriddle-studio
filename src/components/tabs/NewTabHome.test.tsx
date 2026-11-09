@@ -367,6 +367,38 @@ test.each([1, 4])("a collection of %s games opens a game or its table", async (c
   expect(mocks.openDatabase).toHaveBeenCalledTimes(count === 1 ? 0 : 1);
 });
 
+test.each(["Meine Partien.pgn", "Meine Partien.PGN", "Meine Partien"])(
+  "collection %s omits the PGN extension from rows and opened-game recent titles",
+  async (name) => {
+    const ownCollection = { ...collection, name };
+    mocks.databases.data = {
+      collections: [ownCollection],
+      databases: [],
+      unread: [],
+      root: { kind: "databaseRoot", id: { id: "root" } },
+    };
+    mocks.feed.games = [{ collection: ownCollection, game }];
+    await render();
+    expect(rows()[0].querySelector("p")?.textContent).toBe("Meine Partien");
+    await open("Meine Partien");
+    expect(mocks.openGame).toHaveBeenCalledWith(
+      expect.objectContaining({ game, database, databaseTitle: "Meine Partien" }),
+    );
+
+    mocks.openGame.mockClear();
+    await filter("games");
+    expect([...rows()[0].querySelectorAll("p")].map((text) => text.textContent)).toEqual([
+      "White - Black",
+      "Meine Partien",
+    ]);
+    await open("White - Black");
+    expect(mocks.openGame).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ game, database, databaseTitle: "Meine Partien" }),
+    );
+    expect(ownCollection.name).toBe(name);
+  },
+);
+
 test("Games puts reference databases first, then own games, and opens each by kind", async () => {
   mocks.listing.isLoading = false;
   mocks.databases.data = {
