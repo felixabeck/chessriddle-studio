@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => ({
   notifyUnlessCancelled: vi.fn(),
   showNotification: vi.fn(),
   actualSelector: false,
+  moveGames: vi.fn(),
+  onMoveLines: undefined as import("./reorderLines").MoveLines | undefined,
 }));
 
 vi.mock("@/platform/tauri", async () => {
@@ -27,6 +29,7 @@ vi.mock("@/platform/tauri", async () => {
       ...actual.tauri,
       readGames: mocks.readGames,
       readGame: mocks.readGame,
+      moveGames: mocks.moveGames,
     },
   };
 });
@@ -50,6 +53,11 @@ vi.mock("@/utils/chess", async (importOriginal) => {
 
 vi.mock("@mantine/notifications", () => ({
   notifications: { show: mocks.showNotification },
+}));
+
+vi.mock("@/state/practiceStorage", async (original) => ({
+  ...(await original<typeof import("@/state/practiceStorage")>()),
+  ensurePracticeFileReorderReady: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/components/files/notifyError", async () => {
@@ -89,8 +97,9 @@ vi.mock("@tanstack/react-virtual", () => ({
 vi.mock("../panels/info/GameSelector", async (original) => {
   const actual = await original<typeof import("../panels/info/GameSelector")>();
   return {
-    default: (props: React.ComponentProps<typeof actual.default>) =>
-      mocks.actualSelector ? (
+    default: (props: React.ComponentProps<typeof actual.default>) => {
+      mocks.onMoveLines = props.onMoveLines;
+      return mocks.actualSelector ? (
         <actual.default {...props} />
       ) : (
         <button
@@ -100,7 +109,8 @@ vi.mock("../panels/info/GameSelector", async (original) => {
         >
           Select next game
         </button>
-      ),
+      );
+    },
   };
 });
 
@@ -159,6 +169,8 @@ describe("FileCard", () => {
     getDefaultStore().set(tabsAtom, []);
     getDefaultStore().set(libraryGamePositionAtom, null);
     mocks.actualSelector = false;
+    mocks.onMoveLines = undefined;
+    mocks.moveGames.mockReset().mockResolvedValue({ changed: true, start: 0, order: [1, 0, 2] });
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -168,6 +180,30 @@ describe("FileCard", () => {
     await act(async () => root.unmount());
     container.remove();
     vi.restoreAllMocks();
+  });
+
+  test("only Repertoire lists receive the production move flow and selection follows its line", async () => {
+    mocks.readGames.mockResolvedValue([stampedGame('[Event "Preview"]\n\n*')]);
+    await renderWithMantine(<FileCard onEditMetadata={vi.fn()} selected={sampleFileA} />, root);
+    expect(mocks.onMoveLines).toBeUndefined();
+    const repertoire = { ...sampleFileA, metadata: { type: "repertoire" as const, tags: [] } };
+    await renderWithMantine(<FileCard onEditMetadata={vi.fn()} selected={repertoire} />, root);
+    expect(mocks.onMoveLines).toBeTypeOf("function");
+    await act(async () => {
+      await mocks.onMoveLines!(
+        { kind: "line", source: 0, before: 2, belowHeading: true },
+        "list-revision",
+      );
+    });
+    expect(mocks.moveGames).toHaveBeenCalledWith(
+      repertoire.handle,
+      { kind: "line", source: 0, before: 2, belowHeading: true },
+      "list-revision",
+    );
+    expect(getDefaultStore().get(libraryGamePositionAtom)).toEqual({
+      key: fileWorkspaceKey(repertoire.handle),
+      index: 1,
+    });
   });
 
   test("rapid file replacement aborts previous signal and prevents stale publication", async () => {

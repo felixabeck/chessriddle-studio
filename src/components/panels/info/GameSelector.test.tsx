@@ -179,6 +179,51 @@ function renderSelector(
   );
 }
 
+test("a reload retains rows and scroll until an atomic swap and stale page reads cannot refill it", async () => {
+  const oldPage = deferred<StampedGame[]>();
+  const newPage = deferred<StampedGame[]>();
+  mocks.visibleIndices = [0, 1];
+  mocks.readGames.mockReturnValueOnce(oldPage.promise).mockReturnValueOnce(newPage.promise);
+  mocks.parsePGN.mockImplementation(async (pgn: string) => ({ headers: { event: pgn } }));
+  function List({ generation }: { generation: number }) {
+    const [games, setGames] = useState(new Map([[0, { name: "Old first" }]]));
+    return (
+      <GameSelector
+        games={games}
+        setGames={setGames}
+        setPage={vi.fn()}
+        total={2}
+        path={path}
+        activePage={0}
+        reloadGeneration={generation}
+      />
+    );
+  }
+  await act(async () => root.render(<List generation={0} />));
+  const viewport = host.firstElementChild!;
+  viewport.scrollTop = 80;
+  await act(async () => root.render(<List generation={1} />));
+  expect(host.textContent).toContain("Old first");
+  await act(async () => {
+    oldPage.resolve([
+      { ...firstGame, pgn: "Stale first" },
+      { ...firstGame, pgn: "Stale second" },
+    ]);
+  });
+  expect(host.textContent).not.toContain("Stale");
+  expect(host.textContent).toContain("Old first");
+  await act(async () => {
+    newPage.resolve([
+      { ...firstGame, pgn: "Fresh first" },
+      { ...firstGame, pgn: "Fresh second" },
+    ]);
+  });
+  expect(host.textContent).toContain("Fresh first");
+  expect(host.textContent).toContain("Fresh second");
+  expect(host.textContent).not.toContain("Old first");
+  expect(viewport.scrollTop).toBe(80);
+});
+
 async function renderReveal(
   games: Map<number, GameSelectorRow>,
   revealActivePage = true,

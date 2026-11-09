@@ -99,8 +99,8 @@ use crate::oauth::{
     remove_lichess_account, revoke_legacy_lichess_token,
 };
 use crate::pgn::{
-    count_pgn_games, delete_game, file_revision, read_game, read_games, set_game_section,
-    write_game,
+    count_pgn_games, delete_game, file_revision, move_games, read_game, read_games,
+    set_game_section, write_game,
 };
 use crate::practice::{
     acknowledge_practice_orphans, list_practice_decks, load_practice_deck, load_practice_reviews,
@@ -2204,6 +2204,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             lex_pgn,
             is_bmi2_compatible,
             delete_game,
+            move_games,
             delete_duplicated_games,
             delete_empty_games,
             clear_games,
@@ -4748,6 +4749,7 @@ mod blocking_offload_scans {
 
         for (command, core_name, owner_name) in [
             ("delete_game", "delete_game_core", "delete_game_core"),
+            ("move_games", "move_games_core", "move_games_core"),
             ("write_game", "write_game_core", "mutate_game_core"),
             ("set_game_section", "mutate_game_core", "mutate_game_core"),
         ] {

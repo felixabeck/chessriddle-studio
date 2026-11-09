@@ -22,6 +22,7 @@ import {
   getTabFile,
   getTabGameNumber,
   isFileBackedTab,
+  rebindFileTabsAfterStructureChange,
   replaceFileGame,
   type FileBackedTab,
 } from "@/utils/tabs";
@@ -546,26 +547,19 @@ function GameSelectorAccordion({
         }
       });
 
-      const update = updateFileTabs(fileKey, (tab) => {
-        const currentCount = tab.gameOrigin.file.numGames;
-        const startingMetadata = initialTabMetadata.get(tab.value);
-        const metadataCanFollowDelete =
-          startingMetadata !== undefined &&
-          startingMetadata.numGames === originalCount &&
-          tab.gameOrigin.gameNumber === startingMetadata.gameNumber &&
-          (tab.value === ownerId
-            ? currentCount === predictedCount
-            : currentCount === startingMetadata.numGames);
-        if (!metadataCanFollowDelete) return null;
-
-        const nextGameNumber =
-          tab.gameOrigin.gameNumber > index
-            ? tab.gameOrigin.gameNumber - 1
-            : tab.gameOrigin.gameNumber;
-        if (predictedCount === currentCount && nextGameNumber === tab.gameOrigin.gameNumber) {
-          return tab;
-        }
-        return withFileCount(tab, predictedCount, nextGameNumber);
+      const update = rebindFileTabsAfterStructureChange({
+        setTabs,
+        fileKey,
+        captured: initialTabMetadata,
+        originalCount,
+        numGames: predictedCount,
+        ordinals: new Map(
+          Array.from(initialTabMetadata.values(), ({ gameNumber }) => [
+            gameNumber,
+            gameNumber > index ? gameNumber - 1 : gameNumber,
+          ]),
+        ),
+        optimisticOwner: ownerId,
       });
       if (!update.saved && update.matched) {
         markTabsFreshness("conflict");

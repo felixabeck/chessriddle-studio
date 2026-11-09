@@ -47,6 +47,7 @@ import {
     createPracticeDeckAtom,
     clearPracticeFileMigrationFailures,
     ensurePracticeMigration,
+    ensurePracticeFileReorderReady,
     practiceDataSchema,
     PRACTICE_MAX_CONFLICT_RETRIES,
     PRACTICE_FILE_WIDE_FAILURE_GAME,
@@ -178,6 +179,57 @@ afterEach(() => {
 });
 
 describe("practice epoch authority", () => {
+    test("reorder waits for the migration pass and accepts a complete trusted result", async () => {
+        const inventory = deferred<{ decks: never[]; anomalies: never[] }>();
+        native.list.mockReturnValueOnce(inventory.promise);
+        let ready = false;
+        const gate = ensurePracticeFileReorderReady("file-a").then(() => {
+            ready = true;
+        });
+        await Promise.resolve();
+        expect(ready).toBe(false);
+        inventory.resolve({ decks: [], anomalies: [] });
+        await gate;
+        expect(ready).toBe(true);
+    });
+
+    test("reorder refuses an untrusted scan and can retry after the storage is fixed", async () => {
+        localStorage.setItem("deck-invalid", "unread");
+        await expect(ensurePracticeFileReorderReady("file-a")).rejects.toThrow(
+            "Board.Practice.MigrationScanFailed",
+        );
+        localStorage.removeItem("deck-invalid");
+        await expect(ensurePracticeFileReorderReady("file-a")).resolves.toBeUndefined();
+    });
+
+    test("reorder refuses a globally blocked pass", async () => {
+        native.list.mockRejectedValueOnce(new Error("inventory unavailable"));
+        await expect(ensurePracticeFileReorderReady("file-a")).rejects.toThrow(
+            "Board.Practice.MigrationScanFailed",
+        );
+        expect(native.migrate).not.toHaveBeenCalled();
+    });
+
+    test.each([null, 3])(
+        "reorder refuses every migration failure in its file, including game %s",
+        async (game) => {
+            native.list.mockResolvedValue({
+                decks: [],
+                anomalies: [
+                    {
+                        kind: "DamagedDeck",
+                        leaf: "bad-state.json",
+                        fileId: "file-a",
+                        game,
+                        epoch: "epoch",
+                    },
+                ],
+            });
+            await expect(ensurePracticeFileReorderReady("file-a")).rejects.toThrow();
+            await expect(ensurePracticeFileReorderReady("file-b")).resolves.toBeUndefined();
+        },
+    );
+
     test("cached B damage keeps its inventory epoch when C hydrates after deleting A", async () => {
         native.list.mockResolvedValueOnce({
             decks: [{ fileId: "file-a", game: 1 }],

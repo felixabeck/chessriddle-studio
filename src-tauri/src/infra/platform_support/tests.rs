@@ -2429,7 +2429,7 @@ fn legacy_index_mapping_is_dropped_before_removal() {
 /// The live guard-row count at the current phase boundary. Every
 /// `phase_*_removed_rows...` test reads this, so a phase that removes a row edits the live
 /// count in exactly one place instead of five copies.
-const LIVE_GUARD_ROW_COUNT: usize = 12;
+const LIVE_GUARD_ROW_COUNT: usize = 13;
 
 fn assert_removed_rows_are_ungated(phase: &str, rows: &[(&str, &str)]) {
     let mut failures = Vec::new();
@@ -2992,6 +2992,12 @@ fn guard_rows() -> &'static [GuardRow] {
             effects: &["operations.accept("],
         },
         GuardRow {
+            file: "pgn.rs",
+            signature: "pub async fn move_games(",
+            operation: "PGN atomic replacement",
+            effects: &["operations.accept("],
+        },
+        GuardRow {
             file: "db/mod.rs",
             signature: "pub async fn export_to_pgn(",
             operation: "PGN atomic replacement",
@@ -3196,6 +3202,7 @@ fn production_calls_of_every_pgn_atomic_path_node_are_only_from_allowed_callers(
             "commit_pgn_mutation",
             &[
                 "delete_game_core",
+                "move_games_core",
                 "mutate_game_core",
                 "transform_file_core",
             ],
@@ -3206,6 +3213,7 @@ fn production_calls_of_every_pgn_atomic_path_node_are_only_from_allowed_callers(
         ),
         ("append_batch", &["append_collection_batch"]),
         ("delete_game_core", &["delete_game"]),
+        ("move_games_core", &["move_games"]),
         ("write_game_core", &["write_game"]),
         ("mutate_game_core", &["write_game_core", "set_game_section"]),
         ("export_to_pgn_blocking", &["export_to_pgn"]),

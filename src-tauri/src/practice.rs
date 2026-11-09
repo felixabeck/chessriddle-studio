@@ -49,6 +49,24 @@ struct FileDeckMap {
     next_deck: i32,
     legacy_superseded: bool,
     pending: Option<PendingDelete>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pending_reorder: Option<PendingReorder>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PendingReorder {
+    id: String,
+    original_digest: String,
+    output_digest: String,
+    start: usize,
+    order: Vec<usize>,
+}
+
+impl FileDeckMap {
+    fn has_pending(&self) -> bool {
+        self.pending.is_some() || self.pending_reorder.is_some()
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -422,6 +440,26 @@ fn read_map(directory: &AuthorizedDir, file_id: &str) -> Result<Option<FileDeckM
                 || pending.ordinal >= pending.game_count
                 || uuid::Uuid::parse_str(&pending.id).is_err()
         })
+        || (map.pending.is_some() && map.pending_reorder.is_some())
+        || map.pending_reorder.as_ref().is_some_and(|pending| {
+            let mut order = pending.order.clone();
+            order.sort_unstable();
+            uuid::Uuid::parse_str(&pending.id).is_err()
+                || [&pending.original_digest, &pending.output_digest]
+                    .iter()
+                    .any(|digest| {
+                        digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+                    })
+                || pending.original_digest == pending.output_digest
+                || pending
+                    .start
+                    .checked_add(order.len())
+                    .is_none_or(|end| end > map.ordinals.len())
+                || order
+                    .iter()
+                    .enumerate()
+                    .any(|(i, old)| *old != pending.start + i)
+        })
     {
         return Err(invalid_leaf(&leaf, "deck map is invalid"));
     }
@@ -566,6 +604,7 @@ fn fresh_map(
         next_deck,
         legacy_superseded: !identities,
         pending: None,
+        pending_reorder: None,
     })
 }
 
@@ -619,18 +658,52 @@ fn apply_pending(
 
 pub(crate) fn has_pending_delete(directory: &AuthorizedDir, file_id: &str) -> Result<bool, Error> {
     with_map_lock(directory, file_id, || {
-        Ok(read_map(directory, file_id)?.is_some_and(|map| map.pending.is_some()))
+        Ok(read_map(directory, file_id)?.is_some_and(|map| map.has_pending()))
+    })
+}
+
+pub(crate) fn has_pending_reorder(directory: &AuthorizedDir, file_id: &str) -> Result<bool, Error> {
+    with_map_lock(directory, file_id, || {
+        Ok(read_map(directory, file_id)?.is_some_and(|map| map.pending_reorder.is_some()))
     })
 }
 
 /// The caller owns the PGN edit lock. Count acquisition happens outside a blocking closure.
+#[cfg(test)]
 pub(crate) fn resolve_pending_delete_in(
     directory: &AuthorizedDir,
     file_id: &str,
     count: usize,
     establish_durability: impl FnOnce() -> Result<(), Error>,
 ) -> Result<(), Error> {
+    resolve_pending_in(directory, file_id, count, None, establish_durability)
+}
+
+pub(crate) fn resolve_pending_in(
+    directory: &AuthorizedDir,
+    file_id: &str,
+    count: usize,
+    digest: Option<&str>,
+    establish_durability: impl FnOnce() -> Result<(), Error>,
+) -> Result<(), Error> {
     with_map_lock(directory, file_id, || {
+        if let Some(mut map) = read_map(directory, file_id)? {
+            if let Some(pending) = &map.pending_reorder {
+                let landed = if digest == Some(pending.output_digest.as_str()) {
+                    true
+                } else if digest == Some(pending.original_digest.as_str()) {
+                    false
+                } else {
+                    return Err(Error::Conflict(
+                        "practice reorder requires resolution".into(),
+                    ));
+                };
+                if landed {
+                    establish_durability()?;
+                }
+                return apply_reorder(directory, &mut map, landed);
+            }
+        }
         resolve_pending_delete_locked(directory, file_id, count, Box::new(establish_durability))
     })
 }
@@ -665,7 +738,7 @@ pub(crate) fn prepare_delete_in(
             Some(map) => map,
             None => fresh_map(directory, file_id, count, true)?,
         };
-        if map.pending.is_some() {
+        if map.has_pending() {
             return Err(Error::Conflict("practice delete is pending".into()));
         }
         let id = uuid::Uuid::new_v4().to_string();
@@ -676,6 +749,83 @@ pub(crate) fn prepare_delete_in(
         });
         write_map(directory, &map)?;
         Ok(id)
+    })
+}
+
+pub(crate) fn prepare_reorder_in(
+    directory: &AuthorizedDir,
+    file_id: &str,
+    count: usize,
+    start: usize,
+    order: Vec<usize>,
+    original_digest: String,
+    output_digest: String,
+) -> Result<String, Error> {
+    with_map_lock(directory, file_id, || {
+        let mut map = match read_map(directory, file_id)? {
+            Some(map) => map,
+            None => fresh_map(directory, file_id, count, true)?,
+        };
+        if map.has_pending() {
+            return Err(Error::Conflict("practice delete is pending".into()));
+        }
+        if count > MAP_MAX_ORDINALS || start.checked_add(order.len()).is_none_or(|end| end > count)
+        {
+            return Err(Error::InvalidInput("invalid practice permutation".into()));
+        }
+        let mut sorted = order.clone();
+        sorted.sort_unstable();
+        if sorted.iter().enumerate().any(|(i, old)| *old != start + i) {
+            return Err(Error::InvalidInput("invalid practice permutation".into()));
+        }
+        map.ordinals.resize(map.ordinals.len().max(count), None);
+        let id = uuid::Uuid::new_v4().to_string();
+        map.pending_reorder = Some(PendingReorder {
+            id: id.clone(),
+            original_digest,
+            output_digest,
+            start,
+            order,
+        });
+        write_map(directory, &map)?;
+        Ok(id)
+    })
+}
+
+fn apply_reorder(
+    directory: &AuthorizedDir,
+    map: &mut FileDeckMap,
+    landed: bool,
+) -> Result<(), Error> {
+    let Some(pending) = map.pending_reorder.take() else {
+        return Ok(());
+    };
+    if landed {
+        let reordered: Vec<_> = pending.order.iter().map(|old| map.ordinals[*old]).collect();
+        map.ordinals[pending.start..pending.start + reordered.len()].copy_from_slice(&reordered);
+        map.epoch = uuid::Uuid::new_v4().to_string();
+        map.legacy_superseded = true;
+    }
+    write_map(directory, map)
+}
+
+pub(crate) fn finish_reorder_in(
+    directory: &AuthorizedDir,
+    file_id: &str,
+    id: &str,
+    landed: bool,
+) -> Result<(), Error> {
+    with_map_lock(directory, file_id, || {
+        let mut map = read_map(directory, file_id)?
+            .ok_or_else(|| Error::Conflict("practice reorder map disappeared".into()))?;
+        if !map
+            .pending_reorder
+            .as_ref()
+            .is_some_and(|pending| pending.id == id)
+        {
+            return Ok(());
+        }
+        apply_reorder(directory, &mut map, landed)
     })
 }
 
@@ -743,7 +893,7 @@ fn resolve_mapped_deck(
     if expected_epoch.is_some_and(|expected| expected != epoch) {
         return Err(Error::Conflict("practice epoch changed".into()));
     }
-    if map.as_ref().is_some_and(|map| map.pending.is_some()) {
+    if map.as_ref().is_some_and(|map| map.has_pending()) {
         return Err(Error::Conflict(
             "practice delete requires resolution".into(),
         ));
@@ -1349,7 +1499,7 @@ fn repair_mapped_practice_deck_in(
         Err(error) => Err(error),
         Ok(map) => {
             if expected_epoch != Some(map_epoch(map.as_ref()))
-                || map.as_ref().is_some_and(|map| map.pending.is_some())
+                || map.as_ref().is_some_and(|map| map.has_pending())
             {
                 return Err(Error::Conflict(
                     "practice epoch changed or delete is pending".into(),
@@ -2350,7 +2500,7 @@ pub(crate) fn list_practice_decks_in(
                 read_map(directory, &file_id)
             });
             match map {
-                Ok(Some(map)) if map.pending.is_none() => {
+                Ok(Some(map)) if !map.has_pending() => {
                     maps.insert(file_id, Some(map));
                 }
                 _ => {
@@ -2385,7 +2535,7 @@ pub(crate) fn list_practice_decks_in(
         let map = with_map_lock(directory, &file_id, || read_map(directory, &file_id));
         match map {
             Ok(None) => {}
-            Ok(Some(map)) if map.pending.is_none() => {
+            Ok(Some(map)) if !map.has_pending() => {
                 maps.insert(file_id, Some(map));
             }
             _ => {
@@ -3417,6 +3567,7 @@ mod tests {
             next_deck: i32::MAX,
             legacy_superseded: true,
             pending: None,
+            pending_reorder: None,
         };
         write_map(&directory, &map).unwrap();
         let before = leaf_bytes(&directory, &map_leaf("file"));
@@ -3471,6 +3622,136 @@ mod tests {
         let mut map = read_map(&directory, "file").unwrap().unwrap();
         apply_pending(&directory, &mut map, true).unwrap();
         assert_eq!(leaf_bytes(&directory, &map_leaf("file")), before);
+    }
+
+    #[test]
+    fn reorder_journal_recovers_only_known_digests_and_never_retires_decks() {
+        let (_temp, directory) = directory();
+        let original = "a".repeat(64);
+        let output = "b".repeat(64);
+        let unknown = "c".repeat(64);
+        let id = prepare_reorder_in(
+            &directory,
+            "file",
+            3,
+            0,
+            vec![2, 0, 1],
+            original.clone(),
+            output.clone(),
+        )
+        .unwrap();
+        let map = read_map(&directory, "file").unwrap().unwrap();
+        assert_eq!(map.version, 1);
+        assert_eq!(map.ordinals, vec![Some(0), Some(1), Some(2)]);
+        assert_eq!(map.epoch, NO_MAP_EPOCH);
+        assert!(has_pending_delete(&directory, "file").unwrap());
+        assert!(matches!(
+            practice_epoch_in(&directory, "file", 0),
+            Err(Error::Conflict(_))
+        ));
+        assert!(matches!(
+            prepare_delete_in(&directory, "file", 0, 3),
+            Err(Error::Conflict(_))
+        ));
+        assert!(matches!(
+            prepare_reorder_in(
+                &directory,
+                "file",
+                3,
+                0,
+                vec![1, 2, 0],
+                original.clone(),
+                output.clone()
+            ),
+            Err(Error::Conflict(_))
+        ));
+        finish_reorder_in(&directory, "file", "foreign", true).unwrap();
+        assert!(has_pending_delete(&directory, "file").unwrap());
+        assert!(matches!(
+            resolve_pending_in(&directory, "file", 3, Some(&unknown), || panic!(
+                "unknown outcome must not sync"
+            )),
+            Err(Error::Conflict(_))
+        ));
+        assert_eq!(
+            read_map(&directory, "file")
+                .unwrap()
+                .unwrap()
+                .pending_reorder
+                .unwrap()
+                .id,
+            id
+        );
+        assert!(
+            resolve_pending_in(&directory, "file", 3, Some(&output), || Err(
+                Error::Conflict("sync".into())
+            ))
+            .is_err()
+        );
+        assert!(has_pending_delete(&directory, "file").unwrap());
+        resolve_pending_in(&directory, "file", 3, Some(&output), || Ok(())).unwrap();
+        let map = read_map(&directory, "file").unwrap().unwrap();
+        assert_eq!(map.ordinals, vec![Some(2), Some(0), Some(1)]);
+        assert_ne!(map.epoch, NO_MAP_EPOCH);
+        assert!(map.legacy_superseded);
+        assert!(!map.has_pending());
+        let epoch = map.epoch;
+        let id = prepare_reorder_in(
+            &directory,
+            "file",
+            3,
+            0,
+            vec![1, 2, 0],
+            original.clone(),
+            output.clone(),
+        )
+        .unwrap();
+        resolve_pending_in(&directory, "file", 3, Some(&original), || {
+            panic!("not landed must not sync")
+        })
+        .unwrap();
+        finish_reorder_in(&directory, "file", &id, true).unwrap();
+        let map = read_map(&directory, "file").unwrap().unwrap();
+        assert_eq!(map.epoch, epoch);
+        assert_eq!(map.ordinals, vec![Some(2), Some(0), Some(1)]);
+        let inventory = list_practice_decks_in(&directory).unwrap();
+        assert!(inventory.anomalies.is_empty());
+    }
+
+    #[test]
+    fn reorder_pads_missing_ordinals_and_reads_the_original_delete_journal_shape() {
+        let (_temp, directory) = directory();
+        let original = "a".repeat(64);
+        let output = "b".repeat(64);
+        let mut map = fresh_map(&directory, "file", 1, true).unwrap();
+        write_map(&directory, &map).unwrap();
+        let id = prepare_reorder_in(&directory, "file", 4, 0, vec![3, 1, 2, 0], original, output)
+            .unwrap();
+        finish_reorder_in(&directory, "file", &id, true).unwrap();
+        let reordered = read_map(&directory, "file").unwrap().unwrap();
+        assert_eq!(reordered.ordinals, vec![None, None, None, Some(0)]);
+        map.pending = Some(PendingDelete {
+            id: uuid::Uuid::new_v4().to_string(),
+            ordinal: 0,
+            game_count: 1,
+        });
+        let mut old = serde_json::to_value(&map).unwrap();
+        old.as_object_mut().unwrap().remove("pendingReorder");
+        write_json(
+            &directory,
+            &map_leaf("file"),
+            &old,
+            DurabilityStage::PracticeState,
+            "old map",
+        )
+        .unwrap();
+        assert!(has_pending_delete(&directory, "file").unwrap());
+        resolve_pending_in(&directory, "file", 0, None, || Ok(())).unwrap();
+        assert!(read_map(&directory, "file")
+            .unwrap()
+            .unwrap()
+            .ordinals
+            .is_empty());
     }
 
     #[test]

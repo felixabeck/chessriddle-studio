@@ -838,6 +838,7 @@ fn tag_whitespace(character: char) -> bool {
 struct TagPair {
     name: std::ops::Range<usize>,
     pair: std::ops::Range<usize>,
+    value: std::ops::Range<usize>,
 }
 
 fn opening_tag_pairs(text: &str) -> Vec<TagPair> {
@@ -885,6 +886,7 @@ fn opening_tag_pairs(text: &str) -> Vec<TagPair> {
             break;
         }
         at += 1;
+        let value_start = at;
         while let Some(byte) = text.as_bytes().get(at) {
             if *byte == b'"' {
                 break;
@@ -900,6 +902,7 @@ fn opening_tag_pairs(text: &str) -> Vec<TagPair> {
         if at == text.len() {
             break;
         }
+        let value = value_start..at;
         at += 1;
         at += text[at..].len() - text[at..].trim_start_matches(tag_whitespace).len();
         if text.as_bytes().get(at) != Some(&b']') {
@@ -909,6 +912,7 @@ fn opening_tag_pairs(text: &str) -> Vec<TagPair> {
         tags.push(TagPair {
             name,
             pair: start..at,
+            value,
         });
     }
     tags
@@ -1902,12 +1906,23 @@ async fn resolve_practice_pending_locked(
     if !pending {
         return Ok(());
     }
-    let (_, games) = scan_current(resolved.pgn_snapshot()?, repository, cancellation).await?;
-    let count = games.len();
+    let check_directory = directory.clone();
+    let check_id = file_id.clone();
+    let reorder = BLOCKING_GATEWAY
+        .spawn(move || crate::practice::has_pending_reorder(&check_directory, &check_id))
+        .await?;
+    let count = if reorder {
+        0
+    } else {
+        let (_, games) = scan_current(resolved.pgn_snapshot()?, repository, cancellation).await?;
+        games.len()
+    };
     let sync = resolved.pgn_publication_sync()?;
+    let mut source = resolved.pgn_snapshot()?.file;
     BLOCKING_GATEWAY
         .spawn(move || {
-            crate::practice::resolve_pending_delete_in(&directory, &file_id, count, sync)
+            let digest = streamed_digest(&mut source, &CancellationToken::new())?;
+            crate::practice::resolve_pending_in(&directory, &file_id, count, Some(&digest), sync)
         })
         .await
 }
@@ -2263,6 +2278,345 @@ async fn commit_pgn_mutation(
         }
     }
     edit_outcome
+}
+
+#[derive(Debug, Clone, serde::Deserialize, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PgnLineMove {
+    pub kind: GameMoveKind,
+    pub source: i32,
+    pub before: i32,
+    pub below_heading: bool,
+}
+
+#[derive(Debug, Clone, Copy, serde::Deserialize, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum GameMoveKind {
+    Line,
+    Section,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct GameMoveResult {
+    pub changed: bool,
+    pub start: i32,
+    pub order: Vec<i32>,
+}
+
+fn streamed_digest(
+    source: &mut (impl Read + Seek),
+    token: &CancellationToken,
+) -> Result<String, Error> {
+    source.seek(SeekFrom::Start(0))?;
+    let mut digest = Sha256::new();
+    let mut buffer = [0; IO_CHUNK_LEN];
+    loop {
+        if token.is_cancelled() {
+            return Err(Error::Cancellation);
+        }
+        let count = source.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        digest.update(&buffer[..count]);
+    }
+    Ok(format!("{:x}", digest.finalize()))
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MoveToken {
+    Heading(usize),
+    Line(usize),
+}
+
+fn move_tokens(
+    headings: &[Option<Vec<u8>>],
+    movement: &PgnLineMove,
+) -> Result<(Vec<usize>, Vec<Option<usize>>), Error> {
+    let count = headings.len();
+    let source = checked_index(movement.source)?;
+    let before = checked_index(movement.before)?;
+    if source >= count
+        || before > count
+        || (movement.below_heading && headings.get(before).is_none_or(Option::is_none))
+    {
+        return Err(Error::InvalidInput("invalid move destination".into()));
+    }
+    let mut tokens = Vec::with_capacity(count * 2);
+    let mut boundaries = Vec::with_capacity(count + 1);
+    let mut lines = Vec::with_capacity(count);
+    for (index, heading) in headings.iter().enumerate() {
+        boundaries.push(tokens.len());
+        if heading.is_some() {
+            tokens.push(MoveToken::Heading(index));
+        }
+        lines.push(tokens.len());
+        tokens.push(MoveToken::Line(index));
+    }
+    boundaries.push(tokens.len());
+    let destination = boundaries[before] + usize::from(movement.below_heading);
+    let (start, end) = match movement.kind {
+        GameMoveKind::Line => (lines[source], lines[source] + 1),
+        GameMoveKind::Section => {
+            if headings[source].is_none()
+                || movement.below_heading
+                || (before < count && headings[before].is_none())
+            {
+                return Err(Error::InvalidInput("invalid section move".into()));
+            }
+            let end = ((source + 1)..count)
+                .find(|index| headings[*index].is_some())
+                .unwrap_or(count);
+            let start = boundaries[source];
+            let end = boundaries[end];
+            if destination > start && destination < end {
+                return Err(Error::InvalidInput(
+                    "section destination is inside its source".into(),
+                ));
+            }
+            (start, end)
+        }
+    };
+    let block: Vec<_> = tokens.drain(start..end).collect();
+    let destination = if destination >= end {
+        destination - (end - start)
+    } else {
+        destination.min(start)
+    };
+    tokens.splice(destination..destination, block);
+    let mut order = Vec::with_capacity(count);
+    let mut owners = Vec::with_capacity(count);
+    let mut heading = None;
+    for token in tokens {
+        match token {
+            MoveToken::Heading(index) => heading = Some(index),
+            MoveToken::Line(index) => {
+                order.push(index);
+                owners.push(heading.take());
+            }
+        }
+    }
+    Ok((order, owners))
+}
+
+struct PreparedMove {
+    result: GameMoveResult,
+    target: GameRange,
+    replacement: tempfile::NamedTempFile,
+    original_digest: String,
+    output_digest: String,
+}
+
+fn prepare_move(
+    source: &mut (impl Read + Seek),
+    games: &[GameRange],
+    movement: &PgnLineMove,
+    token: &CancellationToken,
+) -> Result<PreparedMove, Error> {
+    let mut headings = Vec::with_capacity(games.len());
+    let mut eol: &[u8] = b"\n";
+    for (index, range) in games.iter().enumerate() {
+        let bytes = read_range_bytes(source, *range, token)?;
+        if index == 0 && bytes.windows(2).any(|pair| pair == b"\r\n") {
+            eol = b"\r\n";
+        }
+        let text = std::str::from_utf8(&bytes).map_err(|_| malformed("PGN is not valid UTF-8"))?;
+        headings.push(
+            opening_tag_pairs(text)
+                .into_iter()
+                .find(|tag| &text[tag.name.clone()] == "Section")
+                .map(|tag| bytes[tag.value].to_vec()),
+        );
+    }
+    let (order, owners) = move_tokens(&headings, movement)?;
+    let changed_at = |index: usize| {
+        order[index] != index
+            || headings[index].as_ref() != owners[index].and_then(|owner| headings[owner].as_ref())
+    };
+    let start = (0..games.len()).find(|index| changed_at(*index));
+    let mut replacement = tempfile::NamedTempFile::new()?;
+    let original_digest = streamed_digest(source, token)?;
+    let Some(start) = start else {
+        return Ok(PreparedMove {
+            result: GameMoveResult {
+                changed: false,
+                start: 0,
+                order: vec![],
+            },
+            target: GameRange { start: 0, end: 0 },
+            replacement,
+            output_digest: original_digest.clone(),
+            original_digest,
+        });
+    };
+    let end = (start..games.len())
+        .rfind(|index| changed_at(*index))
+        .map_or(start + 1, |index| index + 1);
+    let target = GameRange {
+        start: games[start].start,
+        end: games[end - 1].end,
+    };
+    let mut starts = Vec::new();
+    for index in start..end {
+        starts.push(target.start + replacement.as_file_mut().stream_position()?);
+        let old = order[index];
+        let mut bytes = read_range_bytes(source, games[old], token)?;
+        let heading = owners[index].and_then(|owner| headings[owner].as_deref());
+        if headings[old].as_deref() != heading {
+            bytes = edit_tag_pair(&bytes, "Section", heading)?;
+        }
+        if index > 0 {
+            let text =
+                std::str::from_utf8(&bytes).map_err(|_| malformed("PGN is not valid UTF-8"))?;
+            if opening_tag_pairs(text).is_empty() {
+                bytes = edit_tag_pair(&bytes, "Event", Some(b"?"))?;
+            }
+        }
+        if index + 1 < games.len() && order[index + 1] != old + 1 {
+            if !bytes.ends_with(b"\n") {
+                bytes.extend_from_slice(eol);
+            }
+            if !bytes.ends_with(b"\n\n") && !bytes.ends_with(b"\r\n\r\n") {
+                bytes.extend_from_slice(eol);
+            }
+        }
+        if bytes.len() > MAX_PGN_BYTES {
+            return Err(Error::ResourceLimit(
+                "replacement PGN exceeds 10 MiB".into(),
+            ));
+        }
+        replacement.write_all(&bytes)?;
+    }
+    let replacement_size = replacement.as_file().metadata()?.len();
+    let size = source.seek(SeekFrom::End(0))?;
+    let mut assembled = tempfile::NamedTempFile::new()?;
+    copy_range(source, &mut assembled, 0, target.start, token)?;
+    copy_range(
+        replacement.as_file_mut(),
+        &mut assembled,
+        0,
+        replacement_size,
+        token,
+    )?;
+    copy_range(source, &mut assembled, target.end, size, token)?;
+    let actual = scan_games_cancelled(assembled.as_file_mut(), token)?;
+    if actual.len() != games.len()
+        || actual.iter().enumerate().any(|(index, range)| {
+            let expected = if index < start {
+                games[index].start
+            } else if index < end {
+                starts[index - start]
+            } else {
+                games[index].start - target.end + target.start + replacement_size
+            };
+            range.start != expected
+        })
+    {
+        return Err(Error::InvalidInput(
+            "move would change PGN game boundaries".into(),
+        ));
+    }
+    let output_digest = streamed_digest(assembled.as_file_mut(), token)?;
+    let changed = output_digest != original_digest;
+    Ok(PreparedMove {
+        result: GameMoveResult {
+            changed,
+            start: start as i32,
+            order: if changed {
+                order[start..end].iter().map(|old| *old as i32).collect()
+            } else {
+                vec![]
+            },
+        },
+        target,
+        replacement,
+        original_digest,
+        output_digest,
+    })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn move_games(
+    file: crate::infra::path_authority::FileWorkspaceHandle,
+    game_move: PgnLineMove,
+    revision: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<GameMoveResult, Error> {
+    crate::infra::platform_support::off_unix_refusal("PGN atomic replacement", cfg!(unix))?;
+    let lease = state.operations.accept("move_games")?;
+    refuse_positional_collection_write(&state, &file)?;
+    let resolved = resolve_pgn(
+        &state,
+        &file,
+        crate::infra::path_authority::PathOperation::WritePgn,
+    )?;
+    let repository = state.pgn_repository.clone();
+    let rebind = PgnCapabilityRebind::new(state.pgn_path_authority.clone(), &file);
+    move_games_core(lease, resolved, game_move, revision, repository, rebind).await
+}
+
+async fn move_games_core(
+    lease: OperationLease,
+    resolved: crate::infra::path_authority::ResolvedPath,
+    movement: PgnLineMove,
+    revision: String,
+    repository: PgnRepository,
+    mut rebind: PgnCapabilityRebind,
+) -> Result<GameMoveResult, Error> {
+    let cancellation = lease.token();
+    crate::infra::operations::run_native_operation(lease, "move_games", async move {
+        rebind.capture_binding()?;
+        let practice_lock = repository.practice_mutation_lock(Some(&rebind))?;
+        let _practice_guard = match &practice_lock {
+            Some(lock) => Some(tokio::select! { guard = lock.lock() => guard, _ = cancellation.cancelled() => return Err(Error::Cancellation) }),
+            None => None,
+        };
+        let snapshot = resolved.pgn_snapshot()?;
+        let lock = rebind.edit_lock(&repository, snapshot.identity.clone())?;
+        let _guard = tokio::select! { guard = lock.lock() => guard, _ = cancellation.cancelled() => return Err(Error::Cancellation) };
+        rebind.validate_binding()?;
+        resolve_practice_before_mutation(&repository, Some(&rebind), &cancellation).await?;
+        let (key, games) = scan_current(snapshot, &repository, &cancellation).await?;
+        if revision_string_for_key(&key) != revision { return Err(Error::StaleGame); }
+        let count = games.len();
+        let mut source = resolved.pgn_snapshot()?.file;
+        let prepared = BLOCKING_GATEWAY.spawn_cancellable(cancellation.clone(), move |token| prepare_move(&mut source, &games, &movement, token)).await?;
+        if !prepared.result.changed {
+            rebind.validate_binding()?;
+            if snapshot_key(&resolved.pgn_snapshot()?) != key { return Err(Error::StaleGame); }
+            return Ok(prepared.result);
+        }
+        let practice = repository.practice_file(Some(&rebind))?;
+        let pending_id = if let Some((directory, file_id)) = &practice {
+            let directory = directory.clone();
+            let file_id = file_id.clone();
+            let order = prepared.result.order.iter().map(|old| *old as usize).collect();
+            let start = prepared.result.start as usize;
+            let original = prepared.original_digest.clone();
+            let output = prepared.output_digest.clone();
+            Some(BLOCKING_GATEWAY.spawn(move || crate::practice::prepare_reorder_in(&directory, &file_id, count, start, order, original, output)).await?)
+        } else { None };
+        let result = commit_pgn_mutation(resolved, key, PgnMutation { target: prepared.target,
+            replacement: Some(PgnReplacement::Stream(prepared.replacement)), expectation: None,
+            stale_on_snapshot_change: true, operation_name: "move_games", rebind: Some(rebind) }, &repository, &cancellation).await;
+        if let (Some((directory, file_id)), Some(id)) = (practice, pending_id) {
+            let landed = match &result {
+                Ok(()) => Some(true),
+                Err(Error::CommittedDurabilityUncertain(crate::error::DurabilityStage::PgnEdit)) => None,
+                Err(Error::CommittedDurabilityUncertain(_)) => Some(true),
+                Err(_) => Some(false),
+            };
+            if let Some(landed) = landed {
+                if let Err(error) = BLOCKING_GATEWAY.spawn(move || crate::practice::finish_reorder_in(&directory, &file_id, &id, landed)).await {
+                    return Err(if landed { Error::CommittedDurabilityUncertain(crate::error::DurabilityStage::PracticeState) } else { error });
+                }
+            }
+        }
+        result?;
+        Ok(prepared.result)
+    }).await
 }
 
 #[tauri::command]
@@ -2664,6 +3018,322 @@ async fn mutate_game_core(
 
 #[cfg(test)]
 mod tests {
+    fn movement(kind: GameMoveKind, source: i32, before: i32, below_heading: bool) -> PgnLineMove {
+        PgnLineMove {
+            kind,
+            source,
+            before,
+            below_heading,
+        }
+    }
+
+    fn moved_bytes(input: &[u8], movement: PgnLineMove) -> (GameMoveResult, Vec<u8>) {
+        let mut source = std::io::Cursor::new(input);
+        let ranges = scan_games(&mut source).unwrap();
+        let mut prepared =
+            prepare_move(&mut source, &ranges, &movement, &CancellationToken::new()).unwrap();
+        let mut output = Vec::new();
+        if prepared.result.changed {
+            output.extend_from_slice(&input[..prepared.target.start as usize]);
+            prepared
+                .replacement
+                .as_file_mut()
+                .seek(SeekFrom::Start(0))
+                .unwrap();
+            prepared.replacement.read_to_end(&mut output).unwrap();
+            output.extend_from_slice(&input[prepared.target.end as usize..]);
+        } else {
+            output.extend_from_slice(input);
+        }
+        (prepared.result, output)
+    }
+
+    #[test]
+    fn move_token_rules_keep_headings_at_gaps_and_sections_intact() {
+        use GameMoveKind::{Line, Section};
+        let headings = vec![
+            Some(b"A".to_vec()),
+            None,
+            Some(b"B".to_vec()),
+            None,
+            None,
+            Some(vec![]),
+        ];
+        for (movement, expected_order, expected_owners) in [
+            (
+                movement(Line, 0, 2, false),
+                vec![1, 0, 2, 3, 4, 5],
+                vec![Some(0), None, Some(2), None, None, Some(5)],
+            ),
+            (
+                movement(Line, 0, 2, true),
+                vec![1, 0, 2, 3, 4, 5],
+                vec![Some(0), Some(2), None, None, None, Some(5)],
+            ),
+            (
+                movement(Line, 1, 0, false),
+                vec![1, 0, 2, 3, 4, 5],
+                vec![None, Some(0), Some(2), None, None, Some(5)],
+            ),
+            (
+                movement(Line, 1, 0, true),
+                vec![1, 0, 2, 3, 4, 5],
+                vec![Some(0), None, Some(2), None, None, Some(5)],
+            ),
+            (
+                movement(Section, 2, 6, false),
+                vec![0, 1, 5, 2, 3, 4],
+                vec![Some(0), None, Some(5), Some(2), None, None],
+            ),
+            (
+                movement(Section, 2, 0, false),
+                vec![2, 3, 4, 0, 1, 5],
+                vec![Some(2), None, None, Some(0), None, Some(5)],
+            ),
+        ] {
+            assert_eq!(
+                move_tokens(&headings, &movement).unwrap(),
+                (expected_order, expected_owners)
+            );
+        }
+        for movement in [
+            movement(Line, -1, 0, false),
+            movement(Line, 6, 0, false),
+            movement(Line, 0, 7, false),
+            movement(Line, 0, 1, true),
+            movement(Line, 0, 6, true),
+            movement(Section, 1, 0, false),
+            movement(Section, 2, 3, false),
+            movement(Section, 2, 2, true),
+        ] {
+            assert!(matches!(
+                move_tokens(&headings, &movement),
+                Err(Error::InvalidInput(_))
+            ));
+        }
+        let adjacent = vec![Some(b"A".to_vec()), Some(b"B".to_vec()), None];
+        assert_eq!(
+            move_tokens(&adjacent, &movement(Line, 0, 3, false)).unwrap(),
+            (vec![1, 2, 0], vec![Some(1), None, None])
+        );
+    }
+
+    #[test]
+    fn move_joins_preserve_bom_crlf_comments_headerless_and_final_bytes() {
+        for eol in ["\n", "\r\n"] {
+            for first in [
+                "[Event \"A\"]\n\n1. e4 {\n[Section \"comment\"]\n} *\n\n",
+                "[Event \"A\"]\n\n",
+                "1. e4 *\n\n",
+            ] {
+                for last in [
+                    "[Event \"B\"]\n\n1. d4 *",
+                    "[Event \"B\"]",
+                    "[Event \"B\"]\n",
+                    "[Event \"B\"]\n\n",
+                ] {
+                    let input = format!(
+                        "\u{feff}{}{}",
+                        first.replace('\n', eol),
+                        last.replace('\n', eol)
+                    );
+                    let (result, output) =
+                        moved_bytes(input.as_bytes(), movement(GameMoveKind::Line, 1, 0, false));
+                    assert!(result.changed);
+                    assert_eq!(result.order, vec![1, 0]);
+                    assert!(output.starts_with(&[0xef, 0xbb, 0xbf]));
+                    assert_eq!(
+                        output
+                            .windows(3)
+                            .filter(|bytes| *bytes == [0xef, 0xbb, 0xbf])
+                            .count(),
+                        1
+                    );
+                    let joined = String::from_utf8(output).unwrap();
+                    assert!(joined.starts_with(&format!("\u{feff}{}", last.replace('\n', eol))));
+                    if first.starts_with("1.") {
+                        assert!(joined.contains(&format!("[Event \"?\"]{eol}{eol}1. e4")));
+                    } else {
+                        assert!(joined.ends_with(&first.replace('\n', eol)));
+                    }
+                    assert_eq!(scan_games(std::io::Cursor::new(joined)).unwrap().len(), 2);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn move_transfers_raw_heading_values_and_reports_the_entire_changed_span() {
+        let input = b"[Event \"A\"]\n[Section \"  a\\\"b\\\\c  \"]\n\n1. e4 *\n\n[Event \"B\"]\n\n1. d4 *\n\n[Event \"C\"]\n[Section \"\"]\n\n*\n";
+        let (result, output) = moved_bytes(input, movement(GameMoveKind::Line, 0, 2, true));
+        assert_eq!(
+            result,
+            GameMoveResult {
+                changed: true,
+                start: 0,
+                order: vec![1, 0, 2]
+            }
+        );
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.starts_with("[Event \"B\"]\n[Section \"  a\\\"b\\\\c  \"]\n"));
+        assert!(text.contains("[Event \"A\"]\n[Section \"\"]\n"));
+        assert!(!text[text.find("[Event \"C\"]").unwrap()..].contains("[Section"));
+    }
+
+    #[test]
+    fn move_identical_output_and_token_drops_are_noops_without_a_permutation() {
+        let input = b"[Event \"A\"]\n\n*\n\n[Event \"A\"]\n\n*\n\n";
+        for movement in [
+            movement(GameMoveKind::Line, 0, 0, false),
+            movement(GameMoveKind::Line, 0, 1, false),
+            movement(GameMoveKind::Line, 0, 2, false),
+        ] {
+            let (result, output) = moved_bytes(input, movement);
+            assert!(!result.changed);
+            assert!(result.order.is_empty());
+            assert_eq!(output, input);
+        }
+        let input = b"[Section \"A\"]\n\n*\n\n[Section \"B\"]\n\n*\n";
+        let (result, output) = moved_bytes(input, movement(GameMoveKind::Section, 0, 1, false));
+        assert!(!result.changed);
+        assert_eq!(output, input);
+    }
+
+    #[test]
+    fn move_streams_spans_larger_than_the_single_game_limit_and_refuses_changed_boundaries() {
+        let body = format!("[Event \"A\"]\n\n{{{}}} *\n\n", "x".repeat(700_000));
+        let input = format!("{}[Event \"Z\"]\n\n*", body.repeat(16));
+        let (result, output) =
+            moved_bytes(input.as_bytes(), movement(GameMoveKind::Line, 16, 0, false));
+        assert!(result.changed);
+        assert_eq!(result.order.len(), 17);
+        assert_eq!(scan_games(std::io::Cursor::new(output)).unwrap().len(), 17);
+        let input = b"[Section \"only\"]\n\n[Event \"B\"]\n\n*\n";
+        let mut source = std::io::Cursor::new(input);
+        let games = scan_games(&mut source).unwrap();
+        let prepared = prepare_move(
+            &mut source,
+            &games,
+            &movement(GameMoveKind::Line, 0, 2, false),
+            &CancellationToken::new(),
+        );
+        assert!(prepared.is_ok());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn move_command_pins_revision_and_recovers_uncertain_publication_with_practice() {
+        use crate::infra::path_authority::{
+            ensure_app_owned_default_dir, AppDataDir, AppOwnedDefaultRoot, PathAuthority,
+            PathOperation,
+        };
+        for uncertain in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("move.pgn");
+            let original = "[Event \"A\"]\n\n1. e4 *\n\n[Event \"B\"]\n\n1. d4 *\n";
+            std::fs::write(&path, original).unwrap();
+            let mut authority =
+                PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap();
+            let handle = promote_pgn_file(&mut authority, &path);
+            let app = mock_app();
+            let state = app.state::<AppState>();
+            state.pgn_path_authority.install(authority).unwrap();
+            let practice = ensure_app_owned_default_dir(
+                &AppDataDir::for_test(directory.path()),
+                AppOwnedDefaultRoot::Practice,
+            )
+            .unwrap();
+            let id = handle.path_ref().id.clone();
+            crate::practice::sync_practice_positions_in(
+                &practice,
+                &id,
+                0,
+                0,
+                0,
+                r#"{"positions":[{"fen":"start"}]}"#,
+            )
+            .unwrap();
+            let deck = crate::practice::load_practice_deck_in(&practice, &id, 0)
+                .unwrap()
+                .unwrap();
+            state.pgn_repository.initialize_practice(practice).unwrap();
+            let practice = state
+                .pgn_repository
+                .inner()
+                .unwrap()
+                .practice_directory
+                .clone()
+                .unwrap();
+            let revision = revision_string(
+                &resolve_pgn(&state, &handle, PathOperation::ReadPgn)
+                    .unwrap()
+                    .pgn_snapshot()
+                    .unwrap(),
+            );
+            let refused = move_games(
+                handle.clone(),
+                movement(GameMoveKind::Line, 0, 2, false),
+                "stale".into(),
+                app.state(),
+            )
+            .await;
+            assert!(matches!(refused, Err(Error::StaleGame)));
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+            if uncertain {
+                state
+                    .pgn_repository
+                    .set_atomic_file_injector(Some(Arc::new(crate::infra::fs::ParentSyncFault(
+                        "move",
+                    ))))
+                    .unwrap();
+            }
+            let result = move_games(
+                handle.clone(),
+                movement(GameMoveKind::Line, 0, 2, false),
+                revision,
+                app.state(),
+            )
+            .await;
+            if uncertain {
+                assert!(matches!(
+                    result,
+                    Err(Error::CommittedDurabilityUncertain(
+                        crate::error::DurabilityStage::PgnEdit
+                    ))
+                ));
+                assert!(crate::practice::has_pending_delete(&practice, &id).unwrap());
+                state.pgn_repository.set_atomic_file_injector(None).unwrap();
+                let landed = std::fs::read(&path).unwrap();
+                std::fs::write(&path, "unknown bytes").unwrap();
+                assert!(matches!(
+                    resolve_practice_pending(
+                        state.pgn_path_authority.clone(),
+                        id.clone(),
+                        state.pgn_repository.clone(),
+                        practice.clone()
+                    )
+                    .await,
+                    Err(Error::Conflict(_))
+                ));
+                assert!(crate::practice::has_pending_delete(&practice, &id).unwrap());
+                std::fs::write(&path, landed).unwrap();
+                resolve_practice_pending(
+                    state.pgn_path_authority.clone(),
+                    id.clone(),
+                    state.pgn_repository.clone(),
+                    practice.clone(),
+                )
+                .await
+                .unwrap();
+            } else {
+                assert_eq!(result.unwrap().order, vec![1, 0]);
+            }
+            let loaded = crate::practice::load_mapped_practice_deck_in(&practice, &id, 1).unwrap();
+            assert_eq!(loaded.deck.unwrap(), deck);
+            assert!(!crate::practice::has_pending_delete(&practice, &id).unwrap());
+        }
+    }
+
     fn with_section(pgn: &str, section: Option<&str>) -> String {
         let value = section.map(|section| escaped_section(section).unwrap());
         String::from_utf8(

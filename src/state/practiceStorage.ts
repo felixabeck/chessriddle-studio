@@ -526,11 +526,12 @@ async function migrationPass(): Promise<PracticeMigrationPassResult> {
             "Board.Practice.MigrationFailed",
         );
     }
-    if (scan.complete && scan.trusted && inventoryTrusted) practiceWritesBlocked = false;
+    if (scan.complete && scan.trusted && inventoryTrusted && !globalFailure)
+        practiceWritesBlocked = false;
     let result: PracticeMigrationPassResult = {
         outcomes,
         inventory,
-        scanTrusted: scan.trusted,
+        scanTrusted: scan.complete && scan.trusted,
         inventoryTrusted,
     };
     for (const outcome of outcomes) {
@@ -562,6 +563,29 @@ function startPracticeMigrationPass(): Promise<PracticeMigrationPassResult> {
 export function ensurePracticeMigration(): Promise<PracticeMigrationPassResult> {
     practiceMigrationPromise ??= startPracticeMigrationPass();
     return practiceMigrationPromise;
+}
+
+export async function ensurePracticeFileReorderReady(fileId: string): Promise<void> {
+    const pass = ensurePracticeMigration();
+    const result = await pass;
+    try {
+        if (!result.scanTrusted || !result.inventoryTrusted || practiceWritesBlocked) {
+            throw new Error(i18n.t("Board.Practice.MigrationScanFailed"));
+        }
+        for (const [key, failure] of practiceMigrationFailures) {
+            if (key.startsWith(`${fileId}\u0000`)) throw new Error(failure.error.message);
+        }
+        if (
+            result.outcomes.some(
+                (outcome) => outcome.identity.file === fileId && outcome.status === "failed",
+            )
+        ) {
+            throw new Error(i18n.t("Board.Practice.MigrationFailed"));
+        }
+    } catch (error) {
+        if (practiceMigrationPromise === pass) practiceMigrationPromise = undefined;
+        throw error;
+    }
 }
 
 export function runPracticeMigrationPass(): Promise<PracticeMigrationPassResult> {

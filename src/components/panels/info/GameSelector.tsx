@@ -12,6 +12,7 @@ import ConfirmModal from "@/components/common/ConfirmModal";
 import { IconAction } from "@/components/common/IconAction";
 import { gameRowActivation } from "@/components/common/gameOpen";
 import { lineSectionOf } from "@/components/files/lineSection";
+import type { MoveLines } from "@/components/files/reorderLines";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useVirtualPageLoader } from "@/hooks/useVirtualPageLoader";
 import { errorUnlessCancelled } from "@/platform/errors";
@@ -59,6 +60,7 @@ export default function GameSelector({
   onActivate,
   editableSections = false,
   revealActivePage = false,
+  reloadGeneration = 0,
 }: {
   games: Map<number, GameSelectorRow>;
   setGames: React.Dispatch<React.SetStateAction<Map<number, GameSelectorRow>>>;
@@ -70,16 +72,22 @@ export default function GameSelector({
   onActivate?: (index: number) => void | Promise<void>;
   editableSections?: boolean;
   revealActivePage?: boolean;
+  onMoveLines?: MoveLines;
+  reloadGeneration?: number;
 }) {
   const { t } = useTranslation();
   const [sectionTarget, setSectionTarget] = useState<LineSectionTarget | null>(null);
+  const listGeneration = useRef(reloadGeneration);
+  listGeneration.current = reloadGeneration;
+  const reloading = useRef(false);
   const loadPage = useCallback(
     async (startIndex: number, stopIndex: number, options?: { signal?: AbortSignal }) => {
+      const generation = listGeneration.current;
       try {
         const entries: (readonly [number, GameSelectorRow])[] = [];
         let next = startIndex;
         while (next <= stopIndex && !options?.signal?.aborted) {
-          const data = await tauri.readGames(path, next, stopIndex, options);
+          const data = await tauri.readGames(path, next, Math.min(stopIndex, next + 999), options);
           if (data.length === 0) break;
           const page = await Promise.all(
             data.map(async (game, index) => {
@@ -112,7 +120,7 @@ export default function GameSelector({
           entries.push(...page);
           next += page.length;
         }
-        return entries;
+        return generation === listGeneration.current ? entries : [];
       } catch (error) {
         if (!options?.signal?.aborted) notifyUnlessCancelled(t("Common.Error"), error);
         return [];
@@ -120,14 +128,19 @@ export default function GameSelector({
     },
     [path, t],
   );
-  const loadMoreRows = useVirtualPageLoader(path.id.id, loadPage, (startIndex, entries) => {
-    setGames((previous) => {
-      if (entries.length === 0) return previous;
-      const next = new Map(previous);
-      for (const [index, name] of entries) next.set(index, name);
-      return next;
-    });
-  });
+  const loadMoreRows = useVirtualPageLoader(
+    `${path.id.id}:${reloadGeneration}`,
+    loadPage,
+    (startIndex, entries) => {
+      if (reloading.current) return;
+      setGames((previous) => {
+        if (entries.length === 0) return previous;
+        const next = new Map(previous);
+        for (const [index, name] of entries) next.set(index, name);
+        return next;
+      });
+    },
+  );
 
   const fontSize = useAtomValue(fontSizeAtom);
 
@@ -151,8 +164,49 @@ export default function GameSelector({
   // this stable primitive range, not on the ephemeral array/getter result.
   const visibleStart = virtualItems[0]?.index ?? -1;
   const visibleEnd = virtualItems.at(-1)?.index ?? -1;
+  const reloadRows = useRef({ games, visibleStart, visibleEnd });
+  reloadRows.current = { games, visibleStart, visibleEnd };
+  useEffect(() => {
+    if (reloadGeneration === 0) return;
+    const controller = new AbortController();
+    const generation = reloadGeneration;
+    const snapshot = reloadRows.current;
+    const indices = new Set(snapshot.games.keys());
+    for (
+      let index = Math.max(0, snapshot.visibleStart);
+      index <= Math.min(total - 1, Math.max(0, snapshot.visibleEnd));
+      index += 1
+    )
+      indices.add(index);
+    const ordered = Array.from(indices)
+      .filter((index) => index < total)
+      .sort((a, b) => a - b);
+    reloading.current = true;
+    const reload = async () => {
+      const rows = new Map<number, GameSelectorRow>();
+      for (let at = 0; at < ordered.length && !controller.signal.aborted; at += 1) {
+        const start = ordered[at];
+        while (at + 1 < ordered.length && ordered[at + 1] === ordered[at] + 1) at += 1;
+        for (const [index, row] of await loadPage(start, ordered[at], {
+          signal: controller.signal,
+        }))
+          rows.set(index, row);
+      }
+      return rows;
+    };
+    void reload().then((rows) => {
+      if (controller.signal.aborted || listGeneration.current !== generation) return;
+      reloading.current = false;
+      setGames(rows);
+    });
+    return () => {
+      controller.abort();
+      reloading.current = false;
+    };
+  }, [reloadGeneration, path.id.id, total, loadPage, setGames]);
 
   const reveal = useRef(revealActivePage);
+  if (reloadGeneration > 0) reveal.current = false;
   // Use a single offset write, without scrollToIndex's queued retries, so user scrolling wins.
   useEffect(() => {
     if (!revealActivePage || !reveal.current) return;

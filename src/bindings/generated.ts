@@ -873,6 +873,14 @@ async deleteGame(file: FileWorkspaceHandle, n: number, stamp: string, revision: 
     else return { status: "error", error: e  as any };
 }
 },
+async moveGames(file: FileWorkspaceHandle, gameMove: PgnLineMove, revision: string) : Promise<Result<GameMoveResult, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("move_games", { file, gameMove, revision }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async deleteDuplicatedGames(file: DatabaseHandle) : Promise<Result<null, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("delete_duplicated_games", { file }) };
@@ -1523,6 +1531,8 @@ export type GameMove = { uci: string; san: string; fenAfter: string;
  */
 clock: bigint | null; whiteTime: bigint | null; blackTime: bigint | null }
 export type GameMoveEvent = { gameId: string; session: bigint; revision: bigint; moves: GameMove[]; fen: string; whiteTime: bigint | null; blackTime: bigint | null }
+export type GameMoveKind = "line" | "section"
+export type GameMoveResult = { changed: boolean; start: number; order: number[] }
 export type GameOmission = "tooLarge"
 export type GameOverEvent = { gameId: string; session: bigint; revision: bigint; result: GameResult; moves: GameMove[] }
 export type GameQuery = { options?: QueryOptions<GameSort> | null; player1?: number | null; player2?: number | null; player_name?: string | null; tournament_id?: number | null; start_date?: string | null; end_date?: string | null; range1?: [number, number] | null; range2?: [number, number] | null; sides?: Sides | null; outcome?: string | null; position?: PositionQueryJs | null; wanted_result?: string | null; exclude_fast_events?: boolean | null; include_unknown_results?: boolean | null; sample_order?: SampleOrder | null }
@@ -1563,6 +1573,7 @@ export type PathOwnerFamily = "engines" | "downloadDestination" | "fileWorkspace
  * Opaque renderer-safe identifier. It deliberately has no path parsing API.
  */
 export type PathRef = { id: string }
+export type PgnLineMove = { kind: GameMoveKind; source: number; before: number; belowHeading: boolean }
 export type Plan = "free" | "gold"
 export type Player = { id: number; name: string | null; elo: number | null; game_count: number }
 export type PlayerConfig = { type: "human"; name: string } | { type: "engine"; name: string; engineId: string; handle: EngineHandle; options?: EngineOption[]; go: GoMode | null }

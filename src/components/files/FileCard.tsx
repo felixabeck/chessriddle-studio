@@ -4,7 +4,7 @@ import { LibraryTypeBadge } from "@/components/library/presentation";
 import { libraryGamePositionAtom } from "@/components/library/memory";
 import { Pencil } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
-import { useAtom } from "jotai";
+import { useAtom, useStore } from "jotai";
 import { useEffect, useRef, useState } from "react";
 import { useElementSize } from "@mantine/hooks";
 import { useTranslation } from "react-i18next";
@@ -20,6 +20,7 @@ import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import GamePreview from "../databases/GamePreview";
 import GameSelector, { type GameSelectorRow } from "../panels/info/GameSelector";
 import type { FileMetadata } from "./file";
+import { reorderFileLines, type MoveLines } from "./reorderLines";
 
 // Below this card width the preview's move list has no room beside the board. In rem, because the
 // list's needs grow with the font scale while a window width in px does not.
@@ -37,12 +38,21 @@ function FileCard({
   const { t } = useTranslation();
 
   const [, setTabs] = useAtom(tabsAtom);
+  const workspace = useStore();
   const navigate = useNavigate();
 
   const [selectedGame, setSelectedGame] = useState<string | null>(null);
   const [previewOmitted, setPreviewOmitted] = useState(false);
   const [position, setPosition] = useAtom(libraryGamePositionAtom);
   const [games, setGames] = useState<Map<number, GameSelectorRow>>(new Map());
+  const [reloadGeneration, setReloadGeneration] = useState(0);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   // Two handles with the same key are the same file, so a new handle object must not retrigger the read.
   const handleRef = useRef(selected.handle);
   handleRef.current = selected.handle;
@@ -79,7 +89,34 @@ function FileCard({
     return () => {
       controller.abort();
     };
-  }, [handleKey, page, t]);
+  }, [handleKey, page, t, reloadGeneration]);
+
+  const onMoveLines: MoveLines = async (movement, revision) => {
+    try {
+      return await reorderFileLines({
+        file: selected,
+        movement,
+        revision,
+        rows: games,
+        workspace,
+        setTabs,
+        getSelection: () => {
+          const current = workspace.get(libraryGamePositionAtom);
+          return current?.key === handleKey ? current.index : 0;
+        },
+        select: (index) => {
+          if (mounted.current) setPage(index);
+        },
+        reload: (reset) => {
+          if (!mounted.current) return;
+          if (reset) setGames(new Map());
+          setReloadGeneration((previous) => previous + 1);
+        },
+      });
+    } catch (error) {
+      notifyUnlessCancelled(t("Common.Error"), error);
+    }
+  };
 
   const reportOpenError = (error: unknown) => notifyUnlessCancelled(t("Common.Error"), error);
   const gameOpen = useGameOpen(
@@ -143,6 +180,8 @@ function FileCard({
             onActivate={activateGame}
             total={selected.numGames}
             editableSections={selected.metadata.type === "repertoire"}
+            onMoveLines={selected.metadata.type === "repertoire" ? onMoveLines : undefined}
+            reloadGeneration={reloadGeneration}
           />
           <Divider />
         </Box>

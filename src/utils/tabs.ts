@@ -82,6 +82,55 @@ export type SetTabs = (
     activeTab?: string,
     onSaved?: (saved: Workspace) => void,
 ) => boolean;
+
+export type FileTabPrecondition = {
+    numGames: number;
+    gameNumber: number;
+};
+
+export function rebindFileTabsAfterStructureChange({
+    setTabs,
+    fileKey,
+    captured,
+    originalCount,
+    numGames,
+    ordinals,
+    optimisticOwner,
+}: {
+    setTabs: SetTabs;
+    fileKey: string;
+    captured: ReadonlyMap<string, FileTabPrecondition>;
+    originalCount: number;
+    numGames: number;
+    ordinals: ReadonlyMap<number, number>;
+    optimisticOwner?: string;
+}): { matched: boolean; saved: boolean } {
+    let matched = false;
+    const saved = setTabs((tabs) =>
+        tabs.map((tab) => {
+            if (!isFileBackedTab(tab) || fileWorkspaceKey(tab.gameOrigin.file.handle) !== fileKey)
+                return tab;
+            const before = captured.get(tab.value);
+            const current = tab.gameOrigin;
+            if (
+                !before ||
+                before.numGames !== originalCount ||
+                current.gameNumber !== before.gameNumber ||
+                current.file.numGames !==
+                    (tab.value === optimisticOwner ? numGames : before.numGames)
+            )
+                return tab;
+            matched = true;
+            const gameNumber = ordinals.get(current.gameNumber) ?? current.gameNumber;
+            if (current.file.numGames === numGames && current.gameNumber === gameNumber) return tab;
+            return {
+                ...tab,
+                gameOrigin: { ...current, gameNumber, file: { ...current.file, numGames } },
+            };
+        }),
+    );
+    return { matched, saved };
+}
 export type SetCurrentTab = (update: React.SetStateAction<Tab>) => boolean;
 /** Acknowledges the canonical persisted successor before workspace observers run. */
 export type UpdateTab = (
