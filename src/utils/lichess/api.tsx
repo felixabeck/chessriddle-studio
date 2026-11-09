@@ -62,6 +62,27 @@ const tablebaseDataSchema = z
 
 type TablebaseData = z.infer<typeof tablebaseDataSchema>;
 
+// Only the fields FideInfo reads are validated.
+const fidePlayerSchema = z
+  .object({
+    id: z.number().int().positive(),
+    name: z.string(),
+    federation: z.string().nullable().optional(),
+    title: z.string().nullable().optional(),
+    year: z.number().nullable().optional(),
+    standard: z.number().nullable().optional(),
+    rapid: z.number().nullable().optional(),
+    blitz: z.number().nullable().optional(),
+    photo: z
+      .object({ small: z.string().nullable().optional() })
+      .passthrough()
+      .nullable()
+      .optional(),
+  })
+  .passthrough();
+
+export type FidePlayer = z.infer<typeof fidePlayerSchema>;
+
 type LichessPerf = {
   games: number;
   rating: number;
@@ -419,12 +440,21 @@ export async function getTablebaseInfo(fen: string): Promise<TablebaseData> {
   );
 }
 
-export async function getFidePlayer(query: string) {
-  if (!Number.isNaN(Number(query))) {
-    const result = await tauri.getPublicLichessJson({ kind: "fide", query });
-    return JSON.parse(result);
-  }
+export async function getFidePlayer(query: string): Promise<FidePlayer | null> {
   const result = await tauri.getPublicLichessJson({ kind: "fide", query });
-  const data = JSON.parse(result);
-  return data[0];
+  if (/^[0-9]+$/.test(query)) {
+    return parseNativeJsonLogged(
+      result,
+      fidePlayerSchema,
+      "FIDE player lookup",
+      "FIDE player response was rejected",
+    );
+  }
+  const players = await parseNativeJsonLogged(
+    result,
+    z.array(fidePlayerSchema),
+    "FIDE player search",
+    "FIDE player response was rejected",
+  );
+  return players[0] ?? null;
 }

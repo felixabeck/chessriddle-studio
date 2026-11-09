@@ -187,6 +187,22 @@ test("an open modal renders the real federation flag", async () => {
   expect(modalText()).toContain("Magnus");
 });
 
+test("a rejected player response renders the search error and message", async () => {
+  const { FideInfo, SWRConfig } = await importFideInfo();
+  mocks.getFidePlayer.mockRejectedValue(new Error("Lichess returned an invalid response"));
+
+  await renderFideInfo(FideInfo, SWRConfig, {
+    opened: true,
+    setOpened: vi.fn(),
+    name: "Test Player",
+  });
+
+  await vi.waitFor(() => {
+    expect(modalText()).toContain("Databases.FIDE.SearchError");
+    expect(modalText()).toContain("Lichess returned an invalid response");
+  });
+});
+
 test("a rejected flag import is silent and does not retry", async () => {
   const { FideInfo, SWRConfig, loadFlagpack } = await importFideInfo({ rejectFlagpack: true });
   mocks.getFidePlayer.mockResolvedValue(player("Test Player"));

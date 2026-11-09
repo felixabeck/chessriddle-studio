@@ -39,6 +39,7 @@ import {
     convertToNormalized,
     downloadLichess,
     getBestMoves,
+    getFidePlayer,
     getLichessAccount,
     getTablebaseInfo,
 } from "./api";
@@ -272,6 +273,107 @@ describe("getTablebaseInfo", () => {
 
         expect(mocks.logError).not.toHaveBeenCalled();
     });
+});
+
+describe("getFidePlayer", () => {
+    const player = {
+        id: 1503014,
+        name: "Ding Liren 丁立人",
+        federation: "CHN",
+        title: "GM",
+        year: 1992,
+        standard: 2780,
+        rapid: 2776,
+        blitz: 2787,
+        photo: { small: "https://example.com/player.jpg", credit: "FIDE" },
+        inactive: false,
+    };
+    const malformedPlayer = { id: 42, name: { unexpected: "object" }, standard: 2300 };
+
+    beforeEach(() => {
+        mocks.logError.mockReset().mockResolvedValue(undefined);
+        mocks.getPublicLichessJson.mockReset();
+    });
+
+    test("accepts an ID lookup with a Unicode name, photo and extra fields", async () => {
+        mocks.getPublicLichessJson.mockResolvedValue(JSON.stringify(player));
+
+        await expect(getFidePlayer("1503014")).resolves.toEqual(player);
+
+        expect(mocks.getPublicLichessJson).toHaveBeenCalledExactlyOnceWith({
+            kind: "fide",
+            query: "1503014",
+        });
+        expect(mocks.logError).not.toHaveBeenCalled();
+    });
+
+    test("accepts a sparse profile with a null year", async () => {
+        const sparsePlayer = {
+            id: 42,
+            name: "Test Player",
+            federation: "NOR",
+            year: null,
+            standard: 2300,
+            blitz: 2200,
+        };
+        mocks.getPublicLichessJson.mockResolvedValue(JSON.stringify(sparsePlayer));
+
+        await expect(getFidePlayer("42")).resolves.toEqual(sparsePlayer);
+    });
+
+    test("returns the first search result and forwards the Unicode query unchanged", async () => {
+        mocks.getPublicLichessJson.mockResolvedValue(
+            JSON.stringify([player, { id: 42, name: "Another Player" }]),
+        );
+
+        await expect(getFidePlayer("Ding Liren 丁立人")).resolves.toEqual(player);
+
+        expect(mocks.getPublicLichessJson).toHaveBeenCalledExactlyOnceWith({
+            kind: "fide",
+            query: "Ding Liren 丁立人",
+        });
+    });
+
+    test("returns null for an empty search without logging", async () => {
+        mocks.getPublicLichessJson.mockResolvedValue("[]");
+
+        await expect(getFidePlayer("Unknown Player")).resolves.toBeNull();
+
+        expect(mocks.logError).not.toHaveBeenCalled();
+    });
+
+    test.each([
+        {
+            label: "search entry with an object name",
+            query: "Test Player",
+            payload: [malformedPlayer],
+        },
+        { label: "ID lookup with an object name", query: "42", payload: malformedPlayer },
+        { label: "ID lookup returning an array", query: "1503014", payload: [player] },
+        { label: "search returning an object", query: "Test Player", payload: player },
+        { label: "numeric title", query: "1503014", payload: { ...player, title: 5 } },
+        { label: "string ID", query: "1503014", payload: { ...player, id: "1503014" } },
+    ])("rejects $label and logs once", async ({ query, payload }) => {
+        mocks.getPublicLichessJson.mockResolvedValue(JSON.stringify(payload));
+
+        await expect(getFidePlayer(query)).rejects.toThrow(/invalid response/);
+
+        expect(mocks.logError).toHaveBeenCalledExactlyOnceWith("FIDE player response was rejected");
+    });
+
+    test.each(["1e3", " 42", "1.5", "0x10"])(
+        "parses %j as a search and forwards it unchanged",
+        async (query) => {
+            mocks.getPublicLichessJson.mockResolvedValue(JSON.stringify([player]));
+
+            await expect(getFidePlayer(query)).resolves.toEqual(player);
+
+            expect(mocks.getPublicLichessJson).toHaveBeenCalledExactlyOnceWith({
+                kind: "fide",
+                query,
+            });
+        },
+    );
 });
 
 describe("getLichessAccount", () => {
