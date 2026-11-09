@@ -1475,7 +1475,11 @@ export type FileWorkspaceHandleKind = "fileWorkspace"
 export type GameConfig = { white: PlayerConfig; black: PlayerConfig; whiteTimeControl: TimeControl | null; blackTimeControl: TimeControl | null; initialFen: string | null; initialMoves?: string[]; openingBook: OpeningBookConfig | null }
 export type GameEndReason = "checkmate" | "timeout" | "resignation" | "abandonment"
 export type GameInterruptionReason = "engineFailure" | "engineTaskFailed"
-export type GameMove = { uci: string; san: string; fenAfter: string; clock: bigint | null; whiteTime: bigint | null; blackTime: bigint | null }
+export type GameMove = { uci: string; san: string; fenAfter: string; 
+/**
+ * The mover's remaining clock after this move, including the increment.
+ */
+clock: bigint | null; whiteTime: bigint | null; blackTime: bigint | null }
 export type GameMoveEvent = { gameId: string; session: bigint; revision: bigint; moves: GameMove[]; fen: string; whiteTime: bigint | null; blackTime: bigint | null }
 export type GameOmission = "tooLarge"
 export type GameOverEvent = { gameId: string; session: bigint; revision: bigint; result: GameResult; moves: GameMove[] }
