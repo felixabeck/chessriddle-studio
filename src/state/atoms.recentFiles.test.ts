@@ -2,6 +2,7 @@ import { createStore } from "jotai";
 import { afterEach, expect, test, vi } from "vitest";
 import {
     addRecentFileAtom,
+    lastOpenedAtom,
     dedupeRecentFiles,
     recentFileKey,
     recentFileSchema,
@@ -9,6 +10,7 @@ import {
     updateRecentFilesAtom,
     type RecentFile,
 } from "./atoms";
+import { databaseGameOpenedKey } from "./lastOpened";
 
 vi.mock("@/platform/tauri", () => ({ tauri: {} }));
 const file: RecentFile = {
@@ -62,6 +64,26 @@ test("dedupe and the shared ten-entry cap span both entry kinds", () => {
     expect(
         store.get(recentFilesAtom).filter((entry) => recentFileKey(entry) === recentFileKey(file)),
     ).toEqual([expect.objectContaining({ name: "Renamed" })]);
+});
+
+test("admitted file and database recents stamp opaque item keys, including their database", () => {
+    const store = createStore();
+    store.set(lastOpenedAtom, {});
+    store.set(addRecentFileAtom, {
+        ...file,
+        handle: { ...file.handle, id: { id: "opaque-file" } },
+    });
+    store.set(addRecentFileAtom, database);
+    const opened = store.get(lastOpenedAtom);
+    expect(Object.keys(opened).sort()).toEqual(
+        [
+            "opaque-file",
+            database.database.id.id,
+            databaseGameOpenedKey(database.database, database.gameId),
+        ].sort(),
+    );
+    expect(Object.values(opened).every((time) => time > 0)).toBe(true);
+    expect(Object.keys(opened).join(" ")).not.toContain(database.name);
 });
 
 test("refresh dedupes normalized signatures by recency and ignores rebuilt locators", () => {

@@ -130,9 +130,12 @@ export async function openFile(
     options?: {
         gameNumber?: number;
         tabName?: string;
+        ownerId?: string;
+        panel?: "practice";
+        store?: ReturnType<typeof getDefaultStore>;
     },
 ) {
-    const store = getDefaultStore();
+    const store = options?.store ?? getDefaultStore();
     const gameNumber = options?.gameNumber ?? 0;
     const loaded = await loadFileGame(file.handle, gameNumber);
     let tabName = options?.tabName ?? file.name ?? "Untitled";
@@ -148,6 +151,8 @@ export async function openFile(
         },
         setTabs,
         initialTree: loaded.tree,
+        ownerId: options?.ownerId,
+        store,
         gameOrigin: {
             kind: "file",
             file,
@@ -163,7 +168,7 @@ export async function openFile(
         setFileFreshness(id, "verified", { verifiedRevision: loaded.revision });
     }
 
-    if (file.metadata.type === "repertoire") {
+    if (options?.panel === "practice") {
         store.set(tabFamily(id), "practice");
     }
 

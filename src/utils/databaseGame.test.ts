@@ -3,7 +3,17 @@ import { initializeI18n } from "@/i18n";
 import { createStore } from "jotai";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { NormalizedGame, Token } from "@/bindings";
-import { tabsAtom, recentFilesAtom, addRecentFileAtom } from "@/state/atoms";
+import {
+    tabsAtom,
+    recentFilesAtom,
+    addRecentFileAtom,
+    lastOpenedAtom,
+    closingTabsAtom,
+    tabFamily,
+    type RecentEntryInput,
+} from "@/state/atoms";
+import { databaseGameOpenedKey } from "@/state/lastOpened";
+import { WORKSPACE_STORAGE_KEY } from "@/state/workspace";
 import signatureCases from "./gameSignature.cases.json";
 import { tabStorage } from "@/state/store/tabStorage";
 import { closeTreeStore, createTreeStore } from "@/state/store/tree";
@@ -170,6 +180,7 @@ test.each(["admitted", "refused", "online"] as const)(
         const workspace = createStore();
         workspace.set(tabsAtom, []);
         workspace.set(recentFilesAtom, []);
+        workspace.set(lastOpenedAtom, {});
         native.getDbGame.mockResolvedValue({ kind: "found", game });
         const add = vi.fn(
             (
@@ -209,6 +220,14 @@ test.each(["admitted", "refused", "online"] as const)(
         });
         expect(add.mock.calls).toEqual(mode === "admitted" ? [[expectedEntry]] : []);
         expect(workspace.get(recentFilesAtom)).toHaveLength(mode === "admitted" ? 1 : 0);
+        expect(workspace.get(lastOpenedAtom)).toEqual(
+            mode === "admitted"
+                ? {
+                      [database.id.id]: expect.any(Number),
+                      [databaseGameOpenedKey(database, game.id)]: expect.any(Number),
+                  }
+                : {},
+        );
         expect(native.getDbGame).toHaveBeenCalledTimes(mode === "online" ? 0 : 1);
         expect(native.inferGameOrientation).toHaveBeenCalledTimes(mode === "online" ? 0 : 1);
     },
@@ -319,6 +338,151 @@ const orientationRow: NormalizedGame = {
     result: "*",
     moves: "1. e4 e5 *",
 };
+
+test("an owned linked database open finishes current-game, source and orientation preparation before replacement", async () => {
+    const workspace = createStore();
+    const ownerId = crypto.randomUUID();
+    const otherId = crypto.randomUUID();
+    const owner = {
+        value: ownerId,
+        name: "New",
+        type: "new" as const,
+        gameOrigin: { kind: "none" as const },
+    };
+    const other = { ...owner, value: otherId, name: "Other", type: "analysis" as const };
+    workspace.set(tabsAtom, [other, owner], ownerId);
+    workspace.set(recentFilesAtom, []);
+    workspace.set(lastOpenedAtom, {});
+    const locator = {
+        collection: "11111111-1111-4111-8111-111111111111",
+        generation: "current",
+        ordinal: 2,
+        stamp: "c".repeat(64),
+    };
+    const current = { ...orientationRow, white: "Current White", linked: locator };
+    native.getDbGame.mockResolvedValueOnce({ kind: "found", game: current });
+    const file = { id: { id: "opaque-linked-source" }, kind: "fileWorkspace" as const };
+    native.resolveLinkedGame.mockResolvedValueOnce({
+        locator,
+        file,
+        name: "Source",
+        ordinal: 2,
+        purpose: "repertoire",
+        numGames: 3,
+        game: { pgn: "1. e4 e5 *", stamp: locator.stamp, revision: "current", present: true },
+    });
+    native.inferGameOrientation.mockImplementationOnce(async () => {
+        expect(workspace.get(tabsAtom)).toEqual([other, owner]);
+        expect(workspace.get(lastOpenedAtom)).toEqual({});
+        expect(workspace.get(recentFilesAtom)).toEqual([]);
+        return "black";
+    });
+    const append = vi.fn();
+    const id = await openDatabaseGame({
+        game: orientationRow,
+        database,
+        ownerId,
+        store: workspace,
+        setTabs: append,
+        addRecentFile: (entry) => workspace.set(addRecentFileAtom, entry),
+    });
+    expect(id).not.toBeNull();
+    ids.push(id!);
+    expect(append).not.toHaveBeenCalled();
+    expect(native.getDbGame).toHaveBeenCalledExactlyOnceWith(database, orientationRow.id, null);
+    expect(native.resolveLinkedGame).toHaveBeenCalledExactlyOnceWith(database, current.id, locator);
+    expect(native.inferGameOrientation).toHaveBeenCalledExactlyOnceWith(database, current.id);
+    expect(workspace.get(tabsAtom)).toEqual([
+        other,
+        expect.objectContaining({
+            value: id,
+            name: "Current White - Owner",
+            gameOrigin: expect.objectContaining({
+                kind: "file",
+                gameNumber: 2,
+                file: expect.objectContaining({ handle: file }),
+            }),
+        }),
+    ]);
+    expect(tabStorage.read<TreeState>(id!)?.state).toMatchObject({
+        sourceStamp: locator.stamp,
+        linkedSource: locator,
+        headers: { orientation: "black" },
+        dirty: false,
+    });
+    expect(workspace.get(tabFamily(id!))).toBe("info");
+    expect(workspace.get(lastOpenedAtom)[database.id.id]).toBeGreaterThan(0);
+});
+
+test.each(["removed", "closing", "replaced", "tree", "workspace"] as const)(
+    "an owned database open refused or superseded after preparation has no admission or records: %s",
+    async (change) => {
+        const workspace = createStore();
+        const ownerId = crypto.randomUUID();
+        const owner = {
+            value: ownerId,
+            name: "New",
+            type: "new" as const,
+            gameOrigin: { kind: "none" as const },
+        };
+        const other = { ...owner, value: crypto.randomUUID(), type: "analysis" as const };
+        workspace.set(tabsAtom, [other, owner], ownerId);
+        workspace.set(recentFilesAtom, []);
+        workspace.set(lastOpenedAtom, {});
+        let finish!: (orientation: string) => void;
+        native.getDbGame.mockResolvedValueOnce({ kind: "found", game: orientationRow });
+        native.inferGameOrientation.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    finish = resolve;
+                }),
+        );
+        const append = vi.fn();
+        const addRecentFile = vi.fn((entry: RecentEntryInput) =>
+            workspace.set(addRecentFileAtom, entry),
+        );
+        const opening = openDatabaseGame({
+            game: orientationRow,
+            database,
+            ownerId,
+            store: workspace,
+            setTabs: append,
+            addRecentFile,
+        });
+        await vi.waitFor(() => expect(native.inferGameOrientation).toHaveBeenCalledOnce());
+        if (change === "removed") workspace.set(tabsAtom, [other]);
+        if (change === "closing") workspace.set(closingTabsAtom, new Set([ownerId]));
+        if (change === "replaced") workspace.set(tabsAtom, [other, { ...owner, type: "analysis" }]);
+        const before = workspace.get(tabsAtom);
+        const openedBytes = localStorage.getItem("last-opened");
+        const recentBytes = localStorage.getItem("recent-files");
+        const original = Storage.prototype.setItem;
+        const write = vi
+            .spyOn(Storage.prototype, "setItem")
+            .mockImplementation(function (this: Storage, key, value) {
+                if (
+                    this === sessionStorage &&
+                    ((change === "workspace" && key === WORKSPACE_STORAGE_KEY) ||
+                        (change === "tree" && key !== WORKSPACE_STORAGE_KEY))
+                )
+                    throw new DOMException("full", "QuotaExceededError");
+                return original.call(this, key, value);
+            });
+        try {
+            finish("black");
+            expect(await opening).toBeNull();
+            expect(append).not.toHaveBeenCalled();
+            expect(addRecentFile).not.toHaveBeenCalled();
+            expect(workspace.get(tabsAtom)).toEqual(before);
+            expect(workspace.get(lastOpenedAtom)).toEqual({});
+            expect(workspace.get(recentFilesAtom)).toEqual([]);
+            expect(localStorage.getItem("last-opened")).toBe(openedBytes);
+            expect(localStorage.getItem("recent-files")).toBe(recentBytes);
+        } finally {
+            write.mockRestore();
+        }
+    },
+);
 
 test.each(["white", "black"] as const)(
     "a stale list row opens with the current %s orientation and CAS stamp",

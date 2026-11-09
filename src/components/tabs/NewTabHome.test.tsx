@@ -210,6 +210,8 @@ test("displays stored Unknown with a localized untitled label and date, keeping 
   await act(async () => (rows[1] as HTMLButtonElement).click());
   expect(fixtures.openFile).toHaveBeenCalledWith(expect.anything(), fixtures.setTabs, {
     tabName: "Unknown",
+    ownerId: "new-tab",
+    store: expect.anything(),
   });
 });
 
@@ -259,7 +261,7 @@ test("orders due repertoires by due plus unseen and recency, totals them, and re
   expect(fixtures.openFile).toHaveBeenCalledWith(
     expect.objectContaining({ name: "highest", metadata: { type: "repertoire", tags: [] } }),
     fixtures.setTabs,
-    { tabName: "highest" },
+    { tabName: "highest", ownerId: "new-tab", store: expect.anything(), panel: "practice" },
   );
 });
 
@@ -470,7 +472,7 @@ test.each(["loading", "read-failed", "write-blocked"] as const)(
   },
 );
 
-test("opens a recent repertoire into the practice panel", async () => {
+test("opens a recent repertoire with its New Tab owner and no Practice intent", async () => {
   fixtures.recentFiles = [
     {
       name: "white.pgn",
@@ -492,6 +494,11 @@ test("opens a recent repertoire into the practice panel", async () => {
   await vi.waitFor(() => {
     expect(fixtures.openFile).toHaveBeenCalledOnce();
     expect(fixtures.storeSet).toHaveBeenCalled();
+  });
+  expect(fixtures.openFile).toHaveBeenCalledWith(expect.anything(), fixtures.setTabs, {
+    tabName: "white.pgn",
+    ownerId: "new-tab",
+    store: expect.anything(),
   });
 });
 
@@ -639,7 +646,7 @@ test("opens a recent file with an empty pgn as a blank analysis tab", async () =
   expect(fixtures.openFile).toHaveBeenCalledWith(
     expect.objectContaining({ name: "stale.pgn", numGames: 1 }),
     fixtures.setTabs,
-    { tabName: "stale.pgn" },
+    { tabName: "stale.pgn", ownerId: "new-tab", store: expect.anything() },
   );
 });
 

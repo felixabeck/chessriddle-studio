@@ -6,7 +6,13 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createEmptyCard } from "ts-fsrs";
 import type { NormalizedGame } from "@/bindings";
 import { normalizeError } from "@/platform/errors";
-import { deckAtomFamily, recentFilesAtom, tabsAtom, type RecentDatabaseGame } from "@/state/atoms";
+import {
+  deckAtomFamily,
+  recentFilesAtom,
+  lastOpenedAtom,
+  tabsAtom,
+  type RecentDatabaseGame,
+} from "@/state/atoms";
 import { resetPracticeMigrationForTests } from "@/state/practiceStorage";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { defaultTree } from "@/utils/treeReducer";
@@ -200,9 +206,13 @@ test("database row renders context and forwards stored identity during pruning a
   await open();
   expect(mocks.getDbGame).toHaveBeenCalledWith(database, 42, stored.linked);
   expect(mocks.createTab).toHaveBeenCalledOnce();
+  expect(mocks.createTab).toHaveBeenCalledWith(
+    expect.objectContaining({ ownerId: "home", store: workspace }),
+  );
   expect(mocks.navigate).toHaveBeenCalledWith({ to: "/" });
   expect(workspace.get(recentFilesAtom)).toHaveLength(1);
   expect(workspace.get(recentFilesAtom)[0].lastOpened).toBeGreaterThan(1);
+  expect(workspace.get(lastOpenedAtom)[database.id.id]).toBeGreaterThan(1);
 });
 
 test.each([false, true])(

@@ -75,11 +75,7 @@ const setOpened = vi.fn();
 beforeEach(() => {
   vi.clearAllMocks();
   fixtures.ensureFileWorkspace.mockResolvedValue({ id: { id: "workspace" } });
-  fixtures.openFile.mockImplementation(async () => {
-    fixtures.storeSet();
-    fixtures.storeSet();
-    return "tab-id";
-  });
+  fixtures.openFile.mockResolvedValue("tab-id");
   fixtures.createFile.mockResolvedValue({
     isErr: false,
     value: {
@@ -129,7 +125,7 @@ test("keeps the modal state and metadata untouched when tab admission is refused
   expect(setOpened).not.toHaveBeenCalled();
 });
 
-test("acknowledges practice and recent metadata after successful admission", async () => {
+test("opens the created repertoire without requesting Practice after successful admission", async () => {
   await submitRepertoire();
 
   expect(fixtures.createFile).toHaveBeenCalledWith(
@@ -144,7 +140,7 @@ test("acknowledges practice and recent metadata after successful admission", asy
     fixtures.setTabs,
     { tabName: "White" },
   );
-  expect(fixtures.storeSet).toHaveBeenCalledTimes(2);
+  expect(fixtures.storeSet).not.toHaveBeenCalled();
   expect(fixtures.navigate).toHaveBeenCalledWith({ to: "/" });
   expect(setOpened).toHaveBeenCalledWith(false);
 });

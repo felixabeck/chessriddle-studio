@@ -1,6 +1,6 @@
 import { createStore, getDefaultStore } from "jotai";
 import { afterEach, expect, test, vi } from "vitest";
-import { defaultTree } from "@/utils/treeReducer";
+import { defaultTree, type TreeState } from "@/utils/treeReducer";
 import { denyStorageRemoval } from "@/utils/tests/storageMocks";
 import { errorUnlessCancelled } from "@/platform/errors";
 import enUSCatalogue from "@/translation/en-US.json";
@@ -43,6 +43,9 @@ import {
 } from "./workspace";
 import { deserializeStorageValue, serializeStorageValue } from "./store/debouncedStorage";
 import { getFileFreshness, setFileFreshness } from "./fileFreshness";
+import { tauri } from "@/platform/tauri";
+import { openFile } from "@/utils/files";
+import { lastOpenedAtom, recentFilesAtom } from "./atoms";
 
 const persistError = vi.hoisted(() => ({ reportPersistError: vi.fn() }));
 vi.mock("./persistError", () => persistError);
@@ -1304,6 +1307,118 @@ test("returns the admitted tab id and activates it for a valid create", async ()
     ]);
     expect(store.get(activeTabAtom)).toBe(result);
 });
+
+test.each([false, true])(
+    "a file replaces its New Tab among other tabs with explicit Practice: %s",
+    async (practice) => {
+        const fixture = makeReplacementFixture({ ownerActive: true });
+        fixture.store.set(lastOpenedAtom, {});
+        fixture.store.set(recentFilesAtom, []);
+        const file = {
+            type: "file" as const,
+            name: "Repertoire",
+            handle: { id: { id: "opaque-repertoire" }, kind: "fileWorkspace" as const },
+            numGames: 1,
+            metadata: { type: "repertoire" as const, tags: [] },
+            lastModified: 1,
+        };
+        vi.spyOn(tauri, "readGame").mockResolvedValueOnce({
+            pgn: "*",
+            stamp: "a".repeat(64),
+            revision: "r1",
+            present: true,
+        });
+        vi.spyOn(tauri, "lexPgn").mockResolvedValueOnce([{ type: "Outcome", value: "*" }]);
+        const append = vi.fn();
+        const id = await openFile(file, append, {
+            ownerId: fixture.owner.value,
+            store: fixture.store,
+            ...(practice ? { panel: "practice" as const } : {}),
+        });
+        expect(id).not.toBeNull();
+        replacementTabIds.add(id!);
+        expect(append).not.toHaveBeenCalled();
+        expect(fixture.store.get(tabsAtom)).toEqual([
+            fixture.second,
+            expect.objectContaining({
+                value: id,
+                gameOrigin: { kind: "file", file, gameNumber: 0 },
+            }),
+        ]);
+        expect(fixture.store.get(activeTabAtom)).toBe(id);
+        expect(tabStorage.read<TreeState>(id!)?.state.sourceStamp).toBe("a".repeat(64));
+        expect(fixture.store.get(tabFamily(id!))).toBe(practice ? "practice" : "info");
+        expect(fixture.store.get(recentFilesAtom)).toHaveLength(1);
+        expect(fixture.store.get(lastOpenedAtom)[file.handle.id.id]).toBeGreaterThan(0);
+        expect(getFileFreshness(id!).state).toBe("verified");
+    },
+);
+
+test.each(["removed", "closing", "replaced", "tree", "workspace"] as const)(
+    "a file owner superseded or refused during preparation writes no open side effects: %s",
+    async (change) => {
+        const fixture = makeReplacementFixture();
+        fixture.store.set(lastOpenedAtom, {});
+        fixture.store.set(recentFilesAtom, []);
+        const freshness = getFileFreshness(fixture.owner.value);
+        const panels = [...tabFamily.getParams()];
+        const file = {
+            type: "file" as const,
+            name: "Repertoire",
+            handle: { id: { id: "opaque-refused" }, kind: "fileWorkspace" as const },
+            numGames: 1,
+            metadata: { type: "repertoire" as const, tags: [] },
+            lastModified: 1,
+        };
+        let finish!: (game: Awaited<ReturnType<typeof tauri.readGame>>) => void;
+        vi.spyOn(tauri, "readGame").mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    finish = resolve;
+                }),
+        );
+        vi.spyOn(tauri, "lexPgn").mockResolvedValueOnce([{ type: "Outcome", value: "*" }]);
+        const append = vi.fn();
+        const opening = openFile(file, append, {
+            ownerId: fixture.owner.value,
+            store: fixture.store,
+            panel: "practice",
+        });
+        if (change === "removed") fixture.store.set(tabsAtom, [fixture.second]);
+        if (change === "closing")
+            fixture.store.set(closingTabsAtom, new Set([fixture.owner.value]));
+        if (change === "replaced")
+            fixture.store.set(tabsAtom, [fixture.second, { ...fixture.owner, type: "analysis" }]);
+        const beforeTabs = fixture.store.get(tabsAtom);
+        const beforeWorkspace = sessionStorage.getItem(WORKSPACE_STORAGE_KEY);
+        const beforeRecents = localStorage.getItem("recent-files");
+        const beforeOpened = localStorage.getItem("last-opened");
+        const nativeSetItem = Storage.prototype.setItem;
+        vi.spyOn(Storage.prototype, "setItem").mockImplementation(
+            function (this: Storage, key, value) {
+                if (
+                    this === sessionStorage &&
+                    ((change === "workspace" && key === WORKSPACE_STORAGE_KEY) ||
+                        (change === "tree" && key !== WORKSPACE_STORAGE_KEY))
+                ) {
+                    throw new DOMException("full", "QuotaExceededError");
+                }
+                return nativeSetItem.call(this, key, value);
+            },
+        );
+        finish({ pgn: "*", stamp: "a".repeat(64), revision: "r1", present: true });
+        expect(await opening).toBeNull();
+        expect(append).not.toHaveBeenCalled();
+        expect(fixture.store.get(tabsAtom)).toEqual(beforeTabs);
+        expect(sessionStorage.getItem(WORKSPACE_STORAGE_KEY)).toBe(beforeWorkspace);
+        expect(fixture.store.get(lastOpenedAtom)).toEqual({});
+        expect(fixture.store.get(recentFilesAtom)).toEqual([]);
+        expect(localStorage.getItem("last-opened")).toBe(beforeOpened);
+        expect(localStorage.getItem("recent-files")).toBe(beforeRecents);
+        expect([...tabFamily.getParams()]).toEqual(panels);
+        expect(getFileFreshness(fixture.owner.value)).toEqual(freshness);
+    },
+);
 
 test("rolls back a seeded tree when the workspace envelope write is refused", async () => {
     sessionStorage.clear();

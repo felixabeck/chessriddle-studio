@@ -3,6 +3,8 @@ import { ArrowLeft, ChessKnight, Trophy, User } from "lucide-react";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useCollectionCurrency } from "@/state/linkedCollections";
 import { useEffect, useMemo, useState } from "react";
+import { useSetAtom } from "jotai";
+import { recordLastOpenedAtom } from "@/state/atoms";
 import { useTranslation } from "react-i18next";
 import GameTable from "@/components/databases/GameTable";
 import { IconAction } from "@/components/common/IconAction";
@@ -91,6 +93,16 @@ function DatabaseView() {
     [resolution, database, databaseId, databases],
   );
   const preserveUnread = unreadMatches.length > 0;
+  const recordLastOpened = useSetAtom(recordLastOpenedAtom);
+  const shownDatabaseKey =
+    resolution.status === "ready" &&
+    (!resolution.database.collection ||
+      (!currency.error && currency.collection?.status === "ready"))
+      ? databaseHandleKey(resolution.database.file)
+      : null;
+  useEffect(() => {
+    if (shownDatabaseKey !== null) recordLastOpened([shownDatabaseKey]);
+  }, [shownDatabaseKey, recordLastOpened]);
 
   useEffect(() => {
     if (resolution.status === "synchronizing") {

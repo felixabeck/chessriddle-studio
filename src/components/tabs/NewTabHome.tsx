@@ -15,7 +15,7 @@ import {
   UnstyledButton,
   useMatches,
 } from "@mantine/core";
-import { atom, useAtom, useSetAtom } from "jotai";
+import { atom, useAtom, useSetAtom, useStore } from "jotai";
 import equal from "fast-deep-equal";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useDueBoundaryRerender } from "@/components/panels/practice/useDueBoundaryRerender";
@@ -132,6 +132,7 @@ function RecentFileRow({
 }
 
 export default function NewTabHome({ id }: { id: string }) {
+  const store = useStore();
   const { t } = useTranslation();
 
   const [openModal, setOpenModal] = useState(false);
@@ -243,7 +244,7 @@ export default function NewTabHome({ id }: { id: string }) {
   }, [recentFiles, updateRecentFiles]);
 
   const openRecentFile = useCallback(
-    async (file: RecentFile) => {
+    async (file: RecentFile, panel?: "practice") => {
       try {
         if (isDatabaseRecent(file)) {
           const result = await tauri.getDbGame(file.database, file.gameId, file.linked ?? null);
@@ -263,6 +264,8 @@ export default function NewTabHome({ id }: { id: string }) {
             databaseTitle: file.databaseTitle,
             setTabs,
             addRecentFile,
+            ownerId: id,
+            store,
           });
           if (tabId !== null) navigate({ to: "/" });
           return;
@@ -278,7 +281,7 @@ export default function NewTabHome({ id }: { id: string }) {
             lastModified: Date.now(),
           },
           setTabs,
-          { tabName: file.name },
+          { tabName: file.name, ownerId: id, store, ...(panel ? { panel } : {}) },
         );
         if (tabId === null) return;
         navigate({ to: "/" });
@@ -291,7 +294,7 @@ export default function NewTabHome({ id }: { id: string }) {
         notifyUnlessCancelled(t("Common.Error"), cause);
       }
     },
-    [setTabs, setRecentFiles, addRecentFile, navigate, t],
+    [setTabs, setRecentFiles, addRecentFile, navigate, t, id, store],
   );
 
   const cards = [
@@ -451,7 +454,11 @@ export default function NewTabHome({ id }: { id: string }) {
                         </Badge>
                       )}
                     </Box>
-                    <Button size="xs" variant="light" onClick={() => void openRecentFile(file)}>
+                    <Button
+                      size="xs"
+                      variant="light"
+                      onClick={() => void openRecentFile(file, "practice")}
+                    >
                       {t("Board.Tabs.Practice")}
                     </Button>
                   </Group>

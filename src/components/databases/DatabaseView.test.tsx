@@ -2,7 +2,7 @@ import { act, useEffect, type ComponentProps, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import useSWR, { SWRConfig, useSWRConfig } from "swr";
 import { getDefaultStore } from "jotai";
-import { referenceDbAtom } from "@/state/atoms";
+import { lastOpenedAtom, referenceDbAtom } from "@/state/atoms";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
@@ -188,6 +188,51 @@ const selectedDatabase: SuccessDatabaseInfo = {
   storage_size: "0",
   indexed: false,
 };
+
+test("a displayed database table records its opaque database key once per visit", async () => {
+  getDefaultStore().set(lastOpenedAtom, {});
+  mocks.database = selectedDatabase;
+  mocks.getDatabases.mockResolvedValue({ databases: [selectedDatabase], unread: [] });
+  const writes = vi.spyOn(Storage.prototype, "setItem");
+  await render(true, false);
+  expect(container.textContent).toContain("games table");
+  expect(getDefaultStore().get(lastOpenedAtom)).toEqual({ "db-1": expect.any(Number) });
+  expect(getDefaultStore().get(lastOpenedAtom)["db-1"]).toBeGreaterThan(0);
+  await render(true, false);
+  expect(writes.mock.calls.filter(([key]) => key === "last-opened")).toHaveLength(1);
+  await render(false, false);
+  await render(true, false);
+  expect(writes.mock.calls.filter(([key]) => key === "last-opened")).toHaveLength(2);
+});
+
+test.each(["synchronizing", "unavailable", "missing"] as const)(
+  "a database without a displayed table leaves last-opened untouched: %s",
+  async (status) => {
+    getDefaultStore().set(lastOpenedAtom, {});
+    mocks.database = status === "synchronizing" ? undefined : selectedDatabase;
+    mocks.getDatabases.mockResolvedValue({
+      databases:
+        status === "missing"
+          ? []
+          : status === "unavailable"
+            ? [
+                {
+                  type: "error",
+                  file: selectedDatabase.file,
+                  filename: selectedDatabase.filename,
+                  indexed: false,
+                  transient: "busy",
+                  error: "Busy",
+                },
+              ]
+            : [selectedDatabase],
+      unread: [],
+    });
+    await render(true, false);
+    expect(container.textContent).not.toContain("games table");
+    expect(getDefaultStore().get(lastOpenedAtom)).toEqual({});
+  },
+);
 
 test("observes the mounted view after loading ends without a resize from the detached loader", async () => {
   const observed = new Map<Element, ResizeObserverCallback>();

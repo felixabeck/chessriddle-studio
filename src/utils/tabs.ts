@@ -1,7 +1,7 @@
 import { tauri } from "@/platform/tauri";
 import { normalizeError, type AppError } from "@/platform/errors";
 import i18n from "i18next";
-import { useSetAtom, useStore, type getDefaultStore } from "jotai";
+import { getDefaultStore, useSetAtom, useStore } from "jotai";
 import type { StoreApi } from "zustand";
 import { createContext, startTransition, useCallback } from "react";
 import type { FileMetadata } from "@/components/files/file";
@@ -406,7 +406,7 @@ export function replaceNewTab({
     store: ReturnType<typeof getDefaultStore>;
     ownerId: string;
     tab: Omit<Tab, "value">;
-    tree: TreeState;
+    tree?: TreeState;
 }): ReplaceNewTabResult {
     const tabs = store.get(tabsAtom);
     const ownerIndex = tabs.findIndex((current) => current.value === ownerId);
@@ -419,7 +419,7 @@ export function replaceNewTab({
     }
 
     const result = stageAndCommitTab({
-        seed: (freshId) => tabStorage.seed(freshId, tree),
+        seed: tree ? (freshId) => tabStorage.seed(freshId, tree) : undefined,
         existingTabIds: tabs.flatMap((current) => [current.value, getTabTreeKey(current)]),
         commit: (freshId) => {
             const activeTab = store.get(activeTabAtom);
@@ -568,6 +568,8 @@ export async function createTab({
     initialTree,
     databaseGame,
     existingTabIds,
+    ownerId,
+    store,
 }: {
     tab: Omit<Tab, "value" | "gameOrigin">;
     setTabs: SetTabs;
@@ -578,6 +580,8 @@ export async function createTab({
     initialTree?: TreeState;
     databaseGame?: NormalizedGame;
     existingTabIds?: Iterable<string>;
+    ownerId?: string;
+    store?: ReturnType<typeof getDefaultStore>;
 }): Promise<string | null> {
     let treeToSeed: TreeState | undefined = initialTree;
     const databaseOrigin = gameOrigin?.kind === "database" ? gameOrigin : undefined;
@@ -654,11 +658,19 @@ export async function createTab({
         );
     }
 
+    const preparedTab = { ...tab, gameOrigin: gameOrigin ?? { kind: "none" as const } };
+    if (ownerId !== undefined) {
+        const result = replaceNewTab({
+            store: store ?? getDefaultStore(),
+            ownerId,
+            tab: preparedTab,
+            tree: treeToSeed,
+        });
+        return result.kind === "committed" ? result.id : null;
+    }
+
     return commitNewTab({
-        tab: {
-            ...tab,
-            gameOrigin: gameOrigin ?? { kind: "none" },
-        },
+        tab: preparedTab,
         setTabs,
         seed: treeToSeed ? (id) => tabStorage.seed(id, treeToSeed) : undefined,
         existingTabIds,

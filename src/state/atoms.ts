@@ -4,6 +4,12 @@ import { atomFamily, atomWithStorage, unwrap } from "jotai/utils";
 import { z } from "zod";
 import { normalizeGameSignature } from "./gameSignature";
 import { recentFileSchema, type RecentFile, type RecentEntryInput } from "./recentFiles";
+import {
+    boundLastOpened,
+    createLastOpenedStorage,
+    databaseGameOpenedKey,
+    type LastOpened,
+} from "./lastOpened";
 import type {
     BestMoves,
     EngineTerminalSnapshot,
@@ -686,9 +692,34 @@ export const recentFilesAtom = initializeBeforeUse(
     initializeRendererState,
 );
 
+export const lastOpenedAtom = documentPreferences.atomWithStorage<LastOpened>(
+    "last-opened",
+    {},
+    createLastOpenedStorage(localStorage),
+);
+
+export const recordLastOpenedAtom = atom(null, (get, set, keys: string[]) => {
+    const now = Date.now();
+    set(
+        lastOpenedAtom,
+        boundLastOpened({
+            ...Object.fromEntries(keys.map((key) => [key, now])),
+            ...Object.fromEntries(
+                Object.entries(get(lastOpenedAtom)).filter(([key]) => !keys.includes(key)),
+            ),
+        }),
+    );
+});
+
 export const addRecentFileAtom = atom(null, (get, set, file: RecentEntryInput) => {
     const current = get(recentFilesAtom);
     set(recentFilesAtom, dedupeRecentFiles([{ ...file, lastOpened: Date.now() }, ...current]));
+    set(
+        recordLastOpenedAtom,
+        "kind" in file
+            ? [capabilityKey(file.database), databaseGameOpenedKey(file.database, file.gameId)]
+            : [fileWorkspaceKey(file.handle)],
+    );
 });
 
 // Database

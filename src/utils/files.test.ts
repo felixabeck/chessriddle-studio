@@ -119,7 +119,7 @@ describe("openFile tab admission", () => {
         expect(mocks.storeSet).not.toHaveBeenCalled();
     });
 
-    test("returns the admitted id and preserves practice and recent metadata updates", async () => {
+    test("returns the admitted id and records an ordinary repertoire without selecting Practice", async () => {
         mocks.createTab.mockResolvedValueOnce("tab-id");
 
         await expect(openFile(file, setTabs)).resolves.toBe("tab-id");
@@ -130,8 +130,37 @@ describe("openFile tab admission", () => {
                 gameOrigin: { kind: "file", file, gameNumber: 0 },
             }),
         );
-        expect(mocks.storeSet).toHaveBeenCalledTimes(2);
-        expect(mocks.storeSet).toHaveBeenCalledWith(tabFamily("tab-id"), "practice");
+        expect(mocks.storeSet).toHaveBeenCalledTimes(1);
+        expect(mocks.storeSet).toHaveBeenCalledWith(
+            addRecentFileAtom,
+            expect.objectContaining({ handle: file.handle }),
+        );
+        expect(mocks.storeSet).not.toHaveBeenCalledWith(tabFamily("tab-id"), "practice");
+    });
+
+    test("passes the owner through full preparation and selects Practice only on request", async () => {
+        mocks.createTab.mockResolvedValueOnce("practice-id");
+        await openFile(file, setTabs, { ownerId: "home", panel: "practice" });
+        expect(mocks.createTab).toHaveBeenCalledWith(
+            expect.objectContaining({
+                ownerId: "home",
+                initialTree: expect.objectContaining({ sourceStamp: freshStamp }),
+            }),
+        );
+        expect(mocks.storeSet).toHaveBeenCalledWith(tabFamily("practice-id"), "practice");
+    });
+
+    test("an owner without an admitted id leaves freshness and all metadata untouched", async () => {
+        mocks.createTab.mockResolvedValueOnce(null);
+        const before = getFileFreshness("failed-owner");
+        await expect(
+            openFile(file, setTabs, { ownerId: "failed-owner", panel: "practice" }),
+        ).resolves.toBeNull();
+        expect(mocks.createTab).toHaveBeenCalledWith(
+            expect.objectContaining({ ownerId: "failed-owner" }),
+        );
+        expect(mocks.storeSet).not.toHaveBeenCalled();
+        expect(getFileFreshness("failed-owner")).toEqual(before);
     });
 
     test.each([
