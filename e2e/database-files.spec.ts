@@ -3000,7 +3000,12 @@ test("database-files: concurrent conversions render their own live progress coun
     await page.getByRole("link", { name: "Library", exact: true }).click();
     await expect(page).toHaveURL("/library");
     await expect(page.getByRole("heading", { name: "Library", exact: true })).toBeVisible();
-    await expect(page.getByText("Select a library item", { exact: true })).toBeVisible();
+    await expect(
+        page.getByText(
+            "This database is being converted. Its actions will return when conversion finishes.",
+            { exact: true },
+        ),
+    ).toBeVisible();
     await expect(firstRow).toHaveText("Convert: first.pgn120 games • 60.0 games/sCancel");
     await expect(secondRow).toHaveText("Convert: second.pgn42 games • 14.0 games/sCancel");
     const cancel = firstRow.getByRole("button", { name: "Cancel: first.pgn", exact: true });
