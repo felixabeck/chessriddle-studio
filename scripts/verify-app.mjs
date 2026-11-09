@@ -1050,9 +1050,9 @@ async function verifyDirtyTabQuitAndRestart() {
   );
   const analysisOpen = await reachableStableCoordinates(
     session,
-    "Analysis board",
+    "Analysis Board",
     `[...document.querySelectorAll('button')].find((node) =>
-      node.textContent.trim() === 'Analysis board')`,
+      node.textContent.trim() === 'Analysis Board')`,
   );
   await clickAt(session, analysisOpen.x, analysisOpen.y);
   await waitFor(
@@ -1140,7 +1140,7 @@ async function verifyDirtyTabQuitAndRestart() {
     const tree = rawTree && deserializeStorageValue(rawTree)?.state;
     if (
       tab.type === "analysis" &&
-      (tree?.dirty === true || tree?.headers?.event === dirtyEvent || tab.name === "Analysis board")
+      (tree?.dirty === true || tree?.headers?.event === dirtyEvent || tab.name === "Analysis Board")
     ) {
       restoredDirty = true;
     }

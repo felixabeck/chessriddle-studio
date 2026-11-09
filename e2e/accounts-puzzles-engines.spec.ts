@@ -305,7 +305,7 @@ for (const layout of ["desktop", "narrow"] as const) {
         if (layout === "narrow") await editor.scrollIntoViewIfNeeded();
         await capture(`saved-catalog-portraits-reloaded-${layout}`);
         await page.getByRole("link", { name: "Board", exact: true }).click();
-        await page.getByRole("button", { name: /^analysis board$/i }).click();
+        await page.getByRole("button", { name: /^Analysis Board$/ }).click();
         await page.getByRole("tab", { name: "Analysis", exact: true }).click();
         await page.getByRole("button", { name: "Select engines", exact: true }).click();
         const picker = page.locator(".mantine-Popover-dropdown");

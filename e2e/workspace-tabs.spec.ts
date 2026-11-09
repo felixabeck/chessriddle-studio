@@ -16,6 +16,26 @@ import {
 import { deserializeStorageValue } from "../src/state/store/debouncedStorage";
 import { createEmptyCard } from "ts-fsrs";
 import type { PracticeReviewWrite } from "../src/bindings/generated";
+import type { Locator } from "@playwright/test";
+
+async function assertWordsUnbroken(label: Locator) {
+    const splitWords = await label.evaluate((element) => {
+        const split: string[] = [];
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) {
+            const node = walker.currentNode;
+            for (const match of (node.textContent ?? "").matchAll(/\S+/g)) {
+                const range = document.createRange();
+                range.setStart(node, match.index);
+                range.setEnd(node, match.index + match[0].length);
+                const lines = new Set([...range.getClientRects()].map((rect) => rect.top));
+                if (lines.size > 1) split.push(match[0]);
+            }
+        }
+        return split;
+    });
+    expect(splitWords, `${await label.textContent()} wraps only between words`).toEqual([]);
+}
 
 test("workspace-tabs: home has compact actions and one reachable Library list", async ({
     page,
@@ -83,6 +103,31 @@ test("workspace-tabs: home has compact actions and one reachable Library list", 
     const rows = library.locator("[data-library-row]");
     await expect(rows).toHaveCount(10);
     await expect(page.locator("[data-home-library]")).toHaveCount(1);
+    const filterLabels = library.locator(".mantine-SegmentedControl-label");
+    await expect(filterLabels).toHaveCount(4);
+    const actionLabels = page.locator("[data-home-action] .mantine-Button-label");
+    const libraryLinkLabel = library
+        .getByRole("button", { name: "Open Library", exact: true })
+        .locator(".mantine-Button-label");
+    for (const label of [
+        ...(await filterLabels.all()),
+        ...(await actionLabels.all()),
+        libraryLinkLabel,
+    ]) {
+        const lineCount = await label.evaluate((element) => {
+            const style = getComputedStyle(element);
+            const contentHeight =
+                element.getBoundingClientRect().height -
+                Number.parseFloat(style.paddingTop) -
+                Number.parseFloat(style.paddingBottom);
+            return contentHeight / Number.parseFloat(style.lineHeight);
+        });
+        expect(lineCount, `${await label.textContent()} stays on one line at 1440px`).toBeCloseTo(
+            1,
+            1,
+        );
+        await assertNothingClipped(label);
+    }
     const card = (await library.boundingBox())!;
     const list = (await viewport.boundingBox())!;
     expect(list.height).toBeGreaterThan(300);
@@ -135,6 +180,11 @@ test("workspace-tabs: home has compact actions and one reachable Library list", 
         await row.scrollIntoViewIfNeeded();
         await assertNothingClipped(row);
     }
+    for (const control of [...(await filterLabels.all()), libraryLinkLabel]) {
+        await control.scrollIntoViewIfNeeded();
+        await assertWordsUnbroken(control);
+        await assertNothingClipped(control);
+    }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
     );
@@ -164,6 +214,7 @@ test("workspace-tabs: home actions wrap without horizontal scrolling at 200% fon
             const box = (await action.boundingBox())!;
             expect(box.x).toBeGreaterThanOrEqual(0);
             expect(box.x + box.width).toBeLessThanOrEqual(width);
+            await assertWordsUnbroken(action.locator(".mantine-Button-label"));
             await assertNothingClipped(action);
         }
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
@@ -192,7 +243,7 @@ test("workspace-tabs: search opens a Library file outside recents and replaces o
         }),
     });
     await page.goto("/");
-    await page.getByRole("button", { name: /^analysis board$/i }).click();
+    await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     const existing = (await activeWorkspaceTab(page))!;
     await page.getByRole("button", { name: /new tab/i }).click();
     const requesting = (await activeWorkspaceTab(page))!;
@@ -336,7 +387,7 @@ for (const { count, linked } of [
             },
         });
         await page.goto("/");
-        await page.getByRole("button", { name: /^analysis board$/i }).click();
+        await page.getByRole("button", { name: /^Analysis Board$/ }).click();
         const before = (await activeWorkspaceTab(page))!;
         expect(before.gameOrigin).toEqual({ kind: "none" });
         const board = page.getByRole("grid", {
@@ -504,6 +555,7 @@ test("workspace-tabs: closing the last tab of an opened repertoire file leaves a
     await selectFilesTreeRow(page, repertoireFile.name);
     await page.getByRole("button", { name: "Open game", exact: true }).click();
     await expect(page).toHaveURL(/\/$/);
+    await page.getByRole("tab", { name: "Practice", exact: true }).click();
     // Train is an inner tab rendered by PracticePanel, proving its cleanup has mounted.
     await expect(page.getByRole("tab", { name: "Train", exact: true })).toBeVisible();
     await page.getByRole("button", { name: /close tab/i }).click();
@@ -611,6 +663,7 @@ for (const surface of [
         await page.getByRole("button", { name: "Choose collection", exact: true }).click();
         await selectFilesTreeRow(page, repertoireFile.name);
         await page.getByRole("button", { name: "Open game", exact: true }).click();
+        await page.getByRole("tab", { name: "Practice", exact: true }).click();
         await page.getByRole("tab", { name: "Build", exact: true }).click();
         const build = page.getByRole("tabpanel", { name: "Build", exact: true });
         const completeness = build.getByText("No gaps found — your repertoire is complete!", {
@@ -806,6 +859,7 @@ test("workspace-tabs: Train reaches Start Practice by wheel, focus, and pointer 
     await page.getByRole("button", { name: "Choose collection", exact: true }).click();
     await selectFilesTreeRow(page, repertoireFile.name);
     await page.getByRole("button", { name: "Open game", exact: true }).click();
+    await page.getByRole("tab", { name: "Practice", exact: true }).click();
     const train = page.getByRole("tabpanel", { name: "Train", exact: true });
     const start = train.getByRole("button", { name: /Start Practice/ });
     const geometry = () =>
@@ -944,6 +998,7 @@ test("workspace-tabs: incorrect practice reveals the existing answer and its rev
     await page.getByRole("button", { name: "Choose collection", exact: true }).click();
     await selectFilesTreeRow(page, repertoireFile.name);
     await page.getByRole("button", { name: "Open game", exact: true }).click();
+    await page.getByRole("tab", { name: "Practice", exact: true }).click();
     const start = page.getByRole("button", { name: /Start Practice/ });
     await expect(start).toBeEnabled();
     await start.click();
@@ -1105,6 +1160,7 @@ test("workspace-tabs: successful Italian marked-start coverage with a missing co
     await page.getByRole("button", { name: "Choose collection", exact: true }).click();
     await selectFilesTreeRow(page, repertoireFile.name);
     await page.getByRole("button", { name: "Open game", exact: true }).click();
+    await page.getByRole("tab", { name: "Practice", exact: true }).click();
     await page.getByRole("tab", { name: "Build", exact: true }).click();
     const build = page.getByRole("tabpanel", { name: "Build", exact: true });
     const complete = build.getByText("No gaps found — your repertoire is complete!", {
@@ -1245,6 +1301,7 @@ test("workspace-tabs: real transposed practice card selects and reveals the exis
     await page.getByRole("button", { name: "Choose collection", exact: true }).click();
     await selectFilesTreeRow(page, repertoireFile.name);
     await page.getByRole("button", { name: "Open game", exact: true }).click();
+    await page.getByRole("tab", { name: "Practice", exact: true }).click();
     const full = page.getByRole("button", { name: /Practice full repertoire/i });
     await expect(full).toBeVisible();
     // Deliver the existing 250ms deck-sync debounce before starting the held-clock drill.
@@ -1524,7 +1581,7 @@ test("workspace-tabs: FEN import keeps its New Tab on a refused write and replac
     const board = page.getByRole("grid", { name: "Chessboard, White orientation", exact: true });
     await expect(board).toBeVisible();
     await expect(tabs).toHaveCount(1);
-    await expect(tabs.first()).toHaveText(/analysis board/i);
+    await expect(tabs.first()).toHaveText(/Analysis Board/);
     await expect(page.getByRole("gridcell", { name: "e4, White Pawn", exact: true })).toHaveCount(
         1,
     );
@@ -1534,7 +1591,7 @@ test("workspace-tabs: FEN import keeps its New Tab on a refused write and replac
 
     await preserveStorageForReload(page);
     await expect(tabs).toHaveCount(1);
-    await expect(tabs.first()).toHaveText(/analysis board/i);
+    await expect(tabs.first()).toHaveText(/Analysis Board/);
     await expect(board).toBeVisible();
     await expect(page.getByRole("gridcell", { name: "e4, White Pawn", exact: true })).toHaveCount(
         1,

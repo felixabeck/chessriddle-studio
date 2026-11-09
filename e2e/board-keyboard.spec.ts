@@ -618,7 +618,7 @@ test("board-keyboard: user marks coexist, toggle individually, persist per node 
     capture,
 }) => {
     await page.goto("/");
-    await page.getByRole("button", { name: /^analysis board$/i }).click();
+    await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     const board = page.locator("cg-board").first();
     await playBoardMove(page, board, "e2", "e4");
     const start = page.getByRole("button", { name: "Go to start", exact: true });
@@ -671,7 +671,7 @@ test("board-keyboard: explicit keep-drawings preference survives left clicks and
 }) => {
     await page.addInitScript(() => localStorage.setItem("erase-drawables-on-click", "false"));
     await page.goto("/");
-    await page.getByRole("button", { name: /^analysis board$/i }).click();
+    await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     const board = page.locator("cg-board").first();
     const circles = page.locator(".cg-wrap svg.cg-shapes g[cgHash] circle");
     await drawMark(page, board, "c4");
@@ -819,7 +819,7 @@ test("board-keyboard: opens analysis and exposes a keyboard-operable board", asy
     await page.addInitScript(() => localStorage.setItem("erase-drawables-on-click", "false"));
     await page.goto("/");
 
-    await page.getByRole("button", { name: /^analysis board$/i }).click();
+    await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     const whiteBoard = page.getByRole("grid", {
         name: "Chessboard, White orientation",
         exact: true,
@@ -946,7 +946,7 @@ test("board-keyboard: next move at a branch asks which continuation to play", as
     // The default drawing behavior has its own interaction test and capture above.
     await page.addInitScript(() => localStorage.setItem("erase-drawables-on-click", "false"));
     await page.goto("/");
-    await page.getByRole("button", { name: /^analysis board$/i }).click();
+    await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     const board = page.locator("cg-board").first();
     await expect(board).toBeVisible();
 
@@ -1017,7 +1017,7 @@ test("board-keyboard: overflowing chooser stays bounded and reaches lower contin
     assertAccessible,
 }) => {
     await page.goto("/");
-    await page.getByRole("button", { name: /^analysis board$/i }).click();
+    await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     const board = page.locator("cg-board").first();
     const previous = page.getByRole("button", { name: "Previous move", exact: true });
     const moves = [

@@ -61,7 +61,7 @@ async function openChessDBAnalysis(page: Page) {
         serializeStorageValue([engine]),
     );
     await page.goto("/");
-    await page.getByRole("button", { name: /^analysis board$/i }).click();
+    await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     await page.getByRole("tab", { name: "Analysis", exact: true }).click();
     const card = page.locator(".mantine-Accordion-item").filter({ hasText: "ChessDB" });
     await card.getByRole("button", { name: "Enable engine", exact: true }).click();

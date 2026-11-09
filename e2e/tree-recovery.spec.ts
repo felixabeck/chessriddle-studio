@@ -7,7 +7,7 @@ test("tree-recovery: retains an unreadable play tab behind its recovery panel", 
     capture,
 }) => {
     await page.goto("/");
-    await page.getByRole("button", { name: /^analysis board$/i }).click();
+    await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     await expect(page.getByRole("grid", { name: "Chessboard, White orientation" })).toBeVisible();
 
     const tabId = await page

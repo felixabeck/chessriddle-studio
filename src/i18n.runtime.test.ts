@@ -5,5 +5,5 @@ test("installs the unwrapped en-US catalogue for runtime translations", async ()
     await initializeI18n();
     await i18n.changeLanguage("en-US");
 
-    expect(i18n.t("Home.Card.AnalysisBoard.Title")).toBe("Analysis board");
+    expect(i18n.t("Home.Card.AnalysisBoard.Title")).toBe("Analysis Board");
 });

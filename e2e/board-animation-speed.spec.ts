@@ -47,7 +47,7 @@ for (const [label, stored, animates] of [
 ] as const) {
     test(`board-animation-speed: ${label} applies at once and after a reload`, async ({ page }) => {
         await page.goto("/");
-        await page.getByRole("button", { name: /^analysis board$/i }).click();
+        await page.getByRole("button", { name: /^Analysis Board$/ }).click();
         const board = page.locator("cg-board").first();
         await expect(board).toBeVisible();
         await playBoardMove(page, board, "e2", "e4");

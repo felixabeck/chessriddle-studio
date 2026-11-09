@@ -23,7 +23,7 @@
 }
 .action :global(.mantine-Button-label) {
   white-space: normal;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
   text-align: start;
 }
 .library {
@@ -92,12 +92,14 @@
 .filters {
   align-self: flex-start;
   max-width: 100%;
+  overflow-wrap: normal;
 }
 .filters :global(.mantine-SegmentedControl-label) {
   white-space: normal;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
 }
 .filters :global(.mantine-SegmentedControl-control) {
+  flex: 1 0 auto;
   min-width: 0;
 }
 .libraryLink {
@@ -108,10 +110,21 @@
 }
 .libraryLink :global(.mantine-Button-label) {
   white-space: normal;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
 }
 
 @media (max-width: 48em) {
+  .action,
+  .libraryLink {
+    padding-inline: calc(var(--mantine-spacing-xs) / 4);
+  }
+  .action :global(.mantine-Button-inner) {
+    flex-wrap: wrap;
+    gap: var(--mantine-spacing-xs);
+  }
+  .action :global(.mantine-Button-section) {
+    margin-inline: 0;
+  }
   .library {
     padding-inline: var(--mantine-spacing-xs);
   }

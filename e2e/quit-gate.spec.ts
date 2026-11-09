@@ -99,7 +99,7 @@ async function clickCompactFileExit(page: Page) {
 async function openOriginNoneAnalysis(page: Page) {
     await page.goto("/");
     await waitForCloseRequestedListener(page);
-    await page.getByRole("button", { name: /^analysis board$/i }).click();
+    await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     const tab = (await activeWorkspaceTab(page))!;
     expect(tab.type).toBe("analysis");
     expect(tab.gameOrigin).toEqual({ kind: "none" });

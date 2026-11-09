@@ -140,7 +140,7 @@ test("automatic install stays visible across routes, cancels, and never starts a
     const observations = await assertNoAutomaticInstall(page);
     expect(observations.every((sample) => sample.marker === marker)).toBe(true);
     await page.getByRole("link", { name: "Board", exact: true }).click();
-    await page.getByRole("button", { name: /^analysis board$/i }).click();
+    await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     await page.getByRole("tab", { name: "Analysis", exact: true }).click();
     await page.getByRole("button", { name: "Select engines", exact: true }).click();
     await expect(button).toBeVisible();

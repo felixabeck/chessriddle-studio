@@ -20,7 +20,7 @@ const CANCEL_AFTER_MS = 200;
 
 async function openBoard(page: Page) {
     await page.goto("/");
-    await page.getByRole("button", { name: /^analysis board$/i }).click();
+    await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     const board = page.locator("cg-board").first();
     await expect(board).toBeVisible();
     return board;
