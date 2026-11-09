@@ -2,7 +2,7 @@ import { Button, SegmentedControl, Stack, Text, TextInput } from "@mantine/core"
 import { useNavigate } from "@tanstack/react-router";
 import { INITIAL_FEN } from "chessops/fen";
 import { useAtom } from "jotai";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSWRConfig } from "swr";
 import { workspaceErrorMessage } from "../files/workspaceError";
@@ -24,6 +24,15 @@ export default function CreateRepertoireModal({
   const [name, setName] = useState("");
   const [color, setColor] = useState<"white" | "black">("white");
   const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
+  const flight = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const [, setTabs] = useAtom(tabsAtom);
   const navigate = useNavigate();
@@ -35,19 +44,24 @@ export default function CreateRepertoireModal({
       return;
     }
 
-    const pgn = headersToPGN({
-      id: 0,
-      fen: INITIAL_FEN,
-      black: "",
-      white: "",
-      result: "*",
-      event: trimmedName,
-      site: "",
-      orientation: color,
-    });
+    if (flight.current) return;
+    flight.current = true;
+    setPending(true);
 
     try {
+      const pgn = headersToPGN({
+        id: 0,
+        fen: INITIAL_FEN,
+        black: "",
+        white: "",
+        result: "*",
+        event: trimmedName,
+        site: "",
+        orientation: color,
+      });
+
       const workspace = await ensureFileWorkspace();
+      if (!mounted.current) return;
       if (!workspace) return;
       const result = await createFile({
         filename: trimmedName,
@@ -57,6 +71,7 @@ export default function CreateRepertoireModal({
         parent: workspace,
         listingCache,
       });
+      if (!mounted.current) return;
 
       if (result.isErr) {
         setError(workspaceErrorMessage(result.error, result.error.message, t));
@@ -65,6 +80,7 @@ export default function CreateRepertoireModal({
 
       const fileInfo = result.value;
       const id = await openFile(fileInfo, setTabs, { tabName: trimmedName });
+      if (!mounted.current) return;
       if (id === null) return;
       navigate({ to: "/" });
 
@@ -73,14 +89,21 @@ export default function CreateRepertoireModal({
       setError("");
       setOpened(false);
     } catch (error) {
+      if (!mounted.current) return;
       setError(workspaceErrorMessage(error, normalizeError(error).message, t));
+    } finally {
+      flight.current = false;
+      if (mounted.current) setPending(false);
     }
   }
 
   return (
     <AppModal
       opened={opened}
-      onClose={() => setOpened(false)}
+      onClose={() => {
+        if (!pending) setOpened(false);
+      }}
+      pending={pending}
       title={t("Home.Card.NewRepertoire.Title")}
     >
       <form
@@ -94,6 +117,7 @@ export default function CreateRepertoireModal({
             label={t("Common.Name")}
             placeholder={t("Home.Card.NewRepertoire.NamePlaceholder")}
             value={name}
+            disabled={pending}
             onChange={(e) => {
               setName(e.currentTarget.value);
               if (error) setError("");
@@ -109,6 +133,7 @@ export default function CreateRepertoireModal({
             <SegmentedControl
               fullWidth
               value={color}
+              disabled={pending}
               onChange={(v) => setColor(v as "white" | "black")}
               data={[
                 { label: t("Common.WHITE"), value: "white" },
@@ -117,7 +142,9 @@ export default function CreateRepertoireModal({
             />
           </div>
 
-          <Button type="submit">{t("Common.Create")}</Button>
+          <Button type="submit" loading={pending}>
+            {t("Common.Create")}
+          </Button>
         </Stack>
       </form>
     </AppModal>

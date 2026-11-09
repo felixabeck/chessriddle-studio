@@ -1,3 +1,4 @@
+import { Result } from "@badrap/result";
 import { act, type HTMLAttributes, type InputHTMLAttributes } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -42,11 +43,31 @@ vi.mock("react-i18next", async () => {
   };
 });
 vi.mock("../common/AppModal", () => ({
-  default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  default: ({
+    children,
+    pending = false,
+    onClose,
+  }: {
+    children: React.ReactNode;
+    pending?: boolean;
+    onClose: () => void;
+  }) => (
+    <div role="dialog" data-pending={pending}>
+      {!pending && <button type="button" aria-label="Close dialog" onClick={onClose} />}
+      {children}
+    </div>
+  ),
 }));
 vi.mock("@mantine/core", () => ({
-  Button: (props: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props} />,
-  SegmentedControl: () => <div />,
+  Button: ({
+    loading,
+    ...props
+  }: React.ButtonHTMLAttributes<HTMLButtonElement> & { loading?: boolean }) => (
+    <button {...props} disabled={props.disabled || loading} aria-busy={loading} />
+  ),
+  SegmentedControl: ({ disabled }: { disabled?: boolean }) => (
+    <fieldset aria-label="Color" disabled={disabled} />
+  ),
   Stack: ({ children, ...props }: HTMLAttributes<HTMLDivElement>) => (
     <div {...props}>{children}</div>
   ),
@@ -108,12 +129,133 @@ async function submitRepertoire() {
     valueSetter.call(input, "White");
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  await act(async () => {
-    container
-      .querySelector("form")!
-      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-  });
+  await act(async () => submitForm());
 }
+
+function submitForm() {
+  container
+    .querySelector("form")!
+    .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+test("pending creation prevents dismissal and disables draft edits", async () => {
+  const creation = deferred<Awaited<ReturnType<typeof actualFiles.createFile>>>();
+  fixtures.createFile.mockReturnValueOnce(creation.promise);
+
+  await submitRepertoire();
+
+  expect(container.querySelector('[role="dialog"]')?.getAttribute("data-pending")).toBe("true");
+  expect(container.querySelector('[aria-label="Close dialog"]')).toBeNull();
+  expect(container.querySelector("input")?.disabled).toBe(true);
+  expect(container.querySelector("fieldset")?.disabled).toBe(true);
+  expect(container.querySelector('[type="submit"]')?.getAttribute("aria-busy")).toBe("true");
+  expect(setOpened).not.toHaveBeenCalled();
+});
+
+test("repeated submits during creation are single-flight", async () => {
+  const creation = deferred<Awaited<ReturnType<typeof actualFiles.createFile>>>();
+  fixtures.createFile.mockReturnValue(creation.promise);
+
+  await submitRepertoire();
+  await act(async () => {
+    submitForm();
+    submitForm();
+  });
+
+  expect(fixtures.ensureFileWorkspace).toHaveBeenCalledOnce();
+  expect(fixtures.createFile).toHaveBeenCalledOnce();
+  expect(fixtures.openFile).not.toHaveBeenCalled();
+});
+
+test.each(["reject", "Err"])(
+  "delayed creation %s clears pending, preserves the draft, and permits a successful retry",
+  async (failure) => {
+    const creation = deferred<Awaited<ReturnType<typeof actualFiles.createFile>>>();
+    fixtures.createFile.mockReturnValueOnce(creation.promise);
+    await submitRepertoire();
+    expect(container.querySelector('[role="dialog"]')?.getAttribute("data-pending")).toBe("true");
+
+    await act(async () => {
+      const error = new Error("Creation failed");
+      if (failure === "reject") creation.reject(error);
+      else creation.resolve(Result.err(error));
+    });
+
+    expect(container.querySelector('[role="dialog"]')?.getAttribute("data-pending")).toBe("false");
+    expect(container.querySelector('[aria-label="Close dialog"]')).not.toBeNull();
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("Creation failed");
+    expect(container.querySelector("input")?.value).toBe("White");
+    expect(container.querySelector("input")?.disabled).toBe(false);
+    expect(container.querySelector("fieldset")?.disabled).toBe(false);
+    expect(fixtures.openFile).not.toHaveBeenCalled();
+    expect(fixtures.navigate).not.toHaveBeenCalled();
+    expect(setOpened).not.toHaveBeenCalled();
+
+    await act(async () => submitForm());
+
+    expect(fixtures.createFile).toHaveBeenCalledTimes(2);
+    expect(fixtures.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/" });
+    expect(setOpened).toHaveBeenCalledExactlyOnceWith(false);
+  },
+);
+
+test("delayed creation success clears pending and completes exactly once", async () => {
+  const result = await fixtures.createFile();
+  fixtures.createFile.mockClear();
+  const creation = deferred<typeof result>();
+  fixtures.createFile.mockReturnValueOnce(creation.promise);
+  await submitRepertoire();
+  expect(container.querySelector('[role="dialog"]')?.getAttribute("data-pending")).toBe("true");
+
+  await act(async () => creation.resolve(result));
+
+  expect(container.querySelector('[role="dialog"]')?.getAttribute("data-pending")).toBe("false");
+  expect(container.querySelector('[type="submit"]')?.getAttribute("aria-busy")).toBe("false");
+  expect(container.querySelector("input")?.value).toBe("");
+  expect(fixtures.openFile).toHaveBeenCalledOnce();
+  expect(fixtures.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/" });
+  expect(setOpened).toHaveBeenCalledExactlyOnceWith(false);
+});
+
+test.each(["workspace", "creation", "admission", "rejection"])(
+  "unmount during pending %s prevents late continuations and state-update warnings",
+  async (stage) => {
+    const result = await fixtures.createFile();
+    fixtures.createFile.mockClear();
+    const operation = deferred<unknown>();
+    if (stage === "workspace") fixtures.ensureFileWorkspace.mockReturnValueOnce(operation.promise);
+    else if (stage === "admission") fixtures.openFile.mockReturnValueOnce(operation.promise);
+    else fixtures.createFile.mockReturnValueOnce(operation.promise);
+    await submitRepertoire();
+    const consoleError = vi.spyOn(console, "error");
+    const consoleWarn = vi.spyOn(console, "warn");
+
+    await act(async () => root.unmount());
+    await act(async () => {
+      if (stage === "rejection") operation.reject(new Error("Creation failed"));
+      else if (stage === "workspace") operation.resolve({ id: { id: "workspace" } });
+      else if (stage === "admission") operation.resolve("tab-id");
+      else operation.resolve(result);
+    });
+
+    expect(fixtures.createFile).toHaveBeenCalledTimes(stage === "workspace" ? 0 : 1);
+    expect(fixtures.openFile).toHaveBeenCalledTimes(stage === "admission" ? 1 : 0);
+    expect(fixtures.navigate).not.toHaveBeenCalled();
+    expect(setOpened).not.toHaveBeenCalled();
+    expect(consoleError).not.toHaveBeenCalled();
+    expect(consoleWarn).not.toHaveBeenCalled();
+  },
+);
 
 test("keeps the modal state and metadata untouched when tab admission is refused", async () => {
   fixtures.openFile.mockResolvedValueOnce(null);
