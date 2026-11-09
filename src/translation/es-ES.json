@@ -125,6 +125,7 @@
     "Board.Aria.PieceType.rook": "torre",
     "Board.Aria.Rank": "Fila {{rank}}",
     "Board.Aria.Square": "casilla {{square}}: {{piece}}{{selected}}",
+    "Board.CopyFailed": "No se pudo copiar el PGN al portapapeles.",
     "Board.Database.AverageRating": "Puntuación promedio",
     "Board.Database.ExplorerAuthRequired1": "El explorador de Lichess ahora requiere autenticación. Añade una cuenta de Lichess con OAuth en la página de",
     "Board.Database.ExplorerAuthRequired2": "para continuar.",

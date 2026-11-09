@@ -125,6 +125,7 @@
     "Board.Aria.PieceType.rook": "Rook",
     "Board.Aria.Rank": "Rank {{rank}}",
     "Board.Aria.Square": "{{square}}, {{piece}}{{selected}}",
+    "Board.CopyFailed": "The PGN could not be copied to the clipboard.",
     "Board.Database.AverageRating": "Average rating",
     "Board.Database.ExplorerAuthRequired1": "Lichess Explorer now requires authentication. Add a Lichess account with OAuth in the",
     "Board.Database.ExplorerAuthRequired2": "page to continue.",

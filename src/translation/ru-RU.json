@@ -125,6 +125,7 @@
     "Board.Aria.PieceType.rook": "ладья",
     "Board.Aria.Rank": "Ряд {{rank}}",
     "Board.Aria.Square": "поле {{square}}: {{piece}}{{selected}}",
+    "Board.CopyFailed": "Не удалось скопировать PGN в буфер обмена.",
     "Board.Database.AverageRating": "Средний рейтинг",
     "Board.Database.ExplorerAuthRequired1": "Для Lichess Explorer теперь требуется аутентификация. Добавьте учётную запись Lichess с OAuth на",
     "Board.Database.ExplorerAuthRequired2": "странице, чтобы продолжить.",

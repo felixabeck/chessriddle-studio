@@ -84,6 +84,7 @@ function AnnotationEditor() {
   const store = useContext(TreeStateContext)!;
   const root = useStore(store, (s) => s.root);
   const position = useStore(store, (s) => s.position);
+  const documentId = useStore(store, (s) => s.documentId);
   const setComment = useStore(store, (s) => s.setComment);
 
   const currentNode = getNodeAtPath(root, position);
@@ -145,7 +146,7 @@ function AnnotationEditor() {
         setSaveFailed(!result.saved);
       },
     },
-    [position.join()],
+    [position.join(), documentId],
   );
 
   const nodeIdentity = `${position.join()}:${currentNode.fen}`;

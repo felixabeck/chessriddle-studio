@@ -26,14 +26,86 @@ import {
     discardTreeStoreStorage,
     nextContinuation,
     nextLineStart,
+    prepareTreeStoreRetarget,
+    retargetTreeStore,
     retryTreeStoreStorage,
     validateMoveSequence,
 } from "./tree";
 import { tabStorage } from "./tabStorage";
-import { serializeStorageValue } from "./debouncedStorage";
+import { deserializeStorageValue, serializeStorageValue } from "./debouncedStorage";
 import { emptyPuzzleSession } from "@/state/puzzleSession";
 
 const persistedIds: string[] = [];
+
+test.each(["setFen", "setHeaders", "setState", "reset"] as const)(
+    "%s replaces the document identity",
+    (action) => {
+        const store = createTreeStore();
+        const before = store.getState().documentId;
+        expect(before).toBeGreaterThan(0);
+        const fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
+        if (action === "setFen") store.getState().setFen(INITIAL_FEN);
+        else if (action === "setHeaders")
+            store.getState().setHeaders({ ...store.getState().headers, fen });
+        else if (action === "setState") store.getState().setState(defaultTree());
+        else store.getState().reset();
+        expect(store.getState().documentId).toBeGreaterThan(before);
+    },
+);
+
+test("ordinary edits keep the document identity", () => {
+    const store = createTreeStore();
+    const id = store.getState().documentId;
+    expect(id).toBeGreaterThan(0);
+    store.getState().setComment("Comment");
+    expect(store.getState().documentId).toBe(id);
+    store.getState().setAnnotation("!");
+    expect(store.getState().documentId).toBe(id);
+    store.getState().setShapes([{ orig: "e2", dest: "e4", brush: "green" }]);
+    expect(store.getState().documentId).toBe(id);
+    store.getState().makeMove({ payload: "e4" });
+    expect(store.getState().documentId).toBe(id);
+});
+
+test("retargeting installs a fresh document identity only on installation", () => {
+    const id = crypto.randomUUID();
+    persistedIds.push(id);
+    const store = createTreeStore(id);
+    const before = store.getState().documentId;
+    expect(before).toBeGreaterThan(0);
+    const install = prepareTreeStoreRetarget(id, id, defaultTree());
+    expect(store.getState().documentId).toBe(before);
+    install();
+    const installed = store.getState().documentId;
+    expect(installed).toBeGreaterThan(before);
+    retargetTreeStore(id, id, defaultTree());
+    expect(store.getState().documentId).toBeGreaterThan(installed);
+});
+
+test("document identity is excluded from persisted bytes and ignored on rehydrate", async () => {
+    const id = crypto.randomUUID();
+    persistedIds.push(id);
+    const store = createTreeStore(id);
+    const documentId = store.getState().documentId;
+    store.getState().setComment("Saved comment");
+    tabStorage.flush();
+    const payload = deserializeStorageValue<{ state: Record<string, unknown> }>(
+        sessionStorage.getItem(id)!,
+    )!;
+    expect(payload.state).not.toHaveProperty("documentId");
+    expect(documentId).toBeGreaterThan(0);
+    // A legacy or tampered payload cannot install an identity from storage.
+    sessionStorage.setItem(
+        id,
+        serializeStorageValue({
+            version: 1,
+            state: { ...defaultTree(), documentId: -100 },
+        }),
+    );
+    await retryTreeStoreStorage(id);
+    expect(store.getState().documentId).toBe(documentId);
+    expect(store.getState().root.comment).toBe("");
+});
 
 test("setGameEnd keeps one flag, carries effective termination and clearGameEnd removes every flag", () => {
     const store = createTreeStore();

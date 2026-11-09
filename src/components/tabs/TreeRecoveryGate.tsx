@@ -3,6 +3,7 @@ import { useCallback, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { tabStorage } from "@/state/store/tabStorage";
 import { discardTreeStoreStorage, retryTreeStoreStorage } from "@/state/store/tree";
+import { writeClipboardText } from "@/utils/clipboard";
 import classes from "./TreeRecoveryGate.module.css";
 
 type Props = {
@@ -30,8 +31,7 @@ export default function TreeRecoveryGate({ tabId, treeKey = tabId, children }: P
       if (action === "copy") {
         setCopied(false);
         const rawValue = tabStorage.readRawValueForRecovery(treeKey);
-        if (!navigator.clipboard?.writeText) throw new Error("Clipboard access is unavailable.");
-        await navigator.clipboard.writeText(rawValue);
+        await writeClipboardText(rawValue);
         setCopied(true);
       } else if (action === "discard") {
         if (!discardTreeStoreStorage(tabId, treeKey))

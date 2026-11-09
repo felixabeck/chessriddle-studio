@@ -116,6 +116,73 @@ function editor() {
   return editorElement().editor;
 }
 
+test.each(["different FEN", "same FEN", "setState"])(
+  "replacing a document at root isolates undo and redo: %s",
+  async (replacement) => {
+    await mount("old position commentary");
+    const oldEditor = editor();
+    await act(async () =>
+      oldEditor.commands.insertContentAt(oldEditor.state.doc.content.size - 1, " draft"),
+    );
+    expect(store.getState().root.comment).toBe("old position commentary draft");
+    await act(async () => {
+      if (replacement === "setState") {
+        const tree = defaultTree(store.getState().root.fen);
+        tree.root.comment = "new document commentary";
+        store.getState().setState(tree);
+      } else {
+        store
+          .getState()
+          .setFen(
+            replacement === "same FEN"
+              ? store.getState().root.fen
+              : "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+          );
+      }
+    });
+    const expected = replacement === "setState" ? "new document commentary" : "";
+    expect(editor().getText()).toBe(expected);
+    expect(store.getState().root.comment).toBe(expected);
+    const installed = store.getState();
+    writeComment.mockClear();
+    // Exercise the actual history commands before checking instance identity, so the
+    // regression proves that no old commentary can be written into this document.
+    await act(async () => {
+      editor().commands.undo();
+    });
+    expect(store.getState().root.comment).toBe(expected);
+    expect(store.getState()).toBe(installed);
+    await act(async () => {
+      editor().commands.redo();
+    });
+    expect(editor().getText()).toBe(expected);
+    expect(store.getState()).toBe(installed);
+    expect(writeComment).not.toHaveBeenCalled();
+    expect(editor()).not.toBe(oldEditor);
+  },
+);
+
+test.each(["NAG", "shapes"])("%s edits retain annotation typing history", async (edit) => {
+  await mount("old position commentary");
+  const originalEditor = editor();
+  await act(async () =>
+    editor().commands.insertContentAt(editor().state.doc.content.size - 1, " draft"),
+  );
+  await act(async () => {
+    if (edit === "NAG") store.getState().setAnnotation("!");
+    else store.getState().setShapes([{ orig: "e2", dest: "e4", brush: "green" }]);
+  });
+  expect(editor()).toBe(originalEditor);
+  await act(async () => {
+    expect(editor().commands.undo()).toBe(true);
+  });
+  expect(store.getState().root.comment).toBe("old position commentary");
+  expect(editor().getText()).toBe("old position commentary");
+  expect(
+    edit === "NAG" ? store.getState().root.nags.length : store.getState().root.shapes.length,
+  ).toBe(1);
+});
+
 async function focusEditor() {
   await act(async () => editor().view.focus());
 }

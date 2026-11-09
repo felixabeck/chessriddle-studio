@@ -1,4 +1,5 @@
 import type { DrawShape } from "@lichess-org/chessground/draw";
+import { notifications } from "@mantine/notifications";
 import { isNormal, type Move, parseUci } from "chessops";
 import { normalizeMove } from "chessops/chess";
 import { makeFen } from "chessops/fen";
@@ -7,6 +8,8 @@ import { type Draft, freeze, produce } from "immer";
 import { createStore, type StateCreator, type StoreApi } from "zustand";
 import { persist, type PersistStorage } from "zustand/middleware";
 import type { BestMoves, Outcome, Score } from "@/bindings";
+import i18n from "@/i18n";
+import { writeClipboardText } from "@/utils/clipboard";
 import {
     prepareTreeForStorage,
     persistStorageWriteError,
@@ -46,7 +49,22 @@ import {
 
 type CompleteTreeState = TreeState & Pick<TreeStoreState, "linkedSource">;
 
+let nextDocumentId = 0;
+const newDocumentId = () => ++nextDocumentId;
+
+async function copyPgnToClipboard(serialize: () => string): Promise<boolean> {
+    try {
+        await writeClipboardText(serialize());
+        return true;
+    } catch {
+        notifications.show({ message: i18n.t("Board.CopyFailed"), color: "danger" });
+        return false;
+    }
+}
+
 export interface TreeStoreState extends TreeState {
+    /** Identifies the installed document across ordinary edits. Never persisted. */
+    documentId: number;
     linkedSource?: import("@/bindings").LinkedGameLocator | null;
     setLinkedSource: (source: import("@/bindings").LinkedGameLocator | null) => void;
     /** Refresh after an operation's own transition, combine with its live-position/token guard. */
@@ -97,8 +115,8 @@ export interface TreeStoreState extends TreeState {
     deleteMove: (path?: number[]) => void;
     promoteVariation: (path: number[]) => void;
     promoteToMainline: (path: number[]) => void;
-    copyPgn: () => void;
-    copyVariationPgn: (path: number[]) => void;
+    copyPgn: () => Promise<boolean>;
+    copyVariationPgn: (path: number[]) => Promise<boolean>;
 
     setStart: (start: number[]) => void;
 
@@ -150,7 +168,10 @@ type PersistedTreeStore = TreeStore & {
     persist: {
         rehydrate: () => Promise<void> | void;
         getOptions: () => { name?: string };
-        setOptions: (options: { name: string; storage: PersistStorage<TreeStoreState> }) => void;
+        setOptions: (options: {
+            name: string;
+            storage: PersistStorage<Omit<TreeStoreState, "documentId">>;
+        }) => void;
     };
 };
 
@@ -166,6 +187,7 @@ function treeReplacementState(tree: CompleteTreeState) {
     return {
         puzzleSession: undefined,
         ...tree,
+        documentId: newDocumentId(),
         linkedSource: tree.linkedSource ?? null,
         practicePath: null,
     };
@@ -176,7 +198,7 @@ export function prepareTreeStoreRetarget(tab: string, treeKey: string, tree: Com
     const store = treeStores.get(tab)!;
     const options = {
         name: treeKey,
-        storage: tabStorage.storageFor<TreeStoreState>(treeKey !== tab),
+        storage: tabStorage.storageFor<Omit<TreeStoreState, "documentId">>(treeKey !== tab),
     };
     const state = treeReplacementState(tree);
     const install = store[installAdmittedTree];
@@ -275,6 +297,7 @@ export function discardTreeStoreStorage(tab: string, treeKey = tab): boolean {
 
 function installRoot(state: Draft<TreeStoreState>, root: TreeNode): void {
     state.root = root;
+    state.documentId = newDocumentId();
     // A fresh headers object, never a mutation of the current one: in setHeaders it is the caller's
     // object, just assigned into the draft. The start path indexed the tree being replaced.
     const { start: _start, ...headers } = state.headers;
@@ -367,6 +390,7 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
     let persistenceKey = () => treeKey;
     const stateCreator: StateCreator<TreeStoreState> = (set, get) => ({
         ...initialTree,
+        documentId: newDocumentId(),
 
         capturePuzzleSessionOwner: () => {
             const key = persistenceKey();
@@ -410,6 +434,7 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
             set(() => {
                 return {
                     ...defaultTree(),
+                    documentId: newDocumentId(),
                     linkedSource: null,
                     puzzleSession: undefined,
                     practicePath: null,
@@ -731,26 +756,28 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
             ),
         copyVariationPgn: (path) => {
             const { root } = get();
-            const pgn = getPGN(root, {
-                headers: null,
-                comments: false,
-                extraMarkups: false,
-                glyphs: true,
-                variations: false,
-                path,
-            });
-            navigator.clipboard.writeText(pgn);
+            return copyPgnToClipboard(() =>
+                getPGN(root, {
+                    headers: null,
+                    comments: false,
+                    extraMarkups: false,
+                    glyphs: true,
+                    variations: false,
+                    path,
+                }),
+            );
         },
         copyPgn: () => {
             const { root, headers } = get();
-            const pgn = getPGN(root, {
-                headers,
-                comments: true,
-                extraMarkups: true,
-                glyphs: true,
-                variations: true,
-            });
-            navigator.clipboard.writeText(pgn);
+            return copyPgnToClipboard(() =>
+                getPGN(root, {
+                    headers,
+                    comments: true,
+                    extraMarkups: true,
+                    glyphs: true,
+                    variations: true,
+                }),
+            );
         },
         setStart: (start) =>
             set(
@@ -895,7 +922,8 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
         const persistedCreator = persist(stateCreator, {
             name: treeKey!,
             version: TREE_STORAGE_VERSION,
-            storage: tabStorage.storageFor<TreeStoreState>(treeKey !== id),
+            storage: tabStorage.storageFor<Omit<TreeStoreState, "documentId">>(treeKey !== id),
+            partialize: ({ documentId: _documentId, ...state }) => state,
             onRehydrateStorage: () => (state, error) => {
                 if (!error && state) {
                     // A renderer reload cannot resume the JavaScript completion owner that

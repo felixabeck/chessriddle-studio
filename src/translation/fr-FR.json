@@ -125,6 +125,7 @@
     "Board.Aria.PieceType.rook": "tour",
     "Board.Aria.Rank": "Rangée {{rank}}",
     "Board.Aria.Square": "case {{square}} : {{piece}}{{selected}}",
+    "Board.CopyFailed": "Le PGN n’a pas pu être copié dans le presse-papiers.",
     "Board.Database.AverageRating": "Classement moyen",
     "Board.Database.ExplorerAuthRequired1": "Lichess Explorer requiert désormais une authentification. Ajoutez un compte Lichess avec OAuth dans la",
     "Board.Database.ExplorerAuthRequired2": "page pour continuer.",

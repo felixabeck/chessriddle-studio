@@ -125,6 +125,7 @@
     "Board.Aria.PieceType.rook": "wieża",
     "Board.Aria.Rank": "Rząd {{rank}}",
     "Board.Aria.Square": "pole {{square}}: {{piece}}{{selected}}",
+    "Board.CopyFailed": "Nie udało się skopiować PGN do schowka.",
     "Board.Database.AverageRating": "Średnia ocena",
     "Board.Database.ExplorerAuthRequired1": "Eksplorator Lichess wymaga teraz uwierzytelnienia. Dodaj konto Lichess przez OAuth na",
     "Board.Database.ExplorerAuthRequired2": "stronie, aby kontynuować.",

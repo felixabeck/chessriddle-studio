@@ -125,6 +125,7 @@
     "Board.Aria.PieceType.rook": "ладдзя",
     "Board.Aria.Rank": "Радок {{rank}}",
     "Board.Aria.Square": "поле {{square}}: {{piece}}{{selected}}",
+    "Board.CopyFailed": "Не ўдалося скапіраваць PGN у буфер абмену.",
     "Board.Database.AverageRating": "Сярэдні рэйтынг",
     "Board.Database.ExplorerAuthRequired1": "Правадыр Lichess цяпер патрабуе аўтэнтыфікацыі. Дадайце ўліковы запіс Lichess з OAuth на старонцы",
     "Board.Database.ExplorerAuthRequired2": ", каб працягнуць.",

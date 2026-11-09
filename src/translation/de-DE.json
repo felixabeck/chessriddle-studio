@@ -125,6 +125,7 @@
     "Board.Aria.PieceType.rook": "Turm",
     "Board.Aria.Rank": "Reihe {{rank}}",
     "Board.Aria.Square": "Feld {{square}}: {{piece}}{{selected}}",
+    "Board.CopyFailed": "Die PGN konnte nicht in die Zwischenablage kopiert werden.",
     "Board.Database.AverageRating": "Durchschnittswertung",
     "Board.Database.ExplorerAuthRequired1": "Der Lichess-Explorer erfordert jetzt eine Anmeldung. Füge in der",
     "Board.Database.ExplorerAuthRequired2": "-Seite ein Lichess-Konto per OAuth hinzu, um fortzufahren.",

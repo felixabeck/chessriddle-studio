@@ -125,6 +125,7 @@
     "Board.Aria.PieceType.rook": "torre",
     "Board.Aria.Rank": "Linha {{rank}}",
     "Board.Aria.Square": "casa {{square}}: {{piece}}{{selected}}",
+    "Board.CopyFailed": "Não foi possível copiar o PGN para a área de transferência.",
     "Board.Database.AverageRating": "Classificação média",
     "Board.Database.ExplorerAuthRequired1": "O explorador do Lichess requer agora autenticação. Adicione uma conta Lichess com OAuth na",
     "Board.Database.ExplorerAuthRequired2": "página para continuar.",

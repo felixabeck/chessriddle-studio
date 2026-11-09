@@ -125,6 +125,7 @@
     "Board.Aria.PieceType.rook": "kale",
     "Board.Aria.Rank": "Satır {{rank}}",
     "Board.Aria.Square": "kare {{square}}: {{piece}}{{selected}}",
+    "Board.CopyFailed": "PGN panoya kopyalanamadı.",
     "Board.Database.AverageRating": "Ortalama puan",
     "Board.Database.ExplorerAuthRequired1": "Lichess Gezgini artık kimlik doğrulaması gerektiriyor. Şuradan OAuth ile bir Lichess hesabı ekleyin:",
     "Board.Database.ExplorerAuthRequired2": "Devam etmek için sayfa.",

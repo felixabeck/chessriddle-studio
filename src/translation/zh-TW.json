@@ -125,6 +125,7 @@
     "Board.Aria.PieceType.rook": "車",
     "Board.Aria.Rank": "第 {{rank}} 列",
     "Board.Aria.Square": "格子 {{square}}：{{piece}}{{selected}}",
+    "Board.CopyFailed": "無法將 PGN 複製到剪貼簿。",
     "Board.Database.AverageRating": "平均等級分",
     "Board.Database.ExplorerAuthRequired1": "Lichess 開局探索器現在需要驗證身分。請在",
     "Board.Database.ExplorerAuthRequired2": "頁面透過 OAuth 新增 Lichess 帳號以繼續。",

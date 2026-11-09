@@ -125,6 +125,7 @@
     "Board.Aria.PieceType.rook": "룩",
     "Board.Aria.Rank": "{{rank}}행",
     "Board.Aria.Square": "{{square}} 칸: {{piece}}{{selected}}",
+    "Board.CopyFailed": "PGN을 클립보드에 복사하지 못했습니다.",
     "Board.Database.AverageRating": "평균 레이팅",
     "Board.Database.ExplorerAuthRequired1": "이제 Lichess 탐색기를 이용하려면 사용자 인증이 필요합니다. 계속하려면",
     "Board.Database.ExplorerAuthRequired2": "페이지에서 OAuth로 Lichess 계정을 추가하세요.",

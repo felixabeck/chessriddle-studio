@@ -125,6 +125,7 @@
     "Board.Aria.PieceType.rook": "tårn",
     "Board.Aria.Rank": "Rad {{rank}}",
     "Board.Aria.Square": "felt {{square}}: {{piece}}{{selected}}",
+    "Board.CopyFailed": "PGN kunne ikke kopieres til utklippstavlen.",
     "Board.Database.AverageRating": "Gjennomsnittsrating",
     "Board.Database.ExplorerAuthRequired1": "Lichess Explorer krever nå autentisering. Legg til en Lichess-konto med OAuth på",
     "Board.Database.ExplorerAuthRequired2": "-siden for å fortsette.",
