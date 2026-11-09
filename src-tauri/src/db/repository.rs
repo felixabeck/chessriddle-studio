@@ -3562,10 +3562,13 @@ mod upgrade_tests {
         let (_, entry, before) = repository.entry(&target, None).unwrap();
         assert_eq!(entry.schema_probe_count.load(Ordering::SeqCst), 1);
         std::thread::scope(|scope| {
+            // Only fail a genuine stall, a green run never waits for this bound.
+            const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
             let (entered, connected) = std::sync::mpsc::channel();
             let mut releases = Vec::new();
             let mut readers = Vec::new();
-            for _ in 0..4 {
+            let started = Instant::now();
+            for index in 0..4 {
                 let repository = Arc::clone(&repository);
                 let path = case.path.clone();
                 let entered = entered.clone();
@@ -3573,24 +3576,36 @@ mod upgrade_tests {
                 releases.push(release);
                 readers.push(scope.spawn(move || {
                     let connection = repository.connection(&test_target(&path), None);
-                    entered.send(connection.is_ok()).unwrap();
-                    let _ = released.recv_timeout(Duration::from_secs(5));
+                    entered
+                        .send((index, connection.is_ok(), started.elapsed()))
+                        .unwrap();
+                    let _ = released.recv();
                     connection.map(|_| ())
                 }));
             }
-            let outcomes: Vec<_> = (0..4)
-                .map(|_| connected.recv_timeout(Duration::from_secs(2)))
-                .collect();
+            let deadline = started + CONNECT_TIMEOUT;
+            let mut outcomes = Vec::new();
+            for _ in 0..4 {
+                match connected.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                    Ok(outcome) => outcomes.push(outcome),
+                    Err(_) => break,
+                }
+            }
             for release in releases {
                 let _ = release.send(());
             }
-            for reader in readers {
-                reader.join().unwrap().unwrap();
-            }
+            let results: Vec<_> = readers
+                .into_iter()
+                .map(|reader| reader.join().unwrap())
+                .collect();
             assert!(
-                outcomes.into_iter().all(|result| result == Ok(true)),
-                "all validated readers must connect while their siblings still hold connections"
+                outcomes.len() == 4 && outcomes.iter().all(|(_, ok, _)| *ok),
+                "all validated readers must connect while their siblings still hold connections: received {outcomes:?}, missing {} readers",
+                4 - outcomes.len()
             );
+            for result in results {
+                result.unwrap();
+            }
         });
         assert_eq!(
             entry.schema_probe_count.load(Ordering::SeqCst),
