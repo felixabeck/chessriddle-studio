@@ -1,6 +1,48 @@
 # Plan: Connect ChessRiddle Studio to ChessRiddle accounts
 
-Status: **draft for Felix to read. Not approved, not built.** Product choices marked "Felix" are his; technical choices are recommendations. Each phase gets its own detailed `build` plan and review in the repository it changes.
+Status: **Phase A built (2026-11-09). Phases B to E not built.** Product choices marked "Felix" are his; technical choices are recommendations. Each phase gets its own detailed `build` plan and review in the repository it changes.
+
+## Roadmap and current state (recorded 2026-11-09)
+
+This section overrides the phase order further down. It is the agent's recommendation, which Felix asked to have recorded on 2026-11-09. He has not yet decided the signing question below.
+
+### Where phase A stands
+
+* **Studio:** on `master` since `bc4695aa`. The account card stays hidden in release builds until the constant `RELEASE_AVAILABLE` in `src-tauri/src/chessriddle.rs` is switched at release. The `.dev` identifier can use it now, with compile-time `CHESSRIDDLE_API_ORIGIN` and `CHESSRIDDLE_WEB_ORIGIN` overrides limited to literal `127.0.0.1`.
+* **ChessRiddle:** local branch `build/studio-account-20261109` in `/home/felixb/Projekte/chess-tactics-app.worktrees/studio-account`, base `develop` at `ed84c20ce5`, reviewed and fully gated at `5118e54dc0`. It is **not pushed and not deployed**.
+* **Branch hold, Felix 2026-11-09:** "I only want to push it when I'm ready to deploy and when the studio is complete to release ... I don't want to deploy the connection if Chessriddle Studio is not ready yet. So leave this in a branch but don't push it to develop." ChessRiddle work for later phases stacks on this branch under the same hold. Keep the worktree.
+* **Review record:** `tasks/handoffs/2026-11-09-chessriddle-account-connection-review.md`; detailed plan: `tasks/plans/2026-11-09-chessriddle-account-connection.md`.
+
+### Order
+
+1. **Tactics in Studio (phase B), next.** Standard tactics plus retry-your-mistakes (`backend/app/api/routes/puzzles/mistakes.py`, which already exists). Mistakes are the part that is better beside an engine and database than on the web.
+2. **Release preparation, in parallel:** Windows check, code signing, download page on chessriddle.com.
+3. **First public release:** rebase the ChessRiddle branch onto `develop`, re-review, run full gates, push and deploy on Felix's go, switch `RELEASE_AVAILABLE`, publish Studio. The branch hold ends here.
+4. **Send to a trainer collection (phase C), as an update.** Small, but only Gold trainers use it.
+5. **Repertoire (phases D1, D2, D3):** website first, then Studio sync, then the phone app through Philipp. It is the most valuable feature and the largest. Felix's design work can start during steps 1 to 3.
+6. **Own-game puzzles (phase E):** left out unless Felix asks.
+
+Reasons: repertoire must not hold the first release, because it is the largest item and needs Felix's design. The connection alone gives users nothing to do, so it ships with its first feature. Holding everything would keep the ChessRiddle branch drifting from `develop`, which already caused legal-text conflicts. Studio's release configuration builds signed update packages, so later features can arrive as updates.
+
+### Open before a public release
+
+* **Felix decides:** buy code-signing certificates, or launch unsigned with a warning on the download page. `src-tauri/tauri.conf.json` has `certificateThumbprint: null` on Windows and an ad-hoc `signingIdentity: "-"` on macOS.
+* **Untested:** the connection on real Windows, meaning Credential Manager and the browser round trip. It needs a Windows machine.
+* **Untested on a disposable database:** `pg_cron` scheduling for desktop-credential cleanup. The ChessRiddle deploy guard checks it.
+* **Not built:** the chessriddle.com download page.
+
+### What tactics needs on the ChessRiddle side
+
+* Add each puzzle route to `DESKTOP_ROUTE_ALLOWLIST` in `backend/app/core/auth.py` (exact method and served path template). Today it holds only `GET /api/v1/users/me` and `POST /api/v1/desktop-auth/revoke`.
+* Attribution already accepts surface `desktop` and platforms `linux`, `macos`, `windows`. `_is_native_app_client` deliberately excludes desktop, so `puzzle_client_compatibility.py` needs an explicit decision about which puzzle types desktop receives.
+* Carried obligations CR-5, CR-6 and CR-7 below still bind phase B.
+* ChessRiddle commits stack on `build/studio-account-20261109`, because they need its credentials and allowlist. Never push to `develop`.
+
+### Proving the real flow locally
+
+The phase A real end-to-end proof used the `.dev` release binary, real IPC, Chromium, PostgreSQL 17, real Alembic migrations and `supabase/gotrue:v2.197.0`. Its harness scripts and report are kept in `~/.local/share/chessriddle-real-flow-20261109/`, outside the repository. They name their original run paths under `/tmp`.
+
+Next.js rewrites a literal `127.0.0.1` site to `localhost`, which causes a self-redirect loop in local runs only. The harness serves the web app on `localhost` and opens the consent URL there through an `xdg-open` shim, keeping the `redirect_uri` byte-identical on `127.0.0.1`. Do not treat that loop as a product defect.
 
 ## Goal
 
