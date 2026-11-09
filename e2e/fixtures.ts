@@ -1097,6 +1097,7 @@ const tauriBootstrap = () => {
         acknowledge_account_completion: { result: null },
         retire_engine_completion: { result: null },
         list_lichess_accounts: { result: [] },
+        chessriddle_account: { error: "unavailable" },
         get_puzzle_workspace: {
             result: {
                 root: { id: { id: "puzzle-root" }, kind: "puzzleRoot" },

@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+    chessriddleAccount: vi.fn(),
+    connectChessriddle: vi.fn(),
+    disconnectChessriddle: vi.fn(),
     closeSplashscreen: vi.fn(),
     releasePreviousDocumentOperations: vi.fn(),
     startGame: vi.fn(),
@@ -43,6 +46,43 @@ const mocks = vi.hoisted(() => ({
     listeners: new Map<string, (event: any) => void>(),
 }));
 
+test.each(["chessriddleAccount", "connectChessriddle", "disconnectChessriddle"] as const)(
+    "%s unwraps native replies and keeps account errors closed",
+    async (command) => {
+        const { tauri } = await import("./tauri");
+        const { ChessRiddleCommandError } = await import("./chessriddle");
+        const data =
+            command === "disconnectChessriddle"
+                ? { status: "notFound" }
+                : { status: "disconnected" };
+        mocks[command].mockResolvedValue({ status: "ok", data });
+        await expect(tauri[command]()).resolves.toEqual(data);
+        for (const code of [
+            "unavailable",
+            "busy",
+            "storage",
+            "network",
+            "rateLimited",
+            "server",
+            "invalidGrant",
+            "authentication",
+            "invalidLink",
+            "browser",
+            "alreadyConnected",
+        ]) {
+            mocks[command].mockResolvedValue({ status: "error", error: code });
+            await expect(tauri[command]()).rejects.toMatchObject({
+                name: "ChessRiddleCommandError",
+                code,
+            });
+        }
+        mocks[command].mockRejectedValue("network");
+        await expect(tauri[command]()).rejects.toMatchObject({ code: "network" });
+        mocks[command].mockRejectedValue(new Error("private server diagnostic"));
+        await expect(tauri[command]()).rejects.toEqual(new ChessRiddleCommandError("server"));
+    },
+);
+
 test("getDbGame forwards identity as the third argument and owns its abort ticket", async () => {
     const { tauri } = await import("./tauri");
     const database = { id: { id: "db" }, kind: "database" } as const;
@@ -84,6 +124,9 @@ test("orientation inference unwraps success and normalizes typed failures", asyn
 
 vi.mock("@/bindings/generated", () => ({
     commands: {
+        chessriddleAccount: mocks.chessriddleAccount,
+        connectChessriddle: mocks.connectChessriddle,
+        disconnectChessriddle: mocks.disconnectChessriddle,
         closeSplashscreen: mocks.closeSplashscreen,
         releasePreviousDocumentOperations: mocks.releasePreviousDocumentOperations,
         startGame: mocks.startGame,

@@ -47,6 +47,11 @@ export default defineConfig({
             use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "light" },
         },
         {
+            name: "chessriddle-account",
+            testMatch: /chessriddle-account\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "dark" },
+        },
+        {
             name: "game-end",
             testMatch: /game-end\.spec\.ts/,
             use: { ...chromium, viewport: { width: 1280, height: 900 }, colorScheme: "light" },

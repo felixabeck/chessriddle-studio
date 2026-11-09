@@ -3,6 +3,7 @@ import { useAtomValue } from "jotai";
 import { sessionsAtom } from "@/state/atoms";
 import Accounts from "./Accounts";
 import Databases from "./Databases";
+import { ChessRiddleAccountCard } from "./ChessRiddleAccountCard";
 
 // Each column wraps from this basis: side by side while two fit, stacked once they do not (the rem
 // basis scales with the app font, so a large font scale stacks them sooner).
@@ -14,6 +15,7 @@ function AccountsPage() {
   return (
     <Group wrap="wrap" px={{ base: "xs", xs: "md" }} py="md" h="100%" style={{ overflowY: "auto" }}>
       <Stack h="100%" style={column}>
+        <ChessRiddleAccountCard />
         <Accounts />
       </Stack>
 

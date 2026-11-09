@@ -1,0 +1,192 @@
+import { Alert, Button, Card, Group, Stack, Text } from "@mantine/core";
+import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { AccountError, AccountStatus, DisconnectOutcome } from "@/bindings";
+import { ChessRiddleCommandError } from "@/platform/chessriddle";
+import { tauri } from "@/platform/tauri";
+
+type Action = "refresh" | "connect" | "disconnect";
+
+export function ChessRiddleAccountCard() {
+  const { t } = useTranslation();
+  const [status, setStatus] = useState<AccountStatus | null>(null);
+  const [pending, setPending] = useState<Action | null>("refresh");
+  const [error, setError] = useState<AccountError | null>(null);
+  const [removed, setRemoved] = useState<Extract<DisconnectOutcome, { status: "removed" }> | null>(
+    null,
+  );
+  const [unavailable, setUnavailable] = useState(false);
+  const owner = useRef<symbol | null>(null);
+  const running = useRef(false);
+
+  async function run(action: Action, identity = owner.current) {
+    if (!identity || identity !== owner.current || running.current) return;
+    running.current = true;
+    setPending(action);
+    setError(null);
+    const current = () => owner.current === identity;
+    const report = (cause: unknown) => {
+      if (!current()) return;
+      const code = new ChessRiddleCommandError(cause).code;
+      if (code === "unavailable") setUnavailable(true);
+      else setError(code);
+    };
+    try {
+      if (action === "disconnect") {
+        const outcome = await tauri.disconnectChessriddle();
+        if (!current()) return;
+        setRemoved(outcome.status === "removed" ? outcome : null);
+        // Removal has settled, but only a native status read decides the next account action.
+        setStatus(null);
+        const next = await tauri.chessriddleAccount();
+        if (current()) setStatus(next);
+      } else if (action === "connect") {
+        try {
+          const next = await tauri.connectChessriddle();
+          if (current()) setStatus(next);
+        } catch (cause) {
+          if (!current()) return;
+          // The native owner may have linked before a profile fetch failed. Reconcile once,
+          // after connect settles, so a retry never assumes that no credential exists.
+          try {
+            const next = await tauri.chessriddleAccount();
+            if (current()) setStatus(next);
+          } catch (refreshCause) {
+            report(refreshCause);
+          }
+          report(cause);
+        }
+      } else {
+        const next = await tauri.chessriddleAccount();
+        if (current()) setStatus(next);
+      }
+    } catch (cause) {
+      report(cause);
+    } finally {
+      if (current()) {
+        running.current = false;
+        setPending(null);
+      }
+    }
+  }
+
+  useEffect(() => {
+    const identity = Symbol("ChessRiddle account card");
+    owner.current = identity;
+    running.current = false;
+    void run("refresh", identity);
+    return () => {
+      // Native owns the action, including the browser round trip. Retire only this view.
+      owner.current = null;
+    };
+  }, []);
+
+  const errors: Record<AccountError, string> = {
+    unavailable: t("Home.ChessRiddle.Error.Unavailable"),
+    busy: t("Home.ChessRiddle.Error.Busy"),
+    storage: t("Home.ChessRiddle.Error.Storage"),
+    network: t("Home.ChessRiddle.Error.Network"),
+    rateLimited: t("Home.ChessRiddle.Error.RateLimited"),
+    server: t("Home.ChessRiddle.Error.Server"),
+    invalidGrant: t("Home.ChessRiddle.Error.InvalidGrant"),
+    authentication: t("Home.ChessRiddle.Error.Authentication"),
+    invalidLink: t("Home.ChessRiddle.Error.InvalidLink"),
+    browser: t("Home.ChessRiddle.Error.Browser"),
+    alreadyConnected: t("Home.ChessRiddle.Error.AlreadyConnected"),
+  };
+
+  if (unavailable || (!status && !error)) return null;
+
+  return (
+    <Card
+      component="section"
+      aria-label={t("Home.ChessRiddle.Title")}
+      withBorder
+      radius="md"
+      padding="lg"
+      px={{ base: "xs", xs: "lg" }}
+      mt="md"
+      miw={0}
+      className="wrap-anywhere"
+      style={{ flexShrink: 0 }}
+    >
+      <Stack gap="sm" miw={0}>
+        <Text fw={600} size="sm">
+          {t("Home.ChessRiddle.Title")}
+        </Text>
+        <div role="status" aria-live="polite">
+          {pending === "connect" ? (
+            <Text size="sm">{t("Home.ChessRiddle.Connecting")}</Text>
+          ) : status?.status === "connected" ? (
+            <Stack gap={4}>
+              <Text size="sm" className="wrap-anywhere">
+                {status.account.username
+                  ? t("Home.ChessRiddle.ConnectedAs", { username: status.account.username })
+                  : t("Home.ChessRiddle.Connected")}
+              </Text>
+              <Text size="sm" c="dimmed">
+                {status.account.plan === "gold"
+                  ? t("Home.ChessRiddle.PlanGold")
+                  : t("Home.ChessRiddle.PlanFree")}
+              </Text>
+            </Stack>
+          ) : status?.status === "reconnectNeeded" ? (
+            <Text size="sm">{t("Home.ChessRiddle.ReconnectNeeded")}</Text>
+          ) : status?.status === "disconnected" ? (
+            <Text size="sm">{t("Home.ChessRiddle.Disconnected")}</Text>
+          ) : null}
+        </div>
+        {error && (
+          <Alert color="danger" px="xs">
+            {errors[error]}
+          </Alert>
+        )}
+        {removed?.revocation_pending && (
+          <Alert color="warning" px="xs">
+            {t("Home.ChessRiddle.RevocationPending")}
+          </Alert>
+        )}
+        {removed?.durability_uncertain && (
+          <Alert color="warning" px="xs">
+            {t("Home.ChessRiddle.RemovalDurabilityUncertain")}
+          </Alert>
+        )}
+        {status?.status === "connected" && status.durability_uncertain && (
+          <Alert color="warning" px="xs">
+            {t("Home.ChessRiddle.ConnectionDurabilityUncertain")}
+          </Alert>
+        )}
+        <Group gap="xs">
+          {status && (
+            <Button
+              className="wrap-button"
+              miw={0}
+              maw="100%"
+              variant={status.status === "connected" ? "default" : "filled"}
+              disabled={pending !== null}
+              loading={pending === "connect" || pending === "disconnect"}
+              onClick={() => void run(status.status === "connected" ? "disconnect" : "connect")}
+            >
+              {status.status === "connected"
+                ? t("Home.ChessRiddle.Disconnect")
+                : status.status === "reconnectNeeded"
+                  ? t("Home.ChessRiddle.Reconnect")
+                  : t("Home.ChessRiddle.Connect")}
+            </Button>
+          )}
+          <Button
+            className="wrap-button"
+            miw={0}
+            maw="100%"
+            variant="subtle"
+            disabled={pending !== null}
+            loading={pending === "refresh"}
+            onClick={() => void run("refresh")}
+          >
+            {t("Home.ChessRiddle.Refresh")}
+          </Button>
+        </Group>
+      </Stack>
+    </Card>
+  );
+}

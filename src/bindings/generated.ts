@@ -5,6 +5,30 @@
 
 
 export const commands = {
+async chessriddleAccount() : Promise<Result<AccountStatus, AccountError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("chessriddle_account") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async connectChessriddle() : Promise<Result<AccountStatus, AccountError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("connect_chessriddle") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async disconnectChessriddle() : Promise<Result<DisconnectOutcome, AccountError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("disconnect_chessriddle") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async closeSplashscreen() : Promise<Result<null, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("close_splashscreen") };
@@ -1329,10 +1353,13 @@ progressEvent: "progress-event"
 
 export type AccountCollectionPreparation = { collection: CollectionDescriptor | null; migrationRequired: boolean; destination: PathRef; pendingBatch: FileWorkspaceHandle | null }
 export type AccountCompletion = { id: string; request: AccountImportRequest; progressId: string; attempt: number; outcome: CompletionOutcome<AccountImportResult>; publication: ArtifactPublication | null; committedDatabase: DatabaseHandle | null; deletionPending: boolean; importing: boolean }
+export type AccountError = "unavailable" | "busy" | "storage" | "network" | "rateLimited" | "server" | "invalidGrant" | "authentication" | "invalidLink" | "browser" | "alreadyConnected"
 export type AccountIdentity = { provider: string; account: string }
 export type AccountImportRequest = { provider: string; account: string; accountHandle: LichessAccountHandle | null; destination: PathRef; pendingBatch: FileWorkspaceHandle | null; sinceMs: bigint | null; target: AccountImportTarget }
 export type AccountImportResult = { collectionNotice: boolean }
 export type AccountImportTarget = { kind: "linked"; collection: string } | { kind: "unlinked"; database: DatabaseHandle; title: string }
+export type AccountProfile = { handle: ChessRiddleAccountHandle; username: string | null; plan: Plan }
+export type AccountStatus = { status: "disconnected" } | { status: "reconnectNeeded" } | { status: "connected"; account: AccountProfile; durability_uncertain: boolean }
 export type AnalysisOptions = { fen: string; moves: string[]; annotateNovelties: boolean; referenceDb: DatabaseHandle | null; reversed: boolean }
 export type AppendOutcome = { appended: number; committed: boolean; indexReady: boolean; durabilityConfirmed: boolean }
 /**
@@ -1349,6 +1376,10 @@ export type AuthenticationStatus = { state: "pending" } | { state: "succeeded"; 
 export type BestMoves = { nodes: bigint; depth: number; score: Score; uciMoves: string[]; sanMoves: string[]; multipv: number; nps: bigint }
 export type BestMovesPayload = { bestLines: BestMoves[]; engine: string; tab: string; fen: string; moves: string[]; progress: number; generation: string }
 export type BoardOrientation = "white" | "black"
+/**
+ * This handle has no conversion into a Lichess handle at the provider boundary.
+ */
+export type ChessRiddleAccountHandle = string
 export type ClockUpdateEvent = { gameId: string; session: bigint; revision: bigint; whiteTime: bigint | null; blackTime: bigint | null }
 export type CollectionDescriptor = { id: string; name: string; file: FileWorkspaceHandle; database: DatabaseHandle | null; account: AccountIdentity | null; status: CollectionStatus; generation: string; omitted: number; retiredDatabase: DatabaseHandle | null; fetchSinceMs: string | null; pendingBatch?: FileWorkspaceHandle | null }
 export type CollectionEdit = { kind: "delete"; games: LinkedGameLocator[] } | { kind: "cleanup"; empty: boolean; duplicates: boolean } | { kind: "renamePlayer"; from: string; to: string }
@@ -1400,6 +1431,7 @@ export type DatabaseRootHandleKind = "databaseRoot"
 export type DatabaseUnread = { filename: string; category: ErrorCategory }
 export type DatabaseUpgradeFailureReason = "disk-full" | "other"
 export type DbGameLookup = { kind: "found"; game: NormalizedGame } | { kind: "missing" }
+export type DisconnectOutcome = { status: "notFound" } | { status: "removed"; revocation_pending: boolean; durability_uncertain: boolean }
 export type DrawReason = "stalemate" | "insufficientMaterial" | "threefoldRepetition" | "fiftyMoveRule" | "agreement"
 export type DurabilityStage = "ArchiveCommitMarker" | "ArchiveReservationJournal" | "DatabasePgnReplacement" | "DirectoryInstall" | "DownloadTargetReplacement" | "NativeExport" | "OldDirectoryCleanup" | "OldDirectoryCleanupSync" | "PgnEdit" | "PgnCacheInvalidation" | "CollectionIndexRefresh" | "PgnCapabilityRebind" | "RegistryReplacement" | "SearchIndexReplacement" | "WorkspaceDirectoryCreation" | "WorkspacePgnCreation" | "WorkspaceRemoval" | "WorkspaceRename" | "WorkspaceSidecarCreation" | "WorkspaceSidecarReplacement" | "PracticePositions" | "PracticeReviewShard" | "PracticeState"
 /**
@@ -1523,6 +1555,7 @@ export type PathOwnerFamily = "engines" | "downloadDestination" | "fileWorkspace
  * Opaque renderer-safe identifier. It deliberately has no path parsing API.
  */
 export type PathRef = { id: string }
+export type Plan = "free" | "gold"
 export type Player = { id: number; name: string | null; elo: number | null; game_count: number }
 export type PlayerConfig = { type: "human"; name: string } | { type: "engine"; name: string; engineId: string; handle: EngineHandle; options?: EngineOption[]; go: GoMode | null }
 export type PlayerGameInfo = { site_stats_data: SiteStatsData[] }

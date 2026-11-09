@@ -13,9 +13,15 @@ import {
 } from "@/bindings/generated";
 import type { ProgressEvent, ProgressItem } from "@/bindings";
 import { normalizeError } from "./errors";
+import { ChessRiddleCommandError } from "./chessriddle";
 import { error as logError, getCurrentWindow } from "./native";
 
 const MAX_SAFE_COUNTER = BigInt(Number.MAX_SAFE_INTEGER);
+const CHESSRIDDLE_COMMANDS = new Set<PropertyKey>([
+    "chessriddleAccount",
+    "connectChessriddle",
+    "disconnectChessriddle",
+]);
 
 type GameCounterFields = Pick<GameState, "session" | "revision">;
 type GameCounterWireInput<T extends GameCounterFields> = Omit<T, keyof GameCounterFields> & {
@@ -429,6 +435,14 @@ export const tauri: TauriCommands = new Proxy(commands, {
                     args[sinceMsIndex] = encodeCounter(args[sinceMsIndex] as bigint, "sinceMs");
                 }
                 const result = await command(...args);
+                if (CHESSRIDDLE_COMMANDS.has(property)) {
+                    if (isCommandResult(result)) {
+                        if (result.status === "error")
+                            throw new ChessRiddleCommandError(result.error);
+                        return result.data;
+                    }
+                    return result;
+                }
                 const value = isCommandResult(result) ? unwrapCommand(result) : result;
                 if (property === "clearProgress") return decodeProgressGeneration(value);
                 if (property === "getProgress") {
@@ -439,6 +453,11 @@ export const tauri: TauriCommands = new Proxy(commands, {
                 }
                 return GAME_STATE_COMMANDS.has(property) ? normalizeGameState(value) : value;
             } catch (error) {
+                if (CHESSRIDDLE_COMMANDS.has(property)) {
+                    throw error instanceof ChessRiddleCommandError
+                        ? error
+                        : new ChessRiddleCommandError(error);
+                }
                 if (error instanceof TauriCommandError) throw error;
                 throw new TauriCommandError(error);
             } finally {

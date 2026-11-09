@@ -372,6 +372,7 @@ function Databases() {
                 )}
 
                 <Select
+                  aria-label={t("Home.Accounts.SelectPlayer")}
                   value={name}
                   data={players}
                   onChange={(e) => setName(e || "")}

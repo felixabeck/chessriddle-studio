@@ -660,38 +660,40 @@ fn owner(state: &crate::AppState) -> Result<&AccountOwner, AccountError> {
     state.chessriddle.get().ok_or(AccountError::Unavailable)
 }
 
-// Phase 5 adds the Specta registration and renderer consumers together.
-#[allow(dead_code)]
+#[tauri::command]
+#[specta::specta]
 pub(crate) async fn chessriddle_account(
-    state: &crate::AppState,
+    state: tauri::State<'_, crate::AppState>,
 ) -> Result<AccountStatus, AccountError> {
-    match owner(state)?.request(Action::Status).await? {
+    match owner(&state)?.request(Action::Status).await? {
         Reply::Status(status) => Ok(status),
         _ => Err(AccountError::Server),
     }
 }
 
-#[allow(dead_code)]
+#[tauri::command]
+#[specta::specta]
 pub(crate) async fn connect_chessriddle(
     app: tauri::AppHandle,
-    state: &crate::AppState,
+    state: tauri::State<'_, crate::AppState>,
 ) -> Result<AccountStatus, AccountError> {
     let opener = Arc::new(move |url: &str| {
         app.opener()
             .open_url(url, None::<&str>)
             .map_err(|_| "ChessRiddle browser failed".into())
     });
-    match owner(state)?.request(Action::Connect(opener)).await? {
+    match owner(&state)?.request(Action::Connect(opener)).await? {
         Reply::Status(status) => Ok(status),
         _ => Err(AccountError::Server),
     }
 }
 
-#[allow(dead_code)]
+#[tauri::command]
+#[specta::specta]
 pub(crate) async fn disconnect_chessriddle(
-    state: &crate::AppState,
+    state: tauri::State<'_, crate::AppState>,
 ) -> Result<DisconnectOutcome, AccountError> {
-    match owner(state)?.request(Action::Disconnect).await? {
+    match owner(&state)?.request(Action::Disconnect).await? {
         Reply::Disconnect(outcome) => Ok(outcome),
         _ => Err(AccountError::Server),
     }

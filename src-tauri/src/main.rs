@@ -2097,6 +2097,9 @@ fn native_log_targets() -> Vec<Target> {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let specta_builder = tauri_specta::Builder::new()
         .commands(tauri_specta::collect_commands!(
+            chessriddle::chessriddle_account,
+            chessriddle::connect_chessriddle,
+            chessriddle::disconnect_chessriddle,
             close_splashscreen,
             verify_signed_bytes,
             prepare_native_read,
