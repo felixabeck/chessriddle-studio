@@ -51,11 +51,21 @@ test("legal append, undo and input cap share the replay rules", () => {
     expect(line).toHaveLength(3);
     expect(canSubmitTraining(puzzle, shorter, puzzle.solutionPlyCount)).toBe(false);
     expect(canSubmitTraining(puzzle, [], puzzle.solutionPlyCount)).toBe(false);
-    for (const token of ["e7e4", "Nf6", "0000"])
-        expect(() => appendTrainingMove(puzzle, [], token, puzzle.solutionPlyCount)).toThrow();
-    expect(() => trainingPosition(puzzle, [], 1)).toThrow();
-    expect(() => trainingDecision({ ...puzzle, entranceMove: "e2e5" })).toThrow();
-    expect(() => trainingDecision({ ...puzzle, decisionFen: INITIAL_FEN })).toThrow();
+    for (const [token, message] of [
+        ["e7e4", "Illegal training move"],
+        ["Nf6", "Invalid training move"],
+        ["0000", "Invalid training move"],
+    ] as const)
+        expect(() => appendTrainingMove(puzzle, [], token, puzzle.solutionPlyCount)).toThrow(
+            message,
+        );
+    expect(() => trainingPosition(puzzle, [], 1)).toThrow("Invalid training cursor");
+    expect(() => trainingDecision({ ...puzzle, entranceMove: "e2e5" })).toThrow(
+        "Illegal training move",
+    );
+    expect(() => trainingDecision({ ...puzzle, decisionFen: INITIAL_FEN })).toThrow(
+        "Inconsistent training position",
+    );
 });
 
 test("terminal positions enable submit before the cap and solution walking validates legality", () => {
@@ -77,7 +87,9 @@ test("terminal positions enable submit before the cap and solution walking valid
     expect(canSubmitTraining(short, ["d8h4"], 7)).toBe(true);
     expect(trainingDecision(mating).isCheckmate()).toBe(true);
     expect(walkTrainingLine(short.decisionFen, ["d8h4"])[1].san).toBe("Qh4#");
-    expect(() => walkTrainingLine(short.decisionFen, ["d8h4", "a2a3"])).toThrow();
+    expect(() => walkTrainingLine(short.decisionFen, ["d8h4", "a2a3"])).toThrow(
+        "Illegal training move",
+    );
 });
 
 test("input cap and submit threshold can grow after a too-short verdict", () => {
