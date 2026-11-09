@@ -689,6 +689,22 @@ pub(crate) fn resolve_pending_in(
     digest: Option<&str>,
     establish_durability: impl FnOnce() -> Result<(), Error>,
 ) -> Result<(), Error> {
+    resolve_pending_locked(
+        directory,
+        file_id,
+        count,
+        digest,
+        Box::new(establish_durability),
+    )
+}
+
+fn resolve_pending_locked(
+    directory: &AuthorizedDir,
+    file_id: &str,
+    count: usize,
+    digest: Option<&str>,
+    establish_durability: Box<dyn FnOnce() -> Result<(), Error> + '_>,
+) -> Result<(), Error> {
     with_map_lock(directory, file_id, || {
         if let Some(mut map) = read_map(directory, file_id)? {
             if let Some(pending) = &map.pending_reorder {
@@ -707,7 +723,7 @@ pub(crate) fn resolve_pending_in(
                 return apply_reorder(directory, &mut map, landed);
             }
         }
-        resolve_pending_delete_locked(directory, file_id, count, Box::new(establish_durability))
+        resolve_pending_delete_locked(directory, file_id, count, establish_durability)
     })
 }
 
@@ -3486,6 +3502,107 @@ mod tests {
     }
 
     #[test]
+    fn deck_map_rejects_each_invalid_reorder_journal_without_changing_bytes() {
+        let (_temp, directory) = directory();
+        let mut valid = fresh_map(&directory, "file", 2, true).unwrap();
+        valid.pending_reorder = Some(PendingReorder {
+            id: uuid::Uuid::new_v4().to_string(),
+            original_digest: "a".repeat(64),
+            output_digest: "b".repeat(64),
+            start: 0,
+            order: vec![1, 0],
+        });
+        let valid_json = serde_json::to_value(&valid).unwrap();
+        let pending_delete = serde_json::json!({
+            "id": uuid::Uuid::new_v4().to_string(), "ordinal": 0, "gameCount": 2
+        });
+        let mut cases = vec![("pending", pending_delete)];
+        for (field, value) in [
+            ("id", serde_json::json!("invalid-id")),
+            ("originalDigest", serde_json::json!("a".repeat(63))),
+            ("outputDigest", serde_json::json!("b".repeat(65))),
+            ("originalDigest", serde_json::json!("g".repeat(64))),
+            ("outputDigest", serde_json::json!("g".repeat(64))),
+            ("outputDigest", serde_json::json!("a".repeat(64))),
+            ("start", serde_json::json!(usize::MAX)),
+            ("start", serde_json::json!(1)),
+            ("order", serde_json::json!([0, 0])),
+            ("order", serde_json::json!([0, 2])),
+        ] {
+            let mut pending = valid_json["pendingReorder"].clone();
+            pending[field] = value;
+            cases.push(("pendingReorder", pending));
+        }
+        let leaf = map_leaf("file");
+        for (field, value) in cases {
+            let mut invalid = valid_json.clone();
+            invalid[field] = value;
+            let bytes = serde_json::to_vec(&invalid).unwrap();
+            fs::write(directory.path().join(&leaf), &bytes).unwrap();
+            let error = read_map(&directory, "file").unwrap_err();
+            assert_eq!(
+                error.diagnostic(),
+                invalid_leaf(&leaf, "deck map is invalid").diagnostic(),
+                "{invalid}"
+            );
+            assert!(matches!(
+                resolve_pending_in(&directory, "file", 2, Some(&"b".repeat(64)), || {
+                    panic!("invalid journal must not establish PGN durability")
+                }),
+                Err(Error::InvalidInput(_))
+            ));
+            assert_eq!(leaf_bytes(&directory, &leaf), bytes);
+        }
+        write_map(&directory, &valid).unwrap();
+        let loaded = read_map(&directory, "file").unwrap().unwrap();
+        assert_eq!(loaded.pending_reorder.unwrap().order, vec![1, 0]);
+        assert_eq!(loaded.ordinals, vec![Some(0), Some(1)]);
+    }
+
+    #[test]
+    fn prepare_reorder_refuses_invalid_spans_counts_and_permutations_without_writes() {
+        let (_temp, directory) = directory();
+        let original = "a".repeat(64);
+        let output = "b".repeat(64);
+        assert!(
+            matches!(prepare_reorder_in(&directory, "file", MAP_MAX_ORDINALS + 1, 0, vec![0], original.clone(), output.clone()),
+            Err(Error::ResourceLimit(message)) if message == "practice ordinal limit exceeded")
+        );
+        assert!(read_map(&directory, "file").unwrap().is_none());
+        let map = fresh_map(&directory, "file", 2, true).unwrap();
+        write_map(&directory, &map).unwrap();
+        let before = leaf_bytes(&directory, &map_leaf("file"));
+        for (count, start, order) in [
+            (MAP_MAX_ORDINALS + 1, 0, vec![0]),
+            (2, usize::MAX, vec![0]),
+            (2, 2, vec![1]),
+            (2, 0, vec![0, 0]),
+            (2, 0, vec![0, 2]),
+        ] {
+            assert!(
+                matches!(prepare_reorder_in(&directory, "file", count, start, order, original.clone(), output.clone()),
+                Err(Error::InvalidInput(message)) if message == "invalid practice permutation")
+            );
+            assert_eq!(leaf_bytes(&directory, &map_leaf("file")), before);
+            assert!(!has_pending_structural_mutation(&directory, "file").unwrap());
+        }
+    }
+
+    #[test]
+    fn applying_reorder_without_a_journal_preserves_map_and_storage() {
+        let (_temp, directory) = directory();
+        let mut map = fresh_map(&directory, "file", 2, true).unwrap();
+        write_map(&directory, &map).unwrap();
+        let before = serde_json::to_value(&map).unwrap();
+        let stored = all_leaf_bytes(&directory);
+        for landed in [false, true] {
+            apply_reorder(&directory, &mut map, landed).unwrap();
+            assert_eq!(serde_json::to_value(&map).unwrap(), before);
+            assert_eq!(all_leaf_bytes(&directory), stored);
+        }
+    }
+
+    #[test]
     fn deck_map_read_and_write_enforce_ordinal_and_serialized_size_limits() {
         let (_temp, directory) = directory();
         let mut map = fresh_map(&directory, "file", 0, true).unwrap();
@@ -3671,12 +3788,14 @@ mod tests {
         ));
         finish_reorder_in(&directory, "file", "foreign", true).unwrap();
         assert!(has_pending_structural_mutation(&directory, "file").unwrap());
-        assert!(matches!(
-            resolve_pending_in(&directory, "file", 3, Some(&unknown), || panic!(
-                "unknown outcome must not sync"
-            )),
-            Err(Error::Conflict(_))
-        ));
+        let before = leaf_bytes(&directory, &map_leaf("file"));
+        for digest in [None, Some(unknown.as_str())] {
+            assert!(matches!(
+                resolve_pending_in(&directory, "file", 3, digest, || panic!("unknown outcome must not sync")),
+                Err(Error::Conflict(message)) if message == "practice reorder requires resolution"
+            ));
+            assert_eq!(leaf_bytes(&directory, &map_leaf("file")), before);
+        }
         assert_eq!(
             read_map(&directory, "file")
                 .unwrap()
@@ -3693,7 +3812,17 @@ mod tests {
             .is_err()
         );
         assert!(has_pending_structural_mutation(&directory, "file").unwrap());
-        resolve_pending_in(&directory, "file", 3, Some(&output), || Ok(())).unwrap();
+        assert_eq!(leaf_bytes(&directory, &map_leaf("file")), before);
+        let syncs = std::cell::Cell::new(0);
+        resolve_pending_in(&directory, "file", 3, Some(&output), || {
+            syncs.set(syncs.get() + 1);
+            let pending = read_map(&directory, "file")?.unwrap();
+            assert_eq!(pending.ordinals, vec![Some(0), Some(1), Some(2)]);
+            assert_eq!(pending.pending_reorder.unwrap().id, id);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(syncs.get(), 1);
         let map = read_map(&directory, "file").unwrap().unwrap();
         assert_eq!(map.ordinals, vec![Some(2), Some(0), Some(1)]);
         assert_ne!(map.epoch, NO_MAP_EPOCH);
@@ -3718,6 +3847,7 @@ mod tests {
         let map = read_map(&directory, "file").unwrap().unwrap();
         assert_eq!(map.epoch, epoch);
         assert_eq!(map.ordinals, vec![Some(2), Some(0), Some(1)]);
+        assert!(!map.has_pending());
         let inventory = list_practice_decks_in(&directory).unwrap();
         assert!(inventory.anomalies.is_empty());
     }
@@ -4280,6 +4410,175 @@ mod tests {
             assert!(inventory.decks.contains(&PracticeDeckIdentity {
                 file_id: "file".into(),
                 game,
+            }));
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn inventory_recovers_reorders_by_digest_and_preserves_unresolved_or_invalid_maps() {
+        use crate::infra::path_authority::{
+            PathAuthority, PathClass, PathOperation, SharedPathAuthority,
+        };
+
+        let (temp, directory) = directory();
+        let directory = Arc::new(directory);
+        let original = b"[Event \"A\"]\n\n1. e4 *\n\n[Event \"B\"]\n\n1. d4 *\n\n";
+        let output = b"[Event \"B\"]\n\n1. d4 *\n\n[Event \"A\"]\n\n1. e4 *\n\n";
+        let unknown = b"[Event \"Other\"]\n\n1. c4 *\n";
+        let mut authority = PathAuthority::open(temp.path().join("registry.json"), vec![]).unwrap();
+        let mut files = Vec::new();
+        for name in ["output", "original", "unknown", "healthy"] {
+            let path = temp.path().join(format!("{name}.pgn"));
+            let contents: &[u8] = match name {
+                "output" => output,
+                "unknown" => unknown,
+                _ => original,
+            };
+            fs::write(&path, contents).unwrap();
+            let operations = vec![PathOperation::ReadPgn, PathOperation::WritePgn];
+            let grant = authority
+                .grant_dialog_operations(
+                    &path,
+                    "picked PGN",
+                    PathClass::BoundedDialogGrant,
+                    operations.clone(),
+                    std::time::Duration::from_secs(60),
+                    1,
+                )
+                .unwrap();
+            let handle = authority
+                .promote_dialog(&grant, PathClass::PersistentFile, "picked PGN", operations)
+                .unwrap();
+            let file_id = handle.id.id;
+            let mut decks = Vec::new();
+            for game in 0..2 {
+                let document =
+                    serde_json::json!({"positions": [{"fen": format!("position-{game}")}]})
+                        .to_string();
+                sync_practice_positions_in(&directory, &file_id, game, 0, 0, &document).unwrap();
+                decks.push(
+                    load_practice_deck_in(&directory, &file_id, game)
+                        .unwrap()
+                        .unwrap(),
+                );
+            }
+            let pending_id = prepare_reorder_in(
+                &directory,
+                &file_id,
+                2,
+                0,
+                vec![1, 0],
+                format!("{:x}", Sha256::digest(original)),
+                format!("{:x}", Sha256::digest(output)),
+            )
+            .unwrap();
+            if name == "healthy" {
+                finish_reorder_in(&directory, &file_id, &pending_id, false).unwrap();
+            }
+            let before = leaf_bytes(&directory, &map_leaf(&file_id));
+            files.push((name, file_id, path, contents, before, decks));
+        }
+        let malformed_leaf = map_leaf("malformed");
+        fs::write(directory.path().join(&malformed_leaf), b"{damaged").unwrap();
+        let wrong_owner_leaf = map_leaf("wrong-owner");
+        let healthy_map = &files[3].4;
+        fs::write(directory.path().join(&wrong_owner_leaf), healthy_map).unwrap();
+
+        recover_inventory_pending(
+            directory.clone(),
+            SharedPathAuthority::installed(authority),
+            crate::pgn::PgnRepository::default(),
+        )
+        .await
+        .unwrap();
+
+        for (name, file_id, path, contents, before, decks) in &files {
+            assert_eq!(fs::read(path).unwrap(), *contents);
+            let map = read_map(&directory, file_id).unwrap().unwrap();
+            if *name == "unknown" {
+                assert!(map.pending_reorder.is_some());
+                assert_eq!(leaf_bytes(&directory, &map_leaf(file_id)), *before);
+                assert!(matches!(
+                    load_mapped_practice_deck_in(&directory, file_id, 0),
+                    Err(Error::Conflict(_))
+                ));
+            } else {
+                assert!(!map.has_pending());
+                let order = if *name == "output" { [1, 0] } else { [0, 1] };
+                assert_eq!(map.ordinals, order.map(Some));
+                assert_eq!(map.legacy_superseded, *name == "output");
+                assert_eq!(map.epoch == NO_MAP_EPOCH, *name != "output");
+                for (game, number) in order.into_iter().enumerate() {
+                    let loaded =
+                        load_mapped_practice_deck_in(&directory, file_id, game as i32).unwrap();
+                    assert_eq!(loaded.deck.as_ref(), Some(&decks[number as usize]));
+                }
+            }
+            for (game, deck) in decks.iter().enumerate() {
+                assert_eq!(
+                    load_practice_deck_in(&directory, file_id, game as i32)
+                        .unwrap()
+                        .as_ref(),
+                    Some(deck)
+                );
+            }
+        }
+        assert_eq!(leaf_bytes(&directory, &malformed_leaf), b"{damaged");
+        assert_eq!(leaf_bytes(&directory, &wrong_owner_leaf), *healthy_map);
+    }
+
+    #[test]
+    fn inventory_hides_a_reorder_prepared_after_its_map_snapshot_until_resolution() {
+        let (_temp, directory) = directory();
+        let directory = Arc::new(directory);
+        for game in 0..2 {
+            sync_practice_positions_in(&directory, "file", game, 0, 0, &positions()).unwrap();
+        }
+        assert!(read_map(&directory, "file").unwrap().is_none());
+        let overlap_directory = directory.clone();
+        INVENTORY_AFTER_MAP_SNAPSHOT_HOOK.with(|slot| {
+            *slot.borrow_mut() = Some(Box::new(move || {
+                prepare_reorder_in(
+                    &overlap_directory,
+                    "file",
+                    2,
+                    0,
+                    vec![1, 0],
+                    "a".repeat(64),
+                    "b".repeat(64),
+                )
+                .unwrap();
+            }));
+        });
+        let inventory = list_practice_decks_in(&directory).unwrap();
+        assert!(inventory.decks.is_empty());
+        assert_eq!(inventory.anomalies.len(), 1);
+        let damage = &inventory.anomalies[0];
+        assert_eq!(damage.kind, PracticeStoreAnomalyKind::DamagedDeck);
+        assert_eq!(damage.leaf, map_leaf("file"));
+        assert_eq!(damage.file_id.as_deref(), Some("file"));
+        assert_eq!(damage.game, None);
+        assert_eq!(damage.epoch, None);
+        let before = all_leaf_bytes(&directory);
+        let second = list_practice_decks_in(&directory).unwrap();
+        assert!(second.decks.is_empty());
+        assert_eq!(second.anomalies, inventory.anomalies);
+        assert_eq!(all_leaf_bytes(&directory), before);
+        let pending_id = read_map(&directory, "file")
+            .unwrap()
+            .unwrap()
+            .pending_reorder
+            .unwrap()
+            .id;
+        finish_reorder_in(&directory, "file", &pending_id, false).unwrap();
+        let inventory = list_practice_decks_in(&directory).unwrap();
+        assert!(inventory.anomalies.is_empty());
+        assert_eq!(inventory.decks.len(), 2);
+        for game in 0..2 {
+            assert!(inventory.decks.contains(&PracticeDeckIdentity {
+                file_id: "file".into(),
+                game
             }));
         }
     }
