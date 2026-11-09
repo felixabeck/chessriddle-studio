@@ -4,7 +4,7 @@ type StructureChange = {
     resolve: () => void;
 };
 
-// Delete flows own these entries. Retain only one entry per file with an active delete.
+// Structural mutations own these entries. Retain only one entry per file with an active mutation.
 const changes = new Map<string, StructureChange>();
 
 /** The owner must release in finally, after publishing or refusing the same-file tab update. */

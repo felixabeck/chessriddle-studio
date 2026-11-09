@@ -2,6 +2,12 @@ import type { PgnLineMove } from "@/bindings";
 import type { GameSelectorRow } from "./GameSelector";
 import classes from "./GameSelector.module.css";
 
+const MAX_AUTOSCROLL_FRAME_MS = 32;
+const INITIAL_AUTOSCROLL_FRAME_MS = 16;
+const AUTOSCROLL_EDGE_PX = 40;
+const MAX_AUTOSCROLL_SPEED_PX_PER_MS = 0.6;
+const DRAG_ACTIVATION_DISTANCE_PX = 6;
+
 type ListSnapshot = {
     rows: ReadonlyMap<number, GameSelectorRow>;
     total: number;
@@ -132,12 +138,12 @@ export function attachLineDragController({
     const tick = (current: Session, now: number) => {
         if (session !== current || !current.active) return;
         const elapsed = Math.min(
-            32,
-            current.lastFrame === undefined ? 16 : now - current.lastFrame,
+            MAX_AUTOSCROLL_FRAME_MS,
+            current.lastFrame === undefined ? INITIAL_AUTOSCROLL_FRAME_MS : now - current.lastFrame,
         );
         current.lastFrame = now;
         const bounds = viewport.getBoundingClientRect();
-        const edge = Math.min(40, bounds.height / 4);
+        const edge = Math.min(AUTOSCROLL_EDGE_PX, bounds.height / 4);
         if (
             current.x >= bounds.left &&
             current.x < bounds.right &&
@@ -151,7 +157,7 @@ export function attachLineDragController({
                     : current.y > bounds.bottom - edge
                       ? Math.min(1, (current.y - bounds.bottom + edge) / edge)
                       : 0;
-            viewport.scrollTop += velocity * elapsed * 0.6;
+            viewport.scrollTop += velocity * elapsed * MAX_AUTOSCROLL_SPEED_PX_PER_MS;
         }
         update(current);
         current.frame = requestAnimationFrame((time) => tick(current, time));
@@ -221,7 +227,10 @@ export function attachLineDragController({
                 current.x = next.clientX;
                 current.y = next.clientY;
                 if (!current.active) {
-                    if (Math.hypot(current.x - current.startX, current.y - current.startY) < 6)
+                    if (
+                        Math.hypot(current.x - current.startX, current.y - current.startY) <
+                        DRAG_ACTIVATION_DISTANCE_PX
+                    )
                         return;
                     try {
                         list.setPointerCapture(current.pointerId);

@@ -55,6 +55,8 @@ import {
     startFileRevisionPoll,
 } from "@/state/fileFreshness";
 import type { Tab } from "@/utils/tabs";
+import { beginFileStructureChange } from "@/state/fileStructureChange";
+import { fileWorkspaceKey } from "./pathCapabilities";
 import { createFile, ensureFileWorkspace, openFile, pickPgnFile, writeFileGame } from "./files";
 
 const listingCache = { cache: new Map(), mutate: vi.fn() };
@@ -108,6 +110,36 @@ describe("openFile tab admission", () => {
             revision: "device:inode:revision",
             present: true,
         });
+    });
+
+    test("waits for a file structure change before reading and admitting the game", async () => {
+        const endChange = beginFileStructureChange(fileWorkspaceKey(file.handle));
+        mocks.createTab.mockResolvedValueOnce("tab-id");
+        const pending = openFile(file, setTabs);
+        try {
+            await flushPromises();
+            expect(mocks.readGame).not.toHaveBeenCalled();
+            expect(mocks.createTab).not.toHaveBeenCalled();
+            mocks.readGame.mockResolvedValue({
+                pgn: '[Event "Reordered line"]\n\n*',
+                stamp: freshStamp,
+                revision: "after-reorder",
+                present: true,
+            });
+        } finally {
+            endChange();
+        }
+
+        await expect(pending).resolves.toBe("tab-id");
+        expect(mocks.readGame).toHaveBeenCalledExactlyOnceWith(file.handle, 0, undefined);
+        expect(mocks.createTab).toHaveBeenCalledWith(
+            expect.objectContaining({
+                initialTree: expect.objectContaining({
+                    headers: expect.objectContaining({ event: "Reordered line" }),
+                }),
+                gameOrigin: { kind: "file", file, gameNumber: 0 },
+            }),
+        );
     });
 
     test("does not acknowledge practice or recent metadata when admission is refused", async () => {

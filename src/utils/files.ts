@@ -23,6 +23,7 @@ import {
     tabFamily,
 } from "@/state/atoms";
 import { beginFileWrite, setFileFreshness } from "@/state/fileFreshness";
+import { afterFileStructureChange } from "@/state/fileStructureChange";
 import { parsePGN } from "./chess";
 import { fileWorkspaceKey } from "./pathCapabilities";
 import { createTab, type SetTabs } from "./tabs";
@@ -149,7 +150,9 @@ export async function openFile(
 ) {
     const store = options?.store ?? getDefaultStore();
     const gameNumber = options?.gameNumber ?? 0;
-    const loaded = await loadFileGame(file.handle, gameNumber);
+    const loaded = await afterFileStructureChange(fileWorkspaceKey(file.handle), () =>
+        loadFileGame(file.handle, gameNumber),
+    );
     let tabName = options?.tabName ?? file.name ?? "Untitled";
     if (options?.tabName === undefined && loaded.pgn) {
         const gameName = getGameName(loaded.tree.headers);

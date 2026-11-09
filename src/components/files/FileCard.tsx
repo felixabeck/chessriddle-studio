@@ -105,7 +105,11 @@ function FileCard({
           return current?.key === handleKey ? current.index : 0;
         },
         select: (index) => {
-          if (mounted.current) setPage(index);
+          workspace.set(libraryGamePositionAtom, (current) =>
+            current?.key === handleKey || (mounted.current && current === null)
+              ? { key: handleKey, index }
+              : current,
+          );
         },
         reload: (reset) => {
           if (!mounted.current) return;

@@ -26,6 +26,8 @@ import { attachLineDragController } from "./lineDragController";
 
 // Opening load count; the requested end index is inclusive.
 const INITIAL_LOAD_ROWS = 11;
+// Maximum rows per read. The request's end index is inclusive.
+const READ_PAGE_SIZE_ROWS = 1000;
 // Row height at 100 % font size.
 const ROW_HEIGHT_PX = 30;
 // Space a section adds above its first line at 100 % font size.
@@ -89,7 +91,12 @@ export default function GameSelector({
         const entries: (readonly [number, GameSelectorRow])[] = [];
         let next = startIndex;
         while (next <= stopIndex && !options?.signal?.aborted) {
-          const data = await tauri.readGames(path, next, Math.min(stopIndex, next + 999), options);
+          const data = await tauri.readGames(
+            path,
+            next,
+            Math.min(stopIndex, next + READ_PAGE_SIZE_ROWS - 1),
+            options,
+          );
           if (data.length === 0) break;
           const page = await Promise.all(
             data.map(async (game, index) => {

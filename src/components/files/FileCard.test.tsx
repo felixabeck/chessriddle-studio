@@ -3,7 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { cancellationError } from "@/platform/tauri";
 import { tabStorage } from "@/state/store/tabStorage";
-import type { StampedGame } from "@/bindings";
+import type { GameMoveResult, StampedGame } from "@/bindings";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { createStore, getDefaultStore, Provider } from "jotai";
 import { tabsAtom } from "@/state/atoms";
@@ -205,6 +205,59 @@ describe("FileCard", () => {
       index: 1,
     });
   });
+
+  test.each([false, true])(
+    "reorder completion after unmount preserves selection ownership with another file selected=%s",
+    async (selectOtherFile) => {
+      const workspace = createStore();
+      const repertoire = { ...sampleFileA, metadata: { type: "repertoire" as const, tags: [] } };
+      const originalPosition = { key: fileWorkspaceKey(repertoire.handle), index: 0 };
+      const otherPosition = { key: fileWorkspaceKey(sampleFileB.handle), index: 2 };
+      workspace.set(libraryGamePositionAtom, originalPosition);
+      mocks.readGames.mockResolvedValue([stampedGame("Preview")]);
+      let resolveMove!: (result: GameMoveResult) => void;
+      mocks.moveGames.mockReturnValueOnce(
+        new Promise<GameMoveResult>((resolve) => {
+          resolveMove = resolve;
+        }),
+      );
+      const renderCard = () =>
+        renderWithMantine(
+          <Provider store={workspace}>
+            <FileCard onEditMetadata={vi.fn()} selected={repertoire} />
+          </Provider>,
+          root,
+        );
+      await renderCard();
+      let pending!: Promise<unknown>;
+      await act(async () => {
+        pending = mocks.onMoveLines!(
+          { kind: "line", source: 0, before: 2, belowHeading: true },
+          "list-revision",
+        );
+      });
+      expect(mocks.moveGames).toHaveBeenCalledOnce();
+      await renderWithMantine(null, root);
+      if (selectOtherFile) workspace.set(libraryGamePositionAtom, otherPosition);
+
+      await act(async () => {
+        resolveMove({ changed: true, start: 0, order: [1, 0, 2] });
+        await pending;
+      });
+
+      expect(workspace.get(libraryGamePositionAtom)).toEqual(
+        selectOtherFile ? otherPosition : { ...originalPosition, index: 1 },
+      );
+      await renderCard();
+      const expectedIndex = selectOtherFile ? 0 : 1;
+      expect(mocks.readGames).toHaveBeenLastCalledWith(
+        repertoire.handle,
+        expectedIndex,
+        expectedIndex,
+        expect.anything(),
+      );
+    },
+  );
 
   test("rapid file replacement aborts previous signal and prevents stale publication", async () => {
     const signals: AbortSignal[] = [];
