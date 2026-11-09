@@ -489,6 +489,8 @@ export const tauri: TauriCommands = new Proxy(commands, {
 
 /** Typed event subscriptions owned by the same generated-binding boundary. */
 export const tauriSubscriptions = {
+    chessBaseSelected: (callback: Parameters<typeof events.chessBaseSelected.listen>[0]) =>
+        events.chessBaseSelected.listen(callback),
     completionChanged: (callback: Parameters<typeof events.completionChanged.listen>[0]) =>
         events.completionChanged.listen(callback),
     windowFocus: (callback: () => void) => getCurrentWindow().listen("tauri://focus", callback),

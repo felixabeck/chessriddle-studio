@@ -14,6 +14,27 @@ import {
 } from "./errors";
 
 const native = vi.hoisted(() => ({ warn: vi.fn().mockResolvedValue(undefined) }));
+
+test("ChessBase discriminator survives command normalization and requires exact true", () => {
+    const payload = {
+        tag: "backend-error",
+        category: "invalid-input",
+        message: "Export as PGN",
+        chessBaseDatabase: true,
+    };
+    expect(normalizeError(payload)).toMatchObject({
+        category: "validation",
+        chessBaseDatabase: true,
+    });
+    expect(normalizeError(new TauriCommandError(payload))).toMatchObject({
+        chessBaseDatabase: true,
+    });
+    for (const chessBaseDatabase of [undefined, false, null, 1, "true"]) {
+        expect(normalizeError({ ...payload, chessBaseDatabase })).not.toHaveProperty(
+            "chessBaseDatabase",
+        );
+    }
+});
 vi.mock("./native", async (importOriginal) => ({
     ...(await importOriginal<typeof import("./native")>()),
     warn: native.warn,

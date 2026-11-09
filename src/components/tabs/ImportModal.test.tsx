@@ -38,7 +38,10 @@ const fixtures = vi.hoisted(() => ({
 }));
 
 vi.mock("@/state/atoms", () => ({ addRecentFileAtom: fixtures.atoms.addRecentFile }));
-vi.mock("jotai", () => ({ useStore: () => fixtures.store }));
+vi.mock("jotai", async (original) => ({
+  ...(await original<typeof import("jotai")>()),
+  useStore: () => fixtures.store,
+}));
 vi.mock("@/utils/chess", () => ({ parsePGN: fixtures.parsePGN }));
 vi.mock("@/utils/chess.com/api", () => ({ getChesscomGame: fixtures.getChesscomGame }));
 vi.mock("@/utils/lichess/api", () => ({ getLichessGame: fixtures.getLichessGame }));

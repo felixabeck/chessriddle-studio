@@ -64,6 +64,7 @@ vi.mock("@/platform/tauri", () => ({
   tauriSubscriptions: { windowFocus: mocks.windowFocus },
 }));
 vi.mock("@/components/About", () => ({ default: () => null }));
+vi.mock("@/components/library/ChessBaseGuide", () => ({ default: () => null }));
 vi.mock("@/components/feedback/LazyFeedbackModal", () => ({
   default: ({ opened, onClose }: { opened: boolean; onClose: () => void }) =>
     opened ? (

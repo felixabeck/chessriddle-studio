@@ -23,7 +23,8 @@ vi.mock("zustand", () => ({
       setTournamentsActiveTab: vi.fn(),
     }),
 }));
-vi.mock("jotai", () => ({
+vi.mock("jotai", async (original) => ({
+  ...(await original<typeof import("jotai")>()),
   useAtom: () => [[], vi.fn()],
   useSetAtom: () => mocks.addRecentFile,
   useStore: () => ({ get: vi.fn() }),

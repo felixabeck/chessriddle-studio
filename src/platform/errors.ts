@@ -28,6 +28,7 @@ export type AppError = {
     nameTaken?: true;
     databaseAdmission?: true;
     databaseBusy?: true;
+    chessBaseDatabase?: true;
     progress_generation?: string;
 };
 
@@ -247,6 +248,7 @@ export function normalizeError(error: unknown): AppError {
             ...(error.nameTaken === true ? { nameTaken: true } : {}),
             ...(error.databaseAdmission === true ? { databaseAdmission: true } : {}),
             ...(error.databaseBusy === true ? { databaseBusy: true } : {}),
+            ...(error.chessBaseDatabase === true ? { chessBaseDatabase: true } : {}),
             ...(typeof error.progressGeneration === "string"
                 ? { progress_generation: error.progressGeneration }
                 : {}),

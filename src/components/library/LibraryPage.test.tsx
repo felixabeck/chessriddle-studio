@@ -11,6 +11,7 @@ import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
 import LibraryPage from "./LibraryPage";
 import { libraryFilterAtom, librarySearchAtom, librarySelectionAtom } from "./memory";
+import { chessBaseGuideAtom } from "./chessBaseGuideState";
 
 const mocks = vi.hoisted(() => ({
   files: [] as Entry[] | undefined,
@@ -928,9 +929,16 @@ test("empty success differs from loading and source failure", async () => {
   mocks.databases = [];
   await render();
   expect(host.textContent).toContain("Your library is empty");
+  await click(button("Coming from ChessBase?"));
+  expect(store.get(chessBaseGuideAtom)).toBe("link");
+  await act(async () => store.set(librarySearchAtom, "missing"));
+  expect(host.textContent).toContain("No results");
+  expect(host.textContent).not.toContain("Coming from ChessBase?");
+  await act(async () => store.set(librarySearchAtom, ""));
   mocks.databases = undefined;
   await render();
   expect(host.textContent).not.toContain("Your library is empty");
+  expect(host.textContent).not.toContain("Coming from ChessBase?");
   expect(host.textContent).toContain("Loading games databases");
 });
 

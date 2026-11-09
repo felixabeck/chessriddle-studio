@@ -32,6 +32,21 @@ export default defineConfig({
     snapshotPathTemplate: "{testDir}/{testFilePath}-snapshots/{arg}-{projectName}{ext}",
     projects: [
         {
+            name: "chessbase-guide",
+            testMatch: /chessbase-guide\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "light" },
+        },
+        {
+            name: "chessbase-guide-narrow",
+            testMatch: /chessbase-guide\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 320, height: 720 }, colorScheme: "light" },
+        },
+        {
+            name: "chessbase-guide-scaled",
+            testMatch: /chessbase-guide\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "light" },
+        },
+        {
             name: "chessriddle-training",
             testMatch: /chessriddle-training\.spec\.ts/,
             use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "light" },

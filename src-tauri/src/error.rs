@@ -171,6 +171,9 @@ pub struct ErrorPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[specta(optional)]
     pub database_busy: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub chess_base_database: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[specta(optional)]
     pub progress_generation: Option<crate::progress::ProgressGeneration>,
@@ -315,6 +318,9 @@ pub enum Error {
     AnalysisCancelled,
     #[error("Invalid input: {0}")]
     InvalidInput(String),
+
+    #[error("Export the ChessBase database as PGN first")]
+    ChessBaseDatabase,
 
     #[error("Invalid input: {kind}")]
     NativeFolderSelection {
@@ -600,6 +606,7 @@ impl Error {
             Self::Diesel(_) | Self::R2d2(_) => ErrorCategory::Database,
             Self::SystemTime(_)
             | Self::InvalidInput(_)
+            | Self::ChessBaseDatabase
             | Self::NativeFolderSelection { .. }
             | Self::InvalidColor(_) => ErrorCategory::InvalidInput,
             Self::StaleGame => ErrorCategory::StaleGame,
@@ -1112,8 +1119,30 @@ impl Error {
                     || message == DATABASE_OPEN_THROUGH_ANOTHER_NAME)
             .then_some(true),
             database_busy: self.is_database_busy().then_some(true),
+            chess_base_database: matches!(self.unlabelled(), Self::ChessBaseDatabase)
+                .then_some(true),
             progress_generation: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod chessbase_tests {
+    use super::*;
+
+    #[test]
+    fn chessbase_marker_is_exclusive_and_survives_shared() -> Result<(), serde_json::Error> {
+        for error in [
+            Error::ChessBaseDatabase,
+            Error::Shared(std::sync::Arc::new(Error::ChessBaseDatabase)),
+        ] {
+            let payload = serde_json::to_value(error)?;
+            assert_eq!(payload["category"], "invalid-input");
+            assert_eq!(payload["chessBaseDatabase"], true);
+        }
+        let other = serde_json::to_value(Error::InvalidInput("other".into()))?;
+        assert!(other.get("chessBaseDatabase").is_none());
+        Ok(())
     }
 }
 

@@ -26,7 +26,8 @@ vi.mock("@/utils/files", () => ({
   openFile: fixtures.openFile,
 }));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => fixtures.navigate }));
-vi.mock("jotai", () => ({
+vi.mock("jotai", async (original) => ({
+  ...(await original<typeof import("jotai")>()),
   useAtom: (atom: symbol) => (atom.description === "tabs" ? [[], fixtures.setTabs] : [[], vi.fn()]),
   useSetAtom: () => vi.fn(),
   useStore: () => ({ set: fixtures.storeSet }),

@@ -1383,6 +1383,7 @@ async submitFeedback(feedbackType: FeedbackType, message: string, contactEmail: 
 
 export const events = __makeEvents__<{
 bestMovesPayload: BestMovesPayload,
+chessBaseSelected: ChessBaseSelected,
 clockUpdateEvent: ClockUpdateEvent,
 completionChanged: CompletionChanged,
 convertProgress: ConvertProgress,
@@ -1392,6 +1393,7 @@ gameOverEvent: GameOverEvent,
 progressEvent: ProgressEvent
 }>({
 bestMovesPayload: "best-moves-payload",
+chessBaseSelected: "chess-base-selected",
 clockUpdateEvent: "clock-update-event",
 completionChanged: "completion-changed",
 convertProgress: "convert-progress",
@@ -1432,6 +1434,7 @@ export type AuthenticationStatus = { state: "pending" } | { state: "succeeded"; 
 export type BestMoves = { nodes: bigint; depth: number; score: Score; uciMoves: string[]; sanMoves: string[]; multipv: number; nps: bigint }
 export type BestMovesPayload = { bestLines: BestMoves[]; engine: string; tab: string; fen: string; moves: string[]; progress: number; generation: string }
 export type BoardOrientation = "white" | "black"
+export type ChessBaseSelected = Record<string, never>
 /**
  * This handle has no conversion into a Lichess handle at the provider boundary.
  */
@@ -1550,7 +1553,7 @@ export type EngineTerminalEntry = { type: "infoString"; value: string } | { type
  */
 export type EngineTerminalSnapshot = { kind: EngineFailureKind; exitStatus: EngineExitStatus | null; reason: string | null; entries: EngineTerminalEntry[] }
 export type ErrorCategory = "io" | "parsing" | "platform" | "network" | "chess-data" | "database" | "invalid-input" | "stale-game" | "missing-resource" | "conflict" | "resource-limit" | "authentication" | "credential" | "cancellation" | "durability" | "partial-removal" | "operation-and-cleanup" | "engine-timeout" | "engine-position-rejected" | "engine-retired" | "engine-failure" | "permission" | "puzzle-themes-unavailable"
-export type ErrorPayload = { tag: ErrorPayloadTag; category: ErrorCategory; message: string; rootFailure?: RootFailure | null; engineFailure?: EngineTerminalSnapshot | null; remoteHttpRejection?: RemoteHttpRejection | null; nameTaken?: boolean | null; databaseAdmission?: boolean | null; databaseBusy?: boolean | null; progressGeneration?: string | null }
+export type ErrorPayload = { tag: ErrorPayloadTag; category: ErrorCategory; message: string; rootFailure?: RootFailure | null; engineFailure?: EngineTerminalSnapshot | null; remoteHttpRejection?: RemoteHttpRejection | null; nameTaken?: boolean | null; databaseAdmission?: boolean | null; databaseBusy?: boolean | null; chessBaseDatabase?: boolean | null; progressGeneration?: string | null }
 export type ErrorPayloadTag = "backend-error" | "engine-failure"
 export type Event = { id: number; name: string | null; start_date: string | null; end_date: string | null; site: string | null; player_count: number; game_count: number; avg_elo: number | null }
 export type FeedbackOutcome = "sent" | "inProgress" | "keyMismatch" | "invalidInput" | "invalidImage" | "rateLimited" | "deliveryFailed" | "serviceUnavailable"

@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
 import AboutModal from "@/components/About";
+import ChessBaseGuide from "@/components/library/ChessBaseGuide";
 import LazyFeedbackModal from "@/components/feedback/LazyFeedbackModal";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { SideBar } from "@/components/Sidebar";
@@ -366,6 +367,7 @@ export function RootLayout() {
       }}
     >
       <AboutModal opened={aboutOpened} setOpened={setAboutOpened} />
+      <ChessBaseGuide />
       <LazyFeedbackModal opened={feedbackOpened} onClose={() => setFeedbackOpened(false)} />
       <QuitConfirmModal
         opened={quitDialog !== null}

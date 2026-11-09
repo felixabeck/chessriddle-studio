@@ -1,6 +1,7 @@
 import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { getDefaultStore } from "jotai";
+import { chessBaseGuideAtom } from "@/components/library/chessBaseGuideState";
 import { databaseConversionStateAtom, databaseConversionRefreshFailedAtom } from "@/state/atoms";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { CatalogVerificationError } from "@/utils/signedCatalog";
@@ -169,6 +170,33 @@ test("cleanup create does not recover, convert or publish a created database", a
   expect(onCreated).not.toHaveBeenCalled();
 });
 import AddDatabase from "./AddDatabase";
+
+test("the local guide link opens link mode and ChessBase selection cancels without notification", async () => {
+  const store = getDefaultStore();
+  store.set(chessBaseGuideAtom, "closed");
+  await renderAddDatabase();
+  const link = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "ChessBaseGuide.Title",
+  );
+  await act(async () => link?.click());
+  expect(store.get(chessBaseGuideAtom)).toBe("link");
+  mocks.issuePgnWorkspace.mockRejectedValueOnce(
+    new TauriCommandError({
+      tag: "backend-error",
+      category: "invalid-input",
+      message: "Export as PGN",
+      chessBaseDatabase: true,
+    }),
+  );
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((button) => button.textContent === "pick-pgn")
+      ?.click(),
+  );
+  expect(store.get(chessBaseGuideAtom)).toBe("selected");
+  expect(mocks.notify).not.toHaveBeenCalled();
+  expect(mocks.convertPgn).not.toHaveBeenCalled();
+});
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 

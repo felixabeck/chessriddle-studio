@@ -1,7 +1,8 @@
 import { tauri } from "@/platform/tauri";
+import { chessBaseGuideAtom } from "@/components/library/chessBaseGuideState";
 import { Result } from "@badrap/result";
 import { platform } from "@/platform/native";
-import { errorUnlessCancelled, runWithAppliedRecovery } from "@/platform/errors";
+import { errorUnlessCancelled, normalizeError, runWithAppliedRecovery } from "@/platform/errors";
 import { defaultGame, makePgn } from "chessops/pgn";
 import { getDefaultStore } from "jotai";
 import useSWR from "swr";
@@ -36,6 +37,20 @@ export function usePlatform() {
     return { os: r.data, ...r };
 }
 
+/** A recognised ChessBase selection ends the pick and opens the shared migration guide. */
+export async function pickPgnWorkspace() {
+    try {
+        return await tauri.issuePgnWorkspace();
+    } catch (error) {
+        if (normalizeError(error).chessBaseDatabase) {
+            getDefaultStore().set(chessBaseGuideAtom, "selected");
+            return null;
+        }
+        if (errorUnlessCancelled(error) === null) return null;
+        throw error;
+    }
+}
+
 export async function pickPgnFile(
     destination: "existing" | "export" = "existing",
 ): Promise<FileMetadata | null> {
@@ -44,11 +59,12 @@ export async function pickPgnFile(
         descriptor =
             destination === "export"
                 ? await tauri.issuePgnExportDestination()
-                : await tauri.issuePgnWorkspace();
+                : await pickPgnWorkspace();
     } catch (error) {
         if (errorUnlessCancelled(error) === null) return null;
         throw error;
     }
+    if (!descriptor) return null;
     const count = await tauri.countPgnGames(descriptor.handle);
     return {
         type: "file",

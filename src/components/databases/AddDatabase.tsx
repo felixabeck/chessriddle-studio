@@ -1,4 +1,6 @@
 import { tauri, TauriCommandError } from "@/platform/tauri";
+import { pickPgnWorkspace } from "@/utils/files";
+import { ChessBaseGuideLink } from "../library/ChessBaseGuideLink";
 import i18n from "@/i18n";
 import {
   Alert,
@@ -263,7 +265,8 @@ function AddDatabase({
               description={t("Databases.Add.ClickToSelectPGN")}
               onClick={() => {
                 void runUnlessCancelled(t("Common.Error"), async () => {
-                  const selected = await tauri.issuePgnWorkspace();
+                  const selected = await pickPgnWorkspace();
+                  if (!selected) return;
                   form.setFieldValue("files", [selected.handle]);
                   const firstFilename = selected.displayName;
                   if (firstFilename) {
@@ -284,6 +287,7 @@ function AddDatabase({
               filename={form.values.filename ?? null}
               error={form.errors.files}
             />
+            <ChessBaseGuideLink />
 
             <Button fullWidth mt="xl" type="submit" disabled={disableLocalConversion}>
               {t("Databases.Add.Convert")}

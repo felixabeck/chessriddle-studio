@@ -59,7 +59,8 @@ vi.mock("@/platform/tauri", async () => {
     },
   };
 });
-vi.mock("jotai", () => ({
+vi.mock("jotai", async (original) => ({
+  ...(await original<typeof import("jotai")>()),
   useAtomValue: (atom: object) => {
     if (atom !== stateAtoms.fontSizeAtom) throw new Error("Unexpected atom");
     return 100;

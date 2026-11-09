@@ -1,4 +1,5 @@
 import { libraryButtonProps } from "./presentation";
+import { ChessBaseGuideLink } from "./ChessBaseGuideLink";
 import { libraryFilterAtom, librarySearchAtom, librarySelectionAtom } from "./memory";
 import {
   Alert,
@@ -314,14 +315,21 @@ export default function LibraryPage() {
                 onVisibleCount={setVisibleCount}
               />
               {(loadedEmpty || filteredEmpty) && (
-                <Text c="dimmed" ta="center">
-                  {filteredEmpty
-                    ? t("Common.NoResults")
-                    : t("Library.Empty", {
-                        defaultValue:
-                          "Your library is empty. Create a file or add a database to get started.",
-                      })}
-                </Text>
+                <>
+                  <Text c="dimmed" ta="center">
+                    {filteredEmpty
+                      ? t("Common.NoResults")
+                      : t("Library.Empty", {
+                          defaultValue:
+                            "Your library is empty. Create a file or add a database to get started.",
+                        })}
+                  </Text>
+                  {loadedEmpty && !filteredEmpty && (
+                    <Center>
+                      <ChessBaseGuideLink />
+                    </Center>
+                  )}
+                </>
               )}
               {files.trashView}
             </Box>
