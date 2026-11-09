@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { SWRConfig } from "swr";
 import { afterEach, expect, test, vi } from "vitest";
-import type { OutOpening } from "@/bindings/generated";
+import type { OutOpening } from "@/bindings";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import { installMatchMediaStub } from "@/tests/matchMedia";
