@@ -464,7 +464,8 @@ function fileReplacementFixture(ownerActive = true) {
     candidate.getState().setHeaders({ ...candidate.getState().headers, event: "Replacement game" });
     candidate.getState().save();
     const tree = deserializeStorageValue<ReturnType<typeof defaultTree>>(
-        serializeStorageValue(candidate.getState()),
+        // documentId is live store identity and never persisted; JSON drops the undefined field.
+        serializeStorageValue({ ...candidate.getState(), documentId: undefined }),
     )!;
     const replace = (store = fixture.store, isCurrent = () => true) =>
         replaceFileGame({
