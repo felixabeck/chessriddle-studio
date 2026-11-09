@@ -99,7 +99,7 @@ vi.mock("@/platform/native", () => ({ error: mocks.logError }));
 vi.mock("react-i18next", () => {
   const t = (key: string, options?: { number?: number }) =>
     options?.number === undefined ? key : `${key}:${options.number}`;
-  return { useTranslation: () => ({ t }) };
+  return { useTranslation: () => ({ t, i18n: { language: "en-US" } }) };
 });
 vi.mock("@/i18n", async (original) => ({
   ...(await original<typeof import("@/i18n")>()),
