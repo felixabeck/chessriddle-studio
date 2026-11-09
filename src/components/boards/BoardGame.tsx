@@ -1190,6 +1190,9 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
 
   const [sameTimeControl, setSameTimeControl] = useAtom(gameSameTimeControlAtom);
 
+  const timeControlsStartable =
+    hasStartableTimeControl(player1Settings) && hasStartableTimeControl(player2Settings);
+
   const onePlayerIsEngine = players.white.type !== players.black.type;
   const isEngineVsEngine = players.white.type === "engine" && players.black.type === "engine";
 
@@ -1446,15 +1449,17 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
                   </ScrollArea>
 
                   <Divider pb="sm" />
+                  {!timeControlsStartable && (
+                    <Text c="danger" size="sm" ta="center" mb="xs">
+                      {t("Board.Opponent.TimeTooShort")}
+                    </Text>
+                  )}
                   <Button
                     onClick={startGame}
                     fullWidth
                     variant="light"
                     disabled={
-                      error !== null ||
-                      pendingCommand === "start" ||
-                      !hasStartableTimeControl(player1Settings) ||
-                      !hasStartableTimeControl(player2Settings)
+                      error !== null || pendingCommand === "start" || !timeControlsStartable
                     }
                     loading={pendingCommand === "start"}
                   >

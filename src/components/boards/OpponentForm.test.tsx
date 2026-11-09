@@ -25,12 +25,7 @@ vi.mock("@mantine/core", () => ({
   Center: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Divider: () => null,
   Group: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  InputWrapper: ({ children, error }: { children: React.ReactNode; error?: React.ReactNode }) => (
-    <div>
-      {children}
-      {error}
-    </div>
-  ),
+  InputWrapper: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   SegmentedControl: ({
     data,
     onChange,
@@ -91,12 +86,6 @@ function renderOpponent(opponent: OpponentSettings) {
   });
   return { getCurrent: () => current, setOpponent };
 }
-
-test("a timed opponent below the minimum shows the time error", () => {
-  renderOpponent({ type: "human", timeControl: { seconds: 0, increment: 0 } });
-
-  expect(host.textContent).toContain("Board.Opponent.TimeTooShort");
-});
 
 test("human to engine creates the exact engine branch", () => {
   const { getCurrent, setOpponent } = renderOpponent({

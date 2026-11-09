@@ -779,6 +779,7 @@ for (const [player, settingsAtom] of [
       await render();
 
       expect(button("Board.Opponent.StartGame").disabled).toBe(disabled);
+      expect(host.textContent?.includes("Board.Opponent.TimeTooShort")).toBe(disabled);
     },
   );
 }
