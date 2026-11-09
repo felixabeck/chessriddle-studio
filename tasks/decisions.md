@@ -12636,3 +12636,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** It gives one shape for every workspace root and keeps the folder name native-authoritative. A custom engine root registered before this change keeps its stored "Engines" name, because reselecting the same path reuses the registry entry. That label is no worse than today. Reversal path: revert the descriptor types and route the Settings rows back to literals.
 * **Decided by:** Claude Code (Opus 5.5) next-finding drain session 79c3d037-36dc-4a80-a8b5-7aef2505d6d3, full auto, 2026-11-09 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"8ec04bfe8b2d139047e9c6286c1f965ec20dac4afaf56abd1cf1af2c5d2119c6","input_sha256":"d9f0e1e1504ffcaa92e0c786db75c410b0d3b28b1237f2cc77d14c942243777e","kind":"mutation-receipt","operation":"ffa3722b1b18e234f2186c104db5f9d1f47b193f8eb9f0f7859326c54b211f97","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-10"],"target":"decisions-ledger","v":1} -->
+
+### d-20261109-11 — Does the ChessRiddle connect path carry the typed non-Unix refusal Lichess authentication has?
+
+* **Question:** `authenticate` refuses non-Unix platforms. Should the new ChessRiddle connection refuse Windows too?
+* **Governs:** -
+* **Chosen:** No refusal. The listener, keyring and registry paths have Windows implementations and the provider's tests run in `rust-windows-test` and `rust-macos-test`.
+* **Rejected:** Copying the refusal: plan-review lenses found no source reason for it, and it would ship a platform gap with no defect behind it.
+* **Reason:** Real Windows Credential Manager persistence and the browser round trip have no automated proof, so they are a manual check on the Windows build before release. Reversal path: add the refusal to `connect_chessriddle`.
+* **Decided by:** Claude Code (Opus 5.5) build run chessriddle-account, full auto, 2026-11-09 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"b2ab7267fc5df660eac7db3f3dc0a9c209a00defb61defc8c5007488478ba1ca","input_sha256":"3c17582d7e74db1f3c0a850f65805001a5dab1787b1750c2c3fff774da48856f","kind":"mutation-receipt","operation":"d3cae74ac128ce26f9362a7ae30626d08c17070db36266648a2c5e1fdee9d626","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-11"],"target":"decisions-ledger","v":1} -->
