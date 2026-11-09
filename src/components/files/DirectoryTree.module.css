@@ -11,6 +11,19 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Lives on the body, so it also carries the row's container and needs its own surface. */
+.dragPreview {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: var(--mantine-z-index-max);
+  border-radius: var(--cf-radius-sm);
+  background: var(--cf-card);
+  box-shadow: var(--cf-shadow-elevated);
+  opacity: 0.9;
+  pointer-events: none;
+}
+
 .item {
   min-width: 0;
   border-radius: var(--cf-radius-sm);

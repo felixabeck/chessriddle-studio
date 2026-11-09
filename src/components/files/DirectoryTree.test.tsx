@@ -578,6 +578,7 @@ test("routes context, M, and drag move intents with opaque entry handles", async
 
   const payload = new Map<string, string>();
   const dataTransfer = {
+    setDragImage: vi.fn(),
     setData: (type: string, value: string) => payload.set(type, value),
     getData: (type: string) => payload.get(type) || "",
   };
@@ -587,7 +588,10 @@ test("routes context, M, and drag move intents with opaque entry handles", async
     return event;
   };
   act(() => source.dispatchEvent(drag("dragstart")));
+  expect(dataTransfer.setDragImage).toHaveBeenCalledTimes(1);
+  expect(document.body.querySelector("[inert]")?.textContent).toContain("Root");
   act(() => item("Folder").dispatchEvent(drag("drop")));
+  expect(document.body.querySelector("[inert]")).toBeNull();
   expect(onMove).toHaveBeenCalledTimes(1);
   expect(onMove).toHaveBeenCalledWith(rootFile, directory);
 });

@@ -18,6 +18,7 @@ import { openFile } from "@/utils/files";
 import { runTabCreation } from "@/utils/tabs";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import { FILE_TYPES, type Entry, type FileMetadata } from "./file";
+import { endRowDragPreview, preloadRowDragImage, startRowDragPreview } from "./rowDragPreview";
 import classes from "./DirectoryTree.module.css";
 
 export type CollectionPeer = {
@@ -122,6 +123,10 @@ export default function DirectoryTree({
     result.push(...peers.map((entry) => ({ entry, depth: 0 })));
     return result;
   }, [expanded, filtered, peers]);
+  useEffect(() => {
+    preloadRowDragImage();
+    return endRowDragPreview;
+  }, []);
   const fileCount = visible.filter(
     ({ entry }) => entry.type !== "database" || entry.section === "files",
   ).length;
@@ -264,11 +269,13 @@ export default function DirectoryTree({
         }}
         draggable={node.type === "file" || node.type === "directory"}
         onDragStart={(event) => {
-          if (node.type === "file" || node.type === "directory")
+          if (node.type === "file" || node.type === "directory") {
             event.dataTransfer.setData(
               "application/x-en-croissant-handle",
               fileWorkspaceKey(node.handle),
             );
+            startRowDragPreview(event, classes.tree, classes.dragPreview);
+          }
         }}
         onDragOver={(event) => {
           if (isDirectory) event.preventDefault();
