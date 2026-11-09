@@ -154,18 +154,15 @@ describe("openFile tab admission", () => {
         expect(hasFileOpenInFlight(fileWorkspaceKey(file.handle))).toBe(false);
     });
 
-    test.each(["read", "parse", "admission", "refused admission"])(
+    test.each(["read", "parse", "admission"])(
         "releases the open lease after %s failure and permits another open",
         async (boundary) => {
             const failure = new Error("Open failed");
             if (boundary === "read") mocks.readGame.mockRejectedValueOnce(failure);
             if (boundary === "parse") mocks.parsePGN.mockRejectedValueOnce(failure);
             if (boundary === "admission") mocks.createTab.mockRejectedValueOnce(failure);
-            if (boundary === "refused admission") mocks.createTab.mockResolvedValueOnce(null);
 
-            const pending = openFile(file, setTabs);
-            if (boundary === "refused admission") await expect(pending).resolves.toBeNull();
-            else await expect(pending).rejects.toBe(failure);
+            await expect(openFile(file, setTabs)).rejects.toBe(failure);
             expect(hasFileOpenInFlight(fileWorkspaceKey(file.handle))).toBe(false);
 
             mocks.createTab.mockResolvedValueOnce("tab-id");
@@ -174,13 +171,18 @@ describe("openFile tab admission", () => {
         },
     );
 
-    test("does not acknowledge practice or recent metadata when admission is refused", async () => {
+    test("refused admission preserves metadata, releases the open lease and permits retry", async () => {
         mocks.createTab.mockResolvedValueOnce(null);
 
         await expect(openFile(file, setTabs)).resolves.toBeNull();
 
         expect(mocks.readGame).toHaveBeenCalledWith(file.handle, 0, undefined);
         expect(mocks.storeSet).not.toHaveBeenCalled();
+        expect(hasFileOpenInFlight(fileWorkspaceKey(file.handle))).toBe(false);
+
+        mocks.createTab.mockResolvedValueOnce("tab-id");
+        await expect(openFile(file, setTabs)).resolves.toBe("tab-id");
+        expect(hasFileOpenInFlight(fileWorkspaceKey(file.handle))).toBe(false);
     });
 
     test("returns the admitted id and records an ordinary repertoire without selecting Practice", async () => {
