@@ -787,7 +787,20 @@ for (const [player, settingsAtom] of [
 }
 
 for (const timedSide of ["white", "black"] as const) {
-  test.each([999, 1_000, 180_000])(
+  test(`Start rejects only ${timedSide} timed with 999 ms alongside Unlimited`, async () => {
+    store.set(gameSameTimeControlAtom, false);
+    const timedAtom = timedSide === "white" ? gamePlayer1SettingsAtom : gamePlayer2SettingsAtom;
+    store.set(timedAtom, { type: "human", timeControl: { seconds: 999, increment: 2_000 } });
+
+    await render();
+
+    expect(button("Board.Opponent.StartGame").disabled).toBe(true);
+    expect(host.textContent).toContain("Board.Opponent.TimeTooShort");
+    await act(async () => button("Board.Opponent.StartGame").click());
+    expect(fixtures.startGame).not.toHaveBeenCalled();
+  });
+
+  test.each([1_000, 180_000])(
     `Start supports only ${timedSide} timed with %i ms alongside Unlimited`,
     async (seconds) => {
       store.set(gameSameTimeControlAtom, false);
@@ -796,14 +809,9 @@ for (const timedSide of ["white", "black"] as const) {
 
       await render();
 
-      const disabled = seconds < 1_000;
-      expect(button("Board.Opponent.StartGame").disabled).toBe(disabled);
-      expect(host.textContent?.includes("Board.Opponent.TimeTooShort")).toBe(disabled);
+      expect(button("Board.Opponent.StartGame").disabled).toBe(false);
+      expect(host.textContent).not.toContain("Board.Opponent.TimeTooShort");
       await act(async () => button("Board.Opponent.StartGame").click());
-      if (disabled) {
-        expect(fixtures.startGame).not.toHaveBeenCalled();
-        return;
-      }
       expect(fixtures.startGame).toHaveBeenCalledOnce();
       const config = fixtures.startGame.mock.calls[0][1];
       expect(config.whiteTimeControl).toEqual(
