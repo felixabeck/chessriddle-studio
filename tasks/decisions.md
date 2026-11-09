@@ -12805,3 +12805,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Precedent: Felix's 2026-10-04 decision that Windows keeps unlinked databases until the port, so the mandate's own collections do not exist there yet. Reversal path: add a file-backed source to the feed.
 * **Decided by:** Claude Code (Opus 5.5) build run 2026-11-09-new-tab-library, full auto, 2026-11-09 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"733388ace98eeedca42922064f40cb3e67fe5c45185161a11e97e06d6ecced96","input_sha256":"ce9f66f57612b0a4595639a8c1ea91caf5588be1c44801d23896d5895d1c7537","kind":"mutation-receipt","operation":"673ed06a318ada259861bd1cb76b15b67b1a6e6f78f48ef3e856f1d57ac4546c","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-29"],"target":"decisions-ledger","v":1} -->
+
+### d-20261109-31 — What happens to section headings when lines of a repertoire are moved?
+
+* **Question:** A heading is stored as a `Section` tag on one line, so a move has to say what the heading does.
+* **Governs:** `move_tokens` and `prepare_move` in `src-tauri/src/pgn.rs`, `src/components/panels/info/lineDragController.ts`
+* **Chosen:** A heading stays in place when a line is dragged away, and attaches to whichever line follows it after the move. A heading left with no line disappears. A section can be dropped only directly before another heading or at the end of the file.
+* **Rejected:** The heading travelling with its first line, which Felix declined in favour of the heading belonging to its group. Dropping a section inside another one, which would split it or absorb lines.
+* **Reason:** Felix chose the heading behaviour in chat on 2026-11-09. The empty-heading and boundary-only rules follow because headings live on lines. Reversal path: change the token rules in `move_tokens`; files keep plain `Section` tags either way.
+* **Decided by:** Felix in chat, 2026-11-09 (heading stays, section drag, repertoire only); the empty-heading and boundary rules by Claude Code (Opus 5.5) session a43b1706-2c72-4e7b-99fe-a8e648bef2bd · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"c6aa648c7fdd7e78fd80449df427463b6664b0807e165e5ebe8d5024b560983a","input_sha256":"34f2969974d5f583cefab69a9bceca75839ca66860c67795d28bd7a9d7c15b33","kind":"mutation-receipt","operation":"e8be48db66b664c93da1090f94500332b38c1a8d545a3e872f2c8dc1fa6e283c","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-31"],"target":"decisions-ledger","v":1} -->
