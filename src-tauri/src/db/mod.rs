@@ -2161,6 +2161,8 @@ pub enum GameSort {
     Id,
     #[serde(rename = "date")]
     Date,
+    #[serde(rename = "newest")]
+    Newest,
     #[serde(rename = "whiteElo")]
     WhiteElo,
     #[serde(rename = "blackElo")]
@@ -2191,6 +2193,41 @@ pub struct QueryOptions<SortT> {
 }
 
 const MAX_PAGE_SIZE: i32 = 1000;
+
+// Player-name searches accept at most 16 tokens of 128 Unicode characters each.
+// Reject excess input rather than silently dropping part of the predicate.
+const MAX_PLAYER_NAME_TOKENS: usize = 16;
+const MAX_PLAYER_NAME_TOKEN_CHARS: usize = 128;
+
+fn player_name_patterns(query: &str) -> Result<Vec<String>, Error> {
+    let mut patterns = Vec::new();
+    for token in query
+        .split(|character: char| character.is_whitespace() || character == ',')
+        .filter(|token| !token.is_empty())
+    {
+        if patterns.len() == MAX_PLAYER_NAME_TOKENS {
+            return Err(Error::InvalidInput(format!(
+                "player name query must contain at most {MAX_PLAYER_NAME_TOKENS} tokens"
+            )));
+        }
+        if token.chars().take(MAX_PLAYER_NAME_TOKEN_CHARS + 1).count() > MAX_PLAYER_NAME_TOKEN_CHARS
+        {
+            return Err(Error::InvalidInput(format!(
+                "player name tokens must contain at most {MAX_PLAYER_NAME_TOKEN_CHARS} characters"
+            )));
+        }
+        let mut pattern = String::from("%");
+        for character in token.chars() {
+            if matches!(character, '%' | '_' | '\\') {
+                pattern.push('\\');
+            }
+            pattern.push(character);
+        }
+        pattern.push('%');
+        patterns.push(pattern);
+    }
+    Ok(patterns)
+}
 
 fn pagination_limit_offset(
     page: Option<i32>,
@@ -2224,6 +2261,8 @@ pub struct GameQuery {
     pub player1: Option<i32>,
     #[specta(optional)]
     pub player2: Option<i32>,
+    #[specta(optional)]
+    pub player_name: Option<String>,
     #[specta(optional)]
     pub tournament_id: Option<i32>,
     #[specta(optional)]
@@ -2608,6 +2647,19 @@ fn load_games(
             count_query = count_query.filter(games::id.eq(id));
         }
 
+        if let Some(name) = query.player_name {
+            for pattern in player_name_patterns(&name)? {
+                let matching_players = players::table
+                    .filter(players::name.like(pattern).escape('\\'))
+                    .select(players::id);
+                let predicate = games::white_id
+                    .eq_any(matching_players.clone())
+                    .or(games::black_id.eq_any(matching_players));
+                sql_query = sql_query.filter(predicate.clone());
+                count_query = count_query.filter(predicate);
+            }
+        }
+
         // if let Some(speed) = query.speed {
         //     sql_query = sql_query.filter(games::speed.eq(speed as i32));
         //     count_query = count_query.filter(games::speed.eq(speed as i32));
@@ -2722,6 +2774,12 @@ fn load_games(
                 SortDirection::Asc => sql_query.order((games::date.asc(), games::time.asc())),
                 SortDirection::Desc => sql_query.order((games::date.desc(), games::time.desc())),
             },
+            // This sort is always newest first, independently of the legacy direction option.
+            GameSort::Newest => sql_query.order((
+                diesel::dsl::sql::<Text>("REPLACE(COALESCE(Games.Date, ''), '?', '0')").desc(),
+                games::time.desc(),
+                games::id.desc(),
+            )),
             GameSort::WhiteElo => match query_options.direction {
                 SortDirection::Asc => sql_query.order(games::white_elo.asc()),
                 SortDirection::Desc => sql_query.order(games::white_elo.desc()),
@@ -11177,6 +11235,190 @@ mod tests {
             .data
             .iter()
             .any(|event| event.name.as_deref() == Some("Candidates")));
+    }
+
+    #[test]
+    fn game_player_name_query_matches_tokens_literally_and_pages_results() {
+        let (_dir, app, handle, database) = blocking_database_case();
+        let beck_prassas =
+            insert_named_game(&app, &database, "Beck, Felix", "Prassas", "Event", "Site");
+        let other_beck = insert_named_game(
+            &app,
+            &database,
+            "Someone Else",
+            "Beck, Felix",
+            "Event",
+            "Site",
+        );
+        let literal = insert_named_game(
+            &app,
+            &database,
+            "100%_Literal\\Name",
+            "Opponent",
+            "Event",
+            "Site",
+        );
+        insert_named_game(
+            &app,
+            &database,
+            "100XXLiteralName",
+            "Opponent",
+            "Event",
+            "Site",
+        );
+        let state = app.state::<AppState>();
+        let query = |name: &str, page: Option<i32>| {
+            get_games_blocking(
+                &state.pgn_path_authority,
+                &state.database_repository,
+                handle.clone(),
+                GameQuery {
+                    player_name: Some(name.into()),
+                    options: Some(QueryOptions {
+                        page,
+                        page_size: page.map(|_| 1),
+                        ..Default::default()
+                    }),
+                    ..GameQuery::new()
+                },
+                &CancellationToken::new(),
+            )
+            .unwrap()
+        };
+
+        for name in ["Felix Beck", "  fELIx, , bECK\t\n"] {
+            let response = query(name, None);
+            assert_eq!(response.count, Some(2));
+            assert_eq!(
+                response.data.iter().map(|game| game.id).collect::<Vec<_>>(),
+                vec![other_beck, beck_prassas]
+            );
+        }
+        let response = query("Prassas Beck", None);
+        assert_eq!(response.count, Some(1));
+        assert_eq!(response.data[0].id, beck_prassas);
+        let response = query("Felix absent", None);
+        assert_eq!(response.count, Some(0));
+        assert!(response.data.is_empty());
+        for name in ["%", "_", "\\", "100%_Literal\\Name", "%' OR 1=1 --"] {
+            let response = query(name, None);
+            if name.contains("OR") {
+                assert_eq!(response.count, Some(0));
+                assert!(response.data.is_empty());
+            } else {
+                assert_eq!(response.count, Some(1), "{name}");
+                assert_eq!(response.data[0].id, literal, "{name}");
+            }
+        }
+        for (page, expected) in [(1, vec![other_beck]), (2, vec![beck_prassas]), (3, vec![])] {
+            let response = query("Felix Beck", Some(page));
+            assert_eq!(response.count, Some(2));
+            assert_eq!(
+                response.data.iter().map(|game| game.id).collect::<Vec<_>>(),
+                expected
+            );
+        }
+        assert_eq!(query(" , \t\n", None).count, Some(4));
+    }
+
+    #[test]
+    fn game_player_name_query_enforces_token_bounds() {
+        let (_dir, app, handle, database) = blocking_database_case();
+        let name = "é".repeat(MAX_PLAYER_NAME_TOKEN_CHARS);
+        let game_id = insert_named_game(&app, &database, &name, "Opponent", "Event", "Site");
+        let state = app.state::<AppState>();
+        let query = |name: String| {
+            get_games_blocking(
+                &state.pgn_path_authority,
+                &state.database_repository,
+                handle.clone(),
+                GameQuery {
+                    player_name: Some(name),
+                    ..GameQuery::new()
+                },
+                &CancellationToken::new(),
+            )
+        };
+        let response = query(vec![name.clone(); MAX_PLAYER_NAME_TOKENS].join(" ")).unwrap();
+        assert_eq!(response.count, Some(1));
+        assert_eq!(response.data[0].id, game_id);
+        for input in [
+            format!("{name}é"),
+            vec!["é"; MAX_PLAYER_NAME_TOKENS + 1].join(" "),
+        ] {
+            assert!(matches!(query(input), Err(Error::InvalidInput(_))));
+        }
+    }
+
+    #[test]
+    fn game_newest_sort_normalizes_dates_and_keeps_legacy_date_order() {
+        let (_dir, app, handle, database) = blocking_database_case();
+        let mut db = SqliteConnection::establish(&database.to_string_lossy()).unwrap();
+        let fixtures = [
+            (Some("2025.12.31"), None),
+            (Some("2026.??.??"), None),
+            (Some("2026.11.??"), None),
+            (Some("2026.11.08"), Some("23:00:00")),
+            (Some("2026.11.09"), None),
+            (Some("2026.11.09"), Some("09:00:00")),
+            (Some("2026.11.09"), Some("09:00:00")),
+            (Some("2026.11.09"), Some("10:00:00")),
+            (Some("????.??.??"), None),
+            (Some(""), None),
+            (None, None),
+        ];
+        let ids = fixtures
+            .into_iter()
+            .map(|(date, time)| {
+                TempGame {
+                    date: date.map(str::to_owned),
+                    time: time.map(str::to_owned),
+                    ..Default::default()
+                }
+                .insert_to_db(&mut db)
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+        drop(db);
+        let state = app.state::<AppState>();
+        let query = |sort, direction, page| {
+            get_games_blocking(
+                &state.pgn_path_authority,
+                &state.database_repository,
+                handle.clone(),
+                GameQuery {
+                    options: Some(QueryOptions {
+                        sort,
+                        direction,
+                        page,
+                        page_size: page.map(|_| 3),
+                        ..Default::default()
+                    }),
+                    ..GameQuery::new()
+                },
+                &CancellationToken::new(),
+            )
+            .unwrap()
+            .data
+            .into_iter()
+            .map(|game| game.id)
+            .collect::<Vec<_>>()
+        };
+        let expected = [7, 6, 5, 4, 3, 2, 1, 0, 8, 10, 9].map(|index| ids[index]);
+        for direction in [SortDirection::Asc, SortDirection::Desc] {
+            assert_eq!(query(GameSort::Newest, direction, None), expected);
+        }
+        let paged = (1..=4)
+            .flat_map(|page| query(GameSort::Newest, SortDirection::Desc, Some(page)))
+            .collect::<Vec<_>>();
+        assert_eq!(paged, expected);
+        // Legacy date order compares the original text, so unknown dates lead.
+        let legacy = query(GameSort::Date, SortDirection::Desc, None);
+        assert_eq!(&legacy[..3], &[ids[8], ids[1], ids[2]]);
+        assert_eq!(&legacy[legacy.len() - 3..], &[ids[0], ids[9], ids[10]]);
+        let ascending = query(GameSort::Date, SortDirection::Asc, None);
+        assert_eq!(&ascending[..3], &[ids[10], ids[9], ids[0]]);
+        assert_eq!(&ascending[ascending.len() - 3..], &[ids[2], ids[1], ids[8]]);
     }
 
     #[test]

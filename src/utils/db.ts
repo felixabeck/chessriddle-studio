@@ -210,6 +210,7 @@ export async function query_games(
             player1: query.player1,
             range1: normalizeRange(query.range1),
             player2: query.player2,
+            player_name: query.player_name,
             range2: normalizeRange(query.range2),
             tournament_id: query.tournament_id,
             sides: query.sides,

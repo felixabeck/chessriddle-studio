@@ -1517,10 +1517,10 @@ clock: bigint | null; whiteTime: bigint | null; blackTime: bigint | null }
 export type GameMoveEvent = { gameId: string; session: bigint; revision: bigint; moves: GameMove[]; fen: string; whiteTime: bigint | null; blackTime: bigint | null }
 export type GameOmission = "tooLarge"
 export type GameOverEvent = { gameId: string; session: bigint; revision: bigint; result: GameResult; moves: GameMove[] }
-export type GameQuery = { options?: QueryOptions<GameSort> | null; player1?: number | null; player2?: number | null; tournament_id?: number | null; start_date?: string | null; end_date?: string | null; range1?: [number, number] | null; range2?: [number, number] | null; sides?: Sides | null; outcome?: string | null; position?: PositionQueryJs | null; wanted_result?: string | null; exclude_fast_events?: boolean | null; include_unknown_results?: boolean | null; sample_order?: SampleOrder | null }
+export type GameQuery = { options?: QueryOptions<GameSort> | null; player1?: number | null; player2?: number | null; player_name?: string | null; tournament_id?: number | null; start_date?: string | null; end_date?: string | null; range1?: [number, number] | null; range2?: [number, number] | null; sides?: Sides | null; outcome?: string | null; position?: PositionQueryJs | null; wanted_result?: string | null; exclude_fast_events?: boolean | null; include_unknown_results?: boolean | null; sample_order?: SampleOrder | null }
 export type GameResult = { type: "whiteWins"; reason: GameEndReason } | { type: "blackWins"; reason: GameEndReason } | { type: "draw"; reason: DrawReason } | { type: "interrupted"; reason: GameInterruptionReason; snapshot?: EngineTerminalSnapshot | null }
 export type GameSignature = { white: string | null; black: string | null; event: string | null; site: string | null; date: string | null; round: string | null }
-export type GameSort = "id" | "date" | "whiteElo" | "blackElo" | "ply_count"
+export type GameSort = "id" | "date" | "newest" | "whiteElo" | "blackElo" | "ply_count"
 export type GameState = { gameId: string; session: bigint; revision: bigint; status: GameStatus; initialFen: string; moves: GameMove[]; currentFen: string; ply: number; turn: string; whiteTime: bigint | null; blackTime: bigint | null; whitePlayer: string; blackPlayer: string }
 export type GameStatus = "playing" | { finished: { result: GameResult } }
 export type GoMode = { t: "PlayersTime"; c: PlayersTime } | { t: "Depth"; c: number } | { t: "Time"; c: number } | { t: "Nodes"; c: number } | { t: "Infinite" }
