@@ -12676,3 +12676,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Same procedure as d-20261109-13, which this corrects with the final measurement. Reversal path: tighten total against a future smaller production build. This decision is the forward pointer for the ceilings.
 * **Decided by:** Claude Code (Opus 5.5) build run chessriddle-account, full auto, 2026-11-09 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"a40ec1db3f16bfa726e9cfd8511d3b35554b95e4d9b4ae99d84c2ad6e3334c4e","input_sha256":"48202ee3339568f6b1649a3794848f4f1b8dfc6a2f78c8a583ec55afaaed951c","kind":"mutation-receipt","operation":"f3011bbeb1b157ed73b759e802f9b1437eadd3aa1f9e2d619514e3e4f1b7f3aa","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-14"],"target":"decisions-ledger","v":1} -->
+
+### d-20261109-15 — How does ChessRiddle Studio sign in to a ChessRiddle account?
+
+* **Question:** Integration phase A needs a desktop login whose token cannot do more than the desktop features need. Supabase's OAuth server or a credential issued by ChessRiddle?
+* **Governs:** -
+* **Chosen:** ChessRiddle's backend issues opaque desktop credentials after a PKCE browser approval. Studio stores only the refresh token in the OS keyring and sends no traffic to Supabase. `src-tauri/src/chessriddle.rs` owns the token path; `credentials.rs` is parameterised by provider with Lichess addresses unchanged.
+* **Rejected:** Supabase's OAuth 2.1 server: its tokens keep the user's full authority at Supabase, so a stolen desktop token could read RLS-protected data and call Auth directly; it is also beta, needs a production `site_url` change and fixed loopback ports. A restricting Custom Access Token Hook would run on every production login and leave Auth's own routes open.
+* **Reason:** Plan review rounds 1 to 7 (`tasks/handoffs/2026-11-09-chessriddle-account-connection-review.md`). Reversal path: replace the provider endpoints in `chessriddle.rs` and the server credential tables.
+* **Decided by:** Claude Code (Opus 5.5) build run chessriddle-account, full auto, 2026-11-09 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"7acc298ff04ec9eada2f73728b2a5c9a91753ee376c0cb8a96c08a80e1f8d5d5","input_sha256":"d047601d5b2351f3082614730a8623a40e6ec849be2eca697d26f93c639966d9","kind":"mutation-receipt","operation":"b2a94a7fa3209084b593f49f8200cfb9ca739171a785f399d9409fafb4358530","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-15"],"target":"decisions-ledger","v":1} -->
