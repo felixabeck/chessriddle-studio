@@ -192,6 +192,7 @@
     "Board.Opponent.SameTimeControl": "Mesmo controlo de tempo",
     "Board.Opponent.StartGame": "Iniciar partida",
     "Board.Opponent.TimeSettings": "Definições de tempo",
+    "Board.Opponent.TimeTooShort": "O tempo deve ser de pelo menos 1 segundo",
     "Board.Opponent.Unlimited": "Ilimitado",
     "Board.Practice.Accuracy": "Precisão",
     "Board.Practice.Again": "Novamente",

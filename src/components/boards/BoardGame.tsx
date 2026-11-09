@@ -75,7 +75,7 @@ import {
   type GameCommandError,
 } from "./gameCommandError";
 import { OpponentForm, type OpponentSettings } from "./OpponentForm";
-import { toPlayerConfig } from "./playerConfig";
+import { hasStartableTimeControl, toPlayerConfig } from "./playerConfig";
 import { PRODUCT_NAME } from "@/utils/product.json";
 import {
   engineFailureMessage,
@@ -1450,7 +1450,12 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
                     onClick={startGame}
                     fullWidth
                     variant="light"
-                    disabled={error !== null || pendingCommand === "start"}
+                    disabled={
+                      error !== null ||
+                      pendingCommand === "start" ||
+                      !hasStartableTimeControl(player1Settings) ||
+                      !hasStartableTimeControl(player2Settings)
+                    }
                     loading={pendingCommand === "start"}
                   >
                     {t("Board.Opponent.StartGame")}

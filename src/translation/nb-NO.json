@@ -191,6 +191,7 @@
     "Board.Opponent.SameTimeControl": "Samme tidskontroll",
     "Board.Opponent.StartGame": "Start parti",
     "Board.Opponent.TimeSettings": "Tidsinnstillinger",
+    "Board.Opponent.TimeTooShort": "Tiden må være minst 1 sekund",
     "Board.Opponent.Unlimited": "Ubegrenset",
     "Board.Practice.Accuracy": "Nøyaktighet",
     "Board.Practice.Again": "Igjen",

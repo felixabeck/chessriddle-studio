@@ -192,6 +192,7 @@
     "Board.Opponent.SameTimeControl": "Stessa cadenza",
     "Board.Opponent.StartGame": "Inizia partita",
     "Board.Opponent.TimeSettings": "Impostazioni cadenza",
+    "Board.Opponent.TimeTooShort": "Il tempo deve essere di almeno 1 secondo",
     "Board.Opponent.Unlimited": "Illimitata",
     "Board.Practice.Accuracy": "Precisione",
     "Board.Practice.Again": "Riprova",

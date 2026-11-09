@@ -190,6 +190,7 @@
     "Board.Opponent.SameTimeControl": "같은 시간 설정",
     "Board.Opponent.StartGame": "게임 시작",
     "Board.Opponent.TimeSettings": "시간 설정",
+    "Board.Opponent.TimeTooShort": "시간은 최소 1초여야 합니다",
     "Board.Opponent.Unlimited": "제한 없음",
     "Board.Practice.Accuracy": "정확도",
     "Board.Practice.Again": "다시 해야함",

@@ -2,7 +2,22 @@ import { expect, test } from "vitest";
 import type { EngineOption, GoMode } from "@/bindings";
 import type { LocalEngine } from "@/utils/engines";
 import type { OpponentSettings } from "./OpponentForm";
-import { MissingLocalEngineError, toPlayerConfig } from "./playerConfig";
+import { hasStartableTimeControl, MissingLocalEngineError, toPlayerConfig } from "./playerConfig";
+
+test("an unlimited time control can start", () => {
+    expect(hasStartableTimeControl({ type: "human" })).toBe(true);
+});
+
+test.each([
+    [1_000, true],
+    [999, false],
+    [0, false],
+    [1, false], // A cleared time field produces 1 ms.
+])("an initial clock of %i ms has startability %s", (seconds, expected) => {
+    expect(hasStartableTimeControl({ type: "human", timeControl: { seconds, increment: 0 } })).toBe(
+        expected,
+    );
+});
 
 const handle = { id: { id: "engine-path-ref" }, kind: "engine" } as LocalEngine["handle"];
 

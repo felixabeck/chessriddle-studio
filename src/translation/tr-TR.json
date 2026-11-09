@@ -191,6 +191,7 @@
     "Board.Opponent.SameTimeControl": "Aynı zaman kontrolü",
     "Board.Opponent.StartGame": "Oyunu başlat",
     "Board.Opponent.TimeSettings": "Zaman ayarları",
+    "Board.Opponent.TimeTooShort": "Süre en az 1 saniye olmalıdır",
     "Board.Opponent.Unlimited": "Sınırsız",
     "Board.Practice.Accuracy": "Doğruluk",
     "Board.Practice.Again": "Tekrar",

@@ -71,6 +71,9 @@ pub struct TimeControl {
     pub increment: u64,
 }
 
+// Sub-second clocks flag on the first ~100 ms tick before a human can move, and settle_active_clock flags before any increment, so increment-only controls are unsupported.
+const MIN_INITIAL_TIME_MS: u64 = 1_000;
+
 fn validate_time_controls(config: &GameConfig) -> Result<(), Error> {
     let (Some(white), Some(black)) = (&config.white_time_control, &config.black_time_control)
     else {
@@ -95,10 +98,15 @@ fn validate_time_controls(config: &GameConfig) -> Result<(), Error> {
             )));
         }
     }
-    if white.initial_time == 0 && black.initial_time == 0 {
-        return Err(Error::InvalidInput(
-            "at least one player clock must be non-zero".into(),
-        ));
+    for (name, value) in [
+        ("white initial time", white.initial_time),
+        ("black initial time", black.initial_time),
+    ] {
+        if value < MIN_INITIAL_TIME_MS {
+            return Err(Error::InvalidInput(format!(
+                "{name} must be at least {MIN_INITIAL_TIME_MS} milliseconds"
+            )));
+        }
     }
     Ok(())
 }
@@ -198,6 +206,7 @@ pub struct GameMove {
     pub uci: String,
     pub san: String,
     pub fen_after: String,
+    /// The mover's remaining clock after this move, including the increment.
     pub clock: Option<u64>,
     pub white_time: Option<u64>,
     pub black_time: Option<u64>,
@@ -540,14 +549,6 @@ impl GameController {
 
         let san = SanPlus::from_move_and_play_unchecked(&mut self.position.clone(), &mv);
 
-        let clock = self.clock.as_ref().and_then(|c| {
-            if self.position.turn() == Color::White {
-                c.white_time
-            } else {
-                c.black_time
-            }
-        });
-
         self.position.play_unchecked(&mv);
         self.advance_position_generation();
 
@@ -572,7 +573,11 @@ impl GameController {
             .as_ref()
             .map(|c| (c.white_time, c.black_time))
             .unwrap_or((None, None));
-
+        let clock = if self.position.turn() == Color::Black {
+            white_time
+        } else {
+            black_time
+        };
         let fen_after = Fen::from_position(self.position.clone(), EnPassantMode::Legal).to_string();
 
         let game_move = GameMove {
@@ -5598,8 +5603,11 @@ done
     }
 
     #[test]
-    fn time_controls_accept_exact_uci_limits_and_either_single_running_clock() {
-        for (white_initial, black_initial) in [(u64::from(MAX_ENGINE_LIMIT), 0), (0, 1)] {
+    fn time_controls_accept_exact_uci_limits_and_the_minimum_initial_clock() {
+        for (white_initial, black_initial) in [
+            (u64::from(MAX_ENGINE_LIMIT), MIN_INITIAL_TIME_MS),
+            (MIN_INITIAL_TIME_MS, u64::from(MAX_ENGINE_LIMIT)),
+        ] {
             let mut config = human_config();
             config.white_time_control = Some(TimeControl {
                 initial_time: white_initial,
@@ -5610,6 +5618,31 @@ done
                 increment: u64::from(MAX_ENGINE_LIMIT),
             });
             assert!(GameController::new("game".into(), 1, config).is_ok());
+        }
+    }
+
+    #[test]
+    fn time_controls_reject_a_side_below_the_minimum_initial_clock() {
+        for (white_initial, black_initial, name) in [
+            (0, 60_000, "white initial time"),
+            (60_000, 0, "black initial time"),
+            (1, 60_000, "white initial time"),
+            (60_000, MIN_INITIAL_TIME_MS - 1, "black initial time"),
+        ] {
+            let mut config = human_config();
+            config.white_time_control = Some(TimeControl {
+                initial_time: white_initial,
+                increment: 0,
+            });
+            config.black_time_control = Some(TimeControl {
+                initial_time: black_initial,
+                increment: 0,
+            });
+            assert!(matches!(
+                GameController::new("game".into(), 1, config),
+                Err(Error::InvalidInput(message))
+                    if message == format!("{name} must be at least {MIN_INITIAL_TIME_MS} milliseconds")
+            ));
         }
     }
 
@@ -5628,8 +5661,8 @@ done
         controller.clock.as_mut().unwrap().last_tick = Instant::now() - Duration::from_millis(250);
 
         let game_move = controller.apply_move("e2e4").unwrap();
-        assert!(matches!(game_move.clock, Some(700..=800)));
         let white_time = controller.clock.as_ref().unwrap().white_time.unwrap();
+        assert_eq!(game_move.clock, Some(white_time));
         assert!((800..=850).contains(&white_time));
         assert_eq!(controller.clock.as_ref().unwrap().black_time, Some(1_000));
     }
@@ -5643,10 +5676,11 @@ done
             increment: 0,
         });
         config.black_time_control = Some(TimeControl {
-            initial_time: 1,
+            initial_time: MIN_INITIAL_TIME_MS,
             increment: 0,
         });
         let mut controller = GameController::new("game".into(), 1, config).unwrap();
+        controller.clock.as_mut().unwrap().black_time = Some(1);
         controller.clock.as_mut().unwrap().last_tick = Instant::now() - Duration::from_millis(2);
 
         assert_eq!(
