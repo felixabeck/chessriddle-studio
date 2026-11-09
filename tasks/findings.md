@@ -22517,3 +22517,17 @@ Fixed in 0b63a012 (pushed to master; hosted Test 13/13 green; installed locally)
 * **Failure scenario:** `pnpm gates:push -- --frontend` on tree af666d0e, full e2e container lane, 372 passed and 1 failed: `locator('.mantine-ScrollArea-scrollbar[data-state="visible"]')`, `Expected: 0`, `Received: 1`, 20 polls, at `fixtures.ts:197` from `engine-gap.spec.ts:604`. The failure screenshot shows the scrollbar at the right of the Engines panel, away from the pointer. The same test passed in the full lane one run earlier on the same source, and passed 12 of 12 alone with `--repeat-each 12`, so it appears only under full-suite load. A red e2e job here makes `pnpm ci:remote:check` refuse later pushes.
 * **Open question:** Why does that scrollbar stay visible, and should the screenshot hide or scope scrollbars rather than wait page-wide?
 * **Proof:** Run the full e2e container lane repeatedly with this test included and see no timeout at this wait.
+
+---
+
+## 2026-11-09 — filed through the inbox spool
+
+### A database test fails on loaded macOS runners because it caps a busy read at two seconds of wall-clock time
+
+* **ID:** f-20261109-06 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 42589672905
+* **Where:** `src-tauri/src/db/repository.rs:4050`, `db::repository::upgrade_tests::current_schema_foreign_exclusive_lock_returns_busy_within_two_seconds`.
+* **Defect:** The test asserts `started.elapsed() < Duration::from_secs(2)` around a read whose busy timeout is 1000 ms, which leaves one second for opening the database and for scheduling on a runner executing about 3150 tests in parallel.
+* **Failure scenario:** Test run 42589672905 on master 3859bcd9, a frontend and records push, job `rust-macos-test` 129067939536: 3149 passed, 1 failed, `assertion failed: started.elapsed() < Duration::from_secs(2)` at `src/db/repository.rs:4056:9`. The push's `Test` run is red and `pnpm ci:remote:check` refuses later pushes.
+* **Proof:** The test passes with a fixed 10 s ceiling, well below the ordinary 30 s busy timeout, and goes red when `METADATA_READ_BUSY_TIMEOUT_MS` is raised to 30000.
