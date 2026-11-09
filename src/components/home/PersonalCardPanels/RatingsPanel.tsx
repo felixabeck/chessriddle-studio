@@ -51,7 +51,7 @@ function RatingsPanel({
   info: PlayerGameInfo;
   isDatabase?: boolean;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [dateRange, setDateRange] = useState<string | null>(DateRange.AllTime);
   const [timeControl, setTimeControl] = useState<string | null>(null);
   const [website, setWebsite] = useState<string | null>(null);
@@ -182,7 +182,7 @@ function RatingsPanel({
               <XAxis
                 dataKey="date"
                 domain={[dates[timeRange.start], dates[timeRange.end]]}
-                tickFormatter={(date) => new Date(date).toLocaleDateString()}
+                tickFormatter={(date) => new Date(date).toLocaleDateString(i18n.language)}
                 type="number"
               />
               {playerEloDomain == null && <YAxis />}
@@ -190,7 +190,7 @@ function RatingsPanel({
               <Tooltip
                 contentStyle={tooltipContentStyle}
                 cursor={tooltipCursorStyle}
-                labelFormatter={(label) => new Date(label).toLocaleDateString()}
+                labelFormatter={(label) => new Date(label).toLocaleDateString(i18n.language)}
               />
               <Area
                 name="Rating"

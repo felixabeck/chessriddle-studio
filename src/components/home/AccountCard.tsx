@@ -130,7 +130,7 @@ export function AccountCard({
     base: "var(--mantine-spacing-xs)",
     xs: "var(--mantine-spacing-lg)",
   });
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { mutate } = useSWRConfig();
   const databaseOwner = useNativeRequestOwner(DATABASE_LIST_KEY);
   const accountKey = accountCompletionKey({ provider: type, account: accountUsername });
@@ -450,7 +450,7 @@ export function AccountCard({
           <Group justify="space-between" mt={4}>
             <Text size="xs" c="dimmed" miw={0} className="wrap-anywhere">
               {t("Home.Accounts.LastUpdate", {
-                date: new Date(updatedAt).toLocaleDateString(),
+                date: new Date(updatedAt).toLocaleDateString(i18n.language),
                 interpolation: { escapeValue: false },
               })}
             </Text>

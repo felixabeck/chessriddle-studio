@@ -100,7 +100,7 @@ export function useFileWorkspace(
   setSelectedEntry: (entry: Entry | null) => void,
   selectedWorkspaceKey?: string,
 ) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const listingCache = useSWRConfig();
   const compactDialog = useScaledMaxWidth(COMPACT_DIALOG_WIDTH_EM);
   const fileTypeOptions = FILE_TYPES.map(({ value, translationKey }) => ({
@@ -637,7 +637,7 @@ export function useFileWorkspace(
                           t("Files.CollectionRoot", { defaultValue: "Collection root" })}
                       </Text>
                       <Text size="xs" c="dimmed">
-                        {new Date(Number(row.trashedSeconds) * 1000).toLocaleString()}
+                        {new Date(Number(row.trashedSeconds) * 1000).toLocaleString(i18n.language)}
                       </Text>
                     </Group>
                     {row.category && (

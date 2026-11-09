@@ -89,6 +89,7 @@ vi.mock("react-i18next", async () => {
   const { default: catalogue } = await import("@/translation/en-US.json");
   return {
     useTranslation: () => ({
+      i18n: { language: "en-US" },
       t: (key: string, options?: { defaultValue?: string; name?: string }) =>
         key === "Common.NameAlreadyUsed" || key.startsWith("Files.Refusal.")
           ? catalogue.translation[key as keyof typeof catalogue.translation]

@@ -51,7 +51,9 @@ vi.mock("@/platform/tauri", async (original) => ({
   tauriSubscriptions: { progress: mocks.progress, completionChanged: mocks.completionChanged },
 }));
 vi.mock("@mantine/notifications", () => ({ notifications: { show: mocks.notify } }));
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({ t: (key: string) => key, i18n: { language: "en-US" } }),
+}));
 vi.mock("@/platform/native", () => ({ warn: mocks.warn }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });

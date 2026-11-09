@@ -60,6 +60,7 @@ vi.mock("@/i18n", async (original) => ({
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key,
+    i18n: { language: "en-US" },
   }),
 }));
 vi.mock("@/components/library/LinkedCollection", () => ({
