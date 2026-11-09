@@ -22502,3 +22502,18 @@ Fixed in 0b63a012 (pushed to master; hosted Test 13/13 green; installed locally)
 * **Failure scenario:** At 1440x900 with 200% font scale, or at 320x720, open the Analysis tab. The icon at the left of Manage Engines is cut off. `assertPageNotClipped` reports `mantine-Tabs-panel: x starts at 710, before 793` at 200% and `x starts at -61, before 73` at 320px, observed in the container run of `e2e/first-engine-install.spec.ts`.
 * **Open question:** Should the row wrap or shrink its control at these widths?
 * **Proof:** Add `assertPageNotClipped` on the Analysis tab with no engines at 320px and 200% font scale.
+
+---
+
+## 2026-11-09 — filed through the inbox spool
+
+### The pinned-engine e2e test intermittently times out waiting for the analysis panel scrollbar to hide
+
+* **ID:** f-20261109-05 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** final push gates of the first-launch Stockfish change, 2026-11-09
+* **Where:** `e2e/engine-gap.spec.ts:604`, the `waitForScrollAreaScrollbarsHidden` call before the `pinned-engine-hover-preview-dark.png` screenshot, helper at `e2e/fixtures.ts:197`.
+* **Defect:** The wait added by fab855dc assumes every hover scrollbar hides while the pointer rests on a pinned move, but the analysis panel's vertical scrollbar can stay `data-state="visible"` for the whole 8 s expect timeout.
+* **Failure scenario:** `pnpm gates:push -- --frontend` on tree af666d0e, full e2e container lane, 372 passed and 1 failed: `locator('.mantine-ScrollArea-scrollbar[data-state="visible"]')`, `Expected: 0`, `Received: 1`, 20 polls, at `fixtures.ts:197` from `engine-gap.spec.ts:604`. The failure screenshot shows the scrollbar at the right of the Engines panel, away from the pointer. The same test passed in the full lane one run earlier on the same source, and passed 12 of 12 alone with `--repeat-each 12`, so it appears only under full-suite load. A red e2e job here makes `pnpm ci:remote:check` refuse later pushes.
+* **Open question:** Why does that scrollbar stay visible, and should the screenshot hide or scope scrollbars rather than wait page-wide?
+* **Proof:** Run the full e2e container lane repeatedly with this test included and see no timeout at this wait.
