@@ -22590,3 +22590,19 @@ Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates th
 
 * **Correction 2026-11-09 (drain records lens on the closing note):** The closing note's commits were rebased before the push. They landed on `master` as `bcd47a38` (fix and steal and no-surplus tests) and `cda87461` (diagnostic-rule test), not `1f619081` and `e9f0936e`. The note also says the earlier Linux red of f-20261108-08 "was not a slow runner". That overstates the evidence. That recurrence has no per-reader timings, so the lost-request race is a fitting explanation for it, not an established cause.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"43902e615e3092f051147273b6bf8026c7410b28314e2e61b5c811b9d678cee5","input_sha256":"4f3a3eebfa3f7dff6fe273814a6c4589f2f0323a845434cc3a08f1b5a0e94304","kind":"mutation-receipt","operation":"b630043717d536755e69488e39b3eb103b024371adf19ccefb3f3f3386a81854","options":{"section":null},"request_id_sha256":null,"results":["f-20261109-07"],"target":"f-20261109-07","v":1} -->
+
+---
+
+## 2026-11-09 — filed through the inbox spool
+
+### DatabasePanel "second unpinned tab" test times out at 5000 ms under the full frontend-coverage gate
+
+* **ID:** f-20261109-08 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **Filed from:** 7244e15f-bdf7-4774-a1f4-1715272bc61a
+* **Where:** `src/components/panels/database/DatabasePanel.test.tsx`, test `local: a second unpinned tab changes the global reference without sending the first tab's player to it` (mounts the panel three times, opens a Mantine Select and re-renders for each tab).
+* **Defect:** In the `frontend-coverage` push gate on drain HEAD 45e9f98c (rebased on master 87328389, 2026-11-09 18:03, transcript `artifacts/gates/20261109T170126503Z-2667828/frontend-coverage.log`), this one test failed with `Test timed out in 5000ms` at 5992 ms, while 7181 other tests passed. The pushed diff (keyboard-ownership guards, f-20261106-33) does not touch the database panel, and the test imports none of the changed modules. In isolation it passes three times in a row in 1.10 s. The load average was about 7–9 at the time. f-20260901-19's handled note records two earlier DatabasePanel timeouts as "not reproduced and not part of this fix", so this is a recurrence on a file that fix left untreated.
+* **Failure scenario:** A slow coverage run reddens `frontend-coverage` on a commit unrelated to the database panel and blocks the push until a rerun.
+* **Fix direction:** Measure where the 6 s go under coverage instrumentation (the three sequential renders and Select interactions versus module-graph import charged to the test, as in f-20260901-19 / d-20260901-36). Remove the cost at its source; d-20260901-36 rejects raising the timeout.
+* **Related:** f-20260901-19 (handled; same timeout class, other files), d-20260901-36.
+* **Found by:** Claude Code drain session 7244e15f, final gates for f-20261106-33, 2026-11-09.
