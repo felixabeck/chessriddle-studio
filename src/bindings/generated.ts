@@ -1730,7 +1730,11 @@ export type WorkspaceMetadata = { type: WorkspaceFileType; tags: string[] }
 export type WorkspaceTrashItem = { item: TrashItemId; kind: WorkspaceEntryKind | null; name: string; originalFolder: string; trashedSeconds: bigint; category: ErrorCategory | null }
 export type WorkspaceTrashPage = { items: WorkspaceTrashItem[]; olderCount: bigint; cursor: TrashCursor | null }
 export type WorkspaceUnread = { name: string; kind: WorkspaceEntryKind | null; category: ErrorCategory; parent: FileWorkspaceHandle | null }
-export type WriteExpectation = { kind: "game"; stamp: string } | { kind: "linkedGame"; stamp: string; revision: string } | { kind: "append" }
+export type WriteExpectation = { kind: "game"; stamp: string } | 
+/**
+ * The game's text alone cannot tell byte-identical games apart, so this also pins the file.
+ */
+{ kind: "gameAtRevision"; stamp: string; revision: string } | { kind: "linkedGame"; stamp: string; revision: string } | { kind: "append" }
 export type WriteStamp = { stamp: string | null; revision: string | null; linked?: LinkedGameLocator | null }
 export type YearCount = { year: number; count: number }
 

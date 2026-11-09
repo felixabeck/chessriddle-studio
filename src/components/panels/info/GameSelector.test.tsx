@@ -15,6 +15,12 @@ const mocks = vi.hoisted(() => ({
   visibleIndices: [0],
   measure: vi.fn(),
   estimateSize: (() => 0) as (index: number) => number,
+  virtualizer: {
+    getTotalSize: () => 30,
+    measure: () => mocks.measure(),
+    getVirtualItems: () =>
+      mocks.visibleIndices.map((index) => ({ index, size: 30, start: index * 30 })),
+  },
 }));
 
 vi.mock("react-i18next", () => ({ useTranslation: () => translation }));
@@ -33,13 +39,10 @@ vi.mock("@mantine/notifications", () => ({
   notifications: { show: vi.fn() },
 }));
 vi.mock("@tanstack/react-virtual", () => ({
-  useVirtualizer: (options: { estimateSize: (index: number) => number }) => ({
-    ...((mocks.estimateSize = options.estimateSize), {}),
-    getTotalSize: () => 30,
-    measure: mocks.measure,
-    getVirtualItems: () =>
-      mocks.visibleIndices.map((index) => ({ index, size: 30, start: index * 30 })),
-  }),
+  useVirtualizer: (options: { estimateSize: (index: number) => number }) => {
+    mocks.estimateSize = options.estimateSize;
+    return mocks.virtualizer;
+  },
 }));
 vi.mock("@mantine/core", () => ({
   ActionIcon: ({ children, ...props }: any) => <button {...props}>{children}</button>,
@@ -876,12 +879,14 @@ test("a saved section appears at once and every line takes the file's new revisi
     [1, { name: "Second", identity }],
   ]);
   await openEditor(1);
+  mocks.measure.mockClear();
   await click("saved");
+  expect(mocks.measure).toHaveBeenCalledOnce();
   expect(host.textContent).toContain("Neu");
   expect(editorTarget()).toMatchObject({ index: 1, stamp: "s1", revision: "r1" });
 
-  mocks.measure.mockClear();
   await openEditor(1);
+  expect(mocks.measure).toHaveBeenCalledOnce();
   expect(editorTarget()).toMatchObject({ index: 1, section: "Neu", stamp: "s2", revision: "r2" });
   await openEditor(0);
   expect(editorTarget()).toMatchObject({ index: 0, stamp: "s1", revision: "r2" });

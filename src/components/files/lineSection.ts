@@ -14,60 +14,73 @@ export function lineSectionOf(headers: Pick<GameHeaders, "other">): string | und
     return value === undefined ? undefined : normalizeLineSection(value);
 }
 
-const BYTE_ORDER_MARK = String.fromCharCode(0xfeff);
-// One tag pair, not a whole line: PGN allows several tag pairs on a single line.
-const SECTION_TAG_PAIR = new RegExp(
-    `\\[\\s*${LINE_SECTION_TAG}\\s+"(?:[^"\\\\]|\\\\.)*"\\s*\\]`,
-    "g",
-);
+type TagPair = { name: string; start: number; end: number };
 
-function isTagLine(line: string) {
-    return line.trimStart().startsWith("[");
+/** The game's opening tag pairs, skipping what PGN allows between them. Stops at the moves. */
+function scanTagPairs(pgn: string): TagPair[] {
+    const tagPair = /\[\s*([^\s"\]]+)\s+"(?:[^"\\]|\\.)*"\s*\]/y;
+    const tags: TagPair[] = [];
+    let at = 0;
+    while (at < pgn.length) {
+        const character = pgn[at];
+        if (/\s/.test(character)) {
+            at += 1;
+        } else if (character === "{" || character === "%" || character === ";") {
+            const end = pgn.indexOf(character === "{" ? "}" : "\n", at);
+            if (end < 0) break;
+            at = end + 1;
+        } else {
+            tagPair.lastIndex = at;
+            const match = tagPair.exec(pgn);
+            if (!match) break;
+            tags.push({ name: match[1], start: at, end: tagPair.lastIndex });
+            at = tagPair.lastIndex;
+        }
+    }
+    return tags;
 }
 
-// A % or ; line is an escape or comment the parser also accepts between tags.
-function isEscapeLine(line: string) {
-    return /^\s*[%;]/.test(line);
-}
-
-function withoutSectionTag(line: string): string | null {
-    const stripped = line.replace(SECTION_TAG_PAIR, "");
-    if (stripped === line) return line;
-    if (stripped.trim() === "") return null;
-    return stripped.trimStart().replace(/[ \t]+(\r?\n?)$/, "$1");
+function withoutTagPair(text: string, { start, end }: TagPair): string {
+    const lineStart = text.lastIndexOf("\n", start - 1) + 1;
+    const newline = text.indexOf("\n", end);
+    const lineEnd = newline < 0 ? text.length : newline + 1;
+    const aloneOnLine =
+        text.slice(lineStart, start).trim() === "" && text.slice(end, lineEnd).trim() === "";
+    if (aloneOnLine) return text.slice(0, lineStart) + text.slice(lineEnd);
+    if (text.slice(lineStart, start).trim() === "") {
+        return text.slice(0, start) + text.slice(end).replace(/^[ \t]+/, "");
+    }
+    return text.slice(0, start).replace(/[ \t]+$/, "") + text.slice(end);
 }
 
 /**
  * Sets or removes (`null`) the section tag in one game's raw text and leaves everything else alone.
  * The text is edited directly because a parse and rewrite could drop content the tree cannot hold.
  */
-export function withLineSection(pgn: string, section: string | null): string {
-    const bom = pgn.startsWith(BYTE_ORDER_MARK) ? BYTE_ORDER_MARK : "";
+export function withLineSection(pgn: string, section: string | null, gameIndex: number): string {
     const eol = pgn.includes("\r\n") ? "\r\n" : "\n";
-    const tagOf = (name: string, value: string) => pgnTag(name, value).replace("\n", eol);
-    const lines = pgn.slice(bom.length).split(/(?<=\n)/);
-    let start = 0;
-    while (start < lines.length && lines[start].trim() === "") start += 1;
-    let end = start;
-    for (let index = start; index < lines.length; index += 1) {
-        if (isTagLine(lines[index])) end = index + 1;
-        else if (!isEscapeLine(lines[index])) break;
-    }
-    const hadTags = end > start;
+    const tagText = (name: string, value: string) => pgnTag(name, value).replace("\n", eol);
+    const tags = scanTagPairs(pgn);
+    const sections = tags.filter((tag) => tag.name === LINE_SECTION_TAG);
+    const text = sections.reduceRight(withoutTagPair, pgn);
+    const remaining = scanTagPairs(text);
 
-    const block = lines
-        .slice(start, end)
-        .map((line) => (isTagLine(line) ? withoutSectionTag(line) : line))
-        .filter((line) => line !== null);
-    if (section !== null) {
-        const last = block.length - 1;
-        if (last >= 0 && !block[last].endsWith("\n")) block[last] += eol;
-        block.push(tagOf(LINE_SECTION_TAG, normalizeLineSection(section)));
-        // A game without tags needs the blank line that separates its new tag from the moves.
-        if (!hadTags) block.push(eol);
-    } else if (hadTags && !block.some(isTagLine)) {
-        // The scanner finds a later game by its header, so a game must not lose its only tag.
-        block.push(tagOf("Event", "?"));
+    if (section === null) {
+        if (sections.length === 0 || remaining.length > 0) return text;
+        // The scanner finds a later game by its header, so only the first game may lose its last tag.
+        if (gameIndex > 0) return tagText("Event", "?") + text;
+        return text.replace(/^\r?\n/, "");
     }
-    return bom + [...lines.slice(0, start), ...block, ...lines.slice(end)].join("");
+
+    const tag = tagText(LINE_SECTION_TAG, normalizeLineSection(section));
+    const last = remaining.at(-1);
+    if (!last) return tag + (sections.length > 0 ? "" : eol) + text;
+    const newline = text.indexOf("\n", last.end);
+    const lineEnd = newline < 0 ? text.length : newline;
+    if (text.slice(last.end, lineEnd).trim() === "") {
+        const head = newline < 0 ? text + eol : text.slice(0, newline + 1);
+        return head + tag + (newline < 0 ? "" : text.slice(newline + 1));
+    }
+    // Moves can follow the last tag on its own line, and the new tag must stay before them.
+    return text.slice(0, last.end) + eol + tag + text.slice(last.end).replace(/^[ \t]+/, "");
 }

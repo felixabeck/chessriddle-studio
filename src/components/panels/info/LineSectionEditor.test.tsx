@@ -144,7 +144,7 @@ test("saving writes the tag against the stamp it read and reports the new identi
     file,
     3,
     '[Event "A"]\n[Section "mit g3"]\n\n1. e4 *\n',
-    { kind: "game", stamp: "s1" },
+    { kind: "gameAtRevision", stamp: "s1", revision: "r1" },
   );
   expect(onSaved).toHaveBeenCalledExactlyOnceWith(3, "mit g3", { stamp: "s2", revision: "r2" });
   expect(onClose).toHaveBeenCalledOnce();
@@ -172,9 +172,11 @@ test("removing rewrites the line without the tag", async () => {
 });
 
 test.each([
-  ["a different line now at this position", { pgn, stamp: "other", revision: "r1", present: true }],
-  ["an identical line after the file changed", { pgn, stamp: "s1", revision: "r2", present: true }],
   ["a line no longer in the file", { pgn: "", stamp: "s1", revision: "r1", present: false }],
+  [
+    "a line too large to rewrite",
+    { pgn: "", stamp: "s1", revision: "r1", present: true, omission: "tooLarge" },
+  ],
 ])("refuses %s without writing", async (_name, game) => {
   mocks.readFileGame.mockResolvedValue(game);
   await render();

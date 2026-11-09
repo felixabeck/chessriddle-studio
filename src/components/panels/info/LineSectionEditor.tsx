@@ -66,20 +66,17 @@ export default function LineSectionEditor({
     setPending(true);
     try {
       const game = await readFileGame(file, target.index);
-      // Identical lines share a stamp, so only the revision proves this index is still this line.
-      if (
-        !game.present ||
-        game.omission ||
-        game.stamp !== target.stamp ||
-        game.revision !== target.revision
-      ) {
+      if (!game.present || game.omission) {
         showStale();
         return;
       }
-      const written = await writeFileGame(file, target.index, withLineSection(game.pgn, section), {
-        kind: "game",
-        stamp: game.stamp,
-      });
+      // Identical lines share a stamp, so the write also pins the revision the list was read at.
+      const written = await writeFileGame(
+        file,
+        target.index,
+        withLineSection(game.pgn, section, target.index),
+        { kind: "gameAtRevision", stamp: target.stamp, revision: target.revision },
+      );
       onSaved(target.index, section === null ? undefined : normalizeLineSection(section), written);
     } catch (error) {
       const details = normalizeError(error);

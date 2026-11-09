@@ -176,8 +176,18 @@ pub enum GameOmission {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum WriteExpectation {
-    Game { stamp: String },
-    LinkedGame { stamp: String, revision: String },
+    Game {
+        stamp: String,
+    },
+    /// The game's text alone cannot tell byte-identical games apart, so this also pins the file.
+    GameAtRevision {
+        stamp: String,
+        revision: String,
+    },
+    LinkedGame {
+        stamp: String,
+        revision: String,
+    },
     Append,
 }
 
@@ -1360,7 +1370,14 @@ fn edit_existing(
                 source.seek(SeekFrom::Start(target.start - 1))?;
                 let mut prior = [0];
                 source.read_exact(&mut prior)?;
-                if prior[0] != b'\n' {
+                let mut follows_only_bom = false;
+                if target.start == 3 {
+                    source.seek(SeekFrom::Start(0))?;
+                    let mut leading = [0; 3];
+                    source.read_exact(&mut leading)?;
+                    follows_only_bom = leading == [0xEF, 0xBB, 0xBF];
+                }
+                if prior[0] != b'\n' && !follows_only_bom {
                     temporary.write_all(b"\n")?;
                 }
             }
@@ -1950,11 +1967,18 @@ async fn commit_pgn_mutation(
                 return Err(Error::StaleGame);
             }
         }
+        if let WriteExpectation::GameAtRevision { revision, .. } = &expectation {
+            if *revision != revision_string_for_key(&key) {
+                return Err(Error::StaleGame);
+            }
+        }
         let matched = match expectation {
             WriteExpectation::Append => {
                 target.start == key.revision.size && target.end == key.revision.size
             }
-            WriteExpectation::Game { stamp } | WriteExpectation::LinkedGame { stamp, .. } => {
+            WriteExpectation::Game { stamp }
+            | WriteExpectation::GameAtRevision { stamp, .. }
+            | WriteExpectation::LinkedGame { stamp, .. } => {
                 let mut file = commit_snapshot.file.try_clone()?;
                 let range = target;
                 let replacing = replacement.is_some();
@@ -2221,13 +2245,15 @@ pub async fn write_game(
 ) -> Result<WriteStamp, Error> {
     crate::infra::platform_support::off_unix_refusal("PGN atomic replacement", cfg!(unix))?;
     let lease = state.operations.accept("write_game")?;
-    if matches!(&expected, WriteExpectation::Game { .. })
-        && state
-            .pgn_path_authority
-            .collections()?
-            .map(|service| service.contains_source(&file))
-            .transpose()?
-            .unwrap_or(false)
+    if matches!(
+        &expected,
+        WriteExpectation::Game { .. } | WriteExpectation::GameAtRevision { .. }
+    ) && state
+        .pgn_path_authority
+        .collections()?
+        .map(|service| service.contains_source(&file))
+        .transpose()?
+        .unwrap_or(false)
     {
         return Err(Error::StaleGame);
     }
@@ -5129,6 +5155,125 @@ mod tests {
 
         assert!(matches!(result, Err(Error::StaleGame)));
         assert_eq!(std::fs::read(&path).expect("read unchanged PGN"), changed);
+    }
+
+    #[tokio::test]
+    async fn write_at_revision_refuses_a_moved_equal_text_duplicate() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("duplicate-write.pgn");
+        let duplicate = b"[Event \"Same\"]\n\n1. e4 *\n";
+        let original = [duplicate.as_slice(), b"\n", duplicate.as_slice()].concat();
+        std::fs::write(&path, &original).expect("write duplicate PGNs");
+        let app = mock_app();
+        let state = app.state::<AppState>();
+        let selected = read_game_core(
+            writable_for(&directory, &path),
+            1,
+            &CancellationToken::new(),
+            &state.pgn_repository,
+        )
+        .await
+        .expect("read second duplicate");
+        let inserted = b"[Event \"Inserted\"]\n\n1. c4 *\n\n";
+        let changed = [inserted.as_slice(), original.as_slice()].concat();
+        std::fs::write(&path, &changed).expect("shift duplicate rows");
+
+        let lease = state.operations.accept("write_game").expect("accept write");
+        let result = write_game_core(
+            lease,
+            writable_for(&directory, &path),
+            1,
+            "[Event \"Same\"]\n[Section \"x\"]\n\n1. e4 *\n".into(),
+            WriteExpectation::GameAtRevision {
+                stamp: selected.stamp,
+                revision: selected.revision,
+            },
+            state.pgn_repository.clone(),
+            None,
+        )
+        .await;
+
+        assert!(matches!(result, Err(Error::StaleGame)));
+        assert_eq!(std::fs::read(&path).expect("read unchanged PGN"), changed);
+    }
+
+    #[tokio::test]
+    async fn write_at_revision_replaces_only_the_selected_game() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("revision-write.pgn");
+        std::fs::write(
+            &path,
+            b"[Event \"A\"]\n\n1. e4 *\n\n[Event \"B\"]\n\n1. d4 *\n",
+        )
+        .expect("write PGN");
+        let app = mock_app();
+        let state = app.state::<AppState>();
+        let selected = read_game_core(
+            writable_for(&directory, &path),
+            1,
+            &CancellationToken::new(),
+            &state.pgn_repository,
+        )
+        .await
+        .expect("read selected game");
+
+        let lease = state.operations.accept("write_game").expect("accept write");
+        write_game_core(
+            lease,
+            writable_for(&directory, &path),
+            1,
+            "[Event \"B\"]\n[Section \"x\"]\n\n1. d4 *\n".into(),
+            WriteExpectation::GameAtRevision {
+                stamp: selected.stamp,
+                revision: selected.revision,
+            },
+            state.pgn_repository.clone(),
+            None,
+        )
+        .await
+        .expect("write at the current revision");
+
+        assert_eq!(
+            std::fs::read(&path).expect("read PGN"),
+            b"[Event \"A\"]\n\n1. e4 *\n\n[Event \"B\"]\n[Section \"x\"]\n\n1. d4 *\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn replacing_the_first_game_keeps_it_directly_after_a_byte_order_mark() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("bom-write.pgn");
+        std::fs::write(&path, b"\xef\xbb\xbf[Event \"A\"]\n\n1. e4 *\n").expect("write PGN");
+        let app = mock_app();
+        let state = app.state::<AppState>();
+        let selected = read_game_core(
+            writable_for(&directory, &path),
+            0,
+            &CancellationToken::new(),
+            &state.pgn_repository,
+        )
+        .await
+        .expect("read first game");
+
+        let lease = state.operations.accept("write_game").expect("accept write");
+        write_game_core(
+            lease,
+            writable_for(&directory, &path),
+            0,
+            "[Event \"Saved\"]\n\n1. d4 *\n".into(),
+            WriteExpectation::Game {
+                stamp: selected.stamp,
+            },
+            state.pgn_repository.clone(),
+            None,
+        )
+        .await
+        .expect("replace first game");
+
+        assert_eq!(
+            std::fs::read(&path).expect("read PGN"),
+            b"\xef\xbb\xbf[Event \"Saved\"]\n\n1. d4 *\n"
+        );
     }
 
     #[tokio::test]

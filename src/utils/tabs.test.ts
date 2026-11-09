@@ -89,6 +89,7 @@ import {
     appendStoreGame,
     serializeStoreTree,
     sameTabOwner,
+    isTabOfFileGame,
     matchesFileGameTab,
     useTabActions,
     replaceFileGame,
@@ -159,6 +160,17 @@ test("shared tab owner compares logical identity and effective legacy physical g
         false,
     );
     expect(sameTabOwner({ ...fileTab, treeKey: crypto.randomUUID() }, fileTab)).toBe(false);
+});
+
+test("isTabOfFileGame matches only the same file and game number", () => {
+    const tab = saveFixture({ kind: "temp_file" }).tabs[0]!;
+    if (!isFileBackedTab(tab)) throw new Error("Expected a file-backed tab");
+    const { file, gameNumber } = tab.gameOrigin;
+    const otherFile = { id: { id: "other-file" }, kind: "fileWorkspace" } as const;
+    expect(isTabOfFileGame(tab, file.handle, gameNumber)).toBe(true);
+    expect(isTabOfFileGame(tab, file.handle, gameNumber + 1)).toBe(false);
+    expect(isTabOfFileGame(tab, otherFile, gameNumber)).toBe(false);
+    expect(isTabOfFileGame(undefined, file.handle, gameNumber)).toBe(false);
 });
 
 test("shared file/page predicate allows file and temp-file while Save retains its stricter origin kind", async () => {
