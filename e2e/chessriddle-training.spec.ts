@@ -3,6 +3,7 @@ import type { Locator, Page } from "@playwright/test";
 import type { AccountError, TrainingPuzzle, TrainingVerdict } from "../src/bindings/generated";
 import en from "../src/translation/en-US.json" with { type: "json" };
 import de from "../src/translation/de-DE.json" with { type: "json" };
+import { deserializeStorageValue } from "../src/state/store/debouncedStorage";
 import {
     activeWorkspaceTab,
     expect,
@@ -44,6 +45,14 @@ const commands: NonNullable<MockScenario["commands"]> = {
     chessriddle_mistake_count: { result: 2 },
     chessriddle_training_submit: { result: verdict },
     chessriddle_open_upgrade: { result: null },
+    chessriddle_account: { result: { status: "disconnected" } },
+    connect_chessriddle: {
+        result: {
+            status: "connected",
+            account: { handle: "account", username: "Alex", plan: "gold" },
+            durability_uncertain: false,
+        },
+    },
 };
 
 async function playTrainingMove(page: Page, board: Locator, from: string, to: string) {
@@ -57,7 +66,12 @@ async function playTrainingMove(page: Page, board: Locator, from: string, to: st
     await playBoardMove(page, board, square(from), square(to));
 }
 
-async function captureTraining(page: Page, target: Page | Locator, name: string) {
+async function captureTraining(
+    page: Page,
+    target: Page | Locator,
+    name: string,
+    scrollToBottom = true,
+) {
     await page.mouse.move(0, 0);
     await page.evaluate(() => {
         (document.activeElement as HTMLElement | null)?.blur();
@@ -67,21 +81,35 @@ async function captureTraining(page: Page, target: Page | Locator, name: string)
     await page.evaluate(() => document.fonts.ready);
     if (target !== page) {
         const element = target as Locator;
-        await element.evaluate((node) => {
-            node.scrollTop = node.scrollHeight;
-        });
+        if (scrollToBottom)
+            await element.evaluate((node) => {
+                node.scrollTop = node.scrollHeight;
+            });
         await element.scrollIntoViewIfNeeded();
-        await expect(element).toHaveScreenshot(name);
+        await expect.soft(element).toHaveScreenshot(name);
     } else {
-        await expect(page).toHaveScreenshot(name);
+        await expect.soft(page).toHaveScreenshot(name);
     }
 }
 
 async function assertControlLabelsFit(panel: Locator) {
-    const labels = panel.locator(".mantine-Button-label");
-    expect(await splitTextWords(labels), "button labels must fit without splitting words").toEqual(
-        [],
-    );
+    const labels = panel.locator(".mantine-Button-label, .mantine-SegmentedControl-label");
+    const split = await splitTextWords(labels);
+    const geometry = split.length
+        ? await labels.evaluateAll((elements) =>
+              elements.map((element) => ({
+                  text: element.textContent,
+                  width: element.clientWidth,
+                  font: getComputedStyle(element).fontSize,
+                  parentFont: getComputedStyle(element.parentElement!).fontSize,
+                  parent: element.parentElement!.className,
+              })),
+          )
+        : [];
+    expect(
+        split,
+        `button labels must fit without splitting words: ${JSON.stringify(geometry)}`,
+    ).toEqual([]);
     const clipped = await labels.evaluateAll((elements) =>
         elements
             .filter((label) => label.scrollWidth > label.clientWidth + 1)
@@ -90,12 +118,207 @@ async function assertControlLabelsFit(panel: Locator) {
     expect(clipped, "button labels must fit without clipping").toEqual([]);
 }
 
+for (const layout of ["desktop", "narrow"] as const) {
+    test(`${layout}: switching sources retains the tab and both puzzle sessions`, async ({
+        page,
+        mockScenario,
+        assertNoHorizontalOverflow,
+    }) => {
+        await page.setViewportSize({ width: layout === "narrow" ? 320 : 1440, height: 900 });
+        await page.addInitScript(() => {
+            localStorage.setItem("puzzle-db", JSON.stringify({ id: "offline-puzzles" }));
+            localStorage.setItem("board-animation-speed", JSON.stringify("off"));
+            localStorage.setItem("track-puzzle-time", "false");
+        });
+        await mockScenario({
+            commands: {
+                ...commands,
+                list_puzzle_databases: {
+                    result: [
+                        {
+                            title: "Offline.db3",
+                            description: "Offline",
+                            puzzleCount: 1,
+                            storageSize: "1024",
+                            path: { id: "offline-puzzles" },
+                        },
+                    ],
+                },
+                get_puzzle_themes: { result: [] },
+                get_themes_for_puzzle: { result: [] },
+                get_puzzle: {
+                    result: {
+                        id: 7,
+                        fen: INITIAL_FEN,
+                        moves: "e2e4 e7e5 g1f3 b8c6",
+                        rating: 1200,
+                        rating_deviation: 50,
+                        popularity: 1,
+                        nb_plays: 1,
+                    },
+                },
+            },
+        });
+        await page.goto("/");
+        await page.getByRole("button", { name: "Puzzles", exact: true }).click();
+        await expect(
+            page.locator("[data-training-panel]").getByText("Black to move", { exact: true }),
+        ).toBeVisible();
+        const owner = (await activeWorkspaceTab(page))!;
+        await playTrainingMove(page, page.locator("#left cg-board"), "e7", "e5");
+        await page
+            .locator(".mantine-SegmentedControl-label")
+            .filter({ hasText: /^Offline databases$/ })
+            .click();
+        await page.getByRole("button", { name: "New Puzzle", exact: true }).click();
+        await expect(page.locator("#left cg-board piece")).toHaveCount(32);
+        await page
+            .locator(".mantine-SegmentedControl-label")
+            .filter({ hasText: /^ChessRiddle$/ })
+            .click();
+        await expect(
+            page.locator("#bottomRight").getByRole("button", { name: "e5", exact: true }),
+        ).toBeVisible();
+        await page
+            .locator(".mantine-SegmentedControl-label")
+            .filter({ hasText: /^Offline databases$/ })
+            .click();
+        await expect(page.locator("#left cg-board piece")).toHaveCount(32);
+        expect((await activeWorkspaceTab(page))!.value).toBe(owner.value);
+        const offlinePanel = page.locator("#topRight .mantine-Paper-root").first();
+        await expect(
+            offlinePanel.getByRole("radio", { name: "Offline databases", exact: true }),
+        ).toBeChecked();
+        await assertControlLabelsFit(offlinePanel);
+        await assertNoHorizontalOverflow();
+        await captureTraining(page, page, `en-US-${layout}-offline.png`);
+        expect(
+            await page.evaluate(() =>
+                window.__E2E_TAURI__.invocations().filter((call) => call.command === "get_puzzle"),
+            ),
+        ).toHaveLength(1);
+        expect(
+            await page.evaluate(() =>
+                window.__E2E_TAURI__
+                    .invocations()
+                    .filter((call) => call.command === "chessriddle_training_next"),
+            ),
+        ).toHaveLength(1);
+    });
+}
+
+test("unavailable connection keeps the existing offline Puzzles entry and view", async ({
+    page,
+}) => {
+    await page.goto("/");
+    await expect(page.locator("[data-home-action]")).toHaveCount(5);
+    await page.getByRole("button", { name: "Puzzles", exact: true }).click();
+    await expect(page.getByPlaceholder("Select database")).toBeVisible();
+    await expect(page.getByRole("radio", { name: "ChessRiddle", exact: true })).toHaveCount(0);
+    expect((await activeWorkspaceTab(page))!.puzzleSource).toBeUndefined();
+});
+
 for (const locale of ["en-US", "de-DE"] as const) {
     const catalogue = locale === "de-DE" ? de.translation : en.translation;
     const text = (key: keyof typeof en.translation) => catalogue[key];
     test.describe(locale, () => {
         test.use({ appLocale: locale });
         for (const layout of ["desktop", "narrow", "scaled"] as const) {
+            test(`${layout}: connect inside Puzzles`, async ({
+                page,
+                mockScenario,
+                assertNoHorizontalOverflow,
+            }) => {
+                await page.setViewportSize({
+                    width: layout === "narrow" ? 320 : 1440,
+                    height: 900,
+                });
+                await page.addInitScript(
+                    (scale) => localStorage.setItem("font-size", String(scale)),
+                    layout === "scaled" ? 200 : 100,
+                );
+                await mockScenario({
+                    commands: {
+                        ...commands,
+                        chessriddle_training_next: {
+                            outcomes: [{ error: "notConnected" }],
+                            result: puzzle,
+                        },
+                    },
+                });
+                await page.goto("/");
+                await page
+                    .locator("[data-home-actions]")
+                    .getByRole("button", { name: text("Home.Card.Puzzle.Title"), exact: true })
+                    .click();
+                const panel = page.locator("[data-training-panel]");
+                await expect(panel.getByText(text("Training.ConnectPrompt"))).toBeVisible();
+                await expect(
+                    panel.getByRole("button", {
+                        name: text("Home.ChessRiddle.Connect"),
+                        exact: true,
+                    }),
+                ).toBeVisible();
+                await assertControlLabelsFit(panel);
+                await assertNoHorizontalOverflow();
+                await panel.evaluate((node) => {
+                    node.scrollTop = 0;
+                });
+                await expect(
+                    panel.getByRole("radiogroup", {
+                        name: text("Puzzle.Source.Label"),
+                        exact: true,
+                    }),
+                ).toBeInViewport();
+                await expect(
+                    panel.getByRole("heading", { name: text("Training.Title"), exact: true }),
+                ).toHaveCount(0);
+                await expect(
+                    panel.getByRole("button", { name: text("Training.Tactics"), exact: true }),
+                ).toHaveCount(0);
+                await expect(panel.locator('button[data-variant="filled"]')).toHaveCount(1);
+                await expect(
+                    panel.getByRole("button", { name: text("Training.TryAgain"), exact: true }),
+                ).toHaveAttribute("data-variant", "default");
+                const geometry = await panel.evaluate((node) => ({
+                    scrollHeight: node.scrollHeight,
+                    clientHeight: node.clientHeight,
+                    scrollTop: node.scrollTop,
+                }));
+                const panelBox = (await panel.boundingBox())!;
+                const connectBox = (await panel
+                    .getByRole("button", { name: text("Home.ChessRiddle.Connect"), exact: true })
+                    .boundingBox())!;
+                console.log(
+                    "CONNECT_PROMPT_GEOMETRY",
+                    JSON.stringify({
+                        locale,
+                        layout,
+                        ...geometry,
+                        connectBottom: connectBox.y + connectBox.height - panelBox.y,
+                    }),
+                );
+                if (layout === "desktop") {
+                    expect(
+                        geometry.scrollHeight,
+                        `whole prompt must fit: ${JSON.stringify(geometry)}`,
+                    ).toBeLessThanOrEqual(geometry.clientHeight + 1);
+                }
+                await captureTraining(page, page, `${locale}-${layout}-connect.png`);
+                expect(await panel.evaluate((node) => node.scrollTop)).toBe(0);
+                const owner = await activeWorkspaceTab(page);
+                await panel
+                    .getByRole("button", { name: text("Home.ChessRiddle.Connect"), exact: true })
+                    .click();
+                await expect(panel.getByText(text("Training.BlackToMove"))).toBeVisible();
+                expect((await activeWorkspaceTab(page))!.value).toBe(owner!.value);
+                const calls = await page.evaluate(() =>
+                    window.__E2E_TAURI__
+                        .invocations()
+                        .filter((call) => call.command === "chessriddle_training_next"),
+                );
+                expect(calls).toHaveLength(2);
+            });
             test(`${layout}: solving, verdict and tab ownership`, async ({
                 page,
                 mockScenario,
@@ -115,9 +338,9 @@ for (const locale of ["en-US", "de-DE"] as const) {
                 await mockScenario({ commands });
                 await page.goto("/");
                 const homeActions = page.locator("[data-home-actions]");
-                await expect(homeActions.locator("[data-home-action]")).toHaveCount(6);
+                await expect(homeActions.locator("[data-home-action]")).toHaveCount(5);
                 const trainingButton = homeActions.getByRole("button", {
-                    name: text("Training.Title"),
+                    name: text("Home.Card.Puzzle.Title"),
                     exact: true,
                 });
                 if (layout !== "desktop") await trainingButton.scrollIntoViewIfNeeded();
@@ -158,14 +381,16 @@ for (const locale of ["en-US", "de-DE"] as const) {
                     .click();
                 const owner = (await activeWorkspaceTab(page))!;
                 await page.getByRole("button", { name: text("Tab.NewTab"), exact: true }).click();
-                await page.getByRole("tab", { name: text("Training.Title"), exact: true }).click();
+                await page
+                    .getByRole("tab", { name: text("Home.PuzzleTraining"), exact: true })
+                    .click();
                 await expect(
                     page.locator("#bottomRight").getByRole("button", { name: "Nc6", exact: true }),
                 ).toBeVisible();
                 // Returning to an overflowing tab can retain scrollIntoView's 4px inset scroll.
                 // Capture the overview from the tab strip's start, as in the solving capture.
                 const trainingTab = page.getByRole("tab", {
-                    name: text("Training.Title"),
+                    name: text("Home.PuzzleTraining"),
                     exact: true,
                 });
                 await trainingTab.evaluate((tab) => {
@@ -204,9 +429,14 @@ for (const locale of ["en-US", "de-DE"] as const) {
                     expect(next.y + next.height).toBeLessThan(bounds.y + bounds.height);
                 }
                 await captureTraining(page, page, `${locale}-${layout}-verdict.png`);
-                expect(
-                    await page.evaluate((id) => sessionStorage.getItem(id), owner.value),
-                ).toBeNull();
+                const storedTree = await page.evaluate(
+                    (id) => sessionStorage.getItem(id),
+                    owner.value,
+                );
+                const tree = storedTree ? deserializeStorageValue(storedTree) : null;
+                expect(JSON.stringify(tree)).not.toContain("correctVariation");
+                expect(JSON.stringify(tree)).not.toContain("decisionFen");
+                expect(owner).toMatchObject({ type: "puzzles", puzzleSource: "chessriddle" });
                 const sent = await page.evaluate(() =>
                     window.__E2E_TAURI__
                         .invocations()
@@ -244,7 +474,7 @@ for (const locale of ["en-US", "de-DE"] as const) {
             await page.goto("/");
             await page
                 .locator("[data-home-actions]")
-                .getByRole("button", { name: text("Training.Title"), exact: true })
+                .getByRole("button", { name: text("Home.Card.Puzzle.Title"), exact: true })
                 .click();
             const panel = page.locator("[data-training-panel]");
             await expect(panel.getByText(text("Training.Loading"), { exact: true })).toBeVisible();
@@ -300,9 +530,9 @@ for (const locale of ["en-US", "de-DE"] as const) {
             expect(submissions[0].idempotencyKey).not.toBe(submissions[1].idempotencyKey);
 
             const errors: [AccountError, keyof typeof en.translation][] = [
-                ["notConnected", "Training.Error.NotConnected"],
-                ["invalidGrant", "Training.Error.Reconnect"],
-                ["authentication", "Training.Error.Reconnect"],
+                ["notConnected", "Training.ConnectPrompt"],
+                ["invalidGrant", "Training.ConnectPrompt"],
+                ["authentication", "Training.ConnectPrompt"],
                 ["dailyLimit", "Training.Error.DailyLimit"],
                 ["updateRequired", "Training.Error.UpdateRequired"],
                 ["rateLimited", "Training.Error.RateLimited"],
@@ -327,7 +557,12 @@ for (const locale of ["en-US", "de-DE"] as const) {
                         }),
                     { commands, puzzle, error },
                 );
-                await panel.getByRole("button", { name: /^(Mistakes|Fehler)/ }).click();
+                const tryAgain = panel.getByRole("button", {
+                    name: text("Training.TryAgain"),
+                    exact: true,
+                });
+                if (await tryAgain.count()) await tryAgain.click();
+                else await panel.getByRole("button", { name: /^(Mistakes|Fehler)/ }).click();
                 await panel
                     .getByRole("button", { name: text("Training.ShowSolution"), exact: true })
                     .click();
@@ -335,6 +570,7 @@ for (const locale of ["en-US", "de-DE"] as const) {
                 await expect(
                     panel.getByRole("button", { name: text("Training.Submit"), exact: true }),
                 ).toHaveCount(0);
+                await assertControlLabelsFit(panel);
                 if (
                     [
                         "engineBusy",
@@ -411,9 +647,16 @@ for (const locale of ["en-US", "de-DE"] as const) {
                     expect(upgrade[0].args).toEqual({});
                 } else if (error === "notConnected") {
                     await expect(
-                        panel.getByRole("link", { name: text("Training.Accounts"), exact: true }),
+                        panel.getByRole("button", {
+                            name: text("Home.ChessRiddle.Connect"),
+                            exact: true,
+                        }),
                     ).toBeVisible();
-                    await captureTraining(page, panel, `${locale}-not-connected.png`);
+                    await panel.evaluate((node) => {
+                        node.scrollTop = 0;
+                    });
+                    await captureTraining(page, panel, `${locale}-not-connected.png`, false);
+                    expect(await panel.evaluate((node) => node.scrollTop)).toBe(0);
                 }
                 await assertNoHorizontalOverflow();
             }

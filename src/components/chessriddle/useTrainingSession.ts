@@ -1,12 +1,19 @@
-import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { chessRiddleTrainingSessions as sessions } from "@/state/chessRiddleTraining";
 
-export function useTrainingSession(id: string) {
+export function useTrainingSession(id: string, retryFailedAvailabilityOnMount = false) {
+    const retryOnMount = useRef(retryFailedAvailabilityOnMount);
+    retryOnMount.current = retryFailedAvailabilityOnMount;
     const subscribe = useCallback((listener: () => void) => sessions.subscribe(id, listener), [id]);
     const snapshot = useCallback(() => sessions.ensure(id), [id]);
     const session = useSyncExternalStore(subscribe, snapshot);
     useEffect(() => {
-        if (sessions.get(id)?.available === null) void sessions.available(id);
+        const state = sessions.get(id);
+        if (
+            state?.available === null &&
+            (state.failedOperation !== "availability" || retryOnMount.current)
+        )
+            void sessions.available(id);
     }, [id]);
     return session;
 }

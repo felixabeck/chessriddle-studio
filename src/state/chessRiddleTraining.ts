@@ -50,6 +50,7 @@ type Entry = {
     state: TrainingSession;
     request: symbol | null;
     availabilityRequest: symbol | null;
+    availabilityPromise: Promise<boolean | null> | null;
     countRequest: symbol | null;
     upgradeRequest: symbol | null;
     listeners: Set<() => void>;
@@ -96,6 +97,7 @@ export function createChessRiddleTrainingSessions(
                 },
                 request: null,
                 availabilityRequest: null,
+                availabilityPromise: null,
                 countRequest: null,
                 upgradeRequest: null,
                 listeners: new Set(),
@@ -124,7 +126,7 @@ export function createChessRiddleTrainingSessions(
         }
         publish(entry, { phase: "error", error, failedOperation: operation, timedOutMistakeIds });
     };
-    const available = async (tabId: string) => {
+    const readAvailability = async (tabId: string) => {
         const entry = ensure(tabId);
         const identity = Symbol("training availability");
         entry.availabilityRequest = identity;
@@ -142,13 +144,22 @@ export function createChessRiddleTrainingSessions(
             if (
                 entries.get(tabId) === entry &&
                 entry.availabilityRequest === identity &&
-                entry.state.phase === "idle"
+                (entry.state.phase === "idle" || entry.state.failedOperation === "availability")
             )
                 failure(entry, "availability", cause);
-            return false;
+            return null;
         } finally {
             if (entry.availabilityRequest === identity) entry.availabilityRequest = null;
         }
+    };
+    const available = (tabId: string): Promise<boolean | null> => {
+        const entry = ensure(tabId);
+        if (entry.availabilityPromise) return entry.availabilityPromise;
+        const promise = readAvailability(tabId).finally(() => {
+            if (entry.availabilityPromise === promise) entry.availabilityPromise = null;
+        });
+        entry.availabilityPromise = promise;
+        return promise;
     };
     const next = async (tabId: string, source?: TrainingSource) => {
         const entry = entries.get(tabId);
@@ -243,7 +254,7 @@ export function createChessRiddleTrainingSessions(
             !entry ||
             entry.state.phase !== "error" ||
             !entry.state.error ||
-            !retryable.has(entry.state.error)
+            (entry.state.failedOperation !== "availability" && !retryable.has(entry.state.error))
         )
             return;
         if (entry.state.failedOperation === "submit" && entry.state.frozenSubmission)
@@ -255,6 +266,7 @@ export function createChessRiddleTrainingSessions(
         const state = get(tabId);
         if (!state) return [];
         if (state.phase === "error") {
+            if (state.failedOperation === "availability") return ["retry"];
             if (state.error === "engineTimeout") return ["next"];
             if (state.error === "invalidRequest" && state.failedOperation === "submit")
                 return ["next"];

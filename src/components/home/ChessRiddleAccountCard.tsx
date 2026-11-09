@@ -1,5 +1,5 @@
 import { Alert, Button, Card, Group, Stack, Text } from "@mantine/core";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AccountError, AccountStatus, DisconnectOutcome } from "@/bindings";
 import { ChessRiddleCommandError } from "@/platform/chessriddle";
@@ -7,7 +7,7 @@ import { tauri } from "@/platform/tauri";
 
 type Action = "refresh" | "connect" | "disconnect";
 
-export function ChessRiddleAccountCard() {
+export function ChessRiddleAccountCard({ onConnected }: { onConnected?: () => void } = {}) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<AccountStatus | null>(null);
   const [pending, setPending] = useState<Action | null>("refresh");
@@ -18,68 +18,81 @@ export function ChessRiddleAccountCard() {
   const [unavailable, setUnavailable] = useState(false);
   const owner = useRef<symbol | null>(null);
   const running = useRef(false);
+  const onConnectedRef = useRef(onConnected);
+  onConnectedRef.current = onConnected;
 
-  async function run(action: Action, identity = owner.current) {
-    if (!identity || identity !== owner.current || running.current) return;
-    running.current = true;
-    setPending(action);
-    setError(null);
-    const current = () => owner.current === identity;
-    const report = (cause: unknown) => {
-      if (!current()) return;
-      const code = new ChessRiddleCommandError(cause).code;
-      if (code === "unavailable") setUnavailable(true);
-      else setError(code);
-    };
-    try {
-      if (action === "disconnect") {
-        const outcome = await tauri.disconnectChessriddle();
+  const run = useCallback(
+    async (action: Action, identity = owner.current, userTriggered = true) => {
+      if (!identity || identity !== owner.current || running.current) return;
+      running.current = true;
+      setPending(action);
+      setError(null);
+      const current = () => owner.current === identity;
+      let connected = false;
+      const accept = (next: AccountStatus) => {
         if (!current()) return;
-        setRemoved(outcome.status === "removed" ? outcome : null);
-        // Removal has settled, but only a native status read decides the next account action.
-        setStatus(null);
-        const next = await tauri.chessriddleAccount();
-        if (current()) setStatus(next);
-      } else if (action === "connect") {
-        try {
-          const next = await tauri.connectChessriddle();
-          if (current()) setStatus(next);
-        } catch (cause) {
+        setStatus(next);
+        connected = next.status === "connected";
+      };
+      const report = (cause: unknown) => {
+        if (!current()) return;
+        connected = false;
+        const code = new ChessRiddleCommandError(cause).code;
+        if (code === "unavailable") setUnavailable(true);
+        else setError(code);
+      };
+      try {
+        if (action === "disconnect") {
+          const outcome = await tauri.disconnectChessriddle();
           if (!current()) return;
-          // The native owner may have linked before a profile fetch failed. Reconcile once,
-          // after connect settles, so a retry never assumes that no credential exists.
+          setRemoved(outcome.status === "removed" ? outcome : null);
+          // Removal has settled, but only a native status read decides the next account action.
+          setStatus(null);
+          const next = await tauri.chessriddleAccount();
+          if (current()) setStatus(next);
+        } else if (action === "connect") {
           try {
-            const next = await tauri.chessriddleAccount();
-            if (current()) setStatus(next);
-          } catch (refreshCause) {
-            report(refreshCause);
+            const next = await tauri.connectChessriddle();
+            accept(next);
+          } catch (cause) {
+            if (!current()) return;
+            // The native owner may have linked before a profile fetch failed. Reconcile once,
+            // after connect settles, so a retry never assumes that no credential exists.
+            try {
+              const next = await tauri.chessriddleAccount();
+              accept(next);
+            } catch (refreshCause) {
+              report(refreshCause);
+            }
+            report(cause);
           }
-          report(cause);
+        } else {
+          const next = await tauri.chessriddleAccount();
+          accept(next);
         }
-      } else {
-        const next = await tauri.chessriddleAccount();
-        if (current()) setStatus(next);
+      } catch (cause) {
+        report(cause);
+      } finally {
+        if (current()) {
+          running.current = false;
+          setPending(null);
+          if (userTriggered && action !== "disconnect" && connected) onConnectedRef.current?.();
+        }
       }
-    } catch (cause) {
-      report(cause);
-    } finally {
-      if (current()) {
-        running.current = false;
-        setPending(null);
-      }
-    }
-  }
+    },
+    [],
+  );
 
   useEffect(() => {
     const identity = Symbol("ChessRiddle account card");
     owner.current = identity;
     running.current = false;
-    void run("refresh", identity);
+    void run("refresh", identity, false);
     return () => {
       // Native owns the action, including the browser round trip. Retire only this view.
       owner.current = null;
     };
-  }, []);
+  }, [run]);
 
   const errors: Record<AccountError, string> = {
     notConnected: t("Home.ChessRiddle.Error.Server"),

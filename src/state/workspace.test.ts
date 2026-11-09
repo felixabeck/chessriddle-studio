@@ -46,6 +46,33 @@ const legacyTab = {
     gameOrigin: { kind: "none" },
 } as const;
 
+test.each([1, 0])(
+    "workspace version %s hydrates retired tabs and unknown sources without dropping neighbours",
+    (version) => {
+        sessionStorage.clear();
+        const ids = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()];
+        const tabs = [
+            { ...legacyTab, value: ids[0], type: "chessriddleTraining" },
+            { ...legacyTab, value: ids[1], type: "puzzles", puzzleSource: "future" },
+            { ...legacyTab, value: ids[2], type: "puzzles" },
+        ];
+        sessionStorage.setItem(
+            WORKSPACE_STORAGE_KEY,
+            serializeStorageValue({ version, tabs, activeTab: ids[0] }),
+        );
+        const loaded = loadStoredWorkspace();
+        expect(loaded.tabs).toHaveLength(3);
+        expect(loaded.tabs.map((tab) => [tab.type, tab.puzzleSource])).toEqual([
+            ["puzzles", "chessriddle"],
+            ["puzzles", undefined],
+            ["puzzles", undefined],
+        ]);
+        expect(loaded.activeTab).toBe(ids[0]);
+        expect(saveWorkspace(sessionStorage, WORKSPACE_STORAGE_KEY, loaded)).toEqual(loaded);
+        expect(readStoredWorkspace()).toEqual(loaded);
+    },
+);
+
 function loadStoredWorkspace() {
     return loadWorkspace(sessionStorage, WORKSPACE_STORAGE_KEY);
 }
@@ -779,9 +806,9 @@ test("ID repair clones the effective physical source and grants independent owne
     expect(loaded.activeTab).toBe(repaired.value);
 });
 
-test("ID repair skips training tree handling while cloning and retiring an ordinary tab source", () => {
+test("ID repair migrates retired training tabs through normal puzzle tree ownership", () => {
     sessionStorage.clear();
-    const training: Tab = {
+    const training = {
         ...legacyTab,
         value: "legacy-training-owner",
         type: "chessriddleTraining",
@@ -807,13 +834,15 @@ test("ID repair skips training tree handling while cloning and retiring an ordin
     expect(repairedTraining.value).not.toBe(training.value);
     expect(repairedOrdinary.value).not.toBe(legacyTab.value);
     expect(loaded.activeTab).toBe(repairedTraining.value);
-    expect(clone).toHaveBeenCalledExactlyOnceWith(legacyTab.value, repairedOrdinary.value, false);
-    expect(sessionStorage.getItem(getTabTreeKey(repairedTraining))).toBeNull();
-    expect(tabStorage.getStatus(getTabTreeKey(repairedTraining)).kind).toBe("not-read");
-    expect(loaded.treeOwnershipPendingRemovalIds).toEqual([legacyTab.value]);
-    expect(loaded.treeOwnershipProtectedIds).toEqual([training.value]);
+    expect(clone).toHaveBeenCalledTimes(2);
+    expect(clone).toHaveBeenCalledWith(training.value, repairedTraining.value, false);
+    expect(clone).toHaveBeenCalledWith(legacyTab.value, repairedOrdinary.value, false);
+    expect(repairedTraining).toMatchObject({ type: "puzzles", puzzleSource: "chessriddle" });
+    expect(tabStorage.read(getTabTreeKey(repairedTraining))?.state).toMatchObject(defaultTree());
+    expect(loaded.treeOwnershipPendingRemovalIds).toEqual([training.value, legacyTab.value]);
+    expect(loaded.treeOwnershipProtectedIds).toEqual([]);
     expect(readStoredWorkspace()).toEqual(loaded);
-    expect(sessionStorage.getItem(training.value)).toBe(tree);
+    expect(sessionStorage.getItem(training.value)).toBeNull();
     expect(sessionStorage.getItem(legacyTab.value)).toBeNull();
     expect(tabStorage.read(getTabTreeKey(repairedOrdinary))?.state).toEqual(defaultTree());
 });

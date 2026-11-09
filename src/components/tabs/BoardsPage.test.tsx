@@ -80,6 +80,7 @@ type TabFixture = {
   type: "new" | "play" | "analysis" | "puzzles";
   value: string;
   treeKey?: string;
+  puzzleSource?: Tab["puzzleSource"];
 };
 
 const persistentGameOrigin: Tab["gameOrigin"] = {
@@ -949,6 +950,7 @@ test.each(["legacy", "migrated"] as const)(
         value: source,
         treeKey: physical,
         type: "puzzles" as const,
+        puzzleSource: "chessriddle" as const,
       };
       store.set(tabsAtom, [original]);
       store.set(activeTabAtom, source);
@@ -968,6 +970,7 @@ test.each(["legacy", "migrated"] as const)(
       const destination = store.get(tabsAtom)[1]!;
       destinationId = destination?.value;
       expect(destination).toBeDefined();
+      expect(destination.puzzleSource).toBe("chessriddle");
       expect(destination.treeKey).toBeUndefined();
       expect(store.get(activeTabAtom)).toBe(destination.value);
       const saved = deserializeStorageValue<{ state: typeof tree }>(
@@ -1446,7 +1449,13 @@ test.each(["play", "puzzles"] as const)(
   async (type) => {
     fixtures.dirty = true;
     fixtures.tabs = [
-      { value: "current", name: "Current", type, gameOrigin: { kind: "none" } },
+      {
+        value: "current",
+        name: "Current",
+        type,
+        puzzleSource: type === "puzzles" ? "chessriddle" : undefined,
+        gameOrigin: { kind: "none" },
+      },
       { value: "next", name: "Next", type: "new", gameOrigin: { kind: "none" } },
     ];
     store.set(tabsAtom, fixtures.tabs);
@@ -1458,6 +1467,8 @@ test.each(["play", "puzzles"] as const)(
       await Promise.resolve();
     });
     expect(fixtures.confirm?.pendingClose).toBeNull();
+    expect(fixtures.killEngines).toHaveBeenCalledWith("current");
+    expect(fixtures.closeTreeStore).toHaveBeenCalledWith("current");
     expect(store.get(tabsAtom).some((candidate) => candidate.value === "current")).toBe(false);
   },
 );

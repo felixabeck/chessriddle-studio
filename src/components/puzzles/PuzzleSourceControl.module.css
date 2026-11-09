@@ -1,0 +1,15 @@
+.container {
+  min-width: 0;
+  container-type: inline-size;
+}
+
+.control {
+  min-width: 0;
+}
+
+.control :global(.mantine-SegmentedControl-label) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: min(var(--mantine-font-size-sm), 7cqi);
+  padding-inline: min(var(--mantine-spacing-xs), 2cqi);
+}

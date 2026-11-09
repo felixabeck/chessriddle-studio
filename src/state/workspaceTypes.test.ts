@@ -1,6 +1,23 @@
 import { expect, test, vi } from "vitest";
 import { newWorkspaceId, tabSchema } from "./workspaceTypes";
 
+test.each([
+    [{ type: "chessriddleTraining" }, { type: "puzzles", puzzleSource: "chessriddle" }],
+    [{ type: "puzzles" }, { type: "puzzles" }],
+    [
+        { type: "puzzles", puzzleSource: "future" },
+        { type: "puzzles", puzzleSource: undefined },
+    ],
+    [
+        { type: "puzzles", puzzleSource: "offline" },
+        { type: "puzzles", puzzleSource: "offline" },
+    ],
+])("hydrates puzzle metadata %j", (input, expected) => {
+    expect(
+        tabSchema.parse({ name: "Puzzles", value: "tab", gameOrigin: { kind: "none" }, ...input }),
+    ).toEqual({ name: "Puzzles", value: "tab", gameOrigin: { kind: "none" }, ...expected });
+});
+
 test("retries a UUID collision against known tabs and stored tree keys", () => {
     sessionStorage.clear();
     const known = "00000000-0000-4000-8000-000000000001";

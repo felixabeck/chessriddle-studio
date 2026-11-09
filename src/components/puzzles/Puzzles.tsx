@@ -20,8 +20,8 @@ import {
 import { notifications } from "@mantine/notifications";
 import { TriangleAlert, Flame, Plus, Settings, Trash2, X, ScanSearch } from "lucide-react";
 import { makeSquare } from "chessops";
-import { useAtom, useStore as useAtomStore } from "jotai";
-import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { useAtom, useAtomValue, useStore as useAtomStore } from "jotai";
+import { useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { type PathRef, type PuzzleDatabaseInfo } from "@/bindings";
@@ -63,7 +63,10 @@ import {
   getPuzzleDatabases,
   type Puzzle,
 } from "@/utils/puzzles";
-import { createTab, runTabCreation } from "@/utils/tabs";
+import { createTab, runTabCreation, useTabActions } from "@/utils/tabs";
+import ChessRiddleTraining from "../chessriddle/ChessRiddleTraining";
+import { useTrainingSession } from "../chessriddle/useTrainingSession";
+import PuzzleSourceControl, { type PuzzleSource } from "./PuzzleSourceControl";
 import { playSound } from "@/utils/sound";
 import {
   defaultTree,
@@ -98,6 +101,35 @@ const addOptionLabel = (label: string) => `+ ${label}`;
 const emptySession = emptyPuzzleSession();
 
 function Puzzles({ id }: { id: string }) {
+  const tab = useAtomValue(tabsAtom).find((candidate) => candidate.value === id);
+  const training = useTrainingSession(id, tab?.puzzleSource !== "chessriddle");
+  const { updateTab } = useTabActions();
+  const source =
+    tab?.puzzleSource === "chessriddle" && training.available !== false ? "chessriddle" : "offline";
+  const changeSource = (puzzleSource: PuzzleSource) => {
+    if (training.phase === "submitting") return;
+    updateTab(id, (previous) => ({ ...previous, puzzleSource }));
+  };
+  const sourceControl =
+    training.available === true ? (
+      <PuzzleSourceControl
+        source={source}
+        disabled={training.phase === "submitting"}
+        onChange={changeSource}
+      />
+    ) : null;
+  return source === "chessriddle" ? (
+    <ChessRiddleTraining
+      id={id}
+      sourceControl={sourceControl}
+      onOffline={() => changeSource("offline")}
+    />
+  ) : (
+    <OfflinePuzzles id={id} sourceControl={sourceControl} />
+  );
+}
+
+function OfflinePuzzles({ id, sourceControl }: { id: string; sourceControl: ReactNode }) {
   const store = useContext(TreeStateContext)!;
   const { t } = useTranslation();
   const [ready, setReady] = useState(false);
@@ -120,13 +152,20 @@ function Puzzles({ id }: { id: string }) {
   }
   useEffect(restore, [store, id]);
   return ready ? (
-    <PuzzleSessionView />
+    <PuzzleSessionView sourceControl={sourceControl} />
+  ) : sourceControl ? (
+    <Portal target="#topRight">
+      <Stack>
+        {sourceControl}
+        <Button onClick={restore}>{t("TreeRecovery.Retry")}</Button>
+      </Stack>
+    </Portal>
   ) : (
     <Button onClick={restore}>{t("TreeRecovery.Retry")}</Button>
   );
 }
 
-function PuzzleSessionView() {
+function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
   const { t } = useTranslation();
   const commonErrorRef = useRef(t("Common.Error"));
   commonErrorRef.current = t("Common.Error");
@@ -765,6 +804,7 @@ function PuzzleSessionView() {
             overflow: "hidden",
           }}
         >
+          {sourceControl && <Stack pb="sm">{sourceControl}</Stack>}
           <AddPuzzle
             puzzleDbs={puzzleDbs}
             opened={addOpened}
@@ -1074,8 +1114,20 @@ function PuzzleSessionView() {
               </IconAction>
             </Group>
           </Group>
-          <Group grow>
+          <Group
+            grow
+            preventGrowOverflow={!sourceControl}
+            style={
+              sourceControl
+                ? {
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 10rem), 1fr))",
+                  }
+                : undefined
+            }
+          >
             <Button
+              className={sourceControl ? "wrap-button" : undefined}
               mt="sm"
               variant="light"
               fullWidth
@@ -1137,6 +1189,7 @@ function PuzzleSessionView() {
               mt="sm"
               variant="light"
               fullWidth
+              className={sourceControl ? "wrap-button" : undefined}
               onClick={async () => {
                 solutionAbortRef.current?.abort();
                 const abortController = new AbortController();

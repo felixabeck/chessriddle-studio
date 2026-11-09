@@ -47,17 +47,49 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
-async function render() {
+async function render(onConnected?: () => void) {
   await act(async () =>
     root.render(
       <MantineProvider>
         <div data-testid="card-content">
-          <ChessRiddleAccountCard />
+          <ChessRiddleAccountCard onConnected={onConnected} />
         </div>
       </MantineProvider>,
     ),
   );
 }
+
+test("only explicit successful connect, reconnect and refresh notify the training caller", async () => {
+  const onConnected = vi.fn();
+  mocks.chessriddleAccount.mockResolvedValue(connected);
+  await render(onConnected);
+  expect(onConnected).not.toHaveBeenCalled();
+  await click("Refresh");
+  expect(onConnected).toHaveBeenCalledOnce();
+  mocks.chessriddleAccount.mockResolvedValue({ status: "reconnectNeeded" });
+  await click("Refresh");
+  expect(onConnected).toHaveBeenCalledOnce();
+  await click("Reconnect");
+  expect(onConnected).toHaveBeenCalledTimes(2);
+  mocks.chessriddleAccount.mockResolvedValue({ status: "disconnected" });
+  await click("Disconnect");
+  expect(onConnected).toHaveBeenCalledTimes(2);
+  await click("Connect");
+  expect(onConnected).toHaveBeenCalledTimes(3);
+});
+
+test("failed card operations keep their error and do not request training", async () => {
+  const onConnected = vi.fn();
+  await render(onConnected);
+  mocks.connectChessriddle.mockRejectedValue("network");
+  await click("Connect");
+  expect(host.textContent).toContain("Home.ChessRiddle.Error.Network");
+  expect(onConnected).not.toHaveBeenCalled();
+  mocks.chessriddleAccount.mockRejectedValue("network");
+  await click("Refresh");
+  expect(host.textContent).toContain("Home.ChessRiddle.Error.Network");
+  expect(onConnected).not.toHaveBeenCalled();
+});
 
 function button(key: string) {
   const found = [...host.querySelectorAll("button")].find((node) => node.textContent === key);
@@ -188,13 +220,15 @@ test("a removed account with a failed status read offers only explicit refresh",
 });
 
 test("an interrupted profile fetch after connect reconciles the native account once", async () => {
-  await render();
+  const onConnected = vi.fn();
+  await render(onConnected);
   mocks.connectChessriddle.mockRejectedValue(new ChessRiddleCommandError("network"));
   mocks.chessriddleAccount.mockResolvedValue(connected);
   await click("Connect");
   expect(host.textContent).toContain("Home.ChessRiddle.ConnectedAs");
   expect(host.textContent).toContain("Home.ChessRiddle.Error.Network");
   expect(mocks.chessriddleAccount).toHaveBeenCalledTimes(2);
+  expect(onConnected).not.toHaveBeenCalled();
 });
 
 test("connected durability warning asks for recovery after restart", async () => {

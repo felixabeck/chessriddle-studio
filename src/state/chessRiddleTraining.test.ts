@@ -306,6 +306,49 @@ test("late availability and count replies cannot recreate a closed tab", async (
     expect(sessions.get("tab")).toBeUndefined();
 });
 
+test("pending availability is shared and a failed read stays unknown with typed retry", async () => {
+    const { api, sessions } = fixture();
+    const pending = deferred<boolean>();
+    api.chessriddleTrainingAvailable.mockReturnValueOnce(pending.promise);
+    const first = sessions.available("tab");
+    expect(sessions.available("tab")).toBe(first);
+    expect(api.chessriddleTrainingAvailable).toHaveBeenCalledOnce();
+    pending.resolve(false);
+    expect(await first).toBe(false);
+    expect(sessions.get("tab")?.available).toBe(false);
+    sessions.remove("tab");
+    api.chessriddleTrainingAvailable.mockRejectedValueOnce("server");
+    expect(await sessions.available("tab")).toBeNull();
+    expect(sessions.get("tab")).toMatchObject({
+        available: null,
+        phase: "error",
+        error: "server",
+        failedOperation: "availability",
+    });
+    expect(sessions.actions("tab")).toEqual(["retry"]);
+    await sessions.retry("tab");
+    expect(sessions.get("tab")).toMatchObject({ available: true, phase: "idle", error: null });
+});
+
+test.each(["notConnected", "authentication", "invalidGrant", "engineTimeout", "server"])(
+    "failed availability always retries its read for typed %s",
+    async (error) => {
+        const { api, sessions } = fixture();
+        api.chessriddleTrainingAvailable.mockRejectedValueOnce(error);
+        await sessions.available("tab");
+        expect(sessions.actions("tab")).toEqual(["retry"]);
+        api.chessriddleTrainingAvailable.mockRejectedValueOnce("network");
+        await sessions.retry("tab");
+        expect(sessions.get("tab")).toMatchObject({
+            error: "network",
+            failedOperation: "availability",
+        });
+        await sessions.retry("tab");
+        expect(sessions.get("tab")).toMatchObject({ available: true, phase: "idle", error: null });
+        expect(api.chessriddleTrainingNext).not.toHaveBeenCalled();
+    },
+);
+
 test("training state never writes web storage", async () => {
     const { sessions } = fixture();
     const write = vi.spyOn(Storage.prototype, "setItem");

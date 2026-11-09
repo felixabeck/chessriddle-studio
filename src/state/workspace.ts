@@ -165,14 +165,13 @@ function planWorkspaceRepair(
         }
 
         const migratedId = newWorkspaceId([...reserved, ...ids, ...treeKeys]);
-        if (tab.type !== "chessriddleTraining")
-            cloneTargets.push({
-                sourceId,
-                logicalId: tab.value,
-                puzzle: tab.type === "puzzles",
-                targetId: migratedId,
-                requireExisting: tab.treeKey !== undefined,
-            });
+        cloneTargets.push({
+            sourceId,
+            logicalId: tab.value,
+            puzzle: tab.type === "puzzles",
+            targetId: migratedId,
+            requireExisting: tab.treeKey !== undefined,
+        });
         const repaired: Tab = {
             ...tab,
             value: validId ? tab.value : migratedId,

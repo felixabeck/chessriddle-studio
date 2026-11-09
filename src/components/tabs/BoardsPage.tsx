@@ -59,7 +59,6 @@ import "@/styles/react-mosaic.css";
 import { platform } from "@/platform/native";
 import classes from "./BoardsPage.module.css";
 import { notifyUnlessCancelled } from "../files/notifyError";
-import ChessRiddleTraining from "../chessriddle/ChessRiddleTraining";
 
 export default function BoardsPage() {
   const { t } = useTranslation();
@@ -130,12 +129,6 @@ export default function BoardsPage() {
         if (!closedTab) return;
         const jotaiStore = getDefaultStore();
         if (jotaiStore.get(closingTabsAtom).has(value)) return;
-        if (closedTab.type === "chessriddleTraining") {
-          startTransition(() => {
-            closeWorkspaceTab(value);
-          });
-          return;
-        }
         const store = createTreeStore(value, undefined, getTabTreeKey(closedTab));
         if (
           (closedTab.type === "play" ||
@@ -233,7 +226,6 @@ export default function BoardsPage() {
             tab: { ...tab },
             setTabs,
             seed: (id) => {
-              if (tab.type === "chessriddleTraining") return;
               if (tab.type === "puzzles") {
                 const tree =
                   tabStorage.readForClone(getTabTreeKey(tab), tab.treeKey !== undefined) ??
@@ -516,15 +508,6 @@ export default function BoardsPage() {
 }
 
 function TabSwitch({ tab, closeTab }: { tab: Tab; closeTab: (tabId: string) => void }) {
-  if (tab.type === "chessriddleTraining") {
-    return (
-      <WorkspaceTabScope tabId={tab.value}>
-        <BoardTabLayout>
-          <ChessRiddleTraining id={tab.value} />
-        </BoardTabLayout>
-      </WorkspaceTabScope>
-    );
-  }
   if (tab.type === "new") {
     return (
       <WorkspaceTabScope tabId={tab.value}>

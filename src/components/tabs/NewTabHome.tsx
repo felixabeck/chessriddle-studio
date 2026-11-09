@@ -52,6 +52,7 @@ import { useTranslation } from "react-i18next";
 
 import { FileIcon } from "@/components/files/FileIcon";
 import { useTrainingSession } from "@/components/chessriddle/useTrainingSession";
+import { chessRiddleTrainingSessions as trainingSessions } from "@/state/chessRiddleTraining";
 
 import { useLibraryData } from "@/components/library/useLibraryData";
 import { useLibraryDueCounts } from "@/components/library/useLibraryDueCounts";
@@ -170,7 +171,16 @@ function LibraryItemRow({
 export default function NewTabHome({ id }: { id: string }) {
   const store = useStore();
   const { t } = useTranslation();
-  const training = useTrainingSession(id);
+  useTrainingSession(id);
+  const puzzleOpening = useRef(false);
+  const homeOwner = useRef<symbol | null>(null);
+  useEffect(() => {
+    const owner = Symbol("New Tab puzzle action");
+    homeOwner.current = owner;
+    return () => {
+      homeOwner.current = null;
+    };
+  }, [id]);
 
   const [openModal, setOpenModal] = useState(false);
   const [openRepertoireModal, setOpenRepertoireModal] = useState(false);
@@ -481,32 +491,34 @@ export default function NewTabHome({ id }: { id: string }) {
         icon: <Puzzle size={18} />,
         description: t("Home.Card.Puzzle.Desc"),
         label: t("Home.Card.Puzzle.Title"),
-        onClick: () => {
-          setTabs((prev) =>
-            prev.map((tab) =>
-              tab.value === id ? { ...tab, name: t("Home.PuzzleTraining"), type: "puzzles" } : tab,
-            ),
-          );
+        onClick: async () => {
+          if (puzzleOpening.current) return;
+          puzzleOpening.current = true;
+          const owner = homeOwner.current;
+          try {
+            const state = trainingSessions.ensure(id);
+            const available =
+              state.available === null && state.failedOperation !== "availability"
+                ? await trainingSessions.available(id)
+                : state.available;
+            if (!owner || homeOwner.current !== owner) return;
+            setTabs((prev) =>
+              prev.map((tab) =>
+                tab.value === id && tab.type === "new"
+                  ? {
+                      ...tab,
+                      name: t("Home.PuzzleTraining"),
+                      type: "puzzles",
+                      ...(available === false ? {} : { puzzleSource: "chessriddle" as const }),
+                    }
+                  : tab,
+              ),
+            );
+          } finally {
+            puzzleOpening.current = false;
+          }
         },
       },
-      ...(training.available === true
-        ? [
-            {
-              icon: <Puzzle size={18} />,
-              description: t("Training.HomeDescription"),
-              label: t("Training.Title"),
-              onClick: () => {
-                setTabs((previous) =>
-                  previous.map((tab) =>
-                    tab.value === id
-                      ? { ...tab, name: "Training.Title", type: "chessriddleTraining" as const }
-                      : tab,
-                  ),
-                );
-              },
-            },
-          ]
-        : []),
     ],
     [
       {

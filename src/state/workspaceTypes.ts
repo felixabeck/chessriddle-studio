@@ -16,21 +16,27 @@ const gameOriginSchema = z.discriminatedUnion("kind", [
     }),
 ]);
 
-export const tabSchema = z.object({
+const currentTabSchema = z.object({
     name: z.string(),
     value: z.string(),
     treeKey: z.string().uuid().optional(),
-    type: z.enum(["new", "play", "analysis", "puzzles", "chessriddleTraining"]),
+    type: z.enum(["new", "play", "analysis", "puzzles"]),
+    puzzleSource: z.enum(["chessriddle", "offline"]).optional().catch(undefined),
     gameOrigin: gameOriginSchema,
 });
+
+export const tabSchema = z.union([
+    currentTabSchema,
+    currentTabSchema.extend({ type: z.literal("chessriddleTraining") }).transform((tab) => ({
+        ...tab,
+        type: "puzzles" as const,
+        puzzleSource: "chessriddle" as const,
+    })),
+]);
 
 export type GameOrigin = z.infer<typeof gameOriginSchema>;
 export type Tab = z.infer<typeof tabSchema>;
 export type TabFile = FileMetadata;
-
-export function tabHasTree(tab: Pick<Tab, "type">): boolean {
-    return tab.type !== "new" && tab.type !== "chessriddleTraining";
-}
 
 export function getTabTreeKey(tab: Tab): string {
     return tab.treeKey ?? tab.value;

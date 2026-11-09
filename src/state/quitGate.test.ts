@@ -26,17 +26,18 @@ vi.mock("@/platform/native", () => ({
 
 const owned = new Set<string>();
 
-test("training never inspects a tree or blocks quitting", () => {
+test("ChessRiddle-source puzzle tabs inspect their normal tree and block if unreadable", () => {
     const inspect = vi.fn(() => {
-        throw new Error("training has no tree");
+        throw new Error("tree unreadable");
     });
     expect(
         scanBlockingTabs(
             [
                 {
                     value: crypto.randomUUID(),
-                    name: "Training.Title",
-                    type: "chessriddleTraining",
+                    name: "Home.PuzzleTraining",
+                    type: "puzzles",
+                    puzzleSource: "chessriddle",
                     gameOrigin: { kind: "none" },
                 },
             ],
@@ -47,8 +48,8 @@ test("training never inspects a tree or blocks quitting", () => {
                 getFileFreshness: inspect,
             },
         ),
-    ).toEqual([]);
-    expect(inspect).not.toHaveBeenCalled();
+    ).toEqual([expect.objectContaining({ uninspectable: true })]);
+    expect(inspect).toHaveBeenCalledOnce();
 });
 
 function uuid(): string {

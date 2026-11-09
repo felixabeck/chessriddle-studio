@@ -14,9 +14,11 @@ import type { LibraryRow } from "@/components/library/libraryData";
 import { lastOpenedAtom, recentFilesAtom, tabsAtom } from "@/state/atoms";
 import { databaseGameOpenedKey } from "@/state/lastOpened";
 import { installMatchMediaStub } from "@/tests/matchMedia";
+import { chessRiddleTrainingSessions as trainingSessions } from "@/state/chessRiddleTraining";
 import NewTabHome from "./NewTabHome";
 
 const mocks = vi.hoisted(() => ({
+  available: vi.fn(),
   listing: { data: undefined as Entry[] | undefined, isLoading: true, error: undefined as unknown },
   databases: {
     data: undefined as DatabaseList | undefined,
@@ -67,7 +69,12 @@ vi.mock("@/components/library/useOwnGamesFeed", () => ({
   },
 }));
 vi.mock("@/platform/tauri", () => ({
-  tauri: { countPgnGames: mocks.count, getDbGame: mocks.getGame, getDbInfo: mocks.info },
+  tauri: {
+    countPgnGames: mocks.count,
+    getDbGame: mocks.getGame,
+    getDbInfo: mocks.info,
+    chessriddleTrainingAvailable: mocks.available,
+  },
 }));
 vi.mock("@/utils/db", async (original) => ({
   ...(await original<typeof import("@/utils/db")>()),
@@ -170,6 +177,8 @@ async function open(name: string) {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
+  trainingSessions.remove("home");
+  mocks.available.mockReset().mockResolvedValue(false);
   vi.spyOn(i18n, "t").mockImplementation((...args: Parameters<typeof i18n.t>) => String(args[0]));
   localStorage.clear();
   sessionStorage.clear();
@@ -190,6 +199,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await act(async () => root.unmount());
+  trainingSessions.remove("home");
   host.remove();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -671,6 +681,57 @@ test("compact actions replace their own tab and pass import ownership", async ()
   expect(mocks.importModal).toHaveBeenCalledWith(
     expect.objectContaining({ ownerId: "home", openModal: true }),
   );
+});
+
+test.each([true, false, "failed"] as const)(
+  "Puzzles opens one puzzle tab when availability is %s",
+  async (available) => {
+    if (available === "failed") mocks.available.mockRejectedValue("server");
+    else mocks.available.mockResolvedValue(available);
+    await render();
+    expect(host.querySelectorAll("[data-home-action]")).toHaveLength(5);
+    await click("Home.Card.Puzzle.Title");
+    expect(store.get(tabsAtom)[0]).toMatchObject({ type: "puzzles", name: "Home.PuzzleTraining" });
+    expect(store.get(tabsAtom)[0].puzzleSource).toBe(
+      available === false ? undefined : "chessriddle",
+    );
+    expect(mocks.available).toHaveBeenCalledOnce();
+  },
+);
+
+test.each([true, false])(
+  "Puzzles awaits the pending availability read resolving %s",
+  async (available) => {
+    let finish!: (value: boolean) => void;
+    mocks.available.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await render();
+    await click("Home.Card.Puzzle.Title");
+    expect(store.get(tabsAtom)[0].type).toBe("new");
+    expect(mocks.available).toHaveBeenCalledOnce();
+    await act(async () => finish(available));
+    expect(store.get(tabsAtom)[0]).toMatchObject({ type: "puzzles", name: "Home.PuzzleTraining" });
+    expect(store.get(tabsAtom)[0].puzzleSource).toBe(available ? "chessriddle" : undefined);
+  },
+);
+
+test("a late puzzle opening cannot replace another action or a retired home owner", async () => {
+  let finish!: (value: boolean) => void;
+  mocks.available.mockImplementation(
+    () =>
+      new Promise<boolean>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await render();
+  await click("Home.Card.Puzzle.Title");
+  await click("Home.Card.AnalysisBoard.Title");
+  await act(async () => finish(true));
+  expect(store.get(tabsAtom)[0].type).toBe("analysis");
 });
 
 test.each(shippedCatalogues())(

@@ -1,5 +1,4 @@
 import { Alert, Button, Stack, Text } from "@mantine/core";
-import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import type { AccountError } from "@/bindings";
 import { chessRiddleTrainingSessions as sessions } from "@/state/chessRiddleTraining";
@@ -31,11 +30,6 @@ export default function TrainingError({ id, error }: { id: string; error: Accoun
     <Alert color="warning" role="alert">
       <Stack gap="sm">
         <Text>{messages[error]}</Text>
-        {["notConnected", "authentication", "invalidGrant"].includes(error) && (
-          <Button component={Link} to="/accounts" variant="default">
-            {t("Training.Accounts")}
-          </Button>
-        )}
         {error === "dailyLimit" && (
           <Button onClick={() => void sessions.openUpgrade(id)}>{t("Training.Upgrade")}</Button>
         )}

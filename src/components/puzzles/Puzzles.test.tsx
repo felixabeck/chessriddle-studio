@@ -8,6 +8,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type {
   ErrorCategory,
+  TrainingPuzzle,
+  TrainingVerdict,
   Puzzle as NativePuzzle,
   PuzzleDatabaseInfo,
   PuzzleRootDescriptor,
@@ -34,11 +36,15 @@ import {
   puzzleWorkspaceGenerationAtom,
   selectedPuzzleDbAtom,
   trackPuzzleTimeAtom,
+  tabsAtom,
 } from "@/state/atoms";
+import { chessRiddleTrainingSessions as sessions } from "@/state/chessRiddleTraining";
+import * as puzzleSessions from "@/state/puzzleSession";
 import { TauriCommandError } from "@/platform/tauri";
 import { installMatchMediaStub } from "@/tests/matchMedia";
-import { catalogueI18n } from "@/tests/catalogues";
+import { catalogueI18n, shippedCatalogues } from "@/tests/catalogues";
 import i18n from "@/i18n";
+import type { SupportedLocale } from "@/i18n";
 import deDECatalogue from "@/translation/de-DE.json";
 import Puzzles from "./Puzzles";
 import {
@@ -53,6 +59,12 @@ import { tabStorage } from "@/state/store/tabStorage";
 import { deserializeStorageValue, serializeStorageValue } from "@/state/store/debouncedStorage";
 
 const mocks = vi.hoisted(() => ({
+  chessriddleTrainingAvailable: vi.fn(),
+  chessriddleTrainingNext: vi.fn(),
+  chessriddleTrainingSubmit: vi.fn(),
+  chessriddleMistakeCount: vi.fn(),
+  chessriddleAccount: vi.fn(),
+  connectChessriddle: vi.fn(),
   getPuzzleWorkspace: vi.fn(),
   listPuzzleDatabases: vi.fn(),
   getPuzzleThemes: vi.fn(),
@@ -84,6 +96,12 @@ vi.mock("@/platform/tauri", async () => {
   return {
     ...actual,
     tauri: {
+      chessriddleTrainingAvailable: mocks.chessriddleTrainingAvailable,
+      chessriddleTrainingNext: mocks.chessriddleTrainingNext,
+      chessriddleTrainingSubmit: mocks.chessriddleTrainingSubmit,
+      chessriddleMistakeCount: mocks.chessriddleMistakeCount,
+      chessriddleAccount: mocks.chessriddleAccount,
+      connectChessriddle: mocks.connectChessriddle,
       getPuzzleWorkspace: mocks.getPuzzleWorkspace,
       listPuzzleDatabases: mocks.listPuzzleDatabases,
       getPuzzleThemes: mocks.getPuzzleThemes,
@@ -191,6 +209,225 @@ const workspace: PuzzleRootDescriptor = {
   root: { id: { id: "puzzle-root" }, kind: "puzzleRoot" },
   displayName: "Puzzles",
 };
+const trainingPuzzle: TrainingPuzzle = {
+  id: 123,
+  source: "tactics",
+  preEntranceFen: INITIAL_FEN,
+  entranceMove: "e2e4",
+  decisionFen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+  sideToMove: "black",
+  puzzleRating: 1500,
+  solutionPlyCount: 3,
+};
+const connectedAccount = {
+  status: "connected",
+  account: { handle: "account", username: "Alex", plan: "gold" },
+  durability_uncertain: false,
+};
+
+test.each(shippedCatalogues())(
+  "puzzle source and connection strings resolve in $locale without fallback",
+  async ({ locale }) => {
+    const instance = await catalogueI18n(locale as SupportedLocale);
+    for (const key of [
+      "Puzzle.Source.Label",
+      "Puzzle.Source.ChessRiddle",
+      "Puzzle.Source.Offline",
+      "Puzzle.Source.UseOffline",
+      "Training.ConnectPrompt",
+      "Training.TryAgain",
+    ]) {
+      expect(instance.t(key)).not.toBe(key);
+      expect(instance.t(key).trim()).not.toBe("");
+    }
+  },
+);
+
+async function renderSource(puzzleSource?: "chessriddle" | "offline") {
+  const atoms = createStore();
+  atoms.set(tabsAtom, [
+    {
+      value: "puzzles-test",
+      type: "puzzles",
+      name: "Puzzles",
+      gameOrigin: { kind: "none" },
+      ...(puzzleSource ? { puzzleSource } : {}),
+    },
+  ]);
+  await renderPuzzles({ atoms });
+  return atoms;
+}
+async function clickTraining(key: string) {
+  const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+    (node) => node.textContent === key,
+  );
+  expect(button).toBeDefined();
+  await act(async () => button!.click());
+}
+
+test.each([undefined, "offline", "chessriddle"] as const)(
+  "effective source for stored %s during and after availability",
+  async (source) => {
+    const pending = deferred<boolean>();
+    mocks.chessriddleTrainingAvailable.mockReturnValueOnce(pending.promise);
+    const atoms = await renderSource(source);
+    expect(document.querySelector("[data-training-panel]") !== null).toBe(source === "chessriddle");
+    for (const available of [true, false]) {
+      await act(async () => {
+        if (available) pending.resolve(true);
+        else {
+          mocks.chessriddleTrainingAvailable.mockResolvedValue(false);
+          await sessions.available("puzzles-test");
+        }
+      });
+      expect(document.querySelector("[data-training-panel]") !== null).toBe(
+        source === "chessriddle" && available,
+      );
+      expect(document.querySelector('[aria-label="Puzzle.Source.Label"]') !== null).toBe(available);
+      expect(atoms.get(tabsAtom)[0].puzzleSource).toBe(source);
+    }
+  },
+);
+
+test("ChessRiddle is usable after offline restore fails, and switching keeps both sessions", async () => {
+  mocks.chessriddleTrainingAvailable.mockResolvedValue(true);
+  const restore = vi.spyOn(puzzleSessions, "restorePuzzleSession").mockImplementation(() => {
+    throw new Error("offline restore refused");
+  });
+  const atoms = await renderSource("offline");
+  expect(document.body.textContent).toContain("TreeRecovery.Retry");
+  const restoreAttempts = restore.mock.calls.length;
+  await act(async () =>
+    document.querySelector<HTMLInputElement>('input[value="chessriddle"]')!.click(),
+  );
+  expect(document.querySelector("[data-training-panel]")).not.toBeNull();
+  expect(mocks.chessriddleTrainingNext).toHaveBeenCalledOnce();
+  expect(restore).toHaveBeenCalledTimes(restoreAttempts);
+  restore.mockRestore();
+  await act(async () => sessions.append("puzzles-test", "e7e5"));
+  const training = sessions.get("puzzles-test");
+  await act(async () =>
+    document.querySelector<HTMLInputElement>('input[value="offline"]')!.click(),
+  );
+  const offline = treeStore.getState().puzzleSession;
+  await act(async () =>
+    document.querySelector<HTMLInputElement>('input[value="chessriddle"]')!.click(),
+  );
+  expect(atoms.get(tabsAtom)[0].puzzleSource).toBe("chessriddle");
+  expect(sessions.get("puzzles-test")).toBe(training);
+  expect(treeStore.getState().puzzleSession).toBe(offline);
+  expect(mocks.chessriddleTrainingNext).toHaveBeenCalledOnce();
+});
+
+test("the rendered source control disables during submission and enables after settlement", async () => {
+  mocks.chessriddleTrainingAvailable.mockResolvedValue(true);
+  await renderSource("chessriddle");
+  const pending = deferred<TrainingVerdict>();
+  mocks.chessriddleTrainingSubmit.mockReturnValue(pending.promise);
+  await clickTraining("Training.ShowSolution");
+  const inputs = () => [
+    ...document.querySelectorAll<HTMLInputElement>('[aria-label="Puzzle.Source.Label"] input'),
+  ];
+  expect(inputs()).toHaveLength(2);
+  expect(inputs().every((node) => node.disabled)).toBe(true);
+  await act(async () =>
+    pending.resolve({
+      isCorrect: false,
+      tooShort: false,
+      ratingChange: 0,
+      playerRating: null,
+      puzzleRating: 1500,
+      rated: false,
+      ratingPending: false,
+      feedbackCode: "incorrect",
+      feedbackContext: "analysis",
+      correctVariation: [],
+      incorrectMove: null,
+      correctMove: null,
+    }),
+  );
+  expect(inputs().every((node) => !node.disabled)).toBe(true);
+});
+
+test("failed availability renders its typed error, Retry and a working offline escape", async () => {
+  mocks.chessriddleTrainingAvailable.mockRejectedValue("server");
+  const atoms = await renderSource("chessriddle");
+  expect(document.body.textContent).toContain("Training.Error.Server");
+  expect(document.body.textContent).toContain("Training.Retry");
+  expect(document.querySelector('[aria-label="Puzzle.Source.Label"]')).toBeNull();
+  await clickTraining("Puzzle.Source.UseOffline");
+  expect(atoms.get(tabsAtom)[0].puzzleSource).toBe("offline");
+  expect(document.querySelector("[data-training-panel]")).toBeNull();
+  expect(mocks.chessriddleTrainingAvailable).toHaveBeenCalledOnce();
+});
+
+test("an offline tab retries failed availability when its view mounts again", async () => {
+  mocks.chessriddleTrainingAvailable.mockRejectedValueOnce("server");
+  const atoms = await renderSource("offline");
+  expect(document.querySelector('[aria-label="Puzzle.Source.Label"]')).toBeNull();
+  expect(document.body.textContent).not.toContain("Training.Error.Server");
+  await act(async () => root.render(null));
+  mocks.chessriddleTrainingAvailable.mockResolvedValue(true);
+  await renderPuzzles({ atoms });
+  expect(document.querySelector('[aria-label="Puzzle.Source.Label"]')).not.toBeNull();
+  expect(mocks.chessriddleTrainingAvailable).toHaveBeenCalledTimes(2);
+  expect(mocks.chessriddleTrainingNext).not.toHaveBeenCalled();
+});
+
+test.each(["notConnected", "authentication", "invalidGrant"])(
+  "%s prompt loads after user connect and Try again",
+  async (error) => {
+    mocks.chessriddleTrainingAvailable.mockResolvedValue(true);
+    mocks.chessriddleTrainingNext.mockRejectedValueOnce(error);
+    await renderSource("chessriddle");
+    expect(document.body.textContent).toContain("Training.ConnectPrompt");
+    const panel = document.querySelector("[data-training-panel]")!;
+    expect(panel.querySelector("h3")).toBeNull();
+    expect(panel.textContent).not.toContain("Training.Tactics");
+    expect(panel.textContent).not.toContain("Training.Mistakes");
+    const secondary = panel.querySelector("[data-training-secondary-actions]")!;
+    expect(
+      [...secondary.querySelectorAll("button")].map((button) => button.dataset.variant),
+    ).toEqual(["default", "subtle"]);
+    expect(panel.querySelectorAll('button[data-variant="filled"]')).toHaveLength(1);
+    await clickTraining("Home.ChessRiddle.Connect");
+    expect(mocks.chessriddleTrainingNext).toHaveBeenCalledTimes(2);
+    expect(mocks.chessriddleMistakeCount).toHaveBeenCalledTimes(2);
+    expect(panel.textContent).toContain("Training.Title");
+    expect(panel.textContent).toContain("Training.Tactics");
+    mocks.chessriddleTrainingNext.mockRejectedValueOnce(error);
+    await clickTraining("Training.Tactics");
+    await clickTraining("Training.TryAgain");
+    expect(sessions.get("puzzles-test")?.phase).toBe("solving");
+  },
+);
+
+test("account errors after submission hide the retained puzzle details in the prompt", async () => {
+  mocks.chessriddleTrainingAvailable.mockResolvedValue(true);
+  mocks.chessriddleTrainingSubmit.mockRejectedValue("authentication");
+  await renderSource("chessriddle");
+  await clickTraining("Training.ShowSolution");
+  const panel = document.querySelector("[data-training-panel]")!;
+  expect(sessions.get("puzzles-test")?.puzzle).toEqual(trainingPuzzle);
+  expect(panel.textContent).toContain("Training.ConnectPrompt");
+  expect(panel.textContent).not.toContain("Training.EnterBothSides");
+  expect(panel.textContent).not.toContain("Training.MoveCount");
+  expect(panel.textContent).not.toContain("Training.PuzzleRating");
+  expect(panel.querySelector("h3")).toBeNull();
+});
+
+test("the card initial connected read never loops on training authentication errors", async () => {
+  mocks.chessriddleTrainingAvailable.mockResolvedValue(true);
+  mocks.chessriddleTrainingNext.mockRejectedValue("authentication");
+  mocks.chessriddleAccount.mockResolvedValue(connectedAccount);
+  await renderSource("chessriddle");
+  expect(mocks.chessriddleTrainingNext).toHaveBeenCalledOnce();
+  expect(mocks.chessriddleAccount).toHaveBeenCalledOnce();
+  expect(document.body.textContent).toContain("Training.ConnectPrompt");
+  await clickTraining("Home.ChessRiddle.Refresh");
+  expect(mocks.chessriddleTrainingNext).toHaveBeenCalledTimes(2);
+  expect(document.body.textContent).toContain("Training.ConnectPrompt");
+});
 const otherWorkspace: PuzzleRootDescriptor = {
   root: { id: { id: "other-puzzle-root" }, kind: "puzzleRoot" },
   displayName: "Other puzzles",
@@ -2020,6 +2257,12 @@ let portals: HTMLDivElement;
 
 beforeEach(() => {
   vi.resetAllMocks();
+  sessions.remove("puzzles-test");
+  mocks.chessriddleTrainingAvailable.mockResolvedValue(false);
+  mocks.chessriddleTrainingNext.mockResolvedValue(trainingPuzzle);
+  mocks.chessriddleMistakeCount.mockResolvedValue(2);
+  mocks.chessriddleAccount.mockResolvedValue({ status: "disconnected" });
+  mocks.connectChessriddle.mockResolvedValue(connectedAccount);
   mocks.board = null;
   mocks.selectedDatabase = null;
   localStorage.clear();
@@ -2049,6 +2292,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   await act(async () => root.unmount());
+  sessions.remove("puzzles-test");
   closeTreeStore("puzzles-test");
   vi.restoreAllMocks();
   vi.useRealTimers();

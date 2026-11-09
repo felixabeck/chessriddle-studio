@@ -7,6 +7,7 @@
   height: 100%;
   overflow-y: auto;
   padding: var(--mantine-spacing-md);
+  padding-block: var(--mantine-spacing-xs);
 }
 
 .heading,
@@ -35,9 +36,49 @@
   overflow: visible;
 }
 
+.panel :global(.mantine-Card-root) {
+  padding-inline: min(var(--mantine-spacing-xs), 2cqi);
+}
+
+.panel :global(.mantine-Card-root) :global(.mantine-Text-root) {
+  font-size: min(var(--mantine-font-size-sm), 10cqi);
+}
+
+.panel :global(.mantine-Card-root) :global(.mantine-Button-root) {
+  font-size: min(var(--mantine-font-size-sm), 7cqi);
+}
+
+.panel .offlineAction {
+  font-size: min(var(--mantine-font-size-sm), 6cqi);
+}
+
+.connectPrompt {
+  font-size: min(var(--mantine-font-size-sm), 10cqi);
+}
+
+.secondaryActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--mantine-spacing-xs);
+}
+
+.secondaryActions :global(.mantine-Button-root) {
+  max-width: 100%;
+}
+
+.secondaryActions :global(.mantine-Button-label) {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
 @container (max-width: 22rem) {
   .panel {
     padding: var(--mantine-spacing-xs);
+  }
+
+  .secondaryActions {
+    flex-direction: column;
   }
 }
 
