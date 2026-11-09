@@ -12607,3 +12607,22 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Neutral for engine time management, confined to `game.rs`, and keeps every `go` within the UCI limit. Reversal path: change the mirror branch of the `go` selection function in `src-tauri/src/game.rs`.
 * **Decided by:** Claude Code (Opus 5.5) next-finding drain session c6378528-f959-40b1-89ab-54e6a35fe5f1 (adopted plan f5f32f01), full auto, 2026-11-09 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":17,"effect_sha256":"ae0265bd172de4dfc8ece17e8fd8cbe03f08becc54747cceaf8643fd5b51eb63","input_sha256":"aef7894007bd9617407509faf430455fe071a92814fd597243564ce4111c0844","kind":"mutation-receipt","operation":"96a4e7b1790748fa8056c62890f166610ff3996e1cbbe147b4dfa1bc4a7d690e","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-06","d-20261109-07"],"target":"decisions-ledger","v":1} -->
+
+### d-20261109-08 — How does the app decide a profile is new for the first-launch Stockfish install?
+
+* **Question:** The automatic install must run once for a new user, never for someone who removed their engines. What identifies a new profile, and when is the attempt recorded?
+* **Governs:** the first-launch Stockfish install, `src/state/firstLaunchStockfish.ts`
+* **Chosen:** A profile is new when the `first-launch-stockfish` marker is absent, the `engines` storage key is absent, the loaded engine list is empty and `navigator.webdriver` is not true. The marker is written synchronously before the download starts, and its presence alone counts, so a corrupt value counts as claimed.
+* **Rejected:** An empty engine list alone, which would reinstall for a user who removed all engines. Marking after success, which would retry an 80 MB download at every launch for an offline user and contradicts "runs only once". A native environment flag or seeded WebKit storage to exclude automation, which add IPC surface or depend on WebKit's storage format.
+* **Reason:** The `engines` key is written on the first save and keeps `[]` after removal, so its absence is the evidence of a new profile. `navigator.webdriver` was measured true in the real app under `pnpm verify:app`. Reversal path: delete the eligibility predicate and the `AutomaticStockfishNotice` mount in `src/App.tsx`.
+* **Decided by:** Claude Code (Opus 5.5) build session 4e898296-4936-46ad-8e66-5b15c1200742, full auto, 2026-11-09 · **Superseded-by:** -
+
+### d-20261109-09 — Does the first-launch download need a privacy disclosure?
+
+* **Question:** The app contacts GitHub at first launch without a user action. Does the published privacy policy cover that?
+* **Governs:** the first-launch Stockfish install, ChessRiddle privacy revision 2026-11-09
+* **Chosen:** Add one paragraph in English, German and Spanish stating that the desktop app connects directly to GitHub for updates and engine downloads, that Stockfish downloads automatically at first start when no engine exists, and that it can be cancelled. Pushed to `develop` in commit ed84c20ce5. Website publication is a separate deploy.
+* **Rejected:** No change on the ground that the update check already contacts GitHub. The policy described Studio only for its feedback form, so the connection was not covered in text.
+* **Reason:** Felix asked for the check and for an update if needed, and legal texts are updated with the processing change. Reversal path: remove the paragraph and append a new privacy revision.
+* **Decided by:** Claude Code (Opus 5.5) build session 4e898296-4936-46ad-8e66-5b15c1200742, full auto, 2026-11-09 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":17,"effect_sha256":"b4ee00deb6302f55a0bd144af11ea45ce847834849942f8125bc4ca8e4e50994","input_sha256":"8709215d56cc89b7d7fa27b63d224519462e8935735e7cf831ca21663aea0e55","kind":"mutation-receipt","operation":"2c83a1d1b7e79866d41609b7bbe5103fabb4cc961880dd1dcf4c01d2e147515b","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-08","d-20261109-09"],"target":"decisions-ledger","v":1} -->
