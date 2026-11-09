@@ -21,7 +21,9 @@ const commands = {
     release_download: { result: null },
     cancel_download: { result: true },
     clear_progress: { result: "8" },
-    get_engine_workspace: { result: { id: { id: "engine-root" }, kind: "engineRoot" } },
+    get_engine_workspace: {
+        result: { root: { id: { id: "engine-root" }, kind: "engineRoot" }, displayName: "Engines" },
+    },
     // Natural settlement is beyond the test's 45-second timeout. Only cancel ends this job.
     install_engine_workflow: {
         delay: 120_000,
