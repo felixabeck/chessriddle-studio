@@ -80,7 +80,7 @@ const POOL_WORKER_THREADS: usize = 3;
 // Ordinary lazy pools need the same establishment budget in every build.
 const POOL_CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
 const METADATA_READ_BUSY_TIMEOUT_MS: u64 = 1000;
-#[cfg(all(test, unix))]
+#[cfg(test)]
 const SHORT_POOL_CONNECTION_TIMEOUT: Duration = Duration::from_secs(2);
 // Must exceed `PRAGMA busy_timeout = 30000` in `db/mod.rs` so an ordinary
 // contended write completes rather than tripping retirement.
@@ -1291,7 +1291,7 @@ impl DatabaseRepository {
         }
     }
 
-    #[cfg(all(test, unix))]
+    #[cfg(test)]
     fn with_pool_connection_timeout(pool_connection_timeout: Duration) -> Self {
         Self {
             pool_connection_timeout,
@@ -3077,6 +3077,21 @@ fn run_after_probe_current_test_hook(path: &Path) {
 #[cfg(test)]
 type PoolLoopCallback = Arc<dyn Fn(u64) + Send + Sync>;
 
+fn record_pool_failure(
+    recorded: &mut Option<diesel::r2d2::PoolError>,
+    error: diesel::r2d2::PoolError,
+) {
+    // r2d2 exposes its optional retained diagnostic only through Display.
+    if recorded.is_none()
+        || error
+            .to_string()
+            .strip_prefix("timed out waiting for connection: ")
+            .is_some_and(|diagnostic| !diagnostic.is_empty())
+    {
+        *recorded = Some(error);
+    }
+}
+
 impl DatabaseEntry {
     #[cfg(test)]
     fn get_connection(&self) -> Result<PooledConnection<BoundConnectionManager>, Error> {
@@ -3151,15 +3166,7 @@ impl DatabaseEntry {
                 available = match pool.get_timeout(Duration::ZERO) {
                     Ok(connection) => Some(connection),
                     Err(error) => {
-                        // r2d2 exposes its optional retained diagnostic only through Display.
-                        if pool_failure.is_none()
-                            || error
-                                .to_string()
-                                .strip_prefix("timed out waiting for connection: ")
-                                .is_some_and(|diagnostic| !diagnostic.is_empty())
-                        {
-                            pool_failure = Some(error);
-                        }
+                        record_pool_failure(&mut pool_failure, error);
                         None
                     }
                 };
@@ -10820,6 +10827,94 @@ mod bound_sqlite_witnesses {
 
     const POOL_TEST_BOUND: Duration = Duration::from_secs(10);
 
+    #[test]
+    fn pool_failure_selection_preserves_diagnostics_across_empty_rearm_errors() {
+        #[derive(Debug)]
+        struct FailingManager {
+            failures: ParkingMutex<std::sync::mpsc::Receiver<&'static str>>,
+        }
+
+        impl ManageConnection for FailingManager {
+            type Connection = ();
+            type Error = std::io::Error;
+
+            fn connect(&self) -> Result<(), Self::Error> {
+                // Gate every attempt so an empty timeout cannot race a worker failure.
+                let message = self
+                    .failures
+                    .lock()
+                    .recv_timeout(POOL_TEST_BOUND)
+                    .unwrap_or("test failure gate closed");
+                Err(std::io::Error::other(message))
+            }
+
+            fn is_valid(&self, _: &mut ()) -> Result<(), Self::Error> {
+                Ok(())
+            }
+
+            fn has_broken(&self, _: &mut ()) -> bool {
+                false
+            }
+        }
+
+        #[derive(Debug)]
+        struct FailureRecorded(std::sync::mpsc::Sender<()>);
+
+        impl diesel::r2d2::HandleError<std::io::Error> for FailureRecorded {
+            fn handle_error(&self, _: std::io::Error) {
+                // r2d2 records last_error before invoking this handler.
+                let _ = self.0.send(());
+            }
+        }
+
+        let (fail, failures) = std::sync::mpsc::channel();
+        let (recorded, observed) = std::sync::mpsc::channel();
+        let pool = Pool::builder()
+            .thread_pool(pool_worker_threads())
+            .max_size(1)
+            .min_idle(Some(0))
+            .error_handler(Box::new(FailureRecorded(recorded)))
+            .build(FailingManager {
+                failures: ParkingMutex::new(failures),
+            })
+            .unwrap();
+        let empty_message = "timed out waiting for connection";
+        let first_message = "timed out waiting for connection: first establishment failed";
+        let second_message = "timed out waiting for connection: second establishment failed";
+        let mut failure = None;
+
+        record_pool_failure(&mut failure, pool.get_timeout(Duration::ZERO).unwrap_err());
+        assert_eq!(failure.as_ref().unwrap().to_string(), empty_message);
+
+        fail.send("first establishment failed").unwrap();
+        observed.recv_timeout(POOL_TEST_BOUND).unwrap();
+        record_pool_failure(&mut failure, pool.get_timeout(Duration::ZERO).unwrap_err());
+        assert_eq!(failure.as_ref().unwrap().to_string(), first_message);
+
+        let empty = pool.get_timeout(Duration::ZERO).unwrap_err();
+        assert_eq!(empty.to_string(), empty_message);
+        record_pool_failure(&mut failure, empty);
+        assert_eq!(
+            failure.as_ref().unwrap().to_string(),
+            first_message,
+            "EMPTY_REARM_ERROR_REPLACED_RECORDED_DIAGNOSTIC"
+        );
+
+        fail.send("second establishment failed").unwrap();
+        observed.recv_timeout(POOL_TEST_BOUND).unwrap();
+        record_pool_failure(&mut failure, pool.get_timeout(Duration::ZERO).unwrap_err());
+        assert_eq!(failure.as_ref().unwrap().to_string(), second_message);
+
+        failure = None;
+        fail.send("third establishment failed").unwrap();
+        observed.recv_timeout(POOL_TEST_BOUND).unwrap();
+        record_pool_failure(&mut failure, pool.get_timeout(Duration::ZERO).unwrap_err());
+        assert_eq!(
+            failure.as_ref().unwrap().to_string(),
+            "timed out waiting for connection: third establishment failed"
+        );
+    }
+
     struct PoolLoopObserver {
         entry: Arc<DatabaseEntry>,
         completed: std::sync::mpsc::Receiver<u64>,
@@ -10911,10 +11006,8 @@ mod bound_sqlite_witnesses {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("stolen-establishment.db3");
         seed_database(&path, 41, "WAL");
-        let repository = DatabaseRepository {
-            pool_connection_timeout: Duration::from_secs(2),
-            ..DatabaseRepository::default()
-        };
+        let repository =
+            DatabaseRepository::with_pool_connection_timeout(SHORT_POOL_CONNECTION_TIMEOUT);
         let (key, entry, _) = repository.entry(&test_target(&path), None).unwrap();
         let first_sibling = entry.get_connection().unwrap();
         let pool = entry.pool.read().as_ref().unwrap().clone();
@@ -10962,7 +11055,7 @@ mod bound_sqlite_witnesses {
             };
             observer.assert_quiet_wakes(&events, 2);
 
-            // The observer holds A while a sibling checks in and immediately retakes.
+            // The observer holds the waiting caller while a sibling checks in and immediately retakes.
             drop(first_sibling);
             let first_sibling = entry.get_connection().unwrap();
             let checkin_generation = *entry.pool_wake.generation.lock();
@@ -10986,10 +11079,8 @@ mod bound_sqlite_witnesses {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("no-surplus-establishment.db3");
         seed_database(&path, 41, "WAL");
-        let repository = DatabaseRepository {
-            pool_connection_timeout: Duration::from_secs(2),
-            ..DatabaseRepository::default()
-        };
+        let repository =
+            DatabaseRepository::with_pool_connection_timeout(SHORT_POOL_CONNECTION_TIMEOUT);
         let (key, entry, _) = repository.entry(&test_target(&path), None).unwrap();
         let _hooks = configure_test_hooks(&path, |_| {});
         std::thread::scope(|scope| {
