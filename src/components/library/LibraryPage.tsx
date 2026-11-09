@@ -21,12 +21,7 @@ import { useEffect, useState } from "react";
 import { useAtom } from "jotai";
 import useSWR, { useSWRConfig } from "swr";
 import { tauri } from "@/platform/tauri";
-import {
-  CollectionMigration,
-  LinkedCollection,
-  collectionFiles,
-  isCollectionConsumer,
-} from "./LinkedCollection";
+import { CollectionMigration, LinkedCollection, isCollectionConsumer } from "./LinkedCollection";
 import { useTranslation } from "react-i18next";
 import DirectoryTree, { type CollectionPeer } from "@/components/files/DirectoryTree";
 import { FILE_TYPES } from "@/components/files/file";
@@ -35,6 +30,7 @@ import { useDatabaseLibrary } from "@/components/databases/useDatabaseLibrary";
 import { databaseHandleKey } from "@/utils/db";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import { useCollectionCurrencies } from "@/state/linkedCollections";
+import { joinLibraryCollections } from "./libraryData";
 
 export default function LibraryPage() {
   const { t } = useTranslation();
@@ -105,25 +101,13 @@ export default function LibraryPage() {
   ]);
   const normalizedSearch = search.trim().toLowerCase();
   useCollectionCurrencies(databases.collections);
-  const sourceFiles = collectionFiles(files.data ?? []);
+  const {
+    files: sourceFiles,
+    byFile,
+    missing,
+  } = joinLibraryCollections(files.data ?? [], databases.collections);
   const linked =
-    fileSelection?.type === "file"
-      ? databases.collections.find(
-          (collection) =>
-            collection.status !== "retired" &&
-            fileWorkspaceKey(collection.file) === fileWorkspaceKey(fileSelection.handle),
-        )
-      : undefined;
-  const missing = databases.collections.filter(
-    (collection) =>
-      collection.status !== "trashed" &&
-      collection.status !== "retired" &&
-      collection.status !== "preservedOriginal" &&
-      collection.status !== "ready" &&
-      !sourceFiles.some(
-        (file) => fileWorkspaceKey(file.handle) === fileWorkspaceKey(collection.file),
-      ),
-  );
+    fileSelection?.type === "file" ? byFile.get(fileWorkspaceKey(fileSelection.handle)) : undefined;
   const selectedMissing =
     selection?.kind === "missingCollection"
       ? missing.find((collection) => collection.id === selection.id)

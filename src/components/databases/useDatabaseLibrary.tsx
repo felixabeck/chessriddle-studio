@@ -63,6 +63,8 @@ import { PlayerSearchInput } from "./PlayerSearchInput";
 import { databaseRouteTarget, type DatabaseRouteTarget } from "./databaseRoute";
 import { databaseLoadFailureMessage } from "./databaseLoadFailure";
 import { capabilityKey } from "@/utils/pathCapabilities";
+import { standaloneDatabases } from "@/components/library/libraryData";
+import { openStandaloneDatabase } from "@/components/library/openStandaloneDatabase";
 
 export function useDatabaseLibrary(
   selected: string | null,
@@ -124,14 +126,7 @@ export function useDatabaseLibrary(
   }
   const conversionInProgress = conversionState.length > 0;
   const visibleDatabases = useMemo(() => {
-    return (databases ?? []).filter(
-      (item) =>
-        !item.collection &&
-        !conversionState.some(
-          (entry) =>
-            entry.targetDatabase !== null && sameDatabaseHandle(item.file, entry.targetDatabase),
-        ),
-    );
+    return standaloneDatabases(databases ?? [], conversionState);
   }, [databases, conversionState]);
   const selectedDatabase = useMemo(
     () => visibleDatabases.find((db) => databaseHandleKey(db.file) === selected) ?? null,
@@ -193,8 +188,7 @@ export function useDatabaseLibrary(
   const navigate = useNavigate();
 
   function openDatabase(database: SuccessDatabaseInfo) {
-    if (setActiveDatabase(database) !== true) return;
-    void navigate(databaseRouteTarget(database));
+    openStandaloneDatabase(database, navigate);
   }
 
   return {

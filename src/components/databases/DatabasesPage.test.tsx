@@ -64,7 +64,7 @@ vi.mock("react-i18next", async () => {
 });
 vi.mock("@tanstack/react-router", () => ({ Link: () => null, useNavigate: () => mocks.navigate }));
 vi.mock("@/state/store/database", () => ({
-  activeDatabaseViewStore: { getState: () => ({ database: null }) },
+  activeDatabaseViewStore: { getState: () => ({ database: null, setDatabase: mocks.setDatabase }) },
   useActiveDatabaseViewStore: () => mocks.setDatabase,
 }));
 vi.mock("@/components/common/ConfirmModal", () => ({ default: () => null }));

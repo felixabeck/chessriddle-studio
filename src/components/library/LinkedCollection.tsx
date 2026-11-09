@@ -15,7 +15,8 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "@tanstack/react-router";
 import { useSWRConfig } from "swr";
 import type { AccountIdentity, CollectionDescriptor, FileWorkspaceHandle } from "@/bindings";
-import type { Entry, FileMetadata } from "@/components/files/file";
+import type { FileMetadata } from "@/components/files/file";
+export { collectionFiles } from "./libraryData";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { tauri } from "@/platform/tauri";
 import { referenceDbAtom } from "@/state/atoms";
@@ -32,16 +33,6 @@ import NewDatabaseGameButton from "@/components/boards/NewDatabaseGameButton";
 const playerFieldStyles = {
   label: { maxWidth: "100%", overflowWrap: "anywhere" },
 } as const;
-
-export function collectionFiles(entries: readonly Entry[]): FileMetadata[] {
-  return entries.flatMap((entry) =>
-    entry.type === "file"
-      ? [entry]
-      : entry.type === "directory"
-        ? collectionFiles(entry.children)
-        : [],
-  );
-}
 
 export function LinkedCollection({
   collection,

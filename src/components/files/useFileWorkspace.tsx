@@ -28,7 +28,8 @@ import FileCard from "./FileCard";
 import ConfirmModal, { durabilityUncertainMessage } from "../common/ConfirmModal";
 import AppModal from "../common/AppModal";
 import type { Entry, UsableEntry, FileType } from "./file";
-import { FILE_TYPES, workspaceListingToEntries } from "./file";
+import { FILE_TYPES } from "./file";
+import { useWorkspaceListing } from "@/components/library/useWorkspaceListing";
 import { filesMutationErrorMessage, runFilesMutationWithRefresh } from "./workspaceError";
 import { childUnreadableMessage } from "./DirectoryTree";
 import {
@@ -138,7 +139,6 @@ export function useFileWorkspace(
   useEffect(() => {
     if (action) actionInputRef.current?.focus();
   }, [action]);
-  const workspaceKey = workspace ? workspaceListingKey(workspace) : null;
   const workspaceIdentity = workspace ? fileWorkspaceKey(workspace) : null;
   const trashKey = workspace ? ["workspace-trash", workspaceIdentity] : null;
   const trashOwner = useNativeRequestOwner(trashKey);
@@ -206,12 +206,7 @@ export function useFileWorkspace(
       }
     }
   }
-  const workspaceOwner = useNativeRequestOwner(workspaceKey);
-  const { data, error, mutate } = useSWR(workspaceKey, async () =>
-    workspaceOwner!.run(async (signal) =>
-      workspaceListingToEntries(await tauri.listFileWorkspace(workspace!, { signal }), workspace!),
-    ),
-  );
+  const { data, error, mutate } = useWorkspaceListing(workspace);
   const failure = listingFailure(error);
   const trashListingError = trashError ?? olderTrashError;
   const trashFailure = listingFailure(trashListingError);
