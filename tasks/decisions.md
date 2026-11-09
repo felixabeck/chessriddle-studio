@@ -12785,3 +12785,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Bounded per the persisted-state rule and never keyed by a name or path. Accepted: past 1000 distinct items the oldest fall back to modified-time order. Reversal path: delete the record and sort by recents.
 * **Decided by:** Claude Code (Opus 5.5) build run 2026-11-09-new-tab-library, full auto, 2026-11-09 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"821b6f3b04a07252c0293cdf892d21e9387b01d5dd6d5c0d1ec39b0f708d0e88","input_sha256":"97400a8e801f565deff985a33d7c76d8c7bb09ef1799a53f69e989999467dcd5","kind":"mutation-receipt","operation":"2924275fb9502ae20c66cfd224331b1d4ef9aceb5c5effce41da3bfafc651384","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-27"],"target":"decisions-ledger","v":1} -->
+
+### d-20261109-28 — What do collection rows and reference databases do in the New Tab list?
+
+* **Question:** The approved design says reference databases open their game table and individual games appear under Games. Where do reference rows go in a paged list, and what does a collection row in All do?
+* **Governs:** tasks/plans/2026-11-09-new-tab-library.md (New Tab as one Library list)
+* **Chosen:** A collection with more than one game and a reference database open their game table and leave the New Tab alone. A one-game collection opens that game. Reference database rows are listed first under Games.
+* **Rejected:** Listing reference rows after own games, which paged results would make unreachable.
+* **Reason:** Follows Felix's approved "clicking one opens its game table". Reversal path: change the row action and the Games ordering in the projection.
+* **Decided by:** Claude Code (Opus 5.5) build run 2026-11-09-new-tab-library, full auto, 2026-11-09 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"b3a2c26d8238270e6401d7d9a65654e6028f1a3daf9a1b261133446b048a3c7d","input_sha256":"4e6af4caf51aee366f54bcc11b7422c1ace0cc259d70fc0bcc875a024f99d987","kind":"mutation-receipt","operation":"2f69db358dc9d6d40f5af480fca832cb8f7842551fe2d5a7ec494a136d60c186","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-28"],"target":"decisions-ledger","v":1} -->
