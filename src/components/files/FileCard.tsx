@@ -125,7 +125,7 @@ function FileCard({
   };
 
   const reportOpenError = (error: unknown) => {
-    if (error instanceof StaleFileGameError) reloadGames(true);
+    if (error instanceof StaleFileGameError) reloadGames(false);
     notifyUnlessCancelled(t("Common.Error"), error);
   };
   const gameOpen = useGameOpen(

@@ -9,6 +9,7 @@ import { createStore, getDefaultStore, Provider } from "jotai";
 import { tabsAtom } from "@/state/atoms";
 import { libraryGamePositionAtom } from "@/components/library/memory";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
+import * as files from "@/utils/files";
 import i18n, { initializeI18n } from "@/i18n";
 
 const mocks = vi.hoisted(() => ({
@@ -744,25 +745,59 @@ describe("FileCard", () => {
       await initializeI18n();
       await renderActualList();
       const seed = vi.spyOn(tabStorage, "seed");
+      const openFile = vi.spyOn(files, "openFile");
       const currentGame = stampedGame('[Event "Fresh second"]\n\n1. d4 *', "changed");
       mocks.readGame.mockResolvedValue(currentGame);
-      mocks.readGames.mockImplementation(async (_handle: unknown, start: number, end: number) =>
-        Array.from({ length: Math.min(end, 1) - start + 1 }, () => currentGame),
-      );
       const second = container.querySelectorAll<HTMLElement>('[role="option"]')[1];
       await act(async () => second.click());
       expect(getDefaultStore().get(libraryGamePositionAtom)?.index).toBe(1);
-      await act(async () => {
-        activate(second);
+      const originalText = second.textContent;
+      const originalExpected = { stamp: "stamp-revision", revision: "revision" };
+      let finishReload!: () => void;
+      const reload = new Promise<void>((resolve) => {
+        finishReload = resolve;
       });
-      await vi.waitFor(() => expect(mocks.showNotification).toHaveBeenCalledOnce());
-      expect(mocks.showNotification).toHaveBeenCalledWith(
-        expect.objectContaining({ message: i18n.t("Files.LineSection.Stale") }),
-      );
-      expect(mocks.readGame).toHaveBeenCalledExactlyOnceWith(sampleFileA.handle, 1, undefined);
-      expect(seed).not.toHaveBeenCalled();
-      expect(getDefaultStore().get(tabsAtom)).toEqual([]);
-      expect(mocks.navigate).not.toHaveBeenCalled();
+      mocks.readGames
+        .mockClear()
+        .mockImplementation(async (_handle: unknown, start: number, end: number) => {
+          await reload;
+          return Array.from({ length: Math.min(end, 1) - start + 1 }, () => currentGame);
+        });
+      try {
+        await act(async () => {
+          activate(second);
+        });
+        await vi.waitFor(() => expect(mocks.showNotification).toHaveBeenCalledOnce());
+        expect(mocks.showNotification).toHaveBeenCalledWith(
+          expect.objectContaining({ message: i18n.t("Files.LineSection.Stale") }),
+        );
+        expect(mocks.readGames).toHaveBeenCalledWith(sampleFileA.handle, 0, 1, expect.anything());
+        expect(container.querySelectorAll<HTMLElement>('[role="option"]')[1]?.textContent).toBe(
+          originalText,
+        );
+        expect(openFile).toHaveBeenNthCalledWith(1, expect.anything(), expect.anything(), {
+          gameNumber: 1,
+          expected: originalExpected,
+        });
+        expect(openButton().disabled).toBe(false);
+
+        await act(async () => openButton().click());
+        await vi.waitFor(() => expect(mocks.showNotification).toHaveBeenCalledTimes(2));
+        expect(openFile).toHaveBeenNthCalledWith(2, expect.anything(), expect.anything(), {
+          gameNumber: 1,
+          expected: originalExpected,
+        });
+        expect(mocks.readGame).toHaveBeenCalledTimes(2);
+        expect(mocks.readGame).toHaveBeenLastCalledWith(sampleFileA.handle, 1, undefined);
+        expect(container.querySelectorAll<HTMLElement>('[role="option"]')[1]?.textContent).toBe(
+          originalText,
+        );
+        expect(seed).not.toHaveBeenCalled();
+        expect(getDefaultStore().get(tabsAtom)).toEqual([]);
+        expect(mocks.navigate).not.toHaveBeenCalled();
+      } finally {
+        await act(async () => finishReload());
+      }
       await vi.waitFor(() =>
         expect(
           container.querySelectorAll<HTMLElement>('[role="option"]')[1]?.textContent,
@@ -771,6 +806,10 @@ describe("FileCard", () => {
 
       await act(async () => openButton().click());
       await vi.waitFor(() => expect(mocks.navigate).toHaveBeenCalledOnce());
+      expect(openFile).toHaveBeenNthCalledWith(3, expect.anything(), expect.anything(), {
+        gameNumber: 1,
+        expected: { stamp: currentGame.stamp, revision: currentGame.revision },
+      });
       expect(seed).toHaveBeenCalledOnce();
       expect(getDefaultStore().get(tabsAtom)).toEqual([
         expect.objectContaining({ gameOrigin: expect.objectContaining({ gameNumber: 1 }) }),

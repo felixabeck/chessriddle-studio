@@ -11,7 +11,7 @@ test("opens refuse an active structure change and are admitted after it ends", a
     await initializeI18n();
     const endChange = beginFileStructureChange("file-a");
     try {
-        expect(() => beginFileOpen("file-a")).toThrow(new Error(i18n.t("Files.LineSection.Stale")));
+        expect(() => beginFileOpen("file-a")).toThrow(i18n.t("Files.LineSection.Stale"));
         expect(hasFileOpenInFlight("file-a")).toBe(false);
         const endOther = beginFileOpen("file-b");
         expect(hasFileOpenInFlight("file-b")).toBe(true);
