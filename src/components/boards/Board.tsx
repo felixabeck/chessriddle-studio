@@ -46,7 +46,7 @@ import classes from "@/styles/Chessboard.module.css";
 import { ANNOTATION_INFO, isBasicAnnotation, nagGlyphs } from "@/utils/annotation";
 import { getVariationLine } from "@/utils/chess";
 import { normalizeEditedFen, positionFromFen, translateChessopsError } from "@/utils/chessops";
-import { isKeyboardOwnedElsewhere } from "@/utils/keyboardOwnership";
+import { backgroundHotkeyOptions } from "@/utils/keyboardOwnership";
 import ShowMaterial from "../common/ShowMaterial";
 import { TreeStateContext, useVariationChooser } from "@/components/common/TreeStateContext";
 import BoardFrame from "@/components/boards/BoardFrame";
@@ -203,9 +203,7 @@ function Board({
     });
 
   const keyMap = useAtomValue(keyMapAtom);
-  useHotkeys(keyMap.SWAP_ORIENTATION.keys, () => toggleOrientation(), {
-    ignoreEventWhen: (event) => isKeyboardOwnedElsewhere(event, null),
-  });
+  useHotkeys(keyMap.SWAP_ORIENTATION.keys, () => toggleOrientation(), backgroundHotkeyOptions);
   const [evalOpen, setEvalOpen] = useAtom(useTabAtom(evalOpenFamily));
 
   async function makeMove(move: NormalMove) {
@@ -355,9 +353,7 @@ function Board({
     [editingMode, currentNode, setFen],
   );
 
-  useHotkeys(keyMap.TOGGLE_EVAL_BAR.keys, () => setEvalOpen((e) => !e), {
-    ignoreEventWhen: (event) => isKeyboardOwnedElsewhere(event, null),
-  });
+  useHotkeys(keyMap.TOGGLE_EVAL_BAR.keys, () => setEvalOpen((e) => !e), backgroundHotkeyOptions);
 
   const square = match(currentNode)
     .with({ san: "O-O" }, ({ halfMoves }) => parseSquare(halfMoves % 2 === 1 ? "g1" : "g8"))

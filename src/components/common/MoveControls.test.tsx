@@ -476,6 +476,36 @@ test.each(["ArrowLeft", "ArrowRight"])(
   },
 );
 
+test.each([
+  { shortcut: "GO_TO_START", key: "ArrowUp", shiftKey: true, expected: [] },
+  { shortcut: "GO_TO_END", key: "ArrowDown", shiftKey: true, expected: [0, 0] },
+  { shortcut: "NEXT_BRANCH", key: "c", shiftKey: false, expected: [1] },
+  { shortcut: "PREVIOUS_BRANCH", key: "x", shiftKey: false, expected: [2] },
+  { shortcut: "NEXT_BRANCHING", key: "ArrowRight", shiftKey: true, expected: [0, 0] },
+  { shortcut: "PREVIOUS_BRANCHING", key: "ArrowLeft", shiftKey: true, expected: [] },
+])(
+  "modal-owned $shortcut stays put while the same key without the modal navigates",
+  ({ key, shiftKey, expected }) => {
+    store = branchingStore();
+    store.getState().goToMove([0]);
+    render({ modal: true });
+    const button = focusDialogButton();
+    const before = store.getState();
+
+    const event = press(key, { target: button, shiftKey });
+
+    expect(store.getState().position).toEqual([0]);
+    expect(store.getState().root).toBe(before.root);
+    expect(store.getState().dirty).toBe(false);
+    expect(event.defaultPrevented).toBe(false);
+    render();
+    expect(document.querySelector('[aria-modal="true"]')).toBeNull();
+    press(key, { shiftKey });
+    expect(store.getState().position).toEqual(expected);
+    expect(store.getState().position).not.toEqual([0]);
+  },
+);
+
 test("Delete dispatched on document with a modal open preserves the background game", () => {
   store = middleGameStore();
   render({ modal: true });

@@ -23,6 +23,11 @@ export function isKeyboardOwnedElsewhere(event: KeyboardEvent, surface: Element 
     return owner !== null && (surface === null || !owner.contains(surface));
 }
 
+/** react-hotkeys-hook options for a surface that is never rendered inside a dialog: keys owned by an open dialog are ignored (not fired, not prevented, not stopped). */
+export const backgroundHotkeyOptions = {
+    ignoreEventWhen: (event: KeyboardEvent) => isKeyboardOwnedElsewhere(event, null),
+};
+
 export function withKeyboardOwnership(hotkeys: HotkeyItem[]): HotkeyItem[] {
     return hotkeys.map(([keys, handler, options]) => {
         const resolvedOptions = options ?? { preventDefault: true, usePhysicalKeys: false };

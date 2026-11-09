@@ -19,6 +19,7 @@ import { cancellationError, TauriCommandError } from "@/platform/tauri";
 import type { Tab } from "@/state/workspaceTypes";
 import { defaultTree } from "@/utils/treeReducer";
 import { installMatchMediaStub } from "@/tests/matchMedia";
+import { press } from "@/tests/keyboard";
 import { activeDatabaseViewStore } from "@/state/store/database";
 import type { SuccessDatabaseInfo } from "@/utils/db";
 import type { loadFileGame } from "@/utils/files";
@@ -965,6 +966,57 @@ describe("InfoPanel game loading and cancellation", () => {
         stop();
         setItem.mockRestore();
       }
+    },
+  );
+
+  test.each([
+    { key: "PageDown", initialPage: 0, nextPage: 1 },
+    { key: "PageUp", initialPage: 1, nextPage: 0 },
+  ])(
+    "dialog-owned $key preserves the game while the same key outside still pages",
+    async ({ key, initialPage, nextPage }) => {
+      const origin = tabA.gameOrigin;
+      if (origin.kind !== "file") throw new Error("Paging fixture needs a file tab");
+      jotaiStore.set(tabsAtom, [
+        { ...tabA, gameOrigin: { ...origin, gameNumber: initialPage } },
+        tabB,
+      ]);
+      const loaded = diskGame();
+      mocks.loadFileGame.mockResolvedValueOnce(loaded);
+      await act(async () => root.render(renderPanel()));
+      const dialog = document.createElement("section");
+      dialog.setAttribute("aria-modal", "true");
+      const button = document.createElement("button");
+      dialog.append(button);
+      container.append(dialog);
+      button.focus();
+      expect(document.activeElement).toBe(button);
+      const before = treeStore.getState();
+      const tab = jotaiStore.get(currentTabAtom);
+
+      await act(async () => {
+        const event = press(key, { target: button });
+        expect(event.defaultPrevented).toBe(false);
+      });
+
+      expect(mocks.loadFileGame).not.toHaveBeenCalled();
+      expect(treeStore.getState()).toBe(before);
+      expect(jotaiStore.get(currentTabAtom)).toBe(tab);
+      dialog.remove();
+      await act(async () => {
+        press(key);
+      });
+      expect(mocks.loadFileGame).toHaveBeenCalledExactlyOnceWith(
+        origin.file.handle,
+        nextPage,
+        expect.any(AbortSignal),
+      );
+      expect(jotaiStore.get(currentTabAtom)?.gameOrigin).toMatchObject({
+        kind: "file",
+        gameNumber: nextPage,
+      });
+      expect(treeStore.getState().headers.event).toBe("Replacement game");
+      expect(treeStore.getState().root).not.toBe(before.root);
     },
   );
 

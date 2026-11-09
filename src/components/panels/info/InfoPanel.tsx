@@ -38,6 +38,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useActiveDatabaseViewStore } from "@/state/store/database";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
+import { backgroundHotkeyOptions } from "@/utils/keyboardOwnership";
 import { loadFileGame, withFileWrite } from "@/utils/files";
 import { setFileFreshness } from "@/state/fileFreshness";
 import { beginFileStructureChange } from "@/state/fileStructureChange";
@@ -177,11 +178,13 @@ function GameSelectorAccordion({
       void setPage(Math.min(gameNumber + 1, tabFile.numGames - 1));
     },
     {
+      ...backgroundHotkeyOptions,
       enabled: !!tabFile,
     },
   );
 
   useHotkeys(keyMap.PREVIOUS_GAME.keys, () => setPage(Math.max(0, gameNumber - 1)), {
+    ...backgroundHotkeyOptions,
     enabled: !!tabFile,
   });
 
