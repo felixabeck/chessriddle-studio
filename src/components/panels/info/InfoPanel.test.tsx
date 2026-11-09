@@ -13,7 +13,13 @@ import { deserializeStorageValue } from "@/state/store/debouncedStorage";
 import { getTabTreeKey } from "@/state/workspaceTypes";
 import { loadWorkspace, WORKSPACE_STORAGE_KEY } from "@/state/workspace";
 import { activeTabAtom, currentTabAtom, deckAtomFamily, tabsAtom } from "@/state/atoms";
-import { afterFileStructureChange } from "@/state/fileStructureChange";
+import {
+  afterFileStructureChange,
+  beginFileOpen,
+  beginFileStructureChange,
+  hasFileOpenInFlight,
+} from "@/state/fileStructureChange";
+import i18n, { initializeI18n } from "@/i18n";
 import * as practiceStorage from "@/state/practiceStorage";
 import { cancellationError, TauriCommandError } from "@/platform/tauri";
 import type { Tab } from "@/state/workspaceTypes";
@@ -44,7 +50,8 @@ const mocks = vi.hoisted(() => ({
   useActualGameSelector: false,
 }));
 
-vi.mock("react-i18next", () => ({
+vi.mock("react-i18next", async (original) => ({
+  ...(await original<typeof import("react-i18next")>()),
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
@@ -478,6 +485,69 @@ describe("InfoPanel game loading and cancellation", () => {
       tree,
     };
   }
+
+  test("page switching refuses an active structure change without reading and succeeds after release", async () => {
+    await initializeI18n();
+    await act(async () => root.render(renderPanel()));
+    const originalTree = treeStore.getState();
+    const originalWorkspace = sessionStorage.getItem(WORKSPACE_STORAGE_KEY);
+    const endChange = beginFileStructureChange("workspace-token-a");
+    try {
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>('[data-testid="set-page"]')!.click(),
+      );
+      expect(mocks.loadFileGame).not.toHaveBeenCalled();
+      expect(treeStore.getState()).toBe(originalTree);
+      expect(jotaiStore.get(currentTabAtom)?.gameOrigin).toEqual(tabA.gameOrigin);
+      expect(sessionStorage.getItem(WORKSPACE_STORAGE_KEY)).toBe(originalWorkspace);
+      expect(mocks.notify).toHaveBeenCalledWith(
+        expect.objectContaining({ message: i18n.t("Files.LineSection.Stale") }),
+      );
+      expect(hasFileOpenInFlight("workspace-token-a")).toBe(false);
+    } finally {
+      endChange();
+    }
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[data-testid="set-page"]')!.click(),
+    );
+    expect(mocks.loadFileGame).toHaveBeenCalledOnce();
+    expect(jotaiStore.get(currentTabAtom)?.gameOrigin).toMatchObject({ gameNumber: 1 });
+    expect(hasFileOpenInFlight("workspace-token-a")).toBe(false);
+  });
+
+  test("page switching holds the open lease from its read through workspace persistence", async () => {
+    const read = deferred<Awaited<ReturnType<typeof loadFileGame>>>();
+    let leasedAtRead = false;
+    mocks.loadFileGame.mockImplementationOnce(() => {
+      leasedAtRead = hasFileOpenInFlight("workspace-token-a");
+      return read.promise;
+    });
+    await act(async () => root.render(renderPanel()));
+    const leasesAtWrites: boolean[] = [];
+    const setItem = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
+      if (key === WORKSPACE_STORAGE_KEY) {
+        leasesAtWrites.push(hasFileOpenInFlight("workspace-token-a"));
+      }
+      return setItem.call(this, key, value);
+    });
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[data-testid="set-page"]')!.click(),
+    );
+    try {
+      expect(leasedAtRead).toBe(true);
+      expect(hasFileOpenInFlight("workspace-token-a")).toBe(true);
+      expect(leasesAtWrites).toEqual([]);
+      expect(jotaiStore.get(currentTabAtom)?.gameOrigin).toEqual(tabA.gameOrigin);
+    } finally {
+      await act(async () => read.resolve(diskGame()));
+    }
+    expect(leasesAtWrites).toEqual([true]);
+    expect(loadWorkspace(sessionStorage, WORKSPACE_STORAGE_KEY).tabs[0]?.gameOrigin).toMatchObject({
+      gameNumber: 1,
+    });
+    expect(hasFileOpenInFlight("workspace-token-a")).toBe(false);
+  });
 
   async function openActualPageConfirmation() {
     mocks.useActualGameSelector = true;
@@ -1153,6 +1223,36 @@ describe("InfoPanel game loading and cancellation", () => {
     expect(jotaiStore.get(currentTabAtom)?.gameOrigin).toMatchObject({ gameNumber: 0 });
     expect(treeStore.getState()).toMatchObject({ dirty: true, sourceStamp: null });
     expect(treeStore.getState().root.comment).toBe("Edit made during file read");
+  });
+
+  test("delete refuses an in-flight open without native mutation or an optimistic count update", async () => {
+    await act(async () => root.render(renderPanel()));
+    const originalWorkspace = sessionStorage.getItem(WORKSPACE_STORAGE_KEY);
+    const observedOrigins: unknown[] = [];
+    const unsubscribe = jotaiStore.sub(tabsAtom, () => {
+      observedOrigins.push(jotaiStore.get(currentTabAtom)?.gameOrigin);
+    });
+    const endOpen = beginFileOpen("workspace-token-a");
+    try {
+      await primeAndDelete();
+      expect(mocks.deleteGame).not.toHaveBeenCalled();
+      expect(mocks.countPgnGames).not.toHaveBeenCalled();
+      expect(observedOrigins).toEqual([]);
+      expect(jotaiStore.get(currentTabAtom)?.gameOrigin).toEqual(tabA.gameOrigin);
+      expect(sessionStorage.getItem(WORKSPACE_STORAGE_KEY)).toBe(originalWorkspace);
+      expect(container.querySelector('[data-testid="game-cache-size"]')?.textContent).toBe("0");
+      expect(mocks.notify).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Common.Error", message: "Files.RemoveGameStale" }),
+      );
+      expect(mocks.deleteRejected).not.toHaveBeenCalled();
+    } finally {
+      endOpen();
+      unsubscribe();
+    }
+    mocks.deleteGame.mockResolvedValueOnce(undefined);
+    await primeAndDelete();
+    expect(mocks.deleteGame).toHaveBeenCalledOnce();
+    expect(jotaiStore.get(currentTabAtom)?.gameOrigin).toMatchObject({ file: { numGames: 4 } });
   });
 
   test("delete refuses native mutation and cache clearing when metadata cannot be saved", async () => {
@@ -1835,7 +1935,9 @@ describe("InfoPanel game loading and cancellation", () => {
     mocks.loadFileGame.mockImplementationOnce(
       (_handle: unknown, _page: number, signal?: AbortSignal) => {
         if (signal) signalA = signal;
-        return new Promise(() => {}); // never resolves
+        return new Promise((_, reject) => {
+          signal?.addEventListener("abort", () => reject(cancellationError()), { once: true });
+        });
       },
     );
 

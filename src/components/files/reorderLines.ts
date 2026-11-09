@@ -2,13 +2,10 @@ import i18n from "@/i18n";
 import type { PgnLineMove, GameMoveResult } from "@/bindings";
 import { tauri } from "@/platform/tauri";
 import { normalizeError } from "@/platform/errors";
-import { invalidateFileDeckAtoms, tabsAtom } from "@/state/atoms";
+import { tabsAtom } from "@/state/atoms";
 import { beginFileStructureChange, hasFileOpenInFlight } from "@/state/fileStructureChange";
-import { setFileFreshness } from "@/state/fileFreshness";
-import {
-    clearPracticeFileMigrationFailures,
-    ensurePracticeFileReorderReady,
-} from "@/state/practiceStorage";
+import { invalidateFileStructureCaches, markFileTabsFreshness } from "@/state/fileStructureEffects";
+import { ensurePracticeFileReorderReady } from "@/state/practiceStorage";
 import { scanBlockingTabs } from "@/state/quitGate";
 import { withFileWrite } from "@/utils/files";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
@@ -75,17 +72,6 @@ export async function reorderFileLines({
     moving.add(key);
     let release: (() => void) | undefined;
     let mayHaveLanded = false;
-    const mark = (state: "conflict" | "unverified") => {
-        for (const tab of workspace.get(tabsAtom)) {
-            if (isFileBackedTab(tab) && fileWorkspaceKey(tab.gameOrigin.file.handle) === key) {
-                setFileFreshness(
-                    tab.value,
-                    state,
-                    state === "conflict" ? { conflictReason: "changed" } : undefined,
-                );
-            }
-        }
-    };
     try {
         await ensurePracticeFileReorderReady(key);
         const tabs = workspace.get(tabsAtom);
@@ -122,8 +108,7 @@ export async function reorderFileLines({
             setTabs,
             fileKey: key,
             captured,
-            originalCount: file.numGames,
-            numGames: file.numGames,
+            count: { kind: "unchanged" },
             ordinals,
         });
         if (rebound.matched && !rebound.saved) {
@@ -132,7 +117,7 @@ export async function reorderFileLines({
                 message: i18n.t("Common.DurabilityUncertain"),
             };
         }
-        mark("unverified");
+        markFileTabsFreshness(workspace.get(tabsAtom), key, "unverified");
         const selection = getSelection();
         select(ordinals.get(selection) ?? selection);
         reload(false);
@@ -145,7 +130,7 @@ export async function reorderFileLines({
             details.backendCategory === "stale-game"
         ) {
             mayHaveLanded = true;
-            mark("conflict");
+            markFileTabsFreshness(workspace.get(tabsAtom), key, "conflict");
             reload(true);
         }
         if (details.backendCategory === "stale-game")
@@ -154,11 +139,7 @@ export async function reorderFileLines({
     } finally {
         try {
             if (mayHaveLanded) {
-                try {
-                    invalidateFileDeckAtoms(key);
-                } finally {
-                    clearPracticeFileMigrationFailures(key);
-                }
+                invalidateFileStructureCaches(key);
             }
         } finally {
             release?.();

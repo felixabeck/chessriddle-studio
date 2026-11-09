@@ -15,7 +15,7 @@ import GameInfo from "@/components/common/GameInfo";
 import { IconAction } from "@/components/common/IconAction";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import ConfirmChangesModal from "@/components/tabs/ConfirmChangesModal";
-import { currentTabAtom, invalidateFileDeckAtoms, tabsAtom } from "@/state/atoms";
+import { currentTabAtom, tabsAtom } from "@/state/atoms";
 import { keyMapAtom } from "@/state/keybinds";
 import { formatNumber } from "@/utils/format";
 import {
@@ -42,8 +42,12 @@ import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import { backgroundHotkeyOptions } from "@/utils/keyboardOwnership";
 import { loadFileGame, withFileWrite } from "@/utils/files";
 import { setFileFreshness } from "@/state/fileFreshness";
-import { beginFileStructureChange } from "@/state/fileStructureChange";
-import { clearPracticeFileMigrationFailures } from "@/state/practiceStorage";
+import {
+  beginFileOpen,
+  beginFileStructureChange,
+  hasFileOpenInFlight,
+} from "@/state/fileStructureChange";
+import { invalidateFileStructureCaches, markFileTabsFreshness } from "@/state/fileStructureEffects";
 import type { Tab } from "@/state/workspaceTypes";
 import type { TreeStore } from "@/state/store/tree";
 
@@ -403,7 +407,9 @@ function GameSelectorAccordion({
       return;
     }
 
+    let endOpen: (() => void) | undefined;
     try {
+      endOpen = beginFileOpen(request.fileKey);
       const loaded = await loadFileGame(tab.gameOrigin.file.handle, page, controller.signal);
       if (!isCurrentPageRequest(request)) {
         return;
@@ -440,6 +446,7 @@ function GameSelectorAccordion({
       if (errorUnlessCancelled(error) === null) return;
       notifyUnlessCancelled(t("Common.Error"), error);
     } finally {
+      endOpen?.();
       if (pageAbortRef.current === controller) pageAbortRef.current = null;
     }
   }
@@ -512,98 +519,89 @@ function GameSelectorAccordion({
           },
         ]),
     );
-    const optimistic = updateOwnerCount(ownerId, fileKey, originalCount, predictedCount);
-    if (!optimistic.matched) {
+    if (hasFileOpenInFlight(fileKey)) {
       showStaleRefusal();
-      const refresh = await refreshCount();
-      if (refresh === "refused") throw workspaceWriteRefusedError();
       return;
     }
-    if (!optimistic.saved) throw workspaceWriteRefusedError();
-
-    const markTabsFreshness = (state: "conflict" | "unverified") => {
-      for (const tab of jotaiStore.get(tabsAtom)) {
-        if (belongsToFile(tab, fileKey)) {
-          setFileFreshness(
-            tab.value,
-            state,
-            state === "conflict" ? { conflictReason: "changed" } : undefined,
-          );
-        }
-      }
-    };
-    let nativeMutationSucceeded = false;
-    let replacementMayBeInstalled = false;
     const endStructureChange = beginFileStructureChange(fileKey);
     try {
-      await withFileWrite(filePath, async () => {
-        try {
-          await tauri.deleteGame(filePath, index, stamp, revision);
-          nativeMutationSucceeded = true;
-          replacementMayBeInstalled = true;
-        } catch (error) {
-          replacementMayBeInstalled = normalizeError(error).category === "applied-despite-error";
-          throw error;
-        }
-      });
-
-      const update = rebindFileTabsAfterStructureChange({
-        setTabs,
-        fileKey,
-        captured: initialTabMetadata,
-        originalCount,
-        numGames: predictedCount,
-        ordinals: new Map(
-          Array.from(initialTabMetadata.values(), ({ gameNumber }) => [
-            gameNumber,
-            gameNumber > index ? gameNumber - 1 : gameNumber,
-          ]),
-        ),
-        optimisticOwner: ownerId,
-      });
-      if (!update.saved && update.matched) {
-        markTabsFreshness("conflict");
-        if (isCurrentOwner(ownerId, fileKey, ownerStore)) setGames(new Map());
-        throw new Error("Committed but durability uncertain: file deletion tab metadata");
-      }
-
-      markTabsFreshness("unverified");
-      if (isCurrentOwner(ownerId, fileKey, ownerStore)) setGames(new Map());
-    } catch (error) {
-      const errorDetails = normalizeError(error);
-      if (replacementMayBeInstalled || errorDetails.category === "applied-despite-error") {
-        replacementMayBeInstalled = true;
-        markTabsFreshness("conflict");
-        if (isCurrentOwner(ownerId, fileKey, ownerStore)) setGames(new Map());
-        if (!nativeMutationSucceeded) await refreshCount();
-        throw error;
-      }
-      const rollbackCount = () => updateOwnerCount(ownerId, fileKey, predictedCount, originalCount);
-
-      if (errorDetails.backendCategory === "stale-game") {
-        const rollback = rollbackCount();
+      const optimistic = updateOwnerCount(ownerId, fileKey, originalCount, predictedCount);
+      if (!optimistic.matched) {
         showStaleRefusal();
         const refresh = await refreshCount();
-        if ((rollback.matched && !rollback.saved) || refresh === "refused")
-          throw workspaceWriteRefusedError();
+        if (refresh === "refused") throw workspaceWriteRefusedError();
         return;
       }
+      if (!optimistic.saved) throw workspaceWriteRefusedError();
 
-      const rollback = rollbackCount();
-      if (rollback.matched && !rollback.saved) throw workspaceWriteRefusedError();
-      throw error;
-    } finally {
+      let nativeMutationSucceeded = false;
+      let replacementMayBeInstalled = false;
       try {
-        if (replacementMayBeInstalled) {
+        await withFileWrite(filePath, async () => {
           try {
-            invalidateFileDeckAtoms(fileKey);
-          } finally {
-            clearPracticeFileMigrationFailures(fileKey);
+            await tauri.deleteGame(filePath, index, stamp, revision);
+            nativeMutationSucceeded = true;
+            replacementMayBeInstalled = true;
+          } catch (error) {
+            replacementMayBeInstalled = normalizeError(error).category === "applied-despite-error";
+            throw error;
           }
+        });
+
+        const update = rebindFileTabsAfterStructureChange({
+          setTabs,
+          fileKey,
+          captured: initialTabMetadata,
+          count: {
+            kind: "changed",
+            originalCount,
+            numGames: predictedCount,
+            optimisticOwner: ownerId,
+          },
+          ordinals: new Map(
+            Array.from(initialTabMetadata.values(), ({ gameNumber }) => [
+              gameNumber,
+              gameNumber > index ? gameNumber - 1 : gameNumber,
+            ]),
+          ),
+        });
+        if (!update.saved && update.matched) {
+          markFileTabsFreshness(jotaiStore.get(tabsAtom), fileKey, "conflict");
+          if (isCurrentOwner(ownerId, fileKey, ownerStore)) setGames(new Map());
+          throw new Error("Committed but durability uncertain: file deletion tab metadata");
         }
+
+        markFileTabsFreshness(jotaiStore.get(tabsAtom), fileKey, "unverified");
+        if (isCurrentOwner(ownerId, fileKey, ownerStore)) setGames(new Map());
+      } catch (error) {
+        const errorDetails = normalizeError(error);
+        if (replacementMayBeInstalled || errorDetails.category === "applied-despite-error") {
+          replacementMayBeInstalled = true;
+          markFileTabsFreshness(jotaiStore.get(tabsAtom), fileKey, "conflict");
+          if (isCurrentOwner(ownerId, fileKey, ownerStore)) setGames(new Map());
+          if (!nativeMutationSucceeded) await refreshCount();
+          throw error;
+        }
+        const rollbackCount = () =>
+          updateOwnerCount(ownerId, fileKey, predictedCount, originalCount);
+
+        if (errorDetails.backendCategory === "stale-game") {
+          const rollback = rollbackCount();
+          showStaleRefusal();
+          const refresh = await refreshCount();
+          if ((rollback.matched && !rollback.saved) || refresh === "refused")
+            throw workspaceWriteRefusedError();
+          return;
+        }
+
+        const rollback = rollbackCount();
+        if (rollback.matched && !rollback.saved) throw workspaceWriteRefusedError();
+        throw error;
       } finally {
-        endStructureChange();
+        if (replacementMayBeInstalled) invalidateFileStructureCaches(fileKey);
       }
+    } finally {
+      endStructureChange();
     }
   }
 

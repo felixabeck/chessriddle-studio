@@ -120,6 +120,48 @@ test("moves tab ordinals and persists them, follows the current selection, and e
     expect(mocks.clear).toHaveBeenCalledWith("move-file");
 });
 
+test.each(["before", "during"])(
+    "rebinds a tab with a stale count changed %s the move and preserves that count",
+    async (timing) => {
+        const { args, workspace } = setup();
+        const setStaleCount = () =>
+            workspace.set(tabsAtom, (tabs) =>
+                tabs.map((current) =>
+                    current.value === tab(0).value && current.gameOrigin.kind === "file"
+                        ? {
+                              ...current,
+                              gameOrigin: {
+                                  ...current.gameOrigin,
+                                  file: { ...current.gameOrigin.file, numGames: 9 },
+                              },
+                          }
+                        : current,
+                ),
+            );
+        if (timing === "before") setStaleCount();
+        const native = deferred<GameMoveResult>();
+        mocks.move.mockReturnValueOnce(native.promise);
+        const pending = reorderFileLines(args);
+        try {
+            await vi.waitFor(() => expect(mocks.move).toHaveBeenCalledOnce());
+            if (timing === "during") setStaleCount();
+        } finally {
+            native.resolve({ changed: true, start: 0, order: [1, 0, 2] });
+            await pending;
+        }
+        expect(workspace.get(tabsAtom)[0]?.gameOrigin).toMatchObject({
+            gameNumber: 1,
+            file: { numGames: 9 },
+        });
+        expect(
+            loadWorkspace(sessionStorage, WORKSPACE_STORAGE_KEY).tabs[0]?.gameOrigin,
+        ).toMatchObject({
+            gameNumber: 1,
+            file: { numGames: 9 },
+        });
+    },
+);
+
 test.each([
     ["source", { kind: "line", source: 0, before: 2, belowHeading: true }, 0],
     ["heading's new owner", { kind: "line", source: 0, before: 2, belowHeading: true }, 1],

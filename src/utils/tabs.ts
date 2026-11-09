@@ -92,18 +92,16 @@ export function rebindFileTabsAfterStructureChange({
     setTabs,
     fileKey,
     captured,
-    originalCount,
-    numGames,
+    count,
     ordinals,
-    optimisticOwner,
 }: {
     setTabs: SetTabs;
     fileKey: string;
     captured: ReadonlyMap<string, FileTabPrecondition>;
-    originalCount: number;
-    numGames: number;
+    count:
+        | { kind: "unchanged" }
+        | { kind: "changed"; originalCount: number; numGames: number; optimisticOwner?: string };
     ordinals: ReadonlyMap<number, number>;
-    optimisticOwner?: string;
 }): { matched: boolean; saved: boolean } {
     let matched = false;
     const saved = setTabs((tabs) =>
@@ -114,18 +112,26 @@ export function rebindFileTabsAfterStructureChange({
             const current = tab.gameOrigin;
             if (
                 !before ||
-                before.numGames !== originalCount ||
                 current.gameNumber !== before.gameNumber ||
-                current.file.numGames !==
-                    (tab.value === optimisticOwner ? numGames : before.numGames)
+                (count.kind === "changed" &&
+                    (before.numGames !== count.originalCount ||
+                        current.file.numGames !==
+                            (tab.value === count.optimisticOwner
+                                ? count.numGames
+                                : before.numGames)))
             )
                 return tab;
             matched = true;
             const gameNumber = ordinals.get(current.gameNumber) ?? current.gameNumber;
+            const numGames = count.kind === "unchanged" ? current.file.numGames : count.numGames;
             if (current.file.numGames === numGames && current.gameNumber === gameNumber) return tab;
             return {
                 ...tab,
-                gameOrigin: { ...current, gameNumber, file: { ...current.file, numGames } },
+                gameOrigin: {
+                    ...current,
+                    gameNumber,
+                    file: count.kind === "unchanged" ? current.file : { ...current.file, numGames },
+                },
             };
         }),
     );
