@@ -3818,6 +3818,123 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn expired_one_sided_engine_game_loop_finishes_as_timeout_without_go() {
+        for side in [Color::White, Color::Black] {
+            let game_id = "expired-one-sided-engine-loop";
+            let manager = Arc::new(GameManager::new());
+            let (live, controller) = test_live_session(game_id, 1);
+            let (actor, writes) = EngineActor::recording_test_actor(&[]);
+            let registered = register_test_game_engine_with_actor(
+                &live.engine_supervisor,
+                game_id,
+                1,
+                if side == Color::White {
+                    "white"
+                } else {
+                    "black"
+                },
+                "test-engine-id",
+                "test-engine",
+                actor,
+            )
+            .await;
+            let initial_position = {
+                let mut config = human_config();
+                let control = Some(TimeControl {
+                    initial_time: 60_000,
+                    increment: 2_000,
+                });
+                if side == Color::White {
+                    config.white = fake_engine_player();
+                    config.white_time_control = control;
+                } else {
+                    config.black = fake_engine_player();
+                    config.black_time_control = control;
+                    config.initial_fen =
+                        Some("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1".into());
+                }
+                let mut ctrl = controller.write().await;
+                *ctrl = GameController::new(game_id.into(), 1, config).unwrap();
+                if side == Color::White {
+                    ctrl.white_engine = Some(registered.clone());
+                } else {
+                    ctrl.black_engine = Some(registered.clone());
+                }
+                ctrl.clock.as_mut().unwrap().last_tick = Instant::now() - Duration::from_secs(61);
+                assert_eq!(
+                    ctrl.get_current_times(),
+                    if side == Color::White {
+                        (Some(0), None)
+                    } else {
+                        (None, Some(0))
+                    }
+                );
+                assert!(!ctrl.engine_thinking);
+                assert!(ctrl.active_engine_request.is_none());
+                ctrl.position.clone()
+            };
+            publish_test_session(&manager, game_id, live.clone()).await;
+            let (_move_tx, move_rx) = tokio::sync::mpsc::channel(1);
+            let app = tauri::test::mock_app();
+            tauri_specta::Builder::<tauri::test::MockRuntime>::new()
+                .events(tauri_specta::collect_events!(
+                    GameOverEvent,
+                    ClockUpdateEvent,
+                    GameMoveEvent
+                ))
+                .mount_events(&app);
+            let loop_task = tokio::spawn(game_loop(
+                game_id.into(),
+                live.clone(),
+                live.shutdown.subscribe(),
+                move_rx,
+                app.handle().clone(),
+                Arc::downgrade(&manager),
+            ));
+            tokio::time::timeout(TEST_WAIT, async {
+                while controller.read().await.status == GameStatus::Playing {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .expect("expired engine game must leave Playing before the test timeout");
+            tokio::time::timeout(TEST_WAIT, loop_task)
+                .await
+                .unwrap()
+                .unwrap();
+            {
+                let ctrl = controller.read().await;
+                assert_eq!(
+                    ctrl.status,
+                    GameStatus::Finished {
+                        result: if side == Color::White {
+                            GameResult::BlackWins {
+                                reason: GameEndReason::Timeout,
+                            }
+                        } else {
+                            GameResult::WhiteWins {
+                                reason: GameEndReason::Timeout,
+                            }
+                        }
+                    }
+                );
+                assert_eq!(ctrl.next_engine_request, 1);
+                assert!(ctrl.moves.is_empty());
+                assert_eq!(ctrl.position, initial_position);
+                assert!(!ctrl.engine_thinking);
+                assert!(ctrl.active_engine_request.is_none());
+            }
+            let commands = writes.lock().await.clone();
+            assert!(
+                commands.iter().all(|line| !line.starts_with("go")),
+                "{commands:?}"
+            );
+            assert!(live.engine_supervisor.get_exact(&registered.key).is_none());
+            assert!(!manager.session_is_current(game_id, 1));
+        }
+    }
+
+    #[tokio::test]
     async fn cancelled_engine_move_logs_failed_stop_and_keeps_playing() {
         for stale_registration in [false, true] {
             let capture = crate::error::LogCaptureScope::start();
