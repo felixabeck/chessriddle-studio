@@ -22537,3 +22537,20 @@ Fixed in 0b63a012 (pushed to master; hosted Test 13/13 green; installed locally)
 
 Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates the 1000 ms metadata busy timeout from the ordinary 30 s busy timeout and leaves room for a loaded runner. Local proof: passes in 1.79 s, and fails in 30.55 s with METADATA_READ_BUSY_TIMEOUT_MS temporarily raised to 30000. Filed and repaired by the first-launch Stockfish build, whose push 3859bcd9 went red on this unrelated test.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"c277b54c0025f5f76f8c857f2a2dc0c601cb9f1b3a19efd219c00b22e09d49a7","header_sha256":"5e806a59f242018c684811b4606cca6766726e4b01e8bfe44ef6ed93eceea5fd","header_status":"handled","input_sha256":"8580276d3b71d6d8827a9ea34faae08abdd7ba7675b8c563b371980d108ec97a","kind":"mutation-receipt","operation":"61f2307e7277705d89bc02ae9a2b1d3c119148e0fd0c709edd949f6f891445ca","options":{"section":null},"request_id_sha256":null,"results":["f-20261109-06"],"target":"f-20261109-06","v":1} -->
+
+---
+
+## 2026-11-09 — filed through the inbox spool
+
+### A pooled validated reader can block until its sibling connections are released, failing macOS CI after the 30 s deadline
+
+* **ID:** f-20261109-07 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** build · **Blocked:** none
+* **Filed from:** 79c3d037-36dc-4a80-a8b5-7aef2505d6d3
+* **Impact class:** behaviour
+* **Spotted outside diff:** f-20261106-29 release, CI run 42601458748 on `8c6308ed` (job `rust-macos-test`). The pushed diff does not touch `src-tauri/src/db/**`.
+* **Where:** `src-tauri/src/db/repository.rs:3556-3610` (`upgrade_tests::validated_connections_skip_schema_probes_and_reprobe_changed_files`). The production path is `repository.connection(&target, None)` for an already-validated entry, through the r2d2 pool and its `on_acquire` PRAGMAs (`journal_mode = WAL`, `synchronous = FULL`).
+* **Defect:** `f-20261108-08` and `f-20261108-10` closed the earlier reds as a slow runner and replaced the 2 s per-reader bound with one 30 s deadline. The test is red again on the hosted macOS runner. Three readers connected within 1.7–6.1 ms, and reader 1 had not connected after 30 s. When the test then released the three held connections, every reader thread joined and returned, because `reader.join().unwrap()` did not panic before the assert. So reader 1's `connection()` was blocked until siblings released their connections. That is serialization or lock contention between concurrent pooled acquires, not a slow runner. Plausible mechanisms to investigate: the per-connection `PRAGMA journal_mode = WAL` in `on_acquire` needing a lock that held connections prevent, a pool-construction or entry lock held across acquisition, or r2d2 worker-thread starvation.
+* **Failure scenario:** Four threads open the same validated database concurrently and each holds its connection. On macOS one acquire blocks until the others release. In the app, a long-held reader (for example a search) can stall a concurrent database read for the r2d2 timeout. CI on `master` is red intermittently (`3859bcd9` and `8c6308ed` on 2026-11-09).
+* **Open question:** Which lock or pool step serializes a concurrent validated acquire behind held sibling connections, and where does WAL/PRAGMA setup belong so acquires stay independent?
+* **Fix:** Find the blocking mechanism with the received/missing diagnostics the test already emits, plus per-phase timing inside `connection()` (pool get versus `on_acquire` PRAGMAs). Make a concurrent validated acquire independent of held sibling connections, for example by setting WAL once at entry creation instead of on every acquire if that is the lock. Keep the test's assertion that every reader connects while its siblings hold connections. Do not raise the deadline again.
+* **Proof:** CI log of job `rust-macos-test` in run 42601458748: `received [(0, true, 1.664418ms), (3, true, 5.231171ms), (2, true, 6.118579ms)], missing 1 readers`, then 3150 passed and 1 failed. The same test is green on Linux locally (final gates of the f-20261106-29 push, rust-test passed).
