@@ -11,7 +11,7 @@ import {
     type OwnGamesSnapshot,
 } from "./ownGamesFeed";
 
-export function collection(
+function collection(
     id: string,
     status: CollectionDescriptor["status"] = "ready",
 ): CollectionDescriptor {

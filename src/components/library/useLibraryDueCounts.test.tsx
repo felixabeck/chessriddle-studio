@@ -88,8 +88,7 @@ beforeEach(() => {
   pending = new Set();
   peak = 0;
   mocks.family.mockReset();
-  mocks.family.mockImplementation(({ file, game }: { file: string; game: number }) => {
-    expect(game).toBe(0);
+  mocks.family.mockImplementation(({ file }: { file: string; game: number }) => {
     let value = decks.get(file);
     if (!value) {
       value = atom(deck("loading"));
@@ -136,6 +135,7 @@ test("hydrates twelve repertoires through four slots, keeps subscriptions live, 
   expect(latest.total).toBe(11);
   await render([]);
   expect(mounted.size).toBe(0);
+  expect(mocks.family.mock.calls.every(([{ game }]) => game === 0)).toBe(true);
 });
 
 test("includes an unloadable deck in Due and marks the total incomplete", async () => {
@@ -146,6 +146,7 @@ test("includes an unloadable deck in Due and marks the total incomplete", async 
   expect(latest.dueRows[0].failed).toBe(true);
   expect(latest.dueRows[0].count).toBeNull();
   expect(latest.incomplete).toBe(true);
+  expect(mocks.family.mock.calls.every(([{ game }]) => game === 0)).toBe(true);
 });
 
 test("reports the earliest future boundary from a zero-due deck and refreshes when it crosses", async () => {
@@ -160,6 +161,7 @@ test("reports the earliest future boundary from a zero-due deck and refreshes wh
   await act(async () => vi.advanceTimersByTime(1002));
   expect(latest.total).toBe(1);
   expect(latest.nextDue?.getTime()).toBe(earliest + 1000);
+  expect(mocks.family.mock.calls.every(([{ game }]) => game === 0)).toBe(true);
 });
 
 test("unmount releases live subscriptions and prevents queued hydrations and old deliveries", async () => {
@@ -172,6 +174,7 @@ test("unmount releases live subscriptions and prevents queued hydrations and old
   await act(async () => root.render(null));
   expect(mounted.size).toBe(0);
   expect(decks.has("file-4")).toBe(false);
+  expect(mocks.family.mock.calls.every(([{ game }]) => game === 0)).toBe(true);
 });
 
 test("pure due projection excludes never-trained positions", () => {

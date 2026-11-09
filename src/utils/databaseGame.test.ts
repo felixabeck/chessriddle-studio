@@ -220,13 +220,12 @@ test.each(["admitted", "refused", "online"] as const)(
         });
         expect(add.mock.calls).toEqual(mode === "admitted" ? [[expectedEntry]] : []);
         expect(workspace.get(recentFilesAtom)).toHaveLength(mode === "admitted" ? 1 : 0);
+        const admittedLastOpened = {
+            [database.id.id]: expect.any(Number),
+            [databaseGameOpenedKey(database, game.id)]: expect.any(Number),
+        };
         expect(workspace.get(lastOpenedAtom)).toEqual(
-            mode === "admitted"
-                ? {
-                      [database.id.id]: expect.any(Number),
-                      [databaseGameOpenedKey(database, game.id)]: expect.any(Number),
-                  }
-                : {},
+            mode === "admitted" ? admittedLastOpened : {},
         );
         expect(native.getDbGame).toHaveBeenCalledTimes(mode === "online" ? 0 : 1);
         expect(native.inferGameOrientation).toHaveBeenCalledTimes(mode === "online" ? 0 : 1);
