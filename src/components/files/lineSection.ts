@@ -53,6 +53,19 @@ function withoutTagPair(text: string, { start, end }: TagPair): string {
     return text.slice(0, start).replace(/[ \t]+$/, "") + text.slice(end);
 }
 
+function startsWithTagLine(text: string, tags: TagPair[]): boolean {
+    const first = tags[0];
+    if (!first) return false;
+    const newline = text.indexOf("\n", first.start);
+    const lineEnd = newline < 0 ? text.length : newline;
+    const covered = tags.filter((tag) => tag.end <= lineEnd);
+    const uncovered = covered.reduceRight(
+        (line, tag) => line.slice(0, tag.start - first.start) + line.slice(tag.end - first.start),
+        text.slice(first.start, lineEnd),
+    );
+    return uncovered.trim() === "";
+}
+
 /**
  * Sets or removes (`null`) the section tag in one game's raw text and leaves everything else alone.
  * The text is edited directly because a parse and rewrite could drop content the tree cannot hold.
@@ -66,8 +79,10 @@ export function withLineSection(pgn: string, section: string | null): string {
     const remaining = scanTagPairs(text);
 
     if (section === null) {
-        // The scanner finds a game by its header, so a game never loses its last tag.
-        return sections.length > 0 && remaining.length === 0 ? tagText("Event", "?") + text : text;
+        // The scanner finds a game by a line of tags, so removal must leave the game such a line.
+        return sections.length > 0 && !startsWithTagLine(text, remaining)
+            ? tagText("Event", "?") + text
+            : text;
     }
 
     const tag = tagText(LINE_SECTION_TAG, normalizeLineSection(section));

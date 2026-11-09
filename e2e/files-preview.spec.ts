@@ -198,6 +198,54 @@ for (const gesture of ["button", "double-click", "Enter"] as const) {
     });
 }
 
+test("files-preview: a dragged row's preview keeps the row's real size and layout", async ({
+    page,
+    mockScenario,
+}) => {
+    await mockScenario({ commands: filesWorkspaceCommands([[repertoireFile]], pgnFileCommands) });
+    await page.goto("/library");
+    await page.getByRole("button", { name: /choose collection/i }).click();
+    const row = page.getByRole("treeitem", { name: repertoireFile.name, exact: true });
+    await expect(row).toBeVisible();
+
+    const measured = await row.evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        const dataTransfer = new DataTransfer();
+        const fire = (target: EventTarget, type: string, x: number, y: number) =>
+            target.dispatchEvent(
+                new DragEvent(type, { bubbles: true, dataTransfer, clientX: x, clientY: y }),
+            );
+        fire(element, "dragstart", bounds.left + 40, bounds.top + 10);
+        fire(document, "dragover", bounds.left + 140, bounds.top + 110);
+        const preview = document.querySelector<HTMLElement>("body > [inert]")!;
+        const rendered = preview.getBoundingClientRect();
+        const columns = (root: Element) =>
+            getComputedStyle(root.querySelector(":scope > div")!).gridTemplateColumns;
+        const result = {
+            row: { width: bounds.width, height: bounds.height, left: bounds.left, top: bounds.top },
+            preview: {
+                width: rendered.width,
+                height: rendered.height,
+                left: rendered.left,
+                top: rendered.top,
+            },
+            position: getComputedStyle(preview).position,
+            rowColumns: columns(element),
+            previewColumns: columns(preview.querySelector('[role="treeitem"]')!),
+        };
+        fire(element, "dragend", 0, 0);
+        return { ...result, removed: document.querySelector("body > [inert]") === null };
+    });
+
+    expect(measured.preview.width).toBeCloseTo(measured.row.width, 0);
+    expect(measured.preview.height).toBeCloseTo(measured.row.height, 0);
+    expect(measured.preview.left).toBeCloseTo(measured.row.left + 100, 0);
+    expect(measured.preview.top).toBeCloseTo(measured.row.top + 100, 0);
+    expect(measured.position).toBe("fixed");
+    expect(measured.previewColumns).toBe(measured.rowColumns);
+    expect(measured.removed).toBe(true);
+});
+
 test("files-preview: the card fills the window and shows the whole board and its controls", async ({
     page,
     mockScenario,

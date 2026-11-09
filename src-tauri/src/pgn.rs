@@ -5161,8 +5161,9 @@ mod tests {
     async fn write_at_revision_refuses_a_moved_equal_text_duplicate() {
         let directory = tempfile::tempdir().expect("temporary directory");
         let path = directory.path().join("duplicate-write.pgn");
-        let duplicate = b"[Event \"Same\"]\n\n1. e4 *\n";
-        let original = [duplicate.as_slice(), b"\n", duplicate.as_slice()].concat();
+        // Each game's range includes its blank line, so all three have the same stamp.
+        let duplicate = b"[Event \"Same\"]\n\n1. e4 *\n\n";
+        let original = duplicate.repeat(3);
         std::fs::write(&path, &original).expect("write duplicate PGNs");
         let app = mock_app();
         let state = app.state::<AppState>();

@@ -79,6 +79,15 @@ describe("withLineSection", () => {
         expect(withLineSection('[Section "x"]\n', null)).toBe('[Event "?"]\n');
     });
 
+    test("a game keeps a line of only tags when the rest of its header shares the moves' line", () => {
+        expect(withLineSection('[Section "x"]\n[Event "B"] 1. d4 *\n', null)).toBe(
+            '[Event "?"]\n[Event "B"] 1. d4 *\n',
+        );
+        expect(withLineSection('[Section "x"]\n[Event "B"] [Site "S"]\n\n1. d4 *\n', null)).toBe(
+            '[Event "B"] [Site "S"]\n\n1. d4 *\n',
+        );
+    });
+
     test("a game without tags gets a header block", () => {
         expect(withLineSection("1. e4 *\n", "s")).toBe('[Section "s"]\n\n1. e4 *\n');
         expect(withLineSection("1. e4 *\n", null)).toBe("1. e4 *\n");
