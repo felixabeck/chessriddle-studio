@@ -528,7 +528,6 @@ export default function NewTabHome({ id }: { id: string }) {
     ],
   ];
 
-
   return (
     <>
       <ImportModal
