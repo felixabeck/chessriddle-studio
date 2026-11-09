@@ -6,7 +6,7 @@ import {
 import { FileText, Trash2 } from "lucide-react";
 import { tauri } from "@/platform/tauri";
 import { listingFailure, rootFailureMessage } from "@/components/files/listingFailure";
-import { useNativePicker } from "@/hooks/useNativePicker";
+import { useSingleFlight } from "@/hooks/useSingleFlight";
 import {
   isOperationAndCleanup,
   normalizeError,
@@ -107,7 +107,7 @@ export function useFileWorkspace(
     value,
     label: t(translationKey),
   }));
-  const picker = useNativePicker();
+  const picker = useSingleFlight();
   const [workspace, setWorkspace] = useAtom(fileWorkspaceAtom);
   const [, setWorkspaceDisplayName] = useAtom(fileWorkspaceDisplayNameAtom);
   const [action, setAction] = useState<FileAction | null>(null);

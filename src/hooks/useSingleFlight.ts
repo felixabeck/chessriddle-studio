@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-/** Single flight with pending for AppModal and no state writes after unmount. */
+/** One admitted async action at a time: pending state for dialogs and pickers, no state writes after unmount. */
 export function useSingleFlight() {
     const [pending, setPending] = useState(false);
     const flight = useRef(false);

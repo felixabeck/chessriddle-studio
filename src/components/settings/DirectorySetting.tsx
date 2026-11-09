@@ -1,5 +1,5 @@
 import { Input, Text } from "@mantine/core";
-import { useNativePicker } from "@/hooks/useNativePicker";
+import { useSingleFlight } from "@/hooks/useSingleFlight";
 import { useTranslation } from "react-i18next";
 
 type DirectorySettingProps = {
@@ -20,7 +20,7 @@ export function DirectorySetting({
   disabled = false,
 }: DirectorySettingProps) {
   const { t } = useTranslation();
-  const { pending, run } = useNativePicker();
+  const { pending, run } = useSingleFlight();
 
   const chooseDirectory = () =>
     run(async () => {

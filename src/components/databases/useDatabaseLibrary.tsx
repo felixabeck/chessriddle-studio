@@ -2,7 +2,7 @@ import { libraryButtonProps, libraryClasses } from "@/components/library/present
 import NewDatabaseGameButton from "@/components/boards/NewDatabaseGameButton";
 import { tauri } from "@/platform/tauri";
 import { listingFailure } from "@/components/files/listingFailure";
-import { useNativePicker } from "@/hooks/useNativePicker";
+import { useSingleFlight } from "@/hooks/useSingleFlight";
 import {
   Box,
   Button,
@@ -71,7 +71,7 @@ export function useDatabaseLibrary(
   setSelected: Dispatch<SetStateAction<string | null>>,
 ) {
   const { t } = useTranslation();
-  const picker = useNativePicker();
+  const picker = useSingleFlight();
 
   // Opening the overview ends the active session; mount-only lets double-click and Explore restore the sidebar's database target.
   useEffect(() => {
