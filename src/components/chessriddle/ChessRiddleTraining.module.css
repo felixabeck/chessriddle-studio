@@ -1,0 +1,54 @@
+.panelContainer {
+  height: 100%;
+  container-type: inline-size;
+}
+
+.panel {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--mantine-spacing-md);
+}
+
+.heading,
+.panel :global(.mantine-Text-root) {
+  overflow-wrap: anywhere;
+}
+
+.sources,
+.actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--mantine-spacing-xs);
+}
+
+.panel :global(.mantine-Button-root) {
+  height: auto;
+  min-height: var(--button-height);
+  padding-block: 0.5em;
+  padding-inline: min(var(--mantine-spacing-sm), 2cqi);
+  font-size: min(var(--mantine-font-size-sm), 10cqi);
+  white-space: normal;
+}
+
+.panel :global(.mantine-Button-label) {
+  white-space: normal;
+  overflow: visible;
+}
+
+@container (max-width: 22rem) {
+  .panel {
+    padding: var(--mantine-spacing-xs);
+  }
+}
+
+@container (min-width: 28rem) {
+  .sources {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 36rem) {
+  .actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

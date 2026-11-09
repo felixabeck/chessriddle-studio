@@ -26,6 +26,31 @@ vi.mock("@/platform/native", () => ({
 
 const owned = new Set<string>();
 
+test("training never inspects a tree or blocks quitting", () => {
+    const inspect = vi.fn(() => {
+        throw new Error("training has no tree");
+    });
+    expect(
+        scanBlockingTabs(
+            [
+                {
+                    value: crypto.randomUUID(),
+                    name: "Training.Title",
+                    type: "chessriddleTraining",
+                    gameOrigin: { kind: "none" },
+                },
+            ],
+            {
+                getCachedTreeStore: inspect,
+                inspectTree: inspect,
+                getStatus: inspect,
+                getFileFreshness: inspect,
+            },
+        ),
+    ).toEqual([]);
+    expect(inspect).not.toHaveBeenCalled();
+});
+
 function uuid(): string {
     const id = crypto.randomUUID();
     owned.add(id);

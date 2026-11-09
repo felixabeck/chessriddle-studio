@@ -63,7 +63,7 @@ export function BoardTab({
 }
 
 function TabIcon({ tab, tabType }: { tab: Tab; tabType: string }) {
-  if (tabType === "puzzles") {
+  if (tabType === "puzzles" || tabType === "chessriddleTraining") {
     return <Puzzle size="0.875rem" />;
   }
   if (tabType === "play") {

@@ -7,7 +7,7 @@ import {
     type TabTreeStorageStatus,
 } from "@/state/store/tabStorage";
 import { getCachedTreeStore } from "@/state/store/tree";
-import { getTabTreeKey, type Tab } from "@/state/workspaceTypes";
+import { getTabTreeKey, tabHasTree, type Tab } from "@/state/workspaceTypes";
 import { asksBeforeDiscardingChanges, isFileBackedTab } from "@/utils/tabs";
 
 export type BlockingTab = {
@@ -86,7 +86,7 @@ export function scanBlockingTabs(
 ): BlockingTab[] {
     const blocking: BlockingTab[] = [];
     for (const tab of tabs) {
-        if (tab.type === "new") continue;
+        if (!tabHasTree(tab)) continue;
 
         const treeKey = getTabTreeKey(tab);
         const requireExisting = treeKey !== tab.value;

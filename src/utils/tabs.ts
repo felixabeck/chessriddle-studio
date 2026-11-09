@@ -9,6 +9,7 @@ import { MAX_STORE_ATTEMPTS, persistStorageWriteError, tabStorage } from "@/stat
 import { reportPersistError } from "@/state/persistError";
 import {
     getTabTreeKey,
+    tabHasTree,
     newWorkspaceId,
     tabSchema,
     type GameOrigin,
@@ -71,7 +72,7 @@ export function isPersistentGameOrigin(tab?: Tab | null): boolean {
 
 /** Coverage only: persistent origin, or an analysis tab of any origin. Does not read dirty. */
 export function asksBeforeDiscardingChanges(tab?: Tab | null): boolean {
-    if (!tab) return false;
+    if (!tab || !tabHasTree(tab)) return false;
     return isPersistentGameOrigin(tab) || tab.type === "analysis";
 }
 
@@ -638,6 +639,13 @@ export async function createTab({
     ownerId?: string;
     store?: ReturnType<typeof getDefaultStore>;
 }): Promise<string | null> {
+    if (tab.type === "chessriddleTraining") {
+        return commitNewTab({
+            tab: { ...tab, gameOrigin: { kind: "none" } },
+            setTabs,
+            existingTabIds,
+        });
+    }
     let treeToSeed: TreeState | undefined = initialTree;
     const databaseOrigin = gameOrigin?.kind === "database" ? gameOrigin : undefined;
     if (gameOrigin?.kind === "database") {

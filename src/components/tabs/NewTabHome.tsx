@@ -51,6 +51,7 @@ import relativeTime from "dayjs/plugin/relativeTime";
 import { useTranslation } from "react-i18next";
 
 import { FileIcon } from "@/components/files/FileIcon";
+import { useTrainingSession } from "@/components/chessriddle/useTrainingSession";
 
 import { useLibraryData } from "@/components/library/useLibraryData";
 import { useLibraryDueCounts } from "@/components/library/useLibraryDueCounts";
@@ -169,6 +170,7 @@ function LibraryItemRow({
 export default function NewTabHome({ id }: { id: string }) {
   const store = useStore();
   const { t } = useTranslation();
+  const training = useTrainingSession(id);
 
   const [openModal, setOpenModal] = useState(false);
   const [openRepertoireModal, setOpenRepertoireModal] = useState(false);
@@ -487,6 +489,24 @@ export default function NewTabHome({ id }: { id: string }) {
           );
         },
       },
+      ...(training.available === true
+        ? [
+            {
+              icon: <Puzzle size={18} />,
+              description: t("Training.HomeDescription"),
+              label: t("Training.Title"),
+              onClick: () => {
+                setTabs((previous) =>
+                  previous.map((tab) =>
+                    tab.value === id
+                      ? { ...tab, name: "Training.Title", type: "chessriddleTraining" as const }
+                      : tab,
+                  ),
+                );
+              },
+            },
+          ]
+        : []),
     ],
     [
       {
@@ -507,6 +527,7 @@ export default function NewTabHome({ id }: { id: string }) {
       },
     ],
   ];
+
 
   return (
     <>

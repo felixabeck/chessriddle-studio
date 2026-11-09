@@ -1,18 +1,14 @@
-import { Box } from "@mantine/core";
-import { useElementSize, useForceUpdate } from "@mantine/hooks";
-import { type Move, makeUci, type NormalMove, parseSquare } from "chessops";
-import { chessgroundDests, chessgroundMove } from "chessops/compat";
-import { useAtom, useAtomValue } from "jotai";
-import { useContext, useEffect, useRef, useState } from "react";
+import { useForceUpdate } from "@mantine/hooks";
+import { type Move, makeUci } from "chessops";
+import { useAtom } from "jotai";
+import { useContext, useEffect, useRef } from "react";
 import { useStore } from "zustand";
 import { useTranslation } from "react-i18next";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { validateMoveSequence } from "@/state/store/tree";
-import { Chessground } from "@/chessground/Chessground";
 import { useNodeDrawables } from "@/chessground/useNodeDrawables";
 import type { PathRef } from "@/bindings";
-import { jumpToNextPuzzleAtom, moveHighlightAtom, showCoordinatesAtom } from "@/state/atoms";
-import classes from "@/styles/Chessboard.module.css";
+import { jumpToNextPuzzleAtom } from "@/state/atoms";
 import { positionFromFen } from "@/utils/chessops";
 import { capabilityKey } from "@/utils/pathCapabilities";
 import {
@@ -23,10 +19,9 @@ import {
   type Puzzle,
 } from "@/utils/puzzles";
 import { getNodeAtPath } from "@/utils/treeReducer";
-import BoardFrame from "@/components/boards/BoardFrame";
 import { chooserArrows, continuationBrushes } from "@/components/boards/continuationArrows";
 import { useVariationChooser } from "@/components/common/TreeStateContext";
-import PromotionModal from "../boards/PromotionModal";
+import PuzzleBoardSurface from "./PuzzleBoardSurface";
 import { TreeStateContext } from "../common/TreeStateContext";
 
 function PuzzleBoard({
@@ -52,7 +47,6 @@ function PuzzleBoard({
   const store = useContext(TreeStateContext)!;
   const root = useStore(store, (s) => s.root);
   const position = useStore(store, (s) => s.position);
-  const moveHighlight = useAtomValue(moveHighlightAtom);
   const { choice } = useVariationChooser();
   const nodeDrawables = useNodeDrawables(store);
   const makeMove = useStore(store, (s) => s.makeMove);
@@ -100,11 +94,6 @@ function PuzzleBoard({
   const progress = getPuzzleProgress(puzzle, root, position);
   const currentMove = progress.step ?? 0;
   const orientation = puzzlePos ? (puzzlePos.turn === "white" ? "black" : "white") : "white";
-  const [pendingMove, setPendingMove] = useState<NormalMove | null>(null);
-
-  const dests = pos ? chessgroundDests(pos) : new Map();
-  const turn = pos?.turn || "white";
-  const showCoordinates = useAtomValue(showCoordinatesAtom);
   const canPlay =
     !blocked &&
     puzzle &&
@@ -180,68 +169,21 @@ function PuzzleBoard({
     reset();
   }
 
-  const { ref: parentRef, height: parentHeight } = useElementSize();
-
   return (
-    <Box w="100%" h="100%" ref={parentRef}>
-      <BoardFrame style={{ maxWidth: parentHeight }}>
-        <Box className={classes.chessboard}>
-          <PromotionModal
-            pendingMove={pendingMove}
-            cancelMove={() => setPendingMove(null)}
-            confirmMove={async (p) => {
-              if (pendingMove) {
-                await checkMove({ ...pendingMove, promotion: p });
-                setPendingMove(null);
-              }
-            }}
-            turn={turn}
-            orientation={orientation}
-          />
-          <Chessground
-            animation={{
-              enabled: true,
-            }}
-            coordinates={showCoordinates !== "no"}
-            coordinatesOnSquares={showCoordinates === "all"}
-            orientation={orientation}
-            drawable={{
-              enabled: true,
-              visible: true,
-              ...nodeDrawables,
-              autoShapes: chooserArrows(choice),
-              brushes: continuationBrushes,
-            }}
-            movable={{
-              free: false,
-              color: canPlay ? turn : undefined,
-              dests: dests,
-              events: {
-                after: (orig, dest) => {
-                  const from = parseSquare(orig)!;
-                  const to = parseSquare(dest)!;
-                  const move: NormalMove = { from, to };
-                  if (
-                    pos?.board.get(from)?.role === "pawn" &&
-                    ((dest[1] === "8" && turn === "white") || (dest[1] === "1" && turn === "black"))
-                  ) {
-                    setPendingMove(move);
-                  } else {
-                    checkMove(move);
-                  }
-                },
-              },
-            }}
-            lastMove={
-              moveHighlight && currentNode.move ? chessgroundMove(currentNode.move) : undefined
-            }
-            turnColor={turn}
-            fen={currentNode.fen}
-            check={moveHighlight && pos?.isCheck()}
-          />
-        </Box>
-      </BoardFrame>
-    </Box>
+    <PuzzleBoardSurface
+      position={pos}
+      fen={currentNode.fen}
+      orientation={orientation}
+      lastMove={currentNode.move ?? undefined}
+      canPlay={!!canPlay}
+      onMove={checkMove}
+      withVariationChooser
+      drawable={{
+        ...nodeDrawables,
+        autoShapes: chooserArrows(choice),
+        brushes: continuationBrushes,
+      }}
+    />
   );
 }
 
