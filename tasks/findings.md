@@ -22487,3 +22487,18 @@ Fixed in 0b63a012 (pushed to master; hosted Test 13/13 green; installed locally)
 * **Related:** f-20261106-48 (same one-shot defect in `wheelColumnTo`, handled), f-20261107-03 and f-20261107-04 (handled, `wheelBoardStackTo` settled-layout wait). None covers the one-shot wheel in `wheelBoardStackTo`.
 * **Handled (2026-11-09, drain session 1a19f325-2ee7-4238-874d-db52d7242522):** commit 4b4fa8c6. `wheelBoardStackTo` in `e2e/fixtures.ts` now re-measures the stack, the target and the current `scrollTop` and re-wheels by the current delta inside `expect(...).toPass({ timeout: 10_000, intervals: [100, 250, 500] })`. It skips the wheel once scrollTop is within 1 px of the target, and each wheel gets a 1 s settle poll. The settled-layout wait and the "user wheel reveals the stacked tile" assertion are unchanged, and scrolling stays mouse-wheel driven. The timeout is 10 s rather than the proposed 15 s because `wheelColumnTo` calls this helper inside its own 15 s `toPass`. New fixture test "wheelBoardStackTo re-wheels when the first wheel is dropped" (`e2e/font-scaled-breakpoints.spec.ts`) cancels the first wheel event with a one-shot non-passive `preventDefault` listener. Proof: `pnpm test:e2e:container e2e/font-scaled-breakpoints.spec.ts --grep 'wheelBoardStackTo re-wheels when the first wheel is dropped'` failed on the old helper (expected <= 1, received 980) and passed with the fix. `pnpm test:e2e:container e2e/font-scaled-breakpoints.spec.ts e2e/notation-hierarchy.spec.ts` gave 28 passed. Taken in this session because `pnpm ci:remote:check` lists this finding's red `e2e` job beside f-20261108-08's red `rust-macos-test` job from the same run 42571912257, so neither finding's push can land without the other.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"e77c73e8b30a78e98e8a63ed6d512fef056a5fe4711866f9defd0020d4832637","header_sha256":"a03a68761420f9ca42a072b8277feb14b981e108da1f47766a888cd7bf99de54","header_status":"handled","input_sha256":"48a5ca2289c8b36be87abf70dd2542ee235668fe87fdac4efe58ad50cd26b3f8","kind":"mutation-receipt","operation":"3d3604a3b48045eb413a05c15020ac217fb9bb6062cbca9caf18e5bd1e046f82","options":{"section":null},"request_id_sha256":null,"results":["f-20261109-02"],"target":"f-20261109-02","v":1} -->
+
+---
+
+## 2026-11-09 — filed through the inbox spool
+
+### The analysis panel's Manage Engines control is cut off on the left at narrow widths and 200% font scale
+
+* **ID:** f-20261109-04 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** browser verification of the first-launch Stockfish change, 2026-11-09
+* **Where:** `src/components/panels/analysis/AnalysisPanel.tsx`, the row holding the Manage Engines popover target (about line 234).
+* **Defect:** With no engines loaded, the row's content is wider than the analysis Tabs panel, so its left edge is clipped.
+* **Failure scenario:** At 1440x900 with 200% font scale, or at 320x720, open the Analysis tab. The icon at the left of Manage Engines is cut off. `assertPageNotClipped` reports `mantine-Tabs-panel: x starts at 710, before 793` at 200% and `x starts at -61, before 73` at 320px, observed in the container run of `e2e/first-engine-install.spec.ts`.
+* **Open question:** Should the row wrap or shrink its control at these widths?
+* **Proof:** Add `assertPageNotClipped` on the Analysis tab with no engines at 320px and 200% font scale.
