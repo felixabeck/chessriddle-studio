@@ -3,14 +3,17 @@ import { Editor, type JSONContent } from "@tiptap/react";
 import * as tiptap from "@tiptap/react";
 import { Provider, createStore } from "jotai";
 import { marked } from "marked";
+import { EMPTY_FEN } from "chessops/fen";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { useStore } from "zustand";
 import { platform } from "@/platform/native";
 import { TreeStateContext, VariationChooserContext } from "@/components/common/TreeStateContext";
 import MoveControls from "@/components/common/MoveControls";
 import { createVariationChooserStore } from "@/state/store/variationChooser";
 import Comment from "@/components/common/Comment";
+import FenInput from "@/components/panels/info/FenInput";
 import {
   commentDialectCases,
   commentDomText,
@@ -23,6 +26,7 @@ import { keyMapAtom } from "@/state/keybinds";
 import { chooseVariationAtom } from "@/state/atoms";
 import { nextContinuation } from "@/state/store/tree";
 import { installMatchMediaStub } from "@/tests/matchMedia";
+import { installResizeObserverStub } from "@/tests/resizeObserver";
 import { defaultTree } from "@/utils/treeReducer";
 import { createCommentMarkdown } from "@/utils/commentMarkdown";
 import { flattenCommentDocument } from "@/utils/commentSerializer";
@@ -65,6 +69,7 @@ beforeEach(() => {
     },
   });
   installMatchMediaStub();
+  installResizeObserverStub();
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -85,7 +90,12 @@ afterEach(async () => {
   }
 });
 
-async function mount(comment: string, controls = false) {
+function CurrentFenInput() {
+  const fen = useStore(store, (s) => s.currentNode().fen);
+  return <FenInput currentFen={fen} />;
+}
+
+async function mount(comment: string, controls = false, fenInput = false) {
   const initial = defaultTree();
   initial.root.comment = comment;
   store = createTreeStore(undefined, initial);
@@ -100,6 +110,7 @@ async function mount(comment: string, controls = false) {
             <VariationChooserContext.Provider value={chooser}>
               <AnnotationEditor />
               {controls && <MoveControls />}
+              {fenInput && <CurrentFenInput />}
             </VariationChooserContext.Provider>
           </TreeStateContext.Provider>
         </Provider>
@@ -115,6 +126,38 @@ function editorElement() {
 function editor() {
   return editorElement().editor;
 }
+
+test("FenInput Empty clears root commentary and isolates editor undo and redo", async () => {
+  await mount("old position commentary", false, true);
+  expect(store.getState().position).toEqual([]);
+  expect(editor().getText()).toBe("old position commentary");
+  await act(async () =>
+    editor().commands.insertContentAt(editor().state.doc.content.size - 1, " draft"),
+  );
+  expect(store.getState().root.comment).toBe("old position commentary draft");
+  const emptyButton = Array.from(host.querySelectorAll("button")).find(
+    (button) => button.textContent === "Fen.Empty",
+  );
+  expect(emptyButton).toBeDefined();
+  await act(async () => emptyButton!.click());
+
+  function expectEmptyPosition() {
+    expect(store.getState().position).toEqual([]);
+    expect(store.getState().root.fen).toBe(EMPTY_FEN);
+    expect(store.getState().root.comment).toBe("");
+    expect(editor().getText()).toBe("");
+  }
+
+  expectEmptyPosition();
+  await act(async () => {
+    editor().commands.undo();
+  });
+  expectEmptyPosition();
+  await act(async () => {
+    editor().commands.redo();
+  });
+  expectEmptyPosition();
+});
 
 test.each(["different FEN", "same FEN", "setState"])(
   "replacing a document at root isolates undo and redo: %s",

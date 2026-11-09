@@ -13,6 +13,7 @@ import FenSearch from "./FenSearch";
 const mocks = vi.hoisted(() => ({ searchOpeningName: vi.fn() }));
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 vi.mock("@/platform/tauri", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/platform/tauri")>();
   return {
@@ -50,12 +51,15 @@ const sharedFenOpenings: OutOpening[] = [
 let host: HTMLDivElement;
 let root: Root;
 let tree: TreeStore;
+const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
 
 afterEach(async () => {
   await act(async () => root?.unmount());
   host?.remove();
   tree?.dispose();
   mocks.searchOpeningName.mockReset();
+  if (clipboardDescriptor) Object.defineProperty(navigator, "clipboard", clipboardDescriptor);
+  else Reflect.deleteProperty(navigator, "clipboard");
 });
 
 async function setup(openings: OutOpening[]) {
@@ -135,6 +139,30 @@ test("orthodox and FRC suggestions set their own variant and export it faithfull
   await select(frc.name);
   expectPosition(frc.fen, "Chess960");
 });
+
+test.each([
+  { opening: sicilian, move: "Nf3" },
+  { opening: frc, move: "e4" },
+])(
+  "$opening.name selection retains its variant through a legal $move and Copy PGN",
+  async ({ opening, move }) => {
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    await setup([opening]);
+    await type(opening.name);
+    await select(opening.name);
+    await act(async () => tree.getState().makeMove({ payload: move }));
+    expect(tree.getState().position).toEqual([0]);
+    expect(tree.getState().currentNode().san).toBe(move);
+
+    expect(await tree.getState().copyPgn()).toBe(true);
+    expect(writeText).toHaveBeenCalledTimes(1);
+    const pgn = writeText.mock.calls[0][0];
+    expect(pgn).toContain(`[FEN "${opening.fen}"]`);
+    expect(pgn).toContain(move);
+    expect(pgn.includes('[Variant "Chess960"]')).toBe(opening.chess960);
+  },
+);
 
 test("suggestions sharing the standard FEN remain independently selectable", async () => {
   await setup(sharedFenOpenings);
