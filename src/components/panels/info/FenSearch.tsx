@@ -56,8 +56,13 @@ export default function FenSearch({ currentFen: currentFenInput }: { currentFen?
 
   const exactOptionMatch = data?.some((item) => item.fen === search);
 
-  const options = data?.map((item) => (
-    <Combobox.Option value={item.fen} key={item.fen}>
+  function typedFenIsChess960(fen: string) {
+    const matches = data?.filter((item) => item.fen === fen) ?? [];
+    return matches.length > 0 && matches.every((item) => item.chess960);
+  }
+
+  const options = data?.map((item, index) => (
+    <Combobox.Option value={String(index)} key={index}>
       <Group wrap="nowrap">
         <div>
           <Text size="sm">{item.name}</Text>
@@ -77,12 +82,15 @@ export default function FenSearch({ currentFen: currentFenInput }: { currentFen?
       withinPortal={true}
       onOptionSubmit={(val) => {
         if (val === "$create") {
-          addFen(search, data?.some((item) => item.fen === search) || false);
+          addFen(search, typedFenIsChess960(search));
           setValue(search);
         } else {
-          addFen(val, data?.some((item) => item.fen === val) || false);
-          setValue(val);
-          setSearch(val);
+          const item = data?.[Number(val)];
+          if (item) {
+            addFen(item.fen, item.chess960);
+            setValue(item.fen);
+            setSearch(item.fen);
+          }
         }
 
         combobox.closeDropdown();
@@ -111,7 +119,7 @@ export default function FenSearch({ currentFen: currentFenInput }: { currentFen?
               prev.current !== "ArrowDown" &&
               prev.current !== "ArrowUp"
             ) {
-              addFen(search, data?.some((item) => item.fen === search) || false);
+              addFen(search, typedFenIsChess960(search));
               combobox.closeDropdown();
             }
             prev.current = event.nativeEvent.code;

@@ -12,7 +12,7 @@ use crate::error::Error;
 
 #[derive(Debug, Clone)]
 struct Opening {
-    _eco: String,
+    eco: String,
     name: String,
     setup: Setup,
     pgn: Option<String>,
@@ -22,6 +22,7 @@ struct Opening {
 pub struct OutOpening {
     name: String,
     fen: String,
+    chess960: bool,
 }
 
 #[derive(Deserialize)]
@@ -135,6 +136,7 @@ pub async fn search_opening_name(query: String) -> Result<Vec<OutOpening>, Error
         .map(|(o, _)| OutOpening {
             name: o.name.clone(),
             fen: Fen::from_setup(o.setup.clone()).to_string(),
+            chess960: o.eco == "FRC",
         })
         .collect();
     Ok(best_matches_names)
@@ -147,13 +149,13 @@ lazy_static! {
 
         let mut positions = vec![
             Opening {
-                _eco: "Extra".to_string(),
+                eco: "Extra".to_string(),
                 name: "Starting Position".to_string(),
                 setup: Setup::default(),
                 pgn: None,
             },
             Opening {
-                _eco: "Extra".to_string(),
+                eco: "Extra".to_string(),
                 name: "Empty Board".to_string(),
                 setup: Setup::empty(),
                 pgn: None,
@@ -173,7 +175,7 @@ lazy_static! {
                     }
                 }
                 positions.push(Opening {
-                    _eco: record.eco,
+                    eco: record.eco,
                     name: record.name,
                     setup: pos.into_setup(EnPassantMode::Legal),
                     pgn: Some(record.pgn),
@@ -189,7 +191,7 @@ lazy_static! {
             // INVARIANT: FEN strings in the FRC data are valid FENs.
             let fen: Fen = record.fen.parse().expect("Failed to parse fen");
             positions.push(Opening {
-                _eco: "FRC".to_string(),
+                eco: "FRC".to_string(),
                 name: record.name,
                 setup: fen.into_setup(),
                 pgn: None,
@@ -250,7 +252,7 @@ mod tests {
     #[test]
     fn duplicate_normalized_positions_keep_the_first_rows_name() {
         let first = Opening {
-            _eco: "Extra".into(),
+            eco: "Extra".into(),
             name: "First opening".into(),
             setup: Setup::default(),
             pgn: None,
@@ -394,6 +396,23 @@ mod tests {
                 get_opening_from_name(&opening.name),
                 Err(Error::NoOpeningFound)
             ));
+        }
+    }
+
+    #[tokio::test]
+    async fn search_marks_only_fischer_random_catalogue_entries_as_chess960() {
+        for (name, chess960) in [
+            ("Sicilian Defense", false),
+            ("Fischer Random 518", true),
+            ("Starting Position", false),
+        ] {
+            let results = search_opening_name(name.into()).await.unwrap();
+            let opening = results.iter().find(|opening| opening.name == name).unwrap();
+            assert_eq!(
+                serde_json::to_value(opening).unwrap()["chess960"],
+                chess960,
+                "{name}"
+            );
         }
     }
 
