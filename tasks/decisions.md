@@ -12845,3 +12845,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Real pointer input passed in the actual WebKit app, including edge scrolling after the source row unmounts. Reversal path: replace the controller behind the `onMoveLines` prop.
 * **Decided by:** Claude Code (Opus 5.5) session a43b1706-2c72-4e7b-99fe-a8e648bef2bd · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"2fa1192704460825fe4aec760cdb802cf52fc041ca7018ea1a2d547a5f755c0a","input_sha256":"5b76ccc4a8ccd1eed00233cfb1f6be0d2b023f4e52a1764e59b65f003991932b","kind":"mutation-receipt","operation":"d06a4daac89c51f0c0cb4ad18d6d6667804ca8a980d3260bcef02f69676164bf","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-34"],"target":"decisions-ledger","v":1} -->
+
+### d-20261109-37 — Does dragging lines in a repertoire justify a higher total bundle budget?
+
+* **Question:** The line drag controller, the move flow and the open lease add 3,376 B of gzip to the total. `master` was already 1,831 B under the 1,750,000 B ceiling. Does the ceiling move?
+* **Governs:** `bundle-budgets.json`
+* **Chosen:** Raise total to 1,755,000 B and keep Entry and largest lazy. Exact published base `bf14b22acd6709f92db9d6ac59878afa68f706c1` measured 514,635 B Entry, 524,486 B largest lazy and 1,748,169 B total; candidate `a84b3f5197058c39f7fc95ccdadd39dfc1ea28b9` measured 515,201 B Entry, 526,353 B largest lazy and 1,751,545 B total, all gzip, both with `pnpm build-vite` and production `buildBundleReport`, with byte-identical `package.json`, `pnpm-lock.yaml` and `vite.config.ts`.
+* **Rejected:** Dropping the section drag or the edge scrolling to stay under the ceiling, which Felix asked for. Lazy-loading cannot help, because total counts every emitted asset once. No new dependency or translation was added.
+* **Reason:** Felix asked for drag-and-drop reordering on 2026-11-09, and the growth is that behaviour. Reversal path: tighten total against a future smaller production build. This decision is the forward pointer for the ceilings and supersedes d-20261109-23 in that role.
+* **Decided by:** Claude Code (Opus 5.5) session a43b1706-2c72-4e7b-99fe-a8e648bef2bd · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"7031d9b423c5f6cd0719af2581d1cb4591b6d702c7498b71913dea73e2689f5e","input_sha256":"e7dfb79cd877f392d2be1cf8583125279baf271fe5d95f99c8172815bc9a41d9","kind":"mutation-receipt","operation":"9a1573e743abf45b5741c5c9bb5d6f88ab6fd5f83c01a1d1871dc66f4a580aeb","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-37"],"target":"decisions-ledger","v":1} -->
