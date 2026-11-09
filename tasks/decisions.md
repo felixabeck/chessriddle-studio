@@ -12795,3 +12795,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Follows Felix's approved "clicking one opens its game table". Reversal path: change the row action and the Games ordering in the projection.
 * **Decided by:** Claude Code (Opus 5.5) build run 2026-11-09-new-tab-library, full auto, 2026-11-09 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"b3a2c26d8238270e6401d7d9a65654e6028f1a3daf9a1b261133446b048a3c7d","input_sha256":"4e6af4caf51aee366f54bcc11b7422c1ace0cc259d70fc0bcc875a024f99d987","kind":"mutation-receipt","operation":"2f69db358dc9d6d40f5af480fca832cb8f7842551fe2d5a7ec494a136d60c186","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-28"],"target":"decisions-ledger","v":1} -->
+
+### d-20261109-29 — What does the Games filter show where linked collections are unsupported?
+
+* **Question:** Windows has no linked collections, so no index exists for individual library-folder games. What does the filter show there?
+* **Governs:** tasks/plans/2026-11-09-new-tab-library.md (New Tab as one Library list)
+* **Chosen:** Library-folder game PGNs stay file rows, listed under Games and searchable by file name, opening their first game as the Library does. One line says so. The individual-game feed activates by itself when `collections` becomes present on that platform.
+* **Rejected:** A file-backed header scan for Windows only, a separate feature ahead of the planned PGN replacement port.
+* **Reason:** Precedent: Felix's 2026-10-04 decision that Windows keeps unlinked databases until the port, so the mandate's own collections do not exist there yet. Reversal path: add a file-backed source to the feed.
+* **Decided by:** Claude Code (Opus 5.5) build run 2026-11-09-new-tab-library, full auto, 2026-11-09 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"733388ace98eeedca42922064f40cb3e67fe5c45185161a11e97e06d6ecced96","input_sha256":"ce9f66f57612b0a4595639a8c1ea91caf5588be1c44801d23896d5895d1c7537","kind":"mutation-receipt","operation":"673ed06a318ada259861bd1cb76b15b67b1a6e6f78f48ef3e856f1d57ac4546c","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-29"],"target":"decisions-ledger","v":1} -->
