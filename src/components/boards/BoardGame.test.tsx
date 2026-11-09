@@ -235,6 +235,7 @@ import {
   gameIdFamily,
   gamePlayer1SettingsAtom,
   gamePlayer2SettingsAtom,
+  gameSameTimeControlAtom,
   gameSessionFamily,
   gameInterruptionFamily,
   gameStateFamily,
@@ -416,6 +417,7 @@ beforeEach(() => {
   }
   store.set(gamePlayer1SettingsAtom, { type: "human", name: "Alice" });
   store.set(gamePlayer2SettingsAtom, { type: "human", name: "Bob" });
+  store.set(gameSameTimeControlAtom, true);
   fixtures.abortGame.mockResolvedValue(undefined);
   fixtures.getGameEngineLogs.mockResolvedValue([]);
   fixtures.logError.mockResolvedValue(undefined);
@@ -780,6 +782,36 @@ for (const [player, settingsAtom] of [
 
       expect(button("Board.Opponent.StartGame").disabled).toBe(disabled);
       expect(host.textContent?.includes("Board.Opponent.TimeTooShort")).toBe(disabled);
+    },
+  );
+}
+
+for (const timedSide of ["white", "black"] as const) {
+  test.each([999, 1_000, 180_000])(
+    `Start supports only ${timedSide} timed with %i ms alongside Unlimited`,
+    async (seconds) => {
+      store.set(gameSameTimeControlAtom, false);
+      const timedAtom = timedSide === "white" ? gamePlayer1SettingsAtom : gamePlayer2SettingsAtom;
+      store.set(timedAtom, { type: "human", timeControl: { seconds, increment: 2_000 } });
+
+      await render();
+
+      const disabled = seconds < 1_000;
+      expect(button("Board.Opponent.StartGame").disabled).toBe(disabled);
+      expect(host.textContent?.includes("Board.Opponent.TimeTooShort")).toBe(disabled);
+      await act(async () => button("Board.Opponent.StartGame").click());
+      if (disabled) {
+        expect(fixtures.startGame).not.toHaveBeenCalled();
+        return;
+      }
+      expect(fixtures.startGame).toHaveBeenCalledOnce();
+      const config = fixtures.startGame.mock.calls[0][1];
+      expect(config.whiteTimeControl).toEqual(
+        timedSide === "white" ? { initialTime: seconds, increment: 2_000 } : null,
+      );
+      expect(config.blackTimeControl).toEqual(
+        timedSide === "black" ? { initialTime: seconds, increment: 2_000 } : null,
+      );
     },
   );
 }

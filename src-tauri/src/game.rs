@@ -77,36 +77,27 @@ pub struct TimeControl {
 const MIN_INITIAL_TIME_MS: u64 = 1_000;
 
 fn validate_time_controls(config: &GameConfig) -> Result<(), Error> {
-    let (Some(white), Some(black)) = (&config.white_time_control, &config.black_time_control)
-    else {
-        return if config.white_time_control.is_none() && config.black_time_control.is_none() {
-            Ok(())
-        } else {
-            Err(Error::InvalidInput(
-                "both players must provide a time control".into(),
-            ))
-        };
-    };
     let max = u64::from(MAX_ENGINE_LIMIT);
-    for (name, value) in [
-        ("white initial time", white.initial_time),
-        ("black initial time", black.initial_time),
-        ("white increment", white.increment),
-        ("black increment", black.increment),
+    for (side, control) in [
+        ("white", &config.white_time_control),
+        ("black", &config.black_time_control),
     ] {
-        if value > max {
-            return Err(Error::InvalidInput(format!(
-                "{name} must not exceed {MAX_ENGINE_LIMIT} milliseconds"
-            )));
+        let Some(control) = control else {
+            continue;
+        };
+        for (name, value) in [
+            ("initial time", control.initial_time),
+            ("increment", control.increment),
+        ] {
+            if value > max {
+                return Err(Error::InvalidInput(format!(
+                    "{side} {name} must not exceed {MAX_ENGINE_LIMIT} milliseconds"
+                )));
+            }
         }
-    }
-    for (name, value) in [
-        ("white initial time", white.initial_time),
-        ("black initial time", black.initial_time),
-    ] {
-        if value < MIN_INITIAL_TIME_MS {
+        if control.initial_time < MIN_INITIAL_TIME_MS {
             return Err(Error::InvalidInput(format!(
-                "{name} must be at least {MIN_INITIAL_TIME_MS} milliseconds"
+                "{side} initial time must be at least {MIN_INITIAL_TIME_MS} milliseconds"
             )));
         }
     }
@@ -3292,6 +3283,51 @@ fn try_polyglot_book_move(controller: &GameController) -> Option<String> {
     Some(legal_moves[selected].0.clone())
 }
 
+fn select_engine_go(
+    turn: Color,
+    go: Option<GoMode>,
+    white_time: Option<u64>,
+    black_time: Option<u64>,
+    increments: Option<(u64, u64)>,
+) -> Result<Option<GoMode>, Error> {
+    if increments.is_none() && (white_time.is_some() || black_time.is_some()) {
+        return Err(Error::Conflict("game clock state is incomplete".into()));
+    }
+    let mover_time = if turn == Color::White {
+        white_time
+    } else {
+        black_time
+    };
+    let Some(remaining) = mover_time else {
+        return Ok(Some(go.unwrap_or(GoMode::Depth(20))));
+    };
+    if remaining == 0 {
+        return Ok(None);
+    }
+    let (white_increment, black_increment) =
+        increments.ok_or_else(|| Error::Conflict("game clock state is incomplete".into()))?;
+    let mover_increment = if turn == Color::White {
+        white_increment
+    } else {
+        black_increment
+    };
+    let clamp = |value: u64| value.min(u64::from(MAX_ENGINE_LIMIT)) as u32;
+    Ok(Some(GoMode::PlayersTime(PlayersTime::new(
+        clamp(white_time.unwrap_or(remaining)),
+        clamp(black_time.unwrap_or(remaining)),
+        clamp(if white_time.is_some() {
+            white_increment
+        } else {
+            mover_increment
+        }),
+        clamp(if black_time.is_some() {
+            black_increment
+        } else {
+            mover_increment
+        }),
+    ))))
+}
+
 async fn request_engine_move<R: Runtime>(
     game_id: &str,
     controller: &Arc<RwLock<GameController>>,
@@ -3388,23 +3424,19 @@ async fn request_engine_move<R: Runtime>(
         let moves: Vec<String> = ctrl.moves.iter().map(|m| m.uci.clone()).collect();
         let (white_time, black_time) = ctrl.get_current_times();
 
-        let go_mode = match (white_time, black_time, ctrl.clock.as_ref()) {
-            (None, None, None) => go.unwrap_or(GoMode::Depth(20)),
-            (Some(wtime), Some(btime), Some(clock)) => GoMode::PlayersTime(PlayersTime::new(
-                u32::try_from(wtime)
-                    .map_err(|_| Error::InvalidInput("white clock exceeds UCI range".into()))?,
-                u32::try_from(btime)
-                    .map_err(|_| Error::InvalidInput("black clock exceeds UCI range".into()))?,
-                u32::try_from(clock.white_increment)
-                    .map_err(|_| Error::InvalidInput("white increment exceeds UCI range".into()))?,
-                u32::try_from(clock.black_increment)
-                    .map_err(|_| Error::InvalidInput("black increment exceeds UCI range".into()))?,
-            )),
-            _ => {
-                return Err(Error::Conflict(
-                    "game clock state is asymmetric or incomplete".into(),
-                ));
-            }
+        let Some(go_mode) = select_engine_go(
+            turn,
+            go,
+            white_time,
+            black_time,
+            ctrl.clock
+                .as_ref()
+                .map(|clock| (clock.white_increment, clock.black_increment)),
+        )?
+        else {
+            // Keep the request guard until the clock tick ends the game and cancels it.
+            // Clearing it here would let the loop start another request before that tick.
+            return Ok(());
         };
 
         (engine, go_mode, initial_fen, moves, turn)
@@ -3603,6 +3635,187 @@ pub async fn get_game_engine_logs(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn one_sided_engine_requests_write_the_movers_go_and_settle_expiry() {
+        for side in [Color::White, Color::Black] {
+            for (timed_engine, go, expired) in [
+                (true, None, false),
+                (true, Some(GoMode::Nodes(30)), false),
+                (false, None, false),
+                (false, Some(GoMode::Nodes(30)), false),
+                (true, None, true),
+            ] {
+                let game_id = "one-sided-engine-request";
+                let manager = Arc::new(GameManager::new());
+                let (live, controller) = test_live_session(game_id, 1);
+                let bestmove = if side == Color::White {
+                    "bestmove e2e4"
+                } else {
+                    "bestmove e7e5"
+                };
+                let (actor, writes) = EngineActor::recording_test_actor(&[bestmove]);
+                let registered = register_test_game_engine_with_actor(
+                    &live.engine_supervisor,
+                    game_id,
+                    1,
+                    if side == Color::White {
+                        "white"
+                    } else {
+                        "black"
+                    },
+                    "test-engine-id",
+                    "test-engine",
+                    actor,
+                )
+                .await;
+                let context = {
+                    let mut config = human_config();
+                    let mut player = fake_engine_player();
+                    if let PlayerConfig::Engine { go: player_go, .. } = &mut player {
+                        *player_go = go.clone();
+                    }
+                    if side == Color::White {
+                        config.white = player;
+                    } else {
+                        config.black = player;
+                        config.initial_fen =
+                            Some("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1".into());
+                    }
+                    let control = Some(TimeControl {
+                        initial_time: 60_000,
+                        increment: 2_000,
+                    });
+                    if (side == Color::White) == timed_engine {
+                        config.white_time_control = control;
+                    } else {
+                        config.black_time_control = control;
+                    }
+                    let mut ctrl = controller.write().await;
+                    *ctrl = GameController::new(game_id.into(), 1, config).unwrap();
+                    if side == Color::White {
+                        ctrl.white_engine = Some(registered.clone());
+                    } else {
+                        ctrl.black_engine = Some(registered.clone());
+                    }
+                    if expired {
+                        ctrl.clock.as_mut().unwrap().last_tick =
+                            Instant::now() - Duration::from_secs(61);
+                        assert_eq!(
+                            if side == Color::White {
+                                ctrl.get_current_times().0
+                            } else {
+                                ctrl.get_current_times().1
+                            },
+                            Some(0)
+                        );
+                    }
+                    ctrl.begin_engine_request().unwrap()
+                };
+                manager
+                    .publish_live(game_id.into(), 1, live.clone(), || {})
+                    .await
+                    .unwrap();
+                let app = tauri::test::mock_app();
+                tauri_specta::Builder::<tauri::test::MockRuntime>::new()
+                    .events(tauri_specta::collect_events!(GameMoveEvent, GameOverEvent))
+                    .mount_events(&app);
+                tokio::time::timeout(
+                    TEST_WAIT,
+                    request_engine_move(
+                        game_id,
+                        &controller,
+                        app.handle(),
+                        context.clone(),
+                        Arc::downgrade(&manager),
+                    ),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+
+                let commands = writes.lock().await.clone();
+                let searches: Vec<_> = commands
+                    .iter()
+                    .filter(|line| line.starts_with("go "))
+                    .collect();
+                {
+                    let mut ctrl = controller.write().await;
+                    assert_eq!(ctrl.status, GameStatus::Playing);
+                    let clock = ctrl.clock.as_ref().unwrap();
+                    let unlimited_time = if (side == Color::White) == timed_engine {
+                        clock.black_time
+                    } else {
+                        clock.white_time
+                    };
+                    assert_eq!(unlimited_time, None);
+                    if expired {
+                        assert!(commands.is_empty(), "{commands:?}");
+                        assert!(ctrl.moves.is_empty());
+                        assert!(ctrl.engine_thinking);
+                        assert!(ctrl
+                            .active_engine_request
+                            .as_ref()
+                            .unwrap()
+                            .request_id
+                            .is_none());
+                        assert!(ctrl.begin_engine_request().is_none());
+                        let result = ctrl.settle_active_clock().unwrap();
+                        assert_eq!(
+                            result,
+                            if side == Color::White {
+                                GameResult::BlackWins {
+                                    reason: GameEndReason::Timeout,
+                                }
+                            } else {
+                                GameResult::WhiteWins {
+                                    reason: GameEndReason::Timeout,
+                                }
+                            }
+                        );
+                        ctrl.end_game(result.clone());
+                        assert_eq!(ctrl.status, GameStatus::Finished { result });
+                        assert!(!ctrl.engine_thinking);
+                        assert!(ctrl.active_engine_request.is_none());
+                        assert!(context.cancellation.is_cancelled());
+                    } else {
+                        assert_eq!(searches.len(), 1, "{commands:?}");
+                        if timed_engine {
+                            let fields: Vec<_> = searches[0].split_whitespace().collect();
+                            assert_eq!(fields.len(), 9);
+                            assert_eq!(
+                                (fields[0], fields[1], fields[3], fields[5], fields[7]),
+                                ("go", "wtime", "btime", "winc", "binc")
+                            );
+                            let remaining: u64 = fields[2].parse().unwrap();
+                            assert!((1..=60_000).contains(&remaining));
+                            assert_eq!(fields[2], fields[4]);
+                            assert_eq!((fields[6], fields[8]), ("2000", "2000"));
+                        } else {
+                            assert_eq!(
+                                searches[0],
+                                &go.clone()
+                                    .unwrap_or(GoMode::Depth(20))
+                                    .to_uci_string()
+                                    .unwrap()
+                            );
+                        }
+                        assert_eq!(ctrl.moves.len(), 1);
+                        assert_eq!(
+                            ctrl.moves[0].uci,
+                            if side == Color::White { "e2e4" } else { "e7e5" }
+                        );
+                        assert_eq!(ctrl.moves[0].clock.is_some(), timed_engine);
+                        assert_eq!(ctrl.position.turn(), !side);
+                        assert!(!ctrl.engine_thinking);
+                        assert!(ctrl.active_engine_request.is_none());
+                    }
+                }
+                manager.abort_game(game_id, 1).await.unwrap();
+                assert!(live.engine_supervisor.get_exact(&registered.key).is_none());
+            }
+        }
+    }
 
     #[tokio::test]
     async fn cancelled_engine_move_logs_failed_stop_and_keeps_playing() {
@@ -5583,25 +5796,240 @@ done
     }
 
     #[test]
-    fn time_controls_reject_asymmetry_and_values_outside_uci_range() {
-        let mut config = human_config();
-        config.white_time_control = Some(TimeControl {
-            initial_time: 1_000,
-            increment: 0,
-        });
-        assert!(matches!(
-            GameController::new("game".into(), 1, config.clone()),
-            Err(Error::InvalidInput(_))
-        ));
+    fn one_sided_time_controls_accept_limits_and_validate_the_present_side() {
+        let max = u64::from(MAX_ENGINE_LIMIT);
+        for side in [Color::White, Color::Black] {
+            for (initial_time, increment, error) in [
+                (MIN_INITIAL_TIME_MS, 0, None),
+                (max, max, None),
+                (
+                    max + 1,
+                    0,
+                    Some(format!("initial time must not exceed {max} milliseconds")),
+                ),
+                (
+                    MIN_INITIAL_TIME_MS,
+                    max + 1,
+                    Some(format!("increment must not exceed {max} milliseconds")),
+                ),
+                (
+                    0,
+                    0,
+                    Some(format!(
+                        "initial time must be at least {MIN_INITIAL_TIME_MS} milliseconds"
+                    )),
+                ),
+                (
+                    1,
+                    0,
+                    Some(format!(
+                        "initial time must be at least {MIN_INITIAL_TIME_MS} milliseconds"
+                    )),
+                ),
+                (
+                    MIN_INITIAL_TIME_MS - 1,
+                    0,
+                    Some(format!(
+                        "initial time must be at least {MIN_INITIAL_TIME_MS} milliseconds"
+                    )),
+                ),
+            ] {
+                let mut config = human_config();
+                let control = Some(TimeControl {
+                    initial_time,
+                    increment,
+                });
+                if side == Color::White {
+                    config.white_time_control = control;
+                } else {
+                    config.black_time_control = control;
+                }
+                let result = GameController::new("game".into(), 1, config);
+                if let Some(error) = error {
+                    assert!(matches!(result, Err(Error::InvalidInput(message))
+                        if message == format!("{side} {error}")));
+                } else {
+                    let controller = result.unwrap();
+                    assert_eq!(controller.status, GameStatus::Playing);
+                    let clock = controller.clock.as_ref().unwrap();
+                    assert_eq!(
+                        (clock.white_time, clock.black_time),
+                        if side == Color::White {
+                            (Some(initial_time), None)
+                        } else {
+                            (None, Some(initial_time))
+                        }
+                    );
+                }
+            }
+        }
+    }
 
-        config.black_time_control = Some(TimeControl {
-            initial_time: 1_000,
-            increment: u64::from(MAX_ENGINE_LIMIT) + 1,
-        });
-        assert!(matches!(
-            GameController::new("game".into(), 1, config),
-            Err(Error::InvalidInput(_))
-        ));
+    #[test]
+    fn one_sided_clock_debits_moves_takes_back_and_flags_only_the_timed_side() {
+        for side in [Color::White, Color::Black] {
+            let mut config = human_config();
+            let control = Some(TimeControl {
+                initial_time: 60_000,
+                increment: 100,
+            });
+            let (timed_move, unlimited_move) = if side == Color::White {
+                config.white_time_control = control;
+                ("e2e4", "e7e5")
+            } else {
+                config.black_time_control = control;
+                config.initial_fen =
+                    Some("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1".into());
+                ("e7e5", "e2e4")
+            };
+            let mut ctrl = GameController::new("game".into(), 1, config).unwrap();
+            ctrl.clock.as_mut().unwrap().last_tick = Instant::now() - Duration::from_millis(1_000);
+            let moved = ctrl.apply_move(timed_move).unwrap();
+            let remaining = moved.clock.unwrap();
+            assert!((58_000..=59_100).contains(&remaining));
+            let after_move = if side == Color::White {
+                (Some(remaining), None)
+            } else {
+                (None, Some(remaining))
+            };
+            assert_eq!((moved.white_time, moved.black_time), after_move);
+
+            ctrl.clock.as_mut().unwrap().last_tick = Instant::now() - Duration::from_secs(120);
+            assert_eq!(ctrl.get_current_times(), after_move);
+            assert_eq!(ctrl.settle_active_clock(), None);
+            assert_eq!(ctrl.get_current_times(), after_move);
+            let moved = ctrl.apply_move(unlimited_move).unwrap();
+            assert_eq!(moved.clock, None);
+            assert_eq!((moved.white_time, moved.black_time), after_move);
+            assert_eq!(ctrl.status, GameStatus::Playing);
+
+            ctrl.take_back_moves(1).unwrap();
+            assert_eq!(ctrl.get_current_times(), after_move);
+            ctrl.take_back_moves(1).unwrap();
+            ctrl.clock.as_mut().unwrap().last_tick = Instant::now() - Duration::from_secs(61);
+            let result = ctrl.settle_active_clock().unwrap();
+            assert_eq!(
+                result,
+                if side == Color::White {
+                    GameResult::BlackWins {
+                        reason: GameEndReason::Timeout,
+                    }
+                } else {
+                    GameResult::WhiteWins {
+                        reason: GameEndReason::Timeout,
+                    }
+                }
+            );
+            ctrl.end_game(result.clone());
+            assert_eq!(ctrl.status, GameStatus::Finished { result });
+            assert_eq!(
+                ctrl.get_current_times(),
+                if side == Color::White {
+                    (Some(0), None)
+                } else {
+                    (None, Some(0))
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn engine_go_selection_uses_the_movers_clock_or_player_limit() {
+        for go in [None, Some(GoMode::Nodes(30))] {
+            for turn in [Color::White, Color::Black] {
+                for (white, black, increments, timed_mode) in [
+                    (None, None, None, None),
+                    (
+                        Some(12_000),
+                        None,
+                        Some((100, 0)),
+                        Some(PlayersTime::new(12_000, 12_000, 100, 100)),
+                    ),
+                    (
+                        None,
+                        Some(34_000),
+                        Some((0, 200)),
+                        Some(PlayersTime::new(34_000, 34_000, 200, 200)),
+                    ),
+                    (
+                        Some(12_000),
+                        Some(34_000),
+                        Some((100, 200)),
+                        Some(PlayersTime::new(12_000, 34_000, 100, 200)),
+                    ),
+                ] {
+                    let timed = if turn == Color::White {
+                        white.is_some()
+                    } else {
+                        black.is_some()
+                    };
+                    let expected = if timed {
+                        GoMode::PlayersTime(timed_mode.unwrap())
+                    } else {
+                        go.clone().unwrap_or(GoMode::Depth(20))
+                    };
+                    let selected = select_engine_go(turn, go.clone(), white, black, increments)
+                        .unwrap()
+                        .unwrap();
+                    assert_eq!(selected, expected, "{turn:?} {white:?} {black:?} {go:?}");
+                    selected.validate().unwrap();
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn engine_go_selection_skips_expired_movers_and_rejects_missing_clock_state() {
+        for go in [None, Some(GoMode::Depth(7))] {
+            for (turn, white, black) in [
+                (Color::White, Some(0), None),
+                (Color::Black, None, Some(0)),
+                (Color::White, Some(0), Some(10_000)),
+                (Color::Black, Some(10_000), Some(0)),
+                (Color::White, Some(0), Some(0)),
+                (Color::Black, Some(0), Some(0)),
+            ] {
+                assert_eq!(
+                    select_engine_go(turn, go.clone(), white, black, Some((10, 20))).unwrap(),
+                    None
+                );
+            }
+        }
+        for turn in [Color::White, Color::Black] {
+            for (white, black) in [(Some(0), None), (None, Some(1)), (Some(1), Some(2))] {
+                assert!(matches!(
+                    select_engine_go(turn, None, white, black, None),
+                    Err(Error::Conflict(_))
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn engine_go_selection_clamps_all_outgoing_clock_values() {
+        let max = MAX_ENGINE_LIMIT;
+        for turn in [Color::White, Color::Black] {
+            for (white, black) in [
+                (Some(u64::MAX), Some(u64::from(max) + 1)),
+                (Some(u64::MAX), None),
+                (None, Some(u64::MAX)),
+            ] {
+                if (turn == Color::White && white.is_none())
+                    || (turn == Color::Black && black.is_none())
+                {
+                    continue;
+                }
+                let selected =
+                    select_engine_go(turn, None, white, black, Some((u64::MAX, u64::MAX)))
+                        .unwrap()
+                        .unwrap();
+                assert_eq!(
+                    selected,
+                    GoMode::PlayersTime(PlayersTime::new(max, max, max, max))
+                );
+                selected.validate().unwrap();
+            }
+        }
     }
 
     #[test]

@@ -5,7 +5,7 @@ import type { OpponentSettings } from "./OpponentForm";
 
 const MIN_INITIAL_TIME_MS = 1_000;
 
-/** Mirrors the native validate_time_controls floor. */
+/** Mirrors validate_time_controls: each side may be Unlimited or meet the initial-time floor. */
 export function hasStartableTimeControl(settings: OpponentSettings): boolean {
     return (
         settings.timeControl === undefined || settings.timeControl.seconds >= MIN_INITIAL_TIME_MS
