@@ -65,6 +65,7 @@ import {
 } from "@/state/practiceStorage";
 import { getTabFile, getTabGameNumber, sameTabOwner, useTabActions } from "@/utils/tabs";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
+import { isKeyboardOwnedElsewhere } from "@/utils/keyboardOwnership";
 import {
   findFen,
   getBoardState,
@@ -88,6 +89,9 @@ import {
 
 const PRACTICE_ADVANCE_DELAY_MS = 300;
 const PRACTICE_INCORRECT_DELAY_MS = 500;
+const practiceHotkeyOptions = {
+  ignoreEventWhen: (event: KeyboardEvent) => isKeyboardOwnedElsewhere(event, null),
+};
 
 function findPracticeCardFrame(
   card: Pick<Position, "fen" | "answer">,
@@ -668,18 +672,23 @@ function PracticePanel() {
   }
 
   useHotkeys("1", () => handleQualityRating(1), {
+    ...practiceHotkeyOptions,
     enabled: practiceState.phase === "correct",
   });
   useHotkeys("2", () => handleQualityRating(2), {
+    ...practiceHotkeyOptions,
     enabled: practiceState.phase === "correct",
   });
   useHotkeys("3", () => handleQualityRating(3), {
+    ...practiceHotkeyOptions,
     enabled: practiceState.phase === "correct",
   });
   useHotkeys("4", () => handleQualityRating(4), {
+    ...practiceHotkeyOptions,
     enabled: practiceState.phase === "correct",
   });
   useHotkeys("space", () => skipCard(), {
+    ...practiceHotkeyOptions,
     enabled: practiceState.phase === "incorrect",
   });
 

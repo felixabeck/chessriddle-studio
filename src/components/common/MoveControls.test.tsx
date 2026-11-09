@@ -107,6 +107,7 @@ function render({
   controlsInModal = false,
   readOnly = false,
   citation = false,
+  editors = false,
 } = {}) {
   act(() => {
     root.render(
@@ -119,6 +120,12 @@ function render({
               <div role="grid" />
             </BoardFrame>
             {!controlsInModal && <MoveControls readOnly={readOnly} />}
+            {editors && (
+              <>
+                <input aria-label="Comment input" />
+                <div contentEditable tabIndex={0} aria-label="Editable comment" />
+              </>
+            )}
             {citation && (
               <EphemeralTabScope>
                 <GameReferenceProvider>
@@ -439,7 +446,15 @@ test("Delete from a focused modal button preserves the background move and its s
   const before = store.getState();
   expect(before.dirty).toBe(false);
 
-  press("Delete", { target: button });
+  const onKeydown = vi.fn();
+  window.addEventListener("keydown", onKeydown);
+  try {
+    const event = press("Delete", { target: button });
+    expect(onKeydown).toHaveBeenCalledExactlyOnceWith(event);
+    expect(event.defaultPrevented).toBe(false);
+  } finally {
+    window.removeEventListener("keydown", onKeydown);
+  }
 
   expect(store.getState().root).toBe(before.root);
   expect(store.getState().root.children).toBe(before.root.children);
@@ -566,3 +581,30 @@ test("opening a real commentary citation suspends background Delete and ArrowLef
   expect(store.getState().position).toEqual([0]);
   expect(store.getState().dirty).toBe(false);
 });
+
+test.each(["input", "contenteditable"])(
+  "Delete and ArrowLeft from a focused %s preserve the game without a modal",
+  (editor) => {
+    store = middleGameStore();
+    render({ editors: true });
+    expect(document.querySelector('[aria-modal="true"]')).toBeNull();
+    const target = host.querySelector<HTMLElement>(
+      editor === "input" ? "input" : '[contenteditable="true"]',
+    )!;
+    if (editor === "contenteditable") {
+      // jsdom does not implement this browser property.
+      Object.defineProperty(target, "isContentEditable", { value: true });
+    }
+    target.focus();
+    expect(document.activeElement).toBe(target);
+    const before = store.getState();
+
+    for (const key of ["Delete", "ArrowLeft"]) {
+      const event = press(key, { target });
+      expect(store.getState().root).toBe(before.root);
+      expect(store.getState().position).toEqual(before.position);
+      expect(store.getState().dirty).toBe(false);
+      expect(event.defaultPrevented).toBe(false);
+    }
+  },
+);

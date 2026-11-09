@@ -18,6 +18,7 @@ import { PRACTICE_SYNC_DEBOUNCE_MS, resetPracticeMigrationForTests } from "@/sta
 import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import { WorkspaceTabScope } from "@/state/tabScope";
 import { installMatchMediaStub } from "@/tests/matchMedia";
+import { press } from "@/tests/keyboard";
 import { defaultTree, getNodeAtPath } from "@/utils/treeReducer";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import { getTabFile } from "@/utils/tabs";
@@ -436,6 +437,82 @@ test("correct answers retain rating and advancement behavior with the real contr
   expect(atoms.get(practiceStateFamily(owner.value)).phase).toBe("idle");
   expect(mocks.native.recordPracticeReview).toHaveBeenCalledOnce();
   expect(JSON.parse(reviews[0].entry).rating).toBe(3);
+});
+
+function focusDialogButton() {
+  const dialog = document.createElement("section");
+  dialog.setAttribute("aria-modal", "true");
+  const button = document.createElement("button");
+  dialog.append(button);
+  host.append(dialog);
+  button.focus();
+  expect(document.activeElement).toBe(button);
+  return { dialog, button };
+}
+
+test.each([1, 2, 3, 4] as const)(
+  "dialog-owned %s leaves the correct card unrated while the same key outside still rates",
+  async (grade) => {
+    const card = await mountStudy();
+    await act(async () =>
+      atoms.get(practiceMoveControllerFamily(owner.value))!.submitMove(card.answer),
+    );
+    const state = atoms.get(practiceStateFamily(owner.value));
+    expect(state.phase).toBe("correct");
+    const stats = atoms.get(practiceSessionStatsFamily(owner.value));
+    const deckKey = { file: fileWorkspaceKey(getTabFile(owner)!.handle), game: 0 };
+    const deck = atoms.get(deckAtomFamily(deckKey));
+    const source = tree.getState();
+    const { dialog, button } = focusDialogButton();
+
+    await act(async () => {
+      const event = press(String(grade), { target: button });
+      expect(event.defaultPrevented).toBe(false);
+    });
+
+    expect(mocks.native.recordPracticeReview).not.toHaveBeenCalled();
+    expect(reviews).toEqual([]);
+    expect(atoms.get(practiceStateFamily(owner.value))).toBe(state);
+    expect(atoms.get(practiceSessionStatsFamily(owner.value))).toBe(stats);
+    expect(atoms.get(deckAtomFamily(deckKey))).toBe(deck);
+    expect(tree.getState()).toBe(source);
+    dialog.remove();
+    await act(async () => {
+      press(String(grade));
+    });
+    expect(mocks.native.recordPracticeReview).toHaveBeenCalledOnce();
+    expect(JSON.parse(reviews[0].entry).rating).toBe(grade);
+    expect(atoms.get(practiceStateFamily(owner.value)).phase).not.toBe("correct");
+  },
+);
+
+test("dialog-owned Space leaves the incorrect card unchanged while Space outside still skips", async () => {
+  await wrongAnswer();
+  const state = atoms.get(practiceStateFamily(owner.value));
+  const stats = atoms.get(practiceSessionStatsFamily(owner.value));
+  const deckKey = { file: fileWorkspaceKey(getTabFile(owner)!.handle), game: 0 };
+  const deck = atoms.get(deckAtomFamily(deckKey));
+  const source = tree.getState();
+  expect(mocks.native.recordPracticeReview).toHaveBeenCalledOnce();
+  const { dialog, button } = focusDialogButton();
+
+  await act(async () => {
+    const event = press("Space", { target: button });
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  expect(atoms.get(practiceStateFamily(owner.value))).toBe(state);
+  expect(atoms.get(practiceSessionStatsFamily(owner.value))).toBe(stats);
+  expect(atoms.get(deckAtomFamily(deckKey))).toBe(deck);
+  expect(tree.getState()).toBe(source);
+  expect(mocks.native.recordPracticeReview).toHaveBeenCalledOnce();
+  expect(reviews).toHaveLength(1);
+  dialog.remove();
+  await act(async () => {
+    press("Space");
+  });
+  expect(atoms.get(practiceStateFamily(owner.value)).phase).not.toBe("incorrect");
+  expect(mocks.native.recordPracticeReview).toHaveBeenCalledOnce();
 });
 
 test("actual log writer retains repeated FEN IDs and root or missing-node fallback", async () => {
