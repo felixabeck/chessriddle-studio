@@ -137,10 +137,12 @@
         "src/components/common/GoModeInput.tsx",
         "src/components/common/TimeInput.tsx",
         "src/components/engines/**",
+        "src/components/chessriddle/**",
         "src/components/puzzles/**",
         "src/utils/chessdb/**",
         "src/utils/engines.ts",
         "src/utils/engineInstall.ts",
+        "src/utils/chessRiddleTraining.ts",
         "src/utils/puzzles.ts",
         "src/utils/signedCatalog.ts"
       ]
