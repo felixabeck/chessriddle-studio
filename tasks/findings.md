@@ -21918,7 +21918,7 @@ All probes were removed; the tree stayed clean.
 ## 2026-11-06 — filed through the inbox spool
 
 ### PGN copy actions discard clipboard rejection without telling the user the copy failed
-* **ID:** f-20261106-38 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261106-38 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** Share/reference-export review (Felix t22u), HEAD `648967db`.
 * **Where:** `src/state/store/tree.ts:732-753` (`copyVariationPgn` and `copyPgn`) calls navigator.clipboard.writeText without observing its Promise or catching synchronous failure. Production callers `src/components/common/CompleteMoveCell.tsx:306` and `src/components/common/GameNotation.tsx:236` provide no error boundary for these operations either.
@@ -21928,6 +21928,9 @@ All probes were removed; the tree stayed clean.
 * **Repair guard:** Give both actions a common observed asynchronous copy/error contract, including unavailable-API/synchronous failure and denied writes. Show safe user-facing failure feedback and do not report success before acceptance; preserve the correctly captured game/explicit variation content and keep the tree unchanged.
 * **Related:** helper queries over affected files/frontend-ui plus clipboard/copy ledger text found no same mechanism. f-20261106-32 concerns PNG file export of the wrong .cg-wrap; f-20261106-33 concerns background keyboard navigation under a citation modal. Neither handles clipboard failure. Existing source-preservation, variation parsing and citation ownership decisions are unaffected.
 * **Found by:** GrokBot, focused t22u production-action probes.
+
+**Handled 2026-11-09 (drain fdc3d0ae-a198-4262-88bb-1a4b519ee99d, co-located joiner of f-20261106-31):** new `writeClipboardText` (`src/utils/clipboard.ts`) is the one awaited clipboard write with the missing-API check; `TreeRecoveryGate` and both tree-store copy actions use it. `copyPgn`/`copyVariationPgn` serialize as before, return `Promise<boolean>`, and show the translated `Board.CopyFailed` notification on a missing API, a synchronous throw or a rejected write, never leaving a rejection unobserved; no success notice. Translated in all 16 catalogues. Tests: rejected, missing-API and accepted cases for both actions, red with the fix reverted. Commit 9cfe1fa0. Rejected (review): separate messages for denied versus unavailable, since neither has a different in-app remedy.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"8abf677879c3a9e40dfdc08377370f9b7c6b6a8d27240871de399dde02eb4431","header_sha256":"06be9130da53a7c275e406b983e56bdc41550f1a005481f3b88f339aece618f3","header_status":"handled","input_sha256":"d5beca630d40d4b734844ebd5992b27b457f3ae4bc819149db76ec23e0d8c75d","kind":"mutation-receipt","operation":"206eb4bf07343a435135fd0fc01c9fffb2136d442639ba67c92a2945766b264f","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-38"],"target":"f-20261106-38","v":1} -->
 
 ---
 
