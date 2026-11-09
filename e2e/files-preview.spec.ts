@@ -365,6 +365,10 @@ test("files-preview: a section's icon opens its choices inside the window", asyn
             ratio: 1,
         });
     }
+    // The choice replaces the menu with its dialog, so the item click must not end the editor.
+    await page.getByRole("menuitem", { name: "Rename section", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Section", exact: true });
+    await expect(dialog.getByRole("textbox", { name: "Name" })).toHaveValue("mit g3");
 });
 
 test("files-preview: the card fills the window and shows the whole board and its controls", async ({
