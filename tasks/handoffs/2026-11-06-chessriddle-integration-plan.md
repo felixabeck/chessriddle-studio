@@ -15,7 +15,7 @@ This section overrides the phase order further down. It is the agent's recommend
 
 ### Order
 
-1. **Tactics in Studio (phase B), built 2026-11-09.** Standard tactics plus retry-your-mistakes. Studio is on `master`, hidden in release builds by `RELEASE_AVAILABLE`. The ChessRiddle side stacks on `build/studio-account-20261109` as commits `21d30a65d2`, `7ce3d60015` and `8605a3d044`, unpushed and undeployed. Review record: `tasks/handoffs/2026-11-09-chessriddle-tactics-phase-b-review.md`.
+1. **Tactics in Studio (phase B), built 2026-11-09.** Standard tactics plus retry-your-mistakes. Studio is on `master`, hidden in release builds by `RELEASE_AVAILABLE`. The ChessRiddle side stacks on `build/studio-account-20261109` as commits `21d30a65d2`, `7ce3d60015` and `8605a3d044`, unpushed and undeployed. Review record: `tasks/handoffs/2026-11-09-chessriddle-tactics-phase-b-review.md`. Since 2026-11-10 the training has no New Tab action of its own: it opens from the one Puzzles entry as the default source of a puzzle tab, beside the offline databases (`d-20261110-01`, review record `tasks/handoffs/2026-11-09-puzzles-one-entry-review.md`).
 2. **Release preparation, in parallel:** Windows check, code signing, download page on chessriddle.com.
 3. **First public release:** rebase the ChessRiddle branch onto `develop`, re-review, run full gates, push and deploy on Felix's go, switch `RELEASE_AVAILABLE`, publish Studio. The branch hold ends here.
 4. **Send to a trainer collection (phase C), as an update.** Small, but only Gold trainers use it.

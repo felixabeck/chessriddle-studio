@@ -92,3 +92,21 @@ finding ids and date.
   new tab doesn't help me, because anyway I have to click on library and then open the
   files there." The two old cards "doesn't feel consistent".
 - **Date:** 2026-11-09.
+
+## 2026-11-09 — One Puzzles entry, ChessRiddle first
+
+- **Question:** Should ChessRiddle puzzles and the offline puzzle databases be two
+  separate options on New Tab, or should Studio offer only ChessRiddle puzzles?
+- **Choice:** One "Puzzles" entry. Inside the puzzle tab ChessRiddle is the default
+  when the connection is available. A connected user starts ChessRiddle tactics
+  directly, with retry-your-mistakes. A user who is not connected sees the prompt to
+  connect a ChessRiddle account first, with the offline databases as a smaller second
+  choice. The offline databases stay.
+- **Ruled out:** Two New Tab buttons side by side. Removing the offline databases
+  now: without an account or internet the entry would only show a login wall, and a
+  free user at the daily limit would have nothing left to solve.
+- **Felix's reason:** He opened Puzzles and saw no ChessRiddle puzzles: "is it
+  sensible to have those two options or should I just only use the chess riddle
+  puzzles here?" On the recommendation above: "Yes, I will definitely, I want to
+  build this."
+- **Date:** 2026-11-09. Technical record: `d-20261110-01`.
