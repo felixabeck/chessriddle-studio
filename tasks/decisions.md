@@ -12835,3 +12835,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Felix asked that open tabs follow their line. A focused plan review judged this the simplest correct mechanism after the same area reopened twice. Reversal path: remove the lease and the `expected` option from `openFile`.
 * **Decided by:** Claude Code (Opus 5.5) session a43b1706-2c72-4e7b-99fe-a8e648bef2bd, after focused review · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"af33ce05f099ea53f0b00f3e780d6f25dd7518be2d58a2bf72aa0e044eba37a3","input_sha256":"c8a4bf954840c6281d08cb48ec16a967b561b06362b5e19cf5b1ce8c0cd46e96","kind":"mutation-receipt","operation":"1672e4a0c81ee09b0c99760d7818dc22e6c108d67cfff300953408793137a8ae","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-33"],"target":"decisions-ledger","v":1} -->
+
+### d-20261109-34 — Which mechanism drags lines in the virtualized Library list, and who edits the section tag?
+
+* **Question:** The list is virtualized with row sizes that change as sections load, and a move has to transfer tags inside one atomic edit.
+* **Governs:** `src/components/panels/info/lineDragController.ts`, `edit_tag_pair` and `set_game_section` in `src-tauri/src/pgn.rs`
+* **Chosen:** A pointer-event controller with a DOM preview and continuous edge scrolling. Native code owns the section tag edit for both the section editor and the move, and the renderer's text editor is deleted.
+* **Rejected:** HTML5 drag, whose native drag image is doubled on WebKitGTK at a fractional scale. The existing drag library, which does not take size changes of mounted items during a drag and has no notion of the two positions at a heading. Keeping tag editing in both languages. Keyboard reordering, which was not requested.
+* **Reason:** Real pointer input passed in the actual WebKit app, including edge scrolling after the source row unmounts. Reversal path: replace the controller behind the `onMoveLines` prop.
+* **Decided by:** Claude Code (Opus 5.5) session a43b1706-2c72-4e7b-99fe-a8e648bef2bd · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"2fa1192704460825fe4aec760cdb802cf52fc041ca7018ea1a2d547a5f755c0a","input_sha256":"5b76ccc4a8ccd1eed00233cfb1f6be0d2b023f4e52a1764e59b65f003991932b","kind":"mutation-receipt","operation":"d06a4daac89c51f0c0cb4ad18d6d6667804ca8a980d3260bcef02f69676164bf","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-34"],"target":"decisions-ledger","v":1} -->
