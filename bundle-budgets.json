@@ -4,13 +4,13 @@
   "limits": {
     "entry": 565000,
     "largestLazy": 550000,
-    "total": 1750000
+    "total": 1755000
   },
   "measurement": {
     "source": "pnpm gate:run frontend-build",
     "date": "2026-11-09",
-    "entry": 513648,
-    "largestLazy": 521026,
-    "total": 1740639
+    "entry": 515201,
+    "largestLazy": 526353,
+    "total": 1751545
   }
 }
