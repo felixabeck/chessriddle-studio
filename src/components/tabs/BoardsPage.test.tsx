@@ -7,6 +7,8 @@ import type { Tab } from "@/state/workspaceTypes";
 import { MantineProvider } from "@mantine/core";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
+import { focusedDialogButton, press } from "@/tests/keyboard";
+import type { HotkeyItem } from "@mantine/hooks";
 
 const fixtures = vi.hoisted(() => ({
   abortGame: vi.fn(),
@@ -54,7 +56,8 @@ const fixtures = vi.hoisted(() => ({
   closeHandler: null as (() => unknown) | null,
   closeReceipt: true,
   commitReceipt: true,
-  hotkeyBindings: null as Array<[string, () => void]> | null,
+  hotkeyBindings: null as HotkeyItem[] | null,
+  platform: vi.fn(() => "linux"),
   killEngines: vi.fn(),
   invalidateReportOwner: vi.fn(),
   restoreReportOwner: vi.fn(),
@@ -137,7 +140,7 @@ vi.mock("@/state/keybinds", async () => {
   };
 });
 vi.mock("@/platform/native", () => ({
-  platform: () => "linux",
+  platform: fixtures.platform,
   warn: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
@@ -184,12 +187,16 @@ vi.mock("jotai/utils", async () => {
   const { atom } = await vi.importActual<typeof import("jotai")>("jotai");
   return { ...actual, atomWithStorage: (_key: string, initial: unknown) => atom(initial) };
 });
-vi.mock("@mantine/hooks", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@mantine/hooks")>()),
-  useHotkeys: vi.fn((bindings: Array<[string, () => void]>) => {
-    fixtures.hotkeyBindings = bindings;
-  }),
-}));
+vi.mock("@mantine/hooks", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@mantine/hooks")>();
+  return {
+    ...actual,
+    useHotkeys: (bindings: HotkeyItem[]) => {
+      fixtures.hotkeyBindings = bindings;
+      actual.useHotkeys(bindings);
+    },
+  };
+});
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("@hello-pangea/dnd", () => ({
   DragDropContext: ({ children }: { children: ReactNode }) => children,
@@ -376,11 +383,12 @@ function renderPage() {
 function invokeHotkey(keys: string) {
   const binding = fixtures.hotkeyBindings?.find(([shortcut]) => shortcut === keys);
   if (!binding) throw new Error(`Missing hotkey binding: ${keys}`);
-  binding[1]();
+  binding[1](new KeyboardEvent("keydown"));
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fixtures.platform.mockReturnValue("linux");
   installMatchMediaStub();
   installResizeObserverStub();
   fixtures.realMenus = false;
@@ -459,6 +467,82 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
 });
+
+test.each([
+  { name: "numbered selection", key: "1", shiftKey: false },
+  { name: "forward cycle", key: "Tab", shiftKey: false },
+  { name: "reverse cycle", key: "Tab", shiftKey: true },
+])(
+  "$name yields to a focused dialog button and works after dismissal",
+  async ({ key, shiftKey }) => {
+    fixtures.nextReady = true;
+    store.set(activeTabAtom, "next");
+    await renderPage();
+    const { dialog, button } = focusedDialogButton();
+    dialog.setAttribute("role", "dialog");
+    try {
+      expect(document.activeElement).toBe(button);
+      const event = press(key, { target: button, ctrlKey: true, shiftKey });
+      expect(store.get(activeTabAtom)).toBe("next");
+      expect(store.get(tabsAtom)).toHaveLength(2);
+      expect(container.querySelector('[data-testid="view-next"]')).not.toBeNull();
+      expect(event.defaultPrevented).toBe(false);
+      dialog.remove();
+
+      const control = press(key, { target: document.body, ctrlKey: true, shiftKey });
+      expect(store.get(activeTabAtom)).toBe("current");
+      expect(control.defaultPrevented).toBe(true);
+    } finally {
+      dialog.remove();
+    }
+  },
+);
+
+test.each(["linux", "macos"])(
+  "%s close shortcut yields to a focused dialog button and works after dismissal",
+  async (os) => {
+    fixtures.platform.mockReturnValue(os);
+    fixtures.nextReady = true;
+    await renderPage();
+    const { dialog, button } = focusedDialogButton();
+    dialog.setAttribute("role", "dialog");
+    const reachedButton = vi.fn();
+    button.addEventListener("keydown", reachedButton);
+    const closeKey = (target: EventTarget) => {
+      const event = new KeyboardEvent("keydown", {
+        key: "w",
+        code: "KeyW",
+        ctrlKey: os === "linux",
+        metaKey: os === "macos",
+        bubbles: true,
+        cancelable: true,
+      });
+      target.dispatchEvent(event);
+      return event;
+    };
+    try {
+      expect(document.activeElement).toBe(button);
+      await act(async () => {
+        expect(closeKey(button).defaultPrevented).toBe(false);
+      });
+      expect(reachedButton).toHaveBeenCalledOnce();
+      expect(store.get(activeTabAtom)).toBe("current");
+      expect(store.get(tabsAtom)).toHaveLength(2);
+      expect(fixtures.killEngines).not.toHaveBeenCalled();
+      expect(fixtures.closeWorkspaceTab).not.toHaveBeenCalled();
+      dialog.remove();
+
+      await act(async () => {
+        expect(closeKey(document.body).defaultPrevented).toBe(true);
+      });
+      expect(store.get(tabsAtom).map((tab) => tab.value)).toEqual(["next"]);
+      expect(store.get(activeTabAtom)).toBe("next");
+      expect(fixtures.closeWorkspaceTab).toHaveBeenCalledExactlyOnceWith("current");
+    } finally {
+      dialog.remove();
+    }
+  },
+);
 
 async function renderMenuPage() {
   fixtures.realMenus = true;

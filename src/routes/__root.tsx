@@ -35,6 +35,7 @@ import {
   type PracticeMigrationPassResult,
 } from "@/state/practiceStorage";
 import { openFile, pickPgnFile } from "@/utils/files";
+import { backgroundHotkeyOptions } from "@/utils/keyboardOwnership";
 import { createTab, type Tab } from "@/utils/tabs";
 import {
   assembleNativeMenuResources,
@@ -287,12 +288,20 @@ export function RootLayout() {
     [createNewTab, openNewFile, openSettings, requestQuit, runMenu, t, toggleFullscreen],
   );
 
-  useHotkeys(keyMap.NEW_TAB.keys, () => {
-    void menuCallbacks.createNewTab();
-  });
-  useHotkeys(keyMap.OPEN_FILE.keys, () => {
-    void menuCallbacks.openNewFile();
-  });
+  useHotkeys(
+    keyMap.NEW_TAB.keys,
+    () => {
+      void menuCallbacks.createNewTab();
+    },
+    backgroundHotkeyOptions,
+  );
+  useHotkeys(
+    keyMap.OPEN_FILE.keys,
+    () => {
+      void menuCallbacks.openNewFile();
+    },
+    backgroundHotkeyOptions,
+  );
 
   const menuActions = useMemo(
     () =>

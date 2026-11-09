@@ -20,6 +20,7 @@ import {
   tabsAtom,
 } from "@/state/atoms";
 import { keyMapAtom } from "@/state/keybinds";
+import { isKeyboardOwnedElsewhere, withKeyboardOwnership } from "@/utils/keyboardOwnership";
 import {
   closeTreeStore,
   createTreeStore,
@@ -282,6 +283,7 @@ export default function BoardsPage() {
     if (platform() !== "macos") return;
 
     const handler = (e: KeyboardEvent) => {
+      if (isKeyboardOwnedElsewhere(e, null)) return;
       if (e.metaKey && e.key.toLowerCase() === "w") {
         e.preventDefault();
         e.stopPropagation();
@@ -295,29 +297,31 @@ export default function BoardsPage() {
   }, [closeTab, activeTab]);
 
   const keyMap = useAtomValue(keyMapAtom);
-  useHotkeys([
-    [keyMap.CLOSE_TAB.keys, () => closeTab(activeTab)],
-    [keyMap.CYCLE_TABS.keys, () => cycleTabs()],
-    [keyMap.REVERSE_CYCLE_TABS.keys, () => cycleTabs(true)],
-    ["alt+1", () => selectTab(0)],
-    ["ctrl+1", () => selectTab(0)],
-    ["alt+2", () => selectTab(1)],
-    ["ctrl+2", () => selectTab(1)],
-    ["alt+3", () => selectTab(2)],
-    ["ctrl+3", () => selectTab(2)],
-    ["alt+4", () => selectTab(3)],
-    ["ctrl+4", () => selectTab(3)],
-    ["alt+5", () => selectTab(4)],
-    ["ctrl+5", () => selectTab(4)],
-    ["alt+6", () => selectTab(5)],
-    ["ctrl+6", () => selectTab(5)],
-    ["alt+7", () => selectTab(6)],
-    ["ctrl+7", () => selectTab(6)],
-    ["alt+8", () => selectTab(7)],
-    ["ctrl+8", () => selectTab(7)],
-    ["alt+9", () => selectTab(tabs.length - 1)],
-    ["ctrl+9", () => selectTab(tabs.length - 1)],
-  ]);
+  useHotkeys(
+    withKeyboardOwnership([
+      [keyMap.CLOSE_TAB.keys, () => closeTab(activeTab)],
+      [keyMap.CYCLE_TABS.keys, () => cycleTabs()],
+      [keyMap.REVERSE_CYCLE_TABS.keys, () => cycleTabs(true)],
+      ["alt+1", () => selectTab(0)],
+      ["ctrl+1", () => selectTab(0)],
+      ["alt+2", () => selectTab(1)],
+      ["ctrl+2", () => selectTab(1)],
+      ["alt+3", () => selectTab(2)],
+      ["ctrl+3", () => selectTab(2)],
+      ["alt+4", () => selectTab(3)],
+      ["ctrl+4", () => selectTab(3)],
+      ["alt+5", () => selectTab(4)],
+      ["ctrl+5", () => selectTab(4)],
+      ["alt+6", () => selectTab(5)],
+      ["ctrl+6", () => selectTab(5)],
+      ["alt+7", () => selectTab(6)],
+      ["ctrl+7", () => selectTab(6)],
+      ["alt+8", () => selectTab(7)],
+      ["ctrl+8", () => selectTab(7)],
+      ["alt+9", () => selectTab(tabs.length - 1)],
+      ["ctrl+9", () => selectTab(tabs.length - 1)],
+    ]),
+  );
 
   return (
     <Tabs

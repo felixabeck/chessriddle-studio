@@ -2,6 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { AppMenuCallbacks } from "./-appMenu";
+import { focusedDialogButton, press } from "@/tests/keyboard";
 
 const mocks = vi.hoisted(() => ({
   initializePathOwners: vi.fn(),
@@ -12,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   fileRevision: vi.fn(),
   windowFocus: vi.fn(),
   lastCallbacks: null as AppMenuCallbacks | null,
+  createTab: vi.fn(),
+  pickPgnFile: vi.fn(),
 }));
 
 vi.mock("@/state/pathOwners", () => ({
@@ -36,7 +39,6 @@ vi.mock("@/state/keybinds", async () => {
     }),
   };
 });
-vi.mock("react-hotkeys-hook", () => ({ useHotkeys: () => undefined }));
 vi.mock("@/platform/native", () => ({
   Menu: {},
   MenuItem: {},
@@ -81,7 +83,11 @@ vi.mock("@/components/Sidebar", () => ({
 }));
 vi.mock("@/components/TopBar", () => ({ default: () => null }));
 vi.mock("@/components/tabs/QuitConfirmModal", () => ({ default: () => null }));
-vi.mock("@/utils/files", () => ({ openFile: vi.fn(), pickPgnFile: vi.fn() }));
+vi.mock("@/utils/files", () => ({ openFile: vi.fn(), pickPgnFile: mocks.pickPgnFile }));
+vi.mock("@/utils/tabs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/utils/tabs")>()),
+  createTab: mocks.createTab,
+}));
 vi.mock("@mantine/core", () => {
   function AppShell({ children }: { children: React.ReactNode }) {
     return <div>{children}</div>;
@@ -123,6 +129,38 @@ beforeEach(() => {
   mocks.fileRevision.mockReset().mockResolvedValue("dev:ino:revision");
   mocks.windowFocus.mockReset().mockResolvedValue(vi.fn());
   mocks.lastCallbacks = null;
+  mocks.createTab.mockReset().mockResolvedValue("created");
+  mocks.pickPgnFile.mockReset().mockResolvedValue(null);
+});
+
+test.each([
+  { name: "NEW_TAB", key: "t", action: mocks.createTab },
+  { name: "OPEN_FILE", key: "o", action: mocks.pickPgnFile },
+])("$name yields to a focused dialog button and works after dismissal", async ({ key, action }) => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  await act(async () => root.render(<RootLayout />));
+  const { dialog, button } = focusedDialogButton();
+  dialog.setAttribute("role", "dialog");
+  try {
+    expect(document.activeElement).toBe(button);
+    await act(async () => {
+      expect(press(key, { target: button, ctrlKey: true }).defaultPrevented).toBe(false);
+    });
+    expect(action).not.toHaveBeenCalled();
+    dialog.remove();
+
+    await act(async () => {
+      press(key, { ctrlKey: true });
+    });
+    expect(action).toHaveBeenCalledOnce();
+  } finally {
+    dialog.remove();
+    await act(async () => root.unmount());
+    host.remove();
+  }
 });
 
 async function clearThroughProductionPath(
