@@ -32,7 +32,7 @@ pub(crate) const OAUTH_FAILURE: &str = "OAuth authentication failed";
 const LISTENER_DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
 pub(crate) const MAX_OAUTH_RESPONSE_BYTES: usize = 64 * 1024;
 
-async fn safe_oauth_http_client(
+pub(crate) async fn safe_oauth_http_client(
     client: &reqwest::Client,
     request: HttpRequest,
 ) -> Result<HttpResponse, oauth2::reqwest::Error<reqwest::Error>> {

@@ -7,6 +7,7 @@
 mod cancellable_read;
 mod chess;
 mod chesscom;
+mod chessriddle;
 mod credentials;
 mod db;
 mod engine;
@@ -482,6 +483,7 @@ pub struct AppState {
     engine_supervisor: Arc<EngineSupervisor>,
     auth: Arc<AuthLifecycle>,
     credentials: Arc<crate::credentials::CredentialManager>,
+    pub(crate) chessriddle: Arc<std::sync::OnceLock<crate::chessriddle::AccountOwner>>,
     game_manager: Arc<GameManager>,
     progress_state: progress::ProgressStore,
     pub(crate) operations: OperationRegistry,
@@ -519,6 +521,7 @@ impl AppState {
             engine_supervisor: Arc::new(EngineSupervisor::default()),
             auth: Arc::new(AuthLifecycle::default()),
             credentials,
+            chessriddle: Arc::new(std::sync::OnceLock::new()),
             game_manager: Arc::new(GameManager::default()),
             progress_state: Default::default(),
             operations,
@@ -2362,6 +2365,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "native credential storage could not be initialized"
                 })?;
             let authority_registry = app.path().app_config_dir()?.join("path-authority.json");
+            let chessriddle = crate::chessriddle::initialize(app.handle())
+                .map_err(|_| "ChessRiddle credential storage could not be initialized")?;
+            app.state::<AppState>()
+                .chessriddle
+                .set(chessriddle)
+                .map_err(|_| "ChessRiddle token owner was already initialized")?;
             app.state::<AppState>().pgn_repository.initialize_practice(
                 crate::infra::path_authority::ensure_app_owned_default_dir(
                     &app_data,

@@ -12,7 +12,7 @@ use specta::Type;
 use sysinfo::SystemExt;
 use uuid::Uuid;
 
-pub(crate) const FEEDBACK_URL: &str = "https://chessriddle.com/api/v1/feedback";
+pub(crate) use crate::chessriddle::FEEDBACK_URL;
 const STUDIO_PRODUCT: &str = "ChessRiddle Studio";
 const MIN_MESSAGE_CHARS: usize = 10;
 const MAX_MESSAGE_CHARS: usize = 5000;
