@@ -137,7 +137,11 @@ afterEach(() => {
 
 async function render() {
   const setOpened = vi.fn();
-  const setPuzzleDbs = vi.fn();
+  const publish = vi.fn();
+  const refreshPuzzleDbs = vi.fn(async (signal?: AbortSignal) => {
+    const databases = await mocks.getPuzzleDatabases(signal);
+    if (!signal?.aborted) publish(databases);
+  });
   const onWorkspaceChanged = vi.fn();
   await act(async () =>
     root.render(
@@ -145,12 +149,12 @@ async function render() {
         opened
         setOpened={setOpened}
         puzzleDbs={[]}
-        setPuzzleDbs={setPuzzleDbs}
+        refreshPuzzleDbs={refreshPuzzleDbs}
         onWorkspaceChanged={onWorkspaceChanged}
       />,
     ),
   );
-  return { setOpened, setPuzzleDbs, onWorkspaceChanged };
+  return { setOpened, publish, refreshPuzzleDbs, onWorkspaceChanged };
 }
 
 test("refreshes puzzle databases and closes after choosing a workspace", async () => {
@@ -160,7 +164,7 @@ test("refreshes puzzle databases and closes after choosing a workspace", async (
   await act(async () => host.querySelector("button")!.click());
   expect(mocks.choosePuzzleDatabase).toHaveBeenCalledOnce();
   expect(actions.onWorkspaceChanged).toHaveBeenCalledOnce();
-  expect(actions.setPuzzleDbs).toHaveBeenCalledWith([{ title: "Tactics.db3" }]);
+  expect(actions.publish).toHaveBeenCalledWith([{ title: "Tactics.db3" }]);
   expect(actions.setOpened).toHaveBeenCalledWith(false);
   expect(mocks.notify).not.toHaveBeenCalled();
 });
@@ -191,7 +195,7 @@ test("surfaces an ordinary preview-list failure after workspace selection", asyn
   mocks.getPuzzleDatabases.mockRejectedValue(new Error("listing failed"));
   const actions = await render();
   await act(async () => host.querySelector("button")!.click());
-  expect(actions.setPuzzleDbs).not.toHaveBeenCalled();
+  expect(actions.publish).not.toHaveBeenCalled();
   expect(actions.setOpened).not.toHaveBeenCalled();
   expect(mocks.notify).toHaveBeenCalledWith({
     color: "danger",
@@ -225,7 +229,7 @@ test("keeps a cancelled download destination silent", async () => {
   mocks.issueDownloadDestination.mockRejectedValue(new Error("Cancellation"));
   const actions = await render();
   await act(async () => host.querySelectorAll("button")[1].click());
-  expect(actions.setPuzzleDbs).not.toHaveBeenCalled();
+  expect(actions.publish).not.toHaveBeenCalled();
   expect(mocks.notify).not.toHaveBeenCalled();
 });
 
@@ -247,7 +251,7 @@ test("installs a downloaded database and refreshes the visible collection", asyn
     { sha256: tacticsManifest.sha256, signature: tacticsManifest.signature },
   );
   expect(mocks.progressButtonProps?.clearOnCancel).toBe(false);
-  expect(actions.setPuzzleDbs).toHaveBeenCalledWith([{ title: "Lichess.db3" }]);
+  expect(actions.publish).toHaveBeenCalledWith([{ title: "Lichess.db3" }]);
   expect(mocks.notify).not.toHaveBeenCalled();
 });
 
@@ -256,7 +260,7 @@ test("reports a failed download without replacing the installed database list", 
   mocks.issueDownloadDestination.mockRejectedValue(new Error("native failure"));
   const actions = await render();
   await act(async () => host.querySelectorAll("button")[1].click());
-  expect(actions.setPuzzleDbs).not.toHaveBeenCalled();
+  expect(actions.publish).not.toHaveBeenCalled();
   expect(mocks.notify).toHaveBeenCalledWith({
     color: "danger",
     title: "Common.Error",
@@ -351,7 +355,7 @@ test("unmount cancels a held workspace preview and refuses its stale database li
   expect(signal.aborted).toBe(true);
   resolve([{ title: "Stale.db3" }]);
   await act(async () => Promise.resolve());
-  expect(actions.setPuzzleDbs).not.toHaveBeenCalled();
+  expect(actions.publish).not.toHaveBeenCalled();
   expect(mocks.notify).not.toHaveBeenCalled();
 });
 
@@ -368,7 +372,7 @@ test("unmount during the accepted picker prevents a later preview", async () => 
   await act(async () => finishPicker());
   expect(actions.onWorkspaceChanged).toHaveBeenCalledOnce();
   expect(mocks.getPuzzleDatabases).not.toHaveBeenCalled();
-  expect(actions.setPuzzleDbs).not.toHaveBeenCalled();
+  expect(actions.publish).not.toHaveBeenCalled();
   expect(actions.setOpened).not.toHaveBeenCalled();
   expect(mocks.notify).not.toHaveBeenCalled();
 });
@@ -408,7 +412,7 @@ test.each(["picker", "destination"] as const)(
       title: "Common.Error",
       message: "This puzzle folder is no longer available. Choose another in Settings.",
     });
-    expect(actions.setPuzzleDbs).not.toHaveBeenCalled();
+    expect(actions.publish).not.toHaveBeenCalled();
     expect(actions.setOpened).not.toHaveBeenCalled();
   },
 );

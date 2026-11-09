@@ -209,6 +209,17 @@ function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
   const workspaceRequest = useRef(0);
   const selectedDbRef = useRef(selectedDb);
   selectedDbRef.current = selectedDb;
+  const workspaceGenerationRef = useRef(workspaceGeneration);
+  workspaceGenerationRef.current = workspaceGeneration;
+
+  async function refreshPuzzleDbs(signal?: AbortSignal): Promise<void> {
+    const generation = workspaceGenerationRef.current;
+    const databases = await getPuzzleDatabases(signal);
+    // A listing started under an older workspace generation must not be published (f-20261106-43).
+    if (signal?.aborted || !mounted.current || workspaceGenerationRef.current !== generation)
+      return;
+    setPuzzleDbs(databases);
+  }
 
   const effectiveSelectedDb =
     listedWorkspaceGeneration === workspaceGeneration &&
@@ -809,8 +820,12 @@ function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
             puzzleDbs={puzzleDbs}
             opened={addOpened}
             setOpened={setAddOpened}
-            setPuzzleDbs={setPuzzleDbs}
-            onWorkspaceChanged={() => setWorkspaceGeneration((generation) => generation + 1)}
+            refreshPuzzleDbs={refreshPuzzleDbs}
+            onWorkspaceChanged={() => {
+              // The picker starts its preview before the atom update renders, so advance its owner now.
+              workspaceGenerationRef.current += 1;
+              setWorkspaceGeneration((generation) => generation + 1);
+            }}
           />
           <ConfirmModal
             title={t("Puzzle.DeleteDatabase")}

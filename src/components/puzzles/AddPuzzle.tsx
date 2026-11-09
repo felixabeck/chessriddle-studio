@@ -1,7 +1,7 @@
 import { tauri } from "@/platform/tauri";
 import { Alert, Box, Button, Divider, Group, Paper, ScrollArea, Stack, Text } from "@mantine/core";
 import { AlertCircle } from "lucide-react";
-import { type Dispatch, type SetStateAction, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import useSWRImmutable from "swr/immutable";
 import { type PuzzleDatabaseInfo } from "@/bindings";
@@ -13,7 +13,7 @@ import {
 import { formatBytes, formatNumber } from "@/utils/format";
 import { notifyUnlessCancelled, runUnlessCancelled } from "@/components/files/notifyError";
 import { cancelDownloadJob, runDownloadJob, useDownloadJob } from "@/hooks/downloadJobs";
-import { choosePuzzleDatabase, getPuzzleDatabases } from "@/utils/puzzles";
+import { choosePuzzleDatabase } from "@/utils/puzzles";
 import ProgressButton from "../common/ProgressButton";
 import { CatalogVerificationError } from "@/utils/signedCatalog";
 import AppModal from "../common/AppModal";
@@ -22,13 +22,13 @@ function AddPuzzle({
   puzzleDbs,
   opened,
   setOpened,
-  setPuzzleDbs,
+  refreshPuzzleDbs,
   onWorkspaceChanged,
 }: {
   puzzleDbs: PuzzleDatabaseInfo[];
   opened: boolean;
   setOpened: (opened: boolean) => void;
-  setPuzzleDbs: Dispatch<SetStateAction<PuzzleDatabaseInfo[]>>;
+  refreshPuzzleDbs: (signal?: AbortSignal) => Promise<void>;
   onWorkspaceChanged: () => void;
 }) {
   const { t } = useTranslation();
@@ -49,9 +49,8 @@ function AddPuzzle({
       await choosePuzzleDatabase();
       onWorkspaceChanged();
       if (controller.signal.aborted) return;
-      const databases = await getPuzzleDatabases(controller.signal);
+      await refreshPuzzleDbs(controller.signal);
       if (controller.signal.aborted || previewRequest.current !== controller) return;
-      setPuzzleDbs(databases);
       setOpened(false);
     } catch (error) {
       if (!controller.signal.aborted) notifyUnlessCancelled(t("Common.Error"), error, "puzzle");
@@ -79,7 +78,7 @@ function AddPuzzle({
                 puzzleDb={db}
                 key={card.progressId}
                 progressId={card.progressId}
-                setPuzzleDbs={setPuzzleDbs}
+                refreshPuzzleDbs={refreshPuzzleDbs}
                 initInstalled={card.initInstalled}
               />
             );
@@ -100,12 +99,12 @@ function AddPuzzle({
 }
 
 function PuzzleDbCard({
-  setPuzzleDbs,
+  refreshPuzzleDbs,
   puzzleDb,
   progressId,
   initInstalled,
 }: {
-  setPuzzleDbs: Dispatch<SetStateAction<PuzzleDatabaseInfo[]>>;
+  refreshPuzzleDbs: (signal?: AbortSignal) => Promise<void>;
   puzzleDb: DownloadablePuzzleDatabase;
   progressId: string;
   initInstalled: boolean;
@@ -131,7 +130,7 @@ function PuzzleDbCard({
               ticket,
               { sha256: puzzleDb.sha256, signature: puzzleDb.signature },
             );
-            setPuzzleDbs(await getPuzzleDatabases());
+            await refreshPuzzleDbs();
           }),
         "puzzle",
       );

@@ -47,6 +47,7 @@ import i18n from "@/i18n";
 import type { SupportedLocale } from "@/i18n";
 import deDECatalogue from "@/translation/de-DE.json";
 import Puzzles from "./Puzzles";
+import type AddPuzzle from "./AddPuzzle";
 import {
   selectedPuzzleIndex,
   puzzleSchema,
@@ -76,6 +77,7 @@ const mocks = vi.hoisted(() => ({
   playSound: vi.fn(),
   board: null as Config | null,
   selectedDatabase: null as string | null,
+  addPuzzleProps: null as ComponentProps<typeof AddPuzzle> | null,
 }));
 
 vi.mock("@/utils/sound", () => ({ playSound: mocks.playSound }));
@@ -142,9 +144,10 @@ vi.mock("@mantine/core", async (original) => {
   };
 });
 vi.mock("./AddPuzzle", () => ({
-  default: ({ puzzleDbs }: { puzzleDbs: unknown[] }) => (
-    <div data-testid="puzzle-database-count">{puzzleDbs.length}</div>
-  ),
+  default: (props: ComponentProps<typeof AddPuzzle>) => {
+    mocks.addPuzzleProps = props;
+    return <div data-testid="puzzle-database-count">{props.puzzleDbs.length}</div>;
+  },
 }));
 vi.mock("../common/ConfirmModal", () => ({
   default: ({ opened, onConfirm }: { opened: boolean; onConfirm: () => Promise<void> }) =>
@@ -2303,6 +2306,7 @@ beforeEach(() => {
   mocks.connectChessriddle.mockResolvedValue(connectedAccount);
   mocks.board = null;
   mocks.selectedDatabase = null;
+  mocks.addPuzzleProps = null;
   localStorage.clear();
   sessionStorage.clear();
   localStorage.setItem("puzzle-db", JSON.stringify(selectedDb));
@@ -3746,6 +3750,70 @@ test("ignores a stale workspace listing after a newer generation restores the se
   });
 
   await act(async () => finishStaleListing([otherDatabase]));
+  expect(
+    document.querySelector('[data-testid="puzzle-state"]')?.getAttribute("data-database"),
+  ).toBe(selectedDb.id);
+  expect(store.get(selectedPuzzleDbAtom)).toEqual(selectedDb);
+});
+
+test("a late download inventory from the previous workspace cannot reactivate its database", async () => {
+  const store = await renderPuzzles();
+  await vi.waitFor(() => {
+    expect(
+      document.querySelector('[data-testid="puzzle-state"]')?.getAttribute("data-database"),
+    ).toBe(selectedDb.id);
+  });
+
+  const staleListing = deferred<PuzzleDatabaseInfo[]>();
+  mocks.listPuzzleDatabases.mockReturnValueOnce(staleListing.promise);
+  const refresh = mocks.addPuzzleProps!.refreshPuzzleDbs();
+
+  mocks.getPuzzleWorkspace.mockResolvedValue(otherWorkspace);
+  mocks.listPuzzleDatabases.mockResolvedValue([otherDatabase]);
+  await act(async () => mocks.addPuzzleProps!.onWorkspaceChanged());
+  await vi.waitFor(() => {
+    expect(document.querySelector('[data-testid="puzzle-database-count"]')?.textContent).toBe("1");
+    expect(
+      document.querySelector('[data-testid="puzzle-state"]')?.getAttribute("data-database"),
+    ).toBe("none");
+  });
+
+  await act(async () => {
+    staleListing.resolve([selectedDatabase]);
+    await refresh;
+  });
+  expect(
+    document.querySelector('[data-testid="puzzle-state"]')?.getAttribute("data-database"),
+  ).toBe("none");
+  expect(store.get(selectedPuzzleDbAtom)).toEqual(selectedDb);
+  expect(document.querySelector('[data-testid="puzzle-database-count"]')?.textContent).toBe("1");
+  await act(async () =>
+    document.querySelector<HTMLInputElement>('[placeholder="Puzzle.SelectDatabase"]')!.click(),
+  );
+  const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')].map(
+    (option) => option.textContent,
+  );
+  expect(options).toContain("Other");
+  expect(options).not.toContain("Tactics");
+  expect(
+    document.querySelector<HTMLButtonElement>('[aria-label="Puzzle.NewPuzzle"]')?.disabled,
+  ).toBe(true);
+  await newPuzzle();
+  expect(mocks.getPuzzle).not.toHaveBeenCalled();
+});
+
+test("an unchanged-workspace download refresh publishes the new inventory", async () => {
+  const store = await renderPuzzles();
+  await vi.waitFor(() => {
+    expect(
+      document.querySelector('[data-testid="puzzle-state"]')?.getAttribute("data-database"),
+    ).toBe(selectedDb.id);
+  });
+
+  mocks.listPuzzleDatabases.mockResolvedValue([selectedDatabase, otherDatabase]);
+  await act(async () => mocks.addPuzzleProps!.refreshPuzzleDbs());
+
+  expect(document.querySelector('[data-testid="puzzle-database-count"]')?.textContent).toBe("2");
   expect(
     document.querySelector('[data-testid="puzzle-state"]')?.getAttribute("data-database"),
   ).toBe(selectedDb.id);
