@@ -22231,7 +22231,7 @@ All probes were removed; the tree stayed clean.
 
 ### Pinned-engine hover-preview screenshot captures a transient ScrollArea scrollbar on slow runners
 
-* **ID:** f-20261108-01 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261108-01 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 8b655619-b5c3-4691-9ef2-f9c8ad40cf23
 * **Impact class:** tooling
 * **CI run:** 42436165203 (job 128595345671, `e2e`, head `fc49383e`, a records-only commit on top of green `023f316e`)
@@ -22240,6 +22240,8 @@ All probes were removed; the tree stayed clean.
 * **Failure scenario:** any push whose CI e2e job runs on a slow runner fails `engine-gap: pinned engine shows up to its own line count…` (CI duration 25.9 s vs 7.6 s locally); `ci:remote:check` then refuses every push from every checkout.
 * **Proof:** artefact `frontend-browser-audit` 13600002026, entries `…pinn-d96d8…/pinned-engine-hover-preview-dark-{actual,expected,diff}.png`, range-fetched and cropped at (1240,270)-(1340,380). Eight local container repeats (`--repeat-each 8`) all passed, consistent with a timing-only race.
 * **Fix:** call `await waitForScrollAreaScrollbarsHidden(page);` immediately before the hover-preview screenshot (the pointer stays on the move, so the preview stays visible).
+* **Closed at pickup (2026-11-09, drain session 1a19f325-2ee7-4238-874d-db52d7242522):** the finding no longer holds. Commit fab855dc ("test(e2e): wait for hover scrollbars before the pinned-engine preview screenshot", 2026-11-08) already added `await waitForScrollAreaScrollbarsHidden(page);` immediately before the `pinned-engine-hover-preview-dark.png` screenshot at `e2e/engine-gap.spec.ts:604`, which is exactly the recorded fix. No further change was made. It was taken as a co-located joiner of f-20261109-02.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"3102c69957958680c77d49040b15ac8c90c3c949c44f874ea9a309bee7e0cc15","header_sha256":"848fcb916be838d766ab6cd1217438324f1aa303d8b8cc2c9ebd14d79ace46cd","header_status":"handled","input_sha256":"6c6cede79b19358c94c77ccad6556724098a9d479d96431ef7ff8b7184d334df","kind":"mutation-receipt","operation":"7db19696b9fd2ba98ea9cb0fb5cb9ea9d391633445f846021443f45c25f381b6","options":{"section":null},"request_id_sha256":null,"results":["f-20261108-01"],"target":"f-20261108-01","v":1} -->
 
 ### Hosted macos-26-intel rust-platform job hit the 45-minute limit during Clippy on fc49383e, so remote CI is red
 
