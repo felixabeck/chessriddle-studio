@@ -172,6 +172,7 @@
           "src/bindings/index.ts",
           "src/chessground/**",
           "src/components/common/OpenFolderButton.tsx",
+          "src/platform/chessriddle.ts",
           "src/platform/errors.ts",
           "src/platform/http.ts",
           "src/platform/listenerLifecycle.ts",
