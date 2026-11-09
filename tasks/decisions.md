@@ -12855,3 +12855,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Felix asked for drag-and-drop reordering on 2026-11-09, and the growth is that behaviour. Reversal path: tighten total against a future smaller production build. This decision is the forward pointer for the ceilings and supersedes d-20261109-23 in that role.
 * **Decided by:** Claude Code (Opus 5.5) session a43b1706-2c72-4e7b-99fe-a8e648bef2bd · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"7031d9b423c5f6cd0719af2581d1cb4591b6d702c7498b71913dea73e2689f5e","input_sha256":"e7dfb79cd877f392d2be1cf8583125279baf271fe5d95f99c8172815bc9a41d9","kind":"mutation-receipt","operation":"9a1573e743abf45b5741c5c9bb5d6f88ab6fd5f83c01a1d1871dc66f4a580aeb","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-37"],"target":"decisions-ledger","v":1} -->
+
+### d-20261109-38 — Does ChessRiddle tactics training justify raising the total bundle budget?
+
+* **Question:** The training tab and its translated messages put the production build over the 1,755,000 B total ceiling set by d-20261109-37.
+* **Governs:** -
+* **Chosen:** Raise total to 1,780,000 B. Exact published base `93a7664814c8895753053d812d80174638df1c1f` measured 515,239 B Entry, 526,488 B largest lazy and 1,751,647 B total; candidate `24995929dc83fb833d0c6073d24613c335da06e8` measured 518,420 B Entry, 531,298 B largest lazy and 1,770,706 B total, all gzip, both with `pnpm build-vite` and production `buildBundleReport`, with byte-identical `package.json`, `pnpm-lock.yaml` and `vite.config.ts`. Whole-build deltas are +3,181 B Entry, +4,810 B largest lazy and +19,059 B total. Entry stays at 565,000 B and largest lazy at 550,000 B.
+* **Rejected:** Dropping translated training states: every string has a production consumer, and total counts every emitted asset once, so lazy-loading cannot reduce it.
+* **Reason:** The growth is the requested training surface with one message per native outcome in 16 languages. Same procedure as d-20261109-13. Reversal path: tighten total against a future smaller production build. This decision is the forward pointer for the ceilings.
+* **Decided by:** Claude Code (Opus 5.5) build run tactics-phase-b, full auto, 2026-11-09 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"2c49e6c143d022efb0d7381ec0b1dca7cd1467df3653d2e90b55e33e3c20703b","input_sha256":"26f3bc302e66192e9b8dfeabef2373ffb04d7094000f35f50a7d228faa37182c","kind":"mutation-receipt","operation":"702fbf2b3e520793dbe41a81962dc016698f49da6101a74b706594deedc5e025","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-38"],"target":"decisions-ledger","v":1} -->
