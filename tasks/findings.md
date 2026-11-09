@@ -22446,3 +22446,17 @@ Fixed in 0b63a012 (pushed to master; hosted Test 13/13 green; installed locally)
 * **Proof:** Read at HEAD `2d99c36f`: `hasStartableTimeControl` returns true for an unlimited side, and `validate_time_controls` returns the `both players must provide a time control` error when exactly one side has a `TimeControl`. Not reproduced in the app.
 * **Closed (2026-11-09, drain session c6378528-f959-40b1-89ab-54e6a35fe5f1, adopted plan f5f32f01):** One-sided clocks are supported natively (d-20261109-06). `validate_time_controls` range- and floor-checks each present side; `select_engine_go` picks the engine `go` from the mover's side, mirrors the mover's clock for an Unlimited opponent, clamps every value to `MAX_ENGINE_LIMIT`, and starts no search for an expired timed mover so the clock tick records the timeout (d-20261109-07). Renderer logic was already per-side; a rendered Start test proves the MANDATE scenario. Commits e7f7e487, 90f5604b, 1eaf8297; review history `tasks/handoffs/2026-11-09-f-20261109-01-review.md`. Rejected: blocking the configuration in the form.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"69692f3ec1e34a6a1fc354115fbb1fa42d7530a8dd11b57670c4cc9d74a094f0","header_sha256":"15be089734c0141527b38ccb37eb93e8042452105b7b3ae1ab6feac7169c11d7","header_status":"handled","input_sha256":"0073d0067048bd33bf1bb25b0361053b080679d4b1ad8577987e46732433e0a7","kind":"mutation-receipt","operation":"6283ef5ab5c9c0a03891af62e5ba6a002e0db1a152cadf7b76d77f7ece5eb22f","options":{"section":null},"request_id_sha256":null,"results":["f-20261109-01"],"target":"f-20261109-01","v":1} -->
+
+---
+
+## 2026-11-09 — filed through the inbox spool
+
+### Hosted e2e fails the native-menu test: the right click on the rename field reports a prevented menu
+
+* **ID:** f-20261109-03 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Where:** `e2e/workspace-tabs.spec.ts`, test `workspace-tabs: native menu is suppressed on a plain surface and preserved in a text input`.
+* **CI run:** 42573938373
+* **Defect:** On master d66b0103, Test run 42573938373 job `e2e` (129017324029) failed this one test with 363 others passing: after the right click on the Rename tab input, `data-context-menu-prevented` stayed `"true"` for the full 8 s. The test passes locally in the container, including on the rebased tree 2074bbd8. The test measures the input once with `boundingBox()` right after the dialog appears, so a click while the dialog's opening transition runs may land outside the input. That cause is unconfirmed, and no local reproduction exists.
+* **Failure scenario:** A slow hosted runner makes the `e2e` job red on a commit that does not touch context menus, and `pnpm ci:remote:check` then refuses later pushes.
+* **Related:** Run 42571912257 on 6d794f89 failed job `e2e` with a different test, `wheelColumnTo re-reveals a column scrolled out of the stacked` in `e2e/font-scaled-breakpoints.spec.ts`, which also looks like hosted-runner timing. f-20261105-06 removed two other hosted-CI timing flakes.
+* **Fix direction:** Wait until the dialog geometry settles before clicking, then confirm with repeated hosted runs. Inspect the font-scaled failure in the same pass.
