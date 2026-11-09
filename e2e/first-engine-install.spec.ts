@@ -100,7 +100,13 @@ test("automatic install stays visible across routes, cancels, and never starts a
         progressId,
     );
     await expect(notice.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "37");
+    // The element clip includes the page behind the fixed notice along its fractional top edge
+    // and rounded corners. Hiding that page keeps the snapshot about the notice alone.
+    const hiddenPage = await page.addStyleTag({
+        content: ".mantine-AppShell-main { visibility: hidden; }",
+    });
     await expect(notice).toHaveScreenshot("automatic-stockfish-notice.png");
+    await hiddenPage.evaluate((style) => style.remove());
     await page.getByRole("link", { name: "Engines", exact: true }).click();
     await expect(notice).toBeVisible();
     await expect(page.getByRole("button", { name: /Downloading/ })).toHaveCount(2);
