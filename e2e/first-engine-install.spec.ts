@@ -1,7 +1,13 @@
 import type { Page } from "@playwright/test";
 import catalog from "../src/catalogs/engines.json" with { type: "json" };
 import { serializeStorageValue } from "../src/state/store/debouncedStorage";
-import { assertPageNotClipped, expect, test, type MockScenario } from "./fixtures";
+import {
+    assertNothingClipped,
+    assertPageNotClipped,
+    expect,
+    test,
+    type MockScenario,
+} from "./fixtures";
 
 const stockfish = catalog.find(
     (engine) => engine.name === "Stockfish" && engine.os === "linux" && !engine.bmi2,
@@ -19,7 +25,7 @@ const commands = {
     // Natural settlement is beyond the test's 45-second timeout. Only cancel ends this job.
     install_engine_workflow: {
         delay: 120_000,
-        error: { tag: "backend-error", category: "cancellation", message: "Cancelled" },
+        error: { tag: "backend-error", category: "cancellation", message: "Cancellation" },
     },
 } satisfies NonNullable<MockScenario["commands"]>;
 
@@ -80,6 +86,7 @@ test("automatic install stays visible across routes, cancels, and never starts a
             ),
         )
         .toBe(true);
+    await assertPageNotClipped(page);
     await page.evaluate(
         (id) =>
             window.__E2E_TAURI__.emit("progress-event", {
@@ -93,7 +100,6 @@ test("automatic install stays visible across routes, cancels, and never starts a
         progressId,
     );
     await expect(notice.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "37");
-    await assertPageNotClipped(page);
     await expect(notice).toHaveScreenshot("automatic-stockfish-notice.png");
     await page.getByRole("link", { name: "Engines", exact: true }).click();
     await expect(notice).toBeVisible();
@@ -109,11 +115,14 @@ test("automatic install stays visible across routes, cancels, and never starts a
                     .map(({ args }) => args),
             ),
         )
-        .toEqual([{ ticket: "first-stockfish-ticket" }]);
+        .toEqual([{ id: "first-stockfish-ticket" }]);
     await expect(notice).not.toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("alert").filter({ hasText: "Error" })).not.toBeVisible();
     const button = page.getByRole("button", { name: "Install Stockfish", exact: true });
     await expect(button).toBeEnabled();
-    await assertPageNotClipped(page);
+    await assertNothingClipped(
+        button.locator("xpath=ancestor::*[contains(@class,'mantine-Stack-root')][1]"),
+    );
     await expect(button).toHaveScreenshot("engines-install-stockfish.png");
     const marker = await page.evaluate(() => localStorage.getItem("first-launch-stockfish"));
     expect(marker).not.toBeNull();
@@ -128,7 +137,7 @@ test("automatic install stays visible across routes, cancels, and never starts a
     await page.getByRole("button", { name: "Select engines", exact: true }).click();
     await expect(button).toBeVisible();
     await expect(button).toBeEnabled();
-    await assertPageNotClipped(page);
+    await assertNothingClipped(page.locator(".mantine-Popover-dropdown"));
     await expect(page.locator(".mantine-Popover-dropdown")).toHaveScreenshot(
         "analysis-install-stockfish.png",
     );

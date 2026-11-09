@@ -1,4 +1,4 @@
-import { Button } from "@mantine/core";
+import { Box, Button } from "@mantine/core";
 import { useStore } from "jotai";
 import { useEffect, useRef, useState, type ComponentProps } from "react";
 import { useTranslation } from "react-i18next";
@@ -92,6 +92,8 @@ export default function InstallStockfishButton() {
   const { defaultEngines, error } = useDefaultEngines(os, true);
   const engine = selectStockfishCatalogEntry(defaultEngines);
   return !error && engine?.downloadLink ? (
-    <InstallEntry key={engine.downloadLink} engine={engine} />
+    <Box w="100%" maw="16rem">
+      <InstallEntry key={engine.downloadLink} engine={engine} />
+    </Box>
   ) : null;
 }

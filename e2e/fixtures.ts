@@ -1217,7 +1217,7 @@ const tauriBootstrap = () => {
         }
         if (response.delay) {
             if (command === "install_engine_workflow") {
-                const ticket = String(args.ticket);
+                const ticket = String(args.jobId);
                 try {
                     await new Promise<void>((resolve, reject) => {
                         const timer = window.setTimeout(resolve, response.delay);
@@ -1226,7 +1226,7 @@ const tauriBootstrap = () => {
                             reject({
                                 tag: "backend-error",
                                 category: "cancellation",
-                                message: "Cancelled",
+                                message: "Cancellation",
                             });
                         });
                     });
@@ -1327,7 +1327,7 @@ const tauriBootstrap = () => {
                   ? response.results.shift()
                   : response.result;
         if (command === "cancel_download" && result === true) {
-            pendingInstalls.get(String(args.ticket))?.();
+            pendingInstalls.get(String(args.id))?.();
         }
         if (command === "pending_engine_completions" && !state.commands[command])
             return readCompletions();
