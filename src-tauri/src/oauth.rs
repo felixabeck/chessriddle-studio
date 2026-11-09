@@ -1,41 +1,19 @@
-use axum::{
-    extract::Query,
-    response::{Html, IntoResponse},
-    routing::get,
-    Extension, Router,
-};
 use log::{error, info, warn};
-use oauth2::{
-    basic::BasicClient, AuthUrl, AuthorizationCode, ClientId, CsrfToken, HttpRequest, HttpResponse,
-    PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, TokenResponse, TokenUrl,
-};
+use oauth2::{basic::BasicClient, AuthorizationCode, PkceCodeVerifier, TokenResponse};
 use serde::Deserialize;
-use std::{
-    collections::HashMap,
-    net::TcpListener,
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
-    time::Duration,
-};
+use std::{sync::Arc, time::Duration};
 use tauri_plugin_opener::OpenerExt;
-use tokio::{
-    sync::{oneshot, Mutex},
-    task::JoinHandle,
-};
 
 use crate::{
     credentials::{LichessAccountHandle, LichessAccountMetadata, LichessAccountStoreResult},
     error::Error,
+    oauth_pkce::{self, AttemptRegistry, ListenerHandle, OAuthProvider, OAUTH_FAILURE},
     AppState,
 };
 use dashmap::DashMap;
 use serde::Serialize;
 use specta::Type;
 
-const OAUTH_FAILURE: &str = "OAuth authentication failed";
-const LISTENER_DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
 const JOB_TTL: Duration = Duration::from_secs(15 * 60);
 const LICHESS_ACCOUNT_URL: &str = "https://lichess.org/api/account";
 const LICHESS_TOKEN_URL: &str = "https://lichess.org/api/token";
@@ -43,180 +21,14 @@ const LICHESS_TOKEN_TEST_URL: &str = "https://lichess.org/api/token/test";
 const REVOCATION_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_TOKEN_TEST_RESPONSE_BYTES: usize = 64 * 1024;
 const MAX_VERIFY_RESPONSE_BYTES: usize = 64 * 1024;
-const MAX_OAUTH_RESPONSE_BYTES: usize = 64 * 1024;
 
-async fn safe_oauth_http_client(
-    client: &reqwest::Client,
-    request: HttpRequest,
-) -> Result<HttpResponse, oauth2::reqwest::Error<reqwest::Error>> {
-    let method = reqwest::Method::from_bytes(request.method.as_str().as_bytes())
-        .map_err(|error| oauth2::reqwest::Error::Other(error.to_string()))?;
-    let mut builder = client
-        .request(method, request.url.as_str())
-        .body(request.body);
-    for (name, value) in &request.headers {
-        builder = builder.header(name.as_str(), value.as_bytes());
-    }
-    let response = client
-        .execute(builder.build().map_err(oauth2::reqwest::Error::Reqwest)?)
-        .await
-        .map_err(oauth2::reqwest::Error::Reqwest)?;
-    if response
-        .content_length()
-        .is_some_and(|length| length > MAX_OAUTH_RESPONSE_BYTES as u64)
-    {
-        return Err(oauth2::reqwest::Error::Other(
-            "OAuth response exceeded the native limit".into(),
-        ));
-    }
-    let status = response.status();
-    let headers = response.headers().clone();
-    let body = response
-        .bytes()
-        .await
-        .map_err(oauth2::reqwest::Error::Reqwest)?;
-    oauth_response_from_reqwest(status, &headers, body)
-}
-
-fn oauth_response_from_reqwest(
-    status: reqwest::StatusCode,
-    response_headers: &reqwest::header::HeaderMap,
-    body: bytes::Bytes,
-) -> Result<HttpResponse, oauth2::reqwest::Error<reqwest::Error>> {
-    if body.len() > MAX_OAUTH_RESPONSE_BYTES {
-        return Err(oauth2::reqwest::Error::Other(
-            "OAuth response exceeded the native limit".into(),
-        ));
-    }
-    let status_code = axum::http::StatusCode::from_u16(status.as_u16())
-        .map_err(|error| oauth2::reqwest::Error::Other(error.to_string()))?;
-    let mut headers = axum::http::HeaderMap::new();
-    for (name, value) in response_headers {
-        let name = axum::http::header::HeaderName::from_bytes(name.as_str().as_bytes())
-            .map_err(|error| oauth2::reqwest::Error::Other(error.to_string()))?;
-        let value = axum::http::header::HeaderValue::from_bytes(value.as_bytes())
-            .map_err(|error| oauth2::reqwest::Error::Other(error.to_string()))?;
-        headers.insert(name, value);
-    }
-    Ok(HttpResponse {
-        status_code,
-        headers,
-        body: body.to_vec(),
-    })
-}
-
+#[derive(Default)]
 pub struct AuthLifecycle {
-    active: Mutex<HashMap<u64, AuthTransaction>>,
-    next_generation: AtomicU64,
+    attempts: Arc<AttemptRegistry>,
     jobs: DashMap<String, (AuthenticationStatus, tokio::time::Instant)>,
 }
 
-impl Default for AuthLifecycle {
-    fn default() -> Self {
-        Self {
-            active: Mutex::new(HashMap::new()),
-            next_generation: AtomicU64::new(0),
-            jobs: DashMap::new(),
-        }
-    }
-}
-
-struct AuthTransaction {
-    csrf_token: CsrfToken,
-    callback_tx: Option<oneshot::Sender<CallbackSignal>>,
-}
-
-enum CallbackSignal {
-    Code(AuthorizationCode),
-    Rejected,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-enum CallbackResult {
-    AcceptedCode,
-    AcceptedRejection,
-    Mismatch,
-    Missing,
-    Closed,
-}
-
 impl AuthLifecycle {
-    async fn begin(
-        &self,
-        csrf_token: CsrfToken,
-    ) -> Result<(u64, oneshot::Receiver<CallbackSignal>), Error> {
-        let mut active = self.active.lock().await;
-        let generation = self.next_generation.fetch_add(1, Ordering::Relaxed) + 1;
-        let (callback_tx, callback_rx) = oneshot::channel();
-        active.insert(
-            generation,
-            AuthTransaction {
-                csrf_token,
-                callback_tx: Some(callback_tx),
-            },
-        );
-        Ok((generation, callback_rx))
-    }
-
-    async fn clear_generation(&self, generation: u64) {
-        let mut active = self.active.lock().await;
-        active.remove(&generation);
-    }
-
-    async fn accept_callback(&self, query: CallbackQuery) -> CallbackResult {
-        let (callback_tx, signal) = {
-            let mut active = self.active.lock().await;
-            let Some(state) = query.state.as_ref() else {
-                return CallbackResult::Mismatch;
-            };
-            let Some(transaction) = active
-                .values_mut()
-                .find(|attempt| state.secret() == attempt.csrf_token.secret())
-            else {
-                return if active.is_empty() {
-                    CallbackResult::Missing
-                } else {
-                    CallbackResult::Mismatch
-                };
-            };
-            let Some(callback_tx) = transaction.callback_tx.take() else {
-                return CallbackResult::Closed;
-            };
-            if query.error.is_some() {
-                warn!("OAuth provider callback rejected authentication");
-            }
-            let signal = match query.code {
-                Some(code) if query.error.is_none() => CallbackSignal::Code(code),
-                _ => CallbackSignal::Rejected,
-            };
-            (callback_tx, signal)
-        };
-
-        let accepted_result = match &signal {
-            CallbackSignal::Code(_) => CallbackResult::AcceptedCode,
-            CallbackSignal::Rejected => CallbackResult::AcceptedRejection,
-        };
-        match callback_tx.send(signal) {
-            Ok(()) => accepted_result,
-            Err(_) => CallbackResult::Closed,
-        }
-    }
-
-    #[cfg(test)]
-    async fn active_state(&self) -> Option<CsrfToken> {
-        self.active
-            .lock()
-            .await
-            .values()
-            .next()
-            .map(|attempt| attempt.csrf_token.clone())
-    }
-
-    #[cfg(test)]
-    async fn is_idle(&self) -> bool {
-        self.active.lock().await.is_empty()
-    }
-
     fn create_job(&self) -> AuthenticationJob {
         let now = tokio::time::Instant::now();
         self.jobs
@@ -287,13 +99,6 @@ impl LichessRevocationOutcome {
     fn is_pending(self) -> bool {
         !matches!(self, Self::Revoked | Self::AlreadyInvalid)
     }
-}
-
-pub struct ListenerHandle {
-    redirect_url: String,
-    shutdown_tx: Option<oneshot::Sender<()>>,
-    task: JoinHandle<Result<(), String>>,
-    task_completed: bool,
 }
 
 pub trait OAuthServices: Send + Sync + 'static {
@@ -442,15 +247,8 @@ impl OAuthServices for ProdOAuthServices {
         code: AuthorizationCode,
         verifier: PkceCodeVerifier,
     ) -> Result<String, Error> {
-        let token_response = client
-            .exchange_code(code)
-            .set_pkce_verifier(verifier)
-            .request_async(|request| safe_oauth_http_client(&self.http_client, request))
-            .await
-            .map_err(|source| {
-                error!("OAuth token exchange failed: {source}");
-                Error::OAuthFailure(OAUTH_FAILURE.into())
-            })?;
+        let token_response =
+            oauth_pkce::exchange_code(&self.http_client, client, code, verifier).await?;
         Ok(token_response.access_token().secret().clone())
     }
 
@@ -504,41 +302,7 @@ impl OAuthServices for ProdOAuthServices {
         &self,
         lifecycle: Arc<AuthLifecycle>,
     ) -> Result<ListenerHandle, Error> {
-        let listener = TcpListener::bind("127.0.0.1:0").map_err(|source| {
-            error!("OAuth callback listener bind failed: {source}");
-            Error::OAuthFailure(OAUTH_FAILURE.into())
-        })?;
-        let addr = listener.local_addr().map_err(|source| {
-            error!("OAuth callback listener address lookup failed: {source}");
-            Error::OAuthFailure(OAUTH_FAILURE.into())
-        })?;
-        let redirect_url = format!("http://{addr}/callback");
-        let (shutdown_tx, shutdown_rx) = oneshot::channel();
-        let router = Router::new()
-            .route("/callback", get(authorize))
-            .layer(Extension(lifecycle));
-        let server = crate::infra::runtime::with_reactor(|| axum::Server::from_tcp(listener))
-            .map_err(|source| {
-                error!("OAuth callback server construction failed: {source}");
-                Error::OAuthFailure(OAUTH_FAILURE.into())
-            })?
-            .serve(router.into_make_service())
-            .with_graceful_shutdown(async move {
-                let _ = shutdown_rx.await;
-            });
-        let task = tokio::spawn(async move {
-            server.await.map_err(|source| {
-                error!("OAuth callback server failed: {source}");
-                source.to_string()
-            })
-        });
-
-        Ok(ListenerHandle {
-            redirect_url,
-            shutdown_tx: Some(shutdown_tx),
-            task,
-            task_completed: false,
-        })
+        oauth_pkce::start_listener_and_server(lifecycle.attempts.clone())
     }
 }
 
@@ -764,47 +528,37 @@ where
     E: FnOnce(String) -> Result<(), String>,
     S: OAuthServices,
 {
-    let csrf_token = CsrfToken::new_random();
-    let deadline = tokio::time::Instant::now() + config.timeout_duration;
-    let (generation, callback_rx) = lifecycle.begin(csrf_token.clone()).await?;
-    let mut listener = match services.start_listener_and_server(lifecycle.clone()) {
-        Ok(listener) => listener,
-        Err(source) => {
-            error!("OAuth callback listener setup failed: {source}");
-            lifecycle.clear_generation(generation).await;
-            return Err(Error::OAuthFailure(OAUTH_FAILURE.into()));
-        }
+    let provider = OAuthProvider {
+        authorization_url: "https://lichess.org/oauth",
+        token_url: config.token_url_override,
+        client_id: config.client_id,
+        scopes: &["preference:read"],
+        extra_params: &[("username", username.as_str())],
     };
-
     let mut issued_token: Option<String> = None;
-    let result = match tokio::time::timeout(
-        deadline.saturating_duration_since(tokio::time::Instant::now()),
-        authenticate_after_listener(
-            username,
-            csrf_token,
-            callback_rx,
-            &mut listener,
-            open_browser,
-            emit_token,
-            &config,
-            &services,
-            &mut issued_token,
-        ),
-    )
-    .await
-    {
-        Ok(result) => result,
-        Err(_) => {
-            warn!("OAuth authentication timed out");
-            Err(Error::OAuthFailure(OAUTH_FAILURE.into()))
-        }
-    };
-    shutdown_listener(
-        &mut listener,
-        deadline.saturating_duration_since(tokio::time::Instant::now()),
+    let issued_token_for_attempt = &mut issued_token;
+    let services_for_attempt = &services;
+    let username_for_attempt = username.clone();
+    let result = oauth_pkce::authenticate(
+        provider,
+        lifecycle.attempts.clone(),
+        config.timeout_duration,
+        || services.start_listener_and_server(lifecycle.clone()),
+        open_browser,
+        move |client, code, verifier| async move {
+            complete_authentication(
+                username_for_attempt,
+                &client,
+                code,
+                verifier,
+                emit_token,
+                services_for_attempt,
+                issued_token_for_attempt,
+            )
+            .await
+        },
     )
     .await;
-    lifecycle.clear_generation(generation).await;
     if let Some(token) = issued_token.take() {
         revoke_failed_authentication_token(&services, &token).await;
     }
@@ -812,182 +566,65 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn authenticate_after_listener<O, E, S>(
+async fn complete_authentication<E, S>(
     username: String,
-    csrf_token: CsrfToken,
-    callback_rx: oneshot::Receiver<CallbackSignal>,
-    listener: &mut ListenerHandle,
-    open_browser: O,
+    client: &BasicClient,
+    code: AuthorizationCode,
+    verifier: PkceCodeVerifier,
     emit_token: E,
-    config: &AuthInternalConfig<'_>,
     services: &S,
     issued_token: &mut Option<String>,
 ) -> Result<(), Error>
 where
-    O: FnOnce(&str) -> Result<(), String>,
     E: FnOnce(String) -> Result<(), String>,
     S: OAuthServices,
 {
-    let client = match oauth_client(
-        &listener.redirect_url,
-        config.client_id,
-        config.token_url_override,
-    ) {
-        Ok(client) => client,
-        Err(source) => {
-            error!("OAuth client setup failed: {source}");
-            return Err(Error::OAuthFailure(OAUTH_FAILURE.into()));
-        }
-    };
-    let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
-    let (authorization_url, _) = client
-        .authorize_url(|| csrf_token)
-        .add_scope(Scope::new("preference:read".into()))
-        .add_extra_param("username", username.clone())
-        .set_pkce_challenge(pkce_challenge)
-        .url();
-
-    if let Err(source) = open_browser(authorization_url.as_str()) {
-        error!("OAuth browser opener failed: {source}");
-        return Err(Error::OAuthFailure(OAUTH_FAILURE.into()));
-    }
-
-    tokio::pin!(callback_rx);
-    tokio::select! {
-        server_result = &mut listener.task => {
-            listener.task_completed = true;
-            match server_result {
-                Ok(Ok(())) => error!("OAuth callback server stopped before authentication completed"),
-                Ok(Err(source)) => error!("OAuth callback server failed: {source}"),
-                Err(source) => error!("OAuth callback server task failed: {source}"),
-            }
-            Err(Error::OAuthFailure(OAUTH_FAILURE.into()))
-        }
-        callback_result = &mut callback_rx => match callback_result {
-            Ok(CallbackSignal::Code(code)) => match services.exchange_code(&client, code, pkce_verifier).await {
-                Ok(access_token) => {
-                    *issued_token = Some(access_token.clone());
-                    match services.verify_identity(&access_token).await {
-                        Ok(verified_username) if verified_username.eq_ignore_ascii_case(&username) => if let Err(source) = emit_token(access_token) {
-                            error!("OAuth native credential persistence failed: {source}");
-                            Err(Error::OAuthFailure(OAUTH_FAILURE.into()))
-                        } else {
-                            issued_token.take();
-                            info!("OAuth identity credential stored");
-                            Ok(())
-                        },
-                        Ok(_) => {
-                            warn!("OAuth verified identity did not match requested account");
-                            Err(Error::OAuthFailure(OAUTH_FAILURE.into()))
-                        }
-                        Err(source) => {
-                            error!("OAuth identity verification failed: {source}");
-                            Err(Error::OAuthFailure(OAUTH_FAILURE.into()))
-                        }
+    match services.exchange_code(client, code, verifier).await {
+        Ok(access_token) => {
+            *issued_token = Some(access_token.clone());
+            match services.verify_identity(&access_token).await {
+                Ok(verified_username) if verified_username.eq_ignore_ascii_case(&username) => {
+                    if let Err(source) = emit_token(access_token) {
+                        error!("OAuth native credential persistence failed: {source}");
+                        Err(Error::OAuthFailure(OAUTH_FAILURE.into()))
+                    } else {
+                        issued_token.take();
+                        info!("OAuth identity credential stored");
+                        Ok(())
                     }
-                },
-                Err(source) => {
-                    error!("OAuth token exchange failed: {source}");
+                }
+                Ok(_) => {
+                    warn!("OAuth verified identity did not match requested account");
                     Err(Error::OAuthFailure(OAUTH_FAILURE.into()))
                 }
-            },
-            Ok(CallbackSignal::Rejected) => {
-                warn!("OAuth provider rejected or cancelled authentication");
-                Err(Error::OAuthFailure(OAUTH_FAILURE.into()))
-            },
-            Err(source) => {
-                error!("OAuth callback channel closed: {source}");
-                Err(Error::OAuthFailure(OAUTH_FAILURE.into()))
-            }
-        },
-    }
-}
-
-fn oauth_client(
-    redirect_url: &str,
-    client_id: &str,
-    token_url_override: &str,
-) -> Result<BasicClient, String> {
-    let auth_url =
-        AuthUrl::new("https://lichess.org/oauth".into()).map_err(|source| source.to_string())?;
-    let token_url =
-        TokenUrl::new(token_url_override.into()).map_err(|source| source.to_string())?;
-    let redirect_url =
-        RedirectUrl::new(redirect_url.into()).map_err(|source| source.to_string())?;
-    Ok(BasicClient::new(
-        ClientId::new(client_id.into()),
-        None,
-        auth_url,
-        Some(token_url),
-    )
-    .set_redirect_uri(redirect_url))
-}
-
-async fn shutdown_listener(listener: &mut ListenerHandle, drain_timeout: Duration) {
-    if let Some(shutdown_tx) = listener.shutdown_tx.take() {
-        let _ = shutdown_tx.send(());
-    }
-    if listener.task_completed {
-        return;
-    }
-    match tokio::time::timeout(
-        drain_timeout.min(LISTENER_DRAIN_TIMEOUT),
-        &mut listener.task,
-    )
-    .await
-    {
-        Ok(Ok(Ok(()))) => {}
-        Ok(Ok(Err(source))) => error!("OAuth callback server cleanup failed: {source}"),
-        Ok(Err(source)) => error!("OAuth callback server task cleanup failed: {source}"),
-        Err(_) => {
-            warn!(
-                "OAuth callback server did not stop before the transaction deadline; aborting it"
-            );
-            listener.task.abort();
-            if let Err(source) = (&mut listener.task).await {
-                if !source.is_cancelled() {
-                    error!("OAuth callback server abort join failed: {source}");
+                Err(source) => {
+                    error!("OAuth identity verification failed: {source}");
+                    Err(Error::OAuthFailure(OAUTH_FAILURE.into()))
                 }
             }
         }
-    }
-    listener.task_completed = true;
-}
-
-#[derive(Deserialize)]
-pub struct CallbackQuery {
-    pub code: Option<AuthorizationCode>,
-    pub state: Option<CsrfToken>,
-    pub error: Option<String>,
-}
-
-pub async fn authorize(
-    Extension(lifecycle): Extension<Arc<AuthLifecycle>>,
-    Query(query): Query<CallbackQuery>,
-) -> impl IntoResponse {
-    callback_page(lifecycle.accept_callback(query).await)
-}
-
-fn callback_page(result: CallbackResult) -> Html<&'static str> {
-    match result {
-        CallbackResult::AcceptedCode => {
-            Html("Authentication successful! You can close this window.")
+        Err(source) => {
+            error!("OAuth token exchange failed: {source}");
+            Err(Error::OAuthFailure(OAUTH_FAILURE.into()))
         }
-        CallbackResult::AcceptedRejection => Html("Authentication was cancelled or denied."),
-        CallbackResult::Mismatch => {
-            warn!("OAuth callback rejected because its CSRF state did not match");
-            Html("Authentication failed: state mismatch.")
-        }
-        CallbackResult::Missing => Html("Authentication failed: no active transaction."),
-        CallbackResult::Closed => Html("Authentication failed: transaction closed."),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::oauth_pkce::{
+        callback_page, oauth_response_from_reqwest, CallbackQuery, CallbackResult, CallbackSignal,
+        MAX_OAUTH_RESPONSE_BYTES,
+    };
+    use axum::extract::Query;
     use axum::http::Uri;
+    use oauth2::CsrfToken;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use tokio::{
+        sync::{oneshot, Mutex},
+        task::JoinHandle,
+    };
 
     struct RejectingCredentialStore;
 
@@ -1231,10 +868,12 @@ mod tests {
 
     async fn send_valid(lifecycle: Arc<AuthLifecycle>) -> CallbackResult {
         let state = lifecycle
+            .attempts
             .active_state()
             .await
             .expect("active test transaction");
         lifecycle
+            .attempts
             .accept_callback(CallbackQuery {
                 code: Some(AuthorizationCode::new("code".into())),
                 state: Some(state),
@@ -1257,7 +896,7 @@ mod tests {
         )
         .await;
         assert!(matches!(result, Err(Error::OAuthFailure(message)) if message == OAUTH_FAILURE));
-        assert!(lifecycle.is_idle().await);
+        assert!(lifecycle.attempts.is_idle().await);
         assert!(services.listener_stopped.load(Ordering::Relaxed));
     }
 
@@ -1306,27 +945,29 @@ mod tests {
         )
         .await;
         assert!(matches!(result, Err(Error::OAuthFailure(message)) if message == OAUTH_FAILURE));
-        assert!(lifecycle.is_idle().await);
+        assert!(lifecycle.attempts.is_idle().await);
     }
 
     #[tokio::test]
     async fn stale_generation_cleanup_does_not_clear_new_attempt() {
         let lifecycle = AuthLifecycle::default();
         let (first_generation, first_rx) = lifecycle
+            .attempts
             .begin(CsrfToken::new_random())
             .await
             .expect("first attempt");
-        lifecycle.clear_generation(first_generation).await;
+        lifecycle.attempts.clear_generation(first_generation).await;
         drop(first_rx);
         let (second_generation, second_rx) = lifecycle
+            .attempts
             .begin(CsrfToken::new_random())
             .await
             .expect("second attempt");
-        lifecycle.clear_generation(first_generation).await;
-        assert!(lifecycle.active_state().await.is_some());
-        lifecycle.clear_generation(second_generation).await;
+        lifecycle.attempts.clear_generation(first_generation).await;
+        assert!(lifecycle.attempts.active_state().await.is_some());
+        lifecycle.attempts.clear_generation(second_generation).await;
         drop(second_rx);
-        assert!(lifecycle.is_idle().await);
+        assert!(lifecycle.attempts.is_idle().await);
     }
 
     #[test]
@@ -2126,10 +1767,16 @@ mod tests {
         let lifecycle = Arc::new(AuthLifecycle::default());
         let first_state = CsrfToken::new_random();
         let second_state = CsrfToken::new_random();
-        let (first_generation, first_rx) = lifecycle.begin(first_state.clone()).await.unwrap();
-        let (second_generation, second_rx) = lifecycle.begin(second_state.clone()).await.unwrap();
+        let (first_generation, first_rx) =
+            lifecycle.attempts.begin(first_state.clone()).await.unwrap();
+        let (second_generation, second_rx) = lifecycle
+            .attempts
+            .begin(second_state.clone())
+            .await
+            .unwrap();
         assert_eq!(
             lifecycle
+                .attempts
                 .accept_callback(CallbackQuery {
                     code: Some(AuthorizationCode::new("one".into())),
                     state: Some(second_state),
@@ -2141,6 +1788,7 @@ mod tests {
         assert!(matches!(second_rx.await, Ok(CallbackSignal::Code(_))));
         assert_eq!(
             lifecycle
+                .attempts
                 .accept_callback(CallbackQuery {
                     code: Some(AuthorizationCode::new("two".into())),
                     state: Some(first_state),
@@ -2150,9 +1798,9 @@ mod tests {
             CallbackResult::AcceptedCode
         );
         assert!(matches!(first_rx.await, Ok(CallbackSignal::Code(_))));
-        lifecycle.clear_generation(first_generation).await;
-        lifecycle.clear_generation(second_generation).await;
-        assert!(lifecycle.is_idle().await);
+        lifecycle.attempts.clear_generation(first_generation).await;
+        lifecycle.attempts.clear_generation(second_generation).await;
+        assert!(lifecycle.attempts.is_idle().await);
     }
 
     #[tokio::test]
@@ -2163,6 +1811,7 @@ mod tests {
         tokio::task::yield_now().await;
         assert_eq!(
             lifecycle
+                .attempts
                 .accept_callback(CallbackQuery {
                     code: Some(AuthorizationCode::new("bad".into())),
                     state: Some(CsrfToken::new("wrong".into())),
@@ -2171,7 +1820,7 @@ mod tests {
                 .await,
             CallbackResult::Mismatch
         );
-        assert!(lifecycle.active_state().await.is_some());
+        assert!(lifecycle.attempts.active_state().await.is_some());
         assert_eq!(
             send_valid(lifecycle.clone()).await,
             CallbackResult::AcceptedCode
@@ -2185,6 +1834,7 @@ mod tests {
 
         assert_eq!(
             lifecycle
+                .attempts
                 .accept_callback(CallbackQuery {
                     code: Some(AuthorizationCode::new("code".into())),
                     state: None,
@@ -2201,6 +1851,7 @@ mod tests {
 
         assert_eq!(
             lifecycle
+                .attempts
                 .accept_callback(CallbackQuery {
                     code: Some(AuthorizationCode::new("code".into())),
                     state: Some(CsrfToken::new("unknown".into())),
@@ -2215,10 +1866,11 @@ mod tests {
     async fn callback_with_code_and_error_is_treated_as_rejection() {
         let lifecycle = AuthLifecycle::default();
         let state = CsrfToken::new_random();
-        let (_, callback_rx) = lifecycle.begin(state.clone()).await.unwrap();
+        let (_, callback_rx) = lifecycle.attempts.begin(state.clone()).await.unwrap();
 
         assert_eq!(
             lifecycle
+                .attempts
                 .accept_callback(CallbackQuery {
                     code: Some(AuthorizationCode::new("code".into())),
                     state: Some(state),
@@ -2236,11 +1888,13 @@ mod tests {
         let task = start_attempt(lifecycle.clone(), MockServices::new(), |_| Ok(()));
         tokio::task::yield_now().await;
         let state = lifecycle
+            .attempts
             .active_state()
             .await
             .expect("active test transaction");
         assert_eq!(
             lifecycle
+                .attempts
                 .accept_callback(CallbackQuery {
                     code: Some(AuthorizationCode::new("code".into())),
                     state: Some(state.clone()),
@@ -2249,9 +1903,14 @@ mod tests {
                 .await,
             CallbackResult::AcceptedCode
         );
-        let (next_generation, next_rx) = lifecycle.begin(CsrfToken::new_random()).await.unwrap();
+        let (next_generation, next_rx) = lifecycle
+            .attempts
+            .begin(CsrfToken::new_random())
+            .await
+            .unwrap();
         assert_eq!(
             lifecycle
+                .attempts
                 .accept_callback(CallbackQuery {
                     code: Some(AuthorizationCode::new("replay".into())),
                     state: Some(state),
@@ -2261,7 +1920,7 @@ mod tests {
             CallbackResult::Closed
         );
         assert!(task.await.expect("task join").is_ok());
-        lifecycle.clear_generation(next_generation).await;
+        lifecycle.attempts.clear_generation(next_generation).await;
         drop(next_rx);
     }
 
@@ -2277,7 +1936,7 @@ mod tests {
         );
         let result = task.await.expect("task join");
         assert!(matches!(result, Err(Error::OAuthFailure(message)) if message == OAUTH_FAILURE));
-        assert!(lifecycle.is_idle().await);
+        assert!(lifecycle.attempts.is_idle().await);
         assert!(services.listener_stopped.load(Ordering::Relaxed));
     }
 
@@ -2288,6 +1947,7 @@ mod tests {
         let task = start_attempt(lifecycle.clone(), services.clone(), |_| Ok(()));
         tokio::task::yield_now().await;
         let state = lifecycle
+            .attempts
             .active_state()
             .await
             .expect("active test transaction");
@@ -2297,13 +1957,13 @@ mod tests {
         let Query(query) = Query::<CallbackQuery>::try_from_uri(&uri)
             .expect("provider denial query is accepted by Axum");
         assert_eq!(
-            lifecycle.accept_callback(query).await,
+            lifecycle.attempts.accept_callback(query).await,
             CallbackResult::AcceptedRejection
         );
         assert!(
             matches!(task.await.expect("task join"), Err(Error::OAuthFailure(message)) if message == OAUTH_FAILURE)
         );
-        assert!(lifecycle.is_idle().await);
+        assert!(lifecycle.attempts.is_idle().await);
         assert!(services.listener_stopped.load(Ordering::Relaxed));
     }
 
@@ -2314,10 +1974,12 @@ mod tests {
         let task = start_attempt(lifecycle.clone(), services.clone(), |_| Ok(()));
         tokio::task::yield_now().await;
         let state = lifecycle
+            .attempts
             .active_state()
             .await
             .expect("active test transaction");
         let result = lifecycle
+            .attempts
             .accept_callback(CallbackQuery {
                 code: None,
                 state: Some(state),
@@ -2332,7 +1994,7 @@ mod tests {
         assert!(
             matches!(task.await.expect("task join"), Err(Error::OAuthFailure(message)) if message == OAUTH_FAILURE)
         );
-        assert!(lifecycle.is_idle().await);
+        assert!(lifecycle.attempts.is_idle().await);
         assert!(services.listener_stopped.load(Ordering::Relaxed));
     }
 
@@ -2365,7 +2027,7 @@ mod tests {
         assert!(
             matches!(result.expect("task join"), Err(Error::OAuthFailure(message)) if message == OAUTH_FAILURE)
         );
-        assert!(lifecycle.is_idle().await);
+        assert!(lifecycle.attempts.is_idle().await);
         assert!(services.listener_stopped.load(Ordering::Relaxed));
     }
 
@@ -2394,7 +2056,7 @@ mod tests {
         assert!(
             matches!(result.expect("task join"), Err(Error::OAuthFailure(message)) if message == OAUTH_FAILURE)
         );
-        assert!(lifecycle.is_idle().await);
+        assert!(lifecycle.attempts.is_idle().await);
         assert!(services.listener_aborted.load(Ordering::Relaxed));
     }
 
@@ -2412,7 +2074,7 @@ mod tests {
         assert!(
             matches!(task.await.expect("task join"), Err(Error::OAuthFailure(message)) if message == OAUTH_FAILURE)
         );
-        assert!(lifecycle.is_idle().await);
+        assert!(lifecycle.attempts.is_idle().await);
         assert!(services.listener_stopped.load(Ordering::Relaxed));
     }
 
@@ -2452,7 +2114,7 @@ mod tests {
         assert!(services.exchange_started.load(Ordering::Relaxed));
         assert_eq!(services.revoke_calls.load(Ordering::Relaxed), 1);
         assert_eq!(*services.revoked_tokens.lock().await, vec!["token"]);
-        assert!(lifecycle.is_idle().await);
+        assert!(lifecycle.attempts.is_idle().await);
     }
 
     #[tokio::test]
@@ -2486,7 +2148,7 @@ mod tests {
         assert!(
             matches!(task.await.expect("task join"), Err(Error::OAuthFailure(message)) if message == OAUTH_FAILURE)
         );
-        assert!(lifecycle.is_idle().await);
+        assert!(lifecycle.attempts.is_idle().await);
         assert!(services.listener_stopped.load(Ordering::Relaxed));
         assert_eq!(services.revoke_calls.load(Ordering::Relaxed), 1);
         assert_eq!(*services.revoked_tokens.lock().await, vec!["token"]);
@@ -2512,7 +2174,7 @@ mod tests {
         assert_eq!(deliveries.load(Ordering::Relaxed), 1);
         assert_eq!(services.revoke_calls.load(Ordering::Relaxed), 0);
         assert!(services.revoked_tokens.lock().await.is_empty());
-        assert!(lifecycle.is_idle().await);
+        assert!(lifecycle.attempts.is_idle().await);
         assert!(services.listener_stopped.load(Ordering::Relaxed));
     }
 
@@ -2531,6 +2193,6 @@ mod tests {
         )
         .await;
         assert!(matches!(result, Err(Error::OAuthFailure(message)) if message == OAUTH_FAILURE));
-        assert!(lifecycle.is_idle().await);
+        assert!(lifecycle.attempts.is_idle().await);
     }
 }

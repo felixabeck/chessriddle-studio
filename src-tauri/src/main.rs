@@ -20,6 +20,7 @@ mod fs;
 mod lexer;
 mod lichess;
 mod oauth;
+mod oauth_pkce;
 mod opening;
 mod pgn;
 mod practice;
