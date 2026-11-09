@@ -211,7 +211,8 @@ export default function GameSelector({
               return;
             }
             const { stamp, revision } = written;
-            // A write gives the whole file a new revision, and only this line a new stamp.
+            // This write moved the file on by one revision and changed only this line, so rows
+            // read at the edited revision are still current. An older row must stay refused.
             setGames(
               (previous) =>
                 new Map(
@@ -219,7 +220,7 @@ export default function GameSelector({
                     rowIndex,
                     rowIndex === index
                       ? { ...row, section, identity: { stamp, revision } }
-                      : row.identity
+                      : row.identity?.revision === sectionTarget.revision
                         ? { ...row, identity: { ...row.identity, revision } }
                         : row,
                   ]),

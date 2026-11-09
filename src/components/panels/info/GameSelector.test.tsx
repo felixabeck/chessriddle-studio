@@ -892,6 +892,18 @@ test("a saved section appears at once and every line takes the file's new revisi
   expect(editorTarget()).toMatchObject({ index: 0, stamp: "s1", revision: "r2" });
 });
 
+test("a line read at an older revision does not advance with a save", async () => {
+  mocks.visibleIndices = [0, 1];
+  await renderSections([
+    [0, { name: "Old", identity: { stamp: "s0", revision: "r0" } }],
+    [1, { name: "Second", identity }],
+  ]);
+  await openEditor(1);
+  await click("saved");
+  await openEditor(0);
+  expect(editorTarget()).toMatchObject({ index: 0, stamp: "s0", revision: "r0" });
+});
+
 test.each(["saved-unconfirmed", "refresh"])("%s reloads the list from the file", async (button) => {
   mocks.visibleIndices = [0];
   mocks.readGames.mockResolvedValue([firstGame]);

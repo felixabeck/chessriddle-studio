@@ -5197,6 +5197,7 @@ mod tests {
         assert_eq!(std::fs::read(&path).expect("read unchanged PGN"), changed);
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn write_at_revision_replaces_only_the_selected_game() {
         let directory = tempfile::tempdir().expect("temporary directory");
@@ -5239,6 +5240,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn replacing_the_first_game_keeps_it_directly_after_a_byte_order_mark() {
         let directory = tempfile::tempdir().expect("temporary directory");

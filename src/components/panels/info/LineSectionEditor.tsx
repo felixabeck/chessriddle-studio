@@ -71,12 +71,11 @@ export default function LineSectionEditor({
         return;
       }
       // Identical lines share a stamp, so the write also pins the revision the list was read at.
-      const written = await writeFileGame(
-        file,
-        target.index,
-        withLineSection(game.pgn, section, target.index),
-        { kind: "gameAtRevision", stamp: target.stamp, revision: target.revision },
-      );
+      const written = await writeFileGame(file, target.index, withLineSection(game.pgn, section), {
+        kind: "gameAtRevision",
+        stamp: target.stamp,
+        revision: target.revision,
+      });
       onSaved(target.index, section === null ? undefined : normalizeLineSection(section), written);
     } catch (error) {
       const details = normalizeError(error);

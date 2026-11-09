@@ -202,6 +202,18 @@ test("a stale refusal from the write refreshes the list", async () => {
   expect(onClose).toHaveBeenCalledOnce();
 });
 
+test("the write pins the listed line's identity, not what the read returned", async () => {
+  mocks.readFileGame.mockResolvedValue({ pgn, stamp: "now", revision: "now", present: true });
+  await render();
+  await clickItem("Files.LineSection.Start");
+  await submit();
+  expect(mocks.writeFileGame.mock.calls[0][3]).toEqual({
+    kind: "gameAtRevision",
+    stamp: "s1",
+    revision: "r1",
+  });
+});
+
 test("a name of only spaces is reported as the unnamed section it was saved as", async () => {
   await render();
   await clickItem("Files.LineSection.Start");

@@ -57,7 +57,7 @@ function withoutTagPair(text: string, { start, end }: TagPair): string {
  * Sets or removes (`null`) the section tag in one game's raw text and leaves everything else alone.
  * The text is edited directly because a parse and rewrite could drop content the tree cannot hold.
  */
-export function withLineSection(pgn: string, section: string | null, gameIndex: number): string {
+export function withLineSection(pgn: string, section: string | null): string {
     const eol = pgn.includes("\r\n") ? "\r\n" : "\n";
     const tagText = (name: string, value: string) => pgnTag(name, value).replace("\n", eol);
     const tags = scanTagPairs(pgn);
@@ -66,10 +66,8 @@ export function withLineSection(pgn: string, section: string | null, gameIndex: 
     const remaining = scanTagPairs(text);
 
     if (section === null) {
-        if (sections.length === 0 || remaining.length > 0) return text;
-        // The scanner finds a later game by its header, so only the first game may lose its last tag.
-        if (gameIndex > 0) return tagText("Event", "?") + text;
-        return text.replace(/^\r?\n/, "");
+        // The scanner finds a game by its header, so a game never loses its last tag.
+        return sections.length > 0 && remaining.length === 0 ? tagText("Event", "?") + text : text;
     }
 
     const tag = tagText(LINE_SECTION_TAG, normalizeLineSection(section));
