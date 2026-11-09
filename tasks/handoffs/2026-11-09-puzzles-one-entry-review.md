@@ -73,3 +73,7 @@ None from this run. The integration roadmap continues in `tasks/handoffs/2026-11
 ### Records round 1 (records lens over the record commits)
 
 Raw verdict: REVISE, six should-fix and one nit. All Fix: this record no longer claims a ledger row that does not exist yet; `d-20261109-39` got its Superseded-by trailer; the integration roadmap's statements about the branch hold, the unpushed ChessRiddle branch, the allowlist "today", the untested `pg_cron` item and the retained solution were stale against the ChessRiddle run studio-release and CR-5 and are corrected, and its heading carries the update date. The lens could not verify the production deployment state and the orchestrator's two proof reruns.
+
+### Records rounds 2 and 3 (records lens, closure)
+
+Round 2: REVISE. Five of the seven findings CLOSED; two residuals in the integration roadmap, both Fix: the branch hold paragraph still told later phases to stack under the hold, and the traced premises of 2026-11-06 read as current. Round 3: APPROVED, both CLOSED, no new contradiction.
