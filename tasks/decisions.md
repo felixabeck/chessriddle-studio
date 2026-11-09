@@ -12686,3 +12686,22 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Plan review rounds 1 to 7 (`tasks/handoffs/2026-11-09-chessriddle-account-connection-review.md`). Reversal path: replace the provider endpoints in `chessriddle.rs` and the server credential tables.
 * **Decided by:** Claude Code (Opus 5.5) build run chessriddle-account, full auto, 2026-11-09 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"7acc298ff04ec9eada2f73728b2a5c9a91753ee376c0cb8a96c08a80e1f8d5d5","input_sha256":"d047601d5b2351f3082614730a8623a40e6ec849be2eca697d26f93c639966d9","kind":"mutation-receipt","operation":"b2a94a7fa3209084b593f49f8200cfb9ca739171a785f399d9409fafb4358530","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-15"],"target":"decisions-ledger","v":1} -->
+
+### d-20261109-16 — How does a dragged Library row keep its real size on HiDPI WebKitGTK?
+
+* **Question:** WebKitGTK hands GTK the native drag image in device pixels without a device scale, so a Library row appeared at twice its size on a 2x display. Which preview replaces it?
+* **Governs:** Library file and folder drag preview, `src/components/files/rowDragPreview.ts`
+* **Chosen:** Hide the native image with a preloaded transparent image and draw a clone of the row at its measured width in the page, inside a copy of the tree container so its container queries still apply. One preview exists at a time, removed on drop, dragend, the next drag or list unmount.
+* **Rejected:** `setDragImage` with another element, which goes through the same doubling path. A half-size image, which is wrong on every other scale. A pointer-event drag library for this list, which replaces working native drop handling to fix only the preview.
+* **Reason:** WebKit's `DragSourceGtk3.cpp` sets a device offset and no device scale, and the owner's screenshot measured exactly 2.00x. Reversal path: delete `rowDragPreview.ts` and its call in `DirectoryTree.tsx`; the drop logic does not depend on it.
+* **Decided by:** Claude Code (Opus 5.5) session a43b1706-2c72-4e7b-99fe-a8e648bef2bd; a same-size preview was requested by Felix in chat, 2026-11-09 · **Superseded-by:** -
+
+### d-20261109-17 — Where is a manual repertoire section stored and how is it written?
+
+* **Question:** Felix chose manual-only sections for the lines of a repertoire file, in chat on 2026-11-09, with an optional name and no automatic grouping. Where does a section live, and how is one line changed without touching the rest of the file?
+* **Governs:** `src/components/files/lineSection.ts`, `LineSectionEditor.tsx`, `WriteExpectation::GameAtRevision`
+* **Chosen:** One `Section` PGN tag on the line that starts the section, with an empty value for an unnamed gap. The game's raw text is edited by a scanner over its opening tag pairs, and written with a new `GameAtRevision` expectation that pins the stamp and the file revision under the native edit lock. Sections are editable only in Repertoire files, and a line with unsaved changes in an open tab is refused.
+* **Rejected:** Deriving groups from the White field or from moves (Felix rejected automatic grouping after a simulation on his 11 files). A sidecar keyed by game position, which breaks on deletion and does not travel with the file. Parse-and-rewrite through the tree, which can drop content the tree cannot hold. The stamp-only `Game` expectation, which cannot tell byte-identical lines apart after a file shift. Blank placeholder games, which would count as games and enter practice.
+* **Reason:** The tag travels with the PGN, other software ignores unknown tags, and the moves stay untouched so practice decks are unaffected. Reversal path: stop reading the tag in `GameSelector`; existing tags are harmless to every other reader.
+* **Decided by:** Felix in chat, 2026-11-09 (manual-only, optional name, gap as the unnamed form); storage and write mechanics by Claude Code (Opus 5.5) session a43b1706-2c72-4e7b-99fe-a8e648bef2bd · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":17,"effect_sha256":"fa3ad46c3b044090df5dbb26195479dd7376778e37614355704a461d1fb7f52b","input_sha256":"018be480c50747505dbda6a726aee2a67f75438703ab145f6c3ce4efe8b7474c","kind":"mutation-receipt","operation":"7edde43b8e1d0768f453cd21b6b0d9aa9e4c473b27f11e5b120e2734d84f9fa0","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-16","d-20261109-17"],"target":"decisions-ledger","v":1} -->
