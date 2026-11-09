@@ -50,7 +50,7 @@ test.each([
   );
 });
 
-test("Escape cancels shortcut recording without changing the stored keybind", async () => {
+async function startRecording() {
   const store = createStore();
   await act(async () => {
     root.render(
@@ -67,9 +67,15 @@ test("Escape cancels shortcut recording without changing the stored keybind", as
   await act(async () => {
     host.querySelector<HTMLButtonElement>(shortcutSelector)!.click();
   });
+  expect(host.querySelector("kbd")?.textContent).toBe("Settings.Keybinds.PressAnyKey");
+
+  return { store, original, shortcutSelector };
+}
+
+test("Escape cancels shortcut recording without changing the stored keybind", async () => {
+  const { store, original, shortcutSelector } = await startRecording();
   expect(host.querySelector('button[aria-label="Common.Cancel"]')).not.toBeNull();
   expect(host.querySelector('button[aria-label="Common.Save"]')).not.toBeNull();
-  expect(host.querySelector("kbd")?.textContent).toBe("Settings.Keybinds.PressAnyKey");
 
   await act(async () => {
     document.body.dispatchEvent(
@@ -89,22 +95,7 @@ test("Escape cancels shortcut recording without changing the stored keybind", as
 });
 
 test("non-Escape keys are still recorded", async () => {
-  const store = createStore();
-  const keybind = store.get(keyMapAtom).COPY_PGN;
-  await act(async () => {
-    root.render(
-      <MantineProvider>
-        <Provider store={store}>
-          <KeybindInput action="COPY_PGN" keybind={keybind} />
-        </Provider>
-      </MantineProvider>,
-    );
-  });
-
-  await act(async () => {
-    host.querySelector<HTMLButtonElement>(`button[aria-label="${keybind.name}"]`)!.click();
-  });
-  expect(host.querySelector("kbd")?.textContent).toBe("Settings.Keybinds.PressAnyKey");
+  await startRecording();
 
   await act(async () => {
     document.body.dispatchEvent(
@@ -120,22 +111,7 @@ test("non-Escape keys are still recorded", async () => {
 });
 
 test("unmounting while recording releases the keyboard", async () => {
-  const store = createStore();
-  const keybind = store.get(keyMapAtom).COPY_PGN;
-  await act(async () => {
-    root.render(
-      <MantineProvider>
-        <Provider store={store}>
-          <KeybindInput action="COPY_PGN" keybind={keybind} />
-        </Provider>
-      </MantineProvider>,
-    );
-  });
-
-  await act(async () => {
-    host.querySelector<HTMLButtonElement>(`button[aria-label="${keybind.name}"]`)!.click();
-  });
-  expect(host.querySelector("kbd")?.textContent).toBe("Settings.Keybinds.PressAnyKey");
+  await startRecording();
 
   await act(async () => root.unmount());
 
