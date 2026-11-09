@@ -12715,3 +12715,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Ordinary edits keep history while any new document starts clean. Reversal path: drop `documentId` from `TreeStoreState` and the editor's `useEditor` dependency list.
 * **Decided by:** Claude Code (Opus 5.5) next-finding drain, full auto, 2026-11-09 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"4383d8110d00dff5aefb26f9590dd582d34983fea7b9d0bb7bead4929228338c","input_sha256":"416f09cd473ea5f2041ad3570b495f3057c5c7a81293c4f7cdab1021ef30a5ab","kind":"mutation-receipt","operation":"da4cae88c61c69069b38d74465948f4bfd26ca728e2844f5a602840784fad73b","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-18"],"target":"decisions-ledger","v":1} -->
+
+### d-20261109-20 — Where does Library keep its remembered view while the app is open?
+
+* **Question:** Felix decided on 2026-11-09 that Library remembers its selected item, game position, search text and type filter only while the app is open. Which storage gives that lifetime, and how much position state is kept?
+* **Governs:** Library view memory, `src/components/library/`, `src/components/files/FileCard.tsx`
+* **Chosen:** Module-level in-memory jotai atoms beside the Library feature, in the default store. One game position is kept, for the most recently positioned file, keyed by the file's handle key and clamped on read without rewriting it.
+* **Rejected:** sessionStorage, which needs a schema and hydration for a value nobody reads after a reload and would put file handles in web storage. A per-file position map, which needs a retention bound for behaviour nobody requested.
+* **Reason:** Memory gives exactly the requested lifetime with nothing to serialize, and the existing Library re-validation stays the only authority for removing a stale selection. Reversal path: replace the atom declarations in the memory module.
+* **Decided by:** Felix in chat, 2026-11-09 (scope and lifetime); storage mechanics by Claude Code (Opus 5.5) session 56e1d3bb-3fdc-46f0-ac13-9071003a5236, full auto · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"076421881dd9fc322ef72d3bc013daa657f665b9c10b89f5c80ffb791158a0de","input_sha256":"a64449d37edf30cf27baa40ac8d70e8ff4f0bec36c85233f60f5b516910f01be","kind":"mutation-receipt","operation":"c6bfb34abac903f2a2d19005c927e5e15edef614a32691fce9f73addfb19e453","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-20"],"target":"decisions-ledger","v":1} -->
