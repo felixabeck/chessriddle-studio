@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import type { Locator } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import {
     assertChooserInsideBoard,
     expect,
@@ -12,6 +12,7 @@ import {
     gameOpeningFixture,
     activeWorkspaceTab,
     whitePawnSquares,
+    type MockScenario,
 } from "./fixtures";
 
 // A wide, short window at 100% font with a file of many games: the shape in which the card's old
@@ -21,6 +22,265 @@ const MIN_VISIBLE_GAME_ROWS = 4;
 const GAME_ROW_HEIGHT_PX = 30;
 // Covers 10 attempts × 3 animation frames each, plus a 2-frame margin for queued callbacks.
 const SCROLL_SETTLE_FRAMES = 32;
+
+async function openDragFile(
+    page: Page,
+    mockScenario: (scenario: MockScenario) => Promise<void>,
+    repertoire = true,
+) {
+    const file = {
+        ...repertoireFile,
+        gameCount: 80,
+        metadata: { type: repertoire ? "repertoire" : "game", tags: [] },
+    };
+    const games = Array.from({ length: file.gameCount }, (_, index) => {
+        const section = index === 0 ? "First section" : index === 3 ? "Second section" : undefined;
+        const headers = [
+            { tag: "White", value: `White ${index + 1}` },
+            { tag: "Black", value: `Black ${index + 1}` },
+            ...(section ? [{ tag: "Section", value: section }] : []),
+        ];
+        const pgn = `${headers.map(({ tag, value }) => `[${tag} "${value}"]`).join("\n")}\n\n1. e4 c5 *`;
+        return {
+            game: {
+                pgn,
+                stamp: String(index + 1).padStart(64, "0"),
+                revision: "drag-revision",
+                present: true,
+            },
+            tokens: [
+                ...headers.map((value) => ({ type: "Header", value })),
+                { type: "San", value: "e4" },
+                { type: "San", value: "c5" },
+                { type: "Outcome", value: "*" },
+            ],
+        };
+    });
+    await mockScenario({
+        commands: filesWorkspaceCommands([[file]], {
+            read_games: { pgnGames: games.map(({ game }) => game) },
+            read_game: { pgnGames: games.map(({ game }) => game) },
+            file_revision: { result: "drag-revision" },
+            lex_pgn: {
+                pgnTokens: Object.fromEntries(games.map(({ game, tokens }) => [game.pgn, tokens])),
+            },
+            move_games: { result: { changed: false, start: 0, order: [] } },
+        }),
+    });
+    await page.goto("/library");
+    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await selectFilesTreeRow(page, file.name);
+    const list = page.getByRole("listbox", { name: "Games", exact: true });
+    await expect(list.getByRole("option", { name: /White 2 - Black 2/ })).toBeVisible();
+    return list;
+}
+
+const lineMoves = (page: Page) =>
+    page.evaluate(() =>
+        window.__E2E_TAURI__.invocations().filter(({ command }) => command === "move_games"),
+    );
+
+async function startLineDrag(page: Page, row: Locator) {
+    const box = (await row.boundingBox())!;
+    await page.mouse.move(box.x + 45, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 55, box.y + box.height / 2, { steps: 3 });
+    await expect(page.locator("[data-line-drag-preview]")).toBeVisible();
+    return box;
+}
+
+test("files-preview: repertoire clicks below the threshold select and double clicks open", async ({
+    page,
+    mockScenario,
+}) => {
+    await page.setViewportSize({ width: 1920, height: 1100 });
+    const list = await openDragFile(page, mockScenario);
+    const second = list.locator('[data-line-index="1"] [role="option"]');
+    const box = (await second.boundingBox())!;
+    await page.mouse.move(box.x + 45, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 47, box.y + box.height / 2 + 1);
+    await expect(page.locator("[data-line-drag-preview]")).toHaveCount(0);
+    await page.mouse.up();
+    await expect(second).toHaveAttribute("aria-selected", "true");
+    expect(await lineMoves(page)).toEqual([]);
+    await second.dblclick();
+    await expect(page).toHaveURL(/\/$/);
+    expect((await activeWorkspaceTab(page))?.gameOrigin).toMatchObject({ gameNumber: 1 });
+});
+
+for (const belowHeading of [false, true]) {
+    test(`files-preview: line drops ${belowHeading ? "below" : "above"} a heading`, async ({
+        page,
+        mockScenario,
+        capture,
+    }) => {
+        await page.setViewportSize({ width: 1920, height: 1100 });
+        if (belowHeading) {
+            await page.emulateMedia({ reducedMotion: "reduce" });
+            await page.addInitScript(() => localStorage.setItem("mantine-color-scheme", "dark"));
+        }
+        const list = await openDragFile(page, mockScenario);
+        const source = list.locator('[data-line-index="1"] [role="option"]');
+        const heading = list.locator('[data-line-index="3"] [data-line-part="section"]');
+        await expect(heading).toBeInViewport({ ratio: 1 });
+        const box = await startLineDrag(page, source);
+        const preview = page.locator("[data-line-drag-preview]");
+        const previewBox = (await preview.boundingBox())!;
+        expect(previewBox.width).toBeCloseTo(box.width, 0);
+        expect(previewBox.height).toBeCloseTo(box.height, 0);
+        const target = (await (
+            belowHeading ? list.locator('[data-line-index="3"] [role="option"]') : heading
+        ).boundingBox())!;
+        await page.mouse.move(target.x + 60, target.y + 3, { steps: 5 });
+        const marker = page.locator("[data-line-drop-marker]");
+        await expect(marker).toBeVisible();
+        await expect(marker).toHaveAttribute("data-before", "3");
+        await expect(marker).toHaveAttribute("data-below-heading", String(belowHeading));
+        expect((await marker.boundingBox())!.y + 1).toBeCloseTo(target.y, 0);
+        expect(
+            await marker.evaluate((element) => {
+                const probe = document.createElement("span");
+                probe.style.color = "var(--cf-primary)";
+                element.append(probe);
+                const matches =
+                    getComputedStyle(element).backgroundColor === getComputedStyle(probe).color;
+                probe.remove();
+                return matches;
+            }),
+        ).toBe(true);
+        await capture(`line-drop-${belowHeading ? "below" : "above"}`);
+        await page.mouse.up();
+        await expect.poll(() => lineMoves(page)).toHaveLength(1);
+        expect((await lineMoves(page))[0].args).toEqual({
+            file: repertoireFile.handle,
+            gameMove: { kind: "line", source: 1, before: 3, belowHeading },
+            revision: "drag-revision",
+        });
+        await expect(list.locator('[aria-selected="true"]')).toHaveText(/White 1 - Black 1/);
+        await expect(preview).toHaveCount(0);
+        await expect(marker).toHaveCount(0);
+    });
+}
+
+test("files-preview: a section moves by its heading only to a section boundary", async ({
+    page,
+    mockScenario,
+    capture,
+}) => {
+    await page.setViewportSize({ width: 1920, height: 1100 });
+    const list = await openDragFile(page, mockScenario);
+    const heading = list.locator('[data-line-index="3"] [data-line-part="section"]');
+    await expect(heading).toBeInViewport({ ratio: 1 });
+    const source = (await heading.boundingBox())!;
+    await page.mouse.move(source.x + 45, source.y + source.height / 2);
+    await page.mouse.down();
+    const middle = (await list.locator('[data-line-index="1"] [role="option"]').boundingBox())!;
+    await page.mouse.move(middle.x + 60, middle.y + 5, { steps: 5 });
+    const preview = page.locator("[data-line-drag-preview]");
+    await expect(preview).toHaveText("Second section");
+    const row = (await list.locator('[data-line-index="3"] [role="option"]').boundingBox())!;
+    expect((await preview.boundingBox())!.height).toBe(row.height);
+    await expect(page.locator("[data-line-drop-marker]")).toBeHidden();
+    const target = (await list
+        .locator('[data-line-index="0"] [data-line-part="section"]')
+        .boundingBox())!;
+    await page.mouse.move(target.x + 60, target.y + 3, { steps: 5 });
+    await expect(page.locator("[data-line-drop-marker]")).toHaveAttribute("data-before", "0");
+    await capture("section-drop");
+    await page.mouse.up();
+    await expect.poll(() => lineMoves(page)).toHaveLength(1);
+    expect((await lineMoves(page))[0].args).toMatchObject({
+        gameMove: { kind: "section", source: 3, before: 0, belowHeading: false },
+        revision: "drag-revision",
+    });
+});
+
+test("files-preview: stationary edge scrolling keeps a drag after its source unmounts", async ({
+    page,
+    mockScenario,
+    capture,
+}) => {
+    const list = await openDragFile(page, mockScenario);
+    const viewport = page.locator(".mantine-ScrollArea-viewport").filter({ has: list });
+    await expect(viewport).toHaveCount(1);
+    const dimensions = await viewport.evaluate((element) => ({
+        height: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+    }));
+    expect(dimensions.height).toBeGreaterThan(0);
+    expect(dimensions.scrollHeight).toBeGreaterThan(dimensions.height + 300);
+    const source = list.locator('[data-line-index="0"] [role="option"]');
+    await startLineDrag(page, source);
+    const bounds = (await viewport.boundingBox())!;
+    await page.mouse.move(bounds.x + 60, bounds.y + bounds.height - 4);
+    await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBeGreaterThan(100);
+    const marker = page.locator("[data-line-drop-marker]");
+    await expect(marker).toBeVisible();
+    const firstDestination = Number(await marker.getAttribute("data-before"));
+    const firstTop = await viewport.evaluate((element) => element.scrollTop);
+    await expect
+        .poll(() => viewport.evaluate((element) => element.scrollTop))
+        .toBeGreaterThan(firstTop + 100);
+    await expect
+        .poll(async () => Number(await marker.getAttribute("data-before")))
+        .toBeGreaterThan(firstDestination);
+    await expect(source).toHaveCount(0);
+    await expect(page.locator("[data-line-drag-preview]")).toBeVisible();
+    await expect(marker).toBeVisible();
+    const before = Number(await marker.getAttribute("data-before"));
+    expect(before).toBeGreaterThan(3);
+    await page.mouse.move(bounds.x + 60, bounds.y + bounds.height / 2);
+    await expect(marker).toBeVisible();
+    const destination = Number(await marker.getAttribute("data-before"));
+    await capture("stationary-edge-scroll");
+    await page.mouse.up();
+    await expect.poll(() => lineMoves(page)).toHaveLength(1);
+    expect((await lineMoves(page))[0].args).toMatchObject({
+        gameMove: { kind: "line", source: 0, before: destination, belowHeading: false },
+    });
+});
+
+test("files-preview: Escape cancels a drag and section buttons never start one", async ({
+    page,
+    mockScenario,
+}) => {
+    const list = await openDragFile(page, mockScenario);
+    const row = list.locator('[data-line-index="1"] [role="option"]');
+    const button = row.getByRole("button", { name: "Start section here", exact: true });
+    await row.hover();
+    const icon = (await button.locator("svg").boundingBox())!;
+    await page.mouse.move(icon.x + icon.width / 2, icon.y + icon.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(icon.x - 60, icon.y, { steps: 5 });
+    await expect(page.locator("[data-line-drag-preview]")).toHaveCount(0);
+    await page.mouse.up();
+    await startLineDrag(page, row);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("[data-line-drag-preview]")).toHaveCount(0);
+    await expect(page.locator("[data-line-drop-marker]")).toHaveCount(0);
+    await page.mouse.up();
+    expect(await lineMoves(page)).toEqual([]);
+    await row.click();
+    await expect(row).toHaveAttribute("aria-selected", "true");
+});
+
+test("files-preview: other file types keep their row gestures", async ({ page, mockScenario }) => {
+    const list = await openDragFile(page, mockScenario, false);
+    const second = list.locator('[data-line-index="1"] [role="option"]');
+    const box = (await second.boundingBox())!;
+    await page.mouse.move(box.x + 45, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 65, box.y + box.height / 2);
+    await expect(page.locator("[data-line-drag-preview]")).toHaveCount(0);
+    await page.mouse.up();
+    expect(await lineMoves(page)).toEqual([]);
+    await second.click();
+    await expect(second).toHaveAttribute("aria-selected", "true");
+    await second.dblclick();
+    await expect(page).toHaveURL(/\/$/);
+    expect((await activeWorkspaceTab(page))?.gameOrigin).toMatchObject({ gameNumber: 1 });
+});
 
 test("files-preview: returning to Library restores a late game after section headings load", async ({
     page,

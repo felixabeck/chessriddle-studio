@@ -924,6 +924,51 @@ async function renderSections(initial: [number, GameSelectorRow][], editableSect
 
 const identity = { stamp: "s1", revision: "r1" };
 
+test.each(["reload", "file change", "list reset", "disabled", "unmount"])(
+  "%s cancels an active line drag",
+  async (reason) => {
+    const move = vi.fn().mockResolvedValue(undefined);
+    const rows = new Map([[0, { name: "First", identity }]]);
+    const render = (changed = false) =>
+      root.render(
+        reason === "unmount" && changed ? null : (
+          <GameSelector
+            games={changed && reason === "list reset" ? new Map() : rows}
+            setGames={vi.fn()}
+            setPage={vi.fn()}
+            total={1}
+            path={
+              changed && reason === "file change" ? { ...path, id: { id: "another-file" } } : path
+            }
+            activePage={0}
+            reloadGeneration={changed && reason === "reload" ? 1 : 0}
+            onMoveLines={changed && reason === "disabled" ? undefined : move}
+          />
+        ),
+      );
+    await act(async () => render());
+    const list = host.querySelector<HTMLElement>('[role="listbox"]')!;
+    list.setPointerCapture = vi.fn();
+    list.hasPointerCapture = () => false;
+    const fire = (target: EventTarget, type: string, clientX: number) => {
+      const event = new MouseEvent(type, { bubbles: true, clientX, clientY: 10 });
+      Object.defineProperties(event, {
+        pointerId: { value: 1 },
+        isPrimary: { value: true },
+      });
+      target.dispatchEvent(event);
+    };
+    fire(list.querySelector('[role="option"]')!, "pointerdown", 10);
+    fire(window, "pointermove", 20);
+    expect(document.querySelector("[data-line-drag-preview]")).not.toBeNull();
+    await act(async () => render(true));
+    expect(document.querySelector("[data-line-drag-preview]")).toBeNull();
+    expect(document.querySelector("[data-line-drop-marker]")).toBeNull();
+    fire(window, "pointerup", 20);
+    expect(move).not.toHaveBeenCalled();
+  },
+);
+
 test("a named section shows its heading above the line that starts it", async () => {
   mocks.visibleIndices = [0, 1];
   await renderSections([

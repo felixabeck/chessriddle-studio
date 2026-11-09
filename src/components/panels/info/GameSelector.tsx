@@ -22,6 +22,7 @@ import { formatNumber } from "@/utils/format";
 import { getGameName } from "@/utils/treeReducer";
 import classes from "./GameSelector.module.css";
 import LineSectionEditor, { type LineSectionTarget } from "./LineSectionEditor";
+import { attachLineDragController } from "./lineDragController";
 
 // Opening load count; the requested end index is inclusive.
 const INITIAL_LOAD_ROWS = 11;
@@ -61,6 +62,7 @@ export default function GameSelector({
   editableSections = false,
   revealActivePage = false,
   reloadGeneration = 0,
+  onMoveLines,
 }: {
   games: Map<number, GameSelectorRow>;
   setGames: React.Dispatch<React.SetStateAction<Map<number, GameSelectorRow>>>;
@@ -145,6 +147,28 @@ export default function GameSelector({
   const fontSize = useAtomValue(fontSizeAtom);
 
   const parentRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const dragSnapshot = useRef({ games, total, onMoveLines });
+  dragSnapshot.current = { games, total, onMoveLines };
+  const hasRows = games.size > 0;
+  const canMove = !!onMoveLines;
+  useEffect(() => {
+    if (!canMove || !hasRows || !listRef.current || !parentRef.current) return;
+    return attachLineDragController({
+      list: listRef.current,
+      viewport: parentRef.current,
+      snapshot: () => ({
+        rows: dragSnapshot.current.games,
+        total: dragSnapshot.current.total,
+        available: !reloading.current,
+      }),
+      move: (movement, revision) => {
+        void dragSnapshot.current
+          .onMoveLines?.(movement, revision)
+          .catch((error) => notifyUnlessCancelled(t("Common.Error"), error));
+      },
+    });
+  }, [canMove, hasRows, path.id.id, reloadGeneration, total, t]);
   const rowVirtualizer = useVirtualizer({
     count: total,
     estimateSize: (index) =>
@@ -252,6 +276,7 @@ export default function GameSelector({
       onFocusCapture={stopReveal}
     >
       <Box
+        ref={listRef}
         role="listbox"
         aria-label={t("Common.Games")}
         style={{
@@ -362,6 +387,7 @@ function GameRow({
     <div
       role="presentation"
       className={classes.slot}
+      data-line-index={index}
       style={style}
       onContextMenu={
         openSectionEditor
@@ -394,7 +420,7 @@ function GameRow({
         />
       )}
       {section !== undefined && (
-        <div className={classes.section}>
+        <div className={classes.section} data-line-part="section">
           {section && (
             <Text fz="sm" fw={600} truncate>
               {section}
@@ -403,6 +429,7 @@ function GameRow({
         </div>
       )}
       <Group
+        data-line-part="line"
         role="option"
         aria-selected={index === activePage}
         aria-description={section || undefined}

@@ -60,6 +60,35 @@
   opacity: 0;
 }
 
+.dragging,
+.dragging * {
+  cursor: grabbing !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+.dragPreview {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  box-sizing: border-box;
+  margin: 0;
+  overflow: hidden;
+  background: var(--cf-card);
+  color: var(--cf-card-foreground);
+  border: 1px solid var(--cf-primary);
+  border-radius: var(--mantine-radius-xs);
+  box-shadow: var(--cf-shadow-elevated);
+}
+
+.dropMarker {
+  position: fixed;
+  z-index: 1001;
+  height: 2px;
+  pointer-events: none;
+  background: var(--cf-primary);
+}
+
 .row:hover .rowAction,
 .active .rowAction,
 .rowAction:focus-visible {
