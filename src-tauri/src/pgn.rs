@@ -3326,6 +3326,36 @@ mod tests {
     }
 
     #[test]
+    fn move_boundary_validation_refuses_equal_count_shifted_offsets() {
+        let games = [
+            GameRange { start: 0, end: 10 },
+            GameRange { start: 10, end: 20 },
+            GameRange { start: 20, end: 30 },
+            GameRange { start: 30, end: 40 },
+        ];
+        let actual = [
+            GameRange { start: 0, end: 10 },
+            GameRange { start: 10, end: 23 },
+            GameRange { start: 23, end: 35 },
+            GameRange { start: 35, end: 45 },
+        ];
+        let target = GameRange { start: 10, end: 30 };
+        let validate = |actual: &[GameRange]| {
+            validate_move_boundaries(actual, &games, 1, &[10, 23], target, 25)
+        };
+        validate(&actual).unwrap();
+        for index in 0..actual.len() {
+            let mut shifted = actual;
+            shifted[index].start += 1;
+            assert_eq!(shifted.len(), games.len());
+            assert!(matches!(
+                validate(&shifted),
+                Err(Error::InvalidInput(message)) if message == "move would change PGN game boundaries"
+            ));
+        }
+    }
+
+    #[test]
     fn prepare_move_refuses_unclosed_or_swallowed_game_boundaries() {
         for (index, input) in UNCLOSED_COMMENT_GAMES.iter().enumerate() {
             let games = ranges_with_closed_final_comment(input);
