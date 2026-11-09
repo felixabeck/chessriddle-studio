@@ -24,7 +24,7 @@ import {
   tabEngineSettingsFamily,
 } from "@/state/atoms";
 import { displayEngine, displayLines } from "@/tests/engineDisplay";
-import { press } from "@/tests/keyboard";
+import { focusedDialogButton, press } from "@/tests/keyboard";
 import { analysisSearch } from "../panels/analysis/analysisSearch";
 import { AnalysisLineMemory } from "../panels/analysis/analysisLineMemory";
 import { engineIdentity, engineLineContext } from "../panels/analysis/analysisLineContext";
@@ -391,12 +391,7 @@ describe("BoardAnalysis", () => {
     const { getHotkeyHandler } =
       await vi.importActual<typeof import("@mantine/hooks")>("@mantine/hooks");
     const handler = getHotkeyHandler([binding]);
-    const dialog = document.createElement("section");
-    dialog.setAttribute("aria-modal", "true");
-    const button = document.createElement("button");
-    dialog.append(button);
-    container.append(dialog);
-    button.focus();
+    const { dialog, button } = focusedDialogButton(container);
     expect(document.activeElement).toBe(button);
     document.documentElement.addEventListener("keydown", handler);
     try {

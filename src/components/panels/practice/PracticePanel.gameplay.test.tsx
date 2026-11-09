@@ -18,7 +18,7 @@ import { PRACTICE_SYNC_DEBOUNCE_MS, resetPracticeMigrationForTests } from "@/sta
 import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import { WorkspaceTabScope } from "@/state/tabScope";
 import { installMatchMediaStub } from "@/tests/matchMedia";
-import { press } from "@/tests/keyboard";
+import { focusedDialogButton, press } from "@/tests/keyboard";
 import { defaultTree, getNodeAtPath } from "@/utils/treeReducer";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import { getTabFile } from "@/utils/tabs";
@@ -439,17 +439,6 @@ test("correct answers retain rating and advancement behavior with the real contr
   expect(JSON.parse(reviews[0].entry).rating).toBe(3);
 });
 
-function focusDialogButton() {
-  const dialog = document.createElement("section");
-  dialog.setAttribute("aria-modal", "true");
-  const button = document.createElement("button");
-  dialog.append(button);
-  host.append(dialog);
-  button.focus();
-  expect(document.activeElement).toBe(button);
-  return { dialog, button };
-}
-
 test.each([1, 2, 3, 4] as const)(
   "dialog-owned %s leaves the correct card unrated while the same key outside still rates",
   async (grade) => {
@@ -463,7 +452,8 @@ test.each([1, 2, 3, 4] as const)(
     const deckKey = { file: fileWorkspaceKey(getTabFile(owner)!.handle), game: 0 };
     const deck = atoms.get(deckAtomFamily(deckKey));
     const source = tree.getState();
-    const { dialog, button } = focusDialogButton();
+    const { dialog, button } = focusedDialogButton(host);
+    expect(document.activeElement).toBe(button);
 
     await act(async () => {
       const event = press(String(grade), { target: button });
@@ -494,7 +484,8 @@ test("dialog-owned Space leaves the incorrect card unchanged while Space outside
   const deck = atoms.get(deckAtomFamily(deckKey));
   const source = tree.getState();
   expect(mocks.native.recordPracticeReview).toHaveBeenCalledOnce();
-  const { dialog, button } = focusDialogButton();
+  const { dialog, button } = focusedDialogButton(host);
+  expect(document.activeElement).toBe(button);
 
   await act(async () => {
     const event = press("Space", { target: button });

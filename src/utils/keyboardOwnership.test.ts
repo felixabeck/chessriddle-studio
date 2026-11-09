@@ -2,7 +2,7 @@ import { useHotkeys, type HotkeyItem } from "@mantine/hooks";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { press } from "@/tests/keyboard";
+import { focusedDialogButton, press } from "@/tests/keyboard";
 import {
     isKeyboardOwnedElsewhere,
     keyboardOwner,
@@ -25,15 +25,6 @@ afterEach(() => {
     host.remove();
 });
 
-function dialog() {
-    const element = document.createElement("section");
-    element.setAttribute("aria-modal", "true");
-    const button = document.createElement("button");
-    element.append(button);
-    host.append(element);
-    return { element, button };
-}
-
 function keyAt(target: EventTarget) {
     const event = new KeyboardEvent("keydown", { key: "Delete", bubbles: true });
     target.dispatchEvent(event);
@@ -41,15 +32,14 @@ function keyAt(target: EventTarget) {
 }
 
 test("a target inside a blocking dialog belongs to that dialog", () => {
-    const { element, button } = dialog();
-    dialog();
-    button.focus();
+    const { dialog, button } = focusedDialogButton(host);
+    focusedDialogButton(host);
 
-    expect(keyboardOwner(keyAt(button))).toBe(element);
+    expect(keyboardOwner(keyAt(button))).toBe(dialog);
 });
 
 test("an unrelated focused element keeps its own keyboard even with an open dialog", () => {
-    dialog();
+    focusedDialogButton(host);
     const button = document.createElement("button");
     host.append(button);
     button.focus();
@@ -64,17 +54,17 @@ test.each([
     ["html", () => document.documentElement],
     ["non-element", () => host.appendChild(document.createTextNode("text"))],
 ] as const)("a %s target falls back to the last blocking dialog", (_name, target) => {
-    dialog();
-    const topmost = dialog();
+    focusedDialogButton(host);
+    const { dialog: topmost } = focusedDialogButton(host);
 
-    expect(keyboardOwner(keyAt(target()))).toBe(topmost.element);
+    expect(keyboardOwner(keyAt(target()))).toBe(topmost);
 });
 
 test("an event without a target falls back to the last blocking dialog", () => {
-    dialog();
-    const topmost = dialog();
+    focusedDialogButton(host);
+    const { dialog: topmost } = focusedDialogButton(host);
 
-    expect(keyboardOwner(new KeyboardEvent("keydown"))).toBe(topmost.element);
+    expect(keyboardOwner(new KeyboardEvent("keydown"))).toBe(topmost);
 });
 
 test("without a blocking dialog there is no keyboard owner", () => {
@@ -84,7 +74,7 @@ test("without a blocking dialog there is no keyboard owner", () => {
 });
 
 test("only surfaces inside the owner keep their shortcuts", () => {
-    const { element, button } = dialog();
+    const { dialog: element, button } = focusedDialogButton(host);
     const event = keyAt(button);
 
     expect(isKeyboardOwnedElsewhere(event, host)).toBe(true);
@@ -107,8 +97,7 @@ function renderShortcut(options?: HotkeyItem[2]) {
 
 test("real Mantine hotkeys leave a focused dialog button's key and default untouched", () => {
     const handler = renderShortcut();
-    const { button } = dialog();
-    button.focus();
+    const { button } = focusedDialogButton(host);
     expect(document.activeElement).toBe(button);
 
     const event = press("k", { target: button });
@@ -125,7 +114,7 @@ test.each([
     { options: { usePhysicalKeys: false }, prevented: false },
 ])("real Mantine hotkeys preserve outside-key options $options", ({ options, prevented }) => {
     const handler = renderShortcut(options);
-    dialog();
+    focusedDialogButton(host);
     const button = document.createElement("button");
     host.append(button);
     button.focus();

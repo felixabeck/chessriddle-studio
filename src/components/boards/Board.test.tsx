@@ -8,7 +8,7 @@ import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import { createVariationChooserStore } from "@/state/store/variationChooser";
 import { moveInputAtom } from "@/state/atoms";
 import { installMatchMediaStub } from "@/tests/matchMedia";
-import { press as pressKey } from "@/tests/keyboard";
+import { focusedDialogButton, press as pressKey } from "@/tests/keyboard";
 import Board from "./Board";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -121,12 +121,7 @@ async function press(grid: HTMLDivElement, ...keys: string[]) {
 
 test("swap orientation ignores a focused modal button and still flips outside the dialog", async () => {
   const { grid } = await render();
-  const dialog = document.createElement("section");
-  dialog.setAttribute("aria-modal", "true");
-  const button = document.createElement("button");
-  dialog.append(button);
-  host.append(dialog);
-  button.focus();
+  const { button } = focusedDialogButton(host);
   expect(document.activeElement).toBe(button);
   const before = tree.getState();
   expect(before.dirty).toBe(false);
