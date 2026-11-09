@@ -225,7 +225,9 @@ describe("practice epoch authority", () => {
                     },
                 ],
             });
-            await expect(ensurePracticeFileReorderReady("file-a")).rejects.toThrow();
+            await expect(ensurePracticeFileReorderReady("file-a")).rejects.toThrow(
+                "Board.Practice.InventoryDamaged",
+            );
             await expect(ensurePracticeFileReorderReady("file-b")).resolves.toBeUndefined();
         },
     );
