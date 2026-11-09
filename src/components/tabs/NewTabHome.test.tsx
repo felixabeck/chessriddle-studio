@@ -292,7 +292,7 @@ test("Due sorts overdue counts, includes failed decks, and keeps their whole row
   expect(mocks.openFile.mock.calls[0][2].panel).toBe("practice");
 });
 
-test.each(["listing", "unreadable", "metadata"])(
+test.each(["listing", "unreadable", "metadata", "database-listing", "unread-database"])(
   "Due treats %s discovery failure as incomplete with both empty and partial results",
   async (failure) => {
     const entries: Entry[] =
@@ -305,6 +305,16 @@ test.each(["listing", "unreadable", "metadata"])(
       data: entries,
       isLoading: false,
       error: failure === "listing" ? new Error("Workspace listing failed") : undefined,
+    };
+    mocks.databases.error =
+      failure === "database-listing" ? new Error("Database listing failed") : undefined;
+    mocks.databases.data = {
+      databases: [],
+      unread:
+        failure === "unread-database"
+          ? [{ filename: "Unreadable.db3", error: "Permission denied" }]
+          : [],
+      root: { kind: "databaseRoot", id: { id: "root" } },
     };
     await render();
     await filter("due");
