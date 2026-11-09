@@ -187,6 +187,30 @@ test("wheelBoardStackTo waits for a late-mounted board layout", async ({ page })
         .toBe(true);
 });
 
+test("wheelBoardStackTo re-wheels when the first wheel is dropped", async ({ page }) => {
+    await page.setContent(`
+        <div data-board-layout="stacked" style="width: 400px; height: 300px">
+            <div style="height: 300px; overflow-y: auto">
+                <div style="height: 1200px">above</div>
+                <div id="bottomRight" style="height: 80px">target</div>
+            </div>
+        </div>
+        <script>
+            const stack = document.querySelector('[data-board-layout="stacked"] > div');
+            function dropFirstWheel(event) {
+                event.preventDefault();
+                stack.removeEventListener("wheel", dropFirstWheel);
+            }
+            stack.addEventListener("wheel", dropFirstWheel, { passive: false });
+        </script>
+    `);
+
+    await wheelBoardStackTo(page, page.locator("#bottomRight"));
+
+    const stack = page.locator('[data-board-layout="stacked"] > div').first();
+    await expect.poll(() => stack.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+});
+
 for (const host of ["analysis", "play"] as const) {
     for (const width of [1000, 800]) {
         test(`font-scaled-breakpoints: ${host} notation floor and column scrolling at ${width}px and 200%`, async ({

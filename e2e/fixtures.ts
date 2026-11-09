@@ -221,22 +221,32 @@ export async function wheelBoardStackTo(page: Page, target: Locator) {
         .toBe(true);
     const stack = page.locator('[data-board-layout="stacked"] > div').first();
     if ((await stack.count()) === 0) return;
+    // Stay within wheelColumnTo's enclosing 15-second toPass when it calls this helper.
+    await expect(async () => {
+        const frame = (await stack.boundingBox())!;
+        const box = (await target.boundingBox())!;
+        const { top, maximum } = await stack.evaluate((element) => ({
+            top: element.scrollTop,
+            maximum: element.scrollHeight - element.clientHeight,
+        }));
+        const delta = box.y - frame.y - 8;
+        const expected = Math.max(0, Math.min(maximum, top + delta));
+        if (Math.abs(top - expected) <= 1) return;
+        // The four-pixel tile margin belongs to the outer stack, not an inner scroller.
+        await page.mouse.move(frame.x + 1, frame.y + Math.min(frame.height / 2, 100));
+        await page.mouse.wheel(0, delta);
+        await expect
+            .poll(
+                () =>
+                    stack.evaluate(
+                        (element, expected) => Math.abs(element.scrollTop - expected),
+                        expected,
+                    ),
+                { timeout: 1000 },
+            )
+            .toBeLessThanOrEqual(1);
+    }).toPass({ timeout: 10_000, intervals: [100, 250, 500] });
     const frame = (await stack.boundingBox())!;
-    const box = (await target.boundingBox())!;
-    const before = await stack.evaluate((element) => ({
-        top: element.scrollTop,
-        maximum: element.scrollHeight - element.clientHeight,
-    }));
-    const delta = box.y - frame.y - 8;
-    const expected = Math.max(0, Math.min(before.maximum, before.top + delta));
-    // The four-pixel tile margin belongs to the outer stack, not an inner scroller.
-    await page.mouse.move(frame.x + 1, frame.y + Math.min(frame.height / 2, 100));
-    await page.mouse.wheel(0, delta);
-    await expect
-        .poll(() =>
-            stack.evaluate((element, expected) => Math.abs(element.scrollTop - expected), expected),
-        )
-        .toBeLessThanOrEqual(1);
     await expect
         .poll(
             async () => {
