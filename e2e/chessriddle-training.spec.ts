@@ -114,16 +114,18 @@ for (const locale of ["en-US", "de-DE"] as const) {
                 );
                 await mockScenario({ commands });
                 await page.goto("/");
-                await expect(page.locator("[data-home-action]")).toHaveCount(6);
-                if (layout !== "desktop")
-                    await page
-                        .getByRole("button", { name: text("Training.Start"), exact: true })
-                        .scrollIntoViewIfNeeded();
+                const homeActions = page.locator("[data-home-actions]");
+                await expect(homeActions.locator("[data-home-action]")).toHaveCount(6);
+                const trainingButton = homeActions.getByRole("button", {
+                    name: text("Training.Title"),
+                    exact: true,
+                });
+                if (layout !== "desktop") await trainingButton.scrollIntoViewIfNeeded();
+                await expect(trainingButton).toBeVisible();
+                await assertControlLabelsFit(homeActions);
                 await assertNoHorizontalOverflow();
                 await captureTraining(page, page, `${locale}-${layout}-home.png`);
-                await page
-                    .getByRole("button", { name: text("Training.Start"), exact: true })
-                    .click();
+                await trainingButton.click();
                 const panel = page.locator("[data-training-panel]");
                 await expect(panel.getByText(text("Training.BlackToMove"))).toBeVisible();
                 const board = page.locator("#left cg-board");
@@ -240,7 +242,10 @@ for (const locale of ["en-US", "de-DE"] as const) {
                 },
             });
             await page.goto("/");
-            await page.getByRole("button", { name: text("Training.Start"), exact: true }).click();
+            await page
+                .locator("[data-home-actions]")
+                .getByRole("button", { name: text("Training.Title"), exact: true })
+                .click();
             const panel = page.locator("[data-training-panel]");
             await expect(panel.getByText(text("Training.Loading"), { exact: true })).toBeVisible();
             await expect(
