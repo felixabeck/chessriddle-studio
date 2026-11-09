@@ -784,7 +784,7 @@
     "Files.GameCountSuffix_other": "{{number}} партии",
     "Files.GameTooLarge": "Слишком большая, чтобы открыть.",
     "Files.GameUnreadable": "Не удаётся прочитать.",
-    "Files.LineSection.NameHint": "Оставьте пустым для отступа без заголовка.",
+    "Files.LineSection.NameHint": "Оставьте пустым для отступа.",
     "Files.LineSection.Remove": "Удалить раздел",
     "Files.LineSection.Rename": "Переименовать раздел",
     "Files.LineSection.Stale": "Файл изменился. Проверьте список и повторите попытку.",

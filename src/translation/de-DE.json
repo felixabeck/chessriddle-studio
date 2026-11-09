@@ -758,7 +758,7 @@
     "Files.GameCountSuffix_other": "{{number}} Partien",
     "Files.GameTooLarge": "Zu groß zum Öffnen.",
     "Files.GameUnreadable": "Kann nicht gelesen werden.",
-    "Files.LineSection.NameHint": "Leer lassen für eine Lücke ohne Überschrift.",
+    "Files.LineSection.NameHint": "Leer lassen für eine Lücke.",
     "Files.LineSection.Remove": "Abschnitt entfernen",
     "Files.LineSection.Rename": "Abschnitt umbenennen",
     "Files.LineSection.Stale": "Die Datei hat sich geändert. Prüfe die Liste und versuche es erneut.",

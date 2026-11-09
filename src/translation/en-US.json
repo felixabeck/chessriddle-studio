@@ -758,7 +758,7 @@
     "Files.GameCountSuffix_other": "{{number}} games",
     "Files.GameTooLarge": "Too large to open.",
     "Files.GameUnreadable": "Cannot be read.",
-    "Files.LineSection.NameHint": "Leave empty for a gap without a heading.",
+    "Files.LineSection.NameHint": "Leave empty for a gap.",
     "Files.LineSection.Remove": "Remove section",
     "Files.LineSection.Rename": "Rename section",
     "Files.LineSection.Stale": "The file changed. Check the list and try again.",

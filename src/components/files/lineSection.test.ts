@@ -86,6 +86,12 @@ describe("withLineSection", () => {
         expect(withLineSection('[Section "x"]\n[Event "B"] [Site "S"]\n\n1. d4 *\n', null)).toBe(
             '[Event "B"] [Site "S"]\n\n1. d4 *\n',
         );
+        expect(withLineSection('[Section "x"]\n{note} [Event "B"]\n\n1. d4 *\n', null)).toBe(
+            '[Event "?"]\n{note} [Event "B"]\n\n1. d4 *\n',
+        );
+        expect(withLineSection('[Section "x"]\n[Bad-Name "B"]\n\n1. d4 *\n', null)).toBe(
+            '[Event "?"]\n[Bad-Name "B"]\n\n1. d4 *\n',
+        );
     });
 
     test("a game without tags gets a header block", () => {

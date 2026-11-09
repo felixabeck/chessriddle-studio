@@ -771,7 +771,7 @@
     "Files.GameCountSuffix_other": "{{number}} partite",
     "Files.GameTooLarge": "Troppo grande per essere aperta.",
     "Files.GameUnreadable": "Impossibile da leggere.",
-    "Files.LineSection.NameHint": "Lascia vuoto per uno spazio senza titolo.",
+    "Files.LineSection.NameHint": "Lascia vuoto per uno spazio.",
     "Files.LineSection.Remove": "Rimuovi sezione",
     "Files.LineSection.Rename": "Rinomina sezione",
     "Files.LineSection.Stale": "Il file è cambiato. Controlla la lista e riprova.",

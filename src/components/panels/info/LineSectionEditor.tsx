@@ -177,7 +177,7 @@ export default function LineSectionEditor({
             data-autofocus
             label={t("Common.Name", { defaultValue: "Name" })}
             description={t("Files.LineSection.NameHint", {
-              defaultValue: "Leave empty for a gap without a heading.",
+              defaultValue: "Leave empty for a gap.",
             })}
             maxLength={LINE_SECTION_MAX_LENGTH}
             value={name}

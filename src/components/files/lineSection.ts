@@ -53,17 +53,10 @@ function withoutTagPair(text: string, { start, end }: TagPair): string {
     return text.slice(0, start).replace(/[ \t]+$/, "") + text.slice(end);
 }
 
-function startsWithTagLine(text: string, tags: TagPair[]): boolean {
-    const first = tags[0];
-    if (!first) return false;
-    const newline = text.indexOf("\n", first.start);
-    const lineEnd = newline < 0 ? text.length : newline;
-    const covered = tags.filter((tag) => tag.end <= lineEnd);
-    const uncovered = covered.reduceRight(
-        (line, tag) => line.slice(0, tag.start - first.start) + line.slice(tag.end - first.start),
-        text.slice(first.start, lineEnd),
-    );
-    return uncovered.trim() === "";
+// The grammar of `tag_value_spans` in pgn.rs. A false result only adds a harmless tag.
+function startsWithTagLine(text: string): boolean {
+    const firstLine = text.trimStart().split("\n", 1)[0];
+    return /^(?:\[\w+[ \t]+"(?:[^"\\]|\\.)*"[ \t]*\]\s*)+$/.test(firstLine);
 }
 
 /**
@@ -80,7 +73,7 @@ export function withLineSection(pgn: string, section: string | null): string {
 
     if (section === null) {
         // The scanner finds a game by a line of tags, so removal must leave the game such a line.
-        return sections.length > 0 && !startsWithTagLine(text, remaining)
+        return sections.length > 0 && !startsWithTagLine(text)
             ? tagText("Event", "?") + text
             : text;
     }

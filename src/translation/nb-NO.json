@@ -758,7 +758,7 @@
     "Files.GameCountSuffix_other": "{{number}} partier",
     "Files.GameTooLarge": "For stort til å åpnes.",
     "Files.GameUnreadable": "Kan ikke leses.",
-    "Files.LineSection.NameHint": "La stå tomt for et mellomrom uten overskrift.",
+    "Files.LineSection.NameHint": "La stå tomt for et mellomrom.",
     "Files.LineSection.Remove": "Fjern seksjon",
     "Files.LineSection.Rename": "Gi seksjonen nytt navn",
     "Files.LineSection.Stale": "Filen er endret. Sjekk listen og prøv igjen.",

@@ -745,7 +745,7 @@
     "Files.GameCountSuffix_other": "{{number}} 场对局",
     "Files.GameTooLarge": "过大，无法打开。",
     "Files.GameUnreadable": "无法读取。",
-    "Files.LineSection.NameHint": "留空可添加无标题的间隔。",
+    "Files.LineSection.NameHint": "留空即为间隔。",
     "Files.LineSection.Remove": "移除分组",
     "Files.LineSection.Rename": "重命名分组",
     "Files.LineSection.Stale": "文件已更改。请检查列表后重试。",

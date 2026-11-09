@@ -758,7 +758,7 @@
     "Files.GameCountSuffix_other": "{{number}} oyun",
     "Files.GameTooLarge": "Açılamayacak kadar büyük.",
     "Files.GameUnreadable": "Okunamıyor.",
-    "Files.LineSection.NameHint": "Başlıksız bir boşluk için boş bırakın.",
+    "Files.LineSection.NameHint": "Boşluk için boş bırakın.",
     "Files.LineSection.Remove": "Bölümü kaldır",
     "Files.LineSection.Rename": "Bölümü yeniden adlandır",
     "Files.LineSection.Stale": "Dosya değişti. Listeyi kontrol edip yeniden deneyin.",

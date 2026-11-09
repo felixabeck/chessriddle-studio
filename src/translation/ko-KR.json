@@ -745,7 +745,7 @@
     "Files.GameCountSuffix_other": "{{number}}게임",
     "Files.GameTooLarge": "크기가 너무 커서 열 수 없습니다.",
     "Files.GameUnreadable": "읽을 수 없습니다.",
-    "Files.LineSection.NameHint": "제목 없는 간격을 만들려면 비워 두세요.",
+    "Files.LineSection.NameHint": "간격만 두려면 비워 두세요.",
     "Files.LineSection.Remove": "구역 제거",
     "Files.LineSection.Rename": "구역 이름 변경",
     "Files.LineSection.Stale": "파일이 변경되었습니다. 목록을 확인하고 다시 시도하세요.",

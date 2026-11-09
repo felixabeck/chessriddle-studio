@@ -784,7 +784,7 @@
     "Files.GameCountSuffix_other": "{{number}} гульняў",
     "Files.GameTooLarge": "Занадта вялікая, каб адкрыць.",
     "Files.GameUnreadable": "Не ўдаецца прачытаць.",
-    "Files.LineSection.NameHint": "Пакіньце пустым для адступу без загалоўка.",
+    "Files.LineSection.NameHint": "Пакіньце пустым для адступу.",
     "Files.LineSection.Remove": "Выдаліць раздзел",
     "Files.LineSection.Rename": "Перайменаваць раздзел",
     "Files.LineSection.Stale": "Файл змяніўся. Праверце спіс і паспрабуйце яшчэ раз.",

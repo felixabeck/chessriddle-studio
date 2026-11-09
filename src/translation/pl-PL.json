@@ -784,7 +784,7 @@
     "Files.GameCountSuffix_other": "{{number}} partii",
     "Files.GameTooLarge": "Zbyt duża, aby ją otworzyć.",
     "Files.GameUnreadable": "Nie można odczytać.",
-    "Files.LineSection.NameHint": "Pozostaw puste, aby uzyskać odstęp bez nagłówka.",
+    "Files.LineSection.NameHint": "Pozostaw puste dla odstępu.",
     "Files.LineSection.Remove": "Usuń sekcję",
     "Files.LineSection.Rename": "Zmień nazwę sekcji",
     "Files.LineSection.Stale": "Plik się zmienił. Sprawdź listę i spróbuj ponownie.",

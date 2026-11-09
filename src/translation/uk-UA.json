@@ -784,7 +784,7 @@
     "Files.GameCountSuffix_other": "{{number}} ігор",
     "Files.GameTooLarge": "Завелика, щоб відкрити.",
     "Files.GameUnreadable": "Не вдається прочитати.",
-    "Files.LineSection.NameHint": "Залиште порожнім для відступу без заголовка.",
+    "Files.LineSection.NameHint": "Залиште порожнім для відступу.",
     "Files.LineSection.Remove": "Вилучити розділ",
     "Files.LineSection.Rename": "Перейменувати розділ",
     "Files.LineSection.Stale": "Файл змінився. Перевірте список і спробуйте ще раз.",
