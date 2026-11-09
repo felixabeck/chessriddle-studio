@@ -52,21 +52,23 @@ function EngineSelection() {
         </Center>
       )}
 
-      <ScrollArea h={250} scrollbars="y">
-        <Stack gap="xs" align="center" w="100%">
-          {engines.map((engine) => (
-            <EngineBox
-              key={engine.id}
-              engine={engine}
-              toggleLoaded={() => {
-                void setEngines(async (prev) =>
-                  (await prev).map((e) => (e.id === engine.id ? { ...e, loaded: !e.loaded } : e)),
-                ).catch((error) => notifyUnlessCancelled(t("Common.Error"), error));
-              }}
-            />
-          ))}
-        </Stack>
-      </ScrollArea>
+      {engines.length > 0 && (
+        <ScrollArea h={250} scrollbars="y">
+          <Stack gap="xs" align="center" w="100%">
+            {engines.map((engine) => (
+              <EngineBox
+                key={engine.id}
+                engine={engine}
+                toggleLoaded={() => {
+                  void setEngines(async (prev) =>
+                    (await prev).map((e) => (e.id === engine.id ? { ...e, loaded: !e.loaded } : e)),
+                  ).catch((error) => notifyUnlessCancelled(t("Common.Error"), error));
+                }}
+              />
+            ))}
+          </Stack>
+        </ScrollArea>
+      )}
     </>
   );
 }

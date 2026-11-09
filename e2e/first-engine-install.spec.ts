@@ -137,6 +137,7 @@ test("automatic install stays visible across routes, cancels, and never starts a
     await page.getByRole("button", { name: "Select engines", exact: true }).click();
     await expect(button).toBeVisible();
     await expect(button).toBeEnabled();
+    await expect(button).toBeInViewport({ ratio: 1 });
     await assertNothingClipped(page.locator(".mantine-Popover-dropdown"));
     await expect(page.locator(".mantine-Popover-dropdown")).toHaveScreenshot(
         "analysis-install-stockfish.png",

@@ -7060,6 +7060,14 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
   }
 }
 
+// Staged 2026-11-09 by running --fallback-engine-install against a release build from before
+// this feature (no Install Stockfish button): exit status 1, "5 check(s) failed".
+// FE4 failed with its own message. FE5 to FE8 each failed with their distinct dependency message:
+// "FE4 empty Engines page was not reached", "FE5 bounded install observation did not complete",
+// "FE6 automation marker exclusion failed", "FE7 fallback button was not clicked".
+// FE1, FE2, FE3 and FE9 are argued, not staged: breaking them needs a build that does not start,
+// a browser without navigator.webdriver, or a pre-seeded profile or failed screenshot write,
+// which this mode cannot produce without changing the verifier.
 async function verifyFallbackEngineInstall(session) {
   const startup = await assertion(
     "FE1 fallback install renderer starts on the unseeded profile",
