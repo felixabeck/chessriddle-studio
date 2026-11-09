@@ -24,6 +24,7 @@ import {
 } from "@/state/atoms";
 import { getVariationLine } from "@/utils/chess";
 import { positionFromFen } from "@/utils/chessops";
+import { isKeyboardOwnedElsewhere } from "@/utils/keyboardOwnership";
 import { readEngineLines } from "../panels/analysis/useDisplayedEngineLines";
 import { keyMapAtom } from "@/state/keybinds";
 import type { Annotation } from "@/utils/annotation";
@@ -53,6 +54,17 @@ import ConfirmChangesModal from "@/components/tabs/ConfirmChangesModal";
 import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
 import paneClasses from "../common/PaneTabs.module.css";
 import { COMPACT_PANE_TABS_WIDTH_EM } from "./paneTabs";
+
+function withKeyboardOwnership(hotkeys: HotkeyItem[]): HotkeyItem[] {
+  return hotkeys.map(([keys, handler, options]) => [
+    keys,
+    (event) => {
+      if (isKeyboardOwnedElsewhere(event, null)) return;
+      return handler(event);
+    },
+    options,
+  ]);
+}
 
 function BoardAnalysis() {
   const { t } = useTranslation();
@@ -152,58 +164,60 @@ function BoardAnalysis() {
   const atoms = useAtomStore();
   const tabId = useOwnerTabId();
 
-  useHotkeys([
-    [
-      keyMap.PLAY_BEST_ENGINE_MOVE.keys,
-      (event) => {
-        if (event.defaultPrevented || practicing || editingMode || atoms.get(threatFamily(tabId)))
-          return;
-        const state = store.getState();
-        const moves = getVariationLine(state.root, state.position);
-        for (const engine of atoms.get(enginesAtom) ?? []) {
-          const lines = readEngineLines(
-            atoms.get,
-            tabId,
-            engine,
-            state.root.fen,
-            moves,
-            false,
-          ).actionable;
-          const uci = lines?.find((line) => line.multipv === 1)?.uciMoves[0];
-          if (!uci) continue;
-          const move = parseUci(uci);
-          const [position] = positionFromFen(state.currentNode().fen);
-          if (!move || !position?.isLegal(move)) return;
+  useHotkeys(
+    withKeyboardOwnership([
+      [
+        keyMap.PLAY_BEST_ENGINE_MOVE.keys,
+        (event) => {
+          if (event.defaultPrevented || practicing || editingMode || atoms.get(threatFamily(tabId)))
+            return;
+          const state = store.getState();
+          const moves = getVariationLine(state.root, state.position);
+          for (const engine of atoms.get(enginesAtom) ?? []) {
+            const lines = readEngineLines(
+              atoms.get,
+              tabId,
+              engine,
+              state.root.fen,
+              moves,
+              false,
+            ).actionable;
+            const uci = lines?.find((line) => line.multipv === 1)?.uciMoves[0];
+            if (!uci) continue;
+            const move = parseUci(uci);
+            const [position] = positionFromFen(state.currentNode().fen);
+            if (!move || !position?.isLegal(move)) return;
+            event.preventDefault();
+            state.makeMove({ payload: move });
+            return;
+          }
+        },
+        { preventDefault: false },
+      ],
+      [
+        keyMap.TOGGLE_THREAT_MODE.keys,
+        (event) => {
+          const threat = atoms.get(threatFamily(tabId));
+          const enabled = (atoms.get(enginesAtom) ?? []).some(
+            (engine) =>
+              engine.loaded &&
+              atoms.get(
+                tabEngineSettingsFamily({
+                  tab: tabId,
+                  engineId: engine.id,
+                  defaultSettings: engine.settings ?? undefined,
+                  defaultGo: engine.go ?? undefined,
+                }),
+              ).enabled,
+          );
+          if (!threat && !enabled) return;
+          atoms.set(threatFamily(tabId), !threat);
           event.preventDefault();
-          state.makeMove({ payload: move });
-          return;
-        }
-      },
-      { preventDefault: false },
-    ],
-    [
-      keyMap.TOGGLE_THREAT_MODE.keys,
-      (event) => {
-        const threat = atoms.get(threatFamily(tabId));
-        const enabled = (atoms.get(enginesAtom) ?? []).some(
-          (engine) =>
-            engine.loaded &&
-            atoms.get(
-              tabEngineSettingsFamily({
-                tab: tabId,
-                engineId: engine.id,
-                defaultSettings: engine.settings ?? undefined,
-                defaultGo: engine.go ?? undefined,
-              }),
-            ).enabled,
-        );
-        if (!threat && !enabled) return;
-        atoms.set(threatFamily(tabId), !threat);
-        event.preventDefault();
-      },
-      { preventDefault: false },
-    ],
-  ]);
+        },
+        { preventDefault: false },
+      ],
+    ]),
+  );
 
   const setPracticePath = useStore(store, (s) => s.setPracticePath);
   useEffect(() => {
@@ -212,55 +226,59 @@ function BoardAnalysis() {
     }
   }, [practicing, setPracticePath]);
 
-  useHotkeys([
-    [keyMap.SAVE_FILE.keys, () => userSaveFile()],
-    [keyMap.CLEAR_SHAPES.keys, () => clearShapes()],
-  ]);
+  useHotkeys(
+    withKeyboardOwnership([
+      [keyMap.SAVE_FILE.keys, () => userSaveFile()],
+      [keyMap.CLEAR_SHAPES.keys, () => clearShapes()],
+    ]),
+  );
   const annotate = (annotation: Annotation) => {
     if (!isPracticeRating) setAnnotation(annotation);
   };
-  useHotkeys([
-    ...(
+  useHotkeys(
+    withKeyboardOwnership([
+      ...(
+        [
+          [keyMap.ANNOTATION_BRILLIANT.keys, "!!"],
+          [keyMap.ANNOTATION_GOOD.keys, "!"],
+          [keyMap.ANNOTATION_INTERESTING.keys, "!?"],
+          [keyMap.ANNOTATION_DUBIOUS.keys, "?!"],
+          [keyMap.ANNOTATION_MISTAKE.keys, "?"],
+          [keyMap.ANNOTATION_BLUNDER.keys, "??"],
+        ] as const
+      ).map<HotkeyItem>(([keys, annotation]) => [keys, () => annotate(annotation)]),
       [
-        [keyMap.ANNOTATION_BRILLIANT.keys, "!!"],
-        [keyMap.ANNOTATION_GOOD.keys, "!"],
-        [keyMap.ANNOTATION_INTERESTING.keys, "!?"],
-        [keyMap.ANNOTATION_DUBIOUS.keys, "?!"],
-        [keyMap.ANNOTATION_MISTAKE.keys, "?"],
-        [keyMap.ANNOTATION_BLUNDER.keys, "??"],
-      ] as const
-    ).map<HotkeyItem>(([keys, annotation]) => [keys, () => annotate(annotation)]),
-    [
-      keyMap.PRACTICE_TAB.keys,
-      () => {
-        if (isRepertoire) setCurrentTabSelected("practice");
-      },
-    ],
-    [keyMap.ANALYSIS_TAB.keys, () => setCurrentTabSelected("analysis")],
-    [
-      keyMap.GENERATE_REPORT.keys,
-      (e) => {
-        setCurrentTabSelected("analysis");
-        setAnalysisTab("report");
-        setReportModalOpen(true);
-        e.preventDefault();
-      },
-    ],
-    ...(
+        keyMap.PRACTICE_TAB.keys,
+        () => {
+          if (isRepertoire) setCurrentTabSelected("practice");
+        },
+      ],
+      [keyMap.ANALYSIS_TAB.keys, () => setCurrentTabSelected("analysis")],
       [
-        [keyMap.DATABASE_TAB.keys, "database"],
-        [keyMap.ANNOTATE_TAB.keys, "annotate"],
-        [keyMap.INFO_TAB.keys, "info"],
-      ] as const
-    ).map<HotkeyItem>(([keys, panel]) => [keys, () => setCurrentTabSelected(panel)]),
-    [
-      keyMap.TOGGLE_ALL_ENGINES.keys,
-      (e) => {
-        enable(!allEnabled);
-        e.preventDefault();
-      },
-    ],
-  ]);
+        keyMap.GENERATE_REPORT.keys,
+        (e) => {
+          setCurrentTabSelected("analysis");
+          setAnalysisTab("report");
+          setReportModalOpen(true);
+          e.preventDefault();
+        },
+      ],
+      ...(
+        [
+          [keyMap.DATABASE_TAB.keys, "database"],
+          [keyMap.ANNOTATE_TAB.keys, "annotate"],
+          [keyMap.INFO_TAB.keys, "info"],
+        ] as const
+      ).map<HotkeyItem>(([keys, panel]) => [keys, () => setCurrentTabSelected(panel)]),
+      [
+        keyMap.TOGGLE_ALL_ENGINES.keys,
+        (e) => {
+          enable(!allEnabled);
+          e.preventDefault();
+        },
+      ],
+    ]),
+  );
 
   return (
     <>

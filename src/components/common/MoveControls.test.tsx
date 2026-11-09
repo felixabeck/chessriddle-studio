@@ -11,6 +11,7 @@ import { fixtureNode } from "@/tests/treeFixtures";
 import { defaultTree } from "@/utils/treeReducer";
 import { TreeStateContext, TreeStateProvider } from "@/components/common/TreeStateContext";
 import BoardFrame from "@/components/boards/BoardFrame";
+import AppModal from "./AppModal";
 
 const settings = vi.hoisted(() => ({
   chooseVariation: true,
@@ -90,7 +91,7 @@ function CaptureStore() {
   return null;
 }
 
-function render() {
+function render({ modal = false, controlsInModal = false } = {}) {
   act(() => {
     root.render(
       // A fresh jotai store per render, so the setting is read anew in every case.
@@ -101,7 +102,13 @@ function render() {
             <BoardFrame>
               <div role="grid" />
             </BoardFrame>
-            <MoveControls />
+            {!controlsInModal && <MoveControls />}
+            {modal && (
+              <AppModal opened onClose={vi.fn()} title="Citation" transitionProps={{ duration: 0 }}>
+                <button type="button">Dialog action</button>
+                {controlsInModal && <MoveControls />}
+              </AppModal>
+            )}
           </TreeStateProvider>
         </MantineProvider>
       </Provider>,
@@ -389,3 +396,115 @@ test("arrow down at a line end jumps to the next line and never scrolls at the l
   expect(store.getState().position).toEqual([2]);
   expect(event.defaultPrevented).toBe(true);
 });
+
+function focusDialogButton() {
+  const button = document.querySelector<HTMLButtonElement>('[role="dialog"] button')!;
+  expect(button).not.toBeNull();
+  act(() => button.focus());
+  expect(document.activeElement).toBe(button);
+  expect(document.activeElement?.closest('[role="dialog"]')).not.toBeNull();
+  return button;
+}
+
+function pressOn(target: Element, key: string) {
+  const keydown = new KeyboardEvent("keydown", {
+    key,
+    code: key,
+    bubbles: true,
+    cancelable: true,
+  });
+  act(() => {
+    target.dispatchEvent(keydown);
+    target.dispatchEvent(new KeyboardEvent("keyup", { key, code: key, bubbles: true }));
+  });
+  return keydown;
+}
+
+test("Delete from a focused modal button preserves the background move and its subtree", () => {
+  store = middleGameStore();
+  render({ modal: true });
+  const button = focusDialogButton();
+  const before = store.getState();
+  expect(before.dirty).toBe(false);
+
+  pressOn(button, "Delete");
+
+  expect(store.getState().root).toBe(before.root);
+  expect(store.getState().root.children).toBe(before.root.children);
+  expect(store.getState().position).toEqual(before.position);
+  expect(store.getState().dirty).toBe(false);
+});
+
+test.each(["ArrowLeft", "ArrowRight"])(
+  "%s from a focused modal button preserves the background position",
+  (key) => {
+    settings.chooseVariation = false;
+    store = middleGameStore();
+    render({ modal: true });
+    const button = focusDialogButton();
+
+    pressOn(button, key);
+
+    expect(store.getState().position).toEqual([0]);
+  },
+);
+
+test("Delete dispatched on document with a modal open preserves the background game", () => {
+  store = middleGameStore();
+  render({ modal: true });
+  const button = focusDialogButton();
+  act(() => button.blur());
+  expect(document.activeElement).toBe(document.body);
+  const before = store.getState();
+
+  press("Delete");
+
+  expect(store.getState().root).toBe(before.root);
+  expect(store.getState().root.children).toBe(before.root.children);
+  expect(store.getState().position).toEqual(before.position);
+  expect(store.getState().dirty).toBe(false);
+});
+
+test("main-board Delete and ArrowLeft work again after the modal unmounts", () => {
+  settings.chooseVariation = false;
+  store = middleGameStore();
+  render({ modal: true });
+  focusDialogButton();
+  render();
+  expect(document.querySelector('[aria-modal="true"]')).toBeNull();
+
+  press("ArrowLeft");
+  expect(store.getState().position).toEqual([]);
+  press("ArrowRight");
+  expect(store.getState().position).toEqual([0]);
+  press("Delete");
+  expect(store.getState().position).toEqual([]);
+  expect(store.getState().root.children).toEqual([]);
+  expect(store.getState().dirty).toBe(true);
+});
+
+test("MoveControls inside the owning modal still navigate from a focused modal button", () => {
+  settings.chooseVariation = false;
+  store = middleGameStore();
+  render({ modal: true, controlsInModal: true });
+  const button = focusDialogButton();
+
+  pressOn(button, "ArrowRight");
+  expect(store.getState().position).toEqual([0, 0]);
+  pressOn(button, "ArrowLeft");
+  expect(store.getState().position).toEqual([0]);
+});
+
+test.each(["ArrowUp", "ArrowDown"])(
+  "%s leaves the modal key default intact while background branch navigation is suspended",
+  (key) => {
+    store = middleGameStore();
+    render({ modal: true });
+    const button = focusDialogButton();
+
+    const event = pressOn(button, key);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(store.getState().position).toEqual([0]);
+  },
+);

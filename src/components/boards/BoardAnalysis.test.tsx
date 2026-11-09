@@ -584,6 +584,36 @@ describe("BoardAnalysis", () => {
     });
   });
 
+  test("annotation shortcut ignores a key from a focused blocking dialog button", async () => {
+    await act(async () => treeStore.setState({ root: defaultTree().root, dirty: false }));
+    const key = jotaiStore.get(keyMapAtom).ANNOTATION_BRILLIANT.keys;
+    const binding = hotkeys.mock.calls
+      .flatMap(([bindings]) => bindings)
+      .findLast(([bound]) => bound === key)!;
+    const dialog = document.createElement("section");
+    dialog.setAttribute("aria-modal", "true");
+    const button = document.createElement("button");
+    dialog.append(button);
+    container.append(dialog);
+    button.focus();
+    expect(document.activeElement).toBe(button);
+    const before = treeStore.getState();
+    button.addEventListener("keydown", binding[1]);
+
+    await act(async () => {
+      button.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+    });
+
+    expect(treeStore.getState().root).toBe(before.root);
+    expect(treeStore.getState().root.nags).toEqual([]);
+    expect(treeStore.getState().dirty).toBe(false);
+    button.removeEventListener("keydown", binding[1]);
+    dialog.remove();
+    await act(async () => binding[1](new KeyboardEvent("keydown", { key })));
+    expect(treeStore.getState().root.nags).toEqual([3]);
+    expect(treeStore.getState().dirty).toBe(true);
+  });
+
   test("annotation shortcuts preserve all six glyphs and the practice rating boundary", async () => {
     const keyMap = jotaiStore.get(keyMapAtom);
     const annotations = [
@@ -1070,7 +1100,7 @@ describe("BoardAnalysis", () => {
       .flatMap(([bindings]) => bindings)
       .findLast(([bound]) => bound === keys);
     if (!binding) throw new Error("BoardAnalysis registered no Save hotkey");
-    return binding[1] as () => void;
+    return () => binding[1](new KeyboardEvent("keydown"));
   }
 
   test("a database orientation flip autosaves its PGN tag and advances the row stamp", async () => {

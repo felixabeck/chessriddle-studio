@@ -1,13 +1,14 @@
 import { Group } from "@mantine/core";
 import { ChevronLeft, ChevronRight, ChevronFirst, ChevronLast } from "lucide-react";
 import { useAtomValue } from "jotai";
-import { memo, useContext } from "react";
+import { memo, useContext, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { chooseVariationAtom } from "@/state/atoms";
 import { keyMapAtom } from "@/state/keybinds";
 import { nextContinuation } from "@/state/store/tree";
+import { isKeyboardOwnedElsewhere } from "@/utils/keyboardOwnership";
 import { TreeStateContext, useVariationChooser } from "@/components/common/TreeStateContext";
 import IconAction from "./IconAction";
 
@@ -22,6 +23,7 @@ function isBareVerticalArrow(event: KeyboardEvent) {
 }
 
 function MoveControls({ readOnly }: { readOnly?: boolean }) {
+  const groupRef = useRef<HTMLDivElement>(null);
   const store = useContext(TreeStateContext)!;
   const { t } = useTranslation();
   const goToNext = useStore(store, (s) => s.goToNext);
@@ -65,28 +67,49 @@ function MoveControls({ readOnly }: { readOnly?: boolean }) {
   };
   const previous = () => (choice ? close() : goToPrevious());
 
+  const shortcutOptions = (enabled = true) => ({
+    enabled,
+    // ignoreEventWhen runs before preventDefault/enabled, so suspended keys neither fire
+    // nor prevent default or stop propagation inside the owning dialog.
+    ignoreEventWhen: (event: KeyboardEvent) => isKeyboardOwnedElsewhere(event, groupRef.current),
+  });
+
   const keyMap = useAtomValue(keyMapAtom);
-  useHotkeys(keyMap.PREVIOUS_MOVE.keys, previous);
-  useHotkeys(keyMap.NEXT_MOVE.keys, next);
-  useHotkeys(keyMap.GO_TO_START.keys, navigate(start));
-  useHotkeys(keyMap.GO_TO_END.keys, navigate(end));
-  useHotkeys(keyMap.DELETE_MOVE.keys, navigate(readOnly ? () => {} : () => deleteMove()));
+  useHotkeys(keyMap.PREVIOUS_MOVE.keys, previous, shortcutOptions());
+  useHotkeys(keyMap.NEXT_MOVE.keys, next, shortcutOptions());
+  useHotkeys(keyMap.GO_TO_START.keys, navigate(start), shortcutOptions());
+  useHotkeys(keyMap.GO_TO_END.keys, navigate(end), shortcutOptions());
+  useHotkeys(
+    keyMap.DELETE_MOVE.keys,
+    navigate(readOnly ? () => {} : () => deleteMove()),
+    shortcutOptions(),
+  );
   // While the list is open, only bare ArrowUp/ArrowDown select, whatever the branch key bindings.
   // preventDefault: a no-op press at the last line must not scroll the notation instead.
   useHotkeys(keyMap.GO_TO_BRANCH_START.keys, branchNavigation(startBranch), {
+    ...shortcutOptions(),
     preventDefault: true,
   });
-  useHotkeys(keyMap.GO_TO_BRANCH_END.keys, branchNavigation(endBranch), { preventDefault: true });
-  useHotkeys("arrowup", () => select(-1), { enabled: choice !== null, preventDefault: true });
-  useHotkeys("arrowdown", () => select(1), { enabled: choice !== null, preventDefault: true });
-  useHotkeys("escape", () => close(), { enabled: choice !== null });
-  useHotkeys(keyMap.NEXT_BRANCH.keys, navigate(nextBranch));
-  useHotkeys(keyMap.PREVIOUS_BRANCH.keys, navigate(previousBranch));
-  useHotkeys(keyMap.NEXT_BRANCHING.keys, navigate(nextBranching));
-  useHotkeys(keyMap.PREVIOUS_BRANCHING.keys, navigate(previousBranching));
+  useHotkeys(keyMap.GO_TO_BRANCH_END.keys, branchNavigation(endBranch), {
+    ...shortcutOptions(),
+    preventDefault: true,
+  });
+  useHotkeys("arrowup", () => select(-1), {
+    ...shortcutOptions(choice !== null),
+    preventDefault: true,
+  });
+  useHotkeys("arrowdown", () => select(1), {
+    ...shortcutOptions(choice !== null),
+    preventDefault: true,
+  });
+  useHotkeys("escape", () => close(), shortcutOptions(choice !== null));
+  useHotkeys(keyMap.NEXT_BRANCH.keys, navigate(nextBranch), shortcutOptions());
+  useHotkeys(keyMap.PREVIOUS_BRANCH.keys, navigate(previousBranch), shortcutOptions());
+  useHotkeys(keyMap.NEXT_BRANCHING.keys, navigate(nextBranching), shortcutOptions());
+  useHotkeys(keyMap.PREVIOUS_BRANCHING.keys, navigate(previousBranching), shortcutOptions());
 
   return (
-    <Group grow gap="xs">
+    <Group ref={groupRef} grow gap="xs">
       <IconAction
         label={t("Common.MoveControls.GoToStart", { defaultValue: "Go to start" })}
         variant="default"
