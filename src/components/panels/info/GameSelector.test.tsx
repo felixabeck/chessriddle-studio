@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   readGames: vi.fn(),
   parsePGN: vi.fn(),
   visibleIndices: [0],
+  measure: vi.fn(),
 }));
 
 vi.mock("react-i18next", () => ({ useTranslation: () => translation }));
@@ -33,6 +34,7 @@ vi.mock("@mantine/notifications", () => ({
 vi.mock("@tanstack/react-virtual", () => ({
   useVirtualizer: () => ({
     getTotalSize: () => 30,
+    measure: mocks.measure,
     getVirtualItems: () =>
       mocks.visibleIndices.map((index) => ({ index, size: 30, start: index * 30 })),
   }),
@@ -59,6 +61,12 @@ vi.mock("@mantine/core", () => ({
     <p {...props}>{children}</p>
   ),
   Tooltip: ({ children }: any) => <>{children}</>,
+}));
+
+vi.mock("./LineSectionEditor", () => ({
+  default: ({ target }: { target: { index: number; section?: string; stamp: string } }) => (
+    <div data-testid="section-editor">{JSON.stringify(target)}</div>
+  ),
 }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -718,4 +726,93 @@ test("keeps an ordinary failure retryable and closes after retry", async () => {
     firstAttempt.resolve();
     secondAttempt.resolve();
   }
+});
+
+function SectionHarness({
+  initial,
+  editableSections,
+}: {
+  initial: [number, GameSelectorRow][];
+  editableSections: boolean;
+}) {
+  const [games, setGames] = useState(new Map(initial));
+  return (
+    <GameSelector
+      games={games}
+      setGames={setGames}
+      setPage={() => undefined}
+      total={initial.length}
+      path={path}
+      activePage={0}
+      editableSections={editableSections}
+    />
+  );
+}
+
+async function renderSections(initial: [number, GameSelectorRow][], editableSections = true) {
+  await act(async () => {
+    root.render(<SectionHarness initial={initial} editableSections={editableSections} />);
+  });
+}
+
+const identity = { stamp: "s1", revision: "r1" };
+
+test("a named section shows its heading above the line that starts it", async () => {
+  mocks.visibleIndices = [0, 1];
+  await renderSections([
+    [0, { name: "First", identity }],
+    [1, { name: "Second", section: "mit g3", identity }],
+  ]);
+  const [first, second] = Array.from(host.querySelectorAll<HTMLElement>('[role="presentation"]'));
+  expect(first.textContent).not.toContain("mit g3");
+  expect(second.textContent?.startsWith("mit g3")).toBe(true);
+  const option = second.querySelector<HTMLElement>('[role="option"]');
+  expect(option?.getAttribute("aria-description")).toBe("mit g3");
+});
+
+test("reads the section from the line's headers", async () => {
+  mocks.parsePGN.mockResolvedValue({
+    headers: { event: "Loaded game", other: { Section: "Aus der Datei" } },
+  });
+  mocks.readGames.mockResolvedValue([firstGame]);
+  await act(async () => {
+    renderPageLoader(vi.fn());
+  });
+  expect(host.textContent).toContain("Aus der Datei");
+});
+
+test("right-clicking a loaded line opens the section editor where allowed", async () => {
+  mocks.visibleIndices = [1];
+  await renderSections([
+    [0, { name: "First", identity }],
+    [1, { name: "Second", section: "", identity }],
+  ]);
+  const slot = host.querySelector<HTMLElement>('[role="presentation"]')!;
+  const event = new MouseEvent("contextmenu", {
+    bubbles: true,
+    cancelable: true,
+    clientX: 40,
+    clientY: 50,
+  });
+  await act(async () => slot.dispatchEvent(event));
+  expect(event.defaultPrevented).toBe(true);
+  expect(JSON.parse(host.querySelector('[data-testid="section-editor"]')!.textContent!)).toEqual({
+    index: 1,
+    section: "",
+    stamp: "s1",
+    x: 40,
+    y: 50,
+  });
+});
+
+test.each([
+  ["a list without section editing", { name: "First", identity }, false],
+  ["a line that has no identity yet", { name: "First" }, true],
+])("right-clicking %s opens nothing", async (_name, row, editable) => {
+  await renderSections([[0, row as GameSelectorRow]], editable as boolean);
+  const slot = host.querySelector<HTMLElement>('[role="presentation"]')!;
+  await act(async () =>
+    slot.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
+  );
+  expect(host.querySelector('[data-testid="section-editor"]')).toBeNull();
 });

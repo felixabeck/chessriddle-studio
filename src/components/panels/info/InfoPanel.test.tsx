@@ -184,6 +184,7 @@ vi.mock("./GameSelector", async (importOriginal) => {
 vi.mock("@tanstack/react-virtual", () => ({
   useVirtualizer: ({ count }: { count: number }) => ({
     getTotalSize: () => count * 30,
+    measure: () => undefined,
     getVirtualItems: () => (count > 0 ? [{ index: 0, size: 30, start: 0 }] : []),
   }),
 }));

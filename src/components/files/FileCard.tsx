@@ -137,6 +137,7 @@ function FileCard({
             setPage={setPage}
             onActivate={activateGame}
             total={selected.numGames}
+            editableSections={selected.metadata.type === "repertoire"}
           />
           <Divider />
         </Box>

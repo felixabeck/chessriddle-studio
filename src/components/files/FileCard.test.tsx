@@ -78,6 +78,7 @@ vi.mock("../databases/GamePreview", () => ({
 vi.mock("@tanstack/react-virtual", () => ({
   useVirtualizer: () => ({
     getTotalSize: () => 60,
+    measure: () => undefined,
     getVirtualItems: () => [0, 1].map((index) => ({ index, size: 30, start: index * 30 })),
   }),
 }));

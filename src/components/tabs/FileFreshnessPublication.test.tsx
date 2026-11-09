@@ -96,6 +96,7 @@ vi.mock("@tanstack/react-virtual", async (original) => ({
   ...(await original<typeof import("@tanstack/react-virtual")>()),
   useVirtualizer: ({ count }: { count: number }) => ({
     getTotalSize: () => count * 32,
+    measure: () => undefined,
     getVirtualItems: () =>
       Array.from({ length: count }, (_, index) => ({ index, start: index * 32 })),
     measureElement: () => undefined,

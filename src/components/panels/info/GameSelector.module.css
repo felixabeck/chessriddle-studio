@@ -1,3 +1,18 @@
+.slot {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Takes what the row leaves in its slot, so a heading sits directly on its first line. */
+.section {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  padding-inline: var(--mantine-spacing-xs);
+}
+
 .row {
   cursor: pointer;
   border-left: 3px solid transparent;
