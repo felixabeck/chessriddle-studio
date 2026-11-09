@@ -13,6 +13,7 @@ import {
   Text,
   Tooltip,
   UnstyledButton,
+  useMatches,
 } from "@mantine/core";
 import { atom, useAtom, useSetAtom } from "jotai";
 import equal from "fast-deep-equal";
@@ -185,6 +186,8 @@ export default function NewTabHome({ id }: { id: string }) {
   const incomplete = deckRows.some((row) => row.count === null);
   const displayName = useRecentDisplayName();
   const navigate = useNavigate();
+  // The theme's lg scales with the app font size, so both home rows change layout together.
+  const wide = useMatches({ base: false, lg: true }, { getInitialValueInEffect: false });
 
   useEffect(() => {
     let cancelled = false;
@@ -362,10 +365,10 @@ export default function NewTabHome({ id }: { id: string }) {
         setTabs={setTabs}
       />
       <CreateRepertoireModal opened={openRepertoireModal} setOpened={setOpenRepertoireModal} />
-      <Stack gap="lg" pt="sm" className={classes.home}>
+      <Stack gap="md" className={classes.home}>
         <SimpleGrid cols={{ base: 1, sm: 2, lg: 5 }} className={classes.actions}>
           {cards.map((card) => (
-            <Card shadow="sm" p="lg" radius="md" withBorder key={card.title}>
+            <Card shadow="sm" p="lg" radius="md" withBorder key={card.title} data-home-action>
               <Stack align="center" h="100%" justify="space-between">
                 {card.icon}
 
@@ -384,7 +387,7 @@ export default function NewTabHome({ id }: { id: string }) {
           ))}
         </SimpleGrid>
 
-        <Box className={classes.bottom}>
+        <Box className={classes.bottom} data-wide={wide || undefined}>
           <Card p="md" radius="md" withBorder className={classes.bottomCard} data-home-recents>
             <Text fw={600} size="lg" mb="xs" data-home-title>
               {t("Home.RecentFiles.Title")}

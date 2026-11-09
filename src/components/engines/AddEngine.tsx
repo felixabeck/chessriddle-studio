@@ -85,7 +85,7 @@ function AddEngine({
             </Center>
           )}
           <ScrollArea.Autosize mah={720} offsetScrollbars>
-            <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="sm">
+            <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
               {defaultEngines?.map((engine) => {
                 const card = manifestEngineInstallCard(engines, engine);
                 return (
@@ -110,7 +110,7 @@ function AddEngine({
           </ScrollArea.Autosize>
         </Tabs.Panel>
         <Tabs.Panel value="cloud" pt="xs">
-          <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="sm">
+          <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
             <CloudCard
               engine={{
                 id: crypto.randomUUID(),

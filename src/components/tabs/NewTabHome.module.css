@@ -2,6 +2,10 @@
   background-color: var(--cf-surface-inset);
 }
 .home {
+  /* Tops up the board tab panel's compact inset and tab-bar margin to the md page margin. */
+  padding: calc(var(--mantine-spacing-md) - 0.5rem)
+    calc(var(--mantine-spacing-md) - var(--mantine-spacing-xs))
+    calc(var(--mantine-spacing-md) - var(--mantine-spacing-sm));
   height: 100%;
   min-height: 0;
   overflow-y: auto;
@@ -14,7 +18,7 @@
 .bottom {
   display: grid;
   grid-template-columns: 1fr;
-  gap: var(--mantine-spacing-lg);
+  gap: var(--mantine-spacing-md);
   flex: 1 0 auto;
 }
 
@@ -28,14 +32,21 @@
   min-height: 12rem;
 }
 
-@media (min-width: 75em) {
-  .bottom {
-    grid-template-columns: 3fr 2fr;
-    min-height: 20rem;
-    flex: 1 0 20rem;
-  }
+.bottom[data-wide] {
+  /* The same five columns as the action cards above, so both rows share their card edges. */
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  min-height: 20rem;
+  flex: 1 0 20rem;
+}
 
-  .list {
-    height: 0;
-  }
+.bottom[data-wide] .bottomCard {
+  grid-column: span 2;
+}
+
+.bottom[data-wide] .bottomCard:first-child {
+  grid-column: span 3;
+}
+
+.bottom[data-wide] .list {
+  height: 0;
 }

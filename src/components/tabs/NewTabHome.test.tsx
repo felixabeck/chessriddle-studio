@@ -143,11 +143,12 @@ vi.mock("react-i18next", () => ({
     t: (key: string, values?: unknown) => (values ? key + JSON.stringify(values) : key),
   }),
 }));
-vi.mock("@mantine/core", () => {
+vi.mock("@mantine/core", async () => {
   const element = ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
     <div {...props}>{children}</div>
   );
   return {
+    useMatches: (await import("@/tests/matchMedia")).baseResponsiveValue,
     Badge: element,
     Box: element,
     Button: element,

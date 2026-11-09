@@ -12,13 +12,13 @@ function AccountsPage() {
   const sessions = useAtomValue(sessionsAtom);
 
   return (
-    <Group wrap="wrap" px={{ base: "xs", xs: "lg" }} pb="lg" h="100%" style={{ overflowY: "auto" }}>
+    <Group wrap="wrap" px={{ base: "xs", xs: "md" }} py="md" h="100%" style={{ overflowY: "auto" }}>
       <Stack h="100%" style={column}>
         <Accounts />
       </Stack>
 
       {sessions.length > 0 && (
-        <Box h="100%" pt="md" style={{ ...column, overflow: "hidden" }}>
+        <Box h="100%" style={{ ...column, overflow: "hidden" }}>
           <Databases />
         </Box>
       )}

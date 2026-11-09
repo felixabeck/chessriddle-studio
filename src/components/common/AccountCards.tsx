@@ -121,7 +121,7 @@ function PlayerSession({
   const ref = useRef(null);
 
   return (
-    <Stack mt="sm">
+    <Stack>
       <Group justify="space-between" align="center">
         {edit ? (
           <TextInput

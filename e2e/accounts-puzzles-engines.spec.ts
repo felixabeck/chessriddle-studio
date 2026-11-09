@@ -2448,6 +2448,89 @@ test("accounts-puzzles-engines: local settings and catalog upgrade modal", async
     });
 });
 
+test("accounts-puzzles-engines: engine and catalogue cards keep the shared gap", async ({
+    page,
+    mockScenario,
+}) => {
+    // Reads the cards in one frame and polls, because dialogs open with a transition.
+    const expectCardGap = (grid: Locator, columns: number, rows = 1) =>
+        expect
+            .poll(() =>
+                grid.evaluate(
+                    (element, { columns, rows }) => {
+                        const cards = Array.from(element.children, (card) =>
+                            card.getBoundingClientRect(),
+                        );
+                        const [left, right] = cards;
+                        const below = rows > 1 ? cards[columns] : undefined;
+                        return [
+                            Math.round(right.left - left.right),
+                            Math.round(right.top - left.top),
+                            below ? Math.round(below.top - left.bottom) : 16,
+                        ];
+                    },
+                    { columns, rows },
+                ),
+            )
+            .toEqual([16, 0, 16]);
+    const engine = (id: string, name: string) => ({
+        type: "local",
+        id,
+        legacyAssessment: null,
+        name,
+        version: "1",
+        filename: id,
+        handle: { id: { id }, kind: "engine" },
+        settings: [],
+    });
+    await page.addInitScript(
+        (engines) => {
+            localStorage.setItem("engines", engines);
+            localStorage.setItem("font-size", "100");
+        },
+        serializeStorageValue([
+            engine("gap-one", "Gap engine one"),
+            engine("gap-two", "Gap engine two"),
+            engine("gap-three", "Gap engine three"),
+        ]),
+    );
+    await mockScenario({
+        commands: {
+            file_exists: { result: true },
+            is_bmi2_compatible: { result: false },
+            verify_signed_bytes: { result: null },
+            get_progress: { result: null },
+        },
+    });
+    await page.goto("/engines");
+    await expect(page.getByText("Gap engine two").first()).toBeVisible();
+    await expectCardGap(
+        page
+            .locator(".mantine-SimpleGrid-root")
+            .filter({ hasText: "Gap engine one" })
+            .filter({ hasText: "Gap engine two" }),
+        2,
+        2,
+    );
+
+    await page.getByRole("button", { name: "Add New", exact: true }).click();
+    const engineDialog = page.getByRole("dialog", { name: "Add Engine", exact: true });
+    await expect(
+        engineDialog.getByRole("button", { name: "Install", exact: true }).first(),
+    ).toBeVisible();
+    await expectCardGap(engineDialog.locator(".mantine-SimpleGrid-root:visible"), 3);
+    await engineDialog.getByRole("tab", { name: "Cloud", exact: true }).click();
+    await expect(engineDialog.getByText("Lichess Cloud")).toBeVisible();
+    await expectCardGap(engineDialog.locator(".mantine-SimpleGrid-root:visible"), 3);
+    await engineDialog.getByRole("button", { name: "Close" }).click();
+
+    await page.goto("/library");
+    await page.getByRole("button", { name: "Import or download database", exact: true }).click();
+    const databaseDialog = page.getByRole("dialog", { name: "Add Database", exact: true });
+    await expect(databaseDialog.getByRole("button", { name: "Install" }).first()).toBeVisible();
+    await expectCardGap(databaseDialog.locator(".mantine-SimpleGrid-root:visible"), 3, 2);
+});
+
 test("accounts-puzzles-engines: add engine download catalog", async ({
     page,
     mockScenario,

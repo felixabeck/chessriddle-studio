@@ -96,6 +96,21 @@ test("workspace-tabs: home fills remaining height with reachable recent and due 
     expect(Math.abs(dueBox.y + dueBox.height - 1000)).toBeLessThan(32);
     expect(Math.abs(card.y - dueBox.y)).toBeLessThan(2);
     expect(dueBox.x).toBeGreaterThan(card.x + card.width);
+    const actions = await Promise.all(
+        (await page.locator("[data-home-action]").all()).map(async (a) => (await a.boundingBox())!),
+    );
+    expect(actions).toHaveLength(5);
+    const cardGap = 16;
+    for (let i = 1; i < actions.length; i++) {
+        expect(actions[i].x - (actions[i - 1].x + actions[i - 1].width)).toBeCloseTo(cardGap, 0);
+    }
+    expect(dueBox.x - (card.x + card.width)).toBeCloseTo(cardGap, 0);
+    expect(card.y - (actions[0].y + actions[0].height)).toBeCloseTo(cardGap, 0);
+    // The rows use matching five-column tracks, so their card edges line up.
+    expect(card.x).toBeCloseTo(actions[0].x, 0);
+    expect(card.x + card.width).toBeCloseTo(actions[2].x + actions[2].width, 0);
+    expect(dueBox.x).toBeCloseTo(actions[3].x, 0);
+    expect(dueBox.x + dueBox.width).toBeCloseTo(actions[4].x + actions[4].width, 0);
     for (let i = 0; i < 10; i++) {
         await rows.nth(i).scrollIntoViewIfNeeded();
         const box = (await rows.nth(i).boundingBox())!;
@@ -122,6 +137,26 @@ test("workspace-tabs: home fills remaining height with reachable recent and due 
         body: await page.screenshot(),
         contentType: "image/png",
     });
+});
+
+test("workspace-tabs: home rows change layout together at a large font scale", async ({
+    page,
+    mockScenario,
+}) => {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await mockScenario({ commands: {} });
+    await page.addInitScript(() => localStorage.setItem("font-size", "150"));
+    await page.goto("/");
+    const action = async (index: number) =>
+        (await page.locator("[data-home-action]").nth(index).boundingBox())!;
+    const recent = (await page.locator("[data-home-recents]").boundingBox())!;
+    const due = (await page.locator("[data-home-due]").boundingBox())!;
+    const [first, second, third] = [await action(0), await action(1), await action(2)];
+    expect(second.y).toBeCloseTo(first.y, 0);
+    expect(third.y).toBeGreaterThan(first.y + first.height);
+    expect(due.y).toBeGreaterThan(recent.y + recent.height);
+    expect(recent.x).toBeCloseTo(first.x, 0);
+    expect(recent.x + recent.width).toBeCloseTo(second.x + second.width, 0);
 });
 
 for (const { count, linked } of [

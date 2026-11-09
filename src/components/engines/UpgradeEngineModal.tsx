@@ -84,7 +84,7 @@ export default function UpgradeEngineModal({
         </Alert>
       ) : (
         <ScrollArea.Autosize mah={720} offsetScrollbars>
-          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+          <SimpleGrid cols={{ base: 1, sm: 2 }}>
             {defaultEngines?.map((catalog) => {
               if (!catalog.downloadLink) return null;
               const id = `engine-upgrade:${engine.id}:${catalog.downloadLink}`;

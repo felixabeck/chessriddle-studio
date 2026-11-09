@@ -41,6 +41,12 @@ border and no default shadow. `Paper` and `Card` support `variant="inset"`.
 The exact muted-foreground token stays available. Mantine's secondary text is
 contrast-adjusted for readability across the three surface tiers.
 
+Cards on a page or in a catalogue dialog sit `md` (16px) apart, horizontally and
+vertically. Rows of cards stacked on one page share one column grid so their edges
+line up. Card pages keep the same `md` margin to the window edge, and neighbouring
+columns start at the same height. Compact tiles inside a panel or card, and the
+resizable board and database workspaces, may use a smaller gap.
+
 ## Typography and radii
 
 Inter is the sans and heading family. JetBrains Mono is for notation, logs and

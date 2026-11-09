@@ -215,7 +215,7 @@ function AddDatabase({
             </Center>
           )}
           <ScrollArea.Autosize h={500} offsetScrollbars>
-            <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="sm">
+            <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
               {defaultDatabases?.map((db) => {
                 const card = manifestDatabaseInstallCard(databases, db);
                 return (

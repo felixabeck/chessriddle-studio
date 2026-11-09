@@ -119,7 +119,7 @@ export default function EnginesPage() {
   return (
     <Stack h="100%" className={classes.page} data-compact={compact || undefined}>
       <AddEngine opened={opened} setOpened={setOpened} />
-      <Group align="baseline" py="sm" pl={compact ? "xs" : "lg"}>
+      <Group align="baseline" py="sm" pl={compact ? "xs" : "md"}>
         <Title size={compact ? "h3" : undefined}>{t("Engines.Title")}</Title>
         <OpenFolderButton />
       </Group>
@@ -153,7 +153,7 @@ export default function EnginesPage() {
             </Group>
             <Divider />
             <ScrollArea flex={1} mih={0} scrollbars="y">
-              <SimpleGrid cols={{ base: 1, md: 2 }} spacing={{ base: "md", md: "sm" }} p="xs">
+              <SimpleGrid cols={{ base: 1, md: 2 }} p="xs">
                 {filteredEngines.map(({ item, index }) => {
                   const stats =
                     item.type === "local"
