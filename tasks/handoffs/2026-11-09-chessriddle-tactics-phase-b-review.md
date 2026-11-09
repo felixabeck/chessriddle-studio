@@ -58,7 +58,7 @@ Round 1 ran over the cumulative Studio range and the held ChessRiddle range. Ten
 | Bare limits 50, 7 and 86,400,000 | review-code-quality | Fix, named constants |
 | Golden verdict test did not assert the continuation; elapsed time unasserted | review-tests | Fix |
 | Duplicate animation settling and split-word helper in e2e | review-minimalism | Fix, reused and extracted |
-| d-20261109-14 still named itself the ceiling pointer | records lens | Fix, set Superseded-by d-20261109-21 |
+| d-20261109-14 still named itself the ceiling pointer | records lens | Fixed by `master`: another run set d-20261109-14 Superseded-by d-20261109-23, and d-20261109-30 is now the forward pointer |
 | Decision text described the cap incompletely | records lens | Fix, decision re-recorded as d-20261109-24 |
 | New privacy text is literal JSX for EN, DE and ES only | ChessRiddle review-i18n | Skip: the legal documents exist in those three languages by convention, others fall back to English through `LegalDocumentShell` |
 | Privacy disclosure asserted against source text, not the rendered page | ChessRiddle review-tests | Skip: every disclosure in that test file works this way; a test-shape change with no observed failure (rule 4d) |
