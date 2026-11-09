@@ -88,6 +88,16 @@ test("late hydration cannot overwrite a successfully selected name", async () =>
   expect(host.textContent).not.toContain("OldFolder");
 });
 
+test("late hydration failure cannot overwrite a successfully selected name", async () => {
+  let reject!: (error: Error) => void;
+  load.mockReturnValue(new Promise((_, fail) => (reject = fail)));
+  await render();
+  await act(async () => host.querySelector("button")!.click());
+  await act(async () => reject(new Error("stale")));
+  expect(host.textContent).toContain("NewFolder");
+  expect(host.textContent).not.toContain("Settings.Directories.Select");
+});
+
 test("shows loading until hydration settles", async () => {
   let resolve!: (workspace: { displayName: string }) => void;
   load.mockReturnValue(new Promise((done) => (resolve = done)));

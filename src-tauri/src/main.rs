@@ -1036,8 +1036,8 @@ fn download_destination_is_known_blocking(
 }
 
 /// Native-only database-root selection.  A directory is promoted immediately
-/// to a persistent database workspace and the renderer receives only its
-/// opaque handle.
+/// to a persistent database workspace and the renderer receives its opaque
+/// handle and the folder's display name, never its path.
 #[tauri::command]
 #[specta::specta]
 async fn issue_database_workspace(

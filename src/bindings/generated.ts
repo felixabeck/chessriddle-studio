@@ -161,8 +161,8 @@ async downloadDestinationIsKnown(destination: PathRef) : Promise<Result<boolean,
 },
 /**
  * Native-only database-root selection.  A directory is promoted immediately
- * to a persistent database workspace and the renderer receives only its
- * opaque handle.
+ * to a persistent database workspace and the renderer receives its opaque
+ * handle and the folder's display name, never its path.
  */
 async issueDatabaseWorkspace() : Promise<Result<DatabaseRootDescriptor, ErrorPayload>> {
     try {
