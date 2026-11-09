@@ -12755,3 +12755,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** One predicate covers Mantine Modal/Drawer and the custom PromotionModal, which all carry `aria-modal`. Regressions fail when any guard is removed (fix-revert recorded in f-20261106-33). Reversal path: replace `keyboardOwner` with an explicit overlay-ownership registry if a non-`aria-modal` blocking surface appears.
 * **Decided by:** Claude Code (Opus 5.5) drain session 7244e15f, 2026-11-09, full auto · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"cd5a36647cd569ea36a43e8458bef6aab644b6e4b7ecd8b81f9f99b87c2c8ca7","input_sha256":"dcbf0392b532a45620213b7204e7074a8c59b44dd3e9f0e256648c3b455ca64f","kind":"mutation-receipt","operation":"0085770119fc5a64324ed58605f998680df67d5219f142a6b384c1ed13b95963","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-21"],"target":"decisions-ledger","v":1} -->
+
+### d-20261109-25 — Where do player search and chronological order for the New Tab game list live?
+
+* **Question:** Felix's list needs each own game newest first and findable by player name. The existing game query has no name predicate and sorts raw date text, placing unknown dates first. Where does this logic go?
+* **Governs:** tasks/plans/2026-11-09-new-tab-library.md (New Tab as one Library list)
+* **Chosen:** `GameQuery` gains a tokenized, wildcard-escaped player-name predicate and `GameSort` gains a normalized chronological order. The renderer merges per-collection pages with the same ordering.
+* **Rejected:** Filtering loaded pages in the renderer, which cannot find a game that is not loaded. A multi-database native command, which adds a second admission surface.
+* **Reason:** It is the smallest complete route on the existing cancellable `getGames` path. Reversal path: drop the query field and sort value and replace the feed hook.
+* **Decided by:** Claude Code (Opus 5.5) build run 2026-11-09-new-tab-library, full auto, 2026-11-09 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"e59bcbb3918445b701685e217d54435d8f2a8cdbc4c57205cced8680f2f178ef","input_sha256":"04526d970459d9512605c391bc145631938a4cff2b457caf8eb0e3d15aaecf4a","kind":"mutation-receipt","operation":"7a8d8e34a6f66d1d8eaa33d46424209468ab9aebb8a59dfabc884e3cebc39dba","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-25"],"target":"decisions-ledger","v":1} -->
