@@ -39,8 +39,9 @@ globalThis.ResizeObserver = MockResizeObserver;
 // `AppModal` is replaced by a plain dialog element. The real one is a Mantine `Modal`: it portals
 // out of the container and runs a Transition, which produced unactioned state updates and a
 // five-second timeout in the cases that re-render. Nothing here asserts modal chrome — the cases
-// are about what the flag loader does — so the shell is mocked and `@mantine/core` itself is left
-// real, because the flag components rendered by the real `mantine-flagpack` need it.
+// cover flag-loader behavior and player-error rendering — so the shell is mocked and
+// `@mantine/core` itself is left real, because the flag components rendered by the real
+// `mantine-flagpack` need it.
 vi.mock("../common/AppModal", () => ({
   default: ({
     children,

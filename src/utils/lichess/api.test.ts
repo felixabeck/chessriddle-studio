@@ -321,6 +321,29 @@ describe("getFidePlayer", () => {
         await expect(getFidePlayer("42")).resolves.toEqual(sparsePlayer);
     });
 
+    test("accepts null for every nullable profile field", async () => {
+        const nullFieldsPlayer = {
+            ...player,
+            federation: null,
+            title: null,
+            year: null,
+            standard: null,
+            rapid: null,
+            blitz: null,
+            photo: null,
+        };
+        mocks.getPublicLichessJson.mockResolvedValue(JSON.stringify(nullFieldsPlayer));
+
+        await expect(getFidePlayer("1503014")).resolves.toEqual(nullFieldsPlayer);
+    });
+
+    test("accepts a photo with a null small image", async () => {
+        const nullSmallPhotoPlayer = { ...player, photo: { small: null } };
+        mocks.getPublicLichessJson.mockResolvedValue(JSON.stringify(nullSmallPhotoPlayer));
+
+        await expect(getFidePlayer("1503014")).resolves.toEqual(nullSmallPhotoPlayer);
+    });
+
     test("returns the first search result and forwards the Unicode query unchanged", async () => {
         mocks.getPublicLichessJson.mockResolvedValue(
             JSON.stringify([player, { id: 42, name: "Another Player" }]),
@@ -352,6 +375,27 @@ describe("getFidePlayer", () => {
         { label: "ID lookup returning an array", query: "1503014", payload: [player] },
         { label: "search returning an object", query: "Test Player", payload: player },
         { label: "numeric title", query: "1503014", payload: { ...player, title: 5 } },
+        {
+            label: "standard rating object",
+            query: "1503014",
+            payload: { ...player, standard: { unexpected: "object" } },
+        },
+        {
+            label: "rapid rating object",
+            query: "1503014",
+            payload: { ...player, rapid: { unexpected: "object" } },
+        },
+        {
+            label: "blitz rating object",
+            query: "1503014",
+            payload: { ...player, blitz: { unexpected: "object" } },
+        },
+        {
+            label: "photo with a numeric small image",
+            query: "1503014",
+            payload: { ...player, photo: { small: 5 } },
+        },
+        { label: "numeric federation", query: "1503014", payload: { ...player, federation: 7 } },
         { label: "string ID", query: "1503014", payload: { ...player, id: "1503014" } },
     ])("rejects $label and logs once", async ({ query, payload }) => {
         mocks.getPublicLichessJson.mockResolvedValue(JSON.stringify(payload));
