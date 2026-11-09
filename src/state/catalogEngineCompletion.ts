@@ -1,6 +1,9 @@
 import { getDefaultStore } from "jotai";
 import { useSyncExternalStore } from "react";
 import type { EngineInstallIntent } from "@/bindings";
+import i18n from "@/i18n";
+import { notifyUnlessCancelled } from "@/components/files/notifyError";
+import { runDownloadJob } from "@/hooks/downloadJobs";
 import { installCatalogEngine } from "@/utils/engineInstall";
 import type { DefaultEngine, LocalEngine } from "@/utils/engines";
 import {
@@ -11,6 +14,29 @@ import {
 } from "./engineCompletions";
 
 const { pending, listeners, publish, requireDocument } = engineCompletionState;
+
+/** One job and failure contract. A synchronous refusal returns null without accepting a job. */
+export function installCatalogEngineJob(
+    engine: DefaultEngine,
+    progressId: string,
+    upgrade?: LocalEngine,
+    store = getDefaultStore(),
+): Promise<boolean> | null {
+    const failed = (error: unknown) => {
+        if (!(error instanceof Error && "reason" in error && error.reason === "busy")) {
+            notifyUnlessCancelled(i18n.t("Common.Error"), error, "engine");
+        }
+        return false;
+    };
+    try {
+        return runDownloadJob(progressId, (ticket) =>
+            completeCatalogEngine(engine, progressId, ticket, upgrade, store),
+        ).then(() => true, failed);
+    } catch (error) {
+        failed(error);
+        return null;
+    }
+}
 
 export function usePendingEngineCompletion(progressId: string | null, engineId?: string) {
     return useSyncExternalStore(

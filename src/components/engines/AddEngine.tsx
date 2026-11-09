@@ -17,7 +17,7 @@ import { useAtom, useStore } from "jotai";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
-import { cancelDownloadJob, runDownloadJob, useDownloadJob } from "@/hooks/downloadJobs";
+import { cancelDownloadJob, useDownloadJob } from "@/hooks/downloadJobs";
 import { enginesAtom } from "@/state/atoms";
 import AppModal from "../common/AppModal";
 import {
@@ -32,7 +32,7 @@ import { usePlatform } from "@/utils/files";
 import CatalogEngineCard from "./CatalogEngineCard";
 import EngineForm from "./EngineForm";
 import { createEngineFormValidation } from "./engineFormValidation";
-import { completeCatalogEngine, usePendingEngineCompletion } from "@/state/catalogEngineCompletion";
+import { installCatalogEngineJob, usePendingEngineCompletion } from "@/state/catalogEngineCompletion";
 
 function AddEngine({
   opened,
@@ -245,16 +245,13 @@ function EngineCard({
     if (!progressId) return;
     setInProgress(true);
     try {
-      await runDownloadJob(progressId, (ticket) =>
-        completeCatalogEngine(engine, progressId, ticket, undefined, store),
-      );
-      setInstalledThisSession(true);
-    } catch (error) {
-      notifyUnlessCancelled(t("Common.Error"), error, "engine");
+      if (await installCatalogEngineJob(engine, progressId, undefined, store)) {
+        setInstalledThisSession(true);
+      }
     } finally {
       setInProgress(false);
     }
-  }, [engine, progressId, store, t]);
+  }, [engine, progressId, store]);
 
   return (
     <CatalogEngineCard

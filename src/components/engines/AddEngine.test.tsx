@@ -38,6 +38,7 @@ const mocks = await vi.hoisted(async () => {
       },
     ],
     installDefaultEngine: vi.fn(),
+    installJob: vi.fn(),
     withDownloadTicket: vi.fn((run: (ticket: string) => Promise<unknown>) =>
       run("prepared-ticket"),
     ),
@@ -56,10 +57,26 @@ const mocks = await vi.hoisted(async () => {
   });
 });
 
-vi.mock("@/state/catalogEngineCompletion", () => ({
-  completeCatalogEngine: mocks.installDefaultEngine,
-  usePendingEngineCompletion: () => undefined,
-}));
+vi.mock("@/state/catalogEngineCompletion", async () => {
+  const { runDownloadJob } = await import("@/hooks/downloadJobs");
+  const { notifyUnlessCancelled } = await import("@/components/files/notifyError");
+  // Surface harness retains controllable completion timing. The real action has its own suite.
+  mocks.installJob.mockImplementation(async (engine, id, upgrade, store) => {
+    try {
+      await runDownloadJob(id, (ticket) =>
+        mocks.installDefaultEngine(engine, id, ticket, upgrade, store),
+      );
+      return true;
+    } catch (error) {
+      notifyUnlessCancelled("Common.Error", error, "engine");
+      return false;
+    }
+  });
+  return {
+    installCatalogEngineJob: mocks.installJob,
+    usePendingEngineCompletion: () => undefined,
+  };
+});
 vi.mock("@/state/atoms", () => ({
   enginesAtom: Symbol("enginesAtom"),
 }));
@@ -354,6 +371,12 @@ test("an application failure shows an error and returns the card to its action",
   mocks.installDefaultEngine.mockRejectedValue(new Error("Engines.SaveError"));
   await act(async () => root.render(<AddEngine opened setOpened={() => undefined} />));
   await act(async () => mocks.progressButtonProps!.onClick());
+  expect(mocks.installJob).toHaveBeenCalledWith(
+    mocks.defaultEngines[0],
+    defaultEngineProgressId(mocks.defaultEngines[0].downloadLink),
+    undefined,
+    expect.anything(),
+  );
   expect(mocks.saveEngines).not.toHaveBeenCalled();
   expect(mocks.notifyUnlessCancelled).toHaveBeenCalledWith(
     "Common.Error",

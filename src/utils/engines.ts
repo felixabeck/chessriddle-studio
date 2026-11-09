@@ -338,17 +338,23 @@ export async function loadDefaultEngineCatalog(
     });
 }
 
+export async function loadCompatibleEngineCatalog(os: Platform): Promise<DefaultEngine[]> {
+    let bmi2: boolean;
+    try {
+        bmi2 = await tauri.isBmi2Compatible();
+    } catch (error) {
+        throw new EngineCapabilityQueryError(error);
+    }
+    const engines = await loadDefaultEngineCatalog();
+    return engines.filter((engine) => engine.os === os && engine.bmi2 === bmi2);
+}
+
+export async function loadStockfishCatalogEntry(os: Platform): Promise<DefaultEngine | undefined> {
+    return (await loadCompatibleEngineCatalog(os)).find((engine) => engine.name === "Stockfish");
+}
+
 export function useDefaultEngines(os: Platform | undefined, opened: boolean) {
-    const { data, error, isLoading } = useSWR(opened ? os : null, async (os: Platform) => {
-        let bmi2: boolean;
-        try {
-            bmi2 = await tauri.isBmi2Compatible();
-        } catch (error) {
-            throw new EngineCapabilityQueryError(error);
-        }
-        const engines = await loadDefaultEngineCatalog();
-        return engines.filter((engine) => engine.os === os && engine.bmi2 === bmi2);
-    });
+    const { data, error, isLoading } = useSWR(opened ? os : null, loadCompatibleEngineCatalog);
     return {
         defaultEngines: data,
         error,

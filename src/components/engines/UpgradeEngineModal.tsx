@@ -4,9 +4,8 @@ import { useStore } from "jotai";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import AppModal from "@/components/common/AppModal";
-import { notifyUnlessCancelled } from "@/components/files/notifyError";
-import { cancelDownloadJob, runDownloadJob, useDownloadJob } from "@/hooks/downloadJobs";
-import { completeCatalogEngine, usePendingEngineCompletion } from "@/state/catalogEngineCompletion";
+import { cancelDownloadJob, useDownloadJob } from "@/hooks/downloadJobs";
+import { installCatalogEngineJob, usePendingEngineCompletion } from "@/state/catalogEngineCompletion";
 import {
   EngineCapabilityQueryError,
   EngineCatalogVerificationError,
@@ -45,12 +44,9 @@ export default function UpgradeEngineModal({
     active.current = progressId;
     setActiveId(progressId);
     try {
-      await runDownloadJob(progressId, (ticket) =>
-        completeCatalogEngine(catalog, progressId, ticket, engine, store),
-      );
-      setUpgradedLink(catalog.downloadLink ?? null);
-    } catch (cause) {
-      notifyUnlessCancelled(t("Common.Error"), cause, "engine");
+      if (await installCatalogEngineJob(catalog, progressId, engine, store)) {
+        setUpgradedLink(catalog.downloadLink ?? null);
+      }
     } finally {
       active.current = null;
       setActiveId(null);

@@ -30,6 +30,15 @@ export const ENGINE_OWNER_KEYS = [
 ] as const;
 export type EngineOwnerKey = (typeof ENGINE_OWNER_KEYS)[number];
 
+/** Presence, including corrupt or empty bytes, distinguishes an existing profile from a new one. */
+export function enginesStorageKeyAbsent(): boolean {
+    try {
+        return localStorage.getItem("engines") === null;
+    } catch {
+        return false;
+    }
+}
+
 export type EngineOwnerCompletionUpdate<Value> = {
     completionId: string;
     apply: (current: Value) => { value: Value; disposition: CompletionDisposition };

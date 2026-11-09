@@ -7,13 +7,14 @@ import UpgradeEngineModal from "./UpgradeEngineModal";
 
 const mocks = vi.hoisted(() => ({
   complete: vi.fn(),
+  installJob: vi.fn(),
   cancel: vi.fn(),
   notify: vi.fn(),
   pending: undefined as { completion: EngineCompletion; applying: boolean } | undefined,
   catalogError: undefined as unknown,
 }));
 vi.mock("@/state/catalogEngineCompletion", () => ({
-  completeCatalogEngine: mocks.complete,
+  installCatalogEngineJob: mocks.installJob,
   usePendingEngineCompletion: () => mocks.pending,
 }));
 vi.mock("@/hooks/downloadJobs", () => ({
@@ -101,6 +102,15 @@ let host: HTMLDivElement;
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 beforeEach(() => {
   mocks.complete.mockReset().mockResolvedValue(undefined);
+  mocks.installJob.mockReset().mockImplementation(async (entry, id, upgrade, store) => {
+    try {
+      await mocks.complete(entry, id, "ticket", upgrade, store);
+      return true;
+    } catch (error) {
+      mocks.notify("Common.Error", error, "engine");
+      return false;
+    }
+  });
   mocks.notify.mockReset();
   mocks.pending = undefined;
   mocks.catalogError = undefined;
@@ -121,6 +131,12 @@ const click = async () => act(async () => host.querySelector("button")!.click())
 test("submits the immutable engine target and becomes current after full application", async () => {
   await render();
   await click();
+  expect(mocks.installJob).toHaveBeenCalledExactlyOnceWith(
+    catalog,
+    progressId,
+    old,
+    expect.anything(),
+  );
   expect(mocks.complete).toHaveBeenCalledWith(
     catalog,
     progressId,
