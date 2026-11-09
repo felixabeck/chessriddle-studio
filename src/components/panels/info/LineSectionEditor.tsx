@@ -5,20 +5,24 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { FileWorkspaceHandle, WriteStamp } from "@/bindings";
 import AppModal from "@/components/common/AppModal";
-import { LINE_SECTION_MAX_LENGTH, withLineSection } from "@/components/files/lineSection";
+import {
+  LINE_SECTION_MAX_LENGTH,
+  normalizeLineSection,
+  withLineSection,
+} from "@/components/files/lineSection";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { libraryButtonProps } from "@/components/library/presentation";
 import { normalizeError } from "@/platform/errors";
 import { tabsAtom } from "@/state/atoms";
 import { scanBlockingTabs } from "@/state/quitGate";
 import { readFileGame, writeFileGame } from "@/utils/files";
-import { fileWorkspaceKey } from "@/utils/pathCapabilities";
-import { isFileBackedTab } from "@/utils/tabs";
+import { isTabOfFileGame } from "@/utils/tabs";
 
 export type LineSectionTarget = {
   index: number;
   section: string | undefined;
   stamp: string;
+  revision: string;
   x: number;
   y: number;
 };
@@ -30,13 +34,14 @@ export default function LineSectionEditor({
   target,
   onClose,
   onSaved,
-  onStale,
+  onRefresh,
 }: {
   file: FileWorkspaceHandle;
   target: LineSectionTarget;
   onClose: () => void;
   onSaved: (index: number, section: string | undefined, written: WriteStamp) => void;
-  onStale: () => void;
+  /** The list no longer matches the file. */
+  onRefresh: () => void;
 }) {
   const { t } = useTranslation();
   const tabs = useAtomValue(tabsAtom);
@@ -45,20 +50,13 @@ export default function LineSectionEditor({
   const [pending, setPending] = useState(false);
 
   async function save(section: string | null) {
-    const fileKey = fileWorkspaceKey(file);
-    const lineTabs = tabs.filter(
-      (tab) =>
-        isFileBackedTab(tab) &&
-        tab.gameOrigin.gameNumber === target.index &&
-        fileWorkspaceKey(tab.gameOrigin.file.handle) === fileKey,
-    );
+    const lineTabs = tabs.filter((tab) => isTabOfFileGame(tab, file, target.index));
     if (scanBlockingTabs(lineTabs).length > 0) {
       notifications.show({
         color: "danger",
         title: t("Common.Error"),
         message: t("Files.LineSection.UnsavedTab", {
-          defaultValue:
-            "This game has unsaved changes in an open tab. Save or close that tab first.",
+          defaultValue: "Save or close this game's open tab first.",
         }),
       });
       onClose();
@@ -68,7 +66,13 @@ export default function LineSectionEditor({
     setPending(true);
     try {
       const game = await readFileGame(file, target.index);
-      if (!game.present || game.omission || game.stamp !== target.stamp) {
+      // Identical lines share a stamp, so only the revision proves this index is still this line.
+      if (
+        !game.present ||
+        game.omission ||
+        game.stamp !== target.stamp ||
+        game.revision !== target.revision
+      ) {
         showStale();
         return;
       }
@@ -76,10 +80,15 @@ export default function LineSectionEditor({
         kind: "game",
         stamp: game.stamp,
       });
-      onSaved(target.index, section ?? undefined, written);
+      onSaved(target.index, section === null ? undefined : normalizeLineSection(section), written);
     } catch (error) {
-      if (normalizeError(error).backendCategory === "stale-game") showStale();
-      else notifyUnlessCancelled(t("Common.Error"), error);
+      const details = normalizeError(error);
+      if (details.backendCategory === "stale-game") {
+        showStale();
+      } else {
+        if (details.category === "applied-despite-error") onRefresh();
+        notifyUnlessCancelled(t("Common.Error"), error);
+      }
     } finally {
       setPending(false);
       onClose();
@@ -91,11 +100,10 @@ export default function LineSectionEditor({
       color: "danger",
       title: t("Common.Error"),
       message: t("Files.LineSection.Stale", {
-        defaultValue:
-          "The file changed, so the section was not saved. Check the list and try again.",
+        defaultValue: "The file changed. Check the list and try again.",
       }),
     });
-    onStale();
+    onRefresh();
   }
 
   if (mode === "menu") {

@@ -24,7 +24,11 @@ vi.mock("@/utils/files", () => ({
   writeFileGame: mocks.writeFileGame,
 }));
 vi.mock("@/utils/tabs", () => ({
-  isFileBackedTab: (tab: { gameOrigin?: { kind: string } }) => tab.gameOrigin?.kind === "file",
+  isTabOfFileGame: (
+    tab: { gameOrigin: { gameNumber: number; file: { handle: unknown } } },
+    handle: unknown,
+    gameNumber: number,
+  ) => tab.gameOrigin.gameNumber === gameNumber && tab.gameOrigin.file.handle === handle,
 }));
 vi.mock("@/components/library/presentation", () => ({ libraryButtonProps: {} }));
 vi.mock("@/components/common/AppModal", () => ({
@@ -56,19 +60,26 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const file: FileWorkspaceHandle = { id: { id: "file" }, kind: "fileWorkspace" };
 const pgn = '[Event "A"]\n\n1. e4 *\n';
-const target: LineSectionTarget = { index: 3, section: undefined, stamp: "s1", x: 1, y: 2 };
+const target: LineSectionTarget = {
+  index: 3,
+  section: undefined,
+  stamp: "s1",
+  revision: "r1",
+  x: 1,
+  y: 2,
+};
 
 let host: HTMLDivElement;
 let root: Root;
 const onClose = vi.fn();
 const onSaved = vi.fn();
-const onStale = vi.fn();
+const onRefresh = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.tabs = [];
   mocks.scanBlockingTabs.mockReturnValue([]);
-  mocks.readFileGame.mockResolvedValue({ pgn, stamp: "s1", present: true });
+  mocks.readFileGame.mockResolvedValue({ pgn, stamp: "s1", revision: "r1", present: true });
   mocks.writeFileGame.mockResolvedValue({ stamp: "s2", revision: "r2" });
   host = document.createElement("div");
   document.body.append(host);
@@ -88,7 +99,7 @@ async function render(value: LineSectionTarget = target) {
         target={value}
         onClose={onClose}
         onSaved={onSaved}
-        onStale={onStale}
+        onRefresh={onRefresh}
       />,
     );
   });
@@ -151,6 +162,7 @@ test("removing rewrites the line without the tag", async () => {
   mocks.readFileGame.mockResolvedValue({
     pgn: '[Event "A"]\n[Section "x"]\n\n1. e4 *\n',
     stamp: "s1",
+    revision: "r1",
     present: true,
   });
   await render({ ...target, section: "x" });
@@ -160,15 +172,16 @@ test("removing rewrites the line without the tag", async () => {
 });
 
 test.each([
-  ["a different line now at this position", { pgn, stamp: "other", present: true }],
-  ["a line no longer in the file", { pgn: "", stamp: "s1", present: false }],
+  ["a different line now at this position", { pgn, stamp: "other", revision: "r1", present: true }],
+  ["an identical line after the file changed", { pgn, stamp: "s1", revision: "r2", present: true }],
+  ["a line no longer in the file", { pgn: "", stamp: "s1", revision: "r1", present: false }],
 ])("refuses %s without writing", async (_name, game) => {
   mocks.readFileGame.mockResolvedValue(game);
   await render();
   await clickItem("Files.LineSection.Start");
   await submit();
   expect(mocks.writeFileGame).not.toHaveBeenCalled();
-  expect(onStale).toHaveBeenCalledOnce();
+  expect(onRefresh).toHaveBeenCalledOnce();
   expect(onSaved).not.toHaveBeenCalled();
   expect(onClose).toHaveBeenCalledOnce();
 });
@@ -182,7 +195,30 @@ test("a stale refusal from the write refreshes the list", async () => {
   await render();
   await clickItem("Files.LineSection.Start");
   await submit();
-  expect(onStale).toHaveBeenCalledOnce();
+  expect(onRefresh).toHaveBeenCalledOnce();
+  expect(onSaved).not.toHaveBeenCalled();
+  expect(onClose).toHaveBeenCalledOnce();
+});
+
+test("a name of only spaces is reported as the unnamed section it was saved as", async () => {
+  await render();
+  await clickItem("Files.LineSection.Start");
+  await typeName("   ");
+  await submit();
+  expect(mocks.writeFileGame.mock.calls[0][2]).toContain('[Section ""]');
+  expect(onSaved.mock.calls[0][1]).toBe("");
+});
+
+test("a write that landed despite an error refreshes the list", async () => {
+  mocks.writeFileGame.mockRejectedValue({
+    tag: "backend-error",
+    category: "durability",
+    message: "uncertain",
+  });
+  await render();
+  await clickItem("Files.LineSection.Start");
+  await submit();
+  expect(onRefresh).toHaveBeenCalledOnce();
   expect(onSaved).not.toHaveBeenCalled();
   expect(onClose).toHaveBeenCalledOnce();
 });

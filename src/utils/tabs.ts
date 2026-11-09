@@ -33,7 +33,7 @@ import { defaultPGN, getPGN, parsePGN, parsePGNWithLossReport } from "./chess";
 import { pickPgnFile, readFileGame, writeFileGame } from "./files";
 import type { GameHeaders, TreeState } from "./treeReducer";
 import { fileWorkspaceKey } from "./pathCapabilities";
-import type { DatabaseHandle, NormalizedGame } from "@/bindings";
+import type { DatabaseHandle, FileWorkspaceHandle, NormalizedGame } from "@/bindings";
 import { databaseGameToTree, seedDatabaseOrientation } from "./databaseGameTree";
 import { databaseHandleKey } from "./db";
 import { getFileFreshness, setFileFreshness } from "@/state/fileFreshness";
@@ -683,15 +683,33 @@ export function serializeStoreTree(store: StoreApi<TreeStoreState>): string {
     })}\n\n`;
 }
 
+function isSameFileGame(
+    origin: FileBackedTab["gameOrigin"],
+    handle: FileWorkspaceHandle,
+    gameNumber: number,
+): boolean {
+    return (
+        fileWorkspaceKey(origin.file.handle) === fileWorkspaceKey(handle) &&
+        origin.gameNumber === gameNumber
+    );
+}
+
 export function sameFileGameOrigin(left: GameOrigin, right: GameOrigin): boolean {
     if (left.kind === "file" || left.kind === "temp_file") {
         return (
             (right.kind === "file" || right.kind === "temp_file") &&
-            fileWorkspaceKey(left.file.handle) === fileWorkspaceKey(right.file.handle) &&
-            left.gameNumber === right.gameNumber
+            isSameFileGame(left, right.file.handle, right.gameNumber)
         );
     }
     return false;
+}
+
+export function isTabOfFileGame(
+    tab: Tab | undefined,
+    handle: FileWorkspaceHandle,
+    gameNumber: number,
+): tab is FileBackedTab {
+    return isFileBackedTab(tab) && isSameFileGame(tab.gameOrigin, handle, gameNumber);
 }
 
 function sameOrigin(left: GameOrigin, right: GameOrigin): boolean {

@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   parsePGN: vi.fn(),
   visibleIndices: [0],
   measure: vi.fn(),
+  estimateSize: (() => 0) as (index: number) => number,
 }));
 
 vi.mock("react-i18next", () => ({ useTranslation: () => translation }));
@@ -32,7 +33,8 @@ vi.mock("@mantine/notifications", () => ({
   notifications: { show: vi.fn() },
 }));
 vi.mock("@tanstack/react-virtual", () => ({
-  useVirtualizer: () => ({
+  useVirtualizer: (options: { estimateSize: (index: number) => number }) => ({
+    ...((mocks.estimateSize = options.estimateSize), {}),
     getTotalSize: () => 30,
     measure: mocks.measure,
     getVirtualItems: () =>
@@ -64,8 +66,27 @@ vi.mock("@mantine/core", () => ({
 }));
 
 vi.mock("./LineSectionEditor", () => ({
-  default: ({ target }: { target: { index: number; section?: string; stamp: string } }) => (
-    <div data-testid="section-editor">{JSON.stringify(target)}</div>
+  default: ({
+    target,
+    onSaved,
+    onRefresh,
+  }: {
+    target: { index: number };
+    onSaved: (index: number, section: string | undefined, written: object) => void;
+    onRefresh: () => void;
+  }) => (
+    <div>
+      <div data-testid="section-editor">{JSON.stringify(target)}</div>
+      <button
+        data-testid="saved"
+        onClick={() => onSaved(target.index, "Neu", { stamp: "s2", revision: "r2" })}
+      />
+      <button
+        data-testid="saved-unconfirmed"
+        onClick={() => onSaved(target.index, "Neu", { stamp: null, revision: null })}
+      />
+      <button data-testid="refresh" onClick={onRefresh} />
+    </div>
   ),
 }));
 
@@ -800,6 +821,7 @@ test("right-clicking a loaded line opens the section editor where allowed", asyn
     index: 1,
     section: "",
     stamp: "s1",
+    revision: "r1",
     x: 40,
     y: 50,
   });
@@ -815,4 +837,62 @@ test.each([
     slot.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
   );
   expect(host.querySelector('[data-testid="section-editor"]')).toBeNull();
+});
+
+test("a section reserves its space, and only a change of that space re-measures", async () => {
+  mocks.visibleIndices = [0, 1, 2, 3];
+  await renderSections([
+    [0, { name: "First", section: "", identity }],
+    [1, { name: "Second", section: "", identity }],
+    [2, { name: "Third", section: "Benannt", identity }],
+    [3, { name: "Fourth", identity }],
+  ]);
+  const [unnamedFirst, gap, named, plain] = [0, 1, 2, 3].map(mocks.estimateSize);
+  expect(unnamedFirst).toBe(plain);
+  expect(gap).toBeGreaterThan(plain);
+  expect(named).toBeGreaterThan(gap);
+  expect(mocks.measure).toHaveBeenCalled();
+});
+
+async function openEditor(index: number) {
+  const slot = host.querySelectorAll<HTMLElement>('[role="presentation"]')[index];
+  await act(async () =>
+    slot.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
+  );
+}
+
+async function click(testId: string) {
+  await act(async () => host.querySelector<HTMLElement>(`[data-testid="${testId}"]`)!.click());
+}
+
+function editorTarget() {
+  return JSON.parse(host.querySelector('[data-testid="section-editor"]')!.textContent!);
+}
+
+test("a saved section appears at once and every line takes the file's new revision", async () => {
+  mocks.visibleIndices = [0, 1];
+  await renderSections([
+    [0, { name: "First", identity }],
+    [1, { name: "Second", identity }],
+  ]);
+  await openEditor(1);
+  await click("saved");
+  expect(host.textContent).toContain("Neu");
+  expect(editorTarget()).toMatchObject({ index: 1, stamp: "s1", revision: "r1" });
+
+  mocks.measure.mockClear();
+  await openEditor(1);
+  expect(editorTarget()).toMatchObject({ index: 1, section: "Neu", stamp: "s2", revision: "r2" });
+  await openEditor(0);
+  expect(editorTarget()).toMatchObject({ index: 0, stamp: "s1", revision: "r2" });
+});
+
+test.each(["saved-unconfirmed", "refresh"])("%s reloads the list from the file", async (button) => {
+  mocks.visibleIndices = [0];
+  mocks.readGames.mockResolvedValue([firstGame]);
+  await renderSections([[0, { name: "First", identity }]]);
+  await openEditor(0);
+  await click(button);
+  expect(mocks.readGames).toHaveBeenCalled();
+  expect(host.textContent).toContain("Loaded game");
 });

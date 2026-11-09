@@ -48,6 +48,36 @@ describe("withLineSection", () => {
         expect(withLineSection("1. e4 *\n", "s")).toBe('[Section "s"]\n\n1. e4 *\n');
     });
 
+    test("keeps other tags that share a line with the section", () => {
+        const inline = '[Section "old"] [White "Alice"]\n[Black "Bob"]\n\n1. e4 *\n';
+        expect(withLineSection(inline, null)).toBe('[White "Alice"]\n[Black "Bob"]\n\n1. e4 *\n');
+        const trailing = '[White "Alice"] [Section "a\\"b"]\n\n1. e4 *\n';
+        expect(withLineSection(trailing, null)).toBe('[White "Alice"]\n\n1. e4 *\n');
+        expect(withLineSection(inline, "new")).toBe(
+            '[White "Alice"]\n[Black "Bob"]\n[Section "new"]\n\n1. e4 *\n',
+        );
+    });
+
+    test("finds the section past an escape line between tags", () => {
+        const escaped = '[Event "A"]\n% note\n[Section "old"]\n\n1. e4 *\n';
+        expect(withLineSection(escaped, null)).toBe('[Event "A"]\n% note\n\n1. e4 *\n');
+        const renamed = withLineSection(escaped, "new");
+        expect(renamed.match(/\[Section /g)).toHaveLength(1);
+        expect(renamed).toContain('[Section "new"]');
+    });
+
+    test("a game never loses its only tag, which marks where it starts", () => {
+        expect(withLineSection('[Section "B"]\n\n1. d4 *\n', null)).toBe(
+            '[Event "?"]\n\n1. d4 *\n',
+        );
+    });
+
+    test("renaming a section that is the only tag adds no extra blank line", () => {
+        expect(withLineSection('[Section "B"]\n\n1. d4 *\n', "C")).toBe(
+            '[Section "C"]\n\n1. d4 *\n',
+        );
+    });
+
     test("terminates a final tag line that has no line ending", () => {
         expect(withLineSection('[Event "A"]', "s")).toBe('[Event "A"]\n[Section "s"]\n');
     });

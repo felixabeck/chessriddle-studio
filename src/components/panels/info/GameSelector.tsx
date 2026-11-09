@@ -204,18 +204,27 @@ export default function GameSelector({
           file={path}
           target={sectionTarget}
           onClose={() => setSectionTarget(null)}
-          onStale={() => setGames(new Map())}
+          onRefresh={() => setGames(new Map())}
           onSaved={(index, section, written) => {
             if (!written.stamp || !written.revision) {
               setGames(new Map());
               return;
             }
-            const identity = { stamp: written.stamp, revision: written.revision };
-            setGames((previous) => {
-              const row = previous.get(index);
-              if (!row) return previous;
-              return new Map(previous).set(index, { ...row, section, identity });
-            });
+            const { stamp, revision } = written;
+            // A write gives the whole file a new revision, and only this line a new stamp.
+            setGames(
+              (previous) =>
+                new Map(
+                  Array.from(previous, ([rowIndex, row]) => [
+                    rowIndex,
+                    rowIndex === index
+                      ? { ...row, section, identity: { stamp, revision } }
+                      : row.identity
+                        ? { ...row, identity: { ...row.identity, revision } }
+                        : row,
+                  ]),
+                ),
+            );
           }}
         />
       )}
@@ -250,7 +259,7 @@ function GameRow({
   const canDelete = !!game?.identity?.stamp && !!game.identity.revision;
   const omitted = game?.omission === "tooLarge";
   const section = game?.section;
-  const stamp = game?.identity?.stamp;
+  const identity = game?.identity;
 
   return (
     <div
@@ -258,7 +267,7 @@ function GameRow({
       className={classes.slot}
       style={style}
       onContextMenu={
-        onSectionMenu && stamp
+        onSectionMenu && identity
           ? (event) => {
               event.preventDefault();
               const bounds = event.currentTarget.getBoundingClientRect();
@@ -266,7 +275,8 @@ function GameRow({
               onSectionMenu({
                 index,
                 section,
-                stamp,
+                stamp: identity.stamp,
+                revision: identity.revision,
                 x: keyboard ? bounds.left : event.clientX,
                 y: keyboard ? bounds.bottom : event.clientY,
               });
