@@ -12705,3 +12705,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** The tag travels with the PGN, other software ignores unknown tags, and the moves stay untouched so practice decks are unaffected. Reversal path: stop reading the tag in `GameSelector`; existing tags are harmless to every other reader.
 * **Decided by:** Felix in chat, 2026-11-09 (manual-only, optional name, gap as the unnamed form); storage and write mechanics by Claude Code (Opus 5.5) session a43b1706-2c72-4e7b-99fe-a8e648bef2bd · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":17,"effect_sha256":"fa3ad46c3b044090df5dbb26195479dd7376778e37614355704a461d1fb7f52b","input_sha256":"018be480c50747505dbda6a726aee2a67f75438703ab145f6c3ce4efe8b7474c","kind":"mutation-receipt","operation":"7edde43b8e1d0768f453cd21b6b0d9aa9e4c473b27f11e5b120e2734d84f9fa0","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-16","d-20261109-17"],"target":"decisions-ledger","v":1} -->
+
+### d-20261109-18 — What identifies an annotation editor's document so its undo history cannot cross a root replacement?
+
+* **Question:** f-20261106-31: the Tiptap editor was recreated only when the cursor path changed, so replacing the root at the same path kept the old document's undo history. What boundary resets it?
+* **Governs:** f-20261106-31
+* **Chosen:** A non-persisted `documentId` on the tree store, assigned from a module counter on every wholesale root replacement (`installRoot`, `treeReplacementState`, `reset`, store creation) and excluded from persistence by `partialize`. The editor is recreated on `[position.join(), documentId]`.
+* **Rejected:** Keying on the root object (every comment, NAG or shape edit replaces it and would drop history). Clearing history only when the effect calls `setContent` (misses a same-FEN, same-comment replacement). Persisting the id (a rehydrate cannot keep a live editor, and the recovery gate unmounts it).
+* **Reason:** Ordinary edits keep history while any new document starts clean. Reversal path: drop `documentId` from `TreeStoreState` and the editor's `useEditor` dependency list.
+* **Decided by:** Claude Code (Opus 5.5) next-finding drain, full auto, 2026-11-09 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"4383d8110d00dff5aefb26f9590dd582d34983fea7b9d0bb7bead4929228338c","input_sha256":"416f09cd473ea5f2041ad3570b495f3057c5c7a81293c4f7cdab1021ef30a5ab","kind":"mutation-receipt","operation":"da4cae88c61c69069b38d74465948f4bfd26ca728e2844f5a602840784fad73b","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-18"],"target":"decisions-ledger","v":1} -->
