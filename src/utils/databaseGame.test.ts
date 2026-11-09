@@ -194,6 +194,7 @@ test.each(["admitted", "refused", "online"] as const)(
         const id = await openDatabaseGame({
             game,
             database: mode === "online" ? null : database,
+            databaseTitle: "Meine Partien",
             setTabs:
                 mode === "refused" ? () => false : (...args) => workspace.set(tabsAtom, ...args),
             addRecentFile: add,
@@ -205,6 +206,7 @@ test.each(["admitted", "refused", "online"] as const)(
         const expectedEntry = expect.objectContaining({
             kind: "database",
             database,
+            databaseTitle: "Meine Partien",
             gameId: 73,
             linked: {
                 locator: game.linked,

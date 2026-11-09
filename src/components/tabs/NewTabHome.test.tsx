@@ -539,6 +539,23 @@ test.each(["????.??.??", "", null, undefined])(
   },
 );
 
+test("a recent game's secondary collection title omits a stored PGN extension", async () => {
+  store.set(recentFilesAtom, [
+    {
+      kind: "database",
+      database,
+      databaseTitle: "Meine Partien.pgn",
+      gameId: game.id,
+      name: "White - Black",
+      lastOpened: 1,
+    },
+  ]);
+  mocks.getGame.mockResolvedValue({ kind: "found", game });
+  await render();
+  expect(rows()).toHaveLength(1);
+  expect(rows()[0].querySelectorAll("p")[1].textContent).toBe("Meine Partien");
+});
+
 test("a recent game keeps its relative last-opened time despite a known recorded game date", async () => {
   store.set(recentFilesAtom, [
     {
