@@ -12666,3 +12666,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** The growth is the requested account connection card with one message per native outcome in 16 languages. Same procedure as d-20261109-04. Reversal path: tighten total against a future smaller production build.
 * **Decided by:** Claude Code (Opus 5.5) build run chessriddle-account, full auto, 2026-11-09 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"7c754818cdd5552a09800de33dfda1a1169b4b9651bd3b8dd07471752f5936bb","input_sha256":"02dfb1621f7321af78252a8e1531ce44db654fb9f44b546e672b193669b2cc06","kind":"mutation-receipt","operation":"7247e4fd389fdf731c1b3225fe31a16915fec00b0b84ff50ff1f0887653970da","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-13"],"target":"decisions-ledger","v":1} -->
+
+### d-20261109-14 — Does the final ChessRiddle account card build keep the raised total bundle budget?
+
+* **Question:** Review removed unreachable messages and added a stored-account status message after d-20261109-13, and `master` moved. Does the 1,740,000 B ceiling still hold?
+* **Governs:** -
+* **Chosen:** Keep total at 1,740,000 B. Exact published base `3859bcd9ac68d2b78e31eb93f7f3246996cf820c` measured 512,622 B Entry, 515,918 B largest lazy and 1,724,787 B total; candidate `337b126214e9d9e94bde8106d574f5314ddbdb3a` measured 513,300 B Entry, 515,930 B largest lazy and 1,733,440 B total, all gzip, both with `pnpm build-vite` and production `buildBundleReport`, with byte-identical `package.json`, `pnpm-lock.yaml` and `vite.config.ts`. Whole-build deltas are +678 B Entry, +12 B largest lazy and +8,653 B total. Entry stays at 565,000 B and largest lazy at 550,000 B.
+* **Rejected:** Dropping translated status messages: every remaining one has a production consumer, and total counts every emitted asset once, so lazy-loading cannot reduce it.
+* **Reason:** Same procedure as d-20261109-13, which this corrects with the final measurement. Reversal path: tighten total against a future smaller production build. This decision is the forward pointer for the ceilings.
+* **Decided by:** Claude Code (Opus 5.5) build run chessriddle-account, full auto, 2026-11-09 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"a40ec1db3f16bfa726e9cfd8511d3b35554b95e4d9b4ae99d84c2ad6e3334c4e","input_sha256":"48202ee3339568f6b1649a3794848f4f1b8dfc6a2f78c8a583ec55afaaed951c","kind":"mutation-receipt","operation":"f3011bbeb1b157ed73b759e802f9b1437eadd3aa1f9e2d619514e3e4f1b7f3aa","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-14"],"target":"decisions-ledger","v":1} -->
