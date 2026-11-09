@@ -98,7 +98,10 @@ use crate::oauth::{
     authenticate, get_authentication_status, list_lichess_accounts, migrate_legacy_lichess_token,
     remove_lichess_account, revoke_legacy_lichess_token,
 };
-use crate::pgn::{count_pgn_games, delete_game, file_revision, read_game, read_games, write_game};
+use crate::pgn::{
+    count_pgn_games, delete_game, file_revision, read_game, read_games, set_game_section,
+    write_game,
+};
 use crate::practice::{
     acknowledge_practice_orphans, list_practice_decks, load_practice_deck, load_practice_reviews,
     migrate_practice_deck, practice_epoch, record_practice_review, repair_practice_deck,
@@ -2222,6 +2225,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             get_authenticated_lichess_explorer,
             get_public_lichess_json,
             write_game,
+            set_game_section,
             download_file,
             fs::install_engine_workflow,
             fs::pending_engine_completions,
@@ -4742,16 +4746,20 @@ mod blocking_offload_scans {
             "{lichess_runtime}"
         );
 
-        for command in ["delete_game", "write_game"] {
+        for (command, core_name, owner_name) in [
+            ("delete_game", "delete_game_core", "delete_game_core"),
+            ("write_game", "write_game_core", "mutate_game_core"),
+            ("set_game_section", "mutate_game_core", "mutate_game_core"),
+        ] {
             let pgn = include_str!("pgn.rs");
             let body = body_at_indent(pgn, &format!("pub async fn {command}("));
-            let core = format!("{command}_core(");
+            let core = format!("{core_name}(");
             assert!(
                 body.contains("state.operations.accept("),
                 "{command}: {body}"
             );
             assert_eq!(body.matches(&core).count(), 1, "{command}: {body}");
-            let core_body = body_at_indent(pgn, &format!("async fn {command}_core("));
+            let core_body = body_at_indent(pgn, &format!("async fn {owner_name}("));
             assert!(
                 core_body.contains("run_native_operation("),
                 "{command}: {core_body}"

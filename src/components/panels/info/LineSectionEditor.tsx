@@ -6,17 +6,13 @@ import { useTranslation } from "react-i18next";
 import type { FileWorkspaceHandle, WriteStamp } from "@/bindings";
 import AppModal from "@/components/common/AppModal";
 import PointerContextMenu from "@/components/common/PointerContextMenu";
-import {
-  LINE_SECTION_MAX_LENGTH,
-  normalizeLineSection,
-  withLineSection,
-} from "@/components/files/lineSection";
+import { LINE_SECTION_MAX_LENGTH, normalizeLineSection } from "@/components/files/lineSection";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { libraryButtonProps } from "@/components/library/presentation";
 import { normalizeError } from "@/platform/errors";
 import { tabsAtom } from "@/state/atoms";
 import { scanBlockingTabs } from "@/state/quitGate";
-import { readFileGame, writeFileGame } from "@/utils/files";
+import { readFileGame, setFileGameSection } from "@/utils/files";
 import { isTabOfFileGame } from "@/utils/tabs";
 
 export type LineSectionTarget = {
@@ -74,11 +70,13 @@ export default function LineSectionEditor({
         return;
       }
       // Identical lines share a stamp, so the write also pins the revision the list was read at.
-      const written = await writeFileGame(file, target.index, withLineSection(game.pgn, section), {
-        kind: "gameAtRevision",
-        stamp: target.stamp,
-        revision: target.revision,
-      });
+      const written = await setFileGameSection(
+        file,
+        target.index,
+        section,
+        target.stamp,
+        target.revision,
+      );
       onSaved(target.index, section === null ? undefined : normalizeLineSection(section), written);
     } catch (error) {
       const details = normalizeError(error);

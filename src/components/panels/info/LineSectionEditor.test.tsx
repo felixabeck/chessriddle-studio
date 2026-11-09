@@ -7,7 +7,7 @@ import LineSectionEditor, { type LineSectionTarget } from "./LineSectionEditor";
 
 const mocks = vi.hoisted(() => ({
   readFileGame: vi.fn(),
-  writeFileGame: vi.fn(),
+  setFileGameSection: vi.fn(),
   scanBlockingTabs: vi.fn(),
   tabs: [] as unknown[],
 }));
@@ -21,7 +21,7 @@ vi.mock("@/state/atoms", () => ({ tabsAtom: {} }));
 vi.mock("@/state/quitGate", () => ({ scanBlockingTabs: mocks.scanBlockingTabs }));
 vi.mock("@/utils/files", () => ({
   readFileGame: mocks.readFileGame,
-  writeFileGame: mocks.writeFileGame,
+  setFileGameSection: mocks.setFileGameSection,
 }));
 vi.mock("@/utils/tabs", () => ({
   isTabOfFileGame: (
@@ -81,7 +81,7 @@ beforeEach(() => {
   mocks.tabs = [];
   mocks.scanBlockingTabs.mockReturnValue([]);
   mocks.readFileGame.mockResolvedValue({ pgn, stamp: "s1", revision: "r1", present: true });
-  mocks.writeFileGame.mockResolvedValue({ stamp: "s2", revision: "r2" });
+  mocks.setFileGameSection.mockResolvedValue({ stamp: "s2", revision: "r2" });
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -141,20 +141,15 @@ test("a gesture that already chose to start a section opens the name dialog dire
   expect(host.textContent).not.toContain("Files.LineSection.Start");
   await typeName("mit g3");
   await submit();
-  expect(mocks.writeFileGame.mock.calls[0][2]).toContain('[Section "mit g3"]');
+  expect(mocks.setFileGameSection).toHaveBeenCalledExactlyOnceWith(file, 3, "mit g3", "s1", "r1");
 });
 
-test("saving writes the tag against the stamp it read and reports the new identity", async () => {
+test("saving calls the native editor with the listed stamp and revision and reports the new identity", async () => {
   await render();
   await clickItem("Files.LineSection.Start");
   await typeName("mit g3");
   await submit();
-  expect(mocks.writeFileGame).toHaveBeenCalledExactlyOnceWith(
-    file,
-    3,
-    '[Event "A"]\n[Section "mit g3"]\n\n1. e4 *\n',
-    { kind: "gameAtRevision", stamp: "s1", revision: "r1" },
-  );
+  expect(mocks.setFileGameSection).toHaveBeenCalledExactlyOnceWith(file, 3, "mit g3", "s1", "r1");
   expect(onSaved).toHaveBeenCalledExactlyOnceWith(3, "mit g3", { stamp: "s2", revision: "r2" });
   expect(onClose).toHaveBeenCalledOnce();
 });
@@ -163,7 +158,7 @@ test("an empty name saves an unnamed section", async () => {
   await render();
   await clickItem("Files.LineSection.Start");
   await submit();
-  expect(mocks.writeFileGame.mock.calls[0][2]).toContain('[Section ""]');
+  expect(mocks.setFileGameSection.mock.calls[0][2]).toBe("");
   expect(onSaved.mock.calls[0][1]).toBe("");
 });
 
@@ -176,7 +171,7 @@ test("removing rewrites the line without the tag", async () => {
   });
   await render({ ...target, section: "x" });
   await clickItem("Files.LineSection.Remove");
-  expect(mocks.writeFileGame.mock.calls[0][2]).toBe(pgn);
+  expect(mocks.setFileGameSection).toHaveBeenCalledExactlyOnceWith(file, 3, null, "s1", "r1");
   expect(onSaved.mock.calls[0][1]).toBeUndefined();
 });
 
@@ -191,14 +186,14 @@ test.each([
   await render();
   await clickItem("Files.LineSection.Start");
   await submit();
-  expect(mocks.writeFileGame).not.toHaveBeenCalled();
+  expect(mocks.setFileGameSection).not.toHaveBeenCalled();
   expect(onRefresh).toHaveBeenCalledOnce();
   expect(onSaved).not.toHaveBeenCalled();
   expect(onClose).toHaveBeenCalledOnce();
 });
 
 test("a stale refusal from the write refreshes the list", async () => {
-  mocks.writeFileGame.mockRejectedValue({
+  mocks.setFileGameSection.mockRejectedValue({
     tag: "backend-error",
     category: "stale-game",
     message: "stale",
@@ -216,11 +211,7 @@ test("the write pins the listed line's identity, not what the read returned", as
   await render();
   await clickItem("Files.LineSection.Start");
   await submit();
-  expect(mocks.writeFileGame.mock.calls[0][3]).toEqual({
-    kind: "gameAtRevision",
-    stamp: "s1",
-    revision: "r1",
-  });
+  expect(mocks.setFileGameSection).toHaveBeenCalledExactlyOnceWith(file, 3, "", "s1", "r1");
 });
 
 test("a name of only spaces is reported as the unnamed section it was saved as", async () => {
@@ -228,12 +219,26 @@ test("a name of only spaces is reported as the unnamed section it was saved as",
   await clickItem("Files.LineSection.Start");
   await typeName("   ");
   await submit();
-  expect(mocks.writeFileGame.mock.calls[0][2]).toContain('[Section ""]');
+  expect(mocks.setFileGameSection.mock.calls[0][2]).toBe("   ");
   expect(onSaved.mock.calls[0][1]).toBe("");
 });
 
+test("reports the normalized name while sending the value to the native editor", async () => {
+  await render({ ...target, nameFirst: true });
+  await typeName("  a   b  ");
+  await submit();
+  expect(mocks.setFileGameSection).toHaveBeenCalledExactlyOnceWith(
+    file,
+    3,
+    "  a   b  ",
+    "s1",
+    "r1",
+  );
+  expect(onSaved).toHaveBeenCalledExactlyOnceWith(3, "a b", { stamp: "s2", revision: "r2" });
+});
+
 test("a write that landed despite an error refreshes the list", async () => {
-  mocks.writeFileGame.mockRejectedValue({
+  mocks.setFileGameSection.mockRejectedValue({
     tag: "backend-error",
     category: "durability",
     message: "uncertain",
@@ -260,7 +265,7 @@ test("refuses while this line has unsaved changes in an open tab", async () => {
   await submit();
   expect(mocks.scanBlockingTabs).toHaveBeenCalledExactlyOnceWith([lineTab]);
   expect(mocks.readFileGame).not.toHaveBeenCalled();
-  expect(mocks.writeFileGame).not.toHaveBeenCalled();
+  expect(mocks.setFileGameSection).not.toHaveBeenCalled();
   expect(vi.mocked(notifications.show).mock.calls[0][0].message).toBe(
     "Files.LineSection.UnsavedTab",
   );

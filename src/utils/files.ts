@@ -105,6 +105,18 @@ export async function writeFileGame(
     return withFileWrite(handle, () => tauri.writeGame(handle, gameNumber, pgn, expectation));
 }
 
+export async function setFileGameSection(
+    handle: FileWorkspaceHandle,
+    gameNumber: number,
+    section: string | null,
+    stamp: string,
+    revision: string,
+): Promise<WriteStamp> {
+    return withFileWrite(handle, () =>
+        tauri.setGameSection(handle, gameNumber, section, stamp, revision),
+    );
+}
+
 export async function loadFileGame(
     handle: FileWorkspaceHandle,
     gameNumber: number,

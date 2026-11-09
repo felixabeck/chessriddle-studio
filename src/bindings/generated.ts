@@ -1044,6 +1044,14 @@ async writeGame(file: FileWorkspaceHandle, n: number, pgn: string, expected: Wri
     else return { status: "error", error: e  as any };
 }
 },
+async setGameSection(file: FileWorkspaceHandle, n: number, section: string | null, stamp: string, revision: string) : Promise<Result<WriteStamp, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_game_section", { file, n, section, stamp, revision }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async downloadFile(id: string, url: string, destination: PathRef, filename: string, totalSize: number | null, jobId: string, integrity: ArtifactIntegrity | null) : Promise<Result<null, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("download_file", { id, url, destination, filename, totalSize, jobId, integrity }) };

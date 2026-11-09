@@ -184,7 +184,7 @@ export function getVariationLine(root: TreeNode, position: number[]): string[] {
     return moves;
 }
 
-export function pgnTag(name: string, value: string | number): string {
+function pgnTag(name: string, value: string | number): string {
     return `[${name} "${String(value).replace(/[\\"]/g, "\\$&")}"]\n`;
 }
 

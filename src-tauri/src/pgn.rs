@@ -831,6 +831,178 @@ fn update_brace_comment(line: &str, in_brace_comment: &mut bool) {
     }
 }
 
+fn tag_whitespace(character: char) -> bool {
+    matches!(character, '\t'..='\r' | ' ' | '\u{a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}')
+}
+
+struct TagPair {
+    name: std::ops::Range<usize>,
+    pair: std::ops::Range<usize>,
+}
+
+fn opening_tag_pairs(text: &str) -> Vec<TagPair> {
+    let mut tags = Vec::new();
+    let mut at = 0;
+    while at < text.len() {
+        let rest = &text[at..];
+        let whitespace = rest.len() - rest.trim_start_matches(tag_whitespace).len();
+        if whitespace > 0 {
+            at += whitespace;
+            continue;
+        }
+        let delimiter = match text.as_bytes()[at] {
+            b'{' => Some('}'),
+            b'%' | b';' => Some('\n'),
+            _ => None,
+        };
+        if let Some(delimiter) = delimiter {
+            let Some(end) = rest.find(delimiter) else {
+                break;
+            };
+            at += end + 1;
+            continue;
+        }
+        let start = at;
+        if text.as_bytes()[at] != b'[' {
+            break;
+        }
+        at += 1;
+        at += text[at..].len() - text[at..].trim_start_matches(tag_whitespace).len();
+        let name_start = at;
+        for character in text[at..].chars() {
+            if tag_whitespace(character) || matches!(character, '"' | ']') {
+                break;
+            }
+            at += character.len_utf8();
+        }
+        let name = name_start..at;
+        let whitespace = text[at..].len() - text[at..].trim_start_matches(tag_whitespace).len();
+        if name.is_empty() || whitespace == 0 {
+            break;
+        }
+        at += whitespace;
+        if text.as_bytes().get(at) != Some(&b'"') {
+            break;
+        }
+        at += 1;
+        while let Some(byte) = text.as_bytes().get(at) {
+            if *byte == b'"' {
+                break;
+            }
+            if *byte == b'\\' {
+                at += 1;
+                if matches!(text.as_bytes().get(at), None | Some(b'\r' | b'\n')) {
+                    return tags;
+                }
+            }
+            at += 1;
+        }
+        if at == text.len() {
+            break;
+        }
+        at += 1;
+        at += text[at..].len() - text[at..].trim_start_matches(tag_whitespace).len();
+        if text.as_bytes().get(at) != Some(&b']') {
+            break;
+        }
+        at += 1;
+        tags.push(TagPair {
+            name,
+            pair: start..at,
+        });
+    }
+    tags
+}
+
+/// Edits opening tag pairs without rewriting moves or comments. Values are already PGN-escaped,
+/// so a heading transferred from another game retains its exact value bytes.
+pub(crate) fn edit_tag_pair(
+    pgn: &[u8],
+    name: &str,
+    value: Option<&[u8]>,
+) -> Result<Vec<u8>, Error> {
+    let pgn = std::str::from_utf8(pgn).map_err(|_| malformed("PGN is not valid UTF-8"))?;
+    let eol = if pgn.contains("\r\n") { "\r\n" } else { "\n" };
+    let sections: Vec<_> = opening_tag_pairs(pgn)
+        .into_iter()
+        .filter(|tag| &pgn[tag.name.clone()] == name)
+        .collect();
+    let mut text = pgn.to_owned();
+    for tag in sections.iter().rev() {
+        let start = tag.pair.start;
+        let end = tag.pair.end;
+        let line_start = text[..start].rfind('\n').map_or(0, |at| at + 1);
+        let line_end = text[end..].find('\n').map_or(text.len(), |at| end + at + 1);
+        let leading_blank = text[line_start..start]
+            .trim_matches(tag_whitespace)
+            .is_empty();
+        if leading_blank && text[end..line_end].trim_matches(tag_whitespace).is_empty() {
+            text.replace_range(line_start..line_end, "");
+        } else if leading_blank {
+            let after = end + text[end..].len() - text[end..].trim_start_matches([' ', '\t']).len();
+            text.replace_range(start..after, "");
+        } else {
+            let before = text[..start].trim_end_matches([' ', '\t']).len();
+            text.replace_range(before..end, "");
+        }
+    }
+    let Some(value) = value else {
+        let first_line = text
+            .trim_start_matches(tag_whitespace)
+            .split('\n')
+            .next()
+            .unwrap_or("");
+        if !sections.is_empty() && tag_value_spans(first_line.as_bytes()).is_none() {
+            text.insert_str(0, &format!("[Event \"?\"]{eol}"));
+        }
+        return Ok(text.into_bytes());
+    };
+    let value = std::str::from_utf8(value).map_err(|_| malformed("PGN tag is not valid UTF-8"))?;
+    let tag = format!("[{name} \"{value}\"]{eol}");
+    let remaining = opening_tag_pairs(&text);
+    let Some(last) = remaining.last() else {
+        return Ok(
+            format!("{tag}{}{text}", if sections.is_empty() { eol } else { "" }).into_bytes(),
+        );
+    };
+    let end = last.pair.end;
+    let newline = text[end..].find('\n').map(|at| end + at);
+    let line_end = newline.unwrap_or(text.len());
+    if text[end..line_end].trim_matches(tag_whitespace).is_empty() {
+        if let Some(newline) = newline {
+            text.insert_str(newline + 1, &tag);
+        } else {
+            text.push_str(eol);
+            text.push_str(&tag);
+        }
+    } else {
+        let after = end + text[end..].len() - text[end..].trim_start_matches([' ', '\t']).len();
+        text.replace_range(end..after, &format!("{eol}{tag}"));
+    }
+    Ok(text.into_bytes())
+}
+
+fn escaped_section(value: &str) -> Result<String, Error> {
+    let normalized = value
+        .split(tag_whitespace)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let units: Vec<_> = normalized.encode_utf16().take(80).collect();
+    let normalized = String::from_utf16(&units).map_err(|_| {
+        Error::InvalidInput("section length limit splits a Unicode character".into())
+    })?;
+    Ok(normalized
+        .chars()
+        .flat_map(|character| {
+            matches!(character, '\\' | '"')
+                .then_some('\\')
+                .into_iter()
+                .chain(Some(character))
+        })
+        .collect())
+}
+
 fn malformed(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
@@ -2248,14 +2420,8 @@ pub async fn write_game(
     if matches!(
         &expected,
         WriteExpectation::Game { .. } | WriteExpectation::GameAtRevision { .. }
-    ) && state
-        .pgn_path_authority
-        .collections()?
-        .map(|service| service.contains_source(&file))
-        .transpose()?
-        .unwrap_or(false)
-    {
-        return Err(Error::StaleGame);
+    ) {
+        refuse_positional_collection_write(&state, &file)?;
     }
     let resolved = resolve_pgn(
         &state,
@@ -2267,6 +2433,59 @@ pub async fn write_game(
     write_game_core(lease, resolved, n, pgn, expected, repository, Some(rebind)).await
 }
 
+fn refuse_positional_collection_write(
+    state: &AppState,
+    file: &crate::infra::path_authority::FileWorkspaceHandle,
+) -> Result<(), Error> {
+    if state
+        .pgn_path_authority
+        .collections()?
+        .map(|service| service.contains_source(file))
+        .transpose()?
+        .unwrap_or(false)
+    {
+        return Err(Error::StaleGame);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn set_game_section(
+    file: crate::infra::path_authority::FileWorkspaceHandle,
+    n: i32,
+    section: Option<String>,
+    stamp: String,
+    revision: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<WriteStamp, Error> {
+    crate::infra::platform_support::off_unix_refusal("PGN atomic replacement", cfg!(unix))?;
+    let lease = state.operations.accept("set_game_section")?;
+    refuse_positional_collection_write(&state, &file)?;
+    let resolved = resolve_pgn(
+        &state,
+        &file,
+        crate::infra::path_authority::PathOperation::WritePgn,
+    )?;
+    let repository = state.pgn_repository.clone();
+    let rebind = PgnCapabilityRebind::new(state.pgn_path_authority.clone(), &file);
+    mutate_game_core(
+        lease,
+        resolved,
+        n,
+        GameEdit::Section(section),
+        WriteExpectation::GameAtRevision { stamp, revision },
+        repository,
+        Some(rebind),
+    )
+    .await
+}
+
+enum GameEdit {
+    Replace(String),
+    Section(Option<String>),
+}
+
 pub async fn write_game_core(
     lease: OperationLease,
     resolved: crate::infra::path_authority::ResolvedPath,
@@ -2274,10 +2493,35 @@ pub async fn write_game_core(
     pgn: String,
     expected: WriteExpectation,
     repository: PgnRepository,
+    rebind: Option<PgnCapabilityRebind>,
+) -> Result<WriteStamp, Error> {
+    mutate_game_core(
+        lease,
+        resolved,
+        n,
+        GameEdit::Replace(pgn),
+        expected,
+        repository,
+        rebind,
+    )
+    .await
+}
+
+async fn mutate_game_core(
+    lease: OperationLease,
+    resolved: crate::infra::path_authority::ResolvedPath,
+    n: i32,
+    edit: GameEdit,
+    expected: WriteExpectation,
+    repository: PgnRepository,
     mut rebind: Option<PgnCapabilityRebind>,
 ) -> Result<WriteStamp, Error> {
     let cancellation = lease.token();
-    crate::infra::operations::run_native_operation(lease, "write_game", async move {
+    let operation_name = match &edit {
+        GameEdit::Replace(_) => "write_game",
+        GameEdit::Section(_) => "set_game_section",
+    };
+    crate::infra::operations::run_native_operation(lease, operation_name, async move {
         if let Some(rebind) = &mut rebind {
             rebind.capture_binding()?;
         }
@@ -2291,13 +2535,11 @@ pub async fn write_game_core(
         };
         let game_number = n;
         let n = checked_index(n)?;
-        if pgn.len() > MAX_PGN_BYTES {
+        if matches!(&edit, GameEdit::Replace(pgn) if pgn.len() > MAX_PGN_BYTES) {
             return Err(Error::ResourceLimit(
                 "replacement PGN exceeds 10 MiB".into(),
             ));
         }
-        // Validate text before creating a replacement; malformed UTF-8 cannot enter through String.
-        let replacement = pgn.as_bytes().to_vec();
         let scan_snapshot = resolved.pgn_snapshot()?;
         let identity = scan_snapshot.identity.clone();
         let lock = if let Some(rebind) = &rebind {
@@ -2318,6 +2560,8 @@ pub async fn write_game_core(
         let (key, games) = scan_current(scan_snapshot, &repository, &cancellation).await?;
         let target = if let Some(range) = games.get(n).cloned() {
             range
+        } else if matches!(&edit, GameEdit::Section(_)) {
+            return Err(Error::StaleGame);
         } else if n == games.len() {
             GameRange {
                 start: key.revision.size,
@@ -2326,6 +2570,33 @@ pub async fn write_game_core(
         } else {
             return Err(Error::InvalidInput("game index is out of bounds".into()));
         };
+        let pgn = match edit {
+            GameEdit::Replace(pgn) => pgn,
+            GameEdit::Section(section) => {
+                if let WriteExpectation::GameAtRevision { revision, .. } = &expected {
+                    if *revision != revision_string_for_key(&key) {
+                        return Err(Error::StaleGame);
+                    }
+                }
+                let mut source = resolved.pgn_snapshot()?.file;
+                BLOCKING_GATEWAY
+                    .spawn_cancellable(cancellation.clone(), move |token| {
+                        let bytes = read_range_bytes(&mut source, target, token)?;
+                        let value = section.as_deref().map(escaped_section).transpose()?;
+                        let edited =
+                            edit_tag_pair(&bytes, "Section", value.as_deref().map(str::as_bytes))?;
+                        if edited.len() > MAX_PGN_BYTES {
+                            return Err(Error::ResourceLimit(
+                                "replacement PGN exceeds 10 MiB".into(),
+                            ));
+                        }
+                        String::from_utf8(edited)
+                            .map_err(|_| malformed("PGN is not valid UTF-8").into())
+                    })
+                    .await?
+            }
+        };
+        let replacement = pgn.as_bytes().to_vec();
         let readback_capability = rebind.clone();
         commit_pgn_mutation(
             resolved,
@@ -2335,7 +2606,7 @@ pub async fn write_game_core(
                 replacement: Some(PgnReplacement::Bytes(replacement)),
                 expectation: Some(expected),
                 stale_on_snapshot_change: false,
-                operation_name: "write_game",
+                operation_name,
                 rebind,
             },
             &repository,
@@ -2393,6 +2664,275 @@ pub async fn write_game_core(
 
 #[cfg(test)]
 mod tests {
+    fn with_section(pgn: &str, section: Option<&str>) -> String {
+        let value = section.map(|section| escaped_section(section).unwrap());
+        String::from_utf8(
+            edit_tag_pair(
+                pgn.as_bytes(),
+                "Section",
+                value.as_deref().map(str::as_bytes),
+            )
+            .unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn section_editor_preserves_the_renderer_byte_expectations() {
+        let game = "[Event \"A\"]\n[White \"1.d4\"]\n\n1. d4 f5 { [%csl Gd4] keep } *\n\n";
+        assert_eq!(with_section(game, Some("mit g3")), "[Event \"A\"]\n[White \"1.d4\"]\n[Section \"mit g3\"]\n\n1. d4 f5 { [%csl Gd4] keep } *\n\n");
+        assert!(with_section(game, Some("")).contains("[Section \"\"]\n\n1. d4"));
+        let twice = with_section(&with_section(game, Some("old")), Some("new"));
+        assert_eq!(twice.matches("[Section ").count(), 1);
+        assert!(twice.contains("[Section \"new\"]"));
+        assert_eq!(with_section(&with_section(game, Some("x")), None), game);
+        assert_eq!(with_section(game, None), game);
+        assert!(with_section(game, Some("a\"b\\c")).contains("[Section \"a\\\"b\\\\c\"]"));
+        let moves = "[Event \"A\"]\n\n1. e4 {\n[Section \"inside\"]\n} *\n";
+        assert_eq!(with_section(moves, None), moves);
+        let header = "[Event \"A\"] {\n[Section \"keep\"]\n}\n1. e4 *\n";
+        assert_eq!(with_section(header, None), header);
+        let leading = "[Section \"old\"] [White \"Alice\"]\n[Black \"Bob\"]\n\n1. e4 *\n";
+        let escaped = "[Event \"A\"]\n% note\n[Section \"old\"]\n\n1. e4 *\n";
+        let renamed = with_section(escaped, Some("new"));
+        assert_eq!(renamed.matches("[Section ").count(), 1);
+        assert!(renamed.contains("[Section \"new\"]"));
+        for (input, section, expected) in [
+            (
+                "[Event \"A\"]\r\n\r\n1. e4 *\r\n",
+                Some("s"),
+                "[Event \"A\"]\r\n[Section \"s\"]\r\n\r\n1. e4 *\r\n",
+            ),
+            (
+                moves,
+                Some("s"),
+                "[Event \"A\"]\n[Section \"s\"]\n\n1. e4 {\n[Section \"inside\"]\n} *\n",
+            ),
+            (
+                header,
+                Some("s"),
+                "[Event \"A\"]\n[Section \"s\"]\n{\n[Section \"keep\"]\n}\n1. e4 *\n",
+            ),
+            (
+                "[Event \"A\"]\n[White \"Alice\"] 1. e4 *\n",
+                Some("x"),
+                "[Event \"A\"]\n[White \"Alice\"]\n[Section \"x\"]\n1. e4 *\n",
+            ),
+            (
+                leading,
+                None,
+                "[White \"Alice\"]\n[Black \"Bob\"]\n\n1. e4 *\n",
+            ),
+            (
+                leading,
+                Some("new"),
+                "[White \"Alice\"]\n[Black \"Bob\"]\n[Section \"new\"]\n\n1. e4 *\n",
+            ),
+            (
+                "[White \"Alice\"] [Section \"a\\\"b\"]\n\n1. e4 *\n",
+                None,
+                "[White \"Alice\"]\n\n1. e4 *\n",
+            ),
+            (escaped, None, "[Event \"A\"]\n% note\n\n1. e4 *\n"),
+            (
+                "[Section \"B\"]\n\n1. d4 *\n",
+                None,
+                "[Event \"?\"]\n\n1. d4 *\n",
+            ),
+            ("[Section \"x\"]\n", None, "[Event \"?\"]\n"),
+            (
+                "[Section \"x\"]\n[Event \"B\"] 1. d4 *\n",
+                None,
+                "[Event \"?\"]\n[Event \"B\"] 1. d4 *\n",
+            ),
+            (
+                "[Section \"x\"]\n[Event \"B\"] [Site \"S\"]\n\n1. d4 *\n",
+                None,
+                "[Event \"B\"] [Site \"S\"]\n\n1. d4 *\n",
+            ),
+            (
+                "[Section \"x\"]\n{note} [Event \"B\"]\n\n1. d4 *\n",
+                None,
+                "[Event \"?\"]\n{note} [Event \"B\"]\n\n1. d4 *\n",
+            ),
+            (
+                "[Section \"x\"]\n[Bad-Name \"B\"]\n\n1. d4 *\n",
+                None,
+                "[Event \"?\"]\n[Bad-Name \"B\"]\n\n1. d4 *\n",
+            ),
+            ("1. e4 *\n", Some("s"), "[Section \"s\"]\n\n1. e4 *\n"),
+            ("1. e4 *\n", None, "1. e4 *\n"),
+            (
+                "[Section \"B\"]\n\n1. d4 *\n",
+                Some("C"),
+                "[Section \"C\"]\n\n1. d4 *\n",
+            ),
+            (
+                "[Event \"A\"]",
+                Some("s"),
+                "[Event \"A\"]\n[Section \"s\"]\n",
+            ),
+        ] {
+            assert_eq!(
+                with_section(input, section),
+                expected,
+                "{input:?}, {section:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn section_editor_normalizes_names_and_transfers_raw_values() {
+        assert_eq!(
+            escaped_section(" \t a\r\n b\u{a0}\u{feff} c  ").unwrap(),
+            "a b c"
+        );
+        assert_eq!(
+            escaped_section(&format!("  a\t b {}", "c".repeat(200))).unwrap(),
+            format!("a b {}", "c".repeat(76))
+        );
+        assert_eq!(escaped_section("   ").unwrap(), "");
+        assert_eq!(escaped_section("a\u{85}b").unwrap(), "a\u{85}b");
+        assert_eq!(escaped_section(&"😀".repeat(50)).unwrap(), "😀".repeat(40));
+        assert!(matches!(
+            escaped_section(&format!("{}😀", "a".repeat(79))),
+            Err(Error::InvalidInput(_))
+        ));
+        let raw = b"  a\\\"b\\\\c  ";
+        assert_eq!(
+            edit_tag_pair(b"[Event \"A\"]\n\n*\n", "Section", Some(raw)).unwrap(),
+            b"[Event \"A\"]\n[Section \"  a\\\"b\\\\c  \"]\n\n*\n"
+        );
+        assert_eq!(
+            with_section("[Section \"a\"]\n[Section \"b\"]\n\n*\n", Some("c")),
+            "[Section \"c\"]\n\n*\n"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn section_mutation_pins_stamp_and_revision_and_returns_readback_identity() {
+        use crate::infra::path_authority::{PathAuthority, PathOperation};
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("section.pgn");
+        let original =
+            "\u{feff}[Event \"A\"]\r\n\r\n1. e4 *\r\n\r\n[Event \"A\"]\r\n\r\n1. e4 *\r\n";
+        std::fs::write(&path, original).unwrap();
+        let mut authority =
+            PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap();
+        let handle = promote_pgn_file(&mut authority, &path);
+        let app = mock_app();
+        let state = app.state::<AppState>();
+        state.pgn_path_authority.install(authority).unwrap();
+        let read = read_game_core(
+            resolve_pgn(&state, &handle, PathOperation::ReadPgn).unwrap(),
+            0,
+            &CancellationToken::new(),
+            &state.pgn_repository,
+        )
+        .await
+        .unwrap();
+        for (n, stamp, revision) in [
+            (0, "wrong".to_owned(), read.revision.clone()),
+            (0, read.stamp.clone(), "wrong".to_owned()),
+            (2, read.stamp.clone(), read.revision.clone()),
+        ] {
+            let result = set_game_section(
+                handle.clone(),
+                n,
+                Some("x".into()),
+                stamp,
+                revision,
+                app.state(),
+            )
+            .await;
+            assert!(matches!(result, Err(Error::StaleGame)), "{result:?}");
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+        }
+        let written = set_game_section(
+            handle.clone(),
+            0,
+            Some("  a\t b  ".into()),
+            read.stamp,
+            read.revision,
+            app.state(),
+        )
+        .await
+        .unwrap();
+        let expected = original.replacen(
+            "[Event \"A\"]\r\n",
+            "[Event \"A\"]\r\n[Section \"a b\"]\r\n",
+            1,
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), expected);
+        let readback = read_game_core(
+            resolve_pgn(&state, &handle, PathOperation::ReadPgn).unwrap(),
+            0,
+            &CancellationToken::new(),
+            &state.pgn_repository,
+        )
+        .await
+        .unwrap();
+        assert_eq!(written.stamp, Some(readback.stamp));
+        assert_eq!(written.revision, Some(readback.revision));
+        let removed = set_game_section(
+            handle,
+            0,
+            None,
+            written.stamp.unwrap(),
+            written.revision.unwrap(),
+            app.state(),
+        )
+        .await
+        .unwrap();
+        assert!(removed.stamp.is_some());
+        assert!(removed.revision.is_some());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn section_mutation_refuses_oversized_games_without_writing() {
+        use crate::infra::path_authority::{PathAuthority, PathOperation};
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("oversized-section.pgn");
+        let original = b"[Event \"A\"]\n\n1. e4 *\n";
+        std::fs::write(&path, original).unwrap();
+        let mut authority =
+            PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap();
+        let handle = promote_pgn_file(&mut authority, &path);
+        let app = mock_app();
+        let state = app.state::<AppState>();
+        state.pgn_path_authority.install(authority).unwrap();
+        let snapshot = resolve_pgn(&state, &handle, PathOperation::ReadPgn)
+            .unwrap()
+            .pgn_snapshot()
+            .unwrap();
+        let revision = revision_string(&snapshot);
+        state
+            .pgn_repository
+            .retain_if_within_budget(
+                snapshot_key(&snapshot),
+                vec![GameRange {
+                    start: 0,
+                    end: MAX_PGN_BYTES as u64 + 1,
+                }]
+                .into(),
+            )
+            .unwrap();
+        let result = set_game_section(
+            handle,
+            0,
+            Some("x".into()),
+            game_stamp(original),
+            revision,
+            app.state(),
+        )
+        .await;
+        assert!(matches!(result, Err(Error::ResourceLimit(_))), "{result:?}");
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+    }
+
     #[cfg(unix)]
     #[tokio::test]
     async fn practice_decks_follow_native_delete_and_recover_uncertain_publication() {
