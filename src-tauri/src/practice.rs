@@ -656,7 +656,10 @@ fn apply_pending(
     Ok(())
 }
 
-pub(crate) fn has_pending_delete(directory: &AuthorizedDir, file_id: &str) -> Result<bool, Error> {
+pub(crate) fn has_pending_structural_mutation(
+    directory: &AuthorizedDir,
+    file_id: &str,
+) -> Result<bool, Error> {
     with_map_lock(directory, file_id, || {
         Ok(read_map(directory, file_id)?.is_some_and(|map| map.has_pending()))
     })
@@ -2800,7 +2803,7 @@ where
     let check_directory = directory.clone();
     let check_id = file_id.clone();
     let pending = BLOCKING_GATEWAY
-        .spawn(move || has_pending_delete(&check_directory, &check_id))
+        .spawn(move || has_pending_structural_mutation(&check_directory, &check_id))
         .await;
     match pending {
         Ok(true) => {
@@ -2877,7 +2880,8 @@ async fn recover_inventory_pending(
                     continue;
                 };
                 if map_leaf(&map.file_id) == leaf
-                    && has_pending_delete(&scan_directory, &map.file_id).unwrap_or(false)
+                    && has_pending_structural_mutation(&scan_directory, &map.file_id)
+                        .unwrap_or(false)
                 {
                     pending.push(map.file_id);
                 }
@@ -3644,7 +3648,7 @@ mod tests {
         assert_eq!(map.version, 1);
         assert_eq!(map.ordinals, vec![Some(0), Some(1), Some(2)]);
         assert_eq!(map.epoch, NO_MAP_EPOCH);
-        assert!(has_pending_delete(&directory, "file").unwrap());
+        assert!(has_pending_structural_mutation(&directory, "file").unwrap());
         assert!(matches!(
             practice_epoch_in(&directory, "file", 0),
             Err(Error::Conflict(_))
@@ -3666,7 +3670,7 @@ mod tests {
             Err(Error::Conflict(_))
         ));
         finish_reorder_in(&directory, "file", "foreign", true).unwrap();
-        assert!(has_pending_delete(&directory, "file").unwrap());
+        assert!(has_pending_structural_mutation(&directory, "file").unwrap());
         assert!(matches!(
             resolve_pending_in(&directory, "file", 3, Some(&unknown), || panic!(
                 "unknown outcome must not sync"
@@ -3688,7 +3692,7 @@ mod tests {
             ))
             .is_err()
         );
-        assert!(has_pending_delete(&directory, "file").unwrap());
+        assert!(has_pending_structural_mutation(&directory, "file").unwrap());
         resolve_pending_in(&directory, "file", 3, Some(&output), || Ok(())).unwrap();
         let map = read_map(&directory, "file").unwrap().unwrap();
         assert_eq!(map.ordinals, vec![Some(2), Some(0), Some(1)]);
@@ -3745,7 +3749,7 @@ mod tests {
             "old map",
         )
         .unwrap();
-        assert!(has_pending_delete(&directory, "file").unwrap());
+        assert!(has_pending_structural_mutation(&directory, "file").unwrap());
         resolve_pending_in(&directory, "file", 0, None, || Ok(())).unwrap();
         assert!(read_map(&directory, "file")
             .unwrap()
@@ -3786,7 +3790,7 @@ mod tests {
             Error::CommittedDurabilityUncertain(DurabilityStage::PracticeState)
         ));
         assert_ne!(leaf_bytes(&directory, &map_leaf("file")), before);
-        assert!(!has_pending_delete(&directory, "file").unwrap());
+        assert!(!has_pending_structural_mutation(&directory, "file").unwrap());
 
         let id = prepare_delete_in(&directory, "other", 0, 1).unwrap();
         let leaf = positions_leaf(&hash_deck("other", 0));
@@ -4002,9 +4006,9 @@ mod tests {
             Error::CommittedDurabilityUncertain(DurabilityStage::PgnEdit)
         ))
         .is_err());
-        assert!(has_pending_delete(&directory, "file").unwrap());
+        assert!(has_pending_structural_mutation(&directory, "file").unwrap());
         resolve_pending_delete_in(&directory, "file", 1, || Ok(())).unwrap();
-        assert!(!has_pending_delete(&directory, "file").unwrap());
+        assert!(!has_pending_structural_mutation(&directory, "file").unwrap());
         assert_ne!(
             practice_epoch_in(&directory, "file", 0).unwrap().epoch,
             NO_MAP_EPOCH
@@ -4335,14 +4339,14 @@ mod tests {
         .unwrap();
         let inventory = list_practice_decks_in(&directory).unwrap();
         for file in ["unauthorized", moved.as_str()] {
-            assert!(has_pending_delete(&directory, file).unwrap());
+            assert!(has_pending_structural_mutation(&directory, file).unwrap());
             assert!(!inventory.decks.iter().any(|deck| deck.file_id == file));
             assert!(inventory
                 .anomalies
                 .iter()
                 .any(|anomaly| anomaly.file_id.as_deref() == Some(file) && anomaly.game.is_none()));
         }
-        assert!(!has_pending_delete(&directory, recoverable).unwrap());
+        assert!(!has_pending_structural_mutation(&directory, recoverable).unwrap());
         for file in ["healthy", recoverable.as_str()] {
             assert!(inventory.decks.contains(&PracticeDeckIdentity {
                 file_id: file.into(),

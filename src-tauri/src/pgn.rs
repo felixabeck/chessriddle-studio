@@ -204,6 +204,7 @@ pub struct WriteStamp {
 const MAX_LINE_LEN: usize = 1024 * 1024;
 const MAX_PAGE_LEN: usize = 1_000;
 const MAX_PGN_BYTES: usize = 10 * 1024 * 1024;
+const MAX_SECTION_UTF16_UNITS: usize = 80;
 /// Maximum total PGN text bytes returned by one page.
 const MAX_PAGE_BYTES: usize = MAX_PGN_BYTES;
 /// Size of each PGN read and copy chunk.
@@ -398,6 +399,8 @@ struct PgnRepositoryInner {
     post_commit_hook: Option<BoundedHook>,
     #[cfg(test)]
     atomic_file_injector: Option<Arc<dyn crate::infra::fs::AtomicWriterInjector + Send + Sync>>,
+    #[cfg(test)]
+    reorder_journal_injector: Option<Arc<dyn crate::infra::fs::AtomicWriterInjector + Send + Sync>>,
     #[cfg(test)]
     create_post_register_hook: Option<CreatePostRegisterHook>,
 }
@@ -918,6 +921,15 @@ fn opening_tag_pairs(text: &str) -> Vec<TagPair> {
     tags
 }
 
+fn starts_with_tag_header(text: &str) -> bool {
+    let first_line = text
+        .trim_start_matches(tag_whitespace)
+        .split('\n')
+        .next()
+        .unwrap_or("");
+    tag_value_spans(first_line.as_bytes()).is_some()
+}
+
 /// Edits opening tag pairs without rewriting moves or comments. Values are already PGN-escaped,
 /// so a heading transferred from another game retains its exact value bytes.
 pub(crate) fn edit_tag_pair(
@@ -951,12 +963,7 @@ pub(crate) fn edit_tag_pair(
         }
     }
     let Some(value) = value else {
-        let first_line = text
-            .trim_start_matches(tag_whitespace)
-            .split('\n')
-            .next()
-            .unwrap_or("");
-        if !sections.is_empty() && tag_value_spans(first_line.as_bytes()).is_none() {
+        if !sections.is_empty() && !starts_with_tag_header(&text) {
             text.insert_str(0, &format!("[Event \"?\"]{eol}"));
         }
         return Ok(text.into_bytes());
@@ -992,7 +999,10 @@ fn escaped_section(value: &str) -> Result<String, Error> {
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>()
         .join(" ");
-    let units: Vec<_> = normalized.encode_utf16().take(80).collect();
+    let units: Vec<_> = normalized
+        .encode_utf16()
+        .take(MAX_SECTION_UTF16_UNITS)
+        .collect();
     let normalized = String::from_utf16(&units).map_err(|_| {
         Error::InvalidInput("section length limit splits a Unicode character".into())
     })?;
@@ -1875,7 +1885,9 @@ async fn resolve_practice_before_mutation(
     let check_directory = directory.clone();
     let check_id = file_id.clone();
     if !BLOCKING_GATEWAY
-        .spawn(move || crate::practice::has_pending_delete(&check_directory, &check_id))
+        .spawn(move || {
+            crate::practice::has_pending_structural_mutation(&check_directory, &check_id)
+        })
         .await?
     {
         return Ok(());
@@ -1901,7 +1913,9 @@ async fn resolve_practice_pending_locked(
     let check_directory = directory.clone();
     let check_id = file_id.clone();
     let pending = BLOCKING_GATEWAY
-        .spawn(move || crate::practice::has_pending_delete(&check_directory, &check_id))
+        .spawn(move || {
+            crate::practice::has_pending_structural_mutation(&check_directory, &check_id)
+        })
         .await?;
     if !pending {
         return Ok(());
@@ -2425,6 +2439,7 @@ fn prepare_move(
         headings.push(
             opening_tag_pairs(text)
                 .into_iter()
+                .rev()
                 .find(|tag| &text[tag.name.clone()] == "Section")
                 .map(|tag| bytes[tag.value].to_vec()),
         );
@@ -2469,8 +2484,8 @@ fn prepare_move(
         if index > 0 {
             let text =
                 std::str::from_utf8(&bytes).map_err(|_| malformed("PGN is not valid UTF-8"))?;
-            if opening_tag_pairs(text).is_empty() {
-                bytes = edit_tag_pair(&bytes, "Event", Some(b"?"))?;
+            if !starts_with_tag_header(text) {
+                bytes.splice(0..0, b"[Event \"?\"]".iter().chain(eol).copied());
             }
         }
         if index + 1 < games.len() && order[index + 1] != old + 1 {
@@ -2501,22 +2516,7 @@ fn prepare_move(
     )?;
     copy_range(source, &mut assembled, target.end, size, token)?;
     let actual = scan_games_cancelled(assembled.as_file_mut(), token)?;
-    if actual.len() != games.len()
-        || actual.iter().enumerate().any(|(index, range)| {
-            let expected = if index < start {
-                games[index].start
-            } else if index < end {
-                starts[index - start]
-            } else {
-                games[index].start - target.end + target.start + replacement_size
-            };
-            range.start != expected
-        })
-    {
-        return Err(Error::InvalidInput(
-            "move would change PGN game boundaries".into(),
-        ));
-    }
+    validate_move_boundaries(&actual, games, start, &starts, target, replacement_size)?;
     let output_digest = streamed_digest(assembled.as_file_mut(), token)?;
     let changed = output_digest != original_digest;
     Ok(PreparedMove {
@@ -2534,6 +2534,34 @@ fn prepare_move(
         original_digest,
         output_digest,
     })
+}
+
+fn validate_move_boundaries(
+    actual: &[GameRange],
+    games: &[GameRange],
+    start: usize,
+    starts: &[u64],
+    target: GameRange,
+    replacement_size: u64,
+) -> Result<(), Error> {
+    let end = start + starts.len();
+    if actual.len() != games.len()
+        || actual.iter().enumerate().any(|(index, range)| {
+            let expected = if index < start {
+                games[index].start
+            } else if index < end {
+                starts[index - start]
+            } else {
+                games[index].start - target.end + target.start + replacement_size
+            };
+            range.start != expected
+        })
+    {
+        return Err(Error::InvalidInput(
+            "move would change PGN game boundaries".into(),
+        ));
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -2596,25 +2624,18 @@ async fn move_games_core(
             let start = prepared.result.start as usize;
             let original = prepared.original_digest.clone();
             let output = prepared.output_digest.clone();
-            Some(BLOCKING_GATEWAY.spawn(move || crate::practice::prepare_reorder_in(&directory, &file_id, count, start, order, original, output)).await?)
+            #[cfg(test)]
+            let injector = repository.inner()?.reorder_journal_injector.clone();
+            Some(BLOCKING_GATEWAY.spawn(move || {
+                #[cfg(test)]
+                let _injector_guard = injector.map(crate::infra::fs::install_test_atomic_file_injector);
+                crate::practice::prepare_reorder_in(&directory, &file_id, count, start, order, original, output)
+            }).await?)
         } else { None };
         let result = commit_pgn_mutation(resolved, key, PgnMutation { target: prepared.target,
             replacement: Some(PgnReplacement::Stream(prepared.replacement)), expectation: None,
             stale_on_snapshot_change: true, operation_name: "move_games", rebind: Some(rebind) }, &repository, &cancellation).await;
-        if let (Some((directory, file_id)), Some(id)) = (practice, pending_id) {
-            let landed = match &result {
-                Ok(()) => Some(true),
-                Err(Error::CommittedDurabilityUncertain(crate::error::DurabilityStage::PgnEdit)) => None,
-                Err(Error::CommittedDurabilityUncertain(_)) => Some(true),
-                Err(_) => Some(false),
-            };
-            if let Some(landed) = landed {
-                if let Err(error) = BLOCKING_GATEWAY.spawn(move || crate::practice::finish_reorder_in(&directory, &file_id, &id, landed)).await {
-                    return Err(if landed { Error::CommittedDurabilityUncertain(crate::error::DurabilityStage::PracticeState) } else { error });
-                }
-            }
-        }
-        result?;
+        finalize_practice_mutation(result, practice, pending_id, "reorder", crate::practice::finish_reorder_in).await?;
         Ok(prepared.result)
     }).await
 }
@@ -2726,38 +2747,55 @@ pub async fn delete_game_core(
             &cancellation,
         )
         .await;
-        if let (Some((directory, file_id)), Some(pending_id)) = (practice, pending_id) {
-            let landed = match &result {
-                Ok(()) => Some(true),
-                Err(Error::CommittedDurabilityUncertain(
-                    crate::error::DurabilityStage::PgnEdit,
-                )) => None,
-                Err(Error::CommittedDurabilityUncertain(_)) => Some(true),
-                Err(_) => Some(false),
-            };
-            if let Some(landed) = landed {
-                if let Err(error) = BLOCKING_GATEWAY
-                    .spawn(move || {
-                        crate::practice::finish_delete_in(&directory, &file_id, &pending_id, landed)
-                    })
-                    .await
-                {
-                    if landed {
-                        log::warn!(
-                            "practice delete finalization failed: {}",
-                            error.diagnostic()
-                        );
-                        return Err(Error::CommittedDurabilityUncertain(
-                            crate::error::DurabilityStage::PracticeState,
-                        ));
-                    }
-                    return Err(error);
-                }
-            }
-        }
-        result
+        finalize_practice_mutation(
+            result,
+            practice,
+            pending_id,
+            "delete",
+            crate::practice::finish_delete_in,
+        )
+        .await
     })
     .await
+}
+
+async fn finalize_practice_mutation(
+    result: Result<(), Error>,
+    practice: Option<(Arc<crate::infra::path_authority::AuthorizedDir>, String)>,
+    pending_id: Option<String>,
+    operation: &'static str,
+    finalizer: impl FnOnce(&crate::infra::path_authority::AuthorizedDir, &str, &str, bool) -> Result<(), Error>
+        + Send
+        + 'static,
+) -> Result<(), Error> {
+    if let (Some((directory, file_id)), Some(pending_id)) = (practice, pending_id) {
+        let landed = match &result {
+            Ok(()) => Some(true),
+            Err(Error::CommittedDurabilityUncertain(crate::error::DurabilityStage::PgnEdit)) => {
+                None
+            }
+            Err(Error::CommittedDurabilityUncertain(_)) => Some(true),
+            Err(_) => Some(false),
+        };
+        if let Some(landed) = landed {
+            if let Err(error) = BLOCKING_GATEWAY
+                .spawn(move || finalizer(&directory, &file_id, &pending_id, landed))
+                .await
+            {
+                if landed {
+                    log::warn!(
+                        "practice {operation} finalization failed: {}",
+                        error.diagnostic()
+                    );
+                    return Err(Error::CommittedDurabilityUncertain(
+                        crate::error::DurabilityStage::PracticeState,
+                    ));
+                }
+                return Err(error);
+            }
+        }
+    }
+    result
 }
 
 #[tauri::command]
@@ -3018,6 +3056,13 @@ async fn mutate_game_core(
 
 #[cfg(test)]
 mod tests {
+    const SECTION_GAMES: [&str; 4] = [
+        "[Event \"A\"]\n[Section \"First\"]\n\n1. e4 *\n\n",
+        "[Event \"B\"]\n\n1. d4 *\n\n",
+        "[Event \"C\"]\n[Section \"Second\"]\n\n1. c4 *\n\n",
+        "[Event \"D\"]\n\n1. Nf3 *\n\n",
+    ];
+
     fn movement(kind: GameMoveKind, source: i32, before: i32, below_heading: bool) -> PgnLineMove {
         PgnLineMove {
             kind,
@@ -3152,7 +3197,7 @@ mod tests {
                     let joined = String::from_utf8(output).unwrap();
                     assert!(joined.starts_with(&format!("\u{feff}{}", last.replace('\n', eol))));
                     if first.starts_with("1.") {
-                        assert!(joined.contains(&format!("[Event \"?\"]{eol}{eol}1. e4")));
+                        assert!(joined.contains(&format!("[Event \"?\"]{eol}1. e4")));
                     } else {
                         assert!(joined.ends_with(&first.replace('\n', eol)));
                     }
@@ -3200,7 +3245,51 @@ mod tests {
     }
 
     #[test]
-    fn move_streams_spans_larger_than_the_single_game_limit_and_refuses_changed_boundaries() {
+    fn move_transfers_the_last_duplicate_section_tag() {
+        let input = b"[Event \"A\"]\n[Section \"A\"]\n[Section \"B\"]\n\n1. e4 *\n\n[Event \"C\"]\n\n1. d4 *\n\n";
+        let (result, output) = moved_bytes(input, movement(GameMoveKind::Line, 0, 2, false));
+        assert_eq!(result.order, vec![1, 0]);
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "[Event \"C\"]\n[Section \"B\"]\n\n1. d4 *\n\n[Event \"A\"]\n\n1. e4 *\n\n"
+        );
+    }
+
+    #[test]
+    fn move_preserves_same_line_header_and_moves_with_a_scannable_first_line() {
+        let input = b"[Event \"A\"] 1. e4 *\n\n[Event \"B\"]\n\n1. d4 *\n";
+        let (result, output) = moved_bytes(input, movement(GameMoveKind::Line, 0, 2, false));
+        assert_eq!(result.order, vec![1, 0]);
+        assert_eq!(
+            output,
+            b"[Event \"B\"]\n\n1. d4 *\n\n[Event \"?\"]\n[Event \"A\"] 1. e4 *\n\n"
+        );
+        assert_eq!(scan_games(std::io::Cursor::new(output)).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn prepare_section_move_preserves_every_game_in_each_section() {
+        let (result, output) = moved_bytes(
+            SECTION_GAMES.concat().as_bytes(),
+            movement(GameMoveKind::Section, 0, 4, false),
+        );
+        assert_eq!(result.order, vec![2, 3, 0, 1]);
+        assert_eq!(result.start, 0);
+        assert_eq!(
+            output,
+            [
+                SECTION_GAMES[2],
+                SECTION_GAMES[3],
+                SECTION_GAMES[0],
+                SECTION_GAMES[1]
+            ]
+            .concat()
+            .as_bytes()
+        );
+    }
+
+    #[test]
+    fn move_streams_spans_larger_than_the_single_game_limit() {
         let body = format!("[Event \"A\"]\n\n{{{}}} *\n\n", "x".repeat(700_000));
         let input = format!("{}[Event \"Z\"]\n\n*", body.repeat(16));
         let (result, output) =
@@ -3208,16 +3297,289 @@ mod tests {
         assert!(result.changed);
         assert_eq!(result.order.len(), 17);
         assert_eq!(scan_games(std::io::Cursor::new(output)).unwrap().len(), 17);
-        let input = b"[Section \"only\"]\n\n[Event \"B\"]\n\n*\n";
-        let mut source = std::io::Cursor::new(input);
-        let games = scan_games(&mut source).unwrap();
-        let prepared = prepare_move(
-            &mut source,
-            &games,
-            &movement(GameMoveKind::Line, 0, 2, false),
-            &CancellationToken::new(),
-        );
-        assert!(prepared.is_ok());
+    }
+
+    #[test]
+    fn move_boundary_validation_refuses_missing_or_shifted_games() {
+        let games = [
+            GameRange { start: 0, end: 10 },
+            GameRange { start: 10, end: 20 },
+            GameRange { start: 20, end: 30 },
+            GameRange { start: 30, end: 40 },
+        ];
+        let target = GameRange { start: 10, end: 30 };
+        let actual = [
+            GameRange { start: 0, end: 10 },
+            GameRange { start: 10, end: 23 },
+            GameRange { start: 23, end: 35 },
+            GameRange { start: 35, end: 45 },
+        ];
+        let validate = |actual: &[GameRange]| {
+            validate_move_boundaries(actual, &games, 1, &[10, 23], target, 25)
+        };
+        validate(&actual).unwrap();
+        assert!(matches!(
+            validate(&actual[..3]),
+            Err(Error::InvalidInput(_))
+        ));
+        for index in 0..actual.len() {
+            let mut shifted = actual;
+            shifted[index].start += 1;
+            assert!(matches!(
+                validate(&shifted),
+                Err(Error::InvalidInput(message)) if message == "move would change PGN game boundaries"
+            ));
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn practice_finalization_preserves_publication_outcomes_and_error_mapping() {
+        use crate::{
+            error::DurabilityStage,
+            infra::path_authority::{
+                ensure_app_owned_default_dir, AppDataDir, AppOwnedDefaultRoot,
+            },
+        };
+        for outcome in 0..4 {
+            for finalizer_fails in [false, true] {
+                let temp = tempfile::tempdir().unwrap();
+                let directory = ensure_app_owned_default_dir(
+                    &AppDataDir::for_test(temp.path()),
+                    AppOwnedDefaultRoot::Practice,
+                )
+                .unwrap();
+                let publication = match outcome {
+                    0 => Ok(()),
+                    1 => Err(Error::CommittedDurabilityUncertain(
+                        DurabilityStage::PgnEdit,
+                    )),
+                    2 => Err(Error::CommittedDurabilityUncertain(
+                        DurabilityStage::PgnCapabilityRebind,
+                    )),
+                    _ => Err(Error::StaleGame),
+                };
+                let observed = Arc::new(std::sync::Mutex::new(None));
+                let called = observed.clone();
+                let result = finalize_practice_mutation(
+                    publication,
+                    Some((Arc::new(directory), "file".into())),
+                    Some("pending".into()),
+                    "delete",
+                    move |_, file_id, pending_id, landed| {
+                        assert_eq!((file_id, pending_id), ("file", "pending"));
+                        *called.lock().unwrap() = Some(landed);
+                        if finalizer_fails {
+                            Err(Error::Conflict("finalizer failed".into()))
+                        } else {
+                            Ok(())
+                        }
+                    },
+                )
+                .await;
+                assert_eq!(
+                    *observed.lock().unwrap(),
+                    match outcome {
+                        1 => None,
+                        3 => Some(false),
+                        _ => Some(true),
+                    }
+                );
+                match (outcome, finalizer_fails) {
+                    (1, _) => assert!(matches!(
+                        result,
+                        Err(Error::CommittedDurabilityUncertain(
+                            DurabilityStage::PgnEdit
+                        ))
+                    )),
+                    (3, true) => assert!(
+                        matches!(result, Err(Error::Conflict(message)) if message == "finalizer failed")
+                    ),
+                    (_, true) => assert!(matches!(
+                        result,
+                        Err(Error::CommittedDurabilityUncertain(
+                            DurabilityStage::PracticeState
+                        ))
+                    )),
+                    (0, false) => result.unwrap(),
+                    (2, false) => assert!(matches!(
+                        result,
+                        Err(Error::CommittedDurabilityUncertain(
+                            DurabilityStage::PgnCapabilityRebind
+                        ))
+                    )),
+                    _ => assert!(matches!(result, Err(Error::StaleGame))),
+                }
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn reorder_journal_is_durable_before_section_move_publication() {
+        use crate::infra::{
+            fs::{AtomicFileFaultPoint, AtomicWriterInjector},
+            path_authority::{
+                ensure_app_owned_default_dir, AppDataDir, AppOwnedDefaultRoot, AuthorizedDir,
+                PathAuthority, PathOperation,
+            },
+        };
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Mutex,
+        };
+
+        struct JournalProbe {
+            points: Mutex<Vec<AtomicFileFaultPoint>>,
+            fail_at: Option<AtomicFileFaultPoint>,
+        }
+        impl AtomicWriterInjector for JournalProbe {
+            fn inject(&self, point: AtomicFileFaultPoint) -> io::Result<()> {
+                self.points.lock().unwrap().push(point);
+                if self.fail_at == Some(point) {
+                    return Err(io::Error::other("journal durability failure"));
+                }
+                Ok(())
+            }
+        }
+        struct PublicationProbe {
+            journal: Arc<JournalProbe>,
+            practice: Arc<AuthorizedDir>,
+            file_id: String,
+            path: std::path::PathBuf,
+            renames: AtomicUsize,
+        }
+        impl AtomicWriterInjector for PublicationProbe {
+            fn inject(&self, point: AtomicFileFaultPoint) -> io::Result<()> {
+                if point == AtomicFileFaultPoint::Rename && self.renames.load(Ordering::SeqCst) == 0
+                {
+                    assert_eq!(
+                        std::fs::read_to_string(&self.path).unwrap(),
+                        SECTION_GAMES.concat()
+                    );
+                    assert!(
+                        crate::practice::has_pending_reorder(&self.practice, &self.file_id)
+                            .unwrap()
+                    );
+                    let points = self.journal.points.lock().unwrap();
+                    let file_sync = points
+                        .iter()
+                        .position(|point| *point == AtomicFileFaultPoint::FileSync)
+                        .unwrap();
+                    let parent_sync = points
+                        .iter()
+                        .position(|point| *point == AtomicFileFaultPoint::ParentSync)
+                        .unwrap();
+                    assert!(file_sync < parent_sync);
+                    assert!(self.journal.fail_at.is_none());
+                    self.renames.fetch_add(1, Ordering::SeqCst);
+                }
+                Ok(())
+            }
+        }
+
+        for fail_at in [
+            None,
+            Some(AtomicFileFaultPoint::FileSync),
+            Some(AtomicFileFaultPoint::ParentSync),
+        ] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("sections.pgn");
+            std::fs::write(&path, SECTION_GAMES.concat()).unwrap();
+            let mut authority =
+                PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap();
+            let handle = promote_pgn_file(&mut authority, &path);
+            let app = mock_app();
+            let state = app.state::<AppState>();
+            state.pgn_path_authority.install(authority).unwrap();
+            let practice = ensure_app_owned_default_dir(
+                &AppDataDir::for_test(directory.path()),
+                AppOwnedDefaultRoot::Practice,
+            )
+            .unwrap();
+            state.pgn_repository.initialize_practice(practice).unwrap();
+            let practice = state
+                .pgn_repository
+                .inner()
+                .unwrap()
+                .practice_directory
+                .clone()
+                .unwrap();
+            let journal = Arc::new(JournalProbe {
+                points: Mutex::new(vec![]),
+                fail_at,
+            });
+            state
+                .pgn_repository
+                .inner()
+                .unwrap()
+                .reorder_journal_injector = Some(journal.clone());
+            let publication = Arc::new(PublicationProbe {
+                journal,
+                practice: practice.clone(),
+                file_id: handle.path_ref().id.clone(),
+                path: path.clone(),
+                renames: AtomicUsize::new(0),
+            });
+            state
+                .pgn_repository
+                .set_atomic_file_injector(Some(publication.clone()))
+                .unwrap();
+            let revision = revision_string(
+                &resolve_pgn(&state, &handle, PathOperation::ReadPgn)
+                    .unwrap()
+                    .pgn_snapshot()
+                    .unwrap(),
+            );
+            let result = move_games(
+                handle,
+                movement(GameMoveKind::Section, 0, 4, false),
+                revision,
+                app.state(),
+            )
+            .await;
+            if fail_at.is_some() {
+                assert!(result.is_err());
+                if fail_at == Some(AtomicFileFaultPoint::ParentSync) {
+                    assert!(matches!(
+                        result,
+                        Err(Error::CommittedDurabilityUncertain(
+                            crate::error::DurabilityStage::PracticeState
+                        ))
+                    ));
+                }
+                assert_eq!(publication.renames.load(Ordering::SeqCst), 0);
+                assert_eq!(
+                    std::fs::read_to_string(&path).unwrap(),
+                    SECTION_GAMES.concat()
+                );
+            } else {
+                assert_eq!(
+                    result.unwrap(),
+                    GameMoveResult {
+                        changed: true,
+                        start: 0,
+                        order: vec![2, 3, 0, 1]
+                    }
+                );
+                assert_eq!(publication.renames.load(Ordering::SeqCst), 1);
+                assert_eq!(
+                    std::fs::read_to_string(&path).unwrap(),
+                    [
+                        SECTION_GAMES[2],
+                        SECTION_GAMES[3],
+                        SECTION_GAMES[0],
+                        SECTION_GAMES[1]
+                    ]
+                    .concat()
+                );
+                assert!(!crate::practice::has_pending_structural_mutation(
+                    &practice,
+                    &publication.file_id
+                )
+                .unwrap());
+            }
+        }
     }
 
     #[cfg(unix)]
@@ -3301,7 +3663,7 @@ mod tests {
                         crate::error::DurabilityStage::PgnEdit
                     ))
                 ));
-                assert!(crate::practice::has_pending_delete(&practice, &id).unwrap());
+                assert!(crate::practice::has_pending_structural_mutation(&practice, &id).unwrap());
                 state.pgn_repository.set_atomic_file_injector(None).unwrap();
                 let landed = std::fs::read(&path).unwrap();
                 std::fs::write(&path, "unknown bytes").unwrap();
@@ -3315,7 +3677,7 @@ mod tests {
                     .await,
                     Err(Error::Conflict(_))
                 ));
-                assert!(crate::practice::has_pending_delete(&practice, &id).unwrap());
+                assert!(crate::practice::has_pending_structural_mutation(&practice, &id).unwrap());
                 std::fs::write(&path, landed).unwrap();
                 resolve_practice_pending(
                     state.pgn_path_authority.clone(),
@@ -3330,7 +3692,7 @@ mod tests {
             }
             let loaded = crate::practice::load_mapped_practice_deck_in(&practice, &id, 1).unwrap();
             assert_eq!(loaded.deck.unwrap(), deck);
-            assert!(!crate::practice::has_pending_delete(&practice, &id).unwrap());
+            assert!(!crate::practice::has_pending_structural_mutation(&practice, &id).unwrap());
         }
     }
 
@@ -3711,7 +4073,9 @@ mod tests {
                     ),
                     "{result:?}"
                 );
-                assert!(crate::practice::has_pending_delete(&practice, &file_id).unwrap());
+                assert!(
+                    crate::practice::has_pending_structural_mutation(&practice, &file_id).unwrap()
+                );
                 state.pgn_repository.set_atomic_file_injector(None).unwrap();
                 resolve_practice_pending(
                     state.pgn_path_authority.clone(),
@@ -3793,7 +4157,9 @@ mod tests {
             write_through_capability(&app, &handle, 0, "[Event \"Saved\"]\n\n1. e4 *\n".into())
                 .await
                 .unwrap();
-            assert!(!crate::practice::has_pending_delete(&practice, &file_id).unwrap());
+            assert!(
+                !crate::practice::has_pending_structural_mutation(&practice, &file_id).unwrap()
+            );
             assert_eq!(
                 crate::practice::practice_epoch_in(&practice, &file_id, 0)
                     .unwrap()
@@ -3820,7 +4186,9 @@ mod tests {
                 .await
                 .unwrap();
             }
-            assert!(!crate::practice::has_pending_delete(&practice, &file_id).unwrap());
+            assert!(
+                !crate::practice::has_pending_structural_mutation(&practice, &file_id).unwrap()
+            );
             assert_eq!(
                 crate::practice::practice_epoch_in(&practice, &file_id, 0)
                     .unwrap()
