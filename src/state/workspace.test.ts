@@ -779,6 +779,45 @@ test("ID repair clones the effective physical source and grants independent owne
     expect(loaded.activeTab).toBe(repaired.value);
 });
 
+test("ID repair skips training tree handling while cloning and retiring an ordinary tab source", () => {
+    sessionStorage.clear();
+    const training: Tab = {
+        ...legacyTab,
+        value: "legacy-training-owner",
+        type: "chessriddleTraining",
+    };
+    const tree = serializeStorageValue({ version: 1, state: defaultTree() });
+    sessionStorage.setItem(training.value, tree);
+    sessionStorage.setItem(legacyTab.value, tree);
+    sessionStorage.setItem(
+        WORKSPACE_STORAGE_KEY,
+        serializeStorageValue({
+            version: LEGACY_WORKSPACE_VERSION,
+            tabs: [training, legacyTab],
+            activeTab: training.value,
+            treeOwnershipUncertain: true,
+        }),
+    );
+    const clone = vi.spyOn(tabStorage, "clone");
+
+    const loaded = loadStoredWorkspace();
+    const repairedTraining = loaded.tabs[0]!;
+    const repairedOrdinary = loaded.tabs[1]!;
+
+    expect(repairedTraining.value).not.toBe(training.value);
+    expect(repairedOrdinary.value).not.toBe(legacyTab.value);
+    expect(loaded.activeTab).toBe(repairedTraining.value);
+    expect(clone).toHaveBeenCalledExactlyOnceWith(legacyTab.value, repairedOrdinary.value, false);
+    expect(sessionStorage.getItem(getTabTreeKey(repairedTraining))).toBeNull();
+    expect(tabStorage.getStatus(getTabTreeKey(repairedTraining)).kind).toBe("not-read");
+    expect(loaded.treeOwnershipPendingRemovalIds).toEqual([legacyTab.value]);
+    expect(loaded.treeOwnershipProtectedIds).toEqual([training.value]);
+    expect(readStoredWorkspace()).toEqual(loaded);
+    expect(sessionStorage.getItem(training.value)).toBe(tree);
+    expect(sessionStorage.getItem(legacyTab.value)).toBeNull();
+    expect(tabStorage.read(getTabTreeKey(repairedOrdinary))?.state).toEqual(defaultTree());
+});
+
 test("missing explicit-reference ID repair refuses blank admission and retains original ownership", () => {
     sessionStorage.clear();
     const physical = crypto.randomUUID();
