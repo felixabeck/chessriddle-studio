@@ -72,6 +72,16 @@ async function assertNotationColumn(page: Page, hasMoves: boolean) {
     await expect.poll(() => column.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
 }
 
+async function dropFirstWheel(scroller: Locator) {
+    await scroller.evaluate((element) => {
+        element.addEventListener("wheel", (event) => event.preventDefault(), {
+            capture: true,
+            once: true,
+            passive: false,
+        });
+    });
+}
+
 test("wheelColumnTo retries after a first wheel miss", async ({ page }) => {
     await page.setContent(`
         <div
@@ -85,13 +95,7 @@ test("wheelColumnTo retries after a first wheel miss", async ({ page }) => {
     `);
     const column = page.locator("#column");
     const target = page.getByRole("button", { name: "target", exact: true });
-    await column.evaluate((element) => {
-        element.addEventListener("wheel", (event) => event.preventDefault(), {
-            capture: true,
-            once: true,
-            passive: false,
-        });
-    });
+    await dropFirstWheel(column);
 
     await wheelColumnTo(page, column, target);
 
@@ -195,19 +199,12 @@ test("wheelBoardStackTo re-wheels when the first wheel is dropped", async ({ pag
                 <div id="bottomRight" style="height: 80px">target</div>
             </div>
         </div>
-        <script>
-            const stack = document.querySelector('[data-board-layout="stacked"] > div');
-            function dropFirstWheel(event) {
-                event.preventDefault();
-                stack.removeEventListener("wheel", dropFirstWheel);
-            }
-            stack.addEventListener("wheel", dropFirstWheel, { passive: false });
-        </script>
     `);
 
+    const stack = page.locator('[data-board-layout="stacked"] > div').first();
+    await dropFirstWheel(stack);
     await wheelBoardStackTo(page, page.locator("#bottomRight"));
 
-    const stack = page.locator('[data-board-layout="stacked"] > div').first();
     await expect.poll(() => stack.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
 });
 
