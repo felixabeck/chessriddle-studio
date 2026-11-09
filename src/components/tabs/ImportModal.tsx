@@ -19,6 +19,7 @@ import { workspaceErrorMessage } from "../files/workspaceError";
 import { match } from "ts-pattern";
 import { notifyUnlessCancelled, runUnlessCancelled } from "@/components/files/notifyError";
 import { addRecentFileAtom } from "@/state/atoms";
+import { beginFileOpen } from "@/state/fileStructureChange";
 import { parsePGN } from "@/utils/chess";
 import { getChesscomGame } from "@/utils/chess.com/api";
 import { translateChessopsError } from "@/utils/chessops";
@@ -30,6 +31,7 @@ import {
   pickPgnFile,
 } from "@/utils/files";
 import { getLichessGame } from "@/utils/lichess/api";
+import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import { replaceNewTab, type ReplaceNewTabResult, type SetTabs, type Tab } from "@/utils/tabs";
 import { defaultTree, getGameName, type TreeState } from "@/utils/treeReducer";
 import AppModal from "../common/AppModal";
@@ -123,64 +125,72 @@ export default function ImportModal({
       if (importType === "PGN") {
         if (file || pgn) {
           if (file) {
-            let fileInfo: FileMetadata;
-            const count = file.numGames;
-            let loaded = await loadFileGame(file.handle, 0);
-            if (save) {
-              const workspace = await ensureFileWorkspace();
-              if (!workspace) return;
-              const newFile = await createFile({
-                filename,
-                filetype,
-                content: {
-                  kind: "copy",
-                  source: file.handle,
-                  revision: loaded.revision,
-                },
-                workspace,
-                parent: workspace,
-                listingCache,
-              });
-              if (newFile.isErr) {
-                reportImportError(newFile.error, true);
-                return;
+            const endSourceOpen = beginFileOpen(fileWorkspaceKey(file.handle));
+            let endCopyOpen: (() => void) | undefined;
+            try {
+              let fileInfo: FileMetadata;
+              const count = file.numGames;
+              let loaded = await loadFileGame(file.handle, 0);
+              if (save) {
+                const workspace = await ensureFileWorkspace();
+                if (!workspace) return;
+                const newFile = await createFile({
+                  filename,
+                  filetype,
+                  content: {
+                    kind: "copy",
+                    source: file.handle,
+                    revision: loaded.revision,
+                  },
+                  workspace,
+                  parent: workspace,
+                  listingCache,
+                });
+                if (newFile.isErr) {
+                  reportImportError(newFile.error, true);
+                  return;
+                }
+                fileInfo = newFile.value;
+                endCopyOpen = beginFileOpen(fileWorkspaceKey(fileInfo.handle));
+                loaded = await loadFileGame(fileInfo.handle, 0);
+              } else {
+                fileInfo = {
+                  type: "file",
+                  handle: file.handle,
+                  numGames: count,
+                  name: filename,
+                  lastModified: Date.now(),
+                  metadata: {
+                    type: "game",
+                    tags: [],
+                  },
+                };
               }
-              fileInfo = newFile.value;
-              loaded = await loadFileGame(fileInfo.handle, 0);
-            } else {
-              fileInfo = {
-                type: "file",
-                handle: file.handle,
-                numGames: count,
-                name: filename,
-                lastModified: Date.now(),
-                metadata: {
-                  type: "game",
-                  tags: [],
+              const tree = loaded.tree;
+              const result = replaceImportedTab(
+                submittingOwnerId,
+                {
+                  name: getGameName(tree.headers),
+                  gameOrigin: {
+                    kind: "file",
+                    file: fileInfo,
+                    gameNumber: 0,
+                  },
+                  type: "analysis",
                 },
-              };
-            }
-            const tree = loaded.tree;
-            const result = replaceImportedTab(
-              submittingOwnerId,
-              {
-                name: getGameName(tree.headers),
-                gameOrigin: {
-                  kind: "file",
-                  file: fileInfo,
-                  gameNumber: 0,
-                },
-                type: "analysis",
-              },
-              tree,
-            );
+                tree,
+              );
 
-            if (result && (result.kind !== "refused" || result.stage === "workspace")) {
-              store.set(addRecentFileAtom, {
-                name: fileInfo.name,
-                handle: fileInfo.handle,
-                type: fileInfo.metadata.type,
-              });
+              if (result && (result.kind !== "refused" || result.stage === "workspace")) {
+                store.set(addRecentFileAtom, {
+                  name: fileInfo.name,
+                  handle: fileInfo.handle,
+                  type: fileInfo.metadata.type,
+                });
+              }
+            } finally {
+              endCopyOpen?.();
+              endSourceOpen();
             }
           } else {
             const workspace = await ensureFileWorkspace();

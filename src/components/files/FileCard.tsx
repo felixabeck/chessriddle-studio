@@ -10,6 +10,7 @@ import { useElementSize } from "@mantine/hooks";
 import { useTranslation } from "react-i18next";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { tabsAtom } from "@/state/atoms";
+import { StaleFileGameError } from "@/state/fileStructureChange";
 import { rootFontPx } from "@/state/paneLayout";
 import { IconAction } from "@/components/common/IconAction";
 import { OpenGameButton, useGameOpen } from "@/components/common/gameOpen";
@@ -91,6 +92,11 @@ function FileCard({
     };
   }, [handleKey, page, t, reloadGeneration]);
 
+  const reloadGames = (reset: boolean) => {
+    if (!mounted.current) return;
+    if (reset) setGames(new Map());
+    setReloadGeneration((previous) => previous + 1);
+  };
   const onMoveLines: MoveLines = async (movement, revision) => {
     try {
       return await reorderFileLines({
@@ -111,22 +117,29 @@ function FileCard({
               : current,
           );
         },
-        reload: (reset) => {
-          if (!mounted.current) return;
-          if (reset) setGames(new Map());
-          setReloadGeneration((previous) => previous + 1);
-        },
+        reload: reloadGames,
       });
     } catch (error) {
       notifyUnlessCancelled(t("Common.Error"), error);
     }
   };
 
-  const reportOpenError = (error: unknown) => notifyUnlessCancelled(t("Common.Error"), error);
+  const reportOpenError = (error: unknown) => {
+    if (error instanceof StaleFileGameError) reloadGames(true);
+    notifyUnlessCancelled(t("Common.Error"), error);
+  };
   const gameOpen = useGameOpen(
-    ({ file, index }: { file: FileMetadata; index: number }) =>
+    ({
+      file,
+      index,
+      expected,
+    }: {
+      file: FileMetadata;
+      index: number;
+      expected?: GameSelectorRow["identity"];
+    }) =>
       runTabCreation({
-        create: () => openFile(file, setTabs, { gameNumber: index }),
+        create: () => openFile(file, setTabs, { gameNumber: index, expected }),
         onSuccess: () => navigate({ to: "/" }),
         onError: reportOpenError,
       }),
@@ -135,7 +148,7 @@ function FileCard({
   const activateGame = (index: number) => {
     if (index < 0 || index >= selected.numGames) return;
     setPage(index);
-    return gameOpen.activate({ file: selected, index });
+    return gameOpen.activate({ file: selected, index, expected: games.get(index)?.identity });
   };
 
   return (

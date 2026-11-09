@@ -3,6 +3,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { tabStorage } from "@/state/store/tabStorage";
 import { defaultTree } from "@/utils/treeReducer";
+import { hasFileOpenInFlight } from "@/state/fileStructureChange";
+import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 
 const fixtures = vi.hoisted(() => ({
   atoms: {
@@ -10,7 +12,7 @@ const fixtures = vi.hoisted(() => ({
   },
   file: {
     type: "file",
-    handle: { id: { id: "selected-pgn" }, kind: "fileWorkspace" },
+    handle: { id: { id: "selected-pgn" }, kind: "fileWorkspace" as const },
     name: "selected.pgn",
     numGames: 2,
     metadata: { type: "game", tags: [] },
@@ -316,31 +318,81 @@ test("file import passes the fresh file tree and file origin to its owner", asyn
   expect(setOpenModal).not.toHaveBeenCalled();
 });
 
+test("file import holds its open lease from the first read through tab admission", async () => {
+  const tree = defaultTree();
+  const loaded = {
+    pgn: '[Event "Import"]\n\n*',
+    stamp: "import-stamp",
+    revision: "import-revision",
+    present: true,
+    tree,
+  };
+  const request = deferred<typeof loaded>();
+  const key = fileWorkspaceKey(fixtures.file.handle);
+  let heldAtRead = false;
+  let heldAtAdmission = false;
+  fixtures.loadFileGame.mockImplementationOnce(() => {
+    heldAtRead = hasFileOpenInFlight(key);
+    return request.promise;
+  });
+  fixtures.replaceNewTab.mockImplementationOnce(() => {
+    heldAtAdmission = hasFileOpenInFlight(key);
+    return { kind: "committed", id: "imported-tab" };
+  });
+  await renderModal();
+  await chooseFile();
+  await clickSubmit();
+  try {
+    expect(heldAtRead).toBe(true);
+    expect(hasFileOpenInFlight(key)).toBe(true);
+    expect(fixtures.replaceNewTab).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => request.resolve(loaded));
+  }
+  expect(fixtures.replaceNewTab).toHaveBeenCalledOnce();
+  expect(heldAtAdmission).toBe(true);
+  expect(hasFileOpenInFlight(key)).toBe(false);
+});
+
 test("saving an imported PGN copies its source before submitting the reloaded file tree", async () => {
   const workspace = { id: { id: "workspace" }, kind: "fileWorkspace" } as const;
   const savedFile = {
     ...fixtures.file,
-    handle: { id: { id: "saved-pgn" }, kind: "fileWorkspace" },
+    handle: { id: { id: "saved-pgn" }, kind: "fileWorkspace" as const },
   };
   const sourceTree = defaultTree();
   sourceTree.headers.event = "Source preflight";
   const savedTree = defaultTree();
   savedTree.headers.event = "Saved file";
+  const sourceKey = fileWorkspaceKey(fixtures.file.handle);
+  const savedKey = fileWorkspaceKey(savedFile.handle);
+  const leasesAtReads: boolean[] = [];
+  let leasesAtAdmission: boolean[] = [];
   fixtures.loadFileGame
-    .mockResolvedValueOnce({
-      pgn: '[Event "Source preflight"]\n\n1. e4 *',
-      stamp: "source-stamp",
-      revision: "source-revision",
-      present: true,
-      tree: sourceTree,
+    .mockImplementationOnce(async () => {
+      leasesAtReads.push(hasFileOpenInFlight(sourceKey));
+      return {
+        pgn: '[Event "Source preflight"]\n\n1. e4 *',
+        stamp: "source-stamp",
+        revision: "source-revision",
+        present: true,
+        tree: sourceTree,
+      };
     })
-    .mockResolvedValueOnce({
-      pgn: '[Event "Saved file"]\n\n1. d4 *',
-      stamp: "saved-stamp",
-      revision: "saved-revision",
-      present: true,
-      tree: savedTree,
+    .mockImplementationOnce(async () => {
+      leasesAtReads.push(hasFileOpenInFlight(savedKey));
+      return {
+        pgn: '[Event "Saved file"]\n\n1. d4 *',
+        stamp: "saved-stamp",
+        revision: "saved-revision",
+        present: true,
+        tree: savedTree,
+      };
     });
+  fixtures.replaceNewTab.mockImplementationOnce(() => {
+    leasesAtAdmission = [hasFileOpenInFlight(sourceKey), hasFileOpenInFlight(savedKey)];
+    return { kind: "committed", id: "imported-tab" };
+  });
   fixtures.ensureFileWorkspace.mockResolvedValue(workspace);
   fixtures.createFile.mockResolvedValue({ isErr: false, value: savedFile });
   await renderModal();
@@ -377,6 +429,10 @@ test("saving an imported PGN copies its source before submitting the reloaded fi
       tree: savedTree,
     }),
   );
+  expect(leasesAtReads).toEqual([true, true]);
+  expect(leasesAtAdmission).toEqual([true, true]);
+  expect(hasFileOpenInFlight(sourceKey)).toBe(false);
+  expect(hasFileOpenInFlight(savedKey)).toBe(false);
 });
 
 test("a rejected game-0 preflight creates no copied file", async () => {
@@ -393,6 +449,7 @@ test("a rejected game-0 preflight creates no copied file", async () => {
   expect(fixtures.ensureFileWorkspace).not.toHaveBeenCalled();
   expect(fixtures.createFile).not.toHaveBeenCalled();
   expect(fixtures.replaceNewTab).not.toHaveBeenCalled();
+  expect(hasFileOpenInFlight(fileWorkspaceKey(fixtures.file.handle))).toBe(false);
 });
 
 test.each([
@@ -715,6 +772,7 @@ test.each(fileRecentOutcomes)(
     ];
     expect(fixtures.storeSet.mock.calls).toEqual(outcome.addRecent ? [recentFileCall] : []);
     expect(fixtures.notifyUnlessCancelled).toHaveBeenCalledTimes(outcome.name === "thrown" ? 1 : 0);
+    expect(hasFileOpenInFlight(fileWorkspaceKey(fixtures.file.handle))).toBe(false);
   },
 );
 

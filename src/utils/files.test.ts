@@ -118,7 +118,7 @@ describe("openFile tab admission", () => {
         const endChange = beginFileStructureChange(fileWorkspaceKey(file.handle));
         try {
             await expect(openFile(file, setTabs)).rejects.toThrow(
-                new Error(i18n.t("Files.LineSection.Stale")),
+                i18n.t("Files.LineSection.Stale"),
             );
             expect(mocks.readGame).not.toHaveBeenCalled();
             expect(mocks.createTab).not.toHaveBeenCalled();
@@ -227,6 +227,35 @@ describe("openFile tab admission", () => {
         );
         expect(mocks.storeSet).not.toHaveBeenCalled();
         expect(getFileFreshness("failed-owner")).toEqual(before);
+    });
+
+    test.each([
+        { difference: "stamp", stamp: "different-stamp", revision: "device:inode:revision" },
+        {
+            difference: "revision with the same stamp",
+            stamp: freshStamp,
+            revision: "older-revision",
+        },
+    ])("refuses a differing $difference before admitting a tab", async ({ stamp, revision }) => {
+        await initializeI18n();
+        await expect(openFile(file, setTabs, { expected: { stamp, revision } })).rejects.toThrow(
+            i18n.t("Files.LineSection.Stale"),
+        );
+        expect(mocks.readGame).toHaveBeenCalledExactlyOnceWith(file.handle, 0, undefined);
+        expect(mocks.createTab).not.toHaveBeenCalled();
+        expect(mocks.storeSet).not.toHaveBeenCalled();
+        expect(hasFileOpenInFlight(fileWorkspaceKey(file.handle))).toBe(false);
+    });
+
+    test("admits a tab when the expected stamp and revision both match", async () => {
+        mocks.createTab.mockResolvedValueOnce("tab-id");
+        await expect(
+            openFile(file, setTabs, {
+                expected: { stamp: freshStamp, revision: "device:inode:revision" },
+            }),
+        ).resolves.toBe("tab-id");
+        expect(mocks.createTab).toHaveBeenCalledOnce();
+        expect(hasFileOpenInFlight(fileWorkspaceKey(file.handle))).toBe(false);
     });
 
     test.each([

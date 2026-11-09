@@ -23,7 +23,7 @@ import {
     tabFamily,
 } from "@/state/atoms";
 import { beginFileWrite, setFileFreshness } from "@/state/fileFreshness";
-import { beginFileOpen } from "@/state/fileStructureChange";
+import { beginFileOpen, StaleFileGameError } from "@/state/fileStructureChange";
 import { parsePGN } from "./chess";
 import { fileWorkspaceKey } from "./pathCapabilities";
 import { createTab, type SetTabs } from "./tabs";
@@ -146,6 +146,7 @@ export async function openFile(
         ownerId?: string;
         panel?: "practice";
         store?: ReturnType<typeof getDefaultStore>;
+        expected?: { stamp: string; revision: string };
     },
 ) {
     const store = options?.store ?? getDefaultStore();
@@ -153,6 +154,13 @@ export async function openFile(
     const endOpen = beginFileOpen(fileWorkspaceKey(file.handle));
     try {
         const loaded = await loadFileGame(file.handle, gameNumber);
+        const expected = options?.expected;
+        if (
+            expected &&
+            (expected.stamp !== loaded.stamp || expected.revision !== loaded.revision)
+        ) {
+            throw new StaleFileGameError();
+        }
         let tabName = options?.tabName ?? file.name ?? "Untitled";
         if (options?.tabName === undefined && loaded.pgn) {
             const gameName = getGameName(loaded.tree.headers);

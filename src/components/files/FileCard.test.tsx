@@ -9,6 +9,7 @@ import { createStore, getDefaultStore, Provider } from "jotai";
 import { tabsAtom } from "@/state/atoms";
 import { libraryGamePositionAtom } from "@/components/library/memory";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
+import i18n, { initializeI18n } from "@/i18n";
 
 const mocks = vi.hoisted(() => ({
   readGames: vi.fn(),
@@ -77,7 +78,8 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 const t = (key: string) => key;
-vi.mock("react-i18next", () => ({
+vi.mock("react-i18next", async (original) => ({
+  ...(await original<typeof import("react-i18next")>()),
   useTranslation: () => ({ t }),
 }));
 
@@ -684,7 +686,7 @@ describe("FileCard", () => {
     expect(openButton().disabled).toBe(true);
     // Selection changes while the fresh read still belongs to the second game.
     await act(async () => container.querySelectorAll<HTMLElement>('[role="option"]')[0].click());
-    await act(async () => settle(stampedGame('[Event "Fresh second"]\n\n1. d4 *', "second")));
+    await act(async () => settle(stampedGame('[Event "Fresh second"]\n\n1. d4 *')));
     expect(seed).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ headers: expect.objectContaining({ event: "Fresh second" }) }),
@@ -723,6 +725,58 @@ describe("FileCard", () => {
       "2Preview",
     );
   });
+
+  test.each([
+    {
+      gesture: "double-click",
+      activate: (row: HTMLElement) =>
+        row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })),
+    },
+    {
+      gesture: "Enter",
+      activate: (row: HTMLElement) =>
+        row.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+    },
+    { gesture: "Open game button", activate: (_row: HTMLElement) => openButton().click() },
+  ])(
+    "$gesture refuses a stale row and reloads the list for a successful retry",
+    async ({ activate }) => {
+      await initializeI18n();
+      await renderActualList();
+      const seed = vi.spyOn(tabStorage, "seed");
+      const currentGame = stampedGame('[Event "Fresh second"]\n\n1. d4 *', "changed");
+      mocks.readGame.mockResolvedValue(currentGame);
+      mocks.readGames.mockImplementation(async (_handle: unknown, start: number, end: number) =>
+        Array.from({ length: Math.min(end, 1) - start + 1 }, () => currentGame),
+      );
+      const second = container.querySelectorAll<HTMLElement>('[role="option"]')[1];
+      await act(async () => second.click());
+      expect(getDefaultStore().get(libraryGamePositionAtom)?.index).toBe(1);
+      await act(async () => {
+        activate(second);
+      });
+      await vi.waitFor(() => expect(mocks.showNotification).toHaveBeenCalledOnce());
+      expect(mocks.showNotification).toHaveBeenCalledWith(
+        expect.objectContaining({ message: i18n.t("Files.LineSection.Stale") }),
+      );
+      expect(mocks.readGame).toHaveBeenCalledExactlyOnceWith(sampleFileA.handle, 1, undefined);
+      expect(seed).not.toHaveBeenCalled();
+      expect(getDefaultStore().get(tabsAtom)).toEqual([]);
+      expect(mocks.navigate).not.toHaveBeenCalled();
+      await vi.waitFor(() =>
+        expect(
+          container.querySelectorAll<HTMLElement>('[role="option"]')[1]?.textContent,
+        ).toContain("Fresh second"),
+      );
+
+      await act(async () => openButton().click());
+      await vi.waitFor(() => expect(mocks.navigate).toHaveBeenCalledOnce());
+      expect(seed).toHaveBeenCalledOnce();
+      expect(getDefaultStore().get(tabsAtom)).toEqual([
+        expect.objectContaining({ gameOrigin: expect.objectContaining({ gameNumber: 1 }) }),
+      ]);
+    },
+  );
 
   test("open rejection, cancellation and null admission release the lock without navigation", async () => {
     mocks.readGames.mockResolvedValue([]);

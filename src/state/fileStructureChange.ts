@@ -12,13 +12,20 @@ const changes = new Map<string, StructureChange>();
 // Open flows retain one count per file from the first read through tab admission.
 const opens = new Map<string, number>();
 
+export class StaleFileGameError extends Error {
+    constructor() {
+        super(i18n.t("Files.LineSection.Stale"));
+        this.name = "StaleFileGameError";
+    }
+}
+
 export function hasFileOpenInFlight(file: string): boolean {
     return opens.has(file);
 }
 
 /** The owner must release in finally, after tab admission succeeds or fails. */
 export function beginFileOpen(file: string): () => void {
-    if (changes.has(file)) throw new Error(i18n.t("Files.LineSection.Stale"));
+    if (changes.has(file)) throw new StaleFileGameError();
     opens.set(file, (opens.get(file) ?? 0) + 1);
     let released = false;
     return () => {
