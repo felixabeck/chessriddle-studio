@@ -22431,7 +22431,7 @@ Fixed in 0b63a012 (pushed to master; hosted Test 13/13 green; installed locally)
 
 ### Mixed timed and unlimited players pass the Start button and are refused natively
 
-* **ID:** f-20261109-01 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261109-01 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** build · **Blocked:** none
 * **Filed from:** 80dbe00d-ea31-48fe-b96d-190a846539fe
 * **Impact class:** behaviour
 * **Spotted outside diff:** push review (review-correctness) of commit `21794a96` (f-20261106-26/27), 2026-11-09
@@ -22441,3 +22441,5 @@ Fixed in 0b63a012 (pushed to master; hosted Test 13/13 green; installed locally)
 * **Fix:** Decide whether asymmetric timed/unlimited games are supported (clock state and engine `go` mode for the unlimited side) or blocked in the form with a visible reason, then align renderer and native validation and add a rendered Start-button test.
 * **Open question:** Support one-sided clocks natively, or block the configuration in the form?
 * **Proof:** Read at HEAD `2d99c36f`: `hasStartableTimeControl` returns true for an unlimited side, and `validate_time_controls` returns the `both players must provide a time control` error when exactly one side has a `TimeControl`. Not reproduced in the app.
+* **Closed (2026-11-09, drain session c6378528-f959-40b1-89ab-54e6a35fe5f1, adopted plan f5f32f01):** One-sided clocks are supported natively (d-20261109-06). `validate_time_controls` range- and floor-checks each present side; `select_engine_go` picks the engine `go` from the mover's side, mirrors the mover's clock for an Unlimited opponent, clamps every value to `MAX_ENGINE_LIMIT`, and starts no search for an expired timed mover so the clock tick records the timeout (d-20261109-07). Renderer logic was already per-side; a rendered Start test proves the MANDATE scenario. Commits e7f7e487, 90f5604b, 1eaf8297; review history `tasks/handoffs/2026-11-09-f-20261109-01-review.md`. Rejected: blocking the configuration in the form.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"69692f3ec1e34a6a1fc354115fbb1fa42d7530a8dd11b57670c4cc9d74a094f0","header_sha256":"15be089734c0141527b38ccb37eb93e8042452105b7b3ae1ab6feac7169c11d7","header_status":"handled","input_sha256":"0073d0067048bd33bf1bb25b0361053b080679d4b1ad8577987e46732433e0a7","kind":"mutation-receipt","operation":"6283ef5ab5c9c0a03891af62e5ba6a002e0db1a152cadf7b76d77f7ece5eb22f","options":{"section":null},"request_id_sha256":null,"results":["f-20261109-01"],"target":"f-20261109-01","v":1} -->
