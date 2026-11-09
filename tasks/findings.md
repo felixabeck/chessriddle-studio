@@ -21752,7 +21752,7 @@ All probes were removed; the tree stayed clean.
 
 ### Escape while recording a keybind is saved as the shortcut instead of cancelling
 
-* **ID:** f-20261106-28 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261106-28 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** App startup/preferences/i18n/file-input review (t20u area 5/5) at HEAD `c4b2faf0`
 * **Where:** `src/components/settings/KeybindInput.tsx` `ShortcutInput` — Cancel is only the X `IconAction` calling `stop()`; Save persists `Array.from(keys)`. Recording uses `useRecordHotkeys()` from `react-hotkeys-hook`, which adds every `keydown` (including Escape) to the set and does not treat Escape as abort. Related open (different control): `f-20261106-06` piece-set hover preview stick. Not language/date `f-20261106-05`.
@@ -21763,6 +21763,9 @@ All probes were removed; the tree stayed clean.
 
 **Related correction (2026-11-06, push records review):** `f-20261106-06` (piece-set hover preview stick) is handled, not open; it remains a different control.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"eae04295333d2199b4aa7e938cdc829019468de5d7d9ebe9c616b74c6842bbb4","input_sha256":"aad3ec9fdaf827c588d1b883a0d7eb95f9b0a874412f42d9d0dacbfcfc8f314e","kind":"mutation-receipt","operation":"259fd6cd7f9ba3f634768f1fcce4457c0f4dfbee051e8449b4d0a6f381c578d4","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-28"],"target":"f-20261106-28","v":1} -->
+
+**Handled (2026-11-09, drain fc77a29d):** commit `b4666d0e`. `KeybindInput` registers a capture-phase `window` keydown listener only while recording. Escape is swallowed (`preventDefault` and `stopPropagation`) and `stop()` runs without `setKeymap`, the same as Cancel, so Escape is never recorded and the stored binding stays unchanged. Same-file defect fixed in the same commit: `useRecordHotkeys` removes its document listener only in `stop()`. Unmounting while recording, for example navigating away from Settings, left a listener that cancelled every keydown app-wide. A probe on the parent commit measured `defaultPrevented === true` after unmount. `useEffect(() => stop, [stop])` now releases it. Regressions in `KeybindInput.test.tsx` cover Escape cancelling with an unchanged store, non-Escape keys still being recorded, and unmount releasing the keyboard. Each was red with its fix removed and green restored. Rejected: filtering Escape out of the recorded set while staying in recording, because the finding's expected behaviour is cancel. Rejected: replacing `useRecordHotkeys`, because the two effects fully cover its gaps.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"ae8be2cc1ece0a99723a8161cff20d6f95afa4cefe778e53dcecfd2577c76c79","header_sha256":"5a76221e0cd73146828cc8c567e24f0ea3b6d9815fa6aa83662fa2b710972e1e","header_status":"handled","input_sha256":"fc7dfec22989d6ee1afd71e29f931fe4cda4a7f9dfb3ca96aaa392a49acc2310","kind":"mutation-receipt","operation":"76b46b1fccf2dec8173e12f3ff81402a8f562f988363ed02be8fea42aa4972d4","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-28"],"target":"f-20261106-28","v":1} -->
 
 ---
 
