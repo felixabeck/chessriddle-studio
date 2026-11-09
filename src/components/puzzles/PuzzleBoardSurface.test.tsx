@@ -58,3 +58,56 @@ test("a surface without tree context refuses illegal moves and contains rejected
   expect(onMove).toHaveBeenCalledOnce();
   expect(position.turn).toBe("white");
 });
+
+async function pendingPromotion() {
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  const onMove = vi.fn();
+  const store = createStore();
+  const promotionFen = "7k/P7/8/8/8/8/8/7K w - - 0 1";
+  const render = async (fen: string) => {
+    await act(async () =>
+      root!.render(
+        <MantineProvider>
+          <Provider store={store}>
+            <PuzzleBoardSurface
+              position={positionFromFen(fen)[0]!}
+              orientation="white"
+              canPlay
+              onMove={onMove}
+            />
+          </Provider>
+        </MantineProvider>,
+      ),
+    );
+  };
+  await render(promotionFen);
+  await act(async () => {
+    board.config!.movable!.events!.after!("a7", "a8", { premove: false });
+  });
+  expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+  await render(promotionFen);
+  expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+  return { render, promotionFen, onMove, surface: container };
+}
+
+test("promotion survives equal FEN objects and confirms the pending move", async () => {
+  const { onMove, surface } = await pendingPromotion();
+  await act(async () => {
+    surface
+      .querySelector('[role="dialog"]')!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "2", bubbles: true }));
+  });
+  expect(onMove).toHaveBeenCalledExactlyOnceWith({ from: 48, to: 56, promotion: "knight" });
+  expect(surface.querySelector('[role="dialog"]')).toBeNull();
+});
+
+test("promotion survives equal FEN objects but is discarded after a changed position", async () => {
+  const { render, promotionFen, onMove, surface } = await pendingPromotion();
+  await render(INITIAL_FEN);
+  expect(surface.querySelector('[role="dialog"]')).toBeNull();
+  await render(promotionFen);
+  expect(surface.querySelector('[role="dialog"]')).toBeNull();
+  expect(onMove).not.toHaveBeenCalled();
+});

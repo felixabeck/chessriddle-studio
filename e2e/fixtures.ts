@@ -193,6 +193,26 @@ export async function waitForTransitionsSettled(page: Page) {
     });
 }
 
+export async function splitTextWords(labels: Locator): Promise<string[]> {
+    return labels.evaluateAll((elements) =>
+        elements.flatMap((element) => {
+            if (!element.getBoundingClientRect().width) return [];
+            const words: string[] = [];
+            const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+            while (walker.nextNode()) {
+                const node = walker.currentNode;
+                for (const match of (node.textContent ?? "").matchAll(/\S+/g)) {
+                    const range = document.createRange();
+                    range.setStart(node, match.index);
+                    range.setEnd(node, match.index + match[0].length);
+                    if (range.getClientRects().length > 1) words.push(match[0]);
+                }
+            }
+            return words;
+        }),
+    );
+}
+
 export async function waitForScrollAreaScrollbarsHidden(page: Page) {
     await expect(page.locator('.mantine-ScrollArea-scrollbar[data-state="visible"]')).toHaveCount(
         0,

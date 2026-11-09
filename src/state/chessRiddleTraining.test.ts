@@ -141,6 +141,7 @@ test.each(["network", "submissionInProgress", "engineBusy", "engineUnavailable"]
         api.chessriddleTrainingSubmit.mockRejectedValueOnce(code);
         await sessions.submit("tab");
         const body = api.chessriddleTrainingSubmit.mock.calls[0][0];
+        expect(body.elapsedMs).toBe(1000);
         expect(Object.isFrozen(body)).toBe(true);
         expect(Object.isFrozen(body.line)).toBe(true);
         expect(sessions.get("tab")?.puzzle).toEqual(puzzle);
@@ -149,6 +150,7 @@ test.each(["network", "submissionInProgress", "engineBusy", "engineUnavailable"]
         sessions.undo("tab");
         await sessions.retry("tab");
         expect(api.chessriddleTrainingSubmit.mock.calls[1][0]).toBe(body);
+        expect(api.chessriddleTrainingSubmit.mock.calls[1][0].elapsedMs).toBe(1000);
         expect(sessions.get("tab")?.phase).toBe("verdict");
     },
 );

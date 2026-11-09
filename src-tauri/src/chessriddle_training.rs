@@ -5,6 +5,13 @@ use serde::{Deserialize, Serialize};
 use shakmaty::{fen::Fen, uci::UciMove, CastlingMode, Chess, Color, EnPassantMode, Position};
 use specta::Type;
 
+// Mirrors the server submission contract.
+pub(crate) const MAX_TRAINING_SUBMISSION_PLIES: usize = 7;
+// Mirrors the server duration contract.
+pub(crate) const MAX_TRAINING_DURATION_MS: u32 = 86_400_000;
+// Mirrors the server exclusion contract.
+pub(crate) const MAX_TRAINING_EXCLUSIONS: usize = 50;
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Type)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum TrainingSource {
@@ -115,7 +122,7 @@ pub(crate) fn puzzle(
             Color::Black => TrainingSide::Black,
         },
         puzzle_rating: tactic.tactic_rating,
-        solution_ply_count: (tokens.len() - 1).min(7) as u8,
+        solution_ply_count: (tokens.len() - 1).min(MAX_TRAINING_SUBMISSION_PLIES) as u8,
     }))
 }
 
@@ -148,8 +155,8 @@ pub(crate) struct SubmitBody {
 pub(crate) fn submit_body(request: &TrainingSubmission) -> Result<SubmitBody, AccountError> {
     position(&request.decision_fen).map_err(|_| AccountError::InvalidRequest)?;
     if request.puzzle_id <= 0
-        || request.line.len() > 7
-        || request.elapsed_ms > 86_400_000
+        || request.line.len() > MAX_TRAINING_SUBMISSION_PLIES
+        || request.elapsed_ms > MAX_TRAINING_DURATION_MS
         || request.idempotency_key.len() > 36
         || uuid::Uuid::parse_str(&request.idempotency_key).is_err()
         || (request.line.is_empty() && !request.solution_shown)
@@ -307,12 +314,10 @@ pub(crate) fn server_error(status: u16, body: &[u8]) -> AccountError {
             value
                 .pointer("/detail/code")
                 .and_then(serde_json::Value::as_str)
-        })
-        .or_else(|| {
-            value
-                .pointer("/details/reason")
-                .and_then(serde_json::Value::as_str)
-        })
+        });
+    let reason = value
+        .pointer("/details/reason")
+        .and_then(serde_json::Value::as_str)
         .or_else(|| {
             value
                 .pointer("/error/details/reason")
@@ -323,6 +328,15 @@ pub(crate) fn server_error(status: u16, body: &[u8]) -> AccountError {
                 .pointer("/detail/details/reason")
                 .and_then(serde_json::Value::as_str)
         });
+    // Specific reasons refine generic envelope codes such as CONFLICT and FORBIDDEN.
+    let specific_reason = match (status, reason) {
+        (403, Some("desktop_route_forbidden")) => Some(AccountError::UpdateRequired),
+        (409, Some("submission_in_progress")) => Some(AccountError::SubmissionInProgress),
+        _ => None,
+    };
+    if let Some(error) = specific_reason {
+        return error;
+    }
     match (status, code) {
         (429, _) => AccountError::RateLimited,
         (403, Some("DAILY_LIMIT_REACHED")) => AccountError::DailyLimit,
@@ -468,6 +482,7 @@ mod tests {
             .unwrap()
             .decision_fen;
         let dto = serde_json::to_value(verdict(VERDICT.as_bytes(), &decision).unwrap()).unwrap();
+        assert_eq!(dto["correctVariation"], json!(["e7e5", "g1f3", "b8c6"]));
         let mut keys: Vec<_> = dto
             .as_object()
             .unwrap()
@@ -625,34 +640,38 @@ mod tests {
         for (status, body, expected) in [
             (
                 403,
-                json!({"code":"DAILY_LIMIT_REACHED"}),
+                json!({"error":{"code":"DAILY_LIMIT_REACHED","message":"Daily limit reached","details":{"limit":10}}}),
                 AccountError::DailyLimit,
             ),
             (
                 403,
-                json!({"detail":{"details":{"reason":"desktop_route_forbidden"}}}),
+                json!({"error":{"code":"FORBIDDEN","message":"Desktop route forbidden","details":{"reason":"desktop_route_forbidden"}}}),
                 AccountError::UpdateRequired,
             ),
             (
                 409,
-                json!({"detail":{"code":"CLIENT_UPDATE_REQUIRED"}}),
+                json!({"error":{"code":"CLIENT_UPDATE_REQUIRED","message":"Client update required","details":null}}),
                 AccountError::UpdateRequired,
             ),
             (
                 409,
-                json!({"detail":{"code":"submission_in_progress"}}),
+                json!({"error":{"code":"CONFLICT","message":"Submission in progress","details":{"reason":"submission_in_progress","retry_after_ms":1000}}}),
                 AccountError::SubmissionInProgress,
             ),
             (429, json!({"message":"secret"}), AccountError::RateLimited),
             (
                 504,
-                json!({"code":"ENGINE_TIMEOUT"}),
+                json!({"error":{"code":"ENGINE_TIMEOUT","message":"Engine timed out","details":null}}),
                 AccountError::EngineTimeout,
             ),
-            (503, json!({"code":"ENGINE_BUSY"}), AccountError::EngineBusy),
             (
                 503,
-                json!({"code":"ENGINE_UNAVAILABLE"}),
+                json!({"error":{"code":"ENGINE_BUSY","message":"Engine busy","details":null}}),
+                AccountError::EngineBusy,
+            ),
+            (
+                503,
+                json!({"error":{"code":"ENGINE_UNAVAILABLE","message":"Engine unavailable","details":null}}),
                 AccountError::EngineUnavailable,
             ),
             (500, json!({"message":"secret"}), AccountError::Server),

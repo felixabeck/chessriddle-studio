@@ -5,6 +5,13 @@ import type { TrainingPuzzle } from "@/bindings";
 import { positionFromFen } from "./chessops";
 import { getBoardState } from "./treeReducer";
 
+// Mirrors the native submission bound from the server contract.
+export const MAX_TRAINING_SUBMISSION_PLIES = 7;
+// Mirrors the native duration bound from the server contract.
+export const MAX_TRAINING_DURATION_MS = 86_400_000;
+// Mirrors the native exclusion bound from the server contract.
+export const MAX_TRAINING_EXCLUSIONS = 50;
+
 function position(fen: string): Chess {
     const [pos] = positionFromFen(fen);
     if (!pos) throw new Error("Invalid training position");

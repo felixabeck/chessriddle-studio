@@ -298,7 +298,6 @@ fn token_response(status: u16, body: &[u8]) -> Result<Tokens, AccountError> {
 
 type BrowserOpener = Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
 enum Action {
-    Available,
     Next(TrainingSource, Vec<i32>),
     MistakeCount,
     Submit(TrainingSubmission),
@@ -308,7 +307,6 @@ enum Action {
     Disconnect,
 }
 enum Reply {
-    Available(bool),
     Puzzle(Option<TrainingPuzzle>),
     MistakeCount(u32),
     Verdict(TrainingVerdict),
@@ -323,6 +321,7 @@ struct Request {
 
 pub(crate) struct AccountOwner {
     sender: mpsc::Sender<Request>,
+    available: bool,
 }
 
 struct Worker {
@@ -343,6 +342,7 @@ impl AccountOwner {
         http: reqwest::Client,
     ) -> Self {
         let (sender, mut receiver) = mpsc::channel::<Request>(OWNER_QUEUE_CAPACITY);
+        let available = endpoints.available;
         // The worker owns every accepted request through its terminal state even if IPC is dropped.
         // Dropping the final sender drains the bounded queue, then drops all native tokens.
         tauri::async_runtime::spawn(async move {
@@ -361,7 +361,7 @@ impl AccountOwner {
                 let _ = request.reply.send(result);
             }
         });
-        Self { sender }
+        Self { sender, available }
     }
 
     async fn request(&self, action: Action) -> Result<Reply, AccountError> {
@@ -565,7 +565,9 @@ impl Worker {
         source: TrainingSource,
         exclusions: Vec<i32>,
     ) -> Result<Reply, AccountError> {
-        if exclusions.len() > 50 || exclusions.iter().any(|id| *id <= 0) {
+        if exclusions.len() > training::MAX_TRAINING_EXCLUSIONS
+            || exclusions.iter().any(|id| *id <= 0)
+        {
             return Err(AccountError::InvalidRequest);
         }
         let url = self.endpoints.api(match source {
@@ -770,15 +772,11 @@ impl Worker {
     }
 
     async fn execute(&mut self, action: Action) -> Result<Reply, AccountError> {
-        if matches!(action, Action::Available) {
-            return Ok(Reply::Available(self.endpoints.available));
-        }
         if !self.endpoints.available {
             return Err(AccountError::Unavailable);
         }
         self.load().await?;
         match action {
-            Action::Available => Ok(Reply::Available(self.endpoints.available)),
             Action::Next(source, exclusions) => self.next(source, exclusions).await,
             Action::MistakeCount => self.mistake_count().await,
             Action::Submit(request) => self.submit(request).await,
@@ -821,10 +819,7 @@ fn owner(state: &crate::AppState) -> Result<&AccountOwner, AccountError> {
 pub(crate) async fn chessriddle_training_available(
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<bool, AccountError> {
-    match owner(&state)?.request(Action::Available).await? {
-        Reply::Available(value) => Ok(value),
-        _ => Err(AccountError::Server),
-    }
+    Ok(owner(&state).is_ok_and(|owner| owner.available))
 }
 
 #[tauri::command]
@@ -1397,16 +1392,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn training_availability_bypasses_full_and_closed_queues_and_missing_owner() {
+        use tauri::Manager;
+
+        let app = tauri::test::mock_app();
+        app.manage(crate::AppState::default());
+        assert_eq!(chessriddle_training_available(app.state()).await, Ok(false));
+
+        for available in [false, true] {
+            let (sender, receiver) = mpsc::channel(OWNER_QUEUE_CAPACITY);
+            let owner = AccountOwner { sender, available };
+            for _ in 0..OWNER_QUEUE_CAPACITY {
+                let (reply, _) = oneshot::channel();
+                assert!(owner
+                    .sender
+                    .try_send(Request {
+                        action: Action::Status,
+                        reply
+                    })
+                    .is_ok());
+            }
+            assert!(matches!(
+                owner.request(Action::Status).await,
+                Err(AccountError::Busy)
+            ));
+            let state = crate::AppState::default();
+            assert!(state.chessriddle.set(owner).is_ok());
+            let app = tauri::test::mock_app();
+            app.manage(state);
+            assert_eq!(
+                chessriddle_training_available(app.state()).await,
+                Ok(available)
+            );
+            drop(receiver);
+            assert_eq!(
+                chessriddle_training_available(app.state()).await,
+                Ok(available)
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn training_availability_and_all_actions_are_release_gated() {
         let (_temp, credentials) = credentials(Arc::new(TestStore::default()), false).await;
         let fixture = Fixture::new(credentials.clone());
         let mut endpoints = fixture.endpoints.clone();
         endpoints.available = false;
         let owner = AccountOwner::start(credentials, endpoints, http_client().unwrap());
-        assert!(matches!(
-            owner.request(Action::Available).await.unwrap(),
-            Reply::Available(false)
-        ));
+        assert!(!owner.available);
         for action in [
             Action::Next(TrainingSource::Tactics, vec![]),
             Action::MistakeCount,
@@ -1432,10 +1465,7 @@ mod tests {
         let (_temp, credentials) = credentials(Arc::new(TestStore::default()), false).await;
         let fixture = Fixture::new(credentials);
         let owner = fixture.owner();
-        assert!(matches!(
-            owner.request(Action::Available).await.unwrap(),
-            Reply::Available(true)
-        ));
+        assert!(owner.available);
         assert!(matches!(
             owner
                 .request(Action::Next(TrainingSource::Tactics, vec![]))

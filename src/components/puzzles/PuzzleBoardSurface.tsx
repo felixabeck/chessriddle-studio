@@ -33,7 +33,9 @@ export default function PuzzleBoardSurface({
 }) {
   const { ref, height } = useElementSize();
   const reset = useForceUpdate();
-  const [pending, setPending] = useState<{ move: NormalMove; position: Chess } | null>(null);
+  const [pending, setPending] = useState<{ move: NormalMove; fen: string } | null>(null);
+  const positionFen = position ? makeFen(position.toSetup()) : undefined;
+  if (pending && pending.fen !== positionFen) setPending(null);
   const moveHighlight = useAtomValue(moveHighlightAtom);
   const coordinates = useAtomValue(showCoordinatesAtom);
   const turn = position?.turn ?? "white";
@@ -54,13 +56,13 @@ export default function PuzzleBoardSurface({
       <BoardFrame style={{ maxWidth: height }} withVariationChooser={withVariationChooser}>
         <Box className={classes.chessboard}>
           <PromotionModal
-            pendingMove={pending?.position === position && canPlay ? pending.move : null}
+            pendingMove={pending && pending.fen === positionFen && canPlay ? pending.move : null}
             cancelMove={() => {
               setPending(null);
               reset();
             }}
             confirmMove={(promotion) => {
-              if (pending?.position === position) play({ ...pending.move, promotion });
+              if (pending && pending.fen === positionFen) play({ ...pending.move, promotion });
             }}
             turn={turn}
             orientation={orientation}
@@ -88,14 +90,14 @@ export default function PuzzleBoardSurface({
                     position.board.get(from)?.role === "pawn" &&
                     ((dest[1] === "8" && turn === "white") || (dest[1] === "1" && turn === "black"))
                   )
-                    setPending({ move, position });
+                    setPending({ move, fen: makeFen(position.toSetup()) });
                   else play(move);
                 },
               },
             }}
             lastMove={moveHighlight && lastMove ? chessgroundMove(lastMove) : undefined}
             turnColor={turn}
-            fen={fen ?? (position ? makeFen(position.toSetup()) : undefined)}
+            fen={fen ?? positionFen}
             check={moveHighlight && position?.isCheck()}
           />
         </Box>

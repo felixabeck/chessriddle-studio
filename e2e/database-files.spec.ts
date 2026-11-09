@@ -19,11 +19,12 @@ import {
     whitePawnSquares,
     waitForScrollAreaScrollbarsHidden,
     dragMosaicDivider,
+    splitTextWords,
 } from "./fixtures";
 import type { Locator, Page } from "@playwright/test";
 
 async function openingLayout(tree: Locator) {
-    return tree.evaluate((element) => {
+    const layout = await tree.evaluate((element) => {
         const bounds = (node: Element) => {
             const rect = node.getBoundingClientRect();
             return { left: rect.left, right: rect.right, width: rect.width };
@@ -62,20 +63,6 @@ async function openingLayout(tree: Locator) {
                     );
             }
         }
-        const brokenWords: string[] = [];
-        for (const header of element.querySelectorAll("th, [data-opening-column-label]")) {
-            if (!header.getBoundingClientRect().width) continue;
-            const walker = document.createTreeWalker(header, NodeFilter.SHOW_TEXT);
-            while (walker.nextNode()) {
-                const node = walker.currentNode;
-                for (const match of (node.textContent ?? "").matchAll(/\S+/g)) {
-                    const range = document.createRange();
-                    range.setStart(node, match.index);
-                    range.setEnd(node, match.index + match[0].length);
-                    if (range.getClientRects().length > 1) brokenWords.push(match[0]);
-                }
-            }
-        }
         const clippedLabels: string[] = [];
         for (const label of element.querySelectorAll(".mantine-Progress-label")) {
             if (!label.textContent) continue;
@@ -93,10 +80,13 @@ async function openingLayout(tree: Locator) {
             card: bounds(element.closest(".mantine-Paper-root")!),
             ancestors,
             outside,
-            brokenWords,
             clippedLabels,
         };
     });
+    return {
+        ...layout,
+        brokenWords: await splitTextWords(tree.locator("th, [data-opening-column-label]")),
+    };
 }
 
 test("database-files: player opening recency fits narrow and font-scaled Openings in both themes", async ({

@@ -8,6 +8,9 @@ import type {
 import { ChessRiddleCommandError } from "@/platform/chessriddle";
 import { tauri } from "@/platform/tauri";
 import {
+    MAX_TRAINING_SUBMISSION_PLIES,
+    MAX_TRAINING_DURATION_MS,
+    MAX_TRAINING_EXCLUSIONS,
     appendTrainingMove,
     canSubmitTraining,
     trainingDecision,
@@ -117,7 +120,7 @@ export function createChessRiddleTrainingSessions(
             timedOutMistakeIds = [
                 ...timedOutMistakeIds.filter((id) => id !== entry.state.puzzle!.id),
                 entry.state.puzzle.id,
-            ].slice(-50);
+            ].slice(-MAX_TRAINING_EXCLUSIONS);
         }
         publish(entry, { phase: "error", error, failedOperation: operation, timedOutMistakeIds });
     };
@@ -199,7 +202,7 @@ export function createChessRiddleTrainingSessions(
             if (!current(tabId, entry, identity)) return;
             publish(entry, {
                 verdict,
-                inputCap: verdict.tooShort ? 7 : entry.state.inputCap,
+                inputCap: verdict.tooShort ? MAX_TRAINING_SUBMISSION_PLIES : entry.state.inputCap,
                 submitThreshold: verdict.tooShort
                     ? request.line.length + 1
                     : entry.state.submitThreshold,
@@ -226,7 +229,7 @@ export function createChessRiddleTrainingSessions(
             decisionFen: puzzle.decisionFen,
             line: frozenLine,
             elapsedMs: Math.min(
-                86_400_000,
+                MAX_TRAINING_DURATION_MS,
                 Math.max(0, Math.floor(now() - (elapsedStart ?? now()))),
             ),
             solutionShown,

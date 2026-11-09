@@ -8,7 +8,9 @@ import {
     expect,
     playBoardMove,
     preserveStorageForReload,
+    splitTextWords,
     test,
+    waitForTransitionsSettled,
     type MockScenario,
 } from "./fixtures";
 
@@ -57,12 +59,10 @@ async function playTrainingMove(page: Page, board: Locator, from: string, to: st
 
 async function captureTraining(page: Page, target: Page | Locator, name: string) {
     await page.mouse.move(0, 0);
-    await page.evaluate(async () => {
+    await page.evaluate(() => {
         (document.activeElement as HTMLElement | null)?.blur();
-        await Promise.all(
-            document.getAnimations().map((animation) => animation.finished.catch(() => undefined)),
-        );
     });
+    await waitForTransitionsSettled(page);
     await expect(page.getByRole("tooltip")).toHaveCount(0);
     await page.evaluate(() => document.fonts.ready);
     if (target !== page) {
@@ -78,24 +78,16 @@ async function captureTraining(page: Page, target: Page | Locator, name: string)
 }
 
 async function assertControlLabelsFit(panel: Locator) {
-    const broken = await panel.locator(".mantine-Button-label").evaluateAll((labels) =>
-        labels.flatMap((label) => {
-            const walker = document.createTreeWalker(label, NodeFilter.SHOW_TEXT);
-            const words: string[] = [];
-            let node: Node | null;
-            while ((node = walker.nextNode())) {
-                for (const match of node.textContent?.matchAll(/\S+/g) ?? []) {
-                    const range = document.createRange();
-                    range.setStart(node, match.index);
-                    range.setEnd(node, match.index + match[0].length);
-                    if (range.getClientRects().length > 1) words.push(match[0]);
-                }
-            }
-            if (label.scrollWidth > label.clientWidth + 1) words.push(label.textContent ?? "");
-            return words;
-        }),
+    const labels = panel.locator(".mantine-Button-label");
+    expect(await splitTextWords(labels), "button labels must fit without splitting words").toEqual(
+        [],
     );
-    expect(broken, "button labels must fit without splitting words").toEqual([]);
+    const clipped = await labels.evaluateAll((elements) =>
+        elements
+            .filter((label) => label.scrollWidth > label.clientWidth + 1)
+            .map((label) => label.textContent ?? ""),
+    );
+    expect(clipped, "button labels must fit without clipping").toEqual([]);
 }
 
 for (const locale of ["en-US", "de-DE"] as const) {
@@ -168,6 +160,23 @@ for (const locale of ["en-US", "de-DE"] as const) {
                 await expect(
                     page.locator("#bottomRight").getByRole("button", { name: "Nc6", exact: true }),
                 ).toBeVisible();
+                // Returning to an overflowing tab can retain scrollIntoView's 4px inset scroll.
+                // Capture the overview from the tab strip's start, as in the solving capture.
+                const trainingTab = page.getByRole("tab", {
+                    name: text("Training.Title"),
+                    exact: true,
+                });
+                await trainingTab.evaluate((tab) => {
+                    tab.closest(".mantine-ScrollArea-viewport")?.scrollTo({
+                        left: 0,
+                        behavior: "instant",
+                    });
+                });
+                expect(
+                    await trainingTab.evaluate(
+                        (tab) => tab.closest(".mantine-ScrollArea-viewport")?.scrollLeft,
+                    ),
+                ).toBe(0);
                 await panel
                     .getByRole("button", { name: text("Training.Submit"), exact: true })
                     .click();
