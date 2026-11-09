@@ -22555,6 +22555,9 @@ Recurred on master fa4ce4dc in **CI run:** 42646431017 (job 129260809032), same 
 * **Open question:** Why does that scrollbar stay visible, and should the screenshot hide or scope scrollbars rather than wait page-wide?
 * **Proof:** Run the full e2e container lane repeatedly with this test included and see no timeout at this wait.
 
+**Recurrence on master, 2026-11-09 (drain session 1b8508c6-3e3b-4453-98e1-8fe1f9fb47ca):** **CI run:** 42695285428, job `e2e` 129425384735, on master 670467a5. 403 passed and 1 failed, the same test at the same wait: `waitForScrollAreaScrollbarsHidden` (`e2e/fixtures.ts:217`) called from `e2e/engine-gap.spec.ts:604`, `Expected: 0`, `Received: 1`, 19 polls over 8000 ms. The local container e2e lane passed on the same test set an hour earlier (drain push gates, run dir `artifacts/gates/20261109T204221777Z-2856582`). This red job makes `pnpm ci:remote:check` refuse every code push until this finding is repaired.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"7aa939b8292beac23c0d96e295e4c1c9a32b2d79a6d3e2dc60786ff5660320d1","input_sha256":"51db3b874f3c8e92191356621de0b12ac1529bd74b15ffee583511fb28a2d936","kind":"mutation-receipt","operation":"23902eda283672b72f430fb8a5fb77723ce8014bfd0019f63788c4b5486dd130","options":{"section":null},"request_id_sha256":null,"results":["f-20261109-05"],"target":"f-20261109-05","v":1} -->
+
 ---
 
 ## 2026-11-09 — filed through the inbox spool
