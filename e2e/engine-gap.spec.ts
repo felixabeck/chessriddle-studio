@@ -309,7 +309,7 @@ async function setupAnalysisEngine(page: Page, engineCount = 1) {
         })),
     );
     await page.goto("/");
-    await page.getByRole("button", { name: /^open$/i }).click();
+    await page.getByRole("button", { name: /^analysis board$/i }).click();
     await page.getByRole("tab", { name: "Analysis", exact: true }).click();
     await page
         .getByRole("button", {

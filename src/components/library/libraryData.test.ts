@@ -48,6 +48,20 @@ function database(id: string): ManagedDatabaseInfo {
 }
 
 describe("Library projection", () => {
+    test("converts native seconds to milliseconds for file and collection modification times", () => {
+        const seconds = Date.UTC(2026, 10, 8, 12) / 1000;
+        const source = { ...file("file"), lastModified: seconds };
+        const linkedSource = { ...file("collection"), lastModified: seconds - 60 };
+        const result = projectLibrary({
+            entries: [source, linkedSource],
+            collections: [collection("collection")],
+        });
+        expect(result.rows.map(({ kind, modified }) => ({ kind, modified }))).toEqual([
+            { kind: "file", modified: seconds * 1000 },
+            { kind: "collection", modified: (seconds - 60) * 1000 },
+        ]);
+    });
+
     test("flattens nested repertoires, joins one linked row, excludes retired and trashed collections and conversion targets, and keeps external recents", () => {
         const nested = file("twelfth", "repertoire");
         const linked = collection("linked");

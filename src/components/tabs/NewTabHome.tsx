@@ -8,23 +8,24 @@ import {
   Card,
   Group,
   ScrollArea,
-  SimpleGrid,
+  SegmentedControl,
+  TextInput,
   Stack,
   Text,
   Tooltip,
   UnstyledButton,
   useMatches,
 } from "@mantine/core";
-import { atom, useAtom, useSetAtom, useStore } from "jotai";
+import { useAtom, useSetAtom, useStore } from "jotai";
 import equal from "fast-deep-equal";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useDueBoundaryRerender } from "@/components/panels/practice/useDueBoundaryRerender";
+import { useCallback, useEffect, useRef, useState } from "react";
+
 import {
   addRecentFileAtom,
   updateRecentFilesAtom,
   isDatabaseRecent,
   recentFileKey,
-  deckAtomFamily,
+  lastOpenedAtom,
   type RecentFile,
   recentFilesAtom,
   tabsAtom,
@@ -40,19 +41,48 @@ import {
   Clock,
   FileInput as FileInputIcon,
   Puzzle,
-  Target,
   Crosshair,
+  Search,
+  ScanSearch,
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import { useTranslation } from "react-i18next";
-import { fileWorkspaceKey } from "@/utils/pathCapabilities";
-import { getStats } from "@/components/files/opening";
-import Chessboard from "../icons/Chessboard";
+
 import { FileIcon } from "@/components/files/FileIcon";
 
+import { useLibraryData } from "@/components/library/useLibraryData";
+import { useLibraryDueCounts } from "@/components/library/useLibraryDueCounts";
+import { useOwnGamesFeed } from "@/components/library/useOwnGamesFeed";
+import { openStandaloneDatabase } from "@/components/library/openStandaloneDatabase";
+import { compareLibraryRows, type LibraryRow } from "@/components/library/libraryData";
+import type { OwnGame } from "@/components/library/ownGamesFeed";
+import type { FileMetadata, FileType } from "@/components/files/file";
+import { databaseGameOpenedKey } from "@/state/lastOpened";
+import { query_games } from "@/utils/db";
+
 dayjs.extend(relativeTime);
+
+type HomeRow =
+  | LibraryRow
+  | {
+      kind: "game";
+      key: string;
+      name: string;
+      modified: number;
+      opened?: number;
+      recent?: Extract<RecentFile, { kind: "database" }>;
+      own?: OwnGame;
+    };
+
+function rowFileType(row: HomeRow): FileType {
+  return row.kind === "file"
+    ? "metadata" in row.file
+      ? row.file.metadata.type
+      : row.file.type
+    : "game";
+}
 
 const recentFileDateFormat = "YYYY-MM-DD HH:mm";
 
@@ -61,72 +91,73 @@ function RecentFileDuePositions({ count }: { count: number | null }) {
   if (!count) return null;
 
   return (
-    <Badge size="sm" variant="light" color="warning" leftSection={<Target size="0.75rem" />}>
+    <Badge className={classes.dueBadge} size="sm" variant="light" color="warning">
       {count} {t("Board.Practice.Due")}
     </Badge>
   );
 }
 
-function useRecentDisplayName() {
-  const { t, i18n } = useTranslation();
-  return (file: RecentFile) =>
-    file.name === "Unknown"
-      ? `${t("Home.RecentFiles.UntitledGame")} · ${new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium" }).format(file.lastOpened)}`
-      : file.name.replace(/\.pgn$/i, "");
-}
-
-function RecentFileRow({
-  file,
+function LibraryItemRow({
+  row,
   count,
+  secondary,
+  disabled,
   onOpen,
 }: {
-  file: RecentFile;
+  row: HomeRow;
   count: number | null;
-  onOpen: (file: RecentFile) => void;
+  secondary?: string;
+  disabled: boolean;
+  onOpen: (row: HomeRow) => void;
 }) {
-  const displayName = useRecentDisplayName()(file);
-
+  const { t, i18n } = useTranslation();
+  const time = row.opened ?? row.modified;
+  const own = row.kind === "game" ? row.own : undefined;
+  const gameDate = own?.game.date;
+  const name =
+    row.name === "Unknown"
+      ? `${t("Home.RecentFiles.UntitledGame")} · ${new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium" }).format(time)}`
+      : row.name.replace(/\.pgn$/i, "");
   return (
     <UnstyledButton
-      onClick={() => onOpen(file)}
-      px="sm"
-      py={6}
-      style={{
-        borderRadius: "var(--mantine-radius-sm)",
-      }}
-      className={classes.recentFileRow}
-      data-recent-file
+      className={classes.libraryRow}
+      disabled={disabled}
+      onClick={() => onOpen(row)}
+      data-library-row
+      data-kind={row.kind}
     >
-      <Group justify="space-between" wrap="nowrap">
-        <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
-          <Box style={{ flexShrink: 0, color: "var(--mantine-color-dimmed)" }}>
-            <FileIcon type={isDatabaseRecent(file) ? "game" : file.type} size={20} />
-          </Box>
-          <Box style={{ minWidth: 0 }}>
-            <Text size="sm" truncate fw={500}>
-              {displayName}
-            </Text>
-            {isDatabaseRecent(file) && file.databaseTitle && (
-              <Text size="xs" c="dimmed" truncate>
-                {file.databaseTitle}
-              </Text>
-            )}
-          </Box>
-          {!isDatabaseRecent(file) && file.type === "repertoire" && (
-            <RecentFileDuePositions count={count} />
-          )}
+      <FileIcon type={rowFileType(row)} size={20} className={classes.icon} />
+      <Box className={classes.rowContent}>
+        <Group gap={4} wrap="nowrap">
+          <Text className={classes.rowName} size="sm" fw={500}>
+            {name}
+          </Text>
+          <RecentFileDuePositions count={count} />
         </Group>
-        <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
-          <Tooltip label={dayjs(file.lastOpened).format(recentFileDateFormat)}>
-            <Group gap={4} wrap="nowrap">
-              <Clock size={14} style={{ color: "var(--mantine-color-dimmed)" }} />
+        {secondary && (
+          <Text size="xs" c="dimmed" className={classes.secondary}>
+            {secondary}
+          </Text>
+        )}
+      </Box>
+      {own ? (
+        gameDate && gameDate !== "????.??.??" ? (
+          <Text size="xs" c="dimmed" className={classes.time}>
+            {gameDate}
+          </Text>
+        ) : null
+      ) : (
+        time > 0 && (
+          <Tooltip label={dayjs(time).format(recentFileDateFormat)}>
+            <Group gap={4} wrap="nowrap" className={classes.time}>
+              <Clock size={14} />
               <Text size="xs" c="dimmed">
-                {dayjs(file.lastOpened).fromNow()}
+                {dayjs(time).fromNow()}
               </Text>
             </Group>
           </Tooltip>
-        </Group>
-      </Group>
+        )
+      )}
     </UnstyledButton>
   );
 }
@@ -142,53 +173,23 @@ export default function NewTabHome({ id }: { id: string }) {
   const [recentFiles, setRecentFiles] = useAtom(recentFilesAtom);
   const addRecentFile = useSetAtom(addRecentFileAtom);
   const updateRecentFiles = useSetAtom(updateRecentFilesAtom);
-  const deckRowsAtom = useMemo(
-    () =>
-      atom((get) =>
-        recentFiles
-          .filter(
-            (file): file is Extract<RecentFile, { handle: unknown }> =>
-              !isDatabaseRecent(file) && file.type === "repertoire",
-          )
-          .map((file) => {
-            const deck = get(deckAtomFamily({ file: fileWorkspaceKey(file.handle), game: 0 }));
-            return { file, deck };
-          }),
-      ),
-    [recentFiles],
-  );
-  const [decks] = useAtom(deckRowsAtom);
-  // Atoms cache deck data. Time-dependent counts must refresh on the due-boundary render.
-  const deckRows = decks.map(({ file, deck }) => {
-    const failed =
-      deck.status === "read-failed" ||
-      deck.status === "write-blocked" ||
-      (deck.status !== "loading" && deck.status !== "write-pending" && !!deck.error);
-    const stats =
-      !failed && (deck.status === "ready" || deck.status === "write-pending")
-        ? getStats(deck.positions)
-        : null;
-    return {
-      file,
-      count: stats ? stats.due + stats.unseen : null,
-      nextDue: stats?.nextDue,
-      failed,
-    };
-  });
-  const nextDue = deckRows.reduce<Date | null>(
-    (earliest, row) =>
-      row.nextDue && (!earliest || row.nextDue < earliest) ? row.nextDue : earliest,
-    null,
-  );
-  useDueBoundaryRerender(nextDue, id);
-  const dueRows = deckRows
-    .filter((row) => row.failed || (row.count ?? 0) > 0)
-    .sort((a, b) => (b.count ?? 0) - (a.count ?? 0) || b.file.lastOpened - a.file.lastOpened);
-  const incomplete = deckRows.some((row) => row.count === null);
-  const displayName = useRecentDisplayName();
   const navigate = useNavigate();
-  // The theme's lg scales with the app font size, so both home rows change layout together.
-  const wide = useMatches({ base: false, lg: true }, { getInitialValueInEffect: false });
+  const [lastOpened] = useAtom(lastOpenedAtom);
+  const [filter, setFilter] = useState("all");
+  const [query, setQuery] = useState("");
+  const filterOrientation = useMatches({ base: "vertical", sm: "horizontal" } as const, {
+    getInitialValueInEffect: false,
+  });
+  const search = query.trim();
+  const library = useLibraryData();
+  const due = useLibraryDueCounts(library.rows);
+  const feed = useOwnGamesFeed(
+    library.collections,
+    search,
+    filter === "games" || (filter === "all" && !!search),
+  );
+  const opening = useRef<AbortController | null>(null);
+  useEffect(() => () => opening.current?.abort(), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -244,7 +245,7 @@ export default function NewTabHome({ id }: { id: string }) {
   }, [recentFiles, updateRecentFiles]);
 
   const openRecentFile = useCallback(
-    async (file: RecentFile, panel?: "practice") => {
+    async (file: RecentFile, panel?: "practice", source?: FileMetadata) => {
       try {
         if (isDatabaseRecent(file)) {
           const result = await tauri.getDbGame(file.database, file.gameId, file.linked ?? null);
@@ -277,11 +278,16 @@ export default function NewTabHome({ id }: { id: string }) {
             name: file.name,
             handle: file.handle,
             numGames,
-            metadata: { type: file.type, tags: [] },
-            lastModified: Date.now(),
+            metadata: source?.metadata ?? { type: file.type, tags: [] },
+            lastModified: source?.lastModified ?? Date.now(),
           },
           setTabs,
-          { tabName: file.name, ownerId: id, store, ...(panel ? { panel } : {}) },
+          {
+            ...(!source ? { tabName: file.name } : {}),
+            ownerId: id,
+            store,
+            ...(panel ? { panel } : {}),
+          },
         );
         if (tabId === null) return;
         navigate({ to: "/" });
@@ -297,10 +303,143 @@ export default function NewTabHome({ id }: { id: string }) {
     [setTabs, setRecentFiles, addRecentFile, navigate, t, id, store],
   );
 
+  const openRow = async (row: HomeRow) => {
+    if (row.kind === "file") {
+      const file = row.file;
+      await openRecentFile(
+        "metadata" in file
+          ? {
+              name: file.name,
+              handle: file.handle,
+              type: file.metadata.type,
+              lastOpened: row.opened ?? row.modified,
+            }
+          : file,
+        filter === "due" ? "practice" : undefined,
+        "metadata" in file ? file : undefined,
+      );
+      return;
+    }
+    if (row.kind === "game" && row.recent) {
+      await openRecentFile(row.recent);
+      return;
+    }
+    opening.current?.abort();
+    const controller = new AbortController();
+    opening.current = controller;
+    try {
+      if (row.kind === "database") {
+        if (row.database.type !== "success") throw new Error(t("Home.Library.OpenFailed"));
+        openStandaloneDatabase(row.database, navigate);
+      } else if (row.kind === "collection" && row.collection.database) {
+        const database = row.collection.database;
+        const metadata = await tauri.getDbInfo(database);
+        if (controller.signal.aborted) return;
+        if (metadata.status !== "ready") throw new Error(t("Home.Library.OpenFailed"));
+        if (metadata.game_count === 1) {
+          const result = await query_games(
+            database,
+            {
+              options: { sort: "newest", direction: "desc", page: 1, pageSize: 1, skipCount: true },
+            },
+            { signal: controller.signal },
+          );
+          if (controller.signal.aborted) return;
+          const game = result.data[0];
+          if (!game) throw new Error(t("Home.Library.OpenFailed"));
+          const tabId = await openDatabaseGame({
+            game,
+            database,
+            databaseTitle: row.name,
+            setTabs,
+            addRecentFile,
+            ownerId: id,
+            store,
+          });
+          if (tabId !== null) navigate({ to: "/" });
+        } else
+          openStandaloneDatabase(
+            { ...metadata, type: "success", file: database, collection: row.collection },
+            navigate,
+          );
+      } else if (row.kind === "game" && row.own) {
+        const tabId = await openDatabaseGame({
+          game: row.own.game,
+          database: row.own.collection.database,
+          databaseTitle: row.own.collection.name,
+          setTabs,
+          addRecentFile,
+          ownerId: id,
+          store,
+        });
+        if (tabId !== null) navigate({ to: "/" });
+      }
+    } catch (cause) {
+      if (!controller.signal.aborted) notifyUnlessCancelled(t("Home.Library.OpenFailed"), cause);
+    } finally {
+      if (opening.current === controller) opening.current = null;
+    }
+  };
+
+  const matches = (row: HomeRow) =>
+    row.name.toLocaleLowerCase().includes(search.toLocaleLowerCase());
+  const recentGames: HomeRow[] = recentFiles
+    .filter(isDatabaseRecent)
+    .map((recent) => ({
+      kind: "game" as const,
+      key: databaseGameOpenedKey(recent.database, recent.gameId),
+      name: recent.name,
+      modified: 0,
+      opened: Math.max(
+        recent.lastOpened,
+        lastOpened[databaseGameOpenedKey(recent.database, recent.gameId)] ?? 0,
+      ),
+      recent,
+    }))
+    .sort(compareLibraryRows)
+    .slice(0, 10);
+  const ownGames: HomeRow[] = feed.games.map((own) => ({
+    kind: "game",
+    key: databaseGameOpenedKey(own.collection.database!, own.game.id),
+    name: `${own.game.white} - ${own.game.black}`,
+    modified: 0,
+    own,
+    opened: lastOpened[databaseGameOpenedKey(own.collection.database!, own.game.id)],
+  }));
+  let rows: HomeRow[];
+  if (filter === "due") {
+    rows = [...due.dueRows]
+      .sort((a, b) => (b.count ?? 0) - (a.count ?? 0) || compareLibraryRows(a.file, b.file))
+      .map((row) => row.file)
+      .filter(matches);
+  } else if (filter === "repertoires") {
+    rows = library.rows.filter((row) => rowFileType(row) === "repertoire" && matches(row));
+  } else if (filter === "games") {
+    rows = [
+      ...library.rows.filter((row) => row.kind === "database" && matches(row)),
+      ...library.rows.filter(
+        (row) => row.kind === "file" && rowFileType(row) === "game" && matches(row),
+      ),
+      ...ownGames,
+    ];
+  } else {
+    rows = search
+      ? library.rows.filter(matches)
+      : [...library.rows, ...recentGames].sort(compareLibraryRows);
+    if (search) {
+      const seen = new Set(rows.map((row) => row.key));
+      for (const row of [...recentGames.filter(matches), ...ownGames]) {
+        if (!seen.has(row.key)) {
+          rows.push(row);
+          seen.add(row.key);
+        }
+      }
+    }
+  }
+  const incomplete = library.loading || due.incomplete;
   const cards = [
     {
-      icon: <ChessKnight size={60} />,
-      title: t("Home.Card.PlayChess.Title"),
+      icon: <ChessKnight size={18} />,
       description: t("Home.Card.PlayChess.Desc"),
       label: t("Home.Card.PlayChess.Button"),
       onClick: () => {
@@ -312,10 +451,9 @@ export default function NewTabHome({ id }: { id: string }) {
       },
     },
     {
-      icon: <Chessboard size={60} />,
-      title: t("Home.Card.AnalysisBoard.Title"),
+      icon: <ScanSearch size={18} />,
       description: t("Home.Card.AnalysisBoard.Desc"),
-      label: t("Home.Card.AnalysisBoard.Button"),
+      label: t("Home.Card.AnalysisBoard.Title"),
       onClick: () => {
         setTabs((prev: Tab[]) =>
           prev.map((tab) =>
@@ -327,17 +465,15 @@ export default function NewTabHome({ id }: { id: string }) {
       },
     },
     {
-      icon: <Crosshair size={60} />,
-      title: t("Home.Card.NewRepertoire.Title"),
+      icon: <Crosshair size={18} />,
       description: t("Home.Card.NewRepertoire.Desc"),
-      label: t("Home.Card.NewRepertoire.Button"),
+      label: t("Home.Card.NewRepertoire.Title"),
       onClick: () => {
         setOpenRepertoireModal(true);
       },
     },
     {
-      icon: <FileInputIcon size={60} />,
-      title: t("Home.Card.ImportGame.Title"),
+      icon: <FileInputIcon size={18} />,
       description: t("Home.Card.ImportGame.Desc"),
       label: t("Home.Card.ImportGame.Button"),
       onClick: () => {
@@ -345,10 +481,9 @@ export default function NewTabHome({ id }: { id: string }) {
       },
     },
     {
-      icon: <Puzzle size={60} />,
-      title: t("Home.Card.Puzzle.Title"),
+      icon: <Puzzle size={18} />,
       description: t("Home.Card.Puzzle.Desc"),
-      label: t("Home.Card.Puzzle.Button"),
+      label: t("Home.Card.Puzzle.Title"),
       onClick: () => {
         setTabs((prev) =>
           prev.map((tab) =>
@@ -369,110 +504,146 @@ export default function NewTabHome({ id }: { id: string }) {
       />
       <CreateRepertoireModal opened={openRepertoireModal} setOpened={setOpenRepertoireModal} />
       <Stack gap="md" className={classes.home}>
-        <SimpleGrid cols={{ base: 1, sm: 2, lg: 5 }} className={classes.actions}>
-          {cards.map((card) => (
-            <Card shadow="sm" p="lg" radius="md" withBorder key={card.title} data-home-action>
-              <Stack align="center" h="100%" justify="space-between">
-                {card.icon}
-
-                <Box style={{ textAlign: "center" }}>
-                  <Text fw={500}>{card.title}</Text>
-                  <Text size="sm" c="dimmed">
-                    {card.description}
-                  </Text>
-                </Box>
-
-                <Button variant="light" fullWidth mt="md" radius="md" onClick={card.onClick}>
-                  {card.label}
-                </Button>
-              </Stack>
-            </Card>
+        <Group gap="md" className={classes.actions} data-home-actions>
+          {[
+            [cards[0], cards[1], cards[4]],
+            [cards[2], cards[3]],
+          ].map((group, index) => (
+            <Group gap="md" key={index}>
+              {group.map((action) => (
+                <Tooltip label={action.description} key={action.label}>
+                  <Button
+                    variant="default"
+                    leftSection={action.icon}
+                    onClick={action.onClick}
+                    className={classes.action}
+                    data-home-action
+                  >
+                    {action.label}
+                  </Button>
+                </Tooltip>
+              ))}
+            </Group>
           ))}
-        </SimpleGrid>
-
-        <Box className={classes.bottom} data-wide={wide || undefined}>
-          <Card p="md" radius="md" withBorder className={classes.bottomCard} data-home-recents>
-            <Text fw={600} size="lg" mb="xs" data-home-title>
-              {t("Home.RecentFiles.Title")}
+        </Group>
+        <Card withBorder className={classes.library} data-home-library>
+          <Stack gap="md" mih={0} flex={1}>
+            <Text fw={600} size="lg" data-home-title>
+              {t("Library.Title")}
             </Text>
-            {recentFiles.length === 0 ? (
-              <Stack align="center" justify="center" h={200} gap="xs">
-                <Clock size={48} style={{ opacity: 0.3 }} />
-                <Text c="dimmed">{t("Home.RecentFiles.NoRecentFiles")}</Text>
-              </Stack>
-            ) : (
-              <ScrollArea className={classes.list} data-home-list>
-                <Stack gap={2}>
-                  {recentFiles.map((file) => (
-                    <RecentFileRow
-                      key={recentFileKey(file)}
-                      file={file}
-                      count={
-                        deckRows.find((row) => recentFileKey(row.file) === recentFileKey(file))
-                          ?.count ?? null
-                      }
-                      onOpen={openRecentFile}
-                    />
-                  ))}
-                </Stack>
-              </ScrollArea>
+            <TextInput
+              aria-label={t("Home.Library.Search")}
+              placeholder={t("Home.Library.Search")}
+              leftSection={<Search size={16} />}
+              value={query}
+              onChange={(event) => setQuery(event.currentTarget.value)}
+            />
+            <SegmentedControl
+              orientation={filterOrientation}
+              className={classes.filters}
+              value={filter}
+              onChange={setFilter}
+              data={[
+                { value: "all", label: t("Home.Library.All") },
+                { value: "repertoires", label: t("Home.Library.Repertoires") },
+                { value: "games", label: t("Home.Library.Games") },
+                { value: "due", label: t("Home.Library.Due") },
+              ]}
+            />
+            {!library.workspace && (
+              <Text size="sm" c="dimmed">
+                {t("Home.Library.NoWorkspace")}
+              </Text>
             )}
-          </Card>
-          <Card p="md" radius="md" withBorder className={classes.bottomCard} data-home-due>
-            <Text fw={600} size="lg" mb="xs">
-              {t("Home.DuePractice.Title")}
-            </Text>
-            {dueRows.length > 0 && (
-              <Text size="sm" c="dimmed" mb="xs">
+            {(library.listingError ||
+              library.databaseError ||
+              library.unread.length > 0 ||
+              library.failedFiles.length > 0 ||
+              library.unreadDatabases.length > 0) && (
+              <Text size="sm" role="status">
+                {t("Home.Library.LoadFailed")}
+              </Text>
+            )}
+            {feed.incompleteCount > 0 && (
+              <Text size="sm" role="status">
+                {t("Home.Library.GamesIncomplete", { collections: feed.incompleteCount })}
+              </Text>
+            )}
+            {filter === "games" && library.collections === undefined && !library.loading && (
+              <Text size="sm" c="dimmed">
+                {t("Home.Library.GameFiles")}
+              </Text>
+            )}
+            {filter === "due" && due.dueRows.length > 0 && (
+              <Text size="sm" c="dimmed">
                 {t("Home.DuePractice.Total", {
-                  positions: dueRows.reduce((total, row) => total + (row.count ?? 0), 0),
-                  repertoires: dueRows.filter((row) => row.count !== null).length,
+                  positions: due.total,
+                  repertoires: due.dueRows.filter((row) => row.count !== null).length,
                 })}
                 {incomplete && <> · {t("Home.DuePractice.Incomplete")}</>}
               </Text>
             )}
-            <ScrollArea className={classes.list}>
-              <Stack gap="sm">
-                {dueRows.map(({ file, count, failed }) => (
-                  <Group
-                    key={fileWorkspaceKey(file.handle)}
-                    justify="space-between"
-                    wrap="wrap"
-                    data-due-file
-                  >
-                    <Box style={{ minWidth: 0, flex: 1 }}>
-                      <Text size="sm" fw={500} truncate>
-                        {displayName(file)}
-                      </Text>
-                      {failed ? (
-                        <Text size="xs" c="dimmed">
-                          {t("Home.DuePractice.LoadFailed")}
-                        </Text>
-                      ) : (
-                        <Badge size="sm" variant="light" color="warning">
-                          {count} {t("Board.Practice.Due")}
-                        </Badge>
-                      )}
-                    </Box>
-                    <Button
-                      size="xs"
-                      variant="light"
-                      onClick={() => void openRecentFile(file, "practice")}
-                    >
-                      {t("Board.Tabs.Practice")}
-                    </Button>
-                  </Group>
-                ))}
-                {!incomplete && dueRows.length === 0 && (
-                  <Text c="dimmed">{t("Home.DuePractice.NothingDue")}</Text>
+            <ScrollArea className={classes.list} data-home-list>
+              <Stack gap={0}>
+                {rows.map((row) => {
+                  const practice = due.rows.find((entry) => entry.file.key === row.key);
+                  const disabled =
+                    row.kind === "collection" &&
+                    (!row.collection.database || row.collection.status !== "ready");
+                  const secondary = disabled
+                    ? t("Home.Library.CollectionUnavailable")
+                    : practice?.failed
+                      ? t("Home.DuePractice.LoadFailed")
+                      : row.kind === "game"
+                        ? (row.recent?.databaseTitle ?? row.own?.collection.name)
+                        : row.kind === "database"
+                          ? t("Library.GamesDatabase")
+                          : undefined;
+                  return (
+                    <LibraryItemRow
+                      key={row.key}
+                      row={row}
+                      count={practice?.count ?? null}
+                      secondary={secondary}
+                      disabled={disabled}
+                      onOpen={(item) => void openRow(item)}
+                    />
+                  );
+                })}
+                {(library.loading ||
+                  feed.loading ||
+                  (filter === "due" && due.incomplete && rows.length === 0)) && (
+                  <Text size="sm" c="dimmed" role="status">
+                    {t("Common.Loading")}
+                  </Text>
                 )}
-                {incomplete && dueRows.length === 0 && (
-                  <Text c="dimmed">{t("Common.Loading")}</Text>
+                {rows.length === 0 && !library.loading && !feed.loading && (
+                  <Text c="dimmed">
+                    {filter === "due" && !incomplete
+                      ? t("Home.DuePractice.NothingDue")
+                      : t("Home.Library.Empty")}
+                  </Text>
+                )}
+                {feed.active && feed.hasMore && (
+                  <Button
+                    variant="subtle"
+                    loading={feed.loading}
+                    onClick={() => void feed.showMore()}
+                  >
+                    {t("Home.Library.ShowMore")}
+                  </Button>
                 )}
               </Stack>
             </ScrollArea>
-          </Card>
-        </Box>
+            <Button
+              variant="subtle"
+              className={classes.libraryLink}
+              onClick={() => void navigate({ to: "/library" })}
+            >
+              {t("Home.Library.OpenLibrary")}
+            </Button>
+          </Stack>
+        </Card>
       </Stack>
     </>
   );

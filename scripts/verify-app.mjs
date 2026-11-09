@@ -1050,10 +1050,9 @@ async function verifyDirtyTabQuitAndRestart() {
   );
   const analysisOpen = await reachableStableCoordinates(
     session,
-    "Analysis Board Open",
+    "Analysis board",
     `[...document.querySelectorAll('button')].find((node) =>
-      node.textContent.trim() === 'Open' &&
-      node.closest('.mantine-Card-root')?.textContent.includes('Analysis Board'))`,
+      node.textContent.trim() === 'Analysis board')`,
   );
   await clickAt(session, analysisOpen.x, analysisOpen.y);
   await waitFor(
@@ -1141,7 +1140,7 @@ async function verifyDirtyTabQuitAndRestart() {
     const tree = rawTree && deserializeStorageValue(rawTree)?.state;
     if (
       tab.type === "analysis" &&
-      (tree?.dirty === true || tree?.headers?.event === dirtyEvent || tab.name === "Analysis Board")
+      (tree?.dirty === true || tree?.headers?.event === dirtyEvent || tab.name === "Analysis board")
     ) {
       restoredDirty = true;
     }
@@ -1774,7 +1773,7 @@ async function verifySelectedRootPermissions(session, puzzleRoot, engineRoot) {
       JSON.stringify(puzzleDenied),
     );
     await session.execute(`document.querySelector('a[href="/"]')?.click(); return true;`);
-    await click("Train");
+    await click("Puzzles");
     check(
       await visible(
         "ChessRiddle Studio is not allowed to read this puzzle folder. Choose another in Settings.",

@@ -46,6 +46,7 @@ export function standaloneDatabases(
     );
 }
 
+/** Projection timestamps are milliseconds, while source file metadata keeps native Unix seconds. */
 export type LibraryRow =
     | {
           kind: "file";
@@ -84,7 +85,10 @@ export type LibraryProjectionInput = {
 };
 
 /** Opened items precede never-opened items, whose fallback is modified time. */
-export function compareLibraryRows(left: LibraryRow, right: LibraryRow): number {
+export function compareLibraryRows(
+    left: Pick<LibraryRow, "opened" | "modified" | "key">,
+    right: Pick<LibraryRow, "opened" | "modified" | "key">,
+): number {
     if (left.opened !== undefined || right.opened !== undefined) {
         if (left.opened === undefined) return 1;
         if (right.opened === undefined) return -1;
@@ -141,7 +145,7 @@ export function projectLibrary(input: LibraryProjectionInput) {
                 key,
                 name: file.name,
                 file,
-                modified: file.lastModified,
+                modified: file.lastModified * 1000,
                 opened: opened.get(key),
             });
     }
@@ -171,8 +175,8 @@ export function projectLibrary(input: LibraryProjectionInput) {
             name: collection.name,
             collection,
             modified:
-                join.files.find((file) => fileWorkspaceKey(file.handle) === fileKey)
-                    ?.lastModified ?? 0,
+                (join.files.find((file) => fileWorkspaceKey(file.handle) === fileKey)
+                    ?.lastModified ?? 0) * 1000,
             opened: times.length ? Math.max(...times) : undefined,
         });
     }

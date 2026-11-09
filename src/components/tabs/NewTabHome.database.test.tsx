@@ -42,6 +42,13 @@ vi.mock("@/utils/tabs", async (original) => ({
 }));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => mocks.navigate }));
 vi.mock("@/components/files/notifyError", () => ({ notifyUnlessCancelled: mocks.notify }));
+vi.mock("@/components/library/useWorkspaceListing", () => ({
+  useWorkspaceListing: () => ({ data: undefined, isLoading: false }),
+}));
+vi.mock("@/hooks/useDatabaseList", () => ({
+  useDatabaseList: () => ({ data: undefined, isLoading: false }),
+}));
+vi.mock("swr", () => ({ useSWRConfig: () => ({ mutate: vi.fn() }) }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: "en-US" } }),
 }));
@@ -136,7 +143,7 @@ async function render() {
   );
 }
 async function open() {
-  await act(async () => host.querySelector<HTMLButtonElement>("[data-recent-file]")!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>("[data-library-row]")!.click());
 }
 
 test("idle Home lists reviewed repertoire cards as their future due boundaries pass", async () => {
@@ -183,23 +190,24 @@ test("idle Home lists reviewed repertoire cards as their future due boundaries p
       workspace.get(deckAtomFamily({ file: fileWorkspaceKey(file.handle), game: 0 })).status,
     ).toBe("ready");
   }
-  const panel = host.querySelector("[data-home-due]")!;
+  await act(async () => host.querySelector<HTMLInputElement>('input[value="due"]')!.click());
+  const panel = host.querySelector("[data-home-library]")!;
   expect(panel.textContent).toContain("Home.DuePractice.NothingDue");
   await act(async () => vi.advanceTimersByTimeAsync(999));
-  expect(panel.querySelectorAll("[data-due-file]")).toHaveLength(0);
+  expect(panel.querySelectorAll("[data-library-row]")).toHaveLength(0);
   await act(async () => vi.advanceTimersByTimeAsync(2));
-  expect(panel.querySelectorAll("[data-due-file]")).toHaveLength(1);
-  expect(panel.querySelector("[data-due-file]")?.textContent).toContain("earlier");
+  expect(panel.querySelectorAll("[data-library-row]")).toHaveLength(1);
+  expect(panel.querySelector("[data-library-row]")?.textContent).toContain("earlier");
   expect(panel.textContent).not.toContain("Home.DuePractice.NothingDue");
   await act(async () => vi.advanceTimersByTimeAsync(4_000));
-  expect(panel.querySelectorAll("[data-due-file]")).toHaveLength(2);
+  expect(panel.querySelectorAll("[data-library-row]")).toHaveLength(2);
 });
 
 test("database row renders context and forwards stored identity during pruning and reopening", async () => {
   const stored = workspace.get(recentFilesAtom)[0] as RecentDatabaseGame;
   await render();
-  expect(host.querySelector("[data-recent-file]")!.textContent).toContain("Meine Partien");
-  expect(host.querySelector("[data-recent-file]")!.textContent).toContain("White - Black");
+  expect(host.querySelector("[data-library-row]")!.textContent).toContain("Meine Partien");
+  expect(host.querySelector("[data-library-row]")!.textContent).toContain("White - Black");
   expect(mocks.getDbGame).toHaveBeenCalledWith(database, 42, stored.linked, {
     signal: expect.any(AbortSignal),
   });
@@ -319,12 +327,12 @@ test("a not-found lookup rejection keeps the database entry during pruning and o
     signal: expect.any(AbortSignal),
   });
   expect(workspace.get(recentFilesAtom)).toEqual(stored);
-  expect(host.querySelector("[data-recent-file]")).not.toBeNull();
+  expect(host.querySelector("[data-library-row]")).not.toBeNull();
   mocks.getDbGame.mockClear();
   await open();
   expect(mocks.getDbGame).toHaveBeenCalledExactlyOnceWith(database, 42, entry().linked);
   expect(workspace.get(recentFilesAtom)).toEqual(stored);
-  expect(host.querySelector("[data-recent-file]")).not.toBeNull();
+  expect(host.querySelector("[data-library-row]")).not.toBeNull();
   expect(mocks.notify).toHaveBeenCalledWith("Common.Error", error);
   expect(mocks.createTab).not.toHaveBeenCalled();
 });

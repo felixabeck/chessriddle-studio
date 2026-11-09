@@ -305,7 +305,7 @@ for (const layout of ["desktop", "narrow"] as const) {
         if (layout === "narrow") await editor.scrollIntoViewIfNeeded();
         await capture(`saved-catalog-portraits-reloaded-${layout}`);
         await page.getByRole("link", { name: "Board", exact: true }).click();
-        await page.getByRole("button", { name: /^open$/i }).click();
+        await page.getByRole("button", { name: /^analysis board$/i }).click();
         await page.getByRole("tab", { name: "Analysis", exact: true }).click();
         await page.getByRole("button", { name: "Select engines", exact: true }).click();
         const picker = page.locator(".mantine-Popover-dropdown");
@@ -388,7 +388,7 @@ for (const layout of ["desktop", "320-200"] as const) {
             );
             const saved = await page.evaluate(() => localStorage.getItem("engines"));
             if (surface === "puzzle")
-                await page.getByRole("button", { name: "Train", exact: true }).click();
+                await page.getByRole("button", { name: "Puzzles", exact: true }).click();
             else {
                 await page
                     .getByRole("button", {
@@ -2984,7 +2984,7 @@ test("accounts-puzzles-engines: navigates empty account, puzzle, and engine stat
     await expect(page.getByText(/no engines installed/i)).toBeVisible();
 
     await page.getByRole("link", { name: /board/i }).click();
-    await page.getByRole("button", { name: /^train$/i }).click();
+    await page.getByRole("button", { name: /^puzzles$/i }).click();
     await expect(page.getByText(/puzzle training/i)).toBeVisible();
     await assertNoHorizontalOverflow();
     await assertAccessible();
@@ -3039,7 +3039,7 @@ async function openTestPuzzle(
         },
     });
     await page.goto("/");
-    await page.getByRole("button", { name: "Train", exact: true }).click();
+    await page.getByRole("button", { name: "Puzzles", exact: true }).click();
     await page.getByRole("button", { name: "New Puzzle", exact: true }).click();
 }
 
@@ -3189,7 +3189,7 @@ test("accounts-puzzles-engines: selected puzzle B survives reload, refused admis
         },
     });
     await page.goto("/");
-    await page.getByRole("button", { name: "Train", exact: true }).click();
+    await page.getByRole("button", { name: "Puzzles", exact: true }).click();
     const next = page.getByRole("button", { name: "New Puzzle", exact: true });
     await expect(next).toBeEnabled();
     await next.click();

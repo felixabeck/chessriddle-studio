@@ -544,7 +544,7 @@ test("database-files: unreadable saved reference stays unselected and resumes se
     await expect(page.getByRole("treeitem", { name: "opening.db3", exact: true })).toBeVisible();
     const navbar = page.locator("nav.mantine-AppShell-navbar");
     await navbar.getByRole("link", { name: "Board", exact: true }).click();
-    await page.getByRole("button", { name: "Open", exact: true }).click();
+    await page.getByRole("button", { name: /^analysis board$/i }).click();
     await page.getByRole("tab", { name: "Database", exact: true }).click();
     const stats = page.getByRole("tabpanel", { name: "Stats", exact: true });
     const picker = stats.getByPlaceholder("add a database", { exact: true });

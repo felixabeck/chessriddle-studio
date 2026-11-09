@@ -17,7 +17,7 @@ import { deserializeStorageValue } from "../src/state/store/debouncedStorage";
 import { createEmptyCard } from "ts-fsrs";
 import type { PracticeReviewWrite } from "../src/bindings/generated";
 
-test("workspace-tabs: home fills remaining height with reachable recent and due lists", async ({
+test("workspace-tabs: home has compact actions and one reachable Library list", async ({
     page,
     mockScenario,
 }, testInfo) => {
@@ -59,7 +59,11 @@ test("workspace-tabs: home fills remaining height with reachable recent and due 
                                 {
                                     fen: "start",
                                     answer: "e4",
-                                    card: createEmptyCard(),
+                                    card: {
+                                        ...createEmptyCard(),
+                                        reps: 1,
+                                        due: new Date("2020-01-01"),
+                                    },
                                 },
                             ],
                         }),
@@ -74,90 +78,201 @@ test("workspace-tabs: home fills remaining height with reachable recent and due 
         },
     });
     await page.goto("/");
-    const recent = page.locator("[data-home-recents]");
-    const due = page.locator("[data-home-due]");
-    const viewport = recent.locator(".mantine-ScrollArea-viewport");
-    const rows = recent.locator("[data-recent-file]");
+    const library = page.locator("[data-home-library]");
+    const viewport = library.locator(".mantine-ScrollArea-viewport");
+    const rows = library.locator("[data-library-row]");
     await expect(rows).toHaveCount(10);
-    await expect(due.locator("[data-due-file]")).toHaveCount(4);
-    const card = (await recent.boundingBox())!;
-    const dueBox = (await due.boundingBox())!;
+    await expect(page.locator("[data-home-library]")).toHaveCount(1);
+    const card = (await library.boundingBox())!;
     const list = (await viewport.boundingBox())!;
-    const title = (await recent.locator("[data-home-title]").boundingBox())!;
-    const cardBottomPadding = 17;
-    const titleGap = 10;
-    const layoutTolerance = 8;
-    expect(list.height, "recent list exceeds the old 300px cap").toBeGreaterThan(300);
-    expect(
-        Math.abs(list.y + list.height - (card.y + card.height - cardBottomPadding)),
-    ).toBeLessThan(layoutTolerance);
-    expect(Math.abs(list.y - (title.y + title.height + titleGap))).toBeLessThan(layoutTolerance);
+    expect(list.height).toBeGreaterThan(300);
     expect(Math.abs(card.y + card.height - 1000)).toBeLessThan(32);
-    expect(Math.abs(dueBox.y + dueBox.height - 1000)).toBeLessThan(32);
-    expect(Math.abs(card.y - dueBox.y)).toBeLessThan(2);
-    expect(dueBox.x).toBeGreaterThan(card.x + card.width);
     const actions = await Promise.all(
-        (await page.locator("[data-home-action]").all()).map(async (a) => (await a.boundingBox())!),
+        (await page.locator("[data-home-action]").all()).map(
+            async (action) => (await action.boundingBox())!,
+        ),
     );
     expect(actions).toHaveLength(5);
-    const cardGap = 16;
     for (let i = 1; i < actions.length; i++) {
-        expect(actions[i].x - (actions[i - 1].x + actions[i - 1].width)).toBeCloseTo(cardGap, 0);
+        expect(actions[i].y).toBeCloseTo(actions[0].y, 0);
+        expect(actions[i].x - (actions[i - 1].x + actions[i - 1].width)).toBeCloseTo(
+            i === 3 ? 32 : 16,
+            0,
+        );
     }
-    expect(dueBox.x - (card.x + card.width)).toBeCloseTo(cardGap, 0);
-    expect(card.y - (actions[0].y + actions[0].height)).toBeCloseTo(cardGap, 0);
-    // The rows use matching five-column tracks, so their card edges line up.
-    expect(card.x).toBeCloseTo(actions[0].x, 0);
-    expect(card.x + card.width).toBeCloseTo(actions[2].x + actions[2].width, 0);
-    expect(dueBox.x).toBeCloseTo(actions[3].x, 0);
-    expect(dueBox.x + dueBox.width).toBeCloseTo(actions[4].x + actions[4].width, 0);
+    expect(card.y - (actions[0].y + actions[0].height)).toBeCloseTo(16, 0);
     for (let i = 0; i < 10; i++) {
         await rows.nth(i).scrollIntoViewIfNeeded();
-        const box = (await rows.nth(i).boundingBox())!;
-        const visible = (await viewport.boundingBox())!;
-        expect(box.y).toBeGreaterThanOrEqual(visible.y - 1);
-        expect(box.y + box.height).toBeLessThanOrEqual(visible.y + visible.height + 1);
+        await expect(rows.nth(i)).toBeInViewport();
     }
-    await testInfo.attach("home-desktop.png", {
+    await rows.first().focus();
+    await expect(rows.first()).toBeFocused();
+    expect(await rows.first().evaluate((row) => row.matches(":focus-visible"))).toBe(true);
+    await page.getByText("Due", { exact: true }).click();
+    await expect(rows).toHaveCount(4);
+    await expect(
+        library.getByText("4 positions due across 4 repertoires", { exact: true }),
+    ).toBeVisible();
+    await testInfo.attach("home-library-desktop.png", {
         body: await page.screenshot(),
         contentType: "image/png",
     });
-    await page.setViewportSize({ width: 600, height: 500 });
-    const narrowRecent = (await recent.boundingBox())!;
-    const narrowDue = (await due.boundingBox())!;
-    expect(narrowDue.y).toBeGreaterThan(narrowRecent.y + narrowRecent.height);
+    await page.setViewportSize({ width: 320, height: 720 });
     await rows.last().scrollIntoViewIfNeeded();
     await expect(rows.last()).toBeInViewport();
-    await due.scrollIntoViewIfNeeded();
-    await expect(due).toBeInViewport();
-    await expect(
-        due.getByRole("button", { name: "Practice", exact: true }).last(),
-    ).toBeInViewport();
-    await testInfo.attach("home-narrow.png", {
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+    );
+    await testInfo.attach("home-library-narrow.png", {
+        body: await page.screenshot(),
+        contentType: "image/png",
+    });
+    await page.addInitScript(() => localStorage.setItem("font-size", "200"));
+    await page.reload();
+    await page.getByText("Due", { exact: true }).click();
+    await expect(rows).toHaveCount(4);
+    for (const row of await rows.all()) {
+        await row.scrollIntoViewIfNeeded();
+        await assertNothingClipped(row);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+    );
+    await testInfo.attach("home-library-narrow-scaled.png", {
         body: await page.screenshot(),
         contentType: "image/png",
     });
 });
 
-test("workspace-tabs: home rows change layout together at a large font scale", async ({
+test("workspace-tabs: home actions wrap without horizontal scrolling at 200% font scale", async ({
     page,
     mockScenario,
 }) => {
-    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.setViewportSize({ width: 600, height: 720 });
     await mockScenario({ commands: {} });
-    await page.addInitScript(() => localStorage.setItem("font-size", "150"));
+    await page.addInitScript(() => localStorage.setItem("font-size", "200"));
     await page.goto("/");
-    const action = async (index: number) =>
-        (await page.locator("[data-home-action]").nth(index).boundingBox())!;
-    const recent = (await page.locator("[data-home-recents]").boundingBox())!;
-    const due = (await page.locator("[data-home-due]").boundingBox())!;
-    const [first, second, third] = [await action(0), await action(1), await action(2)];
-    expect(second.y).toBeCloseTo(first.y, 0);
-    expect(third.y).toBeGreaterThan(first.y + first.height);
-    expect(due.y).toBeGreaterThan(recent.y + recent.height);
-    expect(recent.x).toBeCloseTo(first.x, 0);
-    expect(recent.x + recent.width).toBeCloseTo(second.x + second.width, 0);
+    const actions = page.locator("[data-home-action]");
+    await expect(actions).toHaveCount(5);
+    const first = (await actions.first().boundingBox())!;
+    const last = (await actions.last().boundingBox())!;
+    expect(last.y).toBeGreaterThan(first.y);
+    for (const width of [600, 320]) {
+        await page.setViewportSize({ width, height: 720 });
+        for (const action of await actions.all()) {
+            await action.scrollIntoViewIfNeeded();
+            const box = (await action.boundingBox())!;
+            expect(box.x).toBeGreaterThanOrEqual(0);
+            expect(box.x + box.width).toBeLessThanOrEqual(width);
+            await assertNothingClipped(action);
+        }
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+            true,
+        );
+    }
 });
+
+test("workspace-tabs: search opens a Library file outside recents and replaces only the requesting New Tab", async ({
+    page,
+    mockScenario,
+}) => {
+    const file = {
+        ...filesWorkspaceFixture.pgnFile,
+        name: "Unopened Najdorf",
+        lastModified: Math.floor(Date.now() / 1000) - 86_400,
+    };
+    await page.addInitScript(
+        (workspace) => localStorage.setItem("file-workspace", JSON.stringify(workspace)),
+        filesWorkspaceFixture.workspace,
+    );
+    await mockScenario({
+        commands: filesWorkspaceCommands([[file]], {
+            ...pgnFileCommands,
+            count_pgn_games: { result: 1 },
+        }),
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: /^analysis board$/i }).click();
+    const existing = (await activeWorkspaceTab(page))!;
+    await page.getByRole("button", { name: /new tab/i }).click();
+    const requesting = (await activeWorkspaceTab(page))!;
+    expect(requesting.type).toBe("new");
+    expect(await page.evaluate(() => localStorage.getItem("recent-files") ?? "")).not.toContain(
+        "Unopened Najdorf",
+    );
+    await page
+        .getByRole("textbox", { name: "Search files and players", exact: true })
+        .fill("Unopened");
+    const row = page.locator("[data-library-row]").filter({ hasText: "Unopened Najdorf" });
+    await expect(row).toContainText("a day ago");
+    await row.click();
+    const opened = (await activeWorkspaceTab(page))!;
+    expect(opened.type).toBe("analysis");
+    expect(opened.gameOrigin).toMatchObject({ kind: "file", file: { name: file.name } });
+    const tabs = page.getByRole("tablist").first().getByRole("tab");
+    await expect(tabs).toHaveCount(2);
+    const stored = await page.evaluate(() => sessionStorage.getItem("workspace"));
+    const workspace = deserializeStorageValue<{ tabs: { value: string }[] }>(stored!);
+    expect(workspace?.tabs.some((tab) => tab.value === existing.value)).toBe(true);
+    expect(workspace?.tabs.some((tab) => tab.value === requesting.value)).toBe(false);
+    await expect(tabs.filter({ hasText: "Weiss - Schwarz" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+    );
+});
+
+for (const filter of ["All", "Due"] as const) {
+    test(`workspace-tabs: Home ${filter} opens a repertoire on ${filter === "Due" ? "Practice" : "Info"}`, async ({
+        page,
+        mockScenario,
+    }) => {
+        const file = {
+            ...filesWorkspaceFixture.pgnFile,
+            metadata: { type: "repertoire", tags: [] },
+        };
+        await page.addInitScript(
+            (workspace) => localStorage.setItem("file-workspace", JSON.stringify(workspace)),
+            filesWorkspaceFixture.workspace,
+        );
+        await mockScenario({
+            commands: filesWorkspaceCommands([[file]], {
+                ...pgnFileCommands,
+                count_pgn_games: { result: 1 },
+                load_practice_deck: {
+                    result: {
+                        epoch: "e2e-practice-epoch",
+                        deck: {
+                            positionsDocument: JSON.stringify({
+                                positions: [
+                                    {
+                                        fen: "start",
+                                        answer: "e4",
+                                        card: {
+                                            ...createEmptyCard(),
+                                            reps: 1,
+                                            due: new Date("2020-01-01"),
+                                        },
+                                    },
+                                ],
+                            }),
+                            revision: 1,
+                            generation: 0,
+                            migrated: true,
+                            unappliedReviews: 0,
+                            orphansAcknowledged: true,
+                        },
+                    },
+                },
+            }),
+        });
+        await page.goto("/");
+        await page.getByText(filter, { exact: true }).click();
+        await page.locator("[data-library-row]").filter({ hasText: file.name }).click();
+        await expect(
+            page.getByRole("tab", { name: filter === "Due" ? "Practice" : "Info", exact: true }),
+        ).toHaveAttribute("aria-selected", "true");
+    });
+}
 
 for (const { count, linked } of [
     { count: 0, linked: false },
@@ -221,7 +336,7 @@ for (const { count, linked } of [
             },
         });
         await page.goto("/");
-        await page.getByRole("button", { name: /^open$/i }).click();
+        await page.getByRole("button", { name: /^analysis board$/i }).click();
         const before = (await activeWorkspaceTab(page))!;
         expect(before.gameOrigin).toEqual({ kind: "none" });
         const board = page.getByRole("grid", {

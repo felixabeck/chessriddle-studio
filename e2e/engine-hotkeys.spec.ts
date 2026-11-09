@@ -13,7 +13,7 @@ async function setup(page: Page) {
         { id: "hotkey-engine", name: "Hotkey Stockfish", handleId: "hotkey-handle" },
     ]);
     await page.goto("/");
-    await page.getByRole("button", { name: /^open$/i }).click();
+    await page.getByRole("button", { name: /^analysis board$/i }).click();
     await page.getByRole("tab", { name: "Analysis", exact: true }).click();
     const panel = page.locator(".mantine-Accordion-item").filter({ hasText: "Hotkey Stockfish" });
     await panel.getByRole("button", { name: "Enable engine", exact: true }).click();

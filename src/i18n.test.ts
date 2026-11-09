@@ -38,7 +38,7 @@ describe("i18n catalogue loading", () => {
         ]);
         expect(
             addResourceBundle.mock.calls.every(
-                ([, , catalogue]) => "Home.Card.AnalysisBoard.Button" in catalogue,
+                ([, , catalogue]) => "Home.Card.AnalysisBoard.Title" in catalogue,
             ),
         ).toBe(true);
         expect(changeLanguage).toHaveBeenCalledWith("de-DE");
