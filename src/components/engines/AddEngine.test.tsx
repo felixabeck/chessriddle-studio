@@ -236,7 +236,9 @@ beforeEach(() => {
   mocks.localSaved = undefined;
   mocks.form = undefined;
   mocks.saveEngines.mockReset().mockResolvedValue({ saved: true, synchronized: true });
-  mocks.getEngineWorkspace.mockReset().mockResolvedValue({ id: { id: "root" } });
+  mocks.getEngineWorkspace
+    .mockReset()
+    .mockResolvedValue({ root: { id: { id: "root" } }, displayName: "Engines" });
   mocks.engineArchiveDestination.mockReset().mockResolvedValue({ id: "destination" });
   mocks.downloadEngineArchive.mockReset().mockResolvedValue(undefined);
   mocks.registerInstalledEngine

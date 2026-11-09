@@ -176,7 +176,10 @@ beforeEach(() => {
       chessCom: { username: "Felix", stats: {} },
     },
   ]);
-  mocks.getDatabaseWorkspace.mockResolvedValue({ id: { id: "root" }, kind: "databaseRoot" });
+  mocks.getDatabaseWorkspace.mockResolvedValue({
+    root: { id: { id: "root" }, kind: "databaseRoot" },
+    displayName: "Databases",
+  });
   const handle = { id: { id: "database" }, kind: "database" };
   mocks.listWorkspaceDatabases.mockResolvedValue({
     entries: [{ handle, filename: "Felix_chesscom.db3", availability: "available" }],
@@ -249,7 +252,7 @@ test.each([{}, { username: "Felix" }, { username: "Foreign" }])(
 test.each(["conflict-readable", "conflict-unread", "unread-only", "loading", "failed"])(
   "real Accounts with %s evidence retain management and block preparation and new history",
   async (state) => {
-    const held = deferred<import("@/bindings").DatabaseRootHandle>();
+    const held = deferred<import("@/bindings").DatabaseRootDescriptor>();
     mocks.linkedCollectionsSupported.mockResolvedValue(true);
     mocks.listLinkedCollections.mockResolvedValue([]);
     mocks.getDbInfo.mockImplementation(async (handle) => ({
@@ -302,10 +305,18 @@ test.each(["conflict-readable", "conflict-unread", "unread-only", "loading", "fa
     expect(mocks.importAccountGames).not.toHaveBeenCalled();
     expect(mocks.createWorkspaceDatabase).not.toHaveBeenCalled();
     if (state === "loading") {
-      await act(async () => held.resolve({ id: { id: "root" }, kind: "databaseRoot" }));
+      await act(async () =>
+        held.resolve({
+          root: { id: { id: "root" }, kind: "databaseRoot" },
+          displayName: "Databases",
+        }),
+      );
     }
     if (state === "failed") {
-      mocks.getDatabaseWorkspace.mockResolvedValue({ id: { id: "root" }, kind: "databaseRoot" });
+      mocks.getDatabaseWorkspace.mockResolvedValue({
+        root: { id: { id: "root" }, kind: "databaseRoot" },
+        displayName: "Databases",
+      });
       await act(async () =>
         [...host.querySelectorAll("button")]
           .find((button) => button.textContent === "Common.Retry")!
@@ -838,7 +849,7 @@ test("a root switch retires a pending successful import refresh and keeps root B
     expect(mocks.getDbInfo).toHaveBeenCalledTimes(2);
     expect(downloadButton().disabled).toBe(true);
 
-    mocks.getDatabaseWorkspace.mockResolvedValue(rootB);
+    mocks.getDatabaseWorkspace.mockResolvedValue({ root: rootB, displayName: "Databases" });
     mocks.listWorkspaceDatabases.mockResolvedValue({
       entries: [{ handle: rootBHandle, filename: "Felix_chesscom.db3", availability: "available" }],
       unread: [],

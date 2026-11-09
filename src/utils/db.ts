@@ -261,7 +261,7 @@ function databaseReadErrorMessage(permission: boolean, missing: boolean): string
 export async function getDatabases(options: { signal?: AbortSignal } = {}): Promise<DatabaseList> {
     const store = getDefaultStore();
     const workspace = store.get(fileWorkspaceAtom);
-    const root = await tauri.getDatabaseWorkspace();
+    const root = (await tauri.getDatabaseWorkspace()).root;
     const databases = await tauri.listWorkspaceDatabases(root, options);
     const linkedSupported = await tauri.linkedCollectionsSupported();
     const collections = linkedSupported

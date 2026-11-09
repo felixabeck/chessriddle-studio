@@ -1757,7 +1757,7 @@ async function verifySelectedRootPermissions(session, puzzleRoot, engineRoot) {
       before.value.length === 0 &&
       healthyWorkflow(acquired) &&
       selectedPuzzle.value?.root?.id?.id === puzzle.id.id &&
-      selectedEngine.value?.id?.id === engine.id.id;
+      selectedEngine.value?.root?.id?.id === engine.id.id;
     check(
       ready,
       "RF0 selected puzzle and engine roots accept real IPC before access loss",
@@ -1837,7 +1837,7 @@ async function verifySelectedRootPermissions(session, puzzleRoot, engineRoot) {
       Array.isArray(recovered.value) &&
         recovered.value.length === 0 &&
         recoveredPuzzle.value?.root?.id?.id === puzzle.id.id &&
-        recoveredEngine.value?.id?.id === engine.id.id &&
+        recoveredEngine.value?.root?.id?.id === engine.id.id &&
         healthyWorkflow(destination),
       "RF8 restoring access recovers the same selected roots",
       JSON.stringify({ recovered, recoveredPuzzle, recoveredEngine, destination }),
@@ -2098,7 +2098,7 @@ async function verifyConversionCancellation(session, ownedRoot) {
   let database;
   try {
     entries = await listFixtureEntries(invoke);
-    const root = await invoke("get_database_workspace", {});
+    const root = (await invoke("get_database_workspace", {})).root;
     database = await invoke("create_workspace_database", {
       root,
       filename: "verify-conversion-cancellation.db3",
@@ -2936,7 +2936,7 @@ async function verifyLinkedCollections(session, filesWorkspace, profileDirectory
     `${prefix}-database-original`,
     game("789", "c4 c5", "database version"),
   );
-  const root = await invoke("get_database_workspace", {});
+  const root = (await invoke("get_database_workspace", {})).root;
   const database = await invoke("create_workspace_database", { root, filename: `${prefix}.db3` });
   await invoke("convert_pgn", {
     progressId: prefix,
@@ -3317,7 +3317,7 @@ async function verifyDatabaseOrientation(session) {
         return `[Event "Orientation ${index}"]\n[White "${ownerIsWhite ? "Orientation Owner" : opponent}"]\n[Black "${ownerIsWhite ? opponent : "Orientation Owner"}"]\n[Result "*"]\n\n1. e4 e5 *\n`;
       }).join("\n");
       const source = await createWorkspacePgnFixture(invoke, workspace, "verify-orientation", pgn);
-      const root = await invoke("get_database_workspace", {});
+      const root = (await invoke("get_database_workspace", {})).root;
       database = await invoke("create_workspace_database", {
         root,
         filename: "verify-orientation.db3",
@@ -3513,7 +3513,7 @@ async function verifyPlayerOverview(session) {
         "verify-player-overview",
         pgn,
       );
-      const root = await invoke("get_database_workspace", {});
+      const root = (await invoke("get_database_workspace", {})).root;
       database = await invoke("create_workspace_database", {
         root,
         filename: "verify-player-overview.db3",
@@ -3720,7 +3720,7 @@ async function verifyNewGameToDatabase(session) {
       (entry) => entry.name === openingRowName,
     )?.handle;
     if (!source) throw new Error("new-game seed fixture is unavailable");
-    const root = await invoke("get_database_workspace", {});
+    const root = (await invoke("get_database_workspace", {})).root;
     const database = await invoke("create_workspace_database", {
       root,
       filename: "verify-new-game.db3",
@@ -3880,7 +3880,7 @@ async function verifyGameOpening(session, ownedRoot, filesWorkspace) {
       if (!file) throw new Error("dedicated PGN fixture was not listed");
       const count = await invoke("count_pgn_games", { file, ticket: null });
       if (count !== 2) throw new Error(`dedicated PGN fixture has ${count} games`);
-      const root = await invoke("get_database_workspace", {});
+      const root = (await invoke("get_database_workspace", {})).root;
       database = await invoke("create_workspace_database", {
         root,
         filename: "verify-game-opening.db3",
@@ -4447,7 +4447,7 @@ async function verifyGameOpening(session, ownedRoot, filesWorkspace) {
       `${citationPrefix}-database-input`,
       '[Event "Elllobregat op 3rd"]\n[Site "Sant Boi de Llobregat"]\n[Date "2022.12.01"]\n[Round "3"]\n[White "Beerdsen, Thomas"]\n[Black "Bluebaum, Matthias"]\n[WhiteElo "2520"]\n[BlackElo "2651"]\n[Result "0-1"]\n[FEN "8/8/8/8/8/8/6k1/K7 b - - 12 23"]\n[SetUp "1"]\n\n23... Kf3 0-1\n',
     );
-    const citationRoot = await invoke("get_database_workspace", {});
+    const citationRoot = (await invoke("get_database_workspace", {})).root;
     citationDatabase = await invoke("create_workspace_database", {
       root: citationRoot,
       filename: `${citationPrefix}.db3`,

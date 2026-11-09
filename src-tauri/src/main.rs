@@ -1043,7 +1043,7 @@ fn download_destination_is_known_blocking(
 async fn issue_database_workspace(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
-) -> Result<crate::infra::path_authority::DatabaseRootHandle, Error> {
+) -> Result<crate::infra::path_authority::DatabaseRootDescriptor, Error> {
     use tauri_plugin_dialog::DialogExt;
     let path = tokio::task::spawn_blocking(move || {
         app.dialog()
@@ -1069,15 +1069,12 @@ async fn issue_database_workspace(
 fn issue_database_workspace_blocking(
     authority: &crate::infra::path_authority::SharedPathAuthority,
     path: PathBuf,
-) -> Result<crate::infra::path_authority::DatabaseRootHandle, Error> {
-    let display_name = path
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "Databases".into());
+) -> Result<crate::infra::path_authority::DatabaseRootDescriptor, Error> {
+    let display_name = crate::infra::path_authority::selected_root_display_name(&path, "Databases");
     authority.with_mut(|authority| {
         let root = authority.get_or_create_database_root(&path, display_name, None)?;
         authority.set_active_database_root(&root)?;
-        Ok(root)
+        authority.database_root_descriptor(root)
     })?
 }
 
@@ -1088,7 +1085,7 @@ fn issue_database_workspace_blocking(
 async fn get_database_workspace(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
-) -> Result<crate::infra::path_authority::DatabaseRootHandle, Error> {
+) -> Result<crate::infra::path_authority::DatabaseRootDescriptor, Error> {
     let authority = state.pgn_path_authority.clone();
     crate::infra::operations::run_accepted_blocking(
         &state.operations,
@@ -1105,13 +1102,14 @@ async fn get_database_workspace(
 fn get_database_workspace_blocking(
     authority: &crate::infra::path_authority::SharedPathAuthority,
     app_data: &dyn Fn() -> Result<crate::infra::path_authority::AppDataDir, Error>,
-) -> Result<crate::infra::path_authority::DatabaseRootHandle, Error> {
+) -> Result<crate::infra::path_authority::DatabaseRootDescriptor, Error> {
     authority.with_mut(|authority| {
         if let Some(root) = authority.active_database_root()? {
-            return Ok(root);
+            return authority.database_root_descriptor(root);
         }
         let app_data = app_data()?;
-        get_default_database_workspace(authority, &app_data)
+        let root = get_default_database_workspace(authority, &app_data)?;
+        authority.database_root_descriptor(root)
     })?
 }
 
@@ -1242,7 +1240,7 @@ fn database_download_destination_blocking(
 async fn issue_engine_workspace(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
-) -> Result<crate::infra::path_authority::EngineRootHandle, Error> {
+) -> Result<crate::infra::path_authority::EngineRootDescriptor, Error> {
     use tauri_plugin_dialog::DialogExt;
     let path = tokio::task::spawn_blocking(move || {
         app.dialog()
@@ -1268,11 +1266,12 @@ async fn issue_engine_workspace(
 fn issue_engine_workspace_blocking(
     authority: &crate::infra::path_authority::SharedPathAuthority,
     path: PathBuf,
-) -> Result<crate::infra::path_authority::EngineRootHandle, Error> {
+) -> Result<crate::infra::path_authority::EngineRootDescriptor, Error> {
+    let display_name = crate::infra::path_authority::selected_root_display_name(&path, "Engines");
     authority.with_mut(|authority| {
-        let root = authority.get_or_create_engine_root(&path, "Engines", None)?;
+        let root = authority.get_or_create_engine_root(&path, display_name, None)?;
         authority.set_active_engine_root(&root)?;
-        Ok(root)
+        authority.engine_root_descriptor(root)
     })?
 }
 
@@ -1283,7 +1282,7 @@ fn issue_engine_workspace_blocking(
 async fn get_engine_workspace(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
-) -> Result<crate::infra::path_authority::EngineRootHandle, Error> {
+) -> Result<crate::infra::path_authority::EngineRootDescriptor, Error> {
     let authority = state.pgn_path_authority.clone();
     crate::infra::operations::run_accepted_blocking(
         &state.operations,
@@ -1300,10 +1299,10 @@ async fn get_engine_workspace(
 fn get_engine_workspace_blocking(
     authority: &crate::infra::path_authority::SharedPathAuthority,
     app_data: &dyn Fn() -> Result<crate::infra::path_authority::AppDataDir, Error>,
-) -> Result<crate::infra::path_authority::EngineRootHandle, Error> {
+) -> Result<crate::infra::path_authority::EngineRootDescriptor, Error> {
     authority.with_mut(|authority| {
         if let Some(root) = authority.active_engine_root()? {
-            return Ok(root);
+            return authority.engine_root_descriptor(root);
         }
         let authorized_dir = crate::infra::path_authority::ensure_app_owned_default_dir(
             &app_data()?,
@@ -1315,7 +1314,7 @@ fn get_engine_workspace_blocking(
             Some(authorized_dir.identity()),
         )?;
         authority.set_active_engine_root(&root)?;
-        Ok(root)
+        authority.engine_root_descriptor(root)
     })?
 }
 
@@ -3346,6 +3345,34 @@ mod tests {
     }
 
     #[test]
+    fn database_and_engine_workspace_descriptors_preserve_selected_names_and_handles() {
+        use crate::infra::path_authority::{PathAuthority, SharedPathAuthority};
+
+        let directory = tempfile::tempdir().unwrap();
+        let databases = directory.path().join("MyChessDBs");
+        let engines = directory.path().join("MyChessEngines");
+        std::fs::create_dir(&databases).unwrap();
+        std::fs::create_dir(&engines).unwrap();
+        let authority = SharedPathAuthority::installed(
+            PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap(),
+        );
+        let no_default = || Err(Error::Conflict("unexpected app-data lookup".into()));
+
+        let database = issue_database_workspace_blocking(&authority, databases).unwrap();
+        assert_eq!(database.display_name, "MyChessDBs");
+        assert_eq!(
+            get_database_workspace_blocking(&authority, &no_default).unwrap(),
+            database
+        );
+        let engine = issue_engine_workspace_blocking(&authority, engines).unwrap();
+        assert_eq!(engine.display_name, "MyChessEngines");
+        assert_eq!(
+            get_engine_workspace_blocking(&authority, &no_default).unwrap(),
+            engine
+        );
+    }
+
+    #[test]
     fn database_and_engine_workspace_bodies_default_only_without_a_selection() {
         use crate::infra::path_authority::{
             portable_tests::assert_workspace_body_defaults_only_without_a_selection,
@@ -3355,12 +3382,16 @@ mod tests {
             assert_workspace_body_defaults_only_without_a_selection(domain, |authority, lookup| {
                 match domain {
                     AppOwnedDefaultRoot::Databases => {
-                        get_database_workspace_blocking(authority, lookup)
-                            .map(|root| root.path_ref().clone())
+                        get_database_workspace_blocking(authority, lookup).map(|descriptor| {
+                            assert_eq!(descriptor.display_name, "Databases");
+                            descriptor.root.path_ref().clone()
+                        })
                     }
                     AppOwnedDefaultRoot::Engines => {
-                        get_engine_workspace_blocking(authority, lookup)
-                            .map(|root| root.path_ref().clone())
+                        get_engine_workspace_blocking(authority, lookup).map(|descriptor| {
+                            assert_eq!(descriptor.display_name, "Engines");
+                            descriptor.root.path_ref().clone()
+                        })
                     }
                     _ => unreachable!(),
                 }
@@ -3380,11 +3411,11 @@ mod tests {
                 |authority, lookup| match domain {
                     AppOwnedDefaultRoot::Databases => {
                         get_database_workspace_blocking(authority, lookup)
-                            .map(|root| root.path_ref().clone())
+                            .map(|descriptor| descriptor.root.path_ref().clone())
                     }
                     AppOwnedDefaultRoot::Engines => {
                         get_engine_workspace_blocking(authority, lookup)
-                            .map(|root| root.path_ref().clone())
+                            .map(|descriptor| descriptor.root.path_ref().clone())
                     }
                     _ => unreachable!(),
                 },

@@ -1764,6 +1764,12 @@ pub struct DatabaseRootHandle {
     pub id: PathRef,
     pub kind: DatabaseRootHandleKind,
 }
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseRootDescriptor {
+    pub root: DatabaseRootHandle,
+    pub display_name: String,
+}
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum DatabaseRootHandleKind {
@@ -1800,6 +1806,12 @@ impl PuzzleRootHandle {
 pub struct PuzzleRootDescriptor {
     pub root: PuzzleRootHandle,
     pub display_name: String,
+}
+
+pub(crate) fn selected_root_display_name(path: &Path, fallback: &str) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| fallback.into())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -1850,6 +1862,12 @@ impl DatabaseHandle {
 pub struct EngineRootHandle {
     pub id: PathRef,
     pub kind: EngineRootHandleKind,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct EngineRootDescriptor {
+    pub root: EngineRootHandle,
+    pub display_name: String,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -7553,19 +7571,39 @@ impl PathAuthority {
         else {
             return Ok(None);
         };
-        let display_name = self
-            .persistent
-            .get(&id.id)
-            .ok_or_else(|| {
-                Error::Conflict("active puzzle workspace disappeared".into()).label_root_failure()
-            })?
-            .stored
-            .display_name
-            .clone();
+        let display_name = self.root_display_name(&id, "puzzle")?;
         Ok(Some(PuzzleRootDescriptor {
             root: PuzzleRootHandle::new(id),
             display_name,
         }))
+    }
+
+    fn root_display_name(&self, id: &PathRef, noun: &str) -> Result<String, Error> {
+        Ok(self
+            .persistent
+            .get(&id.id)
+            .ok_or_else(|| {
+                Error::Conflict(format!("active {noun} workspace disappeared")).label_root_failure()
+            })?
+            .stored
+            .display_name
+            .clone())
+    }
+
+    pub(crate) fn database_root_descriptor(
+        &self,
+        root: DatabaseRootHandle,
+    ) -> Result<DatabaseRootDescriptor, Error> {
+        let display_name = self.root_display_name(root.path_ref(), "database")?;
+        Ok(DatabaseRootDescriptor { root, display_name })
+    }
+
+    pub(crate) fn engine_root_descriptor(
+        &self,
+        root: EngineRootHandle,
+    ) -> Result<EngineRootDescriptor, Error> {
+        let display_name = self.root_display_name(root.path_ref(), "engine")?;
+        Ok(EngineRootDescriptor { root, display_name })
     }
 
     /// Checks a practice deck capability without making availability part of authorisation.

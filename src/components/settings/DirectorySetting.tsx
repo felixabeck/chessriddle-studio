@@ -3,7 +3,7 @@ import { useNativePicker } from "@/hooks/useNativePicker";
 import { useTranslation } from "react-i18next";
 
 type DirectorySettingProps = {
-  value: string | null;
+  value: string | null | undefined;
   onSelect: (directory: string) => Promise<void> | void;
   /** Native code issues an opaque workspace capability and returns display metadata. */
   issueWorkspace: () => Promise<string>;
@@ -42,7 +42,11 @@ export function DirectorySetting({
       disabled={disabled || pending}
       w="min(100%, 22rem)"
     >
-      <Text lineClamp={1}>{pending ? t("Common.Loading") : value}</Text>
+      <Text lineClamp={1}>
+        {pending || value === undefined
+          ? t("Common.Loading")
+          : value || t("Settings.Directories.Select")}
+      </Text>
     </Input>
   );
 }

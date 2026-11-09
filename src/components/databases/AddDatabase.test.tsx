@@ -154,7 +154,10 @@ test("cleanup create does not recover, convert or publish a created database", a
     category: "operation-and-cleanup",
     message: "native failure",
   });
-  mocks.getDatabaseWorkspace.mockResolvedValue({ id: { id: "root" }, kind: "databaseRoot" });
+  mocks.getDatabaseWorkspace.mockResolvedValue({
+    root: { id: { id: "root" }, kind: "databaseRoot" },
+    displayName: "Databases",
+  });
   mocks.createWorkspaceDatabase.mockRejectedValueOnce(cause);
   const onCreated = vi.fn();
   await expect(
@@ -257,7 +260,7 @@ test.each([
     const workspaceRoot = { id: { id: "database-root" }, kind: "databaseRoot" };
     const handle = { id: { id: "database" }, kind: "database" as const };
     const source = { id: { id: "source" }, kind: "fileWorkspace" } as const;
-    mocks.getDatabaseWorkspace.mockResolvedValue(workspaceRoot);
+    mocks.getDatabaseWorkspace.mockResolvedValue({ root: workspaceRoot, displayName: "Databases" });
     mocks.createWorkspaceDatabase.mockRejectedValue(rejection);
     mocks.listWorkspaceDatabases.mockResolvedValue({
       entries: [
@@ -299,7 +302,7 @@ test("installs a downloaded database with the URL-keyed progress id", async () =
   mocks.defaultDatabases = [manifestDb];
   const workspaceRoot = { id: { id: "database-root" }, kind: "databaseRoot" };
   const destination = { id: { id: "destination" }, kind: "path" };
-  mocks.getDatabaseWorkspace.mockResolvedValue(workspaceRoot);
+  mocks.getDatabaseWorkspace.mockResolvedValue({ root: workspaceRoot, displayName: "Databases" });
   mocks.databaseDownloadDestination.mockResolvedValue(destination);
   mocks.downloadFile.mockResolvedValue(undefined);
   const { reloadDatabases } = await renderAddDatabase();
@@ -335,7 +338,10 @@ test("a running database with no local job renders Cancel and calls native looku
 
 test("a downloaded database surfaces a rejected reload without listing inside the component", async () => {
   mocks.defaultDatabases = [manifestDb];
-  mocks.getDatabaseWorkspace.mockResolvedValue({ id: { id: "root" }, kind: "databaseRoot" });
+  mocks.getDatabaseWorkspace.mockResolvedValue({
+    root: { id: { id: "root" }, kind: "databaseRoot" },
+    displayName: "Databases",
+  });
   mocks.databaseDownloadDestination.mockResolvedValue({ id: { id: "destination" } });
   mocks.downloadFile.mockResolvedValue(undefined);
   const reloadDatabases = vi.fn().mockRejectedValue(new Error("download refresh failed"));
@@ -400,8 +406,11 @@ test("cancelling a pre-claim local attempt preserves the surviving bar and its n
 test("keeps a cancelled database download destination silent", async () => {
   mocks.defaultDatabases = [manifestDb];
   mocks.getDatabaseWorkspace.mockResolvedValue({
-    id: { id: "database-root" },
-    kind: "databaseRoot",
+    root: {
+      id: { id: "database-root" },
+      kind: "databaseRoot",
+    },
+    displayName: "Databases",
   });
   mocks.databaseDownloadDestination.mockRejectedValue(new Error("Cancellation"));
   const { reloadDatabases } = await renderAddDatabase();
@@ -458,8 +467,11 @@ test.each(["convert", "download"] as const)(
 test("reports a failed database download destination without replacing the list", async () => {
   mocks.defaultDatabases = [manifestDb];
   mocks.getDatabaseWorkspace.mockResolvedValue({
-    id: { id: "database-root" },
-    kind: "databaseRoot",
+    root: {
+      id: { id: "database-root" },
+      kind: "databaseRoot",
+    },
+    displayName: "Databases",
   });
   mocks.databaseDownloadDestination.mockRejectedValue(new Error("permission denied"));
   const { reloadDatabases } = await renderAddDatabase();
@@ -540,7 +552,10 @@ test("does not notify when cancellation loses the completed-job race", async () 
   await act(async () => mocks.progressButtonProps!.onClick());
   await vi.waitFor(() => expect(mocks.progressButtonProps?.onCancel).toEqual(expect.any(Function)));
   mocks.cancelDownload.mockImplementation(async () => {
-    resolveWorkspace({ id: { id: "root" } });
+    resolveWorkspace({
+      root: { id: { id: "root" }, kind: "databaseRoot" },
+      displayName: "Databases",
+    });
     return false;
   });
 
@@ -588,8 +603,11 @@ test("keeps the modal open when local conversion fails", async () => {
     displayName: "games.pgn",
   });
   mocks.getDatabaseWorkspace.mockResolvedValue({
-    id: { id: "database-root" },
-    kind: "databaseRoot",
+    root: {
+      id: { id: "database-root" },
+      kind: "databaseRoot",
+    },
+    displayName: "Databases",
   });
   mocks.convertPgn.mockClear();
   mocks.createWorkspaceDatabase.mockImplementation(async () => {
@@ -637,7 +655,10 @@ const importSource = { id: { id: "pgn" }, kind: "fileWorkspace" } as const;
 
 function setupLocalImport() {
   mocks.issuePgnWorkspace.mockResolvedValue({ handle: importSource, displayName: "games.pgn" });
-  mocks.getDatabaseWorkspace.mockResolvedValue({ id: { id: "root" }, kind: "databaseRoot" });
+  mocks.getDatabaseWorkspace.mockResolvedValue({
+    root: { id: { id: "root" }, kind: "databaseRoot" },
+    displayName: "Databases",
+  });
   mocks.createWorkspaceDatabase.mockResolvedValue(importHandle);
 }
 

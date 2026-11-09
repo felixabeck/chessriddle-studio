@@ -202,7 +202,9 @@ describe("default-engine installed identity", () => {
 describe("engine persistence", () => {
     it("admits one immutable native workflow with the preallocated Add UUID and ticket", async () => {
         const root = { id: { id: "root" }, kind: "engineRoot" };
-        installMocks.getEngineWorkspace.mockReset().mockResolvedValue(root);
+        installMocks.getEngineWorkspace
+            .mockReset()
+            .mockResolvedValue({ root: root, displayName: "Engines" });
         installMocks.installEngineWorkflow
             .mockReset()
             .mockResolvedValue({ state: "native-result" });
@@ -239,8 +241,11 @@ describe("engine persistence", () => {
 
     it("propagates admission errors and captures an Add identity before the transfer", async () => {
         installMocks.getEngineWorkspace.mockResolvedValue({
-            id: { id: "root" },
-            kind: "engineRoot",
+            root: {
+                id: { id: "root" },
+                kind: "engineRoot",
+            },
+            displayName: "Engines",
         });
         const error = new Error("Cancellation");
         installMocks.installEngineWorkflow.mockReset().mockRejectedValue(error);

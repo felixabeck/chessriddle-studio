@@ -23,6 +23,46 @@ import polish from "../src/translation/pl-PL.json" with { type: "json" };
 import french from "../src/translation/fr-FR.json" with { type: "json" };
 import german from "../src/translation/de-DE.json" with { type: "json" };
 
+test("settings directories hydrate and retain selected workspace names", async ({
+    page,
+    mockScenario,
+    assertAccessible,
+    assertNoHorizontalOverflow,
+    capture,
+}) => {
+    const workspaces = [
+        { noun: "database", kind: "databaseRoot", current: "MyChessDBs", selected: "NewDBs" },
+        { noun: "engine", kind: "engineRoot", current: "MyChessEngines", selected: "NewEngines" },
+        { noun: "puzzle", kind: "puzzleRoot", current: "MyChessPuzzles", selected: "NewPuzzles" },
+    ];
+    const commands: NonNullable<MockScenario["commands"]> = {};
+    for (const { noun, kind, current, selected } of workspaces) {
+        const root = { id: { id: `${noun}-root` }, kind };
+        commands[`get_${noun}_workspace`] = {
+            outcomes: [{ result: { root, displayName: current } }],
+            result: { root, displayName: selected },
+        };
+        commands[`issue_${noun}_workspace`] = { result: { root, displayName: selected } };
+    }
+    await mockScenario({ commands });
+    await page.goto("/settings");
+    await page.getByRole("tab", { name: "Directories", exact: true }).click();
+    const buttons = page.getByRole("button", { name: "Select directory", exact: true });
+    for (const { current, selected } of workspaces) {
+        await expect(buttons.filter({ hasText: current })).toBeVisible();
+        await buttons.filter({ hasText: current }).click();
+        await expect(buttons.filter({ hasText: selected })).toBeVisible();
+    }
+    await page.getByRole("tab", { name: "Board", exact: true }).click();
+    await page.getByRole("tab", { name: "Directories", exact: true }).click();
+    for (const { selected } of workspaces) {
+        await expect(buttons.filter({ hasText: selected })).toBeVisible();
+    }
+    await assertAccessible();
+    await assertNoHorizontalOverflow();
+    await capture("settings-workspace-directories");
+});
+
 async function assertCatalogActionReachable(action: Locator, cancel: Locator) {
     await action.scrollIntoViewIfNeeded();
     await expect(action).toBeDisabled();
@@ -288,7 +328,12 @@ const rootPermissionCommands = {
     is_bmi2_compatible: { result: false },
     get_progress: { result: null },
     prepare_download: { result: "permission-ticket" },
-    get_engine_workspace: { result: { id: { id: "selected-engine-root" }, kind: "engineRoot" } },
+    get_engine_workspace: {
+        result: {
+            root: { id: { id: "selected-engine-root" }, kind: "engineRoot" },
+            displayName: "Engines",
+        },
+    },
     get_engine_config: { result: { name: "Stockfish 18", options: [] } },
 };
 
@@ -2566,7 +2611,12 @@ test("accounts-puzzles-engines: add engine download catalog", async ({
         get_progress: { result: null },
         prepare_download: { result: "engine-download-ticket" },
         release_download: { result: null },
-        get_engine_workspace: { result: { id: { id: "engine-root" }, kind: "engineRoot" } },
+        get_engine_workspace: {
+            result: {
+                root: { id: { id: "engine-root" }, kind: "engineRoot" },
+                displayName: "Engines",
+            },
+        },
         install_engine_workflow: {
             delay: 5000,
             error: {
@@ -2781,7 +2831,12 @@ for (const kind of ["add", "upgrade"] as const) {
                 file_exists: { result: true },
                 prepare_download: { result: "reload-engine-ticket" },
                 release_download: { result: null },
-                get_engine_workspace: { result: { id: { id: "engine-root" }, kind: "engineRoot" } },
+                get_engine_workspace: {
+                    result: {
+                        root: { id: { id: "engine-root" }, kind: "engineRoot" },
+                        displayName: "Engines",
+                    },
+                },
                 install_engine_workflow: {
                     engineInstall: true,
                     result: {

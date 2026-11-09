@@ -90,7 +90,7 @@ export async function convertLocalDatabase(
       return current.database;
     }
   }
-  const root = await tauri.getDatabaseWorkspace();
+  const root = (await tauri.getDatabaseWorkspace()).root;
   const filename = `${crypto.randomUUID()}.db3`;
   const dbPath = await runWithAppliedRecovery(
     () => tauri.createWorkspaceDatabase(root, filename),
@@ -317,7 +317,7 @@ function DatabaseCard({
         t("Common.Error"),
         () =>
           runDownloadJob(progressId, async (ticket) => {
-            const root = await tauri.getDatabaseWorkspace();
+            const root = (await tauri.getDatabaseWorkspace()).root;
             const destination = await tauri.databaseDownloadDestination(root);
             await tauri.downloadFile(
               progressId,

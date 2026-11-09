@@ -130,7 +130,10 @@ vi.mock("@mantine/core", () => {
   };
 });
 
-const folder = (id: string) => ({ id: { id }, kind: "databaseWorkspace" });
+const folder = (id: string) => ({
+  root: { id: { id }, kind: "databaseRoot" },
+  displayName: "Databases",
+});
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const entry = {
   handle: { id: { id: "new-db" }, kind: "database" },
@@ -494,7 +497,7 @@ describe("listing failure copy and state", () => {
               },
             ],
             unread: [],
-            root: folder("cached-root"),
+            root: folder("cached-root").root,
           },
         });
       await render();
@@ -514,7 +517,7 @@ describe("listing failure copy and state", () => {
           { type: "success", file: entry.handle, title: "Cached database", filename: "old.db3" },
         ],
         unread: [],
-        root: folder("cached-root"),
+        root: folder("cached-root").root,
       },
     });
     mocks.listWorkspaceDatabases.mockRejectedValue(failure("permission"));
@@ -547,7 +550,7 @@ describe("database folder recovery", () => {
     await clickChoose();
     expect(mocks.issueDatabaseWorkspace).toHaveBeenCalledOnce();
     expect(mocks.listWorkspaceDatabases).toHaveBeenLastCalledWith(
-      folder("new"),
+      folder("new").root,
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(host.textContent).toContain("New root content");

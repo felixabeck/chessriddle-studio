@@ -1121,7 +1121,18 @@ const tauriBootstrap = () => {
         acknowledge_practice_orphans: { result: null },
         repair_practice_deck: { result: null },
         list_practice_decks: { result: { decks: [], anomalies: [] } },
-        get_database_workspace: { result: { id: { id: "database-root" }, kind: "databaseRoot" } },
+        get_database_workspace: {
+            result: {
+                root: { id: { id: "database-root" }, kind: "databaseRoot" },
+                displayName: "Databases",
+            },
+        },
+        get_engine_workspace: {
+            result: {
+                root: { id: { id: "engine-root" }, kind: "engineRoot" },
+                displayName: "Engines",
+            },
+        },
         list_workspace_databases: { result: { entries: [], unread: [] } },
         linked_collections_supported: { result: false },
         collection_for_database: { result: null },

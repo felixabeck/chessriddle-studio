@@ -50,7 +50,10 @@ test("cleanup create does not run account database recovery", async () => {
     category: "operation-and-cleanup",
     message: "native failure",
   });
-  mocks.getDatabaseWorkspace.mockResolvedValue({ id: { id: "root" }, kind: "databaseRoot" });
+  mocks.getDatabaseWorkspace.mockResolvedValue({
+    root: { id: { id: "root" }, kind: "databaseRoot" },
+    displayName: "Databases",
+  });
   mocks.listWorkspaceDatabases.mockResolvedValueOnce({ entries: [], unread: [] });
   mocks.createWorkspaceDatabase.mockRejectedValueOnce(cause);
   await expect(ensureAccountDatabaseHandle(undefined, "Felix", "lichess")).rejects.toBe(cause);
@@ -137,7 +140,7 @@ test.each([
   async ({ rejection }) => {
     const root = { id: { id: "database-root" }, kind: "databaseRoot" };
     const handle = { id: { id: "database" }, kind: "database" };
-    mocks.getDatabaseWorkspace.mockResolvedValue(root);
+    mocks.getDatabaseWorkspace.mockResolvedValue({ root: root, displayName: "Databases" });
     mocks.listWorkspaceDatabases
       .mockResolvedValueOnce({ entries: [], unread: [] })
       .mockResolvedValueOnce({

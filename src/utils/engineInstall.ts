@@ -12,7 +12,7 @@ export async function installCatalogEngine(
 ): Promise<EngineCompletion> {
     const url = engine.downloadLink;
     if (!url) throw new Error("engine download link is required");
-    const root = await tauri.getEngineWorkspace();
+    const root = (await tauri.getEngineWorkspace()).root;
     return tauri.installEngineWorkflow(
         operationId,
         {

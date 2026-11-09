@@ -48,6 +48,13 @@ test.each(["Cancellation", "native rejection"])(
 let root: Root;
 let host: HTMLDivElement;
 
+test.each([null, ""])("offers directory selection for value %s", async (value) => {
+  await act(async () =>
+    root.render(<DirectorySetting value={value} issueWorkspace={vi.fn()} onSelect={vi.fn()} />),
+  );
+  expect(host.textContent).toContain("Settings.Directories.Select");
+});
+
 beforeEach(() => {
   host = document.createElement("div");
   document.body.append(host);

@@ -15,7 +15,7 @@ import {
 import { useLoaderData } from "@tanstack/react-router";
 import { useAtom } from "jotai";
 import { RESET } from "jotai/utils";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { changeLocale } from "@/i18n";
 import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
@@ -61,6 +61,7 @@ import PercentagePreferenceSlider from "./PercentagePreferenceSlider";
 import PiecesSelect from "./PiecesSelect";
 import RepertoireMinGamesSetting from "./RepertoireMinGamesSetting";
 import { DirectorySetting } from "./DirectorySetting";
+import { WorkspaceDirectorySetting } from "./WorkspaceDirectorySetting";
 import classes from "./SettingsPage.module.css";
 import { SettingRow } from "./SettingsLayout";
 import SettingsSelect from "./SettingsSelect";
@@ -105,9 +106,6 @@ export default function Page() {
   const [fileWorkspaceDisplayName, setFileWorkspaceDisplayName] = useAtom(
     fileWorkspaceDisplayNameAtom,
   );
-  const [databasesDirectory, setDatabasesDirectory] = useState("Databases");
-  const [enginesDirectory, setEnginesDirectory] = useState("Engines");
-  const [puzzleWorkspaceName, setPuzzleWorkspaceName] = useState("Puzzles");
   const [, setPuzzleWorkspaceGeneration] = useAtom(puzzleWorkspaceGenerationAtom);
   const showDirectoryError = useCallback(
     (error: unknown) => {
@@ -115,13 +113,6 @@ export default function Page() {
     },
     [t],
   );
-  useEffect(() => {
-    void tauri
-      .getPuzzleWorkspace()
-      .then((workspace) => setPuzzleWorkspaceName(workspace.displayName))
-      .catch(() => {});
-  }, []);
-
   const [moveMethod, setMoveMethod] = useAtom(moveMethodAtom);
   const [moveNotationType, setMoveNotationType] = useAtom(moveNotationTypeAtom);
   const [showCoordinates, setShowCoordinates] = useAtom(showCoordinatesAtom);
@@ -550,13 +541,9 @@ export default function Page() {
         description: t("Settings.Directories.Databases.Desc"),
         keywords: ["databases", "directory", "folder", "path"],
         render: () => (
-          <DirectorySetting
-            value={databasesDirectory || null}
-            issueWorkspace={async () => {
-              await tauri.issueDatabaseWorkspace();
-              return "Databases";
-            }}
-            onSelect={setDatabasesDirectory}
+          <WorkspaceDirectorySetting
+            load={() => tauri.getDatabaseWorkspace()}
+            issue={() => tauri.issueDatabaseWorkspace()}
             onError={showDirectoryError}
           />
         ),
@@ -568,13 +555,9 @@ export default function Page() {
         description: t("Settings.Directories.Engines.Desc"),
         keywords: ["engines", "directory", "folder", "path"],
         render: () => (
-          <DirectorySetting
-            value={enginesDirectory}
-            issueWorkspace={async () => {
-              await tauri.issueEngineWorkspace();
-              return "Engines";
-            }}
-            onSelect={setEnginesDirectory}
+          <WorkspaceDirectorySetting
+            load={() => tauri.getEngineWorkspace()}
+            issue={() => tauri.issueEngineWorkspace()}
             onError={showDirectoryError}
           />
         ),
@@ -586,13 +569,10 @@ export default function Page() {
         description: t("Settings.Directories.Puzzles.Desc"),
         keywords: ["puzzles", "directory", "folder", "path"],
         render: () => (
-          <DirectorySetting
-            value={puzzleWorkspaceName}
-            issueWorkspace={async () => (await tauri.issuePuzzleWorkspace()).displayName}
-            onSelect={(name) => {
-              setPuzzleWorkspaceName(name);
-              setPuzzleWorkspaceGeneration((generation) => generation + 1);
-            }}
+          <WorkspaceDirectorySetting
+            load={() => tauri.getPuzzleWorkspace()}
+            issue={() => tauri.issuePuzzleWorkspace()}
+            onSelected={() => setPuzzleWorkspaceGeneration((generation) => generation + 1)}
             onError={showDirectoryError}
           />
         ),
@@ -608,16 +588,11 @@ export default function Page() {
       animationSpeed,
       materialDisplay,
       fileWorkspaceDisplayName,
-      databasesDirectory,
-      enginesDirectory,
-      puzzleWorkspaceName,
       setMoveNotationType,
       setMoveMethod,
       setIsNative,
       setFileWorkspace,
       setFileWorkspaceDisplayName,
-      setDatabasesDirectory,
-      setEnginesDirectory,
       setPuzzleWorkspaceGeneration,
       setShowCoordinates,
       setAnimationSpeed,

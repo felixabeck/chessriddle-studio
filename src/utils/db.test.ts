@@ -59,7 +59,10 @@ import {
 afterEach(() => vi.unstubAllGlobals());
 beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getDatabaseWorkspace.mockResolvedValue({ id: { id: "root" }, kind: "databaseRoot" });
+    mocks.getDatabaseWorkspace.mockResolvedValue({
+        root: { id: { id: "root" }, kind: "databaseRoot" },
+        displayName: "Databases",
+    });
     mocks.logError.mockResolvedValue(undefined);
 });
 
@@ -419,7 +422,7 @@ describe("production database metadata pipeline", () => {
 
     it("returns unread children and the original root without reading their database info", async () => {
         const root = { id: { id: "unread-root" }, kind: "databaseRoot" };
-        mocks.getDatabaseWorkspace.mockResolvedValue(root);
+        mocks.getDatabaseWorkspace.mockResolvedValue({ root: root, displayName: "Databases" });
         mocks.listWorkspaceDatabases.mockResolvedValue({
             entries: [
                 { handle: handle("healthy"), filename: "healthy.db3", availability: "available" },

@@ -188,7 +188,10 @@ beforeEach(() => {
     unread: [],
     root: { id: { id: "listing-root" }, kind: "databaseRoot" },
   });
-  mocks.getDatabaseWorkspace.mockResolvedValue({ id: { id: "root" }, kind: "databaseRoot" });
+  mocks.getDatabaseWorkspace.mockResolvedValue({
+    root: { id: { id: "root" }, kind: "databaseRoot" },
+    displayName: "Databases",
+  });
   mocks.listWorkspaceDatabases.mockResolvedValue({
     entries: [{ handle: database, filename: "Felix_chesscom.db3" }],
     unread: [],

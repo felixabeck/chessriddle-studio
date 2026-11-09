@@ -123,7 +123,10 @@ beforeEach(() => {
     durabilityConfirmed: true,
   });
   mocks.issuePgnExportDestination.mockResolvedValue({ handle: source.handle });
-  mocks.getDatabaseWorkspace.mockResolvedValue({ id: { id: "root" }, kind: "databaseRoot" });
+  mocks.getDatabaseWorkspace.mockResolvedValue({
+    root: { id: { id: "root" }, kind: "databaseRoot" },
+    displayName: "Databases",
+  });
   mocks.createWorkspaceDatabase.mockResolvedValue({ id: { id: "restored" }, kind: "database" });
   mocks.migrateLinkedCollection.mockResolvedValue(collection);
   host = document.createElement("div");

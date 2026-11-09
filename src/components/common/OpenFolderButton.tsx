@@ -12,7 +12,7 @@ function OpenFolderButton() {
     await runUnlessCancelled(
       t("Common.Error"),
       async () => {
-        await tauri.openEngineWorkspace(await tauri.getEngineWorkspace());
+        await tauri.openEngineWorkspace((await tauri.getEngineWorkspace()).root);
       },
       "engine",
     );

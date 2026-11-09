@@ -410,10 +410,7 @@ fn issue_puzzle_workspace_blocking(
     authority: &crate::infra::path_authority::SharedPathAuthority,
     path: PathBuf,
 ) -> Result<crate::infra::path_authority::PuzzleRootDescriptor, Error> {
-    let display_name = path
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "Puzzles".into());
+    let display_name = crate::infra::path_authority::selected_root_display_name(&path, "Puzzles");
     authority.with_mut(|authority| {
         let root = authority.get_or_create_puzzle_root(&path, display_name, None)?;
         authority.set_active_puzzle_root(&root)?;

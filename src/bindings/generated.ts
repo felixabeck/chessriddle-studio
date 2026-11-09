@@ -164,7 +164,7 @@ async downloadDestinationIsKnown(destination: PathRef) : Promise<Result<boolean,
  * to a persistent database workspace and the renderer receives only its
  * opaque handle.
  */
-async issueDatabaseWorkspace() : Promise<Result<DatabaseRootHandle, ErrorPayload>> {
+async issueDatabaseWorkspace() : Promise<Result<DatabaseRootDescriptor, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("issue_database_workspace") };
 } catch (e) {
@@ -176,7 +176,7 @@ async issueDatabaseWorkspace() : Promise<Result<DatabaseRootHandle, ErrorPayload
  * Returns the active database root or refuses an unusable selection. With no selection,
  * it acquires, registers and activates the app-owned default root without a renderer path.
  */
-async getDatabaseWorkspace() : Promise<Result<DatabaseRootHandle, ErrorPayload>> {
+async getDatabaseWorkspace() : Promise<Result<DatabaseRootDescriptor, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_database_workspace") };
 } catch (e) {
@@ -208,7 +208,7 @@ async databaseDownloadDestination(root: DatabaseRootHandle) : Promise<Result<Pat
     else return { status: "error", error: e  as any };
 }
 },
-async issueEngineWorkspace() : Promise<Result<EngineRootHandle, ErrorPayload>> {
+async issueEngineWorkspace() : Promise<Result<EngineRootDescriptor, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("issue_engine_workspace") };
 } catch (e) {
@@ -220,7 +220,7 @@ async issueEngineWorkspace() : Promise<Result<EngineRootHandle, ErrorPayload>> {
  * Returns the active engine root or refuses an unusable selection. The app-owned default
  * is created and activated only when no selection exists.
  */
-async getEngineWorkspace() : Promise<Result<EngineRootHandle, ErrorPayload>> {
+async getEngineWorkspace() : Promise<Result<EngineRootDescriptor, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_engine_workspace") };
 } catch (e) {
@@ -1389,6 +1389,7 @@ export type DatabaseHandleKind = "database"
 export type DatabaseInfo = { title: string; description: string; player_count: number; event_count: number; game_count: number; storage_size: string; filename: string; indexed: boolean }
 export type DatabaseInfoResult = ({ status: "ready" } & DatabaseInfo) | { status: "upgrading"; filename: string; title: string | null } | { status: "busy"; filename: string } | { status: "upgrade-failed"; filename: string; message: string; reason: DatabaseUpgradeFailureReason }
 export type DatabaseListing = { entries: DatabaseDescriptor[]; unread: DatabaseUnread[] }
+export type DatabaseRootDescriptor = { root: DatabaseRootHandle; displayName: string }
 /**
  * Opaque handle for a database root.  A root is the only capability that may
  * create or discover database children; the renderer never supplies a path or
@@ -1448,6 +1449,7 @@ export type EngineOptions = { fen: string; moves: string[]; extraOptions: Engine
  */
 export type EngineResourceHandle = { id: PathRef; kind: EngineResourceHandleKind; displayName: string }
 export type EngineResourceHandleKind = "file" | "directory"
+export type EngineRootDescriptor = { root: EngineRootHandle; displayName: string }
 /**
  * Opaque authority-managed engine installation root.
  */

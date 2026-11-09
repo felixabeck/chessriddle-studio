@@ -96,7 +96,7 @@ export async function ensureAccountDatabaseHandle(
   type: "lichess" | "chesscom",
 ): Promise<DatabaseHandle> {
   if (existing) return existing;
-  const root = await tauri.getDatabaseWorkspace();
+  const root = (await tauri.getDatabaseWorkspace()).root;
   const filename = accountDatabaseFilename(title, type);
   const registered = (await tauri.listWorkspaceDatabases(root)).entries.find(
     (candidate) => candidate.filename === filename,

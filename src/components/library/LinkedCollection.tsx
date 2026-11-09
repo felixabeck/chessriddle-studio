@@ -279,7 +279,7 @@ export function LinkedCollection({
           disabled={pending}
           onClick={() =>
             void run(async () => {
-              const root = await tauri.getDatabaseWorkspace();
+              const root = (await tauri.getDatabaseWorkspace()).root;
               const destination = await tauri.createWorkspaceDatabase(
                 root,
                 `restored-${crypto.randomUUID()}.db3`,

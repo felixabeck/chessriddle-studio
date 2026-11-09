@@ -31,7 +31,10 @@ let root: Root;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  native.getEngineWorkspace.mockResolvedValue({ id: { id: "engine-root" }, kind: "engineRoot" });
+  native.getEngineWorkspace.mockResolvedValue({
+    root: { id: { id: "engine-root" }, kind: "engineRoot" },
+    displayName: "Engines",
+  });
   native.openEngineWorkspace.mockResolvedValue(undefined);
   container = document.createElement("div");
   document.body.append(container);
