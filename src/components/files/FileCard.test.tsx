@@ -5,8 +5,10 @@ import { cancellationError } from "@/platform/tauri";
 import { tabStorage } from "@/state/store/tabStorage";
 import type { StampedGame } from "@/bindings";
 import { installMatchMediaStub } from "@/tests/matchMedia";
-import { getDefaultStore } from "jotai";
+import { createStore, getDefaultStore, Provider } from "jotai";
 import { tabsAtom } from "@/state/atoms";
+import { libraryGamePositionAtom } from "@/components/library/memory";
+import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 
 const mocks = vi.hoisted(() => ({
   readGames: vi.fn(),
@@ -79,6 +81,8 @@ vi.mock("@tanstack/react-virtual", () => ({
   useVirtualizer: () => ({
     getTotalSize: () => 60,
     measure: () => undefined,
+    getOffsetForIndex: () => [0, "auto"],
+    scrollToOffset: () => undefined,
     getVirtualItems: () => [0, 1].map((index) => ({ index, size: 30, start: index * 30 })),
   }),
 }));
@@ -153,6 +157,7 @@ describe("FileCard", () => {
     sessionStorage.clear();
     localStorage.clear();
     getDefaultStore().set(tabsAtom, []);
+    getDefaultStore().set(libraryGamePositionAtom, null);
     mocks.actualSelector = false;
     container = document.createElement("div");
     document.body.append(container);
@@ -416,6 +421,10 @@ describe("FileCard", () => {
 
     await renderWithMantine(<FileCard onEditMetadata={vi.fn()} selected={sampleFileA} />, root);
     expect(mocks.readGames).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("[data-testid='game-selector']")!.click(),
+    );
+    expect(mocks.readGames).toHaveBeenCalledTimes(2);
 
     await renderWithMantine(
       <FileCard
@@ -425,9 +434,66 @@ describe("FileCard", () => {
       root,
     );
 
-    expect(mocks.readGames).toHaveBeenCalledTimes(1);
+    expect(mocks.readGames).toHaveBeenCalledTimes(2);
     expect(container.textContent).toContain("renamed");
     expect(container.querySelector("[data-testid='game-preview']")?.textContent).toBe("pgn-a");
+  });
+
+  test("remount restores the handle's position, clamps on read without rewriting, and keeps one slot", async () => {
+    mocks.readGames.mockResolvedValue([stampedGame("preview")]);
+    const renderFile = (selected: FileMetadata) =>
+      renderWithMantine(
+        <FileCard key={selected.handle.id.id} selected={selected} onEditMetadata={vi.fn()} />,
+        root,
+      );
+    const next = () =>
+      act(async () =>
+        container.querySelector<HTMLButtonElement>("[data-testid='game-selector']")!.click(),
+      );
+    await renderFile(sampleFileA);
+    await next();
+    await next();
+    await next();
+    await renderWithMantine(null, root);
+    await renderFile({ ...sampleFileA, numGames: 2, handle: { ...sampleFileA.handle } });
+    expect(mocks.readGames).toHaveBeenLastCalledWith(sampleFileA.handle, 1, 1, expect.anything());
+    expect(getDefaultStore().get(libraryGamePositionAtom)).toEqual({
+      key: fileWorkspaceKey(sampleFileA.handle),
+      index: 3,
+    });
+    await renderFile(sampleFileA);
+    expect(mocks.readGames).toHaveBeenLastCalledWith(sampleFileA.handle, 3, 3, expect.anything());
+    await renderFile(sampleFileB);
+    expect(mocks.readGames).toHaveBeenLastCalledWith(sampleFileB.handle, 0, 0, expect.anything());
+    // Merely visiting B does not replace the last positioned file.
+    await renderFile(sampleFileA);
+    expect(mocks.readGames).toHaveBeenLastCalledWith(sampleFileA.handle, 3, 3, expect.anything());
+    await renderFile(sampleFileB);
+    await next();
+    await renderFile(sampleFileA);
+    expect(mocks.readGames).toHaveBeenLastCalledWith(sampleFileA.handle, 0, 0, expect.anything());
+  });
+
+  test("a failed restored preview keeps the position, and a fresh store starts at the first game with storage retained", async () => {
+    mocks.readGames.mockResolvedValue([stampedGame("preview")]);
+    await renderWithMantine(<FileCard selected={sampleFileA} onEditMetadata={vi.fn()} />, root);
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("[data-testid='game-selector']")!.click(),
+    );
+    const remembered = getDefaultStore().get(libraryGamePositionAtom);
+    await renderWithMantine(null, root);
+    mocks.readGames.mockRejectedValueOnce(new Error("restored read failed"));
+    await renderWithMantine(<FileCard selected={sampleFileA} onEditMetadata={vi.fn()} />, root);
+    expect(mocks.readGames).toHaveBeenLastCalledWith(sampleFileA.handle, 1, 1, expect.anything());
+    expect(getDefaultStore().get(libraryGamePositionAtom)).toBe(remembered);
+    await renderWithMantine(null, root);
+    await renderWithMantine(
+      <Provider store={createStore()}>
+        <FileCard selected={sampleFileA} onEditMetadata={vi.fn()} />
+      </Provider>,
+      root,
+    );
+    expect(mocks.readGames).toHaveBeenLastCalledWith(sampleFileA.handle, 0, 0, expect.anything());
   });
 
   test("renders the metadata-edit control and invokes its callback", async () => {
@@ -546,7 +612,7 @@ describe("FileCard", () => {
     expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/" });
   });
 
-  test("row-focused Enter opens the non-first file game without changing selection first", async () => {
+  test("row-focused Enter opens and remembers the non-first file game without a preceding click", async () => {
     mocks.readGame.mockResolvedValue(stampedGame('[Event "Fresh second"]\n\n1. d4 *'));
     await renderActualList();
     const second = container.querySelectorAll<HTMLElement>('[role="option"]')[1];
@@ -557,6 +623,15 @@ describe("FileCard", () => {
     expect(mocks.readGame).toHaveBeenCalledExactlyOnceWith(sampleFileA.handle, 1, undefined);
     expect(getDefaultStore().get(tabsAtom)[0].gameOrigin).toEqual(
       expect.objectContaining({ kind: "file", gameNumber: 1 }),
+    );
+    expect(getDefaultStore().get(libraryGamePositionAtom)).toEqual({
+      key: fileWorkspaceKey(sampleFileA.handle),
+      index: 1,
+    });
+    await renderWithMantine(null, root);
+    await renderWithMantine(<FileCard selected={sampleFileA} onEditMetadata={vi.fn()} />, root);
+    expect(container.querySelector('[role="option"][aria-selected="true"]')?.textContent).toContain(
+      "2Preview",
     );
   });
 

@@ -1,6 +1,7 @@
 import { tauri } from "@/platform/tauri";
 import { Box, Divider, Group, Stack, Text } from "@mantine/core";
 import { LibraryTypeBadge } from "@/components/library/presentation";
+import { libraryGamePositionAtom } from "@/components/library/memory";
 import { Pencil } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom } from "jotai";
@@ -25,8 +26,7 @@ import type { FileMetadata } from "./file";
 const PREVIEW_CONTROLS_MIN_WIDTH_REM = 26;
 const GAME_LIST_MIN_HEIGHT = "8rem";
 
-// The parent keys this card by the handle key, so a different file remounts it (resetting the
-// page and the game-name cache) while a relisted copy of the same file keeps both.
+// The parent keys this card by the handle key, so a different file remounts its game-name cache.
 function FileCard({
   selected,
   onEditMetadata,
@@ -41,12 +41,15 @@ function FileCard({
 
   const [selectedGame, setSelectedGame] = useState<string | null>(null);
   const [previewOmitted, setPreviewOmitted] = useState(false);
-  const [page, setPage] = useState(0);
+  const [position, setPosition] = useAtom(libraryGamePositionAtom);
   const [games, setGames] = useState<Map<number, GameSelectorRow>>(new Map());
   // Two handles with the same key are the same file, so a new handle object must not retrigger the read.
   const handleRef = useRef(selected.handle);
   handleRef.current = selected.handle;
   const handleKey = fileWorkspaceKey(selected.handle);
+  const page =
+    position?.key === handleKey ? Math.min(position.index, Math.max(0, selected.numGames - 1)) : 0;
+  const setPage = (index: number) => setPosition({ key: handleKey, index });
   const { ref: cardRef, width: cardWidth } = useElementSize();
   // Preserve this card's 16px fallback regardless of the configured font scale.
   const rootFont = rootFontPx(getComputedStyle(document.documentElement).fontSize, 100);
@@ -90,6 +93,7 @@ function FileCard({
   );
   const activateGame = (index: number) => {
     if (index < 0 || index >= selected.numGames) return;
+    setPage(index);
     return gameOpen.activate({ file: selected, index });
   };
 
@@ -133,6 +137,7 @@ function FileCard({
             setGames={setGames}
             games={games}
             activePage={page}
+            revealActivePage
             path={selected.handle}
             setPage={setPage}
             onActivate={activateGame}

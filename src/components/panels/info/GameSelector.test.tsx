@@ -14,10 +14,14 @@ const mocks = vi.hoisted(() => ({
   parsePGN: vi.fn(),
   visibleIndices: [0],
   measure: vi.fn(),
+  getOffsetForIndex: vi.fn((_index: number, _align: string) => [240, "auto"]),
+  scrollToOffset: vi.fn(),
   estimateSize: (() => 0) as (index: number) => number,
   virtualizer: {
     getTotalSize: () => 30,
     measure: () => mocks.measure(),
+    getOffsetForIndex: (index: number, align: string) => mocks.getOffsetForIndex(index, align),
+    scrollToOffset: (...args: unknown[]) => mocks.scrollToOffset(...args),
     getVirtualItems: () =>
       mocks.visibleIndices.map((index) => ({ index, size: 30, start: index * 30 })),
   },
@@ -60,7 +64,11 @@ vi.mock("@mantine/core", () => ({
         {children}
       </div>
     ) : null,
-  ScrollArea: ({ children, viewportRef }: any) => <div ref={viewportRef}>{children}</div>,
+  ScrollArea: ({ children, viewportRef, h: _h, ...props }: any) => (
+    <div ref={viewportRef} {...props}>
+      {children}
+    </div>
+  ),
   Stack: ({ children }: any) => <div>{children}</div>,
   Text: ({ children, truncate: _truncate, fz: _fz, flex: _flex, lh: _lh, ...props }: any) => (
     <p {...props}>{children}</p>
@@ -138,6 +146,8 @@ beforeEach(async () => {
   mocks.parsePGN.mockReset().mockResolvedValue({ headers: { event: "Loaded game" } });
   vi.mocked(notifications.show).mockReset();
   mocks.visibleIndices = [0];
+  mocks.getOffsetForIndex.mockClear();
+  mocks.scrollToOffset.mockClear();
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -168,6 +178,78 @@ function renderSelector(
     />,
   );
 }
+
+async function renderReveal(
+  games: Map<number, GameSelectorRow>,
+  revealActivePage = true,
+  setPage = vi.fn(),
+) {
+  await act(async () =>
+    root.render(
+      <GameSelector
+        games={games}
+        setGames={vi.fn()}
+        setPage={setPage}
+        total={10}
+        path={path}
+        activePage={8}
+        revealActivePage={revealActivePage}
+      />,
+    ),
+  );
+}
+
+test("reveal is opt-in and repeats after section heights or the visible range change", async () => {
+  const games = new Map<number, GameSelectorRow>([[0, { name: "First" }]]);
+  await renderReveal(games, false);
+  expect(mocks.scrollToOffset).not.toHaveBeenCalled();
+  await act(async () => root.render(null));
+  await renderReveal(games);
+  expect(mocks.getOffsetForIndex).toHaveBeenLastCalledWith(8, "auto");
+  expect(mocks.scrollToOffset).toHaveBeenCalledWith(240);
+  mocks.scrollToOffset.mockClear();
+  await renderReveal(new Map([...games, [8, { name: "Late", section: "Loaded heading" }]]));
+  expect(mocks.scrollToOffset).toHaveBeenCalledOnce();
+  mocks.scrollToOffset.mockClear();
+  mocks.visibleIndices = [7, 8, 9];
+  await renderReveal(new Map([...games, [8, { name: "Late", section: "Loaded heading" }]]));
+  expect(mocks.scrollToOffset).toHaveBeenCalledOnce();
+});
+
+test.each(["wheel", "touchmove", "pointerdown", "keydown"])(
+  "%s ends the reveal so late headings do not pull the list back",
+  async (type) => {
+    const games = new Map<number, GameSelectorRow>([[0, { name: "First" }]]);
+    await renderReveal(games);
+    expect(mocks.scrollToOffset).toHaveBeenCalled();
+    const viewport = host.querySelector('[role="listbox"]')!.parentElement!;
+    await act(async () =>
+      viewport.dispatchEvent(
+        type === "keydown"
+          ? new KeyboardEvent(type, { key: "PageDown", bubbles: true })
+          : new Event(type, { bubbles: true }),
+      ),
+    );
+    mocks.scrollToOffset.mockClear();
+    mocks.visibleIndices = [7, 8, 9];
+    await renderReveal(new Map([...games, [8, { name: "Late", section: "Loaded heading" }]]));
+    expect(mocks.scrollToOffset).not.toHaveBeenCalled();
+  },
+);
+
+test("a failed row read during reveal adds no read and never changes the selected position", async () => {
+  mocks.visibleIndices = [8];
+  mocks.readGames.mockRejectedValue(new Error("Remembered row unavailable"));
+  const setPage = vi.fn();
+  await renderReveal(new Map([[0, { name: "First" }]]), true, setPage);
+  await act(async () => {});
+  expect(mocks.readGames).toHaveBeenCalledExactlyOnceWith(path, 8, 8, {
+    signal: expect.any(AbortSignal),
+  });
+  expect(setPage).not.toHaveBeenCalled();
+  expect(host.querySelector('[role="option"]')?.getAttribute("aria-selected")).toBe("true");
+  expect(notifications.show).toHaveBeenCalledOnce();
+});
 
 function renderPageLoader(
   deleteGame: (snapshot: {

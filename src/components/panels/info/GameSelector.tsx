@@ -58,6 +58,7 @@ export default function GameSelector({
   deleteGame,
   onActivate,
   editableSections = false,
+  revealActivePage = false,
 }: {
   games: Map<number, GameSelectorRow>;
   setGames: React.Dispatch<React.SetStateAction<Map<number, GameSelectorRow>>>;
@@ -68,6 +69,7 @@ export default function GameSelector({
   deleteGame?: DeleteGame;
   onActivate?: (index: number) => void | Promise<void>;
   editableSections?: boolean;
+  revealActivePage?: boolean;
 }) {
   const { t } = useTranslation();
   const [sectionTarget, setSectionTarget] = useState<LineSectionTarget | null>(null);
@@ -150,6 +152,25 @@ export default function GameSelector({
   const visibleStart = virtualItems[0]?.index ?? -1;
   const visibleEnd = virtualItems.at(-1)?.index ?? -1;
 
+  const reveal = useRef(revealActivePage);
+  // Use a single offset write, without scrollToIndex's queued retries, so user scrolling wins.
+  useEffect(() => {
+    if (!revealActivePage || !reveal.current) return;
+    const offset = rowVirtualizer.getOffsetForIndex(activePage, "auto");
+    if (offset) rowVirtualizer.scrollToOffset(offset[0]);
+  }, [
+    revealActivePage,
+    activePage,
+    sectionLayout,
+    fontSize,
+    rowVirtualizer,
+    visibleStart,
+    visibleEnd,
+  ]);
+  const stopReveal = () => {
+    reveal.current = false;
+  };
+
   useEffect(() => {
     if (games.size === 0) {
       void loadMoreRows(0, Math.min(INITIAL_LOAD_ROWS - 1, total - 1));
@@ -167,7 +188,17 @@ export default function GameSelector({
   }, [games, loadMoreRows, total, visibleStart, visibleEnd]);
 
   return (
-    <ScrollArea viewportRef={parentRef} h="100%">
+    <ScrollArea
+      viewportRef={parentRef}
+      h="100%"
+      onWheelCapture={stopReveal}
+      onTouchMoveCapture={stopReveal}
+      onPointerDownCapture={stopReveal}
+      onKeyDownCapture={(event) => {
+        if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key))
+          stopReveal();
+      }}
+    >
       <Box
         role="listbox"
         aria-label={t("Common.Games")}

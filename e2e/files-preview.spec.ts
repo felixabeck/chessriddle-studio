@@ -22,6 +22,78 @@ const GAME_ROW_HEIGHT_PX = 30;
 // Covers 10 attempts × 3 animation frames each, plus a 2-frame margin for queued callbacks.
 const SCROLL_SETTLE_FRAMES = 32;
 
+test("files-preview: returning to Library restores a late game after section headings load", async ({
+    page,
+    mockScenario,
+}) => {
+    const file = { ...repertoireFile, gameCount: 40 };
+    const games = Array.from({ length: file.gameCount }, (_, index) => ({
+        pgn: `[White "White ${index + 1}"]\n[Black "Black ${index + 1}"]\n[Section "Section ${index + 1}"]\n\n1. e4 c5 *`,
+        stamp: String(index + 1).padStart(64, "0"),
+        revision: "remembered-file-revision",
+        present: true,
+    }));
+    const tokens = Object.fromEntries(
+        games.map((game, index) => [
+            game.pgn,
+            [
+                ...["White", "Black", "Section"].map((tag) => ({
+                    type: "Header",
+                    value: { tag, value: `${tag} ${index + 1}` },
+                })),
+                { type: "San", value: "e4" },
+                { type: "San", value: "c5" },
+                { type: "Outcome", value: "*" },
+            ],
+        ]),
+    );
+    await mockScenario({
+        commands: filesWorkspaceCommands([], {
+            list_file_workspace: { result: { entries: [file], unread: [] } },
+            read_games: { pgnGames: games },
+            read_game: { pgnGames: games },
+            file_revision: { result: "remembered-file-revision" },
+            lex_pgn: { pgnTokens: tokens, delay: 80 },
+        }),
+    });
+    await page.goto("/library");
+    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await selectFilesTreeRow(page, file.name);
+    const list = page.getByRole("listbox", { name: "Games", exact: true });
+    const viewport = list.locator("..");
+    const late = list.getByRole("option", { name: /White 40 - Black 40/ });
+    // Reach the last game through user scrolling before opening it.
+    await expect(async () => {
+        await viewport.hover();
+        await page.mouse.wheel(0, 3000);
+        await expect(late).toBeInViewport({ ratio: 1 });
+    }).toPass();
+    await late.dblclick();
+    await expect(page).toHaveURL(/\/$/);
+    expect((await activeWorkspaceTab(page))?.gameOrigin).toMatchObject({ gameNumber: 39 });
+    await page.locator("nav").getByRole("link", { name: "Library", exact: true }).click();
+    await expect(page.getByRole("treeitem", { name: file.name, exact: true })).toHaveAttribute(
+        "aria-selected",
+        "true",
+    );
+    await expect(late).toHaveAttribute("aria-selected", "true");
+    await expect(late).toHaveAttribute("aria-description", "Section 40");
+    const isInsideList = () =>
+        late.evaluate((row) => {
+            const viewport = row.closest(".mantine-ScrollArea-viewport")!;
+            const bounds = row.getBoundingClientRect();
+            const top = viewport.getBoundingClientRect().top + viewport.clientTop;
+            return bounds.top >= top && bounds.bottom <= top + viewport.clientHeight;
+        });
+    await expect.poll(isInsideList).toBe(true);
+    // Let remaining heading loads and virtualizer layout updates settle, without scrolling.
+    await page.evaluate(async (frames) => {
+        for (let frame = 0; frame < frames; frame += 1)
+            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    }, SCROLL_SETTLE_FRAMES);
+    expect(await isInsideList()).toBe(true);
+});
+
 for (const compact of [false, true]) {
     test(`files-preview: Trash view ${compact ? "320px at 200%" : "standard"}`, async ({
         page,

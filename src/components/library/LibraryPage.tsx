@@ -1,4 +1,5 @@
 import { libraryButtonProps } from "./presentation";
+import { libraryFilterAtom, librarySearchAtom, librarySelectionAtom } from "./memory";
 import {
   Alert,
   Box,
@@ -17,6 +18,7 @@ import {
 } from "@mantine/core";
 import { TriangleAlert, ChevronRight, Search } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useAtom } from "jotai";
 import useSWR, { useSWRConfig } from "swr";
 import { tauri } from "@/platform/tauri";
 import {
@@ -27,24 +29,19 @@ import {
 } from "./LinkedCollection";
 import { useTranslation } from "react-i18next";
 import DirectoryTree, { type CollectionPeer } from "@/components/files/DirectoryTree";
-import { FILE_TYPES, type Entry } from "@/components/files/file";
+import { FILE_TYPES } from "@/components/files/file";
 import { useFileWorkspace } from "@/components/files/useFileWorkspace";
 import { useDatabaseLibrary } from "@/components/databases/useDatabaseLibrary";
 import { databaseHandleKey } from "@/utils/db";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import { useCollectionCurrencies } from "@/state/linkedCollections";
 
-type Selection =
-  | { kind: "workspace"; workspaceKey: string; entry: Entry }
-  | { kind: "database"; key: string }
-  | { kind: "missingCollection"; id: string };
-
 export default function LibraryPage() {
   const { t } = useTranslation();
   const split = useMatches({ base: false, sm: true }, { getInitialValueInEffect: false });
-  const [selection, setSelection] = useState<Selection | null>(null);
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("");
+  const [selection, setSelection] = useAtom(librarySelectionAtom);
+  const [search, setSearch] = useAtom(librarySearchAtom);
+  const [filter, setFilter] = useAtom(libraryFilterAtom);
   const [visibleCount, setVisibleCount] = useState(0);
   const [migrationDatabase, setMigrationDatabase] = useState<string | null>(null);
   const { mutate } = useSWRConfig();
@@ -99,6 +96,7 @@ export default function LibraryPage() {
       setSelection(null);
   }, [
     selection,
+    setSelection,
     workspaceKey,
     files.data,
     files.selected,

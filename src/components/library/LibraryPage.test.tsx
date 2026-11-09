@@ -10,6 +10,7 @@ import type { ManagedDatabaseInfo } from "@/utils/db";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
 import LibraryPage from "./LibraryPage";
+import { libraryFilterAtom, librarySearchAtom, librarySelectionAtom } from "./memory";
 
 const mocks = vi.hoisted(() => ({
   files: [] as Entry[] | undefined,
@@ -199,6 +200,82 @@ afterEach(async () => {
 function rows() {
   return [...host.querySelectorAll<HTMLElement>('[role="treeitem"]')];
 }
+
+async function leaveLibrary() {
+  await act(async () => root.render(null));
+}
+
+test.each(["file", "directory", "database", "missingCollection"] as const)(
+  "remount restores the %s detail, search and type filter, but a fresh renderer with retained storage starts empty",
+  async (kind) => {
+    if (kind === "directory")
+      mocks.files = [
+        { type: "directory", handle: workspace, name: "Folder", children: [], lastModified: 0 },
+      ];
+    if (kind === "missingCollection") mocks.collections = [missingCollection];
+    await render();
+    await click(rows()[kind === "database" || kind === "missingCollection" ? 1 : 0]);
+    const selected = store.get(librarySelectionAtom);
+    expect(selected).not.toBeNull();
+    await input(host.querySelector('input[aria-label="Search"]')!, "hidden selection");
+    await click(host.querySelector<HTMLInputElement>(".mantine-Select-input")!);
+    await click(
+      [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+        (node) => node.textContent === "Repertoire",
+      )!,
+    );
+    await leaveLibrary();
+    await render();
+    expect(store.get(librarySelectionAtom)).toEqual(selected);
+    expect(host.querySelector<HTMLInputElement>('input[aria-label="Search"]')?.value).toBe(
+      "hidden selection",
+    );
+    expect(host.querySelector<HTMLInputElement>(".mantine-Select-input")?.value).toBe("Repertoire");
+    const detailRestored = {
+      file: host.querySelector("[data-file-detail]")?.textContent === file.name,
+      directory: host.textContent?.includes("Folder"),
+      database: button("Add Games") !== undefined,
+      missingCollection: host.querySelector("[data-linked-collection]") !== null,
+    }[kind];
+    expect(detailRestored).toBe(true);
+    await leaveLibrary();
+    // Keep web storage from the previous renderer, including the workspace.
+    store = createStore();
+    await render();
+    expect(host.textContent).toContain("Select a library item");
+    expect(host.querySelector<HTMLInputElement>('input[aria-label="Search"]')?.value).toBe("");
+    expect(host.querySelector<HTMLInputElement>(".mantine-Select-input")?.value).toBe("");
+    expect(store.get(librarySelectionAtom)).toBeNull();
+    expect(store.get(librarySearchAtom)).toBe("");
+    expect(store.get(libraryFilterAtom)).toBe("");
+  },
+);
+
+test.each(["file", "database"] as const)(
+  "return retains %s before its listing loads, then clears a removed item",
+  async (kind) => {
+    await click(rows()[kind === "file" ? 0 : 1]);
+    await leaveLibrary();
+    if (kind === "file") mocks.files = undefined;
+    else mocks.databases = undefined;
+    await render();
+    expect(store.get(librarySelectionAtom)).not.toBeNull();
+    if (kind === "file") mocks.files = [];
+    else mocks.databases = [];
+    await render();
+    expect(store.get(librarySelectionAtom)).toBeNull();
+    expect(host.textContent).toContain("Select a library item");
+  },
+);
+
+test("return to a changed collection clears only its remembered selection", async () => {
+  await click(rows()[0]);
+  await leaveLibrary();
+  store.set(fileWorkspaceAtom, { ...workspace, id: { id: "changed-while-away" } });
+  await render();
+  expect(store.get(librarySelectionAtom)).toBeNull();
+  expect(host.textContent).toContain("Select a library item");
+});
 
 test("unread peers use root and index keys, show category copy and leave healthy siblings usable", async () => {
   mocks.unread = [
