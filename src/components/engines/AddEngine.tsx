@@ -32,7 +32,10 @@ import { usePlatform } from "@/utils/files";
 import CatalogEngineCard from "./CatalogEngineCard";
 import EngineForm from "./EngineForm";
 import { createEngineFormValidation } from "./engineFormValidation";
-import { installCatalogEngineJob, usePendingEngineCompletion } from "@/state/catalogEngineCompletion";
+import {
+  installCatalogEngineJob,
+  usePendingEngineCompletion,
+} from "@/state/catalogEngineCompletion";
 
 function AddEngine({
   opened,

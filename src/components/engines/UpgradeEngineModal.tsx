@@ -5,7 +5,10 @@ import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import AppModal from "@/components/common/AppModal";
 import { cancelDownloadJob, useDownloadJob } from "@/hooks/downloadJobs";
-import { installCatalogEngineJob, usePendingEngineCompletion } from "@/state/catalogEngineCompletion";
+import {
+  installCatalogEngineJob,
+  usePendingEngineCompletion,
+} from "@/state/catalogEngineCompletion";
 import {
   EngineCapabilityQueryError,
   EngineCatalogVerificationError,
