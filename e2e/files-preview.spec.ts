@@ -78,20 +78,7 @@ test("files-preview: returning to Library restores a late game after section hea
     );
     await expect(late).toHaveAttribute("aria-selected", "true");
     await expect(late).toHaveAttribute("aria-description", "Section 40");
-    const isInsideList = () =>
-        late.evaluate((row) => {
-            const viewport = row.closest(".mantine-ScrollArea-viewport")!;
-            const bounds = row.getBoundingClientRect();
-            const top = viewport.getBoundingClientRect().top + viewport.clientTop;
-            return bounds.top >= top && bounds.bottom <= top + viewport.clientHeight;
-        });
-    await expect.poll(isInsideList).toBe(true);
-    // Let remaining heading loads and virtualizer layout updates settle, without scrolling.
-    await page.evaluate(async (frames) => {
-        for (let frame = 0; frame < frames; frame += 1)
-            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    }, SCROLL_SETTLE_FRAMES);
-    expect(await isInsideList()).toBe(true);
+    await expectCellStaysInViewport(late);
 });
 
 for (const compact of [false, true]) {
@@ -208,16 +195,20 @@ function tallCommentTokens(prefixMoves: string[] = []) {
 async function expectCurrentNotationCellVisible(notation: Locator, move: string) {
     const currentCell = notation.locator('[data-notation-current="true"]');
     await expect(currentCell.getByRole("button", { name: move, exact: true })).toHaveCount(1);
+    await expectCellStaysInViewport(currentCell);
+}
+
+async function expectCellStaysInViewport(cell: Locator) {
     const isInsideViewport = () =>
-        currentCell.evaluate((cell) => {
+        cell.evaluate((cell) => {
             const viewport = cell.closest(".mantine-ScrollArea-viewport")!;
             const bounds = cell.getBoundingClientRect();
             const top = viewport.getBoundingClientRect().top + viewport.clientTop;
             return bounds.top >= top && bounds.bottom <= top + viewport.clientHeight;
         });
     await expect.poll(isInsideViewport).toBe(true);
-    // Let queued virtualizer retries run before checking that the selected cell stays visible.
-    await notation.page().evaluate(async (settleFrames) => {
+    // Let heading loads, layout updates and queued retries settle without scrolling.
+    await cell.page().evaluate(async (settleFrames) => {
         for (let frame = 0; frame < settleFrames; frame += 1) {
             await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
         }

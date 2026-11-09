@@ -194,10 +194,8 @@ export default function GameSelector({
       onWheelCapture={stopReveal}
       onTouchMoveCapture={stopReveal}
       onPointerDownCapture={stopReveal}
-      onKeyDownCapture={(event) => {
-        if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key))
-          stopReveal();
-      }}
+      onKeyDownCapture={stopReveal}
+      onFocusCapture={stopReveal}
     >
       <Box
         role="listbox"

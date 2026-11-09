@@ -199,6 +199,22 @@ async function renderReveal(
   );
 }
 
+test("reveal stays off when revealActivePage is omitted", async () => {
+  await act(async () =>
+    root.render(
+      <GameSelector
+        games={new Map([[0, { name: "First" }]])}
+        setGames={vi.fn()}
+        setPage={vi.fn()}
+        total={10}
+        path={path}
+        activePage={8}
+      />,
+    ),
+  );
+  expect(mocks.scrollToOffset).not.toHaveBeenCalled();
+});
+
 test("reveal is opt-in and repeats after section heights or the visible range change", async () => {
   const games = new Map<number, GameSelectorRow>([[0, { name: "First" }]]);
   await renderReveal(games, false);
@@ -216,7 +232,7 @@ test("reveal is opt-in and repeats after section heights or the visible range ch
   expect(mocks.scrollToOffset).toHaveBeenCalledOnce();
 });
 
-test.each(["wheel", "touchmove", "pointerdown", "keydown"])(
+test.each(["wheel", "touchmove", "pointerdown", "keydown", "focusin"])(
   "%s ends the reveal so late headings do not pull the list back",
   async (type) => {
     const games = new Map<number, GameSelectorRow>([[0, { name: "First" }]]);
@@ -226,7 +242,7 @@ test.each(["wheel", "touchmove", "pointerdown", "keydown"])(
     await act(async () =>
       viewport.dispatchEvent(
         type === "keydown"
-          ? new KeyboardEvent(type, { key: "PageDown", bubbles: true })
+          ? new KeyboardEvent(type, { key: "a", bubbles: true })
           : new Event(type, { bubbles: true }),
       ),
     );

@@ -233,7 +233,7 @@ test.each(["file", "directory", "database", "missingCollection"] as const)(
     expect(host.querySelector<HTMLInputElement>(".mantine-Select-input")?.value).toBe("Repertoire");
     const detailRestored = {
       file: host.querySelector("[data-file-detail]")?.textContent === file.name,
-      directory: host.textContent?.includes("Folder"),
+      directory: host.textContent?.includes("Entries: {{number}}"),
       database: button("Add Games") !== undefined,
       missingCollection: host.querySelector("[data-linked-collection]") !== null,
     }[kind];
