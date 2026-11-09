@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => {
     useDatabaseContentValidation: vi.fn(),
     useDocumentLanguage: vi.fn(),
     sessionPersistenceNotice: vi.fn(() => null),
+    automaticStockfishNotice: vi.fn(() => null),
     closeSplashscreen: vi.fn(),
     getDefaultStore: vi.fn(),
     getMatches: vi.fn(),
@@ -106,6 +107,9 @@ vi.mock("@/hooks/useDocumentLanguage", () => ({
 vi.mock("./components/home/SessionPersistenceNotice", () => ({
   SessionPersistenceNotice: mocks.sessionPersistenceNotice,
 }));
+vi.mock("./components/home/AutomaticStockfishNotice", () => ({
+  AutomaticStockfishNotice: mocks.automaticStockfishNotice,
+}));
 vi.mock("./routeTree.gen", () => ({ routeTree: {} }));
 vi.mock("./styles/theme", () => ({
   appCssVariablesResolver: {},
@@ -167,6 +171,7 @@ beforeEach(() => {
   mocks.useDatabaseContentValidation.mockReset();
   mocks.useDocumentLanguage.mockReset();
   mocks.sessionPersistenceNotice.mockClear();
+  mocks.automaticStockfishNotice.mockClear();
   mocks.useAtomValue.mockReset();
 
   storeValues = { referenceDb: undefined };
@@ -592,6 +597,7 @@ describe("App", () => {
 
     expect(mocks.useConversionProgress).toHaveBeenCalled();
     expect(mocks.sessionPersistenceNotice).toHaveBeenCalled();
+    expect(mocks.automaticStockfishNotice).toHaveBeenCalled();
     expect(mocks.useDatabaseContentValidation).toHaveBeenCalled();
     expect(mocks.useDocumentLanguage).toHaveBeenCalled();
   });

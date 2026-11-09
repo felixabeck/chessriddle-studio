@@ -561,6 +561,7 @@
     "Engines.Empty.AddHint": "添加引擎以开始使用",
     "Engines.Empty.NoInstalled": "未安装任何引擎",
     "Engines.FileMissing": "(檔案不存在)",
+    "Engines.InstallStockfish": "安裝 Stockfish",
     "Engines.LoadError.Changed": "此引擎資料夾已變更。請在設定中選擇其他資料夾。",
     "Engines.LoadError.RootMissing": "此引擎資料夾已無法使用。請在設定中選擇其他資料夾。",
     "Engines.LoadError.RootPermission": "ChessRiddle Studio 沒有權限讀取此引擎資料夾。請在設定中選擇其他資料夾。",

@@ -570,6 +570,7 @@
     "Engines.Empty.AddHint": "Legg til en motor for å komme i gang",
     "Engines.Empty.NoInstalled": "Ingen motorer installert",
     "Engines.FileMissing": "(fil mangler)",
+    "Engines.InstallStockfish": "Installer Stockfish",
     "Engines.LoadError.Changed": "Denne motormappen er endret. Velg en annen i Innstillinger.",
     "Engines.LoadError.RootMissing": "Denne motormappen er ikke lenger tilgjengelig. Velg en annen i Innstillinger.",
     "Engines.LoadError.RootPermission": "ChessRiddle Studio har ikke tillatelse til å lese denne motormappen. Velg en annen i Innstillinger.",

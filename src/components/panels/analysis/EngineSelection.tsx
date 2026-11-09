@@ -5,6 +5,7 @@ import { useAtom } from "jotai";
 import { memo } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import EnginePortrait from "@/components/engines/EnginePortrait";
+import InstallStockfishButton from "@/components/engines/InstallStockfishButton";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { enginesAtom } from "@/state/atoms";
 import { type Engine } from "@/utils/engines";
@@ -37,14 +38,17 @@ function EngineSelection() {
     <>
       {engines.length === 0 && (
         <Center>
-          <Text>
-            <Trans
-              i18nKey="Engines.Selection.None"
-              components={{
-                addEngineLink: <Link to="/engines" />,
-              }}
-            />
-          </Text>
+          <Stack miw={0} maw="100%">
+            <Text>
+              <Trans
+                i18nKey="Engines.Selection.None"
+                components={{
+                  addEngineLink: <Link to="/engines" />,
+                }}
+              />
+            </Text>
+            <InstallStockfishButton />
+          </Stack>
         </Center>
       )}
 

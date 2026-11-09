@@ -579,6 +579,7 @@
     "Engines.Empty.AddHint": "Ajoutez un moteur pour commencer",
     "Engines.Empty.NoInstalled": "Aucun moteur n'est installé",
     "Engines.FileMissing": "(fichier manquant)",
+    "Engines.InstallStockfish": "Installer Stockfish",
     "Engines.LoadError.Changed": "Ce dossier de moteurs a changé. Choisissez-en un autre dans les paramètres.",
     "Engines.LoadError.RootMissing": "Ce dossier de moteurs n’est plus disponible. Choisissez-en un autre dans les paramètres.",
     "Engines.LoadError.RootPermission": "ChessRiddle Studio n’a pas l’autorisation de lire ce dossier de moteurs. Choisissez-en un autre dans les paramètres.",

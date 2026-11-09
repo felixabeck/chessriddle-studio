@@ -570,6 +570,7 @@
     "Engines.Empty.AddHint": "Bir satranç motoru ekleyerek başlayın.",
     "Engines.Empty.NoInstalled": "Yüklü motor yok",
     "Engines.FileMissing": "(dosya eksik)",
+    "Engines.InstallStockfish": "Stockfish'i yükle",
     "Engines.LoadError.Changed": "Bu motor klasörü değişti. Ayarlar’dan başka birini seçin.",
     "Engines.LoadError.RootMissing": "Bu motor klasörü artık kullanılamıyor. Ayarlar’dan başka birini seçin.",
     "Engines.LoadError.RootPermission": "ChessRiddle Studio'ın bu motor klasörünü okuma izni yok. Ayarlar’dan başka birini seçin.",

@@ -570,6 +570,7 @@
     "Engines.Empty.AddHint": "Füge eine Engine hinzu, um zu beginnen",
     "Engines.Empty.NoInstalled": "Nicht installiert",
     "Engines.FileMissing": "(Datei fehlt)",
+    "Engines.InstallStockfish": "Stockfish installieren",
     "Engines.LoadError.Changed": "Dieser Engine-Ordner hat sich geändert. Wähle einen anderen in den Einstellungen.",
     "Engines.LoadError.RootMissing": "Dieser Engine-Ordner ist nicht mehr verfügbar. Wähle einen anderen in den Einstellungen.",
     "Engines.LoadError.RootPermission": "ChessRiddle Studio darf diesen Engine-Ordner nicht lesen. Wähle einen anderen in den Einstellungen.",

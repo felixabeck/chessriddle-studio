@@ -588,6 +588,7 @@
     "Engines.Empty.AddHint": "Добавьте движок, чтобы начать",
     "Engines.Empty.NoInstalled": "Нет установленных движков",
     "Engines.FileMissing": "(файл отсутствует)",
+    "Engines.InstallStockfish": "Установить Stockfish",
     "Engines.LoadError.Changed": "Эта папка движков изменилась. Выберите другую в Настройках.",
     "Engines.LoadError.RootMissing": "Эта папка движков больше недоступна. Выберите другую в Настройках.",
     "Engines.LoadError.RootPermission": "У ChessRiddle Studio нет разрешения на чтение этой папки движков. Выберите другую в Настройках.",

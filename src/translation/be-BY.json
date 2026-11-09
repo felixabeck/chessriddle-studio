@@ -588,6 +588,7 @@
     "Engines.Empty.AddHint": "Дадайце рухавік, каб пачаць",
     "Engines.Empty.NoInstalled": "Няма ўсталяваных рухавікоў",
     "Engines.FileMissing": "(файл адсутнічае)",
+    "Engines.InstallStockfish": "Усталяваць Stockfish",
     "Engines.LoadError.Changed": "Гэта папка рухавікоў змянілася. Выберыце іншую ў наладах.",
     "Engines.LoadError.RootMissing": "Гэта папка рухавікоў больш недаступная. Выберыце іншую ў наладах.",
     "Engines.LoadError.RootPermission": "ChessRiddle Studio не мае дазволу на чытанне гэтай папкі рухавікоў. Выберыце іншую ў наладах.",

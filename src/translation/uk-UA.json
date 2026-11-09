@@ -588,6 +588,7 @@
     "Engines.Empty.AddHint": "Додайте рушій, щоб почати",
     "Engines.Empty.NoInstalled": "Немає встановлених рушіїв",
     "Engines.FileMissing": "(файл відсутній)",
+    "Engines.InstallStockfish": "Встановити Stockfish",
     "Engines.LoadError.Changed": "Ця тека рушіїв змінилася. Виберіть іншу в Налаштуваннях.",
     "Engines.LoadError.RootMissing": "Ця тека рушіїв більше недоступна. Виберіть іншу в Налаштуваннях.",
     "Engines.LoadError.RootPermission": "ChessRiddle Studio не має дозволу на читання цієї теки рушіїв. Виберіть іншу в Налаштуваннях.",

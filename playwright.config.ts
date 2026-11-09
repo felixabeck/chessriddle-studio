@@ -32,6 +32,21 @@ export default defineConfig({
     snapshotPathTemplate: "{testDir}/{testFilePath}-snapshots/{arg}-{projectName}{ext}",
     projects: [
         {
+            name: "first-engine-install",
+            testMatch: /first-engine-install\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "light" },
+        },
+        {
+            name: "first-engine-install-narrow",
+            testMatch: /first-engine-install\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 320, height: 720 }, colorScheme: "light" },
+        },
+        {
+            name: "first-engine-install-scaled",
+            testMatch: /first-engine-install\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "light" },
+        },
+        {
             name: "game-end",
             testMatch: /game-end\.spec\.ts/,
             use: { ...chromium, viewport: { width: 1280, height: 900 }, colorScheme: "light" },

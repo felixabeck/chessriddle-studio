@@ -46,6 +46,7 @@ import { routeTree } from "./routeTree.gen";
 import { appCssVariablesResolver, createAppTheme } from "./styles/theme";
 import { initializePathOwners } from "./state/pathOwners";
 import { SessionPersistenceNotice } from "./components/home/SessionPersistenceNotice";
+import { AutomaticStockfishNotice } from "./components/home/AutomaticStockfishNotice";
 import { installNativeContextMenuSuppression } from "./utils/nativeContextMenu";
 
 const router = createRouter({
@@ -223,6 +224,7 @@ export default function App() {
           />
           <RouterProvider router={router} />
           <SessionPersistenceNotice />
+          <AutomaticStockfishNotice />
         </ContextMenuProvider>
       </MantineProvider>
     </DndProvider>

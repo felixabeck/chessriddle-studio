@@ -24,6 +24,7 @@ import {
 } from "@mantine/core";
 import { useToggle } from "@mantine/hooks";
 import AppModal from "../common/AppModal";
+import InstallStockfishButton from "./InstallStockfishButton";
 import {
   AlertCircle,
   ChevronDown,
@@ -194,9 +195,12 @@ export default function EnginesPage() {
                     {hasSearch ? t("Common.NoResults") : t("Engines.Empty.NoInstalled")}
                   </Text>
                   {!hasSearch && !hasEngines && (
-                    <Text c="dimmed" size="sm" ta="center">
-                      {t("Engines.Empty.AddHint")}
-                    </Text>
+                    <>
+                      <Text c="dimmed" size="sm" ta="center">
+                        {t("Engines.Empty.AddHint")}
+                      </Text>
+                      <InstallStockfishButton />
+                    </>
                   )}
                 </Stack>
               </Center>

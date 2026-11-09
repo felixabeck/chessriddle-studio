@@ -257,6 +257,7 @@ import {
 const screenshotIndex = process.argv.indexOf("--screenshot");
 const screenshotPath = screenshotIndex === -1 ? undefined : process.argv[screenshotIndex + 1];
 const progressContractOnly = process.argv.includes("--progress-contract");
+const fallbackEngineInstallOnly = process.argv.includes("--fallback-engine-install");
 const expectClearRejection = process.argv.includes("--expect-clear-rejection");
 const applicationIndex = process.argv.indexOf("--application");
 const progressGenerationIndex = process.argv.indexOf("--expect-progress-generation");
@@ -7079,6 +7080,120 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
   }
 }
 
+async function verifyFallbackEngineInstall(session) {
+  const assertion = async (description, run) => {
+    try {
+      await run();
+      check(true, description);
+      return true;
+    } catch (error) {
+      check(false, description, error.message);
+      return false;
+    }
+  };
+  const startup = await assertion(
+    "FE1 fallback install renderer starts on the unseeded profile",
+    () => waitFor("fallback install renderer startup", () => session.execute(closeControlProbe)),
+  );
+  const webdriver = await assertion("FE2 navigator.webdriver is true in the real app", async () => {
+    if (!startup) throw new Error("FE1 renderer startup failed");
+    const value = await session.execute("return navigator.webdriver");
+    if (value !== true) throw new Error(`navigator.webdriver was ${JSON.stringify(value)}`);
+  });
+  const unseeded = await assertion("FE3 fallback profile has no saved engines key", async () => {
+    if (!webdriver) throw new Error("FE2 webdriver exclusion was not established");
+    const value = await session.execute("return localStorage.getItem('engines')");
+    if (value !== null) throw new Error(`engines key already exists: ${value}`);
+  });
+  const opened = await assertion(
+    "FE4 the empty Engines page offers Install Stockfish",
+    async () => {
+      if (!unseeded) throw new Error("FE3 profile is not unseeded");
+      await session.execute(`
+      const link = document.querySelector('a[href="/engines"]');
+      if (!link) throw new Error('Engines navigation link is absent');
+      link.click();
+      return true;
+    `);
+      await waitFor("the empty Engines fallback button", () =>
+        session.execute(`
+      return location.pathname === '/engines' && [...document.querySelectorAll('button')]
+        .some(button => !button.disabled && button.textContent.trim() === 'Install Stockfish');
+    `),
+      );
+    },
+  );
+  let markerStayedAbsent = false;
+  const quiet = await assertion(
+    "FE5 no engine install starts during the bounded automation wait",
+    async () => {
+      if (!opened) throw new Error("FE4 empty Engines page was not reached");
+      const deadline = Date.now() + 3000;
+      markerStayedAbsent = true;
+      do {
+        const sample = await session.execute(`
+        return {
+          marker: localStorage.getItem('first-launch-stockfish'),
+          engines: localStorage.getItem('engines'),
+          downloading: [...document.querySelectorAll('button')].some(button =>
+            /Downloading|Extracting/.test(button.textContent))
+        };
+      `);
+        markerStayedAbsent &&= sample.marker === null;
+        const pending = await invokeJsonAndWait(
+          session,
+          "fallback pending engine installs",
+          "__verifyFallbackPending",
+          'window.__TAURI_INTERNALS__.invoke("pending_engine_completions")',
+        );
+        if (pending.error || !Array.isArray(pending.value)) {
+          throw new Error(`pending install observation failed: ${JSON.stringify(pending)}`);
+        }
+        if (sample.downloading || sample.engines !== null || pending.value.length !== 0) {
+          throw new Error(`unexpected install activity: ${JSON.stringify({ sample, pending })}`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } while (Date.now() < deadline);
+    },
+  );
+  const marker = await assertion(
+    "FE6 the first-launch marker stays absent under WebDriver",
+    async () => {
+      if (!quiet) throw new Error("FE5 bounded install observation did not complete");
+      if (!markerStayedAbsent) throw new Error("first-launch-stockfish appeared during the wait");
+      const value = await session.execute("return localStorage.getItem('first-launch-stockfish')");
+      if (value !== null) throw new Error(`first-launch-stockfish exists: ${value}`);
+    },
+  );
+  const clicked = await assertion(
+    "FE7 Install Stockfish accepts a real fallback install",
+    async () => {
+      if (!marker) throw new Error("FE6 automation marker exclusion failed");
+      await clickButton(session, "Install Stockfish");
+    },
+  );
+  await assertion(
+    "FE8 the real download registers Stockfish in the Engines list within ten minutes",
+    async () => {
+      if (!clicked) throw new Error("FE7 fallback button was not clicked");
+      await waitFor(
+        "Stockfish in the Engines list",
+        () =>
+          session.execute(`
+      return location.pathname === '/engines' && [...document.querySelectorAll('button[aria-pressed] p')]
+        .some(label => label.textContent.trim() === 'Stockfish');
+    `),
+        { timeoutMs: 600_000, everyMs: 500 },
+      );
+    },
+  );
+  if (screenshotPath) {
+    await assertion("FE9 fallback engine install screenshot is written", async () => {
+      await writeFile(screenshotPath, Buffer.from(await session.screenshot(), "base64"));
+    });
+  }
+}
+
 async function main() {
   process.on("exit", () => {
     restoreRootPermissionsForCleanup("exit");
@@ -7086,6 +7201,9 @@ async function main() {
   });
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, handleSignal);
   try {
+    if (progressContractOnly && fallbackEngineInstallOnly) {
+      throw new Error("--fallback-engine-install and --progress-contract are mutually exclusive");
+    }
     if (!isAbsolute(progressApplication) || !existsSync(progressApplication)) {
       throw new Error("progress application must name an existing absolute binary path");
     }
@@ -7122,6 +7240,13 @@ async function main() {
         }
       } finally {
         await progressSession.quit();
+      }
+    } else if (fallbackEngineInstallOnly) {
+      const fallbackSession = await Session.open(APP_BINARY);
+      try {
+        await verifyFallbackEngineInstall(fallbackSession);
+      } finally {
+        await fallbackSession.quit();
       }
     } else {
       await verifyFullApplication(profileDirectory, appEnvironment);

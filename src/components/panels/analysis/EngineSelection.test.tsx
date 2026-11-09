@@ -2,10 +2,12 @@ import { WorkspaceTabScope } from "@/state/tabScope";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import type { Engine } from "@/utils/engines";
 
 const mocks = vi.hoisted(() => ({
   activeTabAtom: Symbol("activeTabAtom"),
   enginesAtom: Symbol("enginesAtom"),
+  engines: [] as Engine[],
   notifyUnlessCancelled: vi.fn(),
   setEngines: vi.fn(),
   stopEngine: vi.fn(),
@@ -21,6 +23,9 @@ vi.mock("@tanstack/react-router", () => ({ Link: () => <a /> }));
 vi.mock("@/components/files/notifyError", () => ({
   notifyUnlessCancelled: mocks.notifyUnlessCancelled,
 }));
+vi.mock("@/components/engines/InstallStockfishButton", () => ({
+  default: () => <button type="button" data-testid="stockfish-install" />,
+}));
 vi.mock("@/utils/engines", () => ({
   stopEngine: mocks.stopEngine,
   loadDefaultEngineCatalog: vi.fn().mockResolvedValue([]),
@@ -33,20 +38,7 @@ vi.mock("jotai", async (importOriginal) => {
   return {
     ...(await importOriginal<typeof import("jotai")>()),
     useAtomValue: (atom: symbol) => (atom === mocks.activeTabAtom ? "tab-B" : undefined),
-    useAtom: () => [
-      [
-        {
-          type: "local",
-          id: "engine-1",
-          name: "Stockfish",
-          loaded: true,
-          handle: { id: { id: "handle-1" }, kind: "engine" },
-          filename: "stockfish",
-          version: "17",
-        },
-      ],
-      mocks.setEngines,
-    ],
+    useAtom: () => [mocks.engines, mocks.setEngines],
   };
 });
 vi.mock("@mantine/core", () => ({
@@ -74,6 +66,17 @@ let root: Root;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.engines = [
+    {
+      type: "local",
+      id: "engine-1",
+      name: "Stockfish",
+      loaded: true,
+      handle: { id: { id: "handle-1" }, kind: "engine" },
+      filename: "stockfish",
+      version: "17",
+    },
+  ];
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -82,6 +85,13 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
+});
+
+test("the empty selection offers the shared Stockfish installer beside its existing message", async () => {
+  mocks.engines = [];
+  await act(async () => root.render(<EngineSelection />));
+  expect(host.textContent).toContain("Engines.Selection.None");
+  expect(host.querySelector('[data-testid="stockfish-install"]')).not.toBeNull();
 });
 
 test("a rejected save does not stop the engine and notifies", async () => {

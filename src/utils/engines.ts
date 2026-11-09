@@ -350,7 +350,11 @@ export async function loadCompatibleEngineCatalog(os: Platform): Promise<Default
 }
 
 export async function loadStockfishCatalogEntry(os: Platform): Promise<DefaultEngine | undefined> {
-    return (await loadCompatibleEngineCatalog(os)).find((engine) => engine.name === "Stockfish");
+    return selectStockfishCatalogEntry(await loadCompatibleEngineCatalog(os));
+}
+
+export function selectStockfishCatalogEntry(engines: readonly DefaultEngine[] | undefined) {
+    return engines?.find((engine) => engine.name === "Stockfish");
 }
 
 export function useDefaultEngines(os: Platform | undefined, opened: boolean) {
