@@ -22490,6 +22490,9 @@ Fixed in 0b63a012 (pushed to master; hosted Test 13/13 green; installed locally)
 * **Related:** Run 42571912257 on 6d794f89 failed job `e2e` with a different test, `wheelColumnTo re-reveals a column scrolled out of the stacked` in `e2e/font-scaled-breakpoints.spec.ts`, which also looks like hosted-runner timing. f-20261105-06 removed two other hosted-CI timing flakes.
 * **Fix direction:** Wait until the dialog geometry settles before clicking, then confirm with repeated hosted runs. Inspect the font-scaled failure in the same pass.
 
+Recurred on master fa4ce4dc in **CI run:** 42646431017 (job 129260809032), same test and symptom. The CI trace refutes the measured-box part of the suspected cause: the click went to (720, 121), the field's settled centre in a local run. The DOM snapshots show the dialog's 200 ms opening transition started about 100 ms before that click. Which element received the event is not recorded, so the cause remains unconfirmed. The test now uses a locator right click, which waits for the field to be stable and to receive pointer events. It passed 3 of 3 locally; the old form passed 6 of 6 locally, so local runs do not prove it. Close only after hosted runs stay green. The font-scaled test named under Related was not examined.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"4771d8db47e8c6fe93dd764fe08e14b314818b70cd962d79952a5a3ffab3de8c","input_sha256":"989f127cbe05c73d4d0db1797c4fccaa6d230004aa0f2122b0281fbec5dea477","kind":"mutation-receipt","operation":"c92be4fac25631e1fddaffbf94b9a5a0f556568c3d8baf813acc7150b8868b7f","options":{"section":null},"request_id_sha256":null,"results":["f-20261109-03"],"target":"f-20261109-03","v":1} -->
+
 ---
 
 ## 2026-11-09 — filed through the inbox spool
