@@ -2,10 +2,11 @@ import { Button, SegmentedControl, Stack, Text, TextInput } from "@mantine/core"
 import { useNavigate } from "@tanstack/react-router";
 import { INITIAL_FEN } from "chessops/fen";
 import { useAtom } from "jotai";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSWRConfig } from "swr";
 import { workspaceErrorMessage } from "../files/workspaceError";
+import { useSingleFlight } from "@/hooks/useSingleFlight";
 import { normalizeError } from "@/platform/errors";
 import { tabsAtom } from "@/state/atoms";
 import { headersToPGN } from "@/utils/chess";
@@ -24,15 +25,7 @@ export default function CreateRepertoireModal({
   const [name, setName] = useState("");
   const [color, setColor] = useState<"white" | "black">("white");
   const [error, setError] = useState("");
-  const [pending, setPending] = useState(false);
-  const flight = useRef(false);
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
+  const { pending, run, isMounted } = useSingleFlight();
 
   const [, setTabs] = useAtom(tabsAtom);
   const navigate = useNavigate();
@@ -44,57 +37,52 @@ export default function CreateRepertoireModal({
       return;
     }
 
-    if (flight.current) return;
-    flight.current = true;
-    setPending(true);
+    await run(async () => {
+      try {
+        const pgn = headersToPGN({
+          id: 0,
+          fen: INITIAL_FEN,
+          black: "",
+          white: "",
+          result: "*",
+          event: trimmedName,
+          site: "",
+          orientation: color,
+        });
 
-    try {
-      const pgn = headersToPGN({
-        id: 0,
-        fen: INITIAL_FEN,
-        black: "",
-        white: "",
-        result: "*",
-        event: trimmedName,
-        site: "",
-        orientation: color,
-      });
+        const workspace = await ensureFileWorkspace();
+        if (!isMounted()) return;
+        if (!workspace) return;
+        const result = await createFile({
+          filename: trimmedName,
+          filetype: "repertoire",
+          content: { kind: "text", pgn },
+          workspace,
+          parent: workspace,
+          listingCache,
+        });
+        if (!isMounted()) return;
 
-      const workspace = await ensureFileWorkspace();
-      if (!mounted.current) return;
-      if (!workspace) return;
-      const result = await createFile({
-        filename: trimmedName,
-        filetype: "repertoire",
-        content: { kind: "text", pgn },
-        workspace,
-        parent: workspace,
-        listingCache,
-      });
-      if (!mounted.current) return;
+        if (result.isErr) {
+          setError(workspaceErrorMessage(result.error, result.error.message, t));
+          return;
+        }
 
-      if (result.isErr) {
-        setError(workspaceErrorMessage(result.error, result.error.message, t));
-        return;
+        const fileInfo = result.value;
+        const id = await openFile(fileInfo, setTabs, { tabName: trimmedName });
+        if (!isMounted()) return;
+        if (id === null) return;
+        navigate({ to: "/" });
+
+        setName("");
+        setColor("white");
+        setError("");
+        setOpened(false);
+      } catch (error) {
+        if (!isMounted()) return;
+        setError(workspaceErrorMessage(error, normalizeError(error).message, t));
       }
-
-      const fileInfo = result.value;
-      const id = await openFile(fileInfo, setTabs, { tabName: trimmedName });
-      if (!mounted.current) return;
-      if (id === null) return;
-      navigate({ to: "/" });
-
-      setName("");
-      setColor("white");
-      setError("");
-      setOpened(false);
-    } catch (error) {
-      if (!mounted.current) return;
-      setError(workspaceErrorMessage(error, normalizeError(error).message, t));
-    } finally {
-      flight.current = false;
-      if (mounted.current) setPending(false);
-    }
+    });
   }
 
   return (

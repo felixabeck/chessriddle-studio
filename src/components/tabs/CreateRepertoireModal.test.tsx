@@ -227,6 +227,37 @@ test("delayed creation success clears pending and completes exactly once", async
   expect(setOpened).toHaveBeenCalledExactlyOnceWith(false);
 });
 
+test("pending tab admission prevents dismissal and repeated creation until it completes once", async () => {
+  const admission = deferred<string | null>();
+  fixtures.openFile.mockReturnValueOnce(admission.promise);
+
+  await submitRepertoire();
+
+  expect(fixtures.createFile).toHaveBeenCalledOnce();
+  expect(fixtures.openFile).toHaveBeenCalledOnce();
+  expect(container.querySelector('[role="dialog"]')?.getAttribute("data-pending")).toBe("true");
+  expect(container.querySelector('[aria-label="Close dialog"]')).toBeNull();
+  expect(container.querySelector('[type="submit"]')?.getAttribute("aria-busy")).toBe("true");
+  expect(fixtures.navigate).not.toHaveBeenCalled();
+  expect(setOpened).not.toHaveBeenCalled();
+
+  await act(async () => {
+    submitForm();
+    submitForm();
+  });
+
+  expect(fixtures.ensureFileWorkspace).toHaveBeenCalledOnce();
+  expect(fixtures.createFile).toHaveBeenCalledOnce();
+  expect(fixtures.openFile).toHaveBeenCalledOnce();
+
+  await act(async () => admission.resolve("tab-id"));
+
+  expect(fixtures.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/" });
+  expect(setOpened).toHaveBeenCalledExactlyOnceWith(false);
+  expect(container.querySelector('[role="dialog"]')?.getAttribute("data-pending")).toBe("false");
+  expect(container.querySelector('[type="submit"]')?.getAttribute("aria-busy")).toBe("false");
+});
+
 test.each(["workspace", "creation", "admission", "rejection"])(
   "unmount during pending %s prevents late continuations and state-update warnings",
   async (stage) => {
