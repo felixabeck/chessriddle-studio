@@ -5,6 +5,7 @@ import classes from "./GameSelector.module.css";
 const MAX_AUTOSCROLL_FRAME_MS = 32;
 const INITIAL_AUTOSCROLL_FRAME_MS = 16;
 const AUTOSCROLL_EDGE_PX = 40;
+const AUTOSCROLL_EDGE_VIEWPORT_FRACTION = 0.25;
 const MAX_AUTOSCROLL_SPEED_PX_PER_MS = 0.6;
 const DRAG_ACTIVATION_DISTANCE_PX = 6;
 
@@ -143,7 +144,10 @@ export function attachLineDragController({
         );
         current.lastFrame = now;
         const bounds = viewport.getBoundingClientRect();
-        const edge = Math.min(AUTOSCROLL_EDGE_PX, bounds.height / 4);
+        const edge = Math.min(
+            AUTOSCROLL_EDGE_PX,
+            bounds.height * AUTOSCROLL_EDGE_VIEWPORT_FRACTION,
+        );
         if (
             current.x >= bounds.left &&
             current.x < bounds.right &&

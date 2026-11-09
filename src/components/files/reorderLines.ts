@@ -3,7 +3,7 @@ import type { PgnLineMove, GameMoveResult } from "@/bindings";
 import { tauri } from "@/platform/tauri";
 import { normalizeError } from "@/platform/errors";
 import { invalidateFileDeckAtoms, tabsAtom } from "@/state/atoms";
-import { beginFileStructureChange } from "@/state/fileStructureChange";
+import { beginFileStructureChange, hasFileOpenInFlight } from "@/state/fileStructureChange";
 import { setFileFreshness } from "@/state/fileFreshness";
 import {
     clearPracticeFileMigrationFailures,
@@ -110,6 +110,7 @@ export async function reorderFileLines({
                 },
             ]),
         );
+        if (hasFileOpenInFlight(key)) throw new Error(i18n.t("Files.LineSection.Stale"));
         release = beginFileStructureChange(key);
         const result = await withFileWrite(file.handle, () =>
             tauri.moveGames(file.handle, movement, revision),

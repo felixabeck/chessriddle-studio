@@ -40,7 +40,7 @@ vi.mock("@/utils/chess", async (importOriginal) => {
 vi.mock("./tabs", () => ({ createTab: mocks.createTab }));
 
 import { TauriCommandError } from "@/platform/tauri";
-import type { FileWorkspaceHandle, WriteStamp } from "@/bindings";
+import type { FileWorkspaceHandle, StampedGame, WriteStamp } from "@/bindings";
 import { defaultGame, makePgn } from "chessops/pgn";
 import {
     addRecentFileAtom,
@@ -55,7 +55,8 @@ import {
     startFileRevisionPoll,
 } from "@/state/fileFreshness";
 import type { Tab } from "@/utils/tabs";
-import { beginFileStructureChange } from "@/state/fileStructureChange";
+import i18n, { initializeI18n } from "@/i18n";
+import { beginFileStructureChange, hasFileOpenInFlight } from "@/state/fileStructureChange";
 import { fileWorkspaceKey } from "./pathCapabilities";
 import { createFile, ensureFileWorkspace, openFile, pickPgnFile, writeFileGame } from "./files";
 
@@ -112,35 +113,66 @@ describe("openFile tab admission", () => {
         });
     });
 
-    test("waits for a file structure change before reading and admitting the game", async () => {
+    test("refuses to open during a file structure change without reading and opens after it ends", async () => {
+        await initializeI18n();
         const endChange = beginFileStructureChange(fileWorkspaceKey(file.handle));
-        mocks.createTab.mockResolvedValueOnce("tab-id");
-        const pending = openFile(file, setTabs);
         try {
-            await flushPromises();
+            await expect(openFile(file, setTabs)).rejects.toThrow(
+                new Error(i18n.t("Files.LineSection.Stale")),
+            );
             expect(mocks.readGame).not.toHaveBeenCalled();
             expect(mocks.createTab).not.toHaveBeenCalled();
-            mocks.readGame.mockResolvedValue({
-                pgn: '[Event "Reordered line"]\n\n*',
-                stamp: freshStamp,
-                revision: "after-reorder",
-                present: true,
-            });
+            expect(hasFileOpenInFlight(fileWorkspaceKey(file.handle))).toBe(false);
         } finally {
             endChange();
         }
 
-        await expect(pending).resolves.toBe("tab-id");
+        mocks.createTab.mockResolvedValueOnce("tab-id");
+        await expect(openFile(file, setTabs)).resolves.toBe("tab-id");
         expect(mocks.readGame).toHaveBeenCalledExactlyOnceWith(file.handle, 0, undefined);
-        expect(mocks.createTab).toHaveBeenCalledWith(
-            expect.objectContaining({
-                initialTree: expect.objectContaining({
-                    headers: expect.objectContaining({ event: "Reordered line" }),
-                }),
-                gameOrigin: { kind: "file", file, gameNumber: 0 },
-            }),
-        );
+        expect(hasFileOpenInFlight(fileWorkspaceKey(file.handle))).toBe(false);
     });
+
+    test("holds the open lease through the read and tab admission", async () => {
+        const read = deferred<StampedGame>();
+        const admission = deferred<string>();
+        mocks.readGame.mockReturnValueOnce(read.promise);
+        mocks.createTab.mockReturnValueOnce(admission.promise);
+        const pending = openFile(file, setTabs);
+        try {
+            expect(hasFileOpenInFlight(fileWorkspaceKey(file.handle))).toBe(true);
+            expect(mocks.readGame).toHaveBeenCalledOnce();
+            expect(mocks.createTab).not.toHaveBeenCalled();
+            read.resolve({ pgn: freshPgn, stamp: freshStamp, revision: "revision", present: true });
+            await vi.waitFor(() => expect(mocks.createTab).toHaveBeenCalledOnce());
+            expect(hasFileOpenInFlight(fileWorkspaceKey(file.handle))).toBe(true);
+        } finally {
+            read.resolve({ pgn: freshPgn, stamp: freshStamp, revision: "revision", present: true });
+            admission.resolve("tab-id");
+            await pending;
+        }
+        expect(hasFileOpenInFlight(fileWorkspaceKey(file.handle))).toBe(false);
+    });
+
+    test.each(["read", "parse", "admission", "refused admission"])(
+        "releases the open lease after %s failure and permits another open",
+        async (boundary) => {
+            const failure = new Error("Open failed");
+            if (boundary === "read") mocks.readGame.mockRejectedValueOnce(failure);
+            if (boundary === "parse") mocks.parsePGN.mockRejectedValueOnce(failure);
+            if (boundary === "admission") mocks.createTab.mockRejectedValueOnce(failure);
+            if (boundary === "refused admission") mocks.createTab.mockResolvedValueOnce(null);
+
+            const pending = openFile(file, setTabs);
+            if (boundary === "refused admission") await expect(pending).resolves.toBeNull();
+            else await expect(pending).rejects.toBe(failure);
+            expect(hasFileOpenInFlight(fileWorkspaceKey(file.handle))).toBe(false);
+
+            mocks.createTab.mockResolvedValueOnce("tab-id");
+            await expect(openFile(file, setTabs)).resolves.toBe("tab-id");
+            expect(hasFileOpenInFlight(fileWorkspaceKey(file.handle))).toBe(false);
+        },
+    );
 
     test("does not acknowledge practice or recent metadata when admission is refused", async () => {
         mocks.createTab.mockResolvedValueOnce(null);

@@ -23,7 +23,7 @@ import {
     tabFamily,
 } from "@/state/atoms";
 import { beginFileWrite, setFileFreshness } from "@/state/fileFreshness";
-import { afterFileStructureChange } from "@/state/fileStructureChange";
+import { beginFileOpen } from "@/state/fileStructureChange";
 import { parsePGN } from "./chess";
 import { fileWorkspaceKey } from "./pathCapabilities";
 import { createTab, type SetTabs } from "./tabs";
@@ -150,50 +150,53 @@ export async function openFile(
 ) {
     const store = options?.store ?? getDefaultStore();
     const gameNumber = options?.gameNumber ?? 0;
-    const loaded = await afterFileStructureChange(fileWorkspaceKey(file.handle), () =>
-        loadFileGame(file.handle, gameNumber),
-    );
-    let tabName = options?.tabName ?? file.name ?? "Untitled";
-    if (options?.tabName === undefined && loaded.pgn) {
-        const gameName = getGameName(loaded.tree.headers);
-        tabName = gameName === "Unknown" ? file.name.replace(/\.pgn$/i, "") : gameName;
-    }
+    const endOpen = beginFileOpen(fileWorkspaceKey(file.handle));
+    try {
+        const loaded = await loadFileGame(file.handle, gameNumber);
+        let tabName = options?.tabName ?? file.name ?? "Untitled";
+        if (options?.tabName === undefined && loaded.pgn) {
+            const gameName = getGameName(loaded.tree.headers);
+            tabName = gameName === "Unknown" ? file.name.replace(/\.pgn$/i, "") : gameName;
+        }
 
-    const id = await createTab({
-        tab: {
+        const id = await createTab({
+            tab: {
+                name: tabName,
+                type: "analysis",
+            },
+            setTabs,
+            initialTree: loaded.tree,
+            ownerId: options?.ownerId,
+            store,
+            gameOrigin: {
+                kind: "file",
+                file,
+                gameNumber,
+            },
+        });
+        if (id === null) return null;
+
+        // The tree was just read from disk, so the gate need not read it a second time.
+        if (!loaded.present && gameNumber < file.numGames) {
+            setFileFreshness(id, "unavailable");
+        } else {
+            setFileFreshness(id, "verified", { verifiedRevision: loaded.revision });
+        }
+
+        if (options?.panel === "practice") {
+            store.set(tabFamily(id), "practice");
+        }
+
+        store.set(addRecentFileAtom, {
             name: tabName,
-            type: "analysis",
-        },
-        setTabs,
-        initialTree: loaded.tree,
-        ownerId: options?.ownerId,
-        store,
-        gameOrigin: {
-            kind: "file",
-            file,
-            gameNumber,
-        },
-    });
-    if (id === null) return null;
+            handle: file.handle,
+            type: file.metadata.type,
+        });
 
-    // The tree was just read from disk, so the gate need not read it a second time.
-    if (!loaded.present && gameNumber < file.numGames) {
-        setFileFreshness(id, "unavailable");
-    } else {
-        setFileFreshness(id, "verified", { verifiedRevision: loaded.revision });
+        return id;
+    } finally {
+        endOpen();
     }
-
-    if (options?.panel === "practice") {
-        store.set(tabFamily(id), "practice");
-    }
-
-    store.set(addRecentFileAtom, {
-        name: tabName,
-        handle: file.handle,
-        type: file.metadata.type,
-    });
-
-    return id;
 }
 
 export async function createFile({

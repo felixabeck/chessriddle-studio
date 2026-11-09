@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createStore } from "jotai";
 import { deckAtomFamily, tabsAtom } from "@/state/atoms";
 import { getFileFreshness, removeFileFreshness } from "@/state/fileFreshness";
-import { afterFileStructureChange } from "@/state/fileStructureChange";
+import { afterFileStructureChange, beginFileOpen } from "@/state/fileStructureChange";
 import { loadWorkspace, WORKSPACE_STORAGE_KEY } from "@/state/workspace";
 import { closeTreeStore, createTreeStore } from "@/state/store/tree";
 import { tabStorage } from "@/state/store/tabStorage";
@@ -138,6 +138,25 @@ test.each([
         expect(mocks.move).not.toHaveBeenCalled();
     },
 );
+
+test("refuses an open that starts during readiness checks and permits reorder after release", async () => {
+    const { args, reload, select } = setup();
+    const readiness = deferred<void>();
+    mocks.ready.mockReturnValueOnce(readiness.promise);
+    const pending = reorderFileLines(args);
+    const endOpen = beginFileOpen("move-file");
+    try {
+        readiness.resolve();
+        await expect(pending).rejects.toThrow("Files.LineSection.Stale");
+        expect(mocks.move).not.toHaveBeenCalled();
+        expect(reload).not.toHaveBeenCalled();
+        expect(select).not.toHaveBeenCalled();
+    } finally {
+        endOpen();
+    }
+    await reorderFileLines(args);
+    expect(mocks.move).toHaveBeenCalledExactlyOnceWith(file.handle, args.movement, "list-revision");
+});
 
 test.each(["untrusted migration scan", "global practice write block", "file migration failure"])(
     "refuses %s before invoking native",

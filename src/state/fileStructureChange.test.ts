@@ -1,5 +1,52 @@
 import { expect, test, vi } from "vitest";
-import { afterFileStructureChange, beginFileStructureChange } from "./fileStructureChange";
+import i18n, { initializeI18n } from "@/i18n";
+import {
+    afterFileStructureChange,
+    beginFileOpen,
+    beginFileStructureChange,
+    hasFileOpenInFlight,
+} from "./fileStructureChange";
+
+test("opens refuse an active structure change and are admitted after it ends", async () => {
+    await initializeI18n();
+    const endChange = beginFileStructureChange("file-a");
+    try {
+        expect(() => beginFileOpen("file-a")).toThrow(new Error(i18n.t("Files.LineSection.Stale")));
+        expect(hasFileOpenInFlight("file-a")).toBe(false);
+        const endOther = beginFileOpen("file-b");
+        expect(hasFileOpenInFlight("file-b")).toBe(true);
+        endOther();
+        expect(hasFileOpenInFlight("file-b")).toBe(false);
+    } finally {
+        endChange();
+    }
+    const endOpen = beginFileOpen("file-a");
+    expect(hasFileOpenInFlight("file-a")).toBe(true);
+    endOpen();
+    expect(hasFileOpenInFlight("file-a")).toBe(false);
+});
+
+test("open releases are idempotent and retain the file until every open ends", () => {
+    const endFirst = beginFileOpen("file-a");
+    const endSecond = beginFileOpen("file-a");
+    try {
+        endFirst();
+        endFirst();
+        expect(hasFileOpenInFlight("file-a")).toBe(true);
+    } finally {
+        endFirst();
+        endSecond();
+    }
+    expect(hasFileOpenInFlight("file-a")).toBe(false);
+    const endNext = beginFileOpen("file-a");
+    try {
+        endSecond();
+        expect(hasFileOpenInFlight("file-a")).toBe(true);
+    } finally {
+        endNext();
+    }
+    expect(hasFileOpenInFlight("file-a")).toBe(false);
+});
 
 test("waits for every active delete of the file and leaves other files available", async () => {
     const endFirst = beginFileStructureChange("file-a");
