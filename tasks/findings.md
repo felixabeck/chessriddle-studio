@@ -22524,10 +22524,13 @@ Fixed in 0b63a012 (pushed to master; hosted Test 13/13 green; installed locally)
 
 ### A database test fails on loaded macOS runners because it caps a busy read at two seconds of wall-clock time
 
-* **ID:** f-20261109-06 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261109-06 · **Status:** handled · **Area:** db-search · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 42589672905
 * **Where:** `src-tauri/src/db/repository.rs:4050`, `db::repository::upgrade_tests::current_schema_foreign_exclusive_lock_returns_busy_within_two_seconds`.
 * **Defect:** The test asserts `started.elapsed() < Duration::from_secs(2)` around a read whose busy timeout is 1000 ms, which leaves one second for opening the database and for scheduling on a runner executing about 3150 tests in parallel.
 * **Failure scenario:** Test run 42589672905 on master 3859bcd9, a frontend and records push, job `rust-macos-test` 129067939536: 3149 passed, 1 failed, `assertion failed: started.elapsed() < Duration::from_secs(2)` at `src/db/repository.rs:4056:9`. The push's `Test` run is red and `pnpm ci:remote:check` refuses later pushes.
 * **Proof:** The test passes with a fixed 10 s ceiling, well below the ordinary 30 s busy timeout, and goes red when `METADATA_READ_BUSY_TIMEOUT_MS` is raised to 30000.
+
+Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates the 1000 ms metadata busy timeout from the ordinary 30 s busy timeout and leaves room for a loaded runner. Local proof: passes in 1.79 s, and fails in 30.55 s with METADATA_READ_BUSY_TIMEOUT_MS temporarily raised to 30000. Filed and repaired by the first-launch Stockfish build, whose push 3859bcd9 went red on this unrelated test.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"c277b54c0025f5f76f8c857f2a2dc0c601cb9f1b3a19efd219c00b22e09d49a7","header_sha256":"5e806a59f242018c684811b4606cca6766726e4b01e8bfe44ef6ed93eceea5fd","header_status":"handled","input_sha256":"8580276d3b71d6d8827a9ea34faae08abdd7ba7675b8c563b371980d108ec97a","kind":"mutation-receipt","operation":"61f2307e7277705d89bc02ae9a2b1d3c119148e0fd0c709edd949f6f891445ca","options":{"section":null},"request_id_sha256":null,"results":["f-20261109-06"],"target":"f-20261109-06","v":1} -->
