@@ -12775,3 +12775,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** It reuses one due classification and existing deck state. Accepted: positions stay in memory while the page is mounted. Reversal path: replace the hook's source.
 * **Decided by:** Claude Code (Opus 5.5) build run 2026-11-09-new-tab-library, full auto, 2026-11-09 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"f741940b7a7b0ef956e921cb0fd6952e9838daa3f2d074e22aa22734e6002ce3","input_sha256":"f66f95f67ac89a122c2f32c9444fc790394dd2d3f5b1b479d08b546ea33e6745","kind":"mutation-receipt","operation":"c30597a6d62ec2ec95d2a81536dccfd7295ff6f1728b21360749b63856839da7","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-26"],"target":"decisions-ledger","v":1} -->
+
+### d-20261109-27 — What stores last-opened time for sorting the whole Library?
+
+* **Question:** Felix approved sorting by last opened. Recents hold ten entries and their schema cannot represent opening a game table. What records it?
+* **Governs:** tasks/plans/2026-11-09-new-tab-library.md (New Tab as one Library list)
+* **Chosen:** A separate validated persisted record maps opaque capability keys to milliseconds, bounded to the 1000 most recent. File and database-game opens write it where they record recents, and the game-table page records the database it shows. Items without a record follow by modified time.
+* **Rejected:** Raising the recents cap, which still evicts and cannot represent table opens and would multiply recents validation.
+* **Reason:** Bounded per the persisted-state rule and never keyed by a name or path. Accepted: past 1000 distinct items the oldest fall back to modified-time order. Reversal path: delete the record and sort by recents.
+* **Decided by:** Claude Code (Opus 5.5) build run 2026-11-09-new-tab-library, full auto, 2026-11-09 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"821b6f3b04a07252c0293cdf892d21e9387b01d5dd6d5c0d1ec39b0f708d0e88","input_sha256":"97400a8e801f565deff985a33d7c76d8c7bb09ef1799a53f69e989999467dcd5","kind":"mutation-receipt","operation":"2924275fb9502ae20c66cfd224331b1d4ef9aceb5c5effce41da3bfafc651384","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-27"],"target":"decisions-ledger","v":1} -->
