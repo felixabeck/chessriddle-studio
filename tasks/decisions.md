@@ -12646,3 +12646,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Real Windows Credential Manager persistence and the browser round trip have no automated proof, so they are a manual check on the Windows build before release. Reversal path: add the refusal to `connect_chessriddle`.
 * **Decided by:** Claude Code (Opus 5.5) build run chessriddle-account, full auto, 2026-11-09 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"b2ab7267fc5df660eac7db3f3dc0a9c209a00defb61defc8c5007488478ba1ca","input_sha256":"3c17582d7e74db1f3c0a850f65805001a5dab1787b1750c2c3fff774da48856f","kind":"mutation-receipt","operation":"d3cae74ac128ce26f9362a7ae30626d08c17070db36266648a2c5e1fdee9d626","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-11"],"target":"decisions-ledger","v":1} -->
+
+### d-20261109-12 — How is the ChessRiddle connection kept out of release builds until the server ships?
+
+* **Question:** Studio lands on `master` before the ChessRiddle server side is deployed. How does a released or installed build avoid offering a connection that cannot work?
+* **Governs:** -
+* **Chosen:** `RELEASE_AVAILABLE` in `src-tauri/src/chessriddle.rs` stays false until release. Native commands return `Unavailable` and the card renders nothing. A `.dev`-identifier build is available and can use compile-time literal `127.0.0.1` API and web origins.
+* **Rejected:** Shipping the button against a server that returns 404. A runtime override, which a public build could be pointed at.
+* **Reason:** Felix, 2026-11-09: he deploys the ChessRiddle side only when Studio is ready to release. Reversal path: set the constant true in its own reviewed commit at release.
+* **Decided by:** Claude Code (Opus 5.5) build run chessriddle-account, full auto, 2026-11-09 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"f3492717183840f8c3dc462ce3b161f69d3a8047578c13f2f6eda1487e8db0a9","input_sha256":"e050468430c5771c65efcae1b6a9e9c6225b0001e6d57ec63ed6f946e7027e84","kind":"mutation-receipt","operation":"b665fe8f6d60d1bb89a2a94e33808d86c1001c2b358302e0b67dc6daa2550118","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-12"],"target":"decisions-ledger","v":1} -->
