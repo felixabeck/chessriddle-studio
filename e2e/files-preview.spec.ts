@@ -461,7 +461,8 @@ async function expectCurrentNotationCellVisible(notation: Locator, move: string)
 async function expectCellStaysInViewport(cell: Locator) {
     const isInsideViewport = () =>
         cell.evaluate((cell) => {
-            const viewport = cell.closest(".mantine-ScrollArea-viewport")!;
+            const viewport = cell.closest(".mantine-ScrollArea-viewport");
+            if (viewport === null) return false;
             const bounds = cell.getBoundingClientRect();
             const top = viewport.getBoundingClientRect().top + viewport.clientTop;
             return bounds.top >= top && bounds.bottom <= top + viewport.clientHeight;
