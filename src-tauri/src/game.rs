@@ -71,7 +71,9 @@ pub struct TimeControl {
     pub increment: u64,
 }
 
-// Sub-second clocks flag on the first ~100 ms tick before a human can move, and settle_active_clock flags before any increment, so increment-only controls are unsupported.
+// Chosen usability floor: a zero or near-zero clock flags on the first tick before the side
+// can move. settle_active_clock flags before any increment, so increment-only controls are
+// unsupported.
 const MIN_INITIAL_TIME_MS: u64 = 1_000;
 
 fn validate_time_controls(config: &GameConfig) -> Result<(), Error> {
@@ -5655,7 +5657,7 @@ done
         });
         config.black_time_control = Some(TimeControl {
             initial_time: 1_000,
-            increment: 0,
+            increment: 50,
         });
         let mut controller = GameController::new("game".into(), 1, config).unwrap();
         controller.clock.as_mut().unwrap().last_tick = Instant::now() - Duration::from_millis(250);
@@ -5665,6 +5667,17 @@ done
         assert_eq!(game_move.clock, Some(white_time));
         assert!((800..=850).contains(&white_time));
         assert_eq!(controller.clock.as_ref().unwrap().black_time, Some(1_000));
+
+        controller.clock.as_mut().unwrap().last_tick = Instant::now() - Duration::from_millis(250);
+        let game_move = controller.apply_move("e7e5").unwrap();
+        let black_time = controller.clock.as_ref().unwrap().black_time.unwrap();
+        assert_eq!(game_move.clock, Some(black_time));
+        assert!((750..=800).contains(&black_time));
+        assert_eq!(
+            controller.clock.as_ref().unwrap().white_time,
+            Some(white_time)
+        );
+        assert_ne!(game_move.clock, Some(white_time));
     }
 
     #[test]

@@ -18,7 +18,7 @@ import {
   type OpponentSettings,
 } from "@/state/opponentSettings";
 import { EnginesSelect } from "./EnginesSelect";
-import { MIN_INITIAL_TIME_MS } from "./playerConfig";
+import { hasStartableTimeControl } from "./playerConfig";
 
 export { DEFAULT_TIME_CONTROL, type OpponentSettings } from "@/state/opponentSettings";
 
@@ -123,9 +123,7 @@ export function OpponentForm({
             <InputWrapper
               label={t("GoMode.Time")}
               error={
-                opponent.timeControl.seconds < MIN_INITIAL_TIME_MS
-                  ? t("Board.Opponent.TimeTooShort")
-                  : undefined
+                !hasStartableTimeControl(opponent) ? t("Board.Opponent.TimeTooShort") : undefined
               }
             >
               <TimeInput

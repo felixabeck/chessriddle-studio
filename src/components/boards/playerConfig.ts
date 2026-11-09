@@ -3,7 +3,7 @@ import { normalizeEngineOptions } from "@/components/engines/engineOptions";
 import type { Engine, LocalEngine } from "@/utils/engines";
 import type { OpponentSettings } from "./OpponentForm";
 
-export const MIN_INITIAL_TIME_MS = 1_000;
+const MIN_INITIAL_TIME_MS = 1_000;
 
 /** Mirrors the native validate_time_controls floor. */
 export function hasStartableTimeControl(settings: OpponentSettings): boolean {

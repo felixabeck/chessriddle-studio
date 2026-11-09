@@ -759,6 +759,30 @@ test("starting a human game sends numeric configuration and records ChessRiddle 
   );
 });
 
+for (const [player, settingsAtom] of [
+  [1, gamePlayer1SettingsAtom],
+  [2, gamePlayer2SettingsAtom],
+] as const) {
+  test.each([
+    [0, true],
+    [1, true],
+    [999, true],
+    [1_000, false],
+  ])(
+    `Start button requires a startable clock for player ${player}: %i ms, disabled %s`,
+    async (seconds, disabled) => {
+      for (const atom of [gamePlayer1SettingsAtom, gamePlayer2SettingsAtom]) {
+        store.set(atom, { type: "human", timeControl: { seconds: 60_000, increment: 0 } });
+      }
+      store.set(settingsAtom, { type: "human", timeControl: { seconds, increment: 0 } });
+
+      await render();
+
+      expect(button("Board.Opponent.StartGame").disabled).toBe(disabled);
+    },
+  );
+}
+
 test("a deferred start keeps real loading and disabled semantics until admission settles", async () => {
   const reply = Promise.withResolvers<any>();
   fixtures.startGame.mockReturnValue(reply.promise);
