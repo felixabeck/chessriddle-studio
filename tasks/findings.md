@@ -21988,7 +21988,7 @@ All probes were removed; the tree stayed clean.
 ## 2026-11-06 — filed through the inbox spool
 
 ### Selecting an orthodox named opening exports the continued game with a false Chess960 Variant tag
-* **ID:** f-20261106-42 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261106-42 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** Felix t22u bounded FenSearch/reference review, HEAD `ebaa71f0`; explicit recheck of the earlier unfiled variant-metadata candidate.
 * **Where:** `src/components/panels/info/FenSearch.tsx:25-35,78-85` treats membership in any search result as the chess960 flag. `src-tauri/src/opening.rs:21-25,132-139,163-196` returns both ordinary ECO openings built from Chess::default and Fischer Random starts as the same name/fen shape, without catalogue/variant provenance. `src/utils/chess.ts:235-236` faithfully serializes that erroneous header and `src/state/store/tree.ts:744-753` uses it for the actual Copy PGN action.
@@ -22003,6 +22003,9 @@ All probes were removed; the tree stayed clean.
 
 **Correction, 2026-11-08:** the Related bullet's description of `f-20261106-11` is stale. That finding was re-measured and rejected: chessops 0.14 already handles Chess960 castling in the renderer factory, so no Chess960 legality defect exists. This finding's false-`Variant` provenance defect is unaffected and still stands on its own.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"6c0d8a6d5267cfc5cb776b638a0ee7e9df3b319acee39f62ea451fa0e6aac6d2","input_sha256":"322db46d98e61f8ecbd28adf8466be24589c34e6f90f51ab2d1a343c59f5fc72","kind":"mutation-receipt","operation":"12023f1b97d202fa2b915fb5267a9c0c9912bb3f59780978fef9c30f15faec4d","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-42"],"target":"f-20261106-42","v":1} -->
+
+**Handled 2026-11-09 (drain fdc3d0ae-a198-4262-88bb-1a4b519ee99d, co-located joiner of f-20261106-31):** `search_opening_name` returns `chess960`, true only for FRC catalogue entries (`OutOpening`, bindings regenerated). `FenSearch` keys options by result index and uses the picked entry's flag; typed FENs are Chess960 only when every matching result is FRC, so the standard start shared by Starting Position and Fischer Random 518 stays orthodox while each explicit pick keeps its own provenance. Tests: Rust flag test; FenSearch picks for orthodox, FRC and both shared-FEN entries, typed Enter cases, and pick → legal continuation → real `copyPgn` text for Sicilian+Nf3 (no Variant) and FRC+e4 (Variant kept). Red with the fix reverted. Commits 7b32e24d, 35efea05.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"508eb6810883a0e1e3d29298685929f02ccee178000db5a1d1ec5b6cdf20e599","header_sha256":"5b5e89ae069940e26fa75fd1e91919935d7905fe1a629f3732ba81e773e67f22","header_status":"handled","input_sha256":"64034709c3047548a19327a95526c37529d5d6bc0899bb0e0773dc2c84c2aada","kind":"mutation-receipt","operation":"e35287d03553af5079e5a2b98319fe7db7b4c8e2a8d728c286396d1e8d5768b5","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-42"],"target":"f-20261106-42","v":1} -->
 
 ---
 
