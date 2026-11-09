@@ -12588,3 +12588,22 @@ Former private decision identifier: d-20261029-14
 * **Reason:** A sub-second initial clock is unplayable in this GUI, so the floor only removes a configuration that always lost on time. Post-increment `%clk` is what the live clock displays and what other tools write. Reversal path: lower or remove `MIN_INITIAL_TIME_MS` in both files (and the `Board.Opponent.TimeTooShort` string) if an increment-only rule is implemented.
 * **Decided by:** Claude Code (Opus 5.5) next-finding drain session 80dbe00d-ea31-48fe-b96d-190a846539fe, full auto, 2026-11-09 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"d10a250f1b4a8863e07b2be19d894a93c7866df434990c08e184ce3187c3f07b","input_sha256":"2e7585f96613720144b5d50d68266115a626206111bf639dbb89e576ec26a637","kind":"mutation-receipt","operation":"96f6c6e7a09a77222f27f1a200d74fae77583f969b778c7325227b4887bc6b52","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-05"],"target":"decisions-ledger","v":1} -->
+
+### d-20261109-06 — Are one-sided (timed vs Unlimited) games supported natively or blocked in the form?
+
+* **Question:** f-20261109-01: the setup form lets one side be timed and the other Unlimited, but `validate_time_controls` and the engine `go` selection in `src-tauri/src/game.rs` refuse that combination. Support it natively, or block it in the form?
+* **Governs:** f-20261109-01
+* **Chosen:** Support natively. `validate_time_controls` accepts none, one or both timed sides and range- and floor-checks every present side. The engine `go` mode is chosen from the mover's own side: a timed mover gets `PlayersTime`, an Unlimited mover gets the player's `go` or `depth 20`.
+* **Rejected:** Blocking the configuration in the form with a visible reason. It removes a choice the form and upstream En Croissant already offered, and nothing recorded asks for that removal.
+* **Reason:** `ClockState`, the clock tick, increments, takeback and the renderer are already per-side. Only the two native refusals, both introduced by the audit commit `97c29add` without a product decision, blocked it. Reversal path: restore the both-or-neither check in `validate_time_controls`, mirror it in `hasStartableTimeControl` with a form error, and drop the one-sided `go` branches.
+* **Decided by:** Claude Code (Opus 5.5) next-finding drain session c6378528-f959-40b1-89ab-54e6a35fe5f1 (adopted plan f5f32f01), full auto, 2026-11-09 · **Superseded-by:** -
+
+### d-20261109-07 — Which opponent clock does a timed engine see when its opponent is Unlimited, and how are outgoing clocks bounded?
+
+* **Question:** UCI `go wtime btime winc binc` needs both clocks. What does a timed engine receive for an Unlimited opponent, what happens when the mover's clock has already reached 0, and what happens when increments push a clock past `MAX_ENGINE_LIMIT`?
+* **Governs:** f-20261109-01
+* **Chosen:** The Unlimited opponent is reported with the mover's own remaining time and increment. Every clock and increment written into `PlayersTime` is clamped to `MAX_ENGINE_LIMIT` while the game clock is untouched. A timed mover whose sampled time is 0 starts no search, and the clock tick records the timeout.
+* **Rejected:** Reporting `MAX_ENGINE_LIMIT` for the Unlimited side, which some engines read as time pressure on themselves. Making `PlayersTime` fields optional, which changes the shared `GoMode` binding used by analysis for no gain. Mirroring a 0 clock, which `PlayersTime::validate` rejects and which would end the game as an engine failure instead of a timeout.
+* **Reason:** Neutral for engine time management, confined to `game.rs`, and keeps every `go` within the UCI limit. Reversal path: change the mirror branch of the `go` selection function in `src-tauri/src/game.rs`.
+* **Decided by:** Claude Code (Opus 5.5) next-finding drain session c6378528-f959-40b1-89ab-54e6a35fe5f1 (adopted plan f5f32f01), full auto, 2026-11-09 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":17,"effect_sha256":"ae0265bd172de4dfc8ece17e8fd8cbe03f08becc54747cceaf8643fd5b51eb63","input_sha256":"aef7894007bd9617407509faf430455fe071a92814fd597243564ce4111c0844","kind":"mutation-receipt","operation":"96a4e7b1790748fa8056c62890f166610ff3996e1cbbe147b4dfa1bc4a7d690e","options":{"section":null},"request_id_sha256":null,"results":["d-20261109-06","d-20261109-07"],"target":"decisions-ledger","v":1} -->
