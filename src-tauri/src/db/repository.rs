@@ -501,6 +501,10 @@ struct DatabaseEntry {
     retain_upgrade_failure: std::sync::atomic::AtomicBool,
     #[cfg(test)]
     schema_probe_count: std::sync::atomic::AtomicUsize,
+    #[cfg(test)]
+    pool_request_count: std::sync::atomic::AtomicUsize,
+    #[cfg(test)]
+    pool_loop_observer: ParkingMutex<Option<PoolLoopCallback>>,
     state: Mutex<EntryState>,
     leases: Arc<DrainGate>,
 }
@@ -508,6 +512,7 @@ struct DatabaseEntry {
 #[derive(Debug, Default)]
 struct PoolWake {
     generation: ParkingMutex<u64>,
+    establishments: std::sync::atomic::AtomicU64,
     changed: ParkingCondvar,
     failure: ParkingMutex<PoolFailureState>,
 }
@@ -548,7 +553,12 @@ impl PoolWake {
 impl diesel::r2d2::HandleEvent for PoolEvents {
     fn handle_acquire(&self, _: diesel::r2d2::event::AcquireEvent) {
         *self.wake.failure.lock() = PoolFailureState::default();
-        self.wake.notify();
+        let mut generation = self.wake.generation.lock();
+        self.wake
+            .establishments
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        *generation = generation.wrapping_add(1);
+        self.wake.changed.notify_all();
     }
 
     fn handle_checkin(&self, _: diesel::r2d2::event::CheckinEvent) {
@@ -2072,6 +2082,10 @@ impl DatabaseRepository {
                 retain_upgrade_failure: std::sync::atomic::AtomicBool::new(false),
                 #[cfg(test)]
                 schema_probe_count: std::sync::atomic::AtomicUsize::new(0),
+                #[cfg(test)]
+                pool_request_count: std::sync::atomic::AtomicUsize::new(0),
+                #[cfg(test)]
+                pool_loop_observer: ParkingMutex::new(None),
                 state: Mutex::new(EntryState {
                     last_used: state.clock,
                     ..EntryState::default()
@@ -2761,6 +2775,7 @@ pub(crate) enum TestHook {
     ScanValidationCheckpoint,
     PoolBeyondRetireDeadline,
     PoolBeforeFailureArbitration,
+    PoolAfterFirstRequest,
     #[cfg(unix)]
     AfterBumpOp,
     #[cfg(unix)]
@@ -2920,7 +2935,8 @@ pub(crate) fn run_test_hook(hook: TestHook, path: &Path) {
         | TestHook::ScanAfterEstablish
         | TestHook::ScanValidationCheckpoint
         | TestHook::PoolBeyondRetireDeadline
-        | TestHook::PoolBeforeFailureArbitration => run_noarg_test_hook(hook, path),
+        | TestHook::PoolBeforeFailureArbitration
+        | TestHook::PoolAfterFirstRequest => run_noarg_test_hook(hook, path),
         #[cfg(unix)]
         TestHook::AfterBumpOp => run_noarg_test_hook(hook, path),
         #[cfg(unix)]
@@ -2955,6 +2971,7 @@ fn run_noarg_test_hook(hook: TestHook, path: &Path) {
             TestHook::PostGet => hooks.post_get.take(),
             TestHook::AfterProbeCurrent
             | TestHook::PoolBeforeFailureArbitration
+            | TestHook::PoolAfterFirstRequest
             | TestHook::VanishedHolderSelected
             | TestHook::VanishedHoldersRetired
             | TestHook::BeforeVanishedShmRename
@@ -3010,7 +3027,8 @@ fn run_noarg_test_hook(hook: TestHook, path: &Path) {
                 | TestHook::ScanAfterEstablish
                 | TestHook::ScanValidationCheckpoint
                 | TestHook::PoolBeyondRetireDeadline
-                | TestHook::PoolBeforeFailureArbitration => {}
+                | TestHook::PoolBeforeFailureArbitration
+                | TestHook::PoolAfterFirstRequest => {}
                 TestHook::VanishedHolderSelected
                 | TestHook::VanishedHoldersRetired
                 | TestHook::BeforeVanishedShmRename
@@ -3056,6 +3074,9 @@ fn run_after_probe_current_test_hook(path: &Path) {
     }
 }
 
+#[cfg(test)]
+type PoolLoopCallback = Arc<dyn Fn(u64) + Send + Sync>;
+
 impl DatabaseEntry {
     #[cfg(test)]
     fn get_connection(&self) -> Result<PooledConnection<BoundConnectionManager>, Error> {
@@ -3080,7 +3101,7 @@ impl DatabaseEntry {
             .cloned()
             .ok_or_else(|| Error::Conflict("database pool has been retired".into()))?;
         let pool_deadline = Instant::now() + pool.connection_timeout();
-        let mut requested = false;
+        let mut requested_establishments = None;
         let mut pool_failure = None;
         loop {
             // Each caller observes its own barrier, token and absolute deadline.
@@ -3091,7 +3112,15 @@ impl DatabaseEntry {
                 deadline,
                 cancellation,
             )?);
-            let generation = *self.pool_wake.generation.lock();
+            let (generation, establishments) = {
+                let generation = self.pool_wake.generation.lock();
+                (
+                    *generation,
+                    self.pool_wake
+                        .establishments
+                        .load(std::sync::atomic::Ordering::Relaxed),
+                )
+            };
             // Sample before availability. AcquireEvent clears stale failure before r2d2
             // inserts its connection, so it is not itself an availability notification.
             let failure = self.pool_wake.failure.lock().latest.clone();
@@ -3100,21 +3129,45 @@ impl DatabaseEntry {
             if Instant::now() >= deadline && remaining > RETIRE_CANCELLATION_POLL {
                 run_test_hook(TestHook::PoolBeyondRetireDeadline, &key.path);
             }
-            // One nonblocking get starts replenishment. Subsequent probes neither consume
-            // r2d2's diagnostic nor start an extra worker at the terminal timeout.
-            let available = if requested {
+            // Re-arm once per observed establishment we did not obtain. Other wakes and
+            // polls only probe availability, preserving pending work and its diagnostic.
+            let mut available = if requested_establishments.is_some() {
                 pool.try_get()
             } else {
+                None
+            };
+            if available.is_none() && requested_establishments != Some(establishments) {
                 // try_get alone never schedules r2d2 replenishment for an empty pool.
-                requested = true;
-                match pool.get_timeout(Duration::ZERO) {
+                #[cfg(test)]
+                let first_request = requested_establishments.is_none();
+                requested_establishments = Some(
+                    self.pool_wake
+                        .establishments
+                        .load(std::sync::atomic::Ordering::Relaxed),
+                );
+                #[cfg(test)]
+                self.pool_request_count
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                available = match pool.get_timeout(Duration::ZERO) {
                     Ok(connection) => Some(connection),
                     Err(error) => {
-                        pool_failure = Some(error);
+                        // r2d2 exposes its optional retained diagnostic only through Display.
+                        if pool_failure.is_none()
+                            || error
+                                .to_string()
+                                .strip_prefix("timed out waiting for connection: ")
+                                .is_some_and(|diagnostic| !diagnostic.is_empty())
+                        {
+                            pool_failure = Some(error);
+                        }
                         None
                     }
+                };
+                #[cfg(test)]
+                if first_request {
+                    run_test_hook(TestHook::PoolAfterFirstRequest, &key.path);
                 }
-            };
+            }
             if let Some(connection) = available {
                 let _admission = predecessor_admission(
                     state,
@@ -3149,6 +3202,13 @@ impl DatabaseEntry {
                 return Err(pool_failure.take().map(Error::from).unwrap_or_else(|| {
                     Error::Conflict("database connection acquisition timed out".into())
                 }));
+            }
+            #[cfg(test)]
+            {
+                let observer = self.pool_loop_observer.lock().clone();
+                if let Some(observer) = observer {
+                    observer(generation);
+                }
             }
             self.pool_wake
                 .wait_since(generation, remaining.min(RETIRE_CANCELLATION_POLL));
@@ -10756,6 +10816,209 @@ mod bound_sqlite_witnesses {
                 record.message
             );
         }
+    }
+
+    const POOL_TEST_BOUND: Duration = Duration::from_secs(10);
+
+    struct PoolLoopObserver {
+        entry: Arc<DatabaseEntry>,
+        completed: std::sync::mpsc::Receiver<u64>,
+        resume: Option<std::sync::mpsc::Sender<()>>,
+    }
+
+    impl PoolLoopObserver {
+        fn install(entry: &Arc<DatabaseEntry>) -> Self {
+            let (completed, observed) = std::sync::mpsc::channel();
+            let (resume, resumed) = std::sync::mpsc::channel();
+            let resumed = ParkingMutex::new(resumed);
+            *entry.pool_loop_observer.lock() = Some(Arc::new(move |generation| {
+                if completed.send(generation).is_ok() {
+                    // Disconnection also releases the caller when a test fails.
+                    let _ = resumed.lock().recv_timeout(POOL_TEST_BOUND);
+                }
+            }));
+            Self {
+                entry: Arc::clone(entry),
+                completed: observed,
+                resume: Some(resume),
+            }
+        }
+
+        fn observe_requests(&self, expected: usize) -> u64 {
+            let generation = self
+                .completed
+                .recv_timeout(POOL_TEST_BOUND)
+                .expect("POOL_WAIT_ITERATION_NOT_OBSERVED");
+            assert_eq!(
+                self.entry.pool_request_count.load(Ordering::SeqCst),
+                expected,
+                "UNEXPECTED_REPLENISHMENT_REQUEST_COUNT"
+            );
+            generation
+        }
+
+        fn resume(&self) {
+            self.resume.as_ref().unwrap().send(()).unwrap();
+        }
+
+        fn assert_quiet_wakes(&self, events: &PoolEvents, expected: usize) {
+            for _ in 0..3 {
+                diesel::r2d2::HandleError::handle_error(
+                    events,
+                    BoundPoolError::Validate(diesel::result::Error::NotFound),
+                );
+                let published = *events.wake.generation.lock();
+                self.resume();
+                assert_eq!(self.observe_requests(expected), published);
+            }
+            // With establishment held and no event published, these iterations follow
+            // timeout-only waits. Each observation pauses before the next wait begins.
+            for _ in 0..2 {
+                let generation = *events.wake.generation.lock();
+                self.resume();
+                assert_eq!(self.observe_requests(expected), generation);
+            }
+        }
+    }
+
+    impl Drop for PoolLoopObserver {
+        fn drop(&mut self) {
+            self.entry.pool_loop_observer.lock().take();
+            self.resume.take();
+        }
+    }
+
+    fn hold_next_pool_establishment(
+        path: &Path,
+    ) -> (std::sync::mpsc::Receiver<()>, std::sync::mpsc::Sender<()>) {
+        let (entered, observed) = std::sync::mpsc::channel();
+        let (release, released) = std::sync::mpsc::channel();
+        TEST_HOOKS.get().unwrap().lock().unwrap().by_path.insert(
+            (
+                TestHook::WorkerBeforeEstablish,
+                normalize_test_hook_path(path),
+            ),
+            Box::new(move || {
+                let _ = entered.send(());
+                let _ = released.recv_timeout(POOL_TEST_BOUND);
+            }),
+        );
+        (observed, release)
+    }
+
+    #[test]
+    fn pooled_acquire_rearms_after_a_sibling_steals_its_establishment() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("stolen-establishment.db3");
+        seed_database(&path, 41, "WAL");
+        let repository = DatabaseRepository {
+            pool_connection_timeout: Duration::from_secs(2),
+            ..DatabaseRepository::default()
+        };
+        let (key, entry, _) = repository.entry(&test_target(&path), None).unwrap();
+        let first_sibling = entry.get_connection().unwrap();
+        let pool = entry.pool.read().as_ref().unwrap().clone();
+        let (stolen, stolen_by_hook) = std::sync::mpsc::channel();
+        let (resume_first, resumed_first) = std::sync::mpsc::channel();
+        let stealing_entry = Arc::clone(&entry);
+        let _hooks = configure_test_hooks(&path, |hooks| {
+            hooks.by_path.insert(
+                (
+                    TestHook::PoolAfterFirstRequest,
+                    normalize_test_hook_path(&path),
+                ),
+                Box::new(move || {
+                    let deadline = Instant::now() + POOL_TEST_BOUND;
+                    while pool.state().idle_connections == 0 {
+                        assert!(Instant::now() < deadline, "REQUESTED_CONNECTION_NOT_IDLE");
+                        std::thread::yield_now();
+                    }
+                    let _ = stolen.send(stealing_entry.get_connection().unwrap());
+                    let _ = resumed_first.recv_timeout(POOL_TEST_BOUND);
+                }),
+            );
+        });
+        std::thread::scope(|scope| {
+            let observer = PoolLoopObserver::install(&entry);
+            let caller = scope.spawn(|| {
+                entry.get_connection_cancellable(
+                    &repository.state,
+                    &key,
+                    Instant::now() + POOL_TEST_BOUND,
+                    None,
+                )
+            });
+            let stolen = stolen_by_hook.recv_timeout(POOL_TEST_BOUND).unwrap();
+            // Register only after the stolen connection is idle and then checked out.
+            let (replacement_entered, release_replacement) = hold_next_pool_establishment(&path);
+            resume_first.send(()).unwrap();
+            observer.observe_requests(1);
+            observer.resume();
+            replacement_entered.recv_timeout(POOL_TEST_BOUND).unwrap();
+            observer.observe_requests(2);
+            let events = PoolEvents {
+                wake: Arc::clone(&entry.pool_wake),
+                path: path.clone(),
+            };
+            observer.assert_quiet_wakes(&events, 2);
+
+            // The observer holds A while a sibling checks in and immediately retakes.
+            drop(first_sibling);
+            let first_sibling = entry.get_connection().unwrap();
+            let checkin_generation = *entry.pool_wake.generation.lock();
+            observer.resume();
+            assert_eq!(observer.observe_requests(2), checkin_generation);
+
+            release_replacement.send(()).unwrap();
+            drop(observer);
+            let result = caller.join().unwrap();
+            assert!(
+                result.is_ok(),
+                "STOLEN_ESTABLISHMENT_STRANDED_WAITER: {:?}",
+                result.as_ref().err()
+            );
+            drop((first_sibling, stolen));
+        });
+    }
+
+    #[test]
+    fn pooled_acquire_does_not_replenish_without_a_new_establishment() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("no-surplus-establishment.db3");
+        seed_database(&path, 41, "WAL");
+        let repository = DatabaseRepository {
+            pool_connection_timeout: Duration::from_secs(2),
+            ..DatabaseRepository::default()
+        };
+        let (key, entry, _) = repository.entry(&test_target(&path), None).unwrap();
+        let _hooks = configure_test_hooks(&path, |_| {});
+        std::thread::scope(|scope| {
+            let (worker_entered, release_worker) = hold_next_pool_establishment(&path);
+            let observer = PoolLoopObserver::install(&entry);
+            let caller = scope.spawn(|| {
+                entry.get_connection_cancellable(
+                    &repository.state,
+                    &key,
+                    Instant::now() + POOL_TEST_BOUND,
+                    None,
+                )
+            });
+            worker_entered.recv_timeout(POOL_TEST_BOUND).unwrap();
+            observer.observe_requests(1);
+            observer.assert_quiet_wakes(
+                &PoolEvents {
+                    wake: Arc::clone(&entry.pool_wake),
+                    path: path.clone(),
+                },
+                1,
+            );
+            release_worker.send(()).unwrap();
+            drop(observer);
+            assert!(
+                caller.join().unwrap().is_ok(),
+                "HELD_ESTABLISHMENT_NOT_ACQUIRED"
+            );
+        });
     }
 
     #[test]
