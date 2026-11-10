@@ -35,8 +35,8 @@ Exit status: 101.
 S-lost-delegations — replaced both wrapper bodies and the shared inner body with typed errors.
 ```text
 workspace delegation pins failed:
-file_workspace.rs: fn paired_rename(: lost delegation paired_rename_inner(source,target_parent,target_leaf,None).map(|(outcome,_)|outcome)
-file_workspace.rs: fn paired_workspace_rename(: lost delegation paired_rename_inner(source,target_parent,target_leaf,Some((metadata_bytes,cancellation)),)
+file_workspace.rs: fn paired_rename(: lost delegation paired_rename_inner(source,target_parent,target_leaf,&CancellationToken::new(),None,).map(|(outcome,_)|outcome)
+file_workspace.rs: fn paired_workspace_rename(: lost delegation paired_rename_inner(source,target_parent,target_leaf,cancellation,Some(metadata_bytes),)
 file_workspace.rs: fn paired_rename_inner(: lost delegation letrename_entry_at=ifforward_metadata.is_some(){rename_workspace_entry_at}else{rename_entry_at};
 file_workspace.rs: fn paired_rename_inner(: lost delegation letrename_optional_regular_at=ifforward_metadata.is_some(){rename_workspace_sidecar_at}else{rename_optional_regular_at};
 file_workspace.rs: fn paired_rename_inner(: lost delegation letprimary=rename_entry_at(&source.parent,&source.leaf,source.identity,source.is_dir,target_parent,target_leaf,)?;
@@ -114,10 +114,10 @@ file_workspace.rs: fn mutation_target(: declaration changed: fnmutation_target(g
 file_workspace.rs: fn register_created_entry(: declaration changed: fnregister_created_entry(g2_pgn_path_authority:&SharedPathAuthority,workspace:&FileWorkspaceHandle,path:&Path,display_name:String,identity:(u64,u64),parent_identity:(u64,u64),is_dir:bool,)->Result<FileWorkspaceHandle,Error>
 file_workspace.rs: fn collect_tree_entries(: declaration changed: fncollect_tree_entries(g2_pgn_path_authority:&SharedPathAuthority,workspace:&FileWorkspaceHandle,token:&CancellationToken,)->Result<(WorkspaceListing,Vec<FileWorkspaceHandle>),Error>
 file_workspace.rs: fn paired_rename(: declaration changed: fnpaired_rename(source:&WorkspaceMutationTarget,target_parent:&fs::File,g2_target_leaf:&std::ffi::OsStr,)->Result<crate::infra::fs::AtomicFileOutcome,Error>
-file_workspace.rs: fn paired_rename(: lost delegation paired_rename_inner(source,target_parent,target_leaf,None).map(|(outcome,_)|outcome)
+file_workspace.rs: fn paired_rename(: lost delegation paired_rename_inner(source,target_parent,target_leaf,&CancellationToken::new(),None,).map(|(outcome,_)|outcome)
 file_workspace.rs: fn paired_workspace_rename(: declaration changed: fnpaired_workspace_rename(source:&WorkspaceMutationTarget,target_parent:&fs::File,target_leaf:&OsStr,metadata_bytes:&[u8],g2_cancellation:&CancellationToken,)->Result<(crate::infra::fs::AtomicFileOutcome,bool),Error>
-file_workspace.rs: fn paired_workspace_rename(: lost delegation paired_rename_inner(source,target_parent,target_leaf,Some((metadata_bytes,cancellation)),)
-file_workspace.rs: fn paired_rename_inner(: declaration changed: fnpaired_rename_inner(source:&WorkspaceMutationTarget,target_parent:&fs::File,target_leaf:&OsStr,g2_forward_metadata:Option<(&[u8],&CancellationToken)>,)->Result<(crate::infra::fs::AtomicFileOutcome,bool),Error>
+file_workspace.rs: fn paired_workspace_rename(: lost delegation paired_rename_inner(source,target_parent,target_leaf,cancellation,Some(metadata_bytes),)
+file_workspace.rs: fn paired_rename_inner(: declaration changed: fnpaired_rename_inner(source:&WorkspaceMutationTarget,target_parent:&fs::File,target_leaf:&OsStr,cancellation:&CancellationToken,g2_forward_metadata:Option<&[u8]>,)->Result<(crate::infra::fs::AtomicFileOutcome,bool),Error>
 file_workspace.rs: fn paired_rename_inner(: lost delegation letrename_entry_at=ifforward_metadata.is_some(){rename_workspace_entry_at}else{rename_entry_at};
 file_workspace.rs: fn paired_rename_inner(: lost delegation letrename_optional_regular_at=ifforward_metadata.is_some(){rename_workspace_sidecar_at}else{rename_optional_regular_at};
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2687 filtered out; finished in 0.48s
@@ -3678,16 +3678,16 @@ fn workspace_bodies_are_single_ungated_delegations() {
         (
             "fn paired_rename(",
             "fnpaired_rename(source:&WorkspaceMutationTarget,target_parent:&fs::File,target_leaf:&std::ffi::OsStr,)->Result<crate::infra::fs::AtomicFileOutcome,Error>",
-            &["paired_rename_inner(source,target_parent,target_leaf,None).map(|(outcome,_)|outcome)"],
+            &["paired_rename_inner(source,target_parent,target_leaf,&CancellationToken::new(),None,).map(|(outcome,_)|outcome)"],
         ),
         (
             "fn paired_workspace_rename(",
             "fnpaired_workspace_rename(source:&WorkspaceMutationTarget,target_parent:&fs::File,target_leaf:&OsStr,metadata_bytes:&[u8],cancellation:&CancellationToken,)->Result<(crate::infra::fs::AtomicFileOutcome,WorkspaceSidecarDisposition,),Error,>",
-            &["paired_rename_inner(source,target_parent,target_leaf,Some((metadata_bytes,cancellation)),)"],
+            &["paired_rename_inner(source,target_parent,target_leaf,cancellation,Some(metadata_bytes),)"],
         ),
         (
             "fn paired_rename_inner(",
-            "fnpaired_rename_inner(source:&WorkspaceMutationTarget,target_parent:&fs::File,target_leaf:&OsStr,forward_metadata:Option<(&[u8],&CancellationToken)>,)->Result<(crate::infra::fs::AtomicFileOutcome,WorkspaceSidecarDisposition,),Error,>",
+            "fnpaired_rename_inner(source:&WorkspaceMutationTarget,target_parent:&fs::File,target_leaf:&OsStr,cancellation:&CancellationToken,forward_metadata:Option<&[u8]>,)->Result<(crate::infra::fs::AtomicFileOutcome,WorkspaceSidecarDisposition,),Error,>",
             &[
                 "letrename_entry_at=ifforward_metadata.is_some(){rename_workspace_entry_at}else{rename_entry_at};",
                 "letrename_optional_regular_at=ifforward_metadata.is_some(){rename_workspace_sidecar_at}else{rename_optional_regular_at};",
