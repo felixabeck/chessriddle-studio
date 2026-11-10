@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import {
     expect,
     test,
@@ -9,7 +10,6 @@ import {
     playBoardMove,
     bestMovesPayload,
     seedAnalysisEngines,
-    waitForScrollAreaScrollbarsHidden,
     type AnalysisRequest,
     type MockScenario,
 } from "./fixtures";
@@ -601,9 +601,10 @@ test("engine-gap: pinned engine shows up to its own line count and swaps between
     const moveBox = (await move.boundingBox())!;
     await page.mouse.move(moveBox.x + moveBox.width - 2, moveBox.y + moveBox.height / 2);
     await expect(preview).toBeVisible();
-    await waitForScrollAreaScrollbarsHidden(page);
     await expect(page).toHaveScreenshot("pinned-engine-hover-preview-dark.png", {
         animations: "disabled",
+        // A hover scrollbar can outlive the pointer, and it is not what this image pins.
+        stylePath: fileURLToPath(new URL("./scrollbar-free-screenshot.css", import.meta.url)),
     });
     await page.mouse.move(0, 0);
     await expect(preview).toHaveCount(0);
