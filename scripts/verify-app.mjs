@@ -4252,6 +4252,19 @@ async function verifyGameOpening(session, ownedRoot, filesWorkspace) {
     "GO11 a fixed-coordinate double-click opens an initially unselected non-first PGN game",
     async () => {
       await filesSurface();
+      // The Library remembers the last game position per file (b16db962), so GO10 leaves openingGames[1] selected.
+      const first = await fileRow(openingGames[0]);
+      await clickAt(session, first.x, first.y);
+      await wait(
+        "first PGN game selected before GO11",
+        'return [...document.querySelectorAll(\'[role="option"][aria-selected="true"]\')].some(node => node.textContent.includes(arguments[0])) && ![...document.querySelectorAll(\'[role="option"][aria-selected="true"]\')].some(node => node.textContent.includes(arguments[1]))',
+        [openingGames[0].white, openingGames[1].white],
+      );
+      await wait(
+        "first PGN preview before GO11",
+        "return document.body.innerText.replace(/\\s+/g, '').includes(arguments[0])",
+        [openingGames[0].notation],
+      );
       const row = await fileRow(openingGames[1]);
       if (row.selected !== "false") throw new Error("PGN double-click target was already selected");
       const before = await snapshot();
