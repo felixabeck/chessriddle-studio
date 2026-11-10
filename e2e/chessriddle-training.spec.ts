@@ -496,6 +496,10 @@ async function captureTraining(
         );
     }
     await page.mouse.move(0, 0);
+    // The tab strip's hover scrollbar hides 1 s after the pointer leaves it; capture after that, not during.
+    await expect(
+        page.locator('[data-tab-strip] .mantine-ScrollArea-scrollbar[data-state="visible"]'),
+    ).toHaveCount(0);
     await page.evaluate(() => {
         (document.activeElement as HTMLElement | null)?.blur();
     });
