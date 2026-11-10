@@ -22691,3 +22691,20 @@ Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates th
 * **Found by:** Claude Code build run practice-mode, real-app verification, 2026-11-10.
 * **Correction 2026-11-10 (build run practice-mode, records lens):** The Defect bullet dates both cited Library commits to 2026-11-09. Only `6651de3bd` (the New Tab / Library list redesign) is from 2026-11-09; `a188838f5` (selected rows show at once, closed folders lose the highlight) is from 2026-11-10 and is the commit that changes selection highlighting.
 * **Note:** master commit 94b486c1a ("fix(library): a move key takes focus off the clicked game row", 2026-11-10) landed after this observation and touches the same game list; rerun GO11 on a build that contains it before investigating.
+
+---
+
+## 2026-11-10 — filed through the inbox spool
+
+### Hosted macOS runner lost contact during Rust tests and left master's CI red on a frontend-only push
+
+* **ID:** f-20261110-03 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** fd7f4c3a-c6f8-487c-ad53-3243a2496f52
+* **Impact class:** tooling
+* **CI run:** 42819791205
+* **Where:** `.github/workflows/test.yml` job `rust-macos-test`, step `Run Rust tests`, on master `fc2aa66a`.
+* **Failure scenario:** Test run 42819791205, job `rust-macos-test` 129842073791, started 12:54:53Z and ended 13:50:55Z with the annotation "The hosted runner lost communication with the server." `Run Rust tests` never reported completion. Every other job on that commit is green. `pnpm ci:remote:check` now reports master red, which refuses later code pushes until this run has an owner and a green result.
+* **Defect:** master's newest required macOS result is failure with no test failure on record. The range `c953ce79..fc2aa66a` does not touch `src-tauri` (`git diff --stat` is empty), and the same job passed on `c953ce79` in about 16 minutes. The job log returns 404 BlobNotFound, so a runner hang caused by a test cannot be ruled out from the log. The evidence available points at runner loss.
+* **Fix:** Rerun the failed job once with `gh run rerun 42819791205 --failed -R felixabeck/chessriddle-studio`. If it passes, close this as runner infrastructure. If it hangs or fails again, read its log for the test running at that moment and treat it as a Rust test hang. The push skill's automatic rerun exception covers only setup steps, so this rerun needs this finding as its record.
+* **Proof:** a completed green `rust-macos-test` on `fc2aa66a` or a later master commit.
+* **Found by:** Claude Code, required CI wait of the f-20261106-40 release, drain session fd7f4c3a-c6f8-487c-ad53-3243a2496f52.
