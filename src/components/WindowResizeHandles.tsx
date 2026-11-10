@@ -1,4 +1,3 @@
-import { getDefaultZIndex } from "@mantine/core";
 import { useEffect, useState, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
@@ -53,7 +52,7 @@ export function WindowResizeHandles() {
   };
 
   return (
-    <div className={classes.root} style={{ zIndex: getDefaultZIndex("max") }} aria-hidden>
+    <div className={classes.root} aria-hidden>
       {DIRECTIONS.map((direction) => (
         <div
           key={direction}

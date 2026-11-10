@@ -1185,6 +1185,7 @@ const tauriBootstrap = () => {
         "plugin:menu|set_as_app_menu": { result: null },
         "plugin:window|set_decorations": { result: null },
         "plugin:window|is_maximized": { result: false },
+        "plugin:window|is_fullscreen": { result: false },
         // Production pair: close emits `tauri://close-requested` when a JS listener exists;
         // destroy is recorded and does not re-emit the close request.
         "plugin:window|close": { result: null },

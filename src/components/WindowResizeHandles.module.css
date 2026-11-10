@@ -4,6 +4,7 @@
   --corner: 16px;
 
   position: fixed;
+  z-index: var(--mantine-z-index-max);
   inset: 0;
   pointer-events: none;
 }
