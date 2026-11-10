@@ -1,4 +1,4 @@
-import { MantineProvider } from "@mantine/core";
+import { createTheme, MantineProvider } from "@mantine/core";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import useSWR, { SWRConfig, unstable_serialize, type State } from "swr";
@@ -45,6 +45,18 @@ globalThis.ResizeObserver = class {
   unobserve() {}
   disconnect() {}
 };
+
+// A zero duration keeps Mantine's modal transition timers from outliving the jsdom environment.
+const instantModalTheme = createTheme({
+  components: {
+    Modal: {
+      defaultProps: {
+        transitionProps: { duration: 0 },
+        overlayProps: { transitionProps: { duration: 0 } },
+      },
+    },
+  },
+});
 
 function deferred<T = void>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -137,7 +149,7 @@ describe("database game deletion with real SWR revalidation", () => {
   ) {
     await act(async () =>
       root.render(
-        <MantineProvider env="test">
+        <MantineProvider env="test" theme={instantModalTheme}>
           <SWRConfig
             value={{
               provider: () => cache,
