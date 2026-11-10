@@ -664,6 +664,36 @@ pub(crate) fn pgn_name(name: &str) -> Result<String, Error> {
     })
 }
 
+fn is_admitted_pgn_leaf(leaf: &OsStr) -> bool {
+    leaf.to_string_lossy()
+        .to_ascii_lowercase()
+        .ends_with(".pgn")
+}
+
+/// The sidecar address is not injective across admitted PGNs. This is the one test for sharing it.
+fn sibling_pgn_shares_sidecar(
+    directory: &fs::File,
+    pgn_leaf: &OsStr,
+    also_ignored: Option<&OsStr>,
+    cancellation: &CancellationToken,
+) -> Result<bool, Error> {
+    let info_leaf = sidecar_leaf(pgn_leaf)?;
+    let entries = crate::infra::fs::read_directory_entries_at(
+        directory,
+        cancellation,
+        Some(MAX_DIRECTORY_LISTING_ENTRIES),
+        &mut |name| {
+            name != pgn_leaf
+                && Some(name) != also_ignored
+                && is_admitted_pgn_leaf(name)
+                && sidecar_leaf(name).is_ok_and(|leaf| leaf == info_leaf)
+        },
+    )?;
+    Ok(entries
+        .iter()
+        .any(|entry| entry.kind == DirectoryEntryKind::RegularFile))
+}
+
 #[cfg(all(test, unix))]
 fn info_path(pgn: &Path) -> Result<PathBuf, Error> {
     let leaf = pgn
@@ -816,6 +846,11 @@ fn replace_workspace_file_metadata(
         &info_leaf,
         || {
             crate::infra::fs::assert_entry_identity(parent, pgn_leaf, pgn_identity, false)?;
+            if sibling_pgn_shares_sidecar(parent, pgn_leaf, None, cancellation)? {
+                return Err(Error::Conflict(
+                    crate::error::WORKSPACE_FILE_NAME_TAKEN.into(),
+                ));
+            }
             if cancellation.is_cancelled() {
                 return Err(Error::Cancellation);
             }
@@ -1211,7 +1246,7 @@ pub(crate) fn collect_tree_entries(
             }
             let display = leaf.to_string_lossy().into_owned();
             let mut child_components = components.clone();
-            child_components.push(leaf);
+            child_components.push(leaf.clone());
             let entry = match observation {
                 Ok(entry) => entry,
                 Err((kind, error)) => {
@@ -1223,7 +1258,7 @@ pub(crate) fn collect_tree_entries(
                                 Some(WorkspaceEntryKind::Directory)
                             }
                             Some(DirectoryEntryKind::RegularFile) => {
-                                if !display.to_ascii_lowercase().ends_with(".pgn") {
+                                if !is_admitted_pgn_leaf(&leaf) {
                                     continue;
                                 }
                                 Some(WorkspaceEntryKind::File)
@@ -1253,7 +1288,7 @@ pub(crate) fn collect_tree_entries(
                 DirectoryEntryKind::RegularFile => false,
                 DirectoryEntryKind::Other => continue,
             };
-            if !is_directory && !display.to_ascii_lowercase().ends_with(".pgn") {
+            if !is_directory && !is_admitted_pgn_leaf(&leaf) {
                 continue;
             }
             if is_directory && depth + 1 > MAX_WORKSPACE_LISTING_DEPTH {
@@ -1717,7 +1752,14 @@ fn paired_rename(
     target_parent: &fs::File,
     target_leaf: &std::ffi::OsStr,
 ) -> Result<crate::infra::fs::AtomicFileOutcome, Error> {
-    paired_rename_inner(source, target_parent, target_leaf, None).map(|(outcome, _)| outcome)
+    paired_rename_inner(
+        source,
+        target_parent,
+        target_leaf,
+        &CancellationToken::new(),
+        None,
+    )
+    .map(|(outcome, _)| outcome)
 }
 
 #[derive(Debug)]
@@ -1726,6 +1768,7 @@ enum WorkspaceSidecarDisposition {
     Moved {
         identity: (u64, u64),
         saved_bytes: Option<Vec<u8>>,
+        renamed: bool,
     },
     Created((u64, u64)),
 }
@@ -1766,6 +1809,7 @@ fn rewrite_moved_workspace_metadata(
     let WorkspaceSidecarDisposition::Moved {
         identity,
         saved_bytes,
+        ..
     } = disposition
     else {
         return Ok(());
@@ -1839,6 +1883,7 @@ fn reverse_workspace_rename(
             WorkspaceSidecarDisposition::Moved {
                 identity,
                 saved_bytes: Some(bytes),
+                ..
             } => replace_owned_workspace_metadata(
                 target_parent,
                 &target_info,
@@ -1850,6 +1895,7 @@ fn reverse_workspace_rename(
         };
     finish_committed_workspace_step(restoration, || {
         let sidecar = match disposition {
+            WorkspaceSidecarDisposition::Moved { renamed: false, .. } => Ok(()),
             WorkspaceSidecarDisposition::Moved { identity, .. } => rename_entry_at(
                 target_parent,
                 &target_info,
@@ -1914,7 +1960,8 @@ fn paired_workspace_rename(
         source,
         target_parent,
         target_leaf,
-        Some((metadata_bytes, cancellation)),
+        cancellation,
+        Some(metadata_bytes),
     )
 }
 
@@ -1922,7 +1969,8 @@ fn paired_rename_inner(
     source: &WorkspaceMutationTarget,
     target_parent: &fs::File,
     target_leaf: &OsStr,
-    forward_metadata: Option<(&[u8], &CancellationToken)>,
+    cancellation: &CancellationToken,
+    forward_metadata: Option<&[u8]>,
 ) -> Result<
     (
         crate::infra::fs::AtomicFileOutcome,
@@ -1963,6 +2011,26 @@ fn paired_rename_inner(
     }
     let source_info = sidecar_leaf(&source.leaf)?;
     let target_info = sidecar_leaf(target_leaf)?;
+    let source_sidecar_shared =
+        sibling_pgn_shares_sidecar(&source.parent, &source.leaf, None, cancellation)?;
+    let publishes_sidecar = if forward_metadata.is_some() {
+        true
+    } else if source_sidecar_shared {
+        false
+    } else {
+        match entry_identity_at(&source.parent, &source_info, false) {
+            Ok(_) => true,
+            Err(error) if error.is_missing_entry() => false,
+            Err(error) => return Err(error),
+        }
+    };
+    if publishes_sidecar
+        && sibling_pgn_shares_sidecar(target_parent, target_leaf, Some(&source.leaf), cancellation)?
+    {
+        return Err(Error::Conflict(
+            crate::error::WORKSPACE_FILE_NAME_TAKEN.into(),
+        ));
+    }
     let rename_optional_regular_at = if forward_metadata.is_some() {
         rename_workspace_sidecar_at
     } else {
@@ -1971,13 +2039,30 @@ fn paired_rename_inner(
     let primary = rename_primary()?;
     let mut disposition = WorkspaceSidecarDisposition::Absent;
     let sidecar_result: Result<Option<AtomicFileOutcome>, Error> = (|| {
-        let identity = match entry_identity_at(&source.parent, &source_info, false) {
-            Ok(identity) => Some(identity),
-            Err(error) if error.is_missing_entry() => None,
-            Err(error) => return Err(error),
+        // A shared sidecar stays with the sibling that remains in the source directory.
+        let identity = if source_sidecar_shared {
+            None
+        } else {
+            match entry_identity_at(&source.parent, &source_info, false) {
+                Ok(identity) => Some(identity),
+                Err(error) if error.is_missing_entry() => None,
+                Err(error) => return Err(error),
+            }
         };
         if let Some(identity) = identity {
             assert_entry_identity(&source.parent, &source_info, identity, false)?;
+            // The same stem in the same directory keeps the sidecar at its existing address.
+            if source_info == target_info
+                && crate::infra::path_authority::opened_file_identity(&source.parent)?
+                    == crate::infra::path_authority::opened_file_identity(target_parent)?
+            {
+                disposition = WorkspaceSidecarDisposition::Moved {
+                    identity,
+                    saved_bytes: None,
+                    renamed: false,
+                };
+                return Ok(None);
+            }
             if let Some(sidecar) = rename_optional_regular_at(
                 &source.parent,
                 &source_info,
@@ -1987,11 +2072,12 @@ fn paired_rename_inner(
                 disposition = WorkspaceSidecarDisposition::Moved {
                     identity,
                     saved_bytes: None,
+                    renamed: true,
                 };
                 return Ok(Some(sidecar));
             }
         }
-        let Some((bytes, cancellation)) = forward_metadata else {
+        let Some(bytes) = forward_metadata else {
             return Ok(None);
         };
         let precommit = || {
@@ -2171,6 +2257,11 @@ pub(crate) fn create_owned_workspace_file_blocking(
     let info_leaf = sidecar_leaf(&target_leaf)?;
     crate::infra::fs::ensure_atomic_create_available_at(parent_dir, &target_leaf)?;
     crate::infra::fs::ensure_atomic_create_available_at(parent_dir, &info_leaf)?;
+    if sibling_pgn_shares_sidecar(parent_dir, &target_leaf, None, cancellation)? {
+        return Err(Error::Conflict(
+            crate::error::WORKSPACE_FILE_NAME_TAKEN.into(),
+        ));
+    }
     let source_snapshot = match &content {
         WorkspaceFileContent::Text { .. } => None,
         WorkspaceFileContent::Copy { source, revision } => {
@@ -2793,7 +2884,7 @@ pub(crate) fn trash_entry(
         Err(error) => return Err(Error::with_cleanup(error, bucket.cleanup())),
     };
     let (outcome, mut disposition) =
-        match paired_rename_inner(&source, &bucket_dir, &source.leaf, None) {
+        match paired_rename_inner(&source, &bucket_dir, &source.leaf, cancellation, None) {
             Ok(renamed) => renamed,
             Err(error) => {
                 // A failed internal reverse can leave the primary in the bucket. Keep its origin.
@@ -2912,7 +3003,7 @@ fn restore_trash_item(
         return Err(Error::Cancellation);
     }
     let (outcome, mut disposition) =
-        paired_rename_inner(&source, &target_parent, &source.leaf, None)?;
+        paired_rename_inner(&source, &target_parent, &source.leaf, cancellation, None)?;
     let result = finish_workspace_rename(outcome, || {
         if cancellation.is_cancelled() {
             return Err(Error::Cancellation);
@@ -7191,6 +7282,512 @@ mod tests {
             metadata_from_path(&state.pgn_path_authority, &workspace, &pgn).unwrap(),
             expected
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn metadata_edits_refuse_case_alias_without_changing_shared_sidecar() {
+        for (mode, stem) in [
+            (MetadataEdit::Metadata, "game"),
+            (MetadataEdit::SameLeaf, "before"),
+        ] {
+            let (_directory, state, workspace) = workspace_state();
+            let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+            fs::write(root.join(format!("{stem}.pgn")), b"1. e4 *").unwrap();
+            fs::write(root.join(format!("{stem}.PGN")), b"1. d4 *").unwrap();
+            let original = serialize_metadata(&edited_metadata()).unwrap();
+            let sidecar = root.join(format!("{stem}.info"));
+            fs::write(&sidecar, &original).unwrap();
+            let listing = listed_workspace(&state, &workspace);
+            let leaf = if matches!(mode, MetadataEdit::SameLeaf) {
+                stem.to_string()
+            } else {
+                format!("{stem}.PGN")
+            };
+            let entry = listing
+                .entries
+                .iter()
+                .find(|entry| entry.name == leaf)
+                .unwrap();
+
+            let error = edit_metadata(
+                mode,
+                &state,
+                &workspace,
+                &entry.handle,
+                WorkspaceMetadata::default(),
+                &CancellationToken::new(),
+            )
+            .unwrap_err();
+            assert!(
+                matches!(error, Error::Conflict(ref message) if message == crate::error::WORKSPACE_FILE_NAME_TAKEN)
+            );
+            assert_eq!(fs::read(&sidecar).unwrap(), original);
+            assert_eq!(
+                fs::read(root.join(format!("{stem}.pgn"))).unwrap(),
+                b"1. e4 *"
+            );
+            assert_eq!(
+                fs::read(root.join(format!("{stem}.PGN"))).unwrap(),
+                b"1. d4 *"
+            );
+        }
+    }
+
+    // APFS cannot store non-UTF-8 file names.
+    #[cfg(not(target_os = "macos"))]
+    #[cfg(unix)]
+    #[test]
+    fn metadata_write_refuses_lossy_alias_without_changing_shared_sidecar() {
+        use std::os::unix::ffi::OsStringExt;
+        let (_directory, state, workspace) = workspace_state();
+        let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+        let first = std::ffi::OsString::from_vec(b"game-\xff.pgn".to_vec());
+        let second = std::ffi::OsString::from_vec(b"game-\xfe.pgn".to_vec());
+        fs::write(root.join(&first), b"1. e4 *").unwrap();
+        fs::write(root.join(&second), b"1. d4 *").unwrap();
+        let original = serialize_metadata(&edited_metadata()).unwrap();
+        let sidecar = root.join(sidecar_leaf(&first).unwrap());
+        fs::write(&sidecar, &original).unwrap();
+        let listing = listed_workspace(&state, &workspace);
+        let entry = listing
+            .entries
+            .iter()
+            .find(|entry| {
+                mutation_target(&state.pgn_path_authority, &entry.handle)
+                    .unwrap()
+                    .leaf
+                    == second
+            })
+            .unwrap();
+
+        let error = edit_metadata(
+            MetadataEdit::Metadata,
+            &state,
+            &workspace,
+            &entry.handle,
+            WorkspaceMetadata::default(),
+            &CancellationToken::new(),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, Error::Conflict(ref message) if message == crate::error::WORKSPACE_FILE_NAME_TAKEN)
+        );
+        assert_eq!(fs::read(&sidecar).unwrap(), original);
+        assert_eq!(fs::read(root.join(&first)).unwrap(), b"1. e4 *");
+        assert_eq!(fs::read(root.join(&second)).unwrap(), b"1. d4 *");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn metadata_edits_allow_distinct_stems_and_non_file_case_siblings() {
+        let (_directory, state, workspace) = workspace_state();
+        let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+        fs::write(root.join("left.pgn"), b"1. e4 *").unwrap();
+        fs::write(root.join("right.PGN"), b"1. d4 *").unwrap();
+        let listing = listed_workspace(&state, &workspace);
+        for (name, expected) in [
+            ("left", edited_metadata()),
+            ("right.PGN", WorkspaceMetadata::default()),
+        ] {
+            let entry = listing
+                .entries
+                .iter()
+                .find(|entry| entry.name == name)
+                .unwrap();
+            edit_metadata(
+                MetadataEdit::Metadata,
+                &state,
+                &workspace,
+                &entry.handle,
+                expected.clone(),
+                &CancellationToken::new(),
+            )
+            .unwrap();
+            let pgn = if name == "left" { "left.pgn" } else { name };
+            assert_eq!(
+                metadata_from_path(&state.pgn_path_authority, &workspace, &root.join(pgn)).unwrap(),
+                expected
+            );
+        }
+        assert_eq!(
+            fs::read(root.join("left.info")).unwrap(),
+            serialize_metadata(&edited_metadata()).unwrap()
+        );
+        assert_eq!(
+            fs::read(root.join("right.info")).unwrap(),
+            serialize_metadata(&WorkspaceMetadata::default()).unwrap()
+        );
+
+        fs::write(root.join("game.pgn"), b"*").unwrap();
+        for is_directory in [true, false] {
+            if is_directory {
+                fs::create_dir(root.join("game.PGN")).unwrap();
+            } else {
+                std::os::unix::fs::symlink("left.pgn", root.join("game.PGN")).unwrap();
+            }
+            let listing = listed_workspace(&state, &workspace);
+            let entry = listing
+                .entries
+                .iter()
+                .find(|entry| entry.name == "game")
+                .unwrap();
+            edit_metadata(
+                MetadataEdit::Metadata,
+                &state,
+                &workspace,
+                &entry.handle,
+                edited_metadata(),
+                &CancellationToken::new(),
+            )
+            .unwrap();
+            assert_eq!(
+                metadata_from_path(
+                    &state.pgn_path_authority,
+                    &workspace,
+                    &root.join("game.pgn")
+                )
+                .unwrap(),
+                edited_metadata()
+            );
+            if is_directory {
+                fs::remove_dir(root.join("game.PGN")).unwrap();
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn rename_aliased_pgn_keeps_shared_sidecar_and_allows_later_edit() {
+        let (_directory, state, workspace) = workspace_state();
+        let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+        fs::write(root.join("game.pgn"), b"1. e4 *").unwrap();
+        fs::write(root.join("game.PGN"), b"1. d4 *").unwrap();
+        let original = serialize_metadata(&WorkspaceMetadata::default()).unwrap();
+        fs::write(root.join("game.info"), &original).unwrap();
+        let listing = listed_workspace(&state, &workspace);
+        let source = listing
+            .entries
+            .iter()
+            .find(|entry| entry.name == "game.PGN")
+            .unwrap();
+        let sibling = listing
+            .entries
+            .iter()
+            .find(|entry| entry.name == "game")
+            .unwrap();
+        edit_metadata(
+            MetadataEdit::Rename,
+            &state,
+            &workspace,
+            &source.handle,
+            edited_metadata(),
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert_eq!(fs::read(root.join("game.info")).unwrap(), original);
+        assert_eq!(fs::read(root.join("after.pgn")).unwrap(), b"1. d4 *");
+        assert_eq!(fs::read(root.join("game.pgn")).unwrap(), b"1. e4 *");
+        assert_eq!(
+            metadata_from_path(
+                &state.pgn_path_authority,
+                &workspace,
+                &root.join("after.pgn")
+            )
+            .unwrap(),
+            edited_metadata()
+        );
+        edit_metadata(
+            MetadataEdit::Metadata,
+            &state,
+            &workspace,
+            &sibling.handle,
+            edited_metadata(),
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert_eq!(
+            metadata_from_path(
+                &state.pgn_path_authority,
+                &workspace,
+                &root.join("game.pgn")
+            )
+            .unwrap(),
+            edited_metadata()
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn move_aliased_pgn_keeps_shared_sidecar_and_creates_default_metadata() {
+        let (_directory, state, workspace) = workspace_state();
+        let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+        fs::write(root.join("game.pgn"), b"1. e4 *").unwrap();
+        fs::write(root.join("game.PGN"), b"1. d4 *").unwrap();
+        fs::create_dir(root.join("Archive")).unwrap();
+        let original = serialize_metadata(&edited_metadata()).unwrap();
+        fs::write(root.join("game.info"), &original).unwrap();
+        let listing = listed_workspace(&state, &workspace);
+        let source = listing
+            .entries
+            .iter()
+            .find(|entry| entry.name == "game.PGN")
+            .unwrap();
+        let target = listed_directory(&listing, "Archive");
+        move_workspace_entry_blocking(
+            workspace.clone(),
+            source.handle.clone(),
+            target.handle.clone(),
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert_eq!(fs::read(root.join("game.info")).unwrap(), original);
+        assert_eq!(fs::read(root.join("game.pgn")).unwrap(), b"1. e4 *");
+        assert_eq!(fs::read(root.join("Archive/game.PGN")).unwrap(), b"1. d4 *");
+        assert_eq!(
+            metadata_from_path(
+                &state.pgn_path_authority,
+                &workspace,
+                &root.join("Archive/game.PGN")
+            )
+            .unwrap(),
+            WorkspaceMetadata::default()
+        );
+        assert_eq!(
+            fs::read(root.join("Archive/game.info")).unwrap(),
+            serialize_metadata(&WorkspaceMetadata::default()).unwrap()
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn trash_restore_aliased_pgn_keeps_shared_sidecar_in_place() {
+        let (_directory, state, workspace) = workspace_state();
+        let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+        fs::write(root.join("game.pgn"), b"1. e4 *").unwrap();
+        fs::write(root.join("game.PGN"), b"1. d4 *").unwrap();
+        let original = serialize_metadata(&edited_metadata()).unwrap();
+        fs::write(root.join("game.info"), &original).unwrap();
+        let listing = listed_workspace(&state, &workspace);
+        let source = listing
+            .entries
+            .iter()
+            .find(|entry| entry.name == "game.PGN")
+            .unwrap();
+        trash_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &source.handle,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let trashed = mutation_target(&state.pgn_path_authority, &source.handle).unwrap();
+        assert_eq!(fs::read(trashed.path()).unwrap(), b"1. d4 *");
+        assert!(!trashed.path().with_file_name("game.info").exists());
+        assert_eq!(fs::read(root.join("game.info")).unwrap(), original);
+        restore_entry(
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &workspace,
+            &source.handle,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert_eq!(fs::read(root.join("game.info")).unwrap(), original);
+        assert_eq!(fs::read(root.join("game.pgn")).unwrap(), b"1. e4 *");
+        assert_eq!(fs::read(root.join("game.PGN")).unwrap(), b"1. d4 *");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn create_and_rename_refuse_sidecarless_destination_alias() {
+        let (_directory, state, workspace) = workspace_state();
+        let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+        fs::write(root.join("game.PGN"), b"1. e4 *").unwrap();
+        let error = create_named_text(&state, &workspace, "game", "*").unwrap_err();
+        assert!(
+            matches!(error, Error::Conflict(ref message) if message == crate::error::WORKSPACE_FILE_NAME_TAKEN)
+        );
+        assert!(!root.join("game.pgn").exists());
+        assert!(!root.join("game.info").exists());
+        let source = create_named_text(&state, &workspace, "other", "1. d4 *").unwrap();
+        let original = fs::read(root.join("other.info")).unwrap();
+        let error = rename_workspace_file_blocking(
+            workspace.clone(),
+            source.handle,
+            "game".into(),
+            edited_metadata(),
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &CancellationToken::new(),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, Error::Conflict(ref message) if message == crate::error::WORKSPACE_FILE_NAME_TAKEN)
+        );
+        assert_eq!(fs::read(root.join("other.pgn")).unwrap(), b"1. d4 *");
+        assert_eq!(fs::read(root.join("other.info")).unwrap(), original);
+        assert_eq!(fs::read(root.join("game.PGN")).unwrap(), b"1. e4 *");
+        assert!(!root.join("game.pgn").exists());
+        assert!(!root.join("game.info").exists());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn move_refuses_sidecarless_destination_alias_and_preserves_source() {
+        let (_directory, state, workspace) = workspace_state();
+        let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+        let source = create_named_text(&state, &workspace, "game", "1. e4 *").unwrap();
+        let original = fs::read(root.join("game.info")).unwrap();
+        fs::create_dir(root.join("Archive")).unwrap();
+        fs::write(root.join("Archive/game.PGN"), b"1. d4 *").unwrap();
+        let listing = listed_workspace(&state, &workspace);
+        let target = listed_directory(&listing, "Archive");
+        let error = move_workspace_entry_blocking(
+            workspace.clone(),
+            source.handle,
+            target.handle.clone(),
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &CancellationToken::new(),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, Error::Conflict(ref message) if message == crate::error::WORKSPACE_FILE_NAME_TAKEN)
+        );
+        assert_eq!(fs::read(root.join("game.pgn")).unwrap(), b"1. e4 *");
+        assert_eq!(fs::read(root.join("game.info")).unwrap(), original);
+        assert_eq!(fs::read(root.join("Archive/game.PGN")).unwrap(), b"1. d4 *");
+        assert!(!root.join("Archive/game.pgn").exists());
+        assert!(!root.join("Archive/game.info").exists());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn restore_destination_alias_refuses_only_when_publishing_sidecar() {
+        for with_sidecar in [true, false] {
+            let (_directory, state, workspace) = workspace_state();
+            let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+            fs::write(root.join("game.pgn"), b"1. e4 *").unwrap();
+            let original = serialize_metadata(&edited_metadata()).unwrap();
+            if with_sidecar {
+                fs::write(root.join("game.info"), &original).unwrap();
+            }
+            let listing = listed_workspace(&state, &workspace);
+            let source = &listing.entries[0];
+            trash_entry(
+                &state.pgn_path_authority,
+                &state.workspace_mutation,
+                &workspace,
+                &source.handle,
+                &CancellationToken::new(),
+            )
+            .unwrap();
+            let trashed = mutation_target(&state.pgn_path_authority, &source.handle).unwrap();
+            let bucket = trashed.path().parent().unwrap();
+            let origin = bucket.with_extension("origin");
+            let origin_bytes = fs::read(&origin).unwrap();
+            fs::write(root.join("game.PGN"), b"1. d4 *").unwrap();
+            let result = restore_entry(
+                &state.pgn_path_authority,
+                &state.workspace_mutation,
+                &workspace,
+                &source.handle,
+                &CancellationToken::new(),
+            );
+            if with_sidecar {
+                let error = result.unwrap_err();
+                assert!(
+                    matches!(error, Error::Conflict(ref message) if message == crate::error::WORKSPACE_FILE_NAME_TAKEN)
+                );
+                assert_eq!(fs::read(trashed.path()).unwrap(), b"1. e4 *");
+                assert_eq!(fs::read(bucket.join("game.info")).unwrap(), original);
+                assert_eq!(fs::read(&origin).unwrap(), origin_bytes);
+                assert!(!root.join("game.pgn").exists());
+            } else {
+                result.unwrap();
+                assert_eq!(fs::read(root.join("game.pgn")).unwrap(), b"1. e4 *");
+                assert!(!bucket.exists());
+                assert!(!origin.exists());
+            }
+            assert_eq!(fs::read(root.join("game.PGN")).unwrap(), b"1. d4 *");
+            assert!(!root.join("game.info").exists());
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn rename_lone_uppercase_pgn_to_same_stem_keeps_submitted_metadata() {
+        let (_directory, state, workspace) = workspace_state();
+        let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+        fs::write(root.join("game.PGN"), b"1. e4 *").unwrap();
+        fs::write(
+            root.join("game.info"),
+            serialize_metadata(&WorkspaceMetadata::default()).unwrap(),
+        )
+        .unwrap();
+        let listing = listed_workspace(&state, &workspace);
+        rename_workspace_file_blocking(
+            workspace.clone(),
+            listing.entries[0].handle.clone(),
+            "game".into(),
+            edited_metadata(),
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert_eq!(fs::read(root.join("game.pgn")).unwrap(), b"1. e4 *");
+        assert!(!root.join("game.PGN").exists());
+        assert_eq!(
+            metadata_from_path(
+                &state.pgn_path_authority,
+                &workspace,
+                &root.join("game.pgn")
+            )
+            .unwrap(),
+            edited_metadata()
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn rename_same_stem_restores_primary_and_sidecar_after_rebind_failure() {
+        let (_directory, state, workspace) = workspace_state();
+        let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+        fs::write(root.join("game.PGN"), b"1. e4 *").unwrap();
+        let original = serialize_metadata(&WorkspaceMetadata::default()).unwrap();
+        let sidecar = root.join("game.info");
+        fs::write(&sidecar, &original).unwrap();
+        let listing = listed_workspace(&state, &workspace);
+        let rewritten = serialize_metadata(&edited_metadata()).unwrap();
+        WORKSPACE_REBIND_PRE_REGISTER_HOOK.with(|slot| {
+            *slot.borrow_mut() = Some(Box::new(move || {
+                assert_eq!(fs::read(&sidecar).unwrap(), rewritten);
+                Err(Error::InvalidInput("injected rebind failure".into()))
+            }));
+        });
+
+        let error = rename_workspace_file_blocking(
+            workspace.clone(),
+            listing.entries[0].handle.clone(),
+            "game".into(),
+            edited_metadata(),
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &CancellationToken::new(),
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(error, Error::InvalidInput(ref message) if message == "injected rebind failure")
+        );
+        assert_eq!(fs::read(root.join("game.PGN")).unwrap(), b"1. e4 *");
+        assert!(!root.join("game.pgn").exists());
+        assert_eq!(fs::read(root.join("game.info")).unwrap(), original);
     }
 
     #[cfg(unix)]
