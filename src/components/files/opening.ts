@@ -31,31 +31,40 @@ export function isInPracticeScope(position: number[], start: number[]): boolean 
     return start.length === 0 ? position.length > 0 : isPrefix(start, position);
 }
 
-export function buildFromTree(tree: TreeNode, color: "white" | "black", start: number[]) {
-    const cards: Position[] = [];
-    const seenBoardStates = new Set<string>();
-    const iterator = treeIterator(tree);
-    for (const item of iterator) {
+function* practiceCardsFromTree(tree: TreeNode, color: "white" | "black", start: number[]) {
+    for (const frame of treeIterator(tree)) {
+        const answer = frame.node.children[0]?.san;
         if (
-            item.node.children.length === 0 ||
-            !isInPracticeScope(item.position, start) ||
-            !item.node.children[0].san
+            !isInPracticeScope(frame.position, start) ||
+            !answer ||
+            (color === "white" ? frame.node.halfMoves % 2 !== 0 : frame.node.halfMoves % 2 !== 1)
         ) {
             continue;
         }
-        const boardState = getBoardState(item.node.fen);
+        yield { frame, fen: frame.node.fen, answer };
+    }
+}
+
+/** The live representative uses exactly the same selection and tree order as deck construction. */
+export function resolvePracticeCard(
+    tree: TreeNode,
+    positionKey: string,
+    color: "white" | "black",
+    start: number[],
+) {
+    for (const card of practiceCardsFromTree(tree, color, start)) {
+        if (getBoardState(card.fen) === positionKey) return card;
+    }
+}
+
+export function buildFromTree(tree: TreeNode, color: "white" | "black", start: number[]) {
+    const cards: Position[] = [];
+    const seenBoardStates = new Set<string>();
+    for (const { fen, answer } of practiceCardsFromTree(tree, color, start)) {
+        const boardState = getBoardState(fen);
         if (seenBoardStates.has(boardState)) continue;
-        if (
-            (color === "white" && item.node.halfMoves % 2 === 0) ||
-            (color === "black" && item.node.halfMoves % 2 === 1)
-        ) {
-            seenBoardStates.add(boardState);
-            cards.push({
-                fen: item.node.fen,
-                answer: item.node.children[0].san,
-                card: createEmptyCard(),
-            });
-        }
+        seenBoardStates.add(boardState);
+        cards.push({ fen, answer, card: createEmptyCard() });
     }
     return cards;
 }

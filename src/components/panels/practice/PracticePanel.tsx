@@ -39,10 +39,9 @@ import {
   getCardStatus,
   getNextReviewTimes,
   getStats,
-  isInPracticeScope,
+  resolvePracticeCard,
   syncDeck,
   updateCardPerformance,
-  type Position,
 } from "@/components/files/opening";
 import {
   activeTabAtom,
@@ -69,14 +68,7 @@ import {
 import { getTabFile, getTabGameNumber } from "@/utils/tabs";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import { backgroundHotkeyOptions } from "@/utils/keyboardOwnership";
-import {
-  findFen,
-  getBoardState,
-  getNodeAtPath,
-  treeIterator,
-  type ListNode,
-  type TreeNode,
-} from "@/utils/treeReducer";
+import { findFen, getBoardState, getNodeAtPath } from "@/utils/treeReducer";
 import RepertoireInfo from "./RepertoireInfo";
 import { useDueBoundaryRerender } from "./useDueBoundaryRerender";
 import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
@@ -97,23 +89,6 @@ import {
 
 const PRACTICE_ADVANCE_DELAY_MS = 300;
 const PRACTICE_START_BUTTON_STYLE = { scrollMarginBlock: "var(--mantine-spacing-xs)" };
-function findPracticeCardFrame(
-  card: Pick<Position, "fen" | "answer">,
-  root: TreeNode,
-  start: number[],
-) {
-  const key = getBoardState(card.fen);
-  // Resolve against this tree snapshot even before deck sync replaces a transposed card's FEN.
-  for (const frame of treeIterator(root)) {
-    if (
-      getBoardState(frame.node.fen) === key &&
-      isInPracticeScope(frame.position, start) &&
-      frame.node.children.some((child) => child.san === card.answer)
-    ) {
-      return frame;
-    }
-  }
-}
 
 function PracticePanel() {
   const { t } = useTranslation();
@@ -325,10 +300,14 @@ function PracticePanel() {
   const currentCard = deck.positions.find(
     (position) => getBoardState(position.fen) === practiceState.positionKey,
   );
-  const answerFrame = currentCard
-    ? findPracticeCardFrame(currentCard, root, headers.start || [])
-    : undefined;
-  const answerNode = answerFrame?.node.children.find((child) => child.san === currentCard?.answer);
+  const liveCard = resolvePracticeCard(
+    root,
+    practiceState.positionKey ?? "",
+    headers.orientation || "white",
+    headers.start || [],
+  );
+  const answerFrame = liveCard?.frame;
+  const answerNode = answerFrame?.node.children[0];
   const answerComment = answerNode?.comment?.trim() || "";
   const manualPrompt =
     practiceState.phase === "correct" &&
@@ -342,23 +321,28 @@ function PracticePanel() {
       clearPracticeTimers();
       let latest = sessionStatsRef.current;
       const state = store.getState();
-      let card: Position | undefined;
-      let frame: ListNode | undefined;
+      let resolved: ReturnType<typeof resolvePracticeCard>;
       while (latest.remainingPositionKeys.length > 0) {
         const key = latest.remainingPositionKeys[0];
-        card = deckRef.current.positions.find((position) => getBoardState(position.fen) === key);
-        frame = card
-          ? findPracticeCardFrame(card, state.root, state.headers.start || [])
-          : undefined;
-        if (card && frame) break;
+        resolved = resolvePracticeCard(
+          state.root,
+          key,
+          state.headers.orientation || "white",
+          state.headers.start || [],
+        );
+        if (resolved) break;
         latest = { ...latest, ...advancePracticeQueue(latest, latest.mode) };
       }
       publishStats(latest);
-      if (!card || !frame || latest.remainingPositionKeys.length === 0) {
+      if (!resolved || latest.remainingPositionKeys.length === 0) {
         endPracticeSession();
         return;
       }
-      const key = getBoardState(card.fen);
+      const key = latest.remainingPositionKeys[0];
+      const { frame } = resolved;
+      const card = deckRef.current.positions.find(
+        (position) => getBoardState(position.fen) === key,
+      );
       // A restarted replay still belongs to this presentation, unless its queue entry was dropped.
       const samePresentation = transition === "restart" && key === sessionRef.current.positionKey;
       presentationRef.current = samePresentation
@@ -367,7 +351,7 @@ function PracticePanel() {
             failed: false,
             learning:
               latest.mode === "anki" &&
-              card.card.reps === 0 &&
+              card?.card.reps === 0 &&
               !latest.introducedPositionKeys.includes(key),
             rated: false,
             startedAt: 0,
@@ -396,13 +380,13 @@ function PracticePanel() {
 
       const step = () => {
         const live = store.getState();
-        const liveCard = deckRef.current.positions.find(
-          (position) => getBoardState(position.fen) === key,
+        const liveCard = resolvePracticeCard(
+          live.root,
+          key,
+          live.headers.orientation || "white",
+          live.headers.start || [],
         );
-        const liveFrame = liveCard
-          ? findPracticeCardFrame(liveCard, live.root, live.headers.start || [])
-          : undefined;
-        if (!liveFrame || !liveCard) {
+        if (!liveCard) {
           publishStats({
             ...sessionStatsRef.current,
             ...advancePracticeQueue(sessionStatsRef.current, latest.mode),
@@ -410,6 +394,7 @@ function PracticePanel() {
           newPractice();
           return;
         }
+        const liveFrame = liveCard.frame;
         // Re-resolve both paths after every delay. Edits may have reordered this branch.
         const next = buildPracticeReplay(live.position, liveFrame.position);
         live.setPracticePath(liveFrame.position);
@@ -474,16 +459,17 @@ function PracticePanel() {
       const session = sessionRef.current;
       const live = store.getState();
       if (!canSubmitPracticeMove(session, live.currentNode().fen)) return;
-      const card = deckRef.current.positions.find(
-        (position) => getBoardState(position.fen) === session.positionKey,
+      const card = resolvePracticeCard(
+        live.root,
+        session.positionKey ?? "",
+        live.headers.orientation || "white",
+        live.headers.start || [],
       );
-      const frame = card
-        ? findPracticeCardFrame(card, live.root, live.headers.start || [])
-        : undefined;
-      if (!card || !frame) {
+      if (!card) {
         newPractice();
         return;
       }
+      const { frame } = card;
       const classification = classifyPracticeAnswer(card, san, live.root, live.headers.start || []);
       if (
         (session.phase === "learning" || session.phase === "revealed") &&
@@ -602,14 +588,14 @@ function PracticePanel() {
       hintSan:
         (practiceState.phase === "learning" || practiceState.phase === "revealed") &&
         currentFen === practiceState.currentFen
-          ? currentCard?.answer
+          ? liveCard?.answer
           : undefined,
       submitMove,
     });
     return () => setPracticeMoveController(null);
   }, [
     currentFen,
-    currentCard?.answer,
+    liveCard?.answer,
     practiceState.phase,
     practiceState.currentFen,
     setPracticeMoveController,
@@ -649,8 +635,12 @@ function PracticePanel() {
       const phase = sessionRef.current.phase;
       if (phase === "retry") showMove();
       else if (phase === "learning" || phase === "revealed") {
-        const card = deckRef.current.positions.find(
-          (position) => getBoardState(position.fen) === sessionRef.current.positionKey,
+        const state = store.getState();
+        const card = resolvePracticeCard(
+          state.root,
+          sessionRef.current.positionKey ?? "",
+          state.headers.orientation || "white",
+          state.headers.start || [],
         );
         if (card) submitMove(card.answer);
       } else if (!manualPrompt && answerComment) advancePresentation();
@@ -693,30 +683,36 @@ function PracticePanel() {
       newPractice("restart");
       return;
     }
-    const card = deckRef.current.positions.find(
-      (position) => getBoardState(position.fen) === session.positionKey,
+    const card = resolvePracticeCard(
+      root,
+      session.positionKey ?? "",
+      headers.orientation || "white",
+      headers.start || [],
     );
-    const frame = card ? findPracticeCardFrame(card, root, headers.start || []) : undefined;
-    if (!frame) {
+    if (!card) {
       const latest = sessionStatsRef.current;
       publishStats({ ...latest, ...advancePracticeQueue(latest, latest.mode) });
       newPractice();
-    } else if (frame.node.fen !== session.currentFen) {
+    } else if (
+      card.fen !== session.currentFen ||
+      (session.answer !== undefined && card.answer !== session.answer)
+    ) {
       setSession(
         practiceSessionReducer(session, {
           type: "rebind",
           token: session.token,
-          fen: frame.node.fen,
+          fen: card.fen,
+          answer: card.answer,
         }),
       );
-      setPracticePath(frame.position);
+      setPracticePath(card.frame.position);
       if (
         session.phase === "learning" ||
         session.phase === "waiting" ||
         session.phase === "retry" ||
         session.phase === "revealed"
       ) {
-        store.getState().goToMove(frame.position);
+        store.getState().goToMove(card.frame.position);
       }
     }
   }, [
@@ -996,18 +992,13 @@ function PracticePanel() {
                                 leftSection={<Undo2 size={14} />}
                                 onClick={() => {
                                   const state = store.getState();
-                                  const card = deckRef.current.positions.find(
-                                    (position) =>
-                                      getBoardState(position.fen) ===
-                                      sessionRef.current.positionKey,
+                                  const card = resolvePracticeCard(
+                                    state.root,
+                                    sessionRef.current.positionKey ?? "",
+                                    state.headers.orientation || "white",
+                                    state.headers.start || [],
                                   );
-                                  const frame = card
-                                    ? findPracticeCardFrame(
-                                        card,
-                                        state.root,
-                                        state.headers.start || [],
-                                      )
-                                    : undefined;
+                                  const frame = card?.frame;
                                   if (!frame) {
                                     newPractice();
                                     return;
@@ -1034,15 +1025,15 @@ function PracticePanel() {
                                     move: answerFrame
                                       ? formatMoveNumber(answerFrame.node.halfMoves + 1) +
                                         " " +
-                                        currentCard?.answer
-                                      : currentCard?.answer,
+                                        liveCard?.answer
+                                      : liveCard?.answer,
                                   })}
                                 </Text>
                               )}
                               {practiceState.phase === "revealed" && (
                                 <Text fz="sm">
                                   {t("Board.Practice.PlayRevealedMove", {
-                                    move: currentCard?.answer,
+                                    move: liveCard?.answer,
                                   })}
                                 </Text>
                               )}
@@ -1290,13 +1281,18 @@ function PositionsModal({
       {deck.positions.length === 0 && <Text>{t("Board.Practice.NoPositionsYet")}</Text>}
       <SimpleGrid cols={2}>
         {deck.positions.map((c) => {
-          const frame = findPracticeCardFrame(c, root, headers.start || []);
-          if (!frame) return null;
-          const node = frame.node;
+          const resolved = resolvePracticeCard(
+            root,
+            getBoardState(c.fen),
+            headers.orientation || "white",
+            headers.start || [],
+          );
+          if (!resolved) return null;
+          const node = resolved.frame.node;
           const status = getCardStatus(c.card);
           return (
             <Card key={c.fen}>
-              <Text>{`${formatMoveNumber(node.halfMoves + 1)} ${c.answer}`}</Text>
+              <Text>{`${formatMoveNumber(node.halfMoves + 1)} ${resolved.answer}`}</Text>
               <Divider my="xs" />
               <Group justify="space-between">
                 <Stack>
@@ -1324,9 +1320,14 @@ function PositionsModal({
                   variant="subtle"
                   onClick={() => {
                     const state = store.getState();
-                    const current = findPracticeCardFrame(c, state.root, state.headers.start || []);
+                    const current = resolvePracticeCard(
+                      state.root,
+                      getBoardState(c.fen),
+                      state.headers.orientation || "white",
+                      state.headers.start || [],
+                    );
                     if (!current) return;
-                    goToMove(current.position);
+                    goToMove(current.frame.position);
                     setOpen(false);
                   }}
                 >

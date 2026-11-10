@@ -448,21 +448,28 @@ test("a surviving tree edit restarts replay and reaches its live frame", async (
 
 async function mountTransposedStudy({
   comment,
+  variationAnswer = "Bg7",
+  variationComment = comment,
   ...options
 }: {
   unseen?: boolean;
   grading?: "auto" | "manual";
   comment?: string;
   settle?: boolean;
+  variationAnswer?: string;
+  variationComment?: string;
 } = {}) {
   await mountStudy(
     { ...cases[1], moves: ["Nf3", "Nf6", "g3", "g6", "Bg2", "Bg7"] },
-    ["g3", "g6", "Nf3", "Nf6", "Bg2", "Bg7"],
+    ["g3", "g6", "Nf3", "Nf6", "Bg2", variationAnswer],
     false,
     {
       ...options,
       comments: comment
-        ? [0, 1].map((index) => ({ path: [index, 0, 0, 0, 0, 0], text: comment }))
+        ? [0, 1].map((index) => ({
+            path: [index, 0, 0, 0, 0, 0],
+            text: index === 0 ? comment : (variationComment ?? comment),
+          }))
         : undefined,
       reviewedDues: [
         new Date(Date.now() + 60_000),
@@ -833,6 +840,172 @@ test("genuine card removal drops the entry and completes through the next entry"
   await answer("c4");
   await tick(300);
   expectCompletedTransposedPractice(1, 0, [], [0, 0, 0]);
+});
+
+test.each(["waiting", "retry", "revealed"] as const)(
+  "deleting the representative with a different surviving answer keeps %s and uses the live answer",
+  async (initialPhase) => {
+    await mountTransposedStudy({
+      variationAnswer: "d5",
+      comment: "Old bishop",
+      variationComment: "Live pawn",
+    });
+    if (initialPhase !== "waiting") await answer("h5");
+    if (initialPhase === "revealed") await click("Board.Practice.ShowMove");
+    const before = atoms.get(practiceStateFamily(owner.value));
+    const progress = stats();
+    const written = [...reviews];
+    expect(before.phase).toBe(initialPhase);
+    expect(controller()?.hintSan).toBe(initialPhase === "revealed" ? "Bg7" : undefined);
+
+    await act(async () => tree.getState().deleteMove([0]));
+
+    const rebound = atoms.get(practiceStateFamily(owner.value));
+    expect(phase()).toBe(initialPhase);
+    expect(rebound).toEqual({
+      ...before,
+      currentFen: tree.getState().currentNode().fen,
+      ...(before.answer ? { answer: "d5" } : {}),
+    });
+    expect(rebound.currentFen).not.toBe(before.currentFen);
+    expect(stats()).toEqual(progress);
+    expect(stats().introducedPositionKeys).toEqual([]);
+    expect(reviews).toEqual(written);
+    expect(tree.getState().position).toEqual([0, 0, 0, 0, 0]);
+    expect(controller()?.canMove).toBe(true);
+    expect(controller()?.hintSan).toBe(initialPhase === "revealed" ? "d5" : undefined);
+    expect(host.textContent?.includes('"move":"d5"')).toBe(initialPhase === "revealed");
+    await answer("Bg7");
+    expect(phase()).toBe(initialPhase === "waiting" ? "retry" : "revealed");
+    expect(stats()).toMatchObject({ correct: 0, incorrect: 1 });
+    expect(grades()).toEqual([1]);
+    expect(host.textContent).not.toContain("Board.Practice.Alternative");
+    if (initialPhase === "waiting") await click("Board.Practice.ShowMove");
+    expect(controller()?.hintSan).toBe("d5");
+    expect(host.textContent).toContain('"move":"d5"');
+    expect(host.textContent).not.toContain('"move":"Bg7"');
+    await answer("d5");
+    expect(phase()).toBe("correct");
+    expect(stats()).toMatchObject({ correct: 0, incorrect: 1 });
+    expect(grades()).toEqual([1]);
+    expect(controller()?.hintSan).toBeUndefined();
+    expect(tree.getState().currentNode().san).toBe("d5");
+    expect(host.textContent).toContain("Live pawn");
+    expect(host.textContent).not.toContain("Old bishop");
+    await click("Board.Practice.Continue");
+    expect(phase()).toBe("waiting");
+    expect(stats().remainingPositionKeys).toEqual(progress.remainingPositionKeys);
+    expect(stats().reappendedPositionKeys).toEqual(progress.remainingPositionKeys);
+    await answer("d5");
+    await click("Board.Practice.Continue");
+    expectCompletedTransposedPractice(1, 1, [1, 3]);
+  },
+);
+
+test("an answer-only rebind refreshes retry when the main child changes without a FEN change", async () => {
+  await mountTransposedStudy();
+  await act(async () => {
+    tree.getState().makeMoves({ payload: ["d5"] });
+    tree.getState().goToMove([0, 0, 0, 0, 0]);
+  });
+  await answer("h5");
+  const before = atoms.get(practiceStateFamily(owner.value));
+  const progress = stats();
+  expect(before.answer).toBe("Bg7");
+  await act(async () => tree.getState().promoteVariation([0, 0, 0, 0, 0, 1]));
+  expect(atoms.get(practiceStateFamily(owner.value))).toEqual({ ...before, answer: "d5" });
+  expect(stats()).toEqual(progress);
+  await click("Board.Practice.ShowMove");
+  expect(controller()?.hintSan).toBe("d5");
+  expect(host.textContent).toContain('"move":"d5"');
+  await answer("d5");
+  expect(stats()).toMatchObject({ correct: 0, incorrect: 1 });
+  expect(grades()).toEqual([1]);
+  await tick(300);
+  expect(phase()).toBe("waiting");
+  await answer("d5");
+  await tick(300);
+  expectCompletedTransposedPractice(1, 1, [1, 3]);
+});
+
+async function mountScopedTransposition(startPractice: boolean) {
+  await mountStudy(
+    { ...cases[1], moves: ["Nf3", "Nf6", "g3", "g6", "Bg2", "Bg7"] },
+    ["g3", "g6", "Nf3", "Nf6", "Bg2", "d5"],
+    false,
+    {
+      start: [1],
+      startPractice,
+      settle: false,
+      reviewedDues: [
+        new Date(Date.now() + 60_000),
+        new Date(Date.now() + 60_000),
+        new Date(Date.now() - 1_000),
+      ],
+    },
+  );
+}
+
+test("scoped transpositions use the in-scope occurrence for PositionsModal, replay and answers", async () => {
+  await mountScopedTransposition(false);
+  await click("Board.Practice.ShowAll");
+  const dialog = document.querySelector('[role="dialog"]')!;
+  expect(dialog.textContent).toContain("d5");
+  expect(dialog.textContent).not.toContain("Bg7");
+  const card = [...dialog.querySelectorAll<HTMLElement>(".mantine-Card-root")].find((node) =>
+    node.textContent?.includes("d5"),
+  )!;
+  expect(card).toBeDefined();
+  await act(async () =>
+    card
+      .querySelector<HTMLButtonElement>('button[aria-label="Board.Practice.GoBackToPosition"]')!
+      .click(),
+  );
+  expect(tree.getState().position).toEqual([1, 0, 0, 0, 0]);
+  await act(async () => tree.getState().goToMove([]));
+  await click("Board.Practice.StartPractice");
+  expect(phase()).toBe("replaying");
+  expect(tree.getState().position).toEqual([1]);
+  expect(controller()?.canMove).toBe(false);
+  expect(controller()?.hintSan).toBeUndefined();
+  expect(stats().remainingPositionKeys).toEqual([
+    getBoardState(getNodeAtPath(tree.getState().root, [1, 0, 0, 0, 0]).fen),
+  ]);
+  await tick(PRACTICE_REPLAY_STEP_MS);
+  expect(tree.getState().position).toEqual([1, 0]);
+  await settleReplay();
+  expect(phase()).toBe("waiting");
+  expect(tree.getState().position).toEqual([1, 0, 0, 0, 0]);
+  expect(tree.getState().practicePath).toEqual([1, 0, 0, 0, 0]);
+  expect(controller()?.canMove).toBe(true);
+  expect(stats().introducedPositionKeys).toEqual([]);
+  expect(grades()).toEqual([]);
+  await act(async () => tree.getState().goToMove([0, 0, 0, 0, 0]));
+  expect(host.textContent).toContain("Board.Practice.NotOnPosition");
+  await click("Board.Practice.GoBackToPosition");
+  expect(tree.getState().position).toEqual([1, 0, 0, 0, 0]);
+  await answer("d5");
+  await tick(300);
+  expectCompletedTransposedPractice(1, 0, [3], [1, 0, 0, 0, 0, 0]);
+});
+
+test("scoped transpositions drop an outside-only survivor", async () => {
+  await mountScopedTransposition(true);
+  await settleReplay();
+  const key = atoms.get(practiceStateFamily(owner.value)).positionKey;
+  expect(tree.getState().position).toEqual([1, 0, 0, 0, 0]);
+  expect(stats().remainingPositionKeys).toEqual([key]);
+  await act(async () => tree.getState().deleteMove([1, 0, 0, 0, 0]));
+  expect(getBoardState(getNodeAtPath(tree.getState().root, [0, 0, 0, 0, 0]).fen)).toBe(key);
+  expect(tree.getState().headers.start).toEqual([1]);
+  expect(phase()).toBe("idle");
+  expect(stats().remainingPositionKeys).toEqual([]);
+  expect(stats().introducedPositionKeys).toEqual([]);
+  expect(stats()).toMatchObject({ correct: 0, incorrect: 0 });
+  expect(grades()).toEqual([]);
+  expect(controller()).toBeNull();
+  expect(tree.getState().practicePath).toBeNull();
+  expect(tree.getState().position).toEqual([1, 0, 0, 0]);
 });
 
 test("an idle mount clears a persisted practice path", async () => {

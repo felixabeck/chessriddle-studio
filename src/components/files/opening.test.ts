@@ -10,10 +10,17 @@ import {
     getCardStatus,
     getStats,
     isInPracticeScope,
+    resolvePracticeCard,
     syncDeck,
     updateCardPerformance,
 } from "./opening";
-import { createNode, defaultTree, type TreeNode } from "@/utils/treeReducer";
+import {
+    createNode,
+    defaultTree,
+    getBoardState,
+    treeIterator,
+    type TreeNode,
+} from "@/utils/treeReducer";
 
 test("practice scope includes only non-root positions or the Start subtree", () => {
     expect(isInPracticeScope([], [])).toBe(false);
@@ -67,6 +74,61 @@ test.each([
     const root = openingLine(moves);
 
     expect(buildFromTree(root, "white", start).map(({ answer }) => answer)).toEqual(answers);
+});
+
+function transposedOpening() {
+    const root = openingLine(["Nf3", "Nf6", "g3", "g6", "Bg2", "Bg7"]);
+    root.children.push(...openingLine(["g3", "g6", "Nf3", "Nf6", "Bg2", "d5"]).children);
+    return root;
+}
+
+test.each([
+    {
+        name: "transpositions",
+        tree: transposedOpening,
+        color: "black" as const,
+        start: [],
+        answers: ["Nf6", "g6", "Bg7", "g6", "Nf6"],
+    },
+    {
+        name: "Black-to-move start FEN",
+        tree: () =>
+            openingLine(
+                ["c5", "Nf3", "d6"],
+                "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 12",
+            ),
+        color: "black" as const,
+        start: [],
+        answers: ["d6"],
+    },
+    {
+        name: "headers.start excludes the earlier transposition",
+        tree: transposedOpening,
+        color: "black" as const,
+        start: [1, 0, 0, 0, 0],
+        answers: ["d5"],
+    },
+    {
+        name: "node without children",
+        tree: () => openingLine(["e4"]),
+        color: "black" as const,
+        start: [],
+        answers: [],
+    },
+])("live resolver matches deck construction for $name", ({ tree, color, start, answers }) => {
+    const root = tree();
+    const cards = buildFromTree(root, color, start);
+    expect(cards.map(({ answer }) => answer)).toEqual(answers);
+    for (const frame of treeIterator(root)) {
+        const key = getBoardState(frame.node.fen);
+        const expected = cards.find(({ fen }) => getBoardState(fen) === key);
+        const resolved = resolvePracticeCard(root, key, color, start);
+        expect(resolved && { fen: resolved.fen, answer: resolved.answer }).toEqual(
+            expected && { fen: expected.fen, answer: expected.answer },
+        );
+        expect(resolved?.frame.node.fen).toBe(expected?.fen);
+        expect(resolved?.frame.node.children[0].san).toBe(expected?.answer);
+    }
 });
 
 test("deck synchronization creates and retains the White-to-move Start card", () => {

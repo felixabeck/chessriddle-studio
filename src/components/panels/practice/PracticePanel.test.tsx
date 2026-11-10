@@ -582,6 +582,7 @@ test.each([
   { halfMoves: 1, answer: "e5", expected: "1... e5" },
 ])("renders the exact positions card label $expected", async ({ halfMoves, answer, expected }) => {
   fixtures.node = { halfMoves, san: "e4" };
+  fixtures.tree.headers = { orientation: halfMoves % 2 === 0 ? "white" : "black", start: [] };
   fixtures.deck = deck({ positions: [{ ...position("in-repertoire"), answer }] });
   await rerenderPracticePanel();
   const showPositions = [...(container?.querySelectorAll("button") ?? [])].find((button) =>

@@ -419,7 +419,7 @@ describe("line-training reducer phases", () => {
     });
 
     it.each(["learning", "waiting", "retry", "revealed", "correct", "advancing"] as const)(
-        "rebinds only the FEN in %s and rejects stale tokens",
+        "rebinds the FEN and stored answer in %s and rejects stale tokens",
         (phase) => {
             const state: PracticeSession = {
                 ...replaying(),
@@ -429,11 +429,21 @@ describe("line-training reducer phases", () => {
                 timeTaken: 42,
             };
             expect(
-                practiceSessionReducer(state, { type: "rebind", token: 5, fen: "new-fen" }),
-            ).toEqual({ ...state, currentFen: "new-fen" });
+                practiceSessionReducer(state, {
+                    type: "rebind",
+                    token: 5,
+                    fen: "new-fen",
+                    answer: "d5",
+                }),
+            ).toEqual({ ...state, currentFen: "new-fen", answer: "d5" });
             for (const token of [4, 6])
                 expect(
-                    practiceSessionReducer(state, { type: "rebind", token, fen: "new-fen" }),
+                    practiceSessionReducer(state, {
+                        type: "rebind",
+                        token,
+                        fen: "new-fen",
+                        answer: "d5",
+                    }),
                 ).toBe(state);
         },
     );
@@ -441,9 +451,26 @@ describe("line-training reducer phases", () => {
     it("ignores rebind during idle and replaying", () => {
         for (const state of [idlePracticeSession(5), replaying()]) {
             expect(
-                practiceSessionReducer(state, { type: "rebind", token: 5, fen: "new-fen" }),
+                practiceSessionReducer(state, {
+                    type: "rebind",
+                    token: 5,
+                    fen: "new-fen",
+                    answer: "d5",
+                }),
             ).toBe(state);
         }
+    });
+
+    it("does not add an answer to a presentation that has not stored one", () => {
+        const state = waiting();
+        expect(
+            practiceSessionReducer(state, {
+                type: "rebind",
+                token: 5,
+                fen: "new-fen",
+                answer: "d5",
+            }),
+        ).toEqual({ ...state, currentFen: "new-fen" });
     });
 
     it("introduces unseen cards without a quiz result and finishes through learned", () => {
