@@ -94,10 +94,11 @@ vi.mock("@/utils/chess", async (original) => ({
   },
 }));
 vi.mock("@tanstack/react-virtual", () => ({
-  useVirtualizer: () => ({
-    getTotalSize: () => 60,
+  useVirtualizer: ({ count }: { count: number }) => ({
+    getTotalSize: () => count * 30,
     measure: () => undefined,
-    getVirtualItems: () => [0, 1].map((index) => ({ index, size: 30, start: index * 30 })),
+    getVirtualItems: () =>
+      Array.from({ length: count }, (_, index) => ({ index, size: 30, start: index * 30 })),
   }),
 }));
 vi.mock("@/utils/databaseGame", async (original) => ({
@@ -931,21 +932,90 @@ test.each([new Error("Read failed"), new Error("Parse failed"), new StaleFileGam
   },
 );
 
-test("a stale refusal re-reads chapters and retry uses the refreshed identity", async () => {
-  await expandChapters();
+test("a stale refusal recounts removed chapters and retry uses the refreshed identity", async () => {
+  mocks.listing = { data: [file("Chapters.pgn")], isLoading: false, error: undefined };
+  mocks.count.mockResolvedValueOnce(3);
+  mocks.readGames.mockResolvedValueOnce([
+    ...chapterGames(),
+    { ...chapterGames()[0], pgn: "Third chapter", stamp: "original-2" },
+  ]);
+  await render();
+  await open("Chapters");
+  expect(host.querySelectorAll('[role="option"]')).toHaveLength(3);
+  const signal = mocks.count.mock.lastCall![1].signal as AbortSignal;
+  mocks.count.mockResolvedValueOnce(2);
   mocks.readGames.mockResolvedValue(chapterGames("refreshed"));
   mocks.openFile.mockRejectedValueOnce(new StaleFileGameError());
   const reads = mocks.readGames.mock.calls.length;
   await activateChapter();
+  expect(mocks.count).toHaveBeenLastCalledWith(handle("Chapters.pgn"), { signal });
   expect(mocks.readGames.mock.calls.length).toBeGreaterThan(reads);
+  expect(mocks.readGames.mock.lastCall!.slice(1, 3)).toEqual([0, 1]);
+  expect(host.querySelectorAll('[role="option"]')).toHaveLength(2);
   expect(rows()[0].getAttribute("aria-expanded")).toBe("true");
   await activateChapter();
   expect(mocks.openFile).toHaveBeenCalledTimes(2);
+  expect(mocks.openFile.mock.lastCall![0]).toMatchObject({ numGames: 2 });
   expect(mocks.openFile.mock.lastCall![2]).toMatchObject({
     gameNumber: 1,
     expected: { stamp: "refreshed-1", revision: "refreshed" },
   });
   expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/" });
+});
+
+test.each([0, 1])(
+  "a stale recount of %s keeps the picker open without auto-opening",
+  async (count) => {
+    await expandChapters();
+    mocks.count.mockResolvedValueOnce(count);
+    mocks.readGames.mockResolvedValue(chapterGames("refreshed").slice(0, count));
+    mocks.openFile.mockRejectedValueOnce(new StaleFileGameError());
+    await activateChapter();
+    expect(host.querySelectorAll('[role="option"]')).toHaveLength(count);
+    expect(rows()[0].getAttribute("aria-expanded")).toBe("true");
+    expect(mocks.openFile).toHaveBeenCalledOnce();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  },
+);
+
+test("a failed stale recount notifies and preserves the current picker", async () => {
+  await expandChapters();
+  const error = new Error("Recount failed");
+  mocks.count.mockRejectedValueOnce(error);
+  mocks.openFile.mockRejectedValueOnce(new StaleFileGameError());
+  const reads = mocks.readGames.mock.calls.length;
+  await activateChapter();
+  expect(mocks.notify).toHaveBeenLastCalledWith("Common.Error", error);
+  expect(mocks.readGames).toHaveBeenCalledTimes(reads);
+  expect(rows()[0].getAttribute("aria-expanded")).toBe("true");
+  expect(host.querySelectorAll('[role="option"]')).toHaveLength(2);
+  await activateChapter();
+  expect(mocks.openFile.mock.lastCall![2].expected).toEqual({
+    stamp: "original-1",
+    revision: "original",
+  });
+});
+
+test("a stale recount cannot publish into a newer picker request", async () => {
+  await expandChapters();
+  let finish!: (count: number) => void;
+  mocks.count.mockImplementationOnce(
+    () =>
+      new Promise<number>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  mocks.openFile.mockRejectedValueOnce(new StaleFileGameError());
+  await activateChapter();
+  const signal = mocks.count.mock.lastCall![1].signal as AbortSignal;
+  await open("Chapters");
+  await open("Chapters");
+  const reads = mocks.readGames.mock.calls.length;
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish(0));
+  expect(mocks.readGames).toHaveBeenCalledTimes(reads);
+  expect(rows()[0].getAttribute("aria-expanded")).toBe("true");
+  expect(host.querySelectorAll('[role="option"]')).toHaveLength(2);
 });
 
 test("repeated chapter gestures during a pending open create exactly one tab", async () => {

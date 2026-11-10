@@ -30,7 +30,7 @@ const INITIAL_LOAD_ROWS = 11;
 // Maximum rows per read. The request's end index is inclusive.
 const READ_PAGE_SIZE_ROWS = 1000;
 // Row height at 100 % font size.
-const ROW_HEIGHT_PX = 30;
+export const ROW_HEIGHT_PX = 30;
 // Space a section adds above its first line at 100 % font size.
 const SECTION_GAP_PX = 12;
 const SECTION_HEADING_PX = 26;

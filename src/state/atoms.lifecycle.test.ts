@@ -502,6 +502,7 @@ test.each(["tree", "workspace"] as const)(
             stage,
         });
         expectReplacementOwnerUnchanged(fixture);
+        expect(fixture.store.get(tabsAtom)[1]?.name).toBe(fixture.owner.name);
         expect(fixture.store.get(activeTabAtom)).toBe(fixture.owner.value);
         expect(sessionStorage.getItem(candidate)).toBeNull();
         refusal.mockRestore();
@@ -566,6 +567,7 @@ test.each(["tree", "workspace", "superseded-after-seed"] as const)(
         expect(staged).not.toBe("");
         expect(sessionStorage.getItem(staged)).toBeNull();
         expect(fixture.store.get(tabsAtom)).toBe(oldTabs);
+        expect(fixture.store.get(tabsAtom)[1]?.name).toBe(owner.name);
         expect(fixture.ownerTreeStore.getState()).toBe(oldState);
         expect(fixture.ownerTreeStore.getState().linkedSource).toBe(locator);
         expect(getFileFreshness(owner.value)).toBe(freshness);
