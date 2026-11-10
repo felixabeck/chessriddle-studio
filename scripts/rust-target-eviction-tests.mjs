@@ -163,9 +163,13 @@ async function runEvict(cwd, options = {}) {
   return { ...result, lines };
 }
 
-function holdLock(lockPath, t) {
+async function holdLock(lockPath, t) {
   const held = String(FLOCK_HELD_EXIT_CODE);
-  const child = spawn("flock", ["-n", "-E", held, lockPath, "sleep", "60"], { stdio: "ignore" });
+  const child = spawn(
+    "flock",
+    ["-n", "-E", held, lockPath, "sh", "-c", "echo ready; exec sleep 60"],
+    { stdio: ["ignore", "pipe", "pipe"] },
+  );
   t.after(() => {
     try {
       child.kill("SIGKILL");
@@ -173,9 +177,53 @@ function holdLock(lockPath, t) {
       // Already gone.
     }
   });
-  child.unref();
-  waitUntil(
-    () => spawnSync("flock", ["-n", "-E", held, lockPath, "true"]).status === FLOCK_HELD_EXIT_CODE,
+  try {
+    await new Promise((resolve, reject) => {
+      let stdout = "";
+      let stderr = "";
+      const finish = (reason, code = child.exitCode, signal = child.signalCode) => {
+        clearTimeout(timer);
+        child.stdout.off("data", onStdout);
+        child.stderr.off("data", onStderr);
+        child.off("close", onClose);
+        child.off("error", onError);
+        if (reason) {
+          reject(
+            new assert.AssertionError({
+              message: `lock holder for ${lockPath}: ${reason} (exit code=${code}, signal=${signal}, stderr=${JSON.stringify(stderr)})`,
+            }),
+          );
+        } else {
+          resolve();
+        }
+      };
+      const onStdout = (chunk) => {
+        stdout += chunk;
+        if (stdout.includes("ready")) finish();
+      };
+      const onStderr = (chunk) => {
+        stderr += chunk;
+      };
+      const onClose = (code, signal) => finish("exited before signalling ready", code, signal);
+      const onError = (error) => finish(`failed before signalling ready: ${error.message}`);
+      const timer = setTimeout(() => {
+        child.kill("SIGKILL");
+        finish("timed out after 60000 ms waiting for ready, SIGKILL requested");
+      }, 60_000);
+      child.stdout.setEncoding("utf8").on("data", onStdout);
+      child.stderr.setEncoding("utf8").on("data", onStderr);
+      child.once("close", onClose);
+      child.once("error", onError);
+    });
+  } finally {
+    child.stdout.destroy();
+    child.stderr.destroy();
+    child.unref();
+  }
+  assert.equal(
+    spawnSync("flock", ["-n", "-E", held, lockPath, "true"]).status,
+    FLOCK_HELD_EXIT_CODE,
+    `lock holder signalled ready but confirming probe did not find ${lockPath} held`,
   );
   return child;
 }
@@ -563,7 +611,7 @@ linuxTest("both lock and executable report the lock reason (CR-4)", async (t) =>
   const idleMaxAgeMs = 10_000;
   const stale = now - idleMaxAgeMs - 5_000;
   const unit = makeUnit(join(sibling, "src-tauri", "target"), "debug", { mtimeMs: stale });
-  holdLock(join(unit, ".cargo-lock"), t);
+  await holdLock(join(unit, ".cargo-lock"), t);
   const { child: lockChild } = startCopiedSleep(unit, t, stale);
   const result = await runEvict(main, { nowMs: now, idleMaxAgeMs });
   assert.ok(artifactIntact(unit), `${dump(result)}\n${describeInUseProbe(lockChild)}`);
@@ -738,7 +786,7 @@ linuxTest("an in-use unit alone can keep the root over the cap", async (t) => {
   const root = join(main, "src-tauri", "target");
   const pinned = makeUnit(root, "debug");
   fillAllocated(pinned, PAYLOAD_MIN_BYTES);
-  holdLock(join(pinned, ".cargo-lock"), t);
+  await holdLock(join(pinned, ".cargo-lock"), t);
   const extra = makeUnit(root, "release");
   const cap = 4096n;
   const result = await runEvict(main, { ownCapBytes: cap });
@@ -833,7 +881,7 @@ linuxTest("each lock file, fence, in-use, and symlink skip leaves contents intac
     const target = join(sibling, "src-tauri", "target");
     rmSync(target, { recursive: true, force: true });
     const unit = makeUnit(target, "debug", { mtimeMs: stale });
-    holdLock(join(unit, lockName), t);
+    await holdLock(join(unit, lockName), t);
     const result = await runEvict(main, { nowMs: now, idleMaxAgeMs });
     assert.ok(artifactIntact(unit), `${lockName}\n${dump(result)}`);
     assert.ok(
