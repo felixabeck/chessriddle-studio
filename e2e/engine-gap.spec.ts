@@ -537,6 +537,19 @@ test("engine-gap: A lines stay dimmed and inert at B until explicitly emitted B 
 /** The threat line d4 Nf3 as the pinned bar renders it after 1. e4 a6 2. e5 d5. */
 const PINNED_THREAT_LINE = "3...d44.♘f3";
 
+test("engine-gap: engines reorder from the keyboard on their grip", async ({ page }) => {
+    await setupAnalysisEngine(page, 2);
+    const names = page.locator(".mantine-Accordion-item").getByText(/^E2E (Stockfish|ChessDB)$/);
+    await expect(names).toHaveText(["E2E Stockfish", "E2E ChessDB"]);
+    // The grip is a button: the keyboard lift starts on the button itself, the route the
+    // library's interactive-element check blocks.
+    await page.getByRole("button", { name: "Reorder engine", exact: true }).first().focus();
+    await page.keyboard.press("Space");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Space");
+    await expect(names).toHaveText(["E2E ChessDB", "E2E Stockfish"]);
+});
+
 test("engine-gap: pinned engine shows up to its own line count and swaps between the tabs and the notation", async ({
     page,
     emitTauriEvent,

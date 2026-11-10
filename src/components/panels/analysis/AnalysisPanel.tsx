@@ -203,7 +203,14 @@ function AnalysisPanel() {
                       <div ref={provided.innerRef} {...provided.droppableProps}>
                         <Stack w="100%" gap="xs">
                           {loadedEngines.map((engine, i) => (
-                            <Draggable key={engine.id} draggableId={engine.id} index={i}>
+                            // The grip is a button, which the library refuses as a drag start
+                            // unless interactive-element blocking is off.
+                            <Draggable
+                              key={engine.id}
+                              draggableId={engine.id}
+                              index={i}
+                              disableInteractiveElementBlocking
+                            >
                               {(provided) => (
                                 <div ref={provided.innerRef} {...provided.draggableProps}>
                                   <Accordion.Item value={engine.id} className={classes.engine}>
