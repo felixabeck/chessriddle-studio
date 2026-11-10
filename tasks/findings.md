@@ -22667,3 +22667,21 @@ Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates th
 
 **Attribution correction, 2026-11-09 (drain session 1b8508c6-3e3b-4453-98e1-8fe1f9fb47ca, push review):** The Defect bullet attributes the earlier DatabasePanel timeouts and the quoted "not reproduced and not part of this fix" note to f-20260901-19. Neither is in that entry. They belong to f-20261102-04's handled note, which fixed `referenceCollection.test.ts` and `engineCompletions.test.ts` and left the DatabasePanel timeouts untreated. Read every f-20260901-19 reference in the Defect bullet as f-20261102-04. The Fix direction's pointer to f-20260901-19 / d-20260901-36 for the module-graph-import cost and the rejected timeout increase still stands.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"3b9afb45efd2d9689759e4a15256fa0db3f1f20c15e8a75cc9ce7368096c4c78","input_sha256":"a7aabe2e67641f4b13722827d0810affff40ea27177e6dddae6875630a03406a","kind":"mutation-receipt","operation":"17e9c98dc1ee718a35dc7adaa4062e469aa7b9e9d4d2487a48a223acdb17a9e1","options":{"section":null},"request_id_sha256":null,"results":["f-20261109-08"],"target":"f-20261109-08","v":1} -->
+
+---
+
+## 2026-11-10 — filed through the inbox spool
+
+### `verify:app` GO11 fails: the PGN double-click target is reported as already selected on the Library page
+
+* **ID:** f-20261110-02 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** yes — found while running the real-app proof for the practice-mode build; the practice change does not touch game opening.
+* **Where:** `scripts/verify-app.mjs` check GO11 (`:4252`, "a fixed-coordinate double-click opens an initially unselected non-first PGN game") against the game list of a PGN file on `/library`.
+* **Defect:** `pnpm verify:app` on the practice-mode build worktree (based on master 41ea4fcfc, release build, 2026-11-10 10:37, and again at 10:55) passed every other check, including GO7–GO10 and GO12–GO13, and failed GO11 with `PGN double-click target was already selected, renderer state: {"selected":[],"controls":[{"disabled":false,"text":"Open game"}],"path":"/library"}`. The reported state shows no selected row while the check's precondition claims the target was already selected, so either the check's selection probe no longer matches the Library list markup (the New Tab / Library list was rebuilt on 2026-11-09 in 6651de3bd; a188838f5 of 2026-11-10 changed selection highlighting), or a non-first game row is selected or highlighted before the first click.
+* **Failure scenario:** A user double-clicks the second game of a multi-game PGN in the Library preview. If the row state the check reads is wrong in the product, the double-click may not open that game; if only the probe is stale, `verify:app` stays red on every run and hides real regressions in game opening.
+* **Open question:** Is the selection state wrong in the product after the Library redesign, or does GO11's probe read markup that the redesign changed? Reproduce in the real app first.
+* **Fix direction:** Run `pnpm verify:app` on master to confirm it is independent of the practice change, then read GO11's precondition probe next to the current Library game list.
+* **Found by:** Claude Code build run practice-mode, real-app verification, 2026-11-10.
+* **Correction 2026-11-10 (build run practice-mode, records lens):** The Defect bullet dates both cited Library commits to 2026-11-09. Only `6651de3bd` (the New Tab / Library list redesign) is from 2026-11-09; `a188838f5` (selected rows show at once, closed folders lose the highlight) is from 2026-11-10 and is the commit that changes selection highlighting.
+* **Note:** master commit 94b486c1a ("fix(library): a move key takes focus off the clicked game row", 2026-11-10) landed after this observation and touches the same game list; rerun GO11 on a build that contains it before investigating.
