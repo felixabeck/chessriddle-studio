@@ -56,16 +56,63 @@ afterEach(async () => {
   }
 });
 
-function Editor() {
+function Editor({ simplified = false }: { simplified?: boolean }) {
   const headers = useStore(store, (state) => state.headers);
   return (
     <MantineProvider env="test">
       <TreeStateContext.Provider value={store}>
-        <GameInfo headers={headers} />
+        <GameInfo headers={headers} simplified={simplified} />
       </TreeStateContext.Provider>
     </MantineProvider>
   );
 }
+
+test.each(["", "?", "   "])(
+  "simplified editing shows an editable Event fallback for White %j",
+  async (white) => {
+    const headers = {
+      ...defaultTree().headers,
+      white,
+      black: "?",
+      event: "Legacy opening",
+      round: "2",
+    };
+    store.getState().setHeaders(headers);
+    await act(async () => root.render(<Editor simplified />));
+    const name = host.querySelector<HTMLInputElement>('input[aria-label="GameInfo.LineName"]')!;
+    const idea = host.querySelector<HTMLInputElement>('input[aria-label="GameInfo.Idea"]')!;
+    expect(name.value).toBe("Legacy opening");
+    expect(name.placeholder).toBe("GameInfo.EnterLineName");
+    expect(idea.value).toBe("");
+    expect(idea.placeholder).toBe("GameInfo.EnterIdea");
+    expect(host.querySelector('input[placeholder="GameInfo.UnknownEvent"]')).toBeNull();
+    expect(host.querySelector('input[placeholder="?"]')).toBeNull();
+    expect(host.textContent).toContain("GameInfo.OpeningFor");
+
+    for (const [field, value, key] of [
+      [name, "Dragon System", "white"],
+      [idea, "6...Dc7 plan", "black"],
+    ] as const) {
+      for (let length = 1; length <= value.length; length += 1) {
+        await act(async () => {
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+            field,
+            value.slice(0, length),
+          );
+          field.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+        expect(store.getState().headers[key]).toBe(value.slice(0, length));
+        expect(field.value).toBe(value.slice(0, length));
+        expect(store.getState().headers.event).toBe("Legacy opening");
+      }
+    }
+    expect(store.getState().headers).toEqual({
+      ...headers,
+      white: "Dragon System",
+      black: "6...Dc7 plan",
+    });
+  },
+);
 
 function expectSiteLink(site: string, label: string) {
   const anchors = host.querySelectorAll("a");

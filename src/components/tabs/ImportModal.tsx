@@ -26,6 +26,7 @@ import { translateChessopsError } from "@/utils/chessops";
 import {
   createFile,
   ensureFileWorkspace,
+  getFileGameName,
   loadFileGame,
   openFile,
   pickPgnFile,
@@ -170,7 +171,7 @@ export default function ImportModal({
               const result = replaceImportedTab(
                 submittingOwnerId,
                 {
-                  name: getGameName(tree.headers),
+                  name: getFileGameName(tree.headers, fileInfo),
                   gameOrigin: {
                     kind: "file",
                     file: fileInfo,

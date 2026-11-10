@@ -196,6 +196,7 @@ function FileCard({
             setPage={setPage}
             onActivate={activateGame}
             total={selected.numGames}
+            repertoire={selected.metadata.type === "repertoire"}
             editableSections={selected.metadata.type === "repertoire"}
             onMoveLines={selected.metadata.type === "repertoire" ? onMoveLines : undefined}
             reloadGeneration={reloadGeneration}

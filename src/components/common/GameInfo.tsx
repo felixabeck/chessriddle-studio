@@ -6,6 +6,7 @@ import { memo, useContext, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { createStore, useStore } from "zustand";
 import type { Outcome } from "@/bindings";
+import { lineTitleOf } from "@/components/files/lineTitle";
 import {
   getEffectiveGameEnd,
   getEffectiveTermination,
@@ -36,15 +37,7 @@ function sitePlatformLabel(site: string): string | null {
   }
 }
 
-function GameInfo({
-  headers,
-  simplified,
-  changeTitle,
-}: {
-  headers: GameHeaders;
-  simplified?: boolean;
-  changeTitle?: (title: string) => void;
-}) {
+function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: boolean }) {
   const { t } = useTranslation();
   const contextStore = useContext(TreeStateContext);
   const store = contextStore || EMPTY_STORE;
@@ -62,6 +55,11 @@ function GameInfo({
   const event = headers.event === "?" ? "" : headers.event;
   const site = headers.site === "?" ? "" : headers.site;
   const sitePlatform = sitePlatformLabel(headers.site);
+  // Keep raw White text so spaces survive typing, using the normalized Event fallback only
+  // when White is empty.
+  const lineName = lineTitleOf({ white: headers.white }).name
+    ? headers.white
+    : (lineTitleOf(headers).name ?? "");
 
   return (
     <Box px="md" pt="md">
@@ -83,22 +81,42 @@ function GameInfo({
           </Text>
         )}
         <Group wrap="nowrap" justify={simplified ? "start" : "center"} w="100%">
-          <InlineInput
-            disabled={disabled}
-            value={event}
-            placeholder={simplified ? t("GameInfo.EnterOpeningTitle") : t("GameInfo.UnknownEvent")}
-            className={classes.input}
-            onChange={(e) => {
-              setHeaders({
-                ...headers,
-                event: e.target.value,
-              });
-              if (changeTitle) {
-                changeTitle(e.target.value);
-              }
-            }}
-          />
-          {headers.round && headers.round !== "?" && (
+          {simplified ? (
+            <>
+              <InlineInput
+                disabled={disabled}
+                value={lineName}
+                aria-label={t("GameInfo.LineName")}
+                placeholder={t("GameInfo.EnterLineName")}
+                className={classes.input}
+                onChange={(e) => setHeaders({ ...headers, white: e.target.value })}
+              />
+              <Text component="span" c="dimmed" size="sm" style={{ minWidth: 0 }}>
+                <InlineInput
+                  disabled={disabled}
+                  value={headers.black.trim() === "?" ? "" : headers.black}
+                  aria-label={t("GameInfo.Idea")}
+                  placeholder={t("GameInfo.EnterIdea")}
+                  className={classes.input}
+                  onChange={(e) => setHeaders({ ...headers, black: e.target.value })}
+                />
+              </Text>
+            </>
+          ) : (
+            <InlineInput
+              disabled={disabled}
+              value={event}
+              placeholder={t("GameInfo.UnknownEvent")}
+              className={classes.input}
+              onChange={(e) => {
+                setHeaders({
+                  ...headers,
+                  event: e.target.value,
+                });
+              }}
+            />
+          )}
+          {!simplified && headers.round && headers.round !== "?" && (
             <>
               {"-"}
               <Group gap={0} wrap="nowrap">

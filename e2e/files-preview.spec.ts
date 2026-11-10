@@ -23,6 +23,14 @@ const GAME_ROW_HEIGHT_PX = 30;
 // Covers 10 attempts × 3 animation frames each, plus a 2-frame margin for queued callbacks.
 const SCROLL_SETTLE_FRAMES = 32;
 
+async function expectLineTitle(row: Locator, name: string, idea: string) {
+    await expect(row.getByText(name, { exact: true })).toBeVisible();
+    const subtitle = row.getByText(idea, { exact: true });
+    await expect(subtitle).toBeVisible();
+    await expect(subtitle).toHaveAttribute("style", /color: var\(--mantine-color-dimmed\)/);
+    await expect(row).not.toHaveText(/ - /);
+}
+
 async function openDragFile(
     page: Page,
     mockScenario: (scenario: MockScenario) => Promise<void>,
@@ -71,7 +79,9 @@ async function openDragFile(
     await page.getByRole("button", { name: "Choose collection", exact: true }).click();
     await selectFilesTreeRow(page, file.name);
     const list = page.getByRole("listbox", { name: "Games", exact: true });
-    await expect(list.getByRole("option", { name: /White 2 - Black 2/ })).toBeVisible();
+    const second = list.locator('[data-line-index="1"] [role="option"]');
+    if (repertoire) await expectLineTitle(second, "White 2", "Black 2");
+    else await expect(second).toHaveText(/White 2 - Black 2/);
     return list;
 }
 
@@ -157,7 +167,7 @@ for (const belowHeading of [false, true]) {
             gameMove: { kind: "line", source: 1, before: 3, belowHeading },
             revision: "drag-revision",
         });
-        await expect(list.locator('[aria-selected="true"]')).toHaveText(/White 1 - Black 1/);
+        await expectLineTitle(list.locator('[aria-selected="true"]'), "White 1", "Black 1");
         await expect(preview).toHaveCount(0);
         await expect(marker).toHaveCount(0);
     });
@@ -286,7 +296,11 @@ test("files-preview: returning to Library restores a late game after section hea
     page,
     mockScenario,
 }) => {
-    const file = { ...repertoireFile, gameCount: 40 };
+    const file = {
+        ...repertoireFile,
+        gameCount: 40,
+        metadata: { type: "repertoire" as const, tags: [] },
+    };
     const games = Array.from({ length: file.gameCount }, (_, index) => ({
         pgn: `[White "White ${index + 1}"]\n[Black "Black ${index + 1}"]\n[Section "Section ${index + 1}"]\n\n1. e4 c5 *`,
         stamp: String(index + 1).padStart(64, "0"),
@@ -321,13 +335,14 @@ test("files-preview: returning to Library restores a late game after section hea
     await selectFilesTreeRow(page, file.name);
     const list = page.getByRole("listbox", { name: "Games", exact: true });
     const viewport = list.locator("..");
-    const late = list.getByRole("option", { name: /White 40 - Black 40/ });
+    const late = list.locator('[data-line-index="39"] [role="option"]');
     // Reach the last game through user scrolling before opening it.
     await expect(async () => {
         await viewport.hover();
         await page.mouse.wheel(0, 3000);
         await expect(late).toBeInViewport({ ratio: 1 });
     }).toPass();
+    await expectLineTitle(late, "White 40", "Black 40");
     await late.dblclick();
     await expect(page).toHaveURL(/\/$/);
     expect((await activeWorkspaceTab(page))?.gameOrigin).toMatchObject({ gameNumber: 39 });
@@ -338,6 +353,7 @@ test("files-preview: returning to Library restores a late game after section hea
     );
     await expect(late).toHaveAttribute("aria-selected", "true");
     await expect(late).toHaveAttribute("aria-description", "Section 40");
+    await expectLineTitle(late, "White 40", "Black 40");
     await expectCellStaysInViewport(late);
 });
 

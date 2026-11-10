@@ -7,6 +7,7 @@ import { defaultGame, makePgn } from "chessops/pgn";
 import { getDefaultStore } from "jotai";
 import useSWR from "swr";
 import type { FileMetadata, FileType } from "@/components/files/file";
+import { lineTitleOf } from "@/components/files/lineTitle";
 import {
     reconcileWorkspaceListing,
     type WorkspaceListingCache,
@@ -30,7 +31,13 @@ import { fileWorkspaceKey } from "./pathCapabilities";
 import { createTab, type SetTabs } from "./tabs";
 import { getGameName, type GameHeaders } from "./treeReducer";
 
-export function getFileGameName(headers: GameHeaders, file: Pick<FileMetadata, "name">): string {
+export function getFileGameName(
+    headers: GameHeaders,
+    file: Pick<FileMetadata, "name" | "metadata">,
+): string {
+    if (file.metadata.type === "repertoire") {
+        return lineTitleOf(headers).name ?? file.name.replace(/\.pgn$/i, "");
+    }
     const name = getGameName(headers);
     return name === "Unknown" || name === "?" ? file.name.replace(/\.pgn$/i, "") : name;
 }

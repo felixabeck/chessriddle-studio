@@ -58,7 +58,51 @@ import type { Tab } from "@/utils/tabs";
 import i18n, { initializeI18n } from "@/i18n";
 import { beginFileStructureChange, hasFileOpenInFlight } from "@/state/fileStructureChange";
 import { fileWorkspaceKey } from "./pathCapabilities";
-import { createFile, ensureFileWorkspace, openFile, pickPgnFile, writeFileGame } from "./files";
+import { defaultTree } from "./treeReducer";
+import {
+    createFile,
+    ensureFileWorkspace,
+    getFileGameName,
+    openFile,
+    pickPgnFile,
+    writeFileGame,
+} from "./files";
+
+test.each([
+    { white: "Dragon", black: "plan", event: "fertig", expected: "Dragon" },
+    { white: "Dragon", black: "?", event: "fertig", expected: "Dragon" },
+    { white: "?", black: "?", event: "Legacy", expected: "Legacy" },
+    { white: "?", black: "?", event: "?", expected: "Repertoire" },
+    { white: " ", black: "plan", event: "", expected: "Repertoire" },
+])("getFileGameName names a repertoire tab $expected", ({ expected, ...headers }) => {
+    expect(
+        getFileGameName(
+            { ...defaultTree().headers, ...headers },
+            {
+                name: "Repertoire.PGN",
+                metadata: { type: "repertoire", tags: [] },
+            },
+        ),
+    ).toBe(expected);
+});
+
+test.each([
+    { white: "White", black: "Black", event: "Event", expected: "White - Black" },
+    { white: "White", black: "?", event: "Event", expected: "White - ?" },
+    { white: "?", black: "?", event: "Event", expected: "Event" },
+    { white: "?", black: "?", event: "?", expected: "Games" },
+    { white: "", black: "", event: "", expected: "Games" },
+])("getFileGameName keeps the game tab rule for $expected", ({ expected, ...headers }) => {
+    expect(
+        getFileGameName(
+            { ...defaultTree().headers, ...headers },
+            {
+                name: "Games.pgn",
+                metadata: { type: "game", tags: [] },
+            },
+        ),
+    ).toBe(expected);
+});
 
 const listingCache = { cache: new Map(), mutate: vi.fn() };
 
@@ -193,6 +237,7 @@ describe("openFile tab admission", () => {
         expect(mocks.createTab).toHaveBeenCalledWith(
             expect.objectContaining({
                 initialTree: expect.objectContaining({ sourceStamp: freshStamp }),
+                tab: { name: "Fresh White", type: "analysis" },
                 gameOrigin: { kind: "file", file, gameNumber: 0 },
             }),
         );
@@ -202,6 +247,38 @@ describe("openFile tab admission", () => {
             expect.objectContaining({ handle: file.handle }),
         );
         expect(mocks.storeSet).not.toHaveBeenCalledWith(tabFamily("tab-id"), "practice");
+    });
+
+    test.each([
+        {
+            type: "repertoire" as const,
+            pgn: '[White "Dragon"]\n[Black "?"]\n[Event "fertig"]\n\n*',
+            name: "Dragon",
+        },
+        {
+            type: "repertoire" as const,
+            pgn: '[White "?"]\n[Black "?"]\n[Event "Legacy"]\n\n*',
+            name: "Legacy",
+        },
+        {
+            type: "repertoire" as const,
+            pgn: '[White "?"]\n[Black "?"]\n[Event "?"]\n\n*',
+            name: "white",
+        },
+        { type: "repertoire" as const, pgn: "", name: "white" },
+        { type: "game" as const, pgn: freshPgn, name: "Fresh White - Fresh Black" },
+    ])("opens $type with tab name $name", async ({ type, pgn, name }) => {
+        mocks.readGame.mockResolvedValueOnce({
+            pgn,
+            stamp: freshStamp,
+            revision: "r1",
+            present: true,
+        });
+        mocks.createTab.mockResolvedValueOnce("tab-id");
+        await openFile({ ...file, metadata: { type, tags: [] } }, setTabs);
+        expect(mocks.createTab).toHaveBeenCalledWith(
+            expect.objectContaining({ tab: { name, type: "analysis" } }),
+        );
     });
 
     test("passes the owner through full preparation and selects Practice only on request", async () => {
@@ -273,9 +350,13 @@ describe("openFile tab admission", () => {
                 present: true,
             });
             mocks.createTab.mockResolvedValueOnce("tab-id");
-            await openFile({ ...file, name: "Example.pgn", numGames: 3 }, setTabs, {
-                gameNumber: 1,
-            });
+            await openFile(
+                { ...file, name: "Example.pgn", numGames: 3, metadata: { type: "game", tags: [] } },
+                setTabs,
+                {
+                    gameNumber: 1,
+                },
+            );
             expect(mocks.readGame).toHaveBeenCalledWith(file.handle, 1, undefined);
             expect(mocks.createTab).toHaveBeenCalledWith(
                 expect.objectContaining({ tab: { name, type: "analysis" } }),

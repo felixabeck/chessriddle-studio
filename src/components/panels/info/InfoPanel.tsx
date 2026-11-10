@@ -12,6 +12,9 @@ import { useStore } from "zustand";
 import { isTreeViewDeferred, useTreeView } from "@/state/deferredTreeView";
 import { type DatabaseHandle, type FileWorkspaceHandle } from "@/bindings";
 import GameInfo from "@/components/common/GameInfo";
+import { GameTitle } from "@/components/files/GameTitle";
+import { lineTitleOf, type LineTitle } from "@/components/files/lineTitle";
+import { getGameName } from "@/utils/treeReducer";
 import { IconAction } from "@/components/common/IconAction";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import ConfirmChangesModal from "@/components/tabs/ConfirmChangesModal";
@@ -77,8 +80,30 @@ function InfoPanel({ addGame }: { addGame?: () => void }) {
   const [games, setGames] = useState<Map<number, GameSelectorRow>>(new Map());
   const [currentTab, setCurrentTab] = useOwnerTab();
   const tabFile = getTabFile(currentTab);
-  const gameNumber = getTabGameNumber(currentTab);
   const isReportoire = tabFile?.metadata.type === "repertoire";
+  const derivedTabName = tabFile ? getFileGameName(headers, tabFile) : undefined;
+  const previousTabTitle = useRef({ tab: currentTab, store, name: derivedTabName });
+
+  useEffect(() => {
+    const previous = previousTabTitle.current;
+    previousTabTitle.current = { tab: currentTab, store, name: derivedTabName };
+    // Mounting or changing owners establishes the baseline, preserving a manual tab name.
+    if (
+      derivedTabName === undefined ||
+      previous.name === derivedTabName ||
+      previous.store !== store ||
+      !isFileBackedTab(currentTab) ||
+      !previous.tab ||
+      !sameTabOwner(currentTab, previous.tab) ||
+      !matchesFileGameTab(previous.tab, currentTab.gameOrigin)
+    )
+      return;
+    setCurrentTab((tab) =>
+      sameTabOwner(tab, currentTab) && matchesFileGameTab(tab, currentTab.gameOrigin)
+        ? { ...tab, name: derivedTabName }
+        : tab,
+    );
+  }, [currentTab, derivedTabName, setCurrentTab, store]);
 
   const { t } = useTranslation();
 
@@ -91,28 +116,7 @@ function InfoPanel({ addGame }: { addGame?: () => void }) {
       <ScrollArea pb="sm">
         <FileInfo setGames={setGames} />
         <Stack px="sm">
-          <GameInfo
-            headers={headers}
-            simplified={isReportoire}
-            changeTitle={(title: string) => {
-              if (isFileBackedTab(currentTab)) {
-                const name = getFileGameName(
-                  { ...headers, event: title },
-                  currentTab.gameOrigin.file,
-                );
-                setCurrentTab((tab) =>
-                  sameTabOwner(tab, currentTab) && matchesFileGameTab(tab, currentTab.gameOrigin)
-                    ? { ...tab, name }
-                    : tab,
-                );
-              }
-              setGames((prev) => {
-                const newGames = new Map(prev);
-                newGames.set(gameNumber, { ...newGames.get(gameNumber), name: title });
-                return newGames;
-              });
-            }}
-          />
+          <GameInfo headers={headers} simplified={isReportoire} />
           <FenSearch />
           <PgnInput />
 
@@ -184,7 +188,11 @@ function GameSelectorAccordion({
 
   const tabFile = getTabFile(currentTab);
   const gameNumber = getTabGameNumber(currentTab);
-  const currentName = games.get(gameNumber)?.name || "Untitled";
+  const headers = useStore(store, (state) => state.headers);
+  const repertoire = tabFile?.metadata.type === "repertoire";
+  const currentTitle: LineTitle = repertoire
+    ? lineTitleOf(headers)
+    : { name: getGameName(headers) };
 
   const keyMap = useAtomValue(keyMapAtom);
   const { t } = useTranslation();
@@ -446,6 +454,9 @@ function GameSelectorAccordion({
         isCurrent: () => isCurrentPageRequest(request),
       });
       if (result.kind !== "committed") return;
+      if (discardSnapshot && isCurrentOwner(tab.value, request.fileKey, ownerStore)) {
+        setGames(new Map());
+      }
       // The tree was just read from disk, so the gate need not read it a second time.
       if (!loaded.present && page < tab.gameOrigin.file.numGames) {
         setFileFreshness(tab.value, "unavailable");
@@ -650,7 +661,12 @@ function GameSelectorAccordion({
           <Accordion.Control>
             <Group justify="space-between" wrap="nowrap" w="100%">
               <Text truncate flex={1}>
-                {formatNumber(gameNumber + 1)}. {currentName}
+                {formatNumber(gameNumber + 1)}.{" "}
+                <GameTitle
+                  title={currentTitle}
+                  repertoire={repertoire}
+                  emptyName={t("GameInfo.UntitledLine")}
+                />
               </Text>
               {addGame && (
                 <IconAction
@@ -679,6 +695,8 @@ function GameSelectorAccordion({
                 path={filePath}
                 activePage={gameNumber || 0}
                 total={tabFile.numGames}
+                repertoire={repertoire}
+                activeTitle={currentTitle}
               />
             </Box>
           </Accordion.Panel>

@@ -12,7 +12,9 @@ import ConfirmModal from "@/components/common/ConfirmModal";
 import { IconAction } from "@/components/common/IconAction";
 import { gameRowActivation } from "@/components/common/gameOpen";
 import { moveKeyReleasesFocus } from "@/components/common/MoveCell";
+import { GameTitle } from "@/components/files/GameTitle";
 import { lineSectionOf } from "@/components/files/lineSection";
+import { lineTitleOf, type LineTitle } from "@/components/files/lineTitle";
 import type { MoveLines } from "@/components/files/reorderLines";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useVirtualPageLoader } from "@/hooks/useVirtualPageLoader";
@@ -37,6 +39,7 @@ const SECTION_HEADING_PX = 26;
 
 export type GameSelectorRow = {
   name: string;
+  idea?: string;
   /** Absent for a line inside a section, empty for a section without a name. */
   section?: string;
   omission?: StampedGame["omission"];
@@ -67,6 +70,8 @@ export default function GameSelector({
   reloadGeneration = 0,
   onMoveLines,
   maxHeight,
+  repertoire = false,
+  activeTitle,
 }: {
   games: Map<number, GameSelectorRow>;
   setGames: React.Dispatch<React.SetStateAction<Map<number, GameSelectorRow>>>;
@@ -81,6 +86,8 @@ export default function GameSelector({
   onMoveLines?: MoveLines;
   reloadGeneration?: number;
   maxHeight?: string | number;
+  repertoire?: boolean;
+  activeTitle?: LineTitle;
 }) {
   const { t } = useTranslation();
   const [sectionTarget, setSectionTarget] = useState<LineSectionTarget | null>(null);
@@ -111,10 +118,12 @@ export default function GameSelector({
               }
               try {
                 const { headers } = await parsePGN(game.pgn, undefined, options);
+                const title = repertoire ? lineTitleOf(headers) : { name: getGameName(headers) };
                 return [
                   next + index,
                   {
-                    name: getGameName(headers),
+                    ...title,
+                    name: title.name ?? "",
                     section: lineSectionOf(headers),
                     identity: game.present
                       ? { stamp: game.stamp, revision: game.revision }
@@ -138,10 +147,10 @@ export default function GameSelector({
         return [];
       }
     },
-    [path, t],
+    [path, t, repertoire],
   );
   const loadMoreRows = useVirtualPageLoader(
-    `${path.id.id}:${reloadGeneration}`,
+    `${path.id.id}:${reloadGeneration}:${repertoire}`,
     loadPage,
     (startIndex, entries) => {
       if (reloading.current) return;
@@ -153,6 +162,27 @@ export default function GameSelector({
       });
     },
   );
+
+  const previousRepertoire = useRef(repertoire);
+  useEffect(() => {
+    if (previousRepertoire.current === repertoire) return;
+    previousRepertoire.current = repertoire;
+    setGames(new Map());
+  }, [repertoire, setGames]);
+
+  const hasActiveTitle = activeTitle !== undefined;
+  const activeName = activeTitle?.name ?? "";
+  const activeIdea = activeTitle?.idea;
+  useEffect(() => {
+    if (!hasActiveTitle) return;
+    setGames((previous) => {
+      const row = previous.get(activePage);
+      if (!row || (row.name === activeName && row.idea === activeIdea)) return previous;
+      const next = new Map(previous);
+      next.set(activePage, { ...row, name: activeName, idea: activeIdea });
+      return next;
+    });
+  }, [activePage, hasActiveTitle, activeName, activeIdea, games, setGames]);
 
   const fontSize = useAtomValue(fontSizeAtom);
 
@@ -301,6 +331,8 @@ export default function GameSelector({
             key={virtualRow.index}
             index={virtualRow.index}
             game={games.get(virtualRow.index)}
+            repertoire={repertoire}
+            title={virtualRow.index === activePage ? activeTitle : undefined}
             setPage={setPage}
             deleteGame={deleteGame}
             activePage={activePage}
@@ -362,6 +394,8 @@ function GameRow({
   onActivate,
   rowHeight,
   onSectionMenu,
+  repertoire,
+  title,
 }: {
   style?: React.CSSProperties;
   index: number;
@@ -372,6 +406,8 @@ function GameRow({
   onActivate?: (index: number) => void | Promise<void>;
   rowHeight: number;
   onSectionMenu?: (target: LineSectionTarget) => void;
+  repertoire: boolean;
+  title?: LineTitle;
 }) {
   const { t } = useTranslation();
   const [deleteModal, toggleDelete] = useToggle();
@@ -462,7 +498,7 @@ function GameRow({
           {formatNumber(index + 1)}
         </Text>
         <Text fz="sm" truncate flex={1} lh="sm">
-          {game?.name || "..."}
+          {title || game ? <GameTitle title={title ?? game!} repertoire={repertoire} /> : "..."}
         </Text>
         {deleteGame && (
           <IconAction

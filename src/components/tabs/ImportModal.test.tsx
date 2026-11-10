@@ -46,7 +46,8 @@ vi.mock("@/utils/chess", () => ({ parsePGN: fixtures.parsePGN }));
 vi.mock("@/utils/chess.com/api", () => ({ getChesscomGame: fixtures.getChesscomGame }));
 vi.mock("@/utils/lichess/api", () => ({ getLichessGame: fixtures.getLichessGame }));
 vi.mock("@/utils/tabs", () => ({ replaceNewTab: fixtures.replaceNewTab }));
-vi.mock("@/utils/files", () => ({
+vi.mock("@/utils/files", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/utils/files")>()),
   createFile: fixtures.createFile,
   ensureFileWorkspace: fixtures.ensureFileWorkspace,
   loadFileGame: fixtures.loadFileGame,
@@ -436,6 +437,48 @@ test("saving an imported PGN copies its source before submitting the reloaded fi
   expect(leasesAtAdmission).toEqual([true, true]);
   expect(hasFileOpenInFlight(sourceKey)).toBe(false);
   expect(hasFileOpenInFlight(savedKey)).toBe(false);
+});
+
+test.each([
+  { white: "Dragon System", event: "fertig", name: "Dragon System" },
+  { white: "?", event: "Legacy", name: "Legacy" },
+  { white: "?", event: "?", name: "selected" },
+])("a PGN file saved as Repertoire opens with $name", async ({ white, event, name }) => {
+  const workspace = { id: { id: "workspace" }, kind: "fileWorkspace" } as const;
+  const savedFile = { ...fixtures.file, metadata: { type: "repertoire", tags: [] } };
+  const tree = defaultTree();
+  tree.headers = { ...tree.headers, white, event, black: "6...Dc7 plan" };
+  fixtures.loadFileGame.mockResolvedValue({
+    tree,
+    pgn: "*",
+    revision: "r1",
+    stamp: "s1",
+    present: true,
+  });
+  fixtures.ensureFileWorkspace.mockResolvedValue(workspace);
+  fixtures.createFile.mockResolvedValue({ isErr: false, value: savedFile });
+  await renderModal();
+  await chooseFile();
+  await act(async () =>
+    host.querySelector<HTMLInputElement>('[data-testid="save-to-collection"]')!.click(),
+  );
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="mode-repertoire"]')!.click(),
+  );
+  await clickSubmit();
+  await vi.waitFor(() => expect(fixtures.replaceNewTab).toHaveBeenCalledOnce());
+  expect(fixtures.createFile).toHaveBeenCalledWith(
+    expect.objectContaining({ filetype: "repertoire" }),
+  );
+  expect(fixtures.replaceNewTab).toHaveBeenCalledWith(
+    expect.objectContaining({
+      tab: expect.objectContaining({
+        name,
+        gameOrigin: { kind: "file", file: savedFile, gameNumber: 0 },
+      }),
+      tree,
+    }),
+  );
 });
 
 test("a rejected game-0 preflight creates no copied file", async () => {

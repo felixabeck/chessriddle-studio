@@ -70,9 +70,16 @@ vi.mock("@mantine/core", () => ({
     </div>
   ),
   Stack: ({ children }: any) => <div>{children}</div>,
-  Text: ({ children, truncate: _truncate, fz: _fz, flex: _flex, lh: _lh, ...props }: any) => (
-    <p {...props}>{children}</p>
-  ),
+  Text: ({
+    component: Component = "p",
+    children,
+    inherit: _inherit,
+    truncate: _truncate,
+    fz: _fz,
+    flex: _flex,
+    lh: _lh,
+    ...props
+  }: any) => <Component {...props}>{children}</Component>,
   Tooltip: ({ children }: any) => <>{children}</>,
 }));
 
@@ -260,6 +267,140 @@ test("a reload retains rows and scroll until an atomic swap and stale page reads
   expect(host.textContent).toContain("Fresh second");
   expect(host.textContent).not.toContain("Old first");
   expect(viewport.scrollTop).toBe(80);
+});
+
+test.each([
+  { repertoire: true, black: "6...Dc7", name: "Dragon", idea: "6...Dc7" },
+  { repertoire: true, black: "?", name: "Dragon", idea: undefined },
+  { repertoire: true, black: "?", white: "?", name: "Unbenannte Variante", idea: undefined },
+])(
+  "repertoire rows show a line name and optional dimmed idea for %j",
+  async ({ repertoire, black, white, name, idea }) => {
+    mocks.parsePGN.mockResolvedValue({ headers: { white: white ?? "Dragon", black, event: "?" } });
+    let observed = new Map<number, GameSelectorRow>();
+    function List() {
+      const [games, setGames] = useState(new Map<number, GameSelectorRow>());
+      observed = games;
+      return (
+        <GameSelector
+          games={games}
+          setGames={setGames}
+          setPage={vi.fn()}
+          total={1}
+          path={path}
+          activePage={0}
+          repertoire={repertoire}
+        />
+      );
+    }
+    await act(async () => root.render(<List />));
+    await vi.waitFor(() => expect(observed.size).toBe(1));
+    const row = host.querySelector('[role="option"]')!;
+    expect(row.textContent).toContain(name);
+    expect(row.textContent).not.toContain("?");
+    expect(row.textContent).not.toContain(" - ");
+    expect(observed.get(0)?.idea).toBe(idea);
+    const dimmed = row.querySelector('[c="dimmed"]');
+    expect(dimmed?.textContent).toBe(idea ?? (white === "?" ? name : undefined));
+  },
+);
+
+test.each([
+  { black: "?", name: "Dragon - ?" },
+  { black: "Opponent", name: "Dragon - Opponent" },
+])("game rows keep player titles for %j", async ({ black, name }) => {
+  mocks.parsePGN.mockResolvedValue({ headers: { white: "Dragon", black, event: "?" } });
+  let observed!: ReturnType<typeof renderPageLoader>;
+  await act(async () => {
+    observed = renderPageLoader(vi.fn());
+  });
+  await vi.waitFor(() => expect(observed.games.size).toBe(1));
+  const row = host.querySelector('[role="option"]')!;
+  expect(row.textContent).toContain(name);
+});
+
+test.each([false, true])(
+  "changing repertoire from %s reloads cached row titles",
+  async (initial) => {
+    mocks.parsePGN.mockResolvedValue({ headers: { white: "Dragon", black: "?", event: "?" } });
+    let observed = new Map<number, GameSelectorRow>();
+    function List({ repertoire }: { repertoire: boolean }) {
+      const [games, setGames] = useState(new Map<number, GameSelectorRow>());
+      observed = games;
+      return (
+        <GameSelector
+          games={games}
+          setGames={setGames}
+          setPage={vi.fn()}
+          total={1}
+          path={path}
+          activePage={0}
+          repertoire={repertoire}
+        />
+      );
+    }
+    const expectTitle = (repertoire: boolean) => {
+      const name = repertoire ? "Dragon" : "Dragon - ?";
+      expect(observed.get(0)?.name).toBe(name);
+      expect(host.querySelector('[role="option"]')?.textContent).toBe(`1${name}`);
+    };
+    await act(async () => root.render(<List repertoire={initial} />));
+    expectTitle(initial);
+    const stale = deferred<StampedGame[]>();
+    const reread = deferred<StampedGame[]>();
+    mocks.readGames.mockReturnValueOnce(stale.promise).mockReturnValueOnce(reread.promise);
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = pendingRange(0, 0);
+    });
+    const staleSignal = mocks.readGames.mock.calls[1][3].signal;
+    await act(async () => root.render(<List repertoire={!initial} />));
+    expect(staleSignal.aborted).toBe(true);
+    expect(observed.size).toBe(0);
+    expect(mocks.readGames).toHaveBeenCalledTimes(3);
+    await act(async () => reread.resolve([firstGame]));
+    expectTitle(!initial);
+    await act(async () => {
+      stale.resolve([firstGame]);
+      await pending;
+    });
+    expectTitle(!initial);
+  },
+);
+
+test("the active title updates only an existing cache row and preserves its metadata", async () => {
+  const read = deferred<StampedGame[]>();
+  mocks.readGames.mockReturnValue(read.promise);
+  const row: GameSelectorRow = {
+    name: "Old line",
+    idea: "Old idea",
+    section: "Section",
+    identity: { stamp: "s1", revision: "r1" },
+    omission: "tooLarge",
+  };
+  let observed = new Map<number, GameSelectorRow>();
+  function List() {
+    const [games, setGames] = useState(new Map<number, GameSelectorRow>());
+    observed = games;
+    return (
+      <GameSelector
+        games={games}
+        setGames={setGames}
+        setPage={vi.fn()}
+        total={1}
+        path={path}
+        activePage={0}
+        repertoire
+        activeTitle={{ name: "Dragon", idea: "6...Dc7" }}
+      />
+    );
+  }
+  await act(async () => root.render(<List />));
+  expect(observed.size).toBe(0);
+  expect(host.querySelector('[role="option"]')?.textContent).toContain("Dragon");
+  const merge = mocks.useVirtualPageLoader.mock.calls.at(-1)![2];
+  await act(async () => merge(0, [[0, row]]));
+  expect(observed.get(0)).toEqual({ ...row, name: "Dragon", idea: "6...Dc7" });
 });
 
 async function renderReveal(

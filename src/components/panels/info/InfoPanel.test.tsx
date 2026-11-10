@@ -29,6 +29,7 @@ import { focusedDialogButton, press } from "@/tests/keyboard";
 import { activeDatabaseViewStore } from "@/state/store/database";
 import type { SuccessDatabaseInfo } from "@/utils/db";
 import type { loadFileGame } from "@/utils/files";
+import type { GameSelectorRow } from "./GameSelector";
 import InfoPanel from "./InfoPanel";
 import classes from "./InfoPanel.module.css";
 
@@ -48,6 +49,8 @@ const mocks = vi.hoisted(() => ({
   getDatabases: vi.fn(),
   navigate: vi.fn(),
   useActualGameSelector: false,
+  useActualGameInfo: false,
+  visibleIndices: [0],
 }));
 
 vi.mock("react-i18next", async (original) => ({
@@ -116,12 +119,8 @@ vi.mock("./GameSelector", async (importOriginal) => {
       onActivate,
       ...actualProps
     }: {
-      games: Map<number, { name: string; identity?: { stamp: string; revision: string } }>;
-      setGames: React.Dispatch<
-        React.SetStateAction<
-          Map<number, { name: string; identity?: { stamp: string; revision: string } }>
-        >
-      >;
+      games: Map<number, GameSelectorRow>;
+      setGames: React.Dispatch<React.SetStateAction<Map<number, GameSelectorRow>>>;
       setPage: (page: number) => Promise<void>;
       onActivate?: (page: number) => Promise<void>;
       deleteGame: (snapshot: { index: number; stamp: string; revision: string }) => Promise<void>;
@@ -193,7 +192,10 @@ vi.mock("@tanstack/react-virtual", () => ({
   useVirtualizer: ({ count }: { count: number }) => ({
     getTotalSize: () => count * 30,
     measure: () => undefined,
-    getVirtualItems: () => (count > 0 ? [{ index: 0, size: 30, start: 0 }] : []),
+    getVirtualItems: () =>
+      mocks.visibleIndices
+        .filter((index) => index < count)
+        .map((index) => ({ index, size: 30, start: index * 30 })),
   }),
 }));
 
@@ -209,13 +211,13 @@ vi.mock("./PgnInput", () => ({
   default: () => <div data-testid="pgn-input" />,
 }));
 
-vi.mock("@/components/common/GameInfo", () => ({
-  default: ({ changeTitle }: { changeTitle: (title: string) => void }) => (
-    <button type="button" data-testid="game-info" onClick={() => changeTitle("Renamed chapter")}>
-      Edit title
-    </button>
-  ),
-}));
+vi.mock("@/components/common/GameInfo", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/components/common/GameInfo")>();
+  return {
+    default: (props: React.ComponentProps<typeof actual.default>) =>
+      mocks.useActualGameInfo ? <actual.default {...props} /> : <div data-testid="game-info" />,
+  };
+});
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -319,6 +321,8 @@ describe("InfoPanel game loading and cancellation", () => {
     });
     mocks.navigate.mockReset().mockResolvedValue(undefined);
     mocks.useActualGameSelector = false;
+    mocks.useActualGameInfo = false;
+    mocks.visibleIndices = [0];
     mocks.writeGame
       .mockReset()
       .mockResolvedValue({ stamp: "c".repeat(64), revision: "saved-revision" });
@@ -335,6 +339,7 @@ describe("InfoPanel game loading and cancellation", () => {
     closeTreeStore(tabBId);
     activeDatabaseViewStore.getState().clearDatabase();
     mocks.useActualGameSelector = false;
+    mocks.useActualGameInfo = false;
     vi.restoreAllMocks();
     tabStorage.flush();
   });
@@ -476,6 +481,196 @@ describe("InfoPanel game loading and cancellation", () => {
     });
     return { promise, resolve, reject };
   }
+
+  test("real repertoire editing updates the row and heading despite a late disk page", async () => {
+    mocks.useActualGameSelector = true;
+    mocks.useActualGameInfo = true;
+    if (tabA.gameOrigin.kind !== "file") throw new Error("Expected a file fixture");
+    jotaiStore.set(tabsAtom, [
+      {
+        ...tabA,
+        gameOrigin: {
+          ...tabA.gameOrigin,
+          kind: "file",
+          gameNumber: 0,
+          file: {
+            ...tabA.gameOrigin.file,
+            metadata: { type: "repertoire", tags: [] },
+          },
+        },
+      },
+      tabB,
+    ]);
+    const original = {
+      ...defaultTree().headers,
+      white: "Old line",
+      black: "Old idea",
+      event: "fertig",
+    };
+    treeStore.getState().setHeaders(original);
+    const page = deferred<import("@/bindings").StampedGame[]>();
+    mocks.readGames.mockReturnValue(page.promise);
+    mocks.parsePGN.mockResolvedValue({ headers: original });
+    await act(async () => root.render(renderPanel()));
+    const heading = container.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+    await act(async () => heading.click());
+    await vi.waitFor(() => expect(mocks.readGames).toHaveBeenCalled());
+    const row = () => container.querySelector<HTMLElement>('[role="option"]')!;
+    const name = container.querySelector<HTMLInputElement>(
+      'input[aria-label="GameInfo.LineName"]',
+    )!;
+    const idea = container.querySelector<HTMLInputElement>('input[aria-label="GameInfo.Idea"]')!;
+    expect(name.value).toBe("Old line");
+    expect(idea.value).toBe("Old idea");
+    for (const [field, value, key] of [
+      [name, "Dragon System", "white"],
+      [idea, "6...Dc7 plan", "black"],
+    ] as const) {
+      for (let length = 1; length <= value.length; length += 1) {
+        await act(async () => {
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+            field,
+            value.slice(0, length),
+          );
+          field.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+        expect(treeStore.getState().headers[key]).toBe(value.slice(0, length));
+        expect(field.value).toBe(value.slice(0, length));
+        expect(heading.textContent).toContain(value.slice(0, length).trim());
+        expect(row().textContent).toContain(value.slice(0, length).trim());
+      }
+    }
+    for (const title of [heading, row()]) {
+      expect(title.textContent).toContain("Dragon System");
+      expect(title.textContent).toContain("6...Dc7 plan");
+      expect(title.querySelector('[style*="dimmed"]')?.textContent).toBe("6...Dc7 plan");
+    }
+    expect(jotaiStore.get(currentTabAtom)?.name).toBe("Dragon System");
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(idea, "");
+      idea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(treeStore.getState().headers).toEqual({
+      ...original,
+      white: "Dragon System",
+      black: "",
+    });
+    expect(jotaiStore.get(currentTabAtom)?.name).toBe("Dragon System");
+    await act(async () =>
+      page.resolve([{ pgn: "old disk page", stamp: "s1", revision: "r1", present: true }]),
+    );
+    await vi.waitFor(() => expect(mocks.parsePGN).toHaveBeenCalled());
+    for (const title of [heading, row()]) {
+      expect(title.textContent).toContain("Dragon System");
+      expect(title.textContent).not.toContain("Old line");
+      expect(title.textContent).not.toContain("Old idea");
+      expect(title.textContent).not.toContain("6...Dc7 plan");
+      expect(title.textContent).not.toContain("?");
+      expect(title.textContent).not.toContain(" - ");
+    }
+    await act(async () =>
+      treeStore.getState().setHeaders({ ...original, white: "?", black: "?", event: "?" }),
+    );
+    expect(heading.textContent).toContain("GameInfo.UntitledLine");
+    expect(row().textContent).toContain("GameInfo.UntitledLine");
+    expect(jotaiStore.get(currentTabAtom)?.name).toBe("games_a");
+  });
+
+  async function prepareRenamedRepertoireLineSwitch() {
+    mocks.useActualGameSelector = true;
+    mocks.useActualGameInfo = true;
+    mocks.visibleIndices = [0, 1];
+    if (tabA.gameOrigin.kind !== "file") throw new Error("Expected a file fixture");
+    jotaiStore.set(tabsAtom, [
+      {
+        ...tabA,
+        gameOrigin: {
+          ...tabA.gameOrigin,
+          file: {
+            ...tabA.gameOrigin.file,
+            metadata: { type: "repertoire", tags: [] },
+          },
+        },
+      },
+      tabB,
+    ]);
+    const original = {
+      ...defaultTree().headers,
+      white: "Old line",
+      black: "Old idea",
+      event: "fertig",
+    };
+    treeStore.getState().setHeaders(original);
+    treeStore.getState().save("a".repeat(64));
+    mocks.readGames.mockResolvedValue([
+      { pgn: "first", stamp: "a".repeat(64), revision: "r1", present: true },
+      { pgn: "second", stamp: "b".repeat(64), revision: "r1", present: true },
+    ]);
+    mocks.parsePGN.mockImplementation(async (pgn: string) => ({
+      headers: pgn === "first" ? original : { ...original, white: "Second line" },
+    }));
+    const replacement = diskGame();
+    replacement.tree.headers = { ...original, white: "Second line", black: "Second idea" };
+    mocks.loadFileGame.mockResolvedValue(replacement);
+    await act(async () => root.render(renderPanel()));
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("button[aria-expanded]")!.click(),
+    );
+    const previousRow = () =>
+      container.querySelector<HTMLElement>('[data-line-index="0"] [role="option"]')!;
+    expect(previousRow().textContent).toContain("Old line");
+    for (const [label, value] of [
+      ["GameInfo.LineName", "Dragon System"],
+      ["GameInfo.Idea", "6...Dc7 plan"],
+    ]) {
+      const input = container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+          input,
+          value,
+        );
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    }
+    expect(previousRow().textContent).toContain("Dragon System");
+    expect(previousRow().querySelector('[style*="dimmed"]')?.textContent).toBe("6...Dc7 plan");
+    const pageReads = mocks.readGames.mock.calls.length;
+    await act(async () =>
+      container.querySelector<HTMLElement>('[data-line-index="1"] [role="option"]')!.click(),
+    );
+    await expectPageConfirmation();
+    return { previousRow, pageReads };
+  }
+
+  test("saved rename survives a line switch", async () => {
+    const { previousRow, pageReads } = await prepareRenamedRepertoireLineSwitch();
+    await act(async () => modalButton("Tab.SaveAndClose").click());
+    expect(mocks.writeGame).toHaveBeenCalledOnce();
+    expect(mocks.readGames).toHaveBeenCalledTimes(pageReads);
+    expect(treeStore.getState().dirty).toBe(false);
+    expect(jotaiStore.get(currentTabAtom)?.gameOrigin).toMatchObject({ gameNumber: 1 });
+    expect(previousRow().getAttribute("aria-selected")).toBe("false");
+    expect(previousRow().textContent).toContain("Dragon System");
+    expect(previousRow().querySelector('[style*="dimmed"]')?.textContent).toBe("6...Dc7 plan");
+    expect(previousRow().textContent).not.toContain("Old line");
+    expect(previousRow().textContent).not.toContain("Old idea");
+    expect(mocks.notify).not.toHaveBeenCalled();
+  });
+
+  test("discarded rename restores the disk title after a line switch", async () => {
+    const { previousRow, pageReads } = await prepareRenamedRepertoireLineSwitch();
+    await discardActualPage();
+    expect(mocks.writeGame).not.toHaveBeenCalled();
+    expect(mocks.readGames.mock.calls.length).toBeGreaterThan(pageReads);
+    expect(treeStore.getState().dirty).toBe(false);
+    expect(jotaiStore.get(currentTabAtom)?.gameOrigin).toMatchObject({ gameNumber: 1 });
+    expect(previousRow().getAttribute("aria-selected")).toBe("false");
+    expect(previousRow().textContent).toContain("Old line");
+    expect(previousRow().querySelector('[style*="dimmed"]')?.textContent).toBe("Old idea");
+    expect(previousRow().textContent).not.toContain("Dragon System");
+    expect(previousRow().textContent).not.toContain("6...Dc7 plan");
+    expect(mocks.notify).not.toHaveBeenCalled();
+  });
 
   function diskGame(): Awaited<ReturnType<typeof loadFileGame>> {
     const tree = defaultTree();
@@ -1140,15 +1335,58 @@ describe("InfoPanel game loading and cancellation", () => {
   });
 
   test.each([
-    { event: "Previous chapter", white: "?", black: "?", expected: "Renamed chapter" },
-    { event: "Previous event", white: "White", black: "Black", expected: "White - Black" },
-  ])("title editing derives the file tab name as $expected", async ({ expected, ...headers }) => {
-    treeStore.getState().setHeaders({ ...treeStore.getState().headers, ...headers });
+    {
+      event: "Previous chapter",
+      white: "?",
+      black: "?",
+      initialName: "Previous chapter",
+      expected: "Renamed chapter",
+    },
+    {
+      event: "Previous event",
+      white: "White",
+      black: "Black",
+      initialName: "White - Black",
+      expected: "White - Black",
+    },
+  ])(
+    "title editing derives the file tab name as $expected",
+    async ({ expected, initialName, ...headers }) => {
+      mocks.useActualGameInfo = true;
+      jotaiStore.set(tabsAtom, [{ ...tabA, name: initialName }, tabB]);
+      treeStore.getState().setHeaders({ ...treeStore.getState().headers, ...headers });
+      await act(async () => root.render(renderPanel()));
+      const input = container.querySelector<HTMLInputElement>(
+        'input[placeholder="GameInfo.UnknownEvent"]',
+      )!;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+          input,
+          "Renamed chapter",
+        );
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      expect(treeStore.getState().headers.event).toBe("Renamed chapter");
+      expect(jotaiStore.get(currentTabAtom)?.name).toBe(expected);
+      expect(jotaiStore.get(currentTabAtom)?.gameOrigin).toEqual(tabA.gameOrigin);
+    },
+  );
+
+  test("a manual tab name survives mount and edits until its derived title changes", async () => {
+    jotaiStore.set(tabsAtom, [{ ...tabA, name: "My manual name" }, tabB]);
+    treeStore.getState().setHeaders({ ...defaultTree().headers, event: "Chapter" });
     await act(async () => root.render(renderPanel()));
+    expect(jotaiStore.get(currentTabAtom)?.name).toBe("My manual name");
     await act(async () =>
-      container.querySelector<HTMLButtonElement>('[data-testid="game-info"]')!.click(),
+      treeStore.getState().setHeaders({ ...treeStore.getState().headers, site: "Elsewhere" }),
     );
-    expect(jotaiStore.get(currentTabAtom)?.name).toBe(expected);
+    expect(jotaiStore.get(currentTabAtom)?.name).toBe("My manual name");
+    await act(async () =>
+      treeStore
+        .getState()
+        .setHeaders({ ...treeStore.getState().headers, white: "White", black: "Black" }),
+    );
+    expect(jotaiStore.get(currentTabAtom)?.name).toBe("White - Black");
     expect(jotaiStore.get(currentTabAtom)?.gameOrigin).toEqual(tabA.gameOrigin);
   });
 
