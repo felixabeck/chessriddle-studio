@@ -22,6 +22,7 @@ import type { DatabaseHandle } from "@/bindings";
 import { databaseHandleKey, type DatabaseList, type ManagedDatabaseInfo } from "@/utils/db";
 import { DATABASE_LIST_KEY } from "@/hooks/useDatabaseList";
 import { installMatchMediaStub } from "@/tests/matchMedia";
+import { installInlineComputedStyleStub } from "@/tests/computedStyle";
 import { catalogueI18n, shippedCatalogues } from "@/tests/catalogues";
 import type { SupportedLocale } from "@/i18n";
 import { formatNumber } from "@/utils/format";
@@ -113,6 +114,8 @@ globalThis.ResizeObserver = MockResizeObserver;
 
 // DataTable checks an empty media query for columns without a visibility restriction.
 installMatchMediaStub({ matches: (query) => query === "" });
+// Mantine's layout hooks would otherwise spend most of each render in jsdom's style computation.
+installInlineComputedStyleStub();
 
 describe("explorer game failure catalogues", () => {
   const templates = {
