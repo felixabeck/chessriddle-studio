@@ -99,6 +99,17 @@ describe("untranslated UI literal gate", () => {
     ]);
   });
 
+  test("permits only the wordmark parts in the title bar", () => {
+    const wordmark = `<span><span>Chess</span><span>Riddle</span> <span>Studio</span></span>`;
+    expect(findLiterals(wordmark, "src/components/TopBar.tsx")).toEqual([]);
+    expect(findLiterals(`<Text>Window</Text>`, "src/components/TopBar.tsx")).toEqual(["Window"]);
+    expect(findLiterals(wordmark, "src/components/home/Welcome.tsx")).toEqual([
+      "Chess",
+      "Riddle",
+      "Studio",
+    ]);
+  });
+
   test("rejects additional accessible strings and confirmation props", () => {
     const source = `<Slider aria-valuetext="Engine strength" aria-description="Current strength" confirmLabel="Apply" cancelLabel="Dismiss" />`;
     expect(findLiterals(source)).toEqual(

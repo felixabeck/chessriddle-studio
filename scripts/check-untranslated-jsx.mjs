@@ -57,6 +57,8 @@ function isStructuredTechnicalLiteral(value, filename) {
   const basename = filename.split("/").at(-1);
   if (namedAssetRegistries.has(basename))
     return /^\d+%$|^\(\d+\)$/u.test(value) || /^[\p{L}\d .()]+$/u.test(value);
+  // The title-bar wordmark colours each part of the brand name separately.
+  if (basename === "TopBar.tsx") return /^(?:Chess|Riddle|Studio)$/u.test(value);
   return (
     productIdentitySources.has(basename) &&
     /^(?:ChessRiddle Studio|En Croissant|Lichess|Chess\.com|chess\.com|www\.encroissant\.org)$/u.test(
