@@ -110,3 +110,23 @@ finding ids and date.
   puzzles here?" On the recommendation above: "Yes, I will definitely, I want to
   build this."
 - **Date:** 2026-11-09. Technical record: `d-20261110-01`.
+
+## 2026-11-10 — Arrow down at a line end stays at its own fork
+
+- **Question:** Where does arrow down go at the end of a line, so that variations can
+  be walked from the board alone, without reading the notation?
+- **Choice:** At the end of a variation, arrow down goes to the next sibling variation
+  of the same fork. After the last sibling it goes to the main move those variations
+  are alternatives to. At the end of the main line it does nothing. Inside a line it
+  still jumps to the line's end, and the variation selector stays the way into a
+  variation.
+- **Ruled out:** Walking variation starts in notation order (the earlier behaviour):
+  the end of a nested variation jumped to an unrelated variation further down.
+  Arrow down inside a line entering the next variation below: it only works when the
+  notation shows that a variation exists. Landing on the move after the main move:
+  the main move itself is never shown as its own step.
+- **Felix's reason:** "I don't want to look at the right side. I just want to look at
+  the board and then navigate through it." On landing on the main move: "that would
+  skip a move which is not ideal", and, although arrow down then jumps up in the
+  notation, "logically it's still the best solution".
+- **Date:** 2026-11-10.
