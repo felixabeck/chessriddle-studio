@@ -26,7 +26,8 @@
 }
 
 /* Inline display: flex keeps the root a flex row, so compact stacking is explicit.
-   The 16rem floor applies only beside the list. */
+   Stacked, the panel keeps its 16rem floor on both axes and starts at the left edge,
+   so .tabs scrolls the rest right and down. */
 .tabs[data-compact] {
   flex-direction: column;
 }
@@ -37,7 +38,7 @@
 
 .tabs[data-compact] .panel {
   flex: 1 1 auto;
-  min-width: 0;
+  min-height: 16rem;
 }
 
 .engine.engine {
