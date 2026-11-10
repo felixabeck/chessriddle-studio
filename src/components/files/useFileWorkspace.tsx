@@ -1,5 +1,6 @@
 import {
   libraryButtonProps,
+  libraryDangerButtonProps,
   LibrarySectionHeading,
   libraryClasses,
 } from "@/components/library/presentation";
@@ -736,10 +737,7 @@ export function useFileWorkspace(
               </Button>
               <Button
                 size="xs"
-                {...libraryButtonProps}
-                variant="default"
-                color="danger"
-                c="var(--cf-foreground)"
+                {...libraryDangerButtonProps}
                 onClick={() => setDeleteTarget(selected)}
               >
                 {t("Files.Trash", { defaultValue: "Trash" })}

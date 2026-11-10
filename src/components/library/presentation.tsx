@@ -7,6 +7,15 @@ export { classes as libraryClasses };
 
 export const libraryButtonProps = { color: "gold", styles: wrappingButton } as const;
 
+// The default variant with a foreground label keeps destructive Library actions above AA
+// contrast in the dark theme, where the filled danger fill measures 3.29:1.
+export const libraryDangerButtonProps = {
+  ...libraryButtonProps,
+  variant: "default",
+  color: "danger",
+  c: "var(--cf-foreground)",
+} as const;
+
 export function LibrarySectionHeading({
   children,
   count,

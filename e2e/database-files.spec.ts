@@ -1117,9 +1117,10 @@ for (const surface of desktopLibrarySurfaces) {
 
     mixedTest(
         `database-files: mixed Library databases/contained controls at ${surface.width}px ${surface.scale}% ${surface.scheme}`,
-        async ({ page, mixed, assertNoHorizontalOverflow }) => {
+        async ({ page, mixed, assertAccessible, assertNoHorizontalOverflow }) => {
             await prepareMixedFile(mixed, page, surface);
             await exerciseMixedDatabases(mixed, page, assertNoHorizontalOverflow);
+            await assertAccessible();
             await mixed.snapshot("database");
         },
     );

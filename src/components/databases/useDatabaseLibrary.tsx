@@ -1,4 +1,8 @@
-import { libraryButtonProps, libraryClasses } from "@/components/library/presentation";
+import {
+  libraryButtonProps,
+  libraryDangerButtonProps,
+  libraryClasses,
+} from "@/components/library/presentation";
 import NewDatabaseGameButton from "@/components/boards/NewDatabaseGameButton";
 import { tauri } from "@/platform/tauri";
 import { listingFailure } from "@/components/files/listingFailure";
@@ -580,7 +584,7 @@ export function useDatabaseLibrary(
                   </Button>
                 </Group>
               )}
-              <Button {...libraryButtonProps} onClick={() => setDeleteModal(true)} color="danger">
+              <Button {...libraryDangerButtonProps} onClick={() => setDeleteModal(true)}>
                 {t("Common.Delete")}
               </Button>
             </Group>
