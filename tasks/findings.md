@@ -22577,6 +22577,9 @@ Rejected: wrapping or shrinking the button, lowering the 16rem floor, a CSS-only
 The empty parentheses in the closing note above should name d-20261110-05, which records why the tabs stack and what was rejected.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"6c24496378e32c9f5ab8a24e1b07146726f66143528337ecbe65067e1ba4f0df","input_sha256":"f24505237faeb4b0e8e9048bc4e861ff5bedbb91c41c48c2362cfdb2237319f5","kind":"mutation-receipt","operation":"7d6925df098c462389319ad6814d65d6a90ba8597c794ec17c86b574d311ccb3","options":{"section":null},"request_id_sha256":null,"results":["f-20261109-04"],"target":"f-20261109-04","v":1} -->
 
+The hashes in the closing note predate a rebase. The fix is the three commits titled "fix(analysis): stack the analysis tabs when the pane is too narrow", "fix(analysis): drive the stacked tabs through a real horizontal orientation" and "fix(analysis): keep the stacked panel's 16rem floor on both axes". The third was added after the final e2e gate showed tablebase cards collapsing at 200% font scale. The stacked panel keeps its 16rem floor on both axes and `.tabs` scrolls the rest right and down.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"11d3038ea16a1f99d4e458a450dbc00d911992cec3a739ba86d833aae2ea1dbc","input_sha256":"8305eab2bb1eb22c9c69e69578507bdede2434d95fab98bfa06d20659e90ef06","kind":"mutation-receipt","operation":"4761d67cccb0d2ad4b90c179dbdfdb8fbce5f7cb99d64456620482ef8fbc4cf4","options":{"section":null},"request_id_sha256":null,"results":["f-20261109-04"],"target":"f-20261109-04","v":1} -->
+
 ---
 
 ## 2026-11-09 — filed through the inbox spool
