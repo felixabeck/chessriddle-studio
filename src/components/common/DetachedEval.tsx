@@ -1,4 +1,3 @@
-import { useOwnerTabId } from "@/state/tabScope";
 import { Box, Group, Paper, Stack, Text, Tooltip, useMantineTheme } from "@mantine/core";
 import { ArrowDownToLine, ArrowUpToLine, PinOff, Pause, Play } from "lucide-react";
 import { useAtom, useAtomValue } from "jotai";
@@ -12,15 +11,15 @@ import {
   detachedEngineLinesAtom,
   detachedEnginePlacementAtom,
   enginesAtom,
-  tabEngineSettingsFamily,
 } from "@/state/atoms";
 import { getVariationLine } from "@/utils/chess";
 import type { BestMoves } from "@/bindings";
-import { engineMultiPv, type Engine } from "@/utils/engines";
+import { engineMultiPv, setEngineMultiPv, type Engine } from "@/utils/engines";
 import AssessmentSymbol from "../panels/analysis/AssessmentSymbol";
 import { engineLinePositions, PreviewEngineLineMove } from "../panels/analysis/EngineLinePreview";
 import LinesSlider, { LINE_COUNT_OPTIONS } from "../panels/analysis/LinesSlider";
 import { useDisplayedEngineLines } from "../panels/analysis/useDisplayedEngineLines";
+import { useTabEngineSettings } from "../panels/analysis/useTabEngineSettings";
 import { EngineScoreBubble } from "../panels/analysis/ScoreBubble";
 import classes from "./DetachedEval.module.css";
 import IconAction from "./IconAction";
@@ -62,7 +61,6 @@ const DetachedEvalInner = memo(function DetachedEvalInner({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const ownerTabId = useOwnerTabId();
   const store = useContext(TreeStateContext)!;
   const rootFen = useStore(store, (s) => s.root.fen);
   const moves = useStore(
@@ -81,14 +79,7 @@ const DetachedEvalInner = memo(function DetachedEvalInner({
   }, []);
   const theme = useMantineTheme();
 
-  const [settings, setSettings] = useAtom(
-    tabEngineSettingsFamily({
-      engineId: engine.id,
-      defaultSettings: engine.settings ?? undefined,
-      defaultGo: engine.go ?? undefined,
-      tab: ownerTabId,
-    }),
-  );
+  const { settings, setSettings } = useTabEngineSettings(engine);
 
   const {
     lines: engineVariations,
@@ -148,14 +139,22 @@ const DetachedEvalInner = memo(function DetachedEvalInner({
             </Text>
           )}
         </Group>
-        {multiPv > 1 && (
+        {settings.settings.some(
+          (option) => option.name === "MultiPV" && option.type === "string",
+        ) && (
           <Tooltip label={t("Engines.Settings.NumOfLines")}>
             <Box>
               <LinesSlider
                 ariaLabel={t("Engines.Settings.NumOfLines")}
                 value={Math.min(lineCap ?? multiPv, multiPv, LINE_COUNT_OPTIONS.length)}
-                setValue={setLineCap}
-                max={multiPv}
+                setValue={(count) => {
+                  setLineCap(count);
+                  setSettings((previous) =>
+                    count > engineMultiPv(previous.settings)
+                      ? { ...previous, settings: setEngineMultiPv(previous.settings, count) }
+                      : previous,
+                  );
+                }}
               />
             </Box>
           </Tooltip>

@@ -6,8 +6,6 @@ export default function LinesSlider(props: {
   value: number;
   setValue: (v: number) => void;
   color?: string;
-  /** Options above this count are disabled. */
-  max?: number;
   ariaLabel?: string;
 }) {
   const theme = useMantineTheme();
@@ -20,7 +18,6 @@ export default function LinesSlider(props: {
       data={LINE_COUNT_OPTIONS.map((count) => ({
         value: count.toString(),
         label: count.toString(),
-        disabled: props.max !== undefined && count > props.max,
       }))}
       value={props.value.toString()}
       onChange={(v) => props.setValue(Number.parseInt(v))}

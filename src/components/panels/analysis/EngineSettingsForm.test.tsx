@@ -78,7 +78,14 @@ vi.mock("@/components/common/GoModeInput", () => ({ default: () => null }));
 vi.mock("./CoresSlider", () => ({ default: () => null }));
 vi.mock("./HashSlider", () => ({ default: () => null }));
 vi.mock("./LinesSlider", () => ({
-  default: ({ value }: { value: number }) => <output data-testid="multipv">{value}</output>,
+  default: ({ value, setValue }: { value: number; setValue: (value: number) => void }) => (
+    <>
+      <output data-testid="multipv">{value}</output>
+      <button type="button" onClick={() => setValue(5)}>
+        5 lines
+      </button>
+    </>
+  ),
 }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -140,6 +147,29 @@ test("uses last-wins settings and immutable ids for sync and advanced navigation
     ).click();
   });
   expect(mocks.navigate).toHaveBeenCalledWith({ to: "/engines", search: { selected: 1 } });
+});
+
+test("selecting a line count updates MultiPV through the settings setter", async () => {
+  const setSettings = await render();
+  const previous: Settings = {
+    ...settings,
+    settings: [...settings.settings, { type: "string", name: "Hash", value: "128" }],
+  };
+  await act(async () => {
+    [...host.querySelectorAll("button")]
+      .find((button) => button.textContent === "5 lines")!
+      .click();
+  });
+  const update = setSettings.mock.calls[0][0] as (value: Settings) => Settings;
+  expect(update(previous)).toEqual({
+    ...previous,
+    settings: [
+      { type: "string", name: "MultiPV", value: "5" },
+      { type: "string", name: "MultiPV", value: "5" },
+      { type: "string", name: "Hash", value: "128" },
+    ],
+  });
+  expect(previous.settings[1]).toEqual({ type: "string", name: "MultiPV", value: "4" });
 });
 
 test("a rejected kill leaves enabled state unchanged and notifies", async () => {

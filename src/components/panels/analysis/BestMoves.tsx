@@ -25,19 +25,16 @@ import {
   Crosshair,
 } from "lucide-react";
 import equal from "fast-deep-equal";
-import { useAtom, useAtomValue, useStore } from "jotai";
-import { memo, startTransition, useCallback } from "react";
+import { useAtom, useAtomValue } from "jotai";
+import { memo, startTransition } from "react";
 import { useTranslation } from "react-i18next";
 import type { BestMoves } from "@/bindings";
 import { IconAction } from "@/components/common/IconAction";
-import { useEngineEditDraft, type EngineEditIntent } from "@/components/engines/engineEditDraft";
-import { projectAnalysisSettings } from "@/state/analysisSettings";
 import {
   currentDetachedEngineAtom,
   threatFamily,
   engineProgressFamily,
   engineRetryFamily,
-  tabEngineSettingsFamily,
 } from "@/state/atoms";
 import { translateChessopsError } from "@/utils/chessops";
 import type { ChessDBLine } from "@/utils/chessdb/api";
@@ -47,8 +44,9 @@ import { formatScore } from "@/utils/score";
 import AnalysisRow from "./AnalysisRow";
 import AssessmentSymbol from "./AssessmentSymbol";
 import classes from "./BestMoves.module.css";
-import EngineSettingsForm, { type Settings } from "./EngineSettingsForm";
+import EngineSettingsForm from "./EngineSettingsForm";
 import { engineFailureMessage, useDisplayedEngineLines } from "./useDisplayedEngineLines";
+import { useTabEngineSettings } from "./useTabEngineSettings";
 
 export const arrowColors = [
   { strong: "blue", pale: "paleBlue" },
@@ -81,58 +79,7 @@ function BestMovesComponent({
   const ownerTabId = useOwnerTabId();
   const engineProgress = useAtomValue(engineProgressFamily({ engine: engine.id, tab: ownerTabId }));
   const [, setRetry] = useAtom(engineRetryFamily({ engine: engine.id, tab: ownerTabId }));
-  const { displayed, readDisplayed, submit } = useEngineEditDraft(engine);
-  const store = useStore();
-  const settingsAtom = tabEngineSettingsFamily({
-    engineId: engine.id,
-    defaultSettings: engine.settings ?? undefined,
-    defaultGo: engine.go ?? undefined,
-    tab: ownerTabId,
-  });
-  const [committedSettings, setSettings2] = useAtom(settingsAtom);
-
-  const settings = projectAnalysisSettings(committedSettings, displayed);
-
-  const setSettings = useCallback(
-    (fn: (prev: Settings) => Settings) => {
-      const pending = readDisplayed();
-      const current = store.get(settingsAtom);
-      const previous = projectAnalysisSettings(current, pending);
-      const newSettings = fn(previous);
-      if (!newSettings.synced) {
-        setSettings2(newSettings);
-        return;
-      }
-      setSettings2((current) => ({
-        ...current,
-        enabled: newSettings.enabled,
-        synced: newSettings.synced,
-      }));
-      const syncing = !previous.synced;
-      const changedOptions = newSettings.settings.filter(
-        (option) =>
-          syncing ||
-          !equal(
-            option,
-            previous.settings.find((old) => old.name === option.name),
-          ),
-      );
-      const removedOptions = previous.settings
-        .filter((old) => !newSettings.settings.some((option) => option.name === old.name))
-        .map((option) => option.name);
-      const goChanged = syncing || !equal(newSettings.go, previous.go);
-      const intents: EngineEditIntent[] = [];
-      if (syncing) intents.push({ kind: "reset", settings: newSettings.settings });
-      else {
-        for (const option of changedOptions)
-          intents.push({ kind: "option", name: option.name, value: option });
-        for (const name of removedOptions) intents.push({ kind: "option", name, value: null });
-      }
-      if (goChanged) intents.push({ kind: "field", field: "go", value: newSettings.go });
-      submit(intents);
-    },
-    [readDisplayed, settingsAtom, store, setSettings2, submit],
-  );
+  const { settings, setSettings } = useTabEngineSettings(engine);
 
   const [settingsOn, toggleSettingsOn] = useToggle();
   const [threat, setThreat] = useAtom(useTabAtom(threatFamily));

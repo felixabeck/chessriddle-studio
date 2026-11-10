@@ -27,6 +27,14 @@ export function engineMultiPv(settings: EngineOption[]): number {
     return Number.isInteger(value) && value >= 1 ? value : 1;
 }
 
+export function setEngineMultiPv(settings: EngineOption[], count: number): EngineOption[] {
+    return settings.map((option) =>
+        option.name === "MultiPV" && option.type === "string"
+            ? { ...option, value: String(count || 1) }
+            : option,
+    );
+}
+
 /** Defaults for the settings every local engine entry needs. */
 export function requiredEngineSettingsDefaults(config: EngineConfig): EngineOption[] {
     return config.options

@@ -1,5 +1,5 @@
 import { act } from "react";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createTreeStore } from "@/state/store/tree";
 import {
   currentDetachedEngineAtom,
@@ -45,9 +45,13 @@ const threatLines = [
 const THREAT_LINE = "1...e52.♘f3♘c6";
 
 let h: ReturnType<typeof engineDisplayHarness>;
+beforeEach(() => {
+  localStorage.removeItem("detached-engine-lines");
+  h = engineDisplayHarness();
+  h.store.set(detachedEngineLinesAtom, null);
+});
 afterEach(async () => h.close());
 test("DetachedEval drops historical threat PV and score in check and restores legal analysis", async () => {
-  h = engineDisplayHarness();
   const tree = createTreeStore();
   await h.store.set(enginesAtom, [displayEngine]);
   h.store.set(currentDetachedEngineAtom, displayEngine.id);
@@ -71,7 +75,6 @@ test("DetachedEval drops historical threat PV and score in check and restores le
   tree.dispose();
 });
 test("DetachedEval uses the shared dimmed fallback and replaces it with current lines", async () => {
-  h = engineDisplayHarness();
   const tree = createTreeStore();
   expect((await h.store.set(enginesAtom, [displayEngine])).saved).toBe(true);
   h.store.set(currentDetachedEngineAtom, displayEngine.id);
@@ -98,7 +101,6 @@ test("DetachedEval uses the shared dimmed fallback and replaces it with current 
 test.each([false, true])(
   "P2 DetachedEval shows failure with historical evaluation, partial lines %s",
   async (partial) => {
-    h = engineDisplayHarness();
     const tree = createTreeStore();
     expect((await h.store.set(enginesAtom, [displayEngine])).saved).toBe(true);
     h.store.set(currentDetachedEngineAtom, displayEngine.id);
@@ -144,16 +146,18 @@ const threeLines = [
   },
 ];
 
-async function renderPinned(multiPv: string | null, lines = threeLines) {
+async function renderPinned(multiPv: string | null, lines = threeLines, synced = false) {
   installResizeObserverStub();
-  h = engineDisplayHarness();
   const tree = createTreeStore();
-  expect((await h.store.set(enginesAtom, [displayEngine])).saved).toBe(true);
+  const settings =
+    multiPv === null ? [] : [{ type: "string" as const, name: "MultiPV", value: multiPv }];
+  expect((await h.store.set(enginesAtom, [{ ...displayEngine, settings }])).saved).toBe(true);
   h.store.set(currentDetachedEngineAtom, displayEngine.id);
   if (multiPv !== null)
     h.store.set(h.settingsAtom, (s) => ({
       ...s,
-      settings: [{ type: "string", name: "MultiPV", value: multiPv }],
+      settings,
+      synced,
     }));
   await h.remember(lines);
   await h.render(
@@ -195,11 +199,20 @@ test("DetachedEval shows every computed line until a cap is chosen, and never mo
   const tree = await renderPinned("3");
   for (const text of [LINE, "1.d4d5", "1.c4e5"]) expect(h.host.textContent).toContain(text);
   expect(lineCountInput(3)?.checked).toBe(true);
-  expect([4, 5].map((count) => lineCountInput(count)?.disabled)).toEqual([true, true]);
+  expect([1, 2, 3, 4, 5].map((count) => lineCountInput(count)?.disabled)).toEqual([
+    false,
+    false,
+    false,
+    false,
+    false,
+  ]);
 
   await act(async () => lineCountInput(2)!.click());
   expect(h.store.get(detachedEngineLinesAtom)).toBe(2);
   expect(localStorage.getItem("detached-engine-lines")).toBe("2");
+  expect(h.store.get(h.settingsAtom).settings).toEqual([
+    { type: "string", name: "MultiPV", value: "3" },
+  ]);
   expect(h.host.textContent).toContain("1.d4d5");
   expect(h.host.textContent).not.toContain("1.c4e5");
 
@@ -209,7 +222,65 @@ test("DetachedEval shows every computed line until a cap is chosen, and never mo
   tree.dispose();
 });
 
-test("DetachedEval hides the line selector when the engine computes one line", async () => {
+test.each([false, true])(
+  "DetachedEval raises MultiPV to four on a synced %s tab",
+  async (synced) => {
+    const tree = await renderPinned("3", threeLines, synced);
+    await act(async () => lineCountInput(4)!.click());
+    expect(h.store.get(h.settingsAtom).settings).toEqual([
+      { type: "string", name: "MultiPV", value: "4" },
+    ]);
+    expect(h.store.get(h.settingsAtom).synced).toBe(synced);
+    expect(h.store.get(enginesAtom)![0].settings).toEqual([
+      { type: "string", name: "MultiPV", value: synced ? "4" : "3" },
+    ]);
+    expect(h.store.get(detachedEngineLinesAtom)).toBe(4);
+    expect(lineCountInput(4)?.checked).toBe(true);
+    expect([1, 2, 3, 4, 5].every((count) => !lineCountInput(count)!.disabled)).toBe(true);
+    const fourth = {
+      ...threeLines[0],
+      multipv: 4,
+      sanMoves: ["Nf3", "d5"],
+      uciMoves: ["g1f3", "d7d5"],
+    };
+    await h.remember([...threeLines, fourth]);
+    expect(h.host.querySelectorAll(`.${scoreBubbleClasses.bubble}`)).toHaveLength(4);
+    expect(h.host.textContent).toContain("1.♘f3d5");
+    tree.dispose();
+  },
+);
+
+test.each([false, true])(
+  "DetachedEval keeps MultiPV three when choosing two on a synced %s tab",
+  async (synced) => {
+    const tree = await renderPinned("3", threeLines, synced);
+    await act(async () => lineCountInput(2)!.click());
+    expect(h.store.get(h.settingsAtom).settings).toEqual([
+      { type: "string", name: "MultiPV", value: "3" },
+    ]);
+    expect(h.store.get(enginesAtom)![0].settings).toEqual([
+      { type: "string", name: "MultiPV", value: "3" },
+    ]);
+    expect(h.store.get(detachedEngineLinesAtom)).toBe(2);
+    expect(lineCountInput(2)?.checked).toBe(true);
+    tree.dispose();
+  },
+);
+
+test("DetachedEval shows the line selector with MultiPV one", async () => {
+  const tree = await renderPinned("1", [displayLines[0]]);
+  expect(lineCountInput(1)?.checked).toBe(true);
+  expect(lineCountInput(5)?.disabled).toBe(false);
+  tree.dispose();
+});
+
+test("DetachedEval clamps the selected line count to five with a larger MultiPV", async () => {
+  const tree = await renderPinned("8");
+  expect(lineCountInput(5)?.checked).toBe(true);
+  tree.dispose();
+});
+
+test("DetachedEval hides the line selector when the engine has no MultiPV option", async () => {
   const tree = await renderPinned(null, [displayLines[0]]);
   expect(h.host.textContent).toContain(LINE);
   expect(lineCountInput(1)).toBeNull();
@@ -310,7 +381,6 @@ async function renderBothSlots(stored: string | null) {
   if (stored === null) localStorage.removeItem(PLACEMENT_KEY);
   else localStorage.setItem(PLACEMENT_KEY, stored);
   installResizeObserverStub();
-  h = engineDisplayHarness();
   const tree = createTreeStore();
   expect((await h.store.set(enginesAtom, [displayEngine])).saved).toBe(true);
   h.store.set(currentDetachedEngineAtom, displayEngine.id);
@@ -378,7 +448,6 @@ test("DetachedEval swap focus does not leak into a later mount when the other sl
   try {
     localStorage.removeItem(PLACEMENT_KEY);
     installResizeObserverStub();
-    h = engineDisplayHarness();
     const tree = createTreeStore();
     expect((await h.store.set(enginesAtom, [displayEngine])).saved).toBe(true);
     h.store.set(currentDetachedEngineAtom, displayEngine.id);

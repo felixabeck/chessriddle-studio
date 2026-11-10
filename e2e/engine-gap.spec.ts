@@ -14,7 +14,7 @@ import {
     type MockScenario,
 } from "./fixtures";
 import type { Page } from "@playwright/test";
-import type { ErrorPayload } from "../src/bindings/generated";
+import type { EngineOptions, ErrorPayload } from "../src/bindings/generated";
 
 async function setupNotationMenu(
     page: Page,
@@ -573,7 +573,11 @@ test("engine-gap: pinned engine shows up to its own line count and swaps between
     await expect(detached).toContainText("1.e4e52.♘f3");
     const lineCount = detached.getByRole("radiogroup", { name: "Number of lines", exact: true });
     await expect(lineCount.getByRole("radio", { name: "3", exact: true })).toBeChecked();
-    await expect(lineCount.getByRole("radio", { name: "4", exact: true })).toBeDisabled();
+    for (const count of [1, 2, 3, 4, 5]) {
+        await expect(
+            lineCount.getByRole("radio", { name: String(count), exact: true }),
+        ).toBeEnabled();
+    }
     await lineCount.getByText("2", { exact: true }).click();
     await expect(scores).toHaveText(["+0.34", "+0.21"]);
     await expect(panel.locator("tbody tr > td:first-child > [data-size='md']")).toHaveText([
@@ -608,6 +612,40 @@ test("engine-gap: pinned engine shows up to its own line count and swaps between
     });
     await page.mouse.move(0, 0);
     await expect(preview).toHaveCount(0);
+
+    await lineCount.getByText("4", { exact: true }).click();
+    const raisedSearch = async () =>
+        (await searches()).findLast(({ args }) => {
+            const request = args as AnalysisRequest & { options: EngineOptions };
+            return (
+                request.id === "e2e-engine" &&
+                request.options.extraOptions.some(
+                    (option) =>
+                        option.name === "MultiPV" &&
+                        option.type === "string" &&
+                        option.value === "4",
+                )
+            );
+        })?.args as AnalysisRequest | undefined;
+    await expect.poll(raisedSearch).toBeDefined();
+    const raisedRequest = (await raisedSearch())!;
+    const fourthLine = {
+        ...payload.bestLines[0],
+        multipv: 4,
+        score: { value: { type: "cp" as const, value: -10 }, wdl: null },
+        sanMoves: ["c4", "e5"],
+        uciMoves: ["c2c4", "e7e5"],
+    };
+    await emitTauriEvent({
+        event: "best-moves-payload",
+        payload: {
+            ...bestMovesPayload(raisedRequest, ["e4", "e5", "Nf3"], ["e2e4", "e7e5", "g1f3"], 34),
+            bestLines: [...payload.bestLines, fourthLine],
+        },
+    });
+    await expect(lineCount.getByRole("radio", { name: "4", exact: true })).toBeChecked();
+    await expect(scores).toHaveText(["+0.34", "+0.21", "0.00", "-0.10"]);
+    await expect(detached).toContainText("1.c4e5");
 
     // The bar starts above the panel tabs; its swap button moves it above the notation and back.
     const tabList = page.locator("#topRight").getByRole("tablist").first();

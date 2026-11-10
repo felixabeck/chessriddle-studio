@@ -11,7 +11,7 @@ import GoModeInput from "@/components/common/GoModeInput";
 import { IconAction } from "@/components/common/IconAction";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { enginesAtom } from "@/state/atoms";
-import { type Engine, engineMultiPv, killEngine } from "@/utils/engines";
+import { type Engine, engineMultiPv, setEngineMultiPv, killEngine } from "@/utils/engines";
 import CoresSlider from "./CoresSlider";
 import HashSlider from "./HashSlider";
 import LinesSlider from "./LinesSlider";
@@ -71,11 +71,7 @@ function EngineSettingsForm({
               setSettings((prev) => {
                 return {
                   ...prev,
-                  settings: prev.settings.map((o) =>
-                    o.name === "MultiPV" && o.type === "string"
-                      ? { ...o, value: String(v || 1) }
-                      : o,
-                  ),
+                  settings: setEngineMultiPv(prev.settings, v),
                 };
               })
             }
