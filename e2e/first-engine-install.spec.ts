@@ -142,6 +142,8 @@ test("automatic install stays visible across routes, cancels, and never starts a
     await page.getByRole("link", { name: "Board", exact: true }).click();
     await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     await page.getByRole("tab", { name: "Analysis", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Manage Engines", exact: true })).toBeVisible();
+    await assertPageNotClipped(page);
     await page.getByRole("button", { name: "Select engines", exact: true }).click();
     await expect(button).toBeVisible();
     await expect(button).toBeEnabled();

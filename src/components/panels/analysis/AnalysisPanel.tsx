@@ -83,7 +83,7 @@ function AnalysisPanel() {
   const navigate = useNavigate();
 
   return (
-    <Stack h="100%" pl="xs" style={{ minWidth: 0, minHeight: 0 }}>
+    <Stack h="100%" pl="xs" className={classes.pane} style={{ minWidth: 0, minHeight: 0 }}>
       <Tabs
         h="100%"
         orientation="vertical"
