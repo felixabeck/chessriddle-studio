@@ -33,8 +33,8 @@ command.
 
 ## Relationship to the `build` skill
 
-The normal route for a change is the user-wide `build` skill
-(`~/.claude/skills/build/SKILL.md`). It orchestrates planning, implementation, review, and
+Rule 6b chooses between direct work and the user-wide `build` skill
+(`~/.claude/skills/build/SKILL.md`). Build orchestrates planning, implementation, review, and
 delivery in one session and consumes this file's gate mapping, sensitive-path globs, review tier,
 and project `Skip` catalog instead of duplicating them.
 
