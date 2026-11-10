@@ -410,6 +410,7 @@ test("single click selects, non-first double-click and row Enter activate explic
   const rows = host.querySelectorAll<HTMLElement>('[role="option"]');
   expect(rows).toHaveLength(2);
   expect(rows[1].tabIndex).toBe(0);
+  expect(rows[1].hasAttribute("data-move-key-releases-focus")).toBe(true);
   expect(rows[0].getAttribute("aria-selected")).toBe("true");
   await act(async () => rows[1].click());
   expect(setPage).toHaveBeenCalledExactlyOnceWith(1);

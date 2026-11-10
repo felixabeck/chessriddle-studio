@@ -11,6 +11,7 @@ import type { FileWorkspaceHandle, StampedGame } from "@/bindings";
 import ConfirmModal from "@/components/common/ConfirmModal";
 import { IconAction } from "@/components/common/IconAction";
 import { gameRowActivation } from "@/components/common/gameOpen";
+import { moveKeyReleasesFocus } from "@/components/common/MoveCell";
 import { lineSectionOf } from "@/components/files/lineSection";
 import type { MoveLines } from "@/components/files/reorderLines";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
@@ -441,6 +442,7 @@ function GameRow({
         aria-selected={index === activePage}
         aria-description={section || undefined}
         {...(omitted ? {} : gameRowActivation(index, onActivate ?? setPage))}
+        {...moveKeyReleasesFocus}
         style={{ height: rowHeight, flex: "none" }}
         justify="space-between"
         wrap="nowrap"

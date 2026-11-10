@@ -522,6 +522,39 @@ for (const gesture of ["button", "double-click", "Enter"] as const) {
     });
 }
 
+test("files-preview: a move key takes focus off the clicked row, Enter before it still opens", async ({
+    page,
+    mockScenario,
+}) => {
+    await mockScenario({
+        commands: filesWorkspaceCommands([[gameOpeningFixture.file]], gameOpeningCommands),
+    });
+    await page.goto("/library");
+    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await selectFilesTreeRow(page, gameOpeningFixture.file.name);
+    const second = page.getByRole("option", { name: /Second White - Second Black/ });
+    await second.click();
+    await expect(second).toHaveAttribute("aria-selected", "true");
+    await expect(second).toBeFocused();
+    const firstMove = page.getByRole("button", { name: "d4", exact: true });
+    await expect(firstMove).toBeVisible();
+    const moveBackground = () =>
+        firstMove.evaluate((cell) => cell.style.getPropertyValue("--light-bg"));
+    expect(await moveBackground()).toBe("transparent");
+
+    await page.keyboard.press("ArrowRight");
+
+    await expect.poll(moveBackground).not.toBe("transparent");
+    await expect(second).not.toBeFocused();
+    expect(await second.evaluate((row) => row.matches(":focus-visible"))).toBe(false);
+
+    await second.click();
+    await expect(second).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByRole("tab", { name: /Second White - Second Black/ })).toBeVisible();
+});
+
 test("files-preview: a dragged row's preview keeps the row's real size and layout", async ({
     page,
     mockScenario,

@@ -151,6 +151,7 @@ beforeEach(() => {
     .mockReset()
     .mockResolvedValue({ candidates: [], complete: true, failures: [] });
   settings.chooseVariation = true;
+  settings.keys.NEXT_MOVE = "arrowright";
   settings.keys.GO_TO_BRANCH_START = "arrowup";
   settings.keys.GO_TO_BRANCH_END = "arrowdown";
   host = document.createElement("div");
@@ -430,6 +431,119 @@ test("arrow down visits the next sibling then the main move and never scrolls at
   });
   expect(store.getState().position).toEqual([0, 0]);
   expect(event.defaultPrevented).toBe(true);
+});
+
+function focusedRow(host: Element = document.body) {
+  const row = document.createElement("div");
+  row.tabIndex = 0;
+  row.setAttribute("data-move-key-releases-focus", "true");
+  host.append(row);
+  act(() => row.focus());
+  expect(document.activeElement).toBe(row);
+  return row;
+}
+
+test.each([
+  ["PREVIOUS_MOVE", "goToPrevious", "ArrowLeft", false],
+  ["NEXT_MOVE", "goToNext", "ArrowRight", false],
+  ["GO_TO_START", "goToStart", "ArrowUp", true],
+  ["GO_TO_END", "goToEnd", "ArrowDown", true],
+  ["GO_TO_BRANCH_START", "goToBranchStart", "ArrowUp", false],
+  ["GO_TO_BRANCH_END", "goToBranchEndOrNextLine", "ArrowDown", false],
+  ["NEXT_BRANCH", "nextBranch", "c", false],
+  ["PREVIOUS_BRANCH", "previousBranch", "x", false],
+  ["NEXT_BRANCHING", "nextBranching", "ArrowRight", true],
+  ["PREVIOUS_BRANCHING", "previousBranching", "ArrowLeft", true],
+] as const)("%s runs and lets a marked row give up focus", (_shortcut, action, key, shiftKey) => {
+  settings.chooseVariation = false;
+  store = middleGameStore();
+  render();
+  const spy = vi.fn();
+  act(() => store.setState({ [action]: spy }));
+  const row = focusedRow();
+
+  press(key, { target: row, shiftKey });
+
+  expect(spy).toHaveBeenCalledOnce();
+  expect(document.activeElement).not.toBe(row);
+  row.remove();
+});
+
+test("arrows that only pick in the open variation list leave the row focused", () => {
+  render();
+  press("ArrowRight");
+  expect(options()[0].selected).toBe(true);
+  const row = focusedRow();
+
+  press("ArrowDown", { target: row });
+
+  expect(options()[1].selected).toBe(true);
+  expect(document.activeElement).toBe(row);
+  row.remove();
+});
+
+test("the row gives up focus and the move still happens, on a remapped key", () => {
+  settings.chooseVariation = false;
+  settings.keys.NEXT_MOVE = "j";
+  store = middleGameStore();
+  render();
+  const row = focusedRow();
+
+  press("j", { target: row });
+
+  expect(document.activeElement).not.toBe(row);
+  expect(store.getState().position).toEqual([0, 0]);
+  row.remove();
+});
+
+test("non-navigation keys leave the row focused", () => {
+  store = middleGameStore();
+  render();
+  const row = focusedRow();
+
+  press("Delete", { target: row });
+  press("Enter", { target: row });
+
+  expect(document.activeElement).toBe(row);
+  row.remove();
+});
+
+test("a control nested in a marked row keeps its focus", () => {
+  store = middleGameStore();
+  render();
+  const row = focusedRow();
+  const nested = document.createElement("button");
+  row.append(nested);
+  act(() => nested.focus());
+
+  press("ArrowRight", { target: nested });
+
+  expect(document.activeElement).toBe(nested);
+  row.remove();
+});
+
+test("a row without the marker keeps focus on a move key", () => {
+  store = middleGameStore();
+  render();
+  const row = focusedRow();
+  row.removeAttribute("data-move-key-releases-focus");
+
+  press("ArrowRight", { target: row });
+
+  expect(document.activeElement).toBe(row);
+  row.remove();
+});
+
+test("a row inside an open dialog-owned keyboard keeps focus", () => {
+  store = middleGameStore();
+  render({ modal: true });
+  const dialog = document.querySelector('[role="dialog"]')!;
+  const row = focusedRow(dialog);
+
+  press("ArrowRight", { target: row });
+
+  expect(document.activeElement).toBe(row);
+  row.remove();
 });
 
 function focusDialogButton() {

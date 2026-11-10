@@ -11,6 +11,7 @@ import { nextContinuation } from "@/state/store/tree";
 import { isKeyboardOwnedElsewhere } from "@/utils/keyboardOwnership";
 import { TreeStateContext, useVariationChooser } from "@/components/common/TreeStateContext";
 import IconAction from "./IconAction";
+import { releaseFocusOnMoveKey } from "./MoveCell";
 
 function isBareVerticalArrow(event: KeyboardEvent) {
   return (
@@ -48,6 +49,7 @@ function MoveControls({ readOnly }: { readOnly?: boolean }) {
   };
   const branchNavigation = (action: () => void) => (event: KeyboardEvent) => {
     if (choice && isBareVerticalArrow(event)) return;
+    releaseFocusOnMoveKey(event);
     navigate(action)();
   };
 
@@ -74,11 +76,16 @@ function MoveControls({ readOnly }: { readOnly?: boolean }) {
     ignoreEventWhen: (event: KeyboardEvent) => isKeyboardOwnedElsewhere(event, groupRef.current),
   });
 
+  const moveKey = (action: (event: KeyboardEvent) => void) => (event: KeyboardEvent) => {
+    releaseFocusOnMoveKey(event);
+    action(event);
+  };
+
   const keyMap = useAtomValue(keyMapAtom);
-  useHotkeys(keyMap.PREVIOUS_MOVE.keys, previous, shortcutOptions());
-  useHotkeys(keyMap.NEXT_MOVE.keys, next, shortcutOptions());
-  useHotkeys(keyMap.GO_TO_START.keys, navigate(start), shortcutOptions());
-  useHotkeys(keyMap.GO_TO_END.keys, navigate(end), shortcutOptions());
+  useHotkeys(keyMap.PREVIOUS_MOVE.keys, moveKey(previous), shortcutOptions());
+  useHotkeys(keyMap.NEXT_MOVE.keys, moveKey(next), shortcutOptions());
+  useHotkeys(keyMap.GO_TO_START.keys, moveKey(navigate(start)), shortcutOptions());
+  useHotkeys(keyMap.GO_TO_END.keys, moveKey(navigate(end)), shortcutOptions());
   useHotkeys(
     keyMap.DELETE_MOVE.keys,
     navigate(readOnly ? () => {} : () => deleteMove()),
@@ -103,10 +110,14 @@ function MoveControls({ readOnly }: { readOnly?: boolean }) {
     preventDefault: true,
   });
   useHotkeys("escape", () => close(), shortcutOptions(choice !== null));
-  useHotkeys(keyMap.NEXT_BRANCH.keys, navigate(nextBranch), shortcutOptions());
-  useHotkeys(keyMap.PREVIOUS_BRANCH.keys, navigate(previousBranch), shortcutOptions());
-  useHotkeys(keyMap.NEXT_BRANCHING.keys, navigate(nextBranching), shortcutOptions());
-  useHotkeys(keyMap.PREVIOUS_BRANCHING.keys, navigate(previousBranching), shortcutOptions());
+  useHotkeys(keyMap.NEXT_BRANCH.keys, moveKey(navigate(nextBranch)), shortcutOptions());
+  useHotkeys(keyMap.PREVIOUS_BRANCH.keys, moveKey(navigate(previousBranch)), shortcutOptions());
+  useHotkeys(keyMap.NEXT_BRANCHING.keys, moveKey(navigate(nextBranching)), shortcutOptions());
+  useHotkeys(
+    keyMap.PREVIOUS_BRANCHING.keys,
+    moveKey(navigate(previousBranching)),
+    shortcutOptions(),
+  );
 
   return (
     <Group ref={groupRef} grow gap="xs">

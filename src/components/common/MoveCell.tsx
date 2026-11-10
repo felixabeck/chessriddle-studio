@@ -23,6 +23,23 @@ export function releasePointerFocus(event: MouseEvent<HTMLElement>) {
   if (event.detail > 0) event.currentTarget.blur();
 }
 
+const RELEASES_FOCUS_ATTRIBUTE = "data-move-key-releases-focus";
+
+/**
+ * Marks a focusable row whose focus ends when a move shortcut runs. The row keeps focus after a
+ * click, so Enter still acts on it, but the shortcut steps the moves elsewhere and the browser
+ * would then draw the keyboard focus ring on the row.
+ */
+export const moveKeyReleasesFocus = { [RELEASES_FOCUS_ATTRIBUTE]: true };
+
+/** Only the marked element itself lets go: a control nested in it keeps its own focus. */
+export function releaseFocusOnMoveKey(event: KeyboardEvent) {
+  const { target } = event;
+  if (target instanceof HTMLElement && target.hasAttribute(RELEASES_FOCUS_ATTRIBUTE)) {
+    target.blur();
+  }
+}
+
 interface MoveCellProps {
   annotations: Annotation[];
   isStart: boolean;
