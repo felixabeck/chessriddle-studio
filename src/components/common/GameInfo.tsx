@@ -20,6 +20,22 @@ const EMPTY_STORE = createStore(() => ({
   setHeaders: () => {},
 }));
 
+const SITE_PLATFORM_LABELS = new Map([
+  ["https://lichess.org", "Lichess"],
+  ["https://www.chess.com", "Chess.com"],
+]);
+
+/** Returns the platform label for an exact trusted origin without credentials. */
+function sitePlatformLabel(site: string): string | null {
+  try {
+    const url = new URL(site);
+    if (url.username || url.password) return null;
+    return SITE_PLATFORM_LABELS.get(url.origin) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function GameInfo({
   headers,
   simplified,
@@ -45,6 +61,7 @@ function GameInfo({
 
   const event = headers.event === "?" ? "" : headers.event;
   const site = headers.site === "?" ? "" : headers.site;
+  const sitePlatform = sitePlatformLabel(headers.site);
 
   return (
     <Box px="md" pt="md">
@@ -169,11 +186,10 @@ function GameInfo({
             disabled={disabled}
           />
           <Group justify="center">
-            {headers.site.startsWith("https://lichess.org") ||
-            headers.site.startsWith("https://www.chess.com") ? (
+            {sitePlatform !== null ? (
               <a href={headers.site} target="_blank" rel="noreferrer">
                 <Text p="sm" w={90}>
-                  {headers.site.startsWith("https://lichess.org") ? "Lichess" : "Chess.com"}
+                  {sitePlatform}
                 </Text>
               </a>
             ) : (

@@ -67,6 +67,79 @@ function Editor() {
   );
 }
 
+test.each([
+  ["https://lichess.org/Abcd1234", "Lichess"],
+  ["https://www.chess.com/game/live/123", "Chess.com"],
+])("brands the genuine site %s as %s", async (site, label) => {
+  const state = defaultTree();
+  store.getState().setState({ ...state, headers: { ...state.headers, site } });
+  await act(async () => root.render(<Editor />));
+
+  const anchors = host.querySelectorAll("a");
+  expect(anchors).toHaveLength(1);
+  const anchor = anchors[0];
+  expect(anchor.textContent).toBe(label);
+  expect(anchor.getAttribute("href")).toBe(site);
+  expect(anchor.getAttribute("rel")).toBe("noreferrer");
+  expect(anchor.getAttribute("target")).toBe("_blank");
+});
+
+test.each([
+  "https://lichess.org.attacker.invalid/game",
+  "https://www.chess.com.attacker.invalid/game",
+  "https://lichess.org@attacker.invalid/game",
+  "https://www.chess.com@attacker.invalid/game",
+  "https://user:pw@lichess.org/game",
+  "http://lichess.org/game",
+  "https://lichess.org:8443/game",
+  "https://lichess.org bad",
+])("keeps the untrusted site %s unbranded and editable", async (site) => {
+  const state = defaultTree();
+  store.getState().setState({ ...state, headers: { ...state.headers, site } });
+  await act(async () => root.render(<Editor />));
+
+  expect(host.querySelector("a")).toBeNull();
+  expect(host.textContent).not.toContain("Lichess");
+  expect(host.textContent).not.toContain("Chess.com");
+  const field = host.querySelector<HTMLInputElement>('input[placeholder="GameInfo.UnknownSite"]');
+  expect(field).not.toBeNull();
+  expect(field?.value).toBe(site);
+});
+
+test("keeps a read-only lookalike site literal and brands a genuine site without tree context", async () => {
+  const headers = defaultTree().headers;
+  const site = "https://lichess.org.attacker.invalid/game";
+  await act(async () =>
+    root.render(
+      <MantineProvider env="test">
+        <GameInfo headers={{ ...headers, site }} />
+      </MantineProvider>,
+    ),
+  );
+
+  expect(host.querySelector("a")).toBeNull();
+  expect(host.textContent).toContain(site);
+  expect(host.textContent).not.toContain("Lichess");
+  expect(host.textContent).not.toContain("Chess.com");
+
+  const genuineSite = "https://lichess.org/Abcd1234";
+  await act(async () =>
+    root.render(
+      <MantineProvider env="test">
+        <GameInfo headers={{ ...headers, site: genuineSite }} />
+      </MantineProvider>,
+    ),
+  );
+
+  const anchors = host.querySelectorAll("a");
+  expect(anchors).toHaveLength(1);
+  const anchor = anchors[0];
+  expect(anchor.textContent).toBe("Lichess");
+  expect(anchor.getAttribute("href")).toBe(genuineSite);
+  expect(anchor.getAttribute("rel")).toBe("noreferrer");
+  expect(anchor.getAttribute("target")).toBe("_blank");
+});
+
 test("the Termination field reads the effective value and edits and clears it through the store", async () => {
   const state = defaultTree();
   const node = fixtureNode("e4");
