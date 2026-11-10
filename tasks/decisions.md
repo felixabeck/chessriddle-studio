@@ -13020,3 +13020,31 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Plan review round 1 (four lenses) showed a direct tab-atom write is overwritten on synced tabs by `projectAnalysisSettings`. Reversal path: change the setter in `src/components/common/DetachedEval.tsx`.
 * **Decided by:** Claude Code (Opus 5.5) build run pinned-bar-lines, full auto, 2026-11-10 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"70174788ea0ab982115faa72ae2a14d6f1381e2883cdb22659cbbca2b08de1e7","input_sha256":"f11fbc80f603fbafd09f2f566560d27005bfb63dd73173b01b169a3e5531d161","kind":"mutation-receipt","operation":"a15c8959b988043c2d803c66b27fc7a5fc42600bdf5cf06f44128cb18d6d7a07","options":{"section":null},"request_id_sha256":null,"results":["d-20261110-16"],"target":"decisions-ledger","v":1} -->
+
+### d-20261110-13 — Does a manual tab rename survive a chapter switch in a file tab?
+
+* **Question:** Felix approved that a file tab's name follows the current chapter. A tab can also be renamed by hand. Which wins on the next chapter switch?
+* **Governs:** tasks/plans/2026-11-10-library-chapter-picker.md (file tabs follow the chapter, Library chapter picker)
+* **Chosen:** The chapter switch replaces a manual name, because the tab now shows a different chapter. A manual name lasts until then.
+* **Rejected:** Pinning manual names, which needs a new persisted flag and would leave a tab named after a chapter it no longer shows.
+* **Reason:** It keeps one rule for the tab label. Reversal path: add a `nameIsManual` tab flag that the replacement commit respects.
+* **Decided by:** Claude Code (Opus 5.5) build run 2026-11-10-library-chapter-picker, full auto, 2026-11-10 · **Superseded-by:** -
+
+### d-20261110-14 — Under which name is a file recorded in recents?
+
+* **Question:** `openFile` recorded the recent entry under the tab name, which is now always a chapter name. Recent-only Library rows and the new tab tooltip read that name as the file name.
+* **Governs:** tasks/plans/2026-11-10-library-chapter-picker.md (file tabs follow the chapter, Library chapter picker)
+* **Chosen:** Record the file's own name. Entries already stored under a chapter name stay until the file is next opened through File › Open or the Library listing, since handles are opaque and no handle-to-name lookup exists.
+* **Rejected:** A new native handle-to-name command, outside the request. Keeping the tab name, which shows "Morra › Morra" in the tooltip.
+* **Reason:** The file name is what both readers expect. Reversal path: record `tabName` again in `openFile`.
+* **Decided by:** Claude Code (Opus 5.5) build run 2026-11-10-library-chapter-picker, full auto, 2026-11-10 · **Superseded-by:** -
+
+### d-20261110-15 — Does the expanded Library row keep an "Open" button for chapter 1?
+
+* **Question:** The first proposal to Felix mentioned an Open button on an expanded multi-chapter row; the summary he approved did not.
+* **Governs:** tasks/plans/2026-11-10-library-chapter-picker.md (file tabs follow the chapter, Library chapter picker)
+* **Chosen:** No button. Chapter 1 is the first entry of the expanded list.
+* **Rejected:** A separate Open button, which duplicates the first list entry.
+* **Reason:** One way to open a chapter. Reversal path: add an action to the expanded row header.
+* **Decided by:** Claude Code (Opus 5.5) build run 2026-11-10-library-chapter-picker, full auto, 2026-11-10 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":26,"effect_sha256":"34b64f9e504228c1ae3f3eed0113cf00bbf726a3747d0f57aeda4e0063eb5d2a","input_sha256":"ff75afefb9144e4194dc700cf8ff72e695605a8dbf9d7fced8afb750fd3a9251","kind":"mutation-receipt","operation":"a02a51d0176c2c524f6f464a74769df522715c834175ab5040f55c90a12f4503","options":{"section":null},"request_id_sha256":null,"results":["d-20261110-13","d-20261110-14","d-20261110-15"],"target":"decisions-ledger","v":1} -->
