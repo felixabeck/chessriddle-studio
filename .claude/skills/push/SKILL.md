@@ -307,10 +307,9 @@ gets a `Fix` / `Defer` / `Skip(reason)` verdict. Out-of-area findings are `Defer
 through the project ledger/inbox workflow (policy §4, universal rule 4b); ledger-backed deferrals
 need no manual handoff prompt. Never ask Felix which.
 
-Records-only pushes use policy §1b's single records lens instead of this fan-out. For a mixed range,
-run the §3 fan-out over a DIFF excluding the record paths and, in parallel, the records lens over
-the record paths, as §1b specifies. ChessRiddle Studio's record paths are `tasks/findings.md`,
-`tasks/decisions.md`, `tasks/build-ledger.md` and `tasks/handoffs/**`.
+Record paths follow policy §1b: `tasks/findings.md`, `tasks/decisions.md`, `tasks/build-ledger.md`
+and `tasks/handoffs/**` are ledger records, reviewed by `./scripts/findings.py check` and excluded
+from the §3 fan-out's DIFF. ChessRiddle Studio has no other record paths.
 
 A path below is a Sensitive-Path glob: a hit is `--role sensitive` for that lens (and for
 fixes); everything else is `--role normal`. The globs do not replace named-lens selection.
