@@ -1057,6 +1057,42 @@ async function submitPurgeAndOpenFailureDialog(
     return dialog;
 }
 
+test("async-errors: post-trash undo bar is accessible in the dark theme", async ({
+    page,
+    mockScenario,
+    assertAccessible,
+}) => {
+    await page.addInitScript(() => {
+        localStorage.setItem("font-size", "100");
+        localStorage.setItem("mantine-color-scheme", "dark");
+    });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await mockScenario({
+        commands: filesWorkspaceCommands([[openingDirectory], [], [refreshedDirectory]], {
+            trash_workspace_entry: { result: "11111111-1111-4111-8111-111111111111" },
+        }),
+    });
+    await page.goto("/library");
+    await expect(page.locator("html")).toHaveAttribute("data-mantine-color-scheme", "dark");
+    await page.getByRole("button", { name: "Sammlung auswählen" }).click();
+    await page
+        .getByRole("treeitem", { name: "Openings", exact: true })
+        .getByRole("button", { name: "Löschen" })
+        .click();
+    const trashDialog = page.getByRole("dialog", {
+        name: "In den Papierkorb verschieben",
+        exact: true,
+    });
+    await trashDialog.getByRole("button", { name: "Löschen", exact: true }).click();
+    await expect(page.getByText("Openings wurde in den Papierkorb verschoben.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Rückgängig", exact: true })).toBeVisible();
+    await expect(
+        page.getByRole("button", { name: "Dauerhaft löschen", exact: true }),
+    ).toBeVisible();
+    await assertAccessible();
+});
+
 async function assertPurgeInvocationAndRefresh(page: Page) {
     const fileInvocations = await page.evaluate(() =>
         window.__E2E_TAURI__

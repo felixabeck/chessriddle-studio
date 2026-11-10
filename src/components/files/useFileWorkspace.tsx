@@ -540,12 +540,7 @@ export function useFileWorkspace(
             <Button size="xs" {...libraryButtonProps} onClick={() => setRestoreTarget(trashed)}>
               {t("Common.Undo", { defaultValue: "Undo" })}
             </Button>
-            <Button
-              size="xs"
-              {...libraryButtonProps}
-              color="danger"
-              onClick={() => setPurgeTarget(trashed)}
-            >
+            <Button size="xs" {...libraryDangerButtonProps} onClick={() => setPurgeTarget(trashed)}>
               {t("Files.DeletePermanently", { defaultValue: "Delete permanently" })}
             </Button>
           </Group>
