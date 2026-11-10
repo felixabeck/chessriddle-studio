@@ -159,6 +159,7 @@ async function mountStudy(
     grading?: "auto" | "manual";
     settle?: boolean;
     comment?: string;
+    comments?: { path: number[]; text: string }[];
     newLimit?: number;
     practicePath?: number[];
   } = {},
@@ -169,6 +170,10 @@ async function mountStudy(
     expect(tree.getState().makeMoves({ payload }).success).toBe(true);
   }
   if (options.comment) tree.getState().setComment(options.comment);
+  for (const { path, text } of options.comments ?? []) {
+    tree.getState().goToMove(path);
+    tree.getState().setComment(text);
+  }
   tree.getState().setHeaders({
     ...tree.getState().headers,
     orientation: spec.orientation,
@@ -441,16 +446,28 @@ test("a surviving tree edit restarts replay and reaches its live frame", async (
   expect(tree.getState().position).toEqual([0, 0]);
 });
 
-async function mountTransposedStudy() {
+async function mountTransposedStudy({
+  comment,
+  ...options
+}: {
+  unseen?: boolean;
+  grading?: "auto" | "manual";
+  comment?: string;
+  settle?: boolean;
+} = {}) {
   await mountStudy(
     { ...cases[1], moves: ["Nf3", "Nf6", "g3", "g6", "Bg2", "Bg7"] },
     ["g3", "g6", "Nf3", "Nf6", "Bg2", "Bg7"],
     false,
     {
+      ...options,
+      comments: comment
+        ? [0, 1].map((index) => ({ path: [index, 0, 0, 0, 0, 0], text: comment }))
+        : undefined,
       reviewedDues: [
         new Date(Date.now() + 60_000),
         new Date(Date.now() + 60_000),
-        new Date(Date.now() - 1_000),
+        options.unseen ? undefined : new Date(Date.now() - 1_000),
         new Date(Date.now() + 60_000),
         new Date(Date.now() + 60_000),
       ],
@@ -458,7 +475,7 @@ async function mountTransposedStudy() {
   );
 }
 
-test("a retained transposed card restarts replay when promotion changes its exact FEN", async () => {
+test("a retained transposed card rebinds when promotion changes its exact FEN", async () => {
   await mountTransposedStudy();
   const before = atoms.get(practiceStateFamily(owner.value));
   const queue = [...stats().remainingPositionKeys];
@@ -467,7 +484,7 @@ test("a retained transposed card restarts replay when promotion changes its exac
 
   await act(async () => tree.getState().promoteVariation([1]));
 
-  expect(phase()).toBe("replaying");
+  expect(phase()).toBe("waiting");
   expect(stats().remainingPositionKeys).toEqual(queue);
   expect(stats()).toMatchObject({ correct: 0, incorrect: 0 });
   expect(reviews).toHaveLength(0);
@@ -485,8 +502,8 @@ test("a retained transposed card restarts replay when promotion changes its exac
 });
 
 test.each([false, true])(
-  "a failed transposed presentation keeps its one rating and re-append after FEN-changing promotion, replay edit=%s",
-  async (editDuringReplay) => {
+  "a failed transposed presentation keeps its one rating and re-append after FEN-changing promotion, later edit=%s",
+  async (editAfterRebind) => {
     await mountTransposedStudy();
     const before = atoms.get(practiceStateFamily(owner.value));
     const queue = [...stats().remainingPositionKeys];
@@ -494,23 +511,24 @@ test.each([false, true])(
     expect(phase()).toBe("retry");
     expect(reviews.map(({ entry }) => JSON.parse(entry).rating)).toEqual([1]);
     expect(stats()).toMatchObject({ correct: 0, incorrect: 1 });
+    const startedAt = atoms.get(practiceCardStartTimeFamily(owner.value));
 
     await act(async () => tree.getState().promoteVariation([1]));
-    expect(phase()).toBe("replaying");
-    expect(atoms.get(practiceCardStartTimeFamily(owner.value))).toBe(0);
+    expect(phase()).toBe("retry");
+    expect(atoms.get(practiceCardStartTimeFamily(owner.value))).toBe(startedAt);
     expect(stats().remainingPositionKeys).toEqual(queue);
-    if (editDuringReplay) {
+    if (editAfterRebind) {
       await tick(PRACTICE_REPLAY_STEP_MS);
-      await act(async () => tree.getState().setComment("Restart this replay"));
+      await act(async () => tree.getState().setComment("Keep this presentation"));
     }
-    expect(phase()).toBe("replaying");
-    expect(atoms.get(practiceCardStartTimeFamily(owner.value))).toBe(0);
+    expect(phase()).toBe("retry");
+    expect(atoms.get(practiceCardStartTimeFamily(owner.value))).toBe(startedAt);
     await settleReplay();
     const after = atoms.get(practiceStateFamily(owner.value));
     expect(after.currentFen).not.toBe(before.currentFen);
     expect(after.positionKey).toBe(before.positionKey);
     expect(controller()?.canMove).toBe(true);
-    expect(atoms.get(practiceCardStartTimeFamily(owner.value))).toBe(Date.now());
+    expect(atoms.get(practiceCardStartTimeFamily(owner.value))).toBe(startedAt);
     await answer("Bg7");
 
     expect(reviews.map(({ entry }) => JSON.parse(entry).rating)).toEqual([1]);
@@ -528,6 +546,294 @@ test.each([false, true])(
     expect(reviews.map(({ entry }) => JSON.parse(entry).rating)).toEqual([1]);
   },
 );
+
+function grades() {
+  return reviews.map(({ entry }) => JSON.parse(entry).rating);
+}
+
+function expectCompletedTransposedPractice(
+  correct: number,
+  incorrect: number,
+  expectedGrades: number[],
+  cursor = [0, 0, 0, 0, 0, 0],
+) {
+  expect(phase()).toBe("idle");
+  expect(stats().remainingPositionKeys).toEqual([]);
+  expect(stats().introducedPositionKeys).toEqual([]);
+  expect(stats().reappendedPositionKeys).toEqual([]);
+  expect(stats()).toMatchObject({ correct: 0, incorrect: 0 });
+  expect(atoms.get(practiceCompletedSummaryFamily(owner.value))).toMatchObject({
+    correct,
+    incorrect,
+  });
+  expect(grades()).toEqual(expectedGrades);
+  expect(tree.getState().position).toEqual(cursor);
+  expect(tree.getState().practicePath).toBeNull();
+  expect(controller()).toBeNull();
+}
+
+test.each(["waiting", "retry", "revealed", "learning"] as const)(
+  "promotion rebinds %s without resetting presentation progress and accepts the answer",
+  async (initialPhase) => {
+    await mountTransposedStudy({ unseen: initialPhase === "learning" });
+    if (initialPhase === "retry" || initialPhase === "revealed") await answer("d5");
+    if (initialPhase === "revealed") await answer("d5");
+    const before = atoms.get(practiceStateFamily(owner.value));
+    const progress = stats();
+    const written = [...reviews];
+    const hint = controller()?.hintSan;
+    const startedAt = atoms.get(practiceCardStartTimeFamily(owner.value));
+    expect(before.phase).toBe(initialPhase);
+    expect(progress.introducedPositionKeys).toEqual([]);
+
+    await act(async () => tree.getState().promoteVariation([1]));
+
+    const rebound = atoms.get(practiceStateFamily(owner.value));
+    expect(rebound).toEqual({ ...before, currentFen: tree.getState().currentNode().fen });
+    expect(rebound.currentFen).not.toBe(before.currentFen);
+    expect(stats()).toEqual(progress);
+    expect(reviews).toEqual(written);
+    expect(controller()?.hintSan).toBe(hint);
+    expect(controller()?.canMove).toBe(true);
+    expect(tree.getState().position).toEqual([0, 0, 0, 0, 0]);
+    expect(tree.getState().practicePath).toEqual([0, 0, 0, 0, 0]);
+    expect(atoms.get(practiceCardStartTimeFamily(owner.value))).toBe(startedAt);
+    expect(host.textContent).not.toContain("Board.Practice.NotOnPosition");
+    await answer("Bg7");
+    expect(phase()).toBe(initialPhase === "learning" ? "advancing" : "correct");
+    expect(controller()?.hintSan).toBeUndefined();
+    expect(tree.getState().position).toEqual([0, 0, 0, 0, 0, 0]);
+    expect(stats().introducedPositionKeys).toEqual(
+      initialPhase === "learning" ? progress.remainingPositionKeys : [],
+    );
+    expect(stats()).toMatchObject({
+      correct: initialPhase === "waiting" ? 1 : 0,
+      incorrect: progress.incorrect,
+    });
+    expect(grades()).toEqual(
+      initialPhase === "waiting" ? [3] : initialPhase === "learning" ? [] : [1],
+    );
+    await tick(300);
+    await settleReplay();
+    expect(phase()).toBe(initialPhase === "waiting" ? "idle" : "waiting");
+    expect(stats().remainingPositionKeys).toEqual(
+      initialPhase === "waiting" ? [] : progress.remainingPositionKeys,
+    );
+    expect(stats().reappendedPositionKeys).toEqual(
+      initialPhase === "waiting" ? [] : progress.remainingPositionKeys,
+    );
+    expect(controller()?.hintSan).toBeUndefined();
+    if (initialPhase !== "waiting") {
+      await answer("Bg7");
+      await tick(300);
+    }
+    expectCompletedTransposedPractice(1, progress.incorrect, progress.incorrect ? [1, 3] : [3]);
+  },
+);
+
+test.each(["auto", "manual"] as const)(
+  "an already-correct %s presentation rebinds without repeating a count or rating",
+  async (grading) => {
+    await mountTransposedStudy({ grading, comment: "Keep this explanation" });
+    await answer("Bg7");
+    const before = atoms.get(practiceStateFamily(owner.value));
+    const progress = stats();
+    const written = [...reviews];
+    expect(before.phase).toBe("correct");
+    expect(progress.introducedPositionKeys).toEqual([]);
+    expect(progress).toMatchObject({ correct: 1, incorrect: 0 });
+    expect(grades()).toEqual(grading === "auto" ? [3] : []);
+    let cursor: number[] = [];
+    await act(async () => {
+      tree.getState().promoteVariation([1]);
+      cursor = tree.getState().position;
+    });
+    const rebound = atoms.get(practiceStateFamily(owner.value));
+    expect(rebound).toEqual({
+      ...before,
+      currentFen: getNodeAtPath(tree.getState().root, [0, 0, 0, 0, 0]).fen,
+    });
+    expect(rebound.currentFen).not.toBe(before.currentFen);
+    expect(tree.getState().position).toEqual(cursor);
+    expect(tree.getState().practicePath).toEqual([0, 0, 0, 0, 0]);
+    expect(stats()).toEqual(progress);
+    expect(reviews).toEqual(written);
+    expect(controller()?.hintSan).toBeUndefined();
+    expect(controller()?.canMove).toBe(false);
+    await tick(1_000);
+    expect(phase()).toBe("correct");
+    await click(grading === "auto" ? "Board.Practice.Continue" : "Board.Practice.Good");
+    expectCompletedTransposedPractice(1, 0, [3], cursor);
+  },
+);
+
+test("completed learning rebinds in advancing and re-appends once without another guided step", async () => {
+  await mountTransposedStudy({ unseen: true, comment: "Develop this bishop" });
+  const key = atoms.get(practiceStateFamily(owner.value)).positionKey!;
+  await answer("Bg7");
+  const before = atoms.get(practiceStateFamily(owner.value));
+  const progress = stats();
+  expect(before.phase).toBe("advancing");
+  expect(progress.introducedPositionKeys).toEqual([key]);
+  expect(progress.reappendedPositionKeys).toEqual([]);
+  let cursor: number[] = [];
+  await act(async () => {
+    tree.getState().promoteVariation([1]);
+    cursor = tree.getState().position;
+  });
+  const rebound = atoms.get(practiceStateFamily(owner.value));
+  expect(rebound).toEqual({
+    ...before,
+    currentFen: getNodeAtPath(tree.getState().root, [0, 0, 0, 0, 0]).fen,
+  });
+  expect(rebound.currentFen).not.toBe(before.currentFen);
+  expect(tree.getState().position).toEqual(cursor);
+  expect(tree.getState().practicePath).toEqual([0, 0, 0, 0, 0]);
+  expect(stats()).toEqual(progress);
+  expect(stats()).toMatchObject({ correct: 0, incorrect: 0 });
+  expect(grades()).toEqual([]);
+  expect(controller()?.hintSan).toBeUndefined();
+  expect(controller()?.canMove).toBe(false);
+  await tick(5_000);
+  expect(phase()).toBe("advancing");
+  await click("Board.Practice.Continue");
+  await settleReplay();
+  expect(phase()).toBe("waiting");
+  expect(stats().remainingPositionKeys).toEqual([key]);
+  expect(stats().introducedPositionKeys).toEqual([key]);
+  expect(stats().reappendedPositionKeys).toEqual([key]);
+  expect(controller()?.hintSan).toBeUndefined();
+  expect(tree.getState().position).toEqual([0, 0, 0, 0, 0]);
+  await answer("Bg7");
+  expect(phase()).toBe("correct");
+  expect(grades()).toEqual([3]);
+  expect(stats()).toMatchObject({ correct: 1, incorrect: 0 });
+  await click("Board.Practice.Continue");
+  expectCompletedTransposedPractice(1, 0, [3]);
+});
+
+test("rebind preserves the pending automatic advance's original deadline and fires once", async () => {
+  await mountTransposedStudy();
+  await answer("Bg7");
+  const progress = stats();
+  expect(progress.introducedPositionKeys).toEqual([]);
+  await tick(200);
+  let cursor: number[] = [];
+  await act(async () => {
+    tree.getState().promoteVariation([1]);
+    cursor = tree.getState().position;
+  });
+  expect(phase()).toBe("correct");
+  expect(stats()).toEqual(progress);
+  expect(grades()).toEqual([3]);
+  expect(controller()?.hintSan).toBeUndefined();
+  expect(tree.getState().position).toEqual(cursor);
+  await tick(99);
+  expect(phase()).toBe("correct");
+  await tick(1);
+  expectCompletedTransposedPractice(1, 0, [3], cursor);
+  await tick(1_000);
+  expectCompletedTransposedPractice(1, 0, [3], cursor);
+});
+
+test.each(["delete representative", "reload clocks"] as const)(
+  "%s keeps an equivalent queue entry and rebinds before stale deck reconciliation can drop it",
+  async (change) => {
+    await mountTransposedStudy();
+    const before = atoms.get(practiceStateFamily(owner.value));
+    const progress = stats();
+    await act(async () => {
+      if (change === "delete representative") tree.getState().deleteMove([0]);
+      else {
+        const replacement = createTreeStore(
+          undefined,
+          defaultTree(standard.replace("0 1", "8 10")),
+        );
+        try {
+          for (const payload of [
+            ["Nf3", "Nf6", "g3", "g6", "Bg2", "Bg7"],
+            ["g3", "g6", "Nf3", "Nf6", "Bg2", "Bg7"],
+          ]) {
+            replacement.getState().goToStart();
+            replacement.getState().makeMoves({ payload });
+          }
+          tree.getState().setState({
+            ...defaultTree(replacement.getState().root.fen),
+            root: replacement.getState().root,
+            headers: { ...tree.getState().headers, fen: replacement.getState().root.fen },
+          });
+        } finally {
+          replacement.dispose();
+        }
+      }
+    });
+    const rebound = atoms.get(practiceStateFamily(owner.value));
+    expect(phase()).toBe("waiting");
+    expect(rebound).toEqual({ ...before, currentFen: tree.getState().currentNode().fen });
+    expect(rebound.currentFen).not.toBe(before.currentFen);
+    expect(getBoardState(rebound.currentFen!)).toBe(before.positionKey);
+    expect(stats()).toEqual(progress);
+    expect(stats().introducedPositionKeys).toEqual([]);
+    expect(stats()).toMatchObject({ correct: 0, incorrect: 0 });
+    expect(grades()).toEqual([]);
+    expect(tree.getState().position).toEqual([0, 0, 0, 0, 0]);
+    expect(tree.getState().practicePath).toEqual([0, 0, 0, 0, 0]);
+    expect(controller()?.hintSan).toBeUndefined();
+    expect(controller()?.canMove).toBe(true);
+    await answer("Bg7");
+    await tick(300);
+    expectCompletedTransposedPractice(1, 0, [3]);
+  },
+);
+
+test("a replay restart keeps its queue and learning hint and eventually completes", async () => {
+  await mountTransposedStudy({ unseen: true, settle: false });
+  const progress = stats();
+  expect(phase()).toBe("replaying");
+  await tick(PRACTICE_REPLAY_STEP_MS);
+  await act(async () => tree.getState().promoteVariation([1]));
+  expect(phase()).toBe("replaying");
+  expect(stats()).toEqual(progress);
+  expect(progress.introducedPositionKeys).toEqual([]);
+  expect(progress).toMatchObject({ correct: 0, incorrect: 0 });
+  expect(grades()).toEqual([]);
+  expect(controller()?.hintSan).toBeUndefined();
+  expect(controller()?.canMove).toBe(false);
+  expect(tree.getState().position).toEqual([]);
+  await settleReplay();
+  expect(phase()).toBe("learning");
+  expect(controller()?.hintSan).toBe("Bg7");
+  expect(tree.getState().position).toEqual([0, 0, 0, 0, 0]);
+  await answer("Bg7");
+  expect(stats().introducedPositionKeys).toEqual(progress.remainingPositionKeys);
+  await tick(300);
+  expect(phase()).toBe("waiting");
+  expect(controller()?.hintSan).toBeUndefined();
+  await answer("Bg7");
+  await tick(300);
+  expectCompletedTransposedPractice(1, 0, [3]);
+});
+
+test("genuine card removal drops the entry and completes through the next entry", async () => {
+  await mountStudy(cases[0], ["d4", "d5", "c4"], true);
+  const progress = stats();
+  await act(async () => tree.getState().deleteMove([0]));
+  expect(phase()).toBe("replaying");
+  expect(stats().remainingPositionKeys).toEqual(progress.remainingPositionKeys.slice(1));
+  expect(stats().introducedPositionKeys).toEqual([]);
+  expect(stats()).toMatchObject({ correct: 0, incorrect: 0 });
+  expect(grades()).toEqual([]);
+  expect(controller()?.hintSan).toBeUndefined();
+  expect(controller()?.canMove).toBe(false);
+  expect(tree.getState().position).toEqual([]);
+  await settleReplay();
+  expect(phase()).toBe("waiting");
+  expect(tree.getState().position).toEqual([0, 0]);
+  expect(controller()?.canMove).toBe(true);
+  await answer("c4");
+  await tick(300);
+  expectCompletedTransposedPractice(1, 0, [], [0, 0, 0]);
+});
 
 test("an idle mount clears a persisted practice path", async () => {
   await mountStudy(cases[0], undefined, false, {

@@ -79,7 +79,8 @@ export function idlePracticeSession(token = 0): PracticeSession {
 
 export type PracticeEvent =
     | { type: "replay"; token: number; fen: string; positionKey: string }
-    | { type: "replayed"; token: number; learning: boolean; retryAnswer?: string }
+    | { type: "replayed"; token: number; learning: boolean }
+    | { type: "rebind"; token: number; fen: string }
     | { type: "learned"; token: number }
     | { type: "correct"; token: number; answer: string; timeTaken: number }
     | { type: "wrong"; token: number; answer: string; playedMove: string; timeTaken: number }
@@ -111,14 +112,15 @@ export function practiceSessionReducer(
         };
     }
     if (event.token !== state.token) return state;
+    if (event.type === "rebind") {
+        return state.phase === "idle" || state.phase === "replaying"
+            ? state
+            : { ...state, currentFen: event.fen };
+    }
     if (event.type === "end") return idlePracticeSession(event.token);
     if (event.type === "replayed") {
         return state.phase === "replaying"
-            ? {
-                  ...state,
-                  phase: event.learning ? "learning" : event.retryAnswer ? "retry" : "waiting",
-                  ...(event.retryAnswer ? { answer: event.retryAnswer } : {}),
-              }
+            ? { ...state, phase: event.learning ? "learning" : "waiting" }
             : state;
     }
     if (event.type === "learned") {

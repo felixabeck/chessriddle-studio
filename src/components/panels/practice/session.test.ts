@@ -418,20 +418,32 @@ describe("line-training reducer phases", () => {
         expect(canSubmitPracticeMove(waiting(), "card-fen")).toBe(true);
     });
 
-    it("resumes a failed presentation in retry with its live answer after replay", () => {
-        const retry = practiceSessionReducer(replaying(), {
-            type: "replayed",
-            token: 5,
-            learning: false,
-            retryAnswer: "Nf3",
-        });
-        expect(retry).toEqual({ ...replaying(), phase: "retry", answer: "Nf3" });
-        expect(canSubmitPracticeMove(retry, "card-fen")).toBe(true);
-        expect(practiceSessionReducer(retry, wrong).phase).toBe("revealed");
-        expect(
-            practiceSessionReducer(retry, { type: "reveal", token: 5, answer: retry.answer! })
-                .phase,
-        ).toBe("revealed");
+    it.each(["learning", "waiting", "retry", "revealed", "correct", "advancing"] as const)(
+        "rebinds only the FEN in %s and rejects stale tokens",
+        (phase) => {
+            const state: PracticeSession = {
+                ...replaying(),
+                phase,
+                answer: "Nf3",
+                playedMove: "d4",
+                timeTaken: 42,
+            };
+            expect(
+                practiceSessionReducer(state, { type: "rebind", token: 5, fen: "new-fen" }),
+            ).toEqual({ ...state, currentFen: "new-fen" });
+            for (const token of [4, 6])
+                expect(
+                    practiceSessionReducer(state, { type: "rebind", token, fen: "new-fen" }),
+                ).toBe(state);
+        },
+    );
+
+    it("ignores rebind during idle and replaying", () => {
+        for (const state of [idlePracticeSession(5), replaying()]) {
+            expect(
+                practiceSessionReducer(state, { type: "rebind", token: 5, fen: "new-fen" }),
+            ).toBe(state);
+        }
     });
 
     it("introduces unseen cards without a quiz result and finishes through learned", () => {

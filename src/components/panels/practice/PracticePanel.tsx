@@ -102,18 +102,17 @@ function findPracticeCardFrame(
   root: TreeNode,
   start: number[],
 ) {
-  let firstOutOfScope: ListNode | undefined;
-  // Prefer the Start subtree for transpositions. Out-of-scope stored cards keep their exact frame.
+  const key = getBoardState(card.fen);
+  // Resolve against this tree snapshot even before deck sync replaces a transposed card's FEN.
   for (const frame of treeIterator(root)) {
     if (
-      frame.node.fen === card.fen &&
+      getBoardState(frame.node.fen) === key &&
+      isInPracticeScope(frame.position, start) &&
       frame.node.children.some((child) => child.san === card.answer)
     ) {
-      if (isInPracticeScope(frame.position, start)) return frame;
-      firstOutOfScope ??= frame;
+      return frame;
     }
   }
-  return firstOutOfScope;
 }
 
 function PracticePanel() {
@@ -390,7 +389,7 @@ function PracticePanel() {
         practiceSessionReducer(sessionRef.current, {
           type: "replay",
           token,
-          fen: card.fen,
+          fen: frame.node.fen,
           positionKey: key,
         }),
       );
@@ -428,7 +427,6 @@ function PracticePanel() {
               type: "replayed",
               token,
               learning: presentationRef.current.learning,
-              retryAnswer: presentationRef.current.failed ? liveCard.answer : undefined,
             }),
           );
         } else {
@@ -689,22 +687,49 @@ function PracticePanel() {
   }, [deck.status, practiceState.phase, endPracticeSession]);
 
   useEffect(() => {
-    if (sessionRef.current.phase === "idle") return;
-    if (sessionRef.current.phase === "replaying") {
+    const session = sessionRef.current;
+    if (session.phase === "idle") return;
+    if (session.phase === "replaying") {
       newPractice("restart");
       return;
     }
     const card = deckRef.current.positions.find(
-      (position) => getBoardState(position.fen) === sessionRef.current.positionKey,
+      (position) => getBoardState(position.fen) === session.positionKey,
     );
-    if (!card || !findPracticeCardFrame(card, root, headers.start || [])) {
+    const frame = card ? findPracticeCardFrame(card, root, headers.start || []) : undefined;
+    if (!frame) {
       const latest = sessionStatsRef.current;
       publishStats({ ...latest, ...advancePracticeQueue(latest, latest.mode) });
       newPractice();
-    } else if (card.fen !== sessionRef.current.currentFen) {
-      newPractice("restart");
+    } else if (frame.node.fen !== session.currentFen) {
+      setSession(
+        practiceSessionReducer(session, {
+          type: "rebind",
+          token: session.token,
+          fen: frame.node.fen,
+        }),
+      );
+      setPracticePath(frame.position);
+      if (
+        session.phase === "learning" ||
+        session.phase === "waiting" ||
+        session.phase === "retry" ||
+        session.phase === "revealed"
+      ) {
+        store.getState().goToMove(frame.position);
+      }
     }
-  }, [root, headers.start, headers.orientation, deck.positions, newPractice, publishStats]);
+  }, [
+    root,
+    headers.start,
+    headers.orientation,
+    deck.positions,
+    newPractice,
+    publishStats,
+    setSession,
+    setPracticePath,
+    store,
+  ]);
 
   return (
     <>
