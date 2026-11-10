@@ -13048,3 +13048,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** One way to open a chapter. Reversal path: add an action to the expanded row header.
 * **Decided by:** Claude Code (Opus 5.5) build run 2026-11-10-library-chapter-picker, full auto, 2026-11-10 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":26,"effect_sha256":"34b64f9e504228c1ae3f3eed0113cf00bbf726a3747d0f57aeda4e0063eb5d2a","input_sha256":"ff75afefb9144e4194dc700cf8ff72e695605a8dbf9d7fced8afb750fd3a9251","kind":"mutation-receipt","operation":"a02a51d0176c2c524f6f464a74769df522715c834175ab5040f55c90a12f4503","options":{"section":null},"request_id_sha256":null,"results":["d-20261110-13","d-20261110-14","d-20261110-15"],"target":"decisions-ledger","v":1} -->
+
+### d-20261110-12 — Where are a repertoire line's name and idea stored?
+
+* **Question:** Repertoire lines get a "Line name" and an optional "Idea" instead of White/Black player fields. Which PGN tags hold them, and do existing files have to be converted?
+* **Governs:** `src/components/files/lineTitle.ts`, `src/components/common/GameInfo.tsx` (simplified mode), `src/components/panels/info/GameSelector.tsx`, `src/components/panels/info/InfoPanel.tsx`, `src/utils/files.ts`, `src/components/tabs/ImportModal.tsx`
+* **Chosen:** The name stays in the `White` tag and the idea in `Black`; only presentation and editing change. When `White` is empty or `?`, the name falls back to `Event`. No file is rewritten.
+* **Rejected:** Moving the name into `Event` and the idea into a new tag with a one-time conversion. Felix's 104 lines carry the ChessBase status `[Event "fertig"]` on 85 lines, which that conversion would destroy, and a new tag breaks the round trip with the ChessBase studies his files come from.
+* **Reason:** His files already hold the name in `White` and the idea in `Black`, the ChessBase study convention, so nothing has to be re-entered or converted. Reversal path: a later conversion can move the values, and `lineTitle.ts` is the single read point.
+* **Decided by:** Claude Code (Opus 5.5) session 75b44058-49ff-4171-9bba-7a00260778a8 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"8432745c5b46ce18c763962b329be36ec56b461f37e30bc230baff6bc6a73b3e","input_sha256":"57eab18485d877956e41948c15f4f68953c83ac0b43b0fadf6aed10cb44b18b4","kind":"mutation-receipt","operation":"e9972bd3b534fb0bf4628378ea31136e2993dae1f13e4435cdab3109f38028c4","options":{"section":null},"request_id_sha256":null,"results":["d-20261110-12"],"target":"decisions-ledger","v":1} -->
