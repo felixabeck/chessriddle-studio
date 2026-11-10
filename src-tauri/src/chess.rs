@@ -5118,6 +5118,15 @@ done
         }
     }
 
+    fn assert_uci_line_is_unknown(line: &str) {
+        let parsed = std::panic::catch_unwind(|| parse_one(line));
+        assert!(parsed.is_ok(), "parser unwound for {line}");
+        assert!(
+            matches!(parsed.unwrap(), UciMessage::Unknown(text, None) if text == line),
+            "expected Unknown with the original line for {line}"
+        );
+    }
+
     #[test]
     fn uci_numeric_wdl_overflow_is_unknown_without_unwind() {
         for line in [
@@ -5126,12 +5135,7 @@ done
             "info depth 8 score cp 34 wdl 0 0 2147483648 pv e2e4",
             "info depth 8 score cp 34 wdl -2147483649 0 0 pv e2e4",
         ] {
-            let parsed = std::panic::catch_unwind(|| parse_one(line));
-            assert!(parsed.is_ok(), "parser unwound for {line}");
-            assert!(
-                matches!(parsed.unwrap(), UciMessage::Unknown(text, None) if text == line),
-                "expected Unknown with the original line for {line}"
-            );
+            assert_uci_line_is_unknown(line);
         }
     }
 
@@ -5143,12 +5147,7 @@ done
             "info depth 8 score mate 2147483648 pv e2e4",
             "info depth 8 score mate -2147483649 pv e2e4",
         ] {
-            let parsed = std::panic::catch_unwind(|| parse_one(line));
-            assert!(parsed.is_ok(), "parser unwound for {line}");
-            assert!(
-                matches!(parsed.unwrap(), UciMessage::Unknown(text, None) if text == line),
-                "expected Unknown with the original line for {line}"
-            );
+            assert_uci_line_is_unknown(line);
         }
     }
 

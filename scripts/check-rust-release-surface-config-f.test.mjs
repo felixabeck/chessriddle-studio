@@ -66,59 +66,42 @@ describe("R5 config, test-only scope, and physical source surface", () => {
     ]);
     expectCliStatus(result, 0);
   });
-  test.each(["../pgn-reader", "vendor/other-reader"])(
-    "rejects a changed pgn-reader patch destination %s",
-    async (destination) => {
+  describe.each([
+    [
+      "pgn-reader",
+      'path = "vendor/pgn-reader"',
+      "[patch.crates-io]",
+      ["../pgn-reader", "vendor/other-reader"],
+    ],
+    [
+      "vampirc-uci",
+      'path = "vendor/vampirc-uci"',
+      '[patch."https://github.com/franciscoBSalgueiro/vampirc-uci"]',
+      ["../vampirc-uci", "vendor/other-uci"],
+    ],
+  ])("%s vendored patch", (dependency, approvedPath, approvedTable, rejectedDestinations) => {
+    test.each(rejectedDestinations)(
+      `rejects a changed ${dependency} patch destination %s`,
+      async (destination) => {
+        const result = await runCheckerOver([
+          {
+            path: "src-tauri/Cargo.toml",
+            contents: packageManifest.replace(approvedPath, `path = "${destination}"`),
+          },
+        ]);
+        expectCliStatus(result, 1);
+        expect(result.output).toContain("Cargo manifest path keys may add Rust code");
+      },
+    );
+    test("rejects the approved spelling outside its patch table", async () => {
       const result = await runCheckerOver([
         {
           path: "src-tauri/Cargo.toml",
-          contents: packageManifest.replace(
-            'path = "vendor/pgn-reader"',
-            `path = "${destination}"`,
-          ),
+          contents: packageManifest.replace(approvedTable, "[dependencies.other]"),
         },
       ]);
       expectCliStatus(result, 1);
       expect(result.output).toContain("Cargo manifest path keys may add Rust code");
-    },
-  );
-  test("rejects the approved spelling outside the patch table", async () => {
-    const result = await runCheckerOver([
-      {
-        path: "src-tauri/Cargo.toml",
-        contents: packageManifest.replace("[patch.crates-io]", "[dependencies.other]"),
-      },
-    ]);
-    expectCliStatus(result, 1);
-    expect(result.output).toContain("Cargo manifest path keys may add Rust code");
-  });
-  test.each(["../vampirc-uci", "vendor/other-uci"])(
-    "rejects a changed vampirc-uci patch destination %s",
-    async (destination) => {
-      const result = await runCheckerOver([
-        {
-          path: "src-tauri/Cargo.toml",
-          contents: packageManifest.replace(
-            'path = "vendor/vampirc-uci"',
-            `path = "${destination}"`,
-          ),
-        },
-      ]);
-      expectCliStatus(result, 1);
-      expect(result.output).toContain("Cargo manifest path keys may add Rust code");
-    },
-  );
-  test("rejects the approved vampirc-uci spelling outside its patch table", async () => {
-    const result = await runCheckerOver([
-      {
-        path: "src-tauri/Cargo.toml",
-        contents: packageManifest.replace(
-          '[patch."https://github.com/franciscoBSalgueiro/vampirc-uci"]',
-          "[dependencies.other]",
-        ),
-      },
-    ]);
-    expectCliStatus(result, 1);
-    expect(result.output).toContain("Cargo manifest path keys may add Rust code");
+    });
   });
 });
