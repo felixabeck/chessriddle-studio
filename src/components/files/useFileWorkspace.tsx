@@ -28,7 +28,7 @@ import FileCard from "./FileCard";
 import ConfirmModal, { durabilityUncertainMessage } from "../common/ConfirmModal";
 import AppModal from "../common/AppModal";
 import type { Entry, UsableEntry, FileType } from "./file";
-import { FILE_TYPES } from "./file";
+import { FILE_TYPES, findEntry } from "./file";
 import { useWorkspaceListing } from "@/components/library/useWorkspaceListing";
 import { filesMutationErrorMessage, runFilesMutationWithRefresh } from "./workspaceError";
 import { childUnreadableMessage } from "./DirectoryTree";
@@ -77,22 +77,6 @@ async function runTrashMutationWithRefresh(
     }
     throw cause;
   }
-}
-
-function findEntry(entries: Entry[], key: string, kind: Entry["type"]): UsableEntry | null {
-  for (const entry of entries) {
-    if (
-      entry.type !== "unreadable" &&
-      entry.type === kind &&
-      fileWorkspaceKey(entry.handle) === key
-    )
-      return entry;
-    if (entry.type === "directory") {
-      const child = findEntry(entry.children, key, kind);
-      if (child) return child;
-    }
-  }
-  return null;
 }
 
 export function useFileWorkspace(

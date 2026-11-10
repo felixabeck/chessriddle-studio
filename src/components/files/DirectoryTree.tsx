@@ -17,7 +17,7 @@ import { expandedDirectoriesAtom, tabsAtom } from "@/state/atoms";
 import { openFile } from "@/utils/files";
 import { runTabCreation } from "@/utils/tabs";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
-import { FILE_TYPES, type Entry, type FileMetadata } from "./file";
+import { FILE_TYPES, findEntry, type Directory, type Entry, type FileMetadata } from "./file";
 import { endRowDragPreview, preloadRowDragImage, startRowDragPreview } from "./rowDragPreview";
 import classes from "./DirectoryTree.module.css";
 
@@ -152,6 +152,22 @@ export default function DirectoryTree({
       onError: (error) => notifyUnlessCancelled(t("Common.Error"), error),
     });
   };
+  // A folder is selected only while it is open: closing it gives up the selection it holds,
+  // its own or a nested folder's, so no closed or hidden folder stays the create target.
+  // Ancestry reads the unfiltered tree, because a search can hide the nested folder.
+  const collapseDirectory = (directory: Directory) => {
+    const key = fileWorkspaceKey(directory.handle);
+    setExpanded((old) => old.filter((id) => id !== key));
+    if (selectedFile?.type !== "directory") return;
+    const whole = findEntry(files, key, "directory");
+    if (whole && findEntry([whole], fileWorkspaceKey(selectedFile.handle), "directory"))
+      setSelectedFile(null);
+  };
+  const toggleDirectory = (directory: Directory, open: boolean) => {
+    if (open) return collapseDirectory(directory);
+    setExpanded((old) => [...old, fileWorkspaceKey(directory.handle)]);
+    setSelectedFile(directory);
+  };
   const render = ({ entry: node, depth }: VisibleEntry): React.ReactNode => {
     const isDirectory = node.type === "directory";
     const handleKey = entryKey(node);
@@ -223,18 +239,15 @@ export default function DirectoryTree({
             event.preventDefault();
             setExpanded((old) => [...old, expansionKey]);
           }
-          if (event.key === "ArrowLeft" && isDirectory && open) {
+          if (event.key === "ArrowLeft" && node.type === "directory" && open) {
             event.preventDefault();
-            setExpanded((old) => old.filter((id) => id !== expansionKey));
+            collapseDirectory(node);
           }
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             if (node.type === "database") node.onSelect?.();
-            else if (node.type !== "unreadable") setSelectedFile(node);
-            if (isDirectory)
-              setExpanded((old) =>
-                open ? old.filter((id) => id !== expansionKey) : [...old, expansionKey],
-              );
+            else if (node.type === "file") setSelectedFile(node);
+            if (node.type === "directory") toggleDirectory(node, open);
             else if (event.key === "Enter") {
               if (node.type === "database") node.onOpen?.();
               else if (node.type === "file") openEntry(node);
@@ -253,11 +266,8 @@ export default function DirectoryTree({
           // The first click of each pair owns selection, even if the second hits another row.
           if (node.type === "file" && event.detail > 0 && event.detail % 2 === 0) return;
           if (node.type === "database") node.onSelect?.();
-          else if (node.type !== "unreadable") setSelectedFile(node);
-          if (isDirectory)
-            setExpanded((old) =>
-              open ? old.filter((id) => id !== expansionKey) : [...old, expansionKey],
-            );
+          else if (node.type === "file") setSelectedFile(node);
+          else if (node.type === "directory") toggleDirectory(node, open);
         }}
         onDoubleClick={() => {
           if (

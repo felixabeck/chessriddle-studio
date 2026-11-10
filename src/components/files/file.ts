@@ -5,7 +5,11 @@ import type {
     WorkspaceEntry,
     WorkspaceListing,
 } from "@/bindings";
-import { capabilityKey, fileWorkspaceHandleSchema } from "@/utils/pathCapabilities";
+import {
+    capabilityKey,
+    fileWorkspaceHandleSchema,
+    fileWorkspaceKey,
+} from "@/utils/pathCapabilities";
 
 const fileTypeSchema = z.enum(["repertoire", "game", "tournament", "puzzle", "other"]);
 export type FileType = z.infer<typeof fileTypeSchema>;
@@ -52,6 +56,22 @@ export type UnreadableEntry = {
 };
 export type UsableEntry = FileMetadata | Directory;
 export type Entry = UsableEntry | UnreadableEntry;
+
+export function findEntry(entries: Entry[], key: string, kind: Entry["type"]): UsableEntry | null {
+    for (const entry of entries) {
+        if (
+            entry.type !== "unreadable" &&
+            entry.type === kind &&
+            fileWorkspaceKey(entry.handle) === key
+        )
+            return entry;
+        if (entry.type === "directory") {
+            const child = findEntry(entry.children, key, kind);
+            if (child) return child;
+        }
+    }
+    return null;
+}
 
 export function workspaceEntryToEntry(entry: WorkspaceEntry, unreadKey = ""): Entry {
     if (entry.kind === "directory") {

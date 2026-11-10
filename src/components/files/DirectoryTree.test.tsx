@@ -350,7 +350,89 @@ test("supports ARIA-tree roving focus, keyboard expansion, selection, and opaque
   expect(folder.getAttribute("aria-expanded")).toBe("true");
   await key(folder, " ");
   expect(folder.getAttribute("aria-expanded")).toBe("false");
+  expect(folder.getAttribute("aria-selected")).toBe("false");
+  act(() => folder.click());
+  expect(folder.getAttribute("aria-selected")).toBe("true");
+  act(() => folder.click());
+  expect(folder.getAttribute("aria-expanded")).toBe("false");
+  expect(folder.getAttribute("aria-selected")).toBe("false");
+  act(() => folder.click());
+  await key(folder, "ArrowLeft");
+  expect(folder.getAttribute("aria-selected")).toBe("false");
   expect(treeitems().filter((element) => element.tabIndex === 0)).toHaveLength(1);
+});
+
+test("closing a folder gives up a nested folder's selection, even when a search hides it", async () => {
+  const store = createStore();
+  store.set(fileWorkspaceAtom, handle("tree-workspace-nested"));
+  store.set(expandedDirectoriesAtom, []);
+  store.set(tabsAtom, []);
+  store.set(activeTabAtom, null);
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  const inner: Entry = {
+    type: "directory",
+    handle: handle("opaque-inner"),
+    name: "Inner",
+    lastModified: 1,
+    children: [],
+  };
+  const outer: Entry = {
+    type: "directory",
+    handle: handle("opaque-outer"),
+    name: "Outer",
+    lastModified: 1,
+    children: [inner],
+  };
+  const other: Entry = {
+    type: "directory",
+    handle: handle("opaque-other"),
+    name: "Other",
+    lastModified: 1,
+    children: [],
+  };
+  const selections: (Entry | null)[] = [];
+  function Harness({ search }: { search: string }) {
+    const [selected, setSelected] = useState<Entry | null>(null);
+    selections.push(selected);
+    return (
+      <Provider store={store}>
+        <DirectoryTree
+          files={[outer, other, rootFile]}
+          selectedFile={selected}
+          setSelectedFile={setSelected}
+          onRequestDelete={vi.fn()}
+          search={search}
+          filter=""
+        />
+      </Provider>
+    );
+  }
+  await act(async () => root.render(<Harness search="" />));
+  act(() => item("Outer").click());
+  act(() => item("Inner").click());
+  expect(item("Inner").getAttribute("aria-selected")).toBe("true");
+  act(() => item("Outer").click());
+  expect(selections.at(-1)).toBeNull();
+
+  // Inner kept its own expansion, so it takes one click to close and one to open and select.
+  act(() => item("Outer").click());
+  act(() => item("Inner").click());
+  act(() => item("Inner").click());
+  expect(selections.at(-1)?.name).toBe("Inner");
+  await act(async () => root.render(<Harness search="Outer" />));
+  expect(treeitems().map((element) => element.getAttribute("aria-label"))).toEqual(["Outer"]);
+  act(() => item("Outer").click());
+  expect(selections.at(-1)).toBeNull();
+
+  // An open sibling folder's selection is not this folder's to give up.
+  act(() => item("Outer").click());
+  await act(async () => root.render(<Harness search="" />));
+  act(() => item("Other").click());
+  act(() => item("Outer").click());
+  expect(item("Outer").getAttribute("aria-expanded")).toBe("false");
+  expect(selections.at(-1)?.name).toBe("Other");
 });
 
 test("filters the visible navigation model and opens a filtered file with Enter", async () => {

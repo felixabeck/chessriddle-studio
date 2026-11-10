@@ -33,21 +33,23 @@
   scroll-margin-block: var(--mantine-spacing-xs);
 }
 
-.item[aria-selected="true"] {
-  background: var(--cf-accent);
-  box-shadow: inset 3px 0 var(--cf-primary);
-}
-
 .item:focus-visible {
   outline: 2px solid var(--cf-ring);
   outline-offset: -2px;
 }
 
 @media (hover: hover) {
+  /* `interactive-hover` is within 2% lightness of the surface-inset section the rows sit on. */
   .item:hover {
     --mantine-color-dimmed: var(--cf-foreground);
-    background: var(--cf-interactive-hover);
+    background: color-mix(in srgb, var(--cf-foreground) 7%, transparent);
   }
+}
+
+/* After the hover rule, so a selected row shows its state while the pointer is still on it. */
+.item[aria-selected="true"] {
+  background: color-mix(in srgb, var(--cf-primary) 12%, transparent);
+  box-shadow: inset 3px 0 var(--cf-primary);
 }
 
 .row {

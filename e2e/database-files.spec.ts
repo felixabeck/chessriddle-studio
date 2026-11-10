@@ -1089,8 +1089,13 @@ for (const surface of desktopLibrarySurfaces) {
             expect(await selectedFileRow.evaluate((element) => element.matches(":hover"))).toBe(
                 true,
             );
+            // The selected fill must not wait for the pointer to leave the row.
+            const rowFill = () =>
+                selectedFileRow.evaluate((element) => getComputedStyle(element).backgroundColor);
+            const hoveredFill = await rowFill();
             await assertAccessible();
             await page.mouse.move(surface.width / 2, 0);
+            expect(await rowFill()).toBe(hoveredFill);
             await assertAccessible();
             await fileSnapshotPosition();
             await snapshot("file");
