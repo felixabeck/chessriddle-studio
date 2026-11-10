@@ -662,11 +662,7 @@ function GameSelectorAccordion({
             <Group justify="space-between" wrap="nowrap" w="100%">
               <Text truncate flex={1}>
                 {formatNumber(gameNumber + 1)}.{" "}
-                <GameTitle
-                  title={currentTitle}
-                  repertoire={repertoire}
-                  emptyName={t("GameInfo.UntitledLine")}
-                />
+                <GameTitle title={currentTitle} repertoire={repertoire} />
               </Text>
               {addGame && (
                 <IconAction
