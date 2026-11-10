@@ -621,6 +621,9 @@ impl Worker {
                 }
             })
             .await?;
+        if source == TrainingSource::Tactics && status == 404 {
+            return Err(AccountError::NoMatch);
+        }
         if status != 200 {
             return Err(training::server_error(status, &body));
         }
@@ -1135,6 +1138,7 @@ mod tests {
         revokes: AtomicUsize,
         forms: Mutex<Vec<HashMap<String, String>>>,
         training_queries: Mutex<Vec<String>>,
+        training_not_found: AtomicBool,
         settings_patches: Mutex<Vec<serde_json::Value>>,
         training_submissions: AtomicUsize,
         delayed_submit: AtomicBool,
@@ -1191,6 +1195,9 @@ mod tests {
             .swap(false, Ordering::SeqCst)
         {
             return (StatusCode::UNAUTHORIZED, "{}");
+        }
+        if state.training_not_found.load(Ordering::SeqCst) {
+            return (StatusCode::NOT_FOUND, r#"{"code":"NOT_FOUND"}"#);
         }
         (
             StatusCode::OK,
@@ -1367,6 +1374,7 @@ mod tests {
                 revokes: AtomicUsize::new(0),
                 forms: Mutex::new(Vec::new()),
                 training_queries: Mutex::new(Vec::new()),
+                training_not_found: AtomicBool::new(false),
                 settings_patches: Mutex::new(Vec::new()),
                 training_submissions: AtomicUsize::new(0),
                 delayed_submit: AtomicBool::new(false),
@@ -1649,6 +1657,55 @@ mod tests {
             })))
             .await
             .unwrap();
+        fixture.stop().await;
+    }
+
+    #[tokio::test]
+    async fn tactics_next_not_found_yields_no_match() {
+        let (_temp, credentials) = credentials(Arc::new(TestStore::default()), false).await;
+        credentials
+            .store("user".into(), "initial-refresh".into())
+            .await
+            .unwrap();
+        let fixture = Fixture::new(credentials);
+        fixture
+            .state
+            .training_not_found
+            .store(true, Ordering::SeqCst);
+        let owner = fixture.owner();
+        assert!(matches!(
+            owner
+                .request(Action::Next(
+                    TrainingSource::Tactics,
+                    vec![],
+                    Some(-250),
+                    Some("fork".into()),
+                ))
+                .await,
+            Err(AccountError::NoMatch)
+        ));
+        fixture.stop().await;
+    }
+
+    #[tokio::test]
+    async fn mistakes_next_not_found_keeps_server_error() {
+        let (_temp, credentials) = credentials(Arc::new(TestStore::default()), false).await;
+        credentials
+            .store("user".into(), "initial-refresh".into())
+            .await
+            .unwrap();
+        let fixture = Fixture::new(credentials);
+        fixture
+            .state
+            .training_not_found
+            .store(true, Ordering::SeqCst);
+        let owner = fixture.owner();
+        assert!(matches!(
+            owner
+                .request(Action::Next(TrainingSource::Mistakes, vec![], None, None))
+                .await,
+            Err(AccountError::Server)
+        ));
         fixture.stop().await;
     }
 
