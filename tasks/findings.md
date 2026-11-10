@@ -22736,3 +22736,21 @@ Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates th
 
 **Closed 2026-11-10 (drain next-finding, Claude Code orchestrator), as runner infrastructure.** The prescribed single rerun `gh run rerun 42819791205 --failed` ran attempt 2 of `rust-macos-test` on `fc2aa66a` (job 129873318656), started 13:54:49Z and completed success at 14:08:05Z, about 13 minutes against the lost attempt's 56 minutes. The whole run is now `completed / success` on attempt 2. No test hang reproduced and no repository change was made. The lost attempt's log stays unavailable (404 BlobNotFound), so a one-off hang in that attempt cannot be strictly excluded, but the passing rerun on the identical commit satisfies the finding's Proof. Rejected: changing `timeout-minutes` or test parallelism in `test.yml`, because a single runner loss is no evidence of a repository defect.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"5d900db039dd8cee155b1f47b3fb8ba1c62c93055126a483a1412af4cdcc73c4","header_sha256":"369d6028baa2518c095d3b427e5d061ff059ae02025dfce82af082448892c951","header_status":"handled","input_sha256":"8feca9d2b651cab2da1cd76e1940ccfaaffe9f670897e0f964a8c13e437800da","kind":"mutation-receipt","operation":"eab0593a827d4306bec8d6562058f6fb4780334b0bbcc707e95fd99f91604f6f","options":{"section":null},"request_id_sha256":null,"results":["f-20261110-03"],"target":"f-20261110-03","v":1} -->
+
+---
+
+## 2026-11-10 — filed through the inbox spool
+
+### `retire_replaced_waits_until_every_pooled_connection_has_closed` saw three outstanding pool connections instead of two in CI on a frontend-only push
+
+* **ID:** f-20261110-04 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 42907127764
+* **Spotted outside diff:** yes — found in the required CI wait of the Library chapter picker push (f3b9ba74f), which changes only renderer files.
+* **Where:** `src-tauri/src/db/repository.rs` test `db::repository::tests::retire_replaced_waits_until_every_pooled_connection_has_closed`, assertion at `repository.rs:8016` (`assert_eq!(entry.connections.snapshot().outstanding, 2)`), run under `scripts/rust-branch-coverage.mjs` in job `rust` of the `Test` workflow.
+* **Failure scenario:** Test run 42907127764, job `rust` on master `f3b9ba74f`, step "Run Rust tests with coverage": `left: 3, right: 2`, 3262 passed, 1 failed, 7 ignored. The push range `df1c0d41e..f3b9ba74f` touches no `src-tauri` file, and the newest earlier master runs were green (`pnpm ci:remote:check` passed before the push). `pnpm ci:remote:check` now reports master red, which refuses later code pushes until this run has an owner and a green result.
+* **Defect:** right after `initialized_target_entry` the test takes two connections and expects exactly two outstanding. One more connection was still counted outstanding, most likely the connection dropped at the end of `initialized_target_entry` (`drop(repository.connection(&target, None).unwrap())`) not yet returned to the pool, or another test sharing process-global state. The earlier recurrences of this test under f-20260914-01 (process-global hooks) failed differently (`Conflict("database is open through another directory")`).
+* **Open question:** Is the outstanding count observed before an asynchronous return of the setup connection, i.e. a test race, or does the pool count a connection that was really released?
+* **Fix direction:** Rerun the failed job once (`gh run rerun 42907127764 --failed -R felixabeck/chessriddle-studio`). Independently read how `connections.snapshot().outstanding` is decremented on drop and whether the setup connection's release is synchronous; if it is not, the test must wait for the setup connection's return before asserting.
+* **Proof:** a completed green `rust` job on `f3b9ba74f` or a later master commit, plus the test made deterministic if a race is confirmed.
+* **Found by:** Claude Code, build run 2026-11-10-library-chapter-picker, required CI wait, 2026-11-10.
