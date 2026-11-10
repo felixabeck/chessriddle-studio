@@ -20812,7 +20812,7 @@ Closed by 5ea1ae3b, pushed to master as part of 4633e57f (database games in Rece
 ## 2026-11-02 — filed through the inbox spool
 
 ### `rust-target-eviction-tests.mjs` "an in-use unit alone can keep the root over the cap" times out under machine load
-* **ID:** f-20261102-07 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261102-07 · **Status:** handled · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
 
 * **Where:** `scripts/rust-target-eviction-tests.mjs`, `holdLock` (around line 165) waiting through `waitUntil` (line 80, default deadline 3000 ms) for the spawned `flock -n ... sleep 60` child to hold the lock. The failing case is the test at line 66 / call at line 741.
 * **Defect:** the 3 s deadline assumes the asynchronously spawned `flock` child acquires its lock promptly. `waitUntil` busy-spins on the event-loop thread while it polls, adding CPU pressure, and a loaded machine can delay the child past the deadline. The test then fails in the unconditional contract lane although the eviction code is unchanged.
@@ -20821,6 +20821,10 @@ Closed by 5ea1ae3b, pushed to master as part of 4633e57f (database games in Rece
 * **Proof:** the case passes 50 repetitions under a parallel CPU load (e.g. `stress-ng --cpu $(nproc)`), and a deliberately never-acquiring holder still fails with a clear message.
 * **Found by:** Claude Code push session, 2026-11-02, final contract gate.
 * **Impact class:** tooling
+* **Handled (2026-11-10, drain):** `holdLock` in `scripts/rust-target-eviction-tests.mjs` is now async: the holder runs `flock -n -E 75 <lock> sh -c 'echo ready; exec sleep 60'` and the test awaits the "ready" line on stdout instead of busy-spinning a 3 s deadline. An early exit (e.g. 75, lock already held) or spawn error rejects with the lock path, exit code, signal and stderr; a 60 s setTimeout safety net kills the holder and rejects. A confirming `flock` probe stays after readiness. All three callers await it. Commit 25314c29.
+* **Proof:** full suite 34/34; the named case 50/50 under 20 CPU-burner workers (Codex leaf run); a pre-held lock rejected in 4 ms with `exit code=75`; oxfmt/oxlint clean.
+* **Rejected:** raising the deadline and sleeping between polls, because any fixed deadline still races the load.
+<!-- ledger-meta {"command":"close","effect_lines":3,"effect_sha256":"fdf9b43fb42587418fd0a56875c47c13c4dcd4dac9f9558d680554c9db600b28","header_sha256":"10d2ec7682c251e7acec00028c57cde209a4695b998c1f905154a50de25e29c1","header_status":"handled","input_sha256":"3727ee14a0984407d5869ecafcdc46de8995a6a7c8a1ca5bf60c0fedd5692880","kind":"mutation-receipt","operation":"33b1c595be632f31d9382416552f411c11095ecd111b9cedd7209afbdc942f8d","options":{"section":null},"request_id_sha256":null,"results":["f-20261102-07"],"target":"f-20261102-07","v":1} -->
 
 ---
 
