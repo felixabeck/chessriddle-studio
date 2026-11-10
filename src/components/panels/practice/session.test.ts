@@ -266,7 +266,7 @@ describe("practice queue", () => {
 describe("practice replay", () => {
     it("includes every ply from the root to a first card at ply 14", () => {
         const path = Array<number>(14).fill(0);
-        const replay = buildPracticeReplay(null, path);
+        const replay = buildPracticeReplay(null, path, []);
         expect(PRACTICE_REPLAY_STEP_MS).toBe(450);
         expect(replay.startPath).toEqual([]);
         expect(replay.steps).toEqual([
@@ -299,25 +299,38 @@ describe("practice replay", () => {
             ],
         },
         { cursor: [0], target: [1, 0], start: [], steps: [[1], [1, 0]] },
-        { cursor: [0, 1, 0], target: [0, 1], start: [0, 1], steps: [] },
-        { cursor: [0, 1], target: [0, 1], start: [0, 1], steps: [] },
-        {
-            cursor: [0],
-            target: [0, 1, 2],
-            start: [0],
-            steps: [
-                [0, 1],
-                [0, 1, 2],
-            ],
-        },
     ])(
         "starts a later card at the deepest common ancestor ($cursor → $target)",
         ({ cursor, target, start, steps }) => {
             const before = structuredClone({ cursor, target });
-            expect(buildPracticeReplay(cursor, target)).toEqual({ startPath: start, steps });
+            expect(buildPracticeReplay(cursor, target, [])).toEqual({ startPath: start, steps });
             expect({ cursor, target }).toEqual(before);
         },
     );
+
+    it("stays at the card with no replay steps when the current path equals the card path", () => {
+        expect(buildPracticeReplay([0, 1], [0, 1], [])).toEqual({
+            startPath: [0, 1],
+            steps: [],
+        });
+    });
+
+    it("returns to the card without replay steps when the cursor is deeper on the same line", () => {
+        expect(buildPracticeReplay([0, 1, 0], [0, 1], [])).toEqual({
+            startPath: [0, 1],
+            steps: [],
+        });
+    });
+
+    it("replays only the remaining plies when the current path is a strict prefix of the card", () => {
+        expect(buildPracticeReplay([0], [0, 1, 2], [])).toEqual({
+            startPath: [0],
+            steps: [
+                [0, 1],
+                [0, 1, 2],
+            ],
+        });
+    });
 
     it("starts the first card at headers.start, including when it is the card position", () => {
         expect(buildPracticeReplay(null, [1, 0, 2, 0], [1, 0])).toEqual({
@@ -354,7 +367,7 @@ describe("practice replay", () => {
         reply.children.push(answer);
         const [card] = buildFromTree(root, "white", []);
         expect(card.answer).toBe("Nf3");
-        const replay = buildPracticeReplay(null, [0]);
+        const replay = buildPracticeReplay(null, [0], []);
         expect(replay).toEqual({ startPath: [], steps: [[0]] });
         expect(getNodeAtPath(root, replay.startPath).halfMoves).toBe(45);
         expect(replay.steps.map((path) => getNodeAtPath(root, path).halfMoves)).toEqual([46]);
@@ -537,7 +550,32 @@ describe("line-training reducer phases", () => {
         }
     });
 
-    it("restarts a surviving replay with its token but rejects a different card under that token", () => {
+    it.each(["idle", "replaying", "learning", "revealed", "correct", "advancing"] as const)(
+        "ignores reveal events during %s",
+        (phase) => {
+            const state: PracticeSession = { ...replaying(), phase };
+            expect(practiceSessionReducer(state, { type: "reveal", token: 5, answer: "Nf3" })).toBe(
+                state,
+            );
+        },
+    );
+
+    it.each(["idle", "learning", "waiting", "retry", "revealed", "correct", "advancing"] as const)(
+        "ignores replay events with the current token during %s",
+        (phase) => {
+            const state: PracticeSession = { ...replaying(), phase };
+            expect(
+                practiceSessionReducer(state, {
+                    type: "replay",
+                    token: 5,
+                    fen: "updated-fen",
+                    positionKey: "card-key",
+                }),
+            ).toBe(state);
+        },
+    );
+
+    it("restarts replay with the current token and the same position key", () => {
         const state = replaying();
         expect(
             practiceSessionReducer(state, {
@@ -547,6 +585,10 @@ describe("line-training reducer phases", () => {
                 positionKey: "card-key",
             }),
         ).toEqual({ ...state, currentFen: "updated-fen" });
+    });
+
+    it("ignores replay with the current token and a different position key", () => {
+        const state = replaying();
         expect(
             practiceSessionReducer(state, {
                 type: "replay",

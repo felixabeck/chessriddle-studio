@@ -396,7 +396,11 @@ function PracticePanel() {
         }
         const liveFrame = liveCard.frame;
         // Re-resolve both paths after every delay. Edits may have reordered this branch.
-        const next = buildPracticeReplay(live.position, liveFrame.position);
+        const next = buildPracticeReplay(
+          live.position,
+          liveFrame.position,
+          live.headers.start || [],
+        );
         live.setPracticePath(liveFrame.position);
         if (next.startPath.length !== live.position.length) live.goToMove(next.startPath);
         if (next.steps.length > 0) live.goToMove(next.steps[0]);

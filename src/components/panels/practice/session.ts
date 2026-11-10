@@ -54,13 +54,11 @@ export function advancePracticeQueue(
 export function buildPracticeReplay(
     currentPath: number[] | null,
     cardPath: number[],
-    practiceStart: number[] = [],
+    practiceStart: number[],
 ): { startPath: number[]; steps: number[][] } {
     const from = currentPath ?? practiceStart;
-    let commonLength = 0;
-    while (commonLength < from.length && from[commonLength] === cardPath[commonLength]) {
-        commonLength++;
-    }
+    const mismatch = from.findIndex((index, depth) => index !== cardPath[depth]);
+    const commonLength = mismatch === -1 ? from.length : mismatch;
     const startPath = cardPath.slice(0, commonLength);
     const steps: number[][] = [];
     for (let length = commonLength + 1; length <= cardPath.length; length++) {
@@ -112,47 +110,46 @@ export function practiceSessionReducer(
         };
     }
     if (event.token !== state.token) return state;
-    if (event.type === "rebind") {
-        return state.phase === "idle" || state.phase === "replaying"
-            ? state
-            : {
-                  ...state,
-                  currentFen: event.fen,
-                  ...(state.answer !== undefined ? { answer: event.answer } : {}),
-              };
+    switch (event.type) {
+        case "rebind":
+            return state.phase === "idle" || state.phase === "replaying"
+                ? state
+                : {
+                      ...state,
+                      currentFen: event.fen,
+                      ...(state.answer !== undefined ? { answer: event.answer } : {}),
+                  };
+        case "end":
+            return idlePracticeSession(event.token);
+        case "replayed":
+            return state.phase === "replaying"
+                ? { ...state, phase: event.learning ? "learning" : "waiting" }
+                : state;
+        case "learned":
+            return state.phase === "learning" ? { ...state, phase: "advancing" } : state;
+        case "advance":
+            return state.phase === "correct" ? { ...state, phase: "advancing" } : state;
+        case "correct":
+            return state.phase === "waiting" ||
+                state.phase === "retry" ||
+                state.phase === "revealed"
+                ? { ...state, phase: "correct", answer: event.answer, timeTaken: event.timeTaken }
+                : state;
+        case "reveal":
+            return state.phase === "waiting" || state.phase === "retry"
+                ? { ...state, phase: "revealed", answer: event.answer }
+                : state;
+        case "wrong":
+            return state.phase === "waiting" || state.phase === "retry"
+                ? {
+                      ...state,
+                      phase: state.phase === "waiting" ? "retry" : "revealed",
+                      answer: event.answer,
+                      playedMove: event.playedMove,
+                      timeTaken: event.timeTaken,
+                  }
+                : state;
     }
-    if (event.type === "end") return idlePracticeSession(event.token);
-    if (event.type === "replayed") {
-        return state.phase === "replaying"
-            ? { ...state, phase: event.learning ? "learning" : "waiting" }
-            : state;
-    }
-    if (event.type === "learned") {
-        return state.phase === "learning" ? { ...state, phase: "advancing" } : state;
-    }
-    if (event.type === "advance") {
-        return state.phase === "correct" ? { ...state, phase: "advancing" } : state;
-    }
-    const acceptsAnswer =
-        state.phase === "waiting" || state.phase === "retry" || state.phase === "revealed";
-    if (event.type === "correct" && acceptsAnswer) {
-        return { ...state, phase: "correct", answer: event.answer, timeTaken: event.timeTaken };
-    }
-    if (state.phase === "waiting" || state.phase === "retry") {
-        if (event.type === "reveal") {
-            return { ...state, phase: "revealed", answer: event.answer };
-        }
-        if (event.type === "wrong") {
-            return {
-                ...state,
-                phase: state.phase === "waiting" ? "retry" : "revealed",
-                answer: event.answer,
-                playedMove: event.playedMove,
-                timeTaken: event.timeTaken,
-            };
-        }
-    }
-    return state;
 }
 
 export function emptyPracticeStats(): PracticeSessionStats {
