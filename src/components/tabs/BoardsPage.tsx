@@ -346,7 +346,14 @@ export default function BoardsPage() {
                   className={classes.tabList}
                 >
                   {tabs.map((tab, i) => (
-                    <Draggable key={tab.value} draggableId={tab.value} index={i}>
+                    // The drag handle is the tab's own button, which the library refuses as a
+                    // drag start unless interactive-element blocking is off.
+                    <Draggable
+                      key={tab.value}
+                      draggableId={tab.value}
+                      index={i}
+                      disableInteractiveElementBlocking
+                    >
                       {(provided) => (
                         <div
                           ref={provided.innerRef}
