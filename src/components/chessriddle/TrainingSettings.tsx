@@ -18,6 +18,7 @@ export default function TrainingSettings({
   const { t } = useTranslation();
   const state = useSyncExternalStore(settings.subscribe, settings.get);
   const { values } = state;
+  const disabled = state.status !== "ready" || state.reconciling;
   const durations = [...new Set([60, 180, 300, 600, values.timerDuration])].sort((a, b) => a - b);
   return (
     <AppModal opened={opened} onClose={onClose} title={t("Training.Settings.Title")}>
@@ -26,7 +27,7 @@ export default function TrainingSettings({
           label={t("Training.Settings.Difficulty")}
           value={String(values.difficulty)}
           data={difficultyOptions(t)}
-          disabled={state.status !== "ready" || state.reconciling}
+          disabled={disabled}
           onChange={(value) => {
             if (value !== null) settings.change({ difficulty: Number(value) });
           }}
@@ -39,7 +40,7 @@ export default function TrainingSettings({
             { value: "", label: t("Training.Settings.AllMotifs") },
             ...state.motifs.map((name) => ({ value: name, label: motifLabel(name, t) })),
           ]}
-          disabled={state.status !== "ready" || state.reconciling || !!state.motifError}
+          disabled={disabled || !!state.motifError}
           onChange={(value) => settings.change({ motif: value || null })}
         />
         {state.motifError && (
@@ -53,7 +54,7 @@ export default function TrainingSettings({
         <Switch
           label={t("Training.Settings.ShowTimer")}
           checked={values.showTimer}
-          disabled={state.status !== "ready" || state.reconciling}
+          disabled={disabled}
           onChange={(event) => settings.change({ showTimer: event.currentTarget.checked })}
         />
         <Select
@@ -63,7 +64,7 @@ export default function TrainingSettings({
             { value: "up", label: t("Training.Settings.Up") },
             { value: "down", label: t("Training.Settings.Down") },
           ]}
-          disabled={state.status !== "ready" || state.reconciling}
+          disabled={disabled}
           onChange={(value) => {
             if (value) settings.change({ timerMode: value });
           }}
@@ -79,7 +80,7 @@ export default function TrainingSettings({
                   ? t("Training.Settings.Minutes", { minutes: seconds / 60 })
                   : t("Training.Settings.Seconds", { seconds }),
             }))}
-            disabled={state.status !== "ready" || state.reconciling}
+            disabled={disabled}
             onChange={(value) => {
               if (value) settings.change({ timerDuration: Number(value) });
             }}
