@@ -77,6 +77,34 @@ test.each(shippedCatalogues())(
     },
 );
 
+test.each(shippedCatalogues())(
+    "$locale reports a name collision only when the backend marks the name as taken",
+    async ({ locale, translation }) => {
+        const instance = await catalogueI18n(locale as SupportedLocale);
+        expect(
+            confirmationErrorMessage(
+                {
+                    tag: "backend-error",
+                    category: "conflict",
+                    message: "private native diagnostic",
+                    nameTaken: true,
+                },
+                instance.t.bind(instance),
+            ),
+        ).toBe(translation["Common.NameAlreadyUsed"]);
+        expect(
+            confirmationErrorMessage(
+                {
+                    tag: "backend-error",
+                    category: "conflict",
+                    message: "private native diagnostic",
+                },
+                instance.t.bind(instance),
+            ),
+        ).toBe(translation[messageKeys.unexpected]);
+    },
+);
+
 test("every shipped catalogue has localized file-child unreadable sentences", () => {
     const catalogues = shippedCatalogues();
     const english = catalogues.find(({ locale }) => locale === "en-US")!.translation;

@@ -1765,7 +1765,7 @@ fn paired_rename(
 #[derive(Debug)]
 enum WorkspaceSidecarDisposition {
     Absent,
-    Moved {
+    Existing {
         identity: (u64, u64),
         saved_bytes: Option<Vec<u8>>,
         renamed: bool,
@@ -1799,14 +1799,14 @@ fn replace_owned_workspace_metadata(
     )
 }
 
-fn rewrite_moved_workspace_metadata(
+fn rewrite_existing_workspace_metadata(
     source: &WorkspaceMutationTarget,
     target_leaf: &OsStr,
     disposition: &mut WorkspaceSidecarDisposition,
     bytes: &[u8],
     cancellation: &CancellationToken,
 ) -> Result<(), Error> {
-    let WorkspaceSidecarDisposition::Moved {
+    let WorkspaceSidecarDisposition::Existing {
         identity,
         saved_bytes,
         ..
@@ -1880,7 +1880,7 @@ fn reverse_workspace_rename(
     let target_info = sidecar_leaf(target_leaf)?;
     let restoration =
         match disposition {
-            WorkspaceSidecarDisposition::Moved {
+            WorkspaceSidecarDisposition::Existing {
                 identity,
                 saved_bytes: Some(bytes),
                 ..
@@ -1895,8 +1895,8 @@ fn reverse_workspace_rename(
         };
     finish_committed_workspace_step(restoration, || {
         let sidecar = match disposition {
-            WorkspaceSidecarDisposition::Moved { renamed: false, .. } => Ok(()),
-            WorkspaceSidecarDisposition::Moved { identity, .. } => rename_entry_at(
+            WorkspaceSidecarDisposition::Existing { renamed: false, .. } => Ok(()),
+            WorkspaceSidecarDisposition::Existing { identity, .. } => rename_entry_at(
                 target_parent,
                 &target_info,
                 *identity,
@@ -1941,7 +1941,7 @@ fn compensate_workspace_rename(
     }
 }
 
-/// Forward file mutations own the destination sidecar even when there was none to move.
+/// Forward file mutations own the destination sidecar whether retained, renamed or created.
 /// Publication refusal belongs to the pair so only its retained primary object is reversed.
 fn paired_workspace_rename(
     source: &WorkspaceMutationTarget,
@@ -2056,7 +2056,7 @@ fn paired_rename_inner(
                 && crate::infra::path_authority::opened_file_identity(&source.parent)?
                     == crate::infra::path_authority::opened_file_identity(target_parent)?
             {
-                disposition = WorkspaceSidecarDisposition::Moved {
+                disposition = WorkspaceSidecarDisposition::Existing {
                     identity,
                     saved_bytes: None,
                     renamed: false,
@@ -2069,7 +2069,7 @@ fn paired_rename_inner(
                 target_parent,
                 &target_info,
             )? {
-                disposition = WorkspaceSidecarDisposition::Moved {
+                disposition = WorkspaceSidecarDisposition::Existing {
                     identity,
                     saved_bytes: None,
                     renamed: true,
@@ -2718,7 +2718,7 @@ pub(crate) fn rename_workspace_file_blocking(
         if cancellation.is_cancelled() {
             return Err(Error::Cancellation);
         }
-        let sidecar = rewrite_moved_workspace_metadata(
+        let sidecar = rewrite_existing_workspace_metadata(
             &source,
             &target_leaf,
             &mut disposition,

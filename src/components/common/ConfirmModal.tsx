@@ -16,13 +16,14 @@ export function confirmationErrorMessage(
   cause: unknown,
   t: (key: string, options?: { defaultValue: string }) => string,
 ) {
-  const { category, backendCategory } = normalizeError(cause);
+  const { category, backendCategory, nameTaken } = normalizeError(cause);
   if (backendCategory === "durability") return durabilityUncertainMessage(t);
   if (category === "applied-despite-error") {
     return t("Common.ConfirmationError.applied-despite-error", {
       defaultValue: "Part of the operation was completed, and what is shown may no longer match.",
     });
   }
+  if (nameTaken === true) return t("Common.NameAlreadyUsed");
   return t("Common.ConfirmationError.unexpected", {
     defaultValue: "The action could not be completed. Please try again.",
   });
