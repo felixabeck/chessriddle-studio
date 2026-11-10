@@ -64,6 +64,7 @@ type Stats = {
     unseen: number;
     due: number;
     practiced: number;
+    learned: number;
     nextDue: Date | null;
     total: number;
 };
@@ -75,18 +76,19 @@ export function getCardStatus(card: Card, now: Date = new Date()): CardStatus {
     return new Date(card.due) <= now ? "due" : "practiced";
 }
 
-export function getStats(positions: Position[]) {
+export function getStats(positions: Position[], now: Date = new Date()) {
     const stats: Stats = {
         unseen: 0,
         due: 0,
         practiced: 0,
+        learned: 0,
         nextDue: null,
         total: positions.length,
     };
-    const now = new Date();
     for (const card of positions) {
         const status = getCardStatus(card.card, now);
         stats[status]++;
+        if (card.card.reps > 0) stats.learned++;
         if (status === "practiced") {
             const dueDate = new Date(card.card.due);
             if (!stats.nextDue || dueDate < stats.nextDue) {
@@ -95,6 +97,28 @@ export function getStats(positions: Position[]) {
         }
     }
     return stats;
+}
+
+export type PracticeAnswer = "answer" | "alternative" | "wrong";
+
+export function classifyPracticeAnswer(
+    card: Pick<Position, "fen" | "answer">,
+    san: string,
+    root: TreeNode,
+    start: number[],
+): PracticeAnswer {
+    if (san === card.answer) return "answer";
+    const boardState = getBoardState(card.fen);
+    for (const frame of treeIterator(root)) {
+        if (
+            isInPracticeScope(frame.position, start) &&
+            getBoardState(frame.node.fen) === boardState &&
+            frame.node.children.some((child) => child.san === san)
+        ) {
+            return "alternative";
+        }
+    }
+    return "wrong";
 }
 
 export function getCardForReview(

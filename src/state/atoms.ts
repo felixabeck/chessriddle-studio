@@ -1176,7 +1176,11 @@ export function invalidateFileDeckAtoms(file: string): void {
 
 export type PracticePhase =
     | "idle" // Not practicing
+    | "replaying" // Playing the line into the card position
+    | "learning" // Showing an unseen move before its first quiz
     | "waiting" // Waiting for user to make a move
+    | "retry" // First attempt was wrong, waiting for another attempt
+    | "revealed" // Showing the answer, waiting for it to be played
     | "correct" // Move was correct, waiting for quality rating
     | "advancing" // A correct answer was rated; waiting to show the next card
     | "incorrect"; // Move was incorrect, showing feedback

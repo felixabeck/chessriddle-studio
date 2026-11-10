@@ -1,12 +1,14 @@
 import { parseUci } from "chessops";
 import { Chess } from "chessops/chess";
-import { makeFen } from "chessops/fen";
+import { makeFen, parseFen } from "chessops/fen";
 import { parseSan } from "chessops/san";
 import { type Card, createEmptyCard } from "ts-fsrs";
 import { expect, test } from "vitest";
 import {
     buildFromTree,
+    classifyPracticeAnswer,
     getCardStatus,
+    getStats,
     isInPracticeScope,
     syncDeck,
     updateCardPerformance,
@@ -22,9 +24,9 @@ test("practice scope includes only non-root positions or the Start subtree", () 
     expect(isInPracticeScope([1, 1], [1, 0])).toBe(false);
 });
 
-function openingLine(moves: string[]): TreeNode {
-    const root = defaultTree().root;
-    const position = Chess.default();
+function openingLine(moves: string[], fen?: string): TreeNode {
+    const root = defaultTree(fen).root;
+    const position = Chess.fromSetup(parseFen(root.fen).unwrap()).unwrap();
     let node = root;
     for (const san of moves) {
         const move = parseSan(position, san)!;
@@ -349,3 +351,87 @@ test.each(identityRefreshes)(
         });
     },
 );
+
+test("learned statistics include due reviews and keep the existing status counts", () => {
+    const positions = buildFromTree(
+        openingLine(["e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Ba4"]),
+        "white",
+        [],
+    );
+    positions[0].card = { ...positions[0].card, reps: 2, due: statusNow };
+    const nextDue = new Date(statusNow.getTime() + 60_000);
+    positions[1].card = { ...positions[1].card, reps: 3, due: nextDue };
+    const before = structuredClone(positions);
+
+    expect(getStats(positions, statusNow)).toEqual({
+        unseen: 1,
+        due: 1,
+        practiced: 1,
+        learned: 2,
+        total: 3,
+        nextDue,
+    });
+    expect(getStats(positions, new Date(nextDue.getTime() + 1))).toMatchObject({
+        unseen: 1,
+        due: 2,
+        practiced: 0,
+        learned: 2,
+        nextDue: null,
+    });
+    expect(getStats([], statusNow)).toEqual({
+        unseen: 0,
+        due: 0,
+        practiced: 0,
+        learned: 0,
+        total: 0,
+        nextDue: null,
+    });
+    expect(positions).toEqual(before);
+});
+
+test("classifies the main answer, local alternatives and moves outside the repertoire", () => {
+    const root = openingLine(["e4", "e5", "Nf3"]);
+    const frame = root.children[0].children[0];
+    frame.children.push(...openingLine(["e4", "e5", "Bc4"]).children[0].children[0].children);
+    const [card] = buildFromTree(root, "white", []);
+    const before = structuredClone(root);
+
+    expect(classifyPracticeAnswer(card, "Nf3", root, [])).toBe("answer");
+    expect(classifyPracticeAnswer(card, "Bc4", root, [])).toBe("alternative");
+    expect(classifyPracticeAnswer(card, "d4", root, [])).toBe("wrong");
+    expect(root).toEqual(before);
+});
+
+test("accepts alternative moves from in-scope transposed branches with different clocks", () => {
+    const root = openingLine(["Nf3", "Nf6", "g3", "g6", "Bg2"]);
+    root.children.push(...openingLine(["g3", "g6", "Nf3", "Nf6", "d4"]).children);
+    const card = buildFromTree(root, "white", []).find(({ answer }) => answer === "Bg2")!;
+
+    expect(classifyPracticeAnswer(card, "d4", root, [])).toBe("alternative");
+    expect(classifyPracticeAnswer(card, "d4", root, [0])).toBe("wrong");
+    expect(classifyPracticeAnswer(card, "d4", root, [1])).toBe("alternative");
+    expect(classifyPracticeAnswer(card, "Nf3", root, [])).toBe("wrong");
+    // An identical SAN at the root is outside the empty-Start practice scope.
+    expect(classifyPracticeAnswer({ fen: root.fen, answer: "e4" }, "Nf3", root, [])).toBe("wrong");
+});
+
+test.each(identityRefreshes)(
+    "classifies alternatives using the canonical $name board identity",
+    ({ raw, canonical }) => {
+        const root = defaultTree().root;
+        root.children.push(practiceNode(raw, "e4"), practiceNode(canonical, "Kf2"));
+        expect(classifyPracticeAnswer({ fen: raw, answer: "e4" }, "Kf2", root, [])).toBe(
+            "alternative",
+        );
+    },
+);
+
+test("a Black-to-move root anchors card colour to its move number", () => {
+    const root = openingLine(
+        ["e5", "Nf3", "Nc6", "Bb5", "a6"],
+        "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 23",
+    );
+    expect(root.halfMoves).toBe(45);
+    expect(buildFromTree(root, "black", []).map(({ answer }) => answer)).toEqual(["Nc6", "a6"]);
+    expect(buildFromTree(root, "white", []).map(({ answer }) => answer)).toEqual(["Nf3", "Bb5"]);
+});
