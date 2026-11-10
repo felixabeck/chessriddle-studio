@@ -31,8 +31,11 @@ import {
   tabsAtom,
 } from "@/state/atoms";
 import { gameSignature, openDatabaseGame } from "@/utils/databaseGame";
-import type { Tab } from "@/utils/tabs";
+import { runTabCreation, type Tab } from "@/utils/tabs";
 import { openFile } from "@/utils/files";
+import { useGameOpen } from "@/components/common/gameOpen";
+import GameSelector, { type GameSelectorRow } from "@/components/panels/info/GameSelector";
+import { StaleFileGameError } from "@/state/fileStructureChange";
 import CreateRepertoireModal from "./CreateRepertoireModal";
 import ImportModal from "./ImportModal";
 import classes from "./NewTabHome.module.css";
@@ -108,12 +111,16 @@ function LibraryItemRow({
   count,
   secondary,
   disabled,
+  expanded,
+  counting,
   onOpen,
 }: {
   row: HomeRow;
   count: number | null;
   secondary?: string;
   disabled: boolean;
+  expanded?: boolean;
+  counting?: boolean;
   onOpen: (row: HomeRow) => void;
 }) {
   const { t, i18n } = useTranslation();
@@ -128,6 +135,8 @@ function LibraryItemRow({
     <UnstyledButton
       className={classes.libraryRow}
       disabled={disabled}
+      aria-expanded={row.kind === "file" ? !!expanded : undefined}
+      aria-busy={counting || undefined}
       onClick={() => onOpen(row)}
       data-library-row
       data-kind={row.kind}
@@ -207,6 +216,74 @@ export default function NewTabHome({ id }: { id: string }) {
   const opening = useRef<AbortController | null>(null);
   useEffect(() => () => opening.current?.abort(), []);
 
+  type FileRequest = { key: string; controller: AbortController };
+  const fileRequest = useRef<FileRequest | null>(null);
+  const [countingFile, setCountingFile] = useState<string | null>(null);
+  const [picker, setPicker] = useState<{ request: FileRequest; file: FileMetadata } | null>(null);
+  const [chapters, setChapters] = useState<Map<number, GameSelectorRow>>(new Map());
+  const [reloadGeneration, setReloadGeneration] = useState(0);
+  const collapseFile = useCallback(() => {
+    fileRequest.current?.controller.abort();
+    fileRequest.current = null;
+    setCountingFile(null);
+    setPicker(null);
+    setChapters(new Map());
+    setReloadGeneration(0);
+  }, []);
+  useEffect(() => {
+    collapseFile();
+    return () => {
+      fileRequest.current?.controller.abort();
+      fileRequest.current = null;
+    };
+  }, [id, filter, search, collapseFile]);
+
+  const reportFileError = (
+    cause: unknown,
+    file: FileMetadata,
+    request: FileRequest,
+    pruneMissing = true,
+  ) => {
+    if (cause instanceof StaleFileGameError && fileRequest.current === request) {
+      setReloadGeneration((previous) => previous + 1);
+    }
+    if (pruneMissing && normalizeError(cause).category === "not-found") {
+      setRecentFiles((current) =>
+        current.filter(
+          (entry) => isDatabaseRecent(entry) || entry.handle.id.id !== file.handle.id.id,
+        ),
+      );
+    }
+    notifyUnlessCancelled(t("Common.Error"), cause);
+  };
+  const fileOpen = useGameOpen(
+    ({
+      file,
+      request,
+      index,
+      expected,
+      panel,
+    }: {
+      file: FileMetadata;
+      request: FileRequest;
+      index?: number;
+      expected?: GameSelectorRow["identity"];
+      panel?: "practice";
+    }) =>
+      runTabCreation({
+        create: () =>
+          openFile(file, setTabs, {
+            ownerId: id,
+            store,
+            ...(index !== undefined ? { gameNumber: index, expected } : {}),
+            ...(panel ? { panel } : {}),
+          }),
+        onSuccess: () => navigate({ to: "/" }),
+        onError: (cause) => reportFileError(cause, file, request, index === undefined),
+      }),
+    (cause) => notifyUnlessCancelled(t("Common.Error"), cause),
+  );
+
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
@@ -261,58 +338,30 @@ export default function NewTabHome({ id }: { id: string }) {
   }, [recentFiles, updateRecentFiles]);
 
   const openRecentFile = useCallback(
-    async (file: RecentFile, panel?: "practice", source?: FileMetadata) => {
+    async (file: Extract<RecentFile, { kind: "database" }>) => {
       try {
-        if (isDatabaseRecent(file)) {
-          const result = await tauri.getDbGame(file.database, file.gameId, file.linked ?? null);
-          if (result.kind === "missing") {
-            setRecentFiles((current) =>
-              current.filter((entry) => recentFileKey(entry) !== recentFileKey(file)),
-            );
-            notifyUnlessCancelled(t("Common.Error"), {
-              category: "not-found",
-              message: t("GameReferences.Missing"),
-            });
-            return;
-          }
-          const tabId = await openDatabaseGame({
-            game: result.game,
-            database: file.database,
-            databaseTitle: file.databaseTitle,
-            setTabs,
-            addRecentFile,
-            ownerId: id,
-            store,
-          });
-          if (tabId !== null) navigate({ to: "/" });
-          return;
-        }
-        const numGames = await tauri.countPgnGames(file.handle);
-        const tabId = await openFile(
-          {
-            type: "file",
-            name: file.name,
-            handle: file.handle,
-            numGames,
-            metadata: source?.metadata ?? { type: file.type, tags: [] },
-            lastModified: source?.lastModified ?? Date.now(),
-          },
-          setTabs,
-          {
-            ...(!source ? { tabName: file.name } : {}),
-            ownerId: id,
-            store,
-            ...(panel ? { panel } : {}),
-          },
-        );
-        if (tabId === null) return;
-        navigate({ to: "/" });
-      } catch (cause) {
-        if (!isDatabaseRecent(file) && normalizeError(cause).category === "not-found") {
+        const result = await tauri.getDbGame(file.database, file.gameId, file.linked ?? null);
+        if (result.kind === "missing") {
           setRecentFiles((current) =>
             current.filter((entry) => recentFileKey(entry) !== recentFileKey(file)),
           );
+          notifyUnlessCancelled(t("Common.Error"), {
+            category: "not-found",
+            message: t("GameReferences.Missing"),
+          });
+          return;
         }
+        const tabId = await openDatabaseGame({
+          game: result.game,
+          database: file.database,
+          databaseTitle: file.databaseTitle,
+          setTabs,
+          addRecentFile,
+          ownerId: id,
+          store,
+        });
+        if (tabId !== null) navigate({ to: "/" });
+      } catch (cause) {
         notifyUnlessCancelled(t("Common.Error"), cause);
       }
     },
@@ -321,21 +370,49 @@ export default function NewTabHome({ id }: { id: string }) {
 
   const openRow = async (row: HomeRow) => {
     if (row.kind === "file") {
-      const file = row.file;
-      await openRecentFile(
-        "metadata" in file
-          ? {
-              name: file.name,
-              handle: file.handle,
-              type: file.metadata.type,
-              lastOpened: row.opened ?? row.modified,
-            }
-          : file,
-        filter === "due" ? "practice" : undefined,
-        "metadata" in file ? file : undefined,
-      );
+      const wasCurrent = fileRequest.current?.key === row.key;
+      collapseFile();
+      if (wasCurrent) return;
+      const request = { key: row.key, controller: new AbortController() };
+      fileRequest.current = request;
+      setCountingFile(row.key);
+      const source = row.file;
+      const file: FileMetadata =
+        "metadata" in source
+          ? source
+          : {
+              type: "file",
+              name: source.name,
+              handle: source.handle,
+              numGames: 0,
+              metadata: { type: source.type, tags: [] },
+              lastModified: Date.now(),
+            };
+      try {
+        const numGames = await tauri.countPgnGames(file.handle, {
+          signal: request.controller.signal,
+        });
+        if (fileRequest.current !== request || request.controller.signal.aborted) return;
+        const counted = { ...file, numGames };
+        if (numGames > 1) setPicker({ request, file: counted });
+        else {
+          await fileOpen.activate({
+            file: counted,
+            request,
+            panel: filter === "due" ? "practice" : undefined,
+          });
+          if (fileRequest.current === request) collapseFile();
+        }
+      } catch (cause) {
+        if (fileRequest.current !== request || request.controller.signal.aborted) return;
+        reportFileError(cause, file, request);
+        collapseFile();
+      } finally {
+        if (fileRequest.current === request) setCountingFile(null);
+      }
       return;
     }
+    collapseFile();
     if (row.kind === "game" && row.recent) {
       await openRecentFile(row.recent);
       return;
@@ -641,14 +718,46 @@ export default function NewTabHome({ id }: { id: string }) {
                           ? t("Library.GamesDatabase")
                           : undefined;
                   return (
-                    <LibraryItemRow
-                      key={row.key}
-                      row={row}
-                      count={practice?.count ?? null}
-                      secondary={secondary}
-                      disabled={disabled}
-                      onOpen={(item) => void openRow(item)}
-                    />
+                    <Box key={row.key}>
+                      <LibraryItemRow
+                        row={row}
+                        count={practice?.count ?? null}
+                        secondary={secondary}
+                        disabled={disabled}
+                        expanded={picker?.request.key === row.key}
+                        counting={countingFile === row.key}
+                        onOpen={(item) => void openRow(item)}
+                      />
+                      {picker?.request.key === row.key && (
+                        <Box className={classes.chapters}>
+                          <GameSelector
+                            games={chapters}
+                            setGames={setChapters}
+                            setPage={(index) => {
+                              const chapter = chapters.get(index);
+                              if (
+                                !chapter ||
+                                chapter.omission ||
+                                index < 0 ||
+                                index >= picker.file.numGames
+                              )
+                                return;
+                              void fileOpen.activate({
+                                file: picker.file,
+                                request: picker.request,
+                                index,
+                                expected: chapter.identity,
+                                panel: filter === "due" ? "practice" : undefined,
+                              });
+                            }}
+                            total={picker.file.numGames}
+                            path={picker.file.handle}
+                            activePage={-1}
+                            reloadGeneration={reloadGeneration}
+                          />
+                        </Box>
+                      )}
+                    </Box>
                   );
                 })}
                 {(library.loading ||

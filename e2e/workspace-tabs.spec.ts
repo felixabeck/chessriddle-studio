@@ -1643,3 +1643,100 @@ test("workspace-tabs: FEN import keeps its New Tab on a refused write and replac
         1,
     );
 });
+
+for (const scheme of ["light", "dark"] as const) {
+    test(`workspace-tabs: Library chapter picker opens and follows chapters (${scheme})`, async ({
+        page,
+        mockScenario,
+    }, testInfo) => {
+        await page.emulateMedia({ colorScheme: scheme });
+        await page.addInitScript(
+            ({ workspace, scheme }) => {
+                localStorage.setItem("file-workspace", JSON.stringify(workspace));
+                localStorage.setItem("mantine-color-scheme", scheme);
+            },
+            { workspace: filesWorkspaceFixture.workspace, scheme },
+        );
+        const chapters = ["First", "Morra"].map((title, index) => ({
+            pgn: `[Event "${title}"]\n\n${index === 0 ? "1. e4 e5 *" : "1. d4 d5 *"}`,
+            stamp: String(index + 1).repeat(64),
+            revision: "library-chapters",
+            present: true,
+        }));
+        const tokens = Object.fromEntries(
+            chapters.map((chapter, index) => [
+                chapter.pgn,
+                [
+                    {
+                        type: "Header",
+                        value: { tag: "Event", value: index === 0 ? "First" : "Morra" },
+                    },
+                    { type: "San", value: index === 0 ? "e4" : "d4" },
+                    { type: "San", value: index === 0 ? "e5" : "d5" },
+                    { type: "Outcome", value: "*" },
+                ],
+            ]),
+        );
+        const file = { ...gameOpeningFixture.file, name: "White repertoire.pgn" };
+        await mockScenario({
+            commands: filesWorkspaceCommands([[file]], {
+                ...gameOpeningCommands,
+                count_pgn_games: { result: 2 },
+                read_games: { pgnGames: chapters },
+                read_game: { pgnGames: chapters },
+                file_revision: { result: "library-chapters" },
+                lex_pgn: { pgnTokens: tokens },
+            }),
+        });
+        await page.goto("/");
+        const tabs = page.getByRole("tablist").first().getByRole("tab");
+        const row = page.locator("[data-library-row]").filter({ hasText: "White repertoire" });
+        await expect(row).toHaveAttribute("aria-expanded", "false");
+        await row.focus();
+        await page.keyboard.press("Enter");
+        await expect(row).toHaveAttribute("aria-expanded", "true");
+        await expect(tabs).toHaveCount(1);
+        await expect(tabs.first()).toContainText("New Tab");
+        const list = page.locator("[data-home-library]").getByRole("listbox");
+        await expect(list.getByRole("option")).toHaveCount(2);
+        await expect(list.getByRole("option", { selected: true })).toHaveCount(0);
+        await testInfo.attach(`library-chapters-expanded-${scheme}.png`, {
+            body: await page.screenshot(),
+            contentType: "image/png",
+        });
+        await row.focus();
+        await page.keyboard.press("Tab");
+        await expect(list.getByRole("option").first()).toBeFocused();
+        await page.keyboard.press("Tab");
+        await expect(list.getByRole("option").nth(1)).toBeFocused();
+        await page.keyboard.press("Enter");
+        await expect(tabs).toHaveCount(1);
+        await expect(tabs.first()).toHaveText("Morra");
+        expect((await activeWorkspaceTab(page))?.gameOrigin).toMatchObject({
+            kind: "file",
+            gameNumber: 1,
+            file: { name: file.name },
+        });
+        const label = tabs.first().locator("span").last();
+        expect(await label.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+            true,
+        );
+        await tabs.first().hover();
+        await expect(
+            page.getByRole("tooltip", { name: "White repertoire › Morra", exact: true }),
+        ).toBeVisible();
+        await page.getByRole("tab", { name: "Info", exact: true }).click();
+        await page.getByRole("button", { name: /^2\. Morra/ }).click();
+        await page.getByRole("listbox").getByRole("option").filter({ hasText: "First" }).click();
+        await expect(tabs.first()).toHaveText("First");
+        expect((await activeWorkspaceTab(page))?.gameOrigin).toMatchObject({ gameNumber: 0 });
+        await tabs.first().hover();
+        await expect(
+            page.getByRole("tooltip", { name: "White repertoire › First", exact: true }),
+        ).toBeVisible();
+        await testInfo.attach(`library-chapter-opened-${scheme}.png`, {
+            body: await page.screenshot(),
+            contentType: "image/png",
+        });
+    });
+}

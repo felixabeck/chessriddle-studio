@@ -15,6 +15,7 @@ import { lastOpenedAtom, recentFilesAtom, tabsAtom } from "@/state/atoms";
 import { databaseGameOpenedKey } from "@/state/lastOpened";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { chessRiddleTrainingSessions as trainingSessions } from "@/state/chessRiddleTraining";
+import { StaleFileGameError } from "@/state/fileStructureChange";
 import NewTabHome from "./NewTabHome";
 
 const mocks = vi.hoisted(() => ({
@@ -30,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   feedArgs: vi.fn(),
   showMore: vi.fn(),
   count: vi.fn(),
+  readGames: vi.fn(),
   getGame: vi.fn(),
   info: vi.fn(),
   query: vi.fn(),
@@ -71,6 +73,7 @@ vi.mock("@/components/library/useOwnGamesFeed", () => ({
 vi.mock("@/platform/tauri", () => ({
   tauri: {
     countPgnGames: mocks.count,
+    readGames: mocks.readGames,
     getDbGame: mocks.getGame,
     getDbInfo: mocks.info,
     chessriddleTrainingAvailable: mocks.available,
@@ -81,6 +84,22 @@ vi.mock("@/utils/db", async (original) => ({
   query_games: mocks.query,
 }));
 vi.mock("@/utils/files", () => ({ openFile: mocks.openFile }));
+vi.mock("@/utils/chess", async (original) => ({
+  ...(await original<typeof import("@/utils/chess")>()),
+  parsePGN: async (pgn: string) => {
+    const { defaultTree } = await import("@/utils/treeReducer");
+    const tree = defaultTree();
+    tree.headers.event = pgn;
+    return tree;
+  },
+}));
+vi.mock("@tanstack/react-virtual", () => ({
+  useVirtualizer: () => ({
+    getTotalSize: () => 60,
+    measure: () => undefined,
+    getVirtualItems: () => [0, 1].map((index) => ({ index, size: 30, start: index * 30 })),
+  }),
+}));
 vi.mock("@/utils/databaseGame", async (original) => ({
   ...(await original<typeof import("@/utils/databaseGame")>()),
   openDatabaseGame: mocks.openGame,
@@ -90,12 +109,10 @@ vi.mock("@/components/library/openDatabaseTable", () => ({
 }));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => mocks.navigate }));
 vi.mock("@/components/files/notifyError", () => ({ notifyUnlessCancelled: mocks.notify }));
-vi.mock("react-i18next", () => ({
-  useTranslation: () => ({
-    t: (key: string, values?: unknown) => (values ? key + JSON.stringify(values) : key),
-    i18n: { language: "en-US" },
-  }),
-}));
+vi.mock("react-i18next", () => {
+  const t = (key: string, values?: unknown) => (values ? key + JSON.stringify(values) : key);
+  return { useTranslation: () => ({ t, i18n: { language: "en-US" } }) };
+});
 vi.mock("./CreateRepertoireModal", () => ({ default: () => null }));
 vi.mock("./ImportModal", () => ({
   default: (props: unknown) => {
@@ -188,8 +205,9 @@ beforeEach(() => {
   mocks.databases = { data: undefined, isLoading: false, error: undefined };
   mocks.due = {};
   mocks.feed = { games: [], loading: false, hasMore: false, incompleteCount: 0 };
-  mocks.count.mockResolvedValue(1);
-  mocks.openFile.mockResolvedValue("opened");
+  mocks.count.mockReset().mockResolvedValue(1);
+  mocks.readGames.mockReset().mockResolvedValue(chapterGames());
+  mocks.openFile.mockReset().mockResolvedValue("opened");
   mocks.openGame.mockResolvedValue("opened");
   mocks.info.mockResolvedValue({ status: "ready", game_count: 1, title: "Own games" });
   mocks.query.mockResolvedValue({ data: [game] });
@@ -216,7 +234,7 @@ test("recents remain visible and open with owner while the workspace listing sta
   expect(mocks.openFile).toHaveBeenCalledWith(
     expect.objectContaining({ name: "Recent" }),
     expect.any(Function),
-    { tabName: "Recent", ownerId: "home", store },
+    { ownerId: "home", store },
   );
 });
 
@@ -773,3 +791,194 @@ test.each(shippedCatalogues())(
     expect(instance.t("Home.Library.GamesIncomplete", { collections: 2 })).toContain("2");
   },
 );
+
+function chapterGames(revision = "original") {
+  return ["First chapter", "Second chapter"].map((pgn, index) => ({
+    pgn,
+    present: true,
+    stamp: `${revision}-${index}`,
+    revision,
+    omission: null,
+  }));
+}
+
+async function expandChapters(type: "game" | "repertoire" = "game") {
+  mocks.listing = { data: [file("Chapters.pgn", type)], isLoading: false, error: undefined };
+  mocks.count.mockResolvedValue(2);
+  await render();
+  await open("Chapters");
+  expect(rows()[0].getAttribute("aria-expanded")).toBe("true");
+  expect(mocks.openFile).not.toHaveBeenCalled();
+  expect(host.querySelectorAll('[role="option"]')).toHaveLength(2);
+}
+
+async function activateChapter(index = 1, gesture: "click" | "keyboard" = "click") {
+  const chapter = host.querySelectorAll<HTMLElement>('[role="option"]')[index];
+  expect(chapter).toBeTruthy();
+  await act(async () => {
+    if (gesture === "click") chapter.click();
+    else chapter.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  });
+}
+
+test("a rejected Library count notifies and leaves its row collapsed", async () => {
+  mocks.listing = { data: [file("Chapters.pgn")], isLoading: false, error: undefined };
+  await render();
+  const error = new Error("Count failed");
+  mocks.count.mockRejectedValueOnce(error);
+  await open("Chapters");
+  expect(mocks.notify).toHaveBeenCalledExactlyOnceWith("Common.Error", error);
+  expect(rows()[0].getAttribute("aria-expanded")).toBe("false");
+  expect(host.querySelector('[role="listbox"]')).toBeNull();
+  expect(mocks.openFile).not.toHaveBeenCalled();
+});
+
+test.each(["collapse", "filter", "search", "other row", "unmount"])(
+  "a late count cannot expand after %s and its request is aborted",
+  async (action) => {
+    mocks.listing = {
+      data: [file("Chapters.pgn"), file("Other.pgn")],
+      isLoading: false,
+      error: undefined,
+    };
+    await render();
+    let finish!: (count: number) => void;
+    mocks.count.mockImplementationOnce(
+      () =>
+        new Promise<number>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await open("Chapters");
+    const signal = mocks.count.mock.lastCall![1].signal as AbortSignal;
+    if (action === "collapse") await open("Chapters");
+    if (action === "filter") await filter("repertoires");
+    if (action === "search") await search("Other");
+    if (action === "other row") await open("Other");
+    if (action === "unmount") await act(async () => root.render(null));
+    expect(signal.aborted).toBe(true);
+    await act(async () => finish(2));
+    expect(host.querySelector('[role="listbox"]')).toBeNull();
+    expect(host.querySelector('[aria-expanded="true"]')).toBeNull();
+    expect(mocks.notify).not.toHaveBeenCalled();
+    expect(mocks.openFile).toHaveBeenCalledTimes(action === "other row" ? 1 : 0);
+  },
+);
+
+test.each([0, 1])(
+  "a file with %s games opens directly without a tab-name override",
+  async (count) => {
+    mocks.listing = { data: [file("Direct.pgn")], isLoading: false, error: undefined };
+    mocks.count.mockResolvedValue(count);
+    await render();
+    await open("Direct");
+    expect(mocks.openFile).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ name: "Direct.pgn", numGames: count }),
+      expect.any(Function),
+      { ownerId: "home", store },
+    );
+    expect(rows()[0].getAttribute("aria-expanded")).toBe("false");
+    expect(host.querySelector('[role="listbox"]')).toBeNull();
+  },
+);
+
+test.each(["click", "keyboard"] as const)(
+  "chapter %s activation passes its index and displayed identity",
+  async (gesture) => {
+    await expandChapters();
+    expect(
+      [...host.querySelectorAll('[role="option"]')].every(
+        (row) => row.getAttribute("aria-selected") === "false",
+      ),
+    ).toBe(true);
+    expect(host.querySelector('button[aria-label="Files.RemoveGame"]')).toBeNull();
+    await activateChapter(1, gesture);
+    expect(mocks.openFile).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ name: "Chapters.pgn", numGames: 2 }),
+      expect.any(Function),
+      {
+        ownerId: "home",
+        store,
+        gameNumber: 1,
+        expected: { stamp: "original-1", revision: "original" },
+      },
+    );
+    expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/" });
+  },
+);
+
+test("a Due chapter opens on Practice and clicking its expanded row collapses it", async () => {
+  await expandChapters("repertoire");
+  await open("Chapters");
+  expect(host.querySelector('[role="listbox"]')).toBeNull();
+  mocks.due["Chapters.pgn"] = { count: 3, failed: false };
+  await filter("due");
+  await open("Chapters");
+  await activateChapter();
+  expect(mocks.openFile.mock.lastCall![2]).toMatchObject({ panel: "practice", gameNumber: 1 });
+});
+
+test.each([new Error("Read failed"), new Error("Parse failed"), new StaleFileGameError()])(
+  "a rejected chapter activation keeps the picker expanded: %s",
+  async (error) => {
+    await expandChapters();
+    mocks.openFile.mockRejectedValueOnce(error);
+    await activateChapter();
+    expect(mocks.notify).toHaveBeenCalledExactlyOnceWith("Common.Error", error);
+    expect(rows()[0].getAttribute("aria-expanded")).toBe("true");
+    expect(host.querySelector('[role="listbox"]')).not.toBeNull();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  },
+);
+
+test("a stale refusal re-reads chapters and retry uses the refreshed identity", async () => {
+  await expandChapters();
+  mocks.readGames.mockResolvedValue(chapterGames("refreshed"));
+  mocks.openFile.mockRejectedValueOnce(new StaleFileGameError());
+  const reads = mocks.readGames.mock.calls.length;
+  await activateChapter();
+  expect(mocks.readGames.mock.calls.length).toBeGreaterThan(reads);
+  expect(rows()[0].getAttribute("aria-expanded")).toBe("true");
+  await activateChapter();
+  expect(mocks.openFile).toHaveBeenCalledTimes(2);
+  expect(mocks.openFile.mock.lastCall![2]).toMatchObject({
+    gameNumber: 1,
+    expected: { stamp: "refreshed-1", revision: "refreshed" },
+  });
+  expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/" });
+});
+
+test("repeated chapter gestures during a pending open create exactly one tab", async () => {
+  await expandChapters();
+  let finish!: () => void;
+  mocks.openFile.mockImplementationOnce(
+    (_file, setTabs) =>
+      new Promise<string>((resolve) => {
+        finish = () => {
+          setTabs([
+            {
+              value: "opened",
+              name: "Second chapter",
+              type: "analysis",
+              gameOrigin: { kind: "none" },
+            },
+          ]);
+          resolve("opened");
+        };
+      }),
+  );
+  await activateChapter();
+  await activateChapter(0);
+  await activateChapter(1, "keyboard");
+  await act(async () =>
+    host
+      .querySelector('[role="option"]')!
+      .dispatchEvent(new MouseEvent("dblclick", { bubbles: true })),
+  );
+  expect(mocks.openFile).toHaveBeenCalledOnce();
+  await act(async () => finish());
+  expect(store.get(tabsAtom)).toEqual([
+    expect.objectContaining({ type: "analysis", name: "Second chapter" }),
+  ]);
+  expect(mocks.navigate).toHaveBeenCalledOnce();
+});
