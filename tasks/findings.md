@@ -21972,7 +21972,7 @@ All probes were removed; the tree stayed clean.
 ## 2026-11-06 — filed through the inbox spool
 
 ### Lookalike and credential-bearing Site URLs are mislabeled as Lichess or Chess.com
-* **ID:** f-20261106-40 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261106-40 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** ux
 * **Spotted outside diff:** Cloud/player-reference URL review (Felix t22u), HEAD `5c2055c5`.
 * **Where:** `src/components/common/GameInfo.tsx:172-178` recognizes an imported Site solely with string startsWith and replaces the visible value by trusted platform branding while preserving the original href. GameCard renders this same GameInfo for database metadata at `src/components/databases/GameCard.tsx:117`.
@@ -21983,6 +21983,9 @@ All probes were removed; the tree stayed clean.
 * **Repair guard:** Parse the Site URL and apply exact intended HTTPS host/origin matching with empty username/password before assigning a platform label; otherwise retain neutral literal Site presentation. Cover both lookalike suffixes and userinfo along with genuine platform links. Preserve rel=noreferrer and do not turn this into a generic opener-scope expansion.
 * **Related:** helper queries over GameInfo/FideInfo/frontend-ui found no existing same mechanism. The unsupported/lookalike game-import URL host guard governed by d-20260927-12 belongs to a different admission path and does not classify GameInfo metadata links. f-20261106-32 is unrelated board image export; earlier online-explorer response/game-list findings do not cover this URL label.
 * **Found by:** GrokBot, actual mounted metadata-render probes and URL parsing, offline.
+
+**Closed 2026-11-10 (drain next-finding, Claude Code orchestrator, Codex write leaf):** `GameInfo` now parses the Site with `new URL` and shows Lichess or Chess.com only for the exact origins `https://lichess.org` and `https://www.chess.com` with empty username and password. Every other value keeps the existing neutral literal Site presentation, in both the editable tree view and the read-only GameCard path. The href, `target` and `rel="noreferrer"` are unchanged and no capability or opener scope was touched. Regressions mount the real component for genuine links, both lookalike suffixes, both userinfo spoofs, username alone, password alone, both together on the genuine host, plain http, another port and an unparsable value, plus the read-only consumer. Fix-revert proof: 7 failed and 6 passed with the source reversed, all green restored; substituting `&&` for `||` in the credential guard failed exactly the two single-credential cases. Commits: 8f80d661, bd3a376f. Rejected: reusing ImportModal `gameUrlHost` (d-20260927-12's admission path accepts subdomains and ignores credentials, which is the wrong policy for a trust label); branding subdomains or bare `chess.com` (never branded before, and the repair guard asks for exact intended hosts).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"4d2971640b4e16fbce7d47381db40a56d76a3bdfcb0714ca5f473bf589712fb2","header_sha256":"dddf0f116db85a8e16b74924f91d423abdacbc01354223eccb41a0ed130b953a","header_status":"handled","input_sha256":"8d09b621973332bfc1ba01c486308ce8fd0ae90ffcd56ec21ed1536dad78c04b","kind":"mutation-receipt","operation":"e278d8df26223fdab0b23fd33ece85913115c7d2e940d8145ea282c319a2e652","options":{"section":null},"request_id_sha256":null,"results":["f-20261106-40"],"target":"f-20261106-40","v":1} -->
 
 ---
 
