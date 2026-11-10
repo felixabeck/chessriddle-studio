@@ -57,7 +57,12 @@ export function BoardTab({
           className={cx(classes.tab, { [classes.selected]: selected })}
           classNames={{ tabLabel: classes.tabLabelSlot }}
           leftSection={<TabIcon tab={tab} tabType={tabType} />}
-          onClick={() => setActiveTab(tab.value)}
+          onClick={(event) => {
+            // The drag sensor prevents the mousedown default, which would otherwise focus the
+            // tab; focus it here so the arrow keys continue from the clicked tab.
+            event.currentTarget.focus();
+            setActiveTab(tab.value);
+          }}
           onContextMenu={onContextMenu}
         >
           <span ref={labelRef} className={classes.tabLabel}>

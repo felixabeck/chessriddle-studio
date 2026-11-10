@@ -1527,6 +1527,17 @@ test("workspace-tabs: the new-tab button follows the last tab and stays reachabl
     await expect(tabs.first()).toHaveAttribute("id", secondId!);
     await expect(tabs.nth(1)).toHaveAttribute("id", firstId!);
     expect(await gapAfterLastTab()).toBeLessThanOrEqual(8);
+    // A plain click still selects a tab, and Space and the arrow keys stay tab navigation.
+    await tabs.nth(1).click();
+    await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
+    await tabs.first().click();
+    await expect(tabs.first()).toHaveAttribute("aria-selected", "true");
+    await page.keyboard.press("Space");
+    // Space activates the tab; it does not lift it into a keyboard drag.
+    await expect(page.locator("[data-rfd-placeholder-context-id]")).toHaveCount(0);
+    await page.keyboard.press("ArrowRight");
+    await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
+    await expect(tabs.first()).toHaveAttribute("id", secondId!);
 
     for (let count = 3; count <= 14; count++) {
         await newTab.click();

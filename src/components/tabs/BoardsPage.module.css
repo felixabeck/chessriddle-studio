@@ -54,32 +54,34 @@
   max-width: 15rem;
 }
 
-.headerAction {
-  flex-shrink: 0;
-  height: 2.2rem;
-  width: 2.2rem;
-  padding: 0.5em;
-  border: 1px solid color-mix(in srgb, var(--cf-primary) 20%, transparent);
-  background: var(--cf-interactive);
-  border-radius: var(--cf-radius-md);
-}
-
-.headerAction:hover {
-  background: var(--cf-interactive-hover);
-}
-
+/* The bar's icon buttons share one size; the new-tab button inside the strip drops the
+   bordered surface the trailing actions carry. */
+.headerAction,
 .stripNewTab {
   flex-shrink: 0;
   height: 2.2rem;
   width: 2.2rem;
+  border-radius: var(--cf-radius-md);
+}
+
+.headerAction:hover,
+.stripNewTab:hover {
+  background: var(--cf-interactive-hover);
+}
+
+.headerAction {
+  padding: 0.5em;
+  border: 1px solid color-mix(in srgb, var(--cf-primary) 20%, transparent);
+  background: var(--cf-interactive);
+}
+
+.stripNewTab {
   margin-inline: 2px;
   color: var(--mantine-color-dimmed);
-  border-radius: var(--cf-radius-md);
 }
 
 .stripNewTab:hover {
   color: var(--cf-foreground);
-  background: var(--cf-interactive-hover);
 }
 
 .boardLayout {

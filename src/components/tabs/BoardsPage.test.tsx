@@ -205,6 +205,8 @@ vi.mock("@hello-pangea/dnd", () => ({
     children({ dragHandleProps: null, draggableProps: {}, innerRef: vi.fn() }),
   Droppable: ({ children }: { children: (provided: Record<string, unknown>) => ReactNode }) =>
     children({ droppableProps: {}, innerRef: vi.fn(), placeholder: null }),
+  useMouseSensor: vi.fn(),
+  useTouchSensor: vi.fn(),
 }));
 vi.mock("@mantine/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@mantine/core")>();

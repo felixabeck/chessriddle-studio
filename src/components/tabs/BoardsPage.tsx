@@ -1,6 +1,12 @@
 import { WorkspaceTabScope } from "@/state/tabScope";
 import { tauri } from "@/platform/tauri";
-import { DragDropContext, Draggable, Droppable } from "@hello-pangea/dnd";
+import {
+  DragDropContext,
+  Draggable,
+  Droppable,
+  useMouseSensor,
+  useTouchSensor,
+} from "@hello-pangea/dnd";
 import { Button, Group, Menu, ScrollArea, Tabs, TextInput } from "@mantine/core";
 import { useHotkeys } from "@mantine/hooks";
 import { Ellipsis, Plus, X } from "lucide-react";
@@ -59,6 +65,10 @@ import "@/styles/react-mosaic.css";
 import { platform } from "@/platform/native";
 import classes from "./BoardsPage.module.css";
 import { notifyUnlessCancelled } from "../files/notifyError";
+
+// Tabs are reordered by pointer only: a keyboard lift would claim Space and the arrow keys,
+// which the tab list already uses to activate and move between tabs.
+const POINTER_DRAG_SENSORS = [useMouseSensor, useTouchSensor];
 
 export default function BoardsPage() {
   const { t } = useTranslation();
@@ -326,6 +336,8 @@ export default function BoardsPage() {
         <div className={classes.tabStrip} data-tab-strip>
           <ScrollArea scrollbarSize={4} className={classes.tabsHeader}>
             <DragDropContext
+              enableDefaultSensors={false}
+              sensors={POINTER_DRAG_SENSORS}
               onDragEnd={({ destination, source }) =>
                 destination?.index !== undefined &&
                 setTabs((prev) => {
@@ -348,7 +360,8 @@ export default function BoardsPage() {
                   >
                     {tabs.map((tab, i) => (
                       // The drag handle is the tab's own button, which the library refuses as a
-                      // drag start unless interactive-element blocking is off.
+                      // drag start unless interactive-element blocking is off. Only pointer
+                      // sensors run, so Space and the arrow keys keep their tab behaviour.
                       <Draggable
                         key={tab.value}
                         draggableId={tab.value}
