@@ -22757,3 +22757,21 @@ Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates th
 * **Fix direction:** Rerun the failed job once (`gh run rerun 42907127764 --failed -R felixabeck/chessriddle-studio`). Independently read how `connections.snapshot().outstanding` is decremented on drop and whether the setup connection's release is synchronous; if it is not, the test must wait for the setup connection's return before asserting.
 * **Proof:** a completed green `rust` job on `f3b9ba74f` or a later master commit, plus the test made deterministic if a race is confirmed.
 * **Found by:** Claude Code, build run 2026-11-10-library-chapter-picker, required CI wait, 2026-11-10.
+
+---
+
+## 2026-11-11 — filed through the inbox spool
+
+### The narrow ChessRiddle training verdict screenshot differed by 198 pixels in CI on a unit-test-only push
+
+* **ID:** f-20261111-01 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 42917387463
+* **Spotted outside diff:** yes — found by `pnpm ci:remote:check` before the repertoire line-title push; the red master commit e97990f02 changes only `src/components/panels/database/DatabasePanel.test.tsx` and `src/tests/computedStyle.ts`, neither of which reaches the e2e build.
+* **Where:** `e2e/chessriddle-training.spec.ts:754` "en-US › narrow: solving, verdict and tab ownership", snapshot `en-US-narrow-verdict.png`, job `e2e` of the `Test` workflow.
+* **Failure scenario:** Test run 42917387463, job e2e on master e97990f02: `expect(page).toHaveScreenshot(expected) failed — 198 pixels (ratio 0.01 of all image pixels) are different`, 1 failed, 437 passed. The previous master run 42912021888 on d280ac5b8 was green, and the local `pnpm gates:push --frontend` container e2e lane passed the same spec on a tree containing e97990f02 (2026-11-10, repertoire-line-names worktree).
+* **Defect:** the narrow verdict screenshot is not deterministic in CI; the 198 differing pixels suggest a time-dependent or late-settling element in the verdict view (for example the training timer or a transition), not a layout change.
+* **Open question:** Which element differs in the CI diff image (`test-failed-1.png` / `*-diff.png` artifact of run 42917387463), and does it depend on wall-clock time or an unfinished transition?
+* **Fix direction:** Rerun the failed job once to confirm the flake. Then read the CI diff image and freeze or mask the time-dependent element in the spec (the timer clock, or wait for the transition to settle) instead of re-recording the snapshot.
+* **Proof:** a green e2e job on master, plus the spec repeated (`--repeat-each`) in the container with no screenshot difference after the stabilisation.
+* **Found by:** Claude Code, build run 2026-11-10-repertoire-line-names, pre-push remote CI check, 2026-11-11.
