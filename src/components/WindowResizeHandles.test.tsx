@@ -91,6 +91,14 @@ test("a refused resize is reported", async () => {
   expect(notifyUnlessCancelled).toHaveBeenCalledWith("Common.Error", failure);
 });
 
+test("a failed state query removes the zones and reports the failure", async () => {
+  const failure = new Error("query failed");
+  nativeWindow.isMaximized.mockRejectedValue(failure);
+  await render();
+  expect(handle("North")).toBeNull();
+  expect(notifyUnlessCancelled).toHaveBeenCalledWith("Common.Error", failure);
+});
+
 test.each([
   ["maximized", nativeWindow.isMaximized],
   ["fullscreen", nativeWindow.isFullscreen],

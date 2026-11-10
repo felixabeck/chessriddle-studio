@@ -54,6 +54,14 @@ export function renderTopBar(isNative: boolean, windowPlatform: WindowPlatform):
     return false;
 }
 
+/** Windows keeps the window library's own hit-testing, whose cursor shows there. */
+export function renderResizeHandles(
+    windowPlatform: WindowPlatform,
+    showWindowControls: boolean,
+): boolean {
+    return windowPlatform === "linux" && showWindowControls;
+}
+
 export function buildAppMenuTree(args: {
     t: MenuTranslator;
     isMacOS: boolean;

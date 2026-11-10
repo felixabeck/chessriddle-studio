@@ -34,7 +34,11 @@ export function WindowResizeHandles() {
       isMaximized: async () => (await appWindow.isMaximized()) || (await appWindow.isFullscreen()),
       onResized: (handler) => appWindow.onResized(handler),
       setMaximized: setFillsScreen,
-      notify: (error) => notifyUnlessCancelled(t("Common.Error"), error),
+      notify: (error) => {
+        // The watcher has stopped, so remove the zones instead of trusting a stale state.
+        setFillsScreen(true);
+        notifyUnlessCancelled(t("Common.Error"), error);
+      },
     });
   }, [t]);
 

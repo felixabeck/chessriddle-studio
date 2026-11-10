@@ -49,6 +49,7 @@ import {
   menuWindowPlatform,
   openPgnFromMenu,
   openSettingsFromMenu,
+  renderResizeHandles,
   renderTopBar,
   runNativeMenuAction,
   wantNativeDecorations,
@@ -387,7 +388,7 @@ export function RootLayout() {
           <TopBar menuActions={menuActions} showWindowControls={showWindowControls} />
         </AppShell.Header>
       )}
-      {windowPlatform === "linux" && showWindowControls && <WindowResizeHandles />}
+      {renderResizeHandles(windowPlatform, showWindowControls) && <WindowResizeHandles />}
       <AppShell.Navbar>
         <SideBar onSendFeedback={menuCallbacks.sendFeedback} />
       </AppShell.Navbar>

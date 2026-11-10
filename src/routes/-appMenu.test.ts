@@ -8,6 +8,7 @@ import {
     menuWindowPlatform,
     openPgnFromMenu,
     openSettingsFromMenu,
+    renderResizeHandles,
     renderTopBar,
     resetInstallChainForTests,
     runNativeMenuAction,
@@ -668,6 +669,13 @@ test("surface helpers match the current linux/win32/macos coupling", () => {
     expect(renderTopBar(true, "win32")).toBe(false);
     expect(renderTopBar(false, "other")).toBe(false);
     expect(wantNativeDecorations(false, "other")).toBe(true);
+});
+
+test("resize handles appear only on Linux with the custom window controls", () => {
+    expect(renderResizeHandles("linux", true)).toBe(true);
+    expect(renderResizeHandles("linux", false)).toBe(false);
+    expect(renderResizeHandles("win32", true)).toBe(false);
+    expect(renderResizeHandles("other", true)).toBe(false);
 });
 
 function fakeResource(label: string): NativeMenuResource & { label: string } {
