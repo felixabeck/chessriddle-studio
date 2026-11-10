@@ -1181,9 +1181,8 @@ export type PracticePhase =
     | "waiting" // Waiting for user to make a move
     | "retry" // First attempt was wrong, waiting for another attempt
     | "revealed" // Showing the answer, waiting for it to be played
-    | "correct" // Move was correct, waiting for quality rating
-    | "advancing" // A correct answer was rated; waiting to show the next card
-    | "incorrect"; // Move was incorrect, showing feedback
+    | "correct" // Correct presentation waiting for a grade, Continue or the short delay
+    | "advancing"; // Presentation finished, including an unrated learn step
 
 export type PracticeState = {
     phase: PracticePhase;
@@ -1244,10 +1243,15 @@ export const practiceGradingAtom = atomWithStorage<"auto" | "manual">(
     createZodStorage(z.enum(["auto", "manual"]), localStorage),
 );
 
+export const PRACTICE_NEW_PER_SESSION = { min: 0, max: 100, default: 10 } as const;
+
 export const practiceNewPerSessionAtom = atomWithStorage<number>(
     "practice-new-per-session",
-    10,
-    createZodStorage(z.number().int().min(0).max(100), localStorage),
+    PRACTICE_NEW_PER_SESSION.default,
+    createZodStorage(
+        z.number().int().min(PRACTICE_NEW_PER_SESSION.min).max(PRACTICE_NEW_PER_SESSION.max),
+        localStorage,
+    ),
 );
 
 export const practiceCardStartTimeFamily = atomFamily((_tab: string) => atom<number>(0));

@@ -47,6 +47,7 @@ import {
   pieceSizeAtom,
   practiceGradingAtom,
   practiceNewPerSessionAtom,
+  PRACTICE_NEW_PER_SESSION,
   previewBoardOnHoverAtom,
   flipBoardAfterMoveAtom,
   fontSizeAtom,
@@ -519,16 +520,16 @@ export default function Page() {
         render: () => (
           <NumberInput
             aria-label={t("Settings.Repertoire.NewPerSession")}
-            min={0}
-            max={100}
+            min={PRACTICE_NEW_PER_SESSION.min}
+            max={PRACTICE_NEW_PER_SESSION.max}
             allowDecimal={false}
             value={practiceNewPerSession}
             onChange={(value) => {
               if (
                 typeof value === "number" &&
                 Number.isInteger(value) &&
-                value >= 0 &&
-                value <= 100
+                value >= PRACTICE_NEW_PER_SESSION.min &&
+                value <= PRACTICE_NEW_PER_SESSION.max
               )
                 setPracticeNewPerSession(value);
             }}

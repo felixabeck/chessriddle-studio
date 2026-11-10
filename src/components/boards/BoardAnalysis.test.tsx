@@ -658,7 +658,7 @@ describe("BoardAnalysis", () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
-  test("annotation shortcuts preserve all six glyphs and the practice rating boundary", async () => {
+  test("annotation shortcuts preserve all six glyphs and block every active practice phase", async () => {
     const keyMap = jotaiStore.get(keyMapAtom);
     const annotations = [
       [keyMap.ANNOTATION_BRILLIANT.keys, 3],

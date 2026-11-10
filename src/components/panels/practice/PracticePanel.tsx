@@ -248,6 +248,7 @@ function PracticePanel() {
   );
 
   const endPracticeSession = useCallback(() => {
+    if (sessionRef.current.phase === "idle") return;
     clearPracticeTimers();
     const summary = sessionStatsRef.current;
     setSession(
@@ -277,6 +278,10 @@ function PracticePanel() {
     setCompletedSummary,
   ]);
   endPracticeSessionRef.current = endPracticeSession;
+
+  useEffect(() => {
+    if (practiceState.phase === "idle") setPracticePath(null);
+  }, [practiceState.phase, setPracticePath]);
 
   const scheduleForSession = useCallback((token: number, callback: () => void, delay: number) => {
     const timer = setTimeout(() => {
@@ -608,14 +613,16 @@ function PracticePanel() {
     submitMove,
   ]);
 
-  useEffect(() => () => endPracticeSessionRef.current(), []);
   useEffect(() => {
     if (sessionRef.current.phase !== "idle" && activeTab !== currentTab?.value)
       endPracticeSession();
   }, [activeTab, currentTab?.value, endPracticeSession]);
   useEffect(
-    () => () => endPracticeSessionRef.current(),
-    [deckIdentity.file, deckIdentity.game, currentTab?.treeKey],
+    () => () => {
+      clearPracticeTimers();
+      endPracticeSessionRef.current();
+    },
+    [clearPracticeTimers, deckIdentity.file, deckIdentity.game, currentTab?.treeKey],
   );
   useHotkeys("1", () => handleQualityRating(1), {
     ...backgroundHotkeyOptions,
@@ -688,6 +695,8 @@ function PracticePanel() {
     if (!card || !findPracticeCardFrame(card, root, headers.start || [])) {
       const latest = sessionStatsRef.current;
       publishStats({ ...latest, ...advancePracticeQueue(latest, latest.mode) });
+      newPractice();
+    } else if (card.fen !== sessionRef.current.currentFen) {
       newPractice();
     }
   }, [root, headers.start, headers.orientation, deck.positions, newPractice, publishStats]);

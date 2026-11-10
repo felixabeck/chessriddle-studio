@@ -19,14 +19,19 @@ import {
     type PracticeSession,
 } from "./session";
 
+function waitingSession(token: number, fen: string, positionKey: string): PracticeSession {
+    const replay = practiceSessionReducer(idlePracticeSession(), {
+        type: "replay",
+        token,
+        fen,
+        positionKey,
+    });
+    return practiceSessionReducer(replay, { type: "replayed", token, learning: false });
+}
+
 describe("practiceSessionReducer", () => {
     it("advances only a correctly answered card, and only to advancing", () => {
-        const waiting = practiceSessionReducer(idlePracticeSession(), {
-            type: "start",
-            token: 3,
-            fen: "fen-a",
-            positionKey: "board-a",
-        });
+        const waiting = waitingSession(3, "fen-a", "board-a");
         const correct = practiceSessionReducer(waiting, {
             type: "correct",
             token: 3,
@@ -40,50 +45,48 @@ describe("practiceSessionReducer", () => {
         });
         // A rating arriving while waiting or after a miss must not skip the card.
         expect(practiceSessionReducer(waiting, { type: "advance", token: 3 })).toBe(waiting);
-        const incorrect = practiceSessionReducer(waiting, {
-            type: "incorrect",
+        const retry = practiceSessionReducer(waiting, {
+            type: "wrong",
             token: 3,
             answer: "e4",
             playedMove: "d4",
             timeTaken: 9,
         });
-        expect(practiceSessionReducer(incorrect, { type: "advance", token: 3 })).toBe(incorrect);
+        expect(practiceSessionReducer(retry, { type: "advance", token: 3 })).toBe(retry);
         expect(practiceSessionReducer(correct, { type: "advance", token: 4 })).toBe(correct);
     });
 
-    it("accepts exactly one answer while waiting", () => {
-        const waiting = practiceSessionReducer(idlePracticeSession(), {
-            type: "start",
-            token: 1,
-            fen: "fen-a",
-            positionKey: "board-a",
-        });
-        const incorrect = practiceSessionReducer(waiting, {
-            type: "incorrect",
+    it("allows one retry before revealing and ignores further wrong answers", () => {
+        const waiting = waitingSession(1, "fen-a", "board-a");
+        const retry = practiceSessionReducer(waiting, {
+            type: "wrong",
             token: 1,
             answer: "e4",
             playedMove: "d4",
             timeTaken: 42,
         });
-        expect(incorrect.phase).toBe("incorrect");
+        expect(retry.phase).toBe("retry");
+        const revealed = practiceSessionReducer(retry, {
+            type: "wrong",
+            token: 1,
+            answer: "e4",
+            playedMove: "c4",
+            timeTaken: 43,
+        });
+        expect(revealed.phase).toBe("revealed");
         expect(
-            practiceSessionReducer(incorrect, {
-                type: "incorrect",
+            practiceSessionReducer(revealed, {
+                type: "wrong",
                 token: 1,
                 answer: "e4",
-                playedMove: "c4",
-                timeTaken: 43,
+                playedMove: "d4",
+                timeTaken: 44,
             }),
-        ).toBe(incorrect);
+        ).toBe(revealed);
     });
 
-    it("keeps correct and incorrect outcomes semantically distinct", () => {
-        const waiting = practiceSessionReducer(idlePracticeSession(), {
-            type: "start",
-            token: 5,
-            fen: "fen-a",
-            positionKey: "board-a",
-        });
+    it("keeps correct and retry outcomes semantically distinct", () => {
+        const waiting = waitingSession(5, "fen-a", "board-a");
 
         expect(
             practiceSessionReducer(waiting, {
@@ -102,14 +105,14 @@ describe("practiceSessionReducer", () => {
         });
         expect(
             practiceSessionReducer(waiting, {
-                type: "incorrect",
+                type: "wrong",
                 token: 5,
                 answer: "Nf3",
                 playedMove: "Nc3",
                 timeTaken: 12,
             }),
         ).toEqual({
-            phase: "incorrect",
+            phase: "retry",
             token: 5,
             currentFen: "fen-a",
             positionKey: "board-a",
@@ -120,12 +123,7 @@ describe("practiceSessionReducer", () => {
     });
 
     it("rejects delayed callbacks from stopped or switched sessions", () => {
-        const waiting = practiceSessionReducer(idlePracticeSession(), {
-            type: "start",
-            token: 3,
-            fen: "fen-a",
-            positionKey: "board-a",
-        });
+        const waiting = waitingSession(3, "fen-a", "board-a");
         const stopped = practiceSessionReducer(waiting, { type: "end", token: 3 });
         expect(
             practiceSessionReducer(stopped, {
@@ -146,12 +144,7 @@ describe("practiceSessionReducer", () => {
     });
 
     it("completion clears every active-card field before a later run starts", () => {
-        const waiting = practiceSessionReducer(idlePracticeSession(), {
-            type: "start",
-            token: 7,
-            fen: "history-card",
-            positionKey: "board-a",
-        });
+        const waiting = waitingSession(7, "history-card", "board-a");
         const completed = practiceSessionReducer(
             practiceSessionReducer(waiting, {
                 type: "correct",
@@ -165,12 +158,7 @@ describe("practiceSessionReducer", () => {
     });
 
     it("only unlocks the board for the current waiting card", () => {
-        const waiting = practiceSessionReducer(idlePracticeSession(), {
-            type: "start",
-            token: 1,
-            fen: "fen-a",
-            positionKey: "board-a",
-        });
+        const waiting = waitingSession(1, "fen-a", "board-a");
         expect(canSubmitPracticeMove(waiting, "fen-a")).toBe(true);
         expect(canSubmitPracticeMove(waiting, "fen-b")).toBe(false);
         expect(canSubmitPracticeMove({ ...waiting, phase: "correct" }, "fen-a")).toBe(false);
@@ -183,12 +171,7 @@ describe("practiceSessionReducer", () => {
             const fen = `${board} ${rightsAndEp} 0 1`;
             const canonical = `${board} KQkq - 0 1`;
             expect(getBoardState(fen)).toBe(getBoardState(canonical));
-            const waiting = practiceSessionReducer(idlePracticeSession(), {
-                type: "start",
-                token: 7,
-                fen,
-                positionKey: getBoardState(fen),
-            });
+            const waiting = waitingSession(7, fen, getBoardState(fen));
             expect(canSubmitPracticeMove(waiting, fen)).toBe(true);
             expect(canSubmitPracticeMove(waiting, canonical)).toBe(false);
             expect(waiting.currentFen).toBe(fen);
@@ -211,7 +194,7 @@ describe("practiceSessionReducer", () => {
         expect(isPracticePhase("idle")).toBe(false);
         expect(isPracticePhase("waiting")).toBe(true);
         expect(isPracticePhase("correct")).toBe(true);
-        expect(isPracticePhase("incorrect")).toBe(true);
+        expect(isPracticePhase("retry")).toBe(true);
     });
 });
 
@@ -524,12 +507,10 @@ describe("line-training reducer phases", () => {
         (phase) => {
             const state: PracticeSession = { ...replaying(), phase };
             const events: PracticeEvent[] = [
-                { type: "start", token: 4, fen: "old", positionKey: "old" },
                 { type: "replay", token: 4, fen: "old", positionKey: "old" },
                 { type: "replayed", token: 4, learning: false },
                 { type: "learned", token: 4 },
                 { type: "wrong", token: 4, answer: "old", playedMove: "old", timeTaken: 0 },
-                { type: "incorrect", token: 4, answer: "old", playedMove: "old", timeTaken: 0 },
                 { type: "correct", token: 4, answer: "old", timeTaken: 0 },
                 { type: "reveal", token: 4, answer: "old" },
                 { type: "advance", token: 4 },

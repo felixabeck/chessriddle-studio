@@ -78,14 +78,12 @@ export function idlePracticeSession(token = 0): PracticeSession {
 }
 
 export type PracticeEvent =
-    | { type: "start"; token: number; fen: string; positionKey: string }
     | { type: "replay"; token: number; fen: string; positionKey: string }
     | { type: "replayed"; token: number; learning: boolean }
     | { type: "learned"; token: number }
     | { type: "correct"; token: number; answer: string; timeTaken: number }
     | { type: "wrong"; token: number; answer: string; playedMove: string; timeTaken: number }
     | { type: "reveal"; token: number; answer: string }
-    | { type: "incorrect"; token: number; answer: string; playedMove: string; timeTaken: number }
     | { type: "advance"; token: number }
     | { type: "end"; token: number };
 
@@ -97,18 +95,16 @@ export function practiceSessionReducer(
     state: PracticeSession,
     event: PracticeEvent,
 ): PracticeSession {
-    if (event.type === "start" || event.type === "replay") {
+    if (event.type === "replay") {
         if (event.token < state.token) return state;
         if (
             event.token === state.token &&
-            (event.type !== "replay" ||
-                state.phase !== "replaying" ||
-                state.positionKey !== event.positionKey)
+            (state.phase !== "replaying" || state.positionKey !== event.positionKey)
         ) {
             return state;
         }
         return {
-            phase: event.type === "replay" ? "replaying" : "waiting",
+            phase: "replaying",
             token: event.token,
             currentFen: event.fen,
             positionKey: event.positionKey,
@@ -136,15 +132,10 @@ export function practiceSessionReducer(
         if (event.type === "reveal") {
             return { ...state, phase: "revealed", answer: event.answer };
         }
-        if (event.type === "wrong" || (event.type === "incorrect" && state.phase === "waiting")) {
+        if (event.type === "wrong") {
             return {
                 ...state,
-                phase:
-                    event.type === "incorrect"
-                        ? "incorrect"
-                        : state.phase === "waiting"
-                          ? "retry"
-                          : "revealed",
+                phase: state.phase === "waiting" ? "retry" : "revealed",
                 answer: event.answer,
                 playedMove: event.playedMove,
                 timeTaken: event.timeTaken,

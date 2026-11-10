@@ -22,7 +22,7 @@ import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import { WorkspaceTabScope } from "@/state/tabScope";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { focusedDialogButton, press } from "@/tests/keyboard";
-import { defaultTree, getNodeAtPath } from "@/utils/treeReducer";
+import { defaultTree, getBoardState, getNodeAtPath } from "@/utils/treeReducer";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import { getTabFile } from "@/utils/tabs";
 import PracticePanel from "./PracticePanel";
@@ -151,7 +151,7 @@ async function mountStudy(
   full = false,
   options: {
     reviewedDue?: Date;
-    reviewedDues?: Date[];
+    reviewedDues?: (Date | undefined)[];
     startPractice?: boolean;
     start?: number[];
     unseen?: boolean;
@@ -159,6 +159,7 @@ async function mountStudy(
     settle?: boolean;
     comment?: string;
     newLimit?: number;
+    practicePath?: number[];
   } = {},
 ) {
   tree = createTreeStore(undefined, defaultTree(spec.fen));
@@ -173,6 +174,7 @@ async function mountStudy(
     start: options.start,
   });
   tree.getState().goToMove([]);
+  if (options.practicePath) tree.getState().setPracticePath(options.practicePath);
   tree.getState().save("a".repeat(64));
   const cards = buildFromTree(tree.getState().root, spec.orientation, options.start || []);
   expect(cards.length).toBeGreaterThan(0);
@@ -183,7 +185,7 @@ async function mountStudy(
     cards[0].card = { ...cards[0].card, reps: 1, due: options.reviewedDue };
   }
   options.reviewedDues?.forEach((due, index) => {
-    cards[index].card = { ...cards[index].card, reps: 1, due };
+    if (due) cards[index].card = { ...cards[index].card, reps: 1, due };
   });
   mocks.native.loadPracticeDeck.mockResolvedValue({
     epoch: "no-map",
@@ -219,19 +221,7 @@ async function mountStudy(
   atoms.set(tabsAtom, [owner], owner.value);
   atoms.set(activeTabAtom, owner.value);
   atoms.set(autoSaveAtom, false);
-  await act(async () =>
-    root.render(
-      <MantineProvider env="test">
-        <Provider store={atoms}>
-          <WorkspaceTabScope tabId={owner.value}>
-            <TreeStateContext.Provider value={tree}>
-              <PracticePanel />
-            </TreeStateContext.Provider>
-          </WorkspaceTabScope>
-        </Provider>
-      </MantineProvider>,
-    ),
-  );
+  await renderStudy();
   if (options.startPractice !== false) {
     await click(full ? "Board.Practice.PracticeFullRepertoire" : "Board.Practice.StartPractice");
   }
@@ -246,6 +236,22 @@ async function mountStudy(
           : "waiting",
   );
   return cards[0];
+}
+
+async function renderStudy() {
+  await act(async () =>
+    root.render(
+      <MantineProvider env="test">
+        <Provider store={atoms}>
+          <WorkspaceTabScope tabId={owner.value}>
+            <TreeStateContext.Provider value={tree}>
+              <PracticePanel />
+            </TreeStateContext.Provider>
+          </WorkspaceTabScope>
+        </Provider>
+      </MantineProvider>,
+    ),
+  );
 }
 async function click(label: string) {
   const button = [...document.querySelectorAll<HTMLButtonElement>('button, [role="button"]')].find(
@@ -432,6 +438,56 @@ test("a surviving tree edit restarts replay and reaches its live frame", async (
   expect(phase()).toBe("waiting");
   await tick(1_000);
   expect(tree.getState().position).toEqual([0, 0]);
+});
+
+test("a retained transposed card restarts replay when promotion changes its exact FEN", async () => {
+  await mountStudy(
+    { ...cases[1], moves: ["Nf3", "Nf6", "g3", "g6", "Bg2", "Bg7"] },
+    ["g3", "g6", "Nf3", "Nf6", "Bg2", "Bg7"],
+    false,
+    {
+      reviewedDues: [
+        new Date(Date.now() + 60_000),
+        new Date(Date.now() + 60_000),
+        new Date(Date.now() - 1_000),
+        new Date(Date.now() + 60_000),
+        new Date(Date.now() + 60_000),
+      ],
+    },
+  );
+  const before = atoms.get(practiceStateFamily(owner.value));
+  const queue = [...stats().remainingPositionKeys];
+  expect(tree.getState().currentNode().children[0].san).toBe("Bg7");
+  expect(queue).toEqual([getBoardState(before.currentFen!)]);
+
+  await act(async () => tree.getState().promoteVariation([1]));
+
+  expect(phase()).toBe("replaying");
+  expect(stats().remainingPositionKeys).toEqual(queue);
+  expect(stats()).toMatchObject({ correct: 0, incorrect: 0 });
+  expect(reviews).toHaveLength(0);
+  await settleReplay();
+  const after = atoms.get(practiceStateFamily(owner.value));
+  expect(after.currentFen).not.toBe(before.currentFen);
+  expect(getBoardState(after.currentFen!)).toBe(getBoardState(before.currentFen!));
+  expect(after.positionKey).toBe(before.positionKey);
+  expect(tree.getState().position).toEqual([0, 0, 0, 0, 0]);
+  expect(tree.getState().currentNode().fen).toBe(after.currentFen);
+  expect(controller()?.canMove).toBe(true);
+  await answer("Bg7");
+  expect(phase()).toBe("correct");
+  expect(reviews).toHaveLength(1);
+});
+
+test("an idle mount clears a persisted practice path", async () => {
+  await mountStudy(cases[0], undefined, false, {
+    startPractice: false,
+    practicePath: [0, 0],
+  });
+  expect(phase()).toBe("idle");
+  expect(tree.getState().practicePath).toBeNull();
+  await act(async () => tree.getState().goToNext());
+  expect(tree.getState().position).toEqual([0]);
 });
 
 test.each([false, true])(
@@ -684,10 +740,122 @@ test("session line replaces idle figures and Stop keeps the answered summary", a
   });
 });
 
-test("new-move limit zero offers reviews only and never introduces an unseen card", async () => {
-  await mountStudy(cases[0], undefined, false, { unseen: true, newLimit: 0, startPractice: false });
-  expect(host.textContent).toContain("Board.Practice.PracticedAll1");
-  expect(host.textContent).not.toContain("Board.Practice.StartPractice");
+test.each(["active", "stopped", "finished", "tab switch"] as const)(
+  "%s session summary survives unmount and is shown on return",
+  async (exit) => {
+    const card = await mountStudy();
+    if (exit === "finished") {
+      await answer(card.answer);
+      await tick(300);
+    } else {
+      await answer("Nc3");
+      if (exit === "stopped") await click("Common.Stop");
+      if (exit === "tab switch") {
+        const other = { ...owner, value: crypto.randomUUID(), treeKey: crypto.randomUUID() };
+        await act(async () => {
+          atoms.set(tabsAtom, [owner, other], owner.value);
+          atoms.set(activeTabAtom, other.value);
+        });
+      }
+    }
+    await act(async () => root.unmount());
+    mounted = false;
+    expect(phase()).toBe("idle");
+    const summary = atoms.get(practiceCompletedSummaryFamily(owner.value));
+    expect(summary).toMatchObject({
+      correct: exit === "finished" ? 1 : 0,
+      incorrect: exit === "finished" ? 0 : 1,
+    });
+    await act(async () => atoms.set(activeTabAtom, owner.value));
+    root = createRoot(host);
+    mounted = true;
+    await renderStudy();
+    expect(atoms.get(practiceCompletedSummaryFamily(owner.value))).toBe(summary);
+    expect(host.textContent).toContain("Board.Practice.SessionSummary");
+    expect(host.textContent).toContain(
+      exit === "finished"
+        ? '"correct":1,"incorrect":0,"accuracy":100,"bestStreak":1'
+        : '"correct":0,"incorrect":1,"accuracy":0,"bestStreak":0',
+    );
+  },
+);
+
+test.each([2, 0])("spaced session queues due reviews and at most %s new moves", async (limit) => {
+  await mountStudy(
+    {
+      ...cases[0],
+      moves: [
+        "e4",
+        "e5",
+        "Nf3",
+        "Nc6",
+        "Bb5",
+        "a6",
+        "Ba4",
+        "Nf6",
+        "O-O",
+        "Be7",
+        "Re1",
+        "b5",
+        "Bb3",
+      ],
+    },
+    undefined,
+    false,
+    {
+      unseen: true,
+      reviewedDues: [
+        new Date(Date.now() - 1_000),
+        undefined,
+        new Date(Date.now() - 1_000),
+        undefined,
+        new Date(Date.now() + 60_000),
+      ],
+      newLimit: limit,
+      startPractice: false,
+    },
+  );
+  const deck = atoms.get(
+    deckAtomFamily({ file: fileWorkspaceKey(getTabFile(owner)!.handle), game: 0 }),
+  );
+  expect(deck.positions.map(({ answer }) => answer)).toEqual([
+    "Nf3",
+    "Bb5",
+    "Ba4",
+    "O-O",
+    "Re1",
+    "Bb3",
+  ]);
+  const queued = (limit === 0 ? [0, 2] : [0, 1, 2, 3]).map((index) => deck.positions[index]);
+  await click("Board.Practice.StartPractice");
+  expect(stats().remainingPositionKeys).toEqual(queued.map(({ fen }) => getBoardState(fen)));
+  expect(host.textContent).toContain(`"remaining":${queued.length},"correct":0,"incorrect":0`);
+  await settleReplay();
+  expect(phase()).toBe("waiting");
+  expect(tree.getState().currentNode().children[0].san).toBe("Nf3");
+  await answer("Nf3");
+  await tick(300);
+  const presentations =
+    limit === 0
+      ? [["Ba4", "waiting"]]
+      : [
+          ["Bb5", "learning"],
+          ["Ba4", "waiting"],
+          ["O-O", "learning"],
+          ["Bb5", "waiting"],
+          ["O-O", "waiting"],
+        ];
+  for (const [san, expectedPhase] of presentations) {
+    await settleReplay();
+    expect(tree.getState().currentNode().children[0].san).toBe(san);
+    expect(phase()).toBe(expectedPhase);
+    await answer(san);
+    await tick(300);
+  }
+  expect(phase()).toBe("idle");
+  expect(reviews.map(({ entry }) => JSON.parse(entry).fen)).toEqual(
+    (limit === 0 ? [0, 2] : [0, 2, 1, 3]).map((index) => deck.positions[index].fen),
+  );
 });
 
 test("the sync notice dismisses after five seconds and clears its timer on unmount", async () => {
