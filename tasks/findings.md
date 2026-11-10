@@ -22558,7 +22558,7 @@ Recurred on master fa4ce4dc in **CI run:** 42646431017 (job 129260809032), same 
 
 ### The analysis panel's Manage Engines control is cut off on the left at narrow widths and 200% font scale
 
-* **ID:** f-20261109-04 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261109-04 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** browser verification of the first-launch Stockfish change, 2026-11-09
 * **Where:** `src/components/panels/analysis/AnalysisPanel.tsx`, the row holding the Manage Engines popover target (about line 234).
@@ -22566,6 +22566,13 @@ Recurred on master fa4ce4dc in **CI run:** 42646431017 (job 129260809032), same 
 * **Failure scenario:** At 1440x900 with 200% font scale, or at 320x720, open the Analysis tab. The icon at the left of Manage Engines is cut off. `assertPageNotClipped` reports `mantine-Tabs-panel: x starts at 710, before 793` at 200% and `x starts at -61, before 73` at 320px, observed in the container run of `e2e/first-engine-install.spec.ts`.
 * **Open question:** Should the row wrap or shrink its control at these widths?
 * **Proof:** Add `assertPageNotClipped` on the Analysis tab with no engines at 320px and 200% font scale.
+
+Fixed in 76fe8e01 and b0b693e7. The filed mechanism was wrong: the Manage Engines row was not too wide. Mantine's `row-reverse` for right-placed tabs pushed the non-shrinking 16rem panel off the left edge. A pane at most 26rem wide now stacks the tabs above the panel through a measured width that drives Mantine's real orientation (). BoardTabLayout's first-paint width measurement moved into the shared `useElementWidth` hook.
+
+Proof: `assertPageNotClipped` on the Analysis tab with no engines went red first on both projects (`mantine-Tabs-panel: x starts at -61, before 73` at 320px, `x starts at 710, before 793` at 200%) and is green now. The same spec asserts `aria-orientation` and arrow-key movement. Forcing `orientation="vertical"` turns the narrow project red on that assertion. Moved snapshots: `analysis-install-stockfish-first-engine-install-narrow.png` and `-scaled.png`, only at the popover's bottom corners.
+
+Rejected: wrapping or shrinking the button, lowering the 16rem floor, a CSS-only container query, and `flex-wrap` on the Tabs root.
+<!-- ledger-meta {"command":"close","effect_lines":5,"effect_sha256":"534c50a7e64609295c0afa590ffc69b78284af4e9d2fc19c786501b9633ab8dd","header_sha256":"8f2f3c8b15260a8074b671fc340906947445121ff42d44e67636f1c95e4fa660","header_status":"handled","input_sha256":"3a6b58aac2206ee8e87c36356918f90ca8856babc6066ee1bcd036efb69e9f54","kind":"mutation-receipt","operation":"ac233158c10388ccdc67cbe5cbfc8011a8b2b0d89ae60b032d65297ae0ec98c7","options":{"section":null},"request_id_sha256":null,"results":["f-20261109-04"],"target":"f-20261109-04","v":1} -->
 
 ---
 
