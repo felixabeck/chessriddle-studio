@@ -22757,6 +22757,8 @@ Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates th
 * **Fix direction:** Rerun the failed job once (`gh run rerun 42907127764 --failed -R felixabeck/chessriddle-studio`). Independently read how `connections.snapshot().outstanding` is decremented on drop and whether the setup connection's release is synchronous; if it is not, the test must wait for the setup connection's return before asserting.
 * **Proof:** a completed green `rust` job on `f3b9ba74f` or a later master commit, plus the test made deterministic if a race is confirmed.
 * **Found by:** Claude Code, build run 2026-11-10-library-chapter-picker, required CI wait, 2026-11-10.
+* **Rerun 2026-11-10 (Claude Code, build run 2026-11-10-library-chapter-picker):** the single rerun `gh run rerun 42907127764 --failed` passed `rust` (started 21:54:32Z), so run 42907127764 on `f3b9ba74f` is now `completed / success` and master is green again. The finding stays open: the first attempt failed an assertion (`outstanding` 3 vs 2), not runner infrastructure, so the open question about the setup connection's asynchronous return remains.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"0f2d564041c8b6b628967f3f45b409e73c75588c167e36d86e5d4aa0ed6a7104","input_sha256":"25e46b409993196d96cb75279a1dffc1932719447f8d4e63a4d99919b2ca53f4","kind":"mutation-receipt","operation":"730e0562b0c4ce37c3f5903c3a34f8c2044c5149d47c2c834589744340e2f4bb","options":{"section":null},"request_id_sha256":null,"results":["f-20261110-04"],"target":"f-20261110-04","v":1} -->
 
 ---
 
