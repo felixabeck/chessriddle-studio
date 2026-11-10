@@ -85,7 +85,7 @@ function MoveControls({ readOnly }: { readOnly?: boolean }) {
     shortcutOptions(),
   );
   // While the list is open, only bare ArrowUp/ArrowDown select, whatever the branch key bindings.
-  // preventDefault: a no-op press at the last line must not scroll the notation instead.
+  // preventDefault: a no-op press at the main line end must not scroll the notation instead.
   useHotkeys(keyMap.GO_TO_BRANCH_START.keys, branchNavigation(startBranch), {
     ...shortcutOptions(),
     preventDefault: true,

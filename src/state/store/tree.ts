@@ -86,8 +86,9 @@ export interface TreeStoreState extends TreeState {
     goToBranchStart: () => void;
     goToBranchEnd: () => void;
     /**
-     * Inside a line, goes to its end; at the end of a line, goes to the first move of the next line
-     * in notation order (see nextLineStart). Refused at a line end during a practice drill.
+     * Inside a line, goes to its end. At a variation end, goes to the next sibling variation,
+     * or child 0 of the same fork after the last sibling. Stays at the main line end.
+     * Refused at a line end during a practice drill.
      */
     goToBranchEndOrNextLine: () => void;
     nextBranch: () => void;
@@ -322,49 +323,18 @@ export function nextContinuation(
     return { path: target.path, children: target.node.children };
 }
 
-/**
- * A line is a variation's first move followed by its main continuation (child 0) to the end; the
- * game's main line starts at [0]. Every move belongs to exactly one line. Lines are yielded in the
- * order the notation prints their first moves: a node's alternatives (children 1..n) come right
- * after its main child and before that child's continuation, each with its own nested lines.
- */
-function* lineStarts(root: TreeNode): Generator<number[]> {
-    if (root.children.length === 0) return;
-    yield [0];
-    // Each frame walks one line; a variation pauses it until its whole subtree has been yielded.
-    const stack: { path: number[]; node: TreeNode; next: number }[] = [
-        { path: [], node: root, next: 1 },
-    ];
-    while (stack.length > 0) {
-        const frame = stack[stack.length - 1];
-        const { node } = frame;
-        if (frame.next < node.children.length) {
-            const path = [...frame.path, frame.next];
-            frame.next += 1;
-            yield path;
-            stack.push({ path, node: node.children[frame.next - 1], next: 1 });
-        } else if (node.children.length > 0) {
-            frame.path = [...frame.path, 0];
-            frame.node = node.children[0];
-            frame.next = 1;
-        } else {
-            stack.pop();
-        }
-    }
-}
-
-/** The path of the line that follows the one containing `position`, or null after the last line. */
-export function nextLineStart(root: TreeNode, position: number[]): number[] | null {
-    if (position.length === 0) return null;
+/** The next sibling variation's start, or the same fork's main move. No target on the main line. */
+export function nextSiblingVariationOrMainMove(
+    root: TreeNode,
+    position: number[],
+): number[] | null {
     let lastVariation = position.length - 1;
-    while (lastVariation > 0 && position[lastVariation] === 0) lastVariation -= 1;
-    const current = position.slice(0, lastVariation + 1);
-    let found = false;
-    for (const start of lineStarts(root)) {
-        if (found) return start;
-        found = start.length === current.length && start.every((index, i) => index === current[i]);
-    }
-    return null;
+    while (lastVariation >= 0 && position[lastVariation] === 0) lastVariation -= 1;
+    if (lastVariation < 0) return null;
+    const prefix = position.slice(0, lastVariation);
+    const parent = getNodeAtPath(root, prefix);
+    const next = position[lastVariation] + 1;
+    return [...prefix, next < parent.children.length ? next : 0];
 }
 
 function stepIntoChild(
@@ -649,7 +619,7 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
                 return;
             }
             if (state.practicePath !== null) return;
-            const next = nextLineStart(state.root, state.position);
+            const next = nextSiblingVariationOrMainMove(state.root, state.position);
             if (next) set({ position: next });
         },
 

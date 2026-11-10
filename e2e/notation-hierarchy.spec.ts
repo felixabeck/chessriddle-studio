@@ -620,22 +620,16 @@ test("notation-hierarchy: overflow-only stacked geometry and wheel reachability"
     );
 });
 
-test("notation-hierarchy: arrow down at a line end walks to the next line", async ({
+test("notation-hierarchy: arrow down returns to the same fork's main move and stops at the main line end", async ({
     page,
     mockScenario,
 }) => {
     const notation = await openHierarchyGame(page, mockScenario);
     const current = notation.locator('[data-notation-current="true"] button');
-    await notation.getByRole("button", { name: "Nf6", exact: true }).click();
-    await expect(current).toHaveText("Nf6");
+    await expect(current).toHaveText(CURRENT_VARIATION_SAN);
 
-    // Main line end → 3...f5 → that line's end → its nested 4.d3 → stays on the last line.
-    for (const expected of [
-        NAG_VARIATION_SAN,
-        "fxe4",
-        CURRENT_VARIATION_SAN,
-        CURRENT_VARIATION_SAN,
-    ]) {
+    // 4.d3 → its fork's main move 4.Nc3 → line end → 3...a6 → main line end → stays.
+    for (const expected of [VARIATION_SAN, "fxe4", "a6", "Nf6", "Nf6"]) {
         await page.keyboard.press("ArrowDown");
         await expect(current).toHaveText(expected);
     }
