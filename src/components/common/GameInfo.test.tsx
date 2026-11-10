@@ -67,6 +67,16 @@ function Editor() {
   );
 }
 
+function expectSiteLink(site: string, label: string) {
+  const anchors = host.querySelectorAll("a");
+  expect(anchors).toHaveLength(1);
+  const anchor = anchors[0];
+  expect(anchor.textContent).toBe(label);
+  expect(anchor.getAttribute("href")).toBe(site);
+  expect(anchor.getAttribute("rel")).toBe("noreferrer");
+  expect(anchor.getAttribute("target")).toBe("_blank");
+}
+
 test.each([
   ["https://lichess.org/Abcd1234", "Lichess"],
   ["https://www.chess.com/game/live/123", "Chess.com"],
@@ -75,13 +85,7 @@ test.each([
   store.getState().setState({ ...state, headers: { ...state.headers, site } });
   await act(async () => root.render(<Editor />));
 
-  const anchors = host.querySelectorAll("a");
-  expect(anchors).toHaveLength(1);
-  const anchor = anchors[0];
-  expect(anchor.textContent).toBe(label);
-  expect(anchor.getAttribute("href")).toBe(site);
-  expect(anchor.getAttribute("rel")).toBe("noreferrer");
-  expect(anchor.getAttribute("target")).toBe("_blank");
+  expectSiteLink(site, label);
 });
 
 test.each([
@@ -90,6 +94,8 @@ test.each([
   "https://lichess.org@attacker.invalid/game",
   "https://www.chess.com@attacker.invalid/game",
   "https://user:pw@lichess.org/game",
+  "https://user@lichess.org/game",
+  "https://:pw@lichess.org/game",
   "http://lichess.org/game",
   "https://lichess.org:8443/game",
   "https://lichess.org bad",
@@ -131,13 +137,7 @@ test("keeps a read-only lookalike site literal and brands a genuine site without
     ),
   );
 
-  const anchors = host.querySelectorAll("a");
-  expect(anchors).toHaveLength(1);
-  const anchor = anchors[0];
-  expect(anchor.textContent).toBe("Lichess");
-  expect(anchor.getAttribute("href")).toBe(genuineSite);
-  expect(anchor.getAttribute("rel")).toBe("noreferrer");
-  expect(anchor.getAttribute("target")).toBe("_blank");
+  expectSiteLink(genuineSite, "Lichess");
 });
 
 test("the Termination field reads the effective value and edits and clears it through the store", async () => {
