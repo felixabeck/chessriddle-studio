@@ -20857,7 +20857,7 @@ Closed by 5ea1ae3b, pushed to master as part of 4633e57f (database games in Rece
 
 ### verify:app aborts opening its dirty-quit WebDriver session, so no real-app check after the seed session runs
 
-* **ID:** f-20261103-01 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261103-01 · **Status:** handled · **Area:** gate-scripts · **Root:** - · **Entry:** build · **Blocked:** none
 * **Filed from:** 4c58ce9a-e1cf-4546-976b-650038c07731
 * **Impact class:** tooling
 * **Where:** `scripts/verify-app.mjs` `verifyDirtyTabQuitAndRestart` (`Session.open(APP_BINARY)` after "opening dirty-quit WebDriver session"), `scripts/app-driver.mjs` `Session.open` / `fetchWithTimeout`.
@@ -20866,6 +20866,9 @@ Closed by 5ea1ae3b, pushed to master as part of 4633e57f (database games in Rece
 * **Open question:** is the native port refusal a reuse race in the driver after the seed session's quit (WebKitWebDriver not yet restarted / port not released), or an environment change on this machine (webkit2gtk-driver / tauri-driver version), and should the dirty-quit probe own a fresh driver?
 * **Follow-up:** once fixed, run `pnpm verify:app` and confirm LS1–LS9 (`verifyLosslessFileGameSave`, added for f-20261102-08), which have never executed.
 * **Found by:** drain session 4c58ce9a-e1cf-4546-976b-650038c07731 (build of f-20261102-08), 2026-11-03.
+
+**Closed 2026-11-10 (pickup re-check, drain session 0f6c3aca-b2c4-4a3a-be36-ba47634fa01e):** the defect no longer holds, so no code changed. At 1f53be3a the session ran `pnpm build` and then `pnpm verify:app` on tuxedo-atlas, with the unchanged webkit2gtk-driver/libwebkit2gtk-4.1-0 2.52.6 and the same tauri-driver. The seed session quit, "opening dirty-quit WebDriver session" succeeded, and both dirty-quit checks passed. The run continued through every later check and ended "all checks passed" (exit 0). The Follow-up obligation is met: LS1–LS9 (`verifyLosslessFileGameSave`, f-20261102-08) executed and passed for the first time. LS5 left the bytes unchanged (SHA-256 86f2f043… before and after) and LS9 changed them (06c8683e… → 70705314…). The 2026-11-05 runs recorded under f-20261105-02 had also ended "all checks passed", so the 2026-11-03 native-port refusal did not recur in any later observed run. The likely explanation is a transient environment state on that day, possibly the 623 MHz CPU cap recorded for the same session in the build ledger. The source logs in /tmp no longer exist, so it cannot be attributed further. If it recurs, give the dirty-quit probe its own driver. Log: /tmp/nf-f0103/verify-app.log.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"a512ff0ec54f6f726f15aca24d96cc0911a73797334cf4d5c0eda256d1aaa969","header_sha256":"15f14ed961ac58e569666ff66301e9e3c074d038a9a918dde2736f42c029af1b","header_status":"handled","input_sha256":"00a1ab7c0d5857c3d06c5128be21695f4a11a86de27b1a60535cefc6d3a88804","kind":"mutation-receipt","operation":"00bdb84f6b39aad657d860acefa197c0aa13049945c7ab6251d5899f00575196","options":{"section":null},"request_id_sha256":null,"results":["f-20261103-01"],"target":"f-20261103-01","v":1} -->
 
 ---
 
