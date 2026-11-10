@@ -22426,7 +22426,7 @@ Fixed in 0b63a012 (pushed to master; hosted Test 13/13 green; installed locally)
 
 ### The database detail Delete button is below AA contrast in the dark theme
 
-* **ID:** f-20261108-07 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261108-07 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** ux
 * **Where:** `src/components/databases/useDatabaseLibrary.tsx:590`, the filled danger Delete action of the database detail pane.
 * **Defect:** in dark mode at 100 percent font size, Axe reports the Delete label `#e8e4dc` on `#c45c5c` at 3.29:1, below the 4.5:1 AA minimum for 14 px text.
@@ -22435,6 +22435,8 @@ Fixed in 0b63a012 (pushed to master; hosted Test 13/13 green; installed locally)
 * **Fix shape:** use the default danger presentation that f-20261030-14 used for the file-detail action, keeping the label, action, focus and confirmation.
 * **Proof:** an Axe colour-contrast pass over the database detail pane in the dark theme reports no violation for the Delete action.
 * **Found by:** Codex phase 2 leaf, build db-upgrade-state, 2026-11-08, retained Axe output of an additional accessibility run.
+* **Handled (2026-11-10, drain session 4fd6b2e8-35fc-4a76-9738-04db5fd6fcc0):** commit 5287d98c. The database detail Delete button now uses the same default-variant danger presentation with the foreground label that f-20261030-14 gave the file-detail Trash action. Because this was the second copy, that presentation is one shared `libraryDangerButtonProps` in `src/components/library/presentation.tsx`, and both actions use it (rule 11). Label, handler and confirmation modal are unchanged. Proof: the e2e journey `database-files: mixed Library databases/contained controls` now runs `assertAccessible()` (Axe wcag2a/2aa/21aa) after a database is selected, on all seven desktop surfaces. All seven pass in the container. With only the `useDatabaseLibrary.tsx` change stashed, the 1440px 100% dark case fails with Axe `color-contrast` "3.29 (foreground #e8e4dc, background #c45c5c, 14px)" on Delete. Four snapshots were re-recorded in the container, and their diffs are confined to the Delete button: `library-mixed-{1280,1440,1920}-100-light-database` and `library-mixed-1440-100-dark-database`. Rejected: changing the global danger palette token, because it would touch every danger surface, and f-20261030-14 chose a local presentation for the same reason.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"9b920963ccc832e42f9aac5f57c0e91a08cbc6785eb9dfd4ed21d6735bc48082","header_sha256":"8efd39e81a77c5cdc5961e62f1c4cf47aad65455763b53e44acdb877bf896880","header_status":"handled","input_sha256":"a7adaffe53b589e532773b317acce24c50c05f69251fb6c5e9ac5c4d23f8a30e","kind":"mutation-receipt","operation":"0a1aafed415db2246bb0a517070858f08ce4074b78488e41217bedcc56607e09","options":{"section":null},"request_id_sha256":null,"results":["f-20261108-07"],"target":"f-20261108-07","v":1} -->
 
 ---
 
