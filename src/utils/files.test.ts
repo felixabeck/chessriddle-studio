@@ -260,22 +260,42 @@ describe("openFile tab admission", () => {
 
     test.each([
         { pgn: "*", name: "Example" },
+        { pgn: '[Event "?"]\n[White "?"]\n[Black "?"]\n\n*', name: "Example" },
         { pgn: '[White "White"]\n[Black "Black"]\n\n*', name: "White - Black" },
-    ])("uses the informative name $name for the tab and recent entry", async ({ pgn, name }) => {
-        mocks.readGame.mockResolvedValueOnce({
-            pgn,
-            stamp: freshStamp,
-            revision: "r1",
-            present: true,
-        });
+        { pgn: '[Event "Morra"]\n\n*', name: "Morra" },
+    ])(
+        "uses $name for the chapter tab and the file name for its recent entry",
+        async ({ pgn, name }) => {
+            mocks.readGame.mockResolvedValueOnce({
+                pgn,
+                stamp: freshStamp,
+                revision: "r1",
+                present: true,
+            });
+            mocks.createTab.mockResolvedValueOnce("tab-id");
+            await openFile({ ...file, name: "Example.pgn", numGames: 3 }, setTabs, {
+                gameNumber: 1,
+            });
+            expect(mocks.readGame).toHaveBeenCalledWith(file.handle, 1, undefined);
+            expect(mocks.createTab).toHaveBeenCalledWith(
+                expect.objectContaining({ tab: { name, type: "analysis" } }),
+            );
+            expect(mocks.storeSet).toHaveBeenCalledWith(
+                addRecentFileAtom,
+                expect.objectContaining({ name: "Example.pgn" }),
+            );
+        },
+    );
+
+    test("an explicit tab name does not override the recent file name", async () => {
         mocks.createTab.mockResolvedValueOnce("tab-id");
-        await openFile({ ...file, name: "Example.pgn" }, setTabs);
+        await openFile(file, setTabs, { tabName: "Custom" });
         expect(mocks.createTab).toHaveBeenCalledWith(
-            expect.objectContaining({ tab: { name, type: "analysis" } }),
+            expect.objectContaining({ tab: { name: "Custom", type: "analysis" } }),
         );
         expect(mocks.storeSet).toHaveBeenCalledWith(
             addRecentFileAtom,
-            expect.objectContaining({ name }),
+            expect.objectContaining({ name: file.name }),
         );
     });
 

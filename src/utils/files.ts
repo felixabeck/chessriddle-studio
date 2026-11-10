@@ -28,7 +28,12 @@ import { beginFileOpen, StaleFileGameError } from "@/state/fileStructureChange";
 import { parsePGN } from "./chess";
 import { fileWorkspaceKey } from "./pathCapabilities";
 import { createTab, type SetTabs } from "./tabs";
-import { getGameName } from "./treeReducer";
+import { getGameName, type GameHeaders } from "./treeReducer";
+
+export function getFileGameName(headers: GameHeaders, file: Pick<FileMetadata, "name">): string {
+    const name = getGameName(headers);
+    return name === "Unknown" || name === "?" ? file.name.replace(/\.pgn$/i, "") : name;
+}
 
 export function usePlatform() {
     const r = useSWR("os", async () => {
@@ -177,11 +182,7 @@ export async function openFile(
         ) {
             throw new StaleFileGameError();
         }
-        let tabName = options?.tabName ?? file.name ?? "Untitled";
-        if (options?.tabName === undefined && loaded.pgn) {
-            const gameName = getGameName(loaded.tree.headers);
-            tabName = gameName === "Unknown" ? file.name.replace(/\.pgn$/i, "") : gameName;
-        }
+        const tabName = options?.tabName ?? getFileGameName(loaded.tree.headers, file);
 
         const id = await createTab({
             tab: {
@@ -212,7 +213,7 @@ export async function openFile(
         }
 
         store.set(addRecentFileAtom, {
-            name: tabName,
+            name: file.name,
             handle: file.handle,
             type: file.metadata.type,
         });

@@ -231,7 +231,7 @@ test("a never-opened Library file renders its native modification seconds as a r
   expect(rows()[0].textContent).not.toMatch(/\d+ years ago/);
 });
 
-test("Library listing rows let openFile derive the tab and recent name from the game", async () => {
+test("Library listing rows supply the file name for recents and let openFile derive the chapter tab name", async () => {
   mocks.listing = { data: [file("Raw file name.pgn")], isLoading: false, error: undefined };
   await render();
   await open("Raw file name");

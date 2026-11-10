@@ -132,7 +132,7 @@ test("canonical successor acknowledgement cannot interrupt admitted tree finaliz
             }),
         ).toThrow(failure);
         expect(acknowledged).toMatchObject({
-            name: "Current metadata",
+            name: "Acknowledged page",
             gameOrigin: { gameNumber: 2, file: { numGames: 3 } },
         });
         expect(treeStore.getState()).toMatchObject(candidate);
@@ -161,6 +161,55 @@ test("shared tab owner compares logical identity and effective legacy physical g
     );
     expect(sameTabOwner({ ...fileTab, treeKey: crypto.randomUUID() }, fileTab)).toBe(false);
 });
+
+test.each(["superseded", "refused"] as const)(
+    "%s replacement preserves the tab name, page and tree generation",
+    (outcome) => {
+        const workspace = createStore();
+        const owner = {
+            ...saveFixture().tabs[0]!,
+            value: crypto.randomUUID(),
+            name: "Original chapter",
+        };
+        if (!isFileBackedTab(owner)) throw new Error("Expected a file owner");
+        tabStorage.seed(owner.value, defaultTree());
+        const treeStore = createTreeStore(owner.value);
+        workspace.set(tabsAtom, [owner], owner.value);
+        const before = workspace.get(tabsAtom);
+        const snapshot = treeStore.getState();
+        const candidate = defaultTree();
+        candidate.headers.event = "Replacement chapter";
+        let checks = 0;
+        const setItem = Storage.prototype.setItem;
+        if (outcome === "refused")
+            vi.spyOn(Storage.prototype, "setItem").mockImplementation(
+                function (this: Storage, key, value) {
+                    if (key === WORKSPACE_STORAGE_KEY)
+                        throw new DOMException("quota", "QuotaExceededError");
+                    return setItem.call(this, key, value);
+                },
+            );
+        try {
+            const result = replaceFileGame({
+                store: workspace,
+                owner,
+                treeStore,
+                snapshot,
+                tree: candidate,
+                page: 1,
+                isCurrent: () => outcome === "refused" || ++checks === 1,
+            });
+            expect(result.kind).toBe(outcome);
+            expect(workspace.get(tabsAtom)).toBe(before);
+            expect(workspace.get(tabsAtom)[0]?.name).toBe("Original chapter");
+            expect(treeStore.getState()).toBe(snapshot);
+        } finally {
+            vi.restoreAllMocks();
+            closeTreeStore(owner.value);
+            tabStorage.remove(owner.value);
+        }
+    },
+);
 
 test("isTabOfFileGame matches only the same file and game number", () => {
     const tab = saveFixture({ kind: "temp_file" }).tabs[0]!;
@@ -1082,6 +1131,7 @@ test.each(
                 producer === "page replacement" ? "committed" : undefined,
             );
             const successor = getTab(id)!;
+            expect(successor.name).toBe("Native replacement");
             physical = tabs.getTabTreeKey(successor);
             expect(physical).not.toBe(id);
             expect(successor.gameOrigin).toMatchObject({

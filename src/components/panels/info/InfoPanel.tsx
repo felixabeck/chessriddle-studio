@@ -22,6 +22,8 @@ import {
   getTabFile,
   getTabGameNumber,
   isFileBackedTab,
+  matchesFileGameTab,
+  sameTabOwner,
   rebindFileTabsAfterStructureChange,
   replaceFileGame,
   type FileBackedTab,
@@ -40,7 +42,7 @@ import { useActiveDatabaseViewStore } from "@/state/store/database";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import { backgroundHotkeyOptions } from "@/utils/keyboardOwnership";
-import { loadFileGame, withFileWrite } from "@/utils/files";
+import { getFileGameName, loadFileGame, withFileWrite } from "@/utils/files";
 import { setFileFreshness } from "@/state/fileFreshness";
 import {
   beginFileOpen,
@@ -73,7 +75,7 @@ function InfoPanel({ addGame }: { addGame?: () => void }) {
   const stats = isTreeViewDeferred(store) ? { total: 0, leafs: 0, depth: 0 } : getStats(view);
   const headers = useStore(store, (s) => s.headers);
   const [games, setGames] = useState<Map<number, GameSelectorRow>>(new Map());
-  const [currentTab] = useOwnerTab();
+  const [currentTab, setCurrentTab] = useOwnerTab();
   const tabFile = getTabFile(currentTab);
   const gameNumber = getTabGameNumber(currentTab);
   const isReportoire = tabFile?.metadata.type === "repertoire";
@@ -93,6 +95,17 @@ function InfoPanel({ addGame }: { addGame?: () => void }) {
             headers={headers}
             simplified={isReportoire}
             changeTitle={(title: string) => {
+              if (isFileBackedTab(currentTab)) {
+                const name = getFileGameName(
+                  { ...headers, event: title },
+                  currentTab.gameOrigin.file,
+                );
+                setCurrentTab((tab) =>
+                  sameTabOwner(tab, currentTab) && matchesFileGameTab(tab, currentTab.gameOrigin)
+                    ? { ...tab, name }
+                    : tab,
+                );
+              }
               setGames((prev) => {
                 const newGames = new Map(prev);
                 newGames.set(gameNumber, { ...newGames.get(gameNumber), name: title });

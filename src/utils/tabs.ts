@@ -30,7 +30,7 @@ import {
     type TreeStoreState,
 } from "@/state/store/tree";
 import { defaultPGN, getPGN, parsePGN, parsePGNWithLossReport } from "./chess";
-import { pickPgnFile, readFileGame, writeFileGame } from "./files";
+import { getFileGameName, pickPgnFile, readFileGame, writeFileGame } from "./files";
 import type { GameHeaders, TreeState } from "./treeReducer";
 import { fileWorkspaceKey } from "./pathCapabilities";
 import type { DatabaseHandle, FileWorkspaceHandle, NormalizedGame } from "@/bindings";
@@ -557,6 +557,10 @@ export function replaceFileGame({
                         tab.value === owner.value
                             ? {
                                   ...tab,
+                                  name: getFileGameName(
+                                      tree.headers,
+                                      (tab as FileBackedTab).gameOrigin.file,
+                                  ),
                                   treeKey: id,
                                   gameOrigin:
                                       appendCount === undefined

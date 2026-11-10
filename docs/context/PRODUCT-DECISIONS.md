@@ -172,3 +172,16 @@ finding ids and date.
   I think a bit strange because I no longer opened it so this should no longer be
   highlighted." On the recommendation: "Do everything as you recommend."
 - **Date:** 2026-11-10.
+
+## 2026-11-10 — File tabs show the current chapter
+
+- **Question:** When a file contains several chapters, should the tab name follow the
+  chapter currently shown, and where should the file name appear?
+- **Choice:** Chapter name in the tab, file › chapter in the tooltip. The tab name
+  follows chapter switches and title edits. The Library chapter picker is also part
+  of the agreed design.
+- **Ruled out:** File name only.
+- **Felix's reason:** "When I just show white moragambit then I have the same problem
+  that I can't distinguish between different moragambit files". Also: "The chapter
+  picker should definitely be part of it."
+- **Date:** 2026-11-10.

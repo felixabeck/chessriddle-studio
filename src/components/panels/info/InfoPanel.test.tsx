@@ -210,7 +210,11 @@ vi.mock("./PgnInput", () => ({
 }));
 
 vi.mock("@/components/common/GameInfo", () => ({
-  default: () => <div data-testid="game-info" />,
+  default: ({ changeTitle }: { changeTitle: (title: string) => void }) => (
+    <button type="button" data-testid="game-info" onClick={() => changeTitle("Renamed chapter")}>
+      Edit title
+    </button>
+  ),
 }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -1081,12 +1085,14 @@ describe("InfoPanel game loading and cancellation", () => {
         gameNumber: nextPage,
       });
       expect(treeStore.getState().headers.event).toBe("Replacement game");
+      expect(jotaiStore.get(currentTabAtom)?.name).toBe("Replacement game");
       expect(treeStore.getState().root).not.toBe(before.root);
     },
   );
 
   test("successful setPage loads game and updates tab and tree state", async () => {
     const mockTree = defaultTree();
+    mockTree.headers.event = "Next chapter";
     mockTree.sourceStamp = "b".repeat(64);
     mocks.loadFileGame.mockResolvedValueOnce({
       pgn: "1. e4 e5 *",
@@ -1109,6 +1115,7 @@ describe("InfoPanel game loading and cancellation", () => {
     expect(mocks.loadFileGame).toHaveBeenCalledWith(fileAHandle, 1, expect.any(AbortSignal));
 
     const updatedTab = jotaiStore.get(currentTabAtom);
+    expect(updatedTab?.name).toBe("Next chapter");
     expect(updatedTab?.gameOrigin).toMatchObject({ kind: "file", gameNumber: 1 });
     expect(mocks.notify).not.toHaveBeenCalled();
     // The page was just read, so the tab starts verified at that revision without a second read.
@@ -1130,6 +1137,19 @@ describe("InfoPanel game loading and cancellation", () => {
     });
     expect(jotaiStore.get(tabsAtom).map((tab) => tab.value)).toEqual([tabAId, tabBId]);
     expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    { event: "Previous chapter", white: "?", black: "?", expected: "Renamed chapter" },
+    { event: "Previous event", white: "White", black: "Black", expected: "White - Black" },
+  ])("title editing derives the file tab name as $expected", async ({ expected, ...headers }) => {
+    treeStore.getState().setHeaders({ ...treeStore.getState().headers, ...headers });
+    await act(async () => root.render(renderPanel()));
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[data-testid="game-info"]')!.click(),
+    );
+    expect(jotaiStore.get(currentTabAtom)?.name).toBe(expected);
+    expect(jotaiStore.get(currentTabAtom)?.gameOrigin).toEqual(tabA.gameOrigin);
   });
 
   test.each(["double-click", "Enter"])(
@@ -1182,6 +1202,7 @@ describe("InfoPanel game loading and cancellation", () => {
     });
 
     expect(jotaiStore.get(currentTabAtom)?.gameOrigin).toMatchObject({ gameNumber: 0 });
+    expect(jotaiStore.get(currentTabAtom)?.name).toBe(tabA.name);
     expect(setState).not.toHaveBeenCalled();
   });
 
@@ -1223,6 +1244,7 @@ describe("InfoPanel game loading and cancellation", () => {
     expect(jotaiStore.get(currentTabAtom)?.gameOrigin).toMatchObject({ gameNumber: 0 });
     expect(treeStore.getState()).toMatchObject({ dirty: true, sourceStamp: null });
     expect(treeStore.getState().root.comment).toBe("Edit made during file read");
+    expect(jotaiStore.get(currentTabAtom)?.name).toBe(tabA.name);
   });
 
   test("delete refuses an in-flight open without native mutation or an optimistic count update", async () => {

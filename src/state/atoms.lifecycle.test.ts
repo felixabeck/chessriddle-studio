@@ -610,6 +610,7 @@ test.each([true, false])(
         const published = fixture.store.get(tabsAtom)[1]!;
         expect(published).toEqual({
             ...owner,
+            name: "Replacement game",
             treeKey: result.treeKey,
             gameOrigin: { ...owner.gameOrigin, gameNumber: 0 },
         });
@@ -724,6 +725,7 @@ test("page replacement preserves file metadata refreshed while its read was pend
     replacementTabIds.add(result.treeKey);
     expect(fixture.store.get(tabsAtom)[1]).toEqual({
         ...current,
+        name: "Replacement game",
         treeKey: result.treeKey,
         gameOrigin: { ...current.gameOrigin, gameNumber: 0 },
     });

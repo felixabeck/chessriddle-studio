@@ -2105,7 +2105,7 @@ describe("BoardAnalysis", () => {
     });
     expectCompleted();
     expect(jotaiStore.get(tabsAtom)[0]).toMatchObject({
-      name: "Renamed while adding",
+      name: "Current file name",
       gameOrigin: {
         file: {
           name: "Current file name",
