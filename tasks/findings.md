@@ -22574,6 +22574,9 @@ Proof: `assertPageNotClipped` on the Analysis tab with no engines went red first
 Rejected: wrapping or shrinking the button, lowering the 16rem floor, a CSS-only container query, and `flex-wrap` on the Tabs root.
 <!-- ledger-meta {"command":"close","effect_lines":5,"effect_sha256":"534c50a7e64609295c0afa590ffc69b78284af4e9d2fc19c786501b9633ab8dd","header_sha256":"8f2f3c8b15260a8074b671fc340906947445121ff42d44e67636f1c95e4fa660","header_status":"handled","input_sha256":"3a6b58aac2206ee8e87c36356918f90ca8856babc6066ee1bcd036efb69e9f54","kind":"mutation-receipt","operation":"ac233158c10388ccdc67cbe5cbfc8011a8b2b0d89ae60b032d65297ae0ec98c7","options":{"section":null},"request_id_sha256":null,"results":["f-20261109-04"],"target":"f-20261109-04","v":1} -->
 
+The empty parentheses in the closing note above should name d-20261110-05, which records why the tabs stack and what was rejected.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"6c24496378e32c9f5ab8a24e1b07146726f66143528337ecbe65067e1ba4f0df","input_sha256":"f24505237faeb4b0e8e9048bc4e861ff5bedbb91c41c48c2362cfdb2237319f5","kind":"mutation-receipt","operation":"7d6925df098c462389319ad6814d65d6a90ba8597c794ec17c86b574d311ccb3","options":{"section":null},"request_id_sha256":null,"results":["f-20261109-04"],"target":"f-20261109-04","v":1} -->
+
 ---
 
 ## 2026-11-09 — filed through the inbox spool
