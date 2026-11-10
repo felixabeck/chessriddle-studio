@@ -15,6 +15,7 @@ import {
   practiceCompletedSummaryFamily,
   practiceStateFamily,
   practiceSessionStatsFamily,
+  practiceCardStartTimeFamily,
   tabsAtom,
 } from "@/state/atoms";
 import { PRACTICE_SYNC_DEBOUNCE_MS, resetPracticeMigrationForTests } from "@/state/practiceStorage";
@@ -440,7 +441,7 @@ test("a surviving tree edit restarts replay and reaches its live frame", async (
   expect(tree.getState().position).toEqual([0, 0]);
 });
 
-test("a retained transposed card restarts replay when promotion changes its exact FEN", async () => {
+async function mountTransposedStudy() {
   await mountStudy(
     { ...cases[1], moves: ["Nf3", "Nf6", "g3", "g6", "Bg2", "Bg7"] },
     ["g3", "g6", "Nf3", "Nf6", "Bg2", "Bg7"],
@@ -455,6 +456,10 @@ test("a retained transposed card restarts replay when promotion changes its exac
       ],
     },
   );
+}
+
+test("a retained transposed card restarts replay when promotion changes its exact FEN", async () => {
+  await mountTransposedStudy();
   const before = atoms.get(practiceStateFamily(owner.value));
   const queue = [...stats().remainingPositionKeys];
   expect(tree.getState().currentNode().children[0].san).toBe("Bg7");
@@ -478,6 +483,51 @@ test("a retained transposed card restarts replay when promotion changes its exac
   expect(phase()).toBe("correct");
   expect(reviews).toHaveLength(1);
 });
+
+test.each([false, true])(
+  "a failed transposed presentation keeps its one rating and re-append after FEN-changing promotion, replay edit=%s",
+  async (editDuringReplay) => {
+    await mountTransposedStudy();
+    const before = atoms.get(practiceStateFamily(owner.value));
+    const queue = [...stats().remainingPositionKeys];
+    await answer("d5");
+    expect(phase()).toBe("retry");
+    expect(reviews.map(({ entry }) => JSON.parse(entry).rating)).toEqual([1]);
+    expect(stats()).toMatchObject({ correct: 0, incorrect: 1 });
+
+    await act(async () => tree.getState().promoteVariation([1]));
+    expect(phase()).toBe("replaying");
+    expect(atoms.get(practiceCardStartTimeFamily(owner.value))).toBe(0);
+    expect(stats().remainingPositionKeys).toEqual(queue);
+    if (editDuringReplay) {
+      await tick(PRACTICE_REPLAY_STEP_MS);
+      await act(async () => tree.getState().setComment("Restart this replay"));
+    }
+    expect(phase()).toBe("replaying");
+    expect(atoms.get(practiceCardStartTimeFamily(owner.value))).toBe(0);
+    await settleReplay();
+    const after = atoms.get(practiceStateFamily(owner.value));
+    expect(after.currentFen).not.toBe(before.currentFen);
+    expect(after.positionKey).toBe(before.positionKey);
+    expect(controller()?.canMove).toBe(true);
+    expect(atoms.get(practiceCardStartTimeFamily(owner.value))).toBe(Date.now());
+    await answer("Bg7");
+
+    expect(reviews.map(({ entry }) => JSON.parse(entry).rating)).toEqual([1]);
+    expect(stats()).toMatchObject({ correct: 0, incorrect: 1 });
+    expect(after.phase).toBe("retry");
+    expect(phase()).toBe("correct");
+    await tick(300);
+    await settleReplay();
+    expect(stats().remainingPositionKeys).toEqual(queue);
+    expect(stats().reappendedPositionKeys).toEqual(queue);
+    expect(stats()).toMatchObject({ correct: 0, incorrect: 1 });
+    expect(phase()).toBe("waiting");
+    expect(atoms.get(practiceStateFamily(owner.value)).positionKey).toBe(before.positionKey);
+    expect(tree.getState().currentNode().children[0].san).toBe("Bg7");
+    expect(reviews.map(({ entry }) => JSON.parse(entry).rating)).toEqual([1]);
+  },
+);
 
 test("an idle mount clears a persisted practice path", async () => {
   await mountStudy(cases[0], undefined, false, {

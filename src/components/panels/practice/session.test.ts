@@ -418,6 +418,22 @@ describe("line-training reducer phases", () => {
         expect(canSubmitPracticeMove(waiting(), "card-fen")).toBe(true);
     });
 
+    it("resumes a failed presentation in retry with its live answer after replay", () => {
+        const retry = practiceSessionReducer(replaying(), {
+            type: "replayed",
+            token: 5,
+            learning: false,
+            retryAnswer: "Nf3",
+        });
+        expect(retry).toEqual({ ...replaying(), phase: "retry", answer: "Nf3" });
+        expect(canSubmitPracticeMove(retry, "card-fen")).toBe(true);
+        expect(practiceSessionReducer(retry, wrong).phase).toBe("revealed");
+        expect(
+            practiceSessionReducer(retry, { type: "reveal", token: 5, answer: retry.answer! })
+                .phase,
+        ).toBe("revealed");
+    });
+
     it("introduces unseen cards without a quiz result and finishes through learned", () => {
         const learning = practiceSessionReducer(replaying(), {
             type: "replayed",

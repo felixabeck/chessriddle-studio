@@ -339,7 +339,7 @@ function PracticePanel() {
     practiceGrading === "manual";
 
   const newPractice = useCallback(
-    (first = false) => {
+    (transition: "first" | "next" | "restart" = "next") => {
       clearPracticeTimers();
       let latest = sessionStatsRef.current;
       const state = store.getState();
@@ -360,15 +360,19 @@ function PracticePanel() {
         return;
       }
       const key = getBoardState(card.fen);
-      presentationRef.current = {
-        failed: false,
-        learning:
-          latest.mode === "anki" &&
-          card.card.reps === 0 &&
-          !latest.introducedPositionKeys.includes(key),
-        rated: false,
-        startedAt: 0,
-      };
+      // A restarted replay still belongs to this presentation, unless its queue entry was dropped.
+      const samePresentation = transition === "restart" && key === sessionRef.current.positionKey;
+      presentationRef.current = samePresentation
+        ? { ...presentationRef.current, startedAt: 0 }
+        : {
+            failed: false,
+            learning:
+              latest.mode === "anki" &&
+              card.card.reps === 0 &&
+              !latest.introducedPositionKeys.includes(key),
+            rated: false,
+            startedAt: 0,
+          };
       setAlternative(false);
       setInvisible(true);
       setShowComments(false);
@@ -376,7 +380,7 @@ function PracticePanel() {
       setCardStartTime(0);
       setPracticePath(frame.position);
       const replay = buildPracticeReplay(
-        first ? null : state.position,
+        transition === "first" ? null : state.position,
         frame.position,
         state.headers.start || [],
       );
@@ -424,6 +428,7 @@ function PracticePanel() {
               type: "replayed",
               token,
               learning: presentationRef.current.learning,
+              retryAnswer: presentationRef.current.failed ? liveCard.answer : undefined,
             }),
           );
         } else {
@@ -573,7 +578,7 @@ function PracticePanel() {
       mode,
       ...buildPracticeQueue(deckRef.current.positions, mode, newPerSession, new Date()),
     });
-    newPractice(true);
+    newPractice("first");
   }
   const startPractice = () => startSession("anki");
   const startFullPractice = () => startSession("full");
@@ -686,7 +691,7 @@ function PracticePanel() {
   useEffect(() => {
     if (sessionRef.current.phase === "idle") return;
     if (sessionRef.current.phase === "replaying") {
-      newPractice();
+      newPractice("restart");
       return;
     }
     const card = deckRef.current.positions.find(
@@ -697,7 +702,7 @@ function PracticePanel() {
       publishStats({ ...latest, ...advancePracticeQueue(latest, latest.mode) });
       newPractice();
     } else if (card.fen !== sessionRef.current.currentFen) {
-      newPractice();
+      newPractice("restart");
     }
   }, [root, headers.start, headers.orientation, deck.positions, newPractice, publishStats]);
 
