@@ -111,6 +111,28 @@ finding ids and date.
   build this."
 - **Date:** 2026-11-09. Technical record: `d-20261110-01`.
 
+## 2026-11-10 — Studio offers tactics only, made complete in itself
+
+- **Question:** Should Studio cover all ChessRiddle puzzle modes, so that it is an
+  alternative to the browser, or only tactics?
+- **Choice:** Tactics only, plus the mistakes queue, and no further puzzle modes.
+  The tactics mode gets difficulty and motif and a timer, all synced with the
+  ChessRiddle account, the browser's keyboard shortcuts (Enter or A, the arrows, ?),
+  a "This session" summary with the rating, Analyse after the verdict with the local
+  engine, and a link to the other training modes on chessriddle.com. The puzzle tab
+  is a way into ChessRiddle for Studio users, not a replacement for the website.
+- **Ruled out:** Rebuilding the browser's other modes in Studio: each needs its own
+  solving interface and every later change would be built twice. Zen mode. Saving a
+  puzzle to a local file ("I would wait with that until people ask for it").
+  The wrong-piece hint ("I would also leave this out for now"). A counter of the
+  remaining free puzzles and the motif shown after solving, because both need the
+  server to return new information.
+- **Felix's reason:** "So let's just focus on tactics, no more puzzle modes, but make
+  these really well so that the user is really inclined to check chess riddle out."
+  On the timer: "I think the timer is something valuable and easy to build." On the
+  keys: "I would use the same keyboards that we use in the browser."
+- **Date:** 2026-11-10. Technical record: `d-20261110-08`.
+
 ## 2026-11-10 — Arrow down at a line end stays at its own fork
 
 - **Question:** Where does arrow down go at the end of a line, so that variations can
