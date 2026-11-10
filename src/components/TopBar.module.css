@@ -55,8 +55,38 @@
   overflow-wrap: anywhere;
 }
 
+.brand {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.5rem;
+  margin-inline-end: 0.5rem;
+  user-select: none;
+}
+
+/* Tauri only starts a window drag when the event target itself carries the drag attribute,
+   so everything inside the brand lets the pointer fall through to it. */
+.brand > * {
+  pointer-events: none;
+}
+
 .logo {
   flex: 0 0 auto;
+}
+
+.wordmark {
+  color: var(--cf-foreground);
+  font-size: 0.875rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.wordmarkChess {
+  color: var(--cf-primary);
+}
+
+.wordmarkProduct {
+  font-weight: 400;
 }
 
 .dragRegion {

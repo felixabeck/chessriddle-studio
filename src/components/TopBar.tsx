@@ -213,8 +213,15 @@ function TopBar({
           </Menu>
         ) : (
           <Group gap="xs" px="sm" wrap="nowrap">
-            <Box h="1.25rem" w="1.25rem" className={classes.logo} data-tauri-drag-region>
-              <Image src="/logo.png" alt="" fit="fill" />
+            <Box className={classes.brand} data-tauri-drag-region>
+              <Box h="1.25rem" w="1.25rem" className={classes.logo}>
+                <Image src="/logo.png" alt="" fit="fill" />
+              </Box>
+              {/* Brand name, deliberately not translated. Colours mirror the website's Logo.tsx. */}
+              <span className={classes.wordmark}>
+                <span className={classes.wordmarkChess}>Chess</span>
+                <span>Riddle</span> <span className={classes.wordmarkProduct}>Studio</span>
+              </span>
             </Box>
             <Group gap={0} wrap="nowrap">
               {menuActions.map((action) => (

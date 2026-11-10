@@ -813,11 +813,25 @@ test("compact title-bar: wide baseline, resizing and live font scaling preserve 
         width: 20,
         height: 20,
     });
+    await expect(header).toContainText("ChessRiddle Studio");
+    // Tauri reads the attribute from the event target only, so the brand must not swallow drags.
+    for (const brandPart of [
+        header.locator("img"),
+        header.getByText("ChessRiddle Studio", { exact: true }),
+    ])
+        expect(
+            await brandPart.evaluate((element) => {
+                const { left, top, width, height } = element.getBoundingClientRect();
+                return document
+                    .elementFromPoint(left + width / 2, top + height / 2)
+                    ?.hasAttribute("data-tauri-drag-region");
+            }),
+        ).toBe(true);
     // Inter changes text widths while the title bar keeps its height and window-control space.
     const boxes = [
-        ["Datei", 42, 7, 48, 22],
-        ["Ansicht", 90, 7, 61, 22],
-        ["Hilfe", 151, 7, 44, 22],
+        ["Datei", 195, 7, 48, 22],
+        ["Ansicht", 243, 7, 61, 22],
+        ["Hilfe", 304, 7, 44, 22],
         ["Fenster minimieren", 1145, 0, 45, 36],
         ["Fenster maximieren", 1190, 0, 45, 36],
         ["Fenster schließen", 1235, 0, 45, 36],
