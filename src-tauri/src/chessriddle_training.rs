@@ -13,7 +13,8 @@ pub(crate) const MAX_TRAINING_DURATION_MS: u32 = 86_400_000;
 pub(crate) const MAX_TRAINING_EXCLUSIONS: usize = 50;
 // Bounds the allowlisted motif catalogue retained from the server.
 const MAX_TRAINING_MOTIFS: usize = 200;
-// Mirrors the server's ASCII alphanumeric motif identifier bound.
+// The length limit is the server's. ASCII alphanumeric identifiers are Studio's
+// stricter boundary policy.
 const MAX_TRAINING_MOTIF_LENGTH: usize = 50;
 // Mirrors the server's timer duration range in seconds, for reads and saves.
 const MIN_TIMER_DURATION: u32 = 1;

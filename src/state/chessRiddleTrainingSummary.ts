@@ -42,13 +42,17 @@ export function createTrainingSummaryStore(account: typeof tauri.chessriddleAcco
     };
     const accept = (status: AccountStatus) => {
         if (status.status === "connected") {
-            if (state.handle !== status.account.handle) {
+            if (state.handle !== null && state.handle !== status.account.handle) {
                 reset();
-                state = { ...state, handle: status.account.handle };
             }
             loaded = true;
             profileRating = status.account.tactic_rating ?? null;
-            state = { ...state, rating: verdictRating ?? profileRating, error: null };
+            state = {
+                ...state,
+                handle: status.account.handle,
+                rating: verdictRating ?? profileRating,
+                error: null,
+            };
             publish();
         } else if (status.status === "statusUnreadable") {
             loaded = false;
