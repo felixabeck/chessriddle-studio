@@ -93,6 +93,16 @@
   max-width: 100%;
 }
 
+.summaryError {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.summaryError > :global(.mantine-Text-root) {
+  flex: 1;
+  min-width: 0;
+}
+
 .sources,
 .actions {
   display: grid;

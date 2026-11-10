@@ -1,4 +1,5 @@
 import type { TFunction } from "i18next";
+import { formatThemeLabel } from "@/utils/format";
 
 export function motifLabel(name: string, t: TFunction): string {
     const labels: Record<string, string> = {
@@ -65,10 +66,7 @@ export function motifLabel(name: string, t: TFunction): string {
         advantage: t("Training.Motif.advantage"),
         equality: t("Training.Motif.equality"),
     };
-    return (
-        labels[name] ??
-        name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/^./, (letter) => letter.toUpperCase())
-    );
+    return labels[name] ?? formatThemeLabel(name);
 }
 
 export function difficultyOptions(t: TFunction) {

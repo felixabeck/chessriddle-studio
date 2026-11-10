@@ -1123,6 +1123,7 @@ mod tests {
     struct ServerState {
         token_status: AtomicU16,
         profile_status: AtomicU16,
+        profile_rating: Mutex<Option<f64>>,
         profile_unauthorized_once: AtomicBool,
         revoke_status: AtomicU16,
         refresh_after_removal: AtomicBool,
@@ -1134,6 +1135,8 @@ mod tests {
         revokes: AtomicUsize,
         forms: Mutex<Vec<HashMap<String, String>>>,
         training_queries: Mutex<Vec<String>>,
+        settings_patches: Mutex<Vec<serde_json::Value>>,
+        training_submissions: AtomicUsize,
         delayed_submit: AtomicBool,
         credentials: Arc<ChessRiddleCredentials>,
     }
@@ -1211,11 +1214,13 @@ mod tests {
     }
 
     async fn save_training_settings(
+        State(state): State<Arc<ServerState>>,
         headers: HeaderMap,
         Json(body): Json<serde_json::Value>,
     ) -> Json<serde_json::Value> {
         attribution(&headers);
         assert!(headers.contains_key("authorization"));
+        state.settings_patches.lock().unwrap().push(body.clone());
         assert_eq!(body, settings_response());
         Json(body)
     }
@@ -1232,6 +1237,7 @@ mod tests {
         Json(body): Json<serde_json::Value>,
     ) -> impl IntoResponse {
         training_headers(&headers);
+        state.training_submissions.fetch_add(1, Ordering::SeqCst);
         assert!(
             uuid::Uuid::parse_str(headers.get("Idempotency-Key").unwrap().to_str().unwrap())
                 .is_ok()
@@ -1292,6 +1298,10 @@ mod tests {
             .unwrap()
             .starts_with("Bearer access-"));
         state.profiles.fetch_add(1, Ordering::SeqCst);
+        let mut body = serde_json::json!({"username":"Player", "permissions":{"tier":"gold"}});
+        if let Some(rating) = *state.profile_rating.lock().unwrap() {
+            body["tactic_rating"] = serde_json::json!(rating);
+        }
         (
             if state
                 .profile_unauthorized_once
@@ -1301,7 +1311,7 @@ mod tests {
             } else {
                 StatusCode::from_u16(state.profile_status.load(Ordering::SeqCst)).unwrap()
             },
-            Json(serde_json::json!({"username":"Player", "permissions":{"tier":"gold"}})),
+            Json(body),
         )
     }
 
@@ -1345,6 +1355,7 @@ mod tests {
             let state = Arc::new(ServerState {
                 token_status: AtomicU16::new(200),
                 profile_status: AtomicU16::new(200),
+                profile_rating: Mutex::new(Some(1550.0)),
                 profile_unauthorized_once: AtomicBool::new(false),
                 revoke_status: AtomicU16::new(204),
                 refresh_after_removal: AtomicBool::new(false),
@@ -1356,6 +1367,8 @@ mod tests {
                 revokes: AtomicUsize::new(0),
                 forms: Mutex::new(Vec::new()),
                 training_queries: Mutex::new(Vec::new()),
+                settings_patches: Mutex::new(Vec::new()),
+                training_submissions: AtomicUsize::new(0),
                 delayed_submit: AtomicBool::new(false),
                 credentials,
             });
@@ -1450,6 +1463,125 @@ mod tests {
             assert_eq!(profile.rating(), expected);
             assert_eq!(profile.username.as_deref(), Some("Player"));
         }
+    }
+
+    #[tokio::test]
+    async fn profile_rating_reaches_the_account_dto_through_the_owner() {
+        let (_temp, credentials) = credentials(Arc::new(TestStore::default()), false).await;
+        credentials
+            .store("user".into(), "initial-refresh".into())
+            .await
+            .unwrap();
+        let fixture = Fixture::new(credentials);
+        let owner = fixture.owner();
+        let account = connected(owner.request(Action::Status).await.unwrap());
+        assert_eq!(account.tactic_rating, Some(1550.0));
+        *fixture.state.profile_rating.lock().unwrap() = None;
+        let account = connected(owner.request(Action::Status).await.unwrap());
+        assert_eq!(account.tactic_rating, None);
+        assert_eq!(fixture.state.profiles.load(Ordering::SeqCst), 2);
+        fixture.stop().await;
+    }
+
+    #[tokio::test]
+    async fn invalid_training_values_are_rejected_by_the_owner_before_http() {
+        let (_temp, credentials) = credentials(Arc::new(TestStore::default()), false).await;
+        credentials
+            .store("user".into(), "initial-refresh".into())
+            .await
+            .unwrap();
+        let fixture = Fixture::new(credentials);
+        let owner = fixture.owner();
+        let valid = TrainingSettings {
+            difficulty: 250,
+            motif: Some("fork".into()),
+            show_timer: true,
+            timer_mode: "down".into(),
+            timer_duration: 180,
+        };
+        let mut invalid_settings = Vec::new();
+        for difficulty in [-501, -1, 1, 501] {
+            invalid_settings.push(TrainingSettings {
+                difficulty,
+                ..valid.clone()
+            });
+            assert!(matches!(
+                owner
+                    .request(Action::Next(
+                        TrainingSource::Tactics,
+                        vec![],
+                        Some(difficulty),
+                        None
+                    ))
+                    .await,
+                Err(AccountError::InvalidRequest)
+            ));
+        }
+        for motif in ["", "a_b", "ä", &"a".repeat(51)] {
+            invalid_settings.push(TrainingSettings {
+                motif: Some(motif.into()),
+                ..valid.clone()
+            });
+            assert!(matches!(
+                owner
+                    .request(Action::Next(
+                        TrainingSource::Tactics,
+                        vec![],
+                        None,
+                        Some(motif.into())
+                    ))
+                    .await,
+                Err(AccountError::InvalidRequest)
+            ));
+            let mut request = training_submission();
+            request.motif = Some(motif.into());
+            assert!(matches!(
+                owner.request(Action::Submit(request)).await,
+                Err(AccountError::InvalidRequest)
+            ));
+        }
+        for timer_mode in ["", "sideways"] {
+            invalid_settings.push(TrainingSettings {
+                timer_mode: timer_mode.into(),
+                ..valid.clone()
+            });
+        }
+        for timer_duration in [0, 3601] {
+            invalid_settings.push(TrainingSettings {
+                timer_duration,
+                ..valid.clone()
+            });
+        }
+        for settings in invalid_settings {
+            assert!(matches!(
+                owner.request(Action::Settings(Some(settings))).await,
+                Err(AccountError::InvalidRequest)
+            ));
+            assert!(fixture.state.settings_patches.lock().unwrap().is_empty());
+        }
+        for (difficulty, motif) in [(Some(0), None), (None, Some("fork".into()))] {
+            assert!(matches!(
+                owner
+                    .request(Action::Next(
+                        TrainingSource::Mistakes,
+                        vec![],
+                        difficulty,
+                        motif
+                    ))
+                    .await,
+                Err(AccountError::InvalidRequest)
+            ));
+        }
+        let mut request = training_submission();
+        request.source = TrainingSource::Mistakes;
+        request.motif = Some("fork".into());
+        assert!(matches!(
+            owner.request(Action::Submit(request)).await,
+            Err(AccountError::InvalidRequest)
+        ));
+        assert!(fixture.state.training_queries.lock().unwrap().is_empty());
+        assert_eq!(fixture.state.training_submissions.load(Ordering::SeqCst), 0);
+        fixture.stop().await;
     }
 
     #[tokio::test]

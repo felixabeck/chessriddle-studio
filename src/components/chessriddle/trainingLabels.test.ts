@@ -25,6 +25,6 @@ test.each(Object.entries(catalogues))(
             expect(label).toBe(catalogue.translation[`Training.Motif.${name}`]);
             expect(label).not.toContain("Training.Motif.");
         }
-        expect(motifLabel("futureMotif42", instance.t)).toBe("Future Motif42");
+        expect(motifLabel("futureMotif42", instance.t)).toBe("Future Motif 42");
     },
 );

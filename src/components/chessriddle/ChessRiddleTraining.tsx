@@ -37,7 +37,7 @@ import { formatKeymap } from "@/utils/formatKeymap";
 import TrainingSettings from "./TrainingSettings";
 import TrainingTimer from "./TrainingTimer";
 import { difficultyOptions, motifLabel } from "./trainingLabels";
-import TrainingError from "./TrainingError";
+import TrainingError, { trainingErrorMessage } from "./TrainingError";
 import { useTrainingSession } from "./useTrainingSession";
 import classes from "./ChessRiddleTraining.module.css";
 
@@ -213,6 +213,21 @@ export default function ChessRiddleTraining({
                     {summary.ratedAttempts > 0 &&
                       ` (${summary.change >= 0 ? "+" : ""}${summary.change})`}
                   </Text>
+                  {summary.error && (
+                    <Group gap={4} className={classes.summaryError}>
+                      <Text size="sm" c="warning" role="alert">
+                        {trainingErrorMessage(summary.error, t)}
+                      </Text>
+                      <Button
+                        variant="subtle"
+                        size="compact-xs"
+                        disabled={summary.loading}
+                        onClick={() => void trainingSummary.load()}
+                      >
+                        {t("Training.Retry")}
+                      </Button>
+                    </Group>
+                  )}
                   {summary.attempts > 0 && (
                     <>
                       <Text data-training-solved>

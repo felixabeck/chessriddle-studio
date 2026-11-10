@@ -1,10 +1,10 @@
 import { Alert, Button, Stack, Text } from "@mantine/core";
 import { useTranslation } from "react-i18next";
 import type { AccountError } from "@/bindings";
+import type { TFunction } from "i18next";
 import { chessRiddleTrainingSessions as sessions } from "@/state/chessRiddleTraining";
 
-export default function TrainingError({ id, error }: { id: string; error: AccountError }) {
-  const { t } = useTranslation();
+export function trainingErrorMessage(error: AccountError, t: TFunction): string {
   const messages: Record<AccountError, string> = {
     noMatch: t("Training.Error.NoMatch"),
     notConnected: t("Training.Error.NotConnected"),
@@ -27,10 +27,15 @@ export default function TrainingError({ id, error }: { id: string; error: Accoun
     browser: t("Training.Error.Browser"),
     alreadyConnected: t("Training.Error.Server"),
   };
+  return messages[error];
+}
+
+export default function TrainingError({ id, error }: { id: string; error: AccountError }) {
+  const { t } = useTranslation();
   return (
     <Alert color="warning" role="alert">
       <Stack gap="sm">
-        <Text>{messages[error]}</Text>
+        <Text>{trainingErrorMessage(error, t)}</Text>
         {error === "dailyLimit" && (
           <Button onClick={() => void sessions.openUpgrade(id)}>{t("Training.Upgrade")}</Button>
         )}

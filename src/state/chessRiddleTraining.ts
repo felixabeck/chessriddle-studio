@@ -192,6 +192,7 @@ export function createChessRiddleTrainingSessions(
         });
         try {
             await Promise.all([settings.load(), summary.load()]);
+            await settings.settled();
             if (!current(tabId, entry, identity)) return;
             const effective = settings.effective();
             const motif = selectedSource === "tactics" ? effective.motif : null;

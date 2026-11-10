@@ -38,7 +38,7 @@ vi.mock("react-i18next", () => ({
 }));
 vi.mock("../common/GameInfo", () => ({ default: () => null }));
 vi.mock("./GamePreview", () => ({ default: () => null }));
-installMatchMediaStub({ matches: (query) => query.includes("prefers-reduced-motion") });
+installMatchMediaStub();
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 globalThis.ResizeObserver = class {
   observe() {}
@@ -137,7 +137,7 @@ describe("database game deletion with real SWR revalidation", () => {
   ) {
     await act(async () =>
       root.render(
-        <MantineProvider env="test" theme={{ respectReducedMotion: true }}>
+        <MantineProvider env="test">
           <SWRConfig
             value={{
               provider: () => cache,

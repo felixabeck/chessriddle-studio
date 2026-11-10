@@ -11,6 +11,17 @@ pub(crate) const MAX_TRAINING_SUBMISSION_PLIES: usize = 7;
 pub(crate) const MAX_TRAINING_DURATION_MS: u32 = 86_400_000;
 // Mirrors the server exclusion contract.
 pub(crate) const MAX_TRAINING_EXCLUSIONS: usize = 50;
+// Bounds the allowlisted motif catalogue retained from the server.
+const MAX_TRAINING_MOTIFS: usize = 200;
+// Mirrors the server's ASCII alphanumeric motif identifier bound.
+const MAX_TRAINING_MOTIF_LENGTH: usize = 50;
+// Mirrors the server's timer duration range in seconds, for reads and saves.
+const MIN_TIMER_DURATION: u32 = 1;
+const MAX_TIMER_DURATION: u32 = 3600;
+// Mirrors the server's default timer duration in seconds.
+const DEFAULT_TIMER_DURATION: u32 = 300;
+// The closed difficulty set accepted by the tactics next-puzzle route.
+const TRAINING_DIFFICULTIES: [i32; 5] = [-500, -250, 0, 250, 500];
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Type)]
 #[serde(rename_all = "camelCase")]
@@ -30,7 +41,8 @@ pub(crate) struct TrainingSettings {
 }
 
 pub(crate) fn valid_motif(value: &str) -> bool {
-    (1..=50).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_alphanumeric())
+    (1..=MAX_TRAINING_MOTIF_LENGTH).contains(&value.len())
+        && value.bytes().all(|byte| byte.is_ascii_alphanumeric())
 }
 
 pub(crate) fn validate_filters(
@@ -39,7 +51,7 @@ pub(crate) fn validate_filters(
     motif: Option<&str>,
 ) -> Result<(), AccountError> {
     if (source == TrainingSource::Mistakes && (difficulty.is_some() || motif.is_some()))
-        || difficulty.is_some_and(|value| ![-500, -250, 0, 250, 500].contains(&value))
+        || difficulty.is_some_and(|value| !TRAINING_DIFFICULTIES.contains(&value))
         || motif.is_some_and(|value| !valid_motif(value))
     {
         return Err(AccountError::InvalidRequest);
@@ -55,7 +67,7 @@ impl TrainingSettings {
             self.motif.as_deref(),
         )?;
         if !matches!(self.timer_mode.as_str(), "up" | "down")
-            || !(1..=3600).contains(&self.timer_duration)
+            || !(MIN_TIMER_DURATION..=MAX_TIMER_DURATION).contains(&self.timer_duration)
         {
             return Err(AccountError::InvalidRequest);
         }
@@ -83,8 +95,9 @@ pub(crate) fn settings(body: &[u8]) -> Result<TrainingSettings, AccountError> {
         difficulty: wire
             .puzzle_difficulty_offset
             .as_i64()
-            .filter(|value| [-500, -250, 0, 250, 500].contains(value))
-            .map_or(0, |value| value as i32),
+            .and_then(|value| i32::try_from(value).ok())
+            .filter(|value| TRAINING_DIFFICULTIES.contains(value))
+            .unwrap_or(0),
         motif: wire.selected_motif.and_then(|value| {
             value
                 .as_str()
@@ -101,8 +114,10 @@ pub(crate) fn settings(body: &[u8]) -> Result<TrainingSettings, AccountError> {
         timer_duration: wire
             .timer_duration
             .as_u64()
-            .filter(|value| (1..=3600).contains(value))
-            .map_or(300, |value| value as u32),
+            .filter(|value| {
+                (u64::from(MIN_TIMER_DURATION)..=u64::from(MAX_TIMER_DURATION)).contains(value)
+            })
+            .map_or(DEFAULT_TIMER_DURATION, |value| value as u32),
     })
 }
 
@@ -123,7 +138,7 @@ pub(crate) fn motifs(body: &[u8]) -> Result<Vec<String>, AccountError> {
                 names.push(name.to_owned());
             }
         }
-        if names.len() == 200 {
+        if names.len() == MAX_TRAINING_MOTIFS {
             break;
         }
     }

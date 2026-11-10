@@ -1,4 +1,5 @@
-import type { AccountStatus, TrainingVerdict } from "@/bindings";
+import type { AccountError, AccountStatus, TrainingVerdict } from "@/bindings";
+import { ChessRiddleCommandError } from "@/platform/chessriddle";
 import { tauri } from "@/platform/tauri";
 
 type Summary = {
@@ -8,6 +9,8 @@ type Summary = {
     correct: number;
     change: number;
     rating: number | null;
+    error: AccountError | null;
+    loading: boolean;
 };
 export function createTrainingSummaryStore(account: typeof tauri.chessriddleAccount) {
     const empty = (): Summary => ({
@@ -17,6 +20,8 @@ export function createTrainingSummaryStore(account: typeof tauri.chessriddleAcco
         correct: 0,
         change: 0,
         rating: null,
+        error: null,
+        loading: false,
     });
     let state = empty();
     let generation = Symbol();
@@ -43,9 +48,13 @@ export function createTrainingSummaryStore(account: typeof tauri.chessriddleAcco
             }
             loaded = true;
             profileRating = status.account.tactic_rating ?? null;
-            state = { ...state, rating: verdictRating ?? profileRating };
+            state = { ...state, rating: verdictRating ?? profileRating, error: null };
             publish();
-        } else if (status.status === "disconnected" || status.status === "reconnectNeeded") reset();
+        } else if (status.status === "statusUnreadable") {
+            loaded = false;
+            state = { ...state, error: status.error };
+            publish();
+        } else reset();
     };
     return {
         get: () => state,
@@ -61,17 +70,24 @@ export function createTrainingSummaryStore(account: typeof tauri.chessriddleAcco
         load() {
             if (pending) return pending;
             if (loaded) return Promise.resolve();
-            loaded = true;
+            state = { ...state, loading: true, error: null };
+            publish();
             const identity = generation;
             const promise = account()
                 .then((status) => {
                     if (generation === identity) accept(status);
                 })
-                .catch(() => {
-                    // The account card owns account errors. Missing profile leaves the rating as a dash.
+                .catch((cause: unknown) => {
+                    if (generation !== identity) return;
+                    state = { ...state, error: new ChessRiddleCommandError(cause).code };
+                    publish();
                 })
                 .finally(() => {
-                    if (pending === promise) pending = null;
+                    if (pending === promise) {
+                        pending = null;
+                        state = { ...state, loading: false };
+                        publish();
+                    }
                 });
             pending = promise;
             return promise;

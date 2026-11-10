@@ -118,6 +118,63 @@ test.each([false, true])(
     },
 );
 
+async function nextDuringSettingsSave() {
+    const old = { ...defaultTrainingSettings, difficulty: 250, motif: "fork" };
+    const saved = { ...old, difficulty: 500, motif: "pin" };
+    const save = deferred<typeof saved>();
+    const reconciliation = deferred<typeof old>();
+    const settingsApi = {
+        chessriddleTrainingSettings: vi.fn().mockResolvedValueOnce(old),
+        chessriddleSaveTrainingSettings: vi.fn().mockReturnValue(save.promise),
+        chessriddleTrainingMotifs: vi.fn().mockResolvedValue(["fork", "pin"]),
+    };
+    const { sessions, settings, api } = fixture(settingsApi);
+    await sessions.next("tab");
+    api.chessriddleTrainingNext.mockClear();
+    settingsApi.chessriddleTrainingSettings.mockReturnValueOnce(reconciliation.promise);
+    settings.change({ difficulty: 500, motif: "pin" });
+    const next = sessions.next("tab");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(api.chessriddleTrainingNext).not.toHaveBeenCalled();
+    return { old, saved, save, reconciliation, next, settings, api };
+}
+
+test("next waits for a pending save and uses the saved filters", async () => {
+    const { save, saved, next, api } = await nextDuringSettingsSave();
+    save.resolve(saved);
+    await next;
+    expect(api.chessriddleTrainingNext).toHaveBeenCalledExactlyOnceWith("tactics", [], 500, "pin");
+});
+
+test("next waits for a failed save's reconciliation and uses the confirmed old filters", async () => {
+    const { save, reconciliation, old, next, settings, api } = await nextDuringSettingsSave();
+    save.reject("network");
+    await vi.waitFor(() => expect(settings.get().reconciling).toBe(true));
+    expect(api.chessriddleTrainingNext).not.toHaveBeenCalled();
+    reconciliation.resolve(old);
+    await next;
+    expect(api.chessriddleTrainingNext).toHaveBeenCalledExactlyOnceWith("tactics", [], 250, "fork");
+});
+
+test("closing a tab while next waits for a save retires the waiting request", async () => {
+    const save = deferred<typeof defaultTrainingSettings>();
+    const settingsApi = {
+        chessriddleTrainingSettings: vi.fn().mockResolvedValue(defaultTrainingSettings),
+        chessriddleSaveTrainingSettings: vi.fn().mockReturnValue(save.promise),
+        chessriddleTrainingMotifs: vi.fn().mockResolvedValue([]),
+    };
+    const { sessions, settings, api } = fixture(settingsApi);
+    await sessions.next("tab");
+    api.chessriddleTrainingNext.mockClear();
+    settings.change({ difficulty: 250 });
+    const next = sessions.next("tab");
+    sessions.remove("tab");
+    save.resolve({ ...defaultTrainingSettings, difficulty: 250 });
+    await next;
+    expect(api.chessriddleTrainingNext).not.toHaveBeenCalled();
+    expect(settings.get().saving).toBe(false);
+});
+
 test("two tabs share settings and summary while each submission keeps its request motif", async () => {
     const { sessions, settings, summary, api } = fixture({
         chessriddleTrainingSettings: vi

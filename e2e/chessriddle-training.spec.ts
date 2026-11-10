@@ -262,6 +262,74 @@ test("long active filters truncate while the settings button describes them in f
     expect(geometry.ellipsis).toBe("ellipsis");
 });
 
+test("each timer control saves its changed value", async ({ page, mockScenario }) => {
+    const shown = { ...settings, showTimer: true };
+    const countdown = { ...shown, timerMode: "down" };
+    const duration = { ...countdown, timerDuration: 600 };
+    await mockScenario({
+        commands: {
+            ...connectedCommands,
+            chessriddle_save_training_settings: {
+                outcomes: [{ result: shown }, { result: countdown }, { result: duration }],
+            },
+        },
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Puzzles", exact: true }).click();
+    await page.getByRole("button", { name: "Training settings", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    const saves = () =>
+        page.evaluate(() =>
+            window.__E2E_TAURI__
+                .invocations()
+                .filter((call) => call.command === "chessriddle_save_training_settings")
+                .map((call) => call.args),
+        );
+    await dialog.getByRole("switch", { name: "Show timer" }).click();
+    await expect.poll(saves).toEqual([{ settings: shown }]);
+    await dialog.getByLabel("Timer mode", { exact: true }).click();
+    await page.getByRole("option", { name: "Count down", exact: true }).click();
+    await expect.poll(saves).toEqual([{ settings: shown }, { settings: countdown }]);
+    await dialog.getByLabel("Duration", { exact: true }).click();
+    await page.getByRole("option", { name: "10 min", exact: true }).click();
+    await expect
+        .poll(saves)
+        .toEqual([{ settings: shown }, { settings: countdown }, { settings: duration }]);
+});
+
+test("profile read errors stay compact beside the rating and Retry restores it", async ({
+    page,
+    mockScenario,
+    assertNoHorizontalOverflow,
+}, testInfo) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await mockScenario({
+        commands: {
+            ...connectedCommands,
+            chessriddle_account: {
+                outcomes: [{ result: { status: "statusUnreadable", error: "network" } }],
+                result: connectedCommands.chessriddle_account.result,
+            },
+        },
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Puzzles", exact: true }).click();
+    const summary = page.locator("[data-training-summary]");
+    await expect(summary.locator("[data-training-rating]")).toContainText("—");
+    await expect(summary.getByRole("alert")).toHaveText(en.translation["Training.Error.Network"]);
+    const rating = await summary.locator("[data-training-rating]").boundingBox();
+    const error = await summary.getByRole("alert").boundingBox();
+    expect(error!.x).toBeGreaterThanOrEqual(rating!.x + rating!.width);
+    await assertNoHorizontalOverflow();
+    await testInfo.attach("profile-read-error", {
+        body: await summary.screenshot(),
+        contentType: "image/png",
+    });
+    await summary.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect(summary.getByRole("alert")).toHaveCount(0);
+    await expect(summary.locator("[data-training-rating]")).toContainText("1500");
+});
+
 for (const showTimer of [true, false]) {
     test(`countdown duration remains editable with timer shown=${showTimer}`, async ({
         page,

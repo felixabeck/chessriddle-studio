@@ -73,6 +73,7 @@ const mocks = vi.hoisted(() => ({
   chessriddleTrainingNext: vi.fn(),
   chessriddleTrainingSubmit: vi.fn(),
   chessriddleMistakeCount: vi.fn(),
+  chessriddleOpenWebsite: vi.fn(),
   chessriddleAccount: vi.fn(),
   connectChessriddle: vi.fn(),
   getPuzzleWorkspace: vi.fn(),
@@ -131,6 +132,7 @@ vi.mock("@/platform/tauri", async () => {
       chessriddleTrainingNext: mocks.chessriddleTrainingNext,
       chessriddleTrainingSubmit: mocks.chessriddleTrainingSubmit,
       chessriddleMistakeCount: mocks.chessriddleMistakeCount,
+      chessriddleOpenWebsite: mocks.chessriddleOpenWebsite,
       chessriddleAccount: mocks.chessriddleAccount,
       connectChessriddle: mocks.connectChessriddle,
       getPuzzleWorkspace: mocks.getPuzzleWorkspace,
@@ -579,6 +581,59 @@ test("settings refused by the backend hides the control silently", async () => {
   mocks.chessriddleTrainingAvailable.mockResolvedValue(true);
   await renderSource("chessriddle");
   expect(document.querySelector('[aria-label="Training.Settings.Title"]')).toBeNull();
+  expect(document.querySelector('[data-training-panel] [role="alert"]')).toBeNull();
+});
+
+test.each([false, true])(
+  "profile read failure is visible beside the rating and Retry recovers, unreadable=%s",
+  async (unreadable) => {
+    mocks.chessriddleTrainingAvailable.mockResolvedValue(true);
+    if (unreadable)
+      mocks.chessriddleAccount.mockResolvedValueOnce({
+        status: "statusUnreadable",
+        error: "storage",
+      });
+    else mocks.chessriddleAccount.mockRejectedValueOnce("network");
+    await renderSource("chessriddle");
+    const summary = document.querySelector("[data-training-summary]")!;
+    expect(summary.querySelector("[role=alert]")?.textContent).toBe(
+      unreadable ? "Training.Error.Server" : "Training.Error.Network",
+    );
+    expect(summary.querySelector("[data-training-rating]")?.textContent).toBe(
+      "Training.Session.Rating —",
+    );
+    mocks.chessriddleAccount.mockResolvedValue({
+      ...connectedAccount,
+      account: { ...connectedAccount.account, tactic_rating: 1550 },
+    });
+    await clickTraining("Training.Retry");
+    expect(mocks.chessriddleAccount).toHaveBeenCalledTimes(2);
+    expect(summary.querySelector("[role=alert]")).toBeNull();
+    expect(summary.querySelector("[data-training-rating]")?.textContent).toBe(
+      "Training.Session.Rating 1550",
+    );
+  },
+);
+
+test("the website button invokes the fixed-destination command", async () => {
+  mocks.chessriddleTrainingAvailable.mockResolvedValue(true);
+  await renderSource("chessriddle");
+  await clickTraining("Training.Website");
+  expect(mocks.chessriddleOpenWebsite).toHaveBeenCalledExactlyOnceWith();
+  expect(document.querySelector('[data-training-panel] [role="alert"]')).toBeNull();
+});
+
+test("a refused website command renders its typed error and can be retried", async () => {
+  mocks.chessriddleTrainingAvailable.mockResolvedValue(true);
+  mocks.chessriddleOpenWebsite.mockRejectedValueOnce("browser");
+  await renderSource("chessriddle");
+  await clickTraining("Training.Website");
+  expect(mocks.chessriddleOpenWebsite).toHaveBeenCalledExactlyOnceWith();
+  expect(document.querySelector('[data-training-panel] [role="alert"]')?.textContent).toBe(
+    "Training.Error.Browser",
+  );
+  await clickTraining("Training.Website");
+  expect(mocks.chessriddleOpenWebsite).toHaveBeenCalledTimes(2);
   expect(document.querySelector('[data-training-panel] [role="alert"]')).toBeNull();
 });
 
@@ -2512,6 +2567,7 @@ beforeEach(() => {
   mocks.chessriddleTrainingAvailable.mockResolvedValue(false);
   mocks.chessriddleTrainingNext.mockResolvedValue(trainingPuzzle);
   mocks.chessriddleMistakeCount.mockResolvedValue(2);
+  mocks.chessriddleOpenWebsite.mockResolvedValue(undefined);
   mocks.chessriddleAccount.mockResolvedValue({ status: "disconnected" });
   mocks.connectChessriddle.mockResolvedValue(connectedAccount);
   mocks.board = null;

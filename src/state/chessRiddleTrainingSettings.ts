@@ -125,6 +125,18 @@ export function createTrainingSettingsStore(api: Api) {
             };
         },
         load,
+        async settled() {
+            while (state.saving || state.reconciling) {
+                await new Promise<void>((resolve) => {
+                    const listener = () => {
+                        if (state.saving || state.reconciling) return;
+                        listeners.delete(listener);
+                        resolve();
+                    };
+                    listeners.add(listener);
+                });
+            }
+        },
         retryMotifs: readMotifs,
         effective: (snapshot = state) => ({
             ...confirmed,

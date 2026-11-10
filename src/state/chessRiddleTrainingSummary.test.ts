@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest";
-import type { TrainingVerdict } from "@/bindings";
+import type { AccountStatus, TrainingVerdict } from "@/bindings";
 import { createTrainingSummaryStore } from "./chessRiddleTrainingSummary";
 
 const verdict: TrainingVerdict = {
@@ -47,6 +47,8 @@ test("summary counts finished attempts and rated deltas across consumers and res
         correct: 1,
         change: 8,
         rating: 1500,
+        error: null,
+        loading: false,
     });
     store.accept({
         status: "connected",
@@ -66,6 +68,8 @@ test("summary counts finished attempts and rated deltas across consumers and res
         correct: 0,
         change: 0,
         rating: 1700,
+        error: null,
+        loading: false,
     });
     store.accept({ status: "disconnected" });
     expect(store.get()).toEqual({
@@ -75,6 +79,8 @@ test("summary counts finished attempts and rated deltas across consumers and res
         correct: 0,
         change: 0,
         rating: null,
+        error: null,
+        loading: false,
     });
     expect(one.mock.calls.length).toBe(two.mock.calls.length);
     stopOne();
@@ -91,3 +97,30 @@ test("a zero rating change appears only after a finished rated attempt", () => {
     expect(store.get().ratedAttempts).toBe(1);
     expect(store.get().change).toBe(0);
 });
+
+test.each(["rejected", "unreadable", "raw"] as const)(
+    "a %s profile read retains a typed error and a later load retries successfully",
+    async (failure) => {
+        const account = vi.fn<() => Promise<AccountStatus>>();
+        if (failure === "unreadable")
+            account.mockResolvedValueOnce({ status: "statusUnreadable", error: "storage" });
+        else account.mockRejectedValueOnce(failure === "raw" ? "private server text" : "network");
+        const store = createTrainingSummaryStore(account);
+        await store.load();
+        expect(store.get()).toMatchObject({
+            rating: null,
+            loading: false,
+            error: failure === "unreadable" ? "storage" : failure === "raw" ? "server" : "network",
+        });
+        account.mockResolvedValueOnce({
+            status: "connected",
+            account: { handle: "account", username: "Player", plan: "gold", tactic_rating: 1550 },
+            durability_uncertain: false,
+        });
+        await store.load();
+        expect(account).toHaveBeenCalledTimes(2);
+        expect(store.get()).toMatchObject({ rating: 1550, error: null, loading: false });
+        await store.load();
+        expect(account).toHaveBeenCalledTimes(2);
+    },
+);
