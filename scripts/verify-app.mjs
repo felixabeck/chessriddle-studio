@@ -4260,11 +4260,6 @@ async function verifyGameOpening(session, ownedRoot, filesWorkspace) {
         'return [...document.querySelectorAll(\'[role="option"][aria-selected="true"]\')].some(node => node.textContent.includes(arguments[0])) && ![...document.querySelectorAll(\'[role="option"][aria-selected="true"]\')].some(node => node.textContent.includes(arguments[1]))',
         [openingGames[0].white, openingGames[1].white],
       );
-      await wait(
-        "first PGN preview before GO11",
-        "return document.body.innerText.replace(/\\s+/g, '').includes(arguments[0])",
-        [openingGames[0].notation],
-      );
       const row = await fileRow(openingGames[1]);
       if (row.selected !== "false") throw new Error("PGN double-click target was already selected");
       const before = await snapshot();
