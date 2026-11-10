@@ -323,73 +323,90 @@ export default function BoardsPage() {
       className={classes.tabsContainer}
     >
       <div className={classes.tabsHeaderRow}>
-        <ScrollArea scrollbarSize={4} className={classes.tabsHeader}>
-          <DragDropContext
-            onDragEnd={({ destination, source }) =>
-              destination?.index !== undefined &&
-              setTabs((prev) => {
-                const result = Array.from(prev);
-                const [removed] = result.splice(source.index, 1);
-                result.splice(destination.index, 0, removed);
-                return result;
+        <div className={classes.tabStrip} data-tab-strip>
+          <ScrollArea scrollbarSize={4} className={classes.tabsHeader}>
+            <DragDropContext
+              onDragEnd={({ destination, source }) =>
+                destination?.index !== undefined &&
+                setTabs((prev) => {
+                  const result = Array.from(prev);
+                  const [removed] = result.splice(source.index, 1);
+                  result.splice(destination.index, 0, removed);
+                  return result;
+                })
+              }
+            >
+              <Droppable droppableId="droppable" direction="horizontal">
+                {(provided) => (
+                  <Tabs.List
+                    ref={(node) => {
+                      provided.innerRef(node);
+                      tabListRef.current = node;
+                    }}
+                    {...provided.droppableProps}
+                    className={classes.tabList}
+                  >
+                    {tabs.map((tab, i) => (
+                      // The drag handle is the tab's own button, which the library refuses as a
+                      // drag start unless interactive-element blocking is off.
+                      <Draggable
+                        key={tab.value}
+                        draggableId={tab.value}
+                        index={i}
+                        disableInteractiveElementBlocking
+                      >
+                        {(provided) => (
+                          <div
+                            ref={provided.innerRef}
+                            {...provided.draggableProps}
+                            className={classes.tabSlot}
+                            role="presentation"
+                          >
+                            <BoardTab
+                              tab={tab}
+                              tabType={tab.type}
+                              setActiveTab={handleSetActiveTab}
+                              selected={activeTab === tab.value}
+                              dragHandleProps={provided.dragHandleProps}
+                              onContextMenu={(event) => {
+                                event.preventDefault();
+                                const rect = event.currentTarget.getBoundingClientRect();
+                                const keyboard = event.clientX === 0 && event.clientY === 0;
+                                setActionsOpened(false);
+                                setContextMenu({
+                                  tabId: tab.value,
+                                  x: keyboard ? rect.left : event.clientX,
+                                  y: keyboard ? rect.bottom : event.clientY,
+                                });
+                              }}
+                            />
+                          </div>
+                        )}
+                      </Draggable>
+                    ))}
+                    {provided.placeholder}
+                  </Tabs.List>
+                )}
+              </Droppable>
+            </DragDropContext>
+          </ScrollArea>
+          {/* Outside the scrolled list: it follows the last tab while the tabs fit and stays
+            pinned at the strip's end once they overflow, and it is never a drop target. */}
+          <IconAction
+            label={t("Tab.NewTab", { defaultValue: "New tab" })}
+            variant="subtle"
+            color="gray"
+            onClick={() =>
+              void runTabCreation({
+                create: () => createTab({ tab: { name: t("Tab.NewTab"), type: "new" }, setTabs }),
+                onError: (error) => notifyUnlessCancelled(t("Common.Error"), error),
               })
             }
+            classNames={{ root: classes.stripNewTab }}
           >
-            <Droppable droppableId="droppable" direction="horizontal">
-              {(provided) => (
-                <Tabs.List
-                  ref={(node) => {
-                    provided.innerRef(node);
-                    tabListRef.current = node;
-                  }}
-                  {...provided.droppableProps}
-                  className={classes.tabList}
-                >
-                  {tabs.map((tab, i) => (
-                    // The drag handle is the tab's own button, which the library refuses as a
-                    // drag start unless interactive-element blocking is off.
-                    <Draggable
-                      key={tab.value}
-                      draggableId={tab.value}
-                      index={i}
-                      disableInteractiveElementBlocking
-                    >
-                      {(provided) => (
-                        <div
-                          ref={provided.innerRef}
-                          {...provided.draggableProps}
-                          className={classes.tabSlot}
-                          role="presentation"
-                        >
-                          <BoardTab
-                            tab={tab}
-                            tabType={tab.type}
-                            setActiveTab={handleSetActiveTab}
-                            selected={activeTab === tab.value}
-                            dragHandleProps={provided.dragHandleProps}
-                            onContextMenu={(event) => {
-                              event.preventDefault();
-                              const rect = event.currentTarget.getBoundingClientRect();
-                              const keyboard = event.clientX === 0 && event.clientY === 0;
-                              setActionsOpened(false);
-                              setContextMenu({
-                                tabId: tab.value,
-                                x: keyboard ? rect.left : event.clientX,
-                                y: keyboard ? rect.bottom : event.clientY,
-                              });
-                            }}
-                          />
-                        </div>
-                      )}
-                    </Draggable>
-                  ))}
-                  {provided.placeholder}
-                  <div className={classes.tabsFiller} role="presentation" />
-                </Tabs.List>
-              )}
-            </Droppable>
-          </DragDropContext>
-        </ScrollArea>
+            <Plus />
+          </IconAction>
+        </div>
         <Menu
           shadow="md"
           width={200}
@@ -404,7 +421,7 @@ export default function BoardsPage() {
               label={t("Tab.Actions", { defaultValue: "Tab actions" })}
               variant="default"
               disabled={!activeTab}
-              classNames={{ root: classes.newTab }}
+              classNames={{ root: classes.headerAction }}
             >
               <Ellipsis />
             </IconAction>
@@ -421,24 +438,11 @@ export default function BoardsPage() {
           </Menu.Dropdown>
         </Menu>
         <IconAction
-          label={t("Tab.NewTab", { defaultValue: "New tab" })}
-          variant="default"
-          onClick={() =>
-            void runTabCreation({
-              create: () => createTab({ tab: { name: t("Tab.NewTab"), type: "new" }, setTabs }),
-              onError: (error) => notifyUnlessCancelled(t("Common.Error"), error),
-            })
-          }
-          classNames={{ root: classes.newTab }}
-        >
-          <Plus />
-        </IconAction>
-        <IconAction
           label={t("Tab.Close", { defaultValue: "Close tab" })}
           variant="default"
           disabled={!activeTab}
           onClick={() => void closeTab(activeTab)}
-          classNames={{ root: classes.newTab }}
+          classNames={{ root: classes.headerAction }}
         >
           <X />
         </IconAction>

@@ -1494,6 +1494,61 @@ test("workspace-tabs: creates, focuses, and cycles workspace tabs", async ({
     await expect(page).toHaveScreenshot("workspace-tabs.png", { fullPage: true });
 });
 
+test("workspace-tabs: the new-tab button follows the last tab and stays reachable on overflow", async ({
+    page,
+    assertNoHorizontalOverflow,
+}) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto("/");
+    const tabs = page.getByRole("tablist").first().getByRole("tab");
+    const newTab = page.getByRole("button", { name: /^new tab$/i });
+    await expect(tabs).toHaveCount(1);
+    const gapAfterLastTab = async () => {
+        const last = (await tabs.last().boundingBox())!;
+        const button = (await newTab.boundingBox())!;
+        return button.x - (last.x + last.width);
+    };
+    await newTab.click();
+    await expect(tabs).toHaveCount(2);
+    const gap = await gapAfterLastTab();
+    expect(gap).toBeGreaterThanOrEqual(0);
+    expect(gap).toBeLessThanOrEqual(8);
+
+    // Reordering still works with the button beside the droppable list.
+    const firstId = await tabs.first().getAttribute("id");
+    const secondId = await tabs.nth(1).getAttribute("id");
+    const from = (await tabs.first().boundingBox())!;
+    const to = (await tabs.nth(1).boundingBox())!;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(from.x + from.width / 2 + 10, from.y + from.height / 2, { steps: 5 });
+    await page.mouse.move(to.x + to.width * 0.75, to.y + to.height / 2, { steps: 20 });
+    await page.mouse.up();
+    await expect(tabs.first()).toHaveAttribute("id", secondId!);
+    await expect(tabs.nth(1)).toHaveAttribute("id", firstId!);
+    expect(await gapAfterLastTab()).toBeLessThanOrEqual(8);
+
+    for (let count = 3; count <= 14; count++) {
+        await newTab.click();
+        await expect(tabs).toHaveCount(count);
+    }
+    const strip = page.locator("[data-tab-strip]");
+    const stripBox = (await strip.boundingBox())!;
+    const button = (await newTab.boundingBox())!;
+    // Overflowing tabs scroll; the button stays at the strip's end, inside the viewport.
+    expect(
+        await strip.evaluate((node) => {
+            const viewport = node.querySelector(".mantine-ScrollArea-viewport")!;
+            return viewport.scrollWidth > viewport.clientWidth;
+        }),
+    ).toBe(true);
+    expect(button.x + button.width).toBeLessThanOrEqual(stripBox.x + stripBox.width + 0.5);
+    expect(stripBox.x + stripBox.width - (button.x + button.width)).toBeLessThanOrEqual(8);
+    await expect(tabs.last()).toHaveAttribute("aria-selected", "true");
+    await expect(tabs.last()).toBeInViewport();
+    await assertNoHorizontalOverflow();
+});
+
 test("workspace-tabs: right-click closes the inactive target through the shared tab menu", async ({
     page,
 }) => {

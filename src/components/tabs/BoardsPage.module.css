@@ -21,15 +21,23 @@
   gap: 4px;
 }
 
-.tabsHeaderRow .tabsHeader {
+/* The inset surface spans the whole bar; the tabs and the new-tab button sit inside it. */
+.tabStrip {
+  display: flex;
+  align-items: center;
   flex: 1 1 auto;
   min-width: 0;
   background: var(--cf-surface-inset);
   border-radius: var(--cf-radius-lg);
 }
 
-/* The list is only as wide as the viewport once its tabs overflow, so the inset
-   surface belongs to the scroll container that spans the whole bar. */
+/* Only as wide as its tabs, so the new-tab button follows the last tab; once the tabs
+   overflow it takes the remaining width and scrolls. */
+.tabStrip .tabsHeader {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
 .tabsHeader .tabList {
   background: transparent;
 }
@@ -46,7 +54,7 @@
   max-width: 15rem;
 }
 
-.newTab {
+.headerAction {
   flex-shrink: 0;
   height: 2.2rem;
   width: 2.2rem;
@@ -56,12 +64,22 @@
   border-radius: var(--cf-radius-md);
 }
 
-.newTab:hover {
+.headerAction:hover {
   background: var(--cf-interactive-hover);
 }
 
-.tabsFiller {
-  flex-grow: 1;
+.stripNewTab {
+  flex-shrink: 0;
+  height: 2.2rem;
+  width: 2.2rem;
+  margin-inline: 2px;
+  color: var(--mantine-color-dimmed);
+  border-radius: var(--cf-radius-md);
+}
+
+.stripNewTab:hover {
+  color: var(--cf-foreground);
+  background: var(--cf-interactive-hover);
 }
 
 .boardLayout {
