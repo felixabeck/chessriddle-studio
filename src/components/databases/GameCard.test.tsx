@@ -216,6 +216,18 @@ describe("database game deletion with real SWR revalidation", () => {
     }
   }
 
+  test("opening and dismissing the confirmation arms no modal transition frame", async () => {
+    await render();
+    const frame = vi.spyOn(window, "requestAnimationFrame");
+    try {
+      await act(async () => deleteButton().click());
+      await act(async () => modalButton("Cancel").click());
+      expect(frame).not.toHaveBeenCalled();
+    } finally {
+      frame.mockRestore();
+    }
+  });
+
   test("Trash describes the game and Cancel dismisses without native deletion", async () => {
     await render();
     await act(async () => deleteButton().click());
