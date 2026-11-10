@@ -22589,7 +22589,7 @@ Correction to the snapshot note: comparing the committed PNGs shows changed pixe
 
 ### The pinned-engine e2e test intermittently times out waiting for the analysis panel scrollbar to hide
 
-* **ID:** f-20261109-05 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261109-05 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** final push gates of the first-launch Stockfish change, 2026-11-09
 * **Where:** `e2e/engine-gap.spec.ts:604`, the `waitForScrollAreaScrollbarsHidden` call before the `pinned-engine-hover-preview-dark.png` screenshot, helper at `e2e/fixtures.ts:197`.
@@ -22600,6 +22600,9 @@ Correction to the snapshot note: comparing the committed PNGs shows changed pixe
 
 **Recurrence on master, 2026-11-09 (drain session 1b8508c6-3e3b-4453-98e1-8fe1f9fb47ca):** **CI run:** 42695285428, job `e2e` 129425384735, on master 670467a5. 403 passed and 1 failed, the same test at the same wait: `waitForScrollAreaScrollbarsHidden` (`e2e/fixtures.ts:217`) called from `e2e/engine-gap.spec.ts:604`, `Expected: 0`, `Received: 1`, 19 polls over 8000 ms. The local container e2e lane passed on the same test set an hour earlier (drain push gates, run dir `artifacts/gates/20261109T204221777Z-2856582`). This red job makes `pnpm ci:remote:check` refuse every code push until this finding is repaired.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"7aa939b8292beac23c0d96e295e4c1c9a32b2d79a6d3e2dc60786ff5660320d1","input_sha256":"51db3b874f3c8e92191356621de0b12ac1529bd74b15ffee583511fb28a2d936","kind":"mutation-receipt","operation":"23902eda283672b72f430fb8a5fb77723ce8014bfd0019f63788c4b5486dd130","options":{"section":null},"request_id_sha256":null,"results":["f-20261109-05"],"target":"f-20261109-05","v":1} -->
+
+Fixed in 7d3e7c44. The page-wide wait is gone and this screenshot hides ScrollArea scrollbars through `e2e/scrollbar-free-screenshot.css`; the baseline PNG is unchanged. Why the scrollbar stays visible: CI trace 42695285428 shows `data-state="visible"` from 98.1 s to the 114.9 s timeout, through four pointer moves outside the panel, so Mantine's pointerleave-armed 1000 ms hide timer never completed. The exact browser event sequence was not determined, and the fix no longer depends on it. Proof: with the scrollbar forced visible by a temporary probe (7x59 px thumb confirmed), the test passes with the stylesheet and fails by 444 pixels without it; the unmodified test passed 10 of 10 with `--repeat-each 10` in the e2e container. Rejected alternatives and the reversal path: d-20261110-10.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"b9e4e9b4544a225263775e07064b42614e7e60d3c7d85e43568022fd8c9934a5","header_sha256":"9b2fffb2d6b3f9456351bff25f84c8df0c7545df695e42515b0452f9801ab063","header_status":"handled","input_sha256":"521efd43e875f3ee843eb3121ccd62e429069754241dcf3d2a856f48cb6bd741","kind":"mutation-receipt","operation":"7a9583adc01671f385e936136b71ee2ad723e53911741f6da91e61b3ffbef58d","options":{"section":null},"request_id_sha256":null,"results":["f-20261109-05"],"target":"f-20261109-05","v":1} -->
 
 ---
 
