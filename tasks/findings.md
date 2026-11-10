@@ -22388,7 +22388,7 @@ Resolved by the f-20261108-04 fix in 0b63a012. The Open question is answered by 
 
 ### GameCard.test.tsx leaves a Mantine transition timer that fires after jsdom teardown and fails Vitest intermittently
 
-* **ID:** f-20261108-03 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261108-03 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 84122ac1-515b-49cf-8abe-1ccdf130b1b0
 * **Impact class:** tooling
 * **Where:** `src/components/databases/GameCard.test.tsx`; Mantine `Transition` (`@mantine/core/esm/components/Transition/use-transition.mjs:61`).
@@ -22396,6 +22396,9 @@ Resolved by the f-20261108-04 fix in 0b63a012. The Open question is answered by 
 * **Failure scenario:** any frontend gate or phase proof whose Vitest run includes `GameCard.test.tsx` can go red with all tests passing, depending on scheduling.
 * **Fix shape:** unmount the rendered card and flush or fake the Mantine transition timers before each GameCard test ends (or disable transitions in its theme wrapper), so no timer outlives the environment.
 * **Proof:** a loop of `pnpm exec vitest run src/components/databases/GameCard.test.tsx` (e.g. 30 runs) shows no unhandled error.
+
+**Closed 2026-11-10 (drain next-finding, Claude Code orchestrator, Codex write leaf), as the red-remote repair of the f-20261106-40 push.** **CI run:** 42814053635 (job `frontend`, commit `c953ce79`) failed on exactly this unhandled `window is not defined` from `use-transition.mjs:61`, with all 7752 tests passing. Mechanism: `env="test"` only changes what `Transition` renders, and `useTransition` still arms animation frames and a timeout. A disposable probe that paused 80 ms before each unmount saw up to 39 transition timers armed and, in 2 of 23 tests, a 200 ms timer pending after `root.unmount`, armed after unmount completed. Fix: the file's `render` wrapper passes a theme giving Modal content and overlay a zero transition duration, which takes Mantine's synchronous branch and arms none (probe: 0 armed in all 23 tests). A retained test spies `requestAnimationFrame` across opening and dismissing the confirmation; removing the theme fails exactly that test (1 failed, 23 passed), restored 24 passed. 30 consecutive runs of the file showed no unhandled error. Commits: d29d5243, b5829daf. Rejected: flushing or faking timers in `afterEach` (a frame chain can arm a timer after unmount, so a flush at teardown does not bound it).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"83d646028c29b3b7d06d873cdbd2638ccc13943cb731181997fabb4e6f6eff91","header_sha256":"daae6ac63db229eec8001f8d2b297bf4d08408b23848a855c5b21336accb4e34","header_status":"handled","input_sha256":"0ee2af630415fa080f76f23f336c25e7c5b578d4cdde1cff91888ef359d079e4","kind":"mutation-receipt","operation":"84f69eea6128728dbc6dd5cf3579524b128fb97187fe2494bc4d8f965290c84c","options":{"section":null},"request_id_sha256":null,"results":["f-20261108-03"],"target":"f-20261108-03","v":1} -->
 
 ---
 
