@@ -22698,7 +22698,7 @@ Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates th
 
 ### Hosted macOS runner lost contact during Rust tests and left master's CI red on a frontend-only push
 
-* **ID:** f-20261110-03 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261110-03 · **Status:** handled · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** fd7f4c3a-c6f8-487c-ad53-3243a2496f52
 * **Impact class:** tooling
 * **CI run:** 42819791205
@@ -22708,3 +22708,6 @@ Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates th
 * **Fix:** Rerun the failed job once with `gh run rerun 42819791205 --failed -R felixabeck/chessriddle-studio`. If it passes, close this as runner infrastructure. If it hangs or fails again, read its log for the test running at that moment and treat it as a Rust test hang. The push skill's automatic rerun exception covers only setup steps, so this rerun needs this finding as its record.
 * **Proof:** a completed green `rust-macos-test` on `fc2aa66a` or a later master commit.
 * **Found by:** Claude Code, required CI wait of the f-20261106-40 release, drain session fd7f4c3a-c6f8-487c-ad53-3243a2496f52.
+
+**Closed 2026-11-10 (drain next-finding, Claude Code orchestrator), as runner infrastructure.** The prescribed single rerun `gh run rerun 42819791205 --failed` ran attempt 2 of `rust-macos-test` on `fc2aa66a` (job 129873318656), started 13:54:49Z and completed success at 14:08:05Z, about 13 minutes against the lost attempt's 56 minutes. The whole run is now `completed / success` on attempt 2. No test hang reproduced and no repository change was made. The lost attempt's log stays unavailable (404 BlobNotFound), so a one-off hang in that attempt cannot be strictly excluded, but the passing rerun on the identical commit satisfies the finding's Proof. Rejected: changing `timeout-minutes` or test parallelism in `test.yml`, because a single runner loss is no evidence of a repository defect.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"5d900db039dd8cee155b1f47b3fb8ba1c62c93055126a483a1412af4cdcc73c4","header_sha256":"369d6028baa2518c095d3b427e5d061ff059ae02025dfce82af082448892c951","header_status":"handled","input_sha256":"8feca9d2b651cab2da1cd76e1940ccfaaffe9f670897e0f964a8c13e437800da","kind":"mutation-receipt","operation":"eab0593a827d4306bec8d6562058f6fb4780334b0bbcc707e95fd99f91604f6f","options":{"section":null},"request_id_sha256":null,"results":["f-20261110-03"],"target":"f-20261110-03","v":1} -->
