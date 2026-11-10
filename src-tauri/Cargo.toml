@@ -107,3 +107,6 @@ tokio = { version = "1.33", features = ["test-util"] }
 
 [patch.crates-io]
 pgn-reader = { path = "vendor/pgn-reader" }
+
+[patch."https://github.com/franciscoBSalgueiro/vampirc-uci"]
+vampirc-uci = { path = "vendor/vampirc-uci" }

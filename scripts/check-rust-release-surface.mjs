@@ -1419,7 +1419,14 @@ export function checkGateInvisibleRegions(
   return [...new Set(violations)];
 }
 
-function scanToml(contents, allowPgnReaderPatch = false) {
+function scanToml(contents, allowVendoredPatches = false) {
+  const approvedVendoredPatches = [
+    ["patch.crates-io", 'pgn-reader = { path = "vendor/pgn-reader" }'],
+    [
+      "patch.https://github.com/franciscoBSalgueiro/vampirc-uci",
+      'vampirc-uci = { path = "vendor/vampirc-uci" }',
+    ],
+  ];
   const bareCode = [];
   const keySegments = [];
   const basicStringBackslashes = [];
@@ -1545,12 +1552,13 @@ function scanToml(contents, allowPgnReaderPatch = false) {
         while (boundary > 0 && !/[{,]/.test(line[boundary - 1])) boundary -= 1;
         const keyText = line.slice(boundary, endAt);
         const segments = parseSegments(keyText);
-        // This reviewed third-party patch is outside the application's source scope.
-        // Keep every other path key subject to R5, including changes to this destination.
+        // These reviewed third-party patches are outside the application's source scope.
+        // Keep every other path key subject to R5, including changes to these destinations.
         const approvedPatchPath =
-          allowPgnReaderPatch &&
-          tableSegments.join(".") === "patch.crates-io" &&
-          line.trim() === 'pgn-reader = { path = "vendor/pgn-reader" }' &&
+          allowVendoredPatches &&
+          approvedVendoredPatches.some(
+            ([table, entry]) => tableSegments.join(".") === table && line.trim() === entry,
+          ) &&
           segments.length === 1 &&
           segments[0] === "path";
         if (!approvedPatchPath) keySegments.push(...segments);

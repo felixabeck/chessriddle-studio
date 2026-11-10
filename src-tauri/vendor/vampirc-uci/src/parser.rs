@@ -4,6 +4,8 @@
 //! Behind the scenes, it uses the [PEST parser](https://github.com/pest-parser/pest). The corresponding PEG grammar is
 //! available [here](https://github.com/vampirc/vampirc-uci/blob/master/res/uci.pest).
 
+// Changed by ChessRiddle Studio: score and WDL numbers are decoded fallibly.
+
 use std::str::FromStr;
 
 use chrono::Duration;
@@ -506,6 +508,7 @@ fn do_parse_uci(
                 UciMessage::Option(uoc)
             }
             Rule::info => {
+                let line = pair.as_span().as_str();
                 let mut info_attr: Vec<UciInfoAttribute> = vec![];
 
                 for sp in pair.into_inner() {
@@ -625,9 +628,33 @@ fn do_parse_uci(
 
                                     for spii in spi.into_inner() {
                                         match spii.as_rule() {
-                                            Rule::info_cp => cp = Some(parse_number(spii)),
-                                            Rule::info_mate => mate = Some(parse_number(spii)),
-                                            Rule::info_wdl => wdl = Some(parse_wdl(spii)),
+                                            Rule::info_cp => {
+                                                let Some(value) = parse_score_number(spii) else {
+                                                    return UciMessage::Unknown(
+                                                        line.trim_end().to_owned(),
+                                                        None,
+                                                    );
+                                                };
+                                                cp = Some(value);
+                                            }
+                                            Rule::info_mate => {
+                                                let Some(value) = parse_score_number(spii) else {
+                                                    return UciMessage::Unknown(
+                                                        line.trim_end().to_owned(),
+                                                        None,
+                                                    );
+                                                };
+                                                mate = Some(value);
+                                            }
+                                            Rule::info_wdl => {
+                                                let Some(value) = parse_wdl(spii) else {
+                                                    return UciMessage::Unknown(
+                                                        line.trim_end().to_owned(),
+                                                        None,
+                                                    );
+                                                };
+                                                wdl = Some(value);
+                                            }
                                             Rule::info_lowerbound => lb = Some(true),
                                             Rule::info_upperbound => ub = Some(true),
                                             _ => {}
@@ -750,19 +777,20 @@ where
     T::default()
 }
 
-fn parse_wdl(pair: Pair<Rule>) -> (i32, i32, i32) {
-    let pairs = pair.into_inner();
-    let numbers: Vec<i32> = pairs
-        .map(|p| str::parse::<i32>(p.as_span().as_str()).unwrap())
-        .collect();
+fn parse_score_number(pair: Pair<Rule>) -> Option<i32> {
+    pair.into_inner()
+        .find(|p| p.as_rule() == Rule::number)?
+        .as_str()
+        .parse()
+        .ok()
+}
 
-    assert_eq!(numbers.len(), 3);
-
-    let w = numbers[0];
-    let d = numbers[1];
-    let l = numbers[2];
-
-    (w, d, l)
+fn parse_wdl(pair: Pair<Rule>) -> Option<(i32, i32, i32)> {
+    let mut numbers = pair.into_inner();
+    let w = numbers.next()?.as_str().parse().ok()?;
+    let d = numbers.next()?.as_str().parse().ok()?;
+    let l = numbers.next()?.as_str().parse().ok()?;
+    Some((w, d, l))
 }
 
 fn parse_a_move(sp: Pair<Rule>) -> UciMove {

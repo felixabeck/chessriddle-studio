@@ -449,8 +449,8 @@ pub struct BestMovesPayload {
 
 fn invert_score(score: Score) -> Score {
     let new_value = match score.value {
-        ScoreValue::Cp(x) => ScoreValue::Cp(-x),
-        ScoreValue::Mate(x) => ScoreValue::Mate(-x),
+        ScoreValue::Cp(x) => ScoreValue::Cp(x.saturating_neg()),
+        ScoreValue::Mate(x) => ScoreValue::Mate(x.saturating_neg()),
     };
     let new_wdl = score.wdl.map(|(w, d, l)| (l, d, w));
     Score {
@@ -5116,6 +5116,202 @@ done
             }
             other => panic!("expected info, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn uci_numeric_wdl_overflow_is_unknown_without_unwind() {
+        for line in [
+            "info depth 8 score cp 34 wdl 2147483648 0 0 pv e2e4",
+            "info depth 8 score cp 34 wdl 0 2147483648 0 pv e2e4",
+            "info depth 8 score cp 34 wdl 0 0 2147483648 pv e2e4",
+            "info depth 8 score cp 34 wdl -2147483649 0 0 pv e2e4",
+        ] {
+            let parsed = std::panic::catch_unwind(|| parse_one(line));
+            assert!(parsed.is_ok(), "parser unwound for {line}");
+            assert!(
+                matches!(parsed.unwrap(), UciMessage::Unknown(text, None) if text == line),
+                "expected Unknown with the original line for {line}"
+            );
+        }
+    }
+
+    #[test]
+    fn uci_numeric_score_overflow_is_unknown_without_unwind() {
+        for line in [
+            "info depth 8 score cp 2147483648 pv e2e4",
+            "info depth 8 score cp -2147483649 pv e2e4",
+            "info depth 8 score mate 2147483648 pv e2e4",
+            "info depth 8 score mate -2147483649 pv e2e4",
+        ] {
+            let parsed = std::panic::catch_unwind(|| parse_one(line));
+            assert!(parsed.is_ok(), "parser unwound for {line}");
+            assert!(
+                matches!(parsed.unwrap(), UciMessage::Unknown(text, None) if text == line),
+                "expected Unknown with the original line for {line}"
+            );
+        }
+    }
+
+    #[test]
+    fn uci_numeric_score_and_wdl_boundaries_are_exact() {
+        for (line, expected) in [
+            ("info score cp 2147483647 pv e2e4", ScoreValue::Cp(i32::MAX)),
+            (
+                "info score cp -2147483648 pv e2e4",
+                ScoreValue::Cp(i32::MIN),
+            ),
+            (
+                "info score mate 2147483647 pv e2e4",
+                ScoreValue::Mate(i32::MAX),
+            ),
+            (
+                "info score mate -2147483648 pv e2e4",
+                ScoreValue::Mate(i32::MIN),
+            ),
+        ] {
+            assert_eq!(parsed_info(line).score.value, expected, "{line}");
+        }
+        let parsed = parsed_info("info score cp 34 wdl 2147483647 0 -2147483648 pv e2e4");
+        assert_eq!(parsed.score.value, ScoreValue::Cp(34));
+        assert_eq!(parsed.score.wdl, Some((i32::MAX, 0, i32::MIN)));
+    }
+
+    #[test]
+    fn uci_numeric_non_score_overflow_keeps_upstream_default() {
+        let parsed = parsed_info("info depth 4294967296 score cp 34 pv e2e4");
+        assert_eq!(parsed.depth, 0);
+        assert_eq!(parsed.score.value, ScoreValue::Cp(34));
+    }
+
+    fn parsed_black_info(line: &str) -> BestMoves {
+        let UciMessage::Info(attrs) = parse_one(line) else {
+            panic!("expected info for {line}");
+        };
+        parse_uci_attrs(
+            attrs,
+            "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+            &[],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn uci_numeric_black_to_move_cp_minimum_saturates() {
+        let parsed = parsed_black_info("info score cp -2147483648 pv e7e5");
+        assert_eq!(parsed.score.value, ScoreValue::Cp(i32::MAX));
+        assert_eq!(parsed.san_moves, ["e5"]);
+    }
+
+    #[test]
+    fn uci_numeric_black_to_move_mate_minimum_saturates() {
+        let parsed = parsed_black_info("info score mate -2147483648 pv e7e5");
+        assert_eq!(parsed.score.value, ScoreValue::Mate(i32::MAX));
+        assert_eq!(parsed.san_moves, ["e5"]);
+    }
+
+    const UCI_NUMERIC_SEARCH_LINES: [&str; 4] = [
+        "info depth 8 multipv 1 score cp 2147483648 nodes 100 pv e2e4",
+        "info depth 8 multipv 1 score cp 34 wdl 2147483648 0 0 nodes 100 pv e2e4",
+        "info depth 8 multipv 1 score cp 34 nodes 100 pv d2d4",
+        "bestmove d2d4",
+    ];
+
+    #[tokio::test]
+    async fn uci_numeric_interactive_ignores_overflow_and_publishes_real_score() {
+        let mut probe = interactive_search_probe(&UCI_NUMERIC_SEARCH_LINES, false).await;
+        assert_eq!(probe.process.real_multipv, 1);
+        let result = process_interactive_search_output(
+            &mut probe.process,
+            "engine",
+            "tab",
+            &probe.supervised,
+            &probe.app,
+        )
+        .await;
+        probe.actor.terminate().await.unwrap();
+        result.unwrap();
+
+        let payloads = probe.emitted.lock().unwrap();
+        let terminal = payloads.last().unwrap();
+        assert_eq!(terminal["progress"], 100.0);
+        let best = &terminal["bestLines"];
+        assert_eq!(best.as_array().unwrap().len(), 1);
+        assert_eq!(best[0]["sanMoves"], serde_json::json!(["d4"]));
+        assert_eq!(best[0]["uciMoves"], serde_json::json!(["d2d4"]));
+        assert_eq!(
+            best[0]["score"]["value"],
+            serde_json::json!({ "type": "cp", "value": 34 })
+        );
+        for payload in payloads.iter() {
+            for line in payload["bestLines"].as_array().unwrap() {
+                assert_ne!(
+                    line["score"]["value"],
+                    serde_json::json!({ "type": "cp", "value": 0 })
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn uci_numeric_report_ignores_overflow_and_keeps_only_legal_line() {
+        let (actor, _) = EngineActor::recording_test_actor(&UCI_NUMERIC_SEARCH_LINES);
+        let supervised = SupervisedEngine::new(
+            1,
+            "engine".into(),
+            crate::infra::path_authority::PathRef {
+                id: "engine-path".into(),
+            },
+            actor.clone(),
+            Arc::new(AtomicBool::new(false)),
+        );
+        let mut process = EngineProcess {
+            base: actor.clone(),
+            last_depth: 0,
+            best_moves: Vec::new(),
+            last_best_moves: Vec::new(),
+            last_progress: 0.0,
+            options: EngineOptions {
+                fen: start_fen().to_string(),
+                moves: Vec::new(),
+                extra_options: Vec::new(),
+            },
+            resource_leases: Vec::new(),
+            go_mode: GoMode::Depth(8),
+            running: false,
+            request_id: None,
+            real_multipv: 1,
+            start: Instant::now(),
+        };
+        let result = analyze_position_with_owner(
+            &mut process,
+            &supervised,
+            &CancellationToken::new(),
+            &GoMode::Depth(8),
+            &[],
+        )
+        .await;
+        actor.terminate().await.unwrap();
+        let analysis = result.unwrap();
+        assert_eq!(analysis.best.len(), 1);
+        let best = &analysis.best[0];
+        assert_eq!(best.uci_moves, ["d2d4"]);
+        assert_eq!(best.san_moves, ["d4"]);
+        assert_eq!(best.score.value, ScoreValue::Cp(34));
+        assert_eq!(best.score.wdl, None);
+        assert_eq!(best.depth, 8);
+        assert_eq!(best.nodes, 100);
+    }
+
+    #[test]
+    fn uci_numeric_overflow_is_not_terminal_but_bestmove_is() {
+        assert!(!matches!(
+            parse_one("info depth 8 score cp 34 wdl 2147483648 0 0 pv e2e4"),
+            UciMessage::BestMove { .. }
+        ));
+        assert!(matches!(
+            parse_one("bestmove e2e4"),
+            UciMessage::BestMove { .. }
+        ));
     }
 
     fn ingest(
