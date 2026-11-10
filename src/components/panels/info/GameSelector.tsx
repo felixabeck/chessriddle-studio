@@ -30,7 +30,7 @@ const INITIAL_LOAD_ROWS = 11;
 // Maximum rows per read. The request's end index is inclusive.
 const READ_PAGE_SIZE_ROWS = 1000;
 // Row height at 100 % font size.
-export const ROW_HEIGHT_PX = 30;
+const ROW_HEIGHT_PX = 30;
 // Space a section adds above its first line at 100 % font size.
 const SECTION_GAP_PX = 12;
 const SECTION_HEADING_PX = 26;
@@ -66,6 +66,7 @@ export default function GameSelector({
   revealActivePage = false,
   reloadGeneration = 0,
   onMoveLines,
+  maxHeight,
 }: {
   games: Map<number, GameSelectorRow>;
   setGames: React.Dispatch<React.SetStateAction<Map<number, GameSelectorRow>>>;
@@ -79,6 +80,7 @@ export default function GameSelector({
   revealActivePage?: boolean;
   onMoveLines?: MoveLines;
   reloadGeneration?: number;
+  maxHeight?: string | number;
 }) {
   const { t } = useTranslation();
   const [sectionTarget, setSectionTarget] = useState<LineSectionTarget | null>(null);
@@ -276,7 +278,8 @@ export default function GameSelector({
   return (
     <ScrollArea
       viewportRef={parentRef}
-      h="100%"
+      h={maxHeight === undefined ? "100%" : rowVirtualizer.getTotalSize()}
+      mah={maxHeight}
       onWheelCapture={stopReveal}
       onTouchMoveCapture={stopReveal}
       onPointerDownCapture={stopReveal}

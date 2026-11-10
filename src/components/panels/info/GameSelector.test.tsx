@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
   scrollToOffset: vi.fn(),
   estimateSize: (() => 0) as (index: number) => number,
   virtualizer: {
-    getTotalSize: () => 30,
+    getTotalSize: vi.fn(() => 30),
     measure: () => mocks.measure(),
     getOffsetForIndex: (index: number, align: string) => mocks.getOffsetForIndex(index, align),
     scrollToOffset: (...args: unknown[]) => mocks.scrollToOffset(...args),
@@ -64,8 +64,8 @@ vi.mock("@mantine/core", () => ({
         {children}
       </div>
     ) : null,
-  ScrollArea: ({ children, viewportRef, h: _h, ...props }: any) => (
-    <div ref={viewportRef} {...props}>
+  ScrollArea: ({ children, viewportRef, h, mah, ...props }: any) => (
+    <div ref={viewportRef} style={{ height: h, maxHeight: mah }} {...props}>
       {children}
     </div>
   ),
@@ -146,6 +146,7 @@ beforeEach(async () => {
   mocks.parsePGN.mockReset().mockResolvedValue({ headers: { event: "Loaded game" } });
   vi.mocked(notifications.show).mockReset();
   mocks.visibleIndices = [0];
+  mocks.virtualizer.getTotalSize.mockReset().mockReturnValue(30);
   mocks.getOffsetForIndex.mockClear();
   mocks.scrollToOffset.mockClear();
   host = document.createElement("div");
@@ -178,6 +179,43 @@ function renderSelector(
     />,
   );
 }
+
+test.each([0, 60, 400])(
+  "capped mode follows the virtualizer's %s px content height and updates with its geometry",
+  async (contentHeight) => {
+    const render = () =>
+      root.render(
+        <GameSelector
+          games={new Map([[0, { name: "First" }]])}
+          setGames={vi.fn()}
+          setPage={vi.fn()}
+          total={1}
+          path={path}
+          activePage={0}
+          maxHeight="16rem"
+        />,
+      );
+    mocks.virtualizer.getTotalSize.mockReturnValue(contentHeight);
+    await act(async () => render());
+    const viewport = host.firstElementChild as HTMLElement;
+    expect(viewport.style.height).toBe(`${contentHeight}px`);
+    expect(viewport.style.maxHeight).toBe("16rem");
+    mocks.virtualizer.getTotalSize.mockReturnValue(contentHeight + 38);
+    await act(async () => render());
+    expect(viewport.style.height).toBe(`${contentHeight + 38}px`);
+    expect(viewport.style.maxHeight).toBe("16rem");
+  },
+);
+
+test("default mode fills its parent regardless of the virtualizer's content height", async () => {
+  for (const contentHeight of [60, 400]) {
+    mocks.virtualizer.getTotalSize.mockReturnValue(contentHeight);
+    await act(async () => renderSelector(new Map([[0, { name: "First" }]]), vi.fn()));
+    const viewport = host.firstElementChild as HTMLElement;
+    expect(viewport.style.height).toBe("100%");
+    expect(viewport.style.maxHeight).toBe("");
+  }
+});
 
 test("a reload retains rows and scroll until an atomic swap and stale page reads cannot refill it", async () => {
   const oldPage = deferred<StampedGame[]>();

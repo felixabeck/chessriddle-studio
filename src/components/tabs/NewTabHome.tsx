@@ -16,7 +16,7 @@ import {
   UnstyledButton,
   useMatches,
 } from "@mantine/core";
-import { useAtom, useAtomValue, useSetAtom, useStore } from "jotai";
+import { useAtom, useSetAtom, useStore } from "jotai";
 import equal from "fast-deep-equal";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -29,16 +29,12 @@ import {
   type RecentFile,
   recentFilesAtom,
   tabsAtom,
-  fontSizeAtom,
 } from "@/state/atoms";
 import { gameSignature, openDatabaseGame } from "@/utils/databaseGame";
 import { runTabCreation, type Tab } from "@/utils/tabs";
 import { openFile } from "@/utils/files";
 import { useGameOpen } from "@/components/common/gameOpen";
-import GameSelector, {
-  ROW_HEIGHT_PX,
-  type GameSelectorRow,
-} from "@/components/panels/info/GameSelector";
+import GameSelector, { type GameSelectorRow } from "@/components/panels/info/GameSelector";
 import { StaleFileGameError } from "@/state/fileStructureChange";
 import CreateRepertoireModal from "./CreateRepertoireModal";
 import ImportModal from "./ImportModal";
@@ -183,7 +179,6 @@ function LibraryItemRow({
 
 export default function NewTabHome({ id }: { id: string }) {
   const store = useStore();
-  const fontSize = useAtomValue(fontSizeAtom);
   const { t } = useTranslation();
   useTrainingSession(id);
   const puzzleOpening = useRef(false);
@@ -748,14 +743,9 @@ export default function NewTabHome({ id }: { id: string }) {
                         onOpen={(item) => void openRow(item)}
                       />
                       {picker?.request.key === row.key && (
-                        <Box
-                          className={classes.chapters}
-                          style={{
-                            // Reserve two row heights per section for its heading and gap.
-                            height: `calc(${(picker.file.numGames + 2 * Array.from(chapters.values()).filter((chapter) => chapter.section !== undefined).length) * ROW_HEIGHT_PX * (fontSize / 100)}px + 2 * var(--mantine-spacing-xs))`,
-                          }}
-                        >
+                        <Box className={classes.chapters}>
                           <GameSelector
+                            maxHeight="16rem"
                             games={chapters}
                             setGames={setChapters}
                             setPage={(index) => {
