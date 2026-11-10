@@ -513,7 +513,7 @@ test.each(["nextBranch", "previousBranch"] as const)(
     },
 );
 
-// 1.e4 (1.d4 d5 (1...Nf6 2.c4) 2.c4) (1.c4) 1...e5 2.Nf3 (2.Nc3) 2...Nc6
+// 1.e4 (1.d4 d5 (1...Nf6 2.c4) (1...e6 2.c4) 2.c4) (1.c4) 1...e5 2.Nf3 (2.Nc3) 2...Nc6
 function linesTree() {
     const tree = defaultTree();
     tree.root.children = [
@@ -541,6 +541,10 @@ function linesTree() {
                     halfMoves: 2,
                     children: [fixtureNode("c4", { halfMoves: 3 })],
                 }),
+                fixtureNode("e6", {
+                    halfMoves: 2,
+                    children: [fixtureNode("c4", { halfMoves: 3 })],
+                }),
             ],
         }),
         fixtureNode("c4"),
@@ -551,7 +555,12 @@ function linesTree() {
 test.each([
     { from: [1, 0, 0], to: [2], why: "a variation end goes to the next sibling variation" },
     { from: [2], to: [0], why: "the last root sibling returns to the main move" },
-    { from: [1, 1, 0], to: [1, 0], why: "a nested last sibling returns to its fork's main move" },
+    {
+        from: [1, 1, 0],
+        to: [1, 2],
+        why: "a nested variation end goes to the next sibling variation",
+    },
+    { from: [1, 2, 0], to: [1, 0], why: "a nested last sibling returns to its fork's main move" },
     {
         from: [0, 0, 1],
         to: [0, 0, 0],
@@ -559,7 +568,7 @@ test.each([
     },
     { from: [0, 0, 0, 0], to: null, why: "the main line end has no target" },
     { from: [1], to: [2], why: "a move inside a variation names the same target as its end" },
-    { from: [1, 1], to: [1, 0], why: "a move inside a nested variation names the same target" },
+    { from: [1, 1], to: [1, 2], why: "a move inside a nested variation names the same target" },
     { from: [0, 0], to: null, why: "a move inside the main line has no target" },
     { from: [], to: null, why: "the start position belongs to no line" },
 ])("nextSiblingVariationOrMainMove: $why", ({ from, to }) => {
@@ -571,11 +580,21 @@ test("goToBranchEndOrNextLine returns through fork siblings and stops at the mai
     tree.position = [1, 1];
     const store = createTreeStore(undefined, tree);
     const visited: number[][] = [];
-    for (let i = 0; i < 7; i += 1) {
+    for (let i = 0; i < 9; i += 1) {
         store.getState().goToBranchEndOrNextLine();
         visited.push(store.getState().position);
     }
-    expect(visited).toEqual([[1, 1, 0], [1, 0], [1, 0, 0], [2], [0], [0, 0, 0, 0], [0, 0, 0, 0]]);
+    expect(visited).toEqual([
+        [1, 1, 0],
+        [1, 2],
+        [1, 2, 0],
+        [1, 0],
+        [1, 0, 0],
+        [2],
+        [0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+    ]);
 });
 
 test("goToBranchEndOrNextLine stays at a line end during a practice drill", () => {
