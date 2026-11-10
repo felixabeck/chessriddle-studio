@@ -829,7 +829,13 @@ function practiceFeedbackSetup(now: Date) {
                 epoch: "e2e-practice-epoch",
                 deck: {
                     positionsDocument: JSON.stringify({
-                        positions: [{ fen: cardFen, answer: "Nf3", card: createEmptyCard(now) }],
+                        positions: [
+                            {
+                                fen: cardFen,
+                                answer: "Nf3",
+                                card: { ...createEmptyCard(now), reps: 1 },
+                            },
+                        ],
                     }),
                     revision: 1,
                     generation: 0,
@@ -1004,15 +1010,24 @@ test("workspace-tabs: incorrect practice reveals the existing answer and its rev
     await start.click();
     const board = page.getByRole("grid", { name: "Chessboard, White orientation", exact: true });
     await expect(board).toBeVisible();
+    await expect(page.getByText("Replaying the line...", { exact: true })).toBeVisible();
+    await page.clock.runFor(450);
+    await expect(board.getByRole("gridcell", { name: "e4, White Pawn", exact: true })).toHaveCount(
+        1,
+    );
+    await expect(board.getByRole("gridcell", { name: "e7, Black Pawn", exact: true })).toHaveCount(
+        1,
+    );
+    await page.clock.runFor(450);
     await expect(board.getByRole("gridcell", { name: "e5, Black Pawn", exact: true })).toHaveCount(
         1,
     );
     const tab = (await activeWorkspaceTab(page))!;
     const storedTree = async () => {
-        const raw = await page.evaluate(
-            (key) => sessionStorage.getItem(key),
-            tab.treeKey ?? tab.value,
-        );
+        const raw = await page.evaluate((key) => {
+            window.dispatchEvent(new Event("pagehide"));
+            return sessionStorage.getItem(key);
+        }, tab.treeKey ?? tab.value);
         expect(raw).not.toBeNull();
         return deserializeStorageValue<{
             state: {
@@ -1037,17 +1052,44 @@ test("workspace-tabs: incorrect practice reveals the existing answer and its rev
     });
     await playBoardMove(page, page.locator("cg-board").first(), "b1", "c3");
     await page.clock.runFor(1);
-    await expect(page.getByText("The correct move was Nf3", { exact: true })).toBeVisible();
-    await page.clock.runFor(499);
+    await expect(page.getByText("Not this move — try again", { exact: true })).toBeVisible();
+    await page.clock.runFor(300);
     expect((await storedTree()).position).toEqual([0, 0]);
+    // Assert the actual Chessground piece, whose visual move precedes controller submission.
+    await expect
+        .poll(async () =>
+            page
+                .locator("cg-board")
+                .first()
+                .evaluate((element) => {
+                    const box = element.getBoundingClientRect();
+                    return [...element.querySelectorAll("piece.white.knight")].some((piece) => {
+                        const square = piece.getBoundingClientRect();
+                        return (
+                            Math.abs(square.left - (box.left + box.width / 8)) < 2 &&
+                            Math.abs(square.top - (box.top + (box.height * 7) / 8)) < 2
+                        );
+                    });
+                }),
+        )
+        .toBe(true);
+    await playBoardMove(page, page.locator("cg-board").first(), "b1", "c3");
+    await page.clock.runFor(1);
     await expect(
-        board.getByRole("gridcell", { name: "f3, White Knight", exact: true }),
-    ).toHaveCount(0);
+        page.getByText("Play Nf3 on the board, or press Space", { exact: true }),
+    ).toBeVisible();
+    // Chessground renders autoShapes on the next animation frame. The clock is paused.
+    await page.clock.runFor(16);
+    await expect(page.locator("svg.cg-shapes line")).toHaveCount(1);
+    await testInfo.attach("practice-reveal-arrow.png", {
+        body: await page.screenshot({ fullPage: true }),
+        contentType: "image/png",
+    });
+    await playBoardMove(page, page.locator("cg-board").first(), "g1", "f3");
     await page.clock.runFor(1);
     await expect(
         board.getByRole("gridcell", { name: "f3, White Knight", exact: true }),
     ).toHaveCount(1);
-    await page.clock.runFor(300);
     const after = await storedTree();
     expect(after).toMatchObject({
         position: [0, 0, 0],
@@ -1309,21 +1351,21 @@ test("workspace-tabs: real transposed practice card selects and reveals the exis
     await expect(full).toBeEnabled();
     await full.click();
     const board = page.getByRole("grid", { name: "Chessboard, White orientation", exact: true });
+    await page.clock.runFor(900);
     for (const [from, to] of [
         ["b1", "c3"],
         ["g1", "f3"],
     ]) {
         await playBoardMove(page, page.locator("cg-board").first(), from, to);
         await page.clock.runFor(1);
-        await page.clock.runFor(300);
+        await page.clock.runFor(1200);
     }
-    await page.clock.runFor(300);
     const tab = (await activeWorkspaceTab(page))!;
     const storedTree = async () => {
-        const raw = await page.evaluate(
-            (key) => sessionStorage.getItem(key),
-            tab.treeKey ?? tab.value,
-        );
+        const raw = await page.evaluate((key) => {
+            window.dispatchEvent(new Event("pagehide"));
+            return sessionStorage.getItem(key);
+        }, tab.treeKey ?? tab.value);
         expect(raw).not.toBeNull();
         return deserializeStorageValue<{
             state: {
@@ -1347,15 +1389,19 @@ test("workspace-tabs: real transposed practice card selects and reveals the exis
     await page.keyboard.press("ArrowRight");
     await playBoardMove(page, page.locator("cg-board").first(), "d2", "d4");
     await page.clock.runFor(1);
-    await expect(page.getByText("The correct move was e4", { exact: true })).toBeVisible();
-    await page.clock.runFor(499);
+    await expect(page.getByText("Not this move — try again", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Show move", exact: true }).click();
+    await expect(
+        page.getByText("Play e4 on the board, or press Space", { exact: true }),
+    ).toBeVisible();
+    await page.clock.runFor(16);
     expect((await storedTree()).position).toEqual(before.position);
-    await expect(board.getByRole("gridcell", { name: "e4, empty", exact: true })).toHaveCount(1);
+    await expect(page.locator("svg.cg-shapes line")).toHaveCount(1);
+    await playBoardMove(page, page.locator("cg-board").first(), "e2", "e4");
     await page.clock.runFor(1);
     await expect(board.getByRole("gridcell", { name: "e4, White Pawn", exact: true })).toHaveCount(
         1,
     );
-    await page.clock.runFor(300);
     const after = await storedTree();
     expect(after.position).toEqual([1, 0, 0, 0, 0]);
     expect(after.practicePath).toEqual(before.practicePath);

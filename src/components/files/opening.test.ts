@@ -366,7 +366,6 @@ test("learned statistics include due reviews and keep the existing status counts
     expect(getStats(positions, statusNow)).toEqual({
         unseen: 1,
         due: 1,
-        practiced: 1,
         learned: 2,
         total: 3,
         nextDue,
@@ -374,14 +373,12 @@ test("learned statistics include due reviews and keep the existing status counts
     expect(getStats(positions, new Date(nextDue.getTime() + 1))).toMatchObject({
         unseen: 1,
         due: 2,
-        practiced: 0,
         learned: 2,
         nextDue: null,
     });
     expect(getStats([], statusNow)).toEqual({
         unseen: 0,
         due: 0,
-        practiced: 0,
         learned: 0,
         total: 0,
         nextDue: null,

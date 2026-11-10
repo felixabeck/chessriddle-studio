@@ -837,7 +837,10 @@ async function seedNativePracticeDeck(practiceDirectory, fileId, game, positions
     }
   }
   if (current.entries.length > 0) shards.push(current);
-  const positionValues = practicePositionsDocument(positions);
+  // Exercise fifty automatic review writes without depending on the session's new-move limit.
+  const positionValues = practicePositionsDocument(positions).map((position, index) =>
+    index < 50 ? { ...position, card: { ...position.card, reps: 1 } } : position,
+  );
   const lastEntry = entries.at(-1);
   const envelope = {
     version: PRACTICE_STORAGE_VERSION,
@@ -5276,6 +5279,14 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
       throw new Error(`${error.message}; practice state: ${JSON.stringify(state)}`);
     }
     for (const [index, position] of firstFiftyPracticePositions.entries()) {
+      await waitFor(
+        `practice card ${index + 1} to finish replay`,
+        () =>
+          session
+            .execute("return document.body.innerText.includes('Make your move')")
+            .catch(() => false),
+        { timeoutMs: PRACTICE_RENDERER_TIMEOUT_MS },
+      );
       ratingIndex = index;
       practiceStage = "rate practice cards";
       const move = position.uci;
@@ -5325,9 +5336,10 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
         session
           .execute(
             `const text = document.body.innerText;
-           if (text.includes("How difficult was this?")) return "correct";
-           if (text.includes("The correct move was")) return "incorrect";
+           if (text.includes(arguments[0] + " correct")) return "correct";
+           if (text.includes("Not this move — try again") || text.includes("on the board, or press Space")) return "incorrect";
            return false;`,
+            [index + 1],
           )
           .catch(() => false),
       ).catch(async (error) => {
@@ -5338,19 +5350,8 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
           .catch(() => ({ path: "unavailable", text: "unavailable", board: null }));
         throw new Error(`${error.message}; move ${move}; practice state: ${JSON.stringify(state)}`);
       });
-      if (moveResult === "correct") {
-        await session.execute(
-          "document.dispatchEvent(new KeyboardEvent('keydown', { key: '3', bubbles: true })); return true",
-        );
-      }
-      await waitFor(`practice rating ${index + 1} to advance`, () =>
-        session
-          .execute(
-            `const text = document.body.innerText;
-           return text.includes("Make your move") && !text.includes("The correct move was");`,
-          )
-          .catch(() => false),
-      );
+      if (moveResult !== "correct")
+        throw new Error(`practice move ${index + 1} was rejected: ${move}`);
     }
   } catch (error) {
     // A WebDriver request aborts when the renderer does not answer within the driver's fetch

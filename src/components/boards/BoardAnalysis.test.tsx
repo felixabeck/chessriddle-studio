@@ -671,7 +671,13 @@ describe("BoardAnalysis", () => {
     for (const [panel, phase, blocked] of [
       ["info", "idle", false],
       ["practice", "correct", true],
-      ["practice", "waiting", false],
+      ["practice", "waiting", true],
+      ["practice", "replaying", true],
+      ["practice", "learning", true],
+      ["practice", "retry", true],
+      ["practice", "revealed", true],
+      ["practice", "advancing", true],
+      ["practice", "idle", false],
       ["info", "correct", false],
     ] as const) {
       await act(async () => {

@@ -1,5 +1,16 @@
 import { tauri } from "@/platform/tauri";
-import { Card, Group, ScrollArea, Stack, Table, Tabs, Text, TextInput, Title } from "@mantine/core";
+import {
+  Card,
+  Group,
+  NumberInput,
+  ScrollArea,
+  Stack,
+  Table,
+  Tabs,
+  Text,
+  TextInput,
+  Title,
+} from "@mantine/core";
 import { useHotkeys } from "@mantine/hooks";
 import {
   BookOpen,
@@ -34,7 +45,8 @@ import {
   moveNotationTypeAtom,
   nativeBarAtom,
   pieceSizeAtom,
-  practiceAutoDifficultyAtom,
+  practiceGradingAtom,
+  practiceNewPerSessionAtom,
   previewBoardOnHoverAtom,
   flipBoardAfterMoveAtom,
   fontSizeAtom,
@@ -118,7 +130,8 @@ export default function Page() {
   const [showCoordinates, setShowCoordinates] = useAtom(showCoordinatesAtom);
   const [animationSpeed, setAnimationSpeed] = useAtom(boardAnimationSpeedAtom);
   const [materialDisplay, setMaterialDisplay] = useAtom(materialDisplayAtom);
-  const [practiceAutoDifficulty, setPracticeAutoDifficulty] = useAtom(practiceAutoDifficultyAtom);
+  const [practiceGrading, setPracticeGrading] = useAtom(practiceGradingAtom);
+  const [practiceNewPerSession, setPracticeNewPerSession] = useAtom(practiceNewPerSessionAtom);
 
   const settings: SettingItem[] = useMemo(
     () => [
@@ -477,23 +490,48 @@ export default function Page() {
         render: () => <RepertoireMinGamesSetting />,
       },
       {
-        id: "repertoire-auto-difficulty",
+        id: "practice-grading",
         category: "repertoire",
-        title: t("Settings.Repertoire.AutoDifficulty"),
-        description: t("Settings.Repertoire.AutoDifficulty.Desc"),
+        title: t("Settings.Repertoire.Grading"),
+        description: t("Settings.Repertoire.Grading.Desc"),
         keywords: ["repertoire", "auto", "difficulty", "select", "anki"],
         render: () => (
           <SettingsSelect
             allowDeselect={false}
             data={[
-              { label: t("Settings.Repertoire.AutoDifficulty.None"), value: "none" },
-              { label: t("Board.Practice.Again"), value: "1" },
-              { label: t("Board.Practice.Hard"), value: "2" },
-              { label: t("Board.Practice.Good"), value: "3" },
-              { label: t("Board.Practice.Easy"), value: "4" },
+              { label: t("Settings.Repertoire.Grading.Automatic"), value: "auto" },
+              { label: t("Settings.Repertoire.Grading.Manual"), value: "manual" },
             ]}
-            value={practiceAutoDifficulty}
-            onChange={(val) => setPracticeAutoDifficulty(val as "none" | "1" | "2" | "3" | "4")}
+            aria-label={t("Settings.Repertoire.Grading")}
+            value={practiceGrading}
+            onChange={(val) => {
+              if (val === "auto" || val === "manual") setPracticeGrading(val);
+            }}
+          />
+        ),
+      },
+      {
+        id: "practice-new-per-session",
+        category: "repertoire",
+        title: t("Settings.Repertoire.NewPerSession"),
+        description: t("Settings.Repertoire.NewPerSession.Desc"),
+        keywords: ["practice", "new", "limit", "session"],
+        render: () => (
+          <NumberInput
+            aria-label={t("Settings.Repertoire.NewPerSession")}
+            min={0}
+            max={100}
+            allowDecimal={false}
+            value={practiceNewPerSession}
+            onChange={(value) => {
+              if (
+                typeof value === "number" &&
+                Number.isInteger(value) &&
+                value >= 0 &&
+                value <= 100
+              )
+                setPracticeNewPerSession(value);
+            }}
           />
         ),
       },
@@ -597,8 +635,10 @@ export default function Page() {
       setShowCoordinates,
       setAnimationSpeed,
       setMaterialDisplay,
-      practiceAutoDifficulty,
-      setPracticeAutoDifficulty,
+      practiceGrading,
+      setPracticeGrading,
+      practiceNewPerSession,
+      setPracticeNewPerSession,
       showDirectoryError,
     ],
   );

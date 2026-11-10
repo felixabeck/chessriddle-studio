@@ -1201,6 +1201,7 @@ export const practiceStateFamily = atomFamily((_tab: string) =>
 /** Runtime-only bridge between the practice controller and the board. */
 export type PracticeMoveController = {
     canMove: boolean;
+    hintSan?: string;
     submitMove: (san: string) => void;
 };
 
@@ -1211,6 +1212,8 @@ export const practiceMoveControllerFamily = atomFamily((_tab: string) =>
 export type PracticeSessionStats = {
     mode: "anki" | "full";
     remainingPositionKeys: string[];
+    reappendedPositionKeys: string[];
+    introducedPositionKeys: string[];
     correct: number;
     incorrect: number;
     streak: number;
@@ -1221,6 +1224,8 @@ export const practiceSessionStatsFamily = atomFamily((_tab: string) =>
     atom<PracticeSessionStats>({
         mode: "anki",
         remainingPositionKeys: [],
+        reappendedPositionKeys: [],
+        introducedPositionKeys: [],
         correct: 0,
         incorrect: 0,
         streak: 0,
@@ -1233,10 +1238,16 @@ export const practiceCompletedSummaryFamily = atomFamily((_tab: string) =>
     atom<PracticeSessionStats | null>(null),
 );
 
-export const practiceAutoDifficultyAtom = atomWithStorage<"none" | "1" | "2" | "3" | "4">(
-    "practice-auto-difficulty",
-    "none",
-    createZodStorage(z.enum(["none", "1", "2", "3", "4"]), localStorage),
+export const practiceGradingAtom = atomWithStorage<"auto" | "manual">(
+    "practice-grading",
+    "auto",
+    createZodStorage(z.enum(["auto", "manual"]), localStorage),
+);
+
+export const practiceNewPerSessionAtom = atomWithStorage<number>(
+    "practice-new-per-session",
+    10,
+    createZodStorage(z.number().int().min(0).max(100), localStorage),
 );
 
 export const practiceCardStartTimeFamily = atomFamily((_tab: string) => atom<number>(0));

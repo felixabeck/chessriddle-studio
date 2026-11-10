@@ -14,7 +14,7 @@ const fixtures = vi.hoisted(() => ({
     currentShowComments: Symbol("current-show-comments"),
     currentTab: Symbol("current-tab"),
     deck: Symbol("deck"),
-    practiceAutoDifficulty: Symbol("practice-auto-difficulty"),
+    practiceGrading: Symbol("practice-grading"),
     practiceCardStartTime: Symbol("practice-card-start-time"),
     practiceCompletedSummary: Symbol("practice-completed-summary"),
     practiceMoveController: Symbol("practice-move-controller"),
@@ -43,7 +43,6 @@ const fixtures = vi.hoisted(() => ({
     updated: 0,
     reordered: false,
   })),
-  getCardForReview: vi.fn(),
   updateCardPerformance: vi.fn(),
   loadPracticeReviews: vi.fn(),
   node: { halfMoves: 0, san: "e4" },
@@ -57,7 +56,7 @@ const fixtures = vi.hoisted(() => ({
     setPracticePath: vi.fn(),
   },
   currentTab: { value: "practice-tab" },
-  autoDifficulty: "none" as "none" | "1" | "2" | "3" | "4",
+  grading: "auto" as "auto" | "manual",
 }));
 
 vi.mock("@/state/atoms", () => ({
@@ -68,7 +67,9 @@ vi.mock("@/state/atoms", () => ({
   tabsAtom: fixtures.atoms.currentTab,
   updateTabById: vi.fn(),
   deckAtomFamily: () => fixtures.atoms.deck,
-  practiceAutoDifficultyAtom: fixtures.atoms.practiceAutoDifficulty,
+  practiceGradingAtom: fixtures.atoms.practiceGrading,
+  practiceNewPerSessionAtom: Symbol("new-per-session"),
+  activeTabAtom: Symbol("active-tab"),
   practiceCardStartTimeFamily: () => fixtures.atoms.practiceCardStartTime,
   practiceCompletedSummaryFamily: () => fixtures.atoms.practiceCompletedSummary,
   practiceMoveControllerFamily: () => fixtures.atoms.practiceMoveController,
@@ -93,9 +94,9 @@ vi.mock("jotai", () => ({
   },
   useAtomValue: (atom: symbol) => {
     if (atom === fixtures.atoms.currentTab) return [fixtures.currentTab];
-    if (atom === fixtures.atoms.practiceAutoDifficulty) return fixtures.autoDifficulty;
+    if (atom === fixtures.atoms.practiceGrading) return fixtures.grading;
     if (atom === fixtures.atoms.practiceCardStartTime) return 0;
-    return false;
+    return 10;
   },
   useSetAtom: (atom: symbol) =>
     atom === fixtures.atoms.practiceMoveController ? fixtures.setPracticeMoveController : vi.fn(),
@@ -113,9 +114,8 @@ vi.mock("@/components/files/opening", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/components/files/opening")>()),
   buildFromTree: fixtures.buildFromTree,
   formatReviewInterval: () => "",
-  getCardForReview: fixtures.getCardForReview,
   getNextReviewTimes: () => null,
-  getStats: () => ({ due: 1, nextDue: null, practiced: 0, total: 1, unseen: 1 }),
+  getStats: () => ({ due: 1, nextDue: null, learned: 0, total: 1, unseen: 1 }),
   syncDeck: fixtures.syncDeck,
   updateCardPerformance: fixtures.updateCardPerformance,
 }));
@@ -250,7 +250,7 @@ vi.mock("ts-fsrs", async (importOriginal) => ({
 
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { deferTreeView, releaseTreeView } from "@/state/deferredTreeView";
-import { createNode, defaultTree, getBoardState, type TreeNode } from "@/utils/treeReducer";
+import { createNode, defaultTree, type TreeNode } from "@/utils/treeReducer";
 import PracticePanel from "./PracticePanel";
 
 const position = (fen: string, card = { due: "2026-09-22T00:00:00.000Z", reps: 0 }) => ({
@@ -258,10 +258,6 @@ const position = (fen: string, card = { due: "2026-09-22T00:00:00.000Z", reps: 0
   answer: "e4",
   card,
 });
-
-const initialFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-const secondFen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
-const thirdFen = "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2";
 
 function deck(overrides: Record<string, unknown> = {}) {
   return {
@@ -299,8 +295,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   fixtures.deck = deck();
   fixtures.node = { halfMoves: 0, san: "e4" };
-  fixtures.autoDifficulty = "none";
-  fixtures.getCardForReview.mockReset().mockReturnValue(null);
+  fixtures.grading = "auto";
   fixtures.updateCardPerformance.mockReset();
   fixtures.syncDeck
     .mockReset()
@@ -735,15 +730,6 @@ test("drops a log page that started before the deck generation changed", async (
   expect(container?.textContent).not.toContain("reset-late");
 });
 
-function latestMoveController(): { submitMove: (san: string) => void } {
-  const value = [...fixtures.setPracticeMoveController.mock.calls]
-    .reverse()
-    .map(([controller]) => controller)
-    .find((controller) => controller !== null);
-  if (!value) throw new Error("practice move controller was not registered");
-  return value;
-}
-
 async function rerenderPracticePanel() {
   await act(async () =>
     root?.render(
@@ -755,221 +741,3 @@ async function rerenderPracticePanel() {
     ),
   );
 }
-
-async function startPracticeSession(
-  positions: ReturnType<typeof position>[],
-  mode: "normal" | "full",
-) {
-  fixtures.deck = deck({ positions });
-  await rerenderPracticePanel();
-  const label =
-    mode === "full" ? "Board.Practice.PracticeFullRepertoire" : "Board.Practice.StartPractice";
-  const start = [...(container?.querySelectorAll("button") ?? [])].find((button) =>
-    button.textContent?.includes(label),
-  );
-  await act(async () => start?.click());
-  const first = positions[0];
-  if (!first) throw new Error("practice session needs an initial position");
-  fixtures.tree.currentNode = () => ({ fen: first.fen });
-  await rerenderPracticePanel();
-  return first;
-}
-
-async function startNormalSession(positions: ReturnType<typeof position>[]) {
-  return startPracticeSession(positions, "normal");
-}
-
-async function startFullSession(positions: ReturnType<typeof position>[]) {
-  return startPracticeSession(positions, "full");
-}
-
-async function submitCorrectMove(fen: string) {
-  fixtures.tree.currentNode = () => ({ fen });
-  await rerenderPracticePanel();
-  await act(async () => latestMoveController().submitMove("e4"));
-  await rerenderPracticePanel();
-}
-
-test("current castling card resolves its exact answer-bearing occurrence and retires when only an alias remains", async () => {
-  const raw = "4k3/8/8/3p4/8/8/4P3/R3K2R w HA - 0 2";
-  const canonical = raw.replace(" HA ", " KQ ");
-  expect(getBoardState(raw)).toBe(getBoardState(canonical));
-  const exact = createNode({ fen: raw, move: parseUci("d7d5")!, san: "d5", halfMoves: 2 });
-  exact.children.push(
-    createNode({ fen: canonical, move: parseUci("e2e4")!, san: "e4", halfMoves: 3 }),
-  );
-  const alias = { ...exact, fen: canonical };
-  const tree = defaultTree().root;
-  tree.children.push(alias, { ...exact, children: [] }, exact);
-  fixtures.tree.root = tree;
-  fixtures.tree.goToMove.mockClear();
-
-  await startFullSession([position(raw)]);
-
-  expect(fixtures.tree.goToMove).toHaveBeenCalledExactlyOnceWith([2]);
-  expect(fixtures.practiceState.currentFen).toBe(raw);
-  expect(fixtures.practiceState.phase).toBe("waiting");
-  fixtures.tree.root = { ...tree, children: [alias] };
-  await rerenderPracticePanel();
-  expect(fixtures.practiceState.phase).toBe("idle");
-});
-
-test("full mode skips an active position removed by a deck sync", async () => {
-  vi.useFakeTimers();
-  const first = position(initialFen);
-  const second = position(secondFen);
-  const third = position(thirdFen);
-  await startFullSession([first, second, third]);
-
-  fixtures.deck = deck({ positions: [second, third] });
-  await rerenderPracticePanel();
-  await act(async () => latestMoveController().submitMove("e4"));
-  await rerenderPracticePanel();
-  await act(async () => vi.advanceTimersByTimeAsync(300));
-
-  expect(fixtures.practiceState.currentFen).toBe(second.fen);
-  expect(fixtures.practiceState.phase).toBe("waiting");
-  vi.useRealTimers();
-});
-
-test("full mode skips a queued position removed by a deck sync", async () => {
-  vi.useFakeTimers();
-  const first = position(initialFen);
-  const second = position(secondFen);
-  const third = position(thirdFen);
-  await startFullSession([first, second, third]);
-  await submitCorrectMove(first.fen);
-
-  fixtures.deck = deck({ positions: [first, third] });
-  await rerenderPracticePanel();
-  await act(async () => vi.advanceTimersByTimeAsync(300));
-
-  expect(fixtures.practiceState.currentFen).toBe(third.fen);
-  expect(fixtures.practiceState.phase).toBe("waiting");
-  vi.useRealTimers();
-});
-
-test("full mode completes when a sync removes its final position during advance", async () => {
-  vi.useFakeTimers();
-  const first = position(initialFen);
-  await startFullSession([first]);
-  await submitCorrectMove(first.fen);
-
-  fixtures.deck = deck({ positions: [] });
-  await rerenderPracticePanel();
-  await act(async () => vi.advanceTimersByTimeAsync(300));
-
-  expect(fixtures.practiceState.phase).toBe("idle");
-  vi.useRealTimers();
-});
-
-test("normal-mode rating follows the board identity after a deck sync and ignores a duplicate", async () => {
-  vi.useFakeTimers();
-  const first = position(initialFen);
-  const firstWithNewMoveCounters = position(
-    "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 7 42",
-  );
-  const second = position("in-repertoire-second", {
-    due: "2026-09-23T00:00:00.000Z",
-    reps: 0,
-  });
-  const inserted = position("in-repertoire-inserted", {
-    due: "2026-09-24T00:00:00.000Z",
-    reps: 0,
-  });
-  const rated = {
-    ...first,
-    card: { ...first.card, due: "2026-10-01T00:00:00.000Z", reps: 1 },
-  };
-  fixtures.getCardForReview.mockImplementation(
-    (positions: any[]) =>
-      positions
-        .filter((candidate) => new Date(candidate.card.due) <= new Date())
-        .sort((left, right) => +new Date(left.card.due) - +new Date(right.card.due))[0] ?? null,
-  );
-  fixtures.updateCardPerformance.mockReturnValue({
-    positions: [inserted, { ...firstWithNewMoveCounters, card: rated.card }, second],
-    entry: { fen: first.fen, rating: 3 },
-    entryId: "rated-first",
-  });
-  await startNormalSession([first, second]);
-  await submitCorrectMove(first.fen);
-  fixtures.deck = deck({ positions: [inserted, firstWithNewMoveCounters, second] });
-  await rerenderPracticePanel();
-  const good = [...(container?.querySelectorAll("button") ?? [])].find((button) =>
-    button.textContent?.includes("Board.Practice.Good"),
-  );
-  await act(async () => {
-    good?.click();
-    good?.click();
-  });
-  await act(async () => vi.advanceTimersByTimeAsync(300));
-
-  expect(fixtures.updateCardPerformance).toHaveBeenCalledOnce();
-  expect(fixtures.updateCardPerformance.mock.calls[0]?.[1]).toBe(1);
-  expect(fixtures.updateCardPerformance.mock.calls[0]?.[0][1]?.fen).toBe(
-    firstWithNewMoveCounters.fen,
-  );
-  expect(fixtures.practiceStats.correct).toBe(1);
-  expect(fixtures.practiceState.currentFen).toBe(second.fen);
-  vi.useRealTimers();
-});
-
-test("auto-difficulty rates the latest card after a deck sync", async () => {
-  vi.useFakeTimers();
-  fixtures.autoDifficulty = "3";
-  const first = position("in-repertoire-first");
-  const second = position("in-repertoire-second", {
-    due: "2026-09-23T00:00:00.000Z",
-    reps: 0,
-  });
-  const inserted = position("in-repertoire-inserted", {
-    due: "2026-09-24T00:00:00.000Z",
-    reps: 0,
-  });
-  const rated = {
-    ...first,
-    card: { ...first.card, due: "2026-10-01T00:00:00.000Z", reps: 1 },
-  };
-  fixtures.getCardForReview.mockImplementation(
-    (positions: any[]) =>
-      positions
-        .filter((candidate) => new Date(candidate.card.due) <= new Date())
-        .sort((left, right) => +new Date(left.card.due) - +new Date(right.card.due))[0] ?? null,
-  );
-  fixtures.updateCardPerformance.mockReturnValue({
-    positions: [inserted, rated, second],
-    entry: { fen: first.fen, rating: 3 },
-    entryId: "rated-first",
-  });
-  await startNormalSession([first, second]);
-  await submitCorrectMove(first.fen);
-  fixtures.deck = deck({ positions: [inserted, first, second] });
-  await rerenderPracticePanel();
-  await act(async () => vi.advanceTimersByTimeAsync(300));
-
-  expect(fixtures.updateCardPerformance).toHaveBeenCalledOnce();
-  expect(fixtures.updateCardPerformance.mock.calls[0]?.[1]).toBe(1);
-  expect(fixtures.practiceState.currentFen).toBe(second.fen);
-  vi.useRealTimers();
-});
-
-test("full-repertoire mode enters the first position and advances through the remaining positions", async () => {
-  vi.useFakeTimers();
-  const first = position("in-repertoire-first");
-  const second = position("in-repertoire-second");
-  const inserted = position("in-repertoire-inserted");
-  await startFullSession([first, second]);
-  expect(fixtures.practiceState.currentFen).toBe(first.fen);
-
-  await submitCorrectMove(first.fen);
-  fixtures.deck = deck({ positions: [inserted, first, second] });
-  await rerenderPracticePanel();
-  await act(async () => vi.advanceTimersByTimeAsync(300));
-  expect(fixtures.practiceState.currentFen).toBe(second.fen);
-
-  await submitCorrectMove(second.fen);
-  await act(async () => vi.advanceTimersByTimeAsync(300));
-  expect(fixtures.practiceState.phase).toBe("idle");
-  vi.useRealTimers();
-});

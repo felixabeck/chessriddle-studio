@@ -63,7 +63,6 @@ export function buildFromTree(tree: TreeNode, color: "white" | "black", start: n
 type Stats = {
     unseen: number;
     due: number;
-    practiced: number;
     learned: number;
     nextDue: Date | null;
     total: number;
@@ -80,14 +79,13 @@ export function getStats(positions: Position[], now: Date = new Date()) {
     const stats: Stats = {
         unseen: 0,
         due: 0,
-        practiced: 0,
         learned: 0,
         nextDue: null,
         total: positions.length,
     };
     for (const card of positions) {
         const status = getCardStatus(card.card, now);
-        stats[status]++;
+        if (status === "unseen" || status === "due") stats[status]++;
         if (card.card.reps > 0) stats.learned++;
         if (status === "practiced") {
             const dueDate = new Date(card.card.due);
@@ -119,20 +117,6 @@ export function classifyPracticeAnswer(
         }
     }
     return "wrong";
-}
-
-export function getCardForReview(
-    positions: Position[],
-    options: { random: boolean } = { random: false },
-): Position | null {
-    if (options.random) {
-        return positions[Math.floor(Math.random() * positions.length)];
-    }
-    const now = new Date();
-
-    const filtered = positions.filter((position) => new Date(position.card.due) <= now);
-
-    return filtered.length > 0 ? filtered[0] : null;
 }
 
 export function updateCardPerformance(

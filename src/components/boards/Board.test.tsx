@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { TreeStateContext, VariationChooserContext } from "../common/TreeStateContext";
 import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import { createVariationChooserStore } from "@/state/store/variationChooser";
-import { moveInputAtom } from "@/state/atoms";
+import { moveInputAtom, showVariationArrowsAtom } from "@/state/atoms";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { focusedDialogButton, press as pressKey } from "@/tests/keyboard";
 import Board from "./Board";
@@ -45,7 +45,13 @@ vi.mock("@/state/keybinds", async () => {
   return { keyMapAtom: atom({ SWAP_ORIENTATION: { keys: "f" }, TOGGLE_EVAL_BAR: { keys: "b" } }) };
 });
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock("@/chessground/Chessground", () => ({ Chessground: () => null }));
+const boardConfig = vi.hoisted(() => ({ current: {} as any }));
+vi.mock("@/chessground/Chessground", () => ({
+  Chessground: (props: unknown) => {
+    boardConfig.current = props;
+    return null;
+  },
+}));
 vi.mock("@/chessground/useNodeDrawables", () => ({ useNodeDrawables: () => ({}) }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 vi.mock("./BoardFrame", () => ({ default: ({ children }: { children: ReactNode }) => children }));
@@ -83,6 +89,7 @@ afterEach(async () => {
 async function render(props: Partial<ComponentProps<typeof Board>> = {}, moveInput = false) {
   const atoms = createJotaiStore();
   atoms.set(moveInputAtom, moveInput);
+  atoms.set(showVariationArrowsAtom, true);
   const onMove = vi.fn(async () => true);
   const storeMove = vi.spyOn(tree.getState(), "makeMove");
   const onKeyboardPremove = vi.fn(() => true);
@@ -310,6 +317,30 @@ test("a text move in practice submits SAN without advancing the tree", async () 
   expect(onMove).not.toHaveBeenCalled();
   expect(storeMove).not.toHaveBeenCalled();
   expect(input.value).toBe("");
+});
+
+test("practice hides variation arrows and draws only a legal hint arrow", async () => {
+  tree.getState().makeMove({ payload: "e4" });
+  tree.getState().goToStart();
+  tree.getState().makeMove({ payload: "d4" });
+  tree.getState().goToStart();
+  await render();
+  expect(boardConfig.current.drawable.autoShapes).toHaveLength(2);
+  await render({ practiceMove: { canMove: true, hintSan: "Nf3", submitMove: vi.fn() } });
+  expect(boardConfig.current.drawable.autoShapes).toEqual([
+    { orig: "g1", dest: "f3", brush: "green" },
+  ]);
+  await render({ practiceMove: { canMove: true, hintSan: "invalid", submitMove: vi.fn() } });
+  expect(boardConfig.current.drawable.autoShapes).toEqual([]);
+});
+
+test("a rejected practice move reapplies the position and legal destinations", async () => {
+  await render({ practiceMove: { canMove: true, submitMove: vi.fn() } });
+  const before = boardConfig.current;
+  await act(async () => boardConfig.current.movable.events.after("e2", "e4", {}));
+  expect(boardConfig.current).not.toBe(before);
+  expect(boardConfig.current.fen).toBe(before.fen);
+  expect(boardConfig.current.movable.dests.get("e2")).toContain("e4");
 });
 
 test.each([

@@ -158,6 +158,8 @@ export function emptyPracticeStats(): PracticeSessionStats {
     return {
         mode: "anki",
         remainingPositionKeys: [],
+        reappendedPositionKeys: [],
+        introducedPositionKeys: [],
         correct: 0,
         incorrect: 0,
         streak: 0,

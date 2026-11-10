@@ -13,7 +13,7 @@ import {
 } from "chessops";
 import { chessgroundDests, chessgroundMove } from "chessops/compat";
 import { makeFen, parseFen } from "chessops/fen";
-import { makeSan } from "chessops/san";
+import { makeSan, parseSan } from "chessops/san";
 import { atom, useAtom, useAtomValue } from "jotai";
 import { memo, type MouseEvent, useCallback, useContext, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -92,6 +92,7 @@ interface ChessboardProps {
   blackTime?: number;
   practiceMove?: {
     canMove: boolean;
+    hintSan?: string;
     submitMove: (san: string) => void;
   };
   selectedPiece?: Piece | null;
@@ -188,6 +189,7 @@ function Board({
   const premovesEnabled = enablePremoves && !editingMode && !viewOnly;
 
   const [pendingMove, setPendingMove] = useState<NormalMove | null>(null);
+  const [, restorePracticeBoard] = useState(0);
   const [keyboardSquare, setKeyboardSquare] = useState<SquareName>("e2");
   const [keyboardSource, setKeyboardSource] = useState<SquareName | null>(null);
   const keyboardFocus = useRef(false);
@@ -212,6 +214,9 @@ function Board({
     if (practiceMove) {
       if (!practiceMove.canMove) return;
       practiceMove.submitMove(san);
+      // Chessground already moved the piece. Reapply the live position and destinations
+      // even when the controller rejects the move without changing the tree or phase.
+      restorePracticeBoard((revision) => revision + 1);
       setPendingMove(null);
     } else {
       // A game move becomes part of the tree only after the native authority
@@ -230,7 +235,14 @@ function Board({
   }
 
   const { choice } = useVariationChooser();
-  const shapes: DrawShape[] = chooserArrows(choice);
+  const shapes: DrawShape[] = practiceMove ? [] : chooserArrows(choice);
+  if (practiceMove?.hintSan && pos) {
+    const hint = parseSan(pos, practiceMove.hintSan);
+    if (hint && "from" in hint) {
+      const [orig, dest] = chessgroundMove(hint);
+      shapes.push({ orig, dest, brush: "green" });
+    }
+  }
   if (showArrows && evalOpen && arrows.size > 0 && pos) {
     const entries = Array.from(arrows.entries()).sort((a, b) => a[0] - b[0]);
     for (const [i, moves] of entries) {
@@ -285,7 +297,7 @@ function Board({
   }
 
   // Variation arrows: show all children moves when there are alternatives
-  if (!choice && showVariationArrows && currentNode.children.length > 1) {
+  if (!practiceMove && !choice && showVariationArrows && currentNode.children.length > 1) {
     for (const child of currentNode.children) {
       const arrow = childMoveArrow(child, "variation", MEDIUM_BRUSH);
       if (arrow && !shapes.find((s) => s.orig === arrow.orig && s.dest === arrow.dest)) {

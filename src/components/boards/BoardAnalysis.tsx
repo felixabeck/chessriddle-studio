@@ -18,6 +18,8 @@ import {
   enableAllFamily,
   practiceMoveControllerFamily,
   practiceStateFamily,
+  practiceGradingAtom,
+  practiceSessionStatsFamily,
   enginesAtom,
   threatFamily,
   tabEngineSettingsFamily,
@@ -149,7 +151,14 @@ function BoardAnalysis() {
   const practicing = currentTabSelected === "practice" && practiceTabSelected === "train";
   const practiceState = useAtomValue(useTabAtom(practiceStateFamily));
   const practiceMoveController = useAtomValue(useTabAtom(practiceMoveControllerFamily));
-  const isPracticeRating = practicing && practiceState.phase === "correct";
+  const practiceGrading = useAtomValue(practiceGradingAtom);
+  const practiceStats = useAtomValue(useTabAtom(practiceSessionStatsFamily));
+  const isPracticeRating =
+    practicing &&
+    practiceState.phase === "correct" &&
+    !practiceState.playedMove &&
+    practiceStats.mode === "anki" &&
+    practiceGrading === "manual";
   const atoms = useAtomStore();
   const tabId = useOwnerTabId();
 
@@ -222,7 +231,8 @@ function BoardAnalysis() {
     ]),
   );
   const annotate = (annotation: Annotation) => {
-    if (!isPracticeRating) setAnnotation(annotation);
+    if (!isPracticeRating && !(practicing && practiceState.phase !== "idle"))
+      setAnnotation(annotation);
   };
   useHotkeys(
     withKeyboardOwnership([
