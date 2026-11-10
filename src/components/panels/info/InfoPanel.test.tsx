@@ -576,7 +576,9 @@ describe("InfoPanel game loading and cancellation", () => {
     expect(jotaiStore.get(currentTabAtom)?.name).toBe("games_a");
   });
 
-  async function prepareRenamedRepertoireLineSwitch() {
+  async function prepareRenamedRepertoireLineSwitch(
+    pendingPage?: Promise<import("@/bindings").StampedGame[]>,
+  ) {
     mocks.useActualGameSelector = true;
     mocks.useActualGameInfo = true;
     mocks.visibleIndices = [0, 1];
@@ -588,6 +590,7 @@ describe("InfoPanel game loading and cancellation", () => {
           ...tabA.gameOrigin,
           file: {
             ...tabA.gameOrigin.file,
+            numGames: 2,
             metadata: { type: "repertoire", tags: [] },
           },
         },
@@ -602,16 +605,34 @@ describe("InfoPanel game loading and cancellation", () => {
     };
     treeStore.getState().setHeaders(original);
     treeStore.getState().save("a".repeat(64));
-    mocks.readGames.mockResolvedValue([
+    setFileFreshness(tabAId, "verified", { verifiedRevision: "r1" });
+    const diskRows = [
       { pgn: "first", stamp: "a".repeat(64), revision: "r1", present: true },
       { pgn: "second", stamp: "b".repeat(64), revision: "r1", present: true },
-    ]);
+    ];
+    mocks.readGames.mockReturnValue(pendingPage ?? Promise.resolve(diskRows));
+    const savedRows = diskRows.map((row, index) => ({
+      ...row,
+      pgn: index === 0 ? "saved first" : row.pgn,
+      revision: "saved-revision",
+    }));
     mocks.parsePGN.mockImplementation(async (pgn: string) => ({
-      headers: pgn === "first" ? original : { ...original, white: "Second line" },
+      headers:
+        pgn === "first"
+          ? original
+          : pgn === "saved first"
+            ? { ...original, white: "Dragon System", black: "6...Dc7 plan" }
+            : { ...original, white: "Second line" },
     }));
     const replacement = diskGame();
+    replacement.revision = "r1";
     replacement.tree.headers = { ...original, white: "Second line", black: "Second idea" };
     mocks.loadFileGame.mockResolvedValue(replacement);
+    mocks.writeGame.mockImplementation(async () => {
+      mocks.readGames.mockResolvedValue(savedRows);
+      mocks.loadFileGame.mockResolvedValue({ ...replacement, revision: "saved-revision" });
+      return { stamp: "c".repeat(64), revision: "saved-revision" };
+    });
     await act(async () => root.render(renderPanel()));
     await act(async () =>
       container.querySelector<HTMLButtonElement>("button[aria-expanded]")!.click(),
@@ -639,14 +660,14 @@ describe("InfoPanel game loading and cancellation", () => {
       container.querySelector<HTMLElement>('[data-line-index="1"] [role="option"]')!.click(),
     );
     await expectPageConfirmation();
-    return { previousRow, pageReads };
+    return { previousRow, pageReads, diskRows, savedRows };
   }
 
   test("saved rename survives a line switch", async () => {
     const { previousRow, pageReads } = await prepareRenamedRepertoireLineSwitch();
     await act(async () => modalButton("Tab.SaveAndClose").click());
     expect(mocks.writeGame).toHaveBeenCalledOnce();
-    expect(mocks.readGames).toHaveBeenCalledTimes(pageReads);
+    expect(mocks.readGames.mock.calls.length).toBeGreaterThan(pageReads);
     expect(treeStore.getState().dirty).toBe(false);
     expect(jotaiStore.get(currentTabAtom)?.gameOrigin).toMatchObject({ gameNumber: 1 });
     expect(previousRow().getAttribute("aria-selected")).toBe("false");
@@ -661,7 +682,7 @@ describe("InfoPanel game loading and cancellation", () => {
     const { previousRow, pageReads } = await prepareRenamedRepertoireLineSwitch();
     await discardActualPage();
     expect(mocks.writeGame).not.toHaveBeenCalled();
-    expect(mocks.readGames.mock.calls.length).toBeGreaterThan(pageReads);
+    expect(mocks.readGames).toHaveBeenCalledTimes(pageReads);
     expect(treeStore.getState().dirty).toBe(false);
     expect(jotaiStore.get(currentTabAtom)?.gameOrigin).toMatchObject({ gameNumber: 1 });
     expect(previousRow().getAttribute("aria-selected")).toBe("false");
@@ -669,6 +690,41 @@ describe("InfoPanel game loading and cancellation", () => {
     expect(previousRow().querySelector('[style*="dimmed"]')?.textContent).toBe("Old idea");
     expect(previousRow().textContent).not.toContain("Dragon System");
     expect(previousRow().textContent).not.toContain("6...Dc7 plan");
+    expect(mocks.notify).not.toHaveBeenCalled();
+  });
+
+  test("a page started before save cannot restore the previous line title after switching", async () => {
+    const oldPage = deferred<import("@/bindings").StampedGame[]>();
+    const reread = deferred<import("@/bindings").StampedGame[]>();
+    const { previousRow, pageReads, diskRows, savedRows } =
+      await prepareRenamedRepertoireLineSwitch(oldPage.promise);
+    const oldSignal = mocks.readGames.mock.calls[0][3].signal as AbortSignal;
+    const write = mocks.writeGame.getMockImplementation()!;
+    mocks.writeGame.mockImplementation(async (...args) => {
+      const written = await write(...args);
+      mocks.readGames.mockReturnValue(reread.promise);
+      return written;
+    });
+
+    await act(async () => modalButton("Tab.SaveAndClose").click());
+    expect(mocks.writeGame).toHaveBeenCalledOnce();
+    expect(getFileFreshness(tabAId).verifiedRevision).toBe("saved-revision");
+    expect(mocks.readGames.mock.calls.length).toBeGreaterThan(pageReads);
+    expect(oldSignal.aborted).toBe(true);
+    expect(jotaiStore.get(currentTabAtom)?.gameOrigin).toMatchObject({ gameNumber: 1 });
+    expect(previousRow().getAttribute("aria-selected")).toBe("false");
+    expect(previousRow().textContent).toContain("...");
+
+    await act(async () => oldPage.resolve(diskRows));
+    expect(previousRow().textContent).toContain("...");
+    expect(previousRow().textContent).not.toContain("Old line");
+    expect(previousRow().textContent).not.toContain("Old idea");
+
+    await act(async () => reread.resolve(savedRows));
+    expect(previousRow().textContent).toContain("Dragon System");
+    expect(previousRow().querySelector('[style*="dimmed"]')?.textContent).toBe("6...Dc7 plan");
+    expect(previousRow().textContent).not.toContain("Old line");
+    expect(previousRow().textContent).not.toContain("Old idea");
     expect(mocks.notify).not.toHaveBeenCalled();
   });
 
@@ -1389,6 +1445,37 @@ describe("InfoPanel game loading and cancellation", () => {
     expect(jotaiStore.get(currentTabAtom)?.name).toBe("White - Black");
     expect(jotaiStore.get(currentTabAtom)?.gameOrigin).toEqual(tabA.gameOrigin);
   });
+
+  test.each(["same", "different"])(
+    "switching owners with different derived titles and %s stores preserves both manual tab names",
+    async (stores) => {
+      const owners = [
+        { ...tabA, name: "Manual A" },
+        { ...tabB, name: "Manual B" },
+      ];
+      jotaiStore.set(tabsAtom, owners);
+      treeStore.getState().setHeaders({ ...defaultTree().headers, event: "Derived A" });
+      const treeStoreB = stores === "same" ? treeStore : createTreeStore(tabBId, defaultTree());
+      await act(async () => root.render(renderPanel()));
+      expect(jotaiStore.get(tabsAtom)).toEqual(owners);
+
+      await act(async () => {
+        jotaiStore.set(activeTabAtom, tabBId);
+        treeStoreB.getState().setHeaders({ ...defaultTree().headers, event: "Derived B" });
+        root.render(renderPanel(treeStoreB));
+      });
+      expect(jotaiStore.get(currentTabAtom)?.value).toBe(tabBId);
+      expect(jotaiStore.get(tabsAtom)).toEqual(owners);
+
+      await act(async () => {
+        jotaiStore.set(activeTabAtom, tabAId);
+        treeStore.getState().setHeaders({ ...defaultTree().headers, event: "Derived A" });
+        root.render(renderPanel());
+      });
+      expect(jotaiStore.get(currentTabAtom)?.value).toBe(tabAId);
+      expect(jotaiStore.get(tabsAtom)).toEqual(owners);
+    },
+  );
 
   test.each(["double-click", "Enter"])(
     "real selector %s retains unsaved-change protection",

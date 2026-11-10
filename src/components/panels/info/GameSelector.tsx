@@ -5,7 +5,7 @@ import { SeparatorHorizontal, Trash2 } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import cx from "clsx";
 import { useAtomValue } from "jotai";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { FileWorkspaceHandle, StampedGame } from "@/bindings";
 import ConfirmModal from "@/components/common/ConfirmModal";
@@ -42,7 +42,7 @@ export type GameSelectorRow = {
   idea?: string;
   /** Absent for a line inside a section, empty for a section without a name. */
   section?: string;
-  omission?: StampedGame["omission"];
+  omission?: StampedGame["omission"] | "unreadable";
   identity?: Pick<StampedGame, "stamp" | "revision">;
 };
 
@@ -72,6 +72,7 @@ export default function GameSelector({
   maxHeight,
   repertoire = false,
   activeTitle,
+  verifiedRevision,
 }: {
   games: Map<number, GameSelectorRow>;
   setGames: React.Dispatch<React.SetStateAction<Map<number, GameSelectorRow>>>;
@@ -88,9 +89,17 @@ export default function GameSelector({
   maxHeight?: string | number;
   repertoire?: boolean;
   activeTitle?: LineTitle;
+  verifiedRevision?: string;
 }) {
   const { t } = useTranslation();
   const [sectionTarget, setSectionTarget] = useState<LineSectionTarget | null>(null);
+  const currentRow = useCallback(
+    (row: GameSelectorRow | undefined) =>
+      verifiedRevision === undefined || row?.identity?.revision === verifiedRevision
+        ? row
+        : undefined,
+    [verifiedRevision],
+  );
   const listGeneration = useRef(reloadGeneration);
   listGeneration.current = reloadGeneration;
   const reloading = useRef(false);
@@ -110,10 +119,11 @@ export default function GameSelector({
           if (data.length === 0) break;
           const page = await Promise.all(
             data.map(async (game, index) => {
+              const identity = { stamp: game.stamp, revision: game.revision };
               if (game.omission === "tooLarge") {
                 return [
                   next + index,
-                  { name: t("Files.GameTooLarge"), omission: game.omission },
+                  { name: t("Files.GameTooLarge"), omission: game.omission, identity },
                 ] as const;
               }
               try {
@@ -125,16 +135,17 @@ export default function GameSelector({
                     ...title,
                     name: title.name ?? "",
                     section: lineSectionOf(headers),
-                    identity: game.present
-                      ? { stamp: game.stamp, revision: game.revision }
-                      : undefined,
+                    identity: game.present ? identity : undefined,
                   },
                 ] as const;
               } catch (error) {
                 if (options?.signal?.aborted || errorUnlessCancelled(error) === null) {
                   throw error;
                 }
-                return [next + index, { name: t("Files.GameUnreadable") }] as const;
+                return [
+                  next + index,
+                  { name: t("Files.GameUnreadable"), omission: "unreadable", identity },
+                ] as const;
               }
             }),
           );
@@ -150,15 +161,20 @@ export default function GameSelector({
     [path, t, repertoire],
   );
   const loadMoreRows = useVirtualPageLoader(
-    `${path.id.id}:${reloadGeneration}:${repertoire}`,
+    `${path.id.id}:${reloadGeneration}:${repertoire}:${verifiedRevision ?? ""}`,
     loadPage,
     (startIndex, entries) => {
       if (reloading.current) return;
       setGames((previous) => {
         if (entries.length === 0) return previous;
         const next = new Map(previous);
-        for (const [index, name] of entries) next.set(index, name);
-        return next;
+        let changed = false;
+        for (const [index, row] of entries) {
+          if (!currentRow(row)) continue;
+          next.set(index, row);
+          changed = true;
+        }
+        return changed ? next : previous;
       });
     },
   );
@@ -170,26 +186,16 @@ export default function GameSelector({
     setGames(new Map());
   }, [repertoire, setGames]);
 
-  const hasActiveTitle = activeTitle !== undefined;
-  const activeName = activeTitle?.name ?? "";
-  const activeIdea = activeTitle?.idea;
-  useEffect(() => {
-    if (!hasActiveTitle) return;
-    setGames((previous) => {
-      const row = previous.get(activePage);
-      if (!row || (row.name === activeName && row.idea === activeIdea)) return previous;
-      const next = new Map(previous);
-      next.set(activePage, { ...row, name: activeName, idea: activeIdea });
-      return next;
-    });
-  }, [activePage, hasActiveTitle, activeName, activeIdea, games, setGames]);
-
   const fontSize = useAtomValue(fontSizeAtom);
 
   const parentRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const dragSnapshot = useRef({ games, total, onMoveLines });
-  dragSnapshot.current = { games, total, onMoveLines };
+  const movableGames = useMemo(
+    () => new Map(Array.from(games).filter(([, row]) => !row.omission)),
+    [games],
+  );
+  const dragSnapshot = useRef({ games: movableGames, total, onMoveLines });
+  dragSnapshot.current = { games: movableGames, total, onMoveLines };
   const hasRows = games.size > 0;
   const canMove = !!onMoveLines;
   useEffect(() => {
@@ -296,14 +302,14 @@ export default function GameSelector({
     if (visibleStart >= 0 && visibleEnd >= visibleStart) {
       let hasUnloadedRow = false;
       for (let index = visibleStart; index <= visibleEnd; index += 1) {
-        if (!games.has(index)) {
+        if (!currentRow(games.get(index))) {
           hasUnloadedRow = true;
           break;
         }
       }
       if (hasUnloadedRow) void loadMoreRows(visibleStart, visibleEnd);
     }
-  }, [games, loadMoreRows, total, visibleStart, visibleEnd]);
+  }, [games, loadMoreRows, total, visibleStart, visibleEnd, currentRow]);
 
   return (
     <ScrollArea
@@ -330,7 +336,7 @@ export default function GameSelector({
           <GameRow
             key={virtualRow.index}
             index={virtualRow.index}
-            game={games.get(virtualRow.index)}
+            game={currentRow(games.get(virtualRow.index))}
             repertoire={repertoire}
             title={virtualRow.index === activePage ? activeTitle : undefined}
             setPage={setPage}
@@ -412,12 +418,12 @@ function GameRow({
   const { t } = useTranslation();
   const [deleteModal, toggleDelete] = useToggle();
   const [deleteSnapshot, setDeleteSnapshot] = useState<DeleteGameSnapshot | null>(null);
-  const canDelete = !!game?.identity?.stamp && !!game.identity.revision;
+  const canDelete = !game?.omission && !!game?.identity?.stamp && !!game.identity.revision;
   const omitted = game?.omission === "tooLarge";
   const section = game?.section;
   const identity = game?.identity;
   const openSectionEditor =
-    onSectionMenu && identity
+    onSectionMenu && identity && !game?.omission
       ? (x: number, y: number, nameFirst: boolean) =>
           onSectionMenu({
             index,

@@ -368,7 +368,7 @@ test.each([false, true])(
   },
 );
 
-test("the active title updates only an existing cache row and preserves its metadata", async () => {
+test("the active title renders from headers without writing into the disk cache", async () => {
   const read = deferred<StampedGame[]>();
   mocks.readGames.mockReturnValue(read.promise);
   const row: GameSelectorRow = {
@@ -400,8 +400,104 @@ test("the active title updates only an existing cache row and preserves its meta
   expect(host.querySelector('[role="option"]')?.textContent).toContain("Dragon");
   const merge = mocks.useVirtualPageLoader.mock.calls.at(-1)![2];
   await act(async () => merge(0, [[0, row]]));
-  expect(observed.get(0)).toEqual({ ...row, name: "Dragon", idea: "6...Dc7" });
+  expect(observed.get(0)).toEqual(row);
+  expect(host.querySelector('[role="option"]')?.textContent).toContain("Dragon");
+  expect(host.querySelector('[role="option"]')?.textContent).not.toContain("Old line");
 });
+
+test("a revision change hides cached titles and aborts old reads before switching lines", async () => {
+  const oldPage = deferred<StampedGame[]>();
+  const newPage = deferred<StampedGame[]>();
+  mocks.visibleIndices = [0, 1];
+  mocks.readGames.mockReturnValueOnce(oldPage.promise).mockReturnValueOnce(newPage.promise);
+  mocks.parsePGN.mockImplementation(async (pgn: string) => ({ headers: { event: pgn } }));
+  const diskRow = {
+    name: "Old first",
+    identity: { stamp: "s1", revision: "r1" },
+  };
+  let observed = new Map<number, GameSelectorRow>();
+  function List({ revision, activePage }: { revision: string; activePage: number }) {
+    const [games, setGames] = useState<Map<number, GameSelectorRow>>(new Map([[0, diskRow]]));
+    observed = games;
+    return (
+      <GameSelector
+        games={games}
+        setGames={setGames}
+        setPage={vi.fn()}
+        total={2}
+        path={path}
+        activePage={activePage}
+        activeTitle={{ name: activePage === 0 ? "Saved first" : "Second" }}
+        verifiedRevision={revision}
+      />
+    );
+  }
+  await act(async () => root.render(<List revision="r1" activePage={0} />));
+  const oldSignal = mocks.readGames.mock.calls[0][3].signal;
+  await act(async () => root.render(<List revision="r2" activePage={0} />));
+  expect(oldSignal.aborted).toBe(true);
+  expect(mocks.readGames).toHaveBeenCalledTimes(2);
+  expect(host.textContent).toContain("Saved first");
+  expect(observed.get(0)).toBe(diskRow);
+  await act(async () => root.render(<List revision="r2" activePage={1} />));
+  const firstRow = () => host.querySelector('[data-line-index="0"] [role="option"]')!;
+  expect(firstRow().textContent).toBe("1...");
+  await act(async () => oldPage.resolve([{ ...firstGame, pgn: "Stale first", revision: "r1" }]));
+  expect(firstRow().textContent).toBe("1...");
+  await act(async () =>
+    newPage.resolve([
+      { ...firstGame, pgn: "Saved first", revision: "r2" },
+      { ...firstGame, pgn: "Second", revision: "r2" },
+    ]),
+  );
+  expect(firstRow().textContent).toBe("1Saved first");
+  expect(observed.get(0)?.identity?.revision).toBe("r2");
+  expect(host.textContent).not.toContain("Stale");
+  expect(host.textContent).not.toContain("Old first");
+});
+
+test.each(["tooLarge", "unreadable"] as const)(
+  "%s disk rows retain their revision without repeated reads and recover at the next revision",
+  async (failure) => {
+    mocks.readGames.mockResolvedValueOnce([
+      {
+        ...firstGame,
+        revision: "r1",
+        omission: failure === "tooLarge" ? "tooLarge" : undefined,
+      },
+    ]);
+    mocks.parsePGN.mockRejectedValueOnce(new Error("Unreadable headers"));
+    function List({ revision }: { revision: string }) {
+      const [games, setGames] = useState(new Map<number, GameSelectorRow>());
+      return (
+        <GameSelector
+          games={games}
+          setGames={setGames}
+          setPage={vi.fn()}
+          total={1}
+          path={path}
+          activePage={0}
+          verifiedRevision={revision}
+          deleteGame={vi.fn()}
+          editableSections
+        />
+      );
+    }
+    await act(async () => root.render(<List revision="r1" />));
+    expect(host.querySelector('[role="option"]')?.textContent).toBe(
+      `1${translation.t(failure === "tooLarge" ? "Files.GameTooLarge" : "Files.GameUnreadable")}`,
+    );
+    expect(host.querySelector("button[aria-label]")?.hasAttribute("disabled")).toBe(true);
+    expect(host.querySelectorAll("button[aria-label]")).toHaveLength(1);
+    expect(mocks.readGames).toHaveBeenCalledOnce();
+
+    mocks.readGames.mockResolvedValue([{ ...firstGame, revision: "r2" }]);
+    mocks.parsePGN.mockReset().mockResolvedValue({ headers: { event: "Recovered" } });
+    await act(async () => root.render(<List revision="r2" />));
+    expect(host.querySelector('[role="option"]')?.textContent).toBe("1Recovered");
+    expect(mocks.readGames).toHaveBeenCalledTimes(2);
+  },
+);
 
 async function renderReveal(
   games: Map<number, GameSelectorRow>,
@@ -671,6 +767,7 @@ test("stores a middle omission without parsing, notifying, retrying or activatin
   expect(observed.games.get(1)).toEqual({
     name: translation.t("Files.GameTooLarge"),
     omission: "tooLarge",
+    identity: { stamp: "", revision: "revision-first" },
   });
   expect(host.textContent).toContain("Readable before");
   expect(host.textContent).toContain("Readable after");
@@ -701,7 +798,7 @@ test("maps readable and omitted games individually within one returned array", a
     observed = renderPageLoader(vi.fn(), 3);
   });
   expect([...observed.games.keys()]).toEqual([0, 1, 2]);
-  expect(observed.games.get(1)?.identity).toBeUndefined();
+  expect(observed.games.get(1)?.identity).toEqual({ stamp: "", revision: "revision-first" });
   expect(mocks.parsePGN.mock.calls.map((call) => call[0])).toEqual([firstGame.pgn, secondGame.pgn]);
   expect(mocks.readGames).toHaveBeenCalledOnce();
   expect(notifications.show).not.toHaveBeenCalled();
@@ -848,8 +945,16 @@ test("a header parse failure keeps sibling rows and marks the failed games unrea
     name: "Readable name",
     identity: { stamp: "stamp-first", revision: "revision-first" },
   });
-  expect(observed.games.get(1)).toEqual({ name: translation.t("Files.GameUnreadable") });
-  expect(observed.games.get(2)).toEqual({ name: translation.t("Files.GameUnreadable") });
+  expect(observed.games.get(1)).toEqual({
+    name: translation.t("Files.GameUnreadable"),
+    omission: "unreadable",
+    identity: { stamp: secondGame.stamp, revision: secondGame.revision },
+  });
+  expect(observed.games.get(2)).toEqual({
+    name: translation.t("Files.GameUnreadable"),
+    omission: "unreadable",
+    identity: { stamp: firstGame.stamp, revision: firstGame.revision },
+  });
   expect(host.textContent).toContain("Readable name");
   expect(host.textContent).toContain(translation.t("Files.GameUnreadable"));
   expect(notifications.show).not.toHaveBeenCalled();
@@ -916,7 +1021,11 @@ test("an unreadable row selects, activates, and cannot delete", async () => {
     observed = renderPageLoader(deleteGame, 3, new Map(), setPage, onActivate);
   });
 
-  expect(observed.games.get(1)).toEqual({ name: translation.t("Files.GameUnreadable") });
+  expect(observed.games.get(1)).toEqual({
+    name: translation.t("Files.GameUnreadable"),
+    omission: "unreadable",
+    identity: { stamp: secondGame.stamp, revision: secondGame.revision },
+  });
   const rows = host.querySelectorAll<HTMLElement>('[role="option"]');
   expect(rows).toHaveLength(3);
   const unreadable = rows[1];

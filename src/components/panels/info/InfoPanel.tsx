@@ -46,7 +46,7 @@ import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import { backgroundHotkeyOptions } from "@/utils/keyboardOwnership";
 import { getFileGameName, loadFileGame, withFileWrite } from "@/utils/files";
-import { setFileFreshness } from "@/state/fileFreshness";
+import { setFileFreshness, useFileFreshness } from "@/state/fileFreshness";
 import {
   beginFileOpen,
   beginFileStructureChange,
@@ -181,6 +181,7 @@ function GameSelectorAccordion({
 }) {
   const store = use(TreeStateContext)!;
   const [currentTab] = useOwnerTab();
+  const { verifiedRevision } = useFileFreshness(currentTab?.value ?? "");
   const setTabs = useSetAtom(tabsAtom);
   const jotaiStore = useJotaiStore();
 
@@ -454,9 +455,6 @@ function GameSelectorAccordion({
         isCurrent: () => isCurrentPageRequest(request),
       });
       if (result.kind !== "committed") return;
-      if (discardSnapshot && isCurrentOwner(tab.value, request.fileKey, ownerStore)) {
-        setGames(new Map());
-      }
       // The tree was just read from disk, so the gate need not read it a second time.
       if (!loaded.present && page < tab.gameOrigin.file.numGames) {
         setFileFreshness(tab.value, "unavailable");
@@ -693,6 +691,7 @@ function GameSelectorAccordion({
                 total={tabFile.numGames}
                 repertoire={repertoire}
                 activeTitle={currentTitle}
+                verifiedRevision={verifiedRevision ?? undefined}
               />
             </Box>
           </Accordion.Panel>
