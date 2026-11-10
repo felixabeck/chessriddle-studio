@@ -2673,7 +2673,8 @@ async function openFilesEntry(session, name, timeoutMs = FILES_PROBE_TIMEOUT_MS)
       () =>
         session
           .execute(
-            "return location.pathname === '/' && document.body.innerText.includes('Start Practice')",
+            `return location.pathname === '/' && !!document.querySelector('cg-board') &&
+              [...document.querySelectorAll('[role="tablist"] [role="tab"]')].some(tab => tab.textContent.trim() === 'Practice');`,
           )
           .catch(() => false),
       { timeoutMs },
@@ -2684,6 +2685,25 @@ async function openFilesEntry(session, name, timeoutMs = FILES_PROBE_TIMEOUT_MS)
       .catch(() => ({ path: "unavailable", text: "unavailable" }));
     throw new Error(`${error.message}; renderer state: ${JSON.stringify(state)}`);
   }
+}
+
+async function selectPracticeTab(session, timeoutMs = FILES_PROBE_TIMEOUT_MS) {
+  const tab = await reachableStableCoordinates(
+    session,
+    "the Practice tab",
+    `[...document.querySelectorAll('[role="tab"]')].find(tab => tab.textContent.trim() === 'Practice')`,
+    [],
+    { timeoutMs },
+  );
+  await clickAt(session, tab.x, tab.y);
+  await waitFor(
+    "the Practice tab to show Start Practice",
+    () =>
+      session
+        .execute("return document.body.innerText.includes('Start Practice')")
+        .catch(() => false),
+    { timeoutMs },
+  );
 }
 
 // Game-opening staged-failure inventory (push-review-policy §2).
@@ -5229,10 +5249,16 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
     "successful startup migration retires the legacy practice localStorage key",
   );
 
+  const practiceScreenshot = async (name) => {
+    const path = `${screenshotPath}.${name}.png`;
+    await writeFile(path, Buffer.from(await session.screenshot(), "base64"));
+    console.log(`  .. practice screenshot: ${path}`);
+  };
   let ratingIndex = -1;
   let practiceStage = "open the large practice file";
   try {
     await openFilesEntry(session, largePracticeName, PRACTICE_RENDERER_TIMEOUT_MS);
+    await selectPracticeTab(session, PRACTICE_RENDERER_TIMEOUT_MS);
     const firstFiftyPracticePositions = initialPracticePositions.slice(0, 50);
     await waitFor(
       "the large practice deck to hydrate before UI writing",
@@ -5244,6 +5270,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
           .catch(() => false),
       { timeoutMs: PRACTICE_RENDERER_TIMEOUT_MS },
     );
+    if (screenshotPath) await practiceScreenshot("practice-idle");
     const startPracticeButton = await reachableStableCoordinates(
       session,
       "the rendered normal practice button",
@@ -5278,6 +5305,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
         .catch(() => ({ path: "unavailable", text: "unavailable", buttons: [] }));
       throw new Error(`${error.message}; practice state: ${JSON.stringify(state)}`);
     }
+    if (screenshotPath) await practiceScreenshot("practice-session");
     for (const [index, position] of firstFiftyPracticePositions.entries()) {
       await waitFor(
         `practice card ${index + 1} to finish replay`,
@@ -5439,6 +5467,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
 
   await reopenAssertionSession("large-deck extension");
   await openFilesEntry(session, largePracticeName, PRACTICE_RENDERER_TIMEOUT_MS);
+  await selectPracticeTab(session, PRACTICE_RENDERER_TIMEOUT_MS);
   const readOpenPracticeFreshness = () =>
     session
       .execute(
