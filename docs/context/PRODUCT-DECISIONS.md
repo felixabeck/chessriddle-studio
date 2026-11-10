@@ -130,3 +130,23 @@ finding ids and date.
   skip a move which is not ideal", and, although arrow down then jumps up in the
   notation, "logically it's still the best solution".
 - **Date:** 2026-11-10.
+
+## 2026-11-10 — Library rows: selected beats hover, a folder is highlighted only while open
+
+- **Question:** How do Library file rows show hover and selection? Felix saw the selected
+  fill only after the pointer left the row, and a folder stayed dark after he closed it.
+- **Choice:** The selected look shows immediately on click, also while the pointer is on
+  the row. Selected is a soft gold tint with the gold bar, not the darker fill. Hover is
+  slightly stronger. A folder is not highlighted once it is closed.
+- **Agent adaptation, not Felix's wording:** Felix approved "folders no longer get
+  selected by clicking". The build found that Create file and Create folder create
+  inside the selected folder, so dropping folder selection would have removed that
+  route. Implemented instead: opening a folder selects it, closing it (or a folder
+  above it) clears that selection. Reversal: make `toggleDirectory` in
+  `src/components/files/DirectoryTree.tsx` stop calling `setSelectedFile`, and give
+  Create file/folder another way to target a folder.
+- **Ruled out:** Keeping the selection on a closed folder: it reads as "still open".
+- **Felix's reason:** "when I then close it again it stays highlighted in dark. This is
+  I think a bit strange because I no longer opened it so this should no longer be
+  highlighted." On the recommendation: "Do everything as you recommend."
+- **Date:** 2026-11-10.
