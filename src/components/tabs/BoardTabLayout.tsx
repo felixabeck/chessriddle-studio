@@ -1,9 +1,9 @@
-import { useElementSize } from "@mantine/hooks";
 import { useAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
-import { type ReactNode, useCallback, useLayoutEffect, useState } from "react";
+import { type ReactNode, useCallback, useState } from "react";
 import { Mosaic, type MosaicNode } from "react-mosaic-component";
 import { useRootFontPx } from "@/hooks/useRootFontPx";
+import { useElementWidth } from "@/hooks/useElementWidth";
 import { createWindowsStateStorage, defaultWindowsState, type ViewId } from "@/state/layoutStorage";
 import { needsTwoPaneStack } from "@/state/paneLayout";
 import classes from "./BoardsPage.module.css";
@@ -41,15 +41,9 @@ function TargetHost({ target, direct = false }: { target: HTMLDivElement; direct
 
 export default function BoardTabLayout({ children }: { children: ReactNode }) {
   const [windowsState, setWindowsState] = useAtom(windowsStateAtom);
-  const { ref, width } = useElementSize();
-  const [initialWidth, setInitialWidth] = useState(0);
-  // ResizeObserver publishes on an animation frame. Measure before first paint too,
-  // so a paused frame clock cannot leave a desktop tab in the initial zero-width mode.
-  useLayoutEffect(() => {
-    if (width === 0) setInitialWidth(ref.current?.getBoundingClientRect().width ?? 0);
-  }, [ref, width]);
+  const { ref, width } = useElementWidth();
   const rootFont = useRootFontPx();
-  const narrow = needsTwoPaneStack(width || initialWidth, rootFont);
+  const narrow = needsTwoPaneStack(width, rootFont);
   // React owns the hosts, while this mount owns the three portal destinations.
   // Moving destinations preserves Mantine's one-time target lookup and child state.
   const [targets] = useState(

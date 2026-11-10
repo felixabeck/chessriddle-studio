@@ -23,6 +23,8 @@ import { useShallow } from "zustand/react/shallow";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { IconAction } from "@/components/common/IconAction";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
+import { useElementWidth } from "@/hooks/useElementWidth";
+import { useRootFontPx } from "@/hooks/useRootFontPx";
 import {
   allEnabledFamily,
   analysisTabFamily,
@@ -43,8 +45,14 @@ import TablebaseInfo from "./TablebaseInfo";
 import { useDisplayedEngineLines } from "./useDisplayedEngineLines";
 import classes from "./AnalysisPanel.module.css";
 
+// The 16rem panel floor, tab list, margins and gap, with room for longer locale labels.
+const COMPACT_ANALYSIS_PANE_REM = 26;
+
 function AnalysisPanel() {
   const { t } = useTranslation();
+  const { ref: paneRef, width: paneWidth } = useElementWidth();
+  const rootFont = useRootFontPx();
+  const compact = paneWidth > 0 && paneWidth <= COMPACT_ANALYSIS_PANE_REM * rootFont;
 
   const store = useContext(TreeStateContext)!;
   const rootFen = useStore(store, (s) => s.root.fen);
@@ -83,10 +91,11 @@ function AnalysisPanel() {
   const navigate = useNavigate();
 
   return (
-    <Stack h="100%" pl="xs" className={classes.pane} style={{ minWidth: 0, minHeight: 0 }}>
+    <Stack h="100%" pl="xs" ref={paneRef} style={{ minWidth: 0, minHeight: 0 }}>
       <Tabs
         h="100%"
-        orientation="vertical"
+        orientation={compact ? "horizontal" : "vertical"}
+        data-compact={compact || undefined}
         placement="right"
         value={tab}
         onChange={(v) => setTab(v!)}
