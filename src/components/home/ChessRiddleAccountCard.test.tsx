@@ -21,7 +21,7 @@ installMatchMediaStub();
 
 const connected: AccountStatus = {
   status: "connected",
-  account: { handle: "native-account", username: "Alex", plan: "gold" },
+  account: { handle: "native-account", username: "Alex", plan: "gold", tactic_rating: 1500 },
   durability_uncertain: false,
 };
 let host: HTMLDivElement;

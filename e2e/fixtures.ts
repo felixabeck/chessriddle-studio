@@ -1120,6 +1120,9 @@ const tauriBootstrap = () => {
         list_lichess_accounts: { result: [] },
         chessriddle_account: { error: "unavailable" },
         chessriddle_training_available: { result: false },
+        chessriddle_training_settings: { error: "updateRequired" },
+        chessriddle_training_motifs: { result: [] },
+        chessriddle_open_website: { result: null },
         get_puzzle_workspace: {
             result: {
                 root: { id: { id: "puzzle-root" }, kind: "puzzleRoot" },

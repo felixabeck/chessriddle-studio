@@ -1,6 +1,11 @@
 import { INITIAL_FEN } from "chessops/fen";
 import type { Locator, Page } from "@playwright/test";
-import type { AccountError, TrainingPuzzle, TrainingVerdict } from "../src/bindings/generated";
+import type {
+    AccountError,
+    TrainingPuzzle,
+    TrainingVerdict,
+    TrainingSettings,
+} from "../src/bindings/generated";
 import en from "../src/translation/en-US.json" with { type: "json" };
 import de from "../src/translation/de-DE.json" with { type: "json" };
 import { deserializeStorageValue } from "../src/state/store/debouncedStorage";
@@ -39,12 +44,21 @@ const verdict: TrainingVerdict = {
     incorrectMove: null,
     correctMove: null,
 };
+const settings: TrainingSettings = {
+    difficulty: 0,
+    motif: null,
+    showTimer: false,
+    timerMode: "up",
+    timerDuration: 300,
+};
 const commands: NonNullable<MockScenario["commands"]> = {
     chessriddle_training_available: { result: true },
     chessriddle_training_next: { result: puzzle },
     chessriddle_mistake_count: { result: 2 },
     chessriddle_training_submit: { result: verdict },
     chessriddle_open_upgrade: { result: null },
+    chessriddle_training_settings: { result: settings },
+    chessriddle_training_motifs: { result: ["fork", "pin", "mateIn2"] },
     chessriddle_account: { result: { status: "disconnected" } },
     connect_chessriddle: {
         result: {
@@ -54,6 +68,336 @@ const commands: NonNullable<MockScenario["commands"]> = {
         },
     },
 };
+
+const connectedCommands = {
+    ...commands,
+    chessriddle_training_settings: { result: settings },
+    chessriddle_training_motifs: { result: ["fork", "pin", "mateIn2"] },
+    chessriddle_account: {
+        result: {
+            status: "connected",
+            account: { handle: "account", username: "Alex", plan: "gold", tactic_rating: 1500 },
+            durability_uncertain: false,
+        },
+    },
+};
+
+for (const locale of ["en-US", "de-DE"] as const) {
+    const text = locale === "de-DE" ? de.translation : en.translation;
+    test.describe(`${locale} settings`, () => {
+        test.use({ appLocale: locale });
+        for (const layout of ["desktop", "narrow"] as const) {
+            test(`${layout}: settings save and apply to the next puzzle`, async ({
+                page,
+                mockScenario,
+                assertNoHorizontalOverflow,
+            }) => {
+                const countdown = locale === "en-US" && layout === "desktop";
+                const dialogSettings = {
+                    ...settings,
+                    showTimer: countdown,
+                    timerMode: countdown ? "down" : "up",
+                };
+                await page.setViewportSize({
+                    width: layout === "narrow" ? 320 : 1440,
+                    height: 900,
+                });
+                await mockScenario({
+                    commands: {
+                        ...connectedCommands,
+                        chessriddle_training_settings: { result: dialogSettings },
+                        chessriddle_save_training_settings: {
+                            outcomes: [{ result: { ...dialogSettings, difficulty: 250 } }],
+                            result: { ...dialogSettings, difficulty: 250, motif: "fork" },
+                        },
+                    },
+                });
+                await page.goto("/");
+                await page
+                    .getByRole("button", { name: text["Home.Card.Puzzle.Title"], exact: true })
+                    .click();
+                const panel = page.locator("[data-training-panel]");
+                await panel
+                    .getByRole("button", { name: text["Training.Settings.Title"], exact: true })
+                    .click();
+                const dialog = page.getByRole("dialog");
+                await dialog
+                    .getByLabel(text["Training.Settings.Difficulty"], { exact: true })
+                    .click();
+                await page
+                    .getByRole("option", { name: text["Training.Difficulty.Harder"], exact: true })
+                    .click();
+                await expect(
+                    dialog.getByLabel(text["Training.Settings.Difficulty"], { exact: true }),
+                ).toHaveValue(text["Training.Difficulty.Harder"]);
+                await dialog
+                    .getByLabel(text["Training.Settings.Motif"], { exact: true })
+                    .fill(text["Training.Motif.fork"]);
+                await page
+                    .getByRole("option", { name: text["Training.Motif.fork"], exact: true })
+                    .click();
+                await expect
+                    .poll(async () =>
+                        page.evaluate(
+                            () =>
+                                window.__E2E_TAURI__
+                                    .invocations()
+                                    .filter(
+                                        (call) =>
+                                            call.command === "chessriddle_save_training_settings",
+                                    ).length,
+                        ),
+                    )
+                    .toBe(2);
+                await expect(
+                    dialog.getByRole("switch", { name: text["Training.Settings.ShowTimer"] }),
+                ).toBeChecked({ checked: countdown });
+                await expect(
+                    dialog.getByLabel(text["Training.Settings.TimerMode"], { exact: true }),
+                ).toHaveValue(
+                    countdown ? text["Training.Settings.Down"] : text["Training.Settings.Up"],
+                );
+                await expect(
+                    dialog.getByLabel(text["Training.Settings.Duration"], { exact: true }),
+                ).toHaveCount(countdown ? 1 : 0);
+                await captureTraining(page, dialog, `${locale}-${layout}-settings.png`, false);
+                await assertNoHorizontalOverflow();
+                await page.keyboard.press("Escape");
+                expect(
+                    await page.evaluate(
+                        () =>
+                            window.__E2E_TAURI__
+                                .invocations()
+                                .filter((call) => call.command === "chessriddle_training_next")
+                                .length,
+                    ),
+                ).toBe(1);
+                await panel
+                    .getByRole("button", { name: text["Training.ShowSolution"], exact: true })
+                    .click();
+                await expect(panel.locator("[data-training-summary]")).toContainText("1508");
+                await panel
+                    .getByRole("button", { name: text["Training.Next"], exact: true })
+                    .click();
+                const calls = await page.evaluate(() => window.__E2E_TAURI__.invocations());
+                expect(
+                    calls
+                        .filter((call) => call.command === "chessriddle_save_training_settings")
+                        .at(-1)?.args,
+                ).toMatchObject({
+                    settings: {
+                        ...dialogSettings,
+                        difficulty: 250,
+                        motif: "fork",
+                    },
+                });
+                expect(
+                    calls.filter((call) => call.command === "chessriddle_training_next").at(-1)
+                        ?.args,
+                ).toMatchObject({ source: "tactics", difficulty: 250, motif: "fork" });
+                expect(
+                    calls.find((call) => call.command === "chessriddle_training_submit")?.args,
+                ).toMatchObject({ request: { motif: null } });
+            });
+        }
+    });
+}
+
+test("settings refused by the backend keeps tactics usable", async ({ page, mockScenario }) => {
+    await mockScenario({
+        commands: { ...commands, chessriddle_training_settings: { error: "updateRequired" } },
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Puzzles", exact: true }).click();
+    await expect(
+        page.locator("[data-training-panel]").getByText("Black to move", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Training settings", exact: true })).toHaveCount(
+        0,
+    );
+    await expect(page.locator("[data-training-filters]")).toHaveCount(0);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await page
+        .locator("[data-training-panel]")
+        .getByRole("button", { name: "Show solution", exact: true })
+        .click();
+    await expect(
+        page.locator("[data-training-panel]").getByText("Correct", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Training settings", exact: true })).toHaveCount(
+        0,
+    );
+    await expect(page.locator("[data-training-filters]")).toHaveCount(0);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("long active filters truncate while the settings button describes them in full", async ({
+    page,
+    mockScenario,
+}) => {
+    const motif = "aVeryLongMotifIdentifierRepeatedBeyondTheHeading";
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await mockScenario({
+        commands: {
+            ...connectedCommands,
+            chessriddle_training_settings: { result: { ...settings, motif } },
+            chessriddle_training_motifs: { result: [motif] },
+        },
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Puzzles", exact: true }).click();
+    const panel = page.locator("[data-training-panel]");
+    const filters = panel.locator("[data-training-filters]");
+    await expect(filters).toBeVisible();
+    const fullText = await filters.textContent();
+    const button = panel.getByRole("button", { name: "Training settings", exact: true });
+    await expect(button).toHaveAttribute("title", fullText!);
+    await expect(button).toHaveAccessibleDescription(fullText!);
+    const geometry = await filters.evaluate((element) => ({
+        width: element.clientWidth,
+        content: element.scrollWidth,
+        ellipsis: getComputedStyle(element).textOverflow,
+    }));
+    expect(geometry.content).toBeGreaterThan(geometry.width);
+    expect(geometry.ellipsis).toBe("ellipsis");
+});
+
+for (const showTimer of [true, false]) {
+    test(`countdown duration remains editable with timer shown=${showTimer}`, async ({
+        page,
+        mockScenario,
+    }) => {
+        await mockScenario({
+            commands: {
+                ...connectedCommands,
+                chessriddle_training_settings: {
+                    result: { ...settings, showTimer, timerMode: "down", timerDuration: 90 },
+                },
+            },
+        });
+        await page.goto("/");
+        await page.getByRole("button", { name: "Puzzles", exact: true }).click();
+        await page
+            .locator("[data-training-panel]")
+            .getByRole("button", { name: "Training settings", exact: true })
+            .click();
+        const dialog = page.getByRole("dialog");
+        await expect(dialog.getByRole("switch", { name: "Show timer" })).toBeChecked({
+            checked: showTimer,
+        });
+        const duration = dialog.getByLabel("Duration", { exact: true });
+        await expect(duration).toBeVisible();
+        await expect(duration).toHaveValue("90 seconds");
+        await duration.click();
+        await expect(page.getByRole("option")).toHaveText([
+            "1 min",
+            "90 seconds",
+            "3 min",
+            "5 min",
+            "10 min",
+        ]);
+    });
+}
+
+test("keyboard submit, navigation, ignored keys, next and Analyse", async ({
+    page,
+    mockScenario,
+}) => {
+    await page.addInitScript(() =>
+        localStorage.setItem("board-animation-speed", JSON.stringify("off")),
+    );
+    await mockScenario({ commands: connectedCommands });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Puzzles", exact: true }).click();
+    const panel = page.locator("[data-training-panel]");
+    await expect(panel.getByText("Black to move", { exact: true })).toBeVisible();
+    const board = page.locator("#left cg-board");
+    for (const [from, to] of [
+        ["e7", "e5"],
+        ["g1", "f3"],
+        ["b8", "c6"],
+    ])
+        await playTrainingMove(page, board, from, to);
+    await panel.click({ position: { x: 5, y: 5 } });
+    await page.keyboard.press("ArrowLeft");
+    await expect(page.locator("#bottomRight")).toContainText("Position 2 / 3");
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator("#bottomRight")).toContainText("Position 3 / 3");
+    for (const key of ["Control+Enter", "Meta+Enter", "Alt+a", "h"]) await page.keyboard.press(key);
+    await page.evaluate(() =>
+        document.body.dispatchEvent(
+            new KeyboardEvent("keydown", {
+                key: "Enter",
+                code: "Enter",
+                repeat: true,
+                bubbles: true,
+            }),
+        ),
+    );
+    await page.keyboard.press("?");
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.keyboard.press("a");
+    await expect(page.getByRole("dialog").locator("kbd")).toHaveText(["Enter", "A", "←", "→", "?"]);
+    await expect(page.getByRole("dialog")).not.toContainText("arrowleft");
+    await captureTraining(page, page.getByRole("dialog"), "en-US-desktop-shortcuts.png", false);
+    await page.keyboard.press("Escape");
+    await panel.getByRole("button", { name: "Training settings", exact: true }).click();
+    await page.getByRole("dialog").getByLabel("Motif", { exact: true }).fill("a");
+    await page.keyboard.press("Enter");
+    expect(
+        await page.evaluate(
+            () =>
+                window.__E2E_TAURI__
+                    .invocations()
+                    .filter((call) => call.command === "chessriddle_training_submit").length,
+        ),
+    ).toBe(0);
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    await page.locator("[data-training-panel]").click({ position: { x: 5, y: 5 } });
+    await page.keyboard.press("Enter");
+    await expect(panel.getByText("Correct", { exact: true })).toBeVisible();
+    await expect(panel.locator("[data-training-rating]")).toHaveText("Rating 1508 (+8)");
+    await expect(panel.locator("[data-training-solved]")).toHaveText("Solved 1 / 1");
+    await expect(panel.locator("[data-training-success]")).toHaveText("Success 100%");
+    await page.keyboard.press("a");
+    await expect(panel.getByText("Black to move", { exact: true })).toBeVisible();
+    await panel.getByRole("button", { name: "Show solution", exact: true }).click();
+    await panel.getByRole("button", { name: "Analyse", exact: true }).click();
+    expect((await activeWorkspaceTab(page))?.type).toBe("analysis");
+    await expect(page.locator("#left .cg-wrap")).toHaveClass(/orientation-black/);
+    await expect(page.locator("#bottomRight")).toContainText("c6");
+});
+
+for (const layout of ["desktop", "scaled"] as const) {
+    test(`${layout}: solving with timer`, async ({
+        page,
+        mockScenario,
+        assertNoHorizontalOverflow,
+    }) => {
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await page.addInitScript(
+            (scale) => localStorage.setItem("font-size", String(scale)),
+            layout === "scaled" ? 200 : 100,
+        );
+        await mockScenario({
+            commands: {
+                ...connectedCommands,
+                chessriddle_training_settings: {
+                    result: { ...settings, showTimer: true, timerMode: "down", timerDuration: 600 },
+                },
+            },
+        });
+        await page.goto("/");
+        await page.getByRole("button", { name: "Puzzles", exact: true }).click();
+        await expect(page.getByRole("timer")).toBeVisible();
+        await page.clock.install({ time: new Date("2026-11-10T12:00:00Z") });
+        await page.clock.pauseAt(new Date("2026-11-10T12:00:01Z"));
+        await page.getByRole("timer").scrollIntoViewIfNeeded();
+        await assertNoHorizontalOverflow();
+        await captureTraining(page, page, `en-US-${layout}-timer.png`);
+    });
+}
 
 async function playTrainingMove(page: Page, board: Locator, from: string, to: string) {
     const flipped = await board.evaluate((element) =>
@@ -72,6 +416,17 @@ async function captureTraining(
     name: string,
     scrollToBottom = true,
 ) {
+    if (/(solving|verdict|too-short|daily-limit|engine-timeout|timer)\.png$/.test(name)) {
+        const panel = page.locator("[data-training-panel]");
+        const catalogue = name.startsWith("de-DE") ? de.translation : en.translation;
+        await expect(
+            panel.getByRole("button", { name: catalogue["Training.Settings.Title"], exact: true }),
+        ).toHaveCount(1);
+        await expect(panel.locator("[data-training-filters]")).toBeVisible();
+        await expect(panel.locator("[data-training-filters]")).toContainText(
+            catalogue["Training.Settings.AllMotifs"],
+        );
+    }
     await page.mouse.move(0, 0);
     await page.evaluate(() => {
         (document.activeElement as HTMLElement | null)?.blur();
@@ -344,7 +699,7 @@ for (const locale of ["en-US", "de-DE"] as const) {
                     },
                     layout === "scaled" ? 200 : 100,
                 );
-                await mockScenario({ commands });
+                await mockScenario({ commands: connectedCommands });
                 await page.goto("/");
                 const homeActions = page.locator("[data-home-actions]");
                 await expect(homeActions.locator("[data-home-action]")).toHaveCount(5);
@@ -360,6 +715,20 @@ for (const locale of ["en-US", "de-DE"] as const) {
                 await trainingButton.click();
                 const panel = page.locator("[data-training-panel]");
                 await expect(panel.getByText(text("Training.BlackToMove"))).toBeVisible();
+                await expect(
+                    panel.getByRole("button", {
+                        name: text("Training.Settings.Title"),
+                        exact: true,
+                    }),
+                ).toBeVisible();
+                await expect(panel.locator("[data-training-filters]")).toContainText(
+                    text("Training.Settings.AllMotifs"),
+                );
+                await expect(panel.locator("[data-training-rating]")).toHaveText(
+                    `${text("Training.Session.Rating")} 1500`,
+                );
+                await expect(panel.locator("[data-training-solved]")).toHaveCount(0);
+                await expect(panel.locator("[data-training-success]")).toHaveCount(0);
                 const board = page.locator("#left cg-board");
                 await expect(page.locator("#left .cg-wrap")).toHaveClass(/orientation-black/);
                 await expect(board.locator("square.last-move")).toHaveCount(2);
@@ -367,6 +736,16 @@ for (const locale of ["en-US", "de-DE"] as const) {
                     panel.getByRole("button", { name: text("Training.Submit"), exact: true }),
                 ).toBeDisabled();
                 await assertControlLabelsFit(panel);
+                if (layout === "desktop") {
+                    const website = await panel
+                        .getByRole("button", { name: text("Training.Website"), exact: true })
+                        .boundingBox();
+                    const bounds = await panel.boundingBox();
+                    expect(await panel.evaluate((element) => element.scrollTop)).toBe(0);
+                    expect(website!.y + website!.height).toBeLessThanOrEqual(
+                        bounds!.y + bounds!.height,
+                    );
+                }
                 await captureTraining(page, page, `${locale}-${layout}-solving.png`);
                 await playTrainingMove(page, board, "e7", "e5");
                 await playTrainingMove(page, board, "g1", "f3");
@@ -429,13 +808,44 @@ for (const locale of ["en-US", "de-DE"] as const) {
                     .click();
                 await expect(page.locator("#left piece.black.pawn")).toHaveCount(8);
                 await assertNoHorizontalOverflow();
+                const overlappingSummaryValues = await panel
+                    .locator("[data-training-summary]")
+                    .evaluate((summary) => {
+                        const rects = [...summary.children].map((element) =>
+                            element.getBoundingClientRect(),
+                        );
+                        return rects.some((rect, index) =>
+                            rects
+                                .slice(index + 1)
+                                .some(
+                                    (other) =>
+                                        rect.left < other.right &&
+                                        rect.right > other.left &&
+                                        rect.top < other.bottom &&
+                                        rect.bottom > other.top,
+                                ),
+                        );
+                    });
+                expect(overlappingSummaryValues).toBe(false);
                 if (layout === "desktop") {
+                    const summaryTops = await panel
+                        .locator("[data-training-summary] > p")
+                        .evaluateAll((elements) =>
+                            elements.map((element) => element.getBoundingClientRect().top),
+                        );
+                    expect(new Set(summaryTops).size).toBe(1);
                     const next = (await panel
                         .getByRole("button", { name: text("Training.Next"), exact: true })
                         .boundingBox())!;
                     const bounds = (await panel.boundingBox())!;
                     expect(await panel.evaluate((element) => element.scrollTop)).toBe(0);
                     expect(next.y + next.height).toBeLessThan(bounds.y + bounds.height);
+                    const website = await panel
+                        .getByRole("button", { name: text("Training.Website"), exact: true })
+                        .boundingBox();
+                    expect(website!.y + website!.height).toBeLessThanOrEqual(
+                        bounds.y + bounds.height,
+                    );
                 }
                 await captureTraining(page, page, `${locale}-${layout}-verdict.png`);
                 const storedTree = await page.evaluate(

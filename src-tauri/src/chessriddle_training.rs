@@ -19,6 +19,117 @@ pub(crate) enum TrainingSource {
     Mistakes,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct TrainingSettings {
+    pub difficulty: i32,
+    pub motif: Option<String>,
+    pub show_timer: bool,
+    pub timer_mode: String,
+    pub timer_duration: u32,
+}
+
+pub(crate) fn valid_motif(value: &str) -> bool {
+    (1..=50).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_alphanumeric())
+}
+
+pub(crate) fn validate_filters(
+    source: TrainingSource,
+    difficulty: Option<i32>,
+    motif: Option<&str>,
+) -> Result<(), AccountError> {
+    if (source == TrainingSource::Mistakes && (difficulty.is_some() || motif.is_some()))
+        || difficulty.is_some_and(|value| ![-500, -250, 0, 250, 500].contains(&value))
+        || motif.is_some_and(|value| !valid_motif(value))
+    {
+        return Err(AccountError::InvalidRequest);
+    }
+    Ok(())
+}
+
+impl TrainingSettings {
+    pub(crate) fn body(&self) -> Result<serde_json::Value, AccountError> {
+        validate_filters(
+            TrainingSource::Tactics,
+            Some(self.difficulty),
+            self.motif.as_deref(),
+        )?;
+        if !matches!(self.timer_mode.as_str(), "up" | "down")
+            || !(1..=3600).contains(&self.timer_duration)
+        {
+            return Err(AccountError::InvalidRequest);
+        }
+        Ok(serde_json::json!({
+            "puzzle_difficulty_offset": self.difficulty,
+            "selected_motif": self.motif,
+            "show_timer": self.show_timer,
+            "timer_mode": self.timer_mode,
+            "timer_duration": self.timer_duration,
+        }))
+    }
+}
+
+pub(crate) fn settings(body: &[u8]) -> Result<TrainingSettings, AccountError> {
+    #[derive(Deserialize)]
+    struct Wire {
+        puzzle_difficulty_offset: serde_json::Value,
+        selected_motif: Option<serde_json::Value>,
+        show_timer: bool,
+        timer_mode: serde_json::Value,
+        timer_duration: serde_json::Value,
+    }
+    let wire: Wire = serde_json::from_slice(body).map_err(|_| AccountError::Server)?;
+    Ok(TrainingSettings {
+        difficulty: wire
+            .puzzle_difficulty_offset
+            .as_i64()
+            .filter(|value| [-500, -250, 0, 250, 500].contains(value))
+            .map_or(0, |value| value as i32),
+        motif: wire.selected_motif.and_then(|value| {
+            value
+                .as_str()
+                .filter(|name| valid_motif(name))
+                .map(str::to_owned)
+        }),
+        show_timer: wire.show_timer,
+        timer_mode: wire
+            .timer_mode
+            .as_str()
+            .filter(|value| matches!(*value, "up" | "down"))
+            .unwrap_or("up")
+            .into(),
+        timer_duration: wire
+            .timer_duration
+            .as_u64()
+            .filter(|value| (1..=3600).contains(value))
+            .map_or(300, |value| value as u32),
+    })
+}
+
+pub(crate) fn motifs(body: &[u8]) -> Result<Vec<String>, AccountError> {
+    #[derive(Deserialize)]
+    struct Wire {
+        motifs: Vec<serde_json::Value>,
+    }
+    let wire: Wire = serde_json::from_slice(body).map_err(|_| AccountError::Server)?;
+    let mut names = Vec::new();
+    for value in wire.motifs {
+        if let Some(name) = value
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .filter(|name| valid_motif(name))
+        {
+            if !names.iter().any(|value| value == name) {
+                names.push(name.to_owned());
+            }
+        }
+        if names.len() == 200 {
+            break;
+        }
+    }
+    Ok(names)
+}
+
 #[derive(Clone, Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct TrainingPuzzle {
@@ -136,6 +247,7 @@ pub(crate) struct TrainingSubmission {
     pub elapsed_ms: u32,
     pub solution_shown: bool,
     pub idempotency_key: String,
+    pub motif: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -150,9 +262,11 @@ pub(crate) struct SubmitBody {
     time_taken_ms: u32,
     is_rated: bool,
     solution_shown: bool,
+    motif: Option<String>,
 }
 
 pub(crate) fn submit_body(request: &TrainingSubmission) -> Result<SubmitBody, AccountError> {
+    validate_filters(request.source, None, request.motif.as_deref())?;
     position(&request.decision_fen).map_err(|_| AccountError::InvalidRequest)?;
     if request.puzzle_id <= 0
         || request.line.len() > MAX_TRAINING_SUBMISSION_PLIES
@@ -180,6 +294,7 @@ pub(crate) fn submit_body(request: &TrainingSubmission) -> Result<SubmitBody, Ac
         time_taken_ms: request.elapsed_ms,
         is_rated: request.source == TrainingSource::Tactics && !request.solution_shown,
         solution_shown: request.solution_shown,
+        motif: request.motif.clone(),
     })
 }
 
@@ -338,6 +453,7 @@ pub(crate) fn server_error(status: u16, body: &[u8]) -> AccountError {
         return error;
     }
     match (status, code) {
+        (404 | 503, Some("PUZZLE_FILTER_NO_MATCH")) => AccountError::NoMatch,
         (429, _) => AccountError::RateLimited,
         (403, Some("DAILY_LIMIT_REACHED")) => AccountError::DailyLimit,
         (403, Some("desktop_route_forbidden")) | (409, Some("CLIENT_UPDATE_REQUIRED")) => {
@@ -357,6 +473,118 @@ pub(crate) fn server_error(status: u16, body: &[u8]) -> AccountError {
 mod tests {
     use super::*;
     use serde_json::{json, Value};
+
+    #[test]
+    fn settings_normalise_reads_and_validate_every_renderer_field() {
+        let valid = json!({"puzzle_difficulty_offset":250,"selected_motif":"mateIn2","show_timer":true,"timer_mode":"down","timer_duration":180,"secret":"hidden"});
+        let dto = settings(&serde_json::to_vec(&valid).unwrap()).unwrap();
+        assert_eq!(dto.difficulty, 250);
+        assert_eq!(dto.body().unwrap().as_object().unwrap().len(), 5);
+        assert_eq!(dto.body().unwrap()["selected_motif"], "mateIn2");
+        assert_eq!(
+            serde_json::to_value(&dto)
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .len(),
+            5
+        );
+        for (field, bad) in [
+            ("puzzle_difficulty_offset", json!(42)),
+            ("puzzle_difficulty_offset", json!(0.5)),
+            ("selected_motif", json!("bad/value")),
+            ("timer_mode", json!("other")),
+            ("timer_duration", json!(0)),
+            ("timer_duration", json!(3601)),
+            ("timer_duration", json!(-1)),
+        ] {
+            let mut wire = valid.clone();
+            wire[field] = bad;
+            let normal = settings(&serde_json::to_vec(&wire).unwrap()).unwrap();
+            match field {
+                "puzzle_difficulty_offset" => assert_eq!(normal.difficulty, 0),
+                "selected_motif" => assert_eq!(normal.motif, None),
+                "timer_mode" => assert_eq!(normal.timer_mode, "up"),
+                _ => assert_eq!(normal.timer_duration, 300),
+            }
+        }
+        for difficulty in [-501, -1, 1, 501] {
+            assert_eq!(
+                TrainingSettings {
+                    difficulty,
+                    ..dto.clone()
+                }
+                .body(),
+                Err(AccountError::InvalidRequest)
+            );
+        }
+        for motif in ["", "a_b", "ä", &"a".repeat(51)] {
+            assert_eq!(
+                TrainingSettings {
+                    motif: Some(motif.into()),
+                    ..dto.clone()
+                }
+                .body(),
+                Err(AccountError::InvalidRequest)
+            );
+            assert!(validate_filters(TrainingSource::Tactics, None, Some(motif)).is_err());
+        }
+        for mode in ["", "sideways"] {
+            assert!(TrainingSettings {
+                timer_mode: mode.into(),
+                ..dto.clone()
+            }
+            .body()
+            .is_err());
+        }
+        for duration in [0, 3601] {
+            assert!(TrainingSettings {
+                timer_duration: duration,
+                ..dto.clone()
+            }
+            .body()
+            .is_err());
+        }
+        assert!(validate_filters(TrainingSource::Mistakes, Some(0), None).is_err());
+        assert!(validate_filters(TrainingSource::Mistakes, None, Some("fork")).is_err());
+        let mut request = request();
+        request.motif = Some("fork".into());
+        assert_eq!(
+            serde_json::to_value(submit_body(&request).unwrap()).unwrap()["motif"],
+            "fork"
+        );
+        request.source = TrainingSource::Mistakes;
+        assert!(submit_body(&request).is_err());
+    }
+
+    #[test]
+    fn motifs_are_bounded_deduplicated_allowlisted_names() {
+        let mut values = vec![
+            json!({"name":"fork","secret":"hidden"}),
+            json!({"name":"fork"}),
+            json!({"name":"bad_motif"}),
+            json!({"name":null}),
+            json!({"name":""}),
+            json!("raw"),
+        ];
+        values.extend((0..250).map(|index| json!({"name":format!("motif{index}")})));
+        let result =
+            motifs(&serde_json::to_vec(&json!({"motifs":values,"secret":"hidden"})).unwrap())
+                .unwrap();
+        assert_eq!(result.len(), 200);
+        assert_eq!(result[0], "fork");
+        assert_eq!(result[1], "motif0");
+        for status in [404, 503] {
+            assert_eq!(
+                server_error(status, br#"{"code":"PUZZLE_FILTER_NO_MATCH"}"#),
+                AccountError::NoMatch
+            );
+        }
+        assert_eq!(
+            server_error(403, br#"{"detail":{"code":"desktop_route_forbidden"}}"#),
+            AccountError::UpdateRequired
+        );
+    }
     pub(super) const PUZZLE: &str =
         include_str!("chessriddle_training_samples/puzzle_response.json");
     pub(super) const VERDICT: &str =
@@ -374,6 +602,7 @@ mod tests {
             elapsed_ms: 30000,
             solution_shown: false,
             idempotency_key: "bfe2ba6e-b195-4e7d-8b1e-5919ac36a37c".into(),
+            motif: None,
         }
     }
 

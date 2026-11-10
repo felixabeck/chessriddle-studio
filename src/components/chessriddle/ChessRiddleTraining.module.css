@@ -10,9 +10,87 @@
   padding-block: var(--mantine-spacing-xs);
 }
 
+.panel :global(.mantine-Stack-root) {
+  gap: var(--mantine-spacing-xs);
+}
+
+.panel .compactStack {
+  gap: calc(var(--mantine-spacing-xs) * 0.8);
+}
+
+.panel :global(.mantine-Card-root) {
+  margin-top: 0;
+}
+
 .heading,
 .panel :global(.mantine-Text-root) {
   overflow-wrap: anywhere;
+}
+
+.headingRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mantine-spacing-xs);
+}
+
+.heading {
+  flex-shrink: 0;
+}
+
+.headingControls {
+  display: flex;
+  flex: 1 1 14rem;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: min(100%, 14rem);
+  max-width: 100%;
+  gap: 4px;
+}
+
+.headingControls > :not(.activeFilters) {
+  flex-shrink: 0;
+}
+
+.panel .activeFilters {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+.shortcuts {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--mantine-spacing-sm) var(--mantine-spacing-md);
+  margin: 0;
+}
+
+.shortcuts dt,
+.shortcuts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+@container (max-width: 36rem) {
+  .heading {
+    flex-shrink: 1;
+    min-width: 0;
+  }
+
+  .headingControls {
+    flex-basis: 100%;
+    margin-left: auto;
+    max-width: 100%;
+  }
+}
+
+.summary > :global(.mantine-Text-root) {
+  max-width: 100%;
 }
 
 .sources,

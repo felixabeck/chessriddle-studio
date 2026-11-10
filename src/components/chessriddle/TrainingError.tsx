@@ -6,6 +6,7 @@ import { chessRiddleTrainingSessions as sessions } from "@/state/chessRiddleTrai
 export default function TrainingError({ id, error }: { id: string; error: AccountError }) {
   const { t } = useTranslation();
   const messages: Record<AccountError, string> = {
+    noMatch: t("Training.Error.NoMatch"),
     notConnected: t("Training.Error.NotConnected"),
     authentication: t("Training.Error.Reconnect"),
     invalidGrant: t("Training.Error.Reconnect"),

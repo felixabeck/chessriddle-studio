@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 import type { AccountError, AccountStatus, DisconnectOutcome } from "@/bindings";
 import { ChessRiddleCommandError } from "@/platform/chessriddle";
 import { tauri } from "@/platform/tauri";
+import { trainingSettings } from "@/state/chessRiddleTrainingSettings";
+import { trainingSummary } from "@/state/chessRiddleTrainingSummary";
 
 type Action = "refresh" | "connect" | "disconnect";
 
@@ -32,6 +34,14 @@ export function ChessRiddleAccountCard({ onConnected }: { onConnected?: () => vo
       const accept = (next: AccountStatus) => {
         if (!current()) return;
         setStatus(next);
+        const previousHandle = trainingSummary.get().handle;
+        trainingSummary.accept(next);
+        if (
+          next.status === "disconnected" ||
+          next.status === "reconnectNeeded" ||
+          (next.status === "connected" && previousHandle !== next.account.handle)
+        )
+          trainingSettings.reset();
         connected = next.status === "connected" && !next.durability_uncertain;
       };
       const report = (cause: unknown) => {
@@ -45,11 +55,13 @@ export function ChessRiddleAccountCard({ onConnected }: { onConnected?: () => vo
         if (action === "disconnect") {
           const outcome = await tauri.disconnectChessriddle();
           if (!current()) return;
+          trainingSettings.reset();
+          trainingSummary.reset();
           setRemoved(outcome.status === "removed" ? outcome : null);
           // Removal has settled, but only a native status read decides the next account action.
           setStatus(null);
           const next = await tauri.chessriddleAccount();
-          if (current()) setStatus(next);
+          accept(next);
         } else if (action === "connect") {
           try {
             const next = await tauri.connectChessriddle();
@@ -95,6 +107,7 @@ export function ChessRiddleAccountCard({ onConnected }: { onConnected?: () => vo
   }, [run]);
 
   const errors: Record<AccountError, string> = {
+    noMatch: t("Home.ChessRiddle.Error.Server"),
     notConnected: t("Home.ChessRiddle.Error.Server"),
     dailyLimit: t("Home.ChessRiddle.Error.Server"),
     updateRequired: t("Home.ChessRiddle.Error.Server"),

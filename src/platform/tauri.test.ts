@@ -9,6 +9,10 @@ const mocks = vi.hoisted(() => ({
     chessriddleMistakeCount: vi.fn(),
     chessriddleTrainingSubmit: vi.fn(),
     chessriddleOpenUpgrade: vi.fn(),
+    chessriddleTrainingSettings: vi.fn(),
+    chessriddleSaveTrainingSettings: vi.fn(),
+    chessriddleTrainingMotifs: vi.fn(),
+    chessriddleOpenWebsite: vi.fn(),
     closeSplashscreen: vi.fn(),
     releasePreviousDocumentOperations: vi.fn(),
     startGame: vi.fn(),
@@ -75,6 +79,7 @@ test.each(["chessriddleAccount", "connectChessriddle", "disconnectChessriddle"] 
             "browser",
             "alreadyConnected",
             "notConnected",
+            "noMatch",
             "dailyLimit",
             "updateRequired",
             "invalidRequest",
@@ -102,6 +107,10 @@ test.each([
     "chessriddleMistakeCount",
     "chessriddleTrainingSubmit",
     "chessriddleOpenUpgrade",
+    "chessriddleTrainingSettings",
+    "chessriddleSaveTrainingSettings",
+    "chessriddleTrainingMotifs",
+    "chessriddleOpenWebsite",
 ] as const)("%s uses the closed ChessRiddle boundary", async (command) => {
     const { tauri } = await import("./tauri");
     // Each command has its own public arity. The native mock tests the common adapter.
@@ -110,7 +119,7 @@ test.each([
             case "chessriddleTrainingAvailable":
                 return tauri.chessriddleTrainingAvailable();
             case "chessriddleTrainingNext":
-                return tauri.chessriddleTrainingNext("tactics", []);
+                return tauri.chessriddleTrainingNext("tactics", [], 0, null);
             case "chessriddleMistakeCount":
                 return tauri.chessriddleMistakeCount();
             case "chessriddleTrainingSubmit":
@@ -122,9 +131,24 @@ test.each([
                     elapsedMs: 0,
                     solutionShown: true,
                     idempotencyKey: "00000000-0000-4000-8000-000000000001",
+                    motif: null,
                 });
             case "chessriddleOpenUpgrade":
                 return tauri.chessriddleOpenUpgrade();
+            case "chessriddleTrainingSettings":
+                return tauri.chessriddleTrainingSettings();
+            case "chessriddleSaveTrainingSettings":
+                return tauri.chessriddleSaveTrainingSettings({
+                    difficulty: 0,
+                    motif: null,
+                    showTimer: false,
+                    timerMode: "up",
+                    timerDuration: 300,
+                });
+            case "chessriddleTrainingMotifs":
+                return tauri.chessriddleTrainingMotifs();
+            case "chessriddleOpenWebsite":
+                return tauri.chessriddleOpenWebsite();
         }
     };
     mocks[command].mockResolvedValue({ status: "ok", data: null });
@@ -195,6 +219,10 @@ vi.mock("@/bindings/generated", () => ({
         chessriddleMistakeCount: mocks.chessriddleMistakeCount,
         chessriddleTrainingSubmit: mocks.chessriddleTrainingSubmit,
         chessriddleOpenUpgrade: mocks.chessriddleOpenUpgrade,
+        chessriddleTrainingSettings: mocks.chessriddleTrainingSettings,
+        chessriddleSaveTrainingSettings: mocks.chessriddleSaveTrainingSettings,
+        chessriddleTrainingMotifs: mocks.chessriddleTrainingMotifs,
+        chessriddleOpenWebsite: mocks.chessriddleOpenWebsite,
         closeSplashscreen: mocks.closeSplashscreen,
         releasePreviousDocumentOperations: mocks.releasePreviousDocumentOperations,
         startGame: mocks.startGame,

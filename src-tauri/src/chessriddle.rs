@@ -2,7 +2,8 @@
 
 use crate::{
     chessriddle_training::{
-        self as training, TrainingPuzzle, TrainingSource, TrainingSubmission, TrainingVerdict,
+        self as training, TrainingPuzzle, TrainingSettings, TrainingSource, TrainingSubmission,
+        TrainingVerdict,
     },
     credentials::{ChessRiddleAccountHandle, ChessRiddleAccountMetadata, ChessRiddleCredentials},
     error::Error,
@@ -152,6 +153,7 @@ fn attributed_client(submit: bool) -> Result<reqwest::Client, AccountError> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum AccountError {
+    NoMatch,
     NotConnected,
     DailyLimit,
     UpdateRequired,
@@ -180,14 +182,15 @@ pub(crate) enum Plan {
     Gold,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Type)]
+#[derive(Clone, Debug, PartialEq, Serialize, Type)]
 pub(crate) struct AccountProfile {
     pub handle: ChessRiddleAccountHandle,
     pub username: Option<String>,
     pub plan: Plan,
+    pub tactic_rating: Option<f64>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Type)]
+#[derive(Clone, Debug, PartialEq, Serialize, Type)]
 #[serde(tag = "status", rename_all = "camelCase")]
 pub(crate) enum AccountStatus {
     Disconnected,
@@ -254,6 +257,16 @@ impl Session {
 struct UserResponse {
     username: Option<String>,
     permissions: Permissions,
+    tactic_rating: Option<serde_json::Value>,
+}
+
+impl UserResponse {
+    fn rating(&self) -> Option<f64> {
+        self.tactic_rating
+            .as_ref()
+            .and_then(serde_json::Value::as_f64)
+            .filter(|value| value.is_finite())
+    }
 }
 #[derive(Deserialize)]
 struct Permissions {
@@ -298,7 +311,10 @@ fn token_response(status: u16, body: &[u8]) -> Result<Tokens, AccountError> {
 
 type BrowserOpener = Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
 enum Action {
-    Next(TrainingSource, Vec<i32>),
+    Next(TrainingSource, Vec<i32>, Option<i32>, Option<String>),
+    Settings(Option<TrainingSettings>),
+    Motifs,
+    OpenWebsite(BrowserOpener),
     MistakeCount,
     Submit(TrainingSubmission),
     OpenUpgrade(BrowserOpener),
@@ -307,6 +323,8 @@ enum Action {
     Disconnect,
 }
 enum Reply {
+    Settings(TrainingSettings),
+    Motifs(Vec<String>),
     Puzzle(Option<TrainingPuzzle>),
     MistakeCount(u32),
     Verdict(TrainingVerdict),
@@ -550,11 +568,13 @@ impl Worker {
             serde_json::from_slice(&body).map_err(|_| AccountError::Server)?;
         let session = self.session.as_ref().ok_or(AccountError::Storage)?;
         let account = session.account.as_ref().ok_or(AccountError::Storage)?;
+        let tactic_rating = profile.rating();
         Ok(AccountStatus::Connected {
             account: AccountProfile {
                 handle: account.handle.clone(),
                 username: profile.username,
                 plan: profile.permissions.tier,
+                tactic_rating,
             },
             durability_uncertain: session.durability_uncertain,
         })
@@ -564,7 +584,10 @@ impl Worker {
         &mut self,
         source: TrainingSource,
         exclusions: Vec<i32>,
+        difficulty: Option<i32>,
+        motif: Option<String>,
     ) -> Result<Reply, AccountError> {
+        training::validate_filters(source, difficulty, motif.as_deref())?;
         if exclusions.len() > training::MAX_TRAINING_EXCLUSIONS
             || exclusions.iter().any(|id| *id <= 0)
         {
@@ -578,7 +601,17 @@ impl Worker {
             .authenticated(self.http.clone(), |http| {
                 let request = http.get(&url).header("X-Puzzle-Payload-Protocol-Max", "2");
                 match source {
-                    TrainingSource::Tactics => request.query(&[("mode", "tactic")]),
+                    TrainingSource::Tactics => {
+                        let request = request.query(&[
+                            ("mode", "tactic"),
+                            ("difficulty", &difficulty.unwrap_or(0).to_string()),
+                        ]);
+                        if let Some(motif) = &motif {
+                            request.query(&[("motif", motif)])
+                        } else {
+                            request
+                        }
+                    }
                     TrainingSource::Mistakes => request.query(
                         &exclusions
                             .iter()
@@ -606,6 +639,41 @@ impl Worker {
             return Err(training::server_error(status, &body));
         }
         training::mistake_count(&body).map(Reply::MistakeCount)
+    }
+
+    async fn settings(
+        &mut self,
+        settings: Option<TrainingSettings>,
+    ) -> Result<Reply, AccountError> {
+        let body = settings.as_ref().map(TrainingSettings::body).transpose()?;
+        let url = self.endpoints.api("/users/me/settings");
+        let (status, response) = self
+            .authenticated(self.http.clone(), |http| {
+                if let Some(body) = &body {
+                    http.patch(&url).json(body)
+                } else {
+                    http.get(&url)
+                }
+            })
+            .await?;
+        if status != 200 {
+            return Err(training::server_error(status, &response));
+        }
+        training::settings(&response).map(Reply::Settings)
+    }
+
+    async fn motifs(&self) -> Result<Reply, AccountError> {
+        let response = self
+            .http
+            .get(self.endpoints.api("/puzzles/motifs"))
+            .send()
+            .await
+            .map_err(|_| AccountError::Network)?;
+        let (status, body) = response_bytes(response).await?;
+        if status != 200 {
+            return Err(training::server_error(status, &body));
+        }
+        training::motifs(&body).map(Reply::Motifs)
     }
 
     async fn submit(&mut self, request: TrainingSubmission) -> Result<Reply, AccountError> {
@@ -777,7 +845,16 @@ impl Worker {
         }
         self.load().await?;
         match action {
-            Action::Next(source, exclusions) => self.next(source, exclusions).await,
+            Action::Next(source, exclusions, difficulty, motif) => {
+                self.next(source, exclusions, difficulty, motif).await
+            }
+            Action::Settings(settings) => self.settings(settings).await,
+            Action::Motifs => self.motifs().await,
+            Action::OpenWebsite(opener) => {
+                self.endpoints
+                    .open_link(&format!("{}/", self.endpoints.web_origin), opener.as_ref())?;
+                Ok(Reply::Opened)
+            }
             Action::MistakeCount => self.mistake_count().await,
             Action::Submit(request) => self.submit(request).await,
             Action::OpenUpgrade(opener) => {
@@ -828,9 +905,11 @@ pub(crate) async fn chessriddle_training_next(
     state: tauri::State<'_, crate::AppState>,
     source: TrainingSource,
     exclude_ids: Vec<i32>,
+    difficulty: Option<i32>,
+    motif: Option<String>,
 ) -> Result<Option<TrainingPuzzle>, AccountError> {
     match owner(&state)?
-        .request(Action::Next(source, exclude_ids))
+        .request(Action::Next(source, exclude_ids, difficulty, motif))
         .await?
     {
         Reply::Puzzle(value) => Ok(value),
@@ -867,6 +946,58 @@ fn browser_opener(app: tauri::AppHandle) -> BrowserOpener {
             .open_url(url, None::<&str>)
             .map_err(|_| "ChessRiddle browser failed".into())
     })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn chessriddle_training_settings(
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<TrainingSettings, AccountError> {
+    match owner(&state)?.request(Action::Settings(None)).await? {
+        Reply::Settings(value) => Ok(value),
+        _ => Err(AccountError::Server),
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn chessriddle_save_training_settings(
+    state: tauri::State<'_, crate::AppState>,
+    settings: TrainingSettings,
+) -> Result<TrainingSettings, AccountError> {
+    match owner(&state)?
+        .request(Action::Settings(Some(settings)))
+        .await?
+    {
+        Reply::Settings(value) => Ok(value),
+        _ => Err(AccountError::Server),
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn chessriddle_training_motifs(
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<Vec<String>, AccountError> {
+    match owner(&state)?.request(Action::Motifs).await? {
+        Reply::Motifs(value) => Ok(value),
+        _ => Err(AccountError::Server),
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn chessriddle_open_website(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<(), AccountError> {
+    match owner(&state)?
+        .request(Action::OpenWebsite(browser_opener(app)))
+        .await?
+    {
+        Reply::Opened => Ok(()),
+        _ => Err(AccountError::Server),
+    }
 }
 
 #[tauri::command]
@@ -1041,6 +1172,7 @@ mod tests {
             elapsed_ms: 30000,
             solution_shown: false,
             idempotency_key: uuid::Uuid::new_v4().to_string(),
+            motif: None,
         }
     }
 
@@ -1066,6 +1198,32 @@ mod tests {
     async fn training_count(headers: HeaderMap) -> &'static str {
         training_headers(&headers);
         include_str!("chessriddle_training_samples/mistake_count.json")
+    }
+
+    fn settings_response() -> serde_json::Value {
+        serde_json::json!({"puzzle_difficulty_offset":250,"selected_motif":"fork","show_timer":true,"timer_mode":"down","timer_duration":180})
+    }
+
+    async fn training_settings(headers: HeaderMap) -> Json<serde_json::Value> {
+        attribution(&headers);
+        assert!(headers.contains_key("authorization"));
+        Json(settings_response())
+    }
+
+    async fn save_training_settings(
+        headers: HeaderMap,
+        Json(body): Json<serde_json::Value>,
+    ) -> Json<serde_json::Value> {
+        attribution(&headers);
+        assert!(headers.contains_key("authorization"));
+        assert_eq!(body, settings_response());
+        Json(body)
+    }
+
+    async fn training_motifs(headers: HeaderMap) -> Json<serde_json::Value> {
+        attribution(&headers);
+        assert!(!headers.contains_key("authorization"));
+        Json(serde_json::json!({"motifs":[{"id":1,"name":"fork","hidden":"secret"}]}))
     }
 
     async fn training_submit(
@@ -1207,6 +1365,11 @@ mod tests {
             let router = Router::new()
                 .route("/api/v1/desktop-auth/token", post(token))
                 .route("/api/v1/users/me", get(profile))
+                .route(
+                    "/api/v1/users/me/settings",
+                    get(training_settings).patch(save_training_settings),
+                )
+                .route("/api/v1/puzzles/motifs", get(training_motifs))
                 .route("/api/v1/desktop-auth/revoke", post(revoke))
                 .route("/api/v1/puzzles/next", get(training_next))
                 .route("/api/v1/puzzles/mistakes/next", get(training_next))
@@ -1270,6 +1433,93 @@ mod tests {
         }
     }
 
+    #[test]
+    fn profile_rating_is_optional_and_invalid_ratings_leave_the_profile_valid() {
+        for (rating, expected) in [
+            (None, None),
+            (Some(serde_json::json!(1550)), Some(1550.0)),
+            (Some(serde_json::Value::Null), None),
+            (Some(serde_json::json!("NaN")), None),
+            (Some(serde_json::json!("Infinity")), None),
+        ] {
+            let mut wire = serde_json::json!({"username":"Player","permissions":{"tier":"gold"},"secret":"hidden"});
+            if let Some(rating) = rating {
+                wire["tactic_rating"] = rating;
+            }
+            let profile: UserResponse = serde_json::from_value(wire).unwrap();
+            assert_eq!(profile.rating(), expected);
+            assert_eq!(profile.username.as_deref(), Some("Player"));
+        }
+    }
+
+    #[tokio::test]
+    async fn training_settings_motifs_and_filters_use_the_native_boundary() {
+        let (_temp, credentials) = credentials(Arc::new(TestStore::default()), false).await;
+        credentials
+            .store("user".into(), "initial-refresh".into())
+            .await
+            .unwrap();
+        let fixture = Fixture::new(credentials);
+        let owner = fixture.owner();
+        assert!(
+            matches!(owner.request(Action::Motifs).await.unwrap(), Reply::Motifs(names) if names == ["fork"])
+        );
+        let settings = match owner.request(Action::Settings(None)).await.unwrap() {
+            Reply::Settings(value) => value,
+            _ => panic!("expected settings"),
+        };
+        assert_eq!(settings.difficulty, 250);
+        assert!(matches!(
+            owner
+                .request(Action::Settings(Some(settings)))
+                .await
+                .unwrap(),
+            Reply::Settings(_)
+        ));
+        owner
+            .request(Action::Next(
+                TrainingSource::Tactics,
+                vec![],
+                Some(-250),
+                Some("fork".into()),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            fixture
+                .state
+                .training_queries
+                .lock()
+                .unwrap()
+                .last()
+                .unwrap(),
+            "/api/v1/puzzles/next?mode=tactic&difficulty=-250&motif=fork"
+        );
+        for (source, difficulty, motif) in [
+            (TrainingSource::Tactics, Some(1), None),
+            (TrainingSource::Tactics, None, Some("bad/value".into())),
+            (TrainingSource::Mistakes, Some(0), None),
+            (TrainingSource::Mistakes, None, Some("fork".into())),
+        ] {
+            assert!(matches!(
+                owner
+                    .request(Action::Next(source, vec![], difficulty, motif))
+                    .await,
+                Err(AccountError::InvalidRequest)
+            ));
+        }
+        assert_eq!(fixture.state.training_queries.lock().unwrap().len(), 1);
+        let expected = format!("{}/", fixture.endpoints.web_origin);
+        owner
+            .request(Action::OpenWebsite(Arc::new(move |url| {
+                assert_eq!(url, expected);
+                Ok(())
+            })))
+            .await
+            .unwrap();
+        fixture.stop().await;
+    }
+
     #[tokio::test]
     async fn training_query_repeats_exclusions_and_shares_authentication_retry() {
         let (_temp, credentials) = credentials(Arc::new(TestStore::default()), false).await;
@@ -1285,7 +1535,12 @@ mod tests {
             .store(true, Ordering::SeqCst);
         assert!(matches!(
             owner
-                .request(Action::Next(TrainingSource::Mistakes, vec![9, 10]))
+                .request(Action::Next(
+                    TrainingSource::Mistakes,
+                    vec![9, 10],
+                    None,
+                    None
+                ))
                 .await
                 .unwrap(),
             Reply::Puzzle(Some(_))
@@ -1313,7 +1568,7 @@ mod tests {
         ));
         assert!(matches!(
             owner
-                .request(Action::Next(TrainingSource::Tactics, vec![]))
+                .request(Action::Next(TrainingSource::Tactics, vec![], None, None))
                 .await
                 .unwrap(),
             Reply::Puzzle(Some(_))
@@ -1326,11 +1581,16 @@ mod tests {
                 .unwrap()
                 .last()
                 .unwrap(),
-            "/api/v1/puzzles/next?mode=tactic"
+            "/api/v1/puzzles/next?mode=tactic&difficulty=0"
         );
         assert!(matches!(
             owner
-                .request(Action::Next(TrainingSource::Mistakes, vec![1; 51]))
+                .request(Action::Next(
+                    TrainingSource::Mistakes,
+                    vec![1; 51],
+                    None,
+                    None
+                ))
                 .await,
             Err(AccountError::InvalidRequest)
         ));
@@ -1371,7 +1631,7 @@ mod tests {
         let fixture = Fixture::new(credentials);
         let owner = fixture.owner();
         owner
-            .request(Action::Next(TrainingSource::Tactics, vec![]))
+            .request(Action::Next(TrainingSource::Tactics, vec![], None, None))
             .await
             .unwrap();
         fixture.state.delayed_submit.store(true, Ordering::SeqCst);
@@ -1441,7 +1701,7 @@ mod tests {
         let owner = AccountOwner::start(credentials, endpoints, http_client().unwrap());
         assert!(!owner.available);
         for action in [
-            Action::Next(TrainingSource::Tactics, vec![]),
+            Action::Next(TrainingSource::Tactics, vec![], None, None),
             Action::MistakeCount,
             Action::Submit(TrainingSubmission {
                 line: vec![],
@@ -1450,6 +1710,16 @@ mod tests {
                 ..training_submission()
             }),
             Action::OpenUpgrade(Arc::new(|_| panic!("release opener must not run"))),
+            Action::OpenWebsite(Arc::new(|_| panic!("release opener must not run"))),
+            Action::Settings(None),
+            Action::Settings(Some(TrainingSettings {
+                difficulty: 0,
+                motif: None,
+                show_timer: false,
+                timer_mode: "up".into(),
+                timer_duration: 300,
+            })),
+            Action::Motifs,
         ] {
             assert!(matches!(
                 owner.request(action).await,
@@ -1468,7 +1738,7 @@ mod tests {
         assert!(owner.available);
         assert!(matches!(
             owner
-                .request(Action::Next(TrainingSource::Tactics, vec![]))
+                .request(Action::Next(TrainingSource::Tactics, vec![], None, None))
                 .await,
             Err(AccountError::NotConnected)
         ));

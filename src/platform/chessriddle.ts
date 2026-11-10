@@ -1,6 +1,11 @@
 import type { AccountError } from "@/bindings";
 
+export function requiresChessRiddleConnection(error: AccountError | null): boolean {
+    return error === "notConnected" || error === "authentication" || error === "invalidGrant";
+}
+
 const accountErrors: Record<AccountError, true> = {
+    noMatch: true,
     notConnected: true,
     dailyLimit: true,
     updateRequired: true,

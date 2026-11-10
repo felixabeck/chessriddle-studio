@@ -1,5 +1,5 @@
 import { INITIAL_FEN, makeFen } from "chessops/fen";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import type { TrainingPuzzle } from "@/bindings";
 import {
     appendTrainingMove,
@@ -9,7 +9,20 @@ import {
     trainingSan,
     undoTrainingMove,
     walkTrainingLine,
+    trainingAnalysisTree,
 } from "./chessRiddleTraining";
+import { createTab } from "./tabs";
+import { deserializeStorageValue } from "@/state/store/debouncedStorage";
+import { treeIteratorMainLine, type TreeState } from "./treeReducer";
+import { createStore } from "jotai";
+import { tabsAtom } from "@/state/atoms";
+vi.mock("@/platform/tauri", () => ({
+    tauri: {
+        lexPgn: () => {
+            throw new Error("The lexer must not be called");
+        },
+    },
+}));
 
 const puzzle: TrainingPuzzle = {
     id: 1,
@@ -116,3 +129,39 @@ test("promotions, en passant and castling use chess legality", () => {
     expect(walkTrainingLine("4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 2", ["e5d6"])[1].san).toBe("exd6");
     expect(walkTrainingLine("4k3/8/8/8/8/8/8/4K2R w K - 0 1", ["e1g1"])[1].san).toBe("O-O");
 });
+
+test.each([
+    [puzzle.decisionFen, ["e7e5", "g1f3", "b8c6"], "black"],
+    ["4k3/P7/8/8/8/8/8/4K3 w - - 0 19", ["a7a8n", "e8d7"], "white"],
+    ["4k3/8/8/8/8/8/8/4K2R w K - 0 19", ["e1g1", "e8d7"], "white"],
+] as const)(
+    "Analyse creates a real tab with the complete legal mainline from %s",
+    async (fen, line, side) => {
+        const initialTree = trainingAnalysisTree(
+            { ...puzzle, decisionFen: fen, sideToMove: side },
+            line,
+        );
+        const store = createStore();
+        const id = await createTab({
+            tab: { name: "Analysis", type: "analysis" },
+            setTabs: (value) => store.set(tabsAtom, value),
+            initialTree,
+        });
+        expect(id).not.toBeNull();
+        const stored = deserializeStorageValue(sessionStorage.getItem(id!)!) as {
+            state: TreeState;
+        };
+        expect(stored.state.root.fen).toBe(fen);
+        expect(stored.state.headers.orientation).toBe(side);
+        expect(stored.state.position).toEqual([]);
+        const actual = [...treeIteratorMainLine(stored.state.root)];
+        const steps = walkTrainingLine(fen, line);
+        expect(actual.map(({ node }) => node.fen)).toEqual(steps.map((step) => step.fen));
+        expect(actual.slice(1).map(({ node }) => node.san)).toEqual(
+            steps.slice(1).map((step) => step.san),
+        );
+        expect(actual.map(({ node }) => node.halfMoves)).toEqual(
+            steps.map((_step, index) => initialTree.root.halfMoves + index),
+        );
+    },
+);

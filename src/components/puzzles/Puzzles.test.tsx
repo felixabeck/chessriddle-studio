@@ -40,6 +40,9 @@ import {
   tabsAtom,
 } from "@/state/atoms";
 import { chessRiddleTrainingSessions as sessions } from "@/state/chessRiddleTraining";
+import { trainingSettings } from "@/state/chessRiddleTrainingSettings";
+import { trainingSummary } from "@/state/chessRiddleTrainingSummary";
+import { keyMapAtom } from "@/state/keybinds";
 import * as puzzleSessions from "@/state/puzzleSession";
 import { TauriCommandError } from "@/platform/tauri";
 import { installMatchMediaStub } from "@/tests/matchMedia";
@@ -48,6 +51,8 @@ import i18n from "@/i18n";
 import type { SupportedLocale } from "@/i18n";
 import deDECatalogue from "@/translation/de-DE.json";
 import Puzzles from "./Puzzles";
+import ChessRiddleTraining from "@/components/chessriddle/ChessRiddleTraining";
+import { defaultTrainingSettings } from "@/state/chessRiddleTrainingSettings";
 import type AddPuzzle from "./AddPuzzle";
 import {
   selectedPuzzleIndex,
@@ -62,6 +67,9 @@ import { deserializeStorageValue, serializeStorageValue } from "@/state/store/de
 
 const mocks = vi.hoisted(() => ({
   chessriddleTrainingAvailable: vi.fn(),
+  chessriddleTrainingSettings: vi.fn(),
+  chessriddleSaveTrainingSettings: vi.fn(),
+  chessriddleTrainingMotifs: vi.fn(),
   chessriddleTrainingNext: vi.fn(),
   chessriddleTrainingSubmit: vi.fn(),
   chessriddleMistakeCount: vi.fn(),
@@ -98,7 +106,11 @@ vi.mock("@/platform/native", async () => ({
   platform: () => "linux",
 }));
 
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string) => key,
+  }),
+}));
 vi.mock("@/i18n", async (original) => ({
   ...(await original<typeof import("@/i18n")>()),
   default: {
@@ -113,6 +125,9 @@ vi.mock("@/platform/tauri", async () => {
     tauriSubscriptions: { ...actual.tauriSubscriptions, progress: mocks.subscribeProgress },
     tauri: {
       chessriddleTrainingAvailable: mocks.chessriddleTrainingAvailable,
+      chessriddleTrainingSettings: mocks.chessriddleTrainingSettings,
+      chessriddleSaveTrainingSettings: mocks.chessriddleSaveTrainingSettings,
+      chessriddleTrainingMotifs: mocks.chessriddleTrainingMotifs,
       chessriddleTrainingNext: mocks.chessriddleTrainingNext,
       chessriddleTrainingSubmit: mocks.chessriddleTrainingSubmit,
       chessriddleMistakeCount: mocks.chessriddleMistakeCount,
@@ -496,7 +511,8 @@ test("the card initial connected read never loops on training authentication err
   mocks.chessriddleAccount.mockResolvedValue(connectedAccount);
   await renderSource("chessriddle");
   expect(mocks.chessriddleTrainingNext).toHaveBeenCalledOnce();
-  expect(mocks.chessriddleAccount).toHaveBeenCalledOnce();
+  // One profile read seeds the shared summary, the other belongs to the connect card.
+  expect(mocks.chessriddleAccount).toHaveBeenCalledTimes(2);
   expect(document.body.textContent).toContain("Training.ConnectPrompt");
   await clickTraining("Home.ChessRiddle.Refresh");
   expect(mocks.chessriddleTrainingNext).toHaveBeenCalledTimes(2);
@@ -506,6 +522,163 @@ const otherWorkspace: PuzzleRootDescriptor = {
   root: { id: { id: "other-puzzle-root" }, kind: "puzzleRoot" },
   displayName: "Other puzzles",
 };
+
+test("two mounted training tabs share settings and finished-attempt summaries", async () => {
+  mocks.chessriddleTrainingAvailable.mockResolvedValue(true);
+  mocks.chessriddleTrainingSettings.mockResolvedValue(defaultTrainingSettings);
+  mocks.chessriddleTrainingMotifs.mockResolvedValue(["fork"]);
+  mocks.chessriddleSaveTrainingSettings.mockImplementation(async (values) => values);
+  mocks.chessriddleAccount.mockResolvedValue({
+    ...connectedAccount,
+    account: { ...connectedAccount.account, tactic_rating: 1500 },
+  });
+  mocks.chessriddleTrainingSubmit.mockResolvedValue({
+    isCorrect: true,
+    tooShort: false,
+    rated: true,
+    ratingChange: 8,
+    playerRating: 1508,
+    correctVariation: ["e7e5", "g1f3", "b8c6"],
+  });
+  await act(async () =>
+    root.render(
+      <MantineProvider>
+        <Provider store={createStore()}>
+          <ChessRiddleTraining id="training-one" sourceControl={null} onOffline={() => {}} />
+          <ChessRiddleTraining id="training-two" sourceControl={null} onOffline={() => {}} />
+        </Provider>
+      </MantineProvider>,
+    ),
+  );
+  expect(document.querySelectorAll("[data-training-panel]")).toHaveLength(2);
+  expect(mocks.chessriddleTrainingSettings).toHaveBeenCalledOnce();
+  expect(mocks.chessriddleAccount).toHaveBeenCalledOnce();
+  await act(async () => trainingSettings.change({ difficulty: 250, motif: "fork" }));
+  for (const panel of document.querySelectorAll("[data-training-panel]")) {
+    expect(panel.textContent).toContain("Training.Difficulty.Harder");
+    expect(panel.textContent).toContain("Training.Motif.fork");
+  }
+  await act(async () => sessions.submit("training-one", true));
+  for (const row of document.querySelectorAll("[data-training-summary]"))
+    expect(row.textContent).toBe(
+      "Training.Session.TitleTraining.Session.Rating 1508 (+8)Training.Session.Solved 1 / 1Training.Session.Success 100%",
+    );
+});
+
+test("before any finished attempt the session summary shows only the rating, using a dash if unknown", async () => {
+  mocks.chessriddleTrainingAvailable.mockResolvedValue(true);
+  await renderSource("chessriddle");
+  expect(document.querySelector("[data-training-rating]")?.textContent).toBe(
+    "Training.Session.Rating —",
+  );
+  expect(document.querySelector("[data-training-solved]")).toBeNull();
+  expect(document.querySelector("[data-training-success]")).toBeNull();
+});
+
+test("settings refused by the backend hides the control silently", async () => {
+  mocks.chessriddleTrainingAvailable.mockResolvedValue(true);
+  await renderSource("chessriddle");
+  expect(document.querySelector('[aria-label="Training.Settings.Title"]')).toBeNull();
+  expect(document.querySelector('[data-training-panel] [role="alert"]')).toBeNull();
+});
+
+test("a failed settings read shows a typed error and Retry reloads settings", async () => {
+  mocks.chessriddleTrainingAvailable.mockResolvedValue(true);
+  mocks.chessriddleTrainingSettings.mockRejectedValueOnce("network");
+  await renderSource("chessriddle");
+  expect(document.querySelector('[aria-label="Training.Settings.Title"]')).toBeNull();
+  expect(document.querySelector("[data-training-panel]")?.textContent).toContain(
+    "Training.Error.Network",
+  );
+  mocks.chessriddleTrainingSettings.mockResolvedValue(defaultTrainingSettings);
+  await clickTraining("Training.Retry");
+  expect(document.querySelector('[aria-label="Training.Settings.Title"]')).not.toBeNull();
+});
+
+test("noMatch explains the filters and opens the settings dialog", async () => {
+  mocks.chessriddleTrainingAvailable.mockResolvedValue(true);
+  mocks.chessriddleTrainingSettings.mockResolvedValue(defaultTrainingSettings);
+  mocks.chessriddleTrainingNext.mockRejectedValueOnce("noMatch");
+  await renderSource("chessriddle");
+  expect(document.body.textContent).toContain("Training.Error.NoMatch");
+  await clickTraining("Training.Settings.Title");
+  await act(async () => {
+    await new Promise((resolve) => window.setTimeout(resolve, 250));
+  });
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+    "Training.Settings.Difficulty",
+  );
+});
+
+test("training shortcuts respect bindings, disabled submit, fields, dialogs, modifiers and repeat", async () => {
+  mocks.chessriddleTrainingAvailable.mockResolvedValue(true);
+  mocks.chessriddleTrainingSubmit.mockResolvedValue({
+    isCorrect: true,
+    tooShort: false,
+    rated: true,
+    ratingChange: 8,
+    playerRating: 1508,
+    correctVariation: ["e7e5", "g1f3", "b8c6"],
+  });
+  const atoms = await renderSource("chessriddle");
+  const fire = async (
+    key: string,
+    code: string,
+    options: KeyboardEventInit = {},
+    target: Element = document.body,
+  ) => {
+    await act(async () => {
+      target.dispatchEvent(new KeyboardEvent("keydown", { key, code, bubbles: true, ...options }));
+      target.dispatchEvent(new KeyboardEvent("keyup", { key, code, bubbles: true, ...options }));
+    });
+  };
+  await fire("Enter", "Enter");
+  expect(mocks.chessriddleTrainingSubmit).not.toHaveBeenCalled();
+  await act(async () => {
+    for (const token of ["e7e5", "g1f3", "b8c6"]) sessions.append("puzzles-test", token);
+  });
+  for (const options of [{ repeat: true }, { ctrlKey: true }, { altKey: true }, { metaKey: true }])
+    await fire("a", "KeyA", options);
+  const input = document.createElement("input");
+  host.append(input);
+  input.focus();
+  await fire("Enter", "Enter", {}, input);
+  input.remove();
+  const dialog = document.createElement("div");
+  dialog.setAttribute("aria-modal", "true");
+  document.body.append(dialog);
+  await fire("a", "KeyA");
+  await fire("ArrowLeft", "ArrowLeft");
+  expect(sessions.get("puzzles-test")?.cursor).toBe(3);
+  dialog.remove();
+  expect(mocks.chessriddleTrainingSubmit).not.toHaveBeenCalled();
+  await act(async () =>
+    atoms.set(keyMapAtom, {
+      ...atoms.get(keyMapAtom),
+      PREVIOUS_MOVE: { name: "Previous", keys: "j" },
+      NEXT_MOVE: { name: "Next", keys: "k" },
+    }),
+  );
+  await fire("ArrowLeft", "ArrowLeft");
+  expect(sessions.get("puzzles-test")?.cursor).toBe(3);
+  await fire("j", "KeyJ");
+  expect(sessions.get("puzzles-test")?.cursor).toBe(2);
+  await fire("k", "KeyK");
+  expect(sessions.get("puzzles-test")?.cursor).toBe(3);
+  await fire("h", "KeyH");
+  expect(mocks.chessriddleTrainingSubmit).not.toHaveBeenCalled();
+  await fire("a", "KeyA");
+  expect(sessions.get("puzzles-test")?.phase).toBe("verdict");
+  await fire("Enter", "Enter");
+  expect(mocks.chessriddleTrainingNext).toHaveBeenCalledTimes(2);
+  await fire("?", "Slash", { shiftKey: true });
+  await act(async () => {
+    await new Promise((resolve) => window.setTimeout(resolve, 250));
+  });
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+    "Training.Shortcuts.Title",
+  );
+});
 
 function solutionButton() {
   return [...document.querySelectorAll<HTMLButtonElement>("button")].find(
@@ -2331,6 +2504,10 @@ let portals: HTMLDivElement;
 
 beforeEach(() => {
   vi.resetAllMocks();
+  trainingSettings.reset();
+  trainingSummary.reset();
+  mocks.chessriddleTrainingSettings.mockRejectedValue("updateRequired");
+  mocks.chessriddleTrainingMotifs.mockResolvedValue([]);
   sessions.remove("puzzles-test");
   mocks.chessriddleTrainingAvailable.mockResolvedValue(false);
   mocks.chessriddleTrainingNext.mockResolvedValue(trainingPuzzle);
@@ -2378,6 +2555,8 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   sessions.remove("puzzles-test");
+  sessions.remove("training-one");
+  sessions.remove("training-two");
   closeTreeStore("puzzles-test");
   vi.restoreAllMocks();
   vi.useRealTimers();
@@ -2413,7 +2592,10 @@ async function renderPuzzles({
   if (initial) tabStorage.seed("puzzles-test", initial);
   await act(async () => {
     root.render(
-      <MantineProvider env={mocks.realAddPuzzle ? "test" : undefined}>
+      <MantineProvider
+        env={mocks.realAddPuzzle ? "test" : undefined}
+        theme={{ respectReducedMotion: true }}
+      >
         <Provider store={store}>
           <WorkspaceTabScope tabId="puzzles-test">
             <TreeStateProvider id="puzzles-test" initial={initial}>

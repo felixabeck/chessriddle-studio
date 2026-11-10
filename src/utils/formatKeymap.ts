@@ -1,6 +1,13 @@
 import { platform } from "@/platform/native";
 
 const mapToOs = (key: string): string => {
+    const arrows: Record<string, string> = {
+        arrowleft: "←",
+        arrowright: "→",
+        arrowup: "↑",
+        arrowdown: "↓",
+    };
+    if (arrows[key.toLowerCase()]) return arrows[key.toLowerCase()];
     const isMacos = platform() === "macos";
 
     if (!isMacos) {

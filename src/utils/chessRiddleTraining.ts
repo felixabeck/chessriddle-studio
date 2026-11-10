@@ -3,7 +3,7 @@ import { makeFen } from "chessops/fen";
 import { makeSan } from "chessops/san";
 import type { TrainingPuzzle } from "@/bindings";
 import { positionFromFen } from "./chessops";
-import { getBoardState } from "./treeReducer";
+import { defaultTree, getBoardState } from "./treeReducer";
 
 // Mirrors the native submission bound from the server contract.
 export const MAX_TRAINING_SUBMISSION_PLIES = 7;
@@ -93,4 +93,23 @@ export function trainingSan(puzzle: TrainingPuzzle, line: readonly string[]): st
     return walkTrainingLine(puzzle.decisionFen, line)
         .slice(1)
         .map((step) => step.san);
+}
+
+/** Build the analysis mainline locally, without crossing the native PGN lexer. */
+export function trainingAnalysisTree(puzzle: TrainingPuzzle, line: readonly string[]) {
+    const steps = walkTrainingLine(puzzle.decisionFen, line);
+    const tree = defaultTree(puzzle.decisionFen);
+    tree.headers.orientation = puzzle.sideToMove;
+    let parent = tree.root;
+    for (let index = 0; index < line.length; index++) {
+        const step = steps[index + 1];
+        const child = {
+            ...defaultTree(step.fen).root,
+            move: parseUci(line[index]) ?? null,
+            san: step.san,
+        };
+        parent.children = [child];
+        parent = child;
+    }
+    return tree;
 }

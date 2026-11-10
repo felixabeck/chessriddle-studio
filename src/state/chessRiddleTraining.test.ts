@@ -6,6 +6,11 @@ import {
     chessRiddleTrainingSessions,
 } from "./chessRiddleTraining";
 import { disposeTabAtoms } from "./atoms";
+import {
+    createTrainingSettingsStore,
+    defaultTrainingSettings,
+} from "./chessRiddleTrainingSettings";
+import { createTrainingSummaryStore } from "./chessRiddleTrainingSummary";
 
 const puzzle: TrainingPuzzle = {
     id: 1,
@@ -34,12 +39,20 @@ const verdict: TrainingVerdict = {
 
 function deferred<T>() {
     let resolve!: (value: T) => void;
-    const promise = new Promise<T>((done) => {
+    let reject!: (cause: unknown) => void;
+    const promise = new Promise<T>((done, fail) => {
         resolve = done;
+        reject = fail;
     });
-    return { promise, resolve };
+    return { promise, resolve, reject };
 }
-function fixture() {
+function fixture(
+    settingsApi = {
+        chessriddleTrainingSettings: vi.fn().mockResolvedValue(defaultTrainingSettings),
+        chessriddleSaveTrainingSettings: vi.fn().mockImplementation(async (settings) => settings),
+        chessriddleTrainingMotifs: vi.fn().mockResolvedValue(["fork", "pin"]),
+    },
+) {
     const api = {
         chessriddleTrainingAvailable: vi.fn().mockResolvedValue(true),
         chessriddleTrainingNext: vi.fn().mockResolvedValue(puzzle),
@@ -49,20 +62,99 @@ function fixture() {
     };
     let clock = 0;
     let key = 0;
+    const settings = createTrainingSettingsStore(settingsApi);
+    const summary = createTrainingSummaryStore(
+        vi.fn().mockResolvedValue({
+            status: "connected",
+            account: { handle: "account", tactic_rating: 1500 },
+            durability_uncertain: false,
+        }),
+    );
     const sessions = createChessRiddleTrainingSessions(
         api,
         () => clock,
         () => `00000000-0000-4000-8000-${String(++key).padStart(12, "0")}`,
+        settings,
+        summary,
     );
     sessions.ensure("tab");
     return {
         api,
         sessions,
+        settings,
+        summary,
         tick: () => {
             clock += 1000;
         },
     };
 }
+
+test.each([false, true])(
+    "first request waits for the saved settings and the catalogue, failed catalogue=%s",
+    async (fails) => {
+        const read = deferred<typeof defaultTrainingSettings>();
+        const catalogue = deferred<string[]>();
+        const settingsApi = {
+            chessriddleTrainingSettings: vi.fn().mockReturnValue(read.promise),
+            chessriddleSaveTrainingSettings: vi.fn(),
+            chessriddleTrainingMotifs: vi.fn().mockReturnValue(catalogue.promise),
+        };
+        const { sessions, api, settings } = fixture(settingsApi);
+        const first = sessions.next("tab");
+        expect(api.chessriddleTrainingNext).not.toHaveBeenCalled();
+        read.resolve({ ...defaultTrainingSettings, difficulty: 250, motif: "fork" });
+        await vi.waitFor(() => expect(settings.get().status).toBe("ready"));
+        expect(api.chessriddleTrainingNext).not.toHaveBeenCalled();
+        if (fails) catalogue.reject("network");
+        else catalogue.resolve(["fork"]);
+        await first;
+        expect(api.chessriddleTrainingNext).toHaveBeenLastCalledWith(
+            "tactics",
+            [],
+            250,
+            fails ? null : "fork",
+        );
+        expect(settings.get().values.motif).toBe("fork");
+    },
+);
+
+test("two tabs share settings and summary while each submission keeps its request motif", async () => {
+    const { sessions, settings, summary, api } = fixture({
+        chessriddleTrainingSettings: vi
+            .fn()
+            .mockResolvedValue({ ...defaultTrainingSettings, motif: "fork" }),
+        chessriddleSaveTrainingSettings: vi.fn().mockImplementation(async (values) => values),
+        chessriddleTrainingMotifs: vi.fn().mockResolvedValue(["fork", "pin"]),
+    });
+    sessions.ensure("other");
+    await Promise.all([sessions.next("tab"), sessions.next("other")]);
+    settings.change({ motif: "pin", difficulty: 500 });
+    await vi.waitFor(() => expect(settings.get().saving).toBe(false));
+    await sessions.next("other");
+    expect(api.chessriddleTrainingNext).toHaveBeenLastCalledWith("tactics", [], 500, "pin");
+    fill(sessions);
+    await sessions.submit("tab");
+    expect(api.chessriddleTrainingSubmit).toHaveBeenLastCalledWith(
+        expect.objectContaining({ motif: "fork" }),
+    );
+    expect(summary.get().attempts).toBe(1);
+    await sessions.next("other", "mistakes");
+    expect(api.chessriddleTrainingNext).toHaveBeenLastCalledWith("mistakes", [], null, null);
+});
+
+test.each(["notConnected", "authentication", "invalidGrant"])(
+    "account error %s resets settings and summary",
+    async (code) => {
+        const { sessions, settings, summary, api } = fixture();
+        await sessions.next("tab");
+        fill(sessions);
+        await sessions.submit("tab");
+        api.chessriddleTrainingNext.mockRejectedValueOnce(code);
+        await sessions.next("tab");
+        expect(settings.get().status).toBe("idle");
+        expect(summary.get().attempts).toBe(0);
+    },
+);
 function fill(sessions: ReturnType<typeof fixture>["sessions"]) {
     for (const token of ["e7e5", "g1f3", "b8c6"]) sessions.append("tab", token);
 }
@@ -100,6 +192,7 @@ test("a result arriving after a newer request is ignored", async () => {
     const old = deferred<TrainingPuzzle>();
     api.chessriddleTrainingNext.mockReturnValueOnce(old.promise);
     const first = sessions.next("tab");
+    await vi.waitFor(() => expect(api.chessriddleTrainingNext).toHaveBeenCalledOnce());
     api.chessriddleTrainingNext.mockResolvedValueOnce({ ...puzzle, id: 2 });
     await sessions.next("tab");
     old.resolve(puzzle);
@@ -224,6 +317,8 @@ test.each(["tactics", "mistakes"] as const)(
         expect(api.chessriddleTrainingNext).toHaveBeenLastCalledWith(
             source,
             source === "mistakes" ? [1] : [],
+            source === "tactics" ? 0 : null,
+            null,
         );
         expect(sessions.get("tab")?.puzzle?.id).toBe(2);
     },

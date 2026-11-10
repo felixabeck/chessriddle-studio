@@ -37,9 +37,9 @@ async chessriddleTrainingAvailable() : Promise<Result<boolean, AccountError>> {
     else return { status: "error", error: e  as any };
 }
 },
-async chessriddleTrainingNext(source: TrainingSource, excludeIds: number[]) : Promise<Result<TrainingPuzzle | null, AccountError>> {
+async chessriddleTrainingNext(source: TrainingSource, excludeIds: number[], difficulty: number | null, motif: string | null) : Promise<Result<TrainingPuzzle | null, AccountError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("chessriddle_training_next", { source, excludeIds }) };
+    return { status: "ok", data: await TAURI_INVOKE("chessriddle_training_next", { source, excludeIds, difficulty, motif }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -64,6 +64,38 @@ async chessriddleTrainingSubmit(request: TrainingSubmission) : Promise<Result<Tr
 async chessriddleOpenUpgrade() : Promise<Result<null, AccountError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("chessriddle_open_upgrade") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async chessriddleTrainingSettings() : Promise<Result<TrainingSettings, AccountError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("chessriddle_training_settings") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async chessriddleSaveTrainingSettings(settings: TrainingSettings) : Promise<Result<TrainingSettings, AccountError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("chessriddle_save_training_settings", { settings }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async chessriddleTrainingMotifs() : Promise<Result<string[], AccountError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("chessriddle_training_motifs") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async chessriddleOpenWebsite() : Promise<Result<null, AccountError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("chessriddle_open_website") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1411,12 +1443,12 @@ progressEvent: "progress-event"
 
 export type AccountCollectionPreparation = { collection: CollectionDescriptor | null; migrationRequired: boolean; destination: PathRef; pendingBatch: FileWorkspaceHandle | null }
 export type AccountCompletion = { id: string; request: AccountImportRequest; progressId: string; attempt: number; outcome: CompletionOutcome<AccountImportResult>; publication: ArtifactPublication | null; committedDatabase: DatabaseHandle | null; deletionPending: boolean; importing: boolean }
-export type AccountError = "notConnected" | "dailyLimit" | "updateRequired" | "invalidRequest" | "submissionInProgress" | "engineTimeout" | "engineBusy" | "engineUnavailable" | "unavailable" | "busy" | "storage" | "network" | "rateLimited" | "server" | "invalidGrant" | "authentication" | "invalidLink" | "browser" | "alreadyConnected"
+export type AccountError = "noMatch" | "notConnected" | "dailyLimit" | "updateRequired" | "invalidRequest" | "submissionInProgress" | "engineTimeout" | "engineBusy" | "engineUnavailable" | "unavailable" | "busy" | "storage" | "network" | "rateLimited" | "server" | "invalidGrant" | "authentication" | "invalidLink" | "browser" | "alreadyConnected"
 export type AccountIdentity = { provider: string; account: string }
 export type AccountImportRequest = { provider: string; account: string; accountHandle: LichessAccountHandle | null; destination: PathRef; pendingBatch: FileWorkspaceHandle | null; sinceMs: bigint | null; target: AccountImportTarget }
 export type AccountImportResult = { collectionNotice: boolean }
 export type AccountImportTarget = { kind: "linked"; collection: string } | { kind: "unlinked"; database: DatabaseHandle; title: string }
-export type AccountProfile = { handle: ChessRiddleAccountHandle; username: string | null; plan: Plan }
+export type AccountProfile = { handle: ChessRiddleAccountHandle; username: string | null; plan: Plan; tactic_rating: number | null }
 export type AccountStatus = { status: "disconnected" } | { status: "reconnectNeeded" } | { status: "statusUnreadable"; error: AccountError } | { status: "connected"; account: AccountProfile; durability_uncertain: boolean }
 export type AnalysisOptions = { fen: string; moves: string[]; annotateNovelties: boolean; referenceDb: DatabaseHandle | null; reversed: boolean }
 export type AppendOutcome = { appended: number; committed: boolean; indexReady: boolean; durabilityConfirmed: boolean }
@@ -1712,9 +1744,10 @@ export type TournamentSort = "name" | "date" | "players" | "games" | "avgElo"
 export type TrainingFeedbackCode = "correct" | "incorrect" | "lineTooShort"
 export type TrainingFeedbackContext = "analysis" | "retry"
 export type TrainingPuzzle = { id: number; source: TrainingSource; preEntranceFen: string; entranceMove: string; decisionFen: string; sideToMove: TrainingSide; puzzleRating: number; solutionPlyCount: number }
+export type TrainingSettings = { difficulty: number; motif: string | null; showTimer: boolean; timerMode: string; timerDuration: number }
 export type TrainingSide = "white" | "black"
 export type TrainingSource = "tactics" | "mistakes"
-export type TrainingSubmission = { puzzleId: number; source: TrainingSource; decisionFen: string; line: string[]; elapsedMs: number; solutionShown: boolean; idempotencyKey: string }
+export type TrainingSubmission = { puzzleId: number; source: TrainingSource; decisionFen: string; line: string[]; elapsedMs: number; solutionShown: boolean; idempotencyKey: string; motif: string | null }
 export type TrainingVerdict = { isCorrect: boolean; tooShort: boolean; ratingChange: number; playerRating: number | null; puzzleRating: number; rated: boolean; ratingPending: boolean; feedbackCode: TrainingFeedbackCode; feedbackContext: TrainingFeedbackContext | null; correctVariation: string[]; incorrectMove: string | null; correctMove: string | null }
 export type TrashCursor = { seconds: bigint; item: string }
 export type TrashItemId = string

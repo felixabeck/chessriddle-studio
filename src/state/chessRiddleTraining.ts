@@ -5,8 +5,10 @@ import type {
     TrainingSubmission,
     TrainingVerdict,
 } from "@/bindings";
-import { ChessRiddleCommandError } from "@/platform/chessriddle";
+import { ChessRiddleCommandError, requiresChessRiddleConnection } from "@/platform/chessriddle";
 import { tauri } from "@/platform/tauri";
+import { trainingSettings } from "./chessRiddleTrainingSettings";
+import { trainingSummary } from "./chessRiddleTrainingSummary";
 import {
     MAX_TRAINING_SUBMISSION_PLIES,
     MAX_TRAINING_DURATION_MS,
@@ -44,6 +46,7 @@ export type TrainingSession = {
     failedOperation: Operation | null;
     frozenSubmission: TrainingSubmission | null;
     timedOutMistakeIds: number[];
+    motif: string | null;
 };
 
 type Entry = {
@@ -70,6 +73,8 @@ export function createChessRiddleTrainingSessions(
     api: TrainingApi,
     now: () => number = () => performance.now(),
     uuid: () => string = () => crypto.randomUUID(),
+    settings = trainingSettings,
+    summary = trainingSummary,
 ) {
     const entries = new Map<string, Entry>();
     const get = (tabId: string) => entries.get(tabId)?.state;
@@ -94,6 +99,7 @@ export function createChessRiddleTrainingSessions(
                     failedOperation: null,
                     frozenSubmission: null,
                     timedOutMistakeIds: [],
+                    motif: null,
                 },
                 request: null,
                 availabilityRequest: null,
@@ -117,6 +123,10 @@ export function createChessRiddleTrainingSessions(
     };
     const failure = (entry: Entry, operation: Operation, cause: unknown) => {
         const error = new ChessRiddleCommandError(cause).code;
+        if (requiresChessRiddleConnection(error)) {
+            settings.reset();
+            summary.reset();
+        }
         let timedOutMistakeIds = entry.state.timedOutMistakeIds;
         if (error === "engineTimeout" && entry.state.puzzle?.source === "mistakes") {
             timedOutMistakeIds = [
@@ -181,14 +191,21 @@ export function createChessRiddleTrainingSessions(
             frozenSubmission: null,
         });
         try {
+            await Promise.all([settings.load(), summary.load()]);
+            if (!current(tabId, entry, identity)) return;
+            const effective = settings.effective();
+            const motif = selectedSource === "tactics" ? effective.motif : null;
             const puzzle = await api.chessriddleTrainingNext(
                 selectedSource,
                 selectedSource === "mistakes" ? [...entry.state.timedOutMistakeIds] : [],
+                selectedSource === "tactics" ? effective.difficulty : null,
+                motif,
             );
             if (!current(tabId, entry, identity)) return;
             if (puzzle) trainingDecision(puzzle);
             publish(entry, {
                 puzzle,
+                motif,
                 inputCap: puzzle?.solutionPlyCount ?? 0,
                 submitThreshold: puzzle?.solutionPlyCount ?? 0,
                 phase: puzzle ? "solving" : "empty",
@@ -202,6 +219,7 @@ export function createChessRiddleTrainingSessions(
     };
     const send = async (tabId: string, entry: Entry, request: TrainingSubmission) => {
         const identity = begin(entry);
+        const accountIdentity = summary.identity();
         publish(entry, {
             phase: "submitting",
             error: null,
@@ -211,6 +229,7 @@ export function createChessRiddleTrainingSessions(
         try {
             const verdict = await api.chessriddleTrainingSubmit(request);
             if (!current(tabId, entry, identity)) return;
+            summary.record(verdict, accountIdentity);
             publish(entry, {
                 verdict,
                 inputCap: verdict.tooShort ? MAX_TRAINING_SUBMISSION_PLIES : entry.state.inputCap,
@@ -245,6 +264,7 @@ export function createChessRiddleTrainingSessions(
             ),
             solutionShown,
             idempotencyKey: uuid(),
+            motif: entry.state.motif,
         });
         await send(tabId, entry, request);
     };
@@ -262,8 +282,8 @@ export function createChessRiddleTrainingSessions(
         else if (entry.state.failedOperation === "next") await next(tabId);
         else if (entry.state.failedOperation === "availability") await available(tabId);
     };
-    const actions = (tabId: string): ("retry" | "next" | "continue")[] => {
-        const state = get(tabId);
+    const actions = (tabId: string, snapshot = get(tabId)): ("retry" | "next" | "continue")[] => {
+        const state = snapshot;
         if (!state) return [];
         if (state.phase === "error") {
             if (state.failedOperation === "availability") return ["retry"];
@@ -331,8 +351,14 @@ export function createChessRiddleTrainingSessions(
                 if (entries.get(tabId) === entry && entry.countRequest === identity)
                     publish(entry, { mistakeCount, mistakeCountError: null });
             } catch (cause) {
-                if (entries.get(tabId) === entry && entry.countRequest === identity)
-                    publish(entry, { mistakeCountError: new ChessRiddleCommandError(cause).code });
+                if (entries.get(tabId) === entry && entry.countRequest === identity) {
+                    const error = new ChessRiddleCommandError(cause).code;
+                    if (requiresChessRiddleConnection(error)) {
+                        settings.reset();
+                        summary.reset();
+                    }
+                    publish(entry, { mistakeCountError: error });
+                }
             } finally {
                 if (entry.countRequest === identity) entry.countRequest = null;
             }
@@ -358,8 +384,8 @@ export function createChessRiddleTrainingSessions(
 
 export const chessRiddleTrainingSessions = createChessRiddleTrainingSessions({
     chessriddleTrainingAvailable: () => tauri.chessriddleTrainingAvailable(),
-    chessriddleTrainingNext: (source, excludeIds) =>
-        tauri.chessriddleTrainingNext(source, excludeIds),
+    chessriddleTrainingNext: (source, excludeIds, difficulty, motif) =>
+        tauri.chessriddleTrainingNext(source, excludeIds, difficulty, motif),
     chessriddleMistakeCount: () => tauri.chessriddleMistakeCount(),
     chessriddleTrainingSubmit: (request) => tauri.chessriddleTrainingSubmit(request),
     chessriddleOpenUpgrade: () => tauri.chessriddleOpenUpgrade(),
