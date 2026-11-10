@@ -1,0 +1,88 @@
+/* Pixels, not rem: the grab zones must not change with the app's font scale. */
+.root {
+  --edge: 8px;
+  --corner: 16px;
+
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.root > * {
+  position: absolute;
+  pointer-events: auto;
+}
+
+.handleNorth,
+.handleSouth {
+  right: var(--corner);
+  left: var(--corner);
+  height: var(--edge);
+  cursor: ns-resize;
+}
+
+.handleNorth {
+  top: 0;
+}
+
+.handleSouth {
+  bottom: 0;
+}
+
+.handleEast,
+.handleWest {
+  top: var(--corner);
+  bottom: var(--corner);
+  width: var(--edge);
+  cursor: ew-resize;
+}
+
+.handleEast {
+  right: 0;
+}
+
+.handleWest {
+  left: 0;
+}
+
+.handleNorthEast,
+.handleSouthEast,
+.handleSouthWest,
+.handleNorthWest {
+  width: var(--corner);
+  height: var(--corner);
+}
+
+.handleNorthEast {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+
+  /* An L along the two window edges, so the close button keeps its body. */
+  clip-path: polygon(
+    0 0,
+    100% 0,
+    100% 100%,
+    calc(100% - var(--edge)) 100%,
+    calc(100% - var(--edge)) var(--edge),
+    0 var(--edge)
+  );
+}
+
+.handleSouthEast {
+  right: 0;
+  bottom: 0;
+  cursor: nwse-resize;
+}
+
+.handleSouthWest {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+
+.handleNorthWest {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}

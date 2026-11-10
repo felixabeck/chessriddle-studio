@@ -163,6 +163,7 @@
         "src/components/feedback/**",
         "src/components/Sidebar.tsx",
         "src/components/TopBar.tsx",
+        "src/components/WindowResizeHandles.tsx",
         "src/components/common/ConfirmModal.tsx",
         "src/components/common/AppModal.tsx",
         "src/components/common/FileInput.tsx",

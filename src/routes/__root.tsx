@@ -15,6 +15,7 @@ import LazyFeedbackModal from "@/components/feedback/LazyFeedbackModal";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { SideBar } from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
+import { WindowResizeHandles } from "@/components/WindowResizeHandles";
 import QuitConfirmModal from "@/components/tabs/QuitConfirmModal";
 import i18n from "@/i18n";
 import { nativeBarAtom, tabsAtom } from "@/state/atoms";
@@ -386,6 +387,7 @@ export function RootLayout() {
           <TopBar menuActions={menuActions} showWindowControls={showWindowControls} />
         </AppShell.Header>
       )}
+      {windowPlatform === "linux" && showWindowControls && <WindowResizeHandles />}
       <AppShell.Navbar>
         <SideBar onSendFeedback={menuCallbacks.sendFeedback} />
       </AppShell.Navbar>
