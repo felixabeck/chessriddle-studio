@@ -22580,6 +22580,9 @@ The empty parentheses in the closing note above should name d-20261110-05, which
 The hashes in the closing note predate a rebase. The fix is the three commits titled "fix(analysis): stack the analysis tabs when the pane is too narrow", "fix(analysis): drive the stacked tabs through a real horizontal orientation" and "fix(analysis): keep the stacked panel's 16rem floor on both axes". The third was added after the final e2e gate showed tablebase cards collapsing at 200% font scale. The stacked panel keeps its 16rem floor on both axes and `.tabs` scrolls the rest right and down.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"11d3038ea16a1f99d4e458a450dbc00d911992cec3a739ba86d833aae2ea1dbc","input_sha256":"8305eab2bb1eb22c9c69e69578507bdede2434d95fab98bfa06d20659e90ef06","kind":"mutation-receipt","operation":"4761d67cccb0d2ad4b90c179dbdfdb8fbce5f7cb99d64456620482ef8fbc4cf4","options":{"section":null},"request_id_sha256":null,"results":["f-20261109-04"],"target":"f-20261109-04","v":1} -->
 
+Correction to the snapshot note: comparing the committed PNGs shows changed pixels only within the 16px edge band of each popover image (up to 356 pixels), all at the rounded corners and border antialiasing, and none in the interior. Playwright's threshold diff showed only the bottom corners. The popover's content did not change.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"bd00d882d1e0e5f40f5ba32d9ce579f4d1328c49b6470fbcd4d58cc34689a295","input_sha256":"905b3d5a64fdbd0707d08a15d5e353c16d9a65ad3d32541c3b64ab6f9a390f93","kind":"mutation-receipt","operation":"33f229598b1ed3d45b5b760baca9dcf18f64e2c8c4a766544224ff40f8adba5b","options":{"section":null},"request_id_sha256":null,"results":["f-20261109-04"],"target":"f-20261109-04","v":1} -->
+
 ---
 
 ## 2026-11-09 — filed through the inbox spool
