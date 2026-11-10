@@ -30,6 +30,160 @@ function waitingSession(token: number, fen: string, positionKey: string): Practi
 }
 
 describe("practiceSessionReducer", () => {
+    describe("current-token phase/event specification", () => {
+        const token = 5;
+        const events = {
+            replaySame: { type: "replay", token, fen: "new-fen", positionKey: "card-key" },
+            replayOther: { type: "replay", token, fen: "other-fen", positionKey: "other-key" },
+            replayedQuiz: { type: "replayed", token, learning: false },
+            replayedLearning: { type: "replayed", token, learning: true },
+            rebind: { type: "rebind", token, fen: "new-fen", answer: "Nf3" },
+            learned: { type: "learned", token },
+            correct: { type: "correct", token, answer: "Nf3", timeTaken: 100 },
+            wrong: { type: "wrong", token, answer: "Nf3", playedMove: "Bc4", timeTaken: 100 },
+            reveal: { type: "reveal", token, answer: "Nf3" },
+            advance: { type: "advance", token },
+            end: { type: "end", token },
+        } satisfies Record<string, PracticeEvent>;
+
+        type Expected = PracticeSession["phase"] | "unchanged";
+        // Plan O2/O3/O4/O7: replay arrival, answer/retry/reveal, learning completion,
+        // and correct completion. Rebind refreshes the current presentation without
+        // advancing it, and end clears any phase. "unchanged" requires the same object.
+        const transitions = {
+            idle: {
+                replaySame: "unchanged",
+                replayOther: "unchanged",
+                replayedQuiz: "unchanged",
+                replayedLearning: "unchanged",
+                rebind: "unchanged",
+                learned: "unchanged",
+                correct: "unchanged",
+                wrong: "unchanged",
+                reveal: "unchanged",
+                advance: "unchanged",
+                end: "idle",
+            },
+            replaying: {
+                replaySame: "replaying",
+                replayOther: "unchanged",
+                replayedQuiz: "waiting",
+                replayedLearning: "learning",
+                rebind: "unchanged",
+                learned: "unchanged",
+                correct: "unchanged",
+                wrong: "unchanged",
+                reveal: "unchanged",
+                advance: "unchanged",
+                end: "idle",
+            },
+            learning: {
+                replaySame: "unchanged",
+                replayOther: "unchanged",
+                replayedQuiz: "unchanged",
+                replayedLearning: "unchanged",
+                rebind: "learning",
+                learned: "advancing",
+                correct: "unchanged",
+                wrong: "unchanged",
+                reveal: "unchanged",
+                advance: "unchanged",
+                end: "idle",
+            },
+            waiting: {
+                replaySame: "unchanged",
+                replayOther: "unchanged",
+                replayedQuiz: "unchanged",
+                replayedLearning: "unchanged",
+                rebind: "waiting",
+                learned: "unchanged",
+                correct: "correct",
+                wrong: "retry",
+                reveal: "revealed",
+                advance: "unchanged",
+                end: "idle",
+            },
+            retry: {
+                replaySame: "unchanged",
+                replayOther: "unchanged",
+                replayedQuiz: "unchanged",
+                replayedLearning: "unchanged",
+                rebind: "retry",
+                learned: "unchanged",
+                correct: "correct",
+                wrong: "revealed",
+                reveal: "revealed",
+                advance: "unchanged",
+                end: "idle",
+            },
+            revealed: {
+                replaySame: "unchanged",
+                replayOther: "unchanged",
+                replayedQuiz: "unchanged",
+                replayedLearning: "unchanged",
+                rebind: "revealed",
+                learned: "unchanged",
+                correct: "correct",
+                wrong: "unchanged",
+                reveal: "unchanged",
+                advance: "unchanged",
+                end: "idle",
+            },
+            correct: {
+                replaySame: "unchanged",
+                replayOther: "unchanged",
+                replayedQuiz: "unchanged",
+                replayedLearning: "unchanged",
+                rebind: "correct",
+                learned: "unchanged",
+                correct: "unchanged",
+                wrong: "unchanged",
+                reveal: "unchanged",
+                advance: "advancing",
+                end: "idle",
+            },
+            advancing: {
+                replaySame: "unchanged",
+                replayOther: "unchanged",
+                replayedQuiz: "unchanged",
+                replayedLearning: "unchanged",
+                rebind: "advancing",
+                learned: "unchanged",
+                correct: "unchanged",
+                wrong: "unchanged",
+                reveal: "unchanged",
+                advance: "unchanged",
+                end: "idle",
+            },
+        } satisfies Record<PracticeSession["phase"], Record<keyof typeof events, Expected>>;
+
+        const cases = Object.entries(transitions).flatMap(([phase, outcomes]) =>
+            Object.entries(events).map(([eventName, event]) => ({
+                phase: phase as PracticeSession["phase"],
+                eventName,
+                event,
+                expected: outcomes[eventName as keyof typeof events],
+            })),
+        );
+
+        it.each(cases)("$phase + $eventName → $expected", ({ phase, event, expected }) => {
+            const state: PracticeSession = {
+                phase,
+                token,
+                currentFen: "card-fen",
+                positionKey: "card-key",
+                answer: "e4",
+                playedMove: "d4",
+                timeTaken: 42,
+            };
+            const before = structuredClone(state);
+            const result = practiceSessionReducer(state, event);
+            expect(result.phase).toBe(expected === "unchanged" ? phase : expected);
+            expect(Object.is(result, state)).toBe(expected === "unchanged");
+            expect(state).toEqual(before);
+        });
+    });
+
     it("advances only a correctly answered card, and only to advancing", () => {
         const waiting = waitingSession(3, "fen-a", "board-a");
         const correct = practiceSessionReducer(waiting, {
