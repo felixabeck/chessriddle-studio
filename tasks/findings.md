@@ -22680,7 +22680,7 @@ Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates th
 
 ### `verify:app` GO11 fails: the PGN double-click target is reported as already selected on the Library page
 
-* **ID:** f-20261110-02 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261110-02 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** yes — found while running the real-app proof for the practice-mode build; the practice change does not touch game opening.
 * **Where:** `scripts/verify-app.mjs` check GO11 (`:4252`, "a fixed-coordinate double-click opens an initially unselected non-first PGN game") against the game list of a PGN file on `/library`.
@@ -22691,6 +22691,8 @@ Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates th
 * **Found by:** Claude Code build run practice-mode, real-app verification, 2026-11-10.
 * **Correction 2026-11-10 (build run practice-mode, records lens):** The Defect bullet dates both cited Library commits to 2026-11-09. Only `6651de3bd` (the New Tab / Library list redesign) is from 2026-11-09; `a188838f5` (selected rows show at once, closed folders lose the highlight) is from 2026-11-10 and is the commit that changes selection highlighting.
 * **Note:** master commit 94b486c1a ("fix(library): a move key takes focus off the clicked game row", 2026-11-10) landed after this observation and touches the same game list; rerun GO11 on a build that contains it before investigating.
+* **Entry revalidation 2026-11-10 (drain, next-finding):** build → inline. The open question is answered by reading the code: b16db962 ("remember the view while the app is open", 2026-11-09) stores the selected game per file in `libraryGamePositionAtom` (`src/components/library/memory.ts`), and `FileCard.activateGame` records the opened index. GO10 (`scripts/verify-app.mjs`) selects and opens `openingGames[1]`, so when GO11 returns to the same PGN, that game is restored as `aria-selected="true"`. That is the intended product behaviour. The probe is stale: GO11 must first select another row (game 1) so that its target starts unselected. The `selected: []` in the reported state comes from the database `tbody tr` selector and does not apply to the PGN list. Proof: rerun `pnpm verify:app`.
+<!-- ledger-meta {"command":"set-header","effect_lines":1,"effect_sha256":"6a8463c13d90999b042fa262d61f9a8627e1f79e863fbb58cbc1ca95f6f64ce6","header_sha256":"277e6c209f30dc79e6edceeb2f8b2ba97ce95f89b4b181693528b8e5190495ce","header_status":"open","input_sha256":"422ffcd2329e3c7a61d2379d5781b4c846e3df9b61191939802970d5c7401dc7","kind":"mutation-receipt","operation":"d3c0e9c020b2e8f9375d6c2735bf324ffb109af6a47ccbda6e176d852611999b","options":{"headers":{"Entry":"inline"},"section":null},"request_id_sha256":null,"results":["f-20261110-02"],"target":"f-20261110-02","v":1} -->
 
 ---
 
