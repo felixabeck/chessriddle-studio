@@ -85,3 +85,7 @@ review-correctness, review-error-handling, review-code-quality and review-tests 
 
 * ChessRiddle: admit `GET` and `PATCH /api/v1/users/me/settings` for the Studio login (handover prompt given to Felix on 2026-11-10).
 * After that deploy: the real flow with a `.dev` build.
+
+### Records round 1 (records lens over the record paths)
+
+Raw verdict: REVISE, one should-fix: `docs/bundle-budgets.md` still named `d-20261110-02` as the forward pointer for the ceilings. Fix: that paragraph now says it was the pointer until `d-20261110-09`. The same wording in the older dated paragraphs (pointers `d-20261109-13` and earlier) predates this run and is Skip: each was superseded by the paragraph above it, and the newest paragraph and `bundle-budgets.json` name the current ceiling. Closed by the arbiter: a one-phrase record correction with unchanged meaning of every measurement. The lens could not verify Felix's quoted statements, the handover delivery and the deployment state.
