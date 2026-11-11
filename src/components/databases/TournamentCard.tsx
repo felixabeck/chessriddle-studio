@@ -21,6 +21,25 @@ import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
 import { dateColumn, numericColumn } from "./databaseColumns";
 import PlayerRatingCell from "./PlayerRatingCell";
 
+type TournamentGameSortKey = "date" | "ply_count";
+
+function compareTournamentGames(
+  a: NormalizedGame,
+  b: NormalizedGame,
+  key: TournamentGameSortKey,
+  direction: "asc" | "desc",
+): number {
+  const left = a[key] ?? null;
+  const right = b[key] ?? null;
+  if (left === right) return 0;
+  if (left === null) return 1;
+  if (right === null) return -1;
+
+  const order =
+    typeof left === "number" && typeof right === "number" ? left - right : left < right ? -1 : 1;
+  return direction === "asc" ? order : -order;
+}
+
 const gamePoints = (game: NormalizedGame, player: string) => {
   if (game.white === player) {
     return match(game.result)
@@ -69,16 +88,9 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
     direction: "asc",
   });
 
+  const key = sort.columnAccessor === "ply_count" ? "ply_count" : "date";
   const sortedGames = games
-    ? [...games].sort((a, b) => {
-        const key = sort.columnAccessor;
-        if (sort.direction === "asc") {
-          /// @ts-expect-error we know they're the same type
-          return a[key] > b[key] ? 1 : -1;
-        }
-        /// @ts-expect-error we know they're the same type
-        return a[key] < b[key] ? 1 : -1;
-      })
+    ? [...games].sort((a, b) => compareTournamentGames(a, b, key, sort.direction))
     : [];
 
   const players =
