@@ -534,6 +534,7 @@ test.each([
 
 test.each([
     { filename: " game ", listedName: "game" },
+    { filename: "\u0085game\u0085", listedName: "game" },
     { filename: " Foo.PGN ", listedName: "Foo.PGN" },
     { filename: "Foo.pgn.pgn", listedName: "Foo" },
 ])(
@@ -578,10 +579,26 @@ test.each([
 
 test.each<{
     scenario: string;
+    filename?: string;
     entries: { name: string; kind: "file" | "directory"; id: string }[];
     unread?: WorkspaceUnread[];
     recovered: boolean;
 }>([
+    {
+        scenario: "selects FEFF-prefixed Foo after a pre-existing Foo listed first",
+        filename: "\uFEFFFoo.pgn",
+        entries: [
+            { name: "Foo", kind: "file", id: "pre-existing" },
+            { name: "\uFEFFFoo", kind: "file", id: "created" },
+        ],
+        recovered: true,
+    },
+    {
+        scenario: "rejects a pre-existing Foo without FEFF-prefixed Foo",
+        filename: "\uFEFFFoo.pgn",
+        entries: [{ name: "Foo", kind: "file", id: "pre-existing" }],
+        recovered: false,
+    },
     {
         scenario: "selects Foo after a pre-existing foo listed first",
         entries: [
@@ -633,46 +650,49 @@ test.each<{
         ],
         recovered: true,
     },
-])("createFile recovery $scenario", async ({ entries, unread = [], recovered }) => {
-    const workspace = { id: { id: "workspace" }, kind: "fileWorkspace" } as const;
-    const parent = { id: { id: "parent" }, kind: "fileWorkspace" } as const;
-    const rejection = new TauriCommandError({
-        tag: "backend-error",
-        category: "durability",
-        message: "Committed but durability uncertain: registry replacement",
-    });
-    mocks.createWorkspaceFile.mockRejectedValueOnce(rejection);
-    mocks.listFileWorkspace.mockResolvedValueOnce({
-        entries: entries.map(({ id, name, kind }) => ({
-            handle: { id: { id }, kind: "fileWorkspace" },
-            kind,
-            name,
-            children: [],
-            metadata: kind === "file" ? { type: "game", tags: [] } : null,
-            gameCount: kind === "file" ? 1 : null,
-            lastModified: 42,
-        })),
-        unread,
-    });
+])(
+    "createFile recovery $scenario",
+    async ({ filename = "Foo.pgn", entries, unread = [], recovered }) => {
+        const workspace = { id: { id: "workspace" }, kind: "fileWorkspace" } as const;
+        const parent = { id: { id: "parent" }, kind: "fileWorkspace" } as const;
+        const rejection = new TauriCommandError({
+            tag: "backend-error",
+            category: "durability",
+            message: "Committed but durability uncertain: registry replacement",
+        });
+        mocks.createWorkspaceFile.mockRejectedValueOnce(rejection);
+        mocks.listFileWorkspace.mockResolvedValueOnce({
+            entries: entries.map(({ id, name, kind }) => ({
+                handle: { id: { id }, kind: "fileWorkspace" },
+                kind,
+                name,
+                children: [],
+                metadata: kind === "file" ? { type: "game", tags: [] } : null,
+                gameCount: kind === "file" ? 1 : null,
+                lastModified: 42,
+            })),
+            unread,
+        });
 
-    const result = await createFile({
-        listingCache,
-        filename: "Foo.pgn",
-        filetype: "game",
-        workspace,
-        parent,
-    });
+        const result = await createFile({
+            listingCache,
+            filename,
+            filetype: "game",
+            workspace,
+            parent,
+        });
 
-    expect(result.isOk).toBe(recovered);
-    expect(result.isErr).toBe(!recovered);
-    expect(
-        result.unwrap(
-            (file) => file.handle.id.id,
-            (error) => error,
-        ),
-    ).toBe(recovered ? "created" : rejection);
-    expect(mocks.listFileWorkspace).toHaveBeenCalledExactlyOnceWith(parent);
-});
+        expect(result.isOk).toBe(recovered);
+        expect(result.isErr).toBe(!recovered);
+        expect(
+            result.unwrap(
+                (file) => file.handle.id.id,
+                (error) => error,
+            ),
+        ).toBe(recovered ? "created" : rejection);
+        expect(mocks.listFileWorkspace).toHaveBeenCalledExactlyOnceWith(parent);
+    },
+);
 
 describe("createFile content", () => {
     const workspace: FileWorkspaceHandle = {

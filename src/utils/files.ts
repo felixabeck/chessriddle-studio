@@ -31,6 +31,9 @@ import { fileWorkspaceKey } from "./pathCapabilities";
 import { createTab, type SetTabs } from "./tabs";
 import { getGameName, type GameHeaders } from "./treeReducer";
 
+const NATIVE_TRIM =
+    /^[\t\n\v\f\r\u0020\u0085\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]+|[\t\n\v\f\r\u0020\u0085\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]+$/g;
+
 export function getFileGameName(
     headers: GameHeaders,
     file: Pick<FileMetadata, "name" | "metadata">,
@@ -249,9 +252,10 @@ export async function createFile({
     listingCache: WorkspaceListingCache;
 }): Promise<Result<FileMetadata>> {
     try {
-        // Mirror native pgn_name (trim, ASCII case-insensitive .pgn check, append) and
+        // Mirror native pgn_name (Rust's str::trim, ASCII case-insensitive .pgn check, append) and
         // listing's case-sensitive repeated .pgn strip. Never case-fold names (d-20261018-04).
-        const trimmed = filename.trim();
+        // Trim Unicode White_Space, deliberately not JS trim(), which also strips U+FEFF.
+        const trimmed = filename.replace(NATIVE_TRIM, "");
         const leaf = /\.pgn$/i.test(trimmed) ? trimmed : `${trimmed}.pgn`;
         const listedName = leaf.replace(/(?:\.pgn)+$/, "");
         const entry = await runWithAppliedRecovery(
