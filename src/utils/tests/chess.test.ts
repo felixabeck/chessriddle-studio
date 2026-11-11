@@ -1334,6 +1334,59 @@ test.each([
     }
 });
 
+test.each(
+    ["1/2", "½-½", " 1/2 ", " ½-½ "].flatMap((result) =>
+        ["", "1/2", "½-½", "1/2-1/2"].map((trailing) => ({ result, trailing })),
+    ),
+)("legacy Result '$result' round-trips with trailing '$trailing'", async ({ result, trailing }) => {
+    // The native lexer emits Outcome only for canonical terminators, not legacy draw spellings.
+    mockCommentLexer();
+    const parsed = await parsePGN(`[Result "${result}"]\n\n1. e4 e5 ${trailing}`);
+    expect(parsed.headers.result).toBe("1/2-1/2");
+    expect(headersToPGN(parsed.headers)).toContain('[Result "1/2-1/2"]');
+
+    const written = getPGN(parsed.root, { ...ALL_MARKUPS, headers: parsed.headers });
+    const reparsed = await parsePGN(written);
+    expect(reparsed.headers.result).toBe("1/2-1/2");
+    expect(headersToPGN(reparsed.headers)).toContain('[Result "1/2-1/2"]');
+    expect(reparsed.root).toEqual(parsed.root);
+});
+
+test.each([
+    ["1-0", "1-0"],
+    ["0-1", "0-1"],
+    ["1/2-1/2", "1/2-1/2"],
+    ["*", "*"],
+    [" 1-0 ", "1-0"],
+    [" 0-1 ", "0-1"],
+    [" 1/2-1/2 ", "1/2-1/2"],
+    [" * ", "*"],
+    ["0-0", "*"],
+    ["?", "*"],
+    [" bogus ", "*"],
+    ["", "*"],
+])("Result '%s' normalizes to '%s' without a trailing outcome", async (result, expected) => {
+    mockCommentLexer();
+    const parsed = await parsePGN(`[Result "${result}"]\n\n1. e4 e5`);
+    expect(parsed.headers.result).toBe(expected);
+    expect(headersToPGN(parsed.headers)).toContain(`[Result "${expected}"]`);
+
+    const written = getPGN(parsed.root, { ...ALL_MARKUPS, headers: parsed.headers });
+    const reparsed = await parsePGN(written);
+    expect(reparsed.headers.result).toBe(expected);
+    expect(headersToPGN(reparsed.headers)).toContain(`[Result "${expected}"]`);
+});
+
+test.each(["*", "1-0", "0-1", "1/2-1/2"])(
+    "trailing canonical outcome %s overrides a legacy Result header",
+    async (outcome) => {
+        mockCommentLexer();
+        const parsed = await parsePGN(`[Result " ½-½ "]\n\n1. e4 e5 ${outcome}`);
+        expect(parsed.headers.result).toBe(outcome);
+        expect(headersToPGN(parsed.headers)).toContain(`[Result "${outcome}"]`);
+    },
+);
+
 test("parsePGN models WhiteTimeControl, BlackTimeControl, ECO and UTCTime", async () => {
     mocks.lexPgn.mockResolvedValueOnce([
         { type: "Header", value: { tag: "WhiteTimeControl", value: "600+5" } },

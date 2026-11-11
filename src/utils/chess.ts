@@ -650,6 +650,22 @@ function parseEloTag(
     return undefined;
 }
 
+// Keep file-open hydration aligned with normalize_pgn_result in src-tauri/src/db/mod.rs.
+function normalizePgnResult(value: string | undefined): Outcome {
+    switch (value?.trim()) {
+        case "1-0":
+            return "1-0";
+        case "0-1":
+            return "0-1";
+        case "1/2-1/2":
+        case "1/2":
+        case "½-½":
+            return "1/2-1/2";
+        default:
+            return "*";
+    }
+}
+
 function getPgnHeaders(tokens: Token[]): GameHeaders {
     const headersN = new Map<string, string>();
 
@@ -685,10 +701,6 @@ function getPgnHeaders(tokens: Token[]): GameHeaders {
         ...other
     } = Object.fromEntries(headersN);
 
-    const isValidOutcome = (value: string): value is Outcome => {
-        return ["*", "1-0", "0-1", "1/2-1/2"].includes(value);
-    };
-
     const isValidOrientation = (value: string): value is "white" | "black" => {
         return ["white", "black"].includes(value);
     };
@@ -696,7 +708,7 @@ function getPgnHeaders(tokens: Token[]): GameHeaders {
     const headers: GameHeaders = {
         id: 0,
         fen: normalizeFen(FEN),
-        result: isValidOutcome(Result) ? Result : "*",
+        result: normalizePgnResult(Result),
         black: Black ?? "?",
         white: White ?? "?",
         round: Round ?? "?",
