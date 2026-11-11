@@ -219,6 +219,91 @@ function fill(sessions: ReturnType<typeof fixture>["sessions"]) {
     for (const token of ["e7e5", "g1f3", "b8c6"]) sessions.append("tab", token);
 }
 
+test("turning solution length off immediately relaxes the current puzzle's threshold and cap", async () => {
+    const { sessions, settings, api } = fixture();
+    await settings.load();
+    settings.change({ showMoveCounter: true });
+    await settings.settled();
+    await sessions.next("tab");
+    const state = sessions.get("tab")!;
+    sessions.append("tab", "e7e5");
+    expect(sessions.canSubmit("tab")).toBe(false);
+    settings.change({ showMoveCounter: false, difficulty: 500, motif: "pin" });
+    await settings.settled();
+    expect(sessions.canSubmit("tab")).toBe(true);
+    for (const token of ["g1f3", "b8c6", "f1c4", "g8f6", "d2d3", "f8c5"])
+        sessions.append("tab", token);
+    expect(state.treeStore!.getState().position).toHaveLength(7);
+    sessions.append("tab", "c2c3");
+    expect(state.treeStore!.getState().position).toHaveLength(7);
+    expect(sessions.get("tab")?.inputNotice).toBe("inputLimit");
+    expect(sessions.get("tab")?.puzzle).toBe(state.puzzle);
+    expect(sessions.get("tab")?.elapsedStart).toBe(state.elapsedStart);
+    expect(api.chessriddleTrainingNext).toHaveBeenCalledExactlyOnceWith("tactics", [], 0, null);
+    await sessions.submit("tab");
+    expect(api.chessriddleTrainingSubmit.mock.calls[0][0].motif).toBeNull();
+    await sessions.next("tab");
+    expect(api.chessriddleTrainingNext).toHaveBeenLastCalledWith("tactics", [], 500, "pin");
+});
+
+test("turning solution length on immediately raises the threshold and preserves deeper nodes", async () => {
+    const { sessions, settings } = fixture();
+    await sessions.next("tab");
+    sessions.append("tab", "e7e5");
+    expect(sessions.canSubmit("tab")).toBe(true);
+    settings.change({ showMoveCounter: true });
+    await settings.settled();
+    expect(sessions.canSubmit("tab")).toBe(false);
+    sessions.append("tab", "g1f3");
+    sessions.append("tab", "b8c6");
+    expect(sessions.canSubmit("tab")).toBe(true);
+    sessions.append("tab", "f1c4");
+    const store = sessions.get("tab")!.treeStore!;
+    expect(store.getState().position).toHaveLength(3);
+    settings.change({ showMoveCounter: false });
+    await settings.settled();
+    sessions.append("tab", "f1c4");
+    const root = store.getState().root;
+    expect(store.getState().position).toHaveLength(4);
+    settings.change({ showMoveCounter: true });
+    await settings.settled();
+    expect(store.getState().root).toBe(root);
+    expect(store.getState().position).toHaveLength(4);
+    sessions.append("tab", "g8f6");
+    expect(store.getState().root).toBe(root);
+    expect(sessions.get("tab")?.inputNotice).toBe("inputLimit");
+    sessions.step("tab", "previous");
+    sessions.append("tab", "f1c4");
+    expect(store.getState().position).toHaveLength(4);
+});
+
+test.each([false, true])(
+    "too-short recovery ignores subsequent solution length toggles from %s",
+    async (initial) => {
+        const { sessions, settings, api } = fixture();
+        await settings.load();
+        settings.change({ showMoveCounter: initial });
+        await settings.settled();
+        await sessions.next("tab");
+        fill(sessions);
+        api.chessriddleTrainingSubmit.mockResolvedValueOnce({ ...verdict, tooShort: true });
+        await sessions.submit("tab");
+        for (const showMoveCounter of [!initial, initial]) {
+            settings.change({ showMoveCounter });
+            await settings.settled();
+            expect(sessions.canSubmit("tab")).toBe(false);
+        }
+        sessions.append("tab", "f1c4");
+        expect(sessions.get("tab")!.treeStore!.getState().position).toHaveLength(4);
+        expect(sessions.canSubmit("tab")).toBe(true);
+        sessions.undo("tab", [0, 0]);
+        expect(sessions.get("tab")!.treeStore!.getState().position).toHaveLength(1);
+        expect(sessions.canSubmit("tab")).toBe(true);
+        await sessions.submit("tab");
+        expect(api.chessriddleTrainingSubmit).toHaveBeenCalledTimes(2);
+    },
+);
+
 test.each(["e1g1", "e1h1"])(
     "castling entry %s stores and submits standard UCI and both gestures revisit its node",
     async (firstGesture) => {
@@ -367,10 +452,7 @@ test.each([false, true])(
         });
         await sessions.submit("tab");
         expect(sessions.actions("tab")).toEqual(["continue"]);
-        expect(sessions.get("tab")).toMatchObject({
-            inputCap: 7,
-            submitThreshold: showMoveCounter ? 3 : 1,
-        });
+        expect(sessions.canSubmit("tab")).toBe(false);
         await sessions.submit("tab");
         expect(api.chessriddleTrainingSubmit).toHaveBeenCalledTimes(1);
         sessions.append("tab", "f1c4");
@@ -390,10 +472,14 @@ test.each([false, true])(
             api.chessriddleTrainingSubmit.mock.calls[1][0].idempotencyKey,
         );
         await sessions.next("tab");
-        expect(sessions.get("tab")).toMatchObject({
-            inputCap: showMoveCounter ? 3 : 7,
-            submitThreshold: showMoveCounter ? 3 : 1,
-        });
+        sessions.append("tab", "e7e5");
+        expect(sessions.canSubmit("tab")).toBe(!showMoveCounter);
+        sessions.append("tab", "g1f3");
+        sessions.append("tab", "b8c6");
+        sessions.append("tab", "f1c4");
+        expect(sessions.get("tab")!.treeStore!.getState().position).toHaveLength(
+            showMoveCounter ? 3 : 4,
+        );
     },
 );
 
@@ -583,10 +669,6 @@ test.each([false, true])(
             chessriddleTrainingMotifs: vi.fn().mockResolvedValue([]),
         });
         await sessions.next("tab");
-        expect(sessions.get("tab")).toMatchObject({
-            inputCap: showMoveCounter ? 3 : 7,
-            submitThreshold: showMoveCounter ? 3 : 1,
-        });
         sessions.append("tab", "e7e5");
         expect(sessions.canSubmit("tab")).toBe(!showMoveCounter);
         fillAfterFirst();

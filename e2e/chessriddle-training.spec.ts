@@ -677,6 +677,166 @@ test("account solution length setting shows deepest branch plies and gates submi
     await expect(panel.locator("[data-training-move-count]")).toHaveText("Moves: 3 / 3");
 });
 
+test("solution length changes immediately on the current puzzle and preserves deeper moves", async ({
+    page,
+    mockScenario,
+}, testInfo) => {
+    await mockScenario({
+        commands: {
+            ...connectedCommands,
+            chessriddle_training_settings: { result: { ...settings, showMoveCounter: true } },
+            chessriddle_save_training_settings: {
+                outcomes: [false, true, false, true, false].map((showMoveCounter) => ({
+                    result: { ...settings, showMoveCounter },
+                })),
+            },
+        },
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Puzzles", exact: true }).click();
+    const panel = page.locator("[data-training-panel]");
+    const board = page.locator("#left cg-board");
+    const submit = panel.getByRole("button", { name: "Submit", exact: true });
+    const counter = panel.locator("[data-training-move-count]");
+    await expect(counter).toHaveText("Moves: 0 / 3");
+    await playTrainingMove(page, board, "e7", "e5");
+    await expect(submit).toBeDisabled();
+    await changeSolutionLength(page, false);
+    await expect(counter).toHaveCount(0);
+    await expect(submit).toBeEnabled();
+    await changeSolutionLength(page, true);
+    await expect(counter).toHaveText("Moves: 1 / 3");
+    await expect(submit).toBeDisabled();
+    await playTrainingMove(page, board, "g1", "f3");
+    await playTrainingMove(page, board, "b8", "c6");
+    await expect(submit).toBeEnabled();
+    await playTrainingMove(page, board, "f1", "c4");
+    await expect(counter).toHaveText("Moves: 3 / 3");
+    await expect(
+        panel.getByText(en.translation["Training.InputLimit"], { exact: true }),
+    ).toBeVisible();
+    await changeSolutionLength(page, false);
+    await playTrainingMove(page, board, "f1", "c4");
+    await changeSolutionLength(page, true);
+    await expect(counter).toHaveText("Moves: 4 / 3");
+    await expect(page.locator('#bottomRight [data-notation-current="true"] button')).toHaveText(
+        /[B♗]c4/,
+    );
+    await playTrainingMove(page, board, "g8", "f6");
+    await expect(counter).toHaveText("Moves: 4 / 3");
+    await expect(
+        panel.getByText(en.translation["Training.InputLimit"], { exact: true }),
+    ).toBeVisible();
+    await testInfo.attach("solution-length-on-preserves-deeper-tree", {
+        body: await page.screenshot(),
+        contentType: "image/png",
+    });
+    await changeSolutionLength(page, false);
+    for (const [from, to] of [
+        ["g8", "f6"],
+        ["d2", "d3"],
+        ["f8", "c5"],
+    ])
+        await playTrainingMove(page, board, from, to);
+    await playTrainingMove(page, board, "c2", "c3");
+    await expect(counter).toHaveCount(0);
+    await expect(page.locator('#bottomRight [data-notation-current="true"] button')).toHaveText(
+        /[B♗]c5/,
+    );
+    await expect(
+        panel.getByText(en.translation["Training.InputLimit"], { exact: true }),
+    ).toBeVisible();
+    await testInfo.attach("solution-length-off-relaxes-cap", {
+        body: await page.screenshot(),
+        contentType: "image/png",
+    });
+    expect(
+        await page.evaluate(() =>
+            window.__E2E_TAURI__
+                .invocations()
+                .filter((call) => call.command === "chessriddle_training_next"),
+        ),
+    ).toHaveLength(1);
+});
+
+test("solution length toggles preserve too-short recovery and require a changed tree", async ({
+    page,
+    mockScenario,
+}) => {
+    await mockScenario({
+        commands: {
+            ...connectedCommands,
+            chessriddle_training_settings: { result: { ...settings, showMoveCounter: true } },
+            chessriddle_save_training_settings: {
+                outcomes: [false, true].map((showMoveCounter) => ({
+                    result: { ...settings, showMoveCounter },
+                })),
+            },
+            chessriddle_training_submit: {
+                outcomes: [
+                    {
+                        result: {
+                            ...verdict,
+                            tooShort: true,
+                            isCorrect: false,
+                            correctVariation: [],
+                        },
+                    },
+                ],
+                result: verdict,
+            },
+        },
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Puzzles", exact: true }).click();
+    const panel = page.locator("[data-training-panel]");
+    const board = page.locator("#left cg-board");
+    const submit = panel.getByRole("button", { name: "Submit", exact: true });
+    for (const [from, to] of [
+        ["e7", "e5"],
+        ["g1", "f3"],
+        ["b8", "c6"],
+    ])
+        await playTrainingMove(page, board, from, to);
+    await submit.click();
+    await expect(
+        panel.getByText(en.translation["Training.TooShort"], { exact: true }),
+    ).toBeVisible();
+    for (const showLength of [false, true]) {
+        await changeSolutionLength(page, showLength);
+        await expect(submit).toBeDisabled();
+    }
+    await playTrainingMove(page, board, "f1", "c4");
+    await expect(panel.locator("[data-training-move-count]")).toHaveText("Moves: 4 / 3");
+    await expect(submit).toBeEnabled();
+    for (let i = 0; i < 3; i++)
+        await panel.getByRole("button", { name: "Undo", exact: true }).click();
+    await expect(panel.locator("[data-training-move-count]")).toHaveText("Moves: 1 / 3");
+    await expect(submit).toBeEnabled();
+    await submit.click();
+    await expect(panel.getByText("Correct", { exact: true })).toBeVisible();
+    const sent = await page.evaluate(() =>
+        window.__E2E_TAURI__
+            .invocations()
+            .filter((call) => call.command === "chessriddle_training_submit")
+            .map((call) => (call.args as { request: { idempotencyKey: string } }).request),
+    );
+    expect(sent).toHaveLength(2);
+    expect(sent[1].idempotencyKey).not.toBe(sent[0].idempotencyKey);
+    expect(sent[1]).toMatchObject({ tree: { move: "e7e5", children: [] } });
+});
+
+async function changeSolutionLength(page: Page, checked: boolean) {
+    await page.getByRole("button", { name: "Training settings", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Training settings", exact: true });
+    const toggle = dialog.getByRole("switch", { name: "Show solution length", exact: true });
+    await toggle.click();
+    await expect(toggle).toBeChecked({ checked });
+    await expect(page.locator("[data-training-move-count]")).toHaveCount(checked ? 1 : 0);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+}
+
 test("opponent-ending branches require confirmation and cancellation keeps the tree editable", async ({
     page,
     mockScenario,

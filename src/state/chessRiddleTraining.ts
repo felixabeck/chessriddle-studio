@@ -42,9 +42,6 @@ export type TrainingSession = {
     treeStore: TreeStore | null;
     inputNotice: "oneSolverMove" | "inputLimit" | null;
     rejectedTree: string | null;
-    showMoveCounter: boolean;
-    inputCap: number;
-    submitThreshold: number;
     phase: "idle" | "loading" | "solving" | "submitting" | "verdict" | "error" | "empty";
     elapsedStart: number | null;
     verdict: TrainingVerdict | null;
@@ -98,9 +95,6 @@ export function createChessRiddleTrainingSessions(
                     treeStore: null,
                     inputNotice: null,
                     rejectedTree: null,
-                    showMoveCounter: false,
-                    inputCap: 0,
-                    submitThreshold: 0,
                     phase: "idle",
                     elapsedStart: null,
                     verdict: null,
@@ -122,6 +116,16 @@ export function createChessRiddleTrainingSessions(
     const publish = (entry: Entry, patch: Partial<TrainingSession>) => {
         entry.state = { ...entry.state, ...patch };
         for (const listener of entry.listeners) listener();
+    };
+    const inputRules = (state: TrainingSession) => {
+        const showLength = settings.effective().showMoveCounter && state.rejectedTree === null;
+        const length = state.puzzle?.solutionPlyCount ?? 0;
+        return {
+            cap: showLength
+                ? Math.min(length, MAX_TRAINING_SUBMISSION_PLIES)
+                : MAX_TRAINING_SUBMISSION_PLIES,
+            threshold: showLength ? length : 1,
+        };
     };
     const disposeTree = (entry: Entry) => {
         entry.unsubscribeTree?.();
@@ -198,8 +202,6 @@ export function createChessRiddleTrainingSessions(
             treeStore: null,
             inputNotice: null,
             rejectedTree: null,
-            inputCap: 0,
-            submitThreshold: 0,
             verdict: null,
             elapsedStart: null,
             error: null,
@@ -231,11 +233,6 @@ export function createChessRiddleTrainingSessions(
                 puzzle,
                 motif,
                 treeStore,
-                showMoveCounter: effective.showMoveCounter,
-                inputCap: effective.showMoveCounter
-                    ? Math.min(puzzle?.solutionPlyCount ?? 0, MAX_TRAINING_SUBMISSION_PLIES)
-                    : MAX_TRAINING_SUBMISSION_PLIES,
-                submitThreshold: effective.showMoveCounter ? (puzzle?.solutionPlyCount ?? 0) : 1,
                 phase: puzzle ? "solving" : "empty",
                 elapsedStart: puzzle ? now() : null,
             });
@@ -271,7 +268,6 @@ export function createChessRiddleTrainingSessions(
             }
             publish(entry, {
                 verdict,
-                inputCap: verdict.tooShort ? MAX_TRAINING_SUBMISSION_PLIES : entry.state.inputCap,
                 rejectedTree: verdict.tooShort ? JSON.stringify(request.tree) : null,
                 phase: verdict.tooShort ? "solving" : "verdict",
                 frozenSubmission: null,
@@ -310,7 +306,7 @@ export function createChessRiddleTrainingSessions(
             !!state &&
             state.phase === "solving" &&
             !!tree &&
-            canSubmitTraining(tree, state.submitThreshold) &&
+            canSubmitTraining(tree, inputRules(state).threshold) &&
             JSON.stringify(trainingSubmissionTree(tree.root)) !== state.rejectedTree
         );
     };
@@ -368,7 +364,7 @@ export function createChessRiddleTrainingSessions(
             if (!entry || entry.state.phase !== "solving" || !entry.state.puzzle) return;
             const tree = entry.state.treeStore?.getState();
             if (!tree) return;
-            const gate = trainingMoveNotice(tree, token, entry.state.inputCap);
+            const gate = trainingMoveNotice(tree, token, inputRules(entry.state).cap);
             if (gate.notice) {
                 publish(entry, { inputNotice: gate.notice });
                 return;

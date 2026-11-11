@@ -158,3 +158,32 @@ test("solution length is off by default and survives saves in the existing setti
         showMoveCounter: true,
     });
 });
+
+test("subscribers observe the effective solution length after confirmation and reconciliation", async () => {
+    const { api, store } = fixture();
+    await store.load();
+    const observed: boolean[] = [];
+    const unsubscribe = store.subscribe(() => observed.push(store.effective().showMoveCounter));
+    const save = deferred<TrainingSettings>();
+    api.chessriddleSaveTrainingSettings.mockReturnValueOnce(save.promise);
+    store.change({ showMoveCounter: true });
+    expect(store.get().values.showMoveCounter).toBe(true);
+    expect(observed.at(-1)).toBe(false);
+    save.resolve({ ...defaultTrainingSettings, showMoveCounter: true });
+    await store.settled();
+    expect(observed.at(-1)).toBe(true);
+
+    api.chessriddleSaveTrainingSettings.mockRejectedValueOnce("network");
+    const read = deferred<TrainingSettings>();
+    api.chessriddleTrainingSettings.mockReturnValueOnce(read.promise);
+    store.change({ showMoveCounter: false });
+    await vi.waitFor(() => expect(store.get().reconciling).toBe(true));
+    expect(observed.at(-1)).toBe(true);
+    read.resolve({ ...defaultTrainingSettings, showMoveCounter: false });
+    await store.settled();
+    expect(observed.at(-1)).toBe(false);
+    unsubscribe();
+    const count = observed.length;
+    store.reset();
+    expect(observed).toHaveLength(count);
+});

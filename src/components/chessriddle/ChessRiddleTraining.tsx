@@ -316,7 +316,7 @@ export default function ChessRiddleTraining({
                       </Text>
                     )}
                     <Group justify="space-between">
-                      {state.showMoveCounter && tree && (
+                      {effective.showMoveCounter && tree && (
                         <Text data-training-move-count>
                           {t("Training.MoveCount", {
                             entered: trainingDepth(tree.root),
