@@ -13081,3 +13081,15 @@ Former private decision identifier: d-20261029-14
 * **Reversal path:** Route buildDbCache back to per-position fetchPositionMoves and remove the command and the position_stats cache together. The search_position path is unchanged.
 * **Decided by:** Claude Code (Opus 5.5) build run 2026-11-11-coverage-batch-search, full auto, 2026-11-11 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"2cabdbceabcaba919630fe895887635ad7adcfb10122e3399f6f5672d156c03d","input_sha256":"a844bb23223c59d35a052246fea5de4ed3427e1092e15cd0ec1a3ea3d1bf1528","kind":"mutation-receipt","operation":"ab39cf7c099c1b4c607eff4056a8f6c62927a882000e4a01b7b35fb0586b4e93","options":{"section":null},"request_id_sha256":null,"results":["d-20261111-02"],"target":"decisions-ledger","v":1} -->
+
+## 2026-11-12 — recorded through the decisions lock
+
+### d-20261112-01 — Does an unfinished Test run with no jobs refuse the remote CI check?
+
+* **Question:** Does `pnpm ci:remote:check` refuse when a not-yet-completed Test run in the window has an empty jobs list?
+* **Governs:** -
+* **Chosen:** No. A run whose status is not `completed` and whose jobs list is empty contributes nothing and is skipped. A completed run with an empty jobs list, a missing jobs array, and a window that yields no jobs at all still refuse. This narrows the "empty job list refuses" clause of d-20261001-03; the rest of that decision stands.
+* **Rejected:** Keeping the refusal (blocks every push until the stuck run leaves the five-run window, with no action that clears it); cancelling or deleting the stuck run (a cancelled run with no jobs still returned an empty list, and deleting another session's CI record is destructive).
+* **Reason:** New evidence d-20261001-03 did not consider: on 2026-11-11 GitHub kept master Test run 43095552810 (superseded commit `50035a496`) queued for 2.5 h with zero jobs while the newer run for `20b65a96d` completed green, and the check refused every push. Reversal: restore the throw in `jobsForRun` for non-completed runs.
+* **Decided by:** Claude Code, full auto, drain session fdf49cab-be8c-4793-95ff-0570904a3d1c, push of f-20261111-75 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"687a50adedea70f9384ddaf490675f8d10b0cc59440321e352ca73387a37f659","input_sha256":"335b2f939bcca813a8f7e294e4607972dabdcdfb57de9a6c4a84efe59981edf8","kind":"mutation-receipt","operation":"f3b6a72d1312e263475864f134397114483d6692434fe3a055209dbc081845ba","options":{"section":null},"request_id_sha256":null,"results":["d-20261112-01"],"target":"decisions-ledger","v":1} -->
