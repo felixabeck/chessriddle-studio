@@ -265,7 +265,6 @@ export function RootLayout() {
         exit: () => requestQuit(),
         reload: () => location.reload(),
         toggleFullscreen,
-        documentation: () => tauri.openDocumentation(),
         clearSavedData: () =>
           clearSavedDataFromMenu({
             ask,

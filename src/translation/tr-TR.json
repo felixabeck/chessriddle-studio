@@ -1004,7 +1004,6 @@
     "Menu.Help.ClearSavedData.Confirm": "Tüm kaydedilmiş verileri temizlemek istediğinizden emin misiniz?",
     "Menu.Help.ClearSavedData.MigrationBlocked": "{{decks}} için {{practiceData}} aktarılamadığı veya hasarlı olduğu için kaydedilmiş veriler silinmedi.",
     "Menu.Help.ClearSavedData.Title": "Verileri temizle",
-    "Menu.Help.Documentation": "Dokümantasyon",
     "Menu.Help.OpenLogs": "Kayıtları Aç",
     "Menu.Help.SendFeedback": "Geri bildirim gönder",
     "Menu.MarkAsStart": "Başlangıç olarak işaretle",

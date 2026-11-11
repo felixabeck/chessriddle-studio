@@ -929,7 +929,6 @@ async fn save_engine_logs(app: tauri::AppHandle, text: String) -> Result<(), Err
     .await
 }
 
-const DOCUMENTATION_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/tree/master/docs");
 macro_rules! app_log_file_stem {
     () => {
         "chessriddle-studio"
@@ -937,17 +936,6 @@ macro_rules! app_log_file_stem {
 }
 const APP_LOG_FILE_STEM: &str = app_log_file_stem!();
 const APP_LOG_FILE_NAME: &str = concat!(app_log_file_stem!(), ".log");
-
-/// Opens the fixed project documentation URL without granting arbitrary URL authority to the
-/// renderer.
-#[tauri::command]
-#[specta::specta]
-fn open_documentation(app: tauri::AppHandle) -> Result<(), Error> {
-    use tauri_plugin_opener::OpenerExt;
-    app.opener()
-        .open_url(DOCUMENTATION_URL, None::<&str>)
-        .map_err(Error::from)
-}
 
 /// Opens the application-owned log file without exposing its native path to the renderer.
 #[tauri::command]
@@ -2118,7 +2106,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             issue_pgn_export_destination,
             save_board_snapshot,
             save_engine_logs,
-            open_documentation,
             open_app_log,
             issue_download_destination,
             download_destination_is_known,
@@ -3621,14 +3608,6 @@ mod tests {
             main.contains("RotationStrategy::KeepSome(")
                 && main.contains("NATIVE_LOG_ROTATION_KEEP"),
             "the plugin must keep the named archive count: {main}"
-        );
-    }
-
-    #[test]
-    fn documentation_url_targets_the_fork_repository() {
-        assert_eq!(
-            DOCUMENTATION_URL,
-            "https://github.com/felixabeck/chessriddle-studio/tree/master/docs"
         );
     }
 

@@ -1030,7 +1030,6 @@
     "Menu.Help.ClearSavedData.Confirm": "Ви впевнені, що хочете очистити всі збережені дані?",
     "Menu.Help.ClearSavedData.MigrationBlocked": "Збережені дані не видалено, оскільки {{practiceData}} для {{decks}} не вдалося перенести або їх пошкоджено.",
     "Menu.Help.ClearSavedData.Title": "Очистити дані",
-    "Menu.Help.Documentation": "Документація",
     "Menu.Help.OpenLogs": "Відкрити журнали",
     "Menu.Help.SendFeedback": "Надіслати відгук",
     "Menu.MarkAsStart": "Позначити як початкову",

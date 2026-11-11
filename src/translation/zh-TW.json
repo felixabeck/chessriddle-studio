@@ -991,7 +991,6 @@
     "Menu.Help.ClearSavedData.Confirm": "確定要清除所有已儲存的資料嗎？",
     "Menu.Help.ClearSavedData.MigrationBlocked": "由於無法移轉或資料已損毀，未清除 {{decks}} 的{{practiceData}}與其他已儲存資料。",
     "Menu.Help.ClearSavedData.Title": "清除資料",
-    "Menu.Help.Documentation": "說明文件",
     "Menu.Help.OpenLogs": "開啟日誌",
     "Menu.Help.SendFeedback": "傳送回饋",
     "Menu.MarkAsStart": "标记为起始",

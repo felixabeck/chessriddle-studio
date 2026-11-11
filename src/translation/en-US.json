@@ -1004,7 +1004,6 @@
     "Menu.Help.ClearSavedData.Confirm": "Are you sure you want to clear all saved data?",
     "Menu.Help.ClearSavedData.MigrationBlocked": "Saved data was not cleared because {{practiceData}} for {{decks}} could not be migrated or is damaged.",
     "Menu.Help.ClearSavedData.Title": "Clear data",
-    "Menu.Help.Documentation": "Documentation",
     "Menu.Help.OpenLogs": "Open Logs",
     "Menu.Help.SendFeedback": "Send feedback",
     "Menu.MarkAsStart": "Mark as start",

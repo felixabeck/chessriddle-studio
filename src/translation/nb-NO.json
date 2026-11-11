@@ -1004,7 +1004,6 @@
     "Menu.Help.ClearSavedData.Confirm": "Er du sikker på at du vil slette alle lagrede data?",
     "Menu.Help.ClearSavedData.MigrationBlocked": "Lagrede data ble ikke slettet fordi {{practiceData}} for {{decks}} ikke kunne migreres eller er skadet.",
     "Menu.Help.ClearSavedData.Title": "Slett data",
-    "Menu.Help.Documentation": "Dokumentasjon",
     "Menu.Help.OpenLogs": "Åpne logger",
     "Menu.Help.SendFeedback": "Send tilbakemelding",
     "Menu.MarkAsStart": "Merk som start",

@@ -991,7 +991,6 @@
     "Menu.Help.ClearSavedData.Confirm": "저장된 모든 데이터를 지우시겠습니까?",
     "Menu.Help.ClearSavedData.MigrationBlocked": "{{decks}}의 {{practiceData}}를 마이그레이션할 수 없거나 손상되어 저장된 데이터를 삭제하지 않았습니다.",
     "Menu.Help.ClearSavedData.Title": "데이터 지우기",
-    "Menu.Help.Documentation": "설명서",
     "Menu.Help.OpenLogs": "로그 열기",
     "Menu.Help.SendFeedback": "의견 보내기",
     "Menu.MarkAsStart": "시작으로 표시",

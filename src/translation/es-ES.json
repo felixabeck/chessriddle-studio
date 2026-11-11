@@ -1017,7 +1017,6 @@
     "Menu.Help.ClearSavedData.Confirm": "¿Seguro que quieres borrar todos los datos guardados?",
     "Menu.Help.ClearSavedData.MigrationBlocked": "No se borraron los datos guardados porque {{practiceData}} de {{decks}} no se pudieron migrar o están dañados.",
     "Menu.Help.ClearSavedData.Title": "Borrar datos",
-    "Menu.Help.Documentation": "Documentación",
     "Menu.Help.OpenLogs": "Abrir registros",
     "Menu.Help.SendFeedback": "Enviar comentarios",
     "Menu.MarkAsStart": "Marcar como inicio",

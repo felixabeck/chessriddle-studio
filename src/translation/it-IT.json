@@ -1017,7 +1017,6 @@
     "Menu.Help.ClearSavedData.Confirm": "Vuoi davvero cancellare tutti i dati salvati?",
     "Menu.Help.ClearSavedData.MigrationBlocked": "I dati salvati non sono stati eliminati perché i {{practiceData}} di {{decks}} non sono stati migrati o sono danneggiati.",
     "Menu.Help.ClearSavedData.Title": "Cancella dati",
-    "Menu.Help.Documentation": "Documentazione",
     "Menu.Help.OpenLogs": "Apri logs",
     "Menu.Help.SendFeedback": "Invia feedback",
     "Menu.MarkAsStart": "Segna inizio",

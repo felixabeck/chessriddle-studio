@@ -58,7 +58,6 @@ vi.mock("@/platform/native", () => ({
 vi.mock("@/platform/tauri", () => ({
   tauri: {
     openAppLog: vi.fn(),
-    openDocumentation: vi.fn(),
     fileRevision: mocks.fileRevision,
   },
   tauriSubscriptions: { windowFocus: mocks.windowFocus },

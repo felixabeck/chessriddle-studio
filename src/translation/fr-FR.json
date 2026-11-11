@@ -1017,7 +1017,6 @@
     "Menu.Help.ClearSavedData.Confirm": "Voulez-vous vraiment effacer toutes les données enregistrées ?",
     "Menu.Help.ClearSavedData.MigrationBlocked": "Les données enregistrées n’ont pas été supprimées, car les {{practiceData}} de {{decks}} n’ont pas pu être migrées ou sont endommagées.",
     "Menu.Help.ClearSavedData.Title": "Effacer les données",
-    "Menu.Help.Documentation": "Documentation",
     "Menu.Help.OpenLogs": "Ouvrir les Logs",
     "Menu.Help.SendFeedback": "Envoyer un retour",
     "Menu.MarkAsStart": "Marquer comme début",

@@ -30,7 +30,6 @@ export type AppMenuCallbacks = {
     exit: () => void | Promise<void>;
     reload: () => void;
     toggleFullscreen: () => void | Promise<void>;
-    documentation: () => void | Promise<void>;
     clearSavedData: () => void | Promise<void>;
     openLogs: () => void | Promise<void>;
 };
@@ -174,11 +173,6 @@ export function buildAppMenuTree(args: {
             label: t("Menu.Help"),
             options: [
                 {
-                    label: t("Menu.Help.Documentation"),
-                    id: "documentation",
-                    action: callbacks.documentation,
-                },
-                {
                     label: t("Menu.Help.SendFeedback"),
                     id: "send_feedback",
                     action: callbacks.sendFeedback,
@@ -267,7 +261,6 @@ export type AppMenuCommandBindings = {
     exit: () => Promise<unknown>;
     reload: () => void;
     toggleFullscreen: () => Promise<unknown>;
-    documentation: () => Promise<unknown>;
     clearSavedData: () => Promise<unknown>;
     openLogs: () => Promise<unknown>;
     openLogsSuccessMessage?: string;
@@ -283,7 +276,6 @@ export function bindAppMenuCallbacks(bindings: AppMenuCommandBindings): AppMenuC
         exit: () => bindings.runMenu(bindings.exit),
         reload: bindings.reload,
         toggleFullscreen: () => bindings.runMenu(bindings.toggleFullscreen),
-        documentation: () => bindings.runMenu(bindings.documentation),
         clearSavedData: () => bindings.runMenu(bindings.clearSavedData),
         openLogs: () => bindings.runMenu(bindings.openLogs, bindings.openLogsSuccessMessage),
     };

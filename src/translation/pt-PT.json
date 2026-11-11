@@ -1017,7 +1017,6 @@
     "Menu.Help.ClearSavedData.Confirm": "Tem a certeza de que pretende limpar todos os dados guardados?",
     "Menu.Help.ClearSavedData.MigrationBlocked": "Os dados guardados não foram eliminados porque {{practiceData}} de {{decks}} não puderam ser migrados ou estão danificados.",
     "Menu.Help.ClearSavedData.Title": "Limpar dados",
-    "Menu.Help.Documentation": "Documentação",
     "Menu.Help.OpenLogs": "Abrir logs",
     "Menu.Help.SendFeedback": "Enviar comentários",
     "Menu.MarkAsStart": "Marcar como início",

@@ -749,7 +749,7 @@ test("compact title-bar: all groups and actions by keyboard", async ({
         await expect(item).toBeFocused();
         await page.keyboard.press("ArrowRight");
         const first = page.getByRole("menuitem", {
-            name: ["Neuer Tab", "Neu laden", "Dokumentation"][index]!,
+            name: ["Neuer Tab", "Neu laden", "Feedback senden"][index]!,
             exact: false,
         });
         await expect(first).toBeFocused();

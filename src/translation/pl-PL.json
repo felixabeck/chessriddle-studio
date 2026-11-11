@@ -1030,7 +1030,6 @@
     "Menu.Help.ClearSavedData.Confirm": "Czy na pewno chcesz usunąć wszystkie zapisane dane?",
     "Menu.Help.ClearSavedData.MigrationBlocked": "Nie usunięto zapisanych danych, ponieważ {{practiceData}} dla {{decks}} nie można było zmigrować lub są uszkodzone.",
     "Menu.Help.ClearSavedData.Title": "Wyczyść dane",
-    "Menu.Help.Documentation": "Dokumentacja",
     "Menu.Help.OpenLogs": "Otwórz dzienniki",
     "Menu.Help.SendFeedback": "Wyślij opinię",
     "Menu.MarkAsStart": "Oznacz jako początek",

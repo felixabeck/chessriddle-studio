@@ -1004,7 +1004,6 @@
     "Menu.Help.ClearSavedData.Confirm": "Möchtest du wirklich alle gespeicherten Daten löschen?",
     "Menu.Help.ClearSavedData.MigrationBlocked": "Gespeicherte Daten wurden nicht gelöscht, weil {{practiceData}} für {{decks}} nicht migriert werden konnten oder beschädigt sind.",
     "Menu.Help.ClearSavedData.Title": "Daten löschen",
-    "Menu.Help.Documentation": "Dokumentation",
     "Menu.Help.OpenLogs": "Protokolle öffnen",
     "Menu.Help.SendFeedback": "Feedback senden",
     "Menu.MarkAsStart": "Als Start markieren",

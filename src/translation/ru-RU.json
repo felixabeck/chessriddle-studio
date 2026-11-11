@@ -1030,7 +1030,6 @@
     "Menu.Help.ClearSavedData.Confirm": "Вы уверены, что хотите удалить все сохранённые данные?",
     "Menu.Help.ClearSavedData.MigrationBlocked": "Сохранённые данные не удалены: {{practiceData}} для {{decks}} не удалось перенести или они повреждены.",
     "Menu.Help.ClearSavedData.Title": "Очистить данные",
-    "Menu.Help.Documentation": "Документация",
     "Menu.Help.OpenLogs": "Открыть логи",
     "Menu.Help.SendFeedback": "Отправить отзыв",
     "Menu.MarkAsStart": "Отметить как начало",

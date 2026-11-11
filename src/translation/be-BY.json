@@ -1030,7 +1030,6 @@
     "Menu.Help.ClearSavedData.Confirm": "Вы ўпэўненыя, што хочаце выдаліць усе захаваныя даныя?",
     "Menu.Help.ClearSavedData.MigrationBlocked": "Захаваныя даныя не выдалены, бо {{practiceData}} для {{decks}} не ўдалося перанесці або яны пашкоджаны.",
     "Menu.Help.ClearSavedData.Title": "Ачысціць даныя",
-    "Menu.Help.Documentation": "Дакументацыя",
     "Menu.Help.OpenLogs": "Адкрыць логі",
     "Menu.Help.SendFeedback": "Адправіць водгук",
     "Menu.MarkAsStart": "Пазначыць як пачатковую",

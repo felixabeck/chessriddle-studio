@@ -34,7 +34,7 @@ test("settings-responsive: preserves keyboard focus at narrow 200% font scale", 
     await page.keyboard.press("ArrowDown");
     await expect(page.getByRole("menuitem", { name: /^help$/i })).toBeFocused();
     await page.keyboard.press("ArrowRight");
-    await expect(page.getByRole("menuitem", { name: /^documentation$/i })).toBeFocused();
+    await expect(page.getByRole("menuitem", { name: /^send feedback$/i })).toBeFocused();
     await page.keyboard.press("End");
     await expect(page.getByRole("menuitem", { name: /^about$/i })).toBeFocused();
     await page.keyboard.press("Enter");

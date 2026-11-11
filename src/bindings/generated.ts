@@ -213,18 +213,6 @@ async saveEngineLogs(text: string) : Promise<Result<null, ErrorPayload>> {
 }
 },
 /**
- * Opens the fixed project documentation URL without granting arbitrary URL authority to the
- * renderer.
- */
-async openDocumentation() : Promise<Result<null, ErrorPayload>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("open_documentation") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
  * Opens the application-owned log file without exposing its native path to the renderer.
  */
 async openAppLog() : Promise<Result<null, ErrorPayload>> {

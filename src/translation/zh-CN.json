@@ -991,7 +991,6 @@
     "Menu.Help.ClearSavedData.Confirm": "确定要清除所有已保存的数据吗？",
     "Menu.Help.ClearSavedData.MigrationBlocked": "由于无法迁移或数据已损坏，未清除 {{decks}} 的{{practiceData}}及其他已保存数据。",
     "Menu.Help.ClearSavedData.Title": "清除数据",
-    "Menu.Help.Documentation": "文档",
     "Menu.Help.OpenLogs": "打开日志",
     "Menu.Help.SendFeedback": "发送反馈",
     "Menu.MarkAsStart": "标记为起始",
