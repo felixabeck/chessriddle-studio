@@ -249,8 +249,9 @@ export async function createFile({
     listingCache: WorkspaceListingCache;
 }): Promise<Result<FileMetadata>> {
     try {
-        const expected = filename.toLowerCase();
-        const withoutPgn = expected.replace(/\.pgn$/i, "");
+        const trimmed = filename.trim();
+        const leaf = /\.pgn$/i.test(trimmed) ? trimmed : `${trimmed}.pgn`;
+        const listedName = leaf.replace(/(?:\.pgn)+$/, "");
         const entry = await runWithAppliedRecovery(
             () =>
                 tauri.createWorkspaceFile(
@@ -260,11 +261,14 @@ export async function createFile({
                     { type: filetype, tags: [] },
                     content ?? { kind: "text", pgn: makePgn(defaultGame()) },
                 ),
-            async () =>
-                (await tauri.listFileWorkspace(parent)).entries.find((candidate) => {
-                    const actual = candidate.name.toLowerCase();
-                    return actual === expected || actual === withoutPgn;
-                }),
+            async () => {
+                const matches = (await tauri.listFileWorkspace(parent)).entries.filter(
+                    (candidate) =>
+                        candidate.kind === "file" &&
+                        (candidate.name === listedName || candidate.name === leaf),
+                );
+                return matches.length === 1 ? matches[0] : undefined;
+            },
             () => reconcileWorkspaceListing(workspace, listingCache),
         );
         if (!entry.metadata || entry.gameCount === null)

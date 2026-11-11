@@ -532,6 +532,118 @@ test.each([
     },
 );
 
+test.each([
+    { filename: " game ", listedName: "game" },
+    { filename: " Foo.PGN ", listedName: "Foo.PGN" },
+    { filename: "Foo.pgn.pgn", listedName: "Foo" },
+])(
+    "recovers $filename using its native listed name $listedName",
+    async ({ filename, listedName }) => {
+        const workspace = { id: { id: "workspace" }, kind: "fileWorkspace" } as const;
+        const handle = { id: { id: "created" }, kind: "fileWorkspace" };
+        mocks.createWorkspaceFile.mockRejectedValueOnce(
+            new TauriCommandError({
+                tag: "backend-error",
+                category: "durability",
+                message: "Committed but durability uncertain: registry replacement",
+            }),
+        );
+        mocks.listFileWorkspace.mockResolvedValueOnce({
+            entries: [
+                {
+                    handle,
+                    kind: "file",
+                    name: listedName,
+                    children: [],
+                    metadata: { type: "game", tags: [] },
+                    gameCount: 1,
+                    lastModified: 42,
+                },
+            ],
+            unread: [],
+        });
+
+        const result = await createFile({
+            listingCache,
+            filename,
+            filetype: "game",
+            workspace,
+            parent: workspace,
+        });
+
+        expect(result.isOk).toBe(true);
+        expect(result.unwrap()).toMatchObject({ handle, name: listedName });
+    },
+);
+
+test.each([
+    {
+        scenario: "selects Foo after a pre-existing foo listed first",
+        entries: [
+            { name: "foo", kind: "file", id: "pre-existing" },
+            { name: "Foo", kind: "file", id: "created" },
+        ],
+        recovered: true,
+    },
+    {
+        scenario: "rejects a pre-existing foo without Foo",
+        entries: [{ name: "foo", kind: "file", id: "pre-existing" }],
+        recovered: false,
+    },
+    {
+        scenario: "rejects a directory named Foo",
+        entries: [{ name: "Foo", kind: "directory", id: "directory" }],
+        recovered: false,
+    },
+    {
+        scenario: "rejects multiple accepted file names",
+        entries: [
+            { name: "Foo", kind: "file", id: "created" },
+            { name: "Foo.pgn", kind: "file", id: "ambiguous" },
+        ],
+        recovered: false,
+    },
+])("createFile recovery $scenario", async ({ entries, recovered }) => {
+    const workspace = { id: { id: "workspace" }, kind: "fileWorkspace" } as const;
+    const parent = { id: { id: "parent" }, kind: "fileWorkspace" } as const;
+    const rejection = new TauriCommandError({
+        tag: "backend-error",
+        category: "durability",
+        message: "Committed but durability uncertain: registry replacement",
+    });
+    mocks.createWorkspaceFile.mockRejectedValueOnce(rejection);
+    mocks.listFileWorkspace.mockResolvedValueOnce({
+        entries: entries.map(({ id, name, kind }) => ({
+            handle: { id: { id }, kind: "fileWorkspace" },
+            kind,
+            name,
+            children: [],
+            metadata: kind === "file" ? { type: "game", tags: [] } : null,
+            gameCount: kind === "file" ? 1 : null,
+            lastModified: 42,
+        })),
+        unread: [],
+    });
+
+    const result = await createFile({
+        listingCache,
+        filename: "Foo.pgn",
+        filetype: "game",
+        workspace,
+        parent,
+    });
+
+    expect(result.isOk).toBe(recovered);
+    expect(result.isErr).toBe(!recovered);
+    expect(
+        result.unwrap(
+            (file) => file.handle.id.id,
+            (error) => error,
+        ),
+    ).toBe(recovered ? "created" : rejection);
+    expect(mocks.listFileWorkspace).toHaveBeenCalledExactlyOnceWith(parent);
+});
+
 describe("createFile content", () => {
     const workspace: FileWorkspaceHandle = {
         id: { id: "create-file-workspace" },
