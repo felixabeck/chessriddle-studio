@@ -11,7 +11,6 @@ import { trainingSettings } from "./chessRiddleTrainingSettings";
 import { trainingSummary } from "./chessRiddleTrainingSummary";
 import { createTreeStore, type TreeStore } from "./store/tree";
 import { defaultTree } from "@/utils/treeReducer";
-import { parseUci } from "chessops";
 import { produce } from "immer";
 import {
     MAX_TRAINING_SUBMISSION_PLIES,
@@ -375,10 +374,7 @@ export function createChessRiddleTrainingSessions(
                 return;
             }
             if (gate.existing !== undefined) tree.goToMove([...tree.position, gate.existing]);
-            else {
-                const move = parseUci(token);
-                if (move) tree.makeMove({ payload: move, changeHeaders: false });
-            }
+            else if (gate.move) tree.makeMove({ payload: gate.move, changeHeaders: false });
             if (entry.state.inputNotice) publish(entry, { inputNotice: null });
         },
         undo(tabId: string, path?: number[]) {

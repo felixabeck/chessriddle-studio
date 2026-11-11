@@ -7,6 +7,7 @@ import {
     type NotationRow,
 } from "./notationRows";
 import { defaultTree, getNodeAtPath, type TreeNode } from "@/utils/treeReducer";
+import { formatMoveNumber } from "@/utils/format";
 
 function variedTree() {
     const root = defaultTree().root;
@@ -40,6 +41,57 @@ function moveNames(rows: NotationRow[]) {
 }
 
 describe("buildNotationRows", () => {
+    test.each([false, true])(
+        "numbers a resumed black move after expanded and collapsed variations (analysis: %s)",
+        (analysis) => {
+            const tree = variedTree();
+            tree.e5.children.push(fixtureNode("Bc4", { halfMoves: 3 }));
+            if (analysis) tree.e5.gameEnd = {};
+            for (const collapsed of [false, true]) {
+                const model = buildNotationRows(tree.root, {
+                    tableView: false,
+                    showComments: false,
+                    showVariations: true,
+                    collapsedVariations: collapsed ? new Set([tree.e5]) : undefined,
+                });
+                const row = model.rows[model.rowForNode.get(tree.nc6)!];
+                expect(row).toMatchObject({
+                    type: "moves",
+                    depth: 0,
+                    moves: [
+                        { node: tree.nc6, first: true, analysis },
+                        { node: tree.bb5, first: false },
+                        { node: tree.a6, first: false },
+                    ],
+                });
+                if (row.type !== "moves") throw new Error("Expected inline notation");
+                const move = row.moves[0];
+                expect(
+                    `${move.first ? formatMoveNumber(move.node.halfMoves) : ""} ${move.node.san}`,
+                ).toBe("2... Nc6");
+            }
+        },
+    );
+
+    test("anchors resumed black numbering to a black-to-move root FEN", () => {
+        const root = defaultTree("8/8/8/8/8/8/8/K6k b - - 0 23").root;
+        const first = fixtureNode("Kh2", { halfMoves: root.halfMoves + 1 });
+        const white = fixtureNode("Ka2", { halfMoves: first.halfMoves + 1 });
+        const alternative = fixtureNode("Kb1", { halfMoves: white.halfMoves });
+        const resumed = fixtureNode("Kh3", { halfMoves: white.halfMoves + 1 });
+        root.children = [first];
+        first.children = [white, alternative];
+        white.children = [resumed];
+        const model = buildNotationRows(root, {
+            tableView: false,
+            showComments: false,
+            showVariations: true,
+        });
+        const row = model.rows[model.rowForNode.get(resumed)!];
+        expect(row).toMatchObject({ type: "moves", moves: [{ node: resumed, first: true }] });
+        expect(formatMoveNumber(resumed.halfMoves)).toBe("24...");
+    });
+
     test.each([false, true])(
         "places the end after its move, comment and alternatives before analysis (tableView: %s)",
         (tableView) => {

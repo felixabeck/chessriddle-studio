@@ -249,7 +249,7 @@ function appendInlineTasks(
                         parent: node,
                         childIndex: 0,
                         depth: task.depth,
-                        first: false,
+                        first: hasVariations,
                         variationParent: task.variationParent,
                     });
                 }

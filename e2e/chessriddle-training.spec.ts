@@ -1091,6 +1091,9 @@ for (const locale of ["en-US", "de-DE"] as const) {
                     .locator('[style*="--notation-variation-depth"]')
                     .filter({ hasText: /[B♗]c4/ });
                 await expect(sideLine).toBeVisible();
+                await expect(
+                    notation.getByRole("button", { name: /^[N♘]c6$/ }).locator(".."),
+                ).toHaveText(/^2\.\.\.[N♘]c6$/);
                 expect(
                     await sideLine.evaluate((element) => getComputedStyle(element).paddingLeft),
                 ).not.toBe("0px");
@@ -1137,6 +1140,12 @@ for (const locale of ["en-US", "de-DE"] as const) {
                 await expect(
                     page.locator("#bottomRight").getByRole("button", { name: /^[N♘]c6!$/ }),
                 ).toHaveCount(2);
+                await expect(
+                    notation
+                        .getByRole("button", { name: /^[N♘]c6!$/ })
+                        .first()
+                        .locator(".."),
+                ).toHaveText(/^2\.\.\.[N♘]c6!$/);
                 await page
                     .getByRole("button", { name: text("Training.NextPosition"), exact: true })
                     .click();

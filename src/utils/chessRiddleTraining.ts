@@ -1,4 +1,5 @@
-import { type Chess, makeUci, parseUci } from "chessops";
+import { type Chess, type Move, kingCastlesTo, makeUci, parseUci } from "chessops";
+import { castlingSide } from "chessops/chess";
 import { makeFen } from "chessops/fen";
 import { makeSan } from "chessops/san";
 import type { TrainingPuzzle, TrainingTreeNode, TrainingVerdict } from "@/bindings";
@@ -8,6 +9,9 @@ import { defaultTree, getBoardState, type TreeNode, type TreeState } from "./tre
 
 // Mirrors the native submission bound from the server contract.
 export const MAX_TRAINING_SUBMISSION_PLIES = 7;
+export const MAX_TRAINING_CHILDREN = 10;
+// Depth 7, one solver move and ten opponent replies: 1+10+10+100+100+1000+1000.
+export const MAX_TRAINING_SUBMISSION_NODES = 2221;
 // Mirrors the native duration bound from the server contract.
 export const MAX_TRAINING_DURATION_MS = 86_400_000;
 // Mirrors the native exclusion bound from the server contract.
@@ -23,7 +27,15 @@ function move(pos: Chess, token: string) {
     if (!/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(token)) throw new Error("Invalid training move");
     const parsed = parseUci(token);
     if (!parsed || !pos.isLegal(parsed)) throw new Error("Illegal training move");
-    return parsed;
+    return canonicalMove(pos, parsed);
+}
+
+/** The server expects standard king-destination UCI for either castling gesture. */
+function canonicalMove(pos: Chess, parsed: Move): Move {
+    const side = castlingSide(pos, parsed);
+    return side && "from" in parsed
+        ? { from: parsed.from, to: kingCastlesTo(pos.turn, side) }
+        : parsed;
 }
 
 /** Replay the opponent's entrance, anchored to the supplied root position. */
@@ -53,30 +65,20 @@ export function walkTrainingLine(fen: string, line: readonly string[]) {
     return steps;
 }
 
-export function trainingPosition(
-    puzzle: TrainingPuzzle,
-    line: readonly string[],
-    cursor = line.length,
-) {
-    if (!Number.isInteger(cursor) || cursor < 0 || cursor > line.length)
-        throw new Error("Invalid training cursor");
-    const pos = trainingDecision(puzzle);
-    for (const token of line.slice(0, cursor)) pos.play(move(pos, token));
-    return pos;
-}
-
 export function trainingDepth(node: TreeNode): number {
     return node.children.length ? 1 + Math.max(...node.children.map(trainingDepth)) : 0;
 }
 
 /** The server uses a move-bearing root, Studio uses a decision-position root. */
 export function trainingSubmissionTree(root: TreeNode): TrainingTreeNode {
-    const encode = (node: TreeNode): TrainingTreeNode =>
+    const encode = (node: TreeNode, parentFen: string): TrainingTreeNode =>
         Object.freeze({
-            move: node.move ? makeUci(node.move) : "",
-            children: Object.freeze(node.children.map(encode)) as TrainingTreeNode[],
+            move: node.move ? makeUci(canonicalMove(position(parentFen), node.move)) : "",
+            children: Object.freeze(
+                node.children.map((child) => encode(child, node.fen)),
+            ) as TrainingTreeNode[],
         });
-    return encode(root.children[0] ?? root);
+    return encode(root.children[0] ?? root, root.fen);
 }
 
 export function trainingNeedsConfirmation(root: TreeNode, depth = 0): boolean {
@@ -104,16 +106,18 @@ export function trainingMoveNotice(
 ) {
     let node = tree.root;
     for (const index of tree.position) node = node.children[index];
+    const pos = position(node.fen);
+    const parsed = move(pos, token);
+    const uci = makeUci(parsed);
     const existing = node.children.findIndex(
-        (child) => child.move && makeUci(child.move) === token,
+        (child) => child.move && makeUci(canonicalMove(pos, child.move)) === uci,
     );
     if (existing >= 0) return { existing };
     if (tree.position.length % 2 === 0 && node.children.length)
         return { notice: "oneSolverMove" as const };
-    if (tree.position.length >= cap || node.children.length >= 10)
+    if (tree.position.length >= cap || node.children.length >= MAX_TRAINING_CHILDREN)
         return { notice: "inputLimit" as const };
-    move(position(node.fen), token);
-    return {};
+    return { move: parsed };
 }
 
 /** Optional annotations degrade independently of the already committed verdict. */
@@ -137,7 +141,13 @@ export function trainingVerdictTree(
         const [pos] = positionFromFen(parent.fen);
         if (!parsed || !pos?.isLegal(parsed)) return;
         tree.position = path;
-        makeMove({ state: tree, move: parsed, last: false, sound: false, changeHeaders: false });
+        makeMove({
+            state: tree,
+            move: canonicalMove(pos, parsed),
+            last: false,
+            sound: false,
+            changeHeaders: false,
+        });
         const child = follow(tree.position);
         if (child && !child.nags.includes(2)) child.nags = [1];
         return [...tree.position];
@@ -146,7 +156,15 @@ export function trainingVerdictTree(
     if (serverPath && verdict.incorrectMove && verdict.correctMove) {
         const path = serverPath.length === 1 && serverPath[0] === -1 ? [0] : [0, ...serverPath];
         const wrong = follow(path);
-        if (wrong?.move && makeUci(wrong.move) === verdict.incorrectMove) {
+        const parent = follow(path.slice(0, -1));
+        const parsed = parseUci(verdict.incorrectMove);
+        const [pos] = positionFromFen(parent?.fen ?? "");
+        if (
+            wrong?.move &&
+            parsed &&
+            pos?.isLegal(parsed) &&
+            makeUci(canonicalMove(pos, wrong.move)) === makeUci(canonicalMove(pos, parsed))
+        ) {
             const correction = add(path.slice(0, -1), verdict.correctMove);
             if (correction) wrong.nags = [2];
         }
@@ -160,13 +178,6 @@ export function trainingVerdictTree(
     return tree;
 }
 
-export function trainingSan(puzzle: TrainingPuzzle, line: readonly string[]): string[] {
-    trainingDecision(puzzle);
-    return walkTrainingLine(puzzle.decisionFen, line)
-        .slice(1)
-        .map((step) => step.san);
-}
-
 /** Build the analysis mainline locally, without crossing the native PGN lexer. */
 export function trainingAnalysisTree(puzzle: TrainingPuzzle, line: readonly string[]) {
     const steps = walkTrainingLine(puzzle.decisionFen, line);
@@ -177,7 +188,7 @@ export function trainingAnalysisTree(puzzle: TrainingPuzzle, line: readonly stri
         const step = steps[index + 1];
         const child = {
             ...defaultTree(step.fen).root,
-            move: parseUci(line[index]) ?? null,
+            move: move(position(parent.fen), line[index]),
             san: step.san,
         };
         parent.children = [child];

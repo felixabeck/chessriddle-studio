@@ -1,11 +1,11 @@
-import { INITIAL_FEN, makeFen } from "chessops/fen";
+import { makeUci, parseUci } from "chessops";
+import { INITIAL_FEN } from "chessops/fen";
 import { expect, test, vi } from "vitest";
 import type { TrainingPuzzle } from "@/bindings";
 import {
     canSubmitTraining,
     trainingDecision,
-    trainingPosition,
-    trainingSan,
+    trainingSubmissionTree,
     walkTrainingLine,
     trainingAnalysisTree,
     trainingMoveNotice,
@@ -50,8 +50,13 @@ test("entrance replay and SAN are anchored to Black and the FEN move number", ()
         ["black", 20],
         ["white", 21],
     ]);
-    expect(trainingSan(custom, ["e7e5", "g1f3", "b8c6"])).toEqual(["e5", "Nf3", "Nc6"]);
-    expect(makeFen(trainingPosition(custom, ["e7e5"], 0).toSetup())).toBe(custom.decisionFen);
+    const tree = trainingAnalysisTree(custom, ["e7e5", "g1f3", "b8c6"]);
+    expect([...treeIteratorMainLine(tree.root)].slice(1).map(({ node }) => node.san)).toEqual([
+        "e5",
+        "Nf3",
+        "Nc6",
+    ]);
+    expect(tree.root.fen).toBe(custom.decisionFen);
 });
 
 test("tree input gate navigates existing moves and enforces solver, depth and child limits", () => {
@@ -59,12 +64,12 @@ test("tree input gate navigates existing moves and enforces solver, depth and ch
     expect(trainingMoveNotice(tree, "e7e5", 3)).toEqual({ existing: 0 });
     expect(trainingMoveNotice(tree, "c7c5", 3)).toEqual({ notice: "oneSolverMove" });
     tree.position = [0];
-    expect(trainingMoveNotice(tree, "f1c4", 3)).toEqual({});
+    expect(trainingMoveNotice(tree, "f1c4", 3)).toEqual({ move: parseUci("f1c4") });
     tree.position = [0, 0];
     expect(trainingMoveNotice(tree, "g8f6", 3)).toEqual({ notice: "oneSolverMove" });
     tree.position = [0, 0, 0];
     expect(trainingMoveNotice(tree, "f1c4", 3)).toEqual({ notice: "inputLimit" });
-    expect(trainingMoveNotice(tree, "f1c4", 7)).toEqual({});
+    expect(trainingMoveNotice(tree, "f1c4", 7)).toEqual({ move: parseUci("f1c4") });
     expect(canSubmitTraining(tree, 3)).toBe(true);
     expect(canSubmitTraining(tree, 4)).toBe(false);
     expect(trainingDepth(tree.root)).toBe(3);
@@ -77,7 +82,6 @@ test("tree input gate navigates existing moves and enforces solver, depth and ch
     tree.root.children[0].children = Array(10).fill(tree.root.children[0].children[0]);
     tree.position = [0];
     expect(trainingMoveNotice(tree, "d2d4", 7)).toEqual({ notice: "inputLimit" });
-    expect(() => trainingPosition(puzzle, [], 1)).toThrow("Invalid training cursor");
     expect(() => trainingDecision({ ...puzzle, entranceMove: "e2e5" })).toThrow(
         "Illegal training move",
     );
@@ -127,6 +131,24 @@ test("promotions, en passant and castling use chess legality", () => {
     expect(walkTrainingLine("4k3/P7/8/8/8/8/8/4K3 w - - 0 1", ["a7a8n"])[1].san).toBe("a8=N");
     expect(walkTrainingLine("4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 2", ["e5d6"])[1].san).toBe("exd6");
     expect(walkTrainingLine("4k3/8/8/8/8/8/8/4K2R w K - 0 1", ["e1g1"])[1].san).toBe("O-O");
+});
+
+test.each([
+    ["4k3/8/8/8/8/8/8/4K2R w K - 0 1", "e1g1", "e1h1"],
+    ["4k3/8/8/8/8/8/8/R3K3 w Q - 0 1", "e1c1", "e1a1"],
+    ["4k2r/8/8/8/8/8/8/4K3 b k - 0 1", "e8g8", "e8h8"],
+    ["r3k3/8/8/8/8/8/8/4K3 b q - 0 1", "e8c8", "e8a8"],
+])("castling gestures share canonical tree identity from %s", (fen, standard, rook) => {
+    for (const token of [standard, rook]) {
+        const tree = trainingAnalysisTree({ ...puzzle, decisionFen: fen }, [token]);
+        expect(makeUci(tree.root.children[0].move!)).toBe(standard);
+        for (const gesture of [standard, rook])
+            expect(trainingMoveNotice(tree, gesture, 7)).toEqual({ existing: 0 });
+        expect(trainingSubmissionTree(tree.root)).toEqual({ move: standard, children: [] });
+        // Submission also canonicalizes a tree built by a generic board consumer.
+        tree.root.children[0].move = parseUci(rook)!;
+        expect(trainingSubmissionTree(tree.root)).toEqual({ move: standard, children: [] });
+    }
 });
 
 test.each([

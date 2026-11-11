@@ -7,6 +7,9 @@ use specta::Type;
 
 // Mirrors the server submission contract.
 pub(crate) const MAX_TRAINING_SUBMISSION_PLIES: usize = 7;
+const MAX_TRAINING_CHILDREN: usize = 10;
+// Depth 7, one solver move and ten opponent replies: 1+10+10+100+100+1000+1000.
+const MAX_TRAINING_SUBMISSION_NODES: usize = 2221;
 // Mirrors the server duration contract.
 pub(crate) const MAX_TRAINING_DURATION_MS: u32 = 86_400_000;
 // Mirrors the server exclusion contract.
@@ -207,10 +210,11 @@ fn uci(token: &str) -> Result<UciMove, AccountError> {
     token.parse().map_err(|_| AccountError::Server)
 }
 
-fn play(pos: &mut Chess, token: &str) -> Result<(), AccountError> {
+fn play(pos: &mut Chess, token: &str) -> Result<String, AccountError> {
     let mv = uci(token)?.to_move(pos).map_err(|_| AccountError::Server)?;
+    let canonical = UciMove::from_standard(&mv).to_string();
     pos.play_unchecked(&mv);
-    Ok(())
+    Ok(canonical)
 }
 
 pub(crate) fn puzzle(
@@ -302,37 +306,43 @@ pub(crate) fn submit_body(request: &TrainingSubmission) -> Result<SubmitBody, Ac
         mut pos: Chess,
         depth: usize,
         count: &mut usize,
-    ) -> Result<(), AccountError> {
+    ) -> Result<TrainingTreeNode, AccountError> {
         *count += 1;
         // Seven plies, one solver continuation and at most ten opponent replies.
         if depth > MAX_TRAINING_SUBMISSION_PLIES
-            || *count > 2221
-            || node.children.len() > 10
+            || *count > MAX_TRAINING_SUBMISSION_NODES
+            || node.children.len() > MAX_TRAINING_CHILDREN
             || (depth.is_multiple_of(2) && node.children.len() > 1)
         {
             return Err(AccountError::InvalidRequest);
         }
-        play(&mut pos, &node.r#move).map_err(|_| AccountError::InvalidRequest)?;
-        for (index, child) in node.children.iter().enumerate() {
-            if node.children[..index]
+        let canonical = play(&mut pos, &node.r#move).map_err(|_| AccountError::InvalidRequest)?;
+        let mut children: Vec<TrainingTreeNode> = Vec::with_capacity(node.children.len());
+        for child in &node.children {
+            let child = validate(child, pos.clone(), depth + 1, count)?;
+            if children
                 .iter()
                 .any(|sibling| sibling.r#move == child.r#move)
             {
                 return Err(AccountError::InvalidRequest);
             }
-            validate(child, pos.clone(), depth + 1, count)?;
+            children.push(child);
         }
-        Ok(())
+        Ok(TrainingTreeNode {
+            r#move: canonical,
+            children,
+        })
     }
-    if request.tree.r#move.is_empty() {
+    let variation_tree = if request.tree.r#move.is_empty() {
         if !request.solution_shown || !request.tree.children.is_empty() {
             return Err(AccountError::InvalidRequest);
         }
+        request.tree.clone()
     } else {
-        validate(&request.tree, pos, 1, &mut 0)?;
-    }
+        validate(&request.tree, pos, 1, &mut 0)?
+    };
     Ok(SubmitBody {
-        variation_tree: request.tree.clone(),
+        variation_tree,
         time_taken_ms: request.elapsed_ms,
         is_rated: request.source == TrainingSource::Tactics && !request.solution_shown,
         solution_shown: request.solution_shown,
@@ -451,7 +461,9 @@ pub(crate) fn verdict(body: &[u8], decision_fen: &str) -> Result<TrainingVerdict
             ((path == [-1])
                 || (!path.is_empty()
                     && path.len() < MAX_TRAINING_SUBMISSION_PLIES
-                    && path.iter().all(|index| (0..10).contains(index))))
+                    && path.iter().all(|index| {
+                        usize::try_from(*index).is_ok_and(|index| index < MAX_TRAINING_CHILDREN)
+                    })))
             .then_some(path)
         }),
     })
@@ -728,11 +740,8 @@ mod tests {
         let valid = request.tree.clone();
         let mut second_solver = valid.clone();
         second_solver.children[0].children.push(chain(&["g8f6"]));
-        let mut eleven = valid.clone();
-        eleven.children = vec![chain(&["g1f3"]); 11];
         for tree in [
             second_solver,
-            eleven,
             chain(&[
                 "e7e5", "g1f3", "b8c6", "f1c4", "g8f6", "d2d3", "f8c5", "e1g1",
             ]),
@@ -740,6 +749,82 @@ mod tests {
             chain(&[]),
         ] {
             request.tree = tree;
+            assert!(matches!(
+                submit_body(&request),
+                Err(AccountError::InvalidRequest)
+            ));
+        }
+    }
+
+    #[test]
+    fn submission_child_limit_rejects_eleven_distinct_legal_replies() {
+        let mut request = request();
+        let replies = [
+            "a2a3", "a2a4", "b2b3", "b2b4", "c2c3", "c2c4", "d2d3", "d2d4", "f2f3", "f2f4", "g1f3",
+        ];
+        let mut pos = position(&request.decision_fen).unwrap();
+        play(&mut pos, &request.tree.r#move).unwrap();
+        for reply in replies {
+            assert!(play(&mut pos.clone(), reply).is_ok(), "{reply}");
+        }
+        request.tree.children = replies[..MAX_TRAINING_CHILDREN]
+            .iter()
+            .map(|reply| chain(&[reply]))
+            .collect();
+        assert!(submit_body(&request).is_ok());
+        request
+            .tree
+            .children
+            .push(chain(&[replies[MAX_TRAINING_CHILDREN]]));
+        assert!(matches!(
+            submit_body(&request),
+            Err(AccountError::InvalidRequest)
+        ));
+    }
+
+    #[test]
+    fn submission_rejects_duplicate_siblings() {
+        let mut request = request();
+        request.tree.children = vec![chain(&["g1f3"]); 2];
+        assert!(matches!(
+            submit_body(&request),
+            Err(AccountError::InvalidRequest)
+        ));
+    }
+
+    #[test]
+    fn submission_canonicalizes_both_castling_gestures() {
+        for (fen, standard, rook) in [
+            ("4k3/8/8/8/8/8/8/4K2R w K - 0 1", "e1g1", "e1h1"),
+            ("4k3/8/8/8/8/8/8/R3K3 w Q - 0 1", "e1c1", "e1a1"),
+            ("4k2r/8/8/8/8/8/8/4K3 b k - 0 1", "e8g8", "e8h8"),
+            ("r3k3/8/8/8/8/8/8/4K3 b q - 0 1", "e8c8", "e8a8"),
+        ] {
+            for gesture in [standard, rook] {
+                let mut request = request();
+                request.decision_fen = fen.into();
+                request.tree = chain(&[gesture]);
+                assert_eq!(
+                    submit_body(&request).unwrap().variation_tree.r#move,
+                    standard
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn submission_rejects_castling_aliases_as_duplicate_siblings() {
+        let mut request = request();
+        request.decision_fen = "4k3/8/8/8/8/8/8/4K2R b K - 0 1".into();
+        request.tree = chain(&["e8d8", "e1g1"]);
+        assert!(submit_body(&request).is_ok());
+        request.tree.children = vec![chain(&["e1h1"])];
+        assert_eq!(
+            submit_body(&request).unwrap().variation_tree.children[0].r#move,
+            "e1g1"
+        );
+        for gestures in [["e1g1", "e1h1"], ["e1h1", "e1g1"]] {
+            request.tree.children = gestures.iter().map(|gesture| chain(&[gesture])).collect();
             assert!(matches!(
                 submit_body(&request),
                 Err(AccountError::InvalidRequest)

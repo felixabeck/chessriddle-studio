@@ -108,7 +108,6 @@ function CompleteMoveCell({
 }: CompleteMoveCellProps) {
   const store = useContext(TreeStateContext)!;
   const moveActions = useContext(NotationMoveActionsContext);
-  const { t } = useTranslation();
   const state = store.getState();
   const path = useMemo(() => pathForNotationNode(nodeIndex, node) ?? [], [node, nodeIndex]);
   const isCurrentVariation = providedIsCurrentVariation ?? node === state.currentNode();
@@ -171,25 +170,16 @@ function CompleteMoveCell({
           <Menu opened onClose={() => setOpen(false)} width={200}>
             <Menu.Target>{moveCell}</Menu.Target>
             <Menu.Dropdown>
-              <Menu.Item
-                leftSection={<ArrowUpRight size="0.875rem" />}
-                onClick={() => {
-                  if (store.getState().root === root) moveActions.promote(path);
+              <MoveActionItems
+                actions={{
+                  promote: () => moveActions.promote(path),
+                  delete: () => moveActions.delete(path),
+                }}
+                onAction={(action) => {
+                  if (store.getState().root === root) action();
                   setOpen(false);
                 }}
-              >
-                {t("Menu.PromoteVariation")}
-              </Menu.Item>
-              <Menu.Item
-                color="danger"
-                leftSection={<Trash2 size="0.875rem" />}
-                onClick={() => {
-                  if (store.getState().root === root) moveActions.delete(path);
-                  setOpen(false);
-                }}
-              >
-                {t("Menu.DeleteMove")}
-              </Menu.Item>
+              />
             </Menu.Dropdown>
           </Menu>
         ) : open && move && moveActions === undefined && store.getState().root === root ? (
@@ -238,6 +228,73 @@ function TranspositionAction({ onClick }: { onClick: () => void }) {
   );
 }
 
+type MoveMenuActions = {
+  markGameEnd?: () => void;
+  markStart?: () => void;
+  promoteToMainline?: () => void;
+  promote: () => void;
+  copy?: () => void;
+  delete: () => void;
+};
+
+function MoveActionItems({
+  actions,
+  isGameEnd,
+  onAction,
+}: {
+  actions: MoveMenuActions;
+  isGameEnd?: boolean;
+  onAction: (action: () => void) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {actions.markGameEnd && (
+        <Menu.Item
+          leftSection={<Flag size="0.875rem" />}
+          onClick={() => onAction(actions.markGameEnd!)}
+        >
+          {isGameEnd ? t("Notation.ClearGameEnd") : t("Notation.MarkGameEndHere")}
+        </Menu.Item>
+      )}
+      {actions.markStart && (
+        <Menu.Item
+          leftSection={<Flag size="0.875rem" />}
+          onClick={() => onAction(actions.markStart!)}
+        >
+          {t("Menu.MarkAsStart")}
+        </Menu.Item>
+      )}
+      {actions.promoteToMainline && (
+        <Menu.Item
+          leftSection={<ArrowUpRight size="0.875rem" />}
+          onClick={() => onAction(actions.promoteToMainline!)}
+        >
+          {t("Menu.PromoteToMainLine")}
+        </Menu.Item>
+      )}
+      <Menu.Item
+        leftSection={<ArrowUpRight size="0.875rem" />}
+        onClick={() => onAction(actions.promote)}
+      >
+        {t("Menu.PromoteVariation")}
+      </Menu.Item>
+      {actions.copy && (
+        <Menu.Item leftSection={<Copy size="0.875rem" />} onClick={() => onAction(actions.copy!)}>
+          {t("Menu.CopyVariationPGN")}
+        </Menu.Item>
+      )}
+      <Menu.Item
+        color="danger"
+        leftSection={<Trash2 size="0.875rem" />}
+        onClick={() => onAction(actions.delete)}
+      >
+        {t("Menu.DeleteMove")}
+      </Menu.Item>
+    </>
+  );
+}
+
 function OpenMoveMenu({
   store,
   root,
@@ -265,7 +322,6 @@ function OpenMoveMenu({
 }) {
   const [currentTab] = useOwnerTab();
   const tabFile = getTabFile(currentTab);
-  const { t } = useTranslation();
   const actions = store.getState();
   const mainline = path.length > 0 && path.every((index) => index === 0);
   const isGameEnd = equal(getEffectiveGameEnd(root)?.position, path);
@@ -291,72 +347,29 @@ function OpenMoveMenu({
         />
       </Menu.Target>
       <Menu.Dropdown>
-        {currentTab && mainline && (
-          <Menu.Item
-            leftSection={<Flag size="0.875rem" />}
-            onClick={() => {
-              if (store.getState().root !== root) return;
-              if (isGameEnd) actions.clearGameEnd();
-              else actions.setGameEnd(path);
-              onClose();
-            }}
-          >
-            {isGameEnd ? t("Notation.ClearGameEnd") : t("Notation.MarkGameEndHere")}
-          </Menu.Item>
-        )}
-        {tabFile?.metadata.type === "repertoire" && (
-          <Menu.Item
-            leftSection={<Flag size="0.875rem" />}
-            onClick={() => {
-              if (store.getState().root !== root) return;
-              actions.setStart(path);
-              onClose();
-            }}
-          >
-            {t("Menu.MarkAsStart")}
-          </Menu.Item>
-        )}
-        <Menu.Item
-          leftSection={<ArrowUpRight size="0.875rem" />}
-          onClick={() => {
+        <MoveActionItems
+          actions={{
+            markGameEnd:
+              currentTab && mainline
+                ? () => {
+                    if (isGameEnd) actions.clearGameEnd();
+                    else actions.setGameEnd(path);
+                  }
+                : undefined,
+            markStart:
+              tabFile?.metadata.type === "repertoire" ? () => actions.setStart(path) : undefined,
+            promoteToMainline: () => actions.promoteToMainline(path),
+            promote: () => actions.promoteVariation(path),
+            copy: () => actions.copyVariationPgn(path),
+            delete: () => actions.deleteMove(path),
+          }}
+          isGameEnd={isGameEnd}
+          onAction={(action) => {
             if (store.getState().root !== root) return;
-            actions.promoteToMainline(path);
+            action();
             onClose();
           }}
-        >
-          {t("Menu.PromoteToMainLine")}
-        </Menu.Item>
-        <Menu.Item
-          leftSection={<ArrowUpRight size="0.875rem" />}
-          onClick={() => {
-            if (store.getState().root !== root) return;
-            actions.promoteVariation(path);
-            onClose();
-          }}
-        >
-          {t("Menu.PromoteVariation")}
-        </Menu.Item>
-        <Menu.Item
-          leftSection={<Copy size="0.875rem" />}
-          onClick={() => {
-            if (store.getState().root !== root) return;
-            actions.copyVariationPgn(path);
-            onClose();
-          }}
-        >
-          {t("Menu.CopyVariationPGN")}
-        </Menu.Item>
-        <Menu.Item
-          color="danger"
-          leftSection={<Trash2 size="0.875rem" />}
-          onClick={() => {
-            if (store.getState().root !== root) return;
-            actions.deleteMove(path);
-            onClose();
-          }}
-        >
-          {t("Menu.DeleteMove")}
-        </Menu.Item>
+        />
       </Menu.Dropdown>
     </Menu>
   );

@@ -70,7 +70,10 @@ vi.mock("@mantine/core", () => {
   };
 });
 
-import CompleteMoveCell from "./CompleteMoveCell";
+import CompleteMoveCell, {
+  NotationMoveActionsContext,
+  type NotationMoveActions,
+} from "./CompleteMoveCell";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -254,6 +257,100 @@ test.each([
     expect(actions.deleteMove).toHaveBeenCalledWith(expectedPath);
     expect(host.querySelectorAll('[data-menu="true"]').length).toBe(0);
     expect(actions.setStart).not.toHaveBeenCalledWith([1]);
+  },
+);
+
+test.each(["training", "disabled", "default"] as const)(
+  "%s capability exposes only its allowed move actions and routes callbacks",
+  async (capability) => {
+    const tree = defaultTree();
+    const node = createNode({
+      fen: "move b - - 0 1",
+      move: parseUci("e2e4")!,
+      san: "e4",
+      halfMoves: 1,
+    });
+    tree.root.children = [node];
+    const store = createTreeStore();
+    const storeActions = {
+      promoteVariation: vi.fn(),
+      deleteMove: vi.fn(),
+      promoteToMainline: vi.fn(),
+      copyVariationPgn: vi.fn(),
+      setStart: vi.fn(),
+      setGameEnd: vi.fn(),
+    };
+    store.setState({ root: tree.root, ...storeActions });
+    const sessionActions = { promote: vi.fn(), delete: vi.fn() };
+    const actions =
+      capability === "training" ? sessionActions : capability === "disabled" ? false : undefined;
+    const index = createNotationNodeIndex(tree.root);
+    const render = async (moveActions: NotationMoveActions | undefined) => {
+      await act(async () =>
+        root.render(
+          <TreeStateContext.Provider value={store}>
+            <WorkspaceTabScope tabId="tab">
+              <NotationMoveActionsContext.Provider value={moveActions}>
+                <CompleteMoveCell
+                  node={node}
+                  nodeIndex={index}
+                  root={tree.root}
+                  halfMoves={1}
+                  move="e4"
+                  fen={node.fen}
+                  comment=""
+                  annotations={[]}
+                  showComments={false}
+                />
+              </NotationMoveActionsContext.Provider>
+            </WorkspaceTabScope>
+          </TreeStateContext.Provider>,
+        ),
+      );
+    };
+    const openMenu = async () => {
+      await act(async () =>
+        host
+          .querySelector("[data-move]")!
+          .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
+      );
+    };
+    const items = () => [...host.querySelectorAll<HTMLButtonElement>("[data-menu-item]")];
+    await render(actions);
+    await openMenu();
+    const labels =
+      capability === "disabled"
+        ? []
+        : capability === "training"
+          ? ["Menu.PromoteVariation", "Menu.DeleteMove"]
+          : [
+              "Notation.MarkGameEndHere",
+              "Menu.MarkAsStart",
+              "Menu.PromoteToMainLine",
+              "Menu.PromoteVariation",
+              "Menu.CopyVariationPGN",
+              "Menu.DeleteMove",
+            ];
+    expect(items().map((item) => item.textContent)).toEqual(labels);
+    for (const label of labels) {
+      await act(async () =>
+        items()
+          .find((item) => item.textContent === label)!
+          .click(),
+      );
+      expect(items()).toHaveLength(0);
+      await openMenu();
+    }
+    expect(sessionActions.promote.mock.calls).toEqual(capability === "training" ? [[[0]]] : []);
+    expect(sessionActions.delete.mock.calls).toEqual(capability === "training" ? [[[0]]] : []);
+    for (const action of Object.values(storeActions)) {
+      expect(action.mock.calls).toEqual(capability === "default" ? [[[0]]] : []);
+    }
+    // Submitting or receiving a verdict disables an already-open solving menu too.
+    await render(false);
+    expect(items()).toHaveLength(0);
+    await openMenu();
+    expect(items()).toHaveLength(0);
   },
 );
 

@@ -1,4 +1,5 @@
 import { trainingSubmissionTree } from "@/utils/chessRiddleTraining";
+import { makeUci } from "chessops";
 import { INITIAL_FEN } from "chessops/fen";
 import { expect, test, vi } from "vitest";
 import type { TrainingPuzzle, TrainingVerdict } from "@/bindings";
@@ -217,6 +218,40 @@ test.each(["notConnected", "authentication", "invalidGrant"])(
 function fill(sessions: ReturnType<typeof fixture>["sessions"]) {
     for (const token of ["e7e5", "g1f3", "b8c6"]) sessions.append("tab", token);
 }
+
+test.each(["e1g1", "e1h1"])(
+    "castling entry %s stores and submits standard UCI and both gestures revisit its node",
+    async (firstGesture) => {
+        const { api, sessions } = fixture();
+        api.chessriddleTrainingNext.mockResolvedValueOnce({
+            ...puzzle,
+            preEntranceFen: "5k2/8/8/8/8/8/8/4K2R b K - 0 1",
+            entranceMove: "f8e8",
+            decisionFen: "4k3/8/8/8/8/8/8/4K2R w K - 1 2",
+            sideToMove: "white",
+            solutionPlyCount: 1,
+        });
+        await sessions.next("tab");
+        sessions.append("tab", firstGesture);
+        const store = sessions.get("tab")!.treeStore!;
+        expect(makeUci(store.getState().root.children[0].move!)).toBe("e1g1");
+        expect(store.getState().root.children[0].san).toBe("O-O");
+        for (const gesture of ["e1g1", "e1h1"]) {
+            store.getState().goToStart();
+            sessions.append("tab", gesture);
+            expect(store.getState().position).toEqual([0]);
+            expect(store.getState().root.children).toHaveLength(1);
+            expect(sessions.get("tab")?.inputNotice).toBeNull();
+        }
+        await sessions.submit("tab");
+        expect(api.chessriddleTrainingSubmit).toHaveBeenCalledOnce();
+        expect(api.chessriddleTrainingSubmit.mock.calls[0][0].tree).toEqual({
+            move: "e1g1",
+            children: [],
+        });
+        sessions.remove("tab");
+    },
+);
 
 test("a session and an in-flight submit survive view unmount and remount", async () => {
     const { api, sessions } = fixture();
