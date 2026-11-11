@@ -434,6 +434,79 @@ describe("startup update check", () => {
     expect(mocks.ask).not.toHaveBeenCalled();
   });
 
+  test("closes an update delivered after unmount before timeout without prompting", async () => {
+    vi.useFakeTimers();
+    mockLaunchWithoutCliFile();
+    const update = mockUpdate();
+    let resolveCheck: (value: typeof update) => void = () => undefined;
+    mocks.check.mockReturnValue(
+      new Promise<typeof update>((resolve) => {
+        resolveCheck = resolve;
+      }),
+    );
+
+    await act(async () => root.render(<Probe />));
+    expect(mocks.closeSplashscreen).toHaveBeenCalledOnce();
+    expect(mocks.check).toHaveBeenCalledOnce();
+
+    await act(async () => root.unmount());
+    await act(async () => vi.advanceTimersByTimeAsync(UPDATE_CHECK_TIMEOUT_MS - 1));
+    expect(update.close).not.toHaveBeenCalled();
+    await act(async () => resolveCheck(update));
+
+    expect(update.close).toHaveBeenCalledOnce();
+    expect(mocks.ask).not.toHaveBeenCalled();
+    expect(update.downloadAndInstall).not.toHaveBeenCalled();
+    expect(mocks.relaunch).not.toHaveBeenCalled();
+  });
+
+  test.each([false, true])(
+    "closes an update delivered after timeout without prompting (unmounted: %s)",
+    async (unmount) => {
+      vi.useFakeTimers();
+      mockLaunchWithoutCliFile();
+      const update = mockUpdate();
+      let resolveCheck: (value: typeof update) => void = () => undefined;
+      mocks.check.mockReturnValue(
+        new Promise<typeof update>((resolve) => {
+          resolveCheck = resolve;
+        }),
+      );
+
+      await act(async () => root.render(<Probe />));
+      await act(async () => vi.advanceTimersByTimeAsync(UPDATE_CHECK_TIMEOUT_MS));
+
+      expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining("Update check failed"));
+      expect(update.close).not.toHaveBeenCalled();
+      if (unmount) await act(async () => root.unmount());
+      await act(async () => resolveCheck(update));
+
+      expect(update.close).toHaveBeenCalledOnce();
+      expect(mocks.ask).not.toHaveBeenCalled();
+      expect(update.downloadAndInstall).not.toHaveBeenCalled();
+      expect(mocks.relaunch).not.toHaveBeenCalled();
+    },
+  );
+
+  test("handles a check rejection delivered after timeout", async () => {
+    vi.useFakeTimers();
+    mockLaunchWithoutCliFile();
+    let rejectCheck: (error: Error) => void = () => undefined;
+    mocks.check.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectCheck = reject;
+      }),
+    );
+
+    await act(async () => root.render(<Probe />));
+    await act(async () => vi.advanceTimersByTimeAsync(UPDATE_CHECK_TIMEOUT_MS));
+    await act(async () => rejectCheck(new Error("late network failure")));
+
+    expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining("Update check failed"));
+    expect(mocks.ask).not.toHaveBeenCalled();
+    expect(mocks.relaunch).not.toHaveBeenCalled();
+  });
+
   test("warns and continues when the check fails", async () => {
     mockLaunchWithoutCliFile();
     mocks.check.mockRejectedValue(new Error("latest.json missing"));
@@ -466,6 +539,7 @@ describe("startup update check", () => {
 
     expect(update.downloadAndInstall).toHaveBeenCalledOnce();
     expect(mocks.relaunch).toHaveBeenCalledOnce();
+    expect(update.close).toHaveBeenCalledOnce();
     expect(update.downloadAndInstall.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.relaunch.mock.invocationCallOrder[0],
     );
@@ -473,7 +547,7 @@ describe("startup update check", () => {
 
   test("notifies the user and does not relaunch when the install fails", async () => {
     mockLaunchWithoutCliFile();
-    mockUpdate(() => Promise.reject(new Error("signature mismatch")));
+    const update = mockUpdate(() => Promise.reject(new Error("signature mismatch")));
     mocks.ask.mockResolvedValue(true);
 
     await act(async () => root.render(<Probe />));
@@ -485,6 +559,7 @@ describe("startup update check", () => {
       }),
     );
     expect(mocks.relaunch).not.toHaveBeenCalled();
+    expect(update.close).toHaveBeenCalledOnce();
   });
 
   test("does not relaunch when the install settles after unmount", async () => {
@@ -506,6 +581,7 @@ describe("startup update check", () => {
 
     expect(mocks.relaunch).not.toHaveBeenCalled();
     expect(mocks.showNotification).not.toHaveBeenCalled();
+    expect(update.close).toHaveBeenCalledOnce();
   });
 
   test("skips the check when startup was cancelled", async () => {

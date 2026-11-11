@@ -114,12 +114,22 @@ async function installUpdate(update: Update, signal: AbortSignal) {
   await relaunch();
 }
 
+function closeUpdate(update: Update | null) {
+  if (!update) return;
+  void update.close().catch((e) => warn(`Failed to release update handle: ${e}`));
+}
+
 /** Runs after the splash is closed and never blocks it; every failure ends in `warn`. */
 async function checkForAppUpdate(signal: AbortSignal) {
   let update: Update | null;
+  let pendingUpdate: Promise<Update | null> | undefined;
   try {
-    update = await withTimeout(check(), UPDATE_CHECK_TIMEOUT_MS);
+    pendingUpdate = check();
+    update = await withTimeout(pendingUpdate, UPDATE_CHECK_TIMEOUT_MS);
   } catch (e) {
+    // The plugin check cannot be cancelled. Release any handle delivered after timeout,
+    // and consume a late rejection even after startup has unmounted.
+    void pendingUpdate?.then(closeUpdate, () => undefined);
     if (!signal.aborted) warn(`Update check failed: ${e}`);
     return;
   }
@@ -129,7 +139,7 @@ async function checkForAppUpdate(signal: AbortSignal) {
   } catch (e) {
     if (!signal.aborted) warn(`Update failed: ${e}`);
   } finally {
-    void update.close().catch((e) => warn(`Failed to release update handle: ${e}`));
+    closeUpdate(update);
   }
 }
 
