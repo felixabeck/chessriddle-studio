@@ -23542,3 +23542,19 @@ Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates th
 * **Fix:** Treat a missing, zero, or non-finite denominator as progress `0` (or clamp to `[0, 1]`). Add a regression that `getClockInfo` for a first child with `clock === 0` and no TimeControl header returns a finite progress of 0 for the side whose remaining time is 0.
 * **Proof:** Ephemeral Vitest `src/utils/sweep9_probe.test.ts` on HEAD `a276f9917`, removed afterwards (tree clean). After `1. e4` with `clock: 0`, no `time_control` header, `currentClock: 0`, and Black to move, `getClockInfo` returned `white.value === 0` and `white.progress` `NaN`. No `tasks/decisions.md` entry requires unclamped division by the first-move clock.
 * **Found by:** Grok Bot, quality review (t26u), HEAD `a276f9917`.
+
+---
+
+## 2026-11-11 — filed through the inbox spool
+
+### formatScore omits the sign for DTZ, so the eval bar shows "TZ12" for a winning tablebase score
+
+* **ID:** f-20261111-95 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** tenth-sweep quality review (Felix t26u) at HEAD `7d44de07d`, dense formatter/parser second-read lens (engine score / WDL / mate formatting)
+* **Where:** `src/utils/score.ts` `formatScore` (~17-32) builds `DTZ${Math.abs(score.value)}` and then adds `+`/`-` only when `score.type !== "dtz"`. `src/components/boards/EvalBar.tsx` (~97, ~117) assumes every formatted score has a one-character sign: the winning side uses `formatScore(..., 1).slice(1)`, the losing side `formatScore(..., 1).replace(/\+|-/, "")`. The same unsigned string is shown in the bar tooltip (`:132`) and in engine-line UI (`BestMoves.tsx:381`, `ScoreBubble`, `EvalChart` advantage text). ChessDB endgame scores are mapped to signed `dtz` values in `src/utils/chessdb/api.ts` `chessDBevalToScore` (~188-199) and published as `BestMoves`. Distinct from handled tablebase-panel `DTZ NaN` (`f-20261106` close of the zod parse work): that path labels `dtz` itself and does not use `formatScore`.
+* **Defect:** DTZ is the one `ScoreValue` variant written without a sign, but EvalBar always peels off the first character of a positive score. A winning DTZ 12 therefore renders as `TZ12`. A losing DTZ keeps `DTZ12` on the negative side of the bar, still with no minus in the tooltip or the analysis-line evaluation text, so the side favoured by the tablebase is not shown.
+* **Failure scenario:** The user enables ChessDB on a tablebase endgame that is a win in 12 moves. The eval bar (and its tooltip) and the engine evaluation label show `TZ12` / unsigned `DTZ12` instead of a signed DTZ on the side that is winning. The assessment glyph from `positionAssessment` still marks it as decisive, so the number and the symbol disagree about whose win it is.
+* **Fix:** Give DTZ the same leading `+`/`-` as mate and centipawn scores (for example `+DTZ12` / `-DTZ12`), or otherwise keep a one-character prefix so EvalBar's existing slice/replace still yields `DTZ12`. Add a regression that a positive DTZ does not become `TZ12` after the EvalBar extraction, and that the tooltip/line text still shows which side is favoured.
+* **Proof:** Ephemeral Vitest `src/utils/sweep10_probe.test.ts` on HEAD `7d44de07d`, removed afterwards (tree clean). `formatScore({ type: "dtz", value: 12 })` and the negative counterpart were both `"DTZ12"`; the EvalBar positive extraction (`slice(1)`) was `"TZ12"`, while the same extraction on `+M5` and `+0.50` stayed `M5` / `0.5`. No `tasks/decisions.md` entry requires unsigned DTZ or the missing sign prefix.
+* **Found by:** Grok Bot, quality review (t26u), HEAD `7d44de07d`.
