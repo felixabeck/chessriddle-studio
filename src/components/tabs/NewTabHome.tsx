@@ -220,7 +220,7 @@ export default function NewTabHome({ id }: { id: string }) {
   const [picker, setPicker] = useState<{ request: FileRequest; file: FileMetadata } | null>(null);
   const [chapters, setChapters] = useState<Map<number, GameSelectorRow>>(new Map());
   const [reloadGeneration, setReloadGeneration] = useState(0);
-  const collapseFile = useCallback(() => {
+  const retireRowOpens = useCallback(() => {
     opening.current?.abort();
     opening.current = null;
     fileRequest.current?.controller.abort();
@@ -231,12 +231,12 @@ export default function NewTabHome({ id }: { id: string }) {
     setReloadGeneration(0);
   }, []);
   useEffect(() => {
-    collapseFile();
+    retireRowOpens();
     return () => {
       fileRequest.current?.controller.abort();
       fileRequest.current = null;
     };
-  }, [id, filter, search, collapseFile]);
+  }, [id, filter, search, retireRowOpens]);
 
   const reportFileError = async (
     cause: unknown,
@@ -372,6 +372,7 @@ export default function NewTabHome({ id }: { id: string }) {
           game: result.game,
           database: file.database,
           databaseTitle: file.databaseTitle,
+          signal,
           setTabs,
           addRecentFile,
           ownerId: id,
@@ -388,7 +389,7 @@ export default function NewTabHome({ id }: { id: string }) {
   const openRow = async (row: HomeRow) => {
     if (row.kind === "file") {
       const wasCurrent = fileRequest.current?.key === row.key;
-      collapseFile();
+      retireRowOpens();
       if (wasCurrent) return;
       const request = { key: row.key, controller: new AbortController() };
       fileRequest.current = request;
@@ -418,18 +419,18 @@ export default function NewTabHome({ id }: { id: string }) {
             request,
             panel: filter === "due" ? "practice" : undefined,
           });
-          if (fileRequest.current === request) collapseFile();
+          if (fileRequest.current === request) retireRowOpens();
         }
       } catch (cause) {
         if (fileRequest.current !== request || request.controller.signal.aborted) return;
         reportFileError(cause, file, request);
-        collapseFile();
+        retireRowOpens();
       } finally {
         if (fileRequest.current === request) setCountingFile(null);
       }
       return;
     }
-    collapseFile();
+    retireRowOpens();
     const controller = new AbortController();
     opening.current = controller;
     try {
@@ -458,6 +459,7 @@ export default function NewTabHome({ id }: { id: string }) {
             game,
             database,
             databaseTitle: stripPgnExtension(row.name),
+            signal: controller.signal,
             setTabs,
             addRecentFile,
             ownerId: id,
@@ -474,6 +476,7 @@ export default function NewTabHome({ id }: { id: string }) {
           game: row.own.game,
           database: row.own.collection.database,
           databaseTitle: stripPgnExtension(row.own.collection.name),
+          signal: controller.signal,
           setTabs,
           addRecentFile,
           ownerId: id,

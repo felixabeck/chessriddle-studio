@@ -396,41 +396,49 @@ test("search finds a Library file absent from recents and activates player searc
   expect(mocks.feedArgs).toHaveBeenLastCalledWith(undefined, "Sicilian", false);
 });
 
-test("a second recent game retires the first recent fetch", async () => {
-  store.set(
-    recentFilesAtom,
-    [7, 8].map((gameId) => ({
-      kind: "database" as const,
-      database,
-      gameId,
-      name: `Recent ${gameId}`,
-      lastOpened: gameId,
-    })),
-  );
-  mocks.getGame.mockImplementation(async (_database, gameId) => ({
-    kind: "found",
-    game: { ...game, id: gameId },
-  }));
-  await render();
-  let finish!: (result: { kind: "found"; game: NormalizedGame }) => void;
-  mocks.getGame.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-  );
-  await open("Recent 7");
-  const signal = mocks.getGame.mock.lastCall![3]?.signal;
-  await open("Recent 8");
-  await act(async () => finish({ kind: "found", game }));
-  expect(mocks.openGame).toHaveBeenCalledExactlyOnceWith(
-    expect.objectContaining({ game: expect.objectContaining({ id: 8 }) }),
-  );
-  expect(mocks.navigate).toHaveBeenCalledOnce();
-  expect(signal).toBeInstanceOf(AbortSignal);
-  expect(signal.aborted).toBe(true);
-  expect(mocks.notify).not.toHaveBeenCalled();
-});
+test.each(["resolves", "rejects"])(
+  "a second recent game retires the first recent fetch that %s",
+  async (settlement) => {
+    store.set(
+      recentFilesAtom,
+      [7, 8].map((gameId) => ({
+        kind: "database" as const,
+        database,
+        gameId,
+        name: `Recent ${gameId}`,
+        lastOpened: gameId,
+      })),
+    );
+    mocks.getGame.mockImplementation(async (_database, gameId) => ({
+      kind: "found",
+      game: { ...game, id: gameId },
+    }));
+    await render();
+    let finish!: (result: { kind: "found"; game: NormalizedGame }) => void;
+    let fail!: (cause: unknown) => void;
+    mocks.getGame.mockImplementationOnce(
+      () =>
+        new Promise((resolve, reject) => {
+          finish = resolve;
+          fail = reject;
+        }),
+    );
+    await open("Recent 7");
+    const signal = mocks.getGame.mock.lastCall![3]?.signal;
+    await open("Recent 8");
+    await act(async () => {
+      if (settlement === "rejects") fail(new Error("Retired read failed"));
+      else finish({ kind: "found", game });
+    });
+    expect(mocks.openGame).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ game: expect.objectContaining({ id: 8 }) }),
+    );
+    expect(mocks.navigate).toHaveBeenCalledOnce();
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(signal.aborted).toBe(true);
+    expect(mocks.notify).not.toHaveBeenCalled();
+  },
+);
 
 test("choosing a collection retires an in-flight recent open", async () => {
   store.set(recentFilesAtom, [
@@ -486,6 +494,46 @@ test("changing the filter retires an in-flight collection open", async () => {
   expect(mocks.openGame).not.toHaveBeenCalled();
   expect(mocks.navigate).not.toHaveBeenCalled();
 });
+
+test.each(["collection", "own game", "recent game"])(
+  "changing the filter retires a pending %s tab creation",
+  async (kind) => {
+    mocks.databases.data = {
+      collections: [collection],
+      databases: [],
+      unread: [],
+      root: { kind: "databaseRoot", id: { id: "root" } },
+    };
+    mocks.feed.games = [{ collection, game }];
+    if (kind === "recent game") {
+      store.set(recentFilesAtom, [
+        { kind: "database", database, gameId: game.id, name: "Recent", lastOpened: 1 },
+      ]);
+    }
+    let finish!: (id: null) => void;
+    mocks.openGame.mockImplementationOnce(
+      () =>
+        new Promise<null>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await render();
+    if (kind === "own game") await filter("games");
+    await open(
+      kind === "collection" ? "Own games" : kind === "own game" ? "White - Black" : "Recent",
+    );
+    expect(mocks.openGame).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ game, ownerId: "home", store, signal: expect.any(AbortSignal) }),
+    );
+    const signal = mocks.openGame.mock.lastCall![0].signal as AbortSignal;
+    expect(signal.aborted).toBe(false);
+    await filter("repertoires");
+    expect(signal.aborted).toBe(true);
+    await act(async () => finish(null));
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(mocks.notify).not.toHaveBeenCalled();
+  },
+);
 
 test("choosing a file retires an in-flight collection open", async () => {
   mocks.databases.data = {

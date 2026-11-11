@@ -629,6 +629,7 @@ export async function createTab({
     existingTabIds,
     ownerId,
     store,
+    signal,
 }: {
     tab: Omit<Tab, "value" | "gameOrigin">;
     setTabs: SetTabs;
@@ -641,9 +642,11 @@ export async function createTab({
     existingTabIds?: Iterable<string>;
     ownerId?: string;
     store?: ReturnType<typeof getDefaultStore>;
+    signal?: AbortSignal;
 }): Promise<string | null> {
     let treeToSeed: TreeState | undefined = initialTree;
     const databaseOrigin = gameOrigin?.kind === "database" ? gameOrigin : undefined;
+    const readOptions = signal ? ([{ signal }] as const) : ([] as const);
     if (gameOrigin?.kind === "database") {
         const current = await tauri.getDbGame(
             gameOrigin.database,
@@ -651,6 +654,7 @@ export async function createTab({
             databaseGame?.linked
                 ? { locator: databaseGame.linked, signature: gameSignature(databaseGame) }
                 : null,
+            ...readOptions,
         );
         if (current.kind === "missing") {
             throw {
@@ -669,6 +673,7 @@ export async function createTab({
             gameOrigin.database,
             gameOrigin.gameId,
             gameOrigin.linked ?? null,
+            ...readOptions,
         );
         if (linked) {
             const tree = await parsePGN(linked.game.pgn);
@@ -718,6 +723,7 @@ export async function createTab({
     }
 
     const preparedTab = { ...tab, gameOrigin: gameOrigin ?? { kind: "none" as const } };
+    if (signal?.aborted) return null;
     if (ownerId !== undefined) {
         const result = replaceNewTab({
             store: store ?? getDefaultStore(),

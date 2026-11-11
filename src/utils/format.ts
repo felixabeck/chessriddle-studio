@@ -3,21 +3,31 @@ export function formatNumber(value?: number): string {
     return Intl.NumberFormat().format(value);
 }
 
+const MILLISECONDS_PER_SECOND = 1000;
+const SECONDS_PER_MINUTE = 60;
+const SECONDS_PER_HOUR = 60 * SECONDS_PER_MINUTE;
+const SECONDS_PER_DAY = 24 * SECONDS_PER_HOUR;
+// Months and years are approximations for display.
+const DAYS_PER_MONTH = 30;
+const MONTHS_PER_YEAR = 12;
+const SECONDS_PER_MONTH = DAYS_PER_MONTH * SECONDS_PER_DAY;
+const SECONDS_PER_YEAR = MONTHS_PER_YEAR * SECONDS_PER_MONTH;
+
 export function formatRelativeTime(time: number, now: number, locale: string): string {
-    const seconds = (time - now) / 1000;
+    const seconds = (time - now) / MILLISECONDS_PER_SECOND;
     const magnitude = Math.abs(seconds);
     const [unit, divisor]: [Intl.RelativeTimeFormatUnit, number] =
-        magnitude < 60
+        magnitude < SECONDS_PER_MINUTE
             ? ["second", 1]
-            : magnitude < 60 * 60
-              ? ["minute", 60]
-              : magnitude < 24 * 60 * 60
-                ? ["hour", 60 * 60]
-                : magnitude < 30 * 24 * 60 * 60
-                  ? ["day", 24 * 60 * 60]
-                  : magnitude < 12 * 30 * 24 * 60 * 60
-                    ? ["month", 30 * 24 * 60 * 60]
-                    : ["year", 12 * 30 * 24 * 60 * 60];
+            : magnitude < SECONDS_PER_HOUR
+              ? ["minute", SECONDS_PER_MINUTE]
+              : magnitude < SECONDS_PER_DAY
+                ? ["hour", SECONDS_PER_HOUR]
+                : magnitude < SECONDS_PER_MONTH
+                  ? ["day", SECONDS_PER_DAY]
+                  : magnitude < SECONDS_PER_YEAR
+                    ? ["month", SECONDS_PER_MONTH]
+                    : ["year", SECONDS_PER_YEAR];
     return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(
         Math.trunc(seconds / divisor),
         unit,

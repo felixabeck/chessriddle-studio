@@ -14,6 +14,7 @@ export async function openDatabaseGame({
     addRecentFile,
     ownerId,
     store,
+    signal,
 }: {
     game: NormalizedGame;
     database?: DatabaseHandle | null;
@@ -22,9 +23,10 @@ export async function openDatabaseGame({
     addRecentFile: (entry: RecentEntryInput) => void;
     ownerId?: string;
     store?: Parameters<typeof createTab>[0]["store"];
+    signal?: AbortSignal;
 }) {
     const seed = databaseGameSeed(game, database);
-    const id = await createTab({ ...seed, setTabs, ownerId, store });
+    const id = await createTab({ ...seed, setTabs, ownerId, store, signal });
     if (id !== null && database) {
         addRecentFile({
             kind: "database",

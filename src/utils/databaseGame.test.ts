@@ -415,6 +415,67 @@ test("an owned linked database open finishes current-game, source and orientatio
     expect(workspace.get(lastOpenedAtom)[database.id.id]).toBeGreaterThan(0);
 });
 
+test("openDatabaseGame forwards cancellation through orientation preparation without recording a recent", async () => {
+    const workspace = createStore();
+    const ownerId = crypto.randomUUID();
+    const owner = {
+        value: ownerId,
+        name: "New",
+        type: "new" as const,
+        gameOrigin: { kind: "none" as const },
+    };
+    workspace.set(tabsAtom, [owner], ownerId);
+    native.getDbGame.mockResolvedValueOnce({ kind: "found", game: orientationRow });
+    let finish!: (orientation: string) => void;
+    native.inferGameOrientation.mockImplementationOnce(
+        () =>
+            new Promise<string>((resolve) => {
+                finish = resolve;
+            }),
+    );
+    const controller = new AbortController();
+    const setTabs = vi.fn();
+    const addRecentFile = vi.fn();
+    const seed = vi.spyOn(tabStorage, "seed");
+    try {
+        const opening = openDatabaseGame({
+            game: orientationRow,
+            database,
+            ownerId,
+            store: workspace,
+            setTabs,
+            addRecentFile,
+            signal: controller.signal,
+        });
+        await vi.waitFor(() => expect(native.inferGameOrientation).toHaveBeenCalledOnce());
+        expect(native.getDbGame).toHaveBeenCalledExactlyOnceWith(
+            database,
+            orientationRow.id,
+            null,
+            {
+                signal: controller.signal,
+            },
+        );
+        expect(native.resolveLinkedGame).toHaveBeenCalledExactlyOnceWith(
+            database,
+            orientationRow.id,
+            null,
+            {
+                signal: controller.signal,
+            },
+        );
+        controller.abort();
+        finish("black");
+        expect(await opening).toBeNull();
+        expect(workspace.get(tabsAtom)).toEqual([owner]);
+        expect(setTabs).not.toHaveBeenCalled();
+        expect(seed).not.toHaveBeenCalled();
+        expect(addRecentFile).not.toHaveBeenCalled();
+    } finally {
+        seed.mockRestore();
+    }
+});
+
 test.each(["removed", "closing", "replaced", "tree", "workspace"] as const)(
     "an owned database open refused or superseded after preparation has no admission or records: %s",
     async (change) => {

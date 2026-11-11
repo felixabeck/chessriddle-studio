@@ -212,7 +212,9 @@ test("database row renders context and forwards stored identity during pruning a
     signal: expect.any(AbortSignal),
   });
   await open();
-  expect(mocks.getDbGame).toHaveBeenCalledWith(database, 42, stored.linked);
+  expect(mocks.getDbGame).toHaveBeenCalledWith(database, 42, stored.linked, {
+    signal: expect.any(AbortSignal),
+  });
   expect(mocks.createTab).toHaveBeenCalledOnce();
   expect(mocks.createTab).toHaveBeenCalledWith(
     expect.objectContaining({ ownerId: "home", store: workspace }),
@@ -330,7 +332,9 @@ test("a not-found lookup rejection keeps the database entry during pruning and o
   expect(host.querySelector("[data-library-row]")).not.toBeNull();
   mocks.getDbGame.mockClear();
   await open();
-  expect(mocks.getDbGame).toHaveBeenCalledExactlyOnceWith(database, 42, entry().linked);
+  expect(mocks.getDbGame).toHaveBeenCalledExactlyOnceWith(database, 42, entry().linked, {
+    signal: expect.any(AbortSignal),
+  });
   expect(workspace.get(recentFilesAtom)).toEqual(stored);
   expect(host.querySelector("[data-library-row]")).not.toBeNull();
   expect(mocks.notify).toHaveBeenCalledWith("Common.Error", error);

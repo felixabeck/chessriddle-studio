@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { initializeI18n } from "@/i18n";
 import { createStore } from "jotai";
-import type { CollectionDescriptor, InsertedDbGame } from "@/bindings";
+import type { CollectionDescriptor, InsertedDbGame, NormalizedGame } from "@/bindings";
 import { tabsAtom, updateTabById } from "@/state/atoms";
 import { collectOriginalPathOwners } from "@/state/pathOwners";
 import { loadWorkspace, saveWorkspace, WORKSPACE_STORAGE_KEY } from "@/state/workspace";
@@ -29,6 +29,7 @@ const native = vi.hoisted(() => ({
     lexPgn: vi.fn(),
     countPgnGames: vi.fn(),
     resolveLinkedGame: vi.fn(),
+    getDbGame: vi.fn(),
 }));
 vi.mock("@/platform/tauri", () => ({ tauri: native }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
@@ -80,6 +81,8 @@ beforeEach(async () => {
     native.writeDbGame.mockReset().mockResolvedValue(stampB);
     native.writeGame.mockReset().mockResolvedValue({ stamp: "b".repeat(64), revision: "saved" });
     native.countPgnGames.mockReset().mockResolvedValue(3);
+    native.getDbGame.mockReset();
+    native.resolveLinkedGame.mockReset().mockResolvedValue(null);
 });
 afterEach(() => {
     ids.splice(0).forEach((id) => {
@@ -144,6 +147,48 @@ test("creating and duplicating a draft admits no database row", async () => {
     expect(serializeStoreTree(copied)).toEqual(serializeStoreTree(f.store));
     expect(native.insertDbGame).not.toHaveBeenCalled();
 });
+
+test.each([true, false])(
+    "an aborted database creation neither seeds nor admits a tab, owned=%s",
+    async (owned) => {
+        const f = fixture();
+        f.workspace.set(tabsAtom, [{ ...f.getTab(f.id)!, type: "new" }], f.id);
+        const before = f.workspace.get(tabsAtom);
+        const controller = new AbortController();
+        const pending = deferred<{ kind: "found"; game: NormalizedGame }>();
+        native.getDbGame.mockReturnValueOnce(pending.promise);
+        const setTabs = vi.fn((...args: Parameters<Parameters<typeof createTab>[0]["setTabs"]>) =>
+            f.workspace.set(tabsAtom, ...args),
+        );
+        const seed = vi.spyOn(tabStorage, "seed");
+        const initialTree = defaultTree();
+        initialTree.headers.orientation = "white";
+        const opening = createTab({
+            tab: { name: "Pending", type: "analysis" },
+            gameOrigin: { kind: "database", database, gameId: 42 },
+            initialTree,
+            setTabs,
+            ownerId: owned ? f.id : undefined,
+            store: f.workspace,
+            signal: controller.signal,
+        });
+        expect(native.getDbGame).toHaveBeenCalledExactlyOnceWith(database, 42, null, {
+            signal: controller.signal,
+        });
+        controller.abort();
+        pending.resolve({
+            kind: "found",
+            game: { id: 42, white: "White", black: "Black", moves: "*" } as NormalizedGame,
+        });
+        expect(await opening).toBeNull();
+        expect(native.resolveLinkedGame).toHaveBeenCalledExactlyOnceWith(database, 42, null, {
+            signal: controller.signal,
+        });
+        expect(f.workspace.get(tabsAtom)).toBe(before);
+        expect(setTabs).not.toHaveBeenCalled();
+        expect(seed).not.toHaveBeenCalled();
+    },
+);
 
 test("explicit draft save inserts once and subsequent edited save updates the returned ID", async () => {
     const f = fixture();
