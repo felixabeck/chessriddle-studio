@@ -22930,3 +22930,19 @@ Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates th
 * **Fix:** Keep `useDatabaseLibrary` as data and actions (list, selection, reference, conversion, revalidate, open, add, delete). Move `renderRow`, `renderUnreadRow`, `status`, `progress`, `detail` and `dialogs` into components — e.g. `DatabaseLibraryRow`, `DatabaseLibraryStatus`, `DatabaseLibraryDetail` and `DatabaseLibraryDialogs` — and relocate `GeneralSettings`, `AdvancedSettings`, `PlayerMerger`, `DuplicateRemover` and `IndexInput` with the detail panel. `LibraryPage` keeps composing those components from the hook's data. Existing `DatabasesPage.test.tsx`, `LibraryPage.test.tsx` and `useDatabaseLibrary.refresh.test.tsx` remain the behaviour contract.
 * **Proof:** Hook span is `:73-622`; the six JSX return keys are as cited; `LibraryPage.tsx` consumes them at the lines above and does not build that UI itself. `tasks/decisions.md` has no entry requiring the UI to live inside the hook.
 * **Found by:** Grok Bot, quality review (t26u), HEAD `16156bc18`.
+
+---
+
+## 2026-11-11 — filed through the inbox spool
+
+### PracticePanel.tsx still colocates three already-extracted modal components after the main panel
+
+* **ID:** f-20261111-56 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** general quality review (Felix t26u) at HEAD `23abece0d`
+* **Where:** `src/components/panels/practice/PracticePanel.tsx` (1503 lines). `PracticePanel` itself is `:93-1149` (1056 lines). Three siblings are already standalone functions in the same file: `QualityRatingPanel` (`:1150-1262`, 112 lines), `PositionsModal` (`:1263-1348`, 85 lines) and `LogsModal` (`:1349-1503`, 153 lines). No decision pins these to this module.
+* **Defect:** The rating, positions and logs UIs have already been extracted as their own components, but they still live in the practice-session file. That is the same leftover-colocation pattern as `CloudSettings` versus `EngineSettings` in `EnginesPage.tsx` (f-20261111-54). A change to the review-log modal or the quality-rating sheet is reviewed in the same 1503-line file as session start, card advancement and sync.
+* **Failure scenario:** Editing the positions list or the logs modal requires reviewing and merging against the live practice-session controller in the same file, even though those components do not share its hooks or timers.
+* **Fix:** Move `QualityRatingPanel`, `PositionsModal` and `LogsModal` to a sibling module (for example `PracticePanelModals.tsx`, or one file each). Keep `PracticePanel` as the session controller and import the three. Existing `PracticePanel.test.tsx` / `PracticePanel.gameplay.test.tsx` remain the behaviour contract.
+* **Proof:** Function starts at depth 0 at the line ranges above; the file ends at 1503 with `LogsModal`. `tasks/decisions.md` has no entry requiring these components to share a file.
+* **Found by:** Grok Bot, quality review (t26u), HEAD `23abece0d`.
