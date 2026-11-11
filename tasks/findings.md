@@ -23875,7 +23875,7 @@ Deferred follow-up (keep at midnight filing):
 
 ### A timed-out startup update check that later succeeds never closes the plugin `Update` handle
 
-* **ID:** f-20261112-07 · **Status:** open · **Area:** app-startup · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-07 · **Status:** handled · **Area:** app-startup · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** fourteenth-sweep quality review (Felix t26u) at HEAD `341275b7a`, installer/updater
 * **Where:** `checkForAppUpdate` in `src/App.tsx` (~119-134) races `check()` against `withTimeout` (`UPDATE_CHECK_TIMEOUT_MS`, ~80-90). On timeout the `catch` warns and returns. The plugin handle is closed only in the `finally` of the *successful* check path (`void update.close()` at ~132). The abandoned `check()` promise is never settled into that path. Distinct from handled `f-20260829-03` (startup sequence had no tests; `App.test.tsx` now covers the hanging-check warning but not a late settlement) and from handled `f-20260830-44` (wrong upstream endpoint/signing key). The existing "closes the splash before a hanging check reaches its timeout, then warns" case never resolves `check()`.
@@ -23884,3 +23884,5 @@ Deferred follow-up (keep at midnight filing):
 * **Fix:** Keep the `check()` promise after the timeout and, if it later fulfills with an `Update`, call `update.close()` (and do not open the install dialog or relaunch). Swallow or `warn` a late rejection so it is not unhandled. Add a regression that a `check()` resolving after `UPDATE_CHECK_TIMEOUT_MS` calls `close()` once and never calls `ask` or `relaunch`.
 * **Proof:** Temporary test `sweep14 late check after timeout still closes the update handle` in `src/App.test.tsx` on HEAD `341275b7a`, removed afterwards (tree clean). Production `useAppStartup` with a `check()` that resolved only after `vi.advanceTimersByTimeAsync(UPDATE_CHECK_TIMEOUT_MS)` warned `Update check failed` and left `update.close` at 0 calls; `ask` was not called.
 * **Found by:** Grok Bot, quality review (t26u), HEAD `341275b7a`.
+* **Closed:** 2026-11-12, commit `6c577765c8a7a6394eda57bac5cef4dee83ca7cf` (fix(updater): close late update handles after a timed-out check). Verified as an ancestor of origin/master.
+<!-- ledger-meta {"command":"set-header","effect_lines":1,"effect_sha256":"d269fdf43d04d7bc99f9ba8fc9e80f7622d6733be2a97e724ed620770c4ff04f","header_sha256":"4fdedd88d4a8297d7e390c228fe54566851bb89ebeb91f8a550167a00a5c5eef","header_status":"handled","input_sha256":"c8c96ebc199b26145771a1fdbb742e5a5893e8a5d23661bc004b387a0127f6e9","kind":"mutation-receipt","operation":"c6df5c6677a8efee8479ac8bb2b0844e03ee513e07ec9826a40009efd43cad0f","options":{"headers":{"Status":"handled"},"section":null},"request_id_sha256":null,"results":["f-20261112-07"],"target":"f-20261112-07","v":1} -->
