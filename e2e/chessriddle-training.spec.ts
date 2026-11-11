@@ -93,7 +93,7 @@ for (const locale of ["en-US", "de-DE"] as const) {
                 page,
                 mockScenario,
                 assertNoHorizontalOverflow,
-            }) => {
+            }, testInfo) => {
                 const countdown = locale === "en-US" && layout === "desktop";
                 const dialogSettings = {
                     ...settings,
@@ -109,8 +109,16 @@ for (const locale of ["en-US", "de-DE"] as const) {
                         ...connectedCommands,
                         chessriddle_training_settings: { result: dialogSettings },
                         chessriddle_save_training_settings: {
-                            outcomes: [{ result: { ...dialogSettings, difficulty: 250 } }],
-                            result: { ...dialogSettings, difficulty: 250, motif: "fork" },
+                            outcomes: [
+                                { result: { ...dialogSettings, difficulty: 250 } },
+                                { result: { ...dialogSettings, difficulty: 250, motif: "fork" } },
+                            ],
+                            result: {
+                                ...dialogSettings,
+                                difficulty: 250,
+                                motif: "fork",
+                                showMoveCounter: true,
+                            },
                         },
                     },
                 });
@@ -122,10 +130,20 @@ for (const locale of ["en-US", "de-DE"] as const) {
                 await panel
                     .getByRole("button", { name: text["Training.Settings.Title"], exact: true })
                     .click();
-                const dialog = page.getByRole("dialog");
+                const dialog = page.getByRole("dialog", {
+                    name: text["Training.Settings.Title"],
+                    exact: true,
+                });
                 await dialog
                     .getByLabel(text["Training.Settings.Difficulty"], { exact: true })
                     .click();
+                await expect(page.getByRole("option")).toHaveText([
+                    `♙${text["Training.Difficulty.Easiest"]}`,
+                    `♘${text["Training.Difficulty.Easier"]}`,
+                    `♗${text["Training.Difficulty.Normal"]}`,
+                    `♖${text["Training.Difficulty.Harder"]}`,
+                    `♕${text["Training.Difficulty.Hardest"]}`,
+                ]);
                 await page
                     .getByRole("option", { name: text["Training.Difficulty.Harder"], exact: true })
                     .click();
@@ -133,10 +151,47 @@ for (const locale of ["en-US", "de-DE"] as const) {
                     dialog.getByLabel(text["Training.Settings.Difficulty"], { exact: true }),
                 ).toHaveValue(text["Training.Difficulty.Harder"]);
                 await dialog
-                    .getByLabel(text["Training.Settings.Motif"], { exact: true })
-                    .fill(text["Training.Motif.fork"]);
-                await page
-                    .getByRole("option", { name: text["Training.Motif.fork"], exact: true })
+                    .getByRole("button", { name: text["Training.Settings.Motif"], exact: true })
+                    .click();
+                const motifs = page.getByRole("dialog", {
+                    name: text["Training.Settings.Motif"],
+                    exact: true,
+                });
+                await motifs
+                    .getByText(text["Training.Settings.Categories.Tactics"], { exact: true })
+                    .click();
+                await expect(
+                    motifs.getByRole("radio", {
+                        name: text["Training.Settings.Categories.Tactics"],
+                        exact: true,
+                    }),
+                ).toBeChecked();
+                await expect(
+                    motifs.getByRole("button", {
+                        name: text["Training.Motif.mateIn2"],
+                        exact: true,
+                    }),
+                ).toHaveCount(0);
+                await page.mouse.move(0, 0);
+                await waitForTransitionsSettled(page);
+                await testInfo.attach(`${locale}-${layout}-motifs`, {
+                    body: await motifs.screenshot(),
+                    contentType: "image/png",
+                });
+                await motifs
+                    .getByRole("button", { name: text["Training.Motif.fork"], exact: true })
+                    .click();
+                await expect(
+                    dialog.getByRole("button", {
+                        name: text["Training.Settings.Motif"],
+                        exact: true,
+                    }),
+                ).toContainText(text["Training.Motif.fork"]);
+                await dialog
+                    .getByRole("switch", {
+                        name: text["Training.Settings.ShowSolutionLength"],
+                        exact: true,
+                    })
                     .click();
                 await expect
                     .poll(async () =>
@@ -150,7 +205,13 @@ for (const locale of ["en-US", "de-DE"] as const) {
                                     ).length,
                         ),
                     )
-                    .toBe(2);
+                    .toBe(3);
+                await expect(
+                    dialog.getByRole("switch", {
+                        name: text["Training.Settings.ShowSolutionLength"],
+                        exact: true,
+                    }),
+                ).toBeChecked();
                 await expect(
                     dialog.getByRole("switch", { name: text["Training.Settings.ShowTimer"] }),
                 ).toBeChecked({ checked: countdown });
@@ -191,6 +252,7 @@ for (const locale of ["en-US", "de-DE"] as const) {
                         ...dialogSettings,
                         difficulty: 250,
                         motif: "fork",
+                        showMoveCounter: true,
                     },
                 });
                 expect(
@@ -204,6 +266,101 @@ for (const locale of ["en-US", "de-DE"] as const) {
         }
     });
 }
+
+test("unknown motifs appear under Other and All motifs resets the saved selection", async ({
+    page,
+    mockScenario,
+    assertNoHorizontalOverflow,
+}) => {
+    await page.setViewportSize({ width: 320, height: 900 });
+    await mockScenario({
+        commands: {
+            ...connectedCommands,
+            chessriddle_training_motifs: {
+                result: [
+                    "fork",
+                    "mateIn2",
+                    "opening",
+                    "bishopEndgame",
+                    "promotion",
+                    "futureMotif42",
+                ],
+            },
+            chessriddle_save_training_settings: {
+                outcomes: [
+                    { result: { ...settings, motif: "futureMotif42" } },
+                    { result: settings },
+                ],
+            },
+        },
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Puzzles", exact: true }).click();
+    await page.getByRole("button", { name: "Training settings", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Training settings", exact: true });
+    const trigger = dialog.getByRole("button", { name: "Motif", exact: true });
+    await trigger.click();
+    const picker = page.getByRole("dialog", { name: "Motif", exact: true });
+    await expect(picker.getByRole("radio")).toHaveCount(7);
+    const other = picker.getByRole("radio", { name: "Other", exact: true });
+    await picker.getByText("Other", { exact: true }).click();
+    await expect(other).toBeChecked();
+    const unknown = picker.getByRole("button", { name: "Future Motif 42", exact: true });
+    await expect(unknown).toContainText("•");
+    await expect(picker.getByRole("button")).toHaveCount(1);
+    await assertNoHorizontalOverflow();
+    await unknown.click();
+    await expect(trigger).toContainText("•");
+    await expect(trigger).toContainText("Future Motif 42");
+    const saves = () =>
+        page.evaluate(() =>
+            window.__E2E_TAURI__
+                .invocations()
+                .filter((call) => call.command === "chessriddle_save_training_settings")
+                .map((call) => call.args),
+        );
+    await expect.poll(saves).toEqual([{ settings: { ...settings, motif: "futureMotif42" } }]);
+    await trigger.click();
+    await picker.getByText("All", { exact: true }).click();
+    await expect(picker.getByRole("radio", { name: "All", exact: true })).toBeChecked();
+    await expect(picker.getByRole("button", { name: "Pin", exact: true })).toHaveCount(0);
+    await picker.getByRole("button", { name: "All motifs", exact: true }).click();
+    await expect(trigger).toContainText("All motifs");
+    await expect
+        .poll(saves)
+        .toEqual([{ settings: { ...settings, motif: "futureMotif42" } }, { settings }]);
+});
+
+test("solution length switch reverts after a refused save through the settings error path", async ({
+    page,
+    mockScenario,
+}) => {
+    await mockScenario({
+        commands: {
+            ...connectedCommands,
+            chessriddle_save_training_settings: { error: "server" },
+        },
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Puzzles", exact: true }).click();
+    await page.getByRole("button", { name: "Training settings", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Training settings", exact: true });
+    const toggle = dialog.getByRole("switch", { name: "Show solution length", exact: true });
+    await expect(toggle).not.toBeChecked();
+    await toggle.click();
+    await expect(dialog.getByRole("alert")).toHaveText(en.translation["Training.Error.Server"]);
+    await expect(toggle).not.toBeChecked();
+    await expect(toggle).toBeEnabled();
+    const calls = await page.evaluate(() => window.__E2E_TAURI__.invocations());
+    expect(
+        calls
+            .filter((call) => call.command === "chessriddle_save_training_settings")
+            .map((call) => call.args),
+    ).toEqual([{ settings: { ...settings, showMoveCounter: true } }]);
+    expect(calls.filter((call) => call.command === "chessriddle_training_settings")).toHaveLength(
+        2,
+    );
+});
 
 test("settings refused by the backend keeps tactics usable", async ({ page, mockScenario }) => {
     await mockScenario({
@@ -423,7 +580,7 @@ test("keyboard submit, navigation, ignored keys, next and Analyse", async ({
     await captureTraining(page, page.getByRole("dialog"), "en-US-desktop-shortcuts.png", false);
     await page.keyboard.press("Escape");
     await panel.getByRole("button", { name: "Training settings", exact: true }).click();
-    await page.getByRole("dialog").getByLabel("Motif", { exact: true }).fill("a");
+    await page.getByRole("dialog").getByRole("button", { name: "Motif", exact: true }).click();
     await page.keyboard.press("Enter");
     expect(
         await page.evaluate(

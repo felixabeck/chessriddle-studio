@@ -1,5 +1,6 @@
 import type { TFunction } from "i18next";
 import { formatThemeLabel } from "@/utils/format";
+import { DIFFICULTY_GLYPHS } from "./motifCatalog";
 
 export function motifLabel(name: string, t: TFunction): string {
     const labels: Record<string, string> = {
@@ -76,5 +77,17 @@ export function difficultyOptions(t: TFunction) {
         { value: "0", label: t("Training.Difficulty.Normal") },
         { value: "250", label: t("Training.Difficulty.Harder") },
         { value: "500", label: t("Training.Difficulty.Hardest") },
-    ];
+    ].map((option, index) => ({ ...option, glyph: DIFFICULTY_GLYPHS[index] }));
+}
+
+export function motifCategoryLabels(t: TFunction) {
+    return {
+        all: t("Training.Settings.Categories.All"),
+        tactics: t("Training.Settings.Categories.Tactics"),
+        mates: t("Training.Settings.Categories.Mates"),
+        endgames: t("Training.Settings.Categories.Endgames"),
+        phases: t("Training.Settings.Categories.Phases"),
+        position: t("Training.Settings.Categories.Position"),
+        other: t("Training.Settings.Categories.Other"),
+    };
 }
