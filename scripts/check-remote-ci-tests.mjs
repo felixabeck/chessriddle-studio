@@ -598,7 +598,7 @@ test("refuses an empty run list", () => {
   assert.match(result.error, /no Test runs/u);
 });
 
-test("refuses an empty jobs list", () => {
+test("refuses an empty jobs list for a completed run", () => {
   const { runner } = cannedRunner({
     runs: [run(108, recent)],
     jobsByRun: { 108: [] },
@@ -606,6 +606,49 @@ test("refuses an empty jobs list", () => {
   const result = checkRemoteCi({ runner });
   assert.equal(result.exitCode, 2);
   assert.match(result.error, /empty jobs list/u);
+});
+
+test("passes with a newest queued run with no jobs and an older green run", () => {
+  const { runner } = cannedRunner({
+    runs: [run(133, recent, { status: "queued", conclusion: "" }), run(132, older)],
+    jobsByRun: {
+      133: [],
+      132: [job("test"), job("rust-windows-test")],
+    },
+  });
+
+  assert.deepEqual(checkRemoteCi({ runner }), { exitCode: 0, branch: "master", redJobs: [] });
+});
+
+test("retains an older red job when the newest queued run has no jobs", () => {
+  const { runner } = cannedRunner({
+    runs: [
+      run(135, recent, { status: "queued", conclusion: "" }),
+      run(134, older, { conclusion: "failure" }),
+    ],
+    jobsByRun: {
+      135: [],
+      134: [job("test", { conclusion: "failure" })],
+    },
+  });
+
+  const result = checkRemoteCi({ runner });
+  assert.equal(result.exitCode, 1);
+  assert.deepEqual(
+    result.redJobs.map(({ name, conclusion, runId }) => [name, conclusion, runId]),
+    [["test", "failure", 134]],
+  );
+});
+
+test("refuses when the only run is queued with no jobs", () => {
+  const { runner } = cannedRunner({
+    runs: [run(136, recent, { status: "queued", conclusion: "" })],
+    jobsByRun: { 136: [] },
+  });
+
+  const result = checkRemoteCi({ runner });
+  assert.equal(result.exitCode, 2);
+  assert.match(result.error, /No Test workflow jobs were returned/u);
 });
 
 test("refuses when a seen job has no completed result in the window", () => {

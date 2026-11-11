@@ -189,6 +189,8 @@ function jobsForRun(runner, cwd, run, repository) {
     throw new Error(`gh run view ${run.databaseId} returned no jobs array`);
   }
   if (payload.jobs.length === 0) {
+    // GitHub may not have scheduled jobs for an unfinished run yet.
+    if (run.status !== "completed") return [];
     throw new Error(`gh run view ${run.databaseId} returned an empty jobs list`);
   }
   return payload.jobs.map((job, index) => validateJob(job, run.databaseId, index));
