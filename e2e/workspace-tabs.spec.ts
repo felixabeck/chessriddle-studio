@@ -24,6 +24,18 @@ function positionStats(move: string): PositionStats[] {
     ];
 }
 
+/**
+ * Chessground paints autoShapes on an animation frame, and the board effect that hands it the
+ * hint can commit after any one step of the paused clock. Step one frame at a time until the
+ * single hint arrow is drawn, instead of assuming a single 16 ms step is enough.
+ */
+async function expectPracticeHintArrow(page: import("@playwright/test").Page) {
+    await expect(async () => {
+        await page.clock.runFor(16);
+        await expect(page.locator("svg.cg-shapes line")).toHaveCount(1, { timeout: 100 });
+    }).toPass({ timeout: 8000 });
+}
+
 async function assertWordsUnbroken(label: Locator) {
     const splitWords = await label.evaluate((element) => {
         const split: string[] = [];
@@ -1072,9 +1084,7 @@ test("workspace-tabs: incorrect practice reveals the existing answer and its rev
     await expect(
         page.getByText("Play Nf3 on the board, or press Space", { exact: true }),
     ).toBeVisible();
-    // Chessground renders autoShapes on the next animation frame. The clock is paused.
-    await page.clock.runFor(16);
-    await expect(page.locator("svg.cg-shapes line")).toHaveCount(1);
+    await expectPracticeHintArrow(page);
     await testInfo.attach("practice-reveal-arrow.png", {
         body: await page.screenshot({ fullPage: true }),
         contentType: "image/png",
@@ -1421,9 +1431,8 @@ test("workspace-tabs: real transposed practice card selects and reveals the exis
     await expect(
         page.getByText("Play e4 on the board, or press Space", { exact: true }),
     ).toBeVisible();
-    await page.clock.runFor(16);
+    await expectPracticeHintArrow(page);
     expect((await storedTree()).position).toEqual(before.position);
-    await expect(page.locator("svg.cg-shapes line")).toHaveCount(1);
     await playBoardMove(page, page.locator("cg-board").first(), "e2", "e4");
     await page.clock.runFor(1);
     await expect(board.getByRole("gridcell", { name: "e4, White Pawn", exact: true })).toHaveCount(
