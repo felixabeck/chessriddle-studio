@@ -323,7 +323,7 @@ pub enum Error {
     ChessBaseDatabase,
 
     #[error("Invalid input: {kind}")]
-    NativeFolderSelection {
+    NativeSelection {
         kind: &'static str,
         #[source]
         cause: Box<dyn std::error::Error + Send + Sync>,
@@ -460,12 +460,12 @@ impl Error {
 }
 
 impl Error {
-    /// Keeps the folder conversion cause in native diagnostics, outside the public message.
-    pub(crate) fn native_folder_selection(
+    /// Keeps the native picker conversion cause in native diagnostics, outside the public message.
+    pub(crate) fn native_selection(
         kind: &'static str,
         cause: impl std::error::Error + Send + Sync + 'static,
     ) -> Self {
-        let error = Self::NativeFolderSelection {
+        let error = Self::NativeSelection {
             kind,
             cause: Box::new(cause),
         };
@@ -521,9 +521,7 @@ impl Error {
                 std::io::ErrorKind::InvalidInput => Some(RootFailure::Unusable),
                 _ => None,
             },
-            Self::InvalidInput(_) | Self::NativeFolderSelection { .. } => {
-                Some(RootFailure::Unusable)
-            }
+            Self::InvalidInput(_) | Self::NativeSelection { .. } => Some(RootFailure::Unusable),
             Self::Conflict(_) => Some(RootFailure::Changed),
             _ => None,
         }
@@ -607,7 +605,7 @@ impl Error {
             Self::SystemTime(_)
             | Self::InvalidInput(_)
             | Self::ChessBaseDatabase
-            | Self::NativeFolderSelection { .. }
+            | Self::NativeSelection { .. }
             | Self::InvalidColor(_) => ErrorCategory::InvalidInput,
             Self::StaleGame => ErrorCategory::StaleGame,
             Self::NoStdin
@@ -1264,13 +1262,13 @@ impl Drop for LogCaptureScope {
 mod tests {
     use super::*;
 
-    fn assert_native_folder_selection_redaction(kind: &'static str, marker: &str) {
+    fn assert_native_selection_redaction(kind: &'static str, marker: &str) {
         let capture = LogCaptureScope::start();
-        let cause = format!("folder conversion rejected {marker}");
-        let error = Error::native_folder_selection(kind, std::io::Error::other(cause.clone()));
-        let serialized = serde_json::to_string(&error).expect("serialize folder selection error");
+        let cause = format!("native picker conversion rejected {marker}");
+        let error = Error::native_selection(kind, std::io::Error::other(cause.clone()));
+        let serialized = serde_json::to_string(&error).expect("serialize native selection error");
         let payload: serde_json::Value =
-            serde_json::from_str(&serialized).expect("folder selection payload");
+            serde_json::from_str(&serialized).expect("native selection payload");
         assert!(!serialized.contains(marker));
         assert!(!serialized.contains(&cause));
         assert_eq!(payload["message"], format!("Invalid input: {kind}"));
@@ -1291,18 +1289,26 @@ mod tests {
     }
 
     #[test]
-    fn native_folder_selection_redacts_native_phrase_and_logs_cause() {
-        assert_native_folder_selection_redaction(
+    fn native_selection_redacts_native_phrase_and_logs_cause() {
+        assert_native_selection_redaction(
             "invalid native folder selection",
             "/private/secret-folder-selection-native",
         );
     }
 
     #[test]
-    fn native_folder_selection_redacts_database_phrase_and_logs_cause() {
-        assert_native_folder_selection_redaction(
+    fn native_selection_redacts_database_phrase_and_logs_cause() {
+        assert_native_selection_redaction(
             "invalid database folder selection",
             "/private/secret-folder-selection-database",
+        );
+    }
+
+    #[test]
+    fn native_selection_redacts_file_phrase_and_logs_cause() {
+        assert_native_selection_redaction(
+            "invalid native file selection",
+            "/private/secret-file-selection-native",
         );
     }
 

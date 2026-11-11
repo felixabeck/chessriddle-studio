@@ -393,7 +393,7 @@ pub async fn issue_puzzle_workspace(
             .blocking_pick_folder()
             .ok_or(Error::Cancellation)?
             .into_path()
-            .map_err(|error| Error::InvalidInput(format!("invalid native file selection: {error}")))
+            .map_err(|error| Error::native_selection("invalid puzzle folder selection", error))
     })
     .await
     .map_err(map_picker_join)??;

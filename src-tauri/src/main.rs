@@ -755,7 +755,7 @@ async fn issue_pgn_workspace(
             .blocking_pick_file()
             .ok_or(Error::Cancellation)?
             .into_path()
-            .map_err(|error| Error::InvalidInput(format!("invalid native file selection: {error}")))
+            .map_err(|error| Error::native_selection("invalid native file selection", error))
     })
     .await
     .map_err(map_picker_join)??;
@@ -826,7 +826,7 @@ async fn issue_pgn_export_destination(
             .blocking_save_file()
             .ok_or(Error::Cancellation)?
             .into_path()
-            .map_err(|error| Error::InvalidInput(format!("invalid native file selection: {error}")))
+            .map_err(|error| Error::native_selection("invalid native file selection", error))
     })
     .await
     .map_err(map_picker_join)??;
@@ -874,7 +874,7 @@ async fn save_native_export(
             .blocking_save_file()
             .ok_or(Error::Cancellation)?
             .into_path()
-            .map_err(|error| Error::InvalidInput(format!("invalid native file selection: {error}")))
+            .map_err(|error| Error::native_selection("invalid native file selection", error))
     })
     .await
     .map_err(map_picker_join)??;
@@ -983,9 +983,7 @@ async fn issue_download_destination(
             .blocking_pick_folder()
             .ok_or(Error::Cancellation)?
             .into_path()
-            .map_err(|error| {
-                Error::native_folder_selection("invalid native folder selection", error)
-            })
+            .map_err(|error| Error::native_selection("invalid native folder selection", error))
     })
     .await
     .map_err(map_picker_join)??;
@@ -1064,9 +1062,7 @@ async fn issue_database_workspace(
             .blocking_pick_folder()
             .ok_or(Error::Cancellation)?
             .into_path()
-            .map_err(|error| {
-                Error::native_folder_selection("invalid database folder selection", error)
-            })
+            .map_err(|error| Error::native_selection("invalid database folder selection", error))
     })
     .await
     .map_err(map_picker_join)??;
@@ -1261,9 +1257,7 @@ async fn issue_engine_workspace(
             .blocking_pick_folder()
             .ok_or(Error::Cancellation)?
             .into_path()
-            .map_err(|error| {
-                Error::InvalidInput(format!("invalid engine folder selection: {error}"))
-            })
+            .map_err(|error| Error::native_selection("invalid engine folder selection", error))
     })
     .await
     .map_err(map_picker_join)??;
@@ -1344,7 +1338,7 @@ async fn issue_engine_binary(
             .blocking_pick_file()
             .ok_or(Error::Cancellation)?
             .into_path()
-            .map_err(|error| Error::InvalidInput(format!("invalid engine file selection: {error}")))
+            .map_err(|error| Error::native_selection("invalid engine file selection", error))
     })
     .await
     .map_err(map_picker_join)??;
@@ -1388,9 +1382,7 @@ async fn issue_engine_resource(
         selected
             .ok_or(Error::Cancellation)?
             .into_path()
-            .map_err(|error| {
-                Error::InvalidInput(format!("invalid engine resource selection: {error}"))
-            })
+            .map_err(|error| Error::native_selection("invalid engine resource selection", error))
     })
     .await
     .map_err(map_picker_join)??;
@@ -1474,9 +1466,7 @@ async fn issue_engine_image(
             .blocking_pick_file()
             .ok_or(Error::Cancellation)?
             .into_path()
-            .map_err(|error| {
-                Error::InvalidInput(format!("invalid native image selection: {error}"))
-            })
+            .map_err(|error| Error::native_selection("invalid native image selection", error))
     })
     .await
     .map_err(map_picker_join)??;
@@ -1663,9 +1653,7 @@ async fn issue_opening_book(
             .blocking_pick_file()
             .ok_or(Error::Cancellation)?
             .into_path()
-            .map_err(|error| {
-                Error::InvalidInput(format!("invalid opening book selection: {error}"))
-            })
+            .map_err(|error| Error::native_selection("invalid opening book selection", error))
     })
     .await
     .map_err(map_picker_join)??;
@@ -3524,31 +3512,33 @@ mod tests {
     }
 
     #[test]
-    fn native_folder_selection_commands_use_the_shared_redacting_helper() {
-        use crate::infra::blocking::source_scan::body_at_indent;
-
-        for (source, signature) in [
-            (
-                include_str!("main.rs"),
-                "async fn issue_download_destination(",
-            ),
-            (
-                include_str!("main.rs"),
-                "async fn issue_database_workspace(",
-            ),
-            (
-                include_str!("file_workspace.rs"),
-                "pub async fn issue_file_workspace(",
-            ),
+    fn native_picker_conversions_use_the_shared_redacting_helper() {
+        let needle = [".into", "_path()"].concat();
+        let mut sites = 0;
+        for (name, source) in [
+            ("main.rs", include_str!("main.rs")),
+            ("puzzle.rs", include_str!("puzzle.rs")),
+            ("file_workspace.rs", include_str!("file_workspace.rs")),
         ] {
-            let body = body_at_indent(source, signature);
-            assert!(
-                body.contains("Error::native_folder_selection("),
-                "{signature}"
-            );
-            assert!(!body.contains("Error::InvalidInput"), "{signature}");
-            assert!(!body.contains("{error}"), "{signature}");
+            for (offset, _) in source.match_indices(&needle) {
+                sites += 1;
+                let conversion = source[offset..].split("})").next().unwrap();
+                let conversion = conversion.lines().take(6).collect::<Vec<_>>().join("\n");
+                assert!(
+                    conversion.contains("Error::native_selection("),
+                    "{name}:{offset}: picker conversion must use Error::native_selection"
+                );
+                assert!(
+                    !conversion.contains("Error::InvalidInput"),
+                    "{name}:{offset}"
+                );
+                assert!(!conversion.contains("{error}"), "{name}:{offset}");
+            }
         }
+        assert_eq!(
+            sites, 12,
+            "Route any new picker through Error::native_selection and update the site count"
+        );
     }
 
     #[test]

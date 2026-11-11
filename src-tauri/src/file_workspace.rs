@@ -1592,9 +1592,7 @@ pub async fn issue_file_workspace(
             .blocking_pick_folder()
             .ok_or(Error::Cancellation)?
             .into_path()
-            .map_err(|error| {
-                Error::native_folder_selection("invalid native folder selection", error)
-            })
+            .map_err(|error| Error::native_selection("invalid native folder selection", error))
     })
     .await
     .map_err(map_picker_join)??;
