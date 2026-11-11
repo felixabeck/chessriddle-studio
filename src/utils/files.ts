@@ -161,7 +161,7 @@ export async function loadFileGame(
     const tree = await parsePGN(game.pgn, undefined, { signal });
     tree.sourceStamp = game.stamp;
     const linkedSource = game.linked ?? null;
-    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    if (signal?.aborted) throw new DOMException("Cancellation", "AbortError");
     return { ...game, tree: linkedSource ? { ...tree, linkedSource } : tree };
 }
 

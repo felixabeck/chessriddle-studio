@@ -1403,6 +1403,23 @@ test.each(["resolve", "error"] as const)(
   },
 );
 
+test("theme completion reports structured cancellation with a noncanonical message", async () => {
+  const completion = deferred<string[]>();
+  mocks.getThemesForPuzzle.mockReturnValueOnce(completion.promise);
+  const atoms = await renderPriorPuzzle([puzzleRow()], 0, ["e4"]);
+  await act(async () => atoms.set(jumpToNextPuzzleAtom, false));
+  await humanMove("e7", "e5");
+  expect(mocks.getThemesForPuzzle).toHaveBeenCalledOnce();
+
+  await act(async () => completion.reject(commandError("cancellation", "Analysis cancelled")));
+
+  expect(mocks.notificationShow).toHaveBeenCalledExactlyOnceWith({
+    title: "Common.Error",
+    message: "Analysis cancelled",
+    color: "danger",
+  });
+});
+
 test.each([
   ["position", "resolve"],
   ["tree", "resolve"],
@@ -4220,6 +4237,39 @@ test("successful deletion clears the selected puzzle session and closes the moda
   expect(document.querySelector('[data-testid="puzzle-database-count"]')?.textContent).toBe("0");
   expect(document.querySelector('[data-testid="confirm-delete"]')).toBeNull();
   expect(mocks.notificationShow).not.toHaveBeenCalled();
+});
+
+test("database deletion stays silent for the exact Cancellation message", async () => {
+  mocks.deletePuzzleDatabase.mockRejectedValue(new Error("Cancellation"));
+  const atoms = await renderPuzzles();
+
+  await openAndConfirmDeletion();
+
+  expect(mocks.deletePuzzleDatabase).toHaveBeenCalledExactlyOnceWith(selectedDb);
+  expect(mocks.notificationShow).not.toHaveBeenCalled();
+  expect(atoms.get(selectedPuzzleDbAtom)).toEqual(selectedDb);
+  expect(document.querySelector('[data-testid="confirm-delete"]')).not.toBeNull();
+});
+
+test("database deletion reports the puzzle-domain missing-root sentence", async () => {
+  mocks.deletePuzzleDatabase.mockRejectedValue(
+    new TauriCommandError({
+      tag: "backend-error",
+      category: "io",
+      message: "raw missing root diagnostic",
+      rootFailure: "missing",
+    }),
+  );
+  await renderPuzzles();
+
+  await openAndConfirmDeletion();
+
+  expect(mocks.deletePuzzleDatabase).toHaveBeenCalledExactlyOnceWith(selectedDb);
+  expect(mocks.notificationShow).toHaveBeenCalledExactlyOnceWith({
+    title: "Common.Error",
+    message: "This puzzle folder is no longer available. Choose another in Settings.",
+    color: "danger",
+  });
 });
 
 test("pre-delete failure preserves selection, list, session, timer and modal", async () => {

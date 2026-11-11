@@ -17,7 +17,6 @@ import {
   Switch,
   Text,
 } from "@mantine/core";
-import { notifications } from "@mantine/notifications";
 import { TriangleAlert, Flame, Plus, Settings, Trash2, X, ScanSearch } from "lucide-react";
 import { makeSquare } from "chessops";
 import { useAtom, useAtomValue, useStore as useAtomStore } from "jotai";
@@ -634,13 +633,7 @@ function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
         };
         if (!saveThemes()) return false;
       } catch (error) {
-        if (ownsCompletion() && normalizeError(error).category !== "cancelled") {
-          notifications.show({
-            title: t("Common.Error"),
-            message: normalizeError(error).message,
-            color: "danger",
-          });
-        }
+        if (ownsCompletion()) notifyUnlessCancelled(t("Common.Error"), error, "puzzle");
       }
     }
     return true;
@@ -855,11 +848,7 @@ function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
                     },
                   );
                 } catch (error) {
-                  notifications.show({
-                    color: "danger",
-                    title: t("Common.Error"),
-                    message: normalizeError(error).message,
-                  });
+                  notifyUnlessCancelled(t("Common.Error"), error, "puzzle");
                 }
               }
             }}
