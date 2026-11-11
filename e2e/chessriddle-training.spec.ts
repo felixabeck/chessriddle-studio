@@ -88,12 +88,12 @@ for (const locale of ["en-US", "de-DE"] as const) {
     const text = locale === "de-DE" ? de.translation : en.translation;
     test.describe(`${locale} settings`, () => {
         test.use({ appLocale: locale });
-        for (const layout of ["desktop", "narrow"] as const) {
+        for (const layout of ["desktop", "window", "narrow"] as const) {
             test(`${layout}: settings save and apply to the next puzzle`, async ({
                 page,
                 mockScenario,
                 assertNoHorizontalOverflow,
-            }, testInfo) => {
+            }) => {
                 const countdown = locale === "en-US" && layout === "desktop";
                 const dialogSettings = {
                     ...settings,
@@ -101,13 +101,24 @@ for (const locale of ["en-US", "de-DE"] as const) {
                     timerMode: countdown ? "down" : "up",
                 };
                 await page.setViewportSize({
-                    width: layout === "narrow" ? 320 : 1440,
-                    height: 900,
+                    width: layout === "narrow" ? 320 : layout === "window" ? 800 : 1440,
+                    height: layout === "window" ? 648 : 900,
                 });
                 await mockScenario({
                     commands: {
                         ...connectedCommands,
                         chessriddle_training_settings: { result: dialogSettings },
+                        chessriddle_training_motifs: {
+                            result: [
+                                "fork",
+                                "pin",
+                                "mateIn2",
+                                "bishopEndgame",
+                                "opening",
+                                "promotion",
+                                "futureMotif42",
+                            ],
+                        },
                         chessriddle_save_training_settings: {
                             outcomes: [
                                 { result: { ...dialogSettings, difficulty: 250 } },
@@ -123,6 +134,7 @@ for (const locale of ["en-US", "de-DE"] as const) {
                     },
                 });
                 await page.goto("/");
+                await expect(page.locator("html")).toHaveAttribute("lang", locale);
                 await page
                     .getByRole("button", { name: text["Home.Card.Puzzle.Title"], exact: true })
                     .click();
@@ -157,6 +169,44 @@ for (const locale of ["en-US", "de-DE"] as const) {
                     name: text["Training.Settings.Motif"],
                     exact: true,
                 });
+                const categories = motifs.getByRole("radiogroup", {
+                    name: text["Training.Settings.Motif"],
+                    exact: true,
+                });
+                await expect(categories.getByRole("radio")).toHaveCount(7);
+                await expect
+                    .poll(() =>
+                        categories.evaluate(
+                            (element) => element.scrollWidth <= element.clientWidth,
+                        ),
+                    )
+                    .toBe(true);
+                for (const radio of await categories.getByRole("radio").all()) {
+                    await expect(radio).toBeVisible();
+                    await expect(radio).toBeInViewport({ ratio: 1 });
+                }
+                const other = categories.getByRole("radio", {
+                    name: text["Training.Settings.Categories.Other"],
+                    exact: true,
+                });
+                await expect(other).toBeVisible();
+                await captureTraining(page, motifs, `${locale}-${layout}-motifs.png`, false);
+                await other.click();
+                await expect(other).toBeChecked();
+                await expect(
+                    motifs.getByRole("button", { name: "Future Motif 42", exact: true }),
+                ).toBeVisible();
+                await other.press("ArrowLeft");
+                await expect(
+                    categories.getByRole("radio", {
+                        name: text["Training.Settings.Categories.Position"],
+                        exact: true,
+                    }),
+                ).toBeChecked();
+                await page.keyboard.press("ArrowRight");
+                await expect(other).toBeFocused();
+                await expect(other).toBeChecked();
+                await expect(categories.getByRole("radio", { checked: true })).toHaveCount(1);
                 await motifs
                     .getByText(text["Training.Settings.Categories.Tactics"], { exact: true })
                     .click();
@@ -172,12 +222,6 @@ for (const locale of ["en-US", "de-DE"] as const) {
                         exact: true,
                     }),
                 ).toHaveCount(0);
-                await page.mouse.move(0, 0);
-                await waitForTransitionsSettled(page);
-                await testInfo.attach(`${locale}-${layout}-motifs`, {
-                    body: await motifs.screenshot(),
-                    contentType: "image/png",
-                });
                 await motifs
                     .getByRole("button", { name: text["Training.Motif.fork"], exact: true })
                     .click();

@@ -1,0 +1,31 @@
+.motifLabel {
+  max-width: 100%;
+  hyphens: auto;
+}
+
+.category {
+  width: auto;
+  padding: 4px 8px;
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 500;
+  color: var(--cf-foreground);
+  background: var(--cf-interactive);
+  border-color: var(--cf-border);
+
+  &[data-checked] {
+    color: var(--cf-primary);
+    background: color-mix(in srgb, var(--cf-primary) 10%, var(--cf-interactive));
+    border-color: var(--cf-primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--cf-ring);
+    outline-offset: 2px;
+  }
+
+  @media (hover: hover) {
+    &:hover {
+      background: var(--cf-interactive-hover);
+    }
+  }
+}

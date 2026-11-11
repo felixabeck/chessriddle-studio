@@ -3,8 +3,8 @@ import {
   Group,
   Input,
   Popover,
+  Radio,
   ScrollArea,
-  SegmentedControl,
   Select,
   SimpleGrid,
   Stack,
@@ -20,6 +20,7 @@ import { trainingSettings as settings } from "@/state/chessRiddleTrainingSetting
 import { difficultyOptions, motifCategoryLabels, motifLabel } from "./trainingLabels";
 import { ALL_MOTIFS_ICON, CATEGORY_ORDER, CATEGORY_PATHS, motifMeta } from "./motifCatalog";
 import TrainingError from "./TrainingError";
+import classes from "./TrainingSettings.module.css";
 
 export default function TrainingSettings({
   id,
@@ -171,7 +172,7 @@ function MotifPicker({
             <Text component="span" size="lg" aria-hidden>
               {name ? motifMeta(name).icon : ALL_MOTIFS_ICON}
             </Text>
-            <Text component="span" size="xs" style={{ overflowWrap: "anywhere" }}>
+            <Text component="span" size="xs" className={classes.motifLabel}>
               {label}
             </Text>
           </Stack>
@@ -209,17 +210,23 @@ function MotifPicker({
         </Popover.Target>
         <Popover.Dropdown role="dialog" aria-label={t("Training.Settings.Motif")}>
           <Stack gap="sm">
-            <ScrollArea type="auto" offsetScrollbars>
-              <SegmentedControl
-                value={activeCategory}
-                onChange={setCategory}
-                size="xs"
-                data={[
-                  { value: "all", label: labels.all },
-                  ...available.map((item) => ({
-                    value: item,
-                    label: (
-                      <Group gap={4} wrap="nowrap">
+            <Radio.Group
+              value={activeCategory}
+              onChange={setCategory}
+              label={t("Training.Settings.Motif")}
+              styles={{ label: { display: "none" } }}
+            >
+              <Group gap={6}>
+                {(["all", ...available] as const).map((item) => (
+                  <Radio.Card
+                    key={item}
+                    value={item}
+                    radius="sm"
+                    className={classes.category}
+                    tabIndex={activeCategory === item ? 0 : -1}
+                  >
+                    <Group gap={4} wrap="nowrap">
+                      {item !== "all" && (
                         <svg
                           width={16}
                           height={16}
@@ -229,13 +236,13 @@ function MotifPicker({
                         >
                           <path d={CATEGORY_PATHS[item]} />
                         </svg>
-                        <span>{labels[item]}</span>
-                      </Group>
-                    ),
-                  })),
-                ]}
-              />
-            </ScrollArea>
+                      )}
+                      <span>{labels[item]}</span>
+                    </Group>
+                  </Radio.Card>
+                ))}
+              </Group>
+            </Radio.Group>
             <ScrollArea.Autosize mah={280} type="auto" offsetScrollbars>
               <SimpleGrid cols={{ base: 3, xs: 5 }} spacing="xs">
                 {activeCategory === "all" && option(null)}
