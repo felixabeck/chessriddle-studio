@@ -132,6 +132,7 @@ type GeneratedCommands = {
 export type NativeReadOptions = { signal?: AbortSignal };
 type NativeReadCommandName =
     | "searchPosition"
+    | "searchPositionsStats"
     | "getPlayersGameInfo"
     | "preloadReferenceDb"
     | "getGames"
@@ -177,6 +178,7 @@ type TauriCommands = Omit<
 
 const NATIVE_READ_ARITY: Readonly<Record<NativeReadCommandName, number>> = {
     searchPosition: 3,
+    searchPositionsStats: 3,
     getPlayersGameInfo: 3,
     preloadReferenceDb: 1,
     getGames: 2,

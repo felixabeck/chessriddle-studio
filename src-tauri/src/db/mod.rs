@@ -101,6 +101,8 @@ pub use self::models::Puzzle;
 pub use self::schema::puzzle_themes;
 pub use self::schema::puzzles;
 pub use self::schema::themes;
+pub use self::search::search_positions_stats;
+pub(crate) use self::search::ExactPositionIdentity;
 pub use self::search::{search_position, PositionQueryJs, PositionStats};
 
 const INDEXES_SQL: &str = include_str!("indexes.sql");

@@ -73,7 +73,7 @@ use crate::db::{
     cancel_conversion, clear_games, convert_pgn, create_indexes, delete_database, delete_db_game,
     delete_empty_games, delete_indexes, export_to_pgn, get_player, get_players_game_info,
     get_tournaments, preload_reference_db, prepare_conversion, release_conversion, search_position,
-    MmapSearchIndex,
+    search_positions_stats, MmapSearchIndex,
 };
 use crate::error::Error;
 use crate::game::{
@@ -131,6 +131,9 @@ use tokio::sync::Semaphore;
 const SEARCH_RESULT_CACHE_CAPACITY: usize = 128;
 const SEARCH_INDEX_CACHE_CAPACITY: usize = 8;
 const SEARCH_RESULT_CACHE_MAX_BYTES: usize = 64 * 1024 * 1024;
+// Retain larger repertoires across reruns, with bytes as the primary memory bound.
+const POSITION_STATS_CACHE_CAPACITY: usize = 16_384;
+const POSITION_STATS_CACHE_MAX_BYTES: usize = 16 * 1024 * 1024;
 const MAX_ENGINE_IMAGE_BYTES: usize = 10 * 1024 * 1024;
 type SearchResult = (Vec<PositionStats>, Vec<NormalizedGame>);
 
@@ -272,6 +275,48 @@ impl SearchResultKey {
     }
 }
 
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct PositionStatsKey {
+    position: db::ExactPositionIdentity,
+    identity: SearchIndexIdentity,
+}
+
+#[derive(Clone)]
+struct CachedPositionStats {
+    value: Vec<PositionStats>,
+    bytes: usize,
+}
+
+#[derive(Default)]
+struct PositionStatsCache {
+    entries: BoundedSearchCache<PositionStatsKey, CachedPositionStats>,
+    bytes: usize,
+}
+
+impl PositionStatsCache {
+    fn insert(&mut self, key: PositionStatsKey, value: CachedPositionStats) {
+        self.bytes += value.bytes;
+        for evicted in self
+            .entries
+            .insert(key, value, POSITION_STATS_CACHE_CAPACITY)
+        {
+            self.bytes -= evicted.bytes;
+        }
+        while self.bytes > POSITION_STATS_CACHE_MAX_BYTES {
+            let Some(evicted) = self.entries.evict_oldest() else {
+                break;
+            };
+            self.bytes -= evicted.bytes;
+        }
+    }
+
+    fn retain(&mut self, predicate: impl FnMut(&PositionStatsKey, &CachedPositionStats) -> bool) {
+        for evicted in self.entries.retain(predicate) {
+            self.bytes -= evicted.bytes;
+        }
+    }
+}
+
 struct BoundedSearchCache<K, V> {
     values: HashMap<K, V>,
     newest_last: VecDeque<K>,
@@ -344,6 +389,7 @@ impl<K: Clone + Eq + std::hash::Hash, V: Clone> BoundedSearchCache<K, V> {
 #[derive(Default)]
 pub(crate) struct SearchCache {
     results: Mutex<BoundedSearchCache<SearchResultKey, CachedSearchResult>>,
+    position_stats: Mutex<PositionStatsCache>,
     indexes: Mutex<BoundedSearchCache<SearchIndexIdentity, MmapSearchIndex>>,
     collisions: KeyedLocks<(GameQuery, (u64, u64)), parking_lot::Mutex<()>>,
     generation_locks: KeyedLocks<(u64, u64), parking_lot::Mutex<()>>,
@@ -356,6 +402,10 @@ impl SearchCache {
     /// Clears cached results and indexes; keyed locks are reclaimed by their outstanding leases.
     pub(crate) fn clear(&self) {
         *self.results.lock().expect("search result cache poisoned") = Default::default();
+        *self
+            .position_stats
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Default::default();
         let evicted =
             std::mem::take(&mut *self.indexes.lock().expect("search index cache poisoned"));
         drop(evicted);
@@ -380,6 +430,31 @@ impl SearchCache {
             .expect("search result cache poisoned")
             .get(key)
             .map(|cached| cached.value)
+    }
+
+    pub(crate) fn get_position_stats(&self, key: &PositionStatsKey) -> Option<Vec<PositionStats>> {
+        self.position_stats
+            .lock()
+            .ok()?
+            .entries
+            .get(key)
+            .map(|cached| cached.value)
+    }
+
+    pub(crate) fn insert_position_stats(&self, key: PositionStatsKey, value: Vec<PositionStats>) {
+        let bytes = std::mem::size_of::<PositionStatsKey>()
+            + value.capacity() * std::mem::size_of::<PositionStats>()
+            + value
+                .iter()
+                .map(|item| item.move_.capacity() + item.recency_heap_bytes())
+                .sum::<usize>();
+        if bytes > POSITION_STATS_CACHE_MAX_BYTES {
+            return;
+        }
+        let Ok(mut cache) = self.position_stats.lock() else {
+            return;
+        };
+        cache.insert(key, CachedPositionStats { value, bytes });
     }
 
     pub(crate) fn insert_result(&self, key: SearchResultKey, value: SearchResult) {
@@ -459,6 +534,13 @@ impl SearchCache {
         self.invalidation_counter.fetch_add(1, Ordering::SeqCst);
         // Failure to narrow an optional cache operation must evict conservatively.
         let parent = search_parent_identity(target).ok();
+        self.position_stats
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .retain(|key, _| {
+                !key.identity
+                    .matches_invalidation_scope(parent, target.identity())
+            });
         self.results
             .lock()
             .expect("search result cache poisoned")
@@ -2232,6 +2314,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             get_games,
             get_db_game,
             search_position,
+            search_positions_stats,
             get_players,
             get_puzzle_themes,
             get_themes_for_puzzle,
@@ -5398,12 +5481,16 @@ mod blocking_offload_scans {
             !search_blocking.trim().is_empty(),
             "search_position_blocking must exist: {search_blocking}"
         );
-        assert_offloads(
-            search,
-            "pub async fn search_position(",
-            "search_position_blocking",
-        );
-        let search_wrapper = body_at_indent(search, "pub async fn search_position(");
+        // Both commands pass their blocking core as the worker owned by this dispatcher.
+        let search_wrapper = body_at_indent(search, "async fn dispatch_position_search<T, F>(");
+        assert_body_offloads(search_wrapper, "dispatch_position_search", "worker");
+        for name in ["search_position", "search_positions_stats"] {
+            let wrapper = body_at_indent(search, &format!("pub async fn {name}("));
+            let call = format!("{name}_blocking(");
+            assert_eq!(wrapper.matches(&call).count(), 1, "{wrapper}");
+            let dispatch = call_arguments(wrapper, name, "dispatch_position_search");
+            assert!(dispatch.contains(&call), "{wrapper}");
+        }
 
         let convert = body_at_indent(db, &blocking_fn_signature(db, "convert_pgn"));
         assert!(

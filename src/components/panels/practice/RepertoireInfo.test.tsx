@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   computeTreeCoverage: vi.fn(),
   fetchPositionMoves: vi.fn(),
   searchPosition: vi.fn(),
+  searchPositionsStats: vi.fn(),
   notificationShow: vi.fn(),
   playSound: vi.fn(),
   collection: vi.fn<typeof import("@/platform/tauri").tauri.collectionForDatabase>(
@@ -36,6 +37,7 @@ vi.mock("@/platform/tauri", async (original) => {
     ...actual,
     tauri: new Proxy(actual.tauri, {
       get(target, property, receiver) {
+        if (property === "searchPositionsStats") return mocks.searchPositionsStats;
         return property === "collectionForDatabase"
           ? mocks.collection
           : Reflect.get(target, property, receiver);
@@ -186,13 +188,16 @@ async function realCoverageFixture() {
   const pending: { signal: AbortSignal; release: () => void; reject: (error: Error) => void }[] =
     [];
   let hold = false;
-  mocks.searchPosition.mockImplementation(
-    async ({ fen }: { fen: string }, _operation: string, signal: AbortSignal) => {
-      if (hold && fen === getBoardState(initial.root.fen)) {
+  mocks.searchPositionsStats.mockImplementation(
+    async (_database, fens: string[], _operation: string, { signal }: { signal: AbortSignal }) => {
+      if (hold && fens.includes(getBoardState(initial.root.fen))) {
         // Hold the real algorithm at its database boundary, including late obsolete replies.
         await new Promise<void>((release, reject) => pending.push({ signal, release, reject }));
       }
-      return [(replies.get(fen) ?? []).map((move) => ({ move, white: 100, draw: 0, black: 0 }))];
+      return fens.map((fen) => ({
+        fen,
+        openings: (replies.get(fen) ?? []).map((move) => ({ move, white: 100, draw: 0, black: 0 })),
+      }));
     },
   );
   const actual = await vi.importActual<typeof import("@/utils/repertoire")>("@/utils/repertoire");
@@ -584,6 +589,8 @@ test("initial ready-reference cache reset can deliver the second native query fa
     "@/bindings/generated",
   );
   const actualDb = await vi.importActual<typeof import("@/utils/db")>("@/utils/db");
+  const actualPlatform =
+    await vi.importActual<typeof import("@/platform/tauri")>("@/platform/tauri");
   const actual = await vi.importActual<typeof import("@/utils/repertoire")>("@/utils/repertoire");
   let ticket = 0;
   const prepare = vi.spyOn(commands, "prepareNativeRead").mockImplementation(async () => ({
@@ -601,7 +608,6 @@ test("initial ready-reference cache reset can deliver the second native query fa
   ];
   const query = vi
     .spyOn(commands, "searchPosition")
-    .mockResolvedValueOnce({ status: "ok", data: stats("e4") })
     .mockResolvedValueOnce({
       status: "error",
       error: {
@@ -610,15 +616,27 @@ test("initial ready-reference cache reset can deliver the second native query fa
         message: "Repertoire coverage query failed",
       },
     })
-    .mockResolvedValueOnce({ status: "ok", data: stats("e4") })
-    .mockResolvedValueOnce({ status: "ok", data: stats("c5") })
     .mockResolvedValue({ status: "ok", data: [[], []] });
+  // The original six native replies included one current-position error. The other five
+  // were coverage replies: e4, e4, c5, empty, empty, in DFS order root, d4, e4, e5, Nf3.
+  const coverageReplies = [stats("e4")[0], stats("e4")[0], stats("c5")[0]];
+  const batch = vi
+    .spyOn(commands, "searchPositionsStats")
+    .mockImplementation(async (_db, fens) => ({
+      status: "ok",
+      data: fens.map((fen, index) => ({
+        fen,
+        openings: coverageReplies[index] ?? [],
+      })),
+    }));
   onTestFinished(() => {
     prepare.mockRestore();
     cancel.mockRestore();
     query.mockRestore();
+    batch.mockRestore();
   });
   mocks.searchPosition.mockImplementation(actualDb.searchPosition);
+  mocks.searchPositionsStats.mockImplementation(actualPlatform.tauri.searchPositionsStats);
   mocks.fetchPositionMoves.mockImplementation(actual.fetchPositionMoves);
   mocks.computeTreeCoverage.mockImplementation(actual.computeTreeCoverage);
   let tree!: TreeStore;
@@ -628,14 +646,14 @@ test("initial ready-reference cache reset can deliver the second native query fa
   expect(mocks.computeTreeCoverage).toHaveBeenCalledOnce();
   expect(mocks.fetchPositionMoves).toHaveBeenCalledTimes(2);
   expect(cancel).toHaveBeenCalledWith("coverage-initial-1");
-  expect(query.mock.calls.map((args) => args[3])).toEqual([
-    "coverage-initial-2",
-    "coverage-initial-3",
-    "coverage-initial-4",
-    "coverage-initial-5",
-    "coverage-initial-6",
-    "coverage-initial-7",
+  expect(query).toHaveBeenCalledOnce();
+  expect(batch).toHaveBeenCalledOnce();
+  expect(batch.mock.calls[0][1].slice(0, 3)).toEqual([
+    getBoardState(fixture.initial.root.fen),
+    getBoardState(fixture.initial.root.children[1].fen),
+    getBoardState(fixture.initial.root.children[0].fen),
   ]);
+  expect(query.mock.calls[0][3]).not.toBe(batch.mock.calls[0][3]);
   const result = await mocks.computeTreeCoverage.mock.results[0].value;
   expect(result.coverageMap.size).toBeGreaterThan(0);
   expect(host.textContent).not.toContain("Common.Retry");
@@ -648,21 +666,25 @@ test("initial ready-reference cache reset can deliver the second native query fa
 
   // Once metadata and the independent cache are ready, the same-FEN ordinary edit owns
   // one new coverage request. Its failure stays current until the explicit Retry.
-  query.mockResolvedValueOnce({
+  batch.mockResolvedValueOnce({
     status: "error",
     error: { tag: "backend-error", category: "database", message: "Stable edited coverage failed" },
   });
   await act(async () => tree.getState().setAnnotation("!"));
   expect(tree.getState()).toMatchObject({ dirty: true, root: { nags: [1] } });
-  expect(query).toHaveBeenCalledTimes(7);
+  expect(batch).toHaveBeenCalledTimes(2);
   expect(mocks.computeTreeCoverage).toHaveBeenCalledTimes(2);
   expect(mocks.fetchPositionMoves).toHaveBeenCalledTimes(2);
   expectUnknownCoverage();
   await act(async () => tree.getState().save());
-  expect(query).toHaveBeenCalledTimes(7);
+  expect(batch).toHaveBeenCalledTimes(2);
   expect(retryButton().disabled).toBe(false);
+  batch.mockImplementation(async (_db, fens) => ({
+    status: "ok",
+    data: fens.map((fen) => ({ fen, openings: [] })),
+  }));
   await act(async () => retryButton().click());
-  expect(query).toHaveBeenCalledTimes(12);
+  expect(batch).toHaveBeenCalledTimes(3);
   expect(mocks.computeTreeCoverage).toHaveBeenCalledTimes(3);
   expect(mocks.fetchPositionMoves).toHaveBeenCalledTimes(2);
   expect(host.textContent).not.toContain("Common.Retry");
@@ -704,7 +726,7 @@ test.each(["success", "error"] as const)(
       [getBoardState(e4.children[0].fen), ["Nf3"]],
       [getBoardState(fixture.initial.root.children[1].fen), ["d5"]],
     ]);
-    const query = vi
+    const positionQuery = vi
       .spyOn(commands, "searchPosition")
       .mockImplementation(async (_file, request) => ({
         status: "ok",
@@ -721,8 +743,26 @@ test.each(["success", "error"] as const)(
           [],
         ],
       }));
+    const query = vi
+      .spyOn(commands, "searchPositionsStats")
+      .mockImplementation(async (_file, fens) => ({
+        status: "ok",
+        data: fens.map((fen) => ({
+          fen,
+          openings: (replies.get(fen) ?? []).map((move) => ({
+            move,
+            white: 100,
+            draw: 0,
+            black: 0,
+            unknown: 0,
+            last_played: null,
+            year_counts: [],
+          })),
+        })),
+      }));
     mocks.collection.mockImplementation(actualPlatform.tauri.collectionForDatabase);
     mocks.searchPosition.mockImplementation(actualDb.searchPosition);
+    mocks.searchPositionsStats.mockImplementation(actualPlatform.tauri.searchPositionsStats);
     mocks.fetchPositionMoves.mockImplementation(actual.fetchPositionMoves);
     mocks.computeTreeCoverage.mockImplementation(actual.computeTreeCoverage);
     vi.useFakeTimers();
@@ -741,6 +781,7 @@ test.each(["success", "error"] as const)(
       cancel.mockRestore();
       read.mockRestore();
       query.mockRestore();
+      positionQuery.mockRestore();
       vi.useRealTimers();
     });
     let tree!: TreeStore;
@@ -753,7 +794,7 @@ test.each(["success", "error"] as const)(
     );
     expect(read).toHaveBeenCalledOnce();
     expect(mocks.computeTreeCoverage).toHaveBeenCalledOnce();
-    expect(query).toHaveBeenCalledTimes(6);
+    expect(query).toHaveBeenCalledTimes(1);
     expect(renderedCoverage("e4")).toBe("100");
 
     query.mockResolvedValueOnce({
@@ -766,7 +807,7 @@ test.each(["success", "error"] as const)(
     });
     await act(async () => tree.getState().setAnnotation("!"));
     expect(mocks.computeTreeCoverage).toHaveBeenCalledTimes(2);
-    expect(query).toHaveBeenCalledTimes(7);
+    expect(query).toHaveBeenCalledTimes(2);
     expectUnknownCoverage();
     expect(retryButton().disabled).toBe(false);
     expect(moveRow("e4").textContent).toContain("100");
@@ -779,7 +820,7 @@ test.each(["success", "error"] as const)(
       expect(decoded.at(-1)?.database).not.toBe(decoded.at(-2)?.database);
       expect(decoded.at(-1)?.database).toEqual(database);
       expect(mocks.computeTreeCoverage).toHaveBeenCalledTimes(2);
-      expect(query).toHaveBeenCalledTimes(7);
+      expect(query).toHaveBeenCalledTimes(2);
       expect(mocks.fetchPositionMoves).toHaveBeenCalledTimes(positionReads);
       expect(mocks.notificationShow).toHaveBeenCalledTimes(1);
       expectUnknownCoverage();
@@ -788,15 +829,15 @@ test.each(["success", "error"] as const)(
     }
     await act(async () => atoms.set(referenceDbAtom, structuredClone(database)));
     expect(mocks.computeTreeCoverage).toHaveBeenCalledTimes(2);
-    expect(query).toHaveBeenCalledTimes(7);
+    expect(query).toHaveBeenCalledTimes(2);
     await act(async () => retryButton().click());
     expect(mocks.computeTreeCoverage).toHaveBeenCalledTimes(3);
-    expect(query).toHaveBeenCalledTimes(12);
+    expect(query).toHaveBeenCalledTimes(3);
     expect(renderedCoverage("e4")).toBe("100");
     expect(mocks.fetchPositionMoves).toHaveBeenCalledTimes(positionReads);
 
     // A real capability replacement must retire the cache even with unchanged generation.
-    const held = Promise.withResolvers<Awaited<ReturnType<typeof commands.searchPosition>>>();
+    const held = Promise.withResolvers<Awaited<ReturnType<typeof commands.searchPositionsStats>>>();
     query.mockReturnValueOnce(held.promise);
     metadata = { ...metadata, database: { id: { id: "replacement-reference" }, kind: "database" } };
     await act(async () => focus());
@@ -815,7 +856,7 @@ test.each(["success", "error"] as const)(
     await act(async () =>
       held.resolve(
         staleOutcome === "success"
-          ? { status: "ok", data: [[], []] }
+          ? { status: "ok", data: [] }
           : {
               status: "error",
               error: {
@@ -865,7 +906,7 @@ test.each([
     );
     const before = mocks.computeTreeCoverage.mock.calls.length;
     const failure = new Error("Current coverage search refused");
-    mocks.searchPosition.mockRejectedValueOnce(failure);
+    mocks.searchPositionsStats.mockRejectedValueOnce(failure);
     await act(async () => tree.getState().setComment("Ordinary edited repertoire"));
     expect(mocks.computeTreeCoverage).toHaveBeenCalledTimes(before + 1);
     expect(mocks.notificationShow).toHaveBeenCalledExactlyOnceWith({
@@ -878,13 +919,13 @@ test.each([
     expectUnknownCoverage();
     expect(host.textContent).not.toContain("Board.Practice.Build.Loading");
     expect(host.textContent).toContain("1. e4");
-    const queriesAfterFailure = mocks.searchPosition.mock.calls.length;
+    const queriesAfterFailure = mocks.searchPositionsStats.mock.calls.length;
     await act(async () => {
       tree.getState().save();
       await Promise.resolve();
     });
     expect(mocks.computeTreeCoverage).toHaveBeenCalledTimes(before + 1);
-    expect(mocks.searchPosition).toHaveBeenCalledTimes(queriesAfterFailure);
+    expect(mocks.searchPositionsStats).toHaveBeenCalledTimes(queriesAfterFailure);
     await act(async () => retryButton().click());
     expect(mocks.computeTreeCoverage).toHaveBeenCalledTimes(before + 2);
     expect(host.textContent).not.toContain("Common.Retry");
@@ -900,7 +941,9 @@ test.each(["white", "black"] as const)(
   async (orientation) => {
     await realCoverageFixture();
     mocks.collection.mockResolvedValue(readyReference);
-    mocks.searchPosition.mockResolvedValue([[], []]);
+    mocks.searchPositionsStats.mockImplementation(async (_db, fens: string[]) =>
+      fens.map((fen) => ({ fen, openings: [] })),
+    );
     const initial = defaultTree();
     initial.headers.orientation = orientation;
     let tree!: TreeStore;
@@ -908,16 +951,16 @@ test.each(["white", "black"] as const)(
       tree = value;
     });
     expect(host.textContent).toContain("Board.Practice.Build.NoMovesFound");
-    mocks.searchPosition.mockRejectedValueOnce(new Error("Empty coverage search failed"));
+    mocks.searchPositionsStats.mockRejectedValueOnce(new Error("Empty coverage search failed"));
     await act(async () => tree.getState().setComment("Empty repertoire edit"));
     expectUnknownCoverage();
     expect(host.textContent).toContain("Board.Practice.Build.NoMovesFound");
     expect(retryButton().disabled).toBe(false);
-    const attempts = mocks.searchPosition.mock.calls.length;
+    const attempts = mocks.searchPositionsStats.mock.calls.length;
     await act(async () => tree.getState().save());
-    expect(mocks.searchPosition).toHaveBeenCalledTimes(attempts);
+    expect(mocks.searchPositionsStats).toHaveBeenCalledTimes(attempts);
     await act(async () => retryButton().click());
-    expect(mocks.searchPosition).toHaveBeenCalledTimes(attempts + 1);
+    expect(mocks.searchPositionsStats).toHaveBeenCalledTimes(attempts + 1);
     expect(host.textContent).toContain("Board.Practice.Build.NoMovesFound");
     expect(host.textContent).not.toContain("Common.Retry");
     expect(host.textContent).not.toContain("Board.Practice.Build.Loading");
@@ -933,7 +976,7 @@ test("coverage failure after an ordinary edit cannot claim completeness and Retr
     tree = value;
   });
   expect(host.textContent).toContain("Board.Practice.Build.NoGapsFound");
-  mocks.searchPosition.mockRejectedValueOnce(new Error("Edited search failed"));
+  mocks.searchPositionsStats.mockRejectedValueOnce(new Error("Edited search failed"));
   await act(async () => tree.getState().deleteMove([1]));
   expectUnknownCoverage();
   expect(renderedCoverage("e4")).toBeUndefined();
@@ -998,7 +1041,9 @@ test.each(["success", "error"] as const)(
     );
     await act(async () => tree.getState().setComment("Earlier edit"));
     expect(releaseOld).toBeTypeOf("function");
-    mocks.searchPosition.mockRejectedValueOnce(new Error("Current retryable coverage failure"));
+    mocks.searchPositionsStats.mockRejectedValueOnce(
+      new Error("Current retryable coverage failure"),
+    );
     await act(async () => tree.getState().setComment("Current edit"));
     expect(oldSignal.aborted).toBe(true);
     expectUnknownCoverage();
@@ -1023,7 +1068,7 @@ test("a canceled Retry cannot replace or notify over a successful newer tree", a
   await renderRepertoireInfo(fixture.initial, "coverage-canceled-retry", (value) => {
     tree = value;
   });
-  mocks.searchPosition.mockRejectedValueOnce(new Error("Retryable coverage error"));
+  mocks.searchPositionsStats.mockRejectedValueOnce(new Error("Retryable coverage error"));
   await act(async () => tree.getState().setComment("Current coverage edit"));
   fixture.hold();
   await act(async () => retryButton().click());
@@ -1334,6 +1379,12 @@ test.each([100, 9])(
       fen === startFen ? [{ move: "Bc5", white: games, draw: 0, black: 0 }] : [],
       [],
     ]);
+    mocks.searchPositionsStats.mockImplementation(async (_db, fens: string[]) =>
+      fens.map((fen) => ({
+        fen,
+        openings: fen === startFen ? [{ move: "Bc5", white: games, draw: 0, black: 0 }] : [],
+      })),
+    );
     let tree!: TreeStore;
     const atoms = await renderRepertoireInfo(defaultTree(), `italian-start-${games}`, (value) => {
       tree = value;
@@ -1402,6 +1453,17 @@ test("ten fully covered fractional continuations admit healthy completeness and 
     ),
     [],
   ]);
+  mocks.searchPositionsStats.mockImplementation(async (_db, fens: string[]) =>
+    fens.map((fen) => ({
+      fen,
+      openings: (fen === getBoardState(startNode.fen)
+        ? replies
+        : continuations.has(fen)
+          ? ["d3"]
+          : []
+      ).map((move) => ({ move, white: 10, draw: 0, black: 0 })),
+    })),
+  );
   mocks.computeTreeCoverage.mockImplementation(actual.computeTreeCoverage);
   mocks.fetchPositionMoves.mockImplementation(actual.fetchPositionMoves);
   let tree!: TreeStore;

@@ -13,8 +13,11 @@ import {
 } from "./treeReducer";
 import { createTreeStore, type TreeStoreState } from "@/state/store/tree";
 
-const mocks = vi.hoisted(() => ({ searchPosition: vi.fn() }));
+const mocks = vi.hoisted(() => ({ searchPosition: vi.fn(), searchPositionsStats: vi.fn() }));
 vi.mock("./db", () => ({ searchPosition: mocks.searchPosition }));
+vi.mock("@/platform/tauri", () => ({
+    tauri: { searchPositionsStats: mocks.searchPositionsStats },
+}));
 
 import { computeTreeCoverage, fetchPositionMoves, findBiggestGap, getStats } from "./repertoire";
 
@@ -256,27 +259,66 @@ test("a repetition line terminates coverage instead of recursing until the stack
     // After 1. Nf3 the opponent also plays 1... d5, which the repertoire does not answer, so the
     // start position's real coverage is 0.5 — distinguishable from the neutral placeholder.
     const afterNf3 = getBoardState(line[0].fen);
-    mocks.searchPosition.mockImplementation(async ({ fen }: { fen: string }) => [
-        [
-            { move: nextSan.get(fen), white: 10, draw: 0, black: 0 },
-            ...(fen === afterNf3 ? [{ move: "d5", white: 10, draw: 0, black: 0 }] : []),
-        ],
-    ]);
+    mocks.searchPositionsStats.mockImplementation(async (_db, fens: string[]) =>
+        fens.map((fen) => ({
+            fen,
+            openings: [
+                { move: nextSan.get(fen), white: 10, draw: 0, black: 0 },
+                ...(fen === afterNf3 ? [{ move: "d5", white: 10, draw: 0, black: 0 }] : []),
+            ],
+        })),
+    );
 
-    const { coverageMap, missingGamesMap } = await computeTreeCoverage(
+    const signal = new AbortController().signal;
+    const { coverageMap, missingGamesMap, gamesMap } = await computeTreeCoverage(
         root,
         "white",
         database,
         1,
         [],
         stateMoves,
+        signal,
     );
 
+    expect(mocks.searchPositionsStats).toHaveBeenCalledExactlyOnceWith(
+        database,
+        expect.arrayContaining([...nextSan.keys()]),
+        expect.stringMatching(/^coverage-calc:/),
+        { signal },
+    );
+    expect(mocks.searchPosition).not.toHaveBeenCalled();
     expect(coverageMap.get("")).toBe(0.5);
     expect(coverageMap.get("0,0,0,0")).toBe(0.5);
     expect(coverageMap.get("0")).toBe(0.5);
     expect(missingGamesMap.get("0")).toBe(10);
     expect(coverageMap.get("0,0")).toBe(1);
+    expect(coverageMap).toEqual(
+        new Map([
+            ["", 0.5],
+            ["0", 0.5],
+            ["0,0", 1],
+            ["0,0,0", 1],
+            ["0,0,0,0", 0.5],
+        ]),
+    );
+    expect(gamesMap).toEqual(
+        new Map([
+            ["", 10],
+            ["0", 20],
+            ["0,0", 10],
+            ["0,0,0", 10],
+            ["0,0,0,0", 10],
+        ]),
+    );
+    expect(missingGamesMap).toEqual(
+        new Map([
+            ["", 0],
+            ["0", 10],
+            ["0,0", 0],
+            ["0,0,0", 0],
+            ["0,0,0,0", 0],
+        ]),
+    );
 });
 
 test.each(["KQkq e3", "HAha -"])(
@@ -298,17 +340,20 @@ test.each(["KQkq e3", "HAha -"])(
         }
         const canonical = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -";
         const afterNf6 = getBoardState(root.children[0].fen);
-        mocks.searchPosition.mockImplementation(async ({ fen: key }: { fen: string }) => [
-            [
-                ...[...(stateMoves.get(key)?.keys() ?? [])].map((move) => ({
-                    move,
-                    white: 10,
-                    draw: 0,
-                    black: 0,
-                })),
-                ...(key === afterNf6 ? [{ move: "d4", white: 10, draw: 0, black: 0 }] : []),
-            ],
-        ]);
+        mocks.searchPositionsStats.mockImplementation(async (_db, fens: string[]) =>
+            fens.map((key) => ({
+                fen: key,
+                openings: [
+                    ...[...(stateMoves.get(key)?.keys() ?? [])].map((move) => ({
+                        move,
+                        white: 10,
+                        draw: 0,
+                        black: 0,
+                    })),
+                    ...(key === afterNf6 ? [{ move: "d4", white: 10, draw: 0, black: 0 }] : []),
+                ],
+            })),
+        );
 
         const result = await computeTreeCoverage(root, "black", database, 1, [], stateMoves);
         expect(result.coverageMap.get("")).toBe(0.5);
@@ -317,8 +362,8 @@ test.each(["KQkq e3", "HAha -"])(
         expect(result.gamesMap.get("0,0,0,0")).toBe(10);
         expect(result.dbMovesMap.get(canonical)?.moves[0].move).toBe("Nf6");
         expect(
-            mocks.searchPosition.mock.calls
-                .map(([options]) => options.fen)
+            mocks.searchPositionsStats.mock.calls
+                .flatMap(([, fens]) => fens)
                 .filter((key) => key === canonical),
         ).toHaveLength(1);
         expect(root.fen).toBe(fen);
@@ -352,15 +397,17 @@ test.each([false, true])(
                 ),
             ]),
         );
-        mocks.searchPosition.mockImplementation(async ({ fen }: { fen: string }) => [
-            (fen === getBoardState(root.fen)
-                ? replies
-                : root.children.some((node) => getBoardState(node.fen) === fen)
-                  ? ["Nf3"]
-                  : []
-            ).map((move) => ({ move, white: 10, draw: 0, black: 0 })),
-            [],
-        ]);
+        mocks.searchPositionsStats.mockImplementation(async (_db, fens: string[]) =>
+            fens.map((fen) => ({
+                fen,
+                openings: (fen === getBoardState(root.fen)
+                    ? replies
+                    : root.children.some((node) => getBoardState(node.fen) === fen)
+                      ? ["Nf3"]
+                      : []
+                ).map((move) => ({ move, white: 10, draw: 0, black: 0 })),
+            })),
+        );
         const result = await computeTreeCoverage(root, "white", database, 10, [], stateMoves);
         expect(result.coverageMap.get("") === 1).toBe(!missing);
         expect(result.coverageMap.get("")).toBeCloseTo(missing ? 0.9 : 1, 14);

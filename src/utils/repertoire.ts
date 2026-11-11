@@ -1,5 +1,6 @@
 import type { LocalOptions } from "@/components/panels/database/DatabasePanel";
-import type { DatabaseHandle } from "@/bindings";
+import type { DatabaseHandle, PositionStats } from "@/bindings";
+import { tauri } from "@/platform/tauri";
 import { searchPosition } from "./db";
 import { getNodeAtPath, type TreeNode, getBoardState } from "./treeReducer";
 import { TreeStoreState } from "@/state/store/tree";
@@ -38,6 +39,10 @@ export async function fetchPositionMoves(
         `coverage-calc:${crypto.randomUUID()}`,
         signal,
     );
+    return positionMovesFromStats(openings);
+}
+
+function positionMovesFromStats(openings: PositionStats[]) {
     const summary = openings.find((op) => op.move === "*");
     const moves = openings
         .filter((op) => op.move !== "*")
@@ -80,11 +85,14 @@ async function buildDbCache(
 
     const cache: DbCache = new Map();
 
-    for (let i = 0; i < fenList.length; i++) {
-        const fen = fenList[i];
-        const data = await fetchPositionMoves(dbPath, fen, signal);
-
-        cache.set(fen, data);
+    if (fenList.length > 0) {
+        const results = await tauri.searchPositionsStats(
+            dbPath,
+            fenList,
+            `coverage-calc:${crypto.randomUUID()}`,
+            { signal },
+        );
+        for (const { fen, openings } of results) cache.set(fen, positionMovesFromStats(openings));
     }
     return cache;
 }

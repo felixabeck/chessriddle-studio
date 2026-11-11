@@ -7,7 +7,7 @@ use shakmaty::{fen::Fen, san::SanPlus, Bitboard, Chess, Color, EnPassantMode, Po
 use specta::Type;
 use std::{
     cmp::Reverse,
-    collections::{BinaryHeap, HashSet},
+    collections::{BinaryHeap, HashMap, HashSet},
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex,
@@ -49,7 +49,7 @@ use crate::{
         handle_running_progress_result, update_progress_with_state, JobProgress, ProgressLease,
         ProgressState,
     },
-    AppState, SearchCache, SearchIndexIdentity, SearchResultKey,
+    AppState, PositionStatsKey, SearchCache, SearchIndexIdentity, SearchResultKey,
 };
 
 use super::GameQuery;
@@ -58,6 +58,25 @@ use super::GameQuery;
 pub struct ExactData {
     pawn_home: u16,
     position: Chess,
+}
+
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+pub(crate) struct ExactPositionIdentity {
+    board: shakmaty::Board,
+    turn: Color,
+    castling_rights: Bitboard,
+    ep_square: Option<shakmaty::Square>,
+}
+
+impl ExactPositionIdentity {
+    fn new(position: &Chess) -> Self {
+        Self {
+            board: position.board().clone(),
+            turn: position.turn(),
+            castling_rights: position.castles().castling_rights(),
+            ep_square: position.ep_square(EnPassantMode::Legal),
+        }
+    }
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
@@ -551,6 +570,9 @@ static SEARCH_POSITION_INSTRUMENT_LOCK: Mutex<()> = Mutex::new(());
 #[cfg(test)]
 static PROCESS_ENTRY_CALLS: AtomicUsize = AtomicUsize::new(0);
 #[cfg(test)]
+static MAINLINE_REPLAYS: std::sync::LazyLock<Mutex<HashMap<i32, usize>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+#[cfg(test)]
 static EXCLUDE_FAST_SQL_COMPLETED: AtomicBool = AtomicBool::new(false);
 
 #[cfg(test)]
@@ -598,6 +620,31 @@ fn parse_wanted_result(value: Option<&str>) -> Result<Option<GameResult>, Error>
         })
         .transpose()
         .map(Option::flatten)
+}
+
+fn matches_search_metadata(
+    entry: SearchGameEntryRef<'_>,
+    query: &GameQuery,
+    wanted_result: Option<GameResult>,
+    excluded_fast_game_ids: Option<&HashSet<i32>>,
+) -> bool {
+    query.player1.is_none_or(|id| id == entry.white_id)
+        && query.player2.is_none_or(|id| id == entry.black_id)
+        && match wanted_result {
+            Some(wanted) => entry.result == wanted,
+            None => {
+                query.include_unknown_results == Some(true)
+                    || !matches!(entry.result, GameResult::None | GameResult::Other)
+            }
+        }
+        && matches_date(
+            entry.date,
+            query.start_date.as_deref(),
+            query.end_date.as_deref(),
+        )
+        && elo_in_range(entry.white_elo, query.range1)
+        && elo_in_range(entry.black_elo, query.range2)
+        && !excluded_fast_game_ids.is_some_and(|ids| ids.contains(&entry.id))
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Type)]
@@ -665,6 +712,41 @@ impl PositionStats {
     }
 }
 
+fn record_opening(
+    openings: &DashMap<String, PositionStats>,
+    continuation: String,
+    entry: SearchGameEntryRef<'_>,
+) {
+    let mut opening = openings
+        .entry(continuation)
+        .or_insert_with(|| PositionStats {
+            black: 0,
+            white: 0,
+            draw: 0,
+            unknown: 0,
+            move_: String::new(),
+            last_played: None,
+            year_counts: Vec::new(),
+        });
+    match entry.result {
+        GameResult::WhiteWin => opening.white += 1,
+        GameResult::BlackWin => opening.black += 1,
+        GameResult::Draw => opening.draw += 1,
+        GameResult::Other | GameResult::None => opening.unknown += 1,
+    }
+    opening.record_date(entry.date);
+}
+
+fn collect_openings(openings: DashMap<String, PositionStats>) -> Vec<PositionStats> {
+    openings
+        .into_iter()
+        .map(|(key, mut value)| {
+            value.move_ = key;
+            value
+        })
+        .collect()
+}
+
 fn invalid_move_stream(game_id: i32, error: Error) -> Error {
     match error {
         Error::Cancellation => Error::Cancellation,
@@ -696,6 +778,63 @@ fn get_move_after_match(
     query: &PositionQuery,
     cancellation: &CancellationToken,
 ) -> Result<Option<String>, Error> {
+    let matcher = ReplayQueries {
+        queries: std::slice::from_ref(query),
+        exact: HashMap::new(),
+        partial: vec![0],
+    };
+    Ok(replay_position_matches(
+        game_id,
+        move_blob,
+        *fen,
+        &matcher,
+        vec![0],
+        cancellation,
+        #[cfg(test)]
+        false,
+    )?
+    .pop()
+    .map(|(_, continuation)| continuation))
+}
+
+/// Exact hashes select candidates, while `matches` remains the matching authority.
+struct ReplayQueries<'a> {
+    queries: &'a [PositionQuery],
+    exact: HashMap<ExactPositionIdentity, Vec<usize>>,
+    partial: Vec<usize>,
+}
+
+impl<'a> ReplayQueries<'a> {
+    fn new(queries: &'a [PositionQuery]) -> Self {
+        let mut exact = HashMap::<_, Vec<_>>::new();
+        let mut partial = Vec::new();
+        for (index, query) in queries.iter().enumerate() {
+            match query {
+                PositionQuery::Exact(data) => exact
+                    .entry(ExactPositionIdentity::new(&data.position))
+                    .or_default()
+                    .push(index),
+                PositionQuery::Partial(_) => partial.push(index),
+            }
+        }
+        Self {
+            queries,
+            exact,
+            partial,
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn replay_position_matches(
+    game_id: i32,
+    move_blob: &[u8],
+    fen: Option<&str>,
+    matcher: &ReplayQueries<'_>,
+    mut candidates: Vec<usize>,
+    cancellation: &CancellationToken,
+    #[cfg(test)] instrument: bool,
+) -> Result<Vec<(usize, String)>, Error> {
     if cancellation.is_cancelled() {
         return Err(Error::Cancellation);
     }
@@ -710,21 +849,46 @@ fn get_move_after_match(
         Chess::default()
     };
 
-    if query.matches(&chess) {
-        let mut mainline = try_iter_mainline_move_bytes_cancellable(move_blob, cancellation)
-            .map_err(|error| invalid_move_stream(game_id, error))?
-            .peekable();
-        return matched_position_continuation(game_id, chess, mainline.peek().copied()).map(Some);
+    #[cfg(test)]
+    if instrument {
+        *MAINLINE_REPLAYS
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .entry(game_id)
+            .or_default() += 1;
     }
-
     let mut mainline = try_iter_mainline_move_bytes_cancellable(move_blob, cancellation)
         .map_err(|error| invalid_move_stream(game_id, error))?
         .peekable();
-
-    while let Some(byte) = mainline.next() {
+    let mut found = Vec::new();
+    loop {
         if cancellation.is_cancelled() {
             return Err(Error::Cancellation);
         }
+        let exact_matches = if matcher.exact.is_empty() {
+            None
+        } else {
+            matcher.exact.get(&ExactPositionIdentity::new(&chess))
+        };
+        let matching = exact_matches
+            .into_iter()
+            .flatten()
+            .chain(matcher.partial.iter());
+        for &index in matching {
+            if candidates.contains(&index) && matcher.queries[index].matches(&chess) {
+                let continuation = matched_position_continuation(
+                    game_id,
+                    chess.clone(),
+                    mainline.peek().copied(),
+                )?;
+                found.push((index, continuation));
+                candidates.retain(|candidate| *candidate != index);
+            }
+        }
+        if candidates.is_empty() {
+            break;
+        }
+        let Some(byte) = mainline.next() else { break };
         let m = decode_move(byte, &chess).ok_or_else(|| {
             Error::InvalidInput(format!("game {game_id} has illegal encoded move {byte}"))
         })?;
@@ -735,16 +899,14 @@ fn get_move_after_match(
 
         if is_irreversible {
             let board = chess.board();
-            if !query.is_reachable_by(get_pawn_home(board)) {
-                return Ok(None);
+            let pawn_home = get_pawn_home(board);
+            candidates.retain(|index| matcher.queries[*index].is_reachable_by(pawn_home));
+            if candidates.is_empty() {
+                break;
             }
         }
-        if query.matches(&chess) {
-            return matched_position_continuation(game_id, chess, mainline.peek().copied())
-                .map(Some);
-        }
     }
-    Ok(None)
+    Ok(found)
 }
 
 fn search_progress_percent(processed: usize, total: usize) -> f32 {
@@ -752,6 +914,209 @@ fn search_progress_percent(processed: usize, total: usize) -> f32 {
         return 0.0;
     }
     (processed as f64 / total as f64 * 100.0) as f32
+}
+
+#[derive(Debug, Serialize, Clone, Type)]
+pub struct PositionStatsForFen {
+    pub fen: String,
+    pub openings: Vec<PositionStats>,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn search_positions_stats(
+    file: DatabaseHandle,
+    fens: Vec<String>,
+    app: tauri::AppHandle,
+    tab_id: String,
+    ticket: Option<String>,
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<PositionStatsForFen>, Error> {
+    dispatch_position_search(
+        "search_positions_stats",
+        tab_id,
+        ticket,
+        app,
+        window,
+        state,
+        move |authority, repository, search_cache, permit, lease, app, token| {
+            search_positions_stats_blocking(
+                &authority,
+                &repository,
+                &search_cache,
+                permit,
+                lease,
+                app,
+                file,
+                fens,
+                token,
+            )
+        },
+    )
+    .await
+}
+
+#[cfg(test)]
+thread_local! {
+    static BATCH_CANCEL_AFTER_ENTRY: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
+
+#[allow(clippy::too_many_arguments)]
+fn search_positions_stats_blocking<R: tauri::Runtime>(
+    authority: &crate::infra::path_authority::SharedPathAuthority,
+    repository: &DatabaseRepository,
+    search_cache: &Arc<SearchCache>,
+    _permit: OwnedSemaphorePermit,
+    lease: ProgressLease,
+    app: tauri::AppHandle<R>,
+    file: DatabaseHandle,
+    fens: Vec<String>,
+    cancellation: &CancellationToken,
+) -> Result<Vec<PositionStatsForFen>, Error> {
+    if cancellation.is_cancelled() {
+        return Err(Error::Cancellation);
+    }
+    let mut input_keys = Vec::with_capacity(fens.len());
+    let mut unique = HashMap::new();
+    for fen in &fens {
+        if cancellation.is_cancelled() {
+            return Err(Error::Cancellation);
+        }
+        let query = PositionQuery::exact_from_fen(fen)
+            .map_err(|error| Error::InvalidInput(format!("invalid exact position FEN: {error}")))?;
+        if let PositionQuery::Exact(data) = &query {
+            let key = ExactPositionIdentity::new(&data.position);
+            input_keys.push(key.clone());
+            unique.entry(key).or_insert(query);
+        }
+    }
+    if fens.is_empty() {
+        return Ok(Vec::new());
+    }
+    let target = resolve_search_target(authority, &file)?;
+    #[cfg(test)]
+    let instrument = SEARCH_POSITION_INSTRUMENT.get();
+    #[cfg(test)]
+    let moves_override = SEARCH_ENTRY_MOVES_OVERRIDE.take();
+    #[cfg(test)]
+    let cancel_after = BATCH_CANCEL_AFTER_ENTRY.take();
+    with_search_index(
+        authority,
+        repository,
+        search_cache,
+        &target,
+        &file,
+        cancellation,
+        |_db, identity, index, validate| {
+            let mut results = HashMap::new();
+            let mut misses = Vec::new();
+            let mut queries = Vec::new();
+            for (position, query) in unique {
+                let key = PositionStatsKey {
+                    position: position.clone(),
+                    identity: identity.clone(),
+                };
+                if let Some(stats) = search_cache.get_position_stats(&key) {
+                    results.insert(position, stats);
+                } else {
+                    misses.push(key);
+                    queries.push(query);
+                }
+            }
+            if !misses.is_empty() {
+                let matcher = ReplayQueries::new(&queries);
+                let openings: Vec<DashMap<String, PositionStats>> =
+                    (0..queries.len()).map(|_| DashMap::new()).collect();
+                let coverage_query = GameQuery::new();
+                let processed = AtomicUsize::new(0);
+                let progress_error_diagnosed = AtomicBool::new(false);
+                index
+                    .par_iter()
+                    .map_init(
+                        || cancellation.child_token(),
+                        |token, entry| {
+                            #[cfg(test)]
+                            let entry = SearchGameEntryRef {
+                                moves: moves_override.unwrap_or(entry.moves),
+                                ..entry
+                            };
+                            #[cfg(test)]
+                            if instrument {
+                                PROCESS_ENTRY_CALLS.fetch_add(1, Ordering::SeqCst);
+                            }
+                            if token.is_cancelled() {
+                                return Err(Error::Cancellation);
+                            }
+                            let count = processed.fetch_add(1, Ordering::Relaxed) + 1;
+                            #[cfg(test)]
+                            if cancel_after == Some(count) {
+                                cancellation.cancel();
+                            }
+                            if count.is_multiple_of(POSITION_SEARCH_PROGRESS_INTERVAL) {
+                                handle_running_progress_result(
+                                    update_progress_with_state(
+                                        &app.state::<AppState>().progress_state,
+                                        &app,
+                                        &lease,
+                                        search_progress_percent(count, index.len()),
+                                        ProgressState::Running,
+                                    ),
+                                    "position statistics search",
+                                    &lease,
+                                    &progress_error_diagnosed,
+                                    Some(cancellation),
+                                )?;
+                            }
+                            if !matches_search_metadata(entry, &coverage_query, None, None) {
+                                return Ok(());
+                            }
+                            let candidates = queries
+                                .iter()
+                                .enumerate()
+                                .filter_map(|(i, query)| {
+                                    query.can_reach(entry.pawn_home).then_some(i)
+                                })
+                                .collect::<Vec<_>>();
+                            if candidates.is_empty() {
+                                return Ok(());
+                            }
+                            for (i, continuation) in replay_position_matches(
+                                entry.id,
+                                entry.moves,
+                                entry.fen,
+                                &matcher,
+                                candidates,
+                                token,
+                                #[cfg(test)]
+                                instrument,
+                            )? {
+                                record_opening(&openings[i], continuation, entry);
+                            }
+                            Ok(())
+                        },
+                    )
+                    .try_for_each(|result| result)?;
+                validate()?;
+                for (key, openings) in misses.into_iter().zip(openings) {
+                    let stats = collect_openings(openings);
+                    search_cache.insert_position_stats(key.clone(), stats.clone());
+                    results.insert(key.position, stats);
+                }
+            }
+            validate()?;
+            fens.into_iter()
+                .zip(input_keys)
+                .map(|(fen, key)| {
+                    let openings = results
+                        .get(&key)
+                        .cloned()
+                        .ok_or_else(|| Error::Conflict("missing position statistics".into()))?;
+                    Ok(PositionStatsForFen { fen, openings })
+                })
+                .collect()
+        },
+    )
 }
 
 #[tauri::command]
@@ -765,7 +1130,57 @@ pub async fn search_position(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, AppState>,
 ) -> Result<(Vec<PositionStats>, Vec<NormalizedGame>), Error> {
-    let operation = crate::native_read_operation(ticket, &window, &state, "search_position")?;
+    dispatch_position_search(
+        "search_position",
+        tab_id,
+        ticket,
+        app,
+        window,
+        state,
+        move |authority, repository, search_cache, permit, lease, app, token| {
+            search_position_blocking(
+                &authority,
+                &repository,
+                &search_cache,
+                permit,
+                lease,
+                app,
+                file,
+                query,
+                token,
+                #[cfg(test)]
+                None,
+            )
+        },
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn dispatch_position_search<T, F>(
+    command: &'static str,
+    tab_id: String,
+    ticket: Option<String>,
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, AppState>,
+    worker: F,
+) -> Result<T, Error>
+where
+    T: Send + 'static,
+    F: FnOnce(
+            crate::infra::path_authority::SharedPathAuthority,
+            Arc<DatabaseRepository>,
+            Arc<SearchCache>,
+            OwnedSemaphorePermit,
+            ProgressLease,
+            tauri::AppHandle,
+            &CancellationToken,
+        ) -> Result<T, Error>
+        + Send
+        + 'static,
+{
+    let operation = crate::native_read_operation(ticket, &window, &state, command)?;
     let cancellation = operation.token();
     let progress = JobProgress::new(app.clone(), tab_id)?;
     let authority = state.pgn_path_authority.clone();
@@ -774,22 +1189,18 @@ pub async fn search_position(
     let new_request = state.new_request.clone();
     let lease = progress.lease();
     let worker_app = app.clone();
-    crate::infra::operations::run_native_operation(operation, "search_position", async move {
+    crate::infra::operations::run_native_operation(operation, command, async move {
         let permit = acquire_search_request(new_request, &cancellation).await?;
         BLOCKING_GATEWAY
             .spawn_cancellable(cancellation, move |token| {
-                let result = search_position_blocking(
-                    &authority,
-                    &repository,
-                    &search_cache,
+                let result = worker(
+                    authority,
+                    repository,
+                    search_cache,
                     permit,
                     lease,
                     worker_app,
-                    file,
-                    query,
                     token,
-                    #[cfg(test)]
-                    None,
                 );
                 progress.complete(match &result {
                     Ok(_) => ProgressState::Succeeded,
@@ -817,6 +1228,66 @@ async fn acquire_search_request(
 }
 
 const POSITION_SEARCH_PROGRESS_INTERVAL: usize = 50_000;
+
+/// Shared command admission, before the collision lock or database connection.
+fn resolve_search_target(
+    authority: &crate::infra::path_authority::SharedPathAuthority,
+    database_handle: &DatabaseHandle,
+) -> Result<DatabaseFileTarget, Error> {
+    super::resolve_database(authority, database_handle, PathOperation::DatabaseRead)
+}
+
+fn with_search_index<T>(
+    authority: &crate::infra::path_authority::SharedPathAuthority,
+    repository: &DatabaseRepository,
+    search_cache: &Arc<SearchCache>,
+    target: &DatabaseFileTarget,
+    database_handle: &DatabaseHandle,
+    cancellation: &CancellationToken,
+    search: impl FnOnce(
+        &mut SqliteConnection,
+        SearchIndexIdentity,
+        &MmapSearchIndex,
+        &dyn Fn() -> Result<(), Error>,
+    ) -> Result<T, Error>,
+) -> Result<T, Error> {
+    if cancellation.is_cancelled() {
+        return Err(Error::Cancellation);
+    }
+    let mut connection = get_db_or_create(
+        repository,
+        target,
+        Some(cancellation),
+        authority,
+        database_handle,
+    )?;
+    let (identity, index) = load_search_index_cancellable(
+        authority,
+        repository,
+        search_cache,
+        database_handle,
+        cancellation,
+    )?;
+    connection.transaction::<_, Error, _>(|db| {
+        if super::repository::read_data_revision(db)? != index.source().revision {
+            return Err(Error::StaleGame);
+        }
+        let generation =
+            super::linked_collections::linked_metadata(db)?.map(|(generation, _)| generation);
+        let validate = || {
+            if cancellation.is_cancelled() {
+                return Err(Error::Cancellation);
+            }
+            if let Some(service) = authority.collections()? {
+                service.validate_result(authority, database_handle, &generation)?;
+            }
+            Ok(())
+        };
+        let result = search(db, identity, &index, &validate)?;
+        validate()?;
+        Ok(result)
+    })
+}
 
 // Individual Arc handles the closure must own: BlockingGateway::spawn is
 // `'static` and AppState is not Clone. A bundle type was rejected (plan
@@ -853,310 +1324,238 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
         query.sample_order = None;
     }
     let database_handle = file;
-    let target = super::resolve_database(authority, &database_handle, PathOperation::DatabaseRead)?;
+    let target = resolve_search_target(authority, &database_handle)?;
     let collision_lease = search_cache.collision_lock(query.clone(), &target);
     let _guard = collision_lease.lock_cancellable(cancellation)?;
-
-    let mut database_connection = get_db_or_create(
-        repository,
-        &target,
-        Some(cancellation),
-        authority,
-        &database_handle,
-    )?;
-    let db = &mut *database_connection;
 
     let start = Instant::now();
     info!("start loading games");
 
-    let (identity, mmap_index) = load_search_index_cancellable(
+    with_search_index(
         authority,
         repository,
         search_cache,
+        &target,
         &database_handle,
         cancellation,
-    )?;
-    let cache_key = SearchResultKey::new(query.clone(), identity);
-    db.transaction::<_, Error, _>(|db| {
-        if super::repository::read_data_revision(db)? != mmap_index.source().revision {
-            return Err(Error::StaleGame);
-        }
-        let admitted_generation =
-            super::linked_collections::linked_metadata(db)?.map(|(generation, _)| generation);
-        if let Some(result) = search_cache.get_result(&cache_key) {
-            if let Some(service) = authority.collections()? {
-                service.validate_result(authority, &database_handle, &admitted_generation)?;
+        |db, identity, mmap_index, validate| {
+            let cache_key = SearchResultKey::new(query.clone(), identity);
+            if let Some(result) = search_cache.get_result(&cache_key) {
+                validate()?;
+                return Ok(result);
             }
-            return Ok(result);
-        }
 
-        let game_count = mmap_index.len();
+            let game_count = mmap_index.len();
 
-        info!(
-            "Ready to search {} games: {:?}",
-            game_count,
-            start.elapsed()
-        );
+            info!(
+                "Ready to search {} games: {:?}",
+                game_count,
+                start.elapsed()
+            );
 
-        let openings: DashMap<String, PositionStats> = DashMap::new();
-        const MAX_SAMPLES: usize = 500;
-        let date_order = query.sample_order == Some(super::SampleOrder::Date);
-        // The least preferred sample is evicted before the fixed cap is applied.
-        // Elo mode retains the existing selection, including its tie behaviour.
-        type SampleKey = (i16, Option<String>, i32);
-        let top_games: Mutex<BinaryHeap<Reverse<SampleKey>>> =
-            Mutex::new(BinaryHeap::with_capacity(MAX_SAMPLES + 1));
+            let openings: DashMap<String, PositionStats> = DashMap::new();
+            const MAX_SAMPLES: usize = 500;
+            let date_order = query.sample_order == Some(super::SampleOrder::Date);
+            // The least preferred sample is evicted before the fixed cap is applied.
+            // Elo mode retains the existing selection, including its tie behaviour.
+            type SampleKey = (i16, Option<String>, i32);
+            let top_games: Mutex<BinaryHeap<Reverse<SampleKey>>> =
+                Mutex::new(BinaryHeap::with_capacity(MAX_SAMPLES + 1));
 
-        let processed = AtomicUsize::new(0);
-        let progress_error_diagnosed = AtomicBool::new(false);
+            let processed = AtomicUsize::new(0);
+            let progress_error_diagnosed = AtomicBool::new(false);
 
-        let parsed_position_query: Option<PositionQuery> = if let Some(pq) = &query.position {
-            Some(convert_position_query(pq.clone())?)
-        } else {
-            None
-        };
-
-        let wanted_result = parse_wanted_result(query.wanted_result.as_deref())?;
-
-        let excluded_fast_game_ids: Option<HashSet<i32>> = if query.exclude_fast_events
-            == Some(true)
-        {
-            let ids = super::sqlite_cancellation::with_sqlite_cancellation(cancellation, || {
-                load_excluded_fast_game_ids(db)
-            })?;
-            #[cfg(test)]
-            if instrument {
-                EXCLUDE_FAST_SQL_COMPLETED.store(true, Ordering::SeqCst);
-            }
-            Some(ids)
-        } else {
-            None
-        };
-
-        info!("start search on {}", lease.id);
-
-        let process_entry = |entry: SearchGameEntryRef<'_>,
-                             entry_cancellation: &CancellationToken|
-         -> Result<(), Error> {
-            #[cfg(test)]
-            let entry = SearchGameEntryRef {
-                moves: moves_override.unwrap_or(entry.moves),
-                ..entry
+            let parsed_position_query: Option<PositionQuery> = if let Some(pq) = &query.position {
+                Some(convert_position_query(pq.clone())?)
+            } else {
+                None
             };
-            #[cfg(test)]
-            if instrument {
-                PROCESS_ENTRY_CALLS.fetch_add(1, Ordering::SeqCst);
-            }
-            if entry_cancellation.is_cancelled() {
-                return Err(Error::Cancellation);
-            }
-            let index = processed.fetch_add(1, Ordering::Relaxed) + 1;
-            if index.is_multiple_of(POSITION_SEARCH_PROGRESS_INTERVAL) {
-                let percent = search_progress_percent(index, game_count);
-                let report_progress = || {
-                    update_progress_with_state(
-                        &app.state::<AppState>().progress_state,
-                        &app,
-                        &lease,
-                        percent,
-                        ProgressState::Running,
-                    )
+
+            let wanted_result = parse_wanted_result(query.wanted_result.as_deref())?;
+
+            let excluded_fast_game_ids: Option<HashSet<i32>> =
+                if query.exclude_fast_events == Some(true) {
+                    let ids =
+                        super::sqlite_cancellation::with_sqlite_cancellation(cancellation, || {
+                            load_excluded_fast_game_ids(db)
+                        })?;
+                    #[cfg(test)]
+                    if instrument {
+                        EXCLUDE_FAST_SQL_COMPLETED.store(true, Ordering::SeqCst);
+                    }
+                    Some(ids)
+                } else {
+                    None
+                };
+
+            info!("start search on {}", lease.id);
+
+            let process_entry = |entry: SearchGameEntryRef<'_>,
+                                 entry_cancellation: &CancellationToken|
+             -> Result<(), Error> {
+                #[cfg(test)]
+                let entry = SearchGameEntryRef {
+                    moves: moves_override.unwrap_or(entry.moves),
+                    ..entry
                 };
                 #[cfg(test)]
-                let progress_result = progress_update
-                    .and_then(|update| update(&lease, percent))
-                    .unwrap_or_else(report_progress);
-                #[cfg(not(test))]
-                let progress_result = report_progress();
-                handle_running_progress_result(
-                    progress_result,
-                    "position search",
-                    &lease,
-                    &progress_error_diagnosed,
-                    Some(cancellation),
-                )?;
-            }
+                if instrument {
+                    PROCESS_ENTRY_CALLS.fetch_add(1, Ordering::SeqCst);
+                }
+                if entry_cancellation.is_cancelled() {
+                    return Err(Error::Cancellation);
+                }
+                let index = processed.fetch_add(1, Ordering::Relaxed) + 1;
+                if index.is_multiple_of(POSITION_SEARCH_PROGRESS_INTERVAL) {
+                    let percent = search_progress_percent(index, game_count);
+                    let report_progress = || {
+                        update_progress_with_state(
+                            &app.state::<AppState>().progress_state,
+                            &app,
+                            &lease,
+                            percent,
+                            ProgressState::Running,
+                        )
+                    };
+                    #[cfg(test)]
+                    let progress_result = progress_update
+                        .and_then(|update| update(&lease, percent))
+                        .unwrap_or_else(report_progress);
+                    #[cfg(not(test))]
+                    let progress_result = report_progress();
+                    handle_running_progress_result(
+                        progress_result,
+                        "position search",
+                        &lease,
+                        &progress_error_diagnosed,
+                        Some(cancellation),
+                    )?;
+                }
 
-            if let Some(white) = query.player1 {
-                if white != entry.white_id {
+                if !matches_search_metadata(
+                    entry,
+                    &query,
+                    wanted_result,
+                    excluded_fast_game_ids.as_ref(),
+                ) {
                     return Ok(());
                 }
-            }
 
-            if let Some(black) = query.player2 {
-                if black != entry.black_id {
-                    return Ok(());
-                }
-            }
-
-            if let Some(wanted) = wanted_result {
-                if entry.result != wanted {
-                    return Ok(());
-                }
-            } else if query.include_unknown_results != Some(true)
-                && matches!(entry.result, GameResult::None | GameResult::Other)
-            {
-                return Ok(());
-            }
-
-            if !matches_date(
-                entry.date,
-                query.start_date.as_deref(),
-                query.end_date.as_deref(),
-            ) {
-                return Ok(());
-            }
-
-            // range1 bounds White and range2 bounds Black in position search.
-            if !elo_in_range(entry.white_elo, query.range1)
-                || !elo_in_range(entry.black_elo, query.range2)
-            {
-                return Ok(());
-            }
-
-            if excluded_fast_game_ids
-                .as_ref()
-                .is_some_and(|ids| ids.contains(&entry.id))
-            {
-                return Ok(());
-            }
-
-            // Open-time validation covers every stream. Only metadata candidates
-            // reach replay, which retains its own validation and error context.
-            if let Some(position_query) = &parsed_position_query {
-                if position_query.can_reach(entry.pawn_home) {
-                    if let Some(m) = get_move_after_match(
-                        entry.id,
-                        entry.moves,
-                        &entry.fen,
-                        position_query,
-                        cancellation,
-                    )? {
-                        let elo_key = entry.white_elo.max(entry.black_elo);
-                        let key = if date_order {
-                            // Match the SQL ordering below: unknown dates last,
-                            // with unknown components below known components.
-                            let date = entry
-                                .date
-                                .filter(|date| !date.is_empty() && !date.starts_with('?'))
-                                .map(|date| date_order_components(date).collect::<String>());
-                            (0, date, entry.id)
-                        } else {
-                            (elo_key, None, entry.id)
-                        };
-                        let mut heap = top_games
-                            .lock()
-                            .map_err(|_| Error::InvalidInput("Sample heap lock poisoned".into()))?;
-                        if heap.len() < MAX_SAMPLES {
-                            heap.push(Reverse(key));
-                        } else if let Some(Reverse(minimum)) = heap.peek() {
-                            if (date_order && key > *minimum)
-                                || (!date_order && elo_key > minimum.0)
-                            {
-                                heap.pop();
+                // Open-time validation covers every stream. Only metadata candidates
+                // reach replay, which retains its own validation and error context.
+                if let Some(position_query) = &parsed_position_query {
+                    if position_query.can_reach(entry.pawn_home) {
+                        if let Some(m) = get_move_after_match(
+                            entry.id,
+                            entry.moves,
+                            &entry.fen,
+                            position_query,
+                            cancellation,
+                        )? {
+                            let elo_key = entry.white_elo.max(entry.black_elo);
+                            let key = if date_order {
+                                // Match the SQL ordering below: unknown dates last,
+                                // with unknown components below known components.
+                                let date = entry
+                                    .date
+                                    .filter(|date| !date.is_empty() && !date.starts_with('?'))
+                                    .map(|date| date_order_components(date).collect::<String>());
+                                (0, date, entry.id)
+                            } else {
+                                (elo_key, None, entry.id)
+                            };
+                            let mut heap = top_games.lock().map_err(|_| {
+                                Error::InvalidInput("Sample heap lock poisoned".into())
+                            })?;
+                            if heap.len() < MAX_SAMPLES {
                                 heap.push(Reverse(key));
+                            } else if let Some(Reverse(minimum)) = heap.peek() {
+                                if (date_order && key > *minimum)
+                                    || (!date_order && elo_key > minimum.0)
+                                {
+                                    heap.pop();
+                                    heap.push(Reverse(key));
+                                }
                             }
-                        }
-                        drop(heap);
+                            drop(heap);
 
-                        let mut opening = openings.entry(m).or_insert_with(|| PositionStats {
-                            black: 0,
-                            white: 0,
-                            draw: 0,
-                            unknown: 0,
-                            move_: String::new(),
-                            last_played: None,
-                            year_counts: Vec::new(),
-                        });
-                        match entry.result {
-                            GameResult::WhiteWin => opening.white += 1,
-                            GameResult::BlackWin => opening.black += 1,
-                            GameResult::Draw => opening.draw += 1,
-                            GameResult::Other | GameResult::None => opening.unknown += 1,
+                            record_opening(&openings, m, entry);
                         }
-                        opening.record_date(entry.date);
                     }
                 }
-            }
-            Ok(())
-        };
+                Ok(())
+            };
 
-        // Per-job child tokens avoid sharing a mutex on every metadata check.
-        // Progress lease revocation still cancels the original operation token.
-        mmap_index
-            .par_iter()
-            .map_init(
-                || cancellation.child_token(),
-                |entry_cancellation, entry| process_entry(entry, entry_cancellation),
-            )
-            .try_for_each(|result| result)?;
+            // Per-job child tokens avoid sharing a mutex on every metadata check.
+            // Progress lease revocation still cancels the original operation token.
+            mmap_index
+                .par_iter()
+                .map_init(
+                    || cancellation.child_token(),
+                    |entry_cancellation, entry| process_entry(entry, entry_cancellation),
+                )
+                .try_for_each(|result| result)?;
 
-        let openings: Vec<PositionStats> = openings
-            .into_iter()
-            .map(|(k, mut v)| {
-                v.move_ = k;
-                v
-            })
-            .collect();
-        let ids: Vec<i32> = top_games
-            .into_inner()
-            .map_err(|_| Error::InvalidInput("Sample heap lock poisoned".into()))?
-            .into_iter()
-            .map(|Reverse((_, _, id))| id)
-            .collect();
+            let openings = collect_openings(openings);
+            let ids: Vec<i32> = top_games
+                .into_inner()
+                .map_err(|_| Error::InvalidInput("Sample heap lock poisoned".into()))?
+                .into_iter()
+                .map(|Reverse((_, _, id))| id)
+                .collect();
 
-        info!("finished search in {:?}", start.elapsed());
+            info!("finished search in {:?}", start.elapsed());
 
-        let (white_players, black_players) = diesel::alias!(players as white, players as black);
-        let games: Vec<(Game, Player, Player, Event, Site)> =
-            super::sqlite_cancellation::with_sqlite_cancellation(cancellation, || {
-                let query = games::table
-                    .inner_join(
-                        white_players.on(games::white_id.eq(white_players.field(players::id))),
-                    )
-                    .inner_join(
-                        black_players.on(games::black_id.eq(black_players.field(players::id))),
-                    )
-                    .inner_join(events::table.on(games::event_id.eq(events::id)))
-                    .inner_join(sites::table.on(games::site_id.eq(sites::id)))
-                    .filter(games::id.eq_any(ids))
-                    .into_boxed();
-                if date_order {
-                    let date =
-                        diesel::dsl::sql::<diesel::sql_types::Nullable<diesel::sql_types::Text>>(
+            let (white_players, black_players) = diesel::alias!(players as white, players as black);
+            let games: Vec<(Game, Player, Player, Event, Site)> =
+                super::sqlite_cancellation::with_sqlite_cancellation(cancellation, || {
+                    let query = games::table
+                        .inner_join(
+                            white_players.on(games::white_id.eq(white_players.field(players::id))),
+                        )
+                        .inner_join(
+                            black_players.on(games::black_id.eq(black_players.field(players::id))),
+                        )
+                        .inner_join(events::table.on(games::event_id.eq(events::id)))
+                        .inner_join(sites::table.on(games::site_id.eq(sites::id)))
+                        .filter(games::id.eq_any(ids))
+                        .into_boxed();
+                    if date_order {
+                        let date = diesel::dsl::sql::<
+                            diesel::sql_types::Nullable<diesel::sql_types::Text>,
+                        >(
                             r#"CASE WHEN "Games"."Date" IS NULL OR "Games"."Date" = ''
                             OR "Games"."Date" LIKE '?%' THEN NULL
                             ELSE replace("Games"."Date", '?', '0') END"#,
                         );
-                    query.order((date.desc(), games::id.desc())).load(db)
-                } else {
-                    query
-                        .order((games::white_elo.desc(), games::black_elo.desc()))
-                        .load(db)
-                }
-            })?;
-        if cancellation.is_cancelled() {
-            return Err(Error::Cancellation);
-        }
-        let mut normalized_games = normalize_games(games, cancellation)?;
-        super::linked_collections::qualify_games(
-            db,
-            &database_handle,
-            authority,
-            &mut normalized_games,
-        )?;
-        if let Some(service) = authority.collections()? {
-            service.validate_result(authority, &database_handle, &admitted_generation)?;
-        }
-        if cancellation.is_cancelled() {
-            return Err(Error::Cancellation);
-        }
-        search_cache.insert_result(cache_key, (openings.clone(), normalized_games.clone()));
+                        query.order((date.desc(), games::id.desc())).load(db)
+                    } else {
+                        query
+                            .order((games::white_elo.desc(), games::black_elo.desc()))
+                            .load(db)
+                    }
+                })?;
+            if cancellation.is_cancelled() {
+                return Err(Error::Cancellation);
+            }
+            let mut normalized_games = normalize_games(games, cancellation)?;
+            super::linked_collections::qualify_games(
+                db,
+                &database_handle,
+                authority,
+                &mut normalized_games,
+            )?;
+            validate()?;
+            if cancellation.is_cancelled() {
+                return Err(Error::Cancellation);
+            }
+            search_cache.insert_result(cache_key, (openings.clone(), normalized_games.clone()));
 
-        drop(permit);
+            drop(permit);
 
-        Ok((openings, normalized_games))
-    })
+            Ok((openings, normalized_games))
+        },
+    )
 }
 
 #[cfg(all(test, unix))]
@@ -1839,7 +2238,7 @@ mod imported_search_tests {
     const AFTER_E4_FEN: &str = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
     const ABSENT_FEN: &str = "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2";
 
-    fn imported_search_database(
+    pub(super) fn imported_search_database(
         pgn: &str,
     ) -> (
         tempfile::TempDir,
@@ -2447,6 +2846,379 @@ mod position_query_tests {
         assert!(query.is_reachable_by(0));
         assert!(query.can_reach(0));
         assert!(!query.matches(&chess));
+    }
+}
+
+#[cfg(all(test, unix))]
+mod batch_tests {
+    use super::*;
+
+    fn fixture() -> (
+        tempfile::TempDir,
+        tauri::AppHandle<tauri::test::MockRuntime>,
+        DatabaseHandle,
+        std::path::PathBuf,
+        Vec<String>,
+    ) {
+        let pgn = r#"[Event "Transposition A"]
+[Result "1-0"]
+[Date "2026.01.02"]
+
+1. Nf3 Nf6 2. Nc3 Nc6 3. e4 e5 1-0
+
+[Event "Transposition B"]
+[Result "0-1"]
+
+1. Nc3 Nc6 2. Nf3 Nf6 3. e4 d5 0-1
+
+[Event "Repetition first continuation"]
+[Result "1/2-1/2"]
+
+1. Nf3 Nf6 2. Ng1 Ng8 3. e4 e5 1/2-1/2
+
+[Event "Setup"]
+[Result "1-0"]
+[SetUp "1"]
+[FEN "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"]
+
+1... e5 2. Nf3 1-0
+
+[Event "Unknown"]
+[Result "*"]
+
+1. e4 c5 *
+
+[Event "Pruned"]
+[Result "0-1"]
+
+1. d4 d5 2. c4 e6 0-1
+
+[Event "Ends here"]
+[Result "1-0"]
+
+1. e4 1-0
+"#;
+        let (dir, app, handle, path) = imported_search_tests::imported_search_database(pgn);
+        let mut chess = Chess::default();
+        let mut fens = vec![Fen::from_position(chess.clone(), EnPassantMode::Legal).to_string()];
+        for san in ["Nf3", "Nf6", "Nc3", "Nc6", "e4"] {
+            let m = SanPlus::from_ascii(san.as_bytes())
+                .unwrap()
+                .san
+                .to_move(&chess)
+                .unwrap();
+            chess.play_unchecked(&m);
+            fens.push(Fen::from_position(chess.clone(), EnPassantMode::Legal).to_string());
+        }
+        fens.push("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1".into());
+        (dir, app, handle, path, fens)
+    }
+
+    fn run_batch(
+        app: &tauri::AppHandle<tauri::test::MockRuntime>,
+        handle: &DatabaseHandle,
+        fens: &[String],
+        token: &CancellationToken,
+    ) -> Result<Vec<PositionStatsForFen>, Error> {
+        let state = app.state::<AppState>();
+        let progress = JobProgress::new(app.clone(), "batch-test".into()).unwrap();
+        let result = search_positions_stats_blocking(
+            &state.pgn_path_authority,
+            &state.database_repository,
+            &state.search_cache,
+            state.new_request.clone().try_acquire_owned().unwrap(),
+            progress.lease(),
+            app.clone(),
+            handle.clone(),
+            fens.to_vec(),
+            token,
+        );
+        progress.complete(match &result {
+            Ok(_) => ProgressState::Succeeded,
+            Err(Error::Cancellation) => ProgressState::Cancelled,
+            Err(_) => ProgressState::Failed,
+        });
+        result
+    }
+
+    fn sorted(mut stats: Vec<PositionStats>) -> serde_json::Value {
+        stats.sort_by(|a, b| a.move_.cmp(&b.move_));
+        serde_json::to_value(stats).unwrap()
+    }
+
+    #[test]
+    fn batch_equals_single_search_with_transpositions_repetition_setup_unknown_pruning_and_terminal(
+    ) {
+        let (_dir, app, handle, _path, mut fens) = fixture();
+        fens.push(fens[0].replace("0 1", "8 5"));
+        let result = run_batch(&app, &handle, &fens, &CancellationToken::new()).unwrap();
+        assert_eq!(result.len(), fens.len());
+        assert!(app
+            .state::<AppState>()
+            .search_cache
+            .results
+            .lock()
+            .unwrap()
+            .values
+            .is_empty());
+        for (i, (fen, batch)) in fens.iter().zip(result).enumerate() {
+            assert_eq!(&batch.fen, fen);
+            let single = run_position_search(
+                &app,
+                &handle,
+                exact_position_query(fen),
+                &format!("single-{i}"),
+            )
+            .unwrap();
+            assert_eq!(sorted(batch.openings), sorted(single.0), "{fen}");
+        }
+        let state = app.state::<AppState>();
+        assert_eq!(
+            state
+                .search_cache
+                .position_stats
+                .lock()
+                .unwrap()
+                .entries
+                .values
+                .len(),
+            fens.len() - 1
+        );
+        let e4 = run_batch(&app, &handle, &fens[6..7], &CancellationToken::new()).unwrap();
+        assert!(e4[0]
+            .openings
+            .iter()
+            .any(|item| item.move_ == "*" && item.white == 1));
+        assert!(e4[0]
+            .openings
+            .iter()
+            .all(|item| item.unknown == 0 && item.move_ != "c5"));
+    }
+
+    #[test]
+    fn batch_work_bound_has_identical_entry_and_replay_counts_for_one_and_five_queries() {
+        let (_dir, app, handle, _path, fens) = fixture();
+        let state = app.state::<AppState>();
+        let (_, index) = load_search_index(
+            &state.pgn_path_authority,
+            &state.database_repository,
+            &state.search_cache,
+            &handle,
+        )
+        .unwrap();
+        let _instrument = tests::SearchInstrument::start();
+        let mut previous = None;
+        for k in [1, 5] {
+            *state.search_cache.position_stats.lock().unwrap() = Default::default();
+            PROCESS_ENTRY_CALLS.store(0, Ordering::SeqCst);
+            MAINLINE_REPLAYS.lock().unwrap().clear();
+            run_batch(&app, &handle, &fens[..k], &CancellationToken::new()).unwrap();
+            let visits = PROCESS_ENTRY_CALLS.load(Ordering::SeqCst);
+            let replays = MAINLINE_REPLAYS.lock().unwrap().clone();
+            assert_eq!(visits, index.len());
+            assert!(replays.values().all(|count| *count == 1));
+            assert_eq!(replays.len(), 6);
+            println!("coverage batch k={k}: entries={visits}, mainline_replays={}, max_replays_per_game={}", replays.values().sum::<usize>(), replays.values().max().unwrap());
+            if let Some(previous) = &previous {
+                assert_eq!(&replays, previous);
+            }
+            previous = Some(replays);
+        }
+    }
+
+    #[test]
+    fn batch_cache_hits_misses_revision_and_invalidation_keep_sample_cache_separate() {
+        let (_dir, app, handle, path, fens) = fixture();
+        let state = app.state::<AppState>();
+        let _instrument = tests::SearchInstrument::start();
+        let token = CancellationToken::new();
+        run_batch(&app, &handle, &fens[..5], &token).unwrap();
+        assert_eq!(PROCESS_ENTRY_CALLS.swap(0, Ordering::SeqCst), 7);
+        run_batch(&app, &handle, &fens[..5], &token).unwrap();
+        assert_eq!(PROCESS_ENTRY_CALLS.load(Ordering::SeqCst), 0);
+        run_batch(&app, &handle, &fens[..6], &token).unwrap();
+        assert_eq!(PROCESS_ENTRY_CALLS.swap(0, Ordering::SeqCst), 7);
+        assert!(state.search_cache.results.lock().unwrap().values.is_empty());
+        let mut connection = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+        connection
+            .transaction::<_, Error, _>(|db| {
+                super::super::bump_revision_in_transaction(db, &path, &token, |db| {
+                    diesel::update(games::table)
+                        .set(games::date.eq("2026.11.11"))
+                        .execute(db)?;
+                    Ok(())
+                })
+            })
+            .unwrap();
+        run_batch(&app, &handle, &fens[..6], &token).unwrap();
+        assert_eq!(PROCESS_ENTRY_CALLS.swap(0, Ordering::SeqCst), 7);
+        let target = super::super::resolve_database(
+            &state.pgn_path_authority,
+            &handle,
+            PathOperation::DatabaseRead,
+        )
+        .unwrap();
+        state.search_cache.invalidate_database(&target);
+        assert!(state
+            .search_cache
+            .position_stats
+            .lock()
+            .unwrap()
+            .entries
+            .values
+            .is_empty());
+        run_batch(&app, &handle, &fens[..6], &token).unwrap();
+        assert_eq!(PROCESS_ENTRY_CALLS.swap(0, Ordering::SeqCst), 7);
+        state.search_cache.clear();
+        assert!(state
+            .search_cache
+            .position_stats
+            .lock()
+            .unwrap()
+            .entries
+            .values
+            .is_empty());
+    }
+
+    #[test]
+    fn batch_errors_are_typed_and_never_publish_partial_statistics() {
+        let (_dir, app, handle, _path, fens) = fixture();
+        let _instrument = tests::SearchInstrument::start();
+        let state = app.state::<AppState>();
+        let cancelled = CancellationToken::new();
+        cancelled.cancel();
+        assert!(matches!(
+            run_batch(&app, &handle, &fens, &cancelled),
+            Err(Error::Cancellation)
+        ));
+        assert!(matches!(
+            run_batch(
+                &app,
+                &handle,
+                &["bad fen".into()],
+                &CancellationToken::new()
+            ),
+            Err(Error::InvalidInput(_))
+        ));
+        BATCH_CANCEL_AFTER_ENTRY.set(Some(1));
+        assert!(matches!(
+            run_batch(&app, &handle, &fens, &CancellationToken::new()),
+            Err(Error::Cancellation)
+        ));
+        assert!(state
+            .search_cache
+            .position_stats
+            .lock()
+            .unwrap()
+            .entries
+            .values
+            .is_empty());
+        SEARCH_ENTRY_MOVES_OVERRIDE.set(Some(&[crate::db::encoding::NAG_MARKER, 1]));
+        let batch = run_batch(&app, &handle, &fens[..1], &CancellationToken::new()).unwrap_err();
+        SEARCH_ENTRY_MOVES_OVERRIDE.set(Some(&[crate::db::encoding::NAG_MARKER, 1]));
+        let single = run_position_search(
+            &app,
+            &handle,
+            exact_position_query(&fens[0]),
+            "corrupt-single",
+        )
+        .err()
+        .expect("corrupt candidate stream must fail single-position search");
+        assert!(
+            matches!(batch, Error::InvalidInput(ref message) if message.contains("invalid move stream"))
+        );
+        assert!(
+            matches!(single, Error::InvalidInput(ref message) if message.contains("invalid move stream"))
+        );
+        assert!(state
+            .search_cache
+            .position_stats
+            .lock()
+            .unwrap()
+            .entries
+            .values
+            .is_empty());
+        assert!(state.search_cache.results.lock().unwrap().values.is_empty());
+    }
+
+    #[test]
+    fn position_stats_cache_enforces_entry_and_byte_limits_with_lru_reuse() {
+        let (_dir, app, handle, _path, fens) = fixture();
+        run_batch(&app, &handle, &fens[..1], &CancellationToken::new()).unwrap();
+        let state = app.state::<AppState>();
+        let base = state
+            .search_cache
+            .position_stats
+            .lock()
+            .unwrap()
+            .entries
+            .values
+            .keys()
+            .next()
+            .unwrap()
+            .clone();
+        state.search_cache.clear();
+        let key = |revision: usize| {
+            let mut key = base.clone();
+            key.identity.source.revision = revision as u64;
+            key
+        };
+        for revision in 0..crate::POSITION_STATS_CACHE_CAPACITY {
+            state
+                .search_cache
+                .insert_position_stats(key(revision), vec![]);
+        }
+        assert!(state.search_cache.get_position_stats(&key(0)).is_some());
+        state
+            .search_cache
+            .insert_position_stats(key(crate::POSITION_STATS_CACHE_CAPACITY), vec![]);
+        assert!(state.search_cache.get_position_stats(&key(0)).is_some());
+        assert!(state.search_cache.get_position_stats(&key(1)).is_none());
+        state.search_cache.clear();
+        let stats = |bytes| {
+            vec![PositionStats {
+                move_: "x".repeat(bytes),
+                white: 0,
+                draw: 0,
+                black: 0,
+                unknown: 0,
+                last_played: None,
+                year_counts: vec![],
+            }]
+        };
+        state
+            .search_cache
+            .insert_position_stats(key(0), stats(crate::POSITION_STATS_CACHE_MAX_BYTES));
+        assert!(state.search_cache.get_position_stats(&key(0)).is_none());
+        state
+            .search_cache
+            .insert_position_stats(key(1), stats(crate::POSITION_STATS_CACHE_MAX_BYTES / 2));
+        state
+            .search_cache
+            .insert_position_stats(key(2), stats(crate::POSITION_STATS_CACHE_MAX_BYTES / 2));
+        assert!(state.search_cache.get_position_stats(&key(1)).is_none());
+        assert!(state.search_cache.get_position_stats(&key(2)).is_some());
+        // Replacing a large entry must release its old weight before another insert.
+        state.search_cache.insert_position_stats(key(2), vec![]);
+        state
+            .search_cache
+            .insert_position_stats(key(3), stats(crate::POSITION_STATS_CACHE_MAX_BYTES / 2));
+        assert!(state.search_cache.get_position_stats(&key(2)).is_some());
+        assert!(state.search_cache.get_position_stats(&key(3)).is_some());
+        let target = super::super::resolve_database(
+            &state.pgn_path_authority,
+            &handle,
+            PathOperation::DatabaseRead,
+        )
+        .unwrap();
+        state.search_cache.invalidate_database(&target);
+        assert_eq!(state.search_cache.position_stats.lock().unwrap().bytes, 0);
+        state
+            .search_cache
+            .insert_position_stats(key(4), stats(crate::POSITION_STATS_CACHE_MAX_BYTES / 2));
+        assert!(state.search_cache.get_position_stats(&key(4)).is_some());
+        state.search_cache.clear();
+        assert_eq!(state.search_cache.position_stats.lock().unwrap().bytes, 0);
     }
 }
 
@@ -4279,16 +5051,17 @@ mod tests {
 
     /// Holds the instrumentation lock for a whole test sequence, with the
     /// counters reset. Dropping clears the instrument flag, also on panic.
-    struct SearchInstrument {
+    pub(super) struct SearchInstrument {
         _lock: std::sync::MutexGuard<'static, ()>,
     }
 
     impl SearchInstrument {
-        fn start() -> Self {
+        pub(super) fn start() -> Self {
             let lock = SEARCH_POSITION_INSTRUMENT_LOCK
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             PROCESS_ENTRY_CALLS.store(0, Ordering::SeqCst);
+            MAINLINE_REPLAYS.lock().unwrap().clear();
             EXCLUDE_FAST_SQL_COMPLETED.store(false, Ordering::SeqCst);
             SEARCH_POSITION_INSTRUMENT.set(true);
             Self { _lock: lock }

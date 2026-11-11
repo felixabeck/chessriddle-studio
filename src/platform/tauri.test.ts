@@ -40,6 +40,7 @@ const mocks = vi.hoisted(() => ({
     prepareAnalysis: vi.fn(),
     cancelAnalysis: vi.fn(),
     getGames: vi.fn(),
+    searchPositionsStats: vi.fn(),
     getDbGame: vi.fn(),
     inferGameOrientation: vi.fn(),
     countPgnGames: vi.fn(),
@@ -251,6 +252,7 @@ vi.mock("@/bindings/generated", () => ({
         prepareAnalysis: mocks.prepareAnalysis,
         cancelAnalysis: mocks.cancelAnalysis,
         getGames: mocks.getGames,
+        searchPositionsStats: mocks.searchPositionsStats,
         getDbGame: mocks.getDbGame,
         inferGameOrientation: mocks.inferGameOrientation,
         countPgnGames: mocks.countPgnGames,
@@ -312,6 +314,7 @@ describe("tauri command facade", () => {
         mocks.prepareAnalysis.mockReset();
         mocks.cancelAnalysis.mockReset();
         mocks.getGames.mockReset();
+        mocks.searchPositionsStats.mockReset();
         mocks.countPgnGames.mockReset();
         mocks.fileRevision.mockReset();
         mocks.readGame.mockReset();
@@ -834,6 +837,34 @@ describe("tauri command facade", () => {
         await expect(result).rejects.toMatchObject({ details: { category: "cancelled" } });
         expect(mocks.cancelNativeRead).toHaveBeenCalledOnce();
         expect(mocks.cancelNativeRead).toHaveBeenCalledWith("active-ticket");
+    });
+
+    test("coverage batch routes its third argument and abort options to its own native ticket", async () => {
+        const controller = new AbortController();
+        const database = { id: { id: "coverage-db" }, kind: "database" } as const;
+        const fens = ["coverage-fen"];
+        mocks.prepareNativeRead.mockResolvedValue({ status: "ok", data: "coverage-ticket" });
+        mocks.cancelNativeRead.mockResolvedValue({ status: "ok", data: null });
+        let finishCommand!: (value: unknown) => void;
+        mocks.searchPositionsStats.mockReturnValue(
+            new Promise((resolve) => {
+                finishCommand = resolve;
+            }),
+        );
+        const result = tauri.searchPositionsStats(database, fens, "coverage-calc:test", {
+            signal: controller.signal,
+        });
+        await Promise.resolve();
+        expect(mocks.searchPositionsStats).toHaveBeenCalledExactlyOnceWith(
+            database,
+            fens,
+            "coverage-calc:test",
+            "coverage-ticket",
+        );
+        controller.abort();
+        finishCommand({ status: "ok", data: [] });
+        await expect(result).rejects.toMatchObject({ details: { category: "cancelled" } });
+        expect(mocks.cancelNativeRead).toHaveBeenCalledExactlyOnceWith("coverage-ticket");
     });
 
     test("simultaneous owners cancel independently", async () => {

@@ -1244,6 +1244,14 @@ async searchPosition(file: DatabaseHandle, query: GameQuery, tabId: string, tick
     else return { status: "error", error: e  as any };
 }
 },
+async searchPositionsStats(file: DatabaseHandle, fens: string[], tabId: string, ticket: string | null) : Promise<Result<PositionStatsForFen[], ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("search_positions_stats", { file, fens, tabId, ticket }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getPlayers(file: DatabaseHandle, query: PlayerQuery, ticket: string | null) : Promise<Result<QueryResponse<Player[]>, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_players", { file, query, ticket }) };
@@ -1647,6 +1655,7 @@ export type PlayerSort = "id" | "name" | "elo" | "games"
 export type PlayersTime = { white: number; black: number; winc: number; binc: number }
 export type PositionQueryJs = { fen: string; type_: string }
 export type PositionStats = { move: string; white: number; draw: number; black: number; unknown: number; last_played: string | null; year_counts: YearCount[] }
+export type PositionStatsForFen = { fen: string; openings: PositionStats[] }
 export type PracticeDeckIdentity = { fileId: string; game: number }
 export type PracticeDeckInventory = { decks: PracticeDeckIdentity[]; anomalies: PracticeStoreAnomaly[] }
 export type PracticeDeckLoad = { epoch: string; deck: PracticeDeckSnapshot | null }
