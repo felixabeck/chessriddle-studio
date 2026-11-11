@@ -255,7 +255,7 @@ test("workspace-tabs: search opens a Library file outside recents and replaces o
         .getByRole("textbox", { name: "Search files and players", exact: true })
         .fill("Unopened");
     const row = page.locator("[data-library-row]").filter({ hasText: "Unopened Najdorf" });
-    await expect(row).toContainText("a day ago");
+    await expect(row).toContainText("yesterday");
     await row.click();
     const opened = (await activeWorkspaceTab(page))!;
     expect(opened.type).toBe("analysis");
