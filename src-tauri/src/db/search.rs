@@ -778,10 +778,11 @@ fn get_move_after_match(
     query: &PositionQuery,
     cancellation: &CancellationToken,
 ) -> Result<Option<String>, Error> {
+    // A single query uses `matches` directly, avoiding an exact-identity hash lookup.
     let matcher = ReplayQueries {
         queries: std::slice::from_ref(query),
         exact: HashMap::new(),
-        partial: vec![0],
+        linear_queries: vec![0],
     };
     Ok(replay_position_matches(
         game_id,
@@ -801,26 +802,27 @@ fn get_move_after_match(
 struct ReplayQueries<'a> {
     queries: &'a [PositionQuery],
     exact: HashMap<ExactPositionIdentity, Vec<usize>>,
-    partial: Vec<usize>,
+    /// Queries checked by `matches` without an exact-identity hash lookup.
+    linear_queries: Vec<usize>,
 }
 
 impl<'a> ReplayQueries<'a> {
     fn new(queries: &'a [PositionQuery]) -> Self {
         let mut exact = HashMap::<_, Vec<_>>::new();
-        let mut partial = Vec::new();
+        let mut linear_queries = Vec::new();
         for (index, query) in queries.iter().enumerate() {
             match query {
                 PositionQuery::Exact(data) => exact
                     .entry(ExactPositionIdentity::new(&data.position))
                     .or_default()
                     .push(index),
-                PositionQuery::Partial(_) => partial.push(index),
+                PositionQuery::Partial(_) => linear_queries.push(index),
             }
         }
         Self {
             queries,
             exact,
-            partial,
+            linear_queries,
         }
     }
 }
@@ -873,7 +875,7 @@ fn replay_position_matches(
         let matching = exact_matches
             .into_iter()
             .flatten()
-            .chain(matcher.partial.iter());
+            .chain(matcher.linear_queries.iter());
         for &index in matching {
             if candidates.contains(&index) && matcher.queries[index].matches(&chess) {
                 let continuation = matched_position_continuation(
@@ -914,6 +916,45 @@ fn search_progress_percent(processed: usize, total: usize) -> f32 {
         return 0.0;
     }
     (processed as f64 / total as f64 * 100.0) as f32
+}
+
+#[allow(clippy::too_many_arguments)]
+fn report_position_search_progress<R: tauri::Runtime>(
+    processed: usize,
+    total: usize,
+    app: &tauri::AppHandle<R>,
+    lease: &ProgressLease,
+    context: &str,
+    progress_error_diagnosed: &AtomicBool,
+    cancellation: &CancellationToken,
+    #[cfg(test)] progress_update: Option<&ProgressUpdateHook<'_>>,
+) -> Result<(), Error> {
+    if !processed.is_multiple_of(POSITION_SEARCH_PROGRESS_INTERVAL) {
+        return Ok(());
+    }
+    let percent = search_progress_percent(processed, total);
+    let report_progress = || {
+        update_progress_with_state(
+            &app.state::<AppState>().progress_state,
+            app,
+            lease,
+            percent,
+            ProgressState::Running,
+        )
+    };
+    #[cfg(test)]
+    let progress_result = progress_update
+        .and_then(|update| update(lease, percent))
+        .unwrap_or_else(report_progress);
+    #[cfg(not(test))]
+    let progress_result = report_progress();
+    handle_running_progress_result(
+        progress_result,
+        context,
+        lease,
+        progress_error_diagnosed,
+        Some(cancellation),
+    )
 }
 
 #[derive(Debug, Serialize, Clone, Type)]
@@ -1053,21 +1094,17 @@ fn search_positions_stats_blocking<R: tauri::Runtime>(
                             if cancel_after == Some(count) {
                                 cancellation.cancel();
                             }
-                            if count.is_multiple_of(POSITION_SEARCH_PROGRESS_INTERVAL) {
-                                handle_running_progress_result(
-                                    update_progress_with_state(
-                                        &app.state::<AppState>().progress_state,
-                                        &app,
-                                        &lease,
-                                        search_progress_percent(count, index.len()),
-                                        ProgressState::Running,
-                                    ),
-                                    "position statistics search",
-                                    &lease,
-                                    &progress_error_diagnosed,
-                                    Some(cancellation),
-                                )?;
-                            }
+                            report_position_search_progress(
+                                count,
+                                index.len(),
+                                &app,
+                                &lease,
+                                "position statistics search",
+                                &progress_error_diagnosed,
+                                cancellation,
+                                #[cfg(test)]
+                                None,
+                            )?;
                             if !matches_search_metadata(entry, &coverage_query, None, None) {
                                 return Ok(());
                             }
@@ -1406,31 +1443,17 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
                     return Err(Error::Cancellation);
                 }
                 let index = processed.fetch_add(1, Ordering::Relaxed) + 1;
-                if index.is_multiple_of(POSITION_SEARCH_PROGRESS_INTERVAL) {
-                    let percent = search_progress_percent(index, game_count);
-                    let report_progress = || {
-                        update_progress_with_state(
-                            &app.state::<AppState>().progress_state,
-                            &app,
-                            &lease,
-                            percent,
-                            ProgressState::Running,
-                        )
-                    };
+                report_position_search_progress(
+                    index,
+                    game_count,
+                    &app,
+                    &lease,
+                    "position search",
+                    &progress_error_diagnosed,
+                    cancellation,
                     #[cfg(test)]
-                    let progress_result = progress_update
-                        .and_then(|update| update(&lease, percent))
-                        .unwrap_or_else(report_progress);
-                    #[cfg(not(test))]
-                    let progress_result = report_progress();
-                    handle_running_progress_result(
-                        progress_result,
-                        "position search",
-                        &lease,
-                        &progress_error_diagnosed,
-                        Some(cancellation),
-                    )?;
-                }
+                    progress_update,
+                )?;
 
                 if !matches_search_metadata(
                     entry,
@@ -1889,7 +1912,14 @@ mod descriptor_identity_tests {
             "failed descriptor stamp must not publish an index"
         );
         assert!(
-            state.search_cache.results.lock().unwrap().values.is_empty(),
+            state
+                .search_cache
+                .results
+                .lock()
+                .unwrap()
+                .entries
+                .values
+                .is_empty(),
             "failed descriptor stamp must not publish results"
         );
     }
@@ -2031,7 +2061,14 @@ mod progress_error_tests {
                     "Rayon sibling token must be cancelled"
                 );
                 assert!((1..=2).contains(&checkpoints.load(Ordering::SeqCst)));
-                assert!(state.search_cache.results.lock().unwrap().values.is_empty());
+                assert!(state
+                    .search_cache
+                    .results
+                    .lock()
+                    .unwrap()
+                    .entries
+                    .values
+                    .is_empty());
                 assert!(capture
                     .records()
                     .iter()
@@ -2097,7 +2134,7 @@ mod progress_error_tests {
                 assert!(games.is_empty());
                 let cache = state.search_cache.results.lock().unwrap();
                 assert_eq!(
-                    cache.values.len(),
+                    cache.entries.values.len(),
                     1,
                     "successful results must be published"
                 );
@@ -2335,8 +2372,8 @@ mod imported_search_tests {
             assert_eq!(samples[0].moves, "1. a4 1-0");
 
             let cache = state.search_cache.results.lock().unwrap();
-            assert_eq!(cache.values.len(), 1);
-            let (key, cached) = cache.values.iter().next().unwrap();
+            assert_eq!(cache.entries.values.len(), 1);
+            let (key, cached) = cache.entries.values.iter().next().unwrap();
             assert_eq!(key.query, query);
             assert_eq!(
                 serde_json::to_value(&cached.value).unwrap(),
@@ -2531,11 +2568,25 @@ mod imported_search_tests {
                 let state = app.state::<AppState>();
                 for (fen, expected_presence) in [(AFTER_E4_FEN, true), (ABSENT_FEN, false)] {
                     let query = exact_position_query(fen);
-                    let prior_tuples = state.search_cache.results.lock().unwrap().values.len();
+                    let prior_tuples = state
+                        .search_cache
+                        .results
+                        .lock()
+                        .unwrap()
+                        .entries
+                        .values
+                        .len();
                     if presence_first {
                         assert_eq!(presence(&app, &handle, &query), expected_presence);
                         assert_eq!(
-                            state.search_cache.results.lock().unwrap().values.len(),
+                            state
+                                .search_cache
+                                .results
+                                .lock()
+                                .unwrap()
+                                .entries
+                                .values
+                                .len(),
                             prior_tuples,
                             "presence must not publish explorer tuples"
                         );
@@ -2579,7 +2630,14 @@ mod imported_search_tests {
                         serde_json::to_value(&explorer).unwrap()
                     );
                     assert_eq!(
-                        state.search_cache.results.lock().unwrap().values.len(),
+                        state
+                            .search_cache
+                            .results
+                            .lock()
+                            .unwrap()
+                            .entries
+                            .values
+                            .len(),
                         prior_tuples + 1
                     );
                 }
@@ -2601,7 +2659,17 @@ mod imported_search_tests {
         let explorer =
             run_position_search(&app, &handle, present.clone(), "unfinished-explorer").unwrap();
         assert!(explorer.0.is_empty() && explorer.1.is_empty());
-        assert_eq!(state.search_cache.results.lock().unwrap().values.len(), 1);
+        assert_eq!(
+            state
+                .search_cache
+                .results
+                .lock()
+                .unwrap()
+                .entries
+                .values
+                .len(),
+            1
+        );
         let found = crate::chess::novelty_lookup_blocking(
             &state.pgn_path_authority,
             &state.database_repository,
@@ -2617,7 +2685,17 @@ mod imported_search_tests {
             [true, false],
             "warmed occurrence precedes genuine absence"
         );
-        assert_eq!(state.search_cache.results.lock().unwrap().values.len(), 1);
+        assert_eq!(
+            state
+                .search_cache
+                .results
+                .lock()
+                .unwrap()
+                .entries
+                .values
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -2953,12 +3031,31 @@ mod batch_tests {
         fens.push(fens[0].replace("0 1", "8 5"));
         let result = run_batch(&app, &handle, &fens, &CancellationToken::new()).unwrap();
         assert_eq!(result.len(), fens.len());
+        // This fixture's only draw repeats the start before e4. Count its first Nf3 once.
+        let first_continuation = result[0]
+            .openings
+            .iter()
+            .find(|item| item.move_ == "Nf3")
+            .unwrap();
+        assert_eq!(first_continuation.draw, 1);
+        assert!(result[0]
+            .openings
+            .iter()
+            .filter(|item| item.move_ != "Nf3")
+            .all(|item| item.draw == 0));
+        let later_continuation = result[0]
+            .openings
+            .iter()
+            .find(|item| item.move_ == "e4")
+            .unwrap();
+        assert_eq!(later_continuation.draw, 0);
         assert!(app
             .state::<AppState>()
             .search_cache
             .results
             .lock()
             .unwrap()
+            .entries
             .values
             .is_empty());
         for (i, (fen, batch)) in fens.iter().zip(result).enumerate() {
@@ -2993,6 +3090,108 @@ mod batch_tests {
             .openings
             .iter()
             .all(|item| item.unknown == 0 && item.move_ != "c5"));
+    }
+
+    #[test]
+    fn batch_distinguishes_castling_and_legal_en_passant_in_queries_and_cache() {
+        let pgn = r#"[Event "With castling rights"]
+[Result "1-0"]
+[SetUp "1"]
+[FEN "4k3/8/8/8/8/8/8/4K2R w K - 0 1"]
+
+1. O-O 1-0
+
+[Event "Without castling rights"]
+[Result "0-1"]
+[SetUp "1"]
+[FEN "4k3/8/8/8/8/8/8/4K2R w - - 0 1"]
+
+1. Rh2 0-1
+
+[Event "With legal en passant"]
+[Result "1-0"]
+[SetUp "1"]
+[FEN "4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 2"]
+
+2. exd6 1-0
+
+[Event "Without en passant"]
+[Result "0-1"]
+[SetUp "1"]
+[FEN "4k3/8/8/3pP3/8/8/8/4K3 w - - 0 2"]
+
+2. e6 0-1
+"#;
+        let (_dir, app, handle, _path) = imported_search_tests::imported_search_database(pgn);
+        let state = app.state::<AppState>();
+        let _instrument = tests::SearchInstrument::start();
+        let token = CancellationToken::new();
+        for (fens, moves) in [
+            (
+                [
+                    "4k3/8/8/8/8/8/8/4K2R w K - 0 1",
+                    "4k3/8/8/8/8/8/8/4K2R w - - 0 1",
+                ],
+                ["O-O", "Rh2"],
+            ),
+            (
+                [
+                    "4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 2",
+                    "4k3/8/8/3pP3/8/8/8/4K3 w - - 0 2",
+                ],
+                ["exd6", "e6"],
+            ),
+        ] {
+            let fens = fens.map(str::to_owned);
+            let assert_stats = |result: &PositionStatsForFen, index: usize| {
+                assert_eq!(result.fen, fens[index]);
+                assert_eq!(result.openings.len(), 1, "{}", result.fen);
+                let item = &result.openings[0];
+                assert_eq!(
+                    (
+                        item.move_.as_str(),
+                        item.white,
+                        item.draw,
+                        item.black,
+                        item.unknown
+                    ),
+                    (
+                        moves[index],
+                        i32::from(index == 0),
+                        0,
+                        i32::from(index == 1),
+                        0
+                    ),
+                    "{}",
+                    result.fen
+                );
+            };
+
+            // Both identities must survive deduplication in the same cold batch.
+            state.search_cache.clear();
+            PROCESS_ENTRY_CALLS.store(0, Ordering::SeqCst);
+            let result = run_batch(&app, &handle, &fens, &token).unwrap();
+            assert_eq!(PROCESS_ENTRY_CALLS.swap(0, Ordering::SeqCst), 4);
+            assert_eq!(result.len(), 2);
+            for (index, stats) in result.iter().enumerate() {
+                assert_stats(stats, index);
+            }
+
+            // Warming either identity alone must leave the other as a cache miss.
+            for first in [0, 1] {
+                state.search_cache.clear();
+                for index in [first, 1 - first] {
+                    let result = run_batch(&app, &handle, &fens[index..=index], &token).unwrap();
+                    assert_eq!(PROCESS_ENTRY_CALLS.swap(0, Ordering::SeqCst), 4);
+                    assert_stats(&result[0], index);
+                }
+                let cached = run_batch(&app, &handle, &fens, &token).unwrap();
+                assert_eq!(PROCESS_ENTRY_CALLS.load(Ordering::SeqCst), 0);
+                for (index, stats) in cached.iter().enumerate() {
+                    assert_stats(stats, index);
+                }
+            }
+        }
     }
 
     #[test]
@@ -3038,7 +3237,14 @@ mod batch_tests {
         assert_eq!(PROCESS_ENTRY_CALLS.load(Ordering::SeqCst), 0);
         run_batch(&app, &handle, &fens[..6], &token).unwrap();
         assert_eq!(PROCESS_ENTRY_CALLS.swap(0, Ordering::SeqCst), 7);
-        assert!(state.search_cache.results.lock().unwrap().values.is_empty());
+        assert!(state
+            .search_cache
+            .results
+            .lock()
+            .unwrap()
+            .entries
+            .values
+            .is_empty());
         let mut connection = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
         connection
             .transaction::<_, Error, _>(|db| {
@@ -3138,7 +3344,14 @@ mod batch_tests {
             .entries
             .values
             .is_empty());
-        assert!(state.search_cache.results.lock().unwrap().values.is_empty());
+        assert!(state
+            .search_cache
+            .results
+            .lock()
+            .unwrap()
+            .entries
+            .values
+            .is_empty());
     }
 
     #[test]
@@ -4196,7 +4409,14 @@ mod tests {
         });
         assert!(!get_index_path(&database).exists());
         assert_eq!(state.search_cache.cached_index_count(), 0);
-        assert!(state.search_cache.results.lock().unwrap().values.is_empty());
+        assert!(state
+            .search_cache
+            .results
+            .lock()
+            .unwrap()
+            .entries
+            .values
+            .is_empty());
         drop(holder);
         assert_eq!(state.search_cache.generation_locks.len(), 0);
     }
@@ -4621,7 +4841,14 @@ mod tests {
         assert!(matches!(result, Err(Error::Cancellation)));
         assert!(checkpoints.load(Ordering::SeqCst) >= 2);
         assert!(!get_index_path(&database).exists());
-        assert!(state.search_cache.results.lock().unwrap().values.is_empty());
+        assert!(state
+            .search_cache
+            .results
+            .lock()
+            .unwrap()
+            .entries
+            .values
+            .is_empty());
     }
 
     #[test]
@@ -4646,7 +4873,14 @@ mod tests {
             None,
         );
         assert!(matches!(result, Err(Error::Cancellation)));
-        assert!(state.search_cache.results.lock().unwrap().values.is_empty());
+        assert!(state
+            .search_cache
+            .results
+            .lock()
+            .unwrap()
+            .entries
+            .values
+            .is_empty());
     }
 
     #[tokio::test]
@@ -4682,7 +4916,14 @@ mod tests {
         );
         assert!(checkpoints.load(Ordering::SeqCst) >= 2);
         assert!(!get_index_path(&database).exists());
-        assert!(state.search_cache.results.lock().unwrap().values.is_empty());
+        assert!(state
+            .search_cache
+            .results
+            .lock()
+            .unwrap()
+            .entries
+            .values
+            .is_empty());
         assert!(state.search_cache.indexes.lock().unwrap().values.is_empty());
     }
 
@@ -5296,7 +5537,14 @@ mod tests {
             &handle,
         )
         .unwrap();
-        assert!(state.search_cache.results.lock().unwrap().values.is_empty());
+        assert!(state
+            .search_cache
+            .results
+            .lock()
+            .unwrap()
+            .entries
+            .values
+            .is_empty());
 
         let instrument = SearchInstrument::start();
         let cancellation = CancellationToken::new();
@@ -5329,7 +5577,14 @@ mod tests {
             result.as_ref().err()
         );
         assert!(cancellation.is_cancelled());
-        assert!(state.search_cache.results.lock().unwrap().values.is_empty());
+        assert!(state
+            .search_cache
+            .results
+            .lock()
+            .unwrap()
+            .entries
+            .values
+            .is_empty());
         assert_eq!(PROCESS_ENTRY_CALLS.load(Ordering::SeqCst), 0);
         assert!(!EXCLUDE_FAST_SQL_COMPLETED.load(Ordering::SeqCst));
         drop(instrument);

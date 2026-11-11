@@ -159,8 +159,8 @@ fn pause_image_issuance_after_lease() {
 }
 
 #[derive(Clone)]
-struct CachedSearchResult {
-    value: SearchResult,
+struct WeightedCacheEntry<V> {
+    value: V,
     bytes: usize,
 }
 
@@ -281,28 +281,38 @@ pub(crate) struct PositionStatsKey {
     identity: SearchIndexIdentity,
 }
 
-#[derive(Clone)]
-struct CachedPositionStats {
-    value: Vec<PositionStats>,
+struct WeightedSearchCache<K, V> {
+    entries: BoundedSearchCache<K, WeightedCacheEntry<V>>,
     bytes: usize,
 }
 
-#[derive(Default)]
-struct PositionStatsCache {
-    entries: BoundedSearchCache<PositionStatsKey, CachedPositionStats>,
-    bytes: usize,
+impl<K, V> Default for WeightedSearchCache<K, V> {
+    fn default() -> Self {
+        Self {
+            entries: BoundedSearchCache::default(),
+            bytes: 0,
+        }
+    }
 }
 
-impl PositionStatsCache {
-    fn insert(&mut self, key: PositionStatsKey, value: CachedPositionStats) {
-        self.bytes += value.bytes;
+impl<K: Clone + Eq + std::hash::Hash, V: Clone> WeightedSearchCache<K, V> {
+    fn get(&mut self, key: &K) -> Option<V> {
+        self.entries.get(key).map(|cached| cached.value)
+    }
+
+    fn insert(&mut self, key: K, value: V, bytes: usize, capacity: usize, max_bytes: usize) {
+        // An oversized value must not displace a previously cached value for this key.
+        if bytes > max_bytes {
+            return;
+        }
+        self.bytes += bytes;
         for evicted in self
             .entries
-            .insert(key, value, POSITION_STATS_CACHE_CAPACITY)
+            .insert(key, WeightedCacheEntry { value, bytes }, capacity)
         {
             self.bytes -= evicted.bytes;
         }
-        while self.bytes > POSITION_STATS_CACHE_MAX_BYTES {
+        while self.bytes > max_bytes {
             let Some(evicted) = self.entries.evict_oldest() else {
                 break;
             };
@@ -310,8 +320,11 @@ impl PositionStatsCache {
         }
     }
 
-    fn retain(&mut self, predicate: impl FnMut(&PositionStatsKey, &CachedPositionStats) -> bool) {
-        for evicted in self.entries.retain(predicate) {
+    fn retain(&mut self, mut predicate: impl FnMut(&K, &V) -> bool) {
+        for evicted in self
+            .entries
+            .retain(|key, cached| predicate(key, &cached.value))
+        {
             self.bytes -= evicted.bytes;
         }
     }
@@ -388,8 +401,8 @@ impl<K: Clone + Eq + std::hash::Hash, V: Clone> BoundedSearchCache<K, V> {
 
 #[derive(Default)]
 pub(crate) struct SearchCache {
-    results: Mutex<BoundedSearchCache<SearchResultKey, CachedSearchResult>>,
-    position_stats: Mutex<PositionStatsCache>,
+    results: Mutex<WeightedSearchCache<SearchResultKey, SearchResult>>,
+    position_stats: Mutex<WeightedSearchCache<PositionStatsKey, Vec<PositionStats>>>,
     indexes: Mutex<BoundedSearchCache<SearchIndexIdentity, MmapSearchIndex>>,
     collisions: KeyedLocks<(GameQuery, (u64, u64)), parking_lot::Mutex<()>>,
     generation_locks: KeyedLocks<(u64, u64), parking_lot::Mutex<()>>,
@@ -429,16 +442,10 @@ impl SearchCache {
             .lock()
             .expect("search result cache poisoned")
             .get(key)
-            .map(|cached| cached.value)
     }
 
     pub(crate) fn get_position_stats(&self, key: &PositionStatsKey) -> Option<Vec<PositionStats>> {
-        self.position_stats
-            .lock()
-            .ok()?
-            .entries
-            .get(key)
-            .map(|cached| cached.value)
+        self.position_stats.lock().ok()?.get(key)
     }
 
     pub(crate) fn insert_position_stats(&self, key: PositionStatsKey, value: Vec<PositionStats>) {
@@ -448,37 +455,28 @@ impl SearchCache {
                 .iter()
                 .map(|item| item.move_.capacity() + item.recency_heap_bytes())
                 .sum::<usize>();
-        if bytes > POSITION_STATS_CACHE_MAX_BYTES {
-            return;
-        }
         let Ok(mut cache) = self.position_stats.lock() else {
             return;
         };
-        cache.insert(key, CachedPositionStats { value, bytes });
+        cache.insert(
+            key,
+            value,
+            bytes,
+            POSITION_STATS_CACHE_CAPACITY,
+            POSITION_STATS_CACHE_MAX_BYTES,
+        );
     }
 
     pub(crate) fn insert_result(&self, key: SearchResultKey, value: SearchResult) {
         let bytes = estimated_search_result_bytes(&value);
-        if bytes > SEARCH_RESULT_CACHE_MAX_BYTES {
-            return;
-        }
         let mut cache = self.results.lock().expect("search result cache poisoned");
         cache.insert(
             key,
-            CachedSearchResult { value, bytes },
+            value,
+            bytes,
             SEARCH_RESULT_CACHE_CAPACITY,
+            SEARCH_RESULT_CACHE_MAX_BYTES,
         );
-        let mut total = cache
-            .values
-            .values()
-            .map(|cached| cached.bytes)
-            .sum::<usize>();
-        while total > SEARCH_RESULT_CACHE_MAX_BYTES {
-            let Some(evicted) = cache.evict_oldest() else {
-                break;
-            };
-            total = total.saturating_sub(evicted.bytes);
-        }
     }
 
     pub(crate) fn get_index(&self, identity: &SearchIndexIdentity) -> Option<MmapSearchIndex> {
@@ -2744,6 +2742,39 @@ mod search_cache_tests {
         assert_eq!(cache.get(&"first"), None);
         assert_eq!(cache.get(&"second"), Some(2));
         assert_eq!(cache.get(&"third"), Some(3));
+    }
+
+    #[test]
+    fn weighted_cache_preserves_lru_and_accounts_for_replacement_and_retention() {
+        let mut cache = WeightedSearchCache::default();
+        cache.insert("first", 1, 4, 2, 10);
+        cache.insert("second", 2, 4, 2, 10);
+        assert_eq!(cache.get(&"first"), Some(1));
+        cache.insert("third", 3, 4, 2, 10);
+        assert_eq!(cache.get(&"second"), None);
+        assert_eq!(cache.get(&"first"), Some(1));
+        assert_eq!(cache.bytes, 8);
+
+        // Replacement releases its old weight and refreshes recency.
+        cache.insert("third", 30, 6, 2, 10);
+        assert_eq!(cache.bytes, 10);
+        cache.insert("third", 300, 11, 2, 10);
+        assert_eq!(cache.get(&"third"), Some(30));
+        assert_eq!(cache.bytes, 10);
+        cache.insert("fourth", 4, 7, 2, 10);
+        assert_eq!(cache.get(&"first"), None);
+        assert_eq!(cache.get(&"third"), None);
+        assert_eq!(cache.get(&"fourth"), Some(4));
+        assert_eq!(cache.bytes, 7);
+
+        cache.insert("fifth", 5, 3, 2, 10);
+        cache.retain(|key, _| *key == "fifth");
+        assert_eq!(cache.get(&"fourth"), None);
+        assert_eq!(cache.bytes, 3);
+        cache.insert("sixth", 6, 7, 2, 10);
+        assert_eq!(cache.get(&"fifth"), Some(5));
+        assert_eq!(cache.get(&"sixth"), Some(6));
+        assert_eq!(cache.bytes, 10);
     }
 
     #[test]
@@ -5544,9 +5575,23 @@ mod blocking_offload_scans {
             search_blocking.contains("ProgressLease"),
             "search_position_blocking must take ProgressLease: {search_blocking}"
         );
+        let batch_blocking = body_at_indent(
+            search,
+            "fn search_positions_stats_blocking<R: tauri::Runtime>(",
+        );
+        for body in [search_blocking, batch_blocking] {
+            assert!(
+                body.contains("report_position_search_progress("),
+                "both position scans must use shared progress reporting: {body}"
+            );
+        }
+        let search_progress = body_at_indent(
+            search,
+            "fn report_position_search_progress<R: tauri::Runtime>(",
+        );
         assert!(
-            search_blocking.contains("search_progress_percent"),
-            "search_position_blocking must keep the 0..=100 scale: {search_blocking}"
+            search_progress.contains("search_progress_percent"),
+            "shared position search progress must keep the 0..=100 scale: {search_progress}"
         );
         for token in ["Succeeded", "Failed", "Cancelled", "complete("] {
             assert!(
