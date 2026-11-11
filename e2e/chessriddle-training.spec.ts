@@ -806,6 +806,19 @@ test("solution length toggles preserve too-short recovery and require a changed 
         await changeSolutionLength(page, showLength);
         await expect(submit).toBeDisabled();
     }
+    const savedSettings = () =>
+        page.evaluate(() =>
+            window.__E2E_TAURI__
+                .invocations()
+                .filter((call) => call.command === "chessriddle_save_training_settings")
+                .map((call) => call.args),
+        );
+    await expect
+        .poll(savedSettings)
+        .toEqual([
+            { settings: { ...settings, showMoveCounter: false } },
+            { settings: { ...settings, showMoveCounter: true } },
+        ]);
     await playTrainingMove(page, board, "f1", "c4");
     await expect(panel.locator("[data-training-move-count]")).toHaveText("Moves: 4 / 3");
     await expect(submit).toBeEnabled();
@@ -830,8 +843,15 @@ async function changeSolutionLength(page: Page, checked: boolean) {
     await page.getByRole("button", { name: "Training settings", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Training settings", exact: true });
     const toggle = dialog.getByRole("switch", { name: "Show solution length", exact: true });
-    await toggle.click();
-    await expect(toggle).toBeChecked({ checked });
+    await expect(dialog).toBeVisible();
+    await waitForTransitionsSettled(page);
+    await expect(toggle).toBeEnabled();
+    await toggle.click({ trial: true });
+    await expect(toggle).toBeChecked({ checked: !checked });
+    await expect(async () => {
+        if ((await toggle.isChecked()) !== checked) await toggle.click();
+        await expect(toggle).toBeChecked({ checked, timeout: 0 });
+    }).toPass({ timeout: 1_000, intervals: [100, 250] });
     await expect(page.locator("[data-training-move-count]")).toHaveCount(checked ? 1 : 0);
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
