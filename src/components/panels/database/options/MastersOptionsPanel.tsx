@@ -4,6 +4,7 @@ import { useAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { masterOptionsAtom } from "@/state/atoms";
 import { MIN_DATE } from "@/utils/lichess/api";
+import { formatExplorerDate } from "@/utils/lichess/explorer";
 
 const MasterOptionsPanel = () => {
   const { t } = useTranslation();
@@ -13,7 +14,7 @@ const MasterOptionsPanel = () => {
       <YearPickerInput
         label={t("Common.Since")}
         placeholder={t("Common.PickDate")}
-        value={options.since}
+        value={options.since ? formatExplorerDate(options.since) : null}
         minDate={MIN_DATE}
         maxDate={new Date()}
         onChange={(value) => setOptions({ ...options, since: value ? new Date(value) : undefined })}
@@ -22,7 +23,7 @@ const MasterOptionsPanel = () => {
       <YearPickerInput
         label={t("Common.Until")}
         placeholder={t("Common.PickDate")}
-        value={options.until}
+        value={options.until ? formatExplorerDate(options.until) : null}
         minDate={MIN_DATE}
         maxDate={new Date()}
         onChange={(value) => setOptions({ ...options, until: value ? new Date(value) : undefined })}

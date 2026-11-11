@@ -15,7 +15,10 @@ import {
     waitForFontsSettled,
 } from "./fixtures";
 import type { ErrorPayload } from "../src/bindings/generated";
-import { deserializeStorageValue } from "../src/state/store/debouncedStorage";
+import {
+    deserializeStorageValue,
+    serializeStorageValue,
+} from "../src/state/store/debouncedStorage";
 import type { Locator, Page } from "@playwright/test";
 import type { TreeState } from "../src/utils/treeReducer";
 
@@ -145,6 +148,82 @@ async function importAnalysisFen(page: Page, initialFen: string) {
     const grid = page.getByRole("grid", { name: "Chessboard, White orientation", exact: true });
     await expect(grid).toBeVisible();
     return grid;
+}
+
+for (const timezoneId of ["America/Los_Angeles", "Europe/Berlin"]) {
+    test.describe(`explorer calendar ${timezoneId}`, () => {
+        test.use({ timezoneId });
+
+        test("month and year picker selections survive the stored Date round-trip", async ({
+            page,
+            mockScenario,
+        }) => {
+            await page.setViewportSize({ width: 1440, height: 900 });
+            await page.clock.setFixedTime(new Date("2024-06-15T12:00:00Z"));
+            await page.addInitScript(
+                (stored) => {
+                    for (const [key, value] of Object.entries(stored))
+                        localStorage.setItem(key, value);
+                },
+                {
+                    sessions: serializeStorageValue([
+                        {
+                            updatedAt: Date.UTC(2024, 0, 1),
+                            lichess: {
+                                username: "calendar-player",
+                                account: { id: "calendar-player", username: "calendar-player" },
+                            },
+                        },
+                    ]),
+                },
+            );
+            await mockScenario({
+                commands: {
+                    list_lichess_accounts: {
+                        result: [{ handle: "calendar-account", username: "calendar-player" }],
+                    },
+                    get_authenticated_lichess_explorer: {
+                        result: JSON.stringify({ white: 0, draws: 0, black: 0, moves: [] }),
+                    },
+                    get_progress: { result: null },
+                },
+            });
+            await importAnalysisFen(
+                page,
+                "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            );
+            await page.getByRole("tab", { name: "Database", exact: true }).click();
+            await page.getByRole("tab", { name: "Options", exact: true }).click();
+            const options = page.getByRole("tabpanel", { name: "Options", exact: true });
+            await options.getByText("Lichess All", { exact: true }).click();
+            const since = options.getByLabel("Since", { exact: true });
+            const until = options.getByLabel("Until", { exact: true });
+            async function pickDate(input: Locator, name: string) {
+                await input.click();
+                const dropdown = page.locator("[data-dates-dropdown]");
+                await dropdown.getByRole("button", { name, exact: true }).click();
+                await expect(dropdown).toBeHidden();
+            }
+            await pickDate(since, "Jan");
+            await pickDate(until, "Feb");
+            await expect(since).toHaveText("January 2024");
+            await expect(until).toHaveText("February 2024");
+            await pickDate(since, "Mar");
+            await expect(since).toHaveText("March 2024");
+            await pickDate(since, "Jan");
+            await expect(since).toHaveText("January 2024");
+
+            await options.getByText("Lichess Masters", { exact: true }).click();
+            await pickDate(since, "2024");
+            await pickDate(until, "2024");
+            await expect(since).toHaveText("2024");
+            await expect(until).toHaveText("2024");
+            await pickDate(since, "2023");
+            await expect(since).toHaveText("2023");
+            await pickDate(since, "2024");
+            await expect(since).toHaveText("2024");
+        });
+    });
 }
 
 test("board-keyboard: annotation navigation keeps focus and comments on their moves", async ({

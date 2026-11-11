@@ -10,7 +10,11 @@ import ToggleButtonGroup, {
 import { lichessOptionsAtom } from "@/state/atoms";
 import { capitalize } from "@/utils/format";
 import { MIN_DATE } from "@/utils/lichess/api";
-import type { LichessGameSpeed, LichessRating } from "@/utils/lichess/explorer";
+import {
+  formatExplorerDate,
+  type LichessGameSpeed,
+  type LichessRating,
+} from "@/utils/lichess/explorer";
 
 const LichessOptionsPanel = () => {
   const { t } = useTranslation();
@@ -102,7 +106,7 @@ const LichessOptionsPanel = () => {
         <MonthPickerInput
           label={t("Common.Since")}
           placeholder={t("Common.PickDate")}
-          value={options.since}
+          value={options.since ? formatExplorerDate(options.since) : null}
           minDate={MIN_DATE}
           maxDate={new Date()}
           onChange={(value) =>
@@ -116,7 +120,7 @@ const LichessOptionsPanel = () => {
         <MonthPickerInput
           label={t("Common.Until")}
           placeholder={t("Common.PickDate")}
-          value={options.until}
+          value={options.until ? formatExplorerDate(options.until) : null}
           minDate={MIN_DATE}
           maxDate={new Date()}
           onChange={(value) =>

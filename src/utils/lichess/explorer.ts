@@ -65,11 +65,16 @@ export const masterOptionsSchema = z.object({
 
 export type MasterGamesOptions = z.infer<typeof masterOptionsSchema>;
 
+// Mantine calendar strings are stored as UTC Dates. Preserve that calendar on display and in queries.
+export function formatExplorerDate(date: Date): string {
+    return date.toISOString().slice(0, 10);
+}
+
 export function getLichessGamesQueryParams(
     fen: string,
     options: LichessGamesOptions | undefined,
 ): string {
-    const getDateQueryString = (date: Date) => `${date.getFullYear()}-${date.getMonth() + 1}`;
+    const getDateQueryString = (date: Date) => formatExplorerDate(date).slice(0, 7);
 
     const params = new URLSearchParams();
 
@@ -104,7 +109,7 @@ export function getMasterGamesQueryParams(
     fen: string,
     options: MasterGamesOptions | undefined,
 ): string {
-    const getDateQueryString = (date: Date) => date.getFullYear().toString();
+    const getDateQueryString = (date: Date) => formatExplorerDate(date).slice(0, 4);
 
     const queryParams: string[] = [];
     if (options) {
