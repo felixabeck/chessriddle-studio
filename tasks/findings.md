@@ -23178,6 +23178,9 @@ Handled (drain aaa22b94, 2026-11-11). `rg 'fuse\.js|Fuse\(|from "fuse' src e2e s
 * **Push review follow-up 2026-11-11:** review found cancellation stopped before tab admission. `856d1dbf` carries an optional `AbortSignal` through `openDatabaseGame` → `createTab` (native reads plus a refusal before `replaceNewTab`/`commitNewTab`); `539517f8` does the same for single-game file and chapter opens through `openFile`, and a retired file request no longer prunes recents or notifies. `collapseFile` is now `retireRowOpens`.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"7624c6f17fe42234ac7338014cf6594c65bad09ad6f0534ecfa8f987c523be00","input_sha256":"e71bac2d44c219221dd2e1a79fb077db7f675366509a90786c1700bb4a255af8","kind":"mutation-receipt","operation":"b8e6870f21e33bf4e7dc45a601bbc94f1bf4ff1002375d94cfb3cfc1e91185c3","options":{"section":null},"request_id_sha256":null,"results":["f-20261111-69"],"target":"f-20261111-69","v":1} -->
 
+* **Rebased before push 2026-11-11:** the commits cited above landed as `0714c588` (was `e1c02453`), `38389098` (was `856d1dbf`) and `27b62c3b` (was `539517f8`).
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"d194cd80fb9a61247acf06a66b057ec01bdb23ac6f1f9b2be4868771c7ce1b8f","input_sha256":"ea483b7ab72519c51a1aec3547d37d5970548bbef24925dac80abc25126d68c3","kind":"mutation-receipt","operation":"4f9ca02cf5d2a3a70b482de5028733ce89e2a0019812e1ae8f61802231518c77","options":{"section":null},"request_id_sha256":null,"results":["f-20261111-69"],"target":"f-20261111-69","v":1} -->
+
 ---
 
 ## 2026-11-11 — filed through the inbox spool
