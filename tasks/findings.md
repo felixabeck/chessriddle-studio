@@ -23027,3 +23027,19 @@ Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates th
 * **Fix:** Keep `PuzzleSessionView` (or a hook it calls) as the session and admission controller. Move the settings accordion, database toolbar and delete confirmation, and the stats/history pane, into sibling modules (for example `PuzzleSettingsPanel`, `PuzzleDatabaseToolbar`, `PuzzleSessionHistory`). `AddPuzzle` and `PuzzleBoard` stay imported. Existing `Puzzles.test.tsx` remains the behaviour contract.
 * **Proof:** At HEAD `bdea41f47`, `Puzzles.tsx` has depth-0 functions only at `:103`, `:132` and `:168`, and the default export is at `:1321`. `PuzzleSessionView` JSX at `:819` already renders the extracted `<AddPuzzle>` and at `:799` `<PuzzleBoard>`. `ls src/components/puzzles/` lists those extracted modules. `tasks/decisions.md` has no entry requiring the remaining UI to share this file.
 * **Found by:** Grok Bot, quality review (t26u), HEAD `bdea41f47`.
+
+---
+
+## 2026-11-11 — filed through the inbox spool
+
+### `InfoPanel.tsx` still colocates a 530-line `GameSelectorAccordion` after `GameSelector` was extracted
+
+* **ID:** f-20261111-62 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** general quality review (Felix t26u) at HEAD `bdea41f47`
+* **Where:** `src/components/panels/info/InfoPanel.tsx` (703 lines). `InfoPanel` itself is `:75-139` (the layout). `DatabaseInfo` is `:140-171`. `GameSelectorAccordion` is `:173-702` (530 lines) and ends the file. It already imports and renders `GameSelector` from `./GameSelector` (`:36`, `:683`). `src/components/panels/info/GameSelector.tsx` is itself 551 lines (`GameSelector` `:59-392`, `GameRow` `:393-end`). No decision pins the accordion orchestration to `InfoPanel.tsx`.
+* **Defect:** The game list widget was extracted into `GameSelector.tsx`, but 530 lines of page-change, dirty-tree confirmation, game-count refresh and file-tab rebind still live as a sibling in the info-panel file. `InfoPanel` is only a short layout once that accordion is ignored. A change to paging or discard-before-page-change is reviewed in the same file as the PGN stats header and the database card. This is the same leftover-colocation pattern as f-20261111-54 and f-20261111-56.
+* **Failure scenario:** Editing file paging, the dirty-tree confirm, or the game-count refresh requires reviewing and merging against the info-panel layout and database-card navigation in the same 703-line file, even though `GameSelector.tsx` already exists as the list widget.
+* **Fix:** Move `GameSelectorAccordion` (and the `PageRequest` / `FileTabUpdateResult` types it owns) into `GameSelector.tsx` or a sibling `GameSelectorAccordion.tsx`. Leave `InfoPanel` as the composer of `DatabaseInfo`, the accordion, `FileInfo`, `GameInfo`, `FenSearch` and `PgnInput`. Existing `InfoPanel.test.tsx` and `GameSelector.test.tsx` remain the behaviour contract.
+* **Proof:** At HEAD `bdea41f47`, `GameSelectorAccordion` starts at `InfoPanel.tsx:173` and the file's only later export is `export default InfoPanel` at `:703`. The accordion renders `<GameSelector` at `:683`. `GameSelector.tsx` exports `GameSelector` and `GameSelectorRow` and does not contain the accordion. `tasks/decisions.md` has no entry requiring this orchestration to stay in `InfoPanel.tsx`.
+* **Found by:** Grok Bot, quality review (t26u), HEAD `bdea41f47`.
