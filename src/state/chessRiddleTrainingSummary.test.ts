@@ -15,6 +15,7 @@ const verdict: TrainingVerdict = {
     correctVariation: [],
     incorrectMove: null,
     correctMove: null,
+    incorrectMovePath: null,
 };
 test("summary counts finished attempts and rated deltas across consumers and resets with account identity", async () => {
     const api = vi.fn().mockResolvedValue({

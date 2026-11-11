@@ -1,5 +1,8 @@
 import { Button, Group, Kbd, Loader, Paper, Portal, Stack, Text, Title } from "@mantine/core";
 import { makeUci, parseUci } from "chessops";
+import { positionFromFen } from "@/utils/chessops";
+import GameNotation from "@/components/common/GameNotation";
+import { TreeStateProvider } from "@/components/common/TreeStateContext";
 import {
   ChevronFirst,
   ChevronLast,
@@ -26,9 +29,8 @@ import { tauri } from "@/platform/tauri";
 import { ChessRiddleCommandError, requiresChessRiddleConnection } from "@/platform/chessriddle";
 import type { AccountError } from "@/bindings";
 import {
-  canSubmitTraining,
-  trainingPosition,
-  trainingSan,
+  trainingDepth,
+  trainingNeedsConfirmation,
   trainingAnalysisTree,
 } from "@/utils/chessRiddleTraining";
 import { createTab, runTabCreation } from "@/utils/tabs";
@@ -58,11 +60,14 @@ export default function ChessRiddleTraining({
   const activeFilters = `${difficultyOptions(t).find((option) => option.value === String(effective.difficulty))?.label ?? ""} · ${effective.motif ? motifLabel(effective.motif, t) : t("Training.Settings.AllMotifs")}`;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [confirmSubmitOpen, setConfirmSubmitOpen] = useState(false);
   const [websiteError, setWebsiteError] = useState<AccountError | null>(null);
   const [websitePending, setWebsitePending] = useState(false);
   const setTabs = useSetAtom(tabsAtom);
   const keys = useAtomValue(keyMapAtom);
-  const { puzzle, phase, verdict, line, cursor } = state;
+  const { puzzle, phase, verdict, treeStore } = state;
+  const tree = treeStore?.getState();
+  const node = tree?.currentNode();
   useEffect(() => {
     if (state.available && state.phase === "idle") {
       void sessions.next(id);
@@ -73,14 +78,15 @@ export default function ChessRiddleTraining({
     if (phase === "verdict") void sessions.refreshMistakeCount(id);
   }, [id, phase]);
   const solution = phase === "verdict";
-  const displayedLine = solution ? (verdict?.correctVariation ?? []) : line;
-  const position = puzzle ? trainingPosition(puzzle, displayedLine, cursor) : null;
-  const sans = puzzle ? trainingSan(puzzle, displayedLine) : [];
-  const lastMove = puzzle
-    ? parseUci(cursor === 0 ? puzzle.entranceMove : displayedLine[cursor - 1])
-    : undefined;
+  const position = node ? positionFromFen(node.fen)[0] : null;
+  const lastMove = node?.move ?? (puzzle ? parseUci(puzzle.entranceMove) : undefined);
   const solving = phase === "solving";
-  const canPlay = solving && cursor === line.length && line.length < state.inputCap;
+  const canPlay = solving;
+  const submit = () => {
+    if (!sessions.canSubmit(id) || !tree) return;
+    if (trainingNeedsConfirmation(tree.root)) setConfirmSubmitOpen(true);
+    else void sessions.submit(id);
+  };
   const waiting = phase === "idle" || phase === "loading" || phase === "submitting";
   const actions = sessions.actions(id, state);
   const needsAccount =
@@ -107,13 +113,13 @@ export default function ChessRiddleTraining({
     "enter,a",
     () => {
       if (actions.includes("next")) void sessions.next(id);
-      else if (solving && puzzle && canSubmitTraining(puzzle, line, state.submitThreshold))
-        void sessions.submit(id);
+      else submit();
     },
     shortcutOptions,
   );
-  useHotkeys(keys.PREVIOUS_MOVE.keys, () => sessions.step(id, cursor - 1), shortcutOptions);
-  useHotkeys(keys.NEXT_MOVE.keys, () => sessions.step(id, cursor + 1), shortcutOptions);
+  useHotkeys(keys.PREVIOUS_MOVE.keys, () => sessions.step(id, "previous"), shortcutOptions);
+  useHotkeys(keys.NEXT_MOVE.keys, () => sessions.step(id, "next"), shortcutOptions);
+  useHotkeys("delete", () => sessions.undo(id), shortcutOptions);
   useHotkeys("?", () => setShortcutsOpen(true), { ...shortcutOptions, ignoreModifiers: true });
   useEffect(() => {
     let current = true;
@@ -266,6 +272,11 @@ export default function ChessRiddleTraining({
                       : t("Training.MistakesCount", { mistakes: state.mistakeCount })}
                   </Button>
                 </div>
+                {state.source === "mistakes" && (
+                  <Text size="xs" c="dimmed" data-training-mistakes-note>
+                    {t("Training.MistakesNote")}
+                  </Text>
+                )}
                 {state.mistakeCountError && state.mistakeCountError !== state.error && (
                   <>
                     <TrainingError id={id} error={state.mistakeCountError} />
@@ -305,9 +316,14 @@ export default function ChessRiddleTraining({
                       </Text>
                     )}
                     <Group justify="space-between">
-                      <Text>
-                        {t("Training.MoveCount", { entered: line.length, total: state.inputCap })}
-                      </Text>
+                      {state.showMoveCounter && tree && (
+                        <Text data-training-move-count>
+                          {t("Training.MoveCount", {
+                            entered: trainingDepth(tree.root),
+                            total: puzzle.solutionPlyCount,
+                          })}
+                        </Text>
+                      )}
                       <Text>{t("Training.PuzzleRating", { rating: puzzle.puzzleRating })}</Text>
                     </Group>
                   </>
@@ -318,6 +334,13 @@ export default function ChessRiddleTraining({
                 {solving && verdict?.tooShort && (
                   <Text role="status" c="warning">
                     {t("Training.TooShort")}
+                  </Text>
+                )}
+                {solving && state.inputNotice && (
+                  <Text role="status" c="warning">
+                    {state.inputNotice === "oneSolverMove"
+                      ? t("Training.OnlyOneMoveAllowed")
+                      : t("Training.InputLimit")}
                   </Text>
                 )}
                 {solution && verdict && (
@@ -341,15 +364,12 @@ export default function ChessRiddleTraining({
                   <div className={classes.actions}>
                     <Button
                       variant="default"
-                      disabled={line.length === 0}
+                      disabled={!tree?.root.children.length}
                       onClick={() => sessions.undo(id)}
                     >
                       {t("Training.Undo")}
                     </Button>
-                    <Button
-                      disabled={!canSubmitTraining(puzzle, line, state.submitThreshold)}
-                      onClick={() => void sessions.submit(id)}
-                    >
+                    <Button disabled={!sessions.canSubmit(id)} onClick={submit}>
                       {t("Training.Submit")}
                     </Button>
                     <Button variant="default" onClick={() => void sessions.submit(id, true)}>
@@ -399,6 +419,28 @@ export default function ChessRiddleTraining({
       </Portal>
       <TrainingSettings id={id} opened={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <AppModal
+        opened={confirmSubmitOpen}
+        onClose={() => setConfirmSubmitOpen(false)}
+        title={t("Training.IncompleteVariationTitle")}
+      >
+        <Stack>
+          <Text>{t("Training.IncompleteVariationMessage")}</Text>
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setConfirmSubmitOpen(false)}>
+              {t("Common.Cancel")}
+            </Button>
+            <Button
+              onClick={() => {
+                setConfirmSubmitOpen(false);
+                void sessions.submit(id);
+              }}
+            >
+              {t("Training.Submit")}
+            </Button>
+          </Group>
+        </Stack>
+      </AppModal>
+      <AppModal
         opened={shortcutsOpen}
         onClose={() => setShortcutsOpen(false)}
         title={t("Training.Shortcuts.Title")}
@@ -420,6 +462,10 @@ export default function ChessRiddleTraining({
           </dt>
           <dd>{t("Training.NextPosition")}</dd>
           <dt>
+            <Kbd>{formatKeymap("Delete")}</Kbd>
+          </dt>
+          <dd>{t("Menu.DeleteMove")}</dd>
+          <dt>
             <Kbd>{formatKeymap("?")}</Kbd>
           </dt>
           <dd>{t("Training.Shortcuts.HelpAction")}</dd>
@@ -427,51 +473,48 @@ export default function ChessRiddleTraining({
       </AppModal>
       <Portal target="#bottomRight" style={{ height: "100%" }}>
         <Paper withBorder p="md" h="100%" style={{ overflowY: "auto", overflowWrap: "anywhere" }}>
-          <Stack>
+          <Stack h="100%">
             <Title order={3}>{solution ? t("Training.Solution") : t("Training.EnteredLine")}</Title>
-            {puzzle && (
+            {puzzle && treeStore && tree && (
               <>
-                <Group gap="xs">
-                  {sans.map((san, index) => (
-                    <Button
-                      key={`${index}:${san}`}
-                      size="compact-sm"
-                      variant={cursor === index + 1 ? "filled" : "subtle"}
-                      onClick={() => sessions.step(id, index + 1)}
-                    >
-                      {san}
-                    </Button>
-                  ))}
-                </Group>
+                <TreeStateProvider store={treeStore}>
+                  <GameNotation
+                    moveActions={
+                      solving
+                        ? {
+                            promote: (path) => sessions.promote(id, path),
+                            delete: (path) => sessions.undo(id, path),
+                          }
+                        : false
+                    }
+                  />
+                </TreeStateProvider>
                 <Group gap="xs" wrap="wrap">
                   <IconAction
                     label={t("Training.FirstPosition")}
-                    disabled={cursor === 0}
-                    onClick={() => sessions.step(id, 0)}
+                    disabled={tree.position.length === 0}
+                    onClick={() => sessions.step(id, "first")}
                   >
                     <ChevronFirst />
                   </IconAction>
                   <IconAction
                     label={t("Training.PreviousPosition")}
-                    disabled={cursor === 0}
-                    onClick={() => sessions.step(id, cursor - 1)}
+                    disabled={tree.position.length === 0}
+                    onClick={() => sessions.step(id, "previous")}
                   >
                     <ChevronLeft />
                   </IconAction>
-                  <Text size="sm">
-                    {t("Training.PositionCount", { current: cursor, total: displayedLine.length })}
-                  </Text>
                   <IconAction
                     label={t("Training.NextPosition")}
-                    disabled={cursor === displayedLine.length}
-                    onClick={() => sessions.step(id, cursor + 1)}
+                    disabled={!node?.children.length}
+                    onClick={() => sessions.step(id, "next")}
                   >
                     <ChevronRight />
                   </IconAction>
                   <IconAction
                     label={t("Training.LastPosition")}
-                    disabled={cursor === displayedLine.length}
-                    onClick={() => sessions.step(id, displayedLine.length)}
+                    disabled={!node?.children.length}
+                    onClick={() => sessions.step(id, "last")}
                   >
                     <ChevronLast />
                   </IconAction>

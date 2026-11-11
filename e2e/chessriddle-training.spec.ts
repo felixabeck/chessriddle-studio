@@ -43,11 +43,13 @@ const verdict: TrainingVerdict = {
     correctVariation: ["e7e5", "g1f3", "b8c6"],
     incorrectMove: null,
     correctMove: null,
+    incorrectMovePath: null,
 };
 const settings: TrainingSettings = {
     difficulty: 0,
     motif: null,
     showTimer: false,
+    showMoveCounter: false,
     timerMode: "up",
     timerDuration: 300,
 };
@@ -388,9 +390,13 @@ test("keyboard submit, navigation, ignored keys, next and Analyse", async ({
         await playTrainingMove(page, board, from, to);
     await panel.click({ position: { x: 5, y: 5 } });
     await page.keyboard.press("ArrowLeft");
-    await expect(page.locator("#bottomRight")).toContainText("Position 2 / 3");
+    await expect(page.locator('#bottomRight [data-notation-current="true"] button')).toHaveText(
+        /[N♘]f3/,
+    );
     await page.keyboard.press("ArrowRight");
-    await expect(page.locator("#bottomRight")).toContainText("Position 3 / 3");
+    await expect(page.locator('#bottomRight [data-notation-current="true"] button')).toHaveText(
+        /[N♘]c6/,
+    );
     for (const key of ["Control+Enter", "Meta+Enter", "Alt+a", "h"]) await page.keyboard.press(key);
     await page.evaluate(() =>
         document.body.dispatchEvent(
@@ -405,7 +411,14 @@ test("keyboard submit, navigation, ignored keys, next and Analyse", async ({
     await page.keyboard.press("?");
     await expect(page.getByRole("dialog")).toBeVisible();
     await page.keyboard.press("a");
-    await expect(page.getByRole("dialog").locator("kbd")).toHaveText(["Enter", "A", "←", "→", "?"]);
+    await expect(page.getByRole("dialog").locator("kbd")).toHaveText([
+        "Enter",
+        "A",
+        "←",
+        "→",
+        "Delete",
+        "?",
+    ]);
     await expect(page.getByRole("dialog")).not.toContainText("arrowleft");
     await captureTraining(page, page.getByRole("dialog"), "en-US-desktop-shortcuts.png", false);
     await page.keyboard.press("Escape");
@@ -435,6 +448,72 @@ test("keyboard submit, navigation, ignored keys, next and Analyse", async ({
     expect((await activeWorkspaceTab(page))?.type).toBe("analysis");
     await expect(page.locator("#left .cg-wrap")).toHaveClass(/orientation-black/);
     await expect(page.locator("#bottomRight")).toContainText("c6");
+});
+
+test("account solution length setting shows deepest branch plies and gates submission", async ({
+    page,
+    mockScenario,
+}) => {
+    await mockScenario({
+        commands: {
+            ...connectedCommands,
+            chessriddle_training_settings: { result: { ...settings, showMoveCounter: true } },
+        },
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Puzzles", exact: true }).click();
+    const panel = page.locator("[data-training-panel]");
+    const board = page.locator("#left cg-board");
+    await expect(panel.locator("[data-training-move-count]")).toHaveText("Moves: 0 / 3");
+    await playTrainingMove(page, board, "e7", "e5");
+    await expect(panel.locator("[data-training-move-count]")).toHaveText("Moves: 1 / 3");
+    await expect(panel.getByRole("button", { name: "Submit", exact: true })).toBeDisabled();
+    await playTrainingMove(page, board, "g1", "f3");
+    await playTrainingMove(page, board, "b8", "c6");
+    await expect(panel.locator("[data-training-move-count]")).toHaveText("Moves: 3 / 3");
+    await expect(panel.getByRole("button", { name: "Submit", exact: true })).toBeEnabled();
+    await page.getByRole("button", { name: "First position", exact: true }).click();
+    await expect(panel.locator("[data-training-move-count]")).toHaveText("Moves: 3 / 3");
+});
+
+test("opponent-ending branches require confirmation and cancellation keeps the tree editable", async ({
+    page,
+    mockScenario,
+}) => {
+    await mockScenario({ commands: connectedCommands });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Puzzles", exact: true }).click();
+    const panel = page.locator("[data-training-panel]");
+    const board = page.locator("#left cg-board");
+    await playTrainingMove(page, board, "e7", "e5");
+    await playTrainingMove(page, board, "g1", "f3");
+    await panel.getByRole("button", { name: "Submit", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText(en.translation["Training.IncompleteVariationMessage"]);
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    expect(
+        await page.evaluate(() =>
+            window.__E2E_TAURI__
+                .invocations()
+                .filter((call) => call.command === "chessriddle_training_submit"),
+        ),
+    ).toHaveLength(0);
+    await expect(page.locator('#bottomRight [data-notation-current="true"] button')).toHaveText(
+        /[N♘]f3/,
+    );
+    await panel.getByRole("button", { name: "Submit", exact: true }).click();
+    await dialog.getByRole("button", { name: "Submit", exact: true }).click();
+    await expect(panel.getByText("Correct", { exact: true })).toBeVisible();
+    const sent = await page.evaluate(() =>
+        window.__E2E_TAURI__
+            .invocations()
+            .filter((call) => call.command === "chessriddle_training_submit"),
+    );
+    expect(sent).toHaveLength(1);
+    expect(sent[0].args).toMatchObject({
+        request: { tree: { move: "e7e5", children: [{ move: "g1f3", children: [] }] } },
+    });
 });
 
 for (const layout of ["desktop", "scaled"] as const) {
@@ -771,7 +850,20 @@ for (const locale of ["en-US", "de-DE"] as const) {
                     },
                     layout === "scaled" ? 200 : 100,
                 );
-                await mockScenario({ commands: connectedCommands });
+                await mockScenario({
+                    commands: {
+                        ...connectedCommands,
+                        chessriddle_training_submit: {
+                            result: {
+                                ...verdict,
+                                isCorrect: false,
+                                incorrectMove: "g8f6",
+                                correctMove: "b8c6",
+                                incorrectMovePath: [1, 0],
+                            },
+                        },
+                    },
+                });
                 await page.goto("/");
                 const homeActions = page.locator("[data-home-actions]");
                 await expect(homeActions.locator("[data-home-action]")).toHaveCount(5);
@@ -825,27 +917,34 @@ for (const locale of ["en-US", "de-DE"] as const) {
                 await page
                     .getByRole("button", { name: text("Training.FirstPosition"), exact: true })
                     .click();
+                await playTrainingMove(page, board, "c7", "c5");
+                await expect(
+                    panel.getByText(text("Training.OnlyOneMoveAllowed"), { exact: true }),
+                ).toBeVisible();
                 await playTrainingMove(page, board, "e7", "e5");
+                await expect(
+                    page.locator('#bottomRight [data-notation-current="true"] button'),
+                ).toHaveText("e5");
+                await playTrainingMove(page, board, "f1", "c4");
+                await playTrainingMove(page, board, "g8", "f6");
+                const notation = page.locator("#bottomRight");
+                await expect(notation).toContainText("1...");
+                await expect(notation).toContainText("2.");
+                const sideLine = notation
+                    .locator('[style*="--notation-variation-depth"]')
+                    .filter({ hasText: /[B♗]c4/ });
+                await expect(sideLine).toBeVisible();
                 expect(
-                    await board
-                        .locator("piece.black.pawn")
-                        .evaluateAll((pieces) =>
-                            pieces.some(
-                                (piece) =>
-                                    (piece as HTMLElement & { cgKey: string }).cgKey === "e7",
-                            ),
-                        ),
-                ).toBe(true);
-                await page
-                    .getByRole("button", { name: text("Training.LastPosition"), exact: true })
-                    .click();
+                    await sideLine.evaluate((element) => getComputedStyle(element).paddingLeft),
+                ).not.toBe("0px");
+                await expect(panel.locator("[data-training-move-count]")).toHaveCount(0);
                 const owner = (await activeWorkspaceTab(page))!;
                 await page.getByRole("button", { name: text("Tab.NewTab"), exact: true }).click();
                 await page
                     .getByRole("tab", { name: text("Home.PuzzleTraining"), exact: true })
                     .click();
                 await expect(
-                    page.locator("#bottomRight").getByRole("button", { name: "Nc6", exact: true }),
+                    page.locator("#bottomRight").getByRole("button", { name: /^[N♘]c6$/ }),
                 ).toBeVisible();
                 // Returning to an overflowing tab can retain scrollIntoView's 4px inset scroll.
                 // Capture the overview from the tab strip's start, as in the solving capture.
@@ -868,13 +967,19 @@ for (const locale of ["en-US", "de-DE"] as const) {
                     .getByRole("button", { name: text("Training.Submit"), exact: true })
                     .click();
                 await expect(
-                    panel.getByText(text("Training.Correct"), { exact: true }),
+                    panel.getByText(text("Training.Incorrect"), { exact: true }),
                 ).toBeVisible();
                 await expect(
                     page
                         .locator("#bottomRight")
                         .getByRole("heading", { name: text("Training.Solution"), exact: true }),
                 ).toBeVisible();
+                await expect(
+                    page.locator("#bottomRight").getByRole("button", { name: /^[N♘]f6\?$/ }),
+                ).toBeVisible();
+                await expect(
+                    page.locator("#bottomRight").getByRole("button", { name: /^[N♘]c6!$/ }),
+                ).toHaveCount(2);
                 await page
                     .getByRole("button", { name: text("Training.NextPosition"), exact: true })
                     .click();
@@ -935,7 +1040,16 @@ for (const locale of ["en-US", "de-DE"] as const) {
                 );
                 expect(sent).toHaveLength(1);
                 expect(sent[0].args).toMatchObject({
-                    request: { line: ["e7e5", "g1f3", "b8c6"], solutionShown: false },
+                    request: {
+                        tree: {
+                            move: "e7e5",
+                            children: [
+                                { move: "g1f3", children: [{ move: "b8c6", children: [] }] },
+                                { move: "f1c4", children: [{ move: "g8f6", children: [] }] },
+                            ],
+                        },
+                        solutionShown: false,
+                    },
                 });
                 await preserveStorageForReload(page);
                 await expect(
@@ -1008,6 +1122,7 @@ for (const locale of ["en-US", "de-DE"] as const) {
             await expect(panel.getByText(text("Training.TooShort"))).toBeVisible();
             await captureTraining(page, panel, `${locale}-too-short.png`);
             await playTrainingMove(page, board, "g1", "f3");
+            await playTrainingMove(page, board, "b8", "c6");
             await panel.getByRole("button", { name: text("Training.Submit"), exact: true }).click();
             await expect(
                 panel.getByText(text("Training.Incorrect"), { exact: true }),
@@ -1057,6 +1172,10 @@ for (const locale of ["en-US", "de-DE"] as const) {
                 await panel
                     .getByRole("button", { name: text("Training.ShowSolution"), exact: true })
                     .click();
+                if (error === "engineTimeout")
+                    await expect(panel.locator("[data-training-mistakes-note]")).toHaveText(
+                        text("Training.MistakesNote"),
+                    );
                 await expect(panel.getByText(text(key), { exact: true })).toBeVisible();
                 await expect(
                     panel.getByRole("button", { name: text("Training.Submit"), exact: true }),
@@ -1160,6 +1279,9 @@ for (const locale of ["en-US", "de-DE"] as const) {
             );
             await panel.getByRole("button", { name: /^(Mistakes|Fehler)/ }).click();
             await expect(panel.getByText(text("Training.NoMistakes"))).toBeVisible();
+            await expect(panel.locator("[data-training-mistakes-note]")).toHaveText(
+                text("Training.MistakesNote"),
+            );
         });
     });
 }

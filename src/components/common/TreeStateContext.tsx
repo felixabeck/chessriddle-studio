@@ -20,18 +20,20 @@ export function TreeStateProvider({
   id,
   treeKey,
   initial,
+  store: externalStore,
   children,
 }: {
   id?: string;
   treeKey?: string;
   initial?: TreeState;
+  store?: TreeStore;
   children: React.ReactNode;
 }) {
   const storeRef = useRef<TreeStore | null>(null);
-  if (storeRef.current === null) {
+  if (storeRef.current === null && !externalStore) {
     storeRef.current = createTreeStore(id, initial, treeKey);
   }
-  const store = storeRef.current;
+  const store = externalStore ?? storeRef.current!;
   const chooserRef = useRef<VariationChooserStore | null>(null);
   if (chooserRef.current === null) chooserRef.current = createVariationChooserStore();
   const chooser = chooserRef.current;
@@ -41,9 +43,9 @@ export function TreeStateProvider({
     return () => {
       unsubscribe();
       chooser.getState().close();
-      store.dispose();
+      if (!externalStore) store.dispose();
     };
-  }, [store, chooser]);
+  }, [store, chooser, externalStore]);
 
   return (
     <TreeStateContext.Provider value={store}>

@@ -2,7 +2,7 @@ import { useOwnerTab } from "@/state/tabScope";
 import { Box, Menu, Text } from "@mantine/core";
 import { Merge, ArrowUpRight, Copy, Flag, Trash2 } from "lucide-react";
 import equal from "fast-deep-equal";
-import { memo, useContext, useMemo, useState, type MouseEvent } from "react";
+import { createContext, memo, useContext, useMemo, useState, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import Comment from "@/components/common/Comment";
 import IconAction from "@/components/common/IconAction";
@@ -19,6 +19,14 @@ import { TreeStateContext } from "./TreeStateContext";
 import classes from "./GameNotation.module.css";
 
 const transpositionCache = new WeakMap<TreeNode, Map<string, TreeNode[]>>();
+
+export type NotationMoveActions =
+  | false
+  | {
+      promote: (path: number[]) => void;
+      delete: (path: number[]) => void;
+    };
+export const NotationMoveActionsContext = createContext<NotationMoveActions | undefined>(undefined);
 
 function getTranspositionMap(root: TreeNode) {
   const cached = transpositionCache.get(root);
@@ -99,6 +107,8 @@ function CompleteMoveCell({
   root,
 }: CompleteMoveCellProps) {
   const store = useContext(TreeStateContext)!;
+  const moveActions = useContext(NotationMoveActionsContext);
+  const { t } = useTranslation();
   const state = store.getState();
   const path = useMemo(() => pathForNotationNode(nodeIndex, node) ?? [], [node, nodeIndex]);
   const isCurrentVariation = providedIsCurrentVariation ?? node === state.currentNode();
@@ -114,6 +124,7 @@ function CompleteMoveCell({
 
   const onContextMenu = (event: MouseEvent) => {
     event.preventDefault();
+    if (moveActions === false) return;
     if (store.getState().root !== root) return;
     setOpen(true);
   };
@@ -129,6 +140,7 @@ function CompleteMoveCell({
     <MoveCell
       move={move}
       annotations={annotations}
+      forceAnnotations={moveActions !== undefined}
       isStart={isStart}
       isCurrentVariation={isCurrentVariation}
       onClick={() => {
@@ -155,7 +167,32 @@ function CompleteMoveCell({
         }}
       >
         {hasNumber && <span className={classes.moveNumber}>{formatMoveNumber(halfMoves)}</span>}
-        {open && move && store.getState().root === root ? (
+        {open && move && moveActions && store.getState().root === root ? (
+          <Menu opened onClose={() => setOpen(false)} width={200}>
+            <Menu.Target>{moveCell}</Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Item
+                leftSection={<ArrowUpRight size="0.875rem" />}
+                onClick={() => {
+                  if (store.getState().root === root) moveActions.promote(path);
+                  setOpen(false);
+                }}
+              >
+                {t("Menu.PromoteVariation")}
+              </Menu.Item>
+              <Menu.Item
+                color="danger"
+                leftSection={<Trash2 size="0.875rem" />}
+                onClick={() => {
+                  if (store.getState().root === root) moveActions.delete(path);
+                  setOpen(false);
+                }}
+              >
+                {t("Menu.DeleteMove")}
+              </Menu.Item>
+            </Menu.Dropdown>
+          </Menu>
+        ) : open && move && moveActions === undefined && store.getState().root === root ? (
           <OpenMoveMenu
             store={store}
             root={root}

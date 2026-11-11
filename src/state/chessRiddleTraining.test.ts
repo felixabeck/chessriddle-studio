@@ -1,3 +1,4 @@
+import { trainingSubmissionTree } from "@/utils/chessRiddleTraining";
 import { INITIAL_FEN } from "chessops/fen";
 import { expect, test, vi } from "vitest";
 import type { TrainingPuzzle, TrainingVerdict } from "@/bindings";
@@ -35,6 +36,7 @@ const verdict: TrainingVerdict = {
     correctVariation: ["e7e5", "g1f3", "b8c6"],
     incorrectMove: null,
     correctMove: null,
+    incorrectMovePath: null,
 };
 
 function deferred<T>() {
@@ -230,16 +232,19 @@ test("a session and an in-flight submit survive view unmount and remount", async
     const submitting = sessions.submit("tab");
     expect(first).toHaveBeenCalledTimes(3);
     expect(sessions.get("tab")?.puzzle).toBe(beforeSubmit?.puzzle);
-    expect(sessions.get("tab")?.line).toBe(beforeSubmit?.line);
+    expect(sessions.get("tab")?.treeStore).toBe(beforeSubmit?.treeStore);
     expect(sessions.get("tab")?.elapsedStart).toBe(beforeSubmit?.elapsedStart);
     const second = vi.fn();
     const unsubscribeAgain = sessions.subscribe("tab", second);
     expect(sessions.get("tab")?.phase).toBe("submitting");
-    expect(sessions.get("tab")?.line).toEqual(["e7e5", "g1f3", "b8c6"]);
+    expect(trainingSubmissionTree(sessions.get("tab")!.treeStore!.getState().root)).toEqual({
+        move: "e7e5",
+        children: [{ move: "g1f3", children: [{ move: "b8c6", children: [] }] }],
+    });
     pending.resolve(verdict);
     await submitting;
     expect(sessions.get("tab")?.phase).toBe("verdict");
-    expect(second).toHaveBeenCalledOnce();
+    expect(second).toHaveBeenCalled();
     expect(first).toHaveBeenCalledTimes(3);
     unsubscribeAgain();
 });
@@ -293,7 +298,9 @@ test.each(["network", "submissionInProgress", "engineBusy", "engineUnavailable"]
         const body = api.chessriddleTrainingSubmit.mock.calls[0][0];
         expect(body.elapsedMs).toBe(1000);
         expect(Object.isFrozen(body)).toBe(true);
-        expect(Object.isFrozen(body.line)).toBe(true);
+        expect(Object.isFrozen(body.tree)).toBe(true);
+        expect(Object.isFrozen(body.tree.children)).toBe(true);
+        expect(Object.isFrozen(body.tree.children[0])).toBe(true);
         expect(sessions.get("tab")?.puzzle).toEqual(puzzle);
         expect(sessions.actions("tab")).toEqual(["retry"]);
         tick();
@@ -305,40 +312,55 @@ test.each(["network", "submissionInProgress", "engineBusy", "engineUnavailable"]
     },
 );
 
-test("continuing after too-short at the cap extends the line and uses a new submission key", async () => {
-    const { api, sessions, tick } = fixture();
-    await sessions.next("tab");
-    fill(sessions);
-    api.chessriddleTrainingSubmit.mockResolvedValueOnce({
-        ...verdict,
-        isCorrect: false,
-        tooShort: true,
-        correctVariation: [],
-    });
-    await sessions.submit("tab");
-    expect(sessions.actions("tab")).toEqual(["continue"]);
-    expect(sessions.get("tab")).toMatchObject({ inputCap: 7, submitThreshold: 4 });
-    await sessions.submit("tab");
-    expect(api.chessriddleTrainingSubmit).toHaveBeenCalledTimes(1);
-    sessions.append("tab", "f1c4");
-    tick();
-    await sessions.submit("tab");
-    expect(api.chessriddleTrainingSubmit.mock.calls[1][0].line).toEqual([
-        "e7e5",
-        "g1f3",
-        "b8c6",
-        "f1c4",
-    ]);
-    expect(api.chessriddleTrainingSubmit.mock.calls[1][0].decisionFen).toBe(puzzle.decisionFen);
-    expect(api.chessriddleTrainingSubmit.mock.calls[0][0].idempotencyKey).not.toBe(
-        api.chessriddleTrainingSubmit.mock.calls[1][0].idempotencyKey,
-    );
-    await sessions.next("tab");
-    expect(sessions.get("tab")).toMatchObject({
-        inputCap: puzzle.solutionPlyCount,
-        submitThreshold: puzzle.solutionPlyCount,
-    });
-});
+test.each([false, true])(
+    "too-short keeps the tree editable and needs a change with counter=%s",
+    async (showMoveCounter) => {
+        const { api, sessions, tick } = fixture({
+            chessriddleTrainingSettings: vi
+                .fn()
+                .mockResolvedValue({ ...defaultTrainingSettings, showMoveCounter }),
+            chessriddleSaveTrainingSettings: vi.fn(),
+            chessriddleTrainingMotifs: vi.fn().mockResolvedValue([]),
+        });
+        await sessions.next("tab");
+        fill(sessions);
+        api.chessriddleTrainingSubmit.mockResolvedValueOnce({
+            ...verdict,
+            isCorrect: false,
+            tooShort: true,
+            correctVariation: [],
+        });
+        await sessions.submit("tab");
+        expect(sessions.actions("tab")).toEqual(["continue"]);
+        expect(sessions.get("tab")).toMatchObject({
+            inputCap: 7,
+            submitThreshold: showMoveCounter ? 3 : 1,
+        });
+        await sessions.submit("tab");
+        expect(api.chessriddleTrainingSubmit).toHaveBeenCalledTimes(1);
+        sessions.append("tab", "f1c4");
+        tick();
+        await sessions.submit("tab");
+        expect(api.chessriddleTrainingSubmit.mock.calls[1][0].tree).toEqual({
+            move: "e7e5",
+            children: [
+                {
+                    move: "g1f3",
+                    children: [{ move: "b8c6", children: [{ move: "f1c4", children: [] }] }],
+                },
+            ],
+        });
+        expect(api.chessriddleTrainingSubmit.mock.calls[1][0].decisionFen).toBe(puzzle.decisionFen);
+        expect(api.chessriddleTrainingSubmit.mock.calls[0][0].idempotencyKey).not.toBe(
+            api.chessriddleTrainingSubmit.mock.calls[1][0].idempotencyKey,
+        );
+        await sessions.next("tab");
+        expect(sessions.get("tab")).toMatchObject({
+            inputCap: showMoveCounter ? 3 : 7,
+            submitThreshold: showMoveCounter ? 3 : 1,
+        });
+    },
+);
 
 test("invalidRequest after submit offers only Next and can fetch another puzzle", async () => {
     const { api, sessions } = fixture();
@@ -409,7 +431,7 @@ test("availability, count, upgrade, reveal and empty mistakes have production se
     await sessions.submit("tab", true);
     expect(api.chessriddleTrainingSubmit.mock.calls[0][0]).toMatchObject({
         solutionShown: true,
-        line: [],
+        tree: { move: "", children: [] },
     });
     api.chessriddleTrainingNext.mockResolvedValueOnce(null);
     await sessions.next("tab", "mistakes");
@@ -513,4 +535,117 @@ test("training state never writes web storage", async () => {
     } finally {
         write.mockRestore();
     }
+});
+
+test.each([false, true])(
+    "tree entry, counter limits and branch-aware verdict with counter=%s",
+    async (showMoveCounter) => {
+        const { sessions, api } = fixture({
+            chessriddleTrainingSettings: vi
+                .fn()
+                .mockResolvedValue({ ...defaultTrainingSettings, showMoveCounter }),
+            chessriddleSaveTrainingSettings: vi.fn(),
+            chessriddleTrainingMotifs: vi.fn().mockResolvedValue([]),
+        });
+        await sessions.next("tab");
+        expect(sessions.get("tab")).toMatchObject({
+            inputCap: showMoveCounter ? 3 : 7,
+            submitThreshold: showMoveCounter ? 3 : 1,
+        });
+        sessions.append("tab", "e7e5");
+        expect(sessions.canSubmit("tab")).toBe(!showMoveCounter);
+        fillAfterFirst();
+        const store = sessions.get("tab")!.treeStore!;
+        store.getState().goToStart();
+        sessions.append("tab", "c7c5");
+        expect(sessions.get("tab")?.inputNotice).toBe("oneSolverMove");
+        expect(store.getState().position).toEqual([]);
+        sessions.append("tab", "e7e5");
+        expect(store.getState().position).toEqual([0]);
+        sessions.append("tab", "f1c4");
+        sessions.append("tab", "g8f6");
+        const entered = trainingSubmissionTree(store.getState().root);
+        expect(entered).toEqual({
+            move: "e7e5",
+            children: [
+                { move: "g1f3", children: [{ move: "b8c6", children: [] }] },
+                { move: "f1c4", children: [{ move: "g8f6", children: [] }] },
+            ],
+        });
+        sessions.append("tab", "d2d3");
+        expect(store.getState().position.length).toBe(showMoveCounter ? 3 : 4);
+        if (!showMoveCounter) sessions.undo("tab");
+        api.chessriddleTrainingSubmit.mockResolvedValueOnce({
+            ...verdict,
+            isCorrect: false,
+            incorrectMove: "g8f6",
+            correctMove: "b8c6",
+            incorrectMovePath: [1, 0],
+        });
+        await sessions.submit("tab");
+        expect(api.chessriddleTrainingSubmit.mock.calls[0][0].tree).toEqual(entered);
+        const branches = store.getState().root.children[0].children;
+        expect(branches[0].children[0].nags).toEqual([1]);
+        expect(branches[1].children[0].nags).toEqual([2]);
+        expect(branches[1].children[1].san).toBe("Nc6");
+        expect(branches[1].children[1].nags).toEqual([1]);
+        sessions.undo("tab", [0]);
+        expect(store.getState().root.children).toHaveLength(1);
+        function fillAfterFirst() {
+            sessions.append("tab", "g1f3");
+            sessions.append("tab", "b8c6");
+        }
+    },
+);
+
+test.each([[[9, 0]], [[0, 0]]])(
+    "invalid verdict annotation %j leaves the committed verdict usable",
+    async (incorrectMovePath) => {
+        const { sessions, api, summary } = fixture();
+        await sessions.next("tab");
+        fill(sessions);
+        api.chessriddleTrainingSubmit.mockResolvedValueOnce({
+            ...verdict,
+            incorrectMove: "b8c6",
+            correctMove: "e7e4",
+            incorrectMovePath,
+        });
+        await sessions.submit("tab");
+        expect(sessions.get("tab")?.phase).toBe("verdict");
+        expect(summary.get().attempts).toBe(1);
+        expect(sessions.actions("tab")).toEqual(["next"]);
+        expect(
+            sessions.get("tab")!.treeStore!.getState().root.children[0].children[0].children[0]
+                .nags,
+        ).toEqual([1]);
+    },
+);
+
+test("promoting swaps siblings, deletion removes subtrees and owners dispose on every replacement", async () => {
+    const { sessions } = fixture();
+    await sessions.next("tab");
+    fill(sessions);
+    const store = sessions.get("tab")!.treeStore!;
+    for (const token of ["f1c4", "d2d4"]) {
+        store.getState().goToMove([0]);
+        sessions.append("tab", token);
+    }
+    sessions.promote("tab", [0, 2]);
+    expect(store.getState().root.children[0].children.map((child) => child.san)).toEqual([
+        "d4",
+        "Bc4",
+        "Nf3",
+    ]);
+    expect(store.getState().position).toEqual([0, 0]);
+    sessions.undo("tab", [0, 2]);
+    expect(store.getState().root.children[0].children).toHaveLength(2);
+    sessions.undo("tab", []);
+    expect(store.getState().root.children).toHaveLength(0);
+    const dispose = vi.spyOn(store, "dispose");
+    await sessions.next("tab");
+    expect(dispose).toHaveBeenCalledOnce();
+    const replacement = sessions.get("tab")!.treeStore!;
+    const replacementDispose = vi.spyOn(replacement, "dispose");
+    sessions.remove("tab");
+    expect(replacementDispose).toHaveBeenCalledOnce();
 });

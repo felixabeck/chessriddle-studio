@@ -1744,11 +1744,12 @@ export type TournamentSort = "name" | "date" | "players" | "games" | "avgElo"
 export type TrainingFeedbackCode = "correct" | "incorrect" | "lineTooShort"
 export type TrainingFeedbackContext = "analysis" | "retry"
 export type TrainingPuzzle = { id: number; source: TrainingSource; preEntranceFen: string; entranceMove: string; decisionFen: string; sideToMove: TrainingSide; puzzleRating: number; solutionPlyCount: number }
-export type TrainingSettings = { difficulty: number; motif: string | null; showTimer: boolean; timerMode: string; timerDuration: number }
+export type TrainingSettings = { difficulty: number; motif: string | null; showTimer: boolean; showMoveCounter: boolean; timerMode: string; timerDuration: number }
 export type TrainingSide = "white" | "black"
 export type TrainingSource = "tactics" | "mistakes"
-export type TrainingSubmission = { puzzleId: number; source: TrainingSource; decisionFen: string; line: string[]; elapsedMs: number; solutionShown: boolean; idempotencyKey: string; motif: string | null }
-export type TrainingVerdict = { isCorrect: boolean; tooShort: boolean; ratingChange: number; playerRating: number | null; puzzleRating: number; rated: boolean; ratingPending: boolean; feedbackCode: TrainingFeedbackCode; feedbackContext: TrainingFeedbackContext | null; correctVariation: string[]; incorrectMove: string | null; correctMove: string | null }
+export type TrainingSubmission = { puzzleId: number; source: TrainingSource; decisionFen: string; tree: TrainingTreeNode; elapsedMs: number; solutionShown: boolean; idempotencyKey: string; motif: string | null }
+export type TrainingTreeNode = { move: string; children: TrainingTreeNode[] }
+export type TrainingVerdict = { isCorrect: boolean; tooShort: boolean; ratingChange: number; playerRating: number | null; puzzleRating: number; rated: boolean; ratingPending: boolean; feedbackCode: TrainingFeedbackCode; feedbackContext: TrainingFeedbackContext | null; correctVariation: string[]; incorrectMove: string | null; correctMove: string | null; incorrectMovePath: number[] | null }
 export type TrashCursor = { seconds: bigint; item: string }
 export type TrashItemId = string
 /**

@@ -37,6 +37,7 @@ pub(crate) struct TrainingSettings {
     pub difficulty: i32,
     pub motif: Option<String>,
     pub show_timer: bool,
+    pub show_move_counter: bool,
     pub timer_mode: String,
     pub timer_duration: u32,
 }
@@ -76,6 +77,7 @@ impl TrainingSettings {
             "puzzle_difficulty_offset": self.difficulty,
             "selected_motif": self.motif,
             "show_timer": self.show_timer,
+            "show_move_counter": self.show_move_counter,
             "timer_mode": self.timer_mode,
             "timer_duration": self.timer_duration,
         }))
@@ -88,6 +90,8 @@ pub(crate) fn settings(body: &[u8]) -> Result<TrainingSettings, AccountError> {
         puzzle_difficulty_offset: serde_json::Value,
         selected_motif: Option<serde_json::Value>,
         show_timer: bool,
+        #[serde(default)]
+        show_move_counter: serde_json::Value,
         timer_mode: serde_json::Value,
         timer_duration: serde_json::Value,
     }
@@ -106,6 +110,7 @@ pub(crate) fn settings(body: &[u8]) -> Result<TrainingSettings, AccountError> {
                 .map(str::to_owned)
         }),
         show_timer: wire.show_timer,
+        show_move_counter: wire.show_move_counter.as_bool().unwrap_or(false),
         timer_mode: wire
             .timer_mode
             .as_str()
@@ -259,22 +264,23 @@ pub(crate) struct TrainingSubmission {
     pub puzzle_id: i32,
     pub source: TrainingSource,
     pub decision_fen: String,
-    pub line: Vec<String>,
+    pub tree: TrainingTreeNode,
     pub elapsed_ms: u32,
     pub solution_shown: bool,
     pub idempotency_key: String,
     pub motif: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
-pub(crate) struct VariationNode {
-    r#move: String,
-    children: Vec<VariationNode>,
+#[derive(Clone, Debug, Deserialize, Serialize, Type)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct TrainingTreeNode {
+    pub r#move: String,
+    pub children: Vec<TrainingTreeNode>,
 }
 
 #[derive(Debug, Serialize)]
 pub(crate) struct SubmitBody {
-    variation_tree: VariationNode,
+    variation_tree: TrainingTreeNode,
     time_taken_ms: u32,
     is_rated: bool,
     solution_shown: bool,
@@ -283,30 +289,50 @@ pub(crate) struct SubmitBody {
 
 pub(crate) fn submit_body(request: &TrainingSubmission) -> Result<SubmitBody, AccountError> {
     validate_filters(request.source, None, request.motif.as_deref())?;
-    position(&request.decision_fen).map_err(|_| AccountError::InvalidRequest)?;
+    let pos = position(&request.decision_fen).map_err(|_| AccountError::InvalidRequest)?;
     if request.puzzle_id <= 0
-        || request.line.len() > MAX_TRAINING_SUBMISSION_PLIES
         || request.elapsed_ms > MAX_TRAINING_DURATION_MS
         || request.idempotency_key.len() > 36
         || uuid::Uuid::parse_str(&request.idempotency_key).is_err()
-        || (request.line.is_empty() && !request.solution_shown)
     {
         return Err(AccountError::InvalidRequest);
     }
-    let mut children = Vec::new();
-    for token in request.line.iter().rev() {
-        uci(token).map_err(|_| AccountError::InvalidRequest)?;
-        children = vec![VariationNode {
-            r#move: token.clone(),
-            children,
-        }];
+    fn validate(
+        node: &TrainingTreeNode,
+        mut pos: Chess,
+        depth: usize,
+        count: &mut usize,
+    ) -> Result<(), AccountError> {
+        *count += 1;
+        // Seven plies, one solver continuation and at most ten opponent replies.
+        if depth > MAX_TRAINING_SUBMISSION_PLIES
+            || *count > 2221
+            || node.children.len() > 10
+            || (depth % 2 == 0 && node.children.len() > 1)
+        {
+            return Err(AccountError::InvalidRequest);
+        }
+        play(&mut pos, &node.r#move).map_err(|_| AccountError::InvalidRequest)?;
+        for (index, child) in node.children.iter().enumerate() {
+            if node.children[..index]
+                .iter()
+                .any(|sibling| sibling.r#move == child.r#move)
+            {
+                return Err(AccountError::InvalidRequest);
+            }
+            validate(child, pos.clone(), depth + 1, count)?;
+        }
+        Ok(())
     }
-    let variation_tree = children.pop().unwrap_or(VariationNode {
-        r#move: String::new(),
-        children: vec![],
-    });
+    if request.tree.r#move.is_empty() {
+        if !request.solution_shown || !request.tree.children.is_empty() {
+            return Err(AccountError::InvalidRequest);
+        }
+    } else {
+        validate(&request.tree, pos, 1, &mut 0)?;
+    }
     Ok(SubmitBody {
-        variation_tree,
+        variation_tree: request.tree.clone(),
         time_taken_ms: request.elapsed_ms,
         is_rated: request.source == TrainingSource::Tactics && !request.solution_shown,
         solution_shown: request.solution_shown,
@@ -344,6 +370,7 @@ pub(crate) struct TrainingVerdict {
     pub correct_variation: Vec<String>,
     pub incorrect_move: Option<String>,
     pub correct_move: Option<String>,
+    pub incorrect_move_path: Option<Vec<i32>>,
 }
 
 #[derive(Deserialize)]
@@ -361,6 +388,7 @@ struct VerdictWire {
     correct_variation: String,
     incorrect_move_uci: Option<String>,
     correct_move_uci: Option<String>,
+    incorrect_move_path: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -418,6 +446,14 @@ pub(crate) fn verdict(body: &[u8], decision_fen: &str) -> Result<TrainingVerdict
         correct_variation: line,
         incorrect_move: wire.incorrect_move_uci.filter(|token| uci(token).is_ok()),
         correct_move: wire.correct_move_uci.filter(|token| uci(token).is_ok()),
+        incorrect_move_path: wire.incorrect_move_path.and_then(|value| {
+            let path: Vec<i32> = serde_json::from_value(value).ok()?;
+            ((path == [-1])
+                || (!path.is_empty()
+                    && path.len() < MAX_TRAINING_SUBMISSION_PLIES
+                    && path.iter().all(|index| (0..10).contains(index))))
+            .then_some(path)
+        }),
     })
 }
 
@@ -495,7 +531,9 @@ mod tests {
         let valid = json!({"puzzle_difficulty_offset":250,"selected_motif":"mateIn2","show_timer":true,"timer_mode":"down","timer_duration":180,"secret":"hidden"});
         let dto = settings(&serde_json::to_vec(&valid).unwrap()).unwrap();
         assert_eq!(dto.difficulty, 250);
-        assert_eq!(dto.body().unwrap().as_object().unwrap().len(), 5);
+        assert_eq!(dto.body().unwrap().as_object().unwrap().len(), 6);
+        assert!(!dto.show_move_counter);
+        assert_eq!(dto.body().unwrap()["show_move_counter"], false);
         assert_eq!(dto.body().unwrap()["selected_motif"], "mateIn2");
         assert_eq!(
             serde_json::to_value(&dto)
@@ -503,7 +541,7 @@ mod tests {
                 .as_object()
                 .unwrap()
                 .len(),
-            5
+            6
         );
         for (field, bad) in [
             ("puzzle_difficulty_offset", json!(42)),
@@ -606,6 +644,20 @@ mod tests {
     pub(super) const VERDICT: &str =
         include_str!("chessriddle_training_samples/verdict_correct.json");
 
+    fn chain(line: &[&str]) -> TrainingTreeNode {
+        let mut children = vec![];
+        for token in line.iter().rev() {
+            children = vec![TrainingTreeNode {
+                r#move: (*token).into(),
+                children,
+            }];
+        }
+        children.pop().unwrap_or(TrainingTreeNode {
+            r#move: String::new(),
+            children: vec![],
+        })
+    }
+
     fn request() -> TrainingSubmission {
         TrainingSubmission {
             puzzle_id: 1,
@@ -614,7 +666,7 @@ mod tests {
                 .unwrap()
                 .unwrap()
                 .decision_fen,
-            line: vec!["e7e5".into(), "g1f3".into()],
+            tree: chain(&["e7e5", "g1f3"]),
             elapsed_ms: 30000,
             solution_shown: false,
             idempotency_key: "bfe2ba6e-b195-4e7d-8b1e-5919ac36a37c".into(),
@@ -632,7 +684,7 @@ mod tests {
             ))
             .unwrap()
         );
-        request.line.clear();
+        request.tree = chain(&[]);
         request.solution_shown = true;
         assert_eq!(
             serde_json::to_value(submit_body(&request).unwrap()).unwrap(),
@@ -643,21 +695,97 @@ mod tests {
         );
         request.solution_shown = false;
         assert!(submit_body(&request).is_err());
-        request.line = vec!["e7e5".into()];
+        request.tree = chain(&["e7e5"]);
         request.source = TrainingSource::Mistakes;
         assert!(!submit_body(&request).unwrap().is_rated);
         for token in ["0000", "e7e5q", "Nf3", "a9a1"] {
-            request.line = vec![token.into()];
+            request.tree = chain(&[token]);
             assert!(submit_body(&request).is_err());
         }
-        request.line = vec!["e7e5".into(); 8];
+        request.tree = chain(&["e7e5"; 8]);
         assert!(submit_body(&request).is_err());
-        request.line = vec!["e7e5".into()];
+        request.tree = chain(&["e7e5"]);
         request.elapsed_ms = 86_400_001;
         assert!(submit_body(&request).is_err());
         request.elapsed_ms = 1;
         request.idempotency_key = "bad".into();
         assert!(submit_body(&request).is_err());
+    }
+
+    #[test]
+    fn branching_submissions_preserve_both_replies_and_reject_invalid_trees() {
+        let mut request = request();
+        request.tree.children = vec![chain(&["g1f3", "b8c6"]), chain(&["f1c4", "g8f6"])];
+        let body = serde_json::to_value(submit_body(&request).unwrap()).unwrap();
+        assert_eq!(
+            body["variation_tree"],
+            serde_json::to_value(&request.tree).unwrap()
+        );
+        assert_eq!(
+            body["variation_tree"]["children"].as_array().unwrap().len(),
+            2
+        );
+        let valid = request.tree.clone();
+        let mut second_solver = valid.clone();
+        second_solver.children[0].children.push(chain(&["g8f6"]));
+        let mut eleven = valid.clone();
+        eleven.children = vec![chain(&["g1f3"]); 11];
+        for tree in [
+            second_solver,
+            eleven,
+            chain(&[
+                "e7e5", "g1f3", "b8c6", "f1c4", "g8f6", "d2d3", "f8c5", "e1g1",
+            ]),
+            chain(&["e7e4"]),
+            chain(&[]),
+        ] {
+            request.tree = tree;
+            assert!(matches!(
+                submit_body(&request),
+                Err(AccountError::InvalidRequest)
+            ));
+        }
+    }
+
+    #[test]
+    fn move_counter_defaults_and_optional_verdict_paths_are_allowlisted() {
+        let mut wire = json!({"puzzle_difficulty_offset":0,"show_timer":false,"timer_mode":"up","timer_duration":300});
+        for value in [Value::Null, json!("true"), json!(1), json!(false)] {
+            wire["show_move_counter"] = value;
+            assert!(
+                !settings(&serde_json::to_vec(&wire).unwrap())
+                    .unwrap()
+                    .show_move_counter
+            );
+        }
+        wire["show_move_counter"] = json!(true);
+        assert_eq!(
+            settings(&serde_json::to_vec(&wire).unwrap())
+                .unwrap()
+                .body()
+                .unwrap()["show_move_counter"],
+            true
+        );
+        let mut wire: Value = serde_json::from_str(VERDICT).unwrap();
+        for path in [json!([-1]), json!([1, 0]), json!([0, 1, 0])] {
+            wire["incorrect_move_path"] = path.clone();
+            let dto =
+                verdict(&serde_json::to_vec(&wire).unwrap(), &request().decision_fen).unwrap();
+            assert_eq!(serde_json::to_value(dto.incorrect_move_path).unwrap(), path);
+        }
+        for path in [
+            json!([-2]),
+            json!([-1, 0]),
+            json!([10]),
+            json!("broken"),
+            json!([]),
+        ] {
+            wire["incorrect_move_path"] = path;
+            let dto =
+                verdict(&serde_json::to_vec(&wire).unwrap(), &request().decision_fen).unwrap();
+            assert!(dto.incorrect_move_path.is_none());
+            assert!(dto.is_correct);
+        }
     }
 
     #[test]
@@ -743,6 +871,7 @@ mod tests {
                 "feedbackCode",
                 "feedbackContext",
                 "incorrectMove",
+                "incorrectMovePath",
                 "isCorrect",
                 "playerRating",
                 "puzzleRating",

@@ -140,3 +140,21 @@ test("reset retires late reads and saves", async () => {
     await vi.waitFor(() => expect(store.get().status).toBe("idle"));
     expect(store.get().values).toEqual(defaultTrainingSettings);
 });
+
+test("solution length is off by default and survives saves in the existing settings body", async () => {
+    expect(defaultTrainingSettings.showMoveCounter).toBe(false);
+    const { api, store } = fixture();
+    api.chessriddleTrainingSettings.mockResolvedValueOnce({
+        ...defaultTrainingSettings,
+        showMoveCounter: true,
+    });
+    await store.load();
+    expect(store.effective().showMoveCounter).toBe(true);
+    store.change({ difficulty: 500 });
+    await store.settled();
+    expect(api.chessriddleSaveTrainingSettings).toHaveBeenCalledWith({
+        ...defaultTrainingSettings,
+        difficulty: 500,
+        showMoveCounter: true,
+    });
+});

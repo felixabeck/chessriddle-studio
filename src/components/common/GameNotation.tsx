@@ -38,7 +38,10 @@ import {
   getNodeAtPath,
   type TreeNode,
 } from "@/utils/treeReducer";
-import CompleteMoveCell from "./CompleteMoveCell";
+import CompleteMoveCell, {
+  NotationMoveActionsContext,
+  type NotationMoveActions,
+} from "./CompleteMoveCell";
 import {
   buildNotationRows,
   type NotationMove,
@@ -112,7 +115,15 @@ function getResultText(result: string, t: TFunction): string | undefined {
   }
 }
 
-function GameNotation({ topBar, controls }: { topBar?: boolean; controls?: React.ReactNode }) {
+function GameNotation({
+  topBar,
+  controls,
+  moveActions,
+}: {
+  topBar?: boolean;
+  controls?: React.ReactNode;
+  moveActions?: NotationMoveActions;
+}) {
   const { t } = useTranslation();
   const store = useContext(TreeStateContext)!;
   const { root, headers } = useTreeView(store);
@@ -142,12 +153,12 @@ function GameNotation({ topBar, controls }: { topBar?: boolean; controls?: React
       return { rows: [], index: { root, links: new WeakMap() }, rowForNode: new Map() };
     }
     return buildNotationRows(root, {
-      showVariations,
+      showVariations: moveActions === undefined ? showVariations : true,
       showComments,
-      tableView,
+      tableView: moveActions === undefined ? tableView : false,
       collapsedVariations,
     });
-  }, [root, showVariations, showComments, tableView, collapsedVariations, store]);
+  }, [root, showVariations, showComments, tableView, collapsedVariations, store, moveActions]);
   const startNode = useMemo(() => getNodeAtPath(root, headers.start || []), [root, headers.start]);
   const rowVirtualizer = useVirtualizer({
     count: model.rows.length,
@@ -325,7 +336,11 @@ function GameNotation({ topBar, controls }: { topBar?: boolean; controls?: React
       </Group>
     </Paper>
   );
-  return <GameReferenceProvider>{content}</GameReferenceProvider>;
+  return (
+    <NotationMoveActionsContext.Provider value={moveActions}>
+      <GameReferenceProvider>{content}</GameReferenceProvider>
+    </NotationMoveActionsContext.Provider>
+  );
 }
 
 function NotationHeader() {

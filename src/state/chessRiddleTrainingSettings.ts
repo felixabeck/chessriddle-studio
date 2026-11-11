@@ -6,6 +6,7 @@ export const defaultTrainingSettings: TrainingSettings = {
     difficulty: 0,
     motif: null,
     showTimer: false,
+    showMoveCounter: false,
     timerMode: "up",
     timerDuration: 300,
 };

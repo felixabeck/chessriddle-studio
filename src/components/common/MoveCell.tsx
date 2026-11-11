@@ -42,6 +42,7 @@ export function releaseFocusOnMoveKey(event: KeyboardEvent) {
 
 interface MoveCellProps {
   annotations: Annotation[];
+  forceAnnotations?: boolean;
   isStart: boolean;
   isCurrentVariation: boolean;
   move: string;
@@ -56,7 +57,8 @@ interface MoveCellProps {
 function MoveCell(props: MoveCellProps) {
   const [moveNotationType] = useAtom(moveNotationTypeAtom);
   const [showComments] = useAtom(useTabAtom(showCommentsFamily));
-  const visualAnnotation = showComments ? props.annotations[0] : "";
+  const showAnnotations = props.forceAnnotations || showComments;
+  const visualAnnotation = showAnnotations ? props.annotations[0] : "";
 
   const color = ANNOTATION_INFO[visualAnnotation]?.color || "gray";
   const theme = useMantineTheme();
@@ -109,7 +111,7 @@ function MoveCell(props: MoveCellProps) {
       <Box component="span" className={classes.moveText}>
         {props.isStart && <Flag style={{ marginRight: 5 }} size="0.875rem" />}
         {moveNotationType === "symbols" ? addPieceSymbol(props.move) : props.move}
-        {showComments ? formatNagGlyphs(props.annotations) : ""}
+        {showAnnotations ? formatNagGlyphs(props.annotations) : ""}
       </Box>
       {props.rightAccessory && (
         <Box component="span" className={classes.rightAccessory}>

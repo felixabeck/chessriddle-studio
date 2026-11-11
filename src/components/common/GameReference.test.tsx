@@ -55,7 +55,12 @@ vi.mock("@/state/keybinds", async () => {
   return { keyMapAtom: atom({ TOGGLE_BLUR: { keys: "ctrl+b" }, COPY_PGN: { keys: "ctrl+k" } }) };
 });
 vi.mock("./OpeningName", () => ({ default: () => null }));
-vi.mock("./CompleteMoveCell", () => ({ default: () => null }));
+vi.mock("./CompleteMoveCell", async () => ({
+  NotationMoveActionsContext: (await import("react")).createContext<
+    import("./CompleteMoveCell").NotationMoveActions | undefined
+  >(undefined),
+  default: () => null,
+}));
 vi.mock("./IconAction", () => ({ default: () => null }));
 vi.mock("@tanstack/react-virtual", async (original) => ({
   ...(await original<typeof import("@tanstack/react-virtual")>()),

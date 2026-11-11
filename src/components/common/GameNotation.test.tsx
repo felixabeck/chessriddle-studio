@@ -78,7 +78,10 @@ vi.mock("@/components/common/IconAction", () => ({
   ),
 }));
 vi.mock("./OpeningName", () => ({ default: () => null }));
-vi.mock("./CompleteMoveCell", () => ({
+vi.mock("./CompleteMoveCell", async () => ({
+  NotationMoveActionsContext: (await import("react")).createContext<
+    import("./CompleteMoveCell").NotationMoveActions | undefined
+  >(undefined),
   default: (props: any) => {
     const store = React.useContext(TreeStateContext)!;
     const path = pathForNotationNode(props.nodeIndex, props.node)!;

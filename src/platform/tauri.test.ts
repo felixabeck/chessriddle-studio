@@ -127,7 +127,7 @@ test.each([
                     puzzleId: 1,
                     source: "tactics",
                     decisionFen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
-                    line: [],
+                    tree: { move: "", children: [] },
                     elapsedMs: 0,
                     solutionShown: true,
                     idempotencyKey: "00000000-0000-4000-8000-000000000001",
@@ -142,6 +142,7 @@ test.each([
                     difficulty: 0,
                     motif: null,
                     showTimer: false,
+                    showMoveCounter: false,
                     timerMode: "up",
                     timerDuration: 300,
                 });

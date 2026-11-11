@@ -418,6 +418,7 @@ test("the rendered source control disables during submission and enables after s
       correctVariation: [],
       incorrectMove: null,
       correctMove: null,
+      incorrectMovePath: null,
     }),
   );
   expect(inputs().every((node) => !node.disabled)).toBe(true);
@@ -704,7 +705,7 @@ test("training shortcuts respect bindings, disabled submit, fields, dialogs, mod
   document.body.append(dialog);
   await fire("a", "KeyA");
   await fire("ArrowLeft", "ArrowLeft");
-  expect(sessions.get("puzzles-test")?.cursor).toBe(3);
+  expect(sessions.get("puzzles-test")?.treeStore?.getState().position.length).toBe(3);
   dialog.remove();
   expect(mocks.chessriddleTrainingSubmit).not.toHaveBeenCalled();
   await act(async () =>
@@ -715,11 +716,11 @@ test("training shortcuts respect bindings, disabled submit, fields, dialogs, mod
     }),
   );
   await fire("ArrowLeft", "ArrowLeft");
-  expect(sessions.get("puzzles-test")?.cursor).toBe(3);
+  expect(sessions.get("puzzles-test")?.treeStore?.getState().position.length).toBe(3);
   await fire("j", "KeyJ");
-  expect(sessions.get("puzzles-test")?.cursor).toBe(2);
+  expect(sessions.get("puzzles-test")?.treeStore?.getState().position.length).toBe(2);
   await fire("k", "KeyK");
-  expect(sessions.get("puzzles-test")?.cursor).toBe(3);
+  expect(sessions.get("puzzles-test")?.treeStore?.getState().position.length).toBe(3);
   await fire("h", "KeyH");
   expect(mocks.chessriddleTrainingSubmit).not.toHaveBeenCalled();
   await fire("a", "KeyA");

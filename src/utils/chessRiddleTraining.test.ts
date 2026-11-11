@@ -2,14 +2,15 @@ import { INITIAL_FEN, makeFen } from "chessops/fen";
 import { expect, test, vi } from "vitest";
 import type { TrainingPuzzle } from "@/bindings";
 import {
-    appendTrainingMove,
     canSubmitTraining,
     trainingDecision,
     trainingPosition,
     trainingSan,
-    undoTrainingMove,
     walkTrainingLine,
     trainingAnalysisTree,
+    trainingMoveNotice,
+    trainingNeedsConfirmation,
+    trainingDepth,
 } from "./chessRiddleTraining";
 import { createTab } from "./tabs";
 import { deserializeStorageValue } from "@/state/store/debouncedStorage";
@@ -53,25 +54,29 @@ test("entrance replay and SAN are anchored to Black and the FEN move number", ()
     expect(makeFen(trainingPosition(custom, ["e7e5"], 0).toSetup())).toBe(custom.decisionFen);
 });
 
-test("legal append, undo and input cap share the replay rules", () => {
-    let line: string[] = [];
-    for (const token of ["e7e5", "g1f3", "b8c6"])
-        line = appendTrainingMove(puzzle, line, token, puzzle.solutionPlyCount);
-    expect(canSubmitTraining(puzzle, line, puzzle.solutionPlyCount)).toBe(true);
-    expect(() => appendTrainingMove(puzzle, line, "f1c4", puzzle.solutionPlyCount)).toThrow("full");
-    const shorter = undoTrainingMove(line);
-    expect(shorter).toEqual(["e7e5", "g1f3"]);
-    expect(line).toHaveLength(3);
-    expect(canSubmitTraining(puzzle, shorter, puzzle.solutionPlyCount)).toBe(false);
-    expect(canSubmitTraining(puzzle, [], puzzle.solutionPlyCount)).toBe(false);
-    for (const [token, message] of [
-        ["e7e4", "Illegal training move"],
-        ["Nf6", "Invalid training move"],
-        ["0000", "Invalid training move"],
-    ] as const)
-        expect(() => appendTrainingMove(puzzle, [], token, puzzle.solutionPlyCount)).toThrow(
-            message,
-        );
+test("tree input gate navigates existing moves and enforces solver, depth and child limits", () => {
+    const tree = trainingAnalysisTree(puzzle, ["e7e5", "g1f3", "b8c6"]);
+    expect(trainingMoveNotice(tree, "e7e5", 3)).toEqual({ existing: 0 });
+    expect(trainingMoveNotice(tree, "c7c5", 3)).toEqual({ notice: "oneSolverMove" });
+    tree.position = [0];
+    expect(trainingMoveNotice(tree, "f1c4", 3)).toEqual({});
+    tree.position = [0, 0];
+    expect(trainingMoveNotice(tree, "g8f6", 3)).toEqual({ notice: "oneSolverMove" });
+    tree.position = [0, 0, 0];
+    expect(trainingMoveNotice(tree, "f1c4", 3)).toEqual({ notice: "inputLimit" });
+    expect(trainingMoveNotice(tree, "f1c4", 7)).toEqual({});
+    expect(canSubmitTraining(tree, 3)).toBe(true);
+    expect(canSubmitTraining(tree, 4)).toBe(false);
+    expect(trainingDepth(tree.root)).toBe(3);
+    expect(trainingNeedsConfirmation(tree.root)).toBe(false);
+    tree.root.children[0].children.push(
+        trainingAnalysisTree({ ...puzzle, decisionFen: tree.root.children[0].fen }, ["f1c4"]).root
+            .children[0],
+    );
+    expect(trainingNeedsConfirmation(tree.root)).toBe(true);
+    tree.root.children[0].children = Array(10).fill(tree.root.children[0].children[0]);
+    tree.position = [0];
+    expect(trainingMoveNotice(tree, "d2d4", 7)).toEqual({ notice: "inputLimit" });
     expect(() => trainingPosition(puzzle, [], 1)).toThrow("Invalid training cursor");
     expect(() => trainingDecision({ ...puzzle, entranceMove: "e2e5" })).toThrow(
         "Illegal training move",
@@ -79,6 +84,17 @@ test("legal append, undo and input cap share the replay rules", () => {
     expect(() => trainingDecision({ ...puzzle, decisionFen: INITIAL_FEN })).toThrow(
         "Inconsistent training position",
     );
+    const seven = trainingAnalysisTree(puzzle, [
+        "e7e5",
+        "g1f3",
+        "b8c6",
+        "f1c4",
+        "g8f6",
+        "d2d3",
+        "f8c5",
+    ]);
+    seven.position = Array(7).fill(0);
+    expect(trainingMoveNotice(seven, "e1g1", 7)).toEqual({ notice: "inputLimit" });
 });
 
 test("terminal positions enable submit before the cap and solution walking validates legality", () => {
@@ -97,31 +113,14 @@ test("terminal positions enable submit before the cap and solution walking valid
         entranceMove: "g2g4",
         decisionFen: "rnbqkbnr/pppp1ppp/8/4p3/6P1/5P2/PPPPP2P/RNBQKBNR b KQkq - 0 2",
     };
-    expect(canSubmitTraining(short, ["d8h4"], 7)).toBe(true);
+    expect(canSubmitTraining({ ...trainingAnalysisTree(short, ["d8h4"]), position: [0] }, 7)).toBe(
+        true,
+    );
     expect(trainingDecision(mating).isCheckmate()).toBe(true);
     expect(walkTrainingLine(short.decisionFen, ["d8h4"])[1].san).toBe("Qh4#");
     expect(() => walkTrainingLine(short.decisionFen, ["d8h4", "a2a3"])).toThrow(
         "Illegal training move",
     );
-});
-
-test("input cap and submit threshold can grow after a too-short verdict", () => {
-    let line = ["e7e5", "g1f3", "b8c6"];
-    expect(canSubmitTraining(puzzle, line, 4)).toBe(false);
-    line = appendTrainingMove(puzzle, line, "f1c4", 7);
-    expect(canSubmitTraining(puzzle, line, 4)).toBe(true);
-    line = appendTrainingMove(puzzle, line, "g8f6", 7);
-    expect(canSubmitTraining(puzzle, line, 4)).toBe(true);
-    line = appendTrainingMove(puzzle, line, "d2d3", 7);
-    line = appendTrainingMove(puzzle, line, "f8c5", 7);
-    expect(() => appendTrainingMove(puzzle, line, "e1g1", 7)).toThrow("full");
-    expect(
-        canSubmitTraining(
-            puzzle,
-            undoTrainingMove(undoTrainingMove(undoTrainingMove(undoTrainingMove(line)))),
-            4,
-        ),
-    ).toBe(false);
 });
 
 test("promotions, en passant and castling use chess legality", () => {

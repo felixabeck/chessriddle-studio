@@ -9,14 +9,19 @@ import { ChessRiddleCommandError, requiresChessRiddleConnection } from "@/platfo
 import { tauri } from "@/platform/tauri";
 import { trainingSettings } from "./chessRiddleTrainingSettings";
 import { trainingSummary } from "./chessRiddleTrainingSummary";
+import { createTreeStore, type TreeStore } from "./store/tree";
+import { defaultTree } from "@/utils/treeReducer";
+import { parseUci } from "chessops";
+import { produce } from "immer";
 import {
     MAX_TRAINING_SUBMISSION_PLIES,
     MAX_TRAINING_DURATION_MS,
     MAX_TRAINING_EXCLUSIONS,
-    appendTrainingMove,
     canSubmitTraining,
     trainingDecision,
-    undoTrainingMove,
+    trainingMoveNotice,
+    trainingSubmissionTree,
+    trainingVerdictTree,
 } from "@/utils/chessRiddleTraining";
 
 type TrainingApi = Pick<
@@ -35,10 +40,12 @@ export type TrainingSession = {
     mistakeCountError: AccountError | null;
     upgradeError: AccountError | null;
     puzzle: TrainingPuzzle | null;
-    line: string[];
+    treeStore: TreeStore | null;
+    inputNotice: "oneSolverMove" | "inputLimit" | null;
+    rejectedTree: string | null;
+    showMoveCounter: boolean;
     inputCap: number;
     submitThreshold: number;
-    cursor: number;
     phase: "idle" | "loading" | "solving" | "submitting" | "verdict" | "error" | "empty";
     elapsedStart: number | null;
     verdict: TrainingVerdict | null;
@@ -57,6 +64,7 @@ type Entry = {
     countRequest: symbol | null;
     upgradeRequest: symbol | null;
     listeners: Set<() => void>;
+    unsubscribeTree?: () => void;
 };
 const retryable = new Set<AccountError>([
     "network",
@@ -88,10 +96,12 @@ export function createChessRiddleTrainingSessions(
                     mistakeCountError: null,
                     upgradeError: null,
                     puzzle: null,
-                    line: [],
+                    treeStore: null,
+                    inputNotice: null,
+                    rejectedTree: null,
+                    showMoveCounter: false,
                     inputCap: 0,
                     submitThreshold: 0,
-                    cursor: 0,
                     phase: "idle",
                     elapsedStart: null,
                     verdict: null,
@@ -113,6 +123,11 @@ export function createChessRiddleTrainingSessions(
     const publish = (entry: Entry, patch: Partial<TrainingSession>) => {
         entry.state = { ...entry.state, ...patch };
         for (const listener of entry.listeners) listener();
+    };
+    const disposeTree = (entry: Entry) => {
+        entry.unsubscribeTree?.();
+        entry.unsubscribeTree = undefined;
+        entry.state.treeStore?.dispose();
     };
     const current = (tabId: string, entry: Entry, identity: symbol) =>
         entries.get(tabId) === entry && entry.request === identity;
@@ -176,14 +191,16 @@ export function createChessRiddleTrainingSessions(
         if (!entry || entry.state.phase === "submitting") return;
         const identity = begin(entry);
         const selectedSource = source ?? entry.state.source;
+        disposeTree(entry);
         publish(entry, {
             source: selectedSource,
             phase: "loading",
             puzzle: null,
-            line: [],
+            treeStore: null,
+            inputNotice: null,
+            rejectedTree: null,
             inputCap: 0,
             submitThreshold: 0,
-            cursor: 0,
             verdict: null,
             elapsedStart: null,
             error: null,
@@ -204,11 +221,22 @@ export function createChessRiddleTrainingSessions(
             );
             if (!current(tabId, entry, identity)) return;
             if (puzzle) trainingDecision(puzzle);
+            let treeStore: TreeStore | null = null;
+            if (puzzle) {
+                const tree = defaultTree(puzzle.decisionFen);
+                tree.headers.orientation = puzzle.sideToMove;
+                treeStore = createTreeStore(undefined, tree);
+                entry.unsubscribeTree = treeStore.subscribe(() => publish(entry, {}));
+            }
             publish(entry, {
                 puzzle,
                 motif,
-                inputCap: puzzle?.solutionPlyCount ?? 0,
-                submitThreshold: puzzle?.solutionPlyCount ?? 0,
+                treeStore,
+                showMoveCounter: effective.showMoveCounter,
+                inputCap: effective.showMoveCounter
+                    ? Math.min(puzzle?.solutionPlyCount ?? 0, MAX_TRAINING_SUBMISSION_PLIES)
+                    : MAX_TRAINING_SUBMISSION_PLIES,
+                submitThreshold: effective.showMoveCounter ? (puzzle?.solutionPlyCount ?? 0) : 1,
                 phase: puzzle ? "solving" : "empty",
                 elapsedStart: puzzle ? now() : null,
             });
@@ -231,14 +259,22 @@ export function createChessRiddleTrainingSessions(
             const verdict = await api.chessriddleTrainingSubmit(request);
             if (!current(tabId, entry, identity)) return;
             summary.record(verdict, accountIdentity);
+            if (!verdict.tooShort && entry.state.puzzle && entry.state.treeStore) {
+                entry.state.treeStore
+                    .getState()
+                    .setState(
+                        trainingVerdictTree(
+                            entry.state.puzzle,
+                            entry.state.treeStore.getState().root,
+                            verdict,
+                        ),
+                    );
+            }
             publish(entry, {
                 verdict,
                 inputCap: verdict.tooShort ? MAX_TRAINING_SUBMISSION_PLIES : entry.state.inputCap,
-                submitThreshold: verdict.tooShort
-                    ? request.line.length + 1
-                    : entry.state.submitThreshold,
+                rejectedTree: verdict.tooShort ? JSON.stringify(request.tree) : null,
                 phase: verdict.tooShort ? "solving" : "verdict",
-                cursor: verdict.tooShort ? entry.state.cursor : 0,
                 frozenSubmission: null,
             });
         } catch (cause) {
@@ -250,15 +286,14 @@ export function createChessRiddleTrainingSessions(
     const submit = async (tabId: string, solutionShown = false) => {
         const entry = entries.get(tabId);
         if (!entry || entry.state.phase !== "solving" || !entry.state.puzzle) return;
-        const { puzzle, line, elapsedStart } = entry.state;
-        if (!solutionShown && !canSubmitTraining(puzzle, line, entry.state.submitThreshold)) return;
-        const frozenLine = [...line];
-        Object.freeze(frozenLine);
+        const { puzzle, treeStore, elapsedStart } = entry.state;
+        if (!treeStore || (!solutionShown && !canSubmit(tabId))) return;
+        const tree = trainingSubmissionTree(treeStore.getState().root);
         const request: TrainingSubmission = Object.freeze({
             puzzleId: puzzle.id,
             source: puzzle.source,
             decisionFen: puzzle.decisionFen,
-            line: frozenLine,
+            tree,
             elapsedMs: Math.min(
                 MAX_TRAINING_DURATION_MS,
                 Math.max(0, Math.floor(now() - (elapsedStart ?? now()))),
@@ -268,6 +303,17 @@ export function createChessRiddleTrainingSessions(
             motif: entry.state.motif,
         });
         await send(tabId, entry, request);
+    };
+    const canSubmit = (tabId: string) => {
+        const state = get(tabId);
+        const tree = state?.treeStore?.getState();
+        return (
+            !!state &&
+            state.phase === "solving" &&
+            !!tree &&
+            canSubmitTraining(tree, state.submitThreshold) &&
+            JSON.stringify(trainingSubmissionTree(tree.root)) !== state.rejectedTree
+        );
     };
     const retry = async (tabId: string) => {
         const entry = entries.get(tabId);
@@ -302,6 +348,7 @@ export function createChessRiddleTrainingSessions(
         available,
         next,
         submit,
+        canSubmit,
         retry,
         actions,
         subscribe(tabId: string, listener: () => void) {
@@ -313,34 +360,80 @@ export function createChessRiddleTrainingSessions(
         },
         remove(tabId: string) {
             const entry = entries.get(tabId);
+            if (entry) disposeTree(entry);
             entries.delete(tabId);
             entry?.listeners.clear();
         },
         append(tabId: string, token: string) {
             const entry = entries.get(tabId);
             if (!entry || entry.state.phase !== "solving" || !entry.state.puzzle) return;
-            const line = appendTrainingMove(
-                entry.state.puzzle,
-                entry.state.line,
-                token,
-                entry.state.inputCap,
-            );
-            publish(entry, { line, cursor: line.length, verdict: null });
+            const tree = entry.state.treeStore?.getState();
+            if (!tree) return;
+            const gate = trainingMoveNotice(tree, token, entry.state.inputCap);
+            if (gate.notice) {
+                publish(entry, { inputNotice: gate.notice });
+                return;
+            }
+            if (gate.existing !== undefined) tree.goToMove([...tree.position, gate.existing]);
+            else {
+                const move = parseUci(token);
+                if (move) tree.makeMove({ payload: move, changeHeaders: false });
+            }
+            if (entry.state.inputNotice) publish(entry, { inputNotice: null });
         },
-        undo(tabId: string) {
+        undo(tabId: string, path?: number[]) {
             const entry = entries.get(tabId);
             if (!entry || entry.state.phase !== "solving") return;
-            const line = undoTrainingMove(entry.state.line);
-            publish(entry, { line, cursor: line.length, verdict: null });
+            const tree = entry.state.treeStore?.getState();
+            if (!tree) return;
+            const target = path ?? tree.position;
+            if (target.length) tree.deleteMove(target);
+            else {
+                const empty = defaultTree(entry.state.puzzle!.decisionFen);
+                empty.headers.orientation = entry.state.puzzle!.sideToMove;
+                tree.setState(empty);
+            }
+            publish(entry, { inputNotice: null });
         },
-        step(tabId: string, cursor: number) {
+        promote(tabId: string, path: number[]) {
             const entry = entries.get(tabId);
-            if (!entry || !Number.isInteger(cursor)) return;
-            const cap =
-                entry.state.phase === "verdict"
-                    ? (entry.state.verdict?.correctVariation.length ?? 0)
-                    : entry.state.line.length;
-            if (cursor >= 0 && cursor <= cap) publish(entry, { cursor });
+            if (!entry || entry.state.phase !== "solving" || !path.length) return;
+            const store = entry.state.treeStore;
+            if (!store) return;
+            // The website swaps siblings rather than shifting all intervening indices.
+            store.setState(
+                produce(store.getState(), (tree) => {
+                    const parentPath = path.slice(0, -1);
+                    let parent = tree.root;
+                    for (const index of parentPath) {
+                        if (!parent.children[index]) return;
+                        parent = parent.children[index];
+                    }
+                    const index = path.at(-1)!;
+                    if (!parent.children[index] || index === 0) return;
+                    [parent.children[0], parent.children[index]] = [
+                        parent.children[index],
+                        parent.children[0],
+                    ];
+                    if (
+                        tree.position.length > parentPath.length &&
+                        parentPath.every((value, i) => tree.position[i] === value)
+                    ) {
+                        const selected = tree.position[parentPath.length];
+                        if (selected === 0) tree.position[parentPath.length] = index;
+                        else if (selected === index) tree.position[parentPath.length] = 0;
+                    }
+                }),
+            );
+            publish(entry, { inputNotice: null });
+        },
+        step(tabId: string, action: "first" | "previous" | "next" | "last") {
+            const tree = get(tabId)?.treeStore?.getState();
+            if (!tree) return;
+            if (action === "first") tree.goToStart();
+            else if (action === "previous") tree.goToPrevious();
+            else if (action === "next") tree.goToNext();
+            else tree.goToBranchEnd();
         },
         async refreshMistakeCount(tabId: string) {
             const entry = entries.get(tabId);

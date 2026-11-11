@@ -1175,7 +1175,13 @@ mod tests {
             .unwrap()
             .unwrap()
             .decision_fen,
-            line: vec!["e7e5".into(), "g1f3".into()],
+            tree: training::TrainingTreeNode {
+                r#move: "e7e5".into(),
+                children: vec![training::TrainingTreeNode {
+                    r#move: "g1f3".into(),
+                    children: vec![],
+                }],
+            },
             elapsed_ms: 30000,
             solution_shown: false,
             idempotency_key: uuid::Uuid::new_v4().to_string(),
@@ -1211,7 +1217,7 @@ mod tests {
     }
 
     fn settings_response() -> serde_json::Value {
-        serde_json::json!({"puzzle_difficulty_offset":250,"selected_motif":"fork","show_timer":true,"timer_mode":"down","timer_duration":180})
+        serde_json::json!({"puzzle_difficulty_offset":250,"selected_motif":"fork","show_timer":true,"show_move_counter":true,"timer_mode":"down","timer_duration":180})
     }
 
     async fn training_settings(headers: HeaderMap) -> Json<serde_json::Value> {
@@ -1504,6 +1510,7 @@ mod tests {
             difficulty: 250,
             motif: Some("fork".into()),
             show_timer: true,
+            show_move_counter: true,
             timer_mode: "down".into(),
             timer_duration: 180,
         };
@@ -1893,7 +1900,10 @@ mod tests {
             Action::Next(TrainingSource::Tactics, vec![], None, None),
             Action::MistakeCount,
             Action::Submit(TrainingSubmission {
-                line: vec![],
+                tree: training::TrainingTreeNode {
+                    r#move: String::new(),
+                    children: vec![],
+                },
                 elapsed_ms: 0,
                 solution_shown: true,
                 ..training_submission()
@@ -1905,6 +1915,7 @@ mod tests {
                 difficulty: 0,
                 motif: None,
                 show_timer: false,
+                show_move_counter: false,
                 timer_mode: "up".into(),
                 timer_duration: 300,
             })),
