@@ -23856,3 +23856,19 @@ Deferred should-fix (keep at midnight filing):
 
 Deferred follow-up (keep at midnight filing):
 - Residual fail-open for variant-spelling related imports when retained historical Evidence was never attested under the new code and the source is already gone, so no durable `FingerprintAliases` mapping exists. A hash-only join cannot invent that mapping from the incoming spelling alone (`to_ascii_lowercase("MÜLLER")` is `mÜller`, which differs from `müller`). The repair records aliases when the original source is read under the new code, which covers the reviewed fixture and the common upgrade path. Do not paper over this with an unsound moves-only match.
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### A timed-out startup update check that later succeeds never closes the plugin `Update` handle
+
+* **ID:** f-20261112-07 · **Status:** open · **Area:** app-startup · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** fourteenth-sweep quality review (Felix t26u) at HEAD `341275b7a`, installer/updater
+* **Where:** `checkForAppUpdate` in `src/App.tsx` (~119-134) races `check()` against `withTimeout` (`UPDATE_CHECK_TIMEOUT_MS`, ~80-90). On timeout the `catch` warns and returns. The plugin handle is closed only in the `finally` of the *successful* check path (`void update.close()` at ~132). The abandoned `check()` promise is never settled into that path. Distinct from handled `f-20260829-03` (startup sequence had no tests; `App.test.tsx` now covers the hanging-check warning but not a late settlement) and from handled `f-20260830-44` (wrong upstream endpoint/signing key). The existing "closes the splash before a hanging check reaches its timeout, then warns" case never resolves `check()`.
+* **Defect:** The updater plugin requires `Update.close()` to release a check handle. A check that outlives the 15 s bound is abandoned: if it later returns an update, `close` is not called, and a later rejection is also unhandled.
+* **Failure scenario:** Launch while the update endpoint is slow (or offline long enough to pass 15 s, then it answers). `checkForAppUpdate` warns `Update check failed: timed out after 15000 ms` and returns. The plugin then delivers an `Update`. Nothing calls `close()`, so the native check resource stays open. A later launch or menu-driven check can then see a stuck or second updater session, and the user is not offered the already-fetched update because the first path already bailed out.
+* **Fix:** Keep the `check()` promise after the timeout and, if it later fulfills with an `Update`, call `update.close()` (and do not open the install dialog or relaunch). Swallow or `warn` a late rejection so it is not unhandled. Add a regression that a `check()` resolving after `UPDATE_CHECK_TIMEOUT_MS` calls `close()` once and never calls `ask` or `relaunch`.
+* **Proof:** Temporary test `sweep14 late check after timeout still closes the update handle` in `src/App.test.tsx` on HEAD `341275b7a`, removed afterwards (tree clean). Production `useAppStartup` with a `check()` that resolved only after `vi.advanceTimersByTimeAsync(UPDATE_CHECK_TIMEOUT_MS)` warned `Update check failed` and left `update.close` at 0 calls; `ask` was not called.
+* **Found by:** Grok Bot, quality review (t26u), HEAD `341275b7a`.
