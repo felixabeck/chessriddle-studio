@@ -22746,7 +22746,7 @@ Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates th
 
 ### `retire_replaced_waits_until_every_pooled_connection_has_closed` saw three outstanding pool connections instead of two in CI on a frontend-only push
 
-* **ID:** f-20261110-04 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261110-04 · **Status:** handled · **Area:** db-search · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 42907127764
 * **Spotted outside diff:** yes — found in the required CI wait of the Library chapter picker push (f3b9ba74f), which changes only renderer files.
@@ -22759,6 +22759,9 @@ Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates th
 * **Found by:** Claude Code, build run 2026-11-10-library-chapter-picker, required CI wait, 2026-11-10.
 * **Rerun 2026-11-10 (Claude Code, build run 2026-11-10-library-chapter-picker):** the single rerun `gh run rerun 42907127764 --failed` passed `rust` (started 21:54:32Z), so run 42907127764 on `f3b9ba74f` is now `completed / success` and master is green again. The finding stays open: the first attempt failed an assertion (`outstanding` 3 vs 2), not runner infrastructure, so the open question about the setup connection's asynchronous return remains.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"0f2d564041c8b6b628967f3f45b409e73c75588c167e36d86e5d4aa0ed6a7104","input_sha256":"25e46b409993196d96cb75279a1dffc1932719447f8d4e63a4d99919b2ca53f4","kind":"mutation-receipt","operation":"730e0562b0c4ce37c3f5903c3a34f8c2044c5149d47c2c834589744340e2f4bb","options":{"section":null},"request_id_sha256":null,"results":["f-20261110-04"],"target":"f-20261110-04","v":1} -->
+
+* **Handled 2026-11-11 (Claude Code drain session f1ba0d45-d17f-493b-9d2c-e5165696ee78):** a test race, not a miscounted release. The open question is answered: `PooledConnection` drop returns the setup connection synchronously, but `entry.connections` counts every open SQLite connection, idle ones included. `PoolEvents::handle_acquire` wakes `get_connection_cancellable`'s waiter before r2d2 pushes the new connection into its idle list, so the waiter's `pool.get_timeout(Duration::ZERO)` can schedule a second establishment that lands later as an idle connection. A disposable probe (50 ms sleep after the acquire notification) reproduced the failure as `left: 4, right: 2`. Commit 4f8ec9cda asserts the checked-out count (`state().connections - idle_connections == 2`), which is exact, plus `outstanding >= 2`; with the probe re-applied the 47 `db::repository::tests` pass. Rejected: changing production acquisition, because r2d2 exposes no post-insert signal and the extra idle connection is bounded by `MAX_CONNECTIONS_PER_DATABASE` and closed by retirement, so it has no user impact.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"4e48c775360a52c5bbdfccec6a5a9fce5c0795dba39df2658454066aba7658a9","header_sha256":"9bed5b61e81adc4629d38d022a7b3719de9ef167fafd9dad7f16368c87d53be9","header_status":"handled","input_sha256":"bae3ffc17bc969ee6c5ef2d921704ad7f21cfa15d1a18160b499c7fd4a30d66f","kind":"mutation-receipt","operation":"93e04614d94f011e1305b87ebb847a2236671bd00a210fd00c155f0d19904b0f","options":{"section":null},"request_id_sha256":null,"results":["f-20261110-04"],"target":"f-20261110-04","v":1} -->
 
 ---
 
