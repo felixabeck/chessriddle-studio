@@ -15,8 +15,14 @@ import {
 } from "./fixtures";
 import { deserializeStorageValue } from "../src/state/store/debouncedStorage";
 import { createEmptyCard } from "ts-fsrs";
-import type { PracticeReviewWrite } from "../src/bindings/generated";
+import type { PositionStats, PracticeReviewWrite } from "../src/bindings/generated";
 import type { Locator } from "@playwright/test";
+
+function positionStats(move: string): PositionStats[] {
+    return [
+        { move, white: 100, draw: 0, black: 0, unknown: 0, last_played: null, year_counts: [] },
+    ];
+}
 
 async function assertWordsUnbroken(label: Locator) {
     const splitWords = await label.evaluate((element) => {
@@ -599,19 +605,15 @@ for (const surface of [
             ...filesWorkspaceFixture.pgnFile,
             metadata: { type: "repertoire" as const, tags: [] },
         };
-        const stats = (move: string) => [
-            [
-                {
-                    move,
-                    white: 100,
-                    draw: 0,
-                    black: 0,
-                    unknown: 0,
-                    last_played: null,
-                    year_counts: [],
-                },
-            ],
-            [],
+        const fens = [
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+            "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+            "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -",
+        ];
+        const coverage = [
+            { fen: fens[0], openings: positionStats("e4") },
+            { fen: fens[1], openings: positionStats("c5") },
+            { fen: fens[2], openings: [] },
         ];
         await mockScenario({
             commands: filesWorkspaceCommands([[repertoireFile]], {
@@ -630,15 +632,11 @@ for (const surface of [
                         fetchSinceMs: null,
                     },
                 },
-                search_position: {
+                search_position: { result: [positionStats("e4"), []] },
+                search_positions_stats: {
                     outcomes: [
-                        // Ready-reference cache reset cancels the first position read before IPC.
-                        // Coverage's root read and the replacement position read both succeed.
-                        { result: stats("e4") },
-                        { result: stats("e4") },
-                        { result: stats("c5") },
-                        { result: [[], []] },
-                        // A stable annotation edit then fails coverage's new root read.
+                        { result: coverage },
+                        // A stable annotation edit then fails the new coverage batch.
                         {
                             error: {
                                 tag: "backend-error",
@@ -647,11 +645,9 @@ for (const surface of [
                             },
                         },
                         // Retry covers the actual root, e4 and c5 nodes from pgnFileCommands.
-                        { result: stats("e4") },
-                        { result: stats("c5") },
-                        { result: [[], []] },
+                        { result: coverage },
                     ],
-                    result: [[], []],
+                    result: coverage,
                 },
             }),
         });
@@ -670,18 +666,18 @@ for (const surface of [
             exact: true,
         });
         const prepared = build.getByRole("button", { name: /1\. e4/ });
-        const queries = () =>
-            page.evaluate(() =>
-                window.__E2E_TAURI__
-                    .invocations()
-                    .filter(({ command }) => command === "search_position"),
+        const queries = (command = "search_positions_stats") =>
+            page.evaluate(
+                (command) =>
+                    window.__E2E_TAURI__.invocations().filter((call) => call.command === command),
+                command,
             );
         await expect(completeness).toBeVisible();
         await expect(prepared.getByRole("progressbar").last()).toHaveAttribute(
             "aria-valuenow",
             "100",
         );
-        expect(await queries()).toHaveLength(4);
+        expect(await queries()).toHaveLength(1);
         const tab = (await activeWorkspaceTab(page))!;
         // BoardAnalysis's existing good-move hotkey edits the current tree without changing FEN,
         // reference metadata, position-cache ownership or the mounted Practice/Build panel.
@@ -736,11 +732,11 @@ for (const surface of [
         await expect(prepared.getByRole("progressbar")).toHaveCount(3);
         await assertNothingClipped(error, { mode: "reachable" });
         await assertNoHorizontalOverflow();
-        expect(await queries()).toHaveLength(5);
+        expect(await queries()).toHaveLength(2);
         const failedAt = await page.evaluate(() => Date.now());
         await page.clock.runFor(2000);
         expect(await page.evaluate(() => Date.now())).toBe(failedAt + 2000);
-        expect(await queries()).toHaveLength(5);
+        expect(await queries()).toHaveLength(2);
         await expect(retry).toBeVisible();
         const coverageNotification = page
             .locator(".mantine-Notification-root")
@@ -767,21 +763,19 @@ for (const surface of [
             "100",
         );
         const calls = await queries();
-        expect(calls).toHaveLength(8);
-        expect(
-            calls.map(
-                ({ args }) => (args as { query: { position: { fen: string } } }).query.position.fen,
-            ),
-        ).toEqual([
-            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
-            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
-            "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
-            "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -",
-            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
-            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
-            "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
-            "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -",
+        expect(calls).toHaveLength(3);
+        expect(calls.map(({ args }) => (args as { fens: string[] }).fens)).toEqual([
+            fens,
+            fens,
+            fens,
         ]);
+        // Ready-reference cache reset cancels the first position read before IPC.
+        const positionCalls = await queries("search_position");
+        expect(positionCalls).toHaveLength(1);
+        expect(positionCalls[0].args).toMatchObject({
+            file: database,
+            query: { position: { fen: fens[0] } },
+        });
         await completeness.scrollIntoViewIfNeeded();
         await expect(completeness).toBeInViewport({ ratio: 1 });
         await assertNothingClipped(completeness, { mode: "reachable" });
@@ -1178,10 +1172,10 @@ test("workspace-tabs: successful Italian marked-start coverage with a missing co
         revision: "italian-start",
         present: true,
     };
-    const stats = (move: string) => [
-        [{ move, white: 100, draw: 0, black: 0, unknown: 0, last_played: null, year_counts: [] }],
-        [],
-    ];
+    const rootFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -";
+    const startFen = "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq -";
+    const afterBc5Fen = "r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq -";
+    const afterD3Fen = "r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/3P1N2/PPP2PPP/RNBQK2R b KQkq -";
     const commands = filesWorkspaceCommands([[repertoireFile]], {
         ...pgnFileCommands,
         read_game: { result: game },
@@ -1196,6 +1190,7 @@ test("workspace-tabs: successful Italian marked-start coverage with a missing co
         },
         collection_for_database: { result: null },
         search_position: { result: [[], []] },
+        search_positions_stats: { result: [{ fen: rootFen, openings: [] }] },
     });
     await mockScenario({ commands });
     await page.goto("/library");
@@ -1208,11 +1203,11 @@ test("workspace-tabs: successful Italian marked-start coverage with a missing co
     const complete = build.getByText("No gaps found — your repertoire is complete!", {
         exact: true,
     });
-    const queries = () =>
-        page.evaluate(() =>
-            window.__E2E_TAURI__
-                .invocations()
-                .filter(({ command }) => command === "search_position"),
+    const queries = (command = "search_positions_stats") =>
+        page.evaluate(
+            (command) =>
+                window.__E2E_TAURI__.invocations().filter((call) => call.command === command),
+            command,
         );
     await expect(
         build.getByText("No moves found in the reference database for this position.", {
@@ -1220,13 +1215,18 @@ test("workspace-tabs: successful Italian marked-start coverage with a missing co
         }),
     ).toBeVisible();
     await expect(build.getByText("Loading position data...", { exact: true })).toHaveCount(0);
-    expect(await queries()).toHaveLength(2);
+    expect(await queries()).toHaveLength(1);
+    expect(await queries("search_position")).toHaveLength(1);
     await page.evaluate(
-        ({ commands, response }) =>
+        ({ commands, startFen, openings }) =>
             window.__E2E_TAURI__.configure({
-                commands: { ...commands, search_position: { result: response } },
+                commands: {
+                    ...commands,
+                    search_position: { result: [openings, []] },
+                    search_positions_stats: { result: [{ fen: startFen, openings }] },
+                },
             }),
-        { commands, response: stats("Bc5") },
+        { commands, startFen, openings: positionStats("Bc5") },
     );
     await build.getByRole("button", { name: "Italian Game", exact: true }).click();
     const continuation = build.getByRole("button", { name: /3\.\.\. Bc5/ });
@@ -1235,14 +1235,16 @@ test("workspace-tabs: successful Italian marked-start coverage with a missing co
     await expect(complete).toHaveCount(0);
     await expect(build.getByRole("button", { name: /Next gap|Biggest gap/i })).toHaveCount(0);
     await expect(build.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
-    const startFen = "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq -";
+    expect(await queries()).toHaveLength(2);
+    expect((await queries()).map(({ args }) => (args as { fens: string[] }).fens)).toEqual([
+        [rootFen],
+        [startFen],
+    ]);
     expect(
-        (await queries())
-            .slice(2)
-            .map(
-                ({ args }) => (args as { query: { position: { fen: string } } }).query.position.fen,
-            ),
-    ).toEqual([startFen, startFen]);
+        (await queries("search_position")).map(
+            ({ args }) => (args as { query: { position: { fen: string } } }).query.position.fen,
+        ),
+    ).toEqual([rootFen, startFen]);
     await assertNoHorizontalOverflow();
     await testInfo.attach("repertoire-italian-successful-incomplete.png", {
         body: await page.screenshot({ fullPage: true }),
@@ -1250,32 +1252,48 @@ test("workspace-tabs: successful Italian marked-start coverage with a missing co
     });
 
     await page.evaluate(
-        ({ commands, outcomes }) =>
+        ({ commands, openings, coverage }) =>
             window.__E2E_TAURI__.configure({
-                commands: { ...commands, search_position: { outcomes, result: [[], []] } },
+                commands: {
+                    ...commands,
+                    search_position: { result: [openings, []] },
+                    search_positions_stats: { result: coverage },
+                },
             }),
         {
             commands,
-            outcomes: [{ result: stats("d3") }, { result: stats("Bc5") }, { result: stats("d3") }],
+            openings: positionStats("d3"),
+            coverage: [
+                { fen: startFen, openings: positionStats("Bc5") },
+                { fen: afterBc5Fen, openings: positionStats("d3") },
+            ],
         },
     );
     await continuation.click();
     const response = build.getByRole("button", { name: /4\. d3/ });
     await expect(response).toBeVisible();
     await expect(build.getByText("Loading position data...", { exact: true })).toHaveCount(0);
-    expect(await queries()).toHaveLength(7);
+    expect(await queries()).toHaveLength(3);
+    expect((await queries()).at(-1)!.args).toMatchObject({
+        file: database,
+        fens: [startFen, afterBc5Fen],
+    });
+    expect(await queries("search_position")).toHaveLength(3);
     await page.evaluate(
-        ({ commands, outcomes }) =>
+        ({ commands, coverage }) =>
             window.__E2E_TAURI__.configure({
-                commands: { ...commands, search_position: { outcomes, result: [[], []] } },
+                commands: {
+                    ...commands,
+                    search_position: { result: [[], []] },
+                    search_positions_stats: { result: coverage },
+                },
             }),
         {
             commands,
-            outcomes: [
-                { result: [[], []] },
-                { result: stats("Bc5") },
-                { result: stats("d3") },
-                { result: [[], []] },
+            coverage: [
+                { fen: startFen, openings: positionStats("Bc5") },
+                { fen: afterBc5Fen, openings: positionStats("d3") },
+                { fen: afterD3Fen, openings: [] },
             ],
         },
     );
@@ -1288,7 +1306,16 @@ test("workspace-tabs: successful Italian marked-start coverage with a missing co
         "aria-valuenow",
         "100",
     );
-    expect(await queries()).toHaveLength(11);
+    expect(await queries()).toHaveLength(4);
+    expect((await queries()).at(-1)!.args).toMatchObject({
+        file: database,
+        fens: [startFen, afterBc5Fen, afterD3Fen],
+    });
+    expect(
+        (await queries("search_position")).map(
+            ({ args }) => (args as { query: { position: { fen: string } } }).query.position.fen,
+        ),
+    ).toEqual([rootFen, startFen, afterBc5Fen, afterD3Fen]);
     const calls = await page.evaluate(() => window.__E2E_TAURI__.invocations());
     expect(calls.filter(({ command }) => command === "write_game")).toHaveLength(0);
     await assertNothingClipped(complete, { mode: "reachable" });

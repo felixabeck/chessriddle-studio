@@ -1167,6 +1167,7 @@ const tauriBootstrap = () => {
         cancel_conversion: { result: true },
         release_conversion: { result: null },
         get_opening_from_fens: { result: [] },
+        search_positions_stats: { result: [] },
         list_puzzle_databases: { result: [] },
         kill_engines: { result: null },
         kill_engine: { result: null },
