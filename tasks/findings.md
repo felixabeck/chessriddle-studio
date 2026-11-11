@@ -23293,6 +23293,9 @@ Handled (drain aaa22b94, 2026-11-11). `rg 'fuse\.js|Fuse\(|from "fuse' src e2e s
 * **Rebased hashes (2026-11-11):** after rebasing onto `50035a496` the commits are `ea92ec851` (was `e7e1a51e`), `5c37167d7` (was `dab2ec5b`) and `42faeacc5` (was `58548919`).
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"3b7b7acdb07f92866ffb7c72b0b1413819dbbaf902ccfceaa8e7d48cd1a6e98d","input_sha256":"1c475bf9ac4ba28cd20213e11cf2edd0cab18354ec01474ad265d93d25a7c88a","kind":"mutation-receipt","operation":"5bb3dce91fe1a381cbff49e0c6e93f872d1e82c6eee7fe32bc1cfc170934026c","options":{"section":null},"request_id_sha256":null,"results":["f-20261111-75"],"target":"f-20261111-75","v":1} -->
 
+* **Final hashes (2026-11-11, supersedes the two earlier hash lists):** rebased onto `20b65a96d`: `41606f35d` (exact native-name recovery), `edf742282` (unread guard), `ee895374c` (native White_Space trim).
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"627790fbf6b381e7fe2e0b80ef4775b1894f842ceec21f41970a2f9228aa0371","input_sha256":"c8bf6cba098367662424b3e26ebe3cc7bdc1d6a51c978bec2bbc332c0c67dc52","kind":"mutation-receipt","operation":"1d3a8013a58bdf3929fa9a20ffed1eb4033ae9b866e50be1aa6fe4144297d175","options":{"section":null},"request_id_sha256":null,"results":["f-20261111-75"],"target":"f-20261111-75","v":1} -->
+
 ---
 
 ## 2026-11-11 — filed through the inbox spool
