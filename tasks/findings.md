@@ -22946,3 +22946,19 @@ Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates th
 * **Fix:** Move `QualityRatingPanel`, `PositionsModal` and `LogsModal` to a sibling module (for example `PracticePanelModals.tsx`, or one file each). Keep `PracticePanel` as the session controller and import the three. Existing `PracticePanel.test.tsx` / `PracticePanel.gameplay.test.tsx` remain the behaviour contract.
 * **Proof:** Function starts at depth 0 at the line ranges above; the file ends at 1503 with `LogsModal`. `tasks/decisions.md` has no entry requiring these components to share a file.
 * **Found by:** Grok Bot, quality review (t26u), HEAD `23abece0d`.
+
+---
+
+## 2026-11-11 — filed through the inbox spool
+
+### `useFileWorkspace` is a 895-line hook that also owns the library chooser, trash, detail and dialog UI
+
+* **ID:** f-20261111-57 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** general quality review (Felix t26u) at HEAD `23abece0d`
+* **Where:** `src/components/files/useFileWorkspace.tsx` (977 lines). The hook is `:83-977` (895 lines). Data and actions run first; from `:481` the return value inlines JSX as `chooser` (`:487-500`), `creation` (`:501-521`), `trash` (`:522-549`), `trashView` (`:550-668`), `status` (`:669-694`), `detail` (`:710-776`) and `dialogs` (`:777-end`). `src/components/library/LibraryPage.tsx` only slots those fields (`:214`, `:223`, `:294-295`, `:334`, and the detail/dialogs counterparts). This is the same Library composition as `useDatabaseLibrary` (f-20261111-55). No decision pins the file-workspace UI to the hook.
+* **Defect:** A hook named for workspace data also renders the folder chooser, the new-file form, the trash list and restore UI, the selected-file inspector and the file dialogs. `LibraryPage` cannot be read as a page without following 400+ lines of JSX behind `files.trashView` / `files.detail`. File and database library hooks drifted into the same "return a bag of prebuilt UI" shape independently; the database side is already filed as f-20261111-55.
+* **Failure scenario:** Changing trash restore, file creation or the selected-file inspector requires reviewing and merging against workspace loading, move/trash mutations and selection state in the same 895-line hook. The page component only interpolates the slots, so the UI and the mutations cannot be reviewed apart.
+* **Fix:** Keep `useFileWorkspace` as data and actions (workspace, listing, selection, mutate, trash, open, move). Move `chooser`, `creation`, `trash`, `trashView`, `status`, `detail` and `dialogs` into components (for example `FileWorkspaceChooser`, `FileTrashView`, `FileWorkspaceDetail`, `FileWorkspaceDialogs`). `LibraryPage` keeps composing those components from the hook's data. Existing `FilesPage.test.tsx` and `LibraryPage.test.tsx` remain the behaviour contract.
+* **Proof:** Return keys and line ranges as cited; `LibraryPage.tsx` consumes `files.chooser`, `files.creation`, `files.trash`, `files.status` and `files.trashView` at the lines above. Same slot pattern as f-20261111-55 (`databases.detail` / `databases.renderRow`). `tasks/decisions.md` has no entry requiring the UI to live inside the hook.
+* **Found by:** Grok Bot, quality review (t26u), HEAD `23abece0d`.
