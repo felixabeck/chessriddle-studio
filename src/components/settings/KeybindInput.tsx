@@ -63,8 +63,17 @@ function KeybindInput({
   );
 }
 
-function KbdDisplay({ keys, hovering }: { keys: string; hovering: boolean }) {
-  const splitted = formatKeymap(keys).split("+");
+/** Keycaps for a `+`-joined key string, optionally followed by one unformatted gesture keycap. */
+export function KbdDisplay({
+  keys,
+  hovering,
+  suffix,
+}: {
+  keys: string;
+  hovering: boolean;
+  suffix?: string;
+}) {
+  const splitted = [...(keys ? formatKeymap(keys).split("+") : []), ...(suffix ? [suffix] : [])];
   return (
     <Group>
       {splitted.map((key, i) => (

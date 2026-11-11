@@ -25,7 +25,7 @@ vi.mock("@/i18n", async (original) => ({
   changeLocale: vi.fn(),
 }));
 vi.mock("./BoardSelect", () => ({ default: () => null }));
-vi.mock("./KeybindInput", () => ({ default: () => null }));
+vi.mock("./KeybindInput", () => ({ default: () => null, KbdDisplay: () => null }));
 vi.mock("./PercentagePreferenceSlider", () => ({ default: () => null }));
 vi.mock("./PiecesSelect", () => ({ default: () => null }));
 vi.mock("./RepertoireMinGamesSetting", () => ({ default: () => null }));

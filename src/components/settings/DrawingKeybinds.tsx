@@ -1,8 +1,8 @@
-import { Box, Group, Kbd, Table, Text } from "@mantine/core";
+import { Box, Group, Table, Text } from "@mantine/core";
 import { useTranslation } from "react-i18next";
 import { platform } from "@/platform/native";
 import { DRAWING_MODIFIERS, type DrawingColor, pgnDrawingBrushes } from "@/utils/drawings";
-import { formatKeymap } from "@/utils/formatKeymap";
+import { KbdDisplay } from "./KeybindInput";
 
 /** Read-only list of the right-click modifiers that pick a drawing colour. */
 export function DrawingKeybinds({ titleClassName }: { titleClassName?: string }) {
@@ -49,14 +49,11 @@ export function DrawingKeybinds({ titleClassName }: { titleClassName?: string })
                   </Group>
                 </Table.Td>
                 <Table.Td>
-                  <Group gap="xs">
-                    {keys.map((key) => (
-                      <Group key={key} gap="xs">
-                        <Kbd>{formatKeymap(key)}</Kbd>+
-                      </Group>
-                    ))}
-                    <Kbd>{t("Settings.Drawing.RightClick")}</Kbd>
-                  </Group>
+                  <KbdDisplay
+                    keys={keys.join("+")}
+                    hovering={false}
+                    suffix={t("Settings.Drawing.RightClick")}
+                  />
                 </Table.Td>
               </Table.Tr>
             );

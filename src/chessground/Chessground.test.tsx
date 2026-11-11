@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { MantineProvider } from "@mantine/core";
 import type { Config } from "@lichess-org/chessground/config";
 import type { DrawShape } from "@lichess-org/chessground/draw";
+import { defaults } from "@lichess-org/chessground/state";
 import { afterEach, expect, test, vi } from "vitest";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { getDefaultStore } from "jotai";
@@ -388,4 +389,24 @@ test("a mounted board without its own animation config resumes animating when Of
   } finally {
     localStorage.clear();
   }
+});
+
+test("every board receives all six drawing brushes, even when the caller passes none", async () => {
+  await renderDrawable({});
+  const brushes = createChessground.mock.calls[0][1].drawable?.brushes;
+  expect(brushes?.orange).toMatchObject({ color: "#ff6600" });
+  expect(brushes?.cyan).toMatchObject({ color: "#00bcd4" });
+  expect(brushes?.yellow).toMatchObject({ color: "#e8c500" });
+});
+
+test("a caller's brushes cannot replace a drawing colour", async () => {
+  await renderDrawable({
+    brushes: {
+      ...defaults().drawable.brushes,
+      yellow: { key: "y", color: "#000", opacity: 1, lineWidth: 1 },
+    },
+  });
+  expect(createChessground.mock.calls[0][1].drawable?.brushes?.yellow).toMatchObject({
+    color: "#e8c500",
+  });
 });
