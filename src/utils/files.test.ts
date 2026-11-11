@@ -261,6 +261,37 @@ describe("openFile tab admission", () => {
         expect(hasFileOpenInFlight(fileWorkspaceKey(file.handle))).toBe(false);
     });
 
+    test("forwards cancellation through the read and refuses a retired open before admission", async () => {
+        const { createTab } = await vi.importActual<typeof import("./tabs")>("./tabs");
+        const controller = new AbortController();
+        const admission = deferred<void>();
+        mocks.createTab.mockImplementationOnce(async (options) => {
+            await admission.promise;
+            return createTab(options);
+        });
+        const pending = openFile(file, setTabs, { signal: controller.signal });
+        try {
+            await vi.waitFor(() => expect(mocks.createTab).toHaveBeenCalledOnce());
+            controller.abort();
+        } finally {
+            admission.resolve();
+        }
+
+        await expect(pending).resolves.toBeNull();
+        expect(mocks.readGame).toHaveBeenCalledExactlyOnceWith(file.handle, 0, {
+            signal: controller.signal,
+        });
+        expect(mocks.parsePGN).toHaveBeenCalledWith(freshPgn, undefined, {
+            signal: controller.signal,
+        });
+        expect(mocks.createTab).toHaveBeenCalledWith(
+            expect.objectContaining({ signal: controller.signal }),
+        );
+        expect(setTabs).not.toHaveBeenCalled();
+        expect(mocks.storeSet).not.toHaveBeenCalled();
+        expect(hasFileOpenInFlight(fileWorkspaceKey(file.handle))).toBe(false);
+    });
+
     test("returns the admitted id and records an ordinary repertoire without selecting Practice", async () => {
         mocks.createTab.mockResolvedValueOnce("tab-id");
 

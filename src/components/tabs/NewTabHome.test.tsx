@@ -238,7 +238,7 @@ test("recents remain visible and open with owner while the workspace listing sta
   expect(mocks.openFile).toHaveBeenCalledWith(
     expect.objectContaining({ name: "Recent" }),
     expect.any(Function),
-    { ownerId: "home", store },
+    { ownerId: "home", store, signal: expect.any(AbortSignal) },
   );
 });
 
@@ -275,7 +275,7 @@ test("Library listing rows supply the file name for recents and let openFile der
   expect(mocks.openFile).toHaveBeenCalledWith(
     expect.objectContaining({ name: "Raw file name.pgn" }),
     expect.any(Function),
-    { ownerId: "home", store },
+    { ownerId: "home", store, signal: expect.any(AbortSignal) },
   );
   expect(mocks.openFile.mock.calls[0][2]).not.toHaveProperty("tabName");
 });
@@ -298,6 +298,7 @@ test.each(["all", "repertoires", "due"])(
       {
         ownerId: "home",
         store,
+        signal: expect.any(AbortSignal),
         ...(value === "due" ? { panel: "practice" } : {}),
       },
     );
@@ -396,7 +397,7 @@ test("search finds a Library file absent from recents and activates player searc
   expect(mocks.feedArgs).toHaveBeenLastCalledWith(undefined, "Sicilian", false);
 });
 
-test.each(["resolves", "rejects"])(
+test.each(["resolves", "rejects", "resolves missing"])(
   "a second recent game retires the first recent fetch that %s",
   async (settlement) => {
     store.set(
@@ -414,7 +415,8 @@ test.each(["resolves", "rejects"])(
       game: { ...game, id: gameId },
     }));
     await render();
-    let finish!: (result: { kind: "found"; game: NormalizedGame }) => void;
+    const recents = store.get(recentFilesAtom);
+    let finish!: (result: { kind: "found"; game: NormalizedGame } | { kind: "missing" }) => void;
     let fail!: (cause: unknown) => void;
     mocks.getGame.mockImplementationOnce(
       () =>
@@ -428,6 +430,7 @@ test.each(["resolves", "rejects"])(
     await open("Recent 8");
     await act(async () => {
       if (settlement === "rejects") fail(new Error("Retired read failed"));
+      else if (settlement === "resolves missing") finish({ kind: "missing" });
       else finish({ kind: "found", game });
     });
     expect(mocks.openGame).toHaveBeenCalledExactlyOnceWith(
@@ -437,6 +440,7 @@ test.each(["resolves", "rejects"])(
     expect(signal).toBeInstanceOf(AbortSignal);
     expect(signal.aborted).toBe(true);
     expect(mocks.notify).not.toHaveBeenCalled();
+    expect(store.get(recentFilesAtom)).toEqual(recents);
   },
 );
 
@@ -1061,10 +1065,50 @@ test.each([0, 1])(
     expect(mocks.openFile).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ name: "Direct.pgn", numGames: count }),
       expect.any(Function),
-      { ownerId: "home", store },
+      { ownerId: "home", store, signal: expect.any(AbortSignal) },
     );
     expect(rows()[0].getAttribute("aria-expanded")).toBe("false");
     expect(host.querySelector('[role="listbox"]')).toBeNull();
+  },
+);
+
+test.each(["resolves", "rejects", "rejects as missing"])(
+  "changing the filter retires a pending single-game file open that %s",
+  async (settlement) => {
+    mocks.listing = { data: [file("Direct.pgn")], isLoading: false, error: undefined };
+    store.set(recentFilesAtom, [
+      { name: "Direct.pgn", type: "game", handle: handle("Direct.pgn"), lastOpened: 1 },
+    ]);
+    let finish!: (id: null) => void;
+    let fail!: (cause: unknown) => void;
+    mocks.openFile.mockImplementationOnce(
+      () =>
+        new Promise<null>((resolve, reject) => {
+          finish = resolve;
+          fail = reject;
+        }),
+    );
+    await render();
+    const recents = store.get(recentFilesAtom);
+    await open("Direct");
+    expect(mocks.openFile).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ name: "Direct.pgn", numGames: 1 }),
+      expect.any(Function),
+      { ownerId: "home", store, signal: expect.any(AbortSignal) },
+    );
+    const signal = mocks.openFile.mock.lastCall![2].signal as AbortSignal;
+    expect(signal.aborted).toBe(false);
+    await filter("repertoires");
+    expect(signal.aborted).toBe(true);
+    await act(async () => {
+      if (settlement === "rejects") fail(new Error("Retired file read failed"));
+      else if (settlement === "rejects as missing")
+        fail({ category: "not-found", message: "Retired file is missing" });
+      else finish(null);
+    });
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(mocks.notify).not.toHaveBeenCalled();
+    expect(store.get(recentFilesAtom)).toEqual(recents);
   },
 );
 
@@ -1085,6 +1129,7 @@ test.each(["click", "keyboard"] as const)(
       {
         ownerId: "home",
         store,
+        signal: expect.any(AbortSignal),
         gameNumber: 1,
         expected: { stamp: "original-1", revision: "original" },
       },

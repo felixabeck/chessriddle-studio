@@ -174,6 +174,7 @@ export async function openFile(
         ownerId?: string;
         panel?: "practice";
         store?: ReturnType<typeof getDefaultStore>;
+        signal?: AbortSignal;
         expected?: { stamp: string; revision: string };
     },
 ) {
@@ -181,7 +182,7 @@ export async function openFile(
     const gameNumber = options?.gameNumber ?? 0;
     const endOpen = beginFileOpen(fileWorkspaceKey(file.handle));
     try {
-        const loaded = await loadFileGame(file.handle, gameNumber);
+        const loaded = await loadFileGame(file.handle, gameNumber, options?.signal);
         const expected = options?.expected;
         if (
             expected &&
@@ -200,6 +201,7 @@ export async function openFile(
             initialTree: loaded.tree,
             ownerId: options?.ownerId,
             store,
+            signal: options?.signal,
             gameOrigin: {
                 kind: "file",
                 file,

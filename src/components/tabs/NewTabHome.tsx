@@ -244,6 +244,7 @@ export default function NewTabHome({ id }: { id: string }) {
     request: FileRequest,
     pruneMissing = true,
   ) => {
+    if (fileRequest.current !== request || request.controller.signal.aborted) return;
     if (pruneMissing && normalizeError(cause).category === "not-found") {
       setRecentFiles((current) =>
         current.filter(
@@ -289,6 +290,7 @@ export default function NewTabHome({ id }: { id: string }) {
           openFile(file, setTabs, {
             ownerId: id,
             store,
+            signal: request.controller.signal,
             ...(index !== undefined ? { gameNumber: index, expected } : {}),
             ...(panel ? { panel } : {}),
           }),
