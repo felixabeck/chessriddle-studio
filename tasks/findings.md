@@ -22898,3 +22898,19 @@ Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates th
 * **Fix:** Keep `createTreeStore`, the persist middleware wiring (`:891-930`), and the puzzle/document actions that must close over `install` / `isCurrent` / `persistenceKey` in `tree.ts`. Extract three `StateCreator` fragments that take `(set, get)` and spread them into the factory: `treeNavigationActions` for the `goTo*` / branch helpers (`:447-475`, `:560-701`), folding `nextBranch` / `previousBranch` through one sibling-step helper; `treeMutationActions` for `setFen` / `makeMove` / `appendMove` / `makeMoves` / `deleteMove` / `promote*` (`:439-445`, `:506-558`, `:703-726`); `treeMarkupActions` for copy, start, annotation, comments, game end, headers, shapes, score, analysis and report flags (`:727-888`). Leave the existing `tree.test.ts` suite as the behaviour contract (no intended behaviour change).
 * **Proof:** `createTreeStore` is lines 352–931 inclusive (580). `tasks/decisions.md` has no entry that requires the factory to remain one function. The four groups are already typographically separated, and several mutations already call out-of-band helpers, so the extract is a move of existing closures rather than a new abstraction.
 * **Found by:** Grok Bot, quality review (t26u), HEAD `16156bc18`.
+
+---
+
+## 2026-11-11 — filed through the inbox spool
+
+### `EngineSettings` is a 560-line component still colocated in `EnginesPage.tsx` after `CloudSettings` was extracted
+
+* **ID:** f-20261111-54 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** general quality review (Felix t26u) at HEAD `16156bc18`
+* **Where:** `src/components/engines/EnginesPage.tsx` (1014 lines). The page component is `:81-255`. `CloudSettings` was already extracted as a sibling (`:257-322`). `EngineSettings` remains in the same file at `:324-883` (560 lines) and is the only caller of `JSONModal` (`:884-966`). The parent already narrows on `selectedEngine.type === "local"` (`:155-163`) before rendering `EngineSettings`, which then recasts `engines![selected] as LocalEngine` (`:340`). `EngineName` (`:967`) stays exported from this file for the list header (`:181`). No decision pins `EngineSettings` to this module.
+* **Defect:** The local-engine settings form is a separate responsibility from the engines directory page (list, selection, compact layout, cloud vs local switch). It already has its own hooks (`useEngineEditDraft`, `EngineAttachmentDraft`, `getEngineConfig`) and its own modal. Leaving it in `EnginesPage.tsx` makes the page file more than three times the size of the page component itself, and mixes directory-chrome changes with option rendering, attachment saves and the JSON editor.
+* **Failure scenario:** A change to the engines list layout or the cloud/local switch has to be reviewed in the same 1014-line file as attachment saves, UCI option widgets and the JSON modal. The file already shows the intended split (`CloudSettings` is a sibling); `EngineSettings` is the remaining unextracted half of that pattern.
+* **Fix:** Move `EngineSettings` and `JSONModal` (its only client) to `src/components/engines/EngineSettings.tsx`. Have the parent pass the already-narrowed `LocalEngine` instead of recasting `engines![selected]`. Keep `EnginesPage`, `CloudSettings` and `EngineName` in `EnginesPage.tsx`. Existing `EnginesPage.test.tsx` / `EnginesPage.publication.test.tsx` remain the behaviour contract.
+* **Proof:** Function starts at depth 0: `EnginesPage` `:81`, `CloudSettings` `:257`, `EngineSettings` `:324-883`, `JSONModal` `:884-966`. `rg JSONModal src` only hits this file. `tasks/decisions.md` has no entry requiring these components to share a file.
+* **Found by:** Grok Bot, quality review (t26u), HEAD `16156bc18`.
