@@ -83,6 +83,36 @@ mod native_tests {
     }
 
     #[test]
+    fn semantic_fingerprint_normalizes_unicode_names() {
+        let account = AccountIdentity {
+            provider: "lichess".into(),
+            account: "Player".into(),
+        };
+        let mut game = TempGame {
+            white_name: Some("José".into()),
+            black_name: Some("Müller".into()),
+            date: Some("2026.10.01".into()),
+            time: Some("12:00:00".into()),
+            ..TempGame::default()
+        };
+        let expected = semantic_fingerprint(&game, &account);
+        for (white, black) in [
+            ("José", "Müller"),
+            ("Jose\u{301}", "Mu\u{308}ller"),
+            ("José", "MÜLLER"),
+            ("José", "müller"),
+        ] {
+            game.white_name = Some(white.into());
+            game.black_name = Some(black.into());
+            assert_eq!(semantic_fingerprint(&game, &account), expected);
+            assert_eq!(
+                linked_semantic_fingerprint(&game, &account).unwrap(),
+                expected
+            );
+        }
+    }
+
+    #[test]
     fn shared_fingerprint_preserves_complete_identity_and_linked_validation() {
         let account = AccountIdentity {
             provider: "lichess".into(),
@@ -3384,6 +3414,56 @@ mod native_tests {
 
     #[tokio::test]
     async fn native_repair_invalid_legacy_evidence_blocks_only_related_incoming_games() {
+        assert_invalid_legacy_evidence_blocks_only_related_incoming_games(
+            "Opponent", "Opponent", None,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn native_repair_invalid_unicode_legacy_evidence_blocks_only_related_incoming_games() {
+        assert_invalid_legacy_evidence_blocks_only_related_incoming_games(
+            "MÜLLER",
+            "MÜLLER",
+            // Pre-Unicode ASCII-lowercase digest for Player / MÜLLER and e4 e5.
+            Some("9fcba1811d7f93f1958f378c3d61411eab12f8a81944548618f08433cd7239db"),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn native_repair_invalid_unicode_legacy_evidence_blocks_variant_spellings() {
+        for (original, incoming) in [
+            ("MÜLLER", "Müller"),
+            ("MÜLLER", "müller"),
+            ("JOSÉ", "Jose\u{301}"),
+            ("Jose\u{301}", "José"),
+        ] {
+            let body = game(None, "e4 e5", "legacy")
+                .replace("[Black \"Opponent\"]", &format!("[Black \"{original}\"]"));
+            let parsed = parse_first_db_game(body.as_bytes(), &CancellationToken::new()).unwrap();
+            let account = AccountIdentity {
+                provider: "chesscom".into(),
+                account: "player".into(),
+            };
+            let old = legacy_semantic_fingerprint(&parsed, &account);
+            assert_invalid_legacy_evidence_blocks_only_related_incoming_games(
+                original,
+                incoming,
+                Some(&old),
+            )
+            .await;
+        }
+    }
+
+    async fn assert_invalid_legacy_evidence_blocks_only_related_incoming_games(
+        black: &str,
+        incoming_black: &str,
+        pre_unicode_fingerprint: Option<&str>,
+    ) {
+        let game = |id, moves, note| {
+            game(id, moves, note).replace("[Black \"Opponent\"]", &format!("[Black \"{black}\"]"))
+        };
         for ambiguous in [false, true] {
             let mut fixture = Fixture::new();
             let original = game(None, "e4 e5", "legacy");
@@ -3409,6 +3489,21 @@ mod native_tests {
                     .appended,
                 0
             );
+            if let Some(old) = pre_unicode_fingerprint {
+                let record = fixture
+                    .service
+                    .record(id, &CancellationToken::new())
+                    .unwrap();
+                let parsed =
+                    parse_first_db_game(original.as_bytes(), &CancellationToken::new()).unwrap();
+                let account = record.account.as_ref().unwrap();
+                assert_ne!(old, semantic_fingerprint(&parsed, account));
+                assert_eq!(old, legacy_semantic_fingerprint(&parsed, account));
+                legacy::open(&fixture.service, &record)
+                    .unwrap()
+                    .execute("UPDATE Evidence SET Fingerprint=? WHERE ID='123'", [old])
+                    .unwrap();
+            }
             fixture.restart();
             let changed = if ambiguous {
                 format!("{original}{original}")
@@ -3437,9 +3532,34 @@ mod native_tests {
                 "unrelated incoming game was globally blocked by missing evidence"
             );
             let before = std::fs::read(fixture.path("source")).unwrap();
+            let record = fixture
+                .service
+                .record(id, &CancellationToken::new())
+                .unwrap();
+            let evidence_snapshot = || {
+                let evidence = legacy::open(&fixture.service, &record).unwrap();
+                let mut statement = evidence
+                    .prepare("SELECT * FROM Evidence ORDER BY Provider,Account,ID")
+                    .unwrap();
+                let columns = statement.column_count();
+                statement
+                    .query_map([], |row| {
+                        (0..columns)
+                            .map(|column| row.get::<_, rusqlite::types::Value>(column))
+                            .collect::<Result<Vec<_>, _>>()
+                    })
+                    .unwrap()
+                    .collect::<Result<Vec<_>, _>>()
+                    .unwrap()
+            };
+            let evidence_before = evidence_snapshot();
+            assert_eq!(evidence_before.len(), 1);
             let related = fixture.create(
                 "related",
-                &game(Some("456"), "e4 e5", "related"),
+                &game(Some("456"), "e4 e5", "related").replace(
+                    &format!("[Black \"{black}\"]"),
+                    &format!("[Black \"{incoming_black}\"]"),
+                ),
                 WorkspaceFileType::Other,
             );
             let result = Arc::clone(&fixture.service)
@@ -3455,6 +3575,7 @@ mod native_tests {
                 "invalid evidence silently reassigned a legacy occurrence"
             );
             assert_eq!(std::fs::read(fixture.path("source")).unwrap(), before);
+            assert_eq!(evidence_snapshot(), evidence_before);
             assert!(fixture
                 .service
                 .record(id, &CancellationToken::new())
@@ -8305,6 +8426,74 @@ mod native_tests {
             .unwrap()
             .pending
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn account_merge_rehashes_old_unicode_evidence_and_deduplicates_variants() {
+        let rename = |pgn: String, white: &str, black: &str| {
+            pgn.replace("[White \"Player\"]", &format!("[White \"{white}\"]"))
+                .replace("[Black \"Opponent\"]", &format!("[Black \"{black}\"]"))
+        };
+        let source = rename(game(None, "e4 e5", "legacy"), "Jose\u{301}", "MÜLLER");
+        let (fixture, id) = account_fixture(&source);
+        let incoming = rename(game(Some("100"), "e4 e5", "incoming"), "José", "müller");
+        let input = fixture.create("first", &incoming, WorkspaceFileType::Other);
+        assert_eq!(
+            append_fixture_batch(&fixture, id, input)
+                .await
+                .unwrap()
+                .appended,
+            0
+        );
+        let record = fixture
+            .service
+            .record(id, &CancellationToken::new())
+            .unwrap();
+        let parsed = parse_first_db_game(source.as_bytes(), &CancellationToken::new()).unwrap();
+        let account = record.account.as_ref().unwrap();
+        // Pre-Unicode ASCII-lowercase digest, including mainline move bytes [12, 12].
+        let old = "b016cf2bf7a969866503f0689eb3fef88a83450b5bfbe29d815f0519acd18c8d";
+        let new = semantic_fingerprint(&parsed, account);
+        assert_ne!(old, new);
+        {
+            let evidence = legacy::open(&fixture.service, &record).unwrap();
+            evidence
+                .execute("UPDATE Evidence SET Fingerprint=? WHERE ID='100'", [old])
+                .unwrap();
+        }
+        // The persisted pre-upgrade digest must be rehashed from source before revalidation.
+        for (index, white, black) in [
+            (0, "José", "Müller"),
+            (1, "Jose\u{301}", "Mu\u{308}ller"),
+            (2, "José", "MÜLLER"),
+        ] {
+            let incoming = rename(game(Some("100"), "e4 e5", "retry"), white, black);
+            let input = fixture.create(
+                &format!("retry-{index}"),
+                &incoming,
+                WorkspaceFileType::Other,
+            );
+            assert_eq!(
+                append_fixture_batch(&fixture, id, input)
+                    .await
+                    .unwrap()
+                    .appended,
+                0
+            );
+        }
+        let evidence = legacy::open(&fixture.service, &record).unwrap();
+        let rehashed: String = evidence
+            .query_row(
+                "SELECT Fingerprint FROM Evidence WHERE ID='100'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(rehashed, new);
+        assert_eq!(
+            std::fs::read_to_string(fixture.path("source")).unwrap(),
+            source
+        );
     }
 
     #[tokio::test]

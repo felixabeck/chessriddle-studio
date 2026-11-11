@@ -3512,17 +3512,29 @@ fn linked_semantic_fingerprint(
 }
 
 pub(crate) fn semantic_fingerprint(game: &TempGame, account: &AccountIdentity) -> String {
+    fingerprint_with_name_normalizer(game, account, super::name_identity::normalize_name)
+}
+
+// Retained to attest source games and match incoming games against durable legacy evidence.
+pub(super) fn legacy_semantic_fingerprint(game: &TempGame, account: &AccountIdentity) -> String {
+    fingerprint_with_name_normalizer(game, account, str::to_ascii_lowercase)
+}
+
+fn fingerprint_with_name_normalizer(
+    game: &TempGame,
+    account: &AccountIdentity,
+    normalize_name: fn(&str) -> String,
+) -> String {
     let mut digest = Sha256::new();
     for field in [
-        Some(&account.provider),
-        Some(&account.account),
-        game.white_name.as_ref(),
-        game.black_name.as_ref(),
-        game.date.as_ref(),
-        game.time.as_ref(),
+        Some(account.provider.to_ascii_lowercase()),
+        Some(account.account.to_ascii_lowercase()),
+        game.white_name.as_deref().map(normalize_name),
+        game.black_name.as_deref().map(normalize_name),
+        game.date.as_deref().map(str::to_ascii_lowercase),
+        game.time.as_deref().map(str::to_ascii_lowercase),
     ] {
         if let Some(value) = field {
-            let value = value.to_ascii_lowercase();
             digest.update((value.len() as u64).to_le_bytes());
             digest.update(value.as_bytes());
         } else {

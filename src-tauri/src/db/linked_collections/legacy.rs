@@ -40,7 +40,7 @@ pub(super) fn open(
             "unsupported collection identity evidence".into(),
         ));
     }
-    connection.execute_batch("BEGIN IMMEDIATE; CREATE TABLE IF NOT EXISTS Evidence(Provider TEXT NOT NULL,Account TEXT NOT NULL,ID TEXT NOT NULL,Binding TEXT NOT NULL,Generation TEXT NOT NULL,Ordinal INTEGER NOT NULL,Stamp TEXT NOT NULL,Fingerprint TEXT NOT NULL,PRIMARY KEY(Provider,Account,ID)); CREATE INDEX IF NOT EXISTS EvidenceFingerprint ON Evidence(Provider,Account,Fingerprint); PRAGMA user_version=1; COMMIT;").map_err(batch::batch_error)?;
+    connection.execute_batch("BEGIN IMMEDIATE; CREATE TABLE IF NOT EXISTS Evidence(Provider TEXT NOT NULL,Account TEXT NOT NULL,ID TEXT NOT NULL,Binding TEXT NOT NULL,Generation TEXT NOT NULL,Ordinal INTEGER NOT NULL,Stamp TEXT NOT NULL,Fingerprint TEXT NOT NULL,PRIMARY KEY(Provider,Account,ID)); CREATE INDEX IF NOT EXISTS EvidenceFingerprint ON Evidence(Provider,Account,Fingerprint); CREATE TABLE IF NOT EXISTS FingerprintAliases(Provider TEXT NOT NULL,Account TEXT NOT NULL,LegacyFingerprint TEXT NOT NULL,Fingerprint TEXT NOT NULL,PRIMARY KEY(Provider,Account,LegacyFingerprint,Fingerprint)); PRAGMA user_version=1; COMMIT;").map_err(batch::batch_error)?;
     // SQLite synced the transaction. The verified directory also owns creation of this leaf.
     service.root.descriptor().sync_all()?;
     Ok(connection)
@@ -60,6 +60,9 @@ pub(super) fn revalidate_source(
     binding: &str,
     generation: &str,
 ) -> Result<(), Error> {
+    // Rehash old evidence only when the current source attests the old digest.
+    // This runs in the merge transaction, so failed reconciliation retains the evidence.
+    db.execute("UPDATE Evidence AS e SET Fingerprint=(SELECT s.Fingerprint FROM Source s WHERE s.LegacyFingerprint=e.Fingerprint LIMIT 1) WHERE e.Provider=?1 AND e.Account=?2 AND (SELECT count(DISTINCT s.Fingerprint) FROM Source s WHERE s.LegacyFingerprint=e.Fingerprint)=1", rusqlite::params![account.provider, account.account]).map_err(batch::batch_error)?;
     db.execute_batch(
         "CREATE TEMP TABLE Valid(ID TEXT PRIMARY KEY,Ordinal INTEGER UNIQUE NOT NULL);",
     )
@@ -78,10 +81,21 @@ pub(super) fn check_affected_evidence(
     db: &rusqlite::Transaction<'_>,
     account: &AccountIdentity,
 ) -> Result<(), Error> {
-    let affected: i64 = db.query_row("SELECT count(*) FROM Evidence e JOIN Batch b ON (b.ID=e.ID OR b.Fingerprint=e.Fingerprint) WHERE e.Provider=? AND e.Account=? AND NOT EXISTS(SELECT 1 FROM Valid v WHERE v.ID=e.ID)", rusqlite::params![account.provider, account.account], |row| row.get(0)).map_err(batch::batch_error)?;
+    let affected: i64 = db.query_row("SELECT count(*) FROM Evidence e JOIN Batch b ON (b.ID=e.ID OR b.Fingerprint=e.Fingerprint OR b.LegacyFingerprint=e.Fingerprint OR EXISTS(SELECT 1 FROM FingerprintAliases a WHERE a.Provider=e.Provider AND a.Account=e.Account AND a.LegacyFingerprint=e.Fingerprint AND a.Fingerprint=b.Fingerprint)) WHERE e.Provider=? AND e.Account=? AND NOT EXISTS(SELECT 1 FROM Valid v WHERE v.ID=e.ID)", rusqlite::params![account.provider, account.account], |row| row.get(0)).map_err(batch::batch_error)?;
     if affected != 0 {
         return Err(batch::conflict());
     }
+    Ok(())
+}
+
+/// Retain source-attested digest pairs for Evidence, including assignments made in this merge.
+/// These aliases live with the identity database, so source replacement and restart cannot
+/// discard the original spelling. They never infer semantics from moves or incoming names.
+pub(super) fn remember_source_fingerprints(
+    db: &rusqlite::Transaction<'_>,
+    account: &AccountIdentity,
+) -> Result<(), Error> {
+    db.execute("INSERT OR IGNORE INTO FingerprintAliases SELECT DISTINCT ?1,?2,s.LegacyFingerprint,s.Fingerprint FROM Source s WHERE s.LegacyFingerprint!=s.Fingerprint AND EXISTS(SELECT 1 FROM Evidence e WHERE e.Provider=?1 AND e.Account=?2 AND (e.Fingerprint=s.LegacyFingerprint OR e.Fingerprint=s.Fingerprint))", rusqlite::params![account.provider, account.account]).map_err(batch::batch_error)?;
     Ok(())
 }
 

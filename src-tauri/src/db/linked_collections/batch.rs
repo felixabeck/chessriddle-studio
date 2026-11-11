@@ -72,7 +72,7 @@ fn append_absent(
     }
     let mut membership = legacy::open(service, record)?;
     let binding = legacy::binding(record)?;
-    membership.execute_batch("CREATE TEMP TABLE Source(Ordinal INTEGER PRIMARY KEY,ID TEXT,Fingerprint TEXT NOT NULL,Stamp TEXT NOT NULL); CREATE INDEX SourceID ON Source(ID); CREATE INDEX SourceFingerprint ON Source(Fingerprint); CREATE TEMP TABLE Batch(Ordinal INTEGER PRIMARY KEY,ID TEXT,Fingerprint TEXT NOT NULL); CREATE INDEX BatchID ON Batch(ID); CREATE INDEX BatchFingerprint ON Batch(Fingerprint); CREATE TEMP TABLE Seen(ID TEXT PRIMARY KEY,Fingerprint TEXT NOT NULL);").map_err(batch_error)?;
+    membership.execute_batch("CREATE TEMP TABLE Source(Ordinal INTEGER PRIMARY KEY,ID TEXT,Fingerprint TEXT NOT NULL,Stamp TEXT NOT NULL,LegacyFingerprint TEXT NOT NULL); CREATE INDEX SourceID ON Source(ID); CREATE INDEX SourceFingerprint ON Source(Fingerprint); CREATE INDEX SourceLegacyFingerprint ON Source(LegacyFingerprint); CREATE TEMP TABLE Batch(Ordinal INTEGER PRIMARY KEY,ID TEXT,Fingerprint TEXT NOT NULL,LegacyFingerprint TEXT NOT NULL); CREATE INDEX BatchID ON Batch(ID); CREATE INDEX BatchFingerprint ON Batch(Fingerprint); CREATE INDEX BatchLegacyFingerprint ON Batch(LegacyFingerprint); CREATE TEMP TABLE Seen(ID TEXT PRIMARY KEY,Fingerprint TEXT NOT NULL);").map_err(batch_error)?;
     let transaction = membership.transaction().map_err(batch_error)?;
     if let Some(account) = account {
         transaction
@@ -92,12 +92,13 @@ fn append_absent(
             };
             transaction
                 .execute(
-                    "INSERT INTO Source VALUES(?,?,?,?)",
+                    "INSERT INTO Source VALUES(?,?,?,?,?)",
                     rusqlite::params![
                         ordinal as i64,
                         id,
                         linked_semantic_fingerprint(&game, account)?,
-                        pgn::game_stamp(&bytes)
+                        pgn::game_stamp(&bytes),
+                        legacy_semantic_fingerprint(&game, account)
                     ],
                 )
                 .map_err(batch_error)?;
@@ -120,11 +121,12 @@ fn append_absent(
             }
             transaction
                 .execute(
-                    "INSERT INTO Batch VALUES(?,?,?)",
+                    "INSERT INTO Batch VALUES(?,?,?,?)",
                     rusqlite::params![
                         ordinal as i64,
                         id,
-                        linked_semantic_fingerprint(&game, account)?
+                        linked_semantic_fingerprint(&game, account)?,
+                        legacy_semantic_fingerprint(&game, account)
                     ],
                 )
                 .map_err(batch_error)?;
@@ -210,6 +212,9 @@ fn append_absent(
                 .checked_add(1)
                 .ok_or_else(|| Error::ResourceLimit("batch has too many games".into()))?;
         }
+    }
+    if let Some(account) = account {
+        legacy::remember_source_fingerprints(&transaction, account)?;
     }
     transaction.commit().map_err(batch_error)?;
     service.root.descriptor().sync_all()?;

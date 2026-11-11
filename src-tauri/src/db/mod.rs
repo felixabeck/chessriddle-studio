@@ -11,6 +11,7 @@ mod event_summaries;
 pub(crate) mod linked_collections;
 mod migrations;
 mod models;
+mod name_identity;
 mod ops;
 mod repository;
 #[cfg(all(test, unix))]
@@ -187,6 +188,7 @@ impl diesel::r2d2::CustomizeConnection<SqliteConnection, diesel::r2d2::Error>
 {
     fn on_acquire(&self, conn: &mut SqliteConnection) -> Result<(), diesel::r2d2::Error> {
         (|| {
+            name_identity::register(conn)?;
             conn.batch_execute(
                 "PRAGMA busy_timeout = 30000;\
                  PRAGMA foreign_keys = ON;\
@@ -2217,7 +2219,7 @@ fn player_name_patterns(query: &str) -> Result<Vec<String>, Error> {
             )));
         }
         let mut pattern = String::from("%");
-        for character in token.chars() {
+        for character in name_identity::normalize_name(token).chars() {
             if matches!(character, '%' | '_' | '\\') {
                 pattern.push('\\');
             }
@@ -2650,7 +2652,11 @@ fn load_games(
         if let Some(name) = query.player_name {
             for pattern in player_name_patterns(&name)? {
                 let matching_players = players::table
-                    .filter(players::name.like(pattern).escape('\\'))
+                    .filter(
+                        name_identity::normalized_name(players::name)
+                            .like(pattern)
+                            .escape('\\'),
+                    )
                     .select(players::id);
                 let predicate = games::white_id
                     .eq_any(matching_players.clone())
@@ -3160,12 +3166,18 @@ fn get_players_blocking(
             } else {
                 count_with_rows = !query.options.skip_count;
                 let (predicate, value) = match query.name_match {
-                    Some(PlayerNameMatch::Exact) => ("Name COLLATE NOCASE = ", name),
-                    _ => ("Name LIKE ", format!("%{}%", name)),
+                    Some(PlayerNameMatch::Exact) => (
+                        "normalized_name(Name) = ",
+                        name_identity::normalize_name(&name),
+                    ),
+                    _ => (
+                        "normalized_name(Name) LIKE ",
+                        format!("%{}%", name_identity::normalize_name(&name)),
+                    ),
                 };
                 let name_filter = diesel::dsl::sql::<diesel::sql_types::Bool>(predicate)
                     .bind::<diesel::sql_types::Text, _>(value);
-                // Resolve matching IDs through the narrow Name index before sorting.
+                // Resolve matching IDs through the narrow Name projection before sorting.
                 // Otherwise SQLite scans the entire game-count index even for one match.
                 let matching_players = diesel::alias!(players as matching_players);
                 sql_query = sql_query.filter(
@@ -3334,8 +3346,11 @@ fn get_tournaments_blocking(
             count_query.filter(events::name.is_not("Unknown").and(events::name.is_not("")));
 
         if let Some(name) = query.name {
-            sql_query = sql_query.filter(events::name.like(format!("%{}%", name)));
-            count_query = count_query.filter(events::name.like(format!("%{}%", name)));
+            let pattern = format!("%{}%", name_identity::normalize_name(&name));
+            sql_query = sql_query
+                .filter(name_identity::normalized_name(events::name).like(pattern.clone()));
+            count_query =
+                count_query.filter(name_identity::normalized_name(events::name).like(pattern));
         }
 
         if !query.options.skip_count {
@@ -11238,6 +11253,93 @@ mod tests {
     }
 
     #[test]
+    fn player_and_event_queries_normalize_unicode_names() {
+        for (stored, queries) in [
+            ("Müller", ["müller", "MÜLLER"]),
+            ("José", ["Jose\u{301}", "JOSE\u{301}"]),
+            ("Jose\u{301}", ["José", "JOSÉ"]),
+            ("Straße", ["strasse", "STRASSE"]),
+        ] {
+            let (_dir, app, handle, database) = blocking_database_case();
+            let id = insert_named_game(&app, &database, stored, "Opponent", "Event", "Site");
+            let state = app.state::<AppState>();
+            for query in queries {
+                let games = get_games_blocking(
+                    &state.pgn_path_authority,
+                    &state.database_repository,
+                    handle.clone(),
+                    GameQuery {
+                        player_name: Some(query.into()),
+                        ..GameQuery::new()
+                    },
+                    &CancellationToken::new(),
+                )
+                .unwrap();
+                assert_eq!(games.count, Some(1), "{stored:?} / {query:?}");
+                assert_eq!(games.data[0].id, id);
+                for name_match in [
+                    None,
+                    Some(PlayerNameMatch::Contains),
+                    Some(PlayerNameMatch::Exact),
+                ] {
+                    let players = get_players_blocking(
+                        &state.pgn_path_authority,
+                        &state.database_repository,
+                        handle.clone(),
+                        PlayerQuery {
+                            name: Some(query.into()),
+                            name_match,
+                            range: None,
+                            options: QueryOptions {
+                                sort: PlayerSort::Id,
+                                skip_count: false,
+                                page: None,
+                                page_size: None,
+                                direction: SortDirection::Asc,
+                            },
+                        },
+                        &CancellationToken::new(),
+                    )
+                    .unwrap();
+                    assert_eq!(players.count, Some(1), "{stored:?} / {query:?}");
+                    assert_eq!(players.data[0].name.as_deref(), Some(stored));
+                }
+            }
+        }
+
+        for (stored, queries) in [
+            ("München", ["münchen", "MÜNCHEN"]),
+            ("José", ["Jose\u{301}", "JOSE\u{301}"]),
+            ("Jose\u{301}", ["José", "JOSÉ"]),
+        ] {
+            let (_dir, app, handle, database) = blocking_database_case();
+            insert_named_game(&app, &database, "Player", "Opponent", stored, "Site");
+            let state = app.state::<AppState>();
+            for query in queries.into_iter().chain(["%", "_"]) {
+                let events = get_tournaments_blocking(
+                    &state.pgn_path_authority,
+                    &state.database_repository,
+                    handle.clone(),
+                    TournamentQuery {
+                        name: Some(query.into()),
+                        options: QueryOptions {
+                            sort: TournamentSort::Name,
+                            skip_count: false,
+                            page: None,
+                            page_size: None,
+                            direction: SortDirection::Asc,
+                        },
+                    },
+                    &CancellationToken::new(),
+                )
+                .unwrap();
+                assert_eq!(events.count, Some(1), "{stored:?} / {query:?}");
+                assert_eq!(events.data[0].name.as_deref(), Some(stored));
+            }
+        }
+    }
+
+    #[test]
     fn game_player_name_query_matches_tokens_literally_and_pages_results() {
         let (_dir, app, handle, database) = blocking_database_case();
         let beck_prassas =
@@ -14836,7 +14938,7 @@ mod exact_player_tests {
             ("percent%", vec![8]),
             ("o'brien", vec![9]),
             ("missing-owner", vec![]),
-            ("ÄLEX", vec![12]),
+            ("ÄLEX", vec![12, 13]),
         ] {
             let result = lookup(query(name, Some(PlayerNameMatch::Exact)));
             assert_eq!(
@@ -14918,6 +15020,54 @@ mod exact_player_tests {
 #[cfg(test)]
 mod unlinked_account_tests {
     use super::*;
+
+    #[test]
+    fn account_import_rehashes_old_unicode_fingerprints_before_deduplication() {
+        let fixture = Fixture::new();
+        let state = fixture.app.state::<AppState>();
+        let mut db = state
+            .database_repository
+            .connection(&test_target(&fixture.path), None)
+            .unwrap();
+        let context = fixture.context("chesscom", None);
+        let game = TempGame {
+            white_name: Some("Jose\u{301}".into()),
+            black_name: Some("MÜLLER".into()),
+            date: Some("2026.10.01".into()),
+            time: Some("12:00:00".into()),
+            ..TempGame::default()
+        };
+        let id = game.insert_to_db(&mut db).unwrap();
+        let old = linked_collections::legacy_semantic_fingerprint(&game, &context.identity);
+        let new = linked_collections::semantic_fingerprint(&game, &context.identity);
+        assert_ne!(old, new);
+        // Model a connection retaining the old implementation's temporary digest.
+        db.batch_execute("CREATE TEMP TABLE AccountFingerprints(GameID INTEGER PRIMARY KEY, Fingerprint TEXT NOT NULL);").unwrap();
+        AccountImporter::remember(&mut db, id, &old).unwrap();
+        let mut importer =
+            AccountImporter::new(&mut db, context, &CancellationToken::new()).unwrap();
+        let rehashed: String = diesel::select(diesel::dsl::sql::<Text>(
+            "(SELECT Fingerprint FROM temp.AccountFingerprints LIMIT 1)",
+        ))
+        .get_result(&mut *db)
+        .unwrap();
+        assert_eq!(rehashed, new);
+        for (white, black) in [
+            ("José", "Müller"),
+            ("Jose\u{301}", "Mu\u{308}ller"),
+            ("José", "müller"),
+        ] {
+            let variant = TempGame {
+                white_name: Some(white.into()),
+                black_name: Some(black.into()),
+                date: game.date.clone(),
+                time: game.time.clone(),
+                ..TempGame::default()
+            };
+            assert!(!importer.insert(&mut db, variant).unwrap());
+        }
+        assert_eq!(games::table.count().get_result::<i64>(&mut *db).unwrap(), 1);
+    }
 
     struct Fixture {
         directory: tempfile::TempDir,
