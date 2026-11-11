@@ -23290,6 +23290,9 @@ Handled (drain aaa22b94, 2026-11-11). `rg 'fuse\.js|Fuse\(|from "fuse' src e2e s
 * **Push review repairs (2026-11-11):** `dab2ec5b` refuses recovery when a top-level unread non-directory child carries the created name (otherwise a pre-existing `Foo.pgn.pgn`, listed as `Foo`, could be adopted while the created file is unreadable). ``58548919`` trims the create name with Rust's Unicode White_Space set instead of JS `trim()`, which also strips U+FEFF and keeps U+0085, so `"﻿Foo.pgn"` no longer derives the listed name `Foo`. Both raised by `review-correctness` (rounds 1 and 2), closed in round 3.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"5c1e1a53886eb1526c0464c2cbcdf279ed23ab9b4111347ec56c8da1593a1332","input_sha256":"1b3fdc56efe1aa7af32209336abc0bd63a781936fc524ee169dfe77efbd3808a","kind":"mutation-receipt","operation":"d47bc486337a1d31e00a01f95e21b882a85d0ed7b845d81ecccfe49908c69721","options":{"section":null},"request_id_sha256":null,"results":["f-20261111-75"],"target":"f-20261111-75","v":1} -->
 
+* **Rebased hashes (2026-11-11):** after rebasing onto `50035a496` the commits are `ea92ec851` (was `e7e1a51e`), `5c37167d7` (was `dab2ec5b`) and `42faeacc5` (was `58548919`).
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"3b7b7acdb07f92866ffb7c72b0b1413819dbbaf902ccfceaa8e7d48cd1a6e98d","input_sha256":"1c475bf9ac4ba28cd20213e11cf2edd0cab18354ec01474ad265d93d25a7c88a","kind":"mutation-receipt","operation":"5bb3dce91fe1a381cbff49e0c6e93f872d1e82c6eee7fe32bc1cfc170934026c","options":{"section":null},"request_id_sha256":null,"results":["f-20261111-75"],"target":"f-20261111-75","v":1} -->
+
 ---
 
 ## 2026-11-11 — filed through the inbox spool
