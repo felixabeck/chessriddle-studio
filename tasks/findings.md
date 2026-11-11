@@ -23510,3 +23510,19 @@ Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates th
 * **Fix:** Strip (or otherwise neutralize) `}` when writing comments, matching chessops `safeComment`, in all three interpolations (`startingComment`, `comment`, and `commands`). Add a regression that `getPGN` of a tree whose comment or startingComment contains `}` reparses as one intact (sanitized) comment rather than early-closing movetext.
 * **Proof:** Ephemeral Vitest `src/utils/sweep9_probe.test.ts` on HEAD `a276f9917`, removed afterwards (tree clean). `getPGN` of `1. e4` with comment `watch } this` contained `{watch } this}`; `parsePgn` from chessops recovered a comment that did not contain `this`. The same early close happened for startingComment `lead } cut` (recovered starting comments did not contain `cut`). No `tasks/decisions.md` entry requires raw unescaped comment bytes in the writer.
 * **Found by:** Grok Bot, quality review (t26u), HEAD `a276f9917`.
+
+---
+
+## 2026-11-11 — filed through the inbox spool
+
+### formatClock rounds last-minute tenths to `00:60.0` instead of carrying into the next minute
+
+* **ID:** f-20261111-93 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** ninth-sweep quality review (Felix t26u) at HEAD `a276f9917`, dense-algorithm second-read lens (clock formatting)
+* **Where:** `src/components/boards/Clock.tsx` `formatClock` (~76-91). When the remaining total is under 60 seconds it appends `s.toFixed(1)` after already taking `s = (seconds % 3600) % 60`. It never carries a rounded `60.0` into the minutes field. The Clock strip uses this for both imported `[%clk]` values and live times passed through `getClockInfo`. Distinct from handled `f-20261106-26` (pre-increment `%clk` capture) and `f-20261106-27` (zero initial time rejected at game start). `makeClk` in `src/utils/chess.ts` (~48-57) has the same carry gap at three decimal places, but an integer-millisecond sweep of the last 12 ms of each of 180 minutes produced no `:60` overflow; last-minute `toFixed(1)` is the user-visible path.
+* **Defect:** Remaining times in `[59.95, 60)` seconds render as `00:60.0`. Tree clocks stored as integer milliseconds (`createNode` divides by 1000) include 59950 ms and 59960 ms, which both display that way.
+* **Failure scenario:** In a blitz game, or when stepping through a PGN, a side's remaining time reaches 59.95–59.99 seconds. The clock strip shows `00:60.0` for a tenth of a second instead of `01:00.0` (or `00:59.9` if the intended policy is truncate). The reading looks like an illegal clock just as the last minute begins.
+* **Fix:** After computing hours, minutes, and the one-decimal remainder, if the rounded tenths equal 60, set the display seconds to `0` and carry into minutes (and hours if needed). Add a regression that `formatClock(59950 / 1000)` and `formatClock(59.96)` are `01:00.0` (or the chosen truncated form), never `00:60.0`.
+* **Proof:** Ephemeral Vitest `src/utils/sweep9_probe.test.ts` on HEAD `a276f9917`, removed afterwards (tree clean). `formatClock(59.96)`, `formatClock(59960 / 1000)`, and `formatClock(59950 / 1000)` were all `"00:60.0"`; `formatClock(59.94)` was `"00:59.9"`. No `tasks/decisions.md` entry pins last-minute display to an uncarried tenth.
+* **Found by:** Grok Bot, quality review (t26u), HEAD `a276f9917`.
