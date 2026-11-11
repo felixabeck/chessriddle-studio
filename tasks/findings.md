@@ -22914,3 +22914,19 @@ Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates th
 * **Fix:** Move `EngineSettings` and `JSONModal` (its only client) to `src/components/engines/EngineSettings.tsx`. Have the parent pass the already-narrowed `LocalEngine` instead of recasting `engines![selected]`. Keep `EnginesPage`, `CloudSettings` and `EngineName` in `EnginesPage.tsx`. Existing `EnginesPage.test.tsx` / `EnginesPage.publication.test.tsx` remain the behaviour contract.
 * **Proof:** Function starts at depth 0: `EnginesPage` `:81`, `CloudSettings` `:257`, `EngineSettings` `:324-883`, `JSONModal` `:884-966`. `rg JSONModal src` only hits this file. `tasks/decisions.md` has no entry requiring these components to share a file.
 * **Found by:** Grok Bot, quality review (t26u), HEAD `16156bc18`.
+
+---
+
+## 2026-11-11 — filed through the inbox spool
+
+### `useDatabaseLibrary` is a 550-line hook that also owns the library row, status, detail and dialog UI
+
+* **ID:** f-20261111-55 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** general quality review (Felix t26u) at HEAD `16156bc18`
+* **Where:** `src/components/databases/useDatabaseLibrary.tsx` (862 lines). The hook is `:73-622` (550 lines). Data and actions are done by `:77-197`; the return value then inlines JSX as `renderUnreadRow` (`:203-212`), `renderRow` (`:223-309`), `status` (`:310-347`), `progress` (`:348-398`), `detail` (`:399-594`) and `dialogs` (`:595-619`). `LibraryPage.tsx` only slots those fields (`:157-191`, `:296`, `:305`, `:372-374`, `:403`). The same file still holds the detail-panel helpers `GeneralSettings` (`:624-699`), `AdvancedSettings` (`:701-714`), `PlayerMerger` (`:716-778`), `DuplicateRemover` (`:779-829`) and `IndexInput` (`:830-862`). No decision pins this hook as the place for that UI.
+* **Defect:** A hook named for library data also renders the database cards, the workspace-status region, the selected-database inspector and the add/delete dialogs. The settings widgets are already separate functions, but they remain hidden behind the hook. A change to player-merge or title editing is reviewed in the same 550-line hook as list revalidation, conversion refresh and reference-database state — the file that has already hosted several of those defects.
+* **Failure scenario:** Editing the selected-database detail (title, merge players, remove duplicates, delete) requires reviewing and merging against the list/conversion/reference logic in the same hook. `LibraryPage` cannot be understood as a page without reading 400 lines of JSX that live behind `databases.detail` / `databases.renderRow`.
+* **Fix:** Keep `useDatabaseLibrary` as data and actions (list, selection, reference, conversion, revalidate, open, add, delete). Move `renderRow`, `renderUnreadRow`, `status`, `progress`, `detail` and `dialogs` into components — e.g. `DatabaseLibraryRow`, `DatabaseLibraryStatus`, `DatabaseLibraryDetail` and `DatabaseLibraryDialogs` — and relocate `GeneralSettings`, `AdvancedSettings`, `PlayerMerger`, `DuplicateRemover` and `IndexInput` with the detail panel. `LibraryPage` keeps composing those components from the hook's data. Existing `DatabasesPage.test.tsx`, `LibraryPage.test.tsx` and `useDatabaseLibrary.refresh.test.tsx` remain the behaviour contract.
+* **Proof:** Hook span is `:73-622`; the six JSX return keys are as cited; `LibraryPage.tsx` consumes them at the lines above and does not build that UI itself. `tasks/decisions.md` has no entry requiring the UI to live inside the hook.
+* **Found by:** Grok Bot, quality review (t26u), HEAD `16156bc18`.
