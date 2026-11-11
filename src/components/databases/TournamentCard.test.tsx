@@ -327,23 +327,26 @@ test("sorting orders the games before selecting the displayed page", async () =>
 test.each([
   { button: "Sort date ascending", expected: [5, 3, 1, 4, 2] },
   { button: "Sort plies descending", expected: [4, 1, 5, 3, 2] },
-])("$button preserves payload order for tied games", async ({ button, expected }) => {
-  const dates = ["2026.01.02", "2026.01.03", "2026.01.02", null, "2026.01.02"];
-  const plies = [40, 60, 40, 20, 60];
-  const payload = games(5).map((game, index) => ({
-    ...game,
-    date: dates[index],
-    ply_count: plies[index],
-  }));
-  mocks.getTournamentGames.mockResolvedValue({ data: payload });
-  await render(file("tied-games"));
-  await vi.waitFor(() =>
-    expect(container.querySelectorAll('[data-testid="games"] tbody tr')).toHaveLength(5),
-  );
-  if (button === "Sort date ascending") expectPage(1, 25, expected, 5);
-  await click(button);
-  expectPage(1, 25, expected, 5);
-});
+])(
+  "$button preserves payload order for tied games and keeps missing values last",
+  async ({ button, expected }) => {
+    const dates = ["2026.01.02", "2026.01.03", "2026.01.02", null, "2026.01.02"];
+    const plies = [40, 60, 40, null, 60];
+    const payload = games(5).map((game, index) => ({
+      ...game,
+      date: dates[index],
+      ply_count: plies[index],
+    }));
+    mocks.getTournamentGames.mockResolvedValue({ data: payload });
+    await render(file("tied-games"));
+    await vi.waitFor(() =>
+      expect(container.querySelectorAll('[data-testid="games"] tbody tr')).toHaveLength(5),
+    );
+    if (button === "Sort date ascending") expectPage(1, 25, expected, 5);
+    await click(button);
+    expectPage(1, 25, expected, 5);
+  },
+);
 
 test("sorting frozen tournament games preserves the cached array order", async () => {
   const frozenGames = Object.freeze(games(60));
