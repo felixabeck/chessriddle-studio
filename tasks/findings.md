@@ -23043,3 +23043,19 @@ Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates th
 * **Fix:** Move `GameSelectorAccordion` (and the `PageRequest` / `FileTabUpdateResult` types it owns) into `GameSelector.tsx` or a sibling `GameSelectorAccordion.tsx`. Leave `InfoPanel` as the composer of `DatabaseInfo`, the accordion, `FileInfo`, `GameInfo`, `FenSearch` and `PgnInput`. Existing `InfoPanel.test.tsx` and `GameSelector.test.tsx` remain the behaviour contract.
 * **Proof:** At HEAD `bdea41f47`, `GameSelectorAccordion` starts at `InfoPanel.tsx:173` and the file's only later export is `export default InfoPanel` at `:703`. The accordion renders `<GameSelector` at `:683`. `GameSelector.tsx` exports `GameSelector` and `GameSelectorRow` and does not contain the accordion. `tasks/decisions.md` has no entry requiring this orchestration to stay in `InfoPanel.tsx`.
 * **Found by:** Grok Bot, quality review (t26u), HEAD `bdea41f47`.
+
+---
+
+## 2026-11-11 — filed through the inbox spool
+
+### Two ChessRiddle training tests in `Puzzles.test.tsx` wait 250 ms on a real timer for a dialog
+
+* **ID:** f-20261111-63 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** general quality review (Felix t26u) at HEAD `bdea41f47`
+* **Where:** `src/components/puzzles/Puzzles.test.tsx:661-667` (`noMatch explains the filters and opens the settings dialog`) and `:731-737` (`training shortcuts respect bindings…`). After opening the settings or shortcuts dialog, both tests do `await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 250)); })` and then assert on `[role="dialog"]` text. The same file already uses `vi.waitFor` for later puzzle-database assertions (`:3640` onward) and uses `vi.useFakeTimers` in many other cases. These two tests do not.
+* **Defect:** The dialog wait is a real 250 ms wall-clock sleep, not a condition on the dialog appearing. Under a loaded runner the Mantine dialog can open after 250 ms, so the assertion fails even though the click worked. The rest of this file already knows how to wait for a condition. A fixed sleep also cannot fail closed if the dialog never opens before the timeout — it just hope-and-checks once.
+* **Failure scenario:** Run the Puzzles unit tests on a busy CI or coverage runner. The "noMatch…settings dialog" or shortcuts-dialog test fails with a missing `role="dialog"` (or missing `Training.Settings.Difficulty` / `Training.Shortcuts.Title` text) even though the same click opens the dialog a moment later locally.
+* **Fix:** Replace both sleeps with `await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')?.textContent).toContain(…))` (or `findByRole("dialog")`), matching the later waits in this file. Do not keep a real 250 ms timeout as the success path.
+* **Proof:** At HEAD `bdea41f47`, `rg 'setTimeout\(resolve, 250\)' src/components/puzzles/Puzzles.test.tsx` hits only `:661` and `:731`. Both are followed by a `role="dialog"` assertion. `rg 'vi.waitFor' src/components/puzzles/Puzzles.test.tsx` has many later hits, none of them in these two tests.
+* **Found by:** Grok Bot, quality review (t26u), HEAD `bdea41f47`.
