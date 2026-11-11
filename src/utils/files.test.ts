@@ -40,7 +40,7 @@ vi.mock("@/utils/chess", async (importOriginal) => {
 vi.mock("./tabs", () => ({ createTab: mocks.createTab }));
 
 import { TauriCommandError } from "@/platform/tauri";
-import type { FileWorkspaceHandle, StampedGame, WriteStamp } from "@/bindings";
+import type { FileWorkspaceHandle, StampedGame, WorkspaceUnread, WriteStamp } from "@/bindings";
 import { defaultGame, makePgn } from "chessops/pgn";
 import {
     addRecentFileAtom,
@@ -515,7 +515,7 @@ test.each([
                     lastModified: 42,
                 },
             ],
-            unread: [{ name: listedName, kind: "file", category: "permission", parent: null }],
+            unread: [{ name: "blocked.pgn", kind: "file", category: "permission", parent: null }],
         });
 
         const result = await createFile({
@@ -576,7 +576,12 @@ test.each([
     },
 );
 
-test.each([
+test.each<{
+    scenario: string;
+    entries: { name: string; kind: "file" | "directory"; id: string }[];
+    unread?: WorkspaceUnread[];
+    recovered: boolean;
+}>([
     {
         scenario: "selects Foo after a pre-existing foo listed first",
         entries: [
@@ -603,7 +608,32 @@ test.each([
         ],
         recovered: false,
     },
-])("createFile recovery $scenario", async ({ entries, recovered }) => {
+    {
+        scenario: "rejects a pre-existing Foo when Foo.pgn is unreadable",
+        entries: [{ name: "Foo", kind: "file", id: "pre-existing" }],
+        unread: [{ name: "Foo.pgn", kind: "file", category: "permission", parent: null }],
+        recovered: false,
+    },
+    {
+        scenario: "rejects a pre-existing Foo when unreadable Foo has unknown kind",
+        entries: [{ name: "Foo", kind: "file", id: "pre-existing" }],
+        unread: [{ name: "Foo", kind: null, category: "permission", parent: null }],
+        recovered: false,
+    },
+    {
+        scenario: "selects Foo with an unreadable nested Foo.pgn",
+        entries: [{ name: "Foo", kind: "file", id: "created" }],
+        unread: [
+            {
+                name: "Foo.pgn",
+                kind: "file",
+                category: "permission",
+                parent: { id: { id: "nested" }, kind: "fileWorkspace" },
+            },
+        ],
+        recovered: true,
+    },
+])("createFile recovery $scenario", async ({ entries, unread = [], recovered }) => {
     const workspace = { id: { id: "workspace" }, kind: "fileWorkspace" } as const;
     const parent = { id: { id: "parent" }, kind: "fileWorkspace" } as const;
     const rejection = new TauriCommandError({
@@ -622,7 +652,7 @@ test.each([
             gameCount: kind === "file" ? 1 : null,
             lastModified: 42,
         })),
-        unread: [],
+        unread,
     });
 
     const result = await createFile({

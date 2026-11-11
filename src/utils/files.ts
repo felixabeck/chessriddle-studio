@@ -249,6 +249,8 @@ export async function createFile({
     listingCache: WorkspaceListingCache;
 }): Promise<Result<FileMetadata>> {
     try {
+        // Mirror native pgn_name (trim, ASCII case-insensitive .pgn check, append) and
+        // listing's case-sensitive repeated .pgn strip. Never case-fold names (d-20261018-04).
         const trimmed = filename.trim();
         const leaf = /\.pgn$/i.test(trimmed) ? trimmed : `${trimmed}.pgn`;
         const listedName = leaf.replace(/(?:\.pgn)+$/, "");
@@ -262,7 +264,18 @@ export async function createFile({
                     content ?? { kind: "text", pgn: makePgn(defaultGame()) },
                 ),
             async () => {
-                const matches = (await tauri.listFileWorkspace(parent)).entries.filter(
+                const listing = await tauri.listFileWorkspace(parent);
+                if (
+                    listing.unread.some(
+                        (candidate) =>
+                            candidate.parent === null &&
+                            candidate.kind !== "directory" &&
+                            (candidate.name === listedName || candidate.name === leaf),
+                    )
+                ) {
+                    return undefined;
+                }
+                const matches = listing.entries.filter(
                     (candidate) =>
                         candidate.kind === "file" &&
                         (candidate.name === listedName || candidate.name === leaf),
