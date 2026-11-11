@@ -23123,3 +23123,19 @@ Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates th
 * **Fix:** Remove `fuse.js` from `package.json` and regenerate the lockfile. Confirm `pnpm` install and the frontend unit gates still pass, and that New Tab / Library search still filters without it. Do not remove `@tiptap/extension-link`, `@tiptap/pm`, or `@tauri-apps/plugin-window-state` as part of this change.
 * **Proof:** At HEAD `71b6d01b5`, `rg -n 'fuse\\.js|Fuse\\(' src e2e scripts` is empty. `package.json` still lists `"fuse.js": "^7.0.0"`. `git log -S 'fuse.js' -- package.json src` shows the add (`7b56b11bd`) and no later source import. A scan of all other `package.json` production dependencies found no other unused non-peer package (TipTap peers and the window-state JS package are accounted for as above).
 * **Found by:** Grok Bot, second-sweep unused-dependency confirmation (t26u), HEAD `71b6d01b5`.
+
+---
+
+## 2026-11-11 — filed through the inbox spool
+
+### Repertoire board bars still treat line name and idea as FIDE players
+
+* **ID:** f-20261111-68 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** remaining-cluster review of repertoire line names (Felix t26u) at HEAD `2899cddc2`
+* **Where:** `src/components/boards/Board.tsx:380-381` (bar labels are raw `headers.white` / `headers.black`), `:476-484` and `:717-725` (those labels are always passed to `BoardBar` with `onNameClick` opening FIDE), `:752-753` (`FideInfo` is always mounted against those same headers). `src/components/boards/BoardBar.tsx:13,26-31` shows any non-empty, non-`?` name as a clickable player. Host: `src/components/boards/BoardAnalysis.tsx:148,295` already knows `isRepertoire` but renders `<Board>` without telling it. Contrast: `src/components/common/GameInfo.tsx` in `simplified` mode labels the same tags Line name / Idea and hides the FIDE buttons. d-20261110-12 makes `lineTitle.ts` the single read point and says only presentation and editing change; `Board.tsx` is not on that governs list and does not call `lineTitleOf`.
+* **Defect:** After 3d6cbff0a, a repertoire line's name lives in the `White` tag and its idea in `Black`. The Info panel was updated; the board player bars were not. Opening a repertoire tab therefore paints the line name and idea on the board as if they were opponent names, and a click runs a FIDE player search for that title string.
+* **Failure scenario:** Open a repertoire file, name a line (for example "Italian Game") and optionally an idea, and look at the board. The bottom bar shows "Italian Game" and the top bar shows the idea. Click the name: a FIDE lookup opens and searches for a player called "Italian Game" (not found, or an unrelated namesake). The Info panel correctly presents the same text as Line name / Idea and does not offer FIDE.
+* **Fix:** When the open tab is a repertoire, feed the board bars through `lineTitleOf` and render them as non-interactive titles (no `onNameClick`, no `FideInfo`). Leave game and play boards unchanged. Add a test that a repertoire `Board` with White/Black set does not open `FideInfo` on a bar click, and that a game board still does.
+* **Proof:** At HEAD `2899cddc2`, `Board.tsx` has no repertoire branch: `topPlayer` / `bottomPlayer` are always `headers.black` / `headers.white` (`:380-381`), both `BoardBar`s always pass `onNameClick` that sets `whiteFideOpen` / `blackFideOpen` (`:478-484`, `:719-725`), and both `FideInfo` instances are always passed those headers (`:752-753`). `BoardAnalysis.tsx:148` computes `isRepertoire` from `tabFile?.metadata.type` and `:295` still renders `<Board>` with no such prop. `GameInfo.tsx` already hides the White/Black FIDE buttons when `simplified` is set. `Board.test.tsx` mocks `BoardBar`, so this path is untested.
+* **Found by:** Grok Bot, remaining-cluster review of repertoire line names (t26u), HEAD `2899cddc2`.
