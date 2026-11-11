@@ -8013,7 +8013,15 @@ mod tests {
         let (_target, key, entry) = initialized_target_entry(&repository, &path);
         let first = entry.get_connection().unwrap();
         let second = entry.get_connection().unwrap();
-        assert_eq!(entry.connections.snapshot().outstanding, 2);
+        // The open count may include an idle setup connection that r2d2 inserts
+        // after its acquire event.
+        let pool_state = entry.pool.read().as_ref().expect("live pool").state();
+        assert_eq!(
+            pool_state.connections - pool_state.idle_connections,
+            2,
+            "both held connections are checked out"
+        );
+        assert!(entry.connections.snapshot().outstanding >= 2);
 
         std::thread::scope(|scope| {
             let started = spawn_after_release_delay(scope, move || {
