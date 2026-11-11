@@ -1,5 +1,5 @@
 #!/usr/bin/env -S uv run --script
-# agent-kit-sha256: 207321e8d655f05a62eff09e958bec51b951933aca06032f5ddc217b3b42b95d
+# agent-kit-sha256: 787274c1ab76e63f61b453da8638d6c5c64d1647359e880b69152a3e9615899d
 # /// script
 # requires-python = ">=3.14"
 # ///
@@ -51,6 +51,7 @@ Subcommands
                  entry predates it, and refresh their covering receipt
 ``merge-driver`` git merge driver for the two ledgers (``%O %A %B %P``): compatible
                  edits and whole blocks merge, conflicts fall back to ``git merge-file``
+``renumber-unpublished`` re-allocate colliding unpublished ids before replay
 """
 
 from __future__ import annotations
@@ -547,6 +548,7 @@ COMMAND_CLASSIFICATION = {
     "record-decision": "guarded",
     "set-trailer": "guarded",
     "merge-driver": "guarded",
+    "renumber-unpublished": "guarded",
 }
 PLAN_ONLY_ENV = "DRAIN_PLAN_ONLY"
 PLAN_INBOX_ENV = "DRAIN_PLAN_INBOX"
@@ -906,6 +908,22 @@ def _has_ledger_meta_comment(line: str) -> bool:
     )
 
 
+def _mutation_operation(data: dict[str, object]) -> str:
+    """Share the operation identity between receipt admission and refresh."""
+    options = cast(dict[str, object], data["options"])
+    source = (
+        {"command": data["command"], "request_id_sha256": data["request_id_sha256"]}
+        if data["request_id_sha256"] is not None
+        else {
+            "command": data["command"], "target": data["target"],
+            "input_sha256": data["input_sha256"], "section": options["section"],
+        }
+    )
+    if data["command"] == "set-header" and data["request_id_sha256"] is None:
+        source["headers"] = options["headers"]
+    return _sha256_text(json.dumps(source, sort_keys=True, separators=(",", ":")))
+
+
 def _metadata_schema_issues(meta: LedgerMeta, path: Path) -> list[str]:
     data = meta.data
     where = f"{path}:{meta.line}: ledger-meta"
@@ -1003,25 +1021,7 @@ def _metadata_schema_issues(meta: LedgerMeta, path: Path) -> list[str]:
         ):
             issues.append(f"{where}: invalid field 'effect_lines'")
         if not issues:
-            options = cast(dict[str, object], data["options"])
-            operation_source = (
-                {
-                    "command": data["command"],
-                    "request_id_sha256": data["request_id_sha256"],
-                }
-                if data["request_id_sha256"] is not None
-                else {
-                    "command": data["command"],
-                    "target": data["target"],
-                    "input_sha256": data["input_sha256"],
-                    "section": options["section"],
-                }
-            )
-            if command == "set-header" and data["request_id_sha256"] is None:
-                operation_source["headers"] = options["headers"]
-            expected_operation = _sha256_text(
-                json.dumps(operation_source, sort_keys=True, separators=(",", ":"))
-            )
+            expected_operation = _mutation_operation(data)
             if data["operation"] != expected_operation:
                 issues.append(f"{where}: invalid field 'operation'")
         return issues
@@ -4183,7 +4183,7 @@ def _append_citation_occurrences(
 
 
 def _citation_occurrences(
-    path: Path, source: str, *, text: str | None = None
+    path: Path, source: str, *, text: str | None = None, all_ids: bool = False
 ) -> tuple[list[CitationOccurrence], list[str]]:
     if text is None:
         if not _ledger_path_exists(path):
@@ -4239,7 +4239,7 @@ def _citation_occurrences(
             duplicate_lines=duplicate_lines,
             ordinals_on_line=ordinals_on_line,
         )
-        if GOVERNS_RE.search(line) is not None:
+        if all_ids or GOVERNS_RE.search(line) is not None:
             _append_citation_occurrences(
                 occurrences,
                 issues,
@@ -4263,6 +4263,20 @@ def _citation_context_key(data: dict[str, object]) -> tuple[object, ...]:
         data.get("line_sha256"),
         data.get("occurrence"),
     )
+
+
+def _occurrence_context_key(occurrence: CitationOccurrence) -> tuple[object, ...]:
+    return (
+        occurrence.source, occurrence.entry, occurrence.cited_id,
+        _sha256_text(occurrence.line_text), occurrence.occurrence,
+    )
+
+
+def _occurrence_context(
+    occurrence: CitationOccurrence, contexts: Mapping[tuple[object, ...], LedgerMeta],
+) -> LedgerMeta | None:
+    """Only unqualified citations can delegate ownership to a context."""
+    return contexts.get(_occurrence_context_key(occurrence)) if occurrence.owner is None else None
 
 
 def _citation_resolution(
@@ -4354,15 +4368,9 @@ def _citation_resolution(
             continue
         if occurrence.owner not in {None, "local"}:
             continue
-        key = (
-            occurrence.source,
-            occurrence.entry,
-            occurrence.cited_id,
-            _sha256_text(occurrence.line_text),
-            occurrence.occurrence,
-        )
-        context = contexts.get(key)
-        if context is not None and occurrence.owner is None:
+        key = _occurrence_context_key(occurrence)
+        context = _occurrence_context(occurrence, contexts)
+        if context is not None:
             used_contexts.add(key)
             if context.data.get("status") == "historical-error":
                 corrections = cast(list[str], context.data["corrections"])
@@ -6694,9 +6702,13 @@ def _clone_id_fence_lock(root: Path) -> Path:
     ) / CLONE_WIDE_ID_LOCK_NAME
 
 
+class CloneIdAllocationBusy(LedgerError):
+    """The clone-wide allocation fence is held or unsafe to acquire."""
+
+
 @contextmanager
 def _clone_id_allocation_scope(
-    ledger: Path, *, explicit: bool = False,
+    ledger: Path, *, explicit: bool = False, wait_window_seconds: float | None = None,
 ) -> Iterator[Path | None]:
     """Fence writes and commits before ledger locks, nesting within one clone."""
     global _ACTIVE_ID_RESERVATIONS
@@ -6717,9 +6729,9 @@ def _clone_id_allocation_scope(
         finally:
             _ACTIVE_CLONE_ID_SCOPES[key] = held_root, depth
         return
-    acquired, waited = acquire_ledger_lock(lock)
+    acquired, waited = acquire_ledger_lock(lock, wait_window_seconds=wait_window_seconds)
     if not acquired:
-        raise LedgerError(f"clone-wide ledger id lock {lock} busy (waited {waited:.2f}s)")
+        raise CloneIdAllocationBusy(f"clone-wide ledger id lock {lock} busy (waited {waited:.2f}s)")
     previous_registry = _ACTIVE_ID_RESERVATIONS
     _ACTIVE_CLONE_ID_SCOPES[key] = root, 1
     try:
@@ -7370,24 +7382,13 @@ def _mutation_request(
         )
     input_sha256 = _sha256_bytes(raw_input)
     request_hash = _sha256_text(request_id) if request_id is not None else None
-    identity = {
-        "command": command,
-        "target": target,
-        "input_sha256": input_sha256,
-        "section": section,
-    }
     options: dict[str, object] = {"section": section}
     if header_changes is not None:
         options["headers"] = header_changes
-        identity["headers"] = header_changes
-    operation_source = (
-        {"command": command, "request_id_sha256": request_hash}
-        if request_hash is not None
-        else identity
-    )
-    operation = _sha256_text(
-        json.dumps(operation_source, sort_keys=True, separators=(",", ":"))
-    )
+    operation = _mutation_operation({
+        "command": command, "target": target, "input_sha256": input_sha256,
+        "options": options, "request_id_sha256": request_hash,
+    })
     return MutationRequest(
         command,
         target,
@@ -7426,6 +7427,25 @@ def _receipt_matches_request(data: dict[str, object], request: MutationRequest) 
     )
 
 
+def _refresh_receipt_effects(
+    lines: list[str], metadata: list[LedgerMeta], changed: set[int],
+    *, shifted: Callable[[int], int] = lambda index: index,
+) -> None:
+    """Refresh covering effects in file order, including nested metadata."""
+    for meta in metadata:
+        if meta.data.get("kind") != MUTATION_RECEIPT_KIND:
+            continue
+        receipt_index = shifted(meta.line - 1)
+        effect_start = shifted(meta.line - 1 - cast(int, meta.data["effect_lines"]))
+        if not any(effect_start <= line < receipt_index for line in changed):
+            continue
+        data = json.loads(lines[receipt_index][len(LEDGER_META_PREFIX):-len(LEDGER_META_SUFFIX)])
+        data["effect_lines"] = receipt_index - effect_start
+        data["effect_sha256"] = _sha256_text("\n".join(lines[effect_start:receipt_index]))
+        lines[receipt_index] = _metadata_line(data)
+        changed.add(receipt_index)
+
+
 def _close_receipt_updates(
     original: str,
     finding_id: str,
@@ -7451,11 +7471,16 @@ def _close_receipt_updates(
             or meta.data.get("target") != finding_id
         ):
             continue
-        refreshed = dict(meta.data)
-        refreshed["header_sha256"] = _sha256_text(header_line)
-        refreshed["header_status"] = match.group("status")
+        refreshed = _receipt_with_header(meta.data, header_line)
         updates[meta.line - 1] = _metadata_line(refreshed)
     return updates
+
+
+def _receipt_with_header(data: dict[str, object], header_line: str) -> dict[str, object]:
+    match = HEADER_RE.match(header_line)
+    if match is None:
+        raise LedgerError("could not refresh receipt header")
+    return {**data, "header_sha256": _sha256_text(header_line), "header_status": match.group("status")}
 
 
 def _place_receipt(candidate: str, receipt_line: str) -> str:
@@ -11987,6 +12012,12 @@ def cmd_file(args: argparse.Namespace) -> int:
         return superseded
 
     try:
+        # Intake is durable before any lock, as on every other filing path.
+        # Settle before validation or the first terminal receipt read, including
+        # retries that will return without publishing anything.
+        if REPO_ROOT is not None and _renumber_pending_path(REPO_ROOT).exists():
+            with renumber_receipt_scope(REPO_ROOT):
+                pass
         entry, issues = _validate_entry_text(_decode_entry_bytes(raw), args.ledger, display_path)
         if issues:
             raise LedgerError("; ".join(issues))
@@ -13087,18 +13118,7 @@ def cmd_set_trailer(args: argparse.Namespace) -> int:
         def shifted(index: int) -> int:
             return index + inserted_count if index >= inserted_at else index
 
-        for meta in metadata:
-            if meta.data.get("kind") != MUTATION_RECEIPT_KIND:
-                continue
-            receipt_index = shifted(meta.line - 1)
-            effect_start = shifted(meta.line - 1 - cast(int, meta.data["effect_lines"]))
-            if not any(effect_start <= line < receipt_index for line in changed):
-                continue
-            data = dict(meta.data)
-            data["effect_lines"] = receipt_index - effect_start
-            data["effect_sha256"] = _sha256_text("\n".join(lines[effect_start:receipt_index]))
-            lines[receipt_index] = _metadata_line(data)
-            changed.add(receipt_index)
+        _refresh_receipt_effects(lines, metadata, changed, shifted=shifted)
         candidate = "\n".join(lines) + ("\n" if original.endswith("\n") else "")
         issues = _validate_text(candidate, args.decisions)
         # Entry ids are unchanged, so resolution may use the on-disk id set,
@@ -13803,6 +13823,533 @@ def cmd_apply_answers(args: argparse.Namespace) -> int:
     for note in skipped:
         print(f"skipped {note}")
     return 1 if quarantined else 0
+
+
+RENUMBER_RECONCILIATION_NAME = "findings-renumber-pending.json"
+
+
+class RenumberCheckoutInconsistent(LedgerError):
+    """The ref moved but neither checkout update nor restoration completed."""
+
+
+@dataclass(frozen=True)
+class RenumberUnpublishedResult:
+    old_tip: str
+    new_tip: str
+    mapping: dict[str, str]
+
+
+def _renumber_ref(root: Path) -> str:
+    result = _git_for_ledger(root, "symbolic-ref", "-q", "HEAD")
+    if result.returncode == 0:
+        return result.stdout.strip()
+    if result.returncode == 1:
+        return "HEAD"
+    raise LedgerError(f"could not identify HEAD: {_git_failure_detail(result)}")
+
+
+def _renumber_pending_path(root: Path) -> Path:
+    directory = _allocation_git(root, "rev-parse", "--path-format=absolute", "--git-dir")
+    return Path(directory.stdout.strip()) / RENUMBER_RECONCILIATION_NAME
+
+
+@dataclass
+class RenumberReceiptReconciliation:
+    """Publish-lock-owned receipt transaction, valid only inside its scope."""
+
+    root: Path
+    inbox: Path
+    pending: Path
+    active: bool = True
+
+    def _require_active(self) -> None:
+        if not self.active:
+            raise LedgerError("renumber receipt scope is no longer held")
+
+    def prepare(
+        self, branch_ref: str, old_tip: str, final_tip: str, mapping: Mapping[str, str],
+    ) -> None:
+        """Record the caller's final tip before its CAS, without changing receipts."""
+        self._require_active()
+        if self.pending.exists():
+            raise LedgerError(f"pending renumber reconciliation already exists: {self.pending}")
+        if not mapping:
+            return
+        if branch_ref != "HEAD" and not branch_ref.startswith("refs/heads/"):
+            raise LedgerError(f"invalid reconciliation branch ref {branch_ref!r}")
+        for tip in (old_tip, final_tip):
+            if _allocation_git(self.root, "rev-parse", "--verify", f"{tip}^{{commit}}").stdout.strip() != tip:
+                raise LedgerError(f"reconciliation requires a resolved commit: {tip}")
+        for old, new in mapping.items():
+            if (re.fullmatch(r"[fd]-\d{8}-\d{2}", old) is None
+                    or re.fullmatch(r"[fd]-\d{8}-\d{2}", new) is None
+                    or old[:11] != new[:11] or old == new):
+                raise LedgerError("invalid renumber reconciliation mapping")
+        self._receipts()  # Refuse unreadable receipts before the ref can move.
+        record = {
+            "v": 1, "receipt_directory": str(receipt_directory(self.inbox)),
+            "branch_ref": branch_ref, "old_tip": old_tip, "final_tip": final_tip,
+            "mapping": dict(mapping),
+        }
+        _atomic_write(self.pending, json.dumps(record, sort_keys=True) + "\n", durable_directory=True)
+
+    def _receipts(self) -> list[tuple[Path, dict[str, str]]]:
+        directory = receipt_directory(self.inbox)
+        try:
+            paths = sorted(directory.iterdir())
+        except FileNotFoundError:
+            return []
+        receipts = []
+        for path in paths:
+            if path.suffix == ".json":
+                record = _read_receipt(path)
+                if record is not None:
+                    receipts.append((path, record))
+        return receipts
+
+    def discard(self) -> None:
+        """Discard a record after a caller's failed CAS, leaving receipts intact."""
+        self._require_active()
+        self.pending.unlink(missing_ok=True)
+        _fsync_directory(self.pending.parent)
+
+    def complete(self) -> None:
+        """Settle an interrupted or completed CAS while exclusively owning its lock."""
+        self._require_active()
+        try:
+            raw = self.pending.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return
+        try:
+            data = json.loads(raw, object_pairs_hook=_metadata_object)
+        except (*_JSON_ERRORS, DuplicateLedgerMetadataKey) as exc:
+            raise LedgerError(f"invalid renumber reconciliation {self.pending}: {exc}") from exc
+        if (
+            not isinstance(data, dict)
+            or set(data) != {"v", "receipt_directory", "branch_ref", "old_tip", "final_tip", "mapping"}
+            or data["v"] != 1
+            or data["receipt_directory"] != str(receipt_directory(self.inbox))
+            or not isinstance(data["branch_ref"], str)
+            or (data["branch_ref"] != "HEAD" and not data["branch_ref"].startswith("refs/heads/"))
+            or not all(isinstance(data[key], str) and re.fullmatch(r"[0-9a-f]{40,64}", data[key])
+                       for key in ("old_tip", "final_tip"))
+            or not isinstance(data["mapping"], dict)
+            or not all(isinstance(old, str) and isinstance(new, str)
+                       and re.fullmatch(r"[fd]-\d{8}-\d{2}", old)
+                       and re.fullmatch(r"[fd]-\d{8}-\d{2}", new)
+                       and old[:11] == new[:11] and old != new
+                       for old, new in data["mapping"].items())
+        ):
+            raise LedgerError(f"invalid renumber reconciliation {self.pending}")
+        current = _allocation_git(self.root, "rev-parse", "--verify", data["branch_ref"]).stdout.strip()
+        texts = _renumber_ledgers(self.root, current)
+        entries = set().union(*(_renumber_entries(texts[path], kind)
+                                for path, kind in MERGE_DRIVER_LEDGERS.items()))
+        # A later rebase can replace final_tip while preserving the rewrite.
+        # Published entries may still use the old ids, so check the new entries.
+        if set(data["mapping"].values()) <= entries:
+            for path, receipt in self._receipts():
+                identifier = receipt.get("id")
+                if identifier in data["mapping"]:
+                    receipt["id"] = data["mapping"][identifier]
+                    _write_receipt(path, receipt)
+            if receipt_directory(self.inbox).exists():
+                _fsync_directory(receipt_directory(self.inbox))
+            self.discard()
+        else:
+            contains_final = _git_for_ledger(self.root, "merge-base", "--is-ancestor", data["final_tip"], current)
+            contains_old = _git_for_ledger(self.root, "merge-base", "--is-ancestor", data["old_tip"], current)
+            if contains_old.returncode == 0 and contains_final.returncode == 1:
+                self.discard()
+                return
+            raise LedgerError(
+                f"cannot settle renumber reconciliation {self.pending}: "
+                f"{data['branch_ref']} holds {current} without every rewritten entry "
+                f"and is not an unapplied descendant of {data['old_tip']}"
+            )
+
+
+@contextmanager
+def renumber_receipt_scope(root: Path) -> Iterator[RenumberReceiptReconciliation]:
+    """Settle, prepare and finish a checkout's record under its inbox publish lock.
+
+    The drain calls prepare after rebasing, holds this scope through its branch
+    CAS, then calls complete on success or discard on a failed CAS. A failed
+    receipt rewrite keeps the record for the next operation or file retry.
+    """
+    root = root.resolve()
+    inbox = root / "tasks/findings-inbox"
+    with _publish_lock(publish_lock_path(inbox)):
+        transaction = RenumberReceiptReconciliation(root, inbox, _renumber_pending_path(root))
+        try:
+            transaction.complete()
+            yield transaction
+        finally:
+            transaction.active = False
+
+
+@contextmanager
+def _renumber_repository_scope(root: Path) -> Iterator[None]:
+    names = ("REPO_ROOT", "LEDGER", "DECISIONS", "INBOX", "LEGACY_INBOX", "CLAIM", "ANSWERS", "DEFAULT_DRAIN_LOCK")
+    saved = {name: globals()[name] for name in names}
+    _bind_repo_root(root)
+    try:
+        yield
+    finally:
+        globals().update(saved)
+
+
+def _renumber_ledgers(root: Path, commit: str) -> dict[str, str]:
+    texts = {}
+    for relative in MERGE_DRIVER_LEDGERS:
+        entry = _head_file_blob_entry(root, commit, relative, strict=True)
+        if entry is None:
+            texts[relative] = ""
+            continue
+        if entry[0] not in {"100644", "100755"}:
+            raise LedgerError(f"cannot rewrite non-regular ledger {commit}:{relative}")
+        blob = _git_for_ledger_bytes(root, "cat-file", "blob", entry[1])
+        if blob.returncode:
+            raise LedgerError(f"could not read {commit}:{relative}")
+        texts[relative] = blob.stdout.decode("utf-8")
+    return texts
+
+
+def _renumber_entries(text: str, kind: str) -> dict[str, str]:
+    if kind == "findings":
+        lines, matches, _orphans = _unfenced_header_matches(text)
+        headings = [(heading, match) for heading, _header, match in matches]
+    else:
+        lines, headings = _decision_heading_matches(text)
+    mask = _fence_mask(lines)
+    metadata, issues = _scan_ledger_metadata(text, Path(f"{kind}.md"))
+    if issues:
+        raise LedgerError("invalid ledger metadata: " + "\n".join(issues))
+    receipts = {meta.line - 1 for meta in metadata if meta.data.get("kind") == MUTATION_RECEIPT_KIND}
+    return {
+        match.group("id"): "\n".join(
+            lines[index] for index in range(start, _find_entry_span(lines, mask, start))
+            if index not in receipts
+        ).strip()
+        for start, match in headings
+    }
+
+
+def _renumber_introductions(
+    root: Path, commits: list[str], base_ids: set[str], snapshots: dict[str, dict[str, str]],
+) -> dict[str, str]:
+    introduced: dict[str, str] = {}
+    for commit in commits:
+        texts = snapshots.setdefault(commit, {})
+        if not texts:
+            texts.update(_renumber_ledgers(root, commit))
+        for relative, kind in MERGE_DRIVER_LEDGERS.items():
+            for identifier, form in _renumber_entries(texts[relative], kind).items():
+                if identifier not in base_ids:
+                    introduced.setdefault(identifier, form)
+    return introduced
+
+
+def _renumber_local_line(
+    line: str, mapping: Mapping[str, str], *,
+    contexts: Mapping[str, LedgerMeta] | None = None,
+) -> str:
+    """Use the resolver's qualifier grammar and occurrence ownership."""
+    for pattern in (QUALIFIED_FINDING_RE, QUALIFIED_DECISION_RE):
+        def replace_id(match: re.Match[str]) -> str:
+            identifier = match.group("id")
+            if (match.group("owner") not in {None, "local"}
+                    or (match.group("owner") is None and contexts and identifier in contexts)):
+                return match.group(0)
+            return match.group(0)[:match.start("id") - match.start()] + mapping.get(identifier, identifier)
+        line = pattern.sub(replace_id, line)
+    return line
+
+
+def _renumber_lines_text(original: str, lines: list[str]) -> str:
+    """Retain each line's exact ending when replacing its contents."""
+    return "".join(
+        new + raw[len(old):]
+        for raw, old, new in zip(original.splitlines(keepends=True), original.splitlines(), lines, strict=True)
+    )
+
+
+def _renumber_ledger_texts(texts: dict[str, str], mapping: Mapping[str, str]) -> dict[str, str]:
+    paths = {"findings": "tasks/findings.md", "decisions": "tasks/decisions.md"}
+    metadata = {}
+    occurrences = {}
+    lines = {}
+    for kind, relative in paths.items():
+        metadata[kind], issues = _scan_ledger_metadata(texts[relative], Path(relative))
+        issues += _receipt_effect_issues(texts[relative], Path(relative), metadata[kind])
+        if issues:
+            raise LedgerError("cannot refresh invalid receipts: " + "\n".join(issues))
+        occurrences[kind], _issues = _citation_occurrences(
+            Path(relative), kind, text=texts[relative], all_ids=True,
+        )
+        lines[kind] = texts[relative].splitlines()
+    contexts = {_citation_context_key(meta.data): meta for meta in metadata["decisions"]
+                if meta.data.get("kind") == CITATION_CONTEXT_KIND}
+    for kind in paths:
+        protected: dict[int, dict[str, LedgerMeta]] = {}
+        for occurrence in occurrences[kind]:
+            context = _occurrence_context(occurrence, contexts)
+            if context is not None:
+                protected.setdefault(occurrence.line - 1, {})[occurrence.cited_id] = context
+        meta_lines = {meta.line - 1 for meta in metadata[kind]}
+        fence_states = _fence_mask(lines[kind])
+        for index, line in enumerate(lines[kind]):
+            if index not in meta_lines and fence_states[index] is FenceState.OUTSIDE:
+                lines[kind][index] = _renumber_local_line(line, mapping, contexts=protected.get(index))
+    for meta in metadata["decisions"]:
+        if meta.data.get("kind") != CITATION_CONTEXT_KIND:
+            continue
+        data = dict(meta.data)
+        key = _citation_context_key(data)
+        source = str(data["source"])
+        matched = next((occ for occ in occurrences[source]
+                        if _occurrence_context_key(occ) == key and occ.owner is None), None)
+        if matched is None:
+            raise LedgerError("cannot refresh unmatched citation-context declaration")
+        data["entry"] = mapping.get(str(data["entry"]), data["entry"])
+        data["line_sha256"] = _sha256_text(lines[source][matched.line - 1])
+        if "corrections" in data:
+            data["corrections"] = [mapping.get(value, value) for value in cast(list[str], data["corrections"])]
+        # The changed line can now equal a preceding line. Recompute its ordinal
+        # with the same occurrence scanner used by check.
+        rewritten_occurrences, _issues = _citation_occurrences(
+            Path(paths[source]), source, text="\n".join(lines[source]), all_ids=True,
+        )
+        new_occurrence = next(occ for occ in rewritten_occurrences
+                              if occ.line == matched.line and occ.cited_id == matched.cited_id
+                              and occ.owner is None)
+        data["occurrence"] = new_occurrence.occurrence
+        lines["decisions"][meta.line - 1] = _metadata_line(data)
+    rewritten = {}
+    for kind, relative in paths.items():
+        original_lines = texts[relative].splitlines()
+        for meta in metadata[kind]:
+            if meta.data.get("kind") != MUTATION_RECEIPT_KIND:
+                continue
+            data = dict(meta.data)
+            data["target"] = mapping.get(str(data["target"]), data["target"])
+            data["results"] = [mapping.get(value, value) for value in cast(list[str], data["results"])]
+            data["operation"] = _mutation_operation(data)
+            if data["command"] in {"close", "set-header"}:
+                # Reuse the locked header writer's coupling refresh.
+                target = str(meta.data["target"])
+                original_header = next(line for line in original_lines
+                                       if (match := HEADER_RE.match(line)) and match.group("id") == target)
+                new_header = _renumber_local_line(original_header, mapping)
+                data = _receipt_with_header(data, new_header)
+            lines[kind][meta.line - 1] = _metadata_line(data)
+        changed = {index for index, (old, new) in enumerate(zip(original_lines, lines[kind], strict=True)) if old != new}
+        _refresh_receipt_effects(lines[kind], metadata[kind], changed)
+        rewritten[relative] = _renumber_lines_text(texts[relative], lines[kind])
+    return rewritten
+
+
+def _renumber_validate(texts: dict[str, str], root: Path) -> None:
+    with (
+        _candidate_scratch(texts["tasks/findings.md"], root / "tasks/findings.md") as ledger,
+        _candidate_scratch(texts["tasks/decisions.md"], root / "tasks/decisions.md") as decisions,
+    ):
+        valid, detail = _validate_ledger_paths(ledger, decisions)
+    if not valid:
+        raise LedgerError("rewritten ledgers do not validate:\n" + detail)
+
+
+def _renumber_tree_has_ids(root: Path, commit: str, mapping: Mapping[str, str], paths: set[str] | None = None) -> str | None:
+    tree = _allocation_git(root, "ls-tree", "-r", "-z", commit).stdout
+    pattern = re.compile(rb"(?<![A-Za-z0-9_-])(?:" + b"|".join(value.encode() for value in mapping) + rb")(?![A-Za-z0-9_-])")
+    for record in tree.split("\0"):
+        if not record:
+            continue
+        fields, path = record.split("\t", 1)
+        if paths is not None and path not in paths:
+            continue
+        _mode, kind, blob = fields.split()
+        if kind != "blob":
+            continue
+        if any(part.startswith(".env") for part in Path(path).parts):
+            continue
+        content = _git_for_ledger_bytes(root, "cat-file", "blob", blob)
+        if content.returncode:
+            raise LedgerError(f"could not inspect {commit}:{path}")
+        if pattern.search(content.stdout):
+            return path
+    return None
+
+
+def _renumber_object(root: Path, kind: str, content: bytes) -> str:
+    result = _git_for_ledger_env(root, dict(os.environ), "hash-object", "-w", "-t", kind, "--stdin", stdin=content)
+    if result.returncode:
+        raise LedgerError(f"could not write rewritten {kind}: {result.stderr.decode('utf-8', errors='replace').strip()}")
+    return result.stdout.decode("ascii").strip()
+
+
+def _renumber_commit(root: Path, commit: str, parent: str, texts: dict[str, str], mapping: Mapping[str, str]) -> str:
+    with tempfile.TemporaryDirectory(prefix="findings-renumber-") as scratch:
+        environment = {**os.environ, "GIT_INDEX_FILE": str(Path(scratch) / "index")}
+        result = _git_for_ledger_env(root, environment, "read-tree", commit)
+        if result.returncode:
+            raise LedgerError(_git_failure_detail(result))
+        for relative, text in texts.items():
+            entry = _head_file_blob_entry(root, commit, relative, strict=True)
+            if entry is None:
+                continue
+            blob = _renumber_object(root, "blob", text.encode("utf-8"))
+            result = _git_for_ledger_env(root, environment, "update-index", "--cacheinfo", f"{entry[0]},{blob},{relative}")
+            if result.returncode:
+                raise LedgerError(_git_failure_detail(result))
+        result = _git_for_ledger_env(root, environment, "write-tree")
+        if result.returncode:
+            raise LedgerError(_git_failure_detail(result))
+        tree = result.stdout.strip()
+    original_commit = _git_for_ledger_bytes(root, "cat-file", "commit", commit)
+    if original_commit.returncode:
+        raise LedgerError(f"could not read commit {commit}")
+    raw = original_commit.stdout.decode("utf-8")
+    headers, message = raw.split("\n\n", 1)
+    rewritten_headers = []
+    drop_continuation = False
+    for line in headers.splitlines():
+        if line.startswith(" "):
+            if not drop_continuation:
+                rewritten_headers.append(line)
+            continue
+        drop_continuation = line.startswith(("gpgsig ", "gpgsig-sha256 ", "mergetag "))
+        if drop_continuation:
+            continue
+        if line.startswith("tree "):
+            line = f"tree {tree}"
+        elif line.startswith("parent "):
+            line = f"parent {parent}"
+        rewritten_headers.append(line)
+    message = "\n".join(_renumber_local_line(line, mapping) for line in message.split("\n"))
+    return _renumber_object(root, "commit", ("\n".join(rewritten_headers) + "\n\n" + message).encode("utf-8"))
+
+
+def _renumber_expect_head(root: Path, branch_ref: str, old_tip: str) -> None:
+    if (_renumber_ref(root) != branch_ref
+            or _allocation_git(root, "rev-parse", "HEAD").stdout.strip() != old_tip):
+        raise LedgerError("HEAD moved while the unpublished range was read")
+    if _allocation_git(root, "status", "--porcelain", "--untracked-files=all").stdout:
+        raise LedgerError("working tree became dirty while the unpublished range was read")
+
+
+def _renumber_move_head(root: Path, branch_ref: str, old_tip: str, new_tip: str) -> None:
+    _renumber_expect_head(root, branch_ref, old_tip)
+    _allocation_git(root, "update-ref", branch_ref, new_tip, old_tip)
+    try:
+        _allocation_git(root, "read-tree", "--reset", "-u", new_tip)
+    except (LedgerError, OSError) as exc:
+        try:
+            _allocation_git(root, "update-ref", branch_ref, old_tip, new_tip)
+            _allocation_git(root, "read-tree", "--reset", "-u", old_tip)
+        except (LedgerError, OSError) as restore:
+            raise RenumberCheckoutInconsistent(
+                f"INCONSISTENT: checkout update from {old_tip} to {new_tip} failed: {exc}. "
+                f"Restoration failed: {restore}. Recover with git reset --hard {old_tip}"
+            ) from restore
+        raise LedgerError(f"checkout update failed, restored {old_tip}: {exc}") from exc
+
+
+def renumber_unpublished(
+    root: Path, onto: str, *, reconcile_receipts: bool = True,
+) -> RenumberUnpublishedResult:
+    """Rewrite a clean linear range, including on a private detached HEAD.
+
+    Drain callers pass reconcile_receipts=False and later use
+    renumber_receipt_scope on the shared checkout with their final rebased tip.
+    Raises LedgerError on refusal. No refs move until all candidates validate.
+    """
+    root = root.resolve()
+    with _renumber_repository_scope(root), ExitStack() as scope:
+        scope.enter_context(_clone_id_allocation_scope(root / "tasks/findings.md"))
+        for relative in MERGE_DRIVER_LEDGERS:
+            lock = ledger_lock_path(root / relative)
+            if held_ledger_lock_fd(lock) is None:
+                acquired, waited = acquire_ledger_lock(lock)
+                if not acquired:
+                    raise LedgerError(_ledger_lock_busy_message(lock, waited))
+                scope.callback(release_ledger_lock, lock, defer=False)
+        receipts = scope.enter_context(renumber_receipt_scope(root))
+        old_tip = _allocation_git(root, "rev-parse", "--verify", "HEAD^{commit}").stdout.strip()
+        branch_ref = _renumber_ref(root)
+        onto_tip = _allocation_git(root, "rev-parse", "--verify", f"{onto}^{{commit}}").stdout.strip()
+        if _allocation_git(root, "status", "--porcelain", "--untracked-files=all").stdout:
+            raise LedgerError("working tree is dirty")
+        base = _allocation_git(root, "merge-base", old_tip, onto_tip).stdout.strip()
+        commits = _allocation_git(root, "rev-list", "--reverse", "--topo-order", f"{base}..{old_tip}").stdout.splitlines()
+        if _allocation_git(root, "rev-list", "--merges", f"{base}..{old_tip}").stdout:
+            raise LedgerError("unpublished range contains a merge commit")
+        upstream = _allocation_git(root, "rev-list", "--reverse", "--topo-order", f"{base}..{onto_tip}").stdout.splitlines()
+        snapshots = {base: _renumber_ledgers(root, base)}
+        base_ids = set().union(*(_ledger_content(text, MERGE_DRIVER_LEDGERS[path], strict=False)[0]
+                                for path, text in snapshots[base].items()))
+        local_forms = _renumber_introductions(root, commits, base_ids, snapshots)
+        published_forms = _renumber_introductions(root, upstream, base_ids, snapshots)
+        colliding = sorted(identifier for identifier in local_forms.keys() & published_forms.keys()
+                           if local_forms[identifier] != published_forms[identifier])
+        if not colliding:
+            return RenumberUnpublishedResult(old_tip, old_tip, {})
+        taken = set(local_forms) | set(published_forms) | base_ids
+        for relative in MERGE_DRIVER_LEDGERS:
+            taken.update(_clone_allocation_ids(root, root / relative))
+        mapping = {identifier: _next_high_water_id(identifier[0], identifier[2:10], taken)
+                   for identifier in colliding}
+        ambiguous = _renumber_tree_has_ids(root, base, mapping)
+        if ambiguous is not None:
+            raise LedgerError(f"colliding id occurs in merge-base tree: {ambiguous}")
+        changed = set()
+        parent = base
+        for commit in commits:
+            changed.update(_allocation_git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", "-z", parent, commit).stdout.rstrip("\0").split("\0"))
+            parent = commit
+        changed.difference_update(MERGE_DRIVER_LEDGERS)
+        for commit in [base, *commits]:
+            cited_path = _renumber_tree_has_ids(root, commit, mapping, changed)
+            if cited_path is not None:
+                raise LedgerError(f"colliding id occurs in changed non-ledger path: {cited_path}")
+        tip = base
+        for commit in commits:
+            rewritten = _renumber_ledger_texts(snapshots[commit], mapping)
+            _renumber_validate(rewritten, root)
+            tip = _renumber_commit(root, commit, tip, rewritten, mapping)
+        _renumber_expect_head(root, branch_ref, old_tip)
+        if reconcile_receipts:
+            receipts.prepare(branch_ref, old_tip, tip, mapping)
+        try:
+            _renumber_move_head(root, branch_ref, old_tip, tip)
+        except RenumberCheckoutInconsistent:
+            # Our CAS succeeded. Keep its record for receipt recovery.
+            raise
+        except (LedgerError, OSError):
+            # A failed CAS or a restored checkout published none of this
+            # rewrite. Discard our record while still owning the publish lock,
+            # including when another writer advanced the ref to a third tip.
+            receipts.discard()
+            raise
+        if reconcile_receipts:
+            receipts.complete()
+        return RenumberUnpublishedResult(old_tip, tip, mapping)
+
+
+def cmd_renumber_unpublished(args: argparse.Namespace) -> int:
+    try:
+        if args._explicit_ledger or args._explicit_decisions:
+            raise LedgerError("renumber-unpublished requires the default ledger paths")
+        result = renumber_unpublished(cast(Path, REPO_ROOT), args.onto)
+    except RenumberCheckoutInconsistent as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    except (LedgerError, OSError, UnicodeError) as exc:
+        print(f"REFUSING: {exc}", file=sys.stderr)
+        return 1
+    for old, new in result.mapping.items():
+        print(f"renumbered {old} -> {new}")
+    return 0
 
 
 def _bind_repo_root(root: Path) -> None:
@@ -14953,6 +15500,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "check", help="validate every header and the decisions ledger's ids"
     ).set_defaults(func=cmd_check)
+    p_renumber = sub.add_parser(
+        "renumber-unpublished", help="re-allocate unpublished ids colliding with an upstream"
+    )
+    p_renumber.add_argument("--onto", required=True, help="published commit to replay onto")
+    p_renumber.set_defaults(func=cmd_renumber_unpublished)
     sub.add_parser(
         "drain-status",
         help="exit 0 if this repo's consumer lock is held, 1 otherwise",
