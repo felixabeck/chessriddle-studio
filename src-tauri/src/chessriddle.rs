@@ -24,7 +24,9 @@ use tokio_util::sync::CancellationToken;
 
 pub(crate) const API_ORIGIN: &str = "https://chessriddle.com";
 pub(crate) const FEEDBACK_URL: &str = "https://chessriddle.com/api/v1/feedback";
-pub(crate) const RELEASE_AVAILABLE: bool = false;
+// Kill switch for the connection in release builds (d-20261109-12). Setting it false in a patch
+// release hides the connection again; `.dev` builds always have it.
+pub(crate) const RELEASE_AVAILABLE: bool = true;
 const DEV_API_ORIGIN: Option<&str> = option_env!("CHESSRIDDLE_API_ORIGIN");
 const DEV_WEB_ORIGIN: Option<&str> = option_env!("CHESSRIDDLE_WEB_ORIGIN");
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
@@ -1963,7 +1965,7 @@ mod tests {
             Some("http://127.0.0.1:9000"),
         )
         .unwrap();
-        assert!(!release.available);
+        assert!(release.available);
         assert_eq!(release.origin, API_ORIGIN);
         assert_eq!(release.web_origin, API_ORIGIN);
         assert!(!release.dev_web_override);
