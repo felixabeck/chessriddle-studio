@@ -23835,7 +23835,7 @@ Deferred should-fix (keep at midnight filing):
 
 ### `getClockInfo` throws when TimeControl is "-" (or any other string that parses to no fields) and a move has a clock value
 
-* **ID:** f-20261112-05 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-05 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** fourteenth-sweep quality review (Felix t26u) at HEAD `341275b7a`, material/clock display
 * **Where:** `src/utils/clock.ts` `parseTimeControl` (~39-61) returns `[]` for PGN `-`, `*`, or any token that does not match `(?:(\d+)/)?(\d+)(?:\+(\d+))?`. `getClockInfo` (~83-96) still treats that empty array as truthy and passes it into `calculateProgress` (~17-18), which then evaluates `clock / (timeControl[0].seconds / 1000)` and throws. `Clock.tsx` (~28-36) calls this on every render. Distinct from open `f-20261111-47` (no TimeControl header at all, so `timeControl` is `null` and a zero first-move clock yields `NaN` rather than a throw) and from open `f-20261111-46` (display rounding to `00:60.0`). Coverage-only `f-20261111-28` does not record this crash.
@@ -23844,6 +23844,8 @@ Deferred should-fix (keep at midnight filing):
 * **Fix:** Treat an empty `parseTimeControl` result as "no control" (`null`), the same as a missing header, and in `calculateProgress` guard a missing/non-finite `timeControl[0].seconds` (returning 0, with the `f-20261111-47` denominator guard). Add a regression that `getClockInfo` for `time_control: "-"` after `1. e4` with `clock: 60` returns finite progress and does not throw.
 * **Proof:** Ephemeral Vitest `src/sweep14_probe.test.ts` on HEAD `341275b7a`, removed afterwards (tree clean). Production `getClockInfo` with `headers.time_control = "-"`, position `[0]`, and `currentClock: 60` threw `/seconds|undefined/`.
 * **Found by:** Grok Bot, quality review (t26u), HEAD `341275b7a`.
+* **Closed:** 2026-11-12, commit `194aba5916c86d724aeb3e9f56495701f03c1d1d` (fix(clock): treat unparsable TimeControl as no control). Verified as an ancestor of origin/master.
+<!-- ledger-meta {"command":"set-header","effect_lines":1,"effect_sha256":"b8d8a9afc6d9d14ff1f4cbd91e5c8e796966449b3d7ccc7095c9cba4140dbaa9","header_sha256":"de24c1983c1973de123e4895ba911ef887fe6d02b4f081e2188f967e92203f39","header_status":"handled","input_sha256":"f49e24a7456b0ff734203aa8331e9fcbc5e5ca94726a9e75474458eed22b840c","kind":"mutation-receipt","operation":"ba1e635424c91a641b1c5e328892330bf9360fcec6a69b2827c3341bde6eed2f","options":{"headers":{"Status":"handled"},"section":null},"request_id_sha256":null,"results":["f-20261112-05"],"target":"f-20261112-05","v":1} -->
 
 ---
 
