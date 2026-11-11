@@ -23494,3 +23494,19 @@ Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates th
 * **Fix:** Drive these three copies through `writeClipboardText` (or pass Mantine `error` through and toast it) and show the existing `Board.CopyFailed` message, or a small dedicated key for the error-page diagnostic. Add a rejected-write / missing-API case for at least the PGN-panel button; do not leave `CopyButton` mocked to `null` if that hides the path.
 * **Proof:** Hook and call sites as cited at HEAD `077c723a2`. `rg CopyButton src` hits only these three production files. `writeClipboardText` is used by `tree.ts`, `TreeRecoveryGate.tsx`, and `GamePreview.tsx` only. f-20261106-38's close note names the tree actions and recovery gate, not PgnInput. No `tasks/decisions.md` entry requires leaving Mantine CopyButton unhandled.
 * **Found by:** Grok Bot, quality review (t26u), HEAD `077c723a2`.
+
+---
+
+## 2026-11-11 — filed through the inbox spool
+
+### getMoveText interpolates comments raw, so a `}` in commentary closes the PGN comment early and corrupts the export
+
+* **ID:** f-20261111-92 · **Status:** open · **Area:** chess-tree · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** ninth-sweep quality review (Felix t26u) at HEAD `a276f9917`, dense-algorithm second-read lens (PGN writer)
+* **Where:** `src/utils/chess.ts` `getMoveText` — `startingComment` is interpolated as `` `{${tree.startingComment}}` `` (~75) and `tree.comment` / `tree.commands` are appended inside a `{...}` body (~119-126) with no sanitization. `getPGN` / `writePGN` emit this text for file save, copy-PGN, and database-unrelated export. chessops' writer uses `safeComment = comment.replace(/\}/g, '')` (`node_modules/chessops/src/pgn.ts:241`) because PGN comments cannot contain `}`. This is not the already-handled comment-token overwrite (`db6ac190`) or header escaping (`pgnTag`).
+* **Defect:** User commentary is written verbatim into PGN comment delimiters. The first `}` in a starting comment, move comment, or residual command string terminates the comment for any PGN reader. The remainder is parsed as movetext (illegal SAN, stray tokens, or a second truncated comment).
+* **Failure scenario:** A user writes a move comment such as `watch } this` (or a variation starting comment `lead } cut`) and saves or copies the PGN. Reopening the file, or importing it here or in another tool, keeps only the text before the first `}`. The tail is dropped or surfaces as a parse error. Saving the reparsed tree permanently loses the rest of the commentary.
+* **Fix:** Strip (or otherwise neutralize) `}` when writing comments, matching chessops `safeComment`, in all three interpolations (`startingComment`, `comment`, and `commands`). Add a regression that `getPGN` of a tree whose comment or startingComment contains `}` reparses as one intact (sanitized) comment rather than early-closing movetext.
+* **Proof:** Ephemeral Vitest `src/utils/sweep9_probe.test.ts` on HEAD `a276f9917`, removed afterwards (tree clean). `getPGN` of `1. e4` with comment `watch } this` contained `{watch } this}`; `parsePgn` from chessops recovered a comment that did not contain `this`. The same early close happened for startingComment `lead } cut` (recovered starting comments did not contain `cut`). No `tasks/decisions.md` entry requires raw unescaped comment bytes in the writer.
+* **Found by:** Grok Bot, quality review (t26u), HEAD `a276f9917`.
