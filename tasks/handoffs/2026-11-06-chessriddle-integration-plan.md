@@ -1,10 +1,14 @@
 # Plan: Connect ChessRiddle Studio to ChessRiddle accounts
 
-Status: **Phases A and B built (2026-11-09). Phases C to E not built.** Product choices marked "Felix" are his; technical choices are recommendations. Each phase gets its own detailed `build` plan and review in the repository it changes.
+Status: **Phases A and B built (2026-11-09) and released in Studio `v1.0.0` (2026-11-11). Phases C to E not built.** Product choices marked "Felix" are his; technical choices are recommendations. Each phase gets its own detailed `build` plan and review in the repository it changes.
 
 ## Roadmap and current state (recorded 2026-11-09, updated 2026-11-10)
 
 This section overrides the phase order further down. It is the agent's recommendation, which Felix asked to have recorded on 2026-11-09. He has not yet decided the signing question below.
+
+### Released 2026-11-11
+
+Felix gave the go on 2026-11-11 ("Alright, do everything as recommended"). Before the switch, a `.dev` build against production with the Gold test account solved a tactics puzzle correctly (an engine-entered line, go-deeper twice, Correct and rated) and a mistakes-queue puzzle (count 884 to 883, unrated). That run found one defect, fixed before release: Show solution after a correct but too-short line did nothing, because ChessRiddle keeps `is_on_path_too_short` on its final answer to a revealed line (`verdict(..., solution_shown)`). `RELEASE_AVAILABLE` is now true and stays as the kill switch (`d-20261109-12`). Help > Documentation was removed on Felix's choice the same day: it opened the developer `docs/` folder. Tag `v1.0.0` points to `002b3b256`. Release run 43075639460 published installers for Linux (AppImage, deb, rpm), Windows (NSIS) and macOS (Intel and Apple Silicon), and `latest.json` names all four platforms. The first tag at `54de62094` built only macOS and Windows: its Linux leg stalled on a Canonical DNS outage (actions/runner-images#15296), so its unpublished draft and tag were replaced. Not checked: the published installers by hand on Windows and macOS, and the auto-update, which needs a later version. Installers are unsigned.
 
 ### Where phase A stands
 
