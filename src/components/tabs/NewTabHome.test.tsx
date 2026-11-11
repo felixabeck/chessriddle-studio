@@ -19,6 +19,7 @@ import { StaleFileGameError } from "@/state/fileStructureChange";
 import NewTabHome from "./NewTabHome";
 
 const mocks = vi.hoisted(() => ({
+  language: "en-US",
   available: vi.fn(),
   listing: { data: undefined as Entry[] | undefined, isLoading: true, error: undefined as unknown },
   databases: {
@@ -112,7 +113,7 @@ vi.mock("@tanstack/react-router", () => ({ useNavigate: () => mocks.navigate }))
 vi.mock("@/components/files/notifyError", () => ({ notifyUnlessCancelled: mocks.notify }));
 vi.mock("react-i18next", () => {
   const t = (key: string, values?: unknown) => (values ? key + JSON.stringify(values) : key);
-  return { useTranslation: () => ({ t, i18n: { language: "en-US" } }) };
+  return { useTranslation: () => ({ t, i18n: { language: mocks.language } }) };
 });
 vi.mock("./CreateRepertoireModal", () => ({ default: () => null }));
 vi.mock("./ImportModal", () => ({
@@ -195,6 +196,7 @@ async function open(name: string) {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
+  mocks.language = "en-US";
   trainingSessions.remove("home");
   mocks.available.mockReset().mockResolvedValue(false);
   vi.spyOn(i18n, "t").mockImplementation((...args: Parameters<typeof i18n.t>) => String(args[0]));
@@ -208,6 +210,7 @@ beforeEach(() => {
   mocks.feed = { games: [], loading: false, hasMore: false, incompleteCount: 0 };
   mocks.count.mockReset().mockResolvedValue(1);
   mocks.readGames.mockReset().mockResolvedValue(chapterGames());
+  mocks.getGame.mockReset().mockResolvedValue({ kind: "found", game });
   mocks.openFile.mockReset().mockResolvedValue("opened");
   mocks.openGame.mockResolvedValue("opened");
   mocks.info.mockResolvedValue({ status: "ready", game_count: 1, title: "Own games" });
@@ -246,8 +249,23 @@ test("a never-opened Library file renders its native modification seconds as a r
     error: undefined,
   };
   await render();
-  expect(rows()[0].textContent).toContain("a day ago");
+  expect(rows()[0].textContent).toContain("yesterday");
   expect(rows()[0].textContent).not.toMatch(/\d+ years ago/);
+});
+
+test("recent file dates follow the German interface language", async () => {
+  mocks.language = "de-DE";
+  store.set(recentFilesAtom, [
+    {
+      name: "Recent",
+      type: "game",
+      handle: handle("recent"),
+      lastOpened: Date.now() - 86_400_000,
+    },
+  ]);
+  await render();
+  expect(rows()[0].textContent).toMatch(/gestern|vor 1 Tag/);
+  expect(rows()[0].textContent).not.toContain("a day ago");
 });
 
 test("Library listing rows supply the file name for recents and let openFile derive the chapter tab name", async () => {
@@ -376,6 +394,125 @@ test("search finds a Library file absent from recents and activates player searc
   await open("Sicilian");
   await filter("repertoires");
   expect(mocks.feedArgs).toHaveBeenLastCalledWith(undefined, "Sicilian", false);
+});
+
+test("a second recent game retires the first recent fetch", async () => {
+  store.set(
+    recentFilesAtom,
+    [7, 8].map((gameId) => ({
+      kind: "database" as const,
+      database,
+      gameId,
+      name: `Recent ${gameId}`,
+      lastOpened: gameId,
+    })),
+  );
+  mocks.getGame.mockImplementation(async (_database, gameId) => ({
+    kind: "found",
+    game: { ...game, id: gameId },
+  }));
+  await render();
+  let finish!: (result: { kind: "found"; game: NormalizedGame }) => void;
+  mocks.getGame.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await open("Recent 7");
+  const signal = mocks.getGame.mock.lastCall![3]?.signal;
+  await open("Recent 8");
+  await act(async () => finish({ kind: "found", game }));
+  expect(mocks.openGame).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ game: expect.objectContaining({ id: 8 }) }),
+  );
+  expect(mocks.navigate).toHaveBeenCalledOnce();
+  expect(signal).toBeInstanceOf(AbortSignal);
+  expect(signal.aborted).toBe(true);
+  expect(mocks.notify).not.toHaveBeenCalled();
+});
+
+test("choosing a collection retires an in-flight recent open", async () => {
+  store.set(recentFilesAtom, [
+    { kind: "database", database, gameId: 7, name: "Recent 7", lastOpened: 1 },
+  ]);
+  mocks.databases.data = {
+    collections: [collection],
+    databases: [],
+    unread: [],
+    root: { kind: "databaseRoot", id: { id: "root" } },
+  };
+  const collectionGame = { ...game, id: 8 };
+  mocks.query.mockResolvedValue({ data: [collectionGame] });
+  await render();
+  let finish!: (result: { kind: "found"; game: NormalizedGame }) => void;
+  mocks.getGame.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await open("Recent 7");
+  const signal = mocks.getGame.mock.lastCall![3]?.signal;
+  await open("Own games");
+  await act(async () => finish({ kind: "found", game }));
+  expect(mocks.openGame).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ game: collectionGame }),
+  );
+  expect(mocks.navigate).toHaveBeenCalledOnce();
+  expect(signal).toBeInstanceOf(AbortSignal);
+  expect(signal.aborted).toBe(true);
+  expect(mocks.notify).not.toHaveBeenCalled();
+});
+
+test("changing the filter retires an in-flight collection open", async () => {
+  mocks.databases.data = {
+    collections: [collection],
+    databases: [],
+    unread: [],
+    root: { kind: "databaseRoot", id: { id: "root" } },
+  };
+  let finish!: (metadata: { status: "ready"; game_count: number; title: string }) => void;
+  mocks.info.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await render();
+  await open("Own games");
+  await filter("repertoires");
+  await act(async () => finish({ status: "ready", game_count: 1, title: "Own games" }));
+  expect(mocks.openGame).not.toHaveBeenCalled();
+  expect(mocks.navigate).not.toHaveBeenCalled();
+});
+
+test("choosing a file retires an in-flight collection open", async () => {
+  mocks.databases.data = {
+    collections: [collection],
+    databases: [],
+    unread: [],
+    root: { kind: "databaseRoot", id: { id: "root" } },
+  };
+  mocks.listing = {
+    data: [file("Repertoire", "repertoire")],
+    isLoading: false,
+    error: undefined,
+  };
+  let finish!: (metadata: { status: "ready"; game_count: number; title: string }) => void;
+  mocks.info.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await render();
+  await open("Own games");
+  await open("Repertoire");
+  await act(async () => finish({ status: "ready", game_count: 1, title: "Own games" }));
+  expect(mocks.openFile).toHaveBeenCalledOnce();
+  expect(mocks.openGame).not.toHaveBeenCalled();
+  expect(mocks.navigate).toHaveBeenCalledOnce();
 });
 
 test.each([1, 4])("a collection of %s games opens a game or its table", async (count) => {
@@ -597,7 +734,7 @@ test("a recent game keeps its relative last-opened time despite a known recorded
   ]);
   mocks.getGame.mockResolvedValue({ kind: "found", game: { ...game, date: "2026.10.01" } });
   await render();
-  expect(rows()[0].textContent).toContain("a day ago");
+  expect(rows()[0].textContent).toContain("yesterday");
   expect(rows()[0].textContent).not.toContain("2026.10.01");
 });
 

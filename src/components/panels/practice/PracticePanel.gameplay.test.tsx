@@ -55,6 +55,7 @@ vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, options?: unknown) => (options ? key + " " + JSON.stringify(options) : key),
+    i18n: { language: "en-US" },
   }),
 }));
 vi.mock("./RepertoireInfo", () => ({ default: () => null }));

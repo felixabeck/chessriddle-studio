@@ -1,5 +1,28 @@
 import { describe, expect, test } from "vitest";
-import { formatBytes, formatMoveNumber } from "./format";
+import { formatBytes, formatMoveNumber, formatRelativeTime } from "./format";
+
+describe("formatRelativeTime", () => {
+    const now = Date.UTC(2026, 10, 11, 12);
+    test.each([
+        [0, "now", "jetzt"],
+        [-45, "45 seconds ago", "vor 45 Sekunden"],
+        [45, "in 45 seconds", "in 45 Sekunden"],
+        [-60, "1 minute ago", "vor 1 Minute"],
+        [120, "in 2 minutes", "in 2 Minuten"],
+        [-3600, "1 hour ago", "vor 1 Stunde"],
+        [3 * 3600, "in 3 hours", "in 3 Stunden"],
+        [-24 * 3600, "yesterday", "gestern"],
+        [24 * 3600, "tomorrow", "morgen"],
+        [-29 * 24 * 3600, "29 days ago", "vor 29 Tagen"],
+        [-30 * 24 * 3600, "last month", "letzten Monat"],
+        [60 * 24 * 3600, "in 2 months", "in 2 Monaten"],
+        [-360 * 24 * 3600, "last year", "letztes Jahr"],
+        [720 * 24 * 3600, "in 2 years", "in 2 Jahren"],
+    ])("formats offset %i seconds in English and German", (seconds, english, german) => {
+        expect(formatRelativeTime(now + seconds * 1000, now, "en-US")).toBe(english);
+        expect(formatRelativeTime(now + seconds * 1000, now, "de-DE")).toBe(german);
+    });
+});
 
 describe("formatBytes", () => {
     test.each([

@@ -7,6 +7,8 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 vi.mock("@/hooks/useScaledMaxWidth", () => ({ useScaledMaxWidth: () => false }));
 
 const fixtures = vi.hoisted(() => ({
+  language: "en-US",
+  stats: { due: 1, nextDue: null as Date | null, learned: 0, total: 1, unseen: 1 },
   atoms: {
     currentEvalOpen: Symbol("current-eval-open"),
     currentInvisible: Symbol("current-invisible"),
@@ -115,7 +117,7 @@ vi.mock("@/components/files/opening", async (importOriginal) => ({
   buildFromTree: fixtures.buildFromTree,
   formatReviewInterval: () => "",
   getNextReviewTimes: () => null,
-  getStats: () => ({ due: 1, nextDue: null, learned: 0, total: 1, unseen: 1 }),
+  getStats: () => fixtures.stats,
   syncDeck: fixtures.syncDeck,
   updateCardPerformance: fixtures.updateCardPerformance,
 }));
@@ -238,8 +240,13 @@ vi.mock("@mantine/hooks", async () => {
 });
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { count?: number; cause?: string }) =>
-      options?.count === undefined ? key : `${key}:${options.count}`,
+    t: (key: string, options?: { count?: number; cause?: string; date?: string }) =>
+      options?.date !== undefined
+        ? `${key}:${options.date}`
+        : options?.count === undefined
+          ? key
+          : `${key}:${options.count}`,
+    i18n: { language: fixtures.language },
   }),
 }));
 vi.mock("ts-fsrs", async (importOriginal) => ({
@@ -293,6 +300,8 @@ let container: HTMLDivElement | undefined;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fixtures.language = "en-US";
+  fixtures.stats = { due: 1, nextDue: null, learned: 0, total: 1, unseen: 1 };
   fixtures.deck = deck();
   fixtures.node = { halfMoves: 0, san: "e4" };
   fixtures.grading = "auto";
@@ -327,6 +336,21 @@ afterEach(async () => {
   container?.remove();
   root = undefined;
   container = undefined;
+});
+
+test("the next due date follows the German interface language", async () => {
+  fixtures.language = "de-DE";
+  fixtures.stats = {
+    due: 0,
+    nextDue: new Date(2099, 0, 22, 15, 4),
+    learned: 1,
+    total: 1,
+    unseen: 0,
+  };
+  await rerenderPracticePanel();
+  expect(container?.textContent).toContain("Board.Practice.PracticedAll1");
+  expect(container?.textContent).toContain("Board.Practice.NextDue:22. Jan., 15:04");
+  expect(container?.textContent).not.toContain("Jan 22");
 });
 
 test("shows loading without an empty deck, reset, or session start", async () => {

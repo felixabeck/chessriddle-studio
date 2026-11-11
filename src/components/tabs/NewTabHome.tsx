@@ -50,7 +50,6 @@ import {
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import dayjs from "dayjs";
-import relativeTime from "dayjs/plugin/relativeTime";
 import { useTranslation } from "react-i18next";
 
 import { FileIcon } from "@/components/files/FileIcon";
@@ -66,8 +65,7 @@ import type { OwnGame } from "@/components/library/ownGamesFeed";
 import type { FileMetadata, FileType } from "@/components/files/file";
 import { databaseGameOpenedKey } from "@/state/lastOpened";
 import { databaseMetadataFailureMessage, query_games } from "@/utils/db";
-
-dayjs.extend(relativeTime);
+import { formatRelativeTime } from "@/utils/format";
 
 type HomeRow =
   | LibraryRow
@@ -167,7 +165,7 @@ function LibraryItemRow({
             <Group gap={4} wrap="nowrap" className={classes.time}>
               <Clock size={14} />
               <Text size="xs" c="dimmed">
-                {dayjs(time).fromNow()}
+                {formatRelativeTime(time, Date.now(), i18n.language)}
               </Text>
             </Group>
           </Tooltip>
@@ -223,6 +221,8 @@ export default function NewTabHome({ id }: { id: string }) {
   const [chapters, setChapters] = useState<Map<number, GameSelectorRow>>(new Map());
   const [reloadGeneration, setReloadGeneration] = useState(0);
   const collapseFile = useCallback(() => {
+    opening.current?.abort();
+    opening.current = null;
     fileRequest.current?.controller.abort();
     fileRequest.current = null;
     setCountingFile(null);
@@ -352,9 +352,12 @@ export default function NewTabHome({ id }: { id: string }) {
   }, [recentFiles, updateRecentFiles]);
 
   const openRecentFile = useCallback(
-    async (file: Extract<RecentFile, { kind: "database" }>) => {
+    async (file: Extract<RecentFile, { kind: "database" }>, signal: AbortSignal) => {
       try {
-        const result = await tauri.getDbGame(file.database, file.gameId, file.linked ?? null);
+        const result = await tauri.getDbGame(file.database, file.gameId, file.linked ?? null, {
+          signal,
+        });
+        if (signal.aborted) return;
         if (result.kind === "missing") {
           setRecentFiles((current) =>
             current.filter((entry) => recentFileKey(entry) !== recentFileKey(file)),
@@ -376,7 +379,7 @@ export default function NewTabHome({ id }: { id: string }) {
         });
         if (tabId !== null) navigate({ to: "/" });
       } catch (cause) {
-        notifyUnlessCancelled(t("Common.Error"), cause);
+        if (!signal.aborted) notifyUnlessCancelled(t("Common.Error"), cause);
       }
     },
     [setTabs, setRecentFiles, addRecentFile, navigate, t, id, store],
@@ -427,15 +430,12 @@ export default function NewTabHome({ id }: { id: string }) {
       return;
     }
     collapseFile();
-    if (row.kind === "game" && row.recent) {
-      await openRecentFile(row.recent);
-      return;
-    }
-    opening.current?.abort();
     const controller = new AbortController();
     opening.current = controller;
     try {
-      if (row.kind === "database") {
+      if (row.kind === "game" && row.recent) {
+        await openRecentFile(row.recent, controller.signal);
+      } else if (row.kind === "database") {
         if (row.database.type !== "success") throw new Error(row.database.error);
         openDatabaseTable(row.database, navigate);
       } else if (row.kind === "collection" && row.collection.database) {

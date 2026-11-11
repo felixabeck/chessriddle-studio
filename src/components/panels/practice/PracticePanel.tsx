@@ -18,7 +18,6 @@ import {
 import { useToggle } from "@mantine/hooks";
 import AppModal from "../../common/AppModal";
 import { Undo2, ArrowRight, BookOpen, Check, Info, Target, X } from "lucide-react";
-import dayjs from "dayjs";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -91,7 +90,7 @@ const PRACTICE_ADVANCE_DELAY_MS = 300;
 const PRACTICE_START_BUTTON_STYLE = { scrollMarginBlock: "var(--mantine-spacing-xs)" };
 
 function PracticePanel() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const compactTabs = useScaledMaxWidth(COMPACT_PANE_TABS_WIDTH_EM);
 
   const store = useContext(TreeStateContext)!;
@@ -874,7 +873,12 @@ function PracticePanel() {
                                 <Text ta="center" fz="sm" c="dimmed">
                                   {stats.nextDue &&
                                     t("Board.Practice.NextDue", {
-                                      date: dayjs(stats.nextDue).format("MMM D, HH:mm"),
+                                      date: new Intl.DateTimeFormat(i18n.language, {
+                                        month: "short",
+                                        day: "numeric",
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      }).format(stats.nextDue),
                                     })}
                                 </Text>
                               </Stack>

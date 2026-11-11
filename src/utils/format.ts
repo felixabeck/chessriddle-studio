@@ -3,6 +3,27 @@ export function formatNumber(value?: number): string {
     return Intl.NumberFormat().format(value);
 }
 
+export function formatRelativeTime(time: number, now: number, locale: string): string {
+    const seconds = (time - now) / 1000;
+    const magnitude = Math.abs(seconds);
+    const [unit, divisor]: [Intl.RelativeTimeFormatUnit, number] =
+        magnitude < 60
+            ? ["second", 1]
+            : magnitude < 60 * 60
+              ? ["minute", 60]
+              : magnitude < 24 * 60 * 60
+                ? ["hour", 60 * 60]
+                : magnitude < 30 * 24 * 60 * 60
+                  ? ["day", 24 * 60 * 60]
+                  : magnitude < 12 * 30 * 24 * 60 * 60
+                    ? ["month", 30 * 24 * 60 * 60]
+                    : ["year", 12 * 30 * 24 * 60 * 60];
+    return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(
+        Math.trunc(seconds / divisor),
+        unit,
+    );
+}
+
 export function formatBytes(bytes: bigint | number | string, decimals = 2) {
     const k = 1024;
     const dm = decimals < 0 ? 0 : decimals;
