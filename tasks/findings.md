@@ -23199,6 +23199,9 @@ Handled (drain aaa22b94, 2026-11-11). `rg 'fuse\.js|Fuse\(|from "fuse' src e2e s
 * **Handled 2026-11-11** in `e1c02453`. New `formatRelativeTime(time, now, locale)` in `src/utils/format.ts` (Intl.RelativeTimeFormat, `numeric: "auto"`) replaces `dayjs().fromNow()` in New Tab Home; Practice next-due uses `Intl.DateTimeFormat(i18n.language, …)`. The dayjs relativeTime plugin import is gone. English output moves from dayjs wording ("a day ago") to Intl wording ("yesterday"). Rejected: loading dayjs locale packs (bundle cost, second locale source). Tests: en/de unit table in `format.test.ts`, German New Tab row test, German Practice next-due test.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"ee918274ae74f004139a4969a80deebd6b9df9a61fe55f118718f4512b90d86b","header_sha256":"4e55240d14be791bc9e3357cb764b0d0d3c476fd87e63d660afdc0cd9813a6a5","header_status":"handled","input_sha256":"2a75bacde89ba495ec5468a4e6d843c2fd936dfe8de5d1acaab9d765f363dd5d","kind":"mutation-receipt","operation":"0efe1fa93c1b380675d9ed50895bec23a47a7729b966ba141ff414f6d026b08d","options":{"section":null},"request_id_sha256":null,"results":["f-20261111-70"],"target":"f-20261111-70","v":1} -->
 
+* **Rebased before push 2026-11-11:** the commits cited above landed as `0714c588` (was `e1c02453`), `38389098` (was `856d1dbf`) and `27b62c3b` (was `539517f8`).
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"d194cd80fb9a61247acf06a66b057ec01bdb23ac6f1f9b2be4868771c7ce1b8f","input_sha256":"ea483b7ab72519c51a1aec3547d37d5970548bbef24925dac80abc25126d68c3","kind":"mutation-receipt","operation":"5416c3ab495994e1b0b8512418930c1d158a007a0ed45b7c29f7d31a6e1c0a19","options":{"section":null},"request_id_sha256":null,"results":["f-20261111-70"],"target":"f-20261111-70","v":1} -->
+
 ---
 
 ## 2026-11-11 — filed through the inbox spool
