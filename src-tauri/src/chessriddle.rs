@@ -1145,6 +1145,7 @@ mod tests {
         settings_patches: Mutex<Vec<serde_json::Value>>,
         training_submissions: AtomicUsize,
         delayed_submit: AtomicBool,
+        too_short_submit: AtomicBool,
         credentials: Arc<ChessRiddleCredentials>,
     }
 
@@ -1258,6 +1259,13 @@ mod tests {
             uuid::Uuid::parse_str(headers.get("Idempotency-Key").unwrap().to_str().unwrap())
                 .is_ok()
         );
+        if state.too_short_submit.load(Ordering::SeqCst) {
+            // The server keeps the flag on its final answer to a revealed line.
+            return (
+                StatusCode::CREATED,
+                include_str!("chessriddle_training_samples/verdict_too_short.json"),
+            );
+        }
         assert_eq!(
             body,
             serde_json::from_str::<serde_json::Value>(include_str!(
@@ -1387,6 +1395,7 @@ mod tests {
                 settings_patches: Mutex::new(Vec::new()),
                 training_submissions: AtomicUsize::new(0),
                 delayed_submit: AtomicBool::new(false),
+                too_short_submit: AtomicBool::new(false),
                 credentials,
             });
             let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -1817,6 +1826,32 @@ mod tests {
             })
         ));
         assert!(fixture.state.training_queries.lock().unwrap().is_empty());
+        fixture.stop().await;
+    }
+
+    #[tokio::test]
+    async fn training_submit_makes_a_revealed_too_short_verdict_final() {
+        let (_temp, credentials) = credentials(Arc::new(TestStore::default()), false).await;
+        credentials
+            .store("user".into(), "initial-refresh".into())
+            .await
+            .unwrap();
+        let fixture = Fixture::new(credentials);
+        fixture.state.too_short_submit.store(true, Ordering::SeqCst);
+        let owner = fixture.owner();
+        for (solution_shown, too_short) in [(false, true), (true, false)] {
+            let reply = owner
+                .request(Action::Submit(TrainingSubmission {
+                    solution_shown,
+                    ..training_submission()
+                }))
+                .await
+                .unwrap();
+            let Reply::Verdict(verdict) = reply else {
+                panic!("expected a verdict");
+            };
+            assert_eq!(verdict.too_short, too_short);
+        }
         fixture.stop().await;
     }
 
