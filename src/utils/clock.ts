@@ -11,11 +11,12 @@ function calculateProgress(
     if (clock === null) {
         return 0;
     }
-    if (tc) {
-        return clock / (tc.seconds / 1000);
-    }
-    if (timeControl) {
-        return clock / (timeControl[0].seconds / 1000);
+    if (tc || timeControl) {
+        const seconds = tc ? tc.seconds : timeControl?.[0]?.seconds;
+        if (seconds === undefined || !Number.isFinite(seconds)) {
+            return 0;
+        }
+        return clock / (seconds / 1000);
     }
     if (root.children.length > 0 && root.children[0].clock !== undefined) {
         return clock / root.children[0].clock;
@@ -36,7 +37,7 @@ type ClockInfo = {
     value: number | undefined;
 };
 
-function parseTimeControl(timeControl: string): TimeControl {
+function parseTimeControl(timeControl: string): TimeControl | null {
     const fields = timeControl.split(":");
     const timeControlFields: TimeControl = [];
     for (const field of fields) {
@@ -58,7 +59,7 @@ function parseTimeControl(timeControl: string): TimeControl {
         }
         timeControlFields.push(timeControlField);
     }
-    return timeControlFields;
+    return timeControlFields.length > 0 ? timeControlFields : null;
 }
 
 export function getClockInfo({
@@ -87,12 +88,12 @@ export function getClockInfo({
     let blackTc: TimeControlField | null = null;
 
     if (headers.white_time_control) {
-        whiteTc = parseTimeControl(headers.white_time_control)[0];
+        whiteTc = parseTimeControl(headers.white_time_control)?.[0] ?? null;
     } else if (timeControl) {
         whiteTc = timeControl[0];
     }
     if (headers.black_time_control) {
-        blackTc = parseTimeControl(headers.black_time_control)[0];
+        blackTc = parseTimeControl(headers.black_time_control)?.[0] ?? null;
     } else if (timeControl) {
         blackTc = timeControl[0];
     }
