@@ -23526,3 +23526,19 @@ Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates th
 * **Fix:** After computing hours, minutes, and the one-decimal remainder, if the rounded tenths equal 60, set the display seconds to `0` and carry into minutes (and hours if needed). Add a regression that `formatClock(59950 / 1000)` and `formatClock(59.96)` are `01:00.0` (or the chosen truncated form), never `00:60.0`.
 * **Proof:** Ephemeral Vitest `src/utils/sweep9_probe.test.ts` on HEAD `a276f9917`, removed afterwards (tree clean). `formatClock(59.96)`, `formatClock(59960 / 1000)`, and `formatClock(59950 / 1000)` were all `"00:60.0"`; `formatClock(59.94)` was `"00:59.9"`. No `tasks/decisions.md` entry pins last-minute display to an uncarried tenth.
 * **Found by:** Grok Bot, quality review (t26u), HEAD `a276f9917`.
+
+---
+
+## 2026-11-11 — filed through the inbox spool
+
+### Clock progress is NaN (or Infinity) when the first move's clock is 0 and the game has no TimeControl
+
+* **ID:** f-20261111-94 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** ninth-sweep quality review (Felix t26u) at HEAD `a276f9917`, dense-algorithm second-read lens (clock/time-control math)
+* **Where:** `src/utils/clock.ts` `calculateProgress` (~20-21): if there is no per-side or shared TimeControl, the first child's `clock` is used as the initial time and the function returns `clock / root.children[0].clock` with no zero/non-finite guard. `Clock.tsx` (~61-64) feeds `progress * 100` into Mantine `Progress`. A zero first-move clock is a supported tree value (`src/utils/tests/treeReducer.test.ts` "preserves a zero `[%clk 0:00:00]` clock as a numeric zero"). Distinct from handled `f-20261106-26` / `f-20261106-27` (live-game increment and minimum initial time).
+* **Defect:** A zero denominator yields `NaN` when the displayed remaining time is also 0, and `Infinity` when it is positive. The same division is unguarded for a TimeControl field whose `seconds` is 0 (`tc.seconds / 1000`).
+* **Failure scenario:** The user opens a PGN with no TimeControl tag whose first timed move is `{[%clk 0:00:00]}` (a flagged first move, or a file that preserved a numeric zero clock) and looks at the clock strip on that move. White's remaining time shows `00:00.0` but the progress bar receives `NaN` and does not render a meaningful fill. Stepping to a later move that still has a positive clock, with the first child still at 0, feeds `Infinity` instead.
+* **Fix:** Treat a missing, zero, or non-finite denominator as progress `0` (or clamp to `[0, 1]`). Add a regression that `getClockInfo` for a first child with `clock === 0` and no TimeControl header returns a finite progress of 0 for the side whose remaining time is 0.
+* **Proof:** Ephemeral Vitest `src/utils/sweep9_probe.test.ts` on HEAD `a276f9917`, removed afterwards (tree clean). After `1. e4` with `clock: 0`, no `time_control` header, `currentClock: 0`, and Black to move, `getClockInfo` returned `white.value === 0` and `white.progress` `NaN`. No `tasks/decisions.md` entry requires unclamped division by the first-move clock.
+* **Found by:** Grok Bot, quality review (t26u), HEAD `a276f9917`.
