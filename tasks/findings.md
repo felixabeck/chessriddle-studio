@@ -23775,7 +23775,7 @@ Handled in 462223d93 (drain session 8a82f57e-ddf5-4981-abce-8394b8e730a9). The P
 
 ### "All Captured" material counts a promoted pawn as a capture, so the opponent is shown holding a pawn that is still on the board as a piece
 
-* **ID:** f-20261112-02 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-02 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** fourteenth-sweep quality review (Felix t26u) at HEAD `341275b7a`, material display
 * **Where:** `getMaterialDiff` (`src/utils/chess.ts` ~824-855) derives `whiteCaptured` / `blackCaptured` as `max(0, startingCounts[role] - opponentCount)` with fixed orthodox starting counts (`p: 8`, `n: 2`, `b: 2`, `r: 2`, `q: 1`). A pawn that leaves the pawn count by promotion reduces that side's pawn total without increasing the opponent's, so it is counted as a capture by the opponent. `ShowMaterial` (`src/components/common/ShowMaterial.tsx` ~22-26, ~29-31) uses those captured maps when the user setting `materialDisplayAtom` is `"all"`, which Settings labels "All Captured" (`Settings.MaterialDisplay.All` / `.Desc`: "Show net material difference or all captured pieces"). Difference mode (`mode === "diff"`, the default) uses `pieces` (signed role counts) and is not this bug. Distinct from the parked clock drafts and from open `f-20261111-46` / `f-20261111-47` / parked `timecontrol-dash.md` (clock display, not material).
@@ -23784,6 +23784,8 @@ Handled in 462223d93 (drain session 8a82f57e-ddf5-4981-abce-8394b8e730a9). The P
 * **Fix:** Count captures from the actual move list (or from captured-unit annotations), not from missing-versus-starting-counts. At minimum, when a side has more than the starting number of a higher role, do not attribute the corresponding missing pawns (or missing minor pieces after underpromotion) as captures by the opponent. Add a regression that after a standard-game e-pawn promotion to a queen, with Black still having eight pawns, `blackCaptured.p` is 0 and difference-mode `pieces` stay `{ p: -1, q: 1, … }` / `diff === 8`.
 * **Proof:** Ephemeral Vitest `src/sweep14_material_probe.test.ts` on HEAD `341275b7a`, removed afterwards (tree clean). Production `getMaterialDiff` on `rnbqQbnr/pppppppp/k7/8/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1` returned `pieces { p: -1, n: 0, b: 0, r: 0, q: 1 }`, `whiteCaptured` all 0, `blackCaptured { p: 1, n: 0, b: 0, r: 0, q: 0 }`, `diff` 8.
 * **Found by:** Grok Bot, quality review (t26u), HEAD `341275b7a`.
+* **Closed:** 2026-11-12, commit `82bdb6123ecb678bad8fbf5056eeba07b42121fa` (fix(material): do not count promotions as All-Captured pawns). Verified as an ancestor of origin/master.
+<!-- ledger-meta {"command":"set-header","effect_lines":1,"effect_sha256":"c3cee4a5742ba2d6c5396cc81505371644178b321cd0f10954ec7861ee365b1f","header_sha256":"0f72ad3f662c82a906db06cb69600f3a77f6a003477dd96e38c9a96ed21eeca5","header_status":"handled","input_sha256":"eb2c17917f56eec2c153ee6d7578d086fa19705ae17d497f0b83d71730b2cb5d","kind":"mutation-receipt","operation":"f3e8a747d6eb946bd72803b2ee1cbb141c656de0a07428e103faf328ce2e0dd0","options":{"headers":{"Status":"handled"},"section":null},"request_id_sha256":null,"results":["f-20261112-02"],"target":"f-20261112-02","v":1} -->
 
 ---
 
