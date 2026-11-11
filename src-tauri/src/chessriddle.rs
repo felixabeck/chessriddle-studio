@@ -695,7 +695,8 @@ impl Worker {
         if status != 201 {
             return Err(training::server_error(status, &response));
         }
-        training::verdict(&response, &request.decision_fen).map(Reply::Verdict)
+        training::verdict(&response, &request.decision_fen, request.solution_shown)
+            .map(Reply::Verdict)
     }
 
     async fn connect(&mut self, opener: BrowserOpener) -> Result<AccountStatus, AccountError> {

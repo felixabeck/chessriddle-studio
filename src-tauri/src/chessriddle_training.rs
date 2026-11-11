@@ -407,7 +407,14 @@ struct DescriptorWire {
     params: Option<serde_json::Value>,
 }
 
-pub(crate) fn verdict(body: &[u8], decision_fen: &str) -> Result<TrainingVerdict, AccountError> {
+/// `solution_shown` makes the verdict final: ChessRiddle never offers a go-deeper continuation after
+/// a reveal, yet its final answer to a correct but too-short revealed line still carries
+/// `is_on_path_too_short` (`go_deeper_eligible` and `final_on_path_too_short` on the server).
+pub(crate) fn verdict(
+    body: &[u8],
+    decision_fen: &str,
+    solution_shown: bool,
+) -> Result<TrainingVerdict, AccountError> {
     let wire: VerdictWire = serde_json::from_slice(body).map_err(|_| AccountError::Server)?;
     let mut pos = position(decision_fen)?;
     let mut line: Vec<String> = wire
@@ -445,7 +452,7 @@ pub(crate) fn verdict(body: &[u8], decision_fen: &str) -> Result<TrainingVerdict
     };
     Ok(TrainingVerdict {
         is_correct: wire.is_correct,
-        too_short: wire.is_on_path_too_short,
+        too_short: wire.is_on_path_too_short && !solution_shown,
         rating_change: wire.rating_change,
         player_rating: wire.player_rating,
         puzzle_rating: wire.puzzle_rating,
@@ -854,8 +861,12 @@ mod tests {
         let mut wire: Value = serde_json::from_str(VERDICT).unwrap();
         for path in [json!([-1]), json!([1, 0]), json!([0, 1, 0])] {
             wire["incorrect_move_path"] = path.clone();
-            let dto =
-                verdict(&serde_json::to_vec(&wire).unwrap(), &request().decision_fen).unwrap();
+            let dto = verdict(
+                &serde_json::to_vec(&wire).unwrap(),
+                &request().decision_fen,
+                false,
+            )
+            .unwrap();
             assert_eq!(serde_json::to_value(dto.incorrect_move_path).unwrap(), path);
         }
         for path in [
@@ -866,8 +877,12 @@ mod tests {
             json!([]),
         ] {
             wire["incorrect_move_path"] = path;
-            let dto =
-                verdict(&serde_json::to_vec(&wire).unwrap(), &request().decision_fen).unwrap();
+            let dto = verdict(
+                &serde_json::to_vec(&wire).unwrap(),
+                &request().decision_fen,
+                false,
+            )
+            .unwrap();
             assert!(dto.incorrect_move_path.is_none());
             assert!(dto.is_correct);
         }
@@ -939,7 +954,8 @@ mod tests {
             .unwrap()
             .unwrap()
             .decision_fen;
-        let dto = serde_json::to_value(verdict(VERDICT.as_bytes(), &decision).unwrap()).unwrap();
+        let dto =
+            serde_json::to_value(verdict(VERDICT.as_bytes(), &decision, false).unwrap()).unwrap();
         assert_eq!(dto["correctVariation"], json!(["e7e5", "g1f3", "b8c6"]));
         let mut keys: Vec<_> = dto
             .as_object()
@@ -979,15 +995,25 @@ mod tests {
         let short = verdict(
             include_str!("chessriddle_training_samples/verdict_too_short.json").as_bytes(),
             &decision,
+            false,
         )
         .unwrap();
         assert!(short.too_short);
         assert!(short.correct_variation.is_empty());
+        // The server's final answer to a revealed too-short line keeps the flag; it is not a
+        // continuation (live production 2026-11-11: Studio stayed in "continue entering moves").
+        let revealed = verdict(
+            include_str!("chessriddle_training_samples/verdict_too_short.json").as_bytes(),
+            &decision,
+            true,
+        )
+        .unwrap();
+        assert!(!revealed.too_short);
         let mut wire: Value = serde_json::from_str(VERDICT).unwrap();
         wire["feedback_descriptor"] =
             json!({"code":"unknown server text", "params":{"context":"arbitrary"}});
         assert!(matches!(
-            verdict(&serde_json::to_vec(&wire).unwrap(), &decision)
+            verdict(&serde_json::to_vec(&wire).unwrap(), &decision, false)
                 .unwrap()
                 .feedback_code,
             TrainingFeedbackCode::Correct
@@ -1010,7 +1036,12 @@ mod tests {
     fn stored_verdict_defaults_missing_too_short_to_false() {
         let mut wire: Value = serde_json::from_str(VERDICT).unwrap();
         wire.as_object_mut().unwrap().remove("is_on_path_too_short");
-        let dto = verdict(&serde_json::to_vec(&wire).unwrap(), &request().decision_fen).unwrap();
+        let dto = verdict(
+            &serde_json::to_vec(&wire).unwrap(),
+            &request().decision_fen,
+            false,
+        )
+        .unwrap();
         assert!(!dto.too_short);
         assert!(dto.is_correct);
         assert_eq!(dto.rating_change, 8.0);
@@ -1020,7 +1051,12 @@ mod tests {
     fn stored_verdict_defaults_missing_rating_pending_to_false() {
         let mut wire: Value = serde_json::from_str(VERDICT).unwrap();
         wire.as_object_mut().unwrap().remove("rating_pending");
-        let dto = verdict(&serde_json::to_vec(&wire).unwrap(), &request().decision_fen).unwrap();
+        let dto = verdict(
+            &serde_json::to_vec(&wire).unwrap(),
+            &request().decision_fen,
+            false,
+        )
+        .unwrap();
         assert!(!dto.rating_pending);
         assert!(dto.is_correct);
         assert_eq!(dto.rating_change, 8.0);
@@ -1030,7 +1066,12 @@ mod tests {
     fn stored_verdict_maps_null_rated_to_false() {
         let mut wire: Value = serde_json::from_str(VERDICT).unwrap();
         wire["rated"] = Value::Null;
-        let dto = verdict(&serde_json::to_vec(&wire).unwrap(), &request().decision_fen).unwrap();
+        let dto = verdict(
+            &serde_json::to_vec(&wire).unwrap(),
+            &request().decision_fen,
+            false,
+        )
+        .unwrap();
         assert!(!dto.rated);
         assert!(dto.is_correct);
         assert_eq!(dto.rating_change, 8.0);
@@ -1040,7 +1081,12 @@ mod tests {
     fn stored_verdict_discards_the_whole_variation_on_a_non_uci_token() {
         let mut wire: Value = serde_json::from_str(VERDICT).unwrap();
         wire["correct_variation"] = json!("e7e5 Nf3");
-        let dto = verdict(&serde_json::to_vec(&wire).unwrap(), &request().decision_fen).unwrap();
+        let dto = verdict(
+            &serde_json::to_vec(&wire).unwrap(),
+            &request().decision_fen,
+            false,
+        )
+        .unwrap();
         assert!(dto.correct_variation.is_empty());
         assert!(dto.is_correct);
         assert_eq!(dto.rating_change, 8.0);
@@ -1050,7 +1096,12 @@ mod tests {
     fn stored_verdict_discards_the_whole_variation_on_an_illegal_move() {
         let mut wire: Value = serde_json::from_str(VERDICT).unwrap();
         wire["correct_variation"] = json!("e7e5 e2e5");
-        let dto = verdict(&serde_json::to_vec(&wire).unwrap(), &request().decision_fen).unwrap();
+        let dto = verdict(
+            &serde_json::to_vec(&wire).unwrap(),
+            &request().decision_fen,
+            false,
+        )
+        .unwrap();
         assert!(dto.correct_variation.is_empty());
         assert!(dto.is_correct);
         assert_eq!(dto.rating_change, 8.0);
@@ -1063,8 +1114,12 @@ mod tests {
             wire["incorrect_move_uci"] = json!("e7e5");
             wire["correct_move_uci"] = json!("d7d5");
             wire[field] = json!("server prose");
-            let dto =
-                verdict(&serde_json::to_vec(&wire).unwrap(), &request().decision_fen).unwrap();
+            let dto = verdict(
+                &serde_json::to_vec(&wire).unwrap(),
+                &request().decision_fen,
+                false,
+            )
+            .unwrap();
             if field == "incorrect_move_uci" {
                 assert!(dto.incorrect_move.is_none());
                 assert_eq!(dto.correct_move.as_deref(), Some("d7d5"));
