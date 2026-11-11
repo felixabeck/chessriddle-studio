@@ -342,7 +342,7 @@ test("a child without a move has no arrow", () => {
   expect(childMoveArrow(defaultTree().root, "variation")).toBeNull();
 });
 
-test("imported six-color arrows and squares reach the board with distinct brushes and legacy appearances", () => {
+test("imported six-color arrows and squares reach the board with distinct brushes and their appearances", () => {
   const parsed = splitPgnComment(
     "[%cal Ra1a3,Gb1b3,Yc1c3,Bd1d3,Oe1e3,Cf1f3,Xg1g3] [%csl Ra4,Gb4,Yc4,Bd4,Oe4,Cf4]",
   );
@@ -370,7 +370,11 @@ test("imported six-color arrows and squares reach the board with distinct brushe
     new Set(["red", "green", "yellow", "blue", "orange", "cyan"].map((name) => brushes[name].color))
       .size,
   ).toBe(6);
-  for (const [name, brush] of Object.entries(defaults().drawable.brushes)) {
+  // Yellow is deliberately a clear yellow so it stays distinct from orange; the rest keep
+  // chessground's appearance.
+  expect(brushes.yellow).toEqual({ key: "y", color: "#e8c500", opacity: 1, lineWidth: 10 });
+  const { yellow: _replaced, ...unchanged } = defaults().drawable.brushes;
+  for (const [name, brush] of Object.entries(unchanged)) {
     expect(brushes[name]).toEqual(brush);
   }
 });

@@ -1,0 +1,33 @@
+diff --git a/dist/draw.js b/dist/draw.js
+index 3d3cd72449d19a96174e1f9399989058f87206c6..e0864694a4519bf11e68614fee5977a785353b23 100644
+--- a/dist/draw.js
++++ b/dist/draw.js
+@@ -1,6 +1,5 @@
+ import { unselect, cancelMove, getKeyAtDomPos, getSnappedKeyAtDomPos, whitePov } from './board.js';
+ import { eventPosition, isRightButton } from './util.js';
+-const brushes = ['green', 'red', 'blue', 'yellow'];
+ export function start(state, e) {
+     // support one finger touch only
+     if (e.touches && e.touches.length > 1)
+@@ -71,10 +70,18 @@ export function clear(state) {
+ }
+ export const sameEndpoints = (s1, s2) => s1.orig === s2.orig && s1.dest === s2.dest;
+ export const sameColor = (s1, s2) => s1.brush === s2.brush;
++// ChessRiddle Studio: six drawing colours, one modifier combination each. Shift and Ctrl/Cmd count
++// only on the right button, because Shift+left-click also starts a drawing. Ctrl wins over Shift.
+ function eventBrush(e) {
+-    const modA = (e.shiftKey || e.ctrlKey) && isRightButton(e);
+-    const modB = e.altKey || e.metaKey || e.getModifierState?.('AltGraph');
+-    return brushes[(modA ? 1 : 0) + (modB ? 2 : 0)];
++    const right = isRightButton(e);
++    const ctrl = (e.ctrlKey || e.metaKey) && right;
++    const shift = e.shiftKey && right;
++    const alt = e.altKey || !!e.getModifierState?.('AltGraph');
++    if (ctrl)
++        return alt ? 'cyan' : 'orange';
++    if (shift)
++        return alt ? 'yellow' : 'red';
++    return alt ? 'blue' : 'green';
+ }
+ function addShape(drawable, cur) {
+     const similar = drawable.shapes.find(s => sameEndpoints(s, cur));

@@ -53,6 +53,35 @@ test("settings-responsive: preserves keyboard focus at narrow 200% font scale", 
     await capture("settings-about-support");
 });
 
+test("settings-responsive: keybinds list the six drawing colours and their right-click modifiers", async ({
+    page,
+    assertNoHorizontalOverflow,
+    capture,
+}) => {
+    await page.setViewportSize({ width: 1280, height: 1000 });
+    await page.goto("/settings");
+    const keybinds = page.getByRole("tab", { name: /keybinds/i });
+    await keybinds.click();
+    await expect(keybinds).toHaveAttribute("aria-selected", "true");
+    const expected = {
+        green: "Right-click",
+        red: "shift+Right-click",
+        blue: "alt+Right-click",
+        yellow: "shift+alt+Right-click",
+        orange: "ctrl+Right-click",
+        cyan: "ctrl+alt+Right-click",
+    };
+    for (const [color, gesture] of Object.entries(expected)) {
+        const row = page.getByTestId(`drawing-color-${color}`);
+        await expect(row).toContainText(color, { ignoreCase: true });
+        await expect(row.locator("kbd")).toHaveText(gesture.split("+"));
+    }
+    const drawing = page.getByText("Drawing", { exact: true });
+    await drawing.scrollIntoViewIfNeeded();
+    await assertNoHorizontalOverflow();
+    await capture("settings-keybinds-drawing");
+});
+
 test("settings-responsive: uses the fixed accent and retains scheme selection", async ({
     page,
 }) => {

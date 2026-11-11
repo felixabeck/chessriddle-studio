@@ -1,4 +1,4 @@
-import type { DrawShape } from "@lichess-org/chessground/draw";
+import type { DrawBrush, DrawShape } from "@lichess-org/chessground/draw";
 import { defaults } from "@lichess-org/chessground/state";
 import { makeSquare, parseSquare } from "chessops";
 import type { CommentShape } from "chessops/pgn";
@@ -7,22 +7,35 @@ const legacyBrushes = defaults().drawable.brushes;
 export const PGN_COMMENT_COMMAND = /\s?\[%([A-Za-z0-9_]+)(\s[^\]]*)?\]\s?/g;
 
 // PGN identities, including O = Orange and C = Cyan: https://pgn.echecs.dev/
-// Keep the established four brush appearances. PGN does not encode source-application RGB values.
+// PGN does not encode source-application RGB values. Yellow is a clear yellow, not chessground's
+// orange-yellow, so it stays distinct from orange. The drawing modifiers live in the chessground
+// patch (patches/@lichess-org__chessground@10.1.1.patch) and are listed by DRAWING_MODIFIERS.
 export const PGN_DRAWING_COLORS = {
     G: { name: "green", brush: legacyBrushes.green },
     R: { name: "red", brush: legacyBrushes.red },
-    Y: { name: "yellow", brush: legacyBrushes.yellow },
+    Y: { name: "yellow", brush: { key: "y", color: "#e8c500", opacity: 1, lineWidth: 10 } },
     B: { name: "blue", brush: legacyBrushes.blue },
     O: { name: "orange", brush: { key: "o", color: "#ff6600", opacity: 1, lineWidth: 10 } },
     C: { name: "cyan", brush: { key: "c", color: "#00bcd4", opacity: 1, lineWidth: 10 } },
 } as const;
+
+/** Right-click modifiers per drawing colour, as implemented by the chessground patch. */
+export const DRAWING_MODIFIERS: { color: DrawingColor; modifiers: ("shift" | "ctrl" | "alt")[] }[] =
+    [
+        { color: "green", modifiers: [] },
+        { color: "red", modifiers: ["shift"] },
+        { color: "blue", modifiers: ["alt"] },
+        { color: "yellow", modifiers: ["shift", "alt"] },
+        { color: "orange", modifiers: ["ctrl"] },
+        { color: "cyan", modifiers: ["ctrl", "alt"] },
+    ];
 
 export type DrawingColor = (typeof PGN_DRAWING_COLORS)[keyof typeof PGN_DRAWING_COLORS]["name"];
 export type PgnDrawing = Omit<CommentShape, "color"> & { color: DrawingColor };
 
 export const pgnDrawingBrushes = Object.fromEntries(
     Object.values(PGN_DRAWING_COLORS).map(({ name, brush }) => [name, brush]),
-);
+) as Record<DrawingColor, DrawBrush>;
 
 function drawingCode(brush: string | undefined): string | undefined {
     return Object.entries(PGN_DRAWING_COLORS).find(([, color]) => color.name === brush)?.[0];

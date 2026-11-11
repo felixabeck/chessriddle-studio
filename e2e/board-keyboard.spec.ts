@@ -807,7 +807,7 @@ test("board-keyboard: PGN imports render six named arrow and square colors despi
     const colors = {
         red: "#882020",
         green: "#15781B",
-        yellow: "#e68f00",
+        yellow: "#e8c500",
         blue: "#003088",
         orange: "#ff6600",
         cyan: "#00bcd4",

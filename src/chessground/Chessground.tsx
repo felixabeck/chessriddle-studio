@@ -12,6 +12,7 @@ import {
   boardWoodTextureAtom,
   moveMethodAtom,
 } from "@/state/atoms";
+import { pgnDrawingBrushes } from "@/utils/drawings";
 
 const BOARD_COORDINATE_COLORS: Record<string, { white: string; black: string }> = {
   chessriddle: { white: "#e8ceab", black: "#bc7944" },
@@ -96,6 +97,8 @@ export function Chessground({ ref, ...props }: ChessgroundProps) {
     ...props,
     drawable: {
       ...props.drawable,
+      // Every board must know every colour the drawing modifiers can produce.
+      brushes: { ...props.drawable?.brushes, ...pgnDrawingBrushes },
       onChange: (shapes) => {
         const api = apiRef.current;
         // Chessground clears on empty/opponent-square clicks even when its

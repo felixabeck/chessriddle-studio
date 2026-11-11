@@ -70,6 +70,7 @@ import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { IconAction } from "../common/IconAction";
 import BoardSelect from "./BoardSelect";
 import KeybindInput from "./KeybindInput";
+import { DrawingKeybinds } from "./DrawingKeybinds";
 import PercentagePreferenceSlider from "./PercentagePreferenceSlider";
 import PiecesSelect from "./PiecesSelect";
 import RepertoireMinGamesSetting from "./RepertoireMinGamesSetting";
@@ -900,6 +901,7 @@ export default function Page() {
                       })}
                     </Table.Tbody>
                   </Table>
+                  <DrawingKeybinds titleClassName={classes.title} />
                 </Tabs.Panel>
 
                 <Tabs.Panel value="directories">

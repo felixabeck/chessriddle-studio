@@ -5,6 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
+  '@lichess-org/chessground@10.1.1':
+    hash: d3fa6ddd9e9cead0c0c8d59231a61a1f44979b30cd50a6b5de79fc1dbd50b2bb
+    path: patches/@lichess-org__chessground@10.1.1.patch
   react-mosaic-component@6.1.1:
     hash: ecf9e2bb070bc3b6a6a779628ded0a4e6fcd127b50690f6549ac01d77d24eab7
     path: patches/react-mosaic-component@6.1.1.patch
@@ -21,7 +24,7 @@ importers:
         version: 18.0.1(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@lichess-org/chessground':
         specifier: ^10.1.1
-        version: 10.1.1
+        version: 10.1.1(patch_hash=d3fa6ddd9e9cead0c0c8d59231a61a1f44979b30cd50a6b5de79fc1dbd50b2bb)
       '@mantine/charts':
         specifier: ^8.3.14
         version: 8.3.14(@mantine/core@8.3.14(@mantine/hooks@8.3.14(react@19.2.4))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(@mantine/hooks@8.3.14(react@19.2.4))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(recharts@3.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react-is@18.3.1)(react@19.2.4)(redux@5.0.1))
@@ -4644,7 +4647,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@lichess-org/chessground@10.1.1': {}
+  '@lichess-org/chessground@10.1.1(patch_hash=d3fa6ddd9e9cead0c0c8d59231a61a1f44979b30cd50a6b5de79fc1dbd50b2bb)': {}
 
   '@mantine/charts@8.3.14(@mantine/core@8.3.14(@mantine/hooks@8.3.14(react@19.2.4))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(@mantine/hooks@8.3.14(react@19.2.4))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(recharts@3.7.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react-is@18.3.1)(react@19.2.4)(redux@5.0.1))':
     dependencies:

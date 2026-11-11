@@ -11,4 +11,5 @@ onlyBuiltDependencies:
   - esbuild
   - protobufjs
 patchedDependencies:
+  "@lichess-org/chessground@10.1.1": patches/@lichess-org__chessground@10.1.1.patch
   react-mosaic-component@6.1.1: patches/react-mosaic-component@6.1.1.patch
