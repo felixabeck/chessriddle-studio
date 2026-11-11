@@ -23820,3 +23820,19 @@ Deferred should-fix (keep at midnight filing):
 * **Fix:** In `getPgnHeaders`, apply the same mapping as `normalize_pgn_result` (trim; `1/2` and `½-½` to `1/2-1/2`; unknown to `*`). Keep a later canonical Outcome token as the last writer. Add parse/round-trip tests for `1/2`, `½-½`, padded tags, no trailing outcome, trailing `1/2` / `½-½`, and trailing `1/2-1/2`.
 * **Proof:** At HEAD `341275b7a`, ephemeral probes removed afterwards (tree clean). `cargo test --bin chessriddle-studio sweep14_lex_pgn_legacy_result_and_outcome_tokens` showed `lex_pgn_sync` keeps Result tags `"1/2"`, `"½-½"`, and `" 1/2 "` raw, emits Outcome `"1/2-1/2"` only when the movetext ends with that canonical terminator, and emits no Outcome for trailing `1/2` or `½-½`. Ephemeral Vitest `src/utils/tests/sweep14_result_probe.test.ts` drove production `parsePGN` / `headersToPGN` with those token shapes: a legacy `"1/2"` header plus Outcome `"1/2-1/2"` correctly became `"1/2-1/2"`; `"1/2"`, `"½-½"`, and `" 1/2 "` with no canonical Outcome (including a trailing SAN `1/2` or `½-½`) all hydrated as `"*"` and `headersToPGN` contained `[Result "*"]` rather than `[Result "1/2-1/2"]`.
 * **Found by:** Grok Bot, quality review (t26u), HEAD `341275b7a`.
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### `getClockInfo` throws when TimeControl is "-" (or any other string that parses to no fields) and a move has a clock value
+
+* **ID:** f-20261112-05 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** fourteenth-sweep quality review (Felix t26u) at HEAD `341275b7a`, material/clock display
+* **Where:** `src/utils/clock.ts` `parseTimeControl` (~39-61) returns `[]` for PGN `-`, `*`, or any token that does not match `(?:(\d+)/)?(\d+)(?:\+(\d+))?`. `getClockInfo` (~83-96) still treats that empty array as truthy and passes it into `calculateProgress` (~17-18), which then evaluates `clock / (timeControl[0].seconds / 1000)` and throws. `Clock.tsx` (~28-36) calls this on every render. Distinct from open `f-20261111-47` (no TimeControl header at all, so `timeControl` is `null` and a zero first-move clock yields `NaN` rather than a throw) and from open `f-20261111-46` (display rounding to `00:60.0`). Coverage-only `f-20261111-28` does not record this crash.
+* **Defect:** A present but unparsable or explicitly unset TimeControl is handled as a real control. Once a node has a `%clk` (or other remaining-time) value, rendering the clock strip throws `TypeError: Cannot read properties of undefined (reading 'seconds')` and can take down the board.
+* **Failure scenario:** The user opens a correspondence or untimed PGN with `[TimeControl "-"]` (or `"*"`) and a `[%clk 1:00:00]` on the first move. Stepping to that move renders `Clock`, `getClockInfo` throws, and the analysis board errors instead of hiding or showing the remaining time without a progress bar.
+* **Fix:** Treat an empty `parseTimeControl` result as "no control" (`null`), the same as a missing header, and in `calculateProgress` guard a missing/non-finite `timeControl[0].seconds` (returning 0, with the `f-20261111-47` denominator guard). Add a regression that `getClockInfo` for `time_control: "-"` after `1. e4` with `clock: 60` returns finite progress and does not throw.
+* **Proof:** Ephemeral Vitest `src/sweep14_probe.test.ts` on HEAD `341275b7a`, removed afterwards (tree clean). Production `getClockInfo` with `headers.time_control = "-"`, position `[0]`, and `currentClock: 60` threw `/seconds|undefined/`.
+* **Found by:** Grok Bot, quality review (t26u), HEAD `341275b7a`.
