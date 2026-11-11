@@ -23120,7 +23120,7 @@ Handled (drain aaa22b94, 2026-11-11). All twelve `FilePath::into_path` conversio
 
 ### `fuse.js` is a direct production dependency with no remaining importer
 
-* **ID:** f-20261111-67 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261111-67 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** tooling
 * **Spotted outside diff:** second-sweep unused-dependency confirmation (Felix t26u) at HEAD `71b6d01b5`
 * **Where:** `package.json` dependencies entry `fuse.js` (`^7.0.0`). The lockfile records `fuse.js@7.0.0`. It was introduced for fuzzy search on the files page (`7b56b11bd add fuzzy search in files page`). Later files-explorer reworks (`fa1ae8045`, `09f23e11e`) removed that usage. No current file under `src/`, `e2e/` or `scripts/` imports `fuse.js` or constructs a `Fuse(` helper. Peer pins `@tiptap/extension-link` and `@tiptap/pm` are not in this finding: `@mantine/tiptap` and the TipTap packages declare them as peers. `@tauri-apps/plugin-window-state` is not in this finding: the native plugin is registered in `src-tauri/src/main.rs`.
@@ -23129,6 +23129,9 @@ Handled (drain aaa22b94, 2026-11-11). All twelve `FilePath::into_path` conversio
 * **Fix:** Remove `fuse.js` from `package.json` and regenerate the lockfile. Confirm `pnpm` install and the frontend unit gates still pass, and that New Tab / Library search still filters without it. Do not remove `@tiptap/extension-link`, `@tiptap/pm`, or `@tauri-apps/plugin-window-state` as part of this change.
 * **Proof:** At HEAD `71b6d01b5`, `rg -n 'fuse\\.js|Fuse\\(' src e2e scripts` is empty. `package.json` still lists `"fuse.js": "^7.0.0"`. `git log -S 'fuse.js' -- package.json src` shows the add (`7b56b11bd`) and no later source import. A scan of all other `package.json` production dependencies found no other unused non-peer package (TipTap peers and the window-state JS package are accounted for as above).
 * **Found by:** Grok Bot, second-sweep unused-dependency confirmation (t26u), HEAD `71b6d01b5`.
+
+Handled (drain aaa22b94, 2026-11-11). `rg 'fuse\.js|Fuse\(|from "fuse' src e2e scripts` was empty. `pnpm remove fuse.js` removed the manifest line and its lockfile entries. The TipTap peers and `@tauri-apps/plugin-window-state` were kept. Commit 2537d859.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"e45d443ba972ba532b7ca7b6a33499b2a501acf2ac4673203409226b8c349eba","header_sha256":"d9df25d15b1c5161bb77bd88cee6440a7367141f94ffa8a156416fbacdd2665a","header_status":"handled","input_sha256":"ca79bf2d3f59a76f3b0756c7515ee95b666238b54d405ac9bdf97152bafb95d8","kind":"mutation-receipt","operation":"4725c535a6cd9a521a26de5a7f0ee0a29d849cc2efe4dd9fef82fe286b82a76c","options":{"section":null},"request_id_sha256":null,"results":["f-20261111-67"],"target":"f-20261111-67","v":1} -->
 
 ---
 
