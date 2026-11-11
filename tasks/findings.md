@@ -23011,3 +23011,19 @@ Fixed in c1644b5b. The test now asserts a fixed 10 s ceiling, which separates th
 * **Proof:** At HEAD `d14be3305`, `rg 'Error::InvalidInput\(format!\(.*\{error\}' src-tauri/src/main.rs src-tauri/src/puzzle.rs src-tauri/src/file_workspace.rs` hits the engine, resource and puzzle folder commands above, and does not hit the three commands the scan test names. `issue_puzzle_workspace` at `puzzle.rs:393` is `blocking_pick_folder` with the "file selection" message. `error.rs:1267-1276` (`assert_native_folder_selection_redaction`) asserts the helper's payload is `Invalid input: {kind}` and does not contain the cause marker.
 * **Related:** `f-20261003-02` (handled; fixed the three scanned folder pickers and explicitly left other `into_path` sites out), `f-20260915-04` (handled; `open_engine_workspace` opener diagnostic, a different command).
 * **Found by:** Grok Bot, quality review (t26u), HEAD `d14be3305`.
+
+---
+
+## 2026-11-11 — filed through the inbox spool
+
+### `PuzzleSessionView` is a 1152-line component still in `Puzzles.tsx` after the board and add-database UI were extracted
+
+* **ID:** f-20261111-61 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** general quality review (Felix t26u) at HEAD `bdea41f47`
+* **Where:** `src/components/puzzles/Puzzles.tsx` (1321 lines). The page wrapper `Puzzles` is `:103-131` and `OfflinePuzzles` is `:132-167`. `PuzzleSessionView` is `:168-1320` (1152 lines): request and workspace hooks run through `:795`, and the JSX starts at `:796`. Sibling modules already extracted: `AddPuzzle.tsx`, `PuzzleBoard.tsx`, `PuzzleBoardSurface.tsx`, `PuzzleSourceControl.tsx`. No decision pins the remaining session, filters, timer and settings UI to this file.
+* **Defect:** After the board and add-database flows were split out, `PuzzleSessionView` still owns workspace listing and admission (`refreshPuzzleDbs`, `admitPuzzle`, `generatePuzzle`), theme and rating filters, completion updates, the timer, the settings accordion, delete confirmation, session stats and history. A change to the rating slider or the delete-database confirm is reviewed in the same 1152-line component as puzzle admission and the solution player. This is the same leftover-colocation pattern as `EngineSettings` after `CloudSettings` was extracted (f-20261111-54) and as `PracticePanel` after its modals were extracted as siblings (f-20261111-56). Related but distinct: f-20261111-48 is the error-toast predicate in this file, not the module shape.
+* **Failure scenario:** Editing the puzzle settings accordion, database picker or delete confirmation requires reviewing and merging against workspace listing, request cancellation and the timer in the same 1152-line component, even though those UI blocks do not share the admission hooks.
+* **Fix:** Keep `PuzzleSessionView` (or a hook it calls) as the session and admission controller. Move the settings accordion, database toolbar and delete confirmation, and the stats/history pane, into sibling modules (for example `PuzzleSettingsPanel`, `PuzzleDatabaseToolbar`, `PuzzleSessionHistory`). `AddPuzzle` and `PuzzleBoard` stay imported. Existing `Puzzles.test.tsx` remains the behaviour contract.
+* **Proof:** At HEAD `bdea41f47`, `Puzzles.tsx` has depth-0 functions only at `:103`, `:132` and `:168`, and the default export is at `:1321`. `PuzzleSessionView` JSX at `:819` already renders the extracted `<AddPuzzle>` and at `:799` `<PuzzleBoard>`. `ls src/components/puzzles/` lists those extracted modules. `tasks/decisions.md` has no entry requiring the remaining UI to share this file.
+* **Found by:** Grok Bot, quality review (t26u), HEAD `bdea41f47`.
