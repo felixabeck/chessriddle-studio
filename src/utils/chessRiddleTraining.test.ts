@@ -11,6 +11,7 @@ import {
     trainingMoveNotice,
     trainingNeedsConfirmation,
     trainingDepth,
+    trainingVerdictTree,
 } from "./chessRiddleTraining";
 import { createTab } from "./tabs";
 import { deserializeStorageValue } from "@/state/store/debouncedStorage";
@@ -149,6 +150,32 @@ test.each([
         tree.root.children[0].move = parseUci(rook)!;
         expect(trainingSubmissionTree(tree.root)).toEqual({ move: standard, children: [] });
     }
+});
+
+test("verdict marks a canonical castling move reported with its rook gesture", () => {
+    const castlingPuzzle = {
+        ...puzzle,
+        decisionFen: "4k3/8/8/8/8/8/8/4K2R w K - 0 1",
+        sideToMove: "white" as const,
+    };
+    const submittedRoot = trainingAnalysisTree(castlingPuzzle, ["e1g1"]).root;
+    const tree = trainingVerdictTree(castlingPuzzle, submittedRoot, {
+        isCorrect: false,
+        tooShort: false,
+        ratingChange: 0,
+        playerRating: 1500,
+        puzzleRating: 1500,
+        rated: true,
+        ratingPending: false,
+        feedbackCode: "incorrect",
+        feedbackContext: "analysis",
+        correctVariation: [],
+        incorrectMove: "e1h1",
+        correctMove: "e1f1",
+        incorrectMovePath: [-1],
+    });
+
+    expect(tree.root.children[0].nags).toEqual([2]);
 });
 
 test.each([
