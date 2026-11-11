@@ -1420,6 +1420,45 @@ test("theme completion reports structured cancellation with a noncanonical messa
   });
 });
 
+test("theme completion stays silent for the exact Cancellation message", async () => {
+  const completion = deferred<string[]>();
+  mocks.getThemesForPuzzle.mockReturnValueOnce(completion.promise);
+  const atoms = await renderPriorPuzzle([puzzleRow()], 0, ["e4"]);
+  await act(async () => atoms.set(jumpToNextPuzzleAtom, false));
+  await humanMove("e7", "e5");
+  expect(mocks.getThemesForPuzzle).toHaveBeenCalledOnce();
+
+  await act(async () => completion.reject(new Error("Cancellation")));
+
+  expect(mocks.notificationShow).not.toHaveBeenCalled();
+});
+
+test("theme completion reports the puzzle-domain missing-root sentence", async () => {
+  const completion = deferred<string[]>();
+  mocks.getThemesForPuzzle.mockReturnValueOnce(completion.promise);
+  const atoms = await renderPriorPuzzle([puzzleRow()], 0, ["e4"]);
+  await act(async () => atoms.set(jumpToNextPuzzleAtom, false));
+  await humanMove("e7", "e5");
+  expect(mocks.getThemesForPuzzle).toHaveBeenCalledOnce();
+
+  await act(async () =>
+    completion.reject(
+      new TauriCommandError({
+        tag: "backend-error",
+        category: "io",
+        message: "raw missing root diagnostic",
+        rootFailure: "missing",
+      }),
+    ),
+  );
+
+  expect(mocks.notificationShow).toHaveBeenCalledExactlyOnceWith({
+    title: "Common.Error",
+    message: "This puzzle folder is no longer available. Choose another in Settings.",
+    color: "danger",
+  });
+});
+
 test.each([
   ["position", "resolve"],
   ["tree", "resolve"],
@@ -3687,6 +3726,33 @@ test.each(["workspace", "listing"] as const)(
         "0",
       );
     }
+  },
+);
+
+test.each(["structured", "exact"] as const)(
+  "listing %s cancellation uses the exact-message notification contract",
+  async (outcome) => {
+    const store = await renderPriorPuzzle([puzzleRow()]);
+    const selection = localStorage.getItem("puzzle-db");
+    const history = storedHistoryBytes();
+    mocks.notificationShow.mockClear();
+    mocks.listPuzzleDatabases.mockRejectedValue(
+      outcome === "structured"
+        ? commandError("cancellation", "Analysis cancelled")
+        : new Error("Cancellation"),
+    );
+
+    await act(async () => store.set(puzzleWorkspaceGenerationAtom, (generation) => generation + 1));
+
+    expect(mocks.listPuzzleDatabases).toHaveBeenCalledTimes(2);
+    expect(document.querySelector('[data-testid="puzzle-database-count"]')?.textContent).toBe("0");
+    expect(mocks.notificationShow.mock.calls).toEqual(
+      outcome === "structured"
+        ? [[{ color: "danger", title: "Common.Error", message: "Analysis cancelled" }]]
+        : [],
+    );
+    expect(localStorage.getItem("puzzle-db")).toBe(selection);
+    expect(storedHistoryBytes()).toBe(history);
   },
 );
 

@@ -3513,6 +3513,8 @@ mod tests {
 
     #[test]
     fn native_picker_conversions_use_the_shared_redacting_helper() {
+        // rustfmt puts map_err near into_path(), so cap the scan before following code if the "})" split misses.
+        const CONVERSION_WINDOW_LINES: usize = 6;
         let needle = [".into", "_path()"].concat();
         let mut sites = 0;
         for (name, source) in [
@@ -3523,7 +3525,11 @@ mod tests {
             for (offset, _) in source.match_indices(&needle) {
                 sites += 1;
                 let conversion = source[offset..].split("})").next().unwrap();
-                let conversion = conversion.lines().take(6).collect::<Vec<_>>().join("\n");
+                let conversion = conversion
+                    .lines()
+                    .take(CONVERSION_WINDOW_LINES)
+                    .collect::<Vec<_>>()
+                    .join("\n");
                 assert!(
                     conversion.contains("Error::native_selection("),
                     "{name}:{offset}: picker conversion must use Error::native_selection"
@@ -3538,6 +3544,11 @@ mod tests {
         assert_eq!(
             sites, 12,
             "Route any new picker through Error::native_selection and update the site count"
+        );
+        assert!(
+            include_str!("puzzle.rs")
+                .contains("Error::native_selection(\"invalid puzzle folder selection\""),
+            "f-20261111-60: puzzle folder selection must not be mislabeled as file selection"
         );
     }
 

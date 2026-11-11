@@ -301,9 +301,7 @@ function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
         if (active && listingRequest === workspaceRequest.current) {
           setPuzzleDbs([]);
           setListedWorkspaceGeneration(null);
-          if (normalizeError(error).category !== "cancelled") {
-            notifyUnlessCancelled(commonErrorRef.current, error, "puzzle");
-          }
+          notifyUnlessCancelled(commonErrorRef.current, error, "puzzle");
         }
       });
     return () => {

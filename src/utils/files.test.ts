@@ -63,6 +63,7 @@ import {
     createFile,
     ensureFileWorkspace,
     getFileGameName,
+    loadFileGame,
     openFile,
     pickPgnFile,
     writeFileGame,
@@ -129,6 +130,37 @@ async function flushPromises() {
 const freshPgn =
     '[Event "Fresh from disk"]\n[White "Fresh White"]\n[Black "Fresh Black"]\n\n1. e4 e5 *';
 const freshStamp = "a".repeat(64);
+
+test("loadFileGame rejects with Cancellation when aborted after parsing resolves", async () => {
+    const handle: FileWorkspaceHandle = { id: { id: "cancelled" }, kind: "fileWorkspace" };
+    const controller = new AbortController();
+    const parsed = deferred<ReturnType<typeof defaultTree>>();
+    mocks.readGame.mockResolvedValueOnce({
+        pgn: freshPgn,
+        stamp: freshStamp,
+        revision: "revision",
+        present: true,
+    });
+    mocks.parsePGN.mockReturnValueOnce(parsed.promise);
+
+    const pending = loadFileGame(handle, 0, controller.signal);
+    await vi.waitFor(() => expect(mocks.parsePGN).toHaveBeenCalledOnce());
+    expect(mocks.readGame).toHaveBeenCalledExactlyOnceWith(handle, 0, {
+        signal: controller.signal,
+    });
+    expect(mocks.parsePGN).toHaveBeenCalledWith(freshPgn, undefined, {
+        signal: controller.signal,
+    });
+    expect(controller.signal.aborted).toBe(false);
+    parsed.resolve(defaultTree());
+    controller.abort();
+
+    await expect(pending).rejects.toBeInstanceOf(DOMException);
+    await expect(pending).rejects.toMatchObject({
+        name: "AbortError",
+        message: "Cancellation",
+    });
+});
 
 describe("openFile tab admission", () => {
     const file = {
