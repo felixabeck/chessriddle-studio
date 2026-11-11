@@ -308,7 +308,7 @@ pub(crate) fn submit_body(request: &TrainingSubmission) -> Result<SubmitBody, Ac
         if depth > MAX_TRAINING_SUBMISSION_PLIES
             || *count > 2221
             || node.children.len() > 10
-            || (depth % 2 == 0 && node.children.len() > 1)
+            || (depth.is_multiple_of(2) && node.children.len() > 1)
         {
             return Err(AccountError::InvalidRequest);
         }

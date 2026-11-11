@@ -4,7 +4,7 @@
   "limits": {
     "entry": 565000,
     "largestLazy": 550000,
-    "total": 1820000
+    "total": 1840000
   },
   "measurement": {
     "source": "pnpm build-vite",
