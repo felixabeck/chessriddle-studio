@@ -39,6 +39,7 @@ use std::{
 use tauri::Manager as _;
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
+use unicode_normalization::UnicodeNormalization;
 use uuid::Uuid;
 
 mod catalog_install;
@@ -5098,6 +5099,45 @@ fn validate_components(components: &[OsString]) -> Result<(), Error> {
     Ok(())
 }
 
+/// Compare Unicode composition without changing case or merging invalid native encodings.
+fn nfc_leaf_name(leaf: &OsStr) -> OsString {
+    match leaf.to_str() {
+        Some(name) => name.nfc().collect::<String>().into(),
+        None => leaf.to_os_string(),
+    }
+}
+
+pub(crate) fn equivalent_sibling_leaves(
+    directory: &fs::File,
+    leaf: &OsStr,
+    cancellation: &CancellationToken,
+) -> Result<Vec<DirectoryEntry>, Error> {
+    let normalized = nfc_leaf_name(leaf);
+    read_directory_entries_at(
+        directory,
+        cancellation,
+        Some(MAX_DIRECTORY_LISTING_ENTRIES),
+        &mut |name| nfc_leaf_name(name) == normalized,
+    )
+}
+
+/// Keep the selected native spelling and all later identity checks on the same existing file.
+fn pgn_export_equivalent_path(parent: &fs::File, path: &Path) -> Result<PathBuf, Error> {
+    let leaf = path
+        .file_name()
+        .ok_or_else(|| Error::InvalidInput("PGN export destination needs a filename".into()))?;
+    let mut siblings = equivalent_sibling_leaves(parent, leaf, &CancellationToken::new())?;
+    if siblings.len() > 1 {
+        return Err(Error::Conflict(
+            "PGN export filename already exists in multiple Unicode forms".into(),
+        ));
+    }
+    Ok(match siblings.pop() {
+        Some(entry) => path.with_file_name(entry.name),
+        None => path.to_path_buf(),
+    })
+}
+
 pub(crate) fn workspace_sidecar_leaf(leaf: &OsStr) -> Result<OsString, Error> {
     let stem = Path::new(leaf)
         .file_stem()
@@ -5416,6 +5456,7 @@ impl PathAuthority {
                 "PGN export destination changed before creation".into(),
             ));
         }
+        let canonical = pgn_export_equivalent_path(&parent, &canonical)?;
         let leaf = canonical
             .file_name()
             .filter(|name| !name.is_empty())
@@ -5548,6 +5589,7 @@ impl PathAuthority {
                 "PGN export destination changed before creation".into(),
             ));
         }
+        let canonical = pgn_export_equivalent_path(&parent, &canonical)?;
         let leaf = canonical
             .file_name()
             .filter(|name| !name.is_empty())
@@ -7732,10 +7774,28 @@ impl PathAuthority {
         let mut prepared = Vec::new();
         let mut unread = Vec::new();
         let mut unread_paths = Vec::new();
+        let mut database_names = BTreeMap::new();
+        if purpose == EntryPurpose::DatabaseFile {
+            for entry in &snapshot.entries {
+                if let Some(leaf) = entry.path.to_path()?.file_name() {
+                    database_names.insert(nfc_leaf_name(leaf), leaf.to_os_string());
+                }
+            }
+        }
         let children = map_db3_children_cancellable(
             &root_directory,
             cancellation,
             |filename, display_name, identity| {
+                if purpose == EntryPurpose::DatabaseFile {
+                    let normalized = nfc_leaf_name(&filename);
+                    if database_names
+                        .get(&normalized)
+                        .is_some_and(|name| name != &filename)
+                    {
+                        return Err(Error::Conflict("database filename already exists".into()));
+                    }
+                    database_names.insert(normalized, filename.clone());
+                }
                 let result = identity.and_then(|identity| {
                     let prepared = adapt(self, filename.clone(), display_name.clone(), identity)?;
                     // Probe read access without opening a Unix leaf held by SQLite.
@@ -8042,6 +8102,9 @@ impl PathAuthority {
         let leaf = resolved
             .leaf()
             .ok_or_else(|| Error::InvalidInput("database child has no retained leaf".into()))?;
+        if !equivalent_sibling_leaves(parent, leaf, &CancellationToken::new())?.is_empty() {
+            return Err(Error::Conflict("database filename already exists".into()));
+        }
         let (file, verified_identity) = match resolved.create_database_file() {
             Ok(created) => created,
             Err(Error::Io(error)) if error.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -13755,9 +13818,75 @@ pub(crate) mod portable_tests {
         }
     }
 
-    /// The missing-file arm of `create_pgn_export_destination`: the eleven un-ignored PGN tests
-    /// all write their fixture first, so only this one drives the exclusive create, the two
-    /// `sync_all`s and the promotion to a persistent read/write capability.
+    #[test]
+    fn pgn_export_destination_binds_unicode_composition_variant() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("exports");
+        fs::create_dir(&root).unwrap();
+        let mut authority = authority(&dir, Arc::new(TestClock::new(1)));
+        let first = authority
+            .create_pgn_export_destination(&root.join("José.pgn"), "José.pgn")
+            .unwrap();
+        fs::write(root.join("José.pgn"), b"1. d4 *").unwrap();
+        let second = authority
+            .create_pgn_export_destination(&root.join("Jose\u{301}.pgn"), "Jose\u{301}.pgn")
+            .unwrap();
+        let original = authority
+            .resolve(first.handle.path_ref(), PathOperation::ReadPgn, &[])
+            .unwrap();
+        let variant = authority
+            .resolve(second.handle.path_ref(), PathOperation::WritePgn, &[])
+            .unwrap();
+        assert_eq!(original.identity().unwrap(), variant.identity().unwrap());
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+        assert_eq!(fs::read(root.join("José.pgn")).unwrap(), b"1. d4 *");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn pgn_export_destination_refuses_existing_unicode_composition_duplicates() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("exports");
+        fs::create_dir(&root).unwrap();
+        let mut authority = authority(&dir, Arc::new(TestClock::new(1)));
+        fs::write(root.join("José.pgn"), b"1. d4 *").unwrap();
+        authority
+            .create_pgn_export_destination(&root.join("José.pgn"), "José.pgn")
+            .unwrap();
+        fs::write(root.join("Jose\u{301}.pgn"), b"1. e4 *").unwrap();
+        let registry = fs::read(dir.path().join("registry.json")).unwrap();
+        for name in ["José.pgn", "Jose\u{301}.pgn"] {
+            let error = authority
+                .create_pgn_export_destination(&root.join(name), name)
+                .unwrap_err();
+            assert!(matches!(error, Error::Conflict(ref message)
+                if message == "PGN export filename already exists in multiple Unicode forms"));
+            assert_eq!(fs::read_dir(&root).unwrap().count(), 2);
+            assert_eq!(fs::read(root.join("José.pgn")).unwrap(), b"1. d4 *");
+            assert_eq!(fs::read(root.join("Jose\u{301}.pgn")).unwrap(), b"1. e4 *");
+            assert_eq!(
+                fs::read(dir.path().join("registry.json")).unwrap(),
+                registry
+            );
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn pgn_export_destination_preserves_ascii_case_distinctions() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("exports");
+        fs::create_dir(&root).unwrap();
+        let mut authority = authority(&dir, Arc::new(TestClock::new(1)));
+        for name in ["Foo.pgn", "foo.pgn"] {
+            authority
+                .create_pgn_export_destination(&root.join(name), name)
+                .unwrap();
+        }
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 2);
+    }
+
+    /// Exercises exclusive creation, both syncs, and promotion to a persistent capability.
     #[test]
     fn pgn_export_destination_is_persistent_writable_and_rejects_non_pgn_targets() {
         let dir = tempfile::tempdir().unwrap();
@@ -15744,6 +15873,98 @@ mod tests {
             .diagnostic()
             .contains("injected database-create post-handoff identity failure"));
         DATABASE_CREATE_IDENTITY_FAILURE.with(|slot| assert_eq!(slot.take(), None));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_database_child_refuses_unicode_composition_duplicates() {
+        let dir = tempfile::tempdir().unwrap();
+        let root_path = dir.path().join("databases");
+        fs::create_dir(&root_path).unwrap();
+        let mut authority = authority(&dir, Arc::new(TestClock::new(0)));
+        let root = authority
+            .get_or_create_database_root(&root_path, "Databases", None)
+            .unwrap();
+        let original = authority
+            .create_database_child(&root, OsStr::new("José.db3"))
+            .unwrap();
+        let registry = fs::read(dir.path().join("registry.json")).unwrap();
+        let error = authority
+            .create_database_child(&root, OsStr::new("Jose\u{301}.db3"))
+            .unwrap_err();
+        assert!(
+            matches!(error, Error::Conflict(ref message) if message == "database filename already exists")
+        );
+        assert_eq!(fs::read_dir(&root_path).unwrap().count(), 1);
+        assert_eq!(
+            fs::read(dir.path().join("registry.json")).unwrap(),
+            registry
+        );
+        let listing = authority
+            .list_database_children_cancellable(&root, &CancellationToken::new())
+            .unwrap();
+        assert_eq!(listing.entries.len(), 1);
+        assert_eq!(listing.entries[0].handle, original);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn database_listing_refuses_unicode_composition_sibling_without_registering_it() {
+        for registered in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let root_path = dir.path().join("databases");
+            fs::create_dir(&root_path).unwrap();
+            let mut authority = authority(&dir, Arc::new(TestClock::new(0)));
+            let root = authority
+                .get_or_create_database_root(&root_path, "Databases", None)
+                .unwrap();
+            if registered {
+                authority
+                    .create_database_child(&root, OsStr::new("José.db3"))
+                    .unwrap();
+            } else {
+                fs::write(root_path.join("José.db3"), b"original").unwrap();
+            }
+            fs::write(root_path.join("Jose\u{301}.db3"), b"external variant").unwrap();
+            let registry = fs::read(dir.path().join("registry.json")).unwrap();
+            let result =
+                authority.list_database_children_cancellable(&root, &CancellationToken::new());
+            assert!(
+                matches!(result, Err(Error::Conflict(ref message)) if message == "database filename already exists")
+            );
+            assert_eq!(
+                fs::read(dir.path().join("registry.json")).unwrap(),
+                registry
+            );
+            assert_eq!(
+                fs::read(root_path.join("Jose\u{301}.db3")).unwrap(),
+                b"external variant"
+            );
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn database_child_names_preserve_ascii_case_distinctions() {
+        let dir = tempfile::tempdir().unwrap();
+        let root_path = dir.path().join("databases");
+        fs::create_dir(&root_path).unwrap();
+        let mut authority = authority(&dir, Arc::new(TestClock::new(0)));
+        let root = authority
+            .get_or_create_database_root(&root_path, "Databases", None)
+            .unwrap();
+        let upper = authority
+            .create_database_child(&root, OsStr::new("Foo.db3"))
+            .unwrap();
+        let lower = authority
+            .create_database_child(&root, OsStr::new("foo.db3"))
+            .unwrap();
+        assert_ne!(upper, lower);
+        let listing = authority
+            .list_database_children_cancellable(&root, &CancellationToken::new())
+            .unwrap();
+        assert_eq!(listing.entries.len(), 2);
+        assert_eq!(fs::read_dir(&root_path).unwrap().count(), 2);
     }
 
     #[cfg(unix)]

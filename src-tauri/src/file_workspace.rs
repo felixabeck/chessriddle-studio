@@ -9,9 +9,9 @@ use crate::{
     infra::blocking::BLOCKING_GATEWAY,
     infra::cancellable_lock::lock_std_cancellable,
     infra::path_authority::{
-        workspace_sidecar_leaf as sidecar_leaf, FileWorkspaceDescriptor, FileWorkspaceHandle,
-        IdentityBinding, NativePath, PathAuthority, PathClass, PathOperation, PathRef,
-        SharedPathAuthority, WorkspaceMutationTarget, WorkspaceRemovalStatus,
+        equivalent_sibling_leaves, workspace_sidecar_leaf as sidecar_leaf, FileWorkspaceDescriptor,
+        FileWorkspaceHandle, IdentityBinding, NativePath, PathAuthority, PathClass, PathOperation,
+        PathRef, SharedPathAuthority, WorkspaceMutationTarget, WorkspaceRemovalStatus,
         PICKER_DIALOG_GRANT_TTL,
     },
     pgn, AppState,
@@ -668,6 +668,23 @@ fn is_admitted_pgn_leaf(leaf: &OsStr) -> bool {
     leaf.to_string_lossy()
         .to_ascii_lowercase()
         .ends_with(".pgn")
+}
+
+fn refuse_workspace_composition_variant(
+    directory: &fs::File,
+    leaf: &OsStr,
+    ignored: Option<&OsStr>,
+    cancellation: &CancellationToken,
+) -> Result<(), Error> {
+    if equivalent_sibling_leaves(directory, leaf, cancellation)?
+        .iter()
+        .any(|entry| entry.name != leaf && Some(entry.name.as_os_str()) != ignored)
+    {
+        return Err(Error::Conflict(
+            crate::error::WORKSPACE_FILE_NAME_TAKEN.into(),
+        ));
+    }
+    Ok(())
 }
 
 /// The sidecar address is not injective across admitted PGNs. This is the one test for sharing it.
@@ -2009,8 +2026,22 @@ fn paired_rename_inner(
     }
     let source_info = sidecar_leaf(&source.leaf)?;
     let target_info = sidecar_leaf(target_leaf)?;
+    let same_parent = crate::infra::path_authority::opened_file_identity(&source.parent)?
+        == crate::infra::path_authority::opened_file_identity(target_parent)?;
+    refuse_workspace_composition_variant(
+        target_parent,
+        target_leaf,
+        same_parent.then_some(source.leaf.as_os_str()),
+        cancellation,
+    )?;
     let source_sidecar_shared =
         sibling_pgn_shares_sidecar(&source.parent, &source.leaf, None, cancellation)?;
+    refuse_workspace_composition_variant(
+        target_parent,
+        &target_info,
+        (same_parent && !source_sidecar_shared).then_some(source_info.as_os_str()),
+        cancellation,
+    )?;
     let publishes_sidecar = if forward_metadata.is_some() {
         true
     } else if source_sidecar_shared {
@@ -2255,6 +2286,8 @@ pub(crate) fn create_owned_workspace_file_blocking(
     let info_leaf = sidecar_leaf(&target_leaf)?;
     crate::infra::fs::ensure_atomic_create_available_at(parent_dir, &target_leaf)?;
     crate::infra::fs::ensure_atomic_create_available_at(parent_dir, &info_leaf)?;
+    refuse_workspace_composition_variant(parent_dir, &target_leaf, None, cancellation)?;
+    refuse_workspace_composition_variant(parent_dir, &info_leaf, None, cancellation)?;
     if sibling_pgn_shares_sidecar(parent_dir, &target_leaf, None, cancellation)? {
         return Err(Error::Conflict(
             crate::error::WORKSPACE_FILE_NAME_TAKEN.into(),
@@ -11050,6 +11083,292 @@ mod tests {
             b"unrelated new source"
         );
         assert!(root.join("after.pgn").is_file());
+    }
+
+    #[test]
+    fn workspace_file_name_taken_unicode_composition_create_and_rename() {
+        for (existing, variant) in [("José", "Jose\u{301}"), ("Jose\u{301}", "José")] {
+            let (directory, state, workspace) = workspace_state();
+            let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+            let original = create_named_text(&state, &workspace, existing, "1. d4 *").unwrap();
+            let error = create_named_text(&state, &workspace, variant, "1. e4 *").unwrap_err();
+            assert_name_taken(&error);
+            assert_workspace_entry_names(
+                &root,
+                &[&format!("{existing}.info"), &format!("{existing}.pgn")],
+            );
+            let other = create_named_text(&state, &workspace, "other", "1. c4 *").unwrap();
+            let registry = fs::read(directory.path().join("registry.json")).unwrap();
+            let error = rename_workspace_file_blocking(
+                workspace.clone(),
+                other.handle.clone(),
+                variant.into(),
+                WorkspaceMetadata::default(),
+                &state.pgn_path_authority,
+                &state.workspace_mutation,
+                &CancellationToken::new(),
+            )
+            .unwrap_err();
+            assert_name_taken(&error);
+            assert_eq!(
+                fs::read(directory.path().join("registry.json")).unwrap(),
+                registry
+            );
+            assert_workspace_entry_names(
+                &root,
+                &[
+                    &format!("{existing}.info"),
+                    &format!("{existing}.pgn"),
+                    "other.info",
+                    "other.pgn",
+                ],
+            );
+            assert_eq!(
+                fs::read(root.join(format!("{existing}.pgn"))).unwrap(),
+                b"1. d4 *"
+            );
+            resolve_created_pgn(&state, &original.handle);
+            resolve_created_pgn(&state, &other.handle);
+        }
+    }
+
+    #[test]
+    fn workspace_file_name_taken_unicode_composition_orphan_sidecar() {
+        let (_directory, state, workspace) = workspace_state();
+        let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+        fs::write(root.join("José.info"), b"original metadata").unwrap();
+        let error = create_named_text(&state, &workspace, "Jose\u{301}", "*").unwrap_err();
+        assert_name_taken(&error);
+        assert_workspace_entry_names(&root, &["José.info"]);
+        assert_eq!(
+            fs::read(root.join("José.info")).unwrap(),
+            b"original metadata"
+        );
+    }
+
+    #[test]
+    fn workspace_file_name_taken_unicode_composition_rename_beside_orphan_sidecar() {
+        let (directory, state, workspace) = workspace_state();
+        let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+        let source = create_named_text(&state, &workspace, "other", "1. c4 *").unwrap();
+        fs::write(root.join("José.info"), b"original metadata").unwrap();
+        let registry = fs::read(directory.path().join("registry.json")).unwrap();
+        let source_info = fs::read(root.join("other.info")).unwrap();
+        let error = rename_workspace_file_blocking(
+            workspace.clone(),
+            source.handle.clone(),
+            "Jose\u{301}".into(),
+            WorkspaceMetadata::default(),
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &CancellationToken::new(),
+        )
+        .unwrap_err();
+        assert_name_taken(&error);
+        assert_workspace_entry_names(&root, &["José.info", "other.info", "other.pgn"]);
+        assert_eq!(
+            fs::read(root.join("José.info")).unwrap(),
+            b"original metadata"
+        );
+        assert_eq!(fs::read(root.join("other.pgn")).unwrap(), b"1. c4 *");
+        assert_eq!(fs::read(root.join("other.info")).unwrap(), source_info);
+        assert_eq!(
+            fs::read(directory.path().join("registry.json")).unwrap(),
+            registry
+        );
+        resolve_created_pgn(&state, &source.handle);
+    }
+
+    #[test]
+    fn workspace_file_name_taken_unicode_composition_restore_preserves_both_pairs() {
+        for (original_name, variant) in [("José", "Jose\u{301}"), ("Jose\u{301}", "José")] {
+            let (directory, state, workspace) = workspace_state();
+            let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+            let original = create_named_text(&state, &workspace, original_name, "1. d4 *").unwrap();
+            trash_entry(
+                &state.pgn_path_authority,
+                &state.workspace_mutation,
+                &workspace,
+                &original.handle,
+                &CancellationToken::new(),
+            )
+            .unwrap();
+            let item = test_trash_item(&state.pgn_path_authority, &original.handle);
+            let trashed = mutation_target(&state.pgn_path_authority, &original.handle).unwrap();
+            let bucket = trashed.path().parent().unwrap();
+            let original_info = fs::read(bucket.join(format!("{original_name}.info"))).unwrap();
+            let other = create_named_text(&state, &workspace, variant, "1. e4 *").unwrap();
+            let variant_info = fs::read(root.join(format!("{variant}.info"))).unwrap();
+            let registry = fs::read(directory.path().join("registry.json")).unwrap();
+            let error = restore_trash_item(
+                &state.pgn_path_authority,
+                &state.workspace_mutation,
+                &workspace,
+                &item,
+                &CancellationToken::new(),
+            )
+            .unwrap_err();
+            assert_name_taken(&error);
+            assert_workspace_entry_names(
+                &root,
+                &[
+                    TRASH_DIRECTORY,
+                    &format!("{variant}.info"),
+                    &format!("{variant}.pgn"),
+                ],
+            );
+            assert_workspace_entry_names(
+                bucket,
+                &[
+                    &format!("{original_name}.info"),
+                    &format!("{original_name}.pgn"),
+                ],
+            );
+            assert_eq!(
+                fs::read(bucket.join(format!("{original_name}.pgn"))).unwrap(),
+                b"1. d4 *"
+            );
+            assert_eq!(
+                fs::read(bucket.join(format!("{original_name}.info"))).unwrap(),
+                original_info
+            );
+            assert_eq!(
+                fs::read(root.join(format!("{variant}.pgn"))).unwrap(),
+                b"1. e4 *"
+            );
+            assert_eq!(
+                fs::read(root.join(format!("{variant}.info"))).unwrap(),
+                variant_info
+            );
+            assert_eq!(
+                fs::read(directory.path().join("registry.json")).unwrap(),
+                registry
+            );
+            assert_eq!(
+                mutation_target(&state.pgn_path_authority, &original.handle)
+                    .unwrap()
+                    .path(),
+                trashed.path()
+            );
+            resolve_created_pgn(&state, &other.handle);
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn workspace_file_name_taken_unicode_composition_rename_preserves_shared_sidecar() {
+        let (directory, state, workspace) = workspace_state();
+        let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+        fs::write(root.join("José.pgn"), b"1. e4 *").unwrap();
+        fs::write(root.join("José.PGN"), b"1. d4 *").unwrap();
+        let original_info = serialize_metadata(&edited_metadata()).unwrap();
+        fs::write(root.join("José.info"), &original_info).unwrap();
+        let listing = listed_workspace(&state, &workspace);
+        let source = listing
+            .entries
+            .iter()
+            .find(|entry| entry.name == "José")
+            .unwrap();
+        let registry = fs::read(directory.path().join("registry.json")).unwrap();
+
+        let error = rename_workspace_file_blocking(
+            workspace.clone(),
+            source.handle.clone(),
+            "Jose\u{301}".into(),
+            WorkspaceMetadata::default(),
+            &state.pgn_path_authority,
+            &state.workspace_mutation,
+            &CancellationToken::new(),
+        )
+        .unwrap_err();
+        assert_name_taken(&error);
+        assert_workspace_entry_names(&root, &["José.PGN", "José.info", "José.pgn"]);
+        assert_eq!(fs::read(root.join("José.pgn")).unwrap(), b"1. e4 *");
+        assert_eq!(fs::read(root.join("José.PGN")).unwrap(), b"1. d4 *");
+        assert_eq!(fs::read(root.join("José.info")).unwrap(), original_info);
+        assert_eq!(
+            fs::read(directory.path().join("registry.json")).unwrap(),
+            registry
+        );
+        for entry in &listing.entries {
+            resolve_created_pgn(&state, &entry.handle);
+        }
+    }
+
+    #[test]
+    fn workspace_file_name_taken_unicode_composition_restore_preserves_orphan_sidecar() {
+        for (original_name, variant) in [("José", "Jose\u{301}"), ("Jose\u{301}", "José")] {
+            let (directory, state, workspace) = workspace_state();
+            let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+            let original = create_named_text(&state, &workspace, original_name, "1. d4 *").unwrap();
+            trash_entry(
+                &state.pgn_path_authority,
+                &state.workspace_mutation,
+                &workspace,
+                &original.handle,
+                &CancellationToken::new(),
+            )
+            .unwrap();
+            let item = test_trash_item(&state.pgn_path_authority, &original.handle);
+            let trashed = mutation_target(&state.pgn_path_authority, &original.handle).unwrap();
+            let bucket = trashed.path().parent().unwrap();
+            let original_info = fs::read(bucket.join(format!("{original_name}.info"))).unwrap();
+            fs::write(root.join(format!("{variant}.info")), b"orphan metadata").unwrap();
+            let registry = fs::read(directory.path().join("registry.json")).unwrap();
+
+            let error = restore_trash_item(
+                &state.pgn_path_authority,
+                &state.workspace_mutation,
+                &workspace,
+                &item,
+                &CancellationToken::new(),
+            )
+            .unwrap_err();
+            assert_name_taken(&error);
+            assert_workspace_entry_names(&root, &[TRASH_DIRECTORY, &format!("{variant}.info")]);
+            assert_workspace_entry_names(
+                bucket,
+                &[
+                    &format!("{original_name}.info"),
+                    &format!("{original_name}.pgn"),
+                ],
+            );
+            assert_eq!(
+                fs::read(bucket.join(format!("{original_name}.pgn"))).unwrap(),
+                b"1. d4 *"
+            );
+            assert_eq!(
+                fs::read(bucket.join(format!("{original_name}.info"))).unwrap(),
+                original_info
+            );
+            assert_eq!(
+                fs::read(root.join(format!("{variant}.info"))).unwrap(),
+                b"orphan metadata"
+            );
+            assert_eq!(
+                fs::read(directory.path().join("registry.json")).unwrap(),
+                registry
+            );
+            assert_eq!(
+                mutation_target(&state.pgn_path_authority, &original.handle)
+                    .unwrap()
+                    .path(),
+                trashed.path()
+            );
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn workspace_file_names_preserve_ascii_case_distinctions() {
+        let (_directory, state, workspace) = workspace_state();
+        let upper = create_named_text(&state, &workspace, "Foo", "1. d4 *").unwrap();
+        let lower = create_named_text(&state, &workspace, "foo", "1. e4 *").unwrap();
+        assert_ne!(upper.handle, lower.handle);
+        let root = workspace_root(&state.pgn_path_authority, &workspace).unwrap();
+        assert_workspace_entry_names(&root, &["Foo.info", "Foo.pgn", "foo.info", "foo.pgn"]);
+        assert_eq!(fs::read(root.join("Foo.pgn")).unwrap(), b"1. d4 *");
+        assert_eq!(fs::read(root.join("foo.pgn")).unwrap(), b"1. e4 *");
     }
 
     #[test]
