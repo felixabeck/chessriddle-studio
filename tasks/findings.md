@@ -23750,3 +23750,19 @@ Handled in 462223d93 (drain session 8a82f57e-ddf5-4981-abce-8394b8e730a9). The P
 * **Fix:** Synchronise on the worker's completion signal instead of a wall-clock bound (or use paused tokio time for the deadline), so the outcome does not depend on host load.
 * **Proof:** Full suite red once at 2026-11-11 ~17:52 (panic at `src/fs.rs:3022`). The same test passed 3 out of 3 times when run alone right afterwards.
 * **Found by:** Claude Code (Opus 5.5), build run coverage-batch-search, 2026-11-11.
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Explorer since/until is taken from the local calendar of a UTC-parsed Month/Year picker value, so a west-of-UTC timezone sends the previous month or year
+
+* **ID:** f-20261112-01 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** fourteenth-sweep quality review (Felix t26u) at HEAD `341275b7a`, explorer query builders
+* **Where:** `LichessOptionsPanel` (`src/components/panels/database/options/LichessOptionsPanel.tsx` ~108-113, ~122-125) and `MastersOptionsPanel` (`src/components/panels/database/options/MastersOptionsPanel.tsx` ~19, ~22) store the Mantine v8 picker value as `new Date(value)`. Mantine `toDateString` emits a `YYYY-MM-DD` calendar string (`node_modules/@mantine/dates/esm/utils/to-date-string/to-date-string.mjs`), which `Date` parses as UTC midnight. `getLichessGamesQueryParams` then formats `since`/`until` with local `getFullYear()` / unpadded `getMonth()+1` (`src/utils/lichess/explorer.ts` ~72, ~87-88). `getMasterGamesQueryParams` uses local `getFullYear()` only (~108, ~112-113). Distinct from open coverage-only `f-20261111-28` (untested branches, including unpadded `2024-1` as a hypothetical); that item's fix is to add tests, and Lichess `Month::from_str` (lila-openingexplorer `src/model/date.rs`) accepts `2024-1`. This is the wrong month/year being sent. Not a refile of `f-20261106-22` (handled; Games tab hiding `recentGames`).
+* **Defect:** The picker records a calendar month or year as an ISO date-only string, but the query builder reads that instant in the local timezone. West of UTC, 1 January 00:00Z falls in the previous local December, so January 2024 becomes `since=2023-12` and a Masters year of 2024 becomes `since=2023`.
+* **Failure scenario:** A user in `America/Los_Angeles` (or any zone behind UTC) opens the Lichess explorer, sets Since to January 2024 and Until to February 2024, or sets a Masters Since year of 2024. The request goes to `explorer.lichess.org` as `since=2023-12&until=2024-1` or Masters `since=2023`. Opening counts include December 2023 (or the whole of 2023) and drop the last selected month, so the explorer shows the wrong corpus. In `Europe/Berlin` the year/month are correct (unpadded `2024-1`, which the upstream parser still accepts).
+* **Fix:** Format the picker string directly (`YYYY-MM` / `YYYY`), or use `getUTCFullYear()` / `getUTCMonth()+1` with zero-padded months, instead of `new Date(value)` plus local getters. Keep the Lichess year-month and year query contracts. Add a regression that a `YYYY-MM-DD` January 2024 picker value yields `since=2024-01` (Lichess) and `since=2024` (Masters) even when `TZ=America/Los_Angeles`.
+* **Proof:** Ephemeral Vitest `src/sweep14_explorer_probe.test.ts` on HEAD `341275b7a`, removed afterwards (tree clean). Production panels' `new Date("2024-01-01")` plus the production builders, run under `TZ=America/Los_Angeles`, produced Lichess `since=2023-12` / `until=2024-1` and Masters `since=2023&until=2023`. The same probe under `TZ=Europe/Berlin` produced Lichess `since=2024-1` / `until=2024-2` and Masters `since=2024`. Upstream `Month::from_str` splits on `-`/`/` and parses `month_part` as `u16` in `1..=12`, so unpadded `2024-1` is accepted; the TZ shift is the user-visible miss.
+* **Found by:** Grok Bot, quality review (t26u), HEAD `341275b7a`.
