@@ -853,6 +853,8 @@ export function getMaterialDiff(fen: string) {
     const pieces: PiecesCount = { p: 0, n: 0, b: 0, r: 0, q: 0 };
     const whiteCaptured: PiecesCount = { p: 0, n: 0, b: 0, r: 0, q: 0 };
     const blackCaptured: PiecesCount = { p: 0, n: 0, b: 0, r: 0, q: 0 };
+    let whitePromotions = 0;
+    let blackPromotions = 0;
 
     for (const { key, role } of roles) {
         const whiteCount = white.intersect(board[role]).size();
@@ -860,7 +862,16 @@ export function getMaterialDiff(fen: string) {
         pieces[key] = whiteCount - blackCount;
         whiteCaptured[key] = Math.max(0, startingCounts[key] - blackCount);
         blackCaptured[key] = Math.max(0, startingCounts[key] - whiteCount);
+        if (key !== "p") {
+            whitePromotions += Math.max(0, whiteCount - startingCounts[key]);
+            blackPromotions += Math.max(0, blackCount - startingCounts[key]);
+        }
     }
+
+    // Surplus pieces account for promoted pawns, not captures. FEN alone cannot reveal
+    // promotions that replaced captured pieces or promoted pieces that were later captured.
+    whiteCaptured.p = Math.max(0, whiteCaptured.p - blackPromotions);
+    blackCaptured.p = Math.max(0, blackCaptured.p - whitePromotions);
 
     const diff = pieces.p * 1 + pieces.n * 3 + pieces.b * 3 + pieces.r * 5 + pieces.q * 9;
 
