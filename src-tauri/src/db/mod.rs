@@ -13,6 +13,7 @@ mod migrations;
 mod models;
 mod name_identity;
 mod ops;
+mod pgn_date;
 mod repository;
 #[cfg(all(test, unix))]
 mod test_support;
@@ -2848,7 +2849,11 @@ fn load_games(
             },
             // This sort is always newest first, independently of the legacy direction option.
             GameSort::Newest => sql_query.order((
-                diesel::dsl::sql::<Text>("REPLACE(COALESCE(Games.Date, ''), '?', '0')").desc(),
+                diesel::dsl::sql::<Text>(&format!(
+                    "REPLACE({}, '?', '0')",
+                    pgn_date::canonical_sql("COALESCE(Games.Date, '')")
+                ))
+                .desc(),
                 games::time.desc(),
                 games::id.desc(),
             )),
@@ -3889,6 +3894,7 @@ impl PlayerStatisticsAccumulator {
             game_id,
             time,
         } = row;
+        let date = pgn_date::canonical(&date).into_owned();
 
         // Only complete, valid calendar dates participate in chronological rating selection.
         if date.len() == 10
@@ -11845,6 +11851,51 @@ mod tests {
     }
 
     #[test]
+    fn game_newest_sort_and_date_window_canonicalize_unpadded_dates() {
+        let (_dir, app, handle, database) = blocking_database_case();
+        let mut db = SqliteConnection::establish(&database.to_string_lossy()).unwrap();
+        let ids = ["2026.1.15", "2026.01.16", "2026.01.21"].map(|date| {
+            TempGame {
+                date: Some(date.to_owned()),
+                ..Default::default()
+            }
+            .insert_to_db(&mut db)
+            .unwrap()
+        });
+        drop(db);
+        let state = app.state::<AppState>();
+        let query = |start_date, end_date| {
+            get_games_blocking(
+                &state.pgn_path_authority,
+                &state.database_repository,
+                handle.clone(),
+                GameQuery {
+                    start_date,
+                    end_date,
+                    options: Some(QueryOptions {
+                        sort: GameSort::Newest,
+                        ..Default::default()
+                    }),
+                    ..GameQuery::new()
+                },
+                &CancellationToken::new(),
+            )
+            .unwrap()
+        };
+        let newest = query(None, None);
+        assert_eq!(
+            newest.data.iter().map(|game| game.id).collect::<Vec<_>>(),
+            [ids[2], ids[1], ids[0]]
+        );
+        let window = query(Some("2026.01.10".to_owned()), Some("2026.01.20".to_owned()));
+        assert_eq!(window.count, Some(2));
+        assert_eq!(
+            window.data.iter().map(|game| game.id).collect::<Vec<_>>(),
+            [ids[1], ids[0]]
+        );
+    }
+
+    #[test]
     fn sides_any_elo_ranges_follow_player_orientation() {
         let (_dir, app, handle, database) = blocking_database_case();
         let high_vs_mid = insert_named_game(&app, &database, "High", "Mid", "Event", "Site");
@@ -12576,7 +12627,7 @@ mod tests {
             insert("300+0", "2026.11.08", Some("11:00:00"), 1900);
             insert("300+0", "2026.11.08", None, 2000);
             insert("300+0", "2026.11.07", Some("23:59:59"), 2100);
-            for date in ["2099.??.??", "2099.11.??", "2099.1.01", "2099.02.30", ""] {
+            for date in ["2099.??.??", "2099.11.??", "2099.123.01", "2099.02.30", ""] {
                 insert("300+0", date, Some("23:59:59"), 2500);
             }
             insert("partial-only", "2099.??.??", None, 2600);
@@ -12626,6 +12677,47 @@ mod tests {
             serde_json::to_value(info).unwrap(),
             serde_json::to_value(repeated).unwrap()
         );
+    }
+
+    #[test]
+    fn player_statistics_canonicalize_unpadded_daily_and_latest_dates() {
+        let (_dir, app, handle, database) = blocking_database_case();
+        let player_id = {
+            let mut db = SqliteConnection::establish(&database.to_string_lossy()).unwrap();
+            let player = create_player(&mut db, "Player").unwrap();
+            let opponent = create_player(&mut db, "Opponent").unwrap();
+            let event = create_event(&mut db, "Event", None).unwrap();
+            let site = create_site(&mut db, "Site").unwrap();
+            for (date, player_elo) in [("2026.01.15", 1800), ("2026.1.15", 1900)] {
+                insert_player_statistics_game(
+                    &mut db,
+                    PlayerStatisticsGame {
+                        player_id: player.id,
+                        opponent_id: opponent.id,
+                        event_id: event.id,
+                        site_id: site.id,
+                        is_player_white: true,
+                        player_elo: Some(player_elo),
+                        opponent_elo: Some(1700),
+                        moves: Vec::new(),
+                        date: Some(date),
+                        result: Some("1-0"),
+                        time_control: Some("600+0"),
+                        fen: None,
+                    },
+                );
+            }
+            player.id
+        };
+        let info = load_player_statistics(&app, handle, player_id);
+        let group = &info.site_stats_data[0];
+        assert_eq!(group.daily.len(), 1);
+        assert_eq!(group.daily[0].date, "2026.01.15");
+        assert_eq!(group.daily[0].won, 2);
+        assert_eq!(group.daily[0].max_player_elo, 1900);
+        assert_eq!(group.latest.len(), 1);
+        assert_eq!(group.latest[0].date, "2026.01.15");
+        assert_eq!(group.latest[0].player_elo, 1900);
     }
 
     #[test]

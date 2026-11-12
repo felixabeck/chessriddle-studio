@@ -51,7 +51,7 @@ pub(super) fn assert_event_summaries(db: &mut SqliteConnection) {
             }
             count += 1;
             if let Some(date) = date.as_ref().filter(|date| !date.starts_with('?')) {
-                dates.push(date.clone());
+                dates.push(pgn_date::canonical(date).into_owned());
             }
             participants.extend([*white, *black].into_iter().filter(|id| *id != 0));
             if *site != 0 {
@@ -109,6 +109,34 @@ pub(super) fn assert_event_summaries(db: &mut SqliteConnection) {
         .unwrap(),
         0
     );
+}
+
+#[test]
+fn event_summary_canonicalizes_unpadded_date_bounds() {
+    use event_summaries::{refresh_event_summaries, RowSource};
+
+    for source in [RowSource::IndexedDirtyEvents, RowSource::FullScan] {
+        let mut db = SqliteConnection::establish(":memory:").unwrap();
+        db.batch_execute(CREATE_TABLES_SQL).unwrap();
+        db.batch_execute(
+            "INSERT INTO Events(ID, Name) VALUES(1, 'Event');
+             INSERT INTO Games(EventID, Date) VALUES(1, '2026.1.15'), (1, '2026.01.16');",
+        )
+        .unwrap();
+        db.transaction::<_, Error, _>(|db| refresh_event_summaries(db, source))
+            .unwrap();
+        let event = summary_snapshots(&mut db)
+            .into_iter()
+            .find(|event| event.id == 1)
+            .unwrap();
+        assert_eq!(
+            event.start_date.as_deref(),
+            Some("2026.01.15"),
+            "{source:?}"
+        );
+        assert_eq!(event.end_date.as_deref(), Some("2026.01.16"), "{source:?}");
+        assert_event_summaries(&mut db);
+    }
 }
 
 #[test]

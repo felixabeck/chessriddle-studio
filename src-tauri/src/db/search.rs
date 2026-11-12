@@ -521,6 +521,8 @@ fn matches_date(date: Option<&str>, start: Option<&str>, end: Option<&str>) -> b
     let Some(date) = date else {
         return false;
     };
+    let date = super::pgn_date::canonical(date);
+    let date = date.as_ref();
     let bytes = date.as_bytes();
     let is_pgn_date = bytes.len() == 10
         && bytes.iter().enumerate().all(|(index, byte)| {
@@ -566,34 +568,55 @@ pub(super) fn date_interval_endpoint_sql(
     impl diesel::query_builder::QueryFragment<diesel::sqlite::Sqlite> + Clone + Send,
 > {
     let (month, day) = if latest { ("12", "31") } else { ("01", "01") };
-    diesel::dsl::sql(
-        r#"CASE WHEN length(CAST("Games"."Date" AS BLOB)) = 10
-            AND "Games"."Date" GLOB '[0-9?][0-9?][0-9?][0-9?].[0-9?][0-9?].[0-9?][0-9?]'
-        THEN CASE WHEN instr(substr("Games"."Date", 1, 4), '?') > 0 THEN NULL
-            ELSE substr("Games"."Date", 1, 4) || '.' ||
-                CASE WHEN instr(substr("Games"."Date", 6, 2), '?') > 0
-                    THEN "#,
-    )
-    .bind::<diesel::sql_types::Text, _>(month)
-    .sql(
-        r#" ELSE substr("Games"."Date", 6, 2) END || '.' ||
-                CASE WHEN instr(substr("Games"."Date", 9, 2), '?') > 0
-                    THEN CASE WHEN "#,
-    )
-    .bind::<diesel::sql_types::Bool, _>(latest)
-    .sql(
-        r#" AND substr("Games"."Date", 6, 2) BETWEEN '01' AND '12'
+    let endpoint_sql = |date: &str| {
+        [
+            format!(
+                "CASE WHEN length(CAST(({date}) AS BLOB)) = 10
+            AND ({date}) GLOB '[0-9?][0-9?][0-9?][0-9?].[0-9?][0-9?].[0-9?][0-9?]'
+        THEN CASE WHEN instr(substr(({date}), 1, 4), '?') > 0 THEN NULL
+            ELSE substr(({date}), 1, 4) || '.' ||
+                CASE WHEN instr(substr(({date}), 6, 2), '?') > 0
+                    THEN "
+            ),
+            format!(
+                " ELSE substr(({date}), 6, 2) END || '.' ||
+                CASE WHEN instr(substr(({date}), 9, 2), '?') > 0
+                    THEN CASE WHEN "
+            ),
+            format!(
+                " AND substr(({date}), 6, 2) BETWEEN '01' AND '12'
                     THEN coalesce(strftime('%d', date(
-                        substr("Games"."Date", 1, 4) || '-' ||
-                        substr("Games"."Date", 6, 2) || '-01', '+1 month', '-1 day')), '31')
-                    ELSE "#,
-    )
-    .bind::<diesel::sql_types::Text, _>(day)
-    .sql(
-        r#" END ELSE substr("Games"."Date", 9, 2) END
+                        substr(({date}), 1, 4) || '-' ||
+                        substr(({date}), 6, 2) || '-01', '+1 month', '-1 day')), '31')
+                    ELSE "
+            ),
+            format!(
+                " END ELSE substr(({date}), 9, 2) END
             END
-        ELSE "Games"."Date" END"#,
-    )
+        ELSE ({date}) END"
+            ),
+        ]
+    };
+    let date = r#""Games"."Date""#;
+    let canonical = endpoint_sql(&super::pgn_date::canonical_sql(date));
+    let raw = endpoint_sql(date);
+    diesel::dsl::sql(r#"CASE WHEN length(CAST("Games"."Date" AS BLOB)) IN (8, 9) THEN ("#)
+        .sql(&canonical[0])
+        .bind::<diesel::sql_types::Text, _>(month)
+        .sql(&canonical[1])
+        .bind::<diesel::sql_types::Bool, _>(latest)
+        .sql(&canonical[2])
+        .bind::<diesel::sql_types::Text, _>(day)
+        .sql(&canonical[3])
+        .sql(") ELSE (")
+        .sql(&raw[0])
+        .bind::<diesel::sql_types::Text, _>(month)
+        .sql(&raw[1])
+        .bind::<diesel::sql_types::Bool, _>(latest)
+        .sql(&raw[2])
+        .bind::<diesel::sql_types::Text, _>(day)
+        .sql(&raw[3])
+        .sql(") END")
 }
 
 /// Inclusive Elo bound. The index stores a missing rating as 0, so a band
@@ -745,6 +768,7 @@ impl PositionStats {
         else {
             return;
         };
+        let date = super::pgn_date::canonical(date);
         match self
             .year_counts
             .binary_search_by_key(&year, |item| item.year)
@@ -753,11 +777,11 @@ impl PositionStats {
             Err(index) => self.year_counts.insert(index, YearCount { year, count: 1 }),
         }
         if self.last_played.as_deref().is_none_or(|last| {
-            date_order_components(date)
+            date_order_components(&date)
                 .cmp(date_order_components(last))
                 .is_gt()
         }) {
-            self.last_played = Some(date.to_owned());
+            self.last_played = Some(date.into_owned());
         }
     }
 }
@@ -1531,7 +1555,10 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
                                 let date = entry
                                     .date
                                     .filter(|date| !date.is_empty() && !date.starts_with('?'))
-                                    .map(|date| date_order_components(date).collect::<String>());
+                                    .map(|date| {
+                                        date_order_components(&super::pgn_date::canonical(date))
+                                            .collect::<String>()
+                                    });
                                 (0, date, entry.id)
                             } else {
                                 (elo_key, None, entry.id)
@@ -2859,6 +2886,14 @@ mod date_filter_tests {
     ];
 
     const MONTH_CASES: &[(&str, &str, &str, bool)] = &[
+        ("2026.1.15", "2026.01.10", "2026.01.20", true),
+        ("2026.1.9", "2026.01.10", "2026.01.20", false),
+        ("2026.1.21", "2026.01.10", "2026.01.20", false),
+        ("2026.1.?", "2026.01.01", "2026.01.31", true),
+        ("2026.?.?", "2026.01.01", "2026.12.31", true),
+        ("????.?.?", "2026.01.01", "2026.12.31", false),
+        ("2026.9.30", "2026.10.01", "2026.10.31", false),
+        ("2026.10.1", "2026.10.01", "2026.10.31", true),
         ("2024.06.??", "2024.06.01", "2024.06.30", true),
         ("2024.06.?5", "2024.06.01", "2024.06.30", true),
         ("2024.02.??", "2024.02.01", "2024.02.29", true),
@@ -5852,6 +5887,31 @@ mod tests {
         assert!(unknown.last_played.is_none());
         assert!(unknown.year_counts.is_empty());
         Ok(())
+    }
+
+    #[test]
+    fn record_date_canonicalizes_unpadded_recency() {
+        let mut stats = PositionStats {
+            move_: String::new(),
+            white: 0,
+            black: 0,
+            draw: 0,
+            unknown: 0,
+            last_played: None,
+            year_counts: Vec::new(),
+        };
+        stats.record_date(Some("2026.9.30"));
+        assert_eq!(stats.last_played.as_deref(), Some("2026.09.30"));
+        stats.record_date(Some("2026.10.01"));
+        stats.record_date(Some("2026.9.30"));
+        assert_eq!(stats.last_played.as_deref(), Some("2026.10.01"));
+        assert_eq!(
+            stats.year_counts,
+            vec![YearCount {
+                year: 2026,
+                count: 3
+            }]
+        );
     }
 
     #[test]

@@ -95,6 +95,7 @@ impl Summary {
     fn add(&mut self, game: SummaryGame) {
         self.game_count += 1;
         if let Some(date) = game.date.filter(|date| !date.starts_with('?')) {
+            let date = pgn_date::canonical(&date).into_owned();
             // Rust string ordering compares UTF-8 bytes, matching SQLite BINARY.
             if self.start_date.as_ref().is_none_or(|start| date < *start) {
                 self.start_date = Some(date.clone());
