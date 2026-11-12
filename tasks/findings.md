@@ -24856,3 +24856,19 @@ Line-reference correction: in `src/components/common/IconAction.tsx`, the extra 
 - **Fix:** drop the `aria-label` and let the visible text be the name, with the `Input.Wrapper` label linked via `aria-labelledby` (wrapper label id plus the button's own text id). Or set `aria-label={`${t("Training.Settings.Motif")}: ${currentLabel}`}`. Add a TrainingSettings test asserting the button's accessible name contains the selected motif label.
 - **Proof:** code trace on origin/master d30eb171f. The button carries an explicit `aria-label` (`:198`), which per accname overrides the subtree text (`:208`), and the only other ARIA on it is `aria-haspopup`/`aria-expanded` (`:199-200`). The `Input.Wrapper` label (`:184`) is not associated with the button: no `id`/`aria-labelledby` pairing, and Mantine's wrapper label targets `inputProps.id`, which is not passed. No probe needed; tree unchanged.
 - **Found by:** Grok Bot general review (chunk 27)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Unsaved-changes dialog can be dismissed while its save runs, and the finished save then closes the tab anyway
+
+* **ID:** f-20261112-68 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** behaviour
+- **Spotted outside diff:** no
+- **Where:** `src/components/tabs/ConfirmChangesModal.tsx:146`: `<AppModal withCloseButton={false} opened={modalOpen} onClose={cancel}>` is rendered without `pending={savePending}`. AppModal keeps Escape and outside-click enabled unless `pending` is set (`src/components/common/AppModal.tsx:19-20`). `save()` (`:68-143`) captures `onSaved`/`pendingClose` at click time and calls `onSaved?.()` on `"saved"` (`:112-118`) without checking that the close is still pending. Consumer: `src/components/tabs/BoardsPage.tsx:513-528`. `onCancel` disposes the store and clears `pendingClose`. `onSaved` (from the click-time render) disposes the store again and runs `closeTab(tabId, true)`. `BoardAnalysis.tsx:281-291` (`preserveChanges`) similarly runs `appendGame()` from `onSaved`.
+- **Defect:** only the buttons are disabled during a save (`:157,160`). The dialog itself stays dismissable, so the user can cancel the close mid-save. The cancel is then ignored: when the in-flight save resolves, the stale `onSaved` still closes the tab they chose to keep (or, from the add-game flow, still appends a game after Cancel). It also disposes the pending tree store a second time.
+- **Failure scenario:** with a dirty never-saved analysis tab, click its close ×, then "Save and close". The save picker or a slow write is still running when you press Esc (or click outside) because you changed your mind. The dialog disappears, the tab looks kept, and a moment later the save finishes and the tab closes anyway.
+- **Fix:** pass `pending={savePending}` to AppModal (the shared contract: "pending work cannot be dismissed"), and/or have `save()` re-check that the same close is still pending (e.g. a request id/ref cleared by `cancel`) before calling `onSaved`/`closeTab`. Add a ConfirmChangesModal test: start a deferred save, dismiss, resolve, and assert `onSaved` is not called.
+- **Proof:** ephemeral Vitest reusing ConfirmChangesModal.test.tsx's harness (first 114 lines), with its AppModal mock extended to expose `onClose`/`pending`, a deferred `writeGame`, and a stateful parent whose `onCancel` clears `pendingClose`. After clicking Save: `pending` was `undefined`, Save disabled, `pickPgnFile` 1 and `writeGame` 1 call in flight. Dismissing called `onCancel` once and closed the dialog. Resolving the write then called `onSaved` 1 time. Probe removed, tree clean.
+- **Found by:** Grok Bot general review (chunk 27)
