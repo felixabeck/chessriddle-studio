@@ -23925,7 +23925,7 @@ Handled in 1ab8c70cc. `load_themes_for_puzzle` now shares `themes_query_error` w
 
 ### Performance rating drops 7 points at a 57.5% score because `fideDp` rounds p×100 in binary floating point
 
-* **ID:** f-20261112-10 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-10 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** general review chunk (Felix t40u) at HEAD `e4713b21f` (file identical on origin/master `ba81d9264`), analysis-aggregation / report-formula line-by-line pass
 * **Where:** `src/components/home/PersonalCardPanels/overviewStatistics.ts` `fideDp` (~109-113): `Math.round(p * 100)` with `p` from `scoreFraction` (~82-86). Consumed by `fidePerformanceRating` (~100-107) → `summarizeColor` (~255-272) → the Overview line in `OverviewPanel.tsx` ~252-253. Governing decision `d-20261108-15` says p is "rounded to two decimals"; the existing test `p rounds to two decimals before the dp lookup` (`overviewStatistics.test.ts` ~214-218) pins half-up (0.625 → 0.63 → dp 95).
@@ -23934,6 +23934,8 @@ Handled in 1ab8c70cc. `load_themes_for_puzzle` now shares `themes_query_error` w
 * **Fix:** Round from integers instead of the float product: compute hundredths as `Math.floor((200 * won + 100 * drawn + games) / (2 * games))` (half-up on the exact score in half-points), or pass the half-point score and game count into `fideDp`. Add a regression for `fidePerformanceRating(1800, 3, 17, 0) === 1857` beside the 0.625 case.
 * **Proof:** Probe `/tmp/gb-review-20261112/dp_probe.mjs` on atlas (Node) enumerated every W/D/L split for 1-60 games, comparing the shipped `Math.round(p*100)` lookup with exact integer half-up rounding of the same score. 53 splits differ, all with p = 0.575 (20, 40 and 60 games), shipped dp 50 vs half-up dp 57; e.g. `20 games +3=17-0 p=0.575 code=50 halfup=57`.
 * **Found by:** Grok Bot, general review (t40u), HEAD `e4713b21f`.
+* **Closed 2026-11-12 (drain, Claude Code):** `scoreHundredths(won, drawn, lost)` now rounds the score half-up to hundredths in integer arithmetic (`floor((200W + 100D + N) / 2N)`), and `fideDp` takes those integer hundredths, so 0.575 maps to 58 → dp 57 (11.5/20 against 1800 → 1857). Regression tests `rounds exact scores half-up to hundredths` (3/17/0 and 6/34/0 → 1857) go red under the old `Math.round(p*100)` and green with the fix. Commit 966a55aa7. Decision d-20261108-15 governs and is unchanged (p rounded to two decimals); this makes the code meet it. Rejected: `Math.round(p*100 + epsilon)`, which only moves the float edge.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"cfe1e887915074bc823614158497dbd51371a59d1a5cdbffe577996eb7fee0ca","header_sha256":"d1c7760228b626025f0e0babc9eb7ee26d53464bfbb35cd3d33340eccd844917","header_status":"handled","input_sha256":"3bac03055d932a2b3bccb9bc1482b835c9d071ff77385ae94bdae7e7dd4d4408","kind":"mutation-receipt","operation":"6f5daba5400466ddd7d5709d8ea08139d8139e788aaca5631b9c8ab2d3fb2907","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-10"],"target":"f-20261112-10","v":1} -->
 
 ---
 
