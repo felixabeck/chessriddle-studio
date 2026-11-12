@@ -24553,3 +24553,19 @@ Deferred follow-up (keep at midnight filing):
 - **Fix:** always render the Round input in the full (non-simplified) layout, showing the `?` placeholder when it is empty or `?`, like the White/Black fields. Add a GameInfo test that clears and retypes the round.
 - **Proof:** ephemeral Vitest built on the GameInfo.test.tsx harness, with headers `round: "3"`: after a native input event setting the round input to `""`, the store held `round: ""`, the input element was disconnected (`isConnected === false`) and the "GameInfo.Round" label was gone from the DOM. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 23)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### GameInfo shows a partial PGN date such as 1972.??.?? as blank, hiding the known year
+
+* **ID:** f-20261112-50 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/common/GameInfo.tsx:47-51` (`dayjs(headers.date, "YYYY.MM.DD").isValid() ? … : null`) feeding the `DateInput` at `:228-243`
+- **Defect:** PGN allows partial dates (`1972.??.??`, `2024.05.??`),, and imported Date tags are kept verbatim. Strict parsing rejects any `??` part, so the DateInput gets `null` and shows only its `????.??.??` placeholder, which looks identical to a fully unknown date. The known year or month is invisible in the Info panel and in the database GameCard that reuses GameInfo, and picking a date overwrites it with no hint that part of it was known.
+- **Failure scenario:** import a historical PGN with `[Date "1972.??.??"]` and open the game: the Info panel date reads `????.??.??`, as if the year were unknown.
+- **Fix:** when the date is partial, show the raw header text (for example as the input's displayed value or an adjacent read-only label) instead of the placeholder, and only replace it when the user picks a date. Add a GameInfo test for `1972.??.??`.
+- **Proof:** ephemeral Vitest on the GameInfo.test.tsx harness (customParseFormat extended as in bootstrap.tsx) with `date: "1972.??.??"`: the store kept `"1972.??.??"`, but the DateInput rendered `value=""` with placeholder `????.??.??`. Probe removed, tree clean.
+- **Found by:** Grok Bot general review (chunk 23)
