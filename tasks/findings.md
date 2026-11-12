@@ -25034,3 +25034,19 @@ Line-reference correction: in `src/components/common/IconAction.tsx`, the extra 
 * **Fix:** normalise only when the from-square holds the side-to-move's king, the target is its own rook on a castling square, and the castling right exists. Equivalently, convert the parsed `Move::Castle` back to standard UCI (`to_uci(CastlingMode::Standard)`) instead of rewriting strings. Add a test with a rook-on-e1 book entry.
 * **Proof:** probe outside the repo. A standalone crate against the locked `shakmaty = "=0.27.1"` contains a verbatim copy of `normalize_polyglot_uci` and the same `UciMove::from_ascii(..).to_move(&pos)` filter `try_polyglot_book_move` uses. It printed `k7/8/8/8/8/8/2K5/4R3 w - - 0 1: book e1h1 = Rh1, try_polyglot_book_move keeps e1g1 = Rg1`, plus `e1a1 = Ra1 → e1c1 = Rc1` (`7k/8/8/8/8/8/6K1/4R3 w`) and `e8h8 = Rh8 → e8g8 = Rg8` (`4r3/2k5/8/8/8/8/8/K7 b`). The unit test at `game.rs:~5748-5756` pins the unconditional mapping. Related: f-20260829-10 (the Polyglot ep-hash fix in the same lookup, handled; a different defect).
 * **Found by:** Grok Bot general review
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### A PGN opening book drops every game that contains a variation, and fails when all of them do
+
+* **ID:** f-20261112-79 · **Status:** open · **Area:** chess-tree · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** yes (general review, origin/master 11624873a)
+* **Where:** `src-tauri/src/game.rs:2418-2539` (`OpeningBookPgnVisitor`: it overrides `begin_game`, `header`, `end_headers`, `san` and `end_game` but not `begin_variation`); `src-tauri/vendor/pgn-reader/src/visitor.rs:49-51` (the default `begin_variation` returns `Skip(false)`, so the reader visits variation moves); `game.rs:2546-2575` (`select_random_pgn_entry_cancellable`).
+* **Defect:** the reader enters every `( … )` variation and hands its moves to `san()` as if they were mainline moves. `san()` resolves them against `current_position`, which already includes the mainline move the variation replaces. The move is then usually illegal (wrong side to move), so the visitor sets `skip = true` and `end_game` returns `None`: the whole game is excluded from the random selection. When a variation move does happen to be legal, its UCI is appended to `initial_moves` and the game starts from a mixed line that isn't in the book. Annotated repertoire and opening PGNs normally contain variations. So such a book either silently loses most of its lines or, when every game has one, fails with "Opening book PGN has no valid games" and the game doesn't start.
+* **Failure scenario:** choose a `.pgn` (or a `.zip` holding a `.pgn`) opening book whose games all contain at least one variation, for example `1. e4 e5 (1... c5 2. Nf3) 2. Nf3 Nc6 *`, and start a game. `apply_opening_book_descriptor` returns the InvalidData error "Opening book PGN has no valid games". With a mixed book, only the variation-free games are ever chosen.
+* **Fix:** override `begin_variation` in `OpeningBookPgnVisitor` to return `Skip(true)`, as the vendored crate's own example visitor does at `visitor.rs:70-72`, so that only mainline moves are collected. Add a test with a book game that has a variation.
+* **Proof:** probe outside the repo. A standalone crate against the vendored `pgn-reader` (path dependency on `src-tauri/vendor/pgn-reader`, unchanged from origin/master) and `shakmaty =0.27.1` copies the visitor's `begin_game`/`end_headers`/`san`/`end_game` logic, with no `begin_variation` override. It read four games: `1. e4 e5 (1... c5 2. Nf3) 2. Nf3 Nc6 *`, `1. d4 (1. c4) 1... d5 *` and `1. e4 (1. d4 d5) 1... e5 *` each printed `None` (game dropped), and the control `1. e4 e5 2. Nf3 *` printed `Some(["e2e4", "e7e5", "g1f3"])`. No existing `game.rs` test feeds a book PGN with a variation.
+* **Found by:** Grok Bot general review
