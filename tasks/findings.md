@@ -24021,7 +24021,7 @@ Handled in 1ab8c70cc. `load_themes_for_puzzle` now shares `themes_query_error` w
 
 ### Puzzle "Avg time" averages in puzzles solved with time tracking off as 0 s
 
-* **ID:** f-20261112-16 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-16 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** ux
 * **Spotted outside diff:** general review chunk 3 (Felix t40u) at HEAD `87bab4d77` (file identical on origin/master `ba81d9264`), `Puzzles.tsx` line-by-line pass; inherited from upstream En Croissant (`5603afe1b`)
 * **Where:** `src/components/puzzles/Puzzles.tsx` `avgTimeSeconds` (~373-376) divides the summed `timeSpent` of every `completion === "correct"` puzzle by `wonPuzzles.length`. `changeCompletion` (~544) stores `timeSpent: selectedTimer ? timerElapsed(selectedTimer) : (puzzle.timeSpent ?? 0)`, and the timer effect (~681-697) only creates a timer while `trackTime` is on, so a puzzle solved with tracking off is saved with `timeSpent: 0`, indistinguishable from "tracked, 0 ms". The card is shown only when `trackTime && avgTimeSeconds > 0` (~1033). Distinct from f-20261111-61 (component size) and f-20261111-80 (preference hydration).
@@ -24030,6 +24030,9 @@ Handled in 1ab8c70cc. `load_themes_for_puzzle` now shares `themes_query_error` w
 * **Fix:** Store `timeSpent` as `undefined` (the schema already allows it, `puzzleSession.ts` ~39) when the attempt was completed without a timer, and average only won puzzles with a defined `timeSpent`. Add a `Puzzles.test.tsx` case: one untracked correct solve, then a tracked one, asserting the card shows only the tracked time.
 * **Proof:** Trace above: with `trackTime` false there is no `selectedTimer`, `puzzle.timeSpent` is `undefined` for a fresh attempt (no other writer: `rg -n timeSpent src --glob '!*test*'` lists only lines 421, 440, 544, 581, 748, all timer-gated except 544's `?? 0` fallback), so `first.timeSpent` is 0 and is written at ~581. Example: (0+0+0+30000)/4/1000 = 7.5.
 * **Found by:** Grok Bot, general review (t40u), HEAD `87bab4d77`.
+
+Handled in 1ab8c70cc. `changeCompletion` keeps `timeSpent` undefined for an attempt completed without a timer (the `?? 0` fallback is gone), and `avgTimeSeconds` averages only correct solves with a defined `timeSpent`. Test: `Puzzles.test.tsx` "Avg time includes only tracked correct solves" (one untracked, one 2.5 s tracked solve -> 2.5s). Sessions persisted before this change keep their stored zeros; they are session-scoped and age out.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"0d16359f0a4a5fa714506bc57237e5f8afe5e89b4f8359d1530b31fe8246c277","header_sha256":"5070adcb6cb1e0284f5e69e764c0e58851ee482eb10201016950296529f6a126","header_status":"handled","input_sha256":"ea7034bd3de37fa95121ae72bf792c3e7049c91a0b19ad9c59bca5f03b474ede","kind":"mutation-receipt","operation":"5350cc89914456172aa5dc9e3a6b2a0dc00edfef3ffc099929f0099fdbd43962","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-16"],"target":"f-20261112-16","v":1} -->
 
 ---
 
