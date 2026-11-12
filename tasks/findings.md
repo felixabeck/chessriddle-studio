@@ -24407,3 +24407,19 @@ Deferred follow-up (keep at midnight filing):
 - **Fix:** clear the selection (`setValue(undefined)`) on any text change that is not an exact suggestion pick, or only commit ids on option submit; disable Merge while either side has no committed id; add PlayerSearchInput and PlayerMerger tests for "select, then edit text".
 - **Proof:** ephemeral probe in the `LocalOptionsPanel.test.tsx` harness: with player 42 selected (input "A player"), `enterPlayer("Someone else entirely")` with no matching suggestions leaves `localOptions.player === 42` while the input shows "Someone else entirely". The merge path uses the same component and passes the stored ids straight to `tauri.mergePlayers` (code trace). Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 19)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Player name suggestions return the five lowest-rated (or unrated) matches, so strong players cannot be picked by partial name
+
+* **ID:** f-20261112-41 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/databases/PlayerSearchInput.tsx:90-103` (`query_players` with `pageSize: 5, sort: "elo", direction: "asc"`), ordered natively by `players::elo.asc()` in `src-tauri/src/db/mod.rs:3294-3297`; used by the explorer player filter, the GameTable filters and Merge players
+- **Defect:** the autocomplete asks for the five matching players with the lowest Elo. SQLite sorts NULL first in ascending order, so unrated namesakes come before everyone, and the highest-rated matches, usually the ones a user is looking for, are the ones cut off.
+- **Failure scenario:** in a database with Magnus Carlsen plus five or more lower-rated or unrated "Carlsen" entries, typing "Carlsen" in the explorer player filter suggests only those five, never "Carlsen, Magnus", until the user types a name specific enough to exclude them.
+- **Fix:** request `direction: "desc"` (or sort by `games` desc, which is how the Players list ranks relevance) for suggestions; add a test that the suggestion query asks for the strongest or most active matches.
+- **Proof:** code trace of the request and the native ORDER BY; SQLite check of the same ordering: `ORDER BY elo ASC LIMIT 5` over Carlsen rows (2830, NULL, 1200, 1300, 1400, 1500) returns Henrik (NULL), A, B, C, D and omits Magnus 2830.
+- **Found by:** Grok Bot general review (chunk 19)
