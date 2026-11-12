@@ -391,7 +391,9 @@ test("search finds a Library file absent from recents and activates player searc
   await render();
   await search("Sicilian");
   expect(rows()).toHaveLength(1);
-  expect(mocks.feedArgs).toHaveBeenLastCalledWith(undefined, "Sicilian", true);
+  await vi.waitFor(() =>
+    expect(mocks.feedArgs).toHaveBeenLastCalledWith(undefined, "Sicilian", true),
+  );
   await open("Sicilian");
   await filter("repertoires");
   expect(mocks.feedArgs).toHaveBeenLastCalledWith(undefined, "Sicilian", false);

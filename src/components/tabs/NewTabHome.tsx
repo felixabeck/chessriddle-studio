@@ -1,4 +1,5 @@
 import { tauri } from "@/platform/tauri";
+import { useDebouncedValue } from "@mantine/hooks";
 import { normalizeError } from "@/platform/errors";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import {
@@ -64,7 +65,7 @@ import { compareLibraryRows, type LibraryRow } from "@/components/library/librar
 import type { OwnGame } from "@/components/library/ownGamesFeed";
 import type { FileMetadata, FileType } from "@/components/files/file";
 import { databaseGameOpenedKey } from "@/state/lastOpened";
-import { databaseMetadataFailureMessage, query_games } from "@/utils/db";
+import { databaseMetadataFailureMessage, NAME_SEARCH_DEBOUNCE_MS, query_games } from "@/utils/db";
 import { formatRelativeTime } from "@/utils/format";
 
 type HomeRow =
@@ -204,12 +205,13 @@ export default function NewTabHome({ id }: { id: string }) {
     getInitialValueInEffect: false,
   });
   const search = query.trim();
+  const [debouncedSearch] = useDebouncedValue(search, NAME_SEARCH_DEBOUNCE_MS);
   const library = useLibraryData();
   const due = useLibraryDueCounts(library.rows);
   const feed = useOwnGamesFeed(
     library.collections,
-    search,
-    filter === "games" || (filter === "all" && !!search),
+    debouncedSearch,
+    filter === "games" || (filter === "all" && !!debouncedSearch),
   );
   const opening = useRef<AbortController | null>(null);
   useEffect(() => () => opening.current?.abort(), []);

@@ -1,4 +1,5 @@
 import { Center, Collapse, Flex, Group, NumberInput, Text, TextInput } from "@mantine/core";
+import { useDebouncedValue } from "@mantine/hooks";
 import { EllipsisVertical, Search } from "lucide-react";
 import { DataTable } from "mantine-datatable";
 import { useContext, useState } from "react";
@@ -9,7 +10,7 @@ import { useStore } from "zustand";
 import type { Player, PlayerSort } from "@/bindings";
 import { IconAction } from "@/components/common/IconAction";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
-import { ELO_FILTER_MAX, query_players } from "@/utils/db";
+import { ELO_FILTER_MAX, NAME_SEARCH_DEBOUNCE_MS, query_players } from "@/utils/db";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
 import { numericColumn } from "./databaseColumns";
 import GridLayout from "./GridLayout";
@@ -23,15 +24,16 @@ function PlayerTable() {
 
   const file = useStore(store, (s) => s.database?.file)!;
   const query = useStore(store, (s) => s.players.query);
+  const [debouncedQuery] = useDebouncedValue(query, NAME_SEARCH_DEBOUNCE_MS);
   const setQuery = useStore(store, (s) => s.setPlayersQuery);
 
   const selectedPlayer = useStore(store, (s) => s.players.selectedPlayer);
   const setSelectedPlayer = useStore(store, (s) => s.setPlayersSelectedPlayer);
 
-  const requestKey = ["players", file, query] as const;
+  const requestKey = ["players", file, debouncedQuery] as const;
   const requestOwner = useNativeRequestOwner(requestKey);
   const { data, error, isLoading } = useSWR(requestKey, () =>
-    requestOwner!.run((signal) => query_players(file, query, { signal })),
+    requestOwner!.run((signal) => query_players(file, debouncedQuery, { signal })),
   );
   const players = data?.data ?? [];
   const count = data?.count;

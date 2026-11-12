@@ -25,6 +25,8 @@ import i18n from "i18next";
 import { getDefaultStore } from "jotai";
 import { fileWorkspaceAtom } from "@/state/atoms";
 
+export const NAME_SEARCH_DEBOUNCE_MS = 250;
+
 export type SuccessDatabaseInfo = Extract<DatabaseInfo, { type: "success" }> & {
     collection?: import("@/bindings").CollectionDescriptor;
 };

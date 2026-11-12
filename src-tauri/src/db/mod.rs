@@ -2198,6 +2198,30 @@ pub struct QueryOptions<SortT> {
 
 const MAX_PAGE_SIZE: i32 = 1000;
 
+// Bound single player and event name searches in Unicode characters.
+const MAX_NAME_SEARCH_CHARS: usize = 256;
+
+fn validate_name_search(name: &str) -> Result<(), Error> {
+    if name.chars().take(MAX_NAME_SEARCH_CHARS + 1).count() > MAX_NAME_SEARCH_CHARS {
+        return Err(Error::InvalidInput(format!(
+            "name search must contain at most {MAX_NAME_SEARCH_CHARS} characters"
+        )));
+    }
+    Ok(())
+}
+
+fn like_contains_pattern(normalized: &str) -> String {
+    let mut pattern = String::from("%");
+    for character in normalized.chars() {
+        if matches!(character, '%' | '_' | '\\') {
+            pattern.push('\\');
+        }
+        pattern.push(character);
+    }
+    pattern.push('%');
+    pattern
+}
+
 // Player-name searches accept at most 16 tokens of 128 Unicode characters each.
 // Reject excess input rather than silently dropping part of the predicate.
 const MAX_PLAYER_NAME_TOKENS: usize = 16;
@@ -2220,15 +2244,7 @@ fn player_name_patterns(query: &str) -> Result<Vec<String>, Error> {
                 "player name tokens must contain at most {MAX_PLAYER_NAME_TOKEN_CHARS} characters"
             )));
         }
-        let mut pattern = String::from("%");
-        for character in name_identity::normalize_name(token).chars() {
-            if matches!(character, '%' | '_' | '\\') {
-                pattern.push('\\');
-            }
-            pattern.push(character);
-        }
-        pattern.push('%');
-        patterns.push(pattern);
+        patterns.push(like_contains_pattern(&name_identity::normalize_name(token)));
     }
     Ok(patterns)
 }
@@ -3147,6 +3163,9 @@ fn get_players_blocking(
     cancellation: &CancellationToken,
 ) -> Result<QueryResponse<Vec<Player>>, Error> {
     cancellation_check(cancellation)?;
+    if let Some(name) = &query.name {
+        validate_name_search(name)?;
+    }
     let target = resolve_database(authority, &file, PathOperation::DatabaseRead)?;
 
     let mut database_connection =
@@ -3167,18 +3186,21 @@ fn get_players_blocking(
                 count_query = count_query.filter(players::name.is_not_null());
             } else {
                 count_with_rows = !query.options.skip_count;
-                let (predicate, value) = match query.name_match {
+                let (predicate, value, escape) = match query.name_match {
                     Some(PlayerNameMatch::Exact) => (
                         "normalized_name(Name) = ",
                         name_identity::normalize_name(&name),
+                        "",
                     ),
                     _ => (
                         "normalized_name(Name) LIKE ",
-                        format!("%{}%", name_identity::normalize_name(&name)),
+                        like_contains_pattern(&name_identity::normalize_name(&name)),
+                        " ESCAPE '\\'",
                     ),
                 };
                 let name_filter = diesel::dsl::sql::<diesel::sql_types::Bool>(predicate)
-                    .bind::<diesel::sql_types::Text, _>(value);
+                    .bind::<diesel::sql_types::Text, _>(value)
+                    .sql(escape);
                 // Resolve matching IDs through the narrow Name projection before sorting.
                 // Otherwise SQLite scans the entire game-count index even for one match.
                 let matching_players = diesel::alias!(players as matching_players);
@@ -3321,6 +3343,9 @@ fn get_tournaments_blocking(
     cancellation: &CancellationToken,
 ) -> Result<QueryResponse<Vec<TournamentEvent>>, Error> {
     cancellation_check(cancellation)?;
+    if let Some(name) = &query.name {
+        validate_name_search(name)?;
+    }
     let target = resolve_database(authority, &file, PathOperation::DatabaseRead)?;
 
     let mut database_connection =
@@ -3348,11 +3373,17 @@ fn get_tournaments_blocking(
             count_query.filter(events::name.is_not("Unknown").and(events::name.is_not("")));
 
         if let Some(name) = query.name {
-            let pattern = format!("%{}%", name_identity::normalize_name(&name));
-            sql_query = sql_query
-                .filter(name_identity::normalized_name(events::name).like(pattern.clone()));
-            count_query =
-                count_query.filter(name_identity::normalized_name(events::name).like(pattern));
+            let pattern = like_contains_pattern(&name_identity::normalize_name(&name));
+            sql_query = sql_query.filter(
+                name_identity::normalized_name(events::name)
+                    .like(pattern.clone())
+                    .escape('\\'),
+            );
+            count_query = count_query.filter(
+                name_identity::normalized_name(events::name)
+                    .like(pattern)
+                    .escape('\\'),
+            );
         }
 
         if !query.options.skip_count {
@@ -11317,7 +11348,7 @@ mod tests {
             let (_dir, app, handle, database) = blocking_database_case();
             insert_named_game(&app, &database, "Player", "Opponent", stored, "Site");
             let state = app.state::<AppState>();
-            for query in queries.into_iter().chain(["%", "_"]) {
+            for query in queries {
                 let events = get_tournaments_blocking(
                     &state.pgn_path_authority,
                     &state.database_repository,
@@ -11452,6 +11483,140 @@ mod tests {
         ] {
             assert!(matches!(query(input), Err(Error::InvalidInput(_))));
         }
+    }
+
+    #[test]
+    fn player_name_search_treats_like_wildcards_literally() -> Result<(), Error> {
+        let (_dir, app, handle, database) = blocking_database_case();
+        for name in ["100%", "a_b", "axb", "plain"] {
+            insert_named_game(&app, &database, name, "Opponent", "Event", "Site");
+        }
+        let state = app.state::<AppState>();
+        for (name, expected) in [("%", Some("100%")), ("_", Some("a_b")), ("\\", None)] {
+            // Exercise both the window count and the separate out-of-page count.
+            for page in [1, 2] {
+                let response = get_players_blocking(
+                    &state.pgn_path_authority,
+                    &state.database_repository,
+                    handle.clone(),
+                    PlayerQuery {
+                        name: Some(name.into()),
+                        name_match: Some(PlayerNameMatch::Contains),
+                        range: None,
+                        options: QueryOptions {
+                            page: Some(page),
+                            page_size: Some(10),
+                            sort: PlayerSort::Name,
+                            direction: SortDirection::Asc,
+                            skip_count: false,
+                        },
+                    },
+                    &CancellationToken::new(),
+                )?;
+                assert_eq!(response.count, Some(i32::from(expected.is_some())));
+                let names: Vec<_> = response
+                    .data
+                    .iter()
+                    .filter_map(|p| p.name.as_deref())
+                    .collect();
+                let expected: Vec<_> = expected.filter(|_| page == 1).into_iter().collect();
+                assert_eq!(names, expected, "{name:?}, page {page}");
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn tournament_name_search_treats_like_wildcards_literally() -> Result<(), Error> {
+        let (_dir, app, handle, database) = blocking_database_case();
+        for name in ["50%", "a_b", "axb", "other", "back\\slash"] {
+            insert_named_game(&app, &database, "Player", "Opponent", name, "Site");
+        }
+        let state = app.state::<AppState>();
+        for (name, expected) in [("%", "50%"), ("_", "a_b"), ("\\", "back\\slash")] {
+            let response = get_tournaments_blocking(
+                &state.pgn_path_authority,
+                &state.database_repository,
+                handle.clone(),
+                TournamentQuery {
+                    name: Some(name.into()),
+                    options: QueryOptions {
+                        sort: TournamentSort::Name,
+                        skip_count: false,
+                        page: None,
+                        page_size: None,
+                        direction: SortDirection::Asc,
+                    },
+                },
+                &CancellationToken::new(),
+            )?;
+            assert_eq!(response.count, Some(1));
+            assert_eq!(response.data.len(), 1);
+            assert_eq!(response.data[0].name.as_deref(), Some(expected));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn name_search_rejects_oversized_input() -> Result<(), Error> {
+        let (_dir, app, handle, database) = blocking_database_case();
+        let name = "é".repeat(MAX_NAME_SEARCH_CHARS);
+        insert_named_game(&app, &database, &name, "Opponent", &name, "Site");
+        let state = app.state::<AppState>();
+        for input in [name.clone(), format!("{name}é")] {
+            for name_match in [
+                Some(PlayerNameMatch::Contains),
+                Some(PlayerNameMatch::Exact),
+            ] {
+                let response = get_players_blocking(
+                    &state.pgn_path_authority,
+                    &state.database_repository,
+                    handle.clone(),
+                    PlayerQuery {
+                        name: Some(input.clone()),
+                        name_match,
+                        range: None,
+                        options: QueryOptions {
+                            page: None,
+                            page_size: None,
+                            sort: PlayerSort::Name,
+                            direction: SortDirection::Asc,
+                            skip_count: false,
+                        },
+                    },
+                    &CancellationToken::new(),
+                );
+                if input == name {
+                    assert_eq!(response?.count, Some(1));
+                } else {
+                    assert!(matches!(response, Err(Error::InvalidInput(message))
+                        if message == "name search must contain at most 256 characters"));
+                }
+            }
+            let response = get_tournaments_blocking(
+                &state.pgn_path_authority,
+                &state.database_repository,
+                handle.clone(),
+                TournamentQuery {
+                    name: Some(input.clone()),
+                    options: QueryOptions {
+                        sort: TournamentSort::Name,
+                        skip_count: false,
+                        page: None,
+                        page_size: None,
+                        direction: SortDirection::Asc,
+                    },
+                },
+                &CancellationToken::new(),
+            );
+            if input == name {
+                assert_eq!(response?.count, Some(1));
+            } else {
+                assert!(matches!(response, Err(Error::InvalidInput(message))
+                    if message == "name search must contain at most 256 characters"));
+            }
+        }
+        Ok(())
     }
 
     #[test]
@@ -14962,8 +15127,18 @@ mod exact_player_tests {
                 vec![1, 2, 3, 4]
             );
         }
-        assert_eq!(lookup(query("a_b", None)).count, Some(2));
-        assert_eq!(lookup(query("percent%", None)).count, Some(2));
+        let result = lookup(query("a_b", None));
+        assert_eq!(result.count, Some(1));
+        assert_eq!(
+            result.data.iter().map(|p| p.id).collect::<Vec<_>>(),
+            vec![6]
+        );
+        let result = lookup(query("percent%", None));
+        assert_eq!(result.count, Some(1));
+        assert_eq!(
+            result.data.iter().map(|p| p.id).collect::<Vec<_>>(),
+            vec![8]
+        );
 
         let mut paged = query("aLeX", Some(PlayerNameMatch::Exact));
         paged.range = Some((1500, 2200));

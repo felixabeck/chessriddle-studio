@@ -111,6 +111,7 @@ let container: HTMLDivElement;
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 beforeEach(() => {
+  vi.useFakeTimers();
   vi.clearAllMocks();
   mocks.inputs.clear();
   mocks.getPlayers.mockResolvedValue({ data: [], count: 0 });
@@ -126,6 +127,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   activeDatabaseViewStore.getState().clearDatabase();
+  vi.useRealTimers();
 });
 
 test("max Elo preserves numeric zero and an empty max restores the omitted full band", async () => {
@@ -139,6 +141,7 @@ test("max Elo preserves numeric zero and an empty max restores the omitted full 
     ),
   );
   await act(async () => mocks.inputs.get("Databases.Player.MaxELO")!(0));
+  await act(async () => vi.advanceTimersByTimeAsync(250));
 
   expect(query_players).toHaveBeenLastCalledWith(file, expect.objectContaining({ range: [0, 0] }), {
     signal: expect.any(AbortSignal),
@@ -150,6 +153,7 @@ test("max Elo preserves numeric zero and an empty max restores the omitted full 
   );
 
   await act(async () => mocks.inputs.get("Databases.Player.MaxELO")!(""));
+  await act(async () => vi.advanceTimersByTimeAsync(250));
 
   expect(query_players).toHaveBeenLastCalledWith(
     file,
@@ -189,6 +193,7 @@ test("headers omit ID and sortable Games requests both directions with native pl
   expect(gamesHeader.dataset.sortable).toBe("true");
   for (const direction of ["asc", "desc"] as const) {
     await act(async () => gamesHeader.click());
+    await act(async () => vi.advanceTimersByTimeAsync(250));
     expect(query_players).toHaveBeenLastCalledWith(
       file,
       expect.objectContaining({

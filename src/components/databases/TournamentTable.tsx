@@ -1,5 +1,6 @@
 import { tauri } from "@/platform/tauri";
 import { Center, Flex, Text, TextInput } from "@mantine/core";
+import { useDebouncedValue } from "@mantine/hooks";
 import { Search } from "lucide-react";
 import { DataTable } from "mantine-datatable";
 import { useContext } from "react";
@@ -9,6 +10,7 @@ import useSWR from "swr";
 import { useStore } from "zustand";
 import { type Event, type TournamentSort } from "@/bindings";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
+import { NAME_SEARCH_DEBOUNCE_MS } from "@/utils/db";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
 import {
   dateColumn,
@@ -27,14 +29,15 @@ function TournamentTable() {
 
   const file = useStore(store, (s) => s.database?.file)!;
   const query = useStore(store, (s) => s.tournaments.query);
+  const [debouncedQuery] = useDebouncedValue(query, NAME_SEARCH_DEBOUNCE_MS);
   const selected = useStore(store, (s) => s.tournaments.selectedTournament);
   const setQuery = useStore(store, (s) => s.setTournamentsQuery);
   const setSelected = useStore(store, (s) => s.setTournamentsSelectedTournament);
 
-  const requestKey = ["tournaments", file, query] as const;
+  const requestKey = ["tournaments", file, debouncedQuery] as const;
   const requestOwner = useNativeRequestOwner(requestKey);
   const { data, error, isLoading } = useSWR(requestKey, () =>
-    requestOwner!.run((signal) => tauri.getTournaments(file, query, { signal })),
+    requestOwner!.run((signal) => tauri.getTournaments(file, debouncedQuery, { signal })),
   );
   const tournaments = data?.data ?? [];
   const count = data?.count;

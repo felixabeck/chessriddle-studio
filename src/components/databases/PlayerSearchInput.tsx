@@ -5,7 +5,7 @@ import { Search } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type DatabaseHandle, type Player } from "@/bindings";
-import { query_players } from "@/utils/db";
+import { NAME_SEARCH_DEBOUNCE_MS, query_players } from "@/utils/db";
 import classes from "./SideInput.module.css";
 
 export function PlayerSearchInput({
@@ -26,11 +26,13 @@ export function PlayerSearchInput({
   const [data, setData] = useState<Player[]>([]);
   const playerLookupVersion = useRef(0);
   const searchController = useRef<AbortController | null>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(
     () => () => {
       playerLookupVersion.current += 1;
       searchController.current?.abort();
+      clearTimeout(searchTimer.current);
     },
     [],
   );
@@ -39,6 +41,7 @@ export function PlayerSearchInput({
     playerLookupVersion.current += 1;
     searchController.current?.abort();
     searchController.current = null;
+    clearTimeout(searchTimer.current);
     setData([]);
   }, [file]);
 
@@ -64,9 +67,10 @@ export function PlayerSearchInput({
       });
   }, [file, t, value]);
 
-  async function handleChange(val: string) {
+  function handleChange(val: string) {
     const lookupVersion = ++playerLookupVersion.current;
     searchController.current?.abort();
+    clearTimeout(searchTimer.current);
     const controller = new AbortController();
     searchController.current = controller;
     setTempValue(val);
@@ -80,29 +84,32 @@ export function PlayerSearchInput({
       setValue(player.id);
     }
 
-    try {
-      const res = await query_players(
-        file,
-        {
-          name: val,
-          options: {
-            page: 1,
-            pageSize: 5,
-            skipCount: true,
-            sort: "elo",
-            direction: "asc",
+    searchTimer.current = setTimeout(async () => {
+      if (playerLookupVersion.current !== lookupVersion || controller.signal.aborted) return;
+      try {
+        const res = await query_players(
+          file,
+          {
+            name: val,
+            options: {
+              page: 1,
+              pageSize: 5,
+              skipCount: true,
+              sort: "elo",
+              direction: "asc",
+            },
           },
-        },
-        { signal: controller.signal },
-      );
-      if (playerLookupVersion.current === lookupVersion && !controller.signal.aborted) {
-        setData(res.data);
+          { signal: controller.signal },
+        );
+        if (playerLookupVersion.current === lookupVersion && !controller.signal.aborted) {
+          setData(res.data);
+        }
+      } catch (cause) {
+        if (playerLookupVersion.current === lookupVersion && !controller.signal.aborted) {
+          notifyUnlessCancelled(t("Common.Error"), cause);
+        }
       }
-    } catch (cause) {
-      if (playerLookupVersion.current === lookupVersion && !controller.signal.aborted) {
-        notifyUnlessCancelled(t("Common.Error"), cause);
-      }
-    }
+    }, NAME_SEARCH_DEBOUNCE_MS);
   }
   return (
     <Autocomplete

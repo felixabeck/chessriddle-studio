@@ -8,7 +8,10 @@ const mocks = vi.hoisted(() => ({
   getPlayer: vi.fn(),
   notify: vi.fn(),
 }));
-vi.mock("@/utils/db", () => ({ query_players: mocks.queryPlayers }));
+vi.mock("@/utils/db", () => ({
+  NAME_SEARCH_DEBOUNCE_MS: 250,
+  query_players: mocks.queryPlayers,
+}));
 vi.mock("@/platform/tauri", () => ({ tauri: { getPlayer: mocks.getPlayer } }));
 vi.mock("@/components/files/notifyError", () => ({ notifyUnlessCancelled: mocks.notify }));
 vi.mock("react-i18next", () => {
@@ -59,6 +62,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  vi.useRealTimers();
 });
 
 async function render(database: DatabaseHandle) {
@@ -66,6 +70,51 @@ async function render(database: DatabaseHandle) {
     root.render(<PlayerSearchInput label="Player" file={database} setValue={vi.fn()} />),
   );
 }
+
+test("rapid typing starts only the final player search after 250 ms", async () => {
+  vi.useFakeTimers();
+  mocks.queryPlayers.mockResolvedValue({ data: [], count: 0 });
+  const database = file("db");
+  await render(database);
+  const input = container.querySelector("input")!;
+  for (const name of ["c", "ca", "car"]) {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, name);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(input.value).toBe(name);
+    await act(async () => vi.advanceTimersByTimeAsync(50));
+    expect(mocks.queryPlayers).not.toHaveBeenCalled();
+  }
+  await act(async () => vi.advanceTimersByTimeAsync(199));
+  expect(mocks.queryPlayers).not.toHaveBeenCalled();
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+  expect(mocks.queryPlayers).toHaveBeenCalledExactlyOnceWith(
+    database,
+    expect.objectContaining({ name: "car" }),
+    { signal: expect.any(AbortSignal) },
+  );
+});
+
+test.each(["file replacement", "unmount", "clear"])(
+  "%s cancels a pending debounced player search",
+  async (action) => {
+    vi.useFakeTimers();
+    await render(file("first"));
+    await act(async () => container.querySelector("button")!.click());
+    if (action === "file replacement") await render(file("second"));
+    if (action === "unmount") await act(async () => root.render(null));
+    if (action === "clear") {
+      const input = container.querySelector("input")!;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "");
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    }
+    await act(async () => vi.advanceTimersByTimeAsync(250));
+    expect(mocks.queryPlayers).not.toHaveBeenCalled();
+  },
+);
 
 test("file replacement cancels the active native search and refuses its stale result", async () => {
   let resolve!: (value: { data: Array<{ id: number; name: string }>; count: number }) => void;
