@@ -37,7 +37,7 @@ vi.mock("@/platform/tauri", async () => {
   };
 });
 
-import { databaseHandleKey, searchPosition } from "@/utils/db";
+import { databaseHandleKey, NAME_SEARCH_DEBOUNCE_MS, searchPosition } from "@/utils/db";
 import LocalOptionsPanel from "./LocalOptionsPanel";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -95,9 +95,11 @@ describe("LocalOptionsPanel explorer filters", () => {
       );
       playerInput().dispatchEvent(new Event("input", { bubbles: true }));
     });
+    await act(async () => vi.advanceTimersByTimeAsync(NAME_SEARCH_DEBOUNCE_MS));
   }
 
   beforeEach(async () => {
+    vi.useFakeTimers();
     sessionStorage.clear();
     Object.defineProperty(Element.prototype, "scrollIntoView", {
       configurable: true,
@@ -131,6 +133,7 @@ describe("LocalOptionsPanel explorer filters", () => {
     container.remove();
     if (originalScroll) Object.defineProperty(Element.prototype, "scrollIntoView", originalScroll);
     else Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    vi.useRealTimers();
   });
 
   test("captions the Elo band as applying to both players", () => {
