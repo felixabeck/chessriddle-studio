@@ -58,11 +58,13 @@ afterEach(async () => {
   host?.remove();
   tree?.dispose();
   mocks.searchOpeningName.mockReset();
+  vi.useRealTimers();
   if (clipboardDescriptor) Object.defineProperty(navigator, "clipboard", clipboardDescriptor);
   else Reflect.deleteProperty(navigator, "clipboard");
 });
 
 async function setup(openings: OutOpening[]) {
+  vi.useFakeTimers();
   mocks.searchOpeningName.mockResolvedValue(openings);
   tree = createTreeStore();
   host = document.createElement("div");
@@ -85,17 +87,23 @@ function input() {
   return host.querySelector("input")!;
 }
 
-async function type(text: string) {
+async function typeWithoutWaiting(text: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
   await act(async () => {
     setter.call(input(), text);
     input().dispatchEvent(new Event("input", { bubbles: true }));
     input().dispatchEvent(new Event("change", { bubbles: true }));
   });
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
-  expect(mocks.searchOpeningName).toHaveBeenLastCalledWith(text);
+}
+
+async function advanceTime(milliseconds: number) {
+  await act(async () => vi.advanceTimersByTimeAsync(milliseconds));
+}
+
+async function type(text: string) {
+  await typeWithoutWaiting(text);
+  await advanceTime(250);
+  expect(mocks.searchOpeningName).toHaveBeenCalledWith(text);
 }
 
 async function select(name: string) {
@@ -128,6 +136,57 @@ function expectPosition(fen: string, variant?: "Chess960") {
   expect(pgn.match(/\[Variant "[^"]*"\]/g) ?? []).toEqual(variant ? ['[Variant "Chess960"]'] : []);
   expect(input().value).toBe(fen);
 }
+
+test("the first keystroke waits 250 ms and never searches the initial FEN", async () => {
+  await setup([]);
+  await typeWithoutWaiting("Sicilian");
+  await advanceTime(249);
+  expect(mocks.searchOpeningName).not.toHaveBeenCalled();
+  await advanceTime(1);
+  expect(mocks.searchOpeningName).toHaveBeenCalledExactlyOnceWith("Sicilian");
+  await advanceTime(1000);
+  expect(mocks.searchOpeningName).not.toHaveBeenCalledWith(standardFen);
+  expect(mocks.searchOpeningName).toHaveBeenCalledTimes(1);
+});
+
+test("rapid typing searches only the final value after 250 ms", async () => {
+  await setup([]);
+  await typeWithoutWaiting("S");
+  await advanceTime(50);
+  await typeWithoutWaiting("Sic");
+  await advanceTime(50);
+  await typeWithoutWaiting("Sicilian");
+  await advanceTime(249);
+  expect(mocks.searchOpeningName).not.toHaveBeenCalled();
+  await advanceTime(1);
+  expect(mocks.searchOpeningName).toHaveBeenCalledExactlyOnceWith("Sicilian");
+});
+
+test("a paste over 256 code points never searches", async () => {
+  await setup([]);
+  await typeWithoutWaiting("😀".repeat(257));
+  await advanceTime(1000);
+  expect(mocks.searchOpeningName).not.toHaveBeenCalled();
+});
+
+test("the 256 code point limit accepts multibyte characters", async () => {
+  await setup([]);
+  await type("😀".repeat(256));
+  expect(mocks.searchOpeningName).toHaveBeenCalledExactlyOnceWith("😀".repeat(256));
+});
+
+test("Enter before debounce ignores the previous query's FRC result", async () => {
+  await setup([frc]);
+  await type("Fischer");
+  mocks.searchOpeningName.mockClear();
+  await typeWithoutWaiting(frc.fen);
+  // The stale suggestion may remain, but it must not suppress the create option.
+  const createOption = document.querySelector('[role="option"][value="$create"]');
+  await enter();
+  expectPosition(frc.fen);
+  expect(createOption).not.toBeNull();
+  expect(mocks.searchOpeningName).not.toHaveBeenCalled();
+});
 
 test("orthodox and FRC suggestions set their own variant and export it faithfully", async () => {
   await setup([sicilian, frc]);

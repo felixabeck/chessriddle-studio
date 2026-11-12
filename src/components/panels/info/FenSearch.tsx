@@ -1,5 +1,6 @@
 import { tauri } from "@/platform/tauri";
 import { Combobox, Group, InputBase, Loader, ScrollArea, Text, useCombobox } from "@mantine/core";
+import { useDebouncedValue } from "@mantine/hooks";
 import { type FenError, parseFen } from "chessops/fen";
 import { use, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -7,6 +8,10 @@ import useSWRImmutable from "swr/immutable";
 import { useStore } from "zustand";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { translateChessopsError } from "@/utils/chessops";
+import { NAME_SEARCH_DEBOUNCE_MS } from "@/utils/db";
+
+// Mirrors MAX_OPENING_SEARCH_CHARS in src-tauri/src/opening.rs.
+const OPENING_SEARCH_MAX_CHARS = 256;
 
 export default function FenSearch({ currentFen: currentFenInput }: { currentFen?: string }) {
   const { t } = useTranslation();
@@ -42,6 +47,7 @@ export default function FenSearch({ currentFen: currentFenInput }: { currentFen?
   const [value, setValue] = useState<string | null>(null);
   const [search, setSearch] = useState(currentFen);
   const [hasTyped, setHasTyped] = useState(false);
+  const [debouncedQuery] = useDebouncedValue(hasTyped ? search : null, NAME_SEARCH_DEBOUNCE_MS);
 
   useEffect(() => {
     setValue(currentFen);
@@ -50,14 +56,17 @@ export default function FenSearch({ currentFen: currentFenInput }: { currentFen?
   }, [currentFen]);
 
   const { data, isLoading } = useSWRImmutable(
-    hasTyped ? ["search_opening_name", search] : null,
+    debouncedQuery !== null && [...debouncedQuery].length <= OPENING_SEARCH_MAX_CHARS
+      ? ["search_opening_name", debouncedQuery]
+      : null,
     async ([, search]) => tauri.searchOpeningName(search),
   );
 
-  const exactOptionMatch = data?.some((item) => item.fen === search);
+  const currentMatches = debouncedQuery === search ? data : undefined;
+  const exactOptionMatch = currentMatches?.some((item) => item.fen === search);
 
   function typedFenIsChess960(fen: string) {
-    const matches = data?.filter((item) => item.fen === fen) ?? [];
+    const matches = currentMatches?.filter((item) => item.fen === fen) ?? [];
     return matches.length > 0 && matches.every((item) => item.chess960);
   }
 

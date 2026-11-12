@@ -105,9 +105,24 @@ fn build_opening_index(openings: &[Opening]) -> HashMap<Setup, usize> {
     index
 }
 
+/// An opening name or FEN is far shorter, mirroring db::MAX_NAME_SEARCH_CHARS.
+const MAX_OPENING_SEARCH_CHARS: usize = 256;
+
 #[tauri::command]
 #[specta::specta]
 pub async fn search_opening_name(query: String) -> Result<Vec<OutOpening>, Error> {
+    if query.chars().take(MAX_OPENING_SEARCH_CHARS + 1).count() > MAX_OPENING_SEARCH_CHARS {
+        return Err(Error::InvalidInput(format!(
+            "opening search must contain at most {MAX_OPENING_SEARCH_CHARS} characters"
+        )));
+    }
+
+    crate::infra::blocking::BLOCKING_GATEWAY
+        .spawn(move || Ok(search_opening_name_blocking(&query)))
+        .await
+}
+
+fn search_opening_name_blocking(query: &str) -> Vec<OutOpening> {
     let lower_query = query.to_lowercase();
     let mut best_matches = OPENINGS
         .iter()
@@ -130,7 +145,7 @@ pub async fn search_opening_name(query: String) -> Result<Vec<OutOpening>, Error
             .then_with(|| left.name.cmp(&right.name))
     });
 
-    let best_matches_names = best_matches
+    best_matches
         .into_iter()
         .take(15)
         .map(|(o, _)| OutOpening {
@@ -138,8 +153,7 @@ pub async fn search_opening_name(query: String) -> Result<Vec<OutOpening>, Error
             fen: Fen::from_setup(o.setup.clone()).to_string(),
             chess960: o.eco == "FRC",
         })
-        .collect();
-    Ok(best_matches_names)
+        .collect()
 }
 
 lazy_static! {
@@ -397,6 +411,20 @@ mod tests {
                 Err(Error::NoOpeningFound)
             ));
         }
+    }
+
+    #[tokio::test]
+    async fn opening_search_rejects_queries_over_the_unicode_character_limit() {
+        let result = search_opening_name("é".repeat(257)).await;
+        assert!(matches!(
+            result,
+            Err(Error::InvalidInput(message)) if message == "opening search must contain at most 256 characters"
+        ));
+    }
+
+    #[tokio::test]
+    async fn opening_search_accepts_the_unicode_character_limit() {
+        assert!(search_opening_name("é".repeat(256)).await.is_ok());
     }
 
     #[tokio::test]
