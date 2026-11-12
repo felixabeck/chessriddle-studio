@@ -7,6 +7,7 @@ import type { Score } from "@/bindings";
 import { reportTypeAtom } from "@/state/atoms";
 import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import { installMatchMediaStub } from "@/tests/matchMedia";
+import { installResizeObserverStub } from "@/tests/resizeObserver";
 import EvalChart from "./EvalChart";
 import { TreeStateContext } from "./TreeStateContext";
 
@@ -14,7 +15,8 @@ vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => k
 vi.mock("@/platform/native", () => ({ platform: () => "linux", warn: vi.fn(), error: vi.fn() }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 
-// Resolve props per series and render the real dot with each point, as the chart adapter does.
+// Mantine AreaChart spreads resolved areaProps into both the filled Area and the dots Area
+// for each series. The dots layer is rendered because withDots defaults to true.
 vi.mock("@mantine/charts", () => ({
   AreaChart: ({ data, series, referenceLines, areaProps, type }: any) => (
     <div data-chart-type={type}>
@@ -27,35 +29,34 @@ vi.mock("@mantine/charts", () => ({
           data-label-position={line.labelPosition}
         />
       ))}
-      {series.map((series: any) => {
-        const resolved = typeof areaProps === "function" ? areaProps(series) : areaProps;
-        return (
-          <div
-            key={series.name}
-            data-series={series.name}
-            data-animation-active={String(resolved?.isAnimationActive)}
-          >
-            {data.map((point: any, index: number) => (
-              <svg key={point.name} data-point={point.name}>
-                {resolved?.dot &&
-                  cloneElement(resolved.dot, { payload: point, cx: index * 10, cy: 10 })}
-              </svg>
-            ))}
-          </div>
-        );
-      })}
+      {series.map((series: any) => (
+        <div key={series.name} data-series={series.name}>
+          {["area", "dots"].map((layer) => {
+            const resolved = typeof areaProps === "function" ? areaProps(series) : areaProps;
+            return (
+              <div
+                key={layer}
+                data-layer={layer}
+                data-animation-active={String(resolved?.isAnimationActive)}
+              >
+                {data.map((point: any, index: number) => (
+                  <svg key={point.name} data-point={point.name}>
+                    {resolved?.dot &&
+                      cloneElement(resolved.dot, { payload: point, cx: index * 10, cy: 10 })}
+                  </svg>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      ))}
     </div>
   ),
 }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 installMatchMediaStub();
-class ResizeObserverStub {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-}
-globalThis.ResizeObserver = ResizeObserverStub;
+installResizeObserverStub();
 
 let host: HTMLDivElement;
 let root: Root;
@@ -135,12 +136,17 @@ const expectedReferenceLines = [
   { x: "1... e5", label: "Board.Analysis.Endgame", labelPosition: "insideTopLeft" },
 ];
 
-test("CP renders both phase labels inside the chart and one annotation dot", async () => {
+test("CP renders both phase labels inside the chart and one annotation dot per layer", async () => {
   await renderChart();
   expect(host.querySelector("[data-chart-type]")?.getAttribute("data-chart-type")).toBe("split");
   expect(referenceLines()).toEqual(expectedReferenceLines);
-  expect(host.querySelectorAll("svg circle")).toHaveLength(1);
-  expect(host.querySelector('[data-point="1. e4!"] circle')).not.toBeNull();
+  expect(host.querySelectorAll("svg circle")).toHaveLength(2);
+  const layers = [...host.querySelectorAll('[data-series="yValue"] [data-layer]')];
+  expect(layers.map((layer) => layer.getAttribute("data-layer"))).toEqual(["area", "dots"]);
+  for (const layer of layers) {
+    expect(layer.querySelectorAll("circle")).toHaveLength(1);
+    expect(layer.querySelectorAll('[data-point="1. e4!"] circle')).toHaveLength(1);
+  }
 });
 
 test("switching to WDL preserves the current, middlegame and endgame reference lines", async () => {
@@ -151,7 +157,7 @@ test("switching to WDL preserves the current, middlegame and endgame reference l
   expect(referenceLines()).toEqual(expectedReferenceLines);
 });
 
-test("WDL disables animation on every series and renders annotation dots on White only", async () => {
+test("WDL disables animation on every layer and renders annotation dots on White only", async () => {
   await renderChart();
   await act(async () => atoms.set(reportTypeAtom, "WDL"));
   const series = [...host.querySelectorAll("[data-series]")];
@@ -160,13 +166,17 @@ test("WDL disables animation on every series and renders annotation dots on Whit
     "Draw",
     "Black",
   ]);
-  expect(series.map((area) => area.getAttribute("data-animation-active"))).toEqual([
-    "false",
-    "false",
-    "false",
-  ]);
-  expect(host.querySelectorAll("svg circle")).toHaveLength(1);
-  expect(host.querySelector('[data-series="White"] [data-point="1. e4!"] circle')).not.toBeNull();
+  for (const area of series) {
+    const layers = [...area.querySelectorAll("[data-layer]")];
+    expect(layers.map((layer) => layer.getAttribute("data-layer"))).toEqual(["area", "dots"]);
+    for (const layer of layers) {
+      expect(layer.getAttribute("data-animation-active")).toBe("false");
+      const dotCount = area.getAttribute("data-series") === "White" ? 1 : 0;
+      expect(layer.querySelectorAll("circle")).toHaveLength(dotCount);
+      expect(layer.querySelectorAll('[data-point="1. e4!"] circle')).toHaveLength(dotCount);
+    }
+  }
+  expect(host.querySelectorAll("svg circle")).toHaveLength(2);
   expect(
     host.querySelectorAll('[data-series="Draw"] circle, [data-series="Black"] circle'),
   ).toHaveLength(0);
