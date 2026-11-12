@@ -24655,3 +24655,19 @@ Deferred follow-up (keep at midnight filing):
 - **Fix:** render the name as the Checkbox `label` (and move the toggle to the checkbox's `onChange`, dropping the Paper click handler), or add `aria-label={engine.name}`. Add an EngineSelection test querying the checkbox by engine name.
 - **Proof:** ephemeral Vitest rendering EngineSelection with two engines in `enginesAtom` (EnginePortrait, InstallStockfishButton and router Link mocked): both checkbox inputs had null `aria-label` and `aria-labelledby` and `labels.length === 0`. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 25)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### The typed-move box never shows its "Invalid move" message: a bare Mantine Input renders `error` only as styling
+
+* **ID:** f-20261112-56 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/boards/MoveInput.tsx:20-42`: a bare `@mantine/core` `Input` receives `error={error}` with `t("MoveInput.InvalidMove")` (`:27,37`), but has no wrapper and no `aria-label`. Its only caller is `src/components/boards/Board.tsx:735-742` (keyboard move entry, when `moveInput` is enabled).
+- **Defect:** unlike `TextInput`, a bare `Input` has no `Input.Wrapper` and no slot for error text. Mantine uses `error` there only to set `data-error`/`aria-invalid`. The translated "Invalid move" message is computed but never rendered, so a rejected entry shows only a red border, and there is no explanation for assistive technology either (`aria-invalid="true"` with no `aria-describedby`). The field's only name is its placeholder. Not the legality or native-game bypass entries (findings.md ~16555, ~20447), which cover what is accepted, not how a rejection is reported.
+- **Failure scenario:** enable keyboard move input, type `Ke5` from the starting position and press Enter: the field turns red with no text saying why, and a screen reader announces only "invalid entry" for an unnamed field.
+- **Fix:** use `TextInput` (or wrap in `Input.Wrapper` with `error`) so the message renders and is linked by `aria-describedby`, add `aria-label={t("MoveInput.EnterMove")}`, and add a MoveInput test asserting the message text after an illegal move.
+- **Proof:** ephemeral Vitest rendering MoveInput (i18n mocked to return keys) from the default position: after typing `Ke5` and Enter, the input had `data-error="true"` and `aria-invalid="true"`, null `aria-describedby` and `aria-label`, and the text `MoveInput.InvalidMove` was absent from the DOM. Probe removed, tree clean.
+- **Found by:** Grok Bot general review (chunk 25)
