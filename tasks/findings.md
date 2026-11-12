@@ -24840,3 +24840,19 @@ Line-reference correction: in `src/components/common/IconAction.tsx`, the extra 
 - **Fix:** build the text from `t()` with the existing outcome keys (or a new interpolated `Board.Analysis.WdlTooltip` key), and render three lines as separate `Text`s/a small list rather than embedded `\n`. Add a de-DE tooltip assertion to the EvalChart test.
 - **Proof:** code trace on origin/master d30eb171f: `wdlText` (`:103-105`) is the only user-facing label text in `data` not built through `t` (`name` is move notation). `CustomTooltip` passes it straight into `<Text>`. `EvalChart.module.css` gives `.tooltipTitle` only `font-weight: bold`, and `.tooltip` (`white-space: nowrap`) is not applied to this Paper. No probe needed; tree unchanged.
 - **Found by:** Grok Bot general review (chunk 27)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Training settings: the motif picker button's aria-label hides the selected motif from assistive technology
+
+* **ID:** f-20261112-67 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/chessriddle/TrainingSettings.tsx:194-209`: the `Popover.Target` button sets `aria-label={t("Training.Settings.Motif")}` and renders the current choice (`motifLabel(value, t)` or `t("Training.Settings.AllMotifs")`) only as its visible text child (`:208`). The motif icon is `aria-hidden` (`:202`).
+- **Defect:** `aria-label` takes precedence over content in accessible-name computation, so the button is announced only as "Motif", never as the chosen motif. Every sibling control in the dialog exposes its value (the Difficulty/Timer `Select`s show it as the input value, the Switches as checked state), but the motif filter's current value is unreachable without opening the popover and finding the `aria-pressed` card. Nothing else in the file conveys it.
+- **Failure scenario:** open ChessRiddle training settings with the motif set to "Fork" and Tab to the motif control: a screen reader says "Motif, button, collapsed", with no "Fork". The user cannot confirm which motif filter is active without entering the picker.
+- **Fix:** drop the `aria-label` and let the visible text be the name, with the `Input.Wrapper` label linked via `aria-labelledby` (wrapper label id plus the button's own text id). Or set `aria-label={`${t("Training.Settings.Motif")}: ${currentLabel}`}`. Add a TrainingSettings test asserting the button's accessible name contains the selected motif label.
+- **Proof:** code trace on origin/master d30eb171f. The button carries an explicit `aria-label` (`:198`), which per accname overrides the subtree text (`:208`), and the only other ARIA on it is `aria-haspopup`/`aria-expanded` (`:199-200`). The `Input.Wrapper` label (`:184`) is not associated with the button: no `id`/`aria-labelledby` pairing, and Mantine's wrapper label targets `inputProps.id`, which is not passed. No probe needed; tree unchanged.
+- **Found by:** Grok Bot general review (chunk 27)
