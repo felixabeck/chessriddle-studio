@@ -25,14 +25,25 @@ vi.mock("@/platform/tauri", () => ({
   },
 }));
 vi.mock("@mantine/core", () => ({
-  Select: () => null,
+  Select: ({ "aria-label": label }: { "aria-label"?: string }) => <select aria-label={label} />,
   Stack: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Text: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
 }));
 vi.mock("../../common/EngineLogsView", () => ({
-  default: ({ logs }: { logs: Array<{ value: string }> }) => {
+  default: ({
+    logs,
+    additionalControls,
+  }: {
+    logs: Array<{ value: string }>;
+    additionalControls: React.ReactNode;
+  }) => {
     mocks.renderLogs(logs);
-    return <div data-testid="engine-logs">{logs.map((log) => log.value).join("\n")}</div>;
+    return (
+      <>
+        {additionalControls}
+        <div data-testid="engine-logs">{logs.map((log) => log.value).join("\n")}</div>
+      </>
+    );
   },
 }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -97,6 +108,11 @@ function fail(tab = "tab-1", engineId = engine.id) {
     },
   });
 }
+test("the engine selector has a translated accessible name", async () => {
+  mocks.getEngineLogs.mockResolvedValue([]);
+  await render();
+  expect(host.querySelector("select")?.getAttribute("aria-label")).toBe("Common.Engine");
+});
 test("a rejected log fetch notifies once and is not rendered as empty success", async () => {
   const failure = new Error("engine disconnected");
   mocks.getEngineLogs.mockRejectedValue(failure);

@@ -124,6 +124,28 @@ test("renders an extra diagnostic when it differs from the message", async () =>
   expect(host.textContent).not.toContain("Common.Copied");
 });
 
+test("a successful diagnostic copy shows copied feedback without a notification", async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal("navigator", { clipboard: { writeText } });
+  host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  await act(async () =>
+    root.render(
+      <ErrorComponent
+        error={{ category: "unexpected", message: "boom", diagnostic: "safe-code" }}
+      />,
+    ),
+  );
+  const copy = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "Error.CopyStackTrace",
+  )!;
+  await act(async () => copy.click());
+  expect(writeText).toHaveBeenCalledExactlyOnceWith("safe-code");
+  expect(copy.textContent).toBe("Common.Copied");
+  expect(mocks.notify).not.toHaveBeenCalled();
+});
+
 test("send feedback opens the dialog without RootLayout", async () => {
   host = document.createElement("div");
   document.body.append(host);

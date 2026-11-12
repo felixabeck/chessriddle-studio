@@ -246,6 +246,20 @@ test("the named PGN editor reports a rejected clipboard write from its Copy acti
   expect(editor().querySelector('[aria-label="Common.Copied"]')).toBeNull();
 });
 
+test("a successful clipboard write copies the PGN draft and shows copied feedback without a notification", async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal("navigator", { clipboard: { writeText } });
+  await setup();
+  const text = '[Event "Copied draft"]\n\n1. d4 *';
+  await draft(text);
+  await act(async () =>
+    editor().querySelector<HTMLButtonElement>('[aria-label="Menu.Edit.Copy"]')!.click(),
+  );
+  expect(writeText).toHaveBeenCalledExactlyOnceWith(text);
+  expect(editor().querySelector('[aria-label="Common.Copied"]')).not.toBeNull();
+  expect(mocks.showNotification).not.toHaveBeenCalled();
+});
+
 test("an engine score keeps an unsaved PGN draft when the serialization does not change", async () => {
   const { store } = await setup({ extraMarkups: false });
   const draftText = "1. e4 e5 {unsaved} *";

@@ -10,9 +10,12 @@ import { REPOSITORY_URL } from "@/utils/product.json";
 
 const issueUrl = `${REPOSITORY_URL}/issues/new?assignees=&labels=bug&projects=&template=bug.yml`;
 
+// Keep Mantine CopyButton's former default feedback duration.
+const COPIED_FEEDBACK_MS = 1000;
+
 export default function ErrorComponent({ error }: { error: unknown }) {
   const { t } = useTranslation();
-  const { copied, copy } = useClipboardCopy(t("Error.CopyFailed"), 1000);
+  const { copied, copy } = useClipboardCopy(t("Error.CopyFailed"), COPIED_FEEDBACK_MS);
   const navigate = useNavigate();
   const [feedbackOpened, setFeedbackOpened] = useState(false);
   const normalized = normalizeError(error);
