@@ -16,6 +16,7 @@ import {
     filterPlayerStats,
     formatResultCounts,
     formatScorePercent,
+    scoreHundredths,
     scoreFraction,
 } from "./overviewStatistics";
 
@@ -201,7 +202,7 @@ describe("rated opponents and FIDE performance", () => {
     });
 
     test("p = 1.00 uses dp +800", () => {
-        expect(fideDp(1)).toBe(800);
+        expect(fideDp(100)).toBe(800);
         expect(fidePerformanceRating(1800, 3, 0, 0)).toBe(2600);
     });
 
@@ -213,8 +214,16 @@ describe("rated opponents and FIDE performance", () => {
     test("p rounds to two decimals before the dp lookup", () => {
         // 2.5 / 4 = 0.625 → 0.63 → dp 95
         expect(scoreFraction(2, 1, 1)).toBe(0.625);
-        expect(fideDp(0.625)).toBe(95);
+        expect(scoreHundredths(2, 1, 1)).toBe(63);
+        expect(fideDp(63)).toBe(95);
         expect(fidePerformanceRating(1800, 2, 1, 1)).toBe(1895);
+    });
+
+    test("rounds exact scores half-up to hundredths", () => {
+        expect(scoreHundredths(3, 17, 0)).toBe(58);
+        expect(fidePerformanceRating(1800, 3, 17, 0)).toBe(1857);
+        expect(fidePerformanceRating(1800, 6, 34, 0)).toBe(1857);
+        expect(scoreHundredths(0, 0, 0)).toBe(0);
     });
 });
 

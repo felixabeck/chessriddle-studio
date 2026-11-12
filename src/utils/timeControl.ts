@@ -5,7 +5,7 @@ export function getTimeControl(website: string | null, timeControl: string) {
             return "daily";
         }
         const total = initial + increment * 40;
-        return total < 180 ? "bullet" : total <= 500 ? "blitz" : "rapid";
+        return total < 180 ? "bullet" : total < 600 ? "blitz" : "rapid";
     }
     if (timeControl === "-") {
         return "correspondence";

@@ -96,20 +96,25 @@ export function formatResultCounts(won: number, drawn: number, lost: number): st
     return `+${won} =${drawn} −${lost}`;
 }
 
-/** Rp = Ra + dp(p), with p rounded to two decimals (FIDE table 8.1(a)). */
+export function scoreHundredths(won: number, drawn: number, lost: number): number {
+    const games = won + drawn + lost;
+    return games === 0 ? 0 : Math.floor((200 * won + 100 * drawn + games) / (2 * games));
+}
+
+/** Rp = Ra + dp(p), with p rounded half-up to two decimals from the exact score (FIDE table 8.1(a)). */
 export function fidePerformanceRating(
     averageOpponent: number,
     won: number,
     drawn: number,
     lost: number,
 ): number {
-    return averageOpponent + fideDp(scoreFraction(won, drawn, lost));
+    return averageOpponent + fideDp(scoreHundredths(won, drawn, lost));
 }
 
-export function fideDp(p: number): number {
-    const hundredths = Math.min(100, Math.max(0, Math.round(p * 100)));
-    if (hundredths >= 50) return DP_FROM_EQUAL[hundredths - 50];
-    return -DP_FROM_EQUAL[50 - hundredths];
+export function fideDp(hundredths: number): number {
+    const clamped = Math.min(100, Math.max(0, hundredths));
+    if (clamped >= 50) return DP_FROM_EQUAL[clamped - 50];
+    return -DP_FROM_EQUAL[50 - clamped];
 }
 
 export function compareLatestRating(a: LatestRatingData, b: LatestRatingData): number {
