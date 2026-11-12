@@ -23560,7 +23560,7 @@ Handled (drain aaa22b94, 2026-11-11). `rg 'fuse\.js|Fuse\(|from "fuse' src e2e s
 
 ### getMoveText interpolates comments raw, so a `}` in commentary closes the PGN comment early and corrupts the export
 
-* **ID:** f-20261111-92 · **Status:** open · **Area:** chess-tree · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261111-92 · **Status:** handled · **Area:** chess-tree · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** ninth-sweep quality review (Felix t26u) at HEAD `a276f9917`, dense-algorithm second-read lens (PGN writer)
 * **Where:** `src/utils/chess.ts` `getMoveText` — `startingComment` is interpolated as `` `{${tree.startingComment}}` `` (~75) and `tree.comment` / `tree.commands` are appended inside a `{...}` body (~119-126) with no sanitization. `getPGN` / `writePGN` emit this text for file save, copy-PGN, and database-unrelated export. chessops' writer uses `safeComment = comment.replace(/\}/g, '')` (`node_modules/chessops/src/pgn.ts:241`) because PGN comments cannot contain `}`. This is not the already-handled comment-token overwrite (`db6ac190`) or header escaping (`pgnTag`).
@@ -23569,6 +23569,8 @@ Handled (drain aaa22b94, 2026-11-11). `rg 'fuse\.js|Fuse\(|from "fuse' src e2e s
 * **Fix:** Strip (or otherwise neutralize) `}` when writing comments, matching chessops `safeComment`, in all three interpolations (`startingComment`, `comment`, and `commands`). Add a regression that `getPGN` of a tree whose comment or startingComment contains `}` reparses as one intact (sanitized) comment rather than early-closing movetext.
 * **Proof:** Ephemeral Vitest `src/utils/sweep9_probe.test.ts` on HEAD `a276f9917`, removed afterwards (tree clean). `getPGN` of `1. e4` with comment `watch } this` contained `{watch } this}`; `parsePgn` from chessops recovered a comment that did not contain `this`. The same early close happened for startingComment `lead } cut` (recovered starting comments did not contain `cut`). No `tasks/decisions.md` entry requires raw unescaped comment bytes in the writer.
 * **Found by:** Grok Bot, quality review (t26u), HEAD `a276f9917`.
+* **Handled 2026-11-12 (drain, inline/lens tier):** `getMoveText` in `src/utils/chess.ts` now passes `startingComment`, `commands` and `comment` through a module-private `safeComment` that strips `}`, matching the chessops writer. Eval, clock, drawings and game-end markup are unchanged (game end already used `sanitizeGameEndTermination`). Three regressions in `src/utils/tests/chess.test.ts` reparse the `getPGN` output with chessops `parsePgn` (a move comment, a variation starting comment, opaque commands). A fix-revert proof turned all three red and they went green again once the fix was restored. Commit `0e37ff587`. Rejected alternative: replacing `}` with a look-alike character, which would insert content the user never typed. Stripping is the convention PGN writers already use.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"69edde44511c7431f86d094857e34495d629122812e948206bcd8c4cfb7ff7a8","header_sha256":"0ad6ca71add2618fd9993da7c9d6734737f70ab5e04f4339840bc8de7645ea00","header_status":"handled","input_sha256":"5ded042150afa0c873ac0ce81cb5aebbce3bd56b82ddc2dfcf2685c22203c6e9","kind":"mutation-receipt","operation":"c3f98a8b839f96f4304b23a8c35bb08ffe69baec44202eb613fca4f0a643173f","options":{"section":null},"request_id_sha256":null,"results":["f-20261111-92"],"target":"f-20261111-92","v":1} -->
 
 ---
 
