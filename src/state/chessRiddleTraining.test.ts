@@ -383,7 +383,7 @@ test("a result arriving after a newer request is ignored", async () => {
 });
 
 test("a closed tab ignores late fetch and submit results without recreating its session", async () => {
-    const { api, sessions } = fixture();
+    const { api, sessions, summary } = fixture();
     const old = deferred<TrainingPuzzle>();
     api.chessriddleTrainingNext.mockReturnValueOnce(old.promise);
     const fetching = sessions.next("tab");
@@ -391,6 +391,7 @@ test("a closed tab ignores late fetch and submit results without recreating its 
     old.resolve(puzzle);
     await fetching;
     expect(sessions.get("tab")).toBeUndefined();
+    expect(summary.get().attempts).toBe(0);
     sessions.ensure("tab");
     await sessions.next("tab");
     fill(sessions);
@@ -401,6 +402,9 @@ test("a closed tab ignores late fetch and submit results without recreating its 
     sessions.ensure("tab");
     pending.resolve(verdict);
     await submitting;
+    expect(summary.get().attempts).toBe(1);
+    expect(summary.get().change).toBe(8);
+    expect(summary.get().rating).toBe(verdict.playerRating);
     expect(sessions.get("tab")?.phase).toBe("idle");
     sessions.remove("tab");
     expect(sessions.get("tab")).toBeUndefined();

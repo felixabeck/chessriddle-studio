@@ -253,8 +253,9 @@ export function createChessRiddleTrainingSessions(
         });
         try {
             const verdict = await api.chessriddleTrainingSubmit(request);
-            if (!current(tabId, entry, identity)) return;
+            // The server already recorded the attempt, and the summary is global across tabs.
             summary.record(verdict, accountIdentity);
+            if (!current(tabId, entry, identity)) return;
             if (!verdict.tooShort && entry.state.puzzle && entry.state.treeStore) {
                 entry.state.treeStore
                     .getState()
