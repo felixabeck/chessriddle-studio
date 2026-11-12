@@ -24375,3 +24375,19 @@ Deferred follow-up (keep at midnight filing):
 - **Fix:** give the three columns `title: t(...)` (reusing existing keys where they fit), render the sum row label through `t` while keeping a non-display sentinel for the `move !== "Total"` checks, and use `t("Databases.Game.NoGamesFound")` for `emptyState`; extend the de-DE catalogue test that f-20261104-03 added to cover OpeningsTable.
 - **Proof:** ephemeral Vitest render of `OpeningsTable` with `useTranslation` mocked to `T(key)`: the rendered text contains the literal "No games found" (untranslated). Column titles traced: no `title` on any column, the same pattern f-20261104-03 identified for GameTable. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 19)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Local explorer and player opening tree keep showing pre-change statistics after games are added to or deleted from a plain database
+
+* **ID:** f-20261112-39 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** behaviour
+- **Spotted outside diff:** no
+- **Where:** `src/components/panels/database/useLocalExplorer.ts:4` (`useSWR` from `swr/immutable`) and `:44-55` (key is `{type:"local", options}` plus a collection generation only for linked collections); `src/components/databases/databaseMutation.ts:49-71` (`refreshDatabaseGameQueries` revalidates only `games`/`players`/`tournaments` keys); callers `DatabasePanel.tsx:217` and `PlayerOpeningTree.tsx:72`
+- **Defect:** for a plain SQLite database (no linked collection, so no generation in the key) the explorer key carries no database version, the hook uses immutable SWR (no revalidation on mount or focus), and no write path invalidates these keys. The native search cache is invalidated on mutation (`src-tauri/src/db/search.rs:360`), but the renderer never asks again for a position it has already cached.
+- **Failure scenario:** with database D as explorer reference, view a position, then add games to D (Add games, account import, or save the current game into D) or delete a game from it, and return to that position or reopen the panel or PlayerOpeningTree: Stats, Games and Matches show the old counts and game list until the app restarts or a filter changes.
+- **Fix:** include a database revision in the key (as the linked-collection generation already does), or have `refreshDatabaseGameQueries` and the import/save paths also invalidate `{type:"local"}` keys whose `options.path` matches the mutated database; add a test that a mutation followed by a remount refetches.
+- **Proof:** ephemeral probe using `useLocalExplorer` with `useCollectionCurrency` returning `{collection:null}` and a shared SWR cache: first mount shows `white=1`; unmount; `searchPosition` now resolves `white=2`; remount shows `"1"` with `searchPosition` called once in total. Grep finds no `mutate` or `cache.delete` targeting local-explorer keys. Probe removed, tree clean.
+- **Found by:** Grok Bot general review (chunk 19)
