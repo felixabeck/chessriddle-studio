@@ -24197,3 +24197,19 @@ Deferred follow-up (keep at midnight filing):
 * **Fix:** use `sort: "newest"` (its direction is ignored natively) in LastGamesList. Add a component or native regression where a `????.??.??` game and a `2026.11.09` game for the same player list the dated game first.
 * **Proof:** the committed native test `game_newest_sort_normalizes_dates_and_keeps_legacy_date_order` (`src-tauri/src/db/mod.rs` ~11783-11851 on origin/master) inserts `????.??.??`, `2026.??.??`, `2026.11.??`, `2026.11.09`… through production `get_games_blocking`. It asserts that `GameSort::Date` + `Desc` returns `[????.??.??, 2026.??.??, 2026.11.??]` first ("Legacy date order compares the original text, so unknown dates lead"), while `GameSort::Newest` puts the fully dated 2026.11.09 games first. LastGamesList passes exactly `sort: "date", direction: "desc"` with `player1` as its only filter, so it receives the legacy order. `rg 'sort: "date"' src` shows only this recency widget and the table-column default in `src/state/store/database.ts` (the user-chosen column sort, out of scope per the f-96 close note).
 * **Found by:** Grok Bot general review 2026-11-12 (chunk 10)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Library due counts read only the first chapter's practice deck, so a multi-chapter repertoire with due positions in later chapters never appears under "Due"
+
+* **ID:** f-20261112-28 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** yes (general review)
+* **Where:** `src/components/library/useLibraryDueCounts.ts:77` (origin/master 5512756fa) subscribes `deckAtomFamily({ file: row.key, game: 0 })` for each repertoire. Practice decks are keyed per chapter: `src/components/panels/practice/PracticePanel.tsx:108-113` uses `{ file, game: getTabGameNumber(currentTab) }`, and `src/state/practiceStorage.ts` `PracticeDeckKey = { file, game }` / `loadPracticeDeck(fileId, game)`. Consumers: `src/components/tabs/NewTabHome.tsx` Due filter, row badges, `Home.DuePractice.Total`.
+* **Defect:** a repertoire PGN can hold several chapters (games). New Tab Home opens a chapter picker for any file with `numGames > 1`, including under the Due filter, where it passes `panel: "practice"` with the chosen index. Each chapter has its own persisted deck. The library due projection loads only chapter 0's deck, so due positions in chapters 1..n are never counted, and the "Practice next-due" boundary ignores them too.
+* **Failure scenario:** the user keeps one repertoire file with chapters "1.e4 e5", "Sicilian" and "French", and has practised all three. Today only Sicilian and French positions are due. Home → Due shows "Nothing due" (or omits this repertoire), the total understates the due positions, and the row shows no badge. The user is never told to review, although opening chapter 2's Practice panel lists due cards.
+* **Fix:** aggregate due stats over every chapter deck of a repertoire (count chapters via `countPgnGames`, or add a native per-file practice summary that sums all `game` keys), keeping the concurrency bound. Add a regression where chapter 1 has due positions and chapter 0 has none, and the repertoire appears under Due with the right count.
+* **Proof:** code trace on origin/master. `useLibraryDueCounts` is the only library caller of `deckAtomFamily` and hard-codes `game: 0`. `rg 'deckAtomFamily\(' src` shows only it and PracticePanel, which uses the tab's real `gameOrigin.gameNumber` (`src/utils/tabs.ts:63-65`). `practiceStorage.ts:132` keys storage by `${file}\u0000${game}`, so a review recorded in chapter 2 is stored under game 2 and cannot reach the game-0 deck the library reads. The introducing commit dff35c379 ("bounded overdue counts across every repertoire") and `tasks/decisions.md` mention no first-chapter-only scope.
+* **Found by:** Grok Bot general review 2026-11-12 (chunk 10)
