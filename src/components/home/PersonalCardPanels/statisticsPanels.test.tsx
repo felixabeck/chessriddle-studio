@@ -31,9 +31,18 @@ vi.mock("recharts", () => ({
       {children}
     </>
   ),
-  Area: () => null,
-  AreaChart: ({ data }: { data: { date: number; player_elo: number }[] }) => (
-    <div data-testid="rating-data">{data.map((row) => row.player_elo).join("|")}</div>
+  Area: ({ name }: { name: string }) => <span data-testid="rating-series">{name}</span>,
+  AreaChart: ({
+    data,
+    children,
+  }: {
+    data: { date: number; player_elo: number }[];
+    children: React.ReactNode;
+  }) => (
+    <>
+      <div data-testid="rating-data">{data.map((row) => row.player_elo).join("|")}</div>
+      {children}
+    </>
   ),
   CartesianGrid: () => null,
   ResponsiveContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -515,7 +524,7 @@ test("RatingsPanel filters All websites rapid by each row's site", async () => {
     [
       // Daily dates are parsed in local time, like parseCompleteDailyDate does.
       dayjs("2026.09.01", "YYYY.MM.DD", true).valueOf(),
-      new Date("2026-10-02T00:00:00Z").getTime(),
+      new Date(2026, 9, 2).getTime(),
     ].join("|"),
   );
 });
@@ -534,6 +543,77 @@ test("Ratings sums duplicate daily keys and takes the highest rating for each da
   expect(container.textContent).toContain("6 Common.Games");
   expect(container.querySelector("[data-testid='result-counts']")?.textContent).toContain("3:1:2");
   expect(container.querySelector("[data-testid='rating-data']")?.textContent).toBe("2820|2810");
+  expect(container.querySelector("[data-testid='rating-series']")?.textContent).toBe(
+    "Home.Personal.Ratings.Rating",
+  );
+});
+
+function ratingStatisticsForDates(dates: string[]): PlayerGameInfo {
+  return {
+    site_stats_data: [
+      {
+        ...duplicatedDailyStatistics.site_stats_data[0],
+        daily: dates.map((date, index) => ({
+          date,
+          time_control: "600+0",
+          won: 1,
+          drawn: 0,
+          lost: 0,
+          max_player_elo: 1800 + index * 100,
+        })),
+      },
+    ],
+  };
+}
+
+describe.each(["Europe/Berlin", "America/New_York"])("Ratings timeline in %s", (timezone) => {
+  test.each([
+    { name: "deduplicates today's game and anchor", dates: ["2026.10.01", "2026.10.02"] },
+    { name: "anchors today without a same-day game", dates: ["2026.10.01"] },
+  ])("$name", async ({ dates }) => {
+    vi.stubEnv("TZ", timezone);
+    try {
+      const today = new Date(2026, 9, 2);
+      expect(today.getTimezoneOffset()).not.toBe(0);
+
+      await render(
+        <RatingsPanel playerName="Magnus" info={ratingStatisticsForDates(dates)} isDatabase />,
+      );
+
+      const stops = container
+        .querySelector("[data-testid='rating-dates']")!
+        .textContent!.split("|");
+      expect(stops).toHaveLength(2);
+      expect(Number(stops[stops.length - 1])).toBe(today.getTime());
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
+test("Ratings Seven Days includes the boundary day across Berlin's autumn DST change", async () => {
+  vi.stubEnv("TZ", "Europe/Berlin");
+  try {
+    vi.setSystemTime(new Date("2026-10-30T12:00:00Z"));
+    expect(new Date(2026, 9, 23).getTimezoneOffset()).toBe(-120);
+    expect(new Date(2026, 9, 30).getTimezoneOffset()).toBe(-60);
+
+    await render(
+      <RatingsPanel
+        playerName="Magnus"
+        info={ratingStatisticsForDates(["2026.10.23", "2026.10.29"])}
+        isDatabase
+      />,
+    );
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>("[data-testid='select-seven-days']")!.click();
+    });
+
+    expect(container.textContent).toContain("2 Common.Games");
+    expect(container.querySelector("[data-testid='rating-data']")?.textContent).toBe("1800|1900");
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });
 
 test("Ratings excludes out-of-range days from the summary and rating series", async () => {

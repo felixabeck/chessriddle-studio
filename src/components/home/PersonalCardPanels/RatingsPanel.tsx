@@ -1,4 +1,5 @@
 import { Stack, Text } from "@mantine/core";
+import dayjs from "dayjs";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -30,13 +31,13 @@ function calculateEarliestDate(dateRange: DateRange, ratingDates: number[]): num
   const lastDate = ratingDates[ratingDates.length - 1];
   switch (dateRange) {
     case DateRange.SevenDays:
-      return lastDate - 7 * 24 * 60 * 60 * 1000;
+      return dayjs(lastDate).subtract(7, "day").valueOf();
     case DateRange.ThirtyDays:
-      return lastDate - 30 * 24 * 60 * 60 * 1000;
+      return dayjs(lastDate).subtract(30, "day").valueOf();
     case DateRange.NinetyDays:
-      return lastDate - 90 * 24 * 60 * 60 * 1000;
+      return dayjs(lastDate).subtract(90, "day").valueOf();
     case DateRange.OneYear:
-      return lastDate - 365 * 24 * 60 * 60 * 1000;
+      return dayjs(lastDate).subtract(365, "day").valueOf();
     default:
       return Math.min(...ratingDates);
   }
@@ -67,10 +68,8 @@ function RatingsPanel({
   );
 
   const dates = useMemo(() => {
-    const timezoneOffset = new Date().getTimezoneOffset() * 60 * 1000; // milliseconds
-    const localDate = new Date(Date.now() - timezoneOffset);
-    const todayString = localDate.toISOString().slice(0, 10);
-    const today = new Date(todayString).getTime();
+    // Match parseCompleteDailyDate's local-midnight convention.
+    const today = dayjs().startOf("day").valueOf();
     return Array.from(
       new Set([
         today,
@@ -193,7 +192,7 @@ function RatingsPanel({
                 labelFormatter={(label) => new Date(label).toLocaleDateString(i18n.language)}
               />
               <Area
-                name="Rating"
+                name={t("Home.Personal.Ratings.Rating")}
                 dataKey="player_elo"
                 type="monotone"
                 stroke="var(--cf-primary)"
