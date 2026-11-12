@@ -24181,3 +24181,19 @@ Deferred follow-up (keep at midnight filing):
 * **Fix:** add a renderer `canonicalPgnDate` that mirrors `pgn_date::canonical` (pad only the `YYYY.M.D` / `YYYY.M.DD` / `YYYY.MM.D` shapes with digit-or-`?` parts; a lone `?` becomes `??`). Apply it before the `?`→`0` replacement in `compareOwnGames`, and add a parity test against the Rust `CASES` table (or expose the canonical key from native in `NormalizedGame`).
 * **Proof:** ephemeral Vitest probe (removed, tree clean). `OwnGamesFeed` was built with two ready collections whose loader returned A: `[{id:1,date:"2026.1.5",time:null}]` and B: `[{id:2,date:"2026.01.20",time:null}]` on page 1 and `[]` afterwards. After `showMore()`, the expected Newest order `["2026.01.20","2026.1.5"]` was received as `["2026.1.5","2026.01.20"]`. `pgn_date.rs` CASES pin `("2026.1.15","2026.01.15")`, and the Newest SQL uses `canonical_sql`, so native would order these two the other way round.
 * **Found by:** Grok Bot general review 2026-11-12 (chunk 10)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Player Overview "Last games" uses the legacy raw-text Date sort, so undated and partially dated games are listed as the player's most recent games
+
+* **ID:** f-20261112-27 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** yes (general review)
+* **Where:** `src/components/home/PersonalCardPanels/LastGamesList.tsx:28-38` (origin/master 5512756fa) queries `query_games` with `options: { sort: "date", direction: "desc", pageSize: 10 }`; native `src-tauri/src/db/mod.rs` `GameSort::Date` orders by raw `games.date DESC, games.time DESC`, while `GameSort::Newest` (same file, with `pgn_date::canonical_sql`) is the recency order.
+* **Defect:** "Last games" is a recency list (the 10 newest games of the player), but it asks for the legacy column sort. That sort compares the stored PGN date text verbatim. `?` (0x3F) sorts above every digit, so `????.??.??`, `2026.??.??` and `2026.11.??` all rank above any fully dated game, and unpadded dates such as `2026.1.5` rank above `2026.01.20`. The f-20261111-96 close note deliberately kept `GameSort::Date` as original-text order (the table column sort). Newest exists for "most recent first", but this caller was never moved to it.
+* **Failure scenario:** a player's collection mixes downloaded online games (full dates) with OTB games imported from a PGN that writes `[Date "????.??.??"]` or year-only `[Date "2019.??.??"]`. The Home → player Overview "Last games" panel fills its 10 rows with those undated or partial games and omits the games the player actually played this week. Clicking a row opens an old game presented as recent.
+* **Fix:** use `sort: "newest"` (its direction is ignored natively) in LastGamesList. Add a component or native regression where a `????.??.??` game and a `2026.11.09` game for the same player list the dated game first.
+* **Proof:** the committed native test `game_newest_sort_normalizes_dates_and_keeps_legacy_date_order` (`src-tauri/src/db/mod.rs` ~11783-11851 on origin/master) inserts `????.??.??`, `2026.??.??`, `2026.11.??`, `2026.11.09`… through production `get_games_blocking`. It asserts that `GameSort::Date` + `Desc` returns `[????.??.??, 2026.??.??, 2026.11.??]` first ("Legacy date order compares the original text, so unknown dates lead"), while `GameSort::Newest` puts the fully dated 2026.11.09 games first. LastGamesList passes exactly `sort: "date", direction: "desc"` with `player1` as its only filter, so it receives the legacy order. `rg 'sort: "date"' src` shows only this recency widget and the table-column default in `src/state/store/database.ts` (the user-chosen column sort, out of scope per the f-96 close note).
+* **Found by:** Grok Bot general review 2026-11-12 (chunk 10)
