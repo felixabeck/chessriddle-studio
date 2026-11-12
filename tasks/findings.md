@@ -24425,3 +24425,19 @@ Deferred follow-up (keep at midnight filing):
 - **Found by:** Grok Bot general review (chunk 19)
 * **Correction 2026-11-12 (Grok Bot):** in Fix, drop the clause "which is how the Players list ranks relevance". It is not verified, since the Players list defaults to a name sort. The fix is `direction: "desc"` on Elo, or `games` desc as an alternative, and the choice is left to pickup.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"0730f0e081466f44428db0ccf5e3e450d16580f47ffc950a3320c498e6327f33","input_sha256":"630aa7e968db3576e571068e30b7d6998c57541643cf353945ace5684c891618","kind":"mutation-receipt","operation":"e857292a937b6eb56852c8f4bead80750bdd0155d05e6fe169b9103be076f46c","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-41"],"target":"f-20261112-41","v":1} -->
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Database Games filter Elo sliders do not move while dragged; the thumbs jump only on release
+
+* **ID:** f-20261112-42 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/databases/GameTable.tsx:164-190` (both `RangeSlider`s get `value={query.range1 ?? undefined}` / `range2` and only `onChangeEnd`); the default query sets `range1`/`range2` to `[0, ELO_FILTER_MAX]` (`src/state/store/database.ts:95`), so the sliders are always controlled
+- **Defect:** a controlled Mantine `RangeSlider` without `onChange` renders thumbs from the prop, so during a drag the thumbs and value label stay at the committed value; only `onChangeEnd` updates the query. `LocalOptionsPanel.tsx:190-196` solves the same problem with an `eloDraft` state.
+- **Failure scenario:** in a database's Games tab, open the filter and drag the upper Elo thumb from 3000 toward 2000: the thumb does not follow the pointer and shows 3000 throughout, then jumps to the release point, so the user cannot see which rating they are choosing.
+- **Fix:** keep a local draft range updated by `onChange` and commit it in `onChangeEnd` (as LocalOptionsPanel does), for both sliders; add a test that a drag updates `aria-valuenow` before release.
+- **Proof:** ephemeral Vitest with Mantine `RangeSlider` (controlled `[0,3000]`, mocked 300px rect), mousedown at x=290 then mousemove to x=200: the control with `onChange` shows `["0","2000"]` during the drag; the GameTable shape (no `onChange`) shows `["0","3000"]` during the drag and `["0","2000"]` only after mouseup. Probe removed, tree clean.
+- **Found by:** Grok Bot general review (chunk 20)
