@@ -4,6 +4,13 @@ import { match } from "ts-pattern";
 import type { GoMode } from "@/bindings";
 import TimeInput from "./TimeInput";
 
+// Native GoMode::validate rejects a zero limit.
+const MIN_LIMIT = 1;
+
+function limit(value: string | number): number {
+  return typeof value === "number" ? Math.max(MIN_LIMIT, value) : MIN_LIMIT;
+}
+
 function GoModeInput({
   goMode,
   setGoMode,
@@ -43,17 +50,24 @@ function GoModeInput({
           <NumberInput
             min={1}
             value={v.c}
-            onChange={(v) => setGoMode({ t: "Depth", c: typeof v === "number" ? v : 1 })}
+            onChange={(v) => setGoMode({ t: "Depth", c: limit(v) })}
           />
         ))
         .with({ t: "Nodes" }, (v) => (
           <NumberInput
             min={1}
             value={v.c}
-            onChange={(v) => setGoMode({ t: "Nodes", c: typeof v === "number" ? v : 1 })}
+            onChange={(v) => setGoMode({ t: "Nodes", c: limit(v) })}
           />
         ))
-        .with({ t: "Time" }, (v) => <TimeInput value={v.c} setValue={setGoMode} />)
+        .with({ t: "Time" }, (v) => (
+          <TimeInput
+            value={v.c}
+            setValue={(next) =>
+              setGoMode(next.t === "Time" ? { t: "Time", c: limit(next.c) } : next)
+            }
+          />
+        ))
         .otherwise(() => null)}
     </Group>
   );

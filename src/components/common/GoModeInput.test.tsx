@@ -8,9 +8,21 @@ const mocks = vi.hoisted(() => ({ select: vi.fn() }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("@mantine/core", () => ({
   Group: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  NumberInput: ({ value, rightSection }: { value: number; rightSection?: React.ReactNode }) => (
+  NumberInput: ({
+    value,
+    rightSection,
+    onChange,
+  }: {
+    value: number;
+    rightSection?: React.ReactNode;
+    onChange: (value: number) => void;
+  }) => (
     <>
-      <input type="number" value={value} readOnly />
+      <input
+        type="number"
+        value={value}
+        onChange={(event) => onChange(Number(event.currentTarget.value))}
+      />
       {rightSection}
     </>
   ),
@@ -52,6 +64,22 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
 });
+
+test.each(["Time", "Depth", "Nodes"] as const)(
+  "typing zero into the %s input emits a minimum of one",
+  (t) => {
+    const setGoMode = vi.fn();
+    act(() => {
+      root.render(<GoModeInput goMode={{ t, c: 500 }} setGoMode={setGoMode} />);
+    });
+    act(() => {
+      const input = host.querySelector("input")!;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "0");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(setGoMode).toHaveBeenCalledExactlyOnceWith({ t, c: 1 });
+  },
+);
 
 test.each([undefined, 500])("Time switches use the configured default %s", (timeDefault) => {
   const setGoMode = vi.fn();
