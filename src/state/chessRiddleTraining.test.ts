@@ -410,6 +410,23 @@ test("a closed tab ignores late fetch and submit results without recreating its 
     expect(sessions.get("tab")).toBeUndefined();
 });
 
+test("a late submit verdict leaves the new account's summary unchanged", async () => {
+    const { api, sessions, summary } = fixture();
+    await sessions.next("tab");
+    fill(sessions);
+    const pending = deferred<TrainingVerdict>();
+    api.chessriddleTrainingSubmit.mockReturnValueOnce(pending.promise);
+    const submitting = sessions.submit("tab");
+    summary.accept({
+        status: "connected",
+        account: { handle: "other", username: "Other", plan: "free", tactic_rating: 1700 },
+        durability_uncertain: false,
+    });
+    pending.resolve(verdict);
+    await submitting;
+    expect(summary.get()).toMatchObject({ attempts: 0, change: 0, rating: 1700, handle: "other" });
+});
+
 test.each(["network", "submissionInProgress", "engineBusy", "engineUnavailable"])(
     "Retry after %s reuses the frozen body and key and keeps the puzzle",
     async (code) => {
