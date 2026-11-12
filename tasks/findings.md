@@ -24671,3 +24671,19 @@ Deferred follow-up (keep at midnight filing):
 - **Fix:** use `TextInput` (or wrap in `Input.Wrapper` with `error`) so the message renders and is linked by `aria-describedby`, add `aria-label={t("MoveInput.EnterMove")}`, and add a MoveInput test asserting the message text after an illegal move.
 - **Proof:** ephemeral Vitest rendering MoveInput (i18n mocked to return keys) from the default position: after typing `Ke5` and Enter, the input had `data-error="true"` and `aria-invalid="true"`, null `aria-describedby` and `aria-label`, and the text `MoveInput.InvalidMove` was absent from the DOM. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 25)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### The explorer's Games tab opens games only by mouse click, with no keyboard activation and no single-flight guard
+
+* **ID:** f-20261112-57 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/panels/database/GamesTable.tsx:35-52` (DataTable `onRowClick` calls `runTabCreation(openDatabaseGame…)` directly), rendered by `src/components/panels/database/DatabasePanel.tsx:358`. Compare the Library `src/components/databases/GameTable.tsx:89,256-259`, which wraps the same open in `useGameOpen` and spreads `gameRowActivation(record, gameOpen.activate)` (`tabIndex: 0`, Enter handler, `src/components/common/gameOpen.tsx:40-55`) onto each row.
+- **Defect:** the analysis-panel GamesTable never adopted the shared row-activation contract. Its rows are not focusable and have no key handler, so a keyboard user cannot open any listed game. Each click also starts its own open request, because there is no `useGameOpen` admission lock ("one admission lock, shared by its button and every row gesture"), so repeated clicks issue overlapping opens.
+- **Failure scenario:** in the analysis panel's Database → Games tab, Tab into the table: no row takes focus and Enter does nothing. With the mouse, a quick double-click on a row sends two concurrent open-game requests for the same game.
+- **Fix:** mirror GameTable: hold `useGameOpen` for `openDatabaseGame` + `runTabCreation`, and pass `customRowAttributes={(record) => gameRowActivation(record, gameOpen.activate)}` instead of `onRowClick` (or keep click and add the lock). Extend GamesTable.test.tsx with an Enter-on-row case and a double-click case.
+- **Proof:** ephemeral Vitest rendering the real `mantine-datatable` GamesTable (only `openDatabaseGame`, router and i18n mocked) with one game: the row had no `tabindex` (`tabIndex === -1`), no focusable descendant, and Enter on it made 0 open calls; two clicks made 2 `openDatabaseGame` calls. Probe removed, tree clean.
+- **Found by:** Grok Bot general review (chunk 26)
