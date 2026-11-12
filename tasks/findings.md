@@ -23966,3 +23966,19 @@ Deferred follow-up (keep at midnight filing):
 * **Fix:** Make the slider controlled: `value={[dateRange.start, dateRange.end]}` and `onChange={(v) => onDateRangeChange({ start: v[0], end: v[1] })}`, make `dateRange` required, and delete `internalRange` and its effect. If an uncontrolled mode is wanted, parenthesise as `dateRange?.end ?? (ratingDates.length > 0 ? ratingDates.length - 1 : 0)`.
 * **Proof:** Node evaluation of the initializer expression on atlas: `{start:2,end:3}` with 10 dates → `[2,9]` (expected `[2,3]`); `undefined` with 10 dates → `[0,9]`; `{start:0,end:0}` → `[0,0]`. `rg TimeRangeSlider src` shows `RatingsPanel` as the only caller, always passing `dateRange`.
 * **Found by:** Grok Bot, general review (t40u), HEAD `8927ceb72`.
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Castling that gives check or mate highlights the rook's square, not the king's destination, as the last move
+
+* **ID:** f-20261112-14 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** general review chunk (Felix t40u) at HEAD `8927ceb72` (file identical on origin/master `ba81d9264`), board move-handling line-by-line pass
+* **Where:** `src/components/boards/Board.tsx` ~370-377: the last-move destination is `match(currentNode).with({ san: "O-O" }, … "g1"/"g8").with({ san: "O-O-O" }, … "c1"/"c8").otherwise((node) => node.move?.to)`. chessops encodes castling as king-to-rook (`move.to` = h1/a1, or the rook's file in Chess960) and `makeSan` appends `+`/`#`. Only the exact strings `O-O` and `O-O-O` are mapped, so `O-O+`, `O-O#`, `O-O-O+`, `O-O-O#` fall through to `node.move.to`. The result feeds Chessground `lastMove` (~692).
+* **Defect:** The castling special case is keyed on the full SAN string instead of the move being a castle, so the check/mate suffix silently disables it.
+* **Failure scenario:** In a game where White plays 0-0 and the f1 rook gives check (e.g. Black king on f8), stepping to that move highlights e1 and h1, the rook's original square. Every other castle in the same game highlights e1 and g1. The same happens for queenside castling with check (a1 instead of c1) and for castling mate.
+* **Fix:** Detect castling from the move and position, not the SAN text, e.g. `san.startsWith("O-O-O")` / `san.startsWith("O-O")` at minimum, or better, derive it from the node's move (king moving onto its own rook) and use the castling target squares. Add a `Board.test.tsx` case for `O-O+` and `O-O-O#` asserting `lastMove` ends on g1/c1.
+* **Proof:** Probe `/tmp/gb-review-20261112/castle_check.mjs` run on atlas with the repo's chessops: from `5k2/8/8/8/8/8/8/4K2R w K - 0 1`, `parseSan("O-O")` then `makeSan` gives `san: O-O+` and `move.to: h1`. Neither string equals `"O-O"`, so the `.with({ san: "O-O" })` arm cannot match and `otherwise` returns h1. `rg '"O-O"' src` shows no other normalisation on this path.
+* **Found by:** Grok Bot, general review (t40u), HEAD `8927ceb72`.
