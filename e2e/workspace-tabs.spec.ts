@@ -508,7 +508,7 @@ test("workspace-tabs: analysis row and nested column drags resize panes and rest
         commands: filesWorkspaceCommands([[gameOpeningFixture.file]], gameOpeningCommands),
     });
     await page.goto("/library");
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, gameOpeningFixture.file.name);
     await page.getByRole("button", { name: "Open game", exact: true }).click();
     const mosaic = page.locator(".mosaic-root");
@@ -569,7 +569,7 @@ test("workspace-tabs: closing the last tab of an opened repertoire file leaves a
         commands: filesWorkspaceCommands([[repertoireFile]], { ...pgnFileCommands }),
     });
     await page.goto("/library");
-    await page.getByRole("button", { name: /choose collection/i }).click();
+    await page.getByRole("button", { name: /choose folder/i }).click();
     await selectFilesTreeRow(page, repertoireFile.name);
     await page.getByRole("button", { name: "Open game", exact: true }).click();
     await expect(page).toHaveURL(/\/$/);
@@ -668,7 +668,7 @@ for (const surface of [
             "font-size",
             surface.scale === "200" ? "32px" : "16px",
         );
-        await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+        await page.getByRole("button", { name: "Choose folder", exact: true }).click();
         await selectFilesTreeRow(page, repertoireFile.name);
         await page.getByRole("button", { name: "Open game", exact: true }).click();
         await page.getByRole("tab", { name: "Practice", exact: true }).click();
@@ -868,7 +868,7 @@ test("workspace-tabs: Train reaches Start Practice by wheel, focus, and pointer 
     const { repertoireFile, commands } = practiceFeedbackSetup(now);
     await mockScenario({ commands });
     await page.goto("/library");
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, repertoireFile.name);
     await page.getByRole("button", { name: "Open game", exact: true }).click();
     await page.getByRole("tab", { name: "Practice", exact: true }).click();
@@ -1007,7 +1007,7 @@ test("workspace-tabs: incorrect practice reveals the existing answer and its rev
     const { repertoireFile, game, cardFen, commands } = practiceFeedbackSetup(now);
     await mockScenario({ commands });
     await page.goto("/library");
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, repertoireFile.name);
     await page.getByRole("button", { name: "Open game", exact: true }).click();
     await page.getByRole("tab", { name: "Practice", exact: true }).click();
@@ -1204,7 +1204,7 @@ test("workspace-tabs: successful Italian marked-start coverage with a missing co
     });
     await mockScenario({ commands });
     await page.goto("/library");
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, repertoireFile.name);
     await page.getByRole("button", { name: "Open game", exact: true }).click();
     await page.getByRole("tab", { name: "Practice", exact: true }).click();
@@ -1377,7 +1377,7 @@ test("workspace-tabs: real transposed practice card selects and reveals the exis
         }),
     });
     await page.goto("/library");
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, repertoireFile.name);
     await page.getByRole("button", { name: "Open game", exact: true }).click();
     await page.getByRole("tab", { name: "Practice", exact: true }).click();

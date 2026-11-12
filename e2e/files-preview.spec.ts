@@ -76,7 +76,7 @@ async function openDragFile(
         }),
     });
     await page.goto("/library");
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, file.name);
     const list = page.getByRole("listbox", { name: "Games", exact: true });
     const second = list.locator('[data-line-index="1"] [role="option"]');
@@ -327,7 +327,7 @@ test("files-preview: returning to Library restores a late game after section hea
         }),
     });
     await page.goto("/library");
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, file.name);
     const list = page.getByRole("listbox", { name: "Games", exact: true });
     const viewport = list.locator("..");
@@ -399,7 +399,7 @@ for (const compact of [false, true]) {
         });
         await page.goto("/library");
         await expect(page.locator("html")).toHaveCSS("font-size", compact ? "32px" : "16px");
-        await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+        await page.getByRole("button", { name: "Choose folder", exact: true }).click();
         const trash = page.getByRole("region", { name: "Trash", exact: true });
         await expect(trash.getByText("Archive/Openings", { exact: true })).toBeVisible();
         await expect(
@@ -497,7 +497,7 @@ for (const gesture of ["button", "double-click", "Enter"] as const) {
             commands: filesWorkspaceCommands([[gameOpeningFixture.file]], gameOpeningCommands),
         });
         await page.goto("/library");
-        await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+        await page.getByRole("button", { name: "Choose folder", exact: true }).click();
         await selectFilesTreeRow(page, gameOpeningFixture.file.name);
         const second = page.getByRole("option", { name: /Second White - Second Black/ });
         const first = page.getByRole("option", { name: /First White - First Black/ });
@@ -540,7 +540,7 @@ test("files-preview: a move key takes focus off the clicked row, Enter before it
         commands: filesWorkspaceCommands([[gameOpeningFixture.file]], gameOpeningCommands),
     });
     await page.goto("/library");
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, gameOpeningFixture.file.name);
     const second = page.getByRole("option", { name: /Second White - Second Black/ });
     await second.click();
@@ -571,7 +571,7 @@ test("files-preview: a dragged row's preview keeps the row's real size and layou
 }) => {
     await mockScenario({ commands: filesWorkspaceCommands([[repertoireFile]], pgnFileCommands) });
     await page.goto("/library");
-    await page.getByRole("button", { name: /choose collection/i }).click();
+    await page.getByRole("button", { name: /choose folder/i }).click();
     const row = page.getByRole("treeitem", { name: repertoireFile.name, exact: true });
     await expect(row).toBeVisible();
 
@@ -621,7 +621,7 @@ test("files-preview: a repertoire line shows its section icon where it can be fo
     const file = { ...repertoireFile, metadata: { type: "repertoire" as const, tags: [] } };
     await mockScenario({ commands: filesWorkspaceCommands([[file]], pgnFileCommands) });
     await page.goto("/library");
-    await page.getByRole("button", { name: /choose collection/i }).click();
+    await page.getByRole("button", { name: /choose folder/i }).click();
     await selectFilesTreeRow(page, file.name);
     const rows = page.getByRole("option");
     const iconOf = (row: Locator) =>
@@ -656,7 +656,7 @@ test("files-preview: a section's icon opens its choices inside the window", asyn
         }),
     });
     await page.goto("/library");
-    await page.getByRole("button", { name: /choose collection/i }).click();
+    await page.getByRole("button", { name: /choose folder/i }).click();
     await selectFilesTreeRow(page, file.name);
     await expect(page.getByText("mit g3").first()).toBeVisible();
     await page
@@ -696,7 +696,7 @@ test("files-preview: the card fills the window and shows the whole board and its
         }),
     });
     await page.goto("/library");
-    await page.getByRole("button", { name: /choose collection/i }).click();
+    await page.getByRole("button", { name: /choose folder/i }).click();
     await selectFilesTreeRow(page, repertoireFile.name);
     await expect(page.getByText("Weiss - Schwarz").first()).toBeVisible();
     await expect
@@ -751,7 +751,7 @@ test("files-preview: a right click on the board offers flip and copy FEN", async
         });
     });
     await page.goto("/library");
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, repertoireFile.name);
     const board = page.locator("cg-board");
     await expect(board).toBeVisible();
@@ -822,7 +822,7 @@ test("files-preview: variation chooser lies inside the preview board at its top 
         }),
     });
     await page.goto("/library");
-    await page.getByRole("button", { name: /choose collection/i }).click();
+    await page.getByRole("button", { name: /choose folder/i }).click();
     await selectFilesTreeRow(page, repertoireFile.name);
     const board = page.locator("cg-board");
     await expect(board).toBeVisible();
@@ -865,7 +865,7 @@ test("files-preview: saved shapes stay beside chooser arrows and follow the chos
         }),
     });
     await page.goto("/library");
-    await page.getByRole("button", { name: /choose collection/i }).click();
+    await page.getByRole("button", { name: /choose folder/i }).click();
     await selectFilesTreeRow(page, repertoireFile.name);
     const preview = page.locator(".cg-wrap");
     await expect(preview).toBeVisible();
@@ -915,7 +915,7 @@ test("files-preview: numbered comment prose stays inline with its moves", async 
         }),
     });
     await page.goto("/library");
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, repertoireFile.name);
 
     const notation = page
@@ -946,7 +946,7 @@ test("files-preview: navigation reveals both ends of a notation row taller than 
         }),
     });
     await page.goto("/library");
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, repertoireFile.name);
 
     const notation = page
@@ -991,7 +991,7 @@ test("files-preview: navigation mounts a distant tall row and reveals its select
         }),
     });
     await page.goto("/library");
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, repertoireFile.name);
 
     // Keep the viewport locator stable while virtual rows mount and unmount.

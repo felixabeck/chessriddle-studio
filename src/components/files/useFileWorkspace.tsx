@@ -484,20 +484,6 @@ export function useFileWorkspace(
     selected,
     failure,
     mutate,
-    chooser: (
-      <>
-        <Button
-          miw={0}
-          {...libraryButtonProps}
-          disabled={picker.pending}
-          onClick={() => void chooseWorkspace()}
-        >
-          {workspace
-            ? t("Files.ChangeCollection", { defaultValue: "Change collection" })
-            : t("Files.ChooseCollection", { defaultValue: "Choose collection" })}
-        </Button>
-      </>
-    ),
     creation: (
       <>
         <Button
@@ -685,6 +671,18 @@ export function useFileWorkspace(
             {t("Library.FilesLoading", { defaultValue: "Loading PGN files…" })}
           </Text>
         ) : null}
+        {/* The folder is otherwise changed in Settings; here it is offered only as the way out. */}
+        {(!workspace || failure !== "silent") && (
+          <Button
+            miw={0}
+            {...libraryButtonProps}
+            style={{ alignSelf: "flex-start" }}
+            disabled={picker.pending}
+            onClick={() => void chooseWorkspace()}
+          >
+            {t("Files.ChooseFolder", { defaultValue: "Choose folder" })}
+          </Button>
+        )}
         {actionError && !moveTarget && (
           <Text c="danger" role="alert">
             {actionError}

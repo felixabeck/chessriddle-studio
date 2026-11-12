@@ -232,7 +232,7 @@ test("linked collection New game appends to its PGN without inserting into the i
         }),
     });
     await page.goto("/library");
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, file.name);
     await expect(page.getByRole("button", { name: "New game", exact: true })).toBeEnabled();
     await page.getByRole("button", { name: "New game", exact: true }).scrollIntoViewIfNeeded();

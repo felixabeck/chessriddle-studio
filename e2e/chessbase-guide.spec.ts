@@ -21,7 +21,7 @@ test("empty Library opens the migration guide with reachable content", async ({
     assertNoHorizontalOverflow,
 }, testInfo) => {
     await page.goto("/library");
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await expect(page.getByText("Your library is empty.", { exact: false })).toBeVisible();
     const link = page.getByRole("button", { name: "Coming from ChessBase?", exact: true });
     await expect(link).toHaveScreenshot("guide-entry.png");

@@ -3,7 +3,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { MantineProvider } from "@mantine/core";
 import { createStore, Provider } from "jotai";
 import { afterEach, assert, beforeEach, expect, test, vi } from "vitest";
-import { fileWorkspaceAtom, databaseConversionStateAtom, referenceDbAtom } from "@/state/atoms";
+import {
+  fileWorkspaceAtom,
+  fileWorkspaceDisplayNameAtom,
+  databaseConversionStateAtom,
+  referenceDbAtom,
+} from "@/state/atoms";
 import { activeDatabaseViewStore } from "@/state/store/database";
 import { workspaceListingToEntries, type Entry } from "@/components/files/file";
 import type { ManagedDatabaseInfo } from "@/utils/db";
@@ -929,6 +934,9 @@ test("empty success differs from loading and source failure", async () => {
   mocks.databases = [];
   await render();
   expect(host.textContent).toContain("Your library is empty");
+  expect(host.textContent).not.toContain("Files ·");
+  await act(async () => store.set(fileWorkspaceDisplayNameAtom, "Repertoire"));
+  expect(host.textContent).toContain("Files · Repertoire");
   await click(button("Coming from ChessBase?"));
   expect(store.get(chessBaseGuideAtom)).toBe("link");
   await act(async () => store.set(librarySearchAtom, "missing"));

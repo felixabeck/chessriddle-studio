@@ -241,7 +241,7 @@ for (const host of ["analysis", "play"] as const) {
                     }),
                 });
                 await page.goto("/library");
-                await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+                await page.getByRole("button", { name: "Choose folder", exact: true }).click();
                 await selectFilesTreeRow(page, filesWorkspaceFixture.pgnFile.name);
                 await page.getByRole("button", { name: "Open game", exact: true }).click();
                 await expect(page).toHaveURL("/");
@@ -423,7 +423,7 @@ test("font-scaled-breakpoints: visible library open controls wrap at 320px and 2
     await assertNoHorizontalOverflow();
     await expect(page).toHaveScreenshot("database-game-open-320-200.png", { fullPage: true });
     await page.goto("/library");
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, gameOpeningFixture.file.name);
     const gameOpen = page.getByRole("button", { name: "Open game", exact: true });
     await expect(gameOpen).toBeEnabled();
@@ -639,7 +639,7 @@ for (const scale of [200, 100] as const) {
         await page.setViewportSize({ width: 800, height: 720 });
         await mockScenario({ commands: filesWorkspaceCommands([[]]) });
         await page.goto("/library");
-        await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+        await page.getByRole("button", { name: "Choose folder", exact: true }).click();
         await page.getByRole("button", { name: "Create folder", exact: true }).click();
         const dialog = page.getByRole("dialog", { name: "Create folder", exact: true });
         await expect(dialog.getByRole("textbox", { name: "Name", exact: true })).toBeFocused();

@@ -19,7 +19,8 @@ import {
 } from "@mantine/core";
 import { TriangleAlert, ChevronRight, Search } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
+import { fileWorkspaceDisplayNameAtom } from "@/state/atoms";
 import useSWR, { useSWRConfig } from "swr";
 import { tauri } from "@/platform/tauri";
 import { CollectionMigration, LinkedCollection, isCollectionConsumer } from "./LinkedCollection";
@@ -40,6 +41,7 @@ export default function LibraryPage() {
   const [search, setSearch] = useAtom(librarySearchAtom);
   const [filter, setFilter] = useAtom(libraryFilterAtom);
   const [visibleCount, setVisibleCount] = useState(0);
+  const folderName = useAtomValue(fileWorkspaceDisplayNameAtom);
   const [migrationDatabase, setMigrationDatabase] = useState<string | null>(null);
   const { mutate } = useSWRConfig();
   const { data: linkSupported } = useSWR("linkedCollectionsSupported", () =>
@@ -207,12 +209,14 @@ export default function LibraryPage() {
       p={{ base: "xs", sm: "md" }}
       style={{ overflow: split ? "hidden" : "auto" }}
     >
-      <Group justify="space-between" wrap="wrap" style={{ flexShrink: split ? 0 : undefined }}>
-        <Title miw={0} fz={{ base: "h3", sm: "h1" }} className="wrap-anywhere">
-          {t("Library.Title", { defaultValue: "Library" })}
-        </Title>
-        {files.chooser}
-      </Group>
+      <Title
+        miw={0}
+        fz={{ base: "h3", sm: "h1" }}
+        className="wrap-anywhere"
+        style={{ flexShrink: split ? 0 : undefined }}
+      >
+        {t("Library.Title", { defaultValue: "Library" })}
+      </Title>
       <Group
         role="group"
         aria-label={t("Common.AddNew")}
@@ -311,11 +315,18 @@ export default function LibraryPage() {
                 filter={filter}
                 peers={peers}
                 grouped
+                folderName={files.workspace ? folderName : ""}
                 label={t("Library.Title", { defaultValue: "Library" })}
                 onVisibleCount={setVisibleCount}
               />
               {(loadedEmpty || filteredEmpty) && (
                 <>
+                  {/* The tree draws its headings only around rows, so an empty folder is named here. */}
+                  {loadedEmpty && !filteredEmpty && folderName && (
+                    <Text c="dimmed" ta="center" size="sm" className="wrap-anywhere">
+                      {`${t("Files.Title", { defaultValue: "Files" })} · ${folderName}`}
+                    </Text>
+                  )}
                   <Text c="dimmed" ta="center">
                     {filteredEmpty
                       ? t("Common.NoResults")

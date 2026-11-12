@@ -47,7 +47,7 @@ async function setupNotationMenu(
         localStorage.setItem("letters", JSON.stringify("letters"));
     }, tableLayout);
     await page.goto("/library");
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, filesWorkspaceFixture.pgnFile.name);
     if (scope === "workspace") {
         await page.getByRole("button", { name: "Open game", exact: true }).click();

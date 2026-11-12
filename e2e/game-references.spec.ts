@@ -101,7 +101,7 @@ test("citations: formatted notation, keyboard choice and narrow missing guidance
 }) => {
     await mockScenario({ commands: commands([game, { ...game, id: 2 }]) });
     await page.goto("/library");
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, filesWorkspaceFixture.pgnFile.name);
     await openPreparationGame(page);
     const reference = page.getByRole("button", { name: citation, exact: true });
@@ -137,7 +137,7 @@ test("citations: formatted notation, keyboard choice and narrow missing guidance
 
     await page.setViewportSize({ width: 800, height: 720 });
     await page.goto("/library");
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, filesWorkspaceFixture.pgnFile.name);
     await openPreparationGame(page);
     await page.getByRole("button", { name: second, exact: true }).click();
@@ -156,7 +156,7 @@ test("citations: only a complete unique occurrence opens automatically", async (
 }) => {
     await mockScenario({ commands: commands([game]) });
     await page.goto("/library");
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, filesWorkspaceFixture.pgnFile.name);
     await openPreparationGame(page);
     await page.getByRole("button", { name: citation, exact: true }).click();

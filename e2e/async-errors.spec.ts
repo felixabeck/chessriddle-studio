@@ -195,7 +195,7 @@ for (const locale of ["en-US", "de-DE"] as const) {
             });
             await page.goto("/library");
             await page
-                .getByRole("button", { name: copy["Files.ChooseCollection"], exact: true })
+                .getByRole("button", { name: copy["Files.ChooseFolder"], exact: true })
                 .click();
             await expect
                 .poll(() =>
@@ -324,7 +324,7 @@ for (const locale of ["en-US", "de-DE"] as const) {
                 });
                 await page.goto("/library");
                 await page
-                    .getByRole("button", { name: copy["Files.ChooseCollection"], exact: true })
+                    .getByRole("button", { name: copy["Files.ChooseFolder"], exact: true })
                     .click();
                 await expect(
                     page.getByRole("treeitem", { name: destination.name, exact: true }),
@@ -958,14 +958,14 @@ for (const [rootFailure, filesKey, databasesKey] of listingReasons) {
             }),
         });
         await page.goto("/library");
-        await page.getByRole("button", { name: "Sammlung auswählen", exact: true }).click();
+        await page.getByRole("button", { name: "Ordner auswählen", exact: true }).click();
         const alert = page.getByRole("alert");
         await expect(alert).toBeVisible();
         await expect(alert).toHaveText(germanListingCopy[filesKey]);
         await alert.scrollIntoViewIfNeeded();
         await expect(
             page.getByRole("button", {
-                name: germanListingCopy["Files.ChangeCollection"],
+                name: germanListingCopy["Files.ChooseFolder"],
                 exact: true,
             }),
         ).toBeVisible();
@@ -1035,7 +1035,7 @@ async function submitPurgeAndOpenFailureDialog(
         }),
     });
     await page.goto("/library");
-    await page.getByRole("button", { name: "Sammlung auswählen" }).click();
+    await page.getByRole("button", { name: "Ordner auswählen" }).click();
     const deleteEntry = page
         .getByRole("treeitem", { name: "Openings", exact: true })
         .getByRole("button", { name: "Löschen" });
@@ -1075,7 +1075,7 @@ test("async-errors: post-trash undo bar is accessible in the dark theme", async 
     });
     await page.goto("/library");
     await expect(page.locator("html")).toHaveAttribute("data-mantine-color-scheme", "dark");
-    await page.getByRole("button", { name: "Sammlung auswählen" }).click();
+    await page.getByRole("button", { name: "Ordner auswählen" }).click();
     await page
         .getByRole("treeitem", { name: "Openings", exact: true })
         .getByRole("button", { name: "Löschen" })
@@ -1139,7 +1139,7 @@ test("async-errors: localizes directory-trash failures in the confirmation dialo
         }),
     });
     await page.goto("/library");
-    await page.getByRole("button", { name: "Sammlung auswählen" }).click();
+    await page.getByRole("button", { name: "Ordner auswählen" }).click();
     await page
         .getByRole("treeitem", { name: "Openings", exact: true })
         .getByRole("button", { name: "Löschen" })
@@ -1169,7 +1169,7 @@ test("async-errors: fits a selected PGN file and its card at 320px", async ({
         commands: filesWorkspaceCommands([[openingDirectory, pgnFile]], pgnFileCommands),
     });
     await page.goto("/library");
-    await page.getByRole("button", { name: "Sammlung auswählen" }).click();
+    await page.getByRole("button", { name: "Ordner auswählen" }).click();
     const fileRow = await selectFilesTreeRow(page, pgnFile.name);
     // Nothing before this line depends on the card, so an overflowing page fails here.
     await assertNoHorizontalOverflow();
@@ -1330,7 +1330,7 @@ for (const locale of ["en-US", "de-DE"] as const) {
             });
             await page.goto("/library");
             await page
-                .getByRole("button", { name: copy["Files.ChooseCollection"], exact: true })
+                .getByRole("button", { name: copy["Files.ChooseFolder"], exact: true })
                 .click();
             await page.getByRole("button", { name: copy["Files.CreateFile"], exact: true }).click();
             const dialog = page.getByRole("dialog", {
@@ -1399,7 +1399,7 @@ for (const locale of ["en-US", "de-DE"] as const) {
             });
             await page.goto("/library");
             await page
-                .getByRole("button", { name: copy["Files.ChooseCollection"], exact: true })
+                .getByRole("button", { name: copy["Files.ChooseFolder"], exact: true })
                 .click();
             await selectFilesTreeRow(page, pgnFile.name);
             await page.getByRole("button", { name: copy["Files.Trash"], exact: true }).click();

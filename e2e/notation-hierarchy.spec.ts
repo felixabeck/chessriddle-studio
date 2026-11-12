@@ -133,7 +133,7 @@ function notationViewport(page: Page) {
 
 async function openLibraryFile(page: Page) {
     await page.goto("/library");
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, filesWorkspaceFixture.pgnFile.name);
 }
 

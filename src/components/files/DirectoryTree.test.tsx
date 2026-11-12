@@ -19,11 +19,18 @@ vi.mock("@mantine/core", () => ({
     ),
   ),
   Group: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  Text: ({ children, ...props }: React.HTMLAttributes<HTMLSpanElement>) => (
+  Text: ({
+    children,
+    inherit: _inherit,
+    fw: _fw,
+    c: _c,
+    ...props
+  }: React.HTMLAttributes<HTMLSpanElement> & { inherit?: boolean; fw?: number; c?: string }) => (
     <span {...props}>{children}</span>
   ),
 }));
 vi.mock("lucide-react", () => ({
+  Database: () => null,
   FileText: () => null,
   Folder: () => null,
   FolderOpen: () => null,
@@ -676,4 +683,38 @@ test("routes context, M, and drag move intents with opaque entry handles", async
   expect(document.body.querySelector("[inert]")).toBeNull();
   expect(onMove).toHaveBeenCalledTimes(1);
   expect(onMove).toHaveBeenCalledWith(rootFile, directory);
+});
+
+test.each([
+  ["Repertoire", [rootFile], "Files.Title · Repertoire"],
+  ["", [rootFile], "Files.Title"],
+  // A tree without rows renders no heading: role="tree" may not hold headings alone.
+  ["Repertoire", [], undefined],
+])("the grouped Files heading names folder %j listing %j", async (folderName, files, heading) => {
+  const store = createStore();
+  store.set(fileWorkspaceAtom, handle("tree-workspace-heading"));
+  store.set(expandedDirectoriesAtom, []);
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () =>
+    root.render(
+      <Provider store={store}>
+        <DirectoryTree
+          files={files}
+          selectedFile={null}
+          setSelectedFile={() => {}}
+          onRequestDelete={() => {}}
+          search=""
+          filter=""
+          grouped
+          folderName={folderName}
+        />
+      </Provider>,
+    ),
+  );
+  const title = [...container.querySelectorAll('[data-section="files"] span')].find((element) =>
+    element.textContent?.startsWith("Files.Title"),
+  );
+  expect(title?.textContent).toBe(heading);
 });

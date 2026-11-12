@@ -189,7 +189,7 @@ test("board-wood-texture: arrows from PGN drawings keep finite coordinates when 
         await route.continue().catch(() => undefined);
     });
     await page.goto("/library");
-    await page.getByRole("button", { name: /choose collection/i }).click();
+    await page.getByRole("button", { name: /choose folder/i }).click();
     await selectFilesTreeRow(page, filesWorkspaceFixture.pgnFile.name);
     await page.getByRole("button", { name: "Open game", exact: true }).click();
     await expect(page).toHaveURL(/\/$/);

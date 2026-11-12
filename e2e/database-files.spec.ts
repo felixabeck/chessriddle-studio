@@ -560,7 +560,7 @@ test("database-files: unreadable saved reference stays unselected and resumes se
     await page.evaluate((next) => window.__E2E_TAURI__.configure({ commands: next }), commands);
     await navbar.getByRole("link", { name: "Library", exact: true }).click();
     // Choosing the existing workspace loads its files and revalidates the shared database list.
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await expect(page.getByRole("button", { name: "Open database", exact: true })).toBeVisible();
     await navbar.getByRole("link", { name: "Board", exact: true }).click();
     await expect(picker).toHaveValue(gameOpeningFixture.databaseTitle);
@@ -791,7 +791,7 @@ async function openMixedLibrary(
     const { files, databases, unavailable, scenario } = mixedDesktopLibraryFixture();
     await mockScenario(scenario);
     await page.goto("/library");
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await expect(page.locator("html")).toHaveAttribute("data-mantine-color-scheme", surface.scheme);
     await expect(page.locator("html")).toHaveCSS(
         "font-size",
@@ -817,7 +817,7 @@ async function openMixedLibrary(
     await expect(sections).toHaveCount(2);
     const assertCounts = async (fileCount: number, databaseCount: number) => {
         for (const [index, name, count] of [
-            [0, "Files", fileCount],
+            [0, "Files · E2E collection", fileCount],
             [1, "Databases", databaseCount],
         ] as const) {
             const section = sections.nth(index);
@@ -1003,7 +1003,6 @@ for (const surface of desktopLibrarySurfaces) {
                     .getByRole("group", { name: "Add New", exact: true })
                     .getByRole("button")
                     .all()),
-                page.getByRole("button", { name: "Change collection", exact: true }),
             ])
                 await reachable(control);
             const rowGeometry = [];
@@ -1196,7 +1195,7 @@ test("database-files: an unavailable-only Library offers recovery without the wh
         },
     });
     await page.goto("/library");
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     const row = await selectFilesTreeRow(page, unavailable.name);
     await expect(page.getByRole("treeitem")).toHaveCount(1);
     await expect(row).toContainText("The search index is unavailable");
@@ -1308,7 +1307,7 @@ test("database-files: fixed-coordinate file double-click stays on the requested 
         },
     });
     await page.goto("/library");
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await expect(page.getByRole("treeitem")).toHaveCount(entries.length);
     await selectFilesTreeRow(page, originalFile.name);
     const role = page.locator("[data-preserved-original]");
@@ -1655,7 +1654,7 @@ for (const surface of [
             },
         });
         await page.goto("/library");
-        await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+        await page.getByRole("button", { name: "Choose folder", exact: true }).click();
         const row = page.getByRole("treeitem", { name: file.name, exact: true });
         await expect(row).toHaveCount(1);
         await row.getByText(file.name, { exact: true }).click();
@@ -1722,7 +1721,7 @@ for (const surface of [
             };
             await mockScenario({ commands: base });
             await page.goto("/library");
-            await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+            await page.getByRole("button", { name: "Choose folder", exact: true }).click();
             await selectFilesTreeRow(page, collection.name);
             const detail = page.locator("[data-linked-collection]");
             await expect(detail.getByRole("alert")).toContainText(
@@ -1830,7 +1829,7 @@ for (const surface of [
         };
         await mockScenario({ commands: base });
         await page.goto("/library");
-        await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+        await page.getByRole("button", { name: "Choose folder", exact: true }).click();
         await selectFilesTreeRow(page, gameOpeningFixture.databaseTitle);
         await page.getByRole("button", { name: "Link existing collection", exact: true }).click();
         const dialog = page.getByRole("dialog", { name: "Link existing collection", exact: true });
@@ -1930,7 +1929,7 @@ for (const surface of [
             },
         });
         await page.goto("/library");
-        await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+        await page.getByRole("button", { name: "Choose folder", exact: true }).click();
         await selectFilesTreeRow(page, gameOpeningFixture.databaseTitle);
         await page.getByRole("button", { name: "Link existing collection", exact: true }).click();
         const dialog = page.getByRole("dialog", { name: "Link existing collection", exact: true });
@@ -2024,7 +2023,7 @@ test("database-files: mixed Library retains hierarchy, selection, type filters a
         },
     });
     await page.goto("/library");
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     const tree = page.getByRole("tree", { name: "Library", exact: true });
     await expect(tree).toHaveCount(1);
     const collision = tree.getByRole("treeitem", { name: sameName, exact: true });
@@ -2750,7 +2749,7 @@ test("database-files: metadata-only editing fits 320px and relists the chosen ty
         }),
     });
     await page.goto("/library");
-    await page.getByRole("button", { name: /choose collection/i }).click();
+    await page.getByRole("button", { name: /choose folder/i }).click();
     await selectFilesTreeRow(page, initial.name);
     await page.getByRole("button", { name: "Edit metadata", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Edit metadata", exact: true });
@@ -2801,7 +2800,7 @@ test("database-files: Move destination wraps at 320px and 200% and submits the s
         }),
     });
     await page.goto("/library");
-    await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, pgnFile.name);
     await page
         .getByRole("treeitem", { name: pgnFile.name, exact: true })
@@ -2869,7 +2868,7 @@ test("database-files: grants a workspace and creates a folder through typed IPC"
     });
     await page.goto("/library");
 
-    await page.getByRole("button", { name: /choose collection/i }).click();
+    await page.getByRole("button", { name: /choose folder/i }).click();
     await expect(page.getByRole("button", { name: /create folder/i })).toBeVisible();
     await expect(page.getByText("Openings")).toHaveCount(0);
     await page.getByRole("button", { name: /create folder/i }).click();

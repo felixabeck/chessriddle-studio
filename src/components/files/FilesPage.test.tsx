@@ -67,7 +67,7 @@ vi.mock("jotai", async (original) => ({
   },
   useAtom: (atom: object) =>
     atom === stateAtoms.fileWorkspaceAtom
-      ? [mocks.workspace ?? workspace, mocks.setWorkspace]
+      ? [mocks.workspace === undefined ? workspace : mocks.workspace, mocks.setWorkspace]
       : ["", mocks.setWorkspaceDisplayName],
 }));
 vi.mock("@/state/atoms", () => stateAtoms);
@@ -350,7 +350,6 @@ function FilesPage() {
   controller = source;
   return (
     <>
-      {source.chooser}
       {source.creation}
       <Input
         aria-label="Common.Search"
@@ -1692,7 +1691,8 @@ test("collection selection keeps the native opaque handle and only display metad
   const nextWorkspace = { id: { id: "new-workspace-token" }, kind: "fileWorkspace" };
   mocks.issueFileWorkspace.mockResolvedValue({ handle: nextWorkspace, displayName: "Games" });
 
-  click("Change collection");
+  await withoutFolder();
+  click("Choose folder");
   await settle();
 
   expect(mocks.setWorkspace).toHaveBeenCalledWith(nextWorkspace);
@@ -1702,7 +1702,8 @@ test("collection selection keeps the native opaque handle and only display metad
 test("cancelled collection selection stays silent", async () => {
   mocks.issueFileWorkspace.mockRejectedValueOnce(new Error("Cancellation"));
 
-  click("Change collection");
+  await withoutFolder();
+  click("Choose folder");
   await settle();
 
   expect(mocks.setWorkspace).not.toHaveBeenCalled();
@@ -1934,7 +1935,8 @@ test.each(["trash", "restore"] as const)(
 test("failed collection selection notifies without changing the workspace", async () => {
   mocks.issueFileWorkspace.mockRejectedValueOnce(new Error("permission denied"));
 
-  click("Change collection");
+  await withoutFolder();
+  click("Choose folder");
   await settle();
 
   expect(mocks.setWorkspace).not.toHaveBeenCalled();
@@ -1954,14 +1956,15 @@ test("collection selection prevents duplicate pending requests and re-enables th
       }),
   );
 
-  click("Change collection");
-  expect(button("Change collection").disabled).toBe(true);
-  click("Change collection");
+  await withoutFolder();
+  click("Choose folder");
+  expect(button("Choose folder").disabled).toBe(true);
+  click("Choose folder");
   expect(mocks.issueFileWorkspace).toHaveBeenCalledOnce();
 
   resolve({ handle: workspace, displayName: "Games" });
   await settle();
-  expect(button("Change collection").disabled).toBe(false);
+  expect(button("Choose folder").disabled).toBe(false);
 });
 
 test("collection selection can be retried after a rejection", async () => {
@@ -1969,9 +1972,10 @@ test("collection selection can be retried after a rejection", async () => {
     .mockRejectedValueOnce(new Error("permission denied"))
     .mockResolvedValueOnce({ handle: workspace, displayName: "Games" });
 
-  click("Change collection");
+  await withoutFolder();
+  click("Choose folder");
   await settle();
-  click("Change collection");
+  click("Choose folder");
   await settle();
 
   expect(mocks.issueFileWorkspace).toHaveBeenCalledTimes(2);
@@ -2057,7 +2061,7 @@ describe("listing failures", () => {
     ["unusable", "This collection cannot be opened. Choose another."],
     ["permission", "ChessRiddle Studio is not allowed to read this collection. Choose another."],
     ["too-large", "This collection is too large to list. Choose another."],
-  ])("%s renders its sentence and keeps the header recovery", async (rootFailure, sentence) => {
+  ])("%s renders its sentence and offers another folder", async (rootFailure, sentence) => {
     mocks.error = {
       tag: "backend-error",
       category: "io",
@@ -2067,7 +2071,7 @@ describe("listing failures", () => {
     await rerender();
     expect(container.querySelector('[role="alert"]')?.textContent).toBe(sentence);
     mocks.issueFileWorkspace.mockResolvedValueOnce({ handle: workspace, displayName: "Games" });
-    click("Change collection");
+    click("Choose folder");
     await settle();
     expect(mocks.issueFileWorkspace).toHaveBeenCalledOnce();
   });
@@ -2100,7 +2104,8 @@ describe("listing failures", () => {
       message: "diagnostic",
       rootFailure: "changed",
     });
-    click("Change collection");
+    await withoutFolder();
+    click("Choose folder");
     await settle();
     expect(mocks.notify).toHaveBeenCalledWith({
       color: "danger",
@@ -2115,9 +2120,10 @@ describe("listing failures", () => {
     mocks.issueFileWorkspace
       .mockRejectedValueOnce(new Error("Cancellation"))
       .mockResolvedValueOnce({ handle: workspace, displayName: "Games" });
-    click("Change collection");
+    await withoutFolder();
+    click("Choose folder");
     await settle();
-    click("Change collection");
+    click("Choose folder");
     await settle();
     expect(mocks.issueFileWorkspace).toHaveBeenCalledTimes(2);
   });
@@ -2252,6 +2258,23 @@ function card() {
 async function rerender() {
   await act(async () => root.render(<FilesPage />));
 }
+
+/** The folder button exists only without a folder or after a listing failure. */
+async function withoutFolder() {
+  mocks.workspace = null;
+  await rerender();
+}
+
+test("the folder button and its sentence appear only without a listed folder", async () => {
+  const status = () => container.querySelector('[role="region"][aria-label="Files.Title"]')!;
+  expect(status().querySelector("button")).toBeNull();
+  expect(status().textContent).not.toContain("Files.EmptyWorkspace");
+
+  await withoutFolder();
+
+  expect(status().querySelector("button")?.textContent).toBe("Choose folder");
+  expect(status().textContent).toContain("Files.EmptyWorkspace");
+});
 
 describe("workspace controls", () => {
   test("search text reaches the tree", async () => {

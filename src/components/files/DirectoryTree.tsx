@@ -90,6 +90,7 @@ export default function DirectoryTree({
   label,
   onVisibleCount,
   grouped = false,
+  folderName = "",
 }: {
   files: Entry[];
   selectedFile: Entry | null;
@@ -103,6 +104,8 @@ export default function DirectoryTree({
   label?: string;
   onVisibleCount?: (count: number) => void;
   grouped?: boolean;
+  /** Display name of the listed folder, shown beside the Files heading. */
+  folderName?: string;
 }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useAtom(expandedDirectoriesAtom);
@@ -402,6 +405,11 @@ export default function DirectoryTree({
           <Box role="presentation" className={libraryClasses.section} data-section="files">
             <LibrarySectionHeading count={fileCount} icon={<FileText />}>
               {t("Files.Title", { defaultValue: "Files" })}
+              {folderName && (
+                <Text component="span" inherit fw={400} c="dimmed">
+                  {` · ${folderName}`}
+                </Text>
+              )}
             </LibrarySectionHeading>
             {fileCount > 0 && (
               <div

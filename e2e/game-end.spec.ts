@@ -41,7 +41,7 @@ for (const colorScheme of ["light", "dark"] as const) {
                 { colorScheme, tableView },
             );
             await page.goto("/library");
-            await page.getByRole("button", { name: "Choose collection", exact: true }).click();
+            await page.getByRole("button", { name: "Choose folder", exact: true }).click();
             await selectFilesTreeRow(page, filesWorkspaceFixture.pgnFile.name);
             await page.getByRole("button", { name: "Open game", exact: true }).click();
             await expect(page).toHaveURL("/");

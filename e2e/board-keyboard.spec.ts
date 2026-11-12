@@ -56,7 +56,7 @@ for (const mode of ["diff", "all"] as const) {
             }),
         });
         await page.goto("/library");
-        await page.getByRole("button", { name: /choose collection/i }).click();
+        await page.getByRole("button", { name: /choose folder/i }).click();
         await selectFilesTreeRow(page, filesWorkspaceFixture.pgnFile.name);
         await page.getByRole("button", { name: "Open game", exact: true }).click();
         await expect(page.getByRole("grid")).toBeVisible();
@@ -794,7 +794,7 @@ test("board-keyboard: PGN imports render six named arrow and square colors despi
         }),
     });
     await page.goto("/library");
-    await page.getByRole("button", { name: /choose collection/i }).click();
+    await page.getByRole("button", { name: /choose folder/i }).click();
     await selectFilesTreeRow(page, filesWorkspaceFixture.pgnFile.name);
     await page.getByRole("button", { name: "Open game", exact: true }).click();
     await expect(page).toHaveURL(/\/$/);
