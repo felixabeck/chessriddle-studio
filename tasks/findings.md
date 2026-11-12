@@ -23902,3 +23902,19 @@ Deferred follow-up (keep at midnight filing):
 * **Fix:** Route both theme readers through one helper that maps the missing-table error to `Error::PuzzleThemesUnavailable` (preferably by checking the schema once, not by matching `to_string()`), and in `Puzzles.tsx` skip `getThemesForPuzzle` while `themesTableMissing` is set and treat a `puzzle-themes-unavailable` category from it as "no themes" without a toast. Add a Rust test that `load_themes_for_puzzle` on a puzzles-only database returns `PuzzleThemesUnavailable`, and a `Puzzles.test.tsx` case that completing a puzzle on such a database shows no notification.
 * **Proof:** Reproduced the exact query shape on atlas with `sqlite3` against a puzzles-only database using the `repository.rs` legacy fixture schema (`CREATE TABLE puzzles (id, fen, moves, rating, rating_deviation, popularity, nb_plays)`): the unfiltered `get_puzzle` query (`SELECT … FROM puzzles WHERE rating <= … AND rating >= … ORDER BY RANDOM() LIMIT 20`) returned the row, and the `load_themes_for_puzzle` query (`SELECT themes.name FROM themes INNER JOIN puzzle_themes ON puzzle_themes.theme_id = themes.id WHERE puzzle_themes.puzzle_id = 1 ORDER BY themes.name`) failed with `no such table: themes`. The Diesel join is fixed by `schema.rs` `joinable!(puzzle_themes -> themes (theme_id))`; the error is not mapped anywhere on that path (`rg PuzzleThemesUnavailable src-tauri/src` finds only `load_puzzle_themes`). Scratch database removed.
 * **Found by:** Grok Bot, general review (t40u), HEAD `84923491c`.
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Performance rating drops 7 points at a 57.5% score because `fideDp` rounds p×100 in binary floating point
+
+* **ID:** f-20261112-10 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** general review chunk (Felix t40u) at HEAD `e4713b21f` (file identical on origin/master `ba81d9264`), analysis-aggregation / report-formula line-by-line pass
+* **Where:** `src/components/home/PersonalCardPanels/overviewStatistics.ts` `fideDp` (~109-113): `Math.round(p * 100)` with `p` from `scoreFraction` (~82-86). Consumed by `fidePerformanceRating` (~100-107) → `summarizeColor` (~255-272) → the Overview line in `OverviewPanel.tsx` ~252-253. Governing decision `d-20261108-15` says p is "rounded to two decimals"; the existing test `p rounds to two decimals before the dp lookup` (`overviewStatistics.test.ts` ~214-218) pins half-up (0.625 → 0.63 → dp 95).
+* **Defect:** `0.575 * 100` is `57.49999999999999` in IEEE-754, so `Math.round` gives 57 instead of the half-up 58 the decision and test require, and the lookup returns dp 50 instead of 57. Every other reachable fraction rounds correctly; this one is the only miss up to 60 rated games.
+* **Failure scenario:** A player with 11.5/20 (or 23/40, 34.5/60) against rated opponents sees a performance rating 7 points lower than FIDE table 8.1(a) gives, e.g. average opponent 1800 → shown 1850, FIDE 1857.
+* **Fix:** Round from integers instead of the float product: compute hundredths as `Math.floor((200 * won + 100 * drawn + games) / (2 * games))` (half-up on the exact score in half-points), or pass the half-point score and game count into `fideDp`. Add a regression for `fidePerformanceRating(1800, 3, 17, 0) === 1857` beside the 0.625 case.
+* **Proof:** Probe `/tmp/gb-review-20261112/dp_probe.mjs` on atlas (Node) enumerated every W/D/L split for 1-60 games, comparing the shipped `Math.round(p*100)` lookup with exact integer half-up rounding of the same score. 53 splits differ, all with p = 0.575 (20, 40 and 60 games), shipped dp 50 vs half-up dp 57; e.g. `20 games +3=17-0 p=0.575 code=50 halfup=57`.
+* **Found by:** Grok Bot, general review (t40u), HEAD `e4713b21f`.
