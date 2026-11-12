@@ -1,4 +1,4 @@
-import { AreaChart } from "@mantine/charts";
+import { AreaChart, type ChartReferenceLineProps } from "@mantine/charts";
 import { Alert, Box, LoadingOverlay, Paper, SegmentedControl, Stack, Text } from "@mantine/core";
 import equal from "fast-deep-equal";
 import { useAtom } from "jotai";
@@ -34,6 +34,8 @@ type DataPoint = {
   Draw: number;
   Black: number;
 };
+
+const annotationAreaProps = { isAnimationActive: false, dot: <CustomDot /> };
 
 function getYValue(node: TreeNode): number | undefined {
   if (node.score) {
@@ -137,6 +139,35 @@ function EvalChart(props: EvalChartProps) {
     phases.middlegamePly !== null ? data[phases.middlegamePly]?.name : null;
   const endgamePositionName = phases.endgamePly !== null ? data[phases.endgamePly]?.name : null;
 
+  const referenceLines: ChartReferenceLineProps[] = [
+    {
+      x: currentPositionName,
+      color: "var(--cf-primary)",
+    },
+    ...(middlegamePositionName
+      ? [
+          {
+            x: middlegamePositionName,
+            color: "var(--cf-border-strong)",
+            strokeDasharray: "5 5",
+            label: t("Board.Analysis.Middlegame"),
+            labelPosition: "insideTopLeft" as const,
+          },
+        ]
+      : []),
+    ...(endgamePositionName
+      ? [
+          {
+            x: endgamePositionName,
+            color: "var(--cf-border-strong)",
+            strokeDasharray: "5 5",
+            label: t("Board.Analysis.Endgame"),
+            labelPosition: "insideTopLeft" as const,
+          },
+        ]
+      : []),
+  ];
+
   const colouroffset = gradientOffset(data);
 
   const [chartType, setChartType] = useAtom(reportTypeAtom);
@@ -172,42 +203,12 @@ function EvalChart(props: EvalChartProps) {
             splitOffset={colouroffset}
             activeDotProps={{ r: 3, strokeWidth: 1 }}
             dotProps={{ r: 0 }}
-            referenceLines={[
-              {
-                x: currentPositionName,
-                color: "var(--cf-primary)",
-              },
-              ...(middlegamePositionName
-                ? [
-                    {
-                      x: middlegamePositionName,
-                      color: "var(--cf-border-strong)",
-                      strokeDasharray: "5 5",
-                      label: t("Board.Analysis.Middlegame"),
-                      labelPosition: "insideTopLeft" as const,
-                    },
-                  ]
-                : []),
-              ...(endgamePositionName
-                ? [
-                    {
-                      x: endgamePositionName,
-                      color: "var(--cf-border-strong)",
-                      strokeDasharray: "5 5",
-                      label: t("Board.Analysis.Endgame"),
-                      labelPosition: "insideTopLeft" as const,
-                    },
-                  ]
-                : []),
-            ]}
+            referenceLines={referenceLines}
             areaChartProps={{
               onClick: onChartClick,
               style: { cursor: "pointer" },
             }}
-            areaProps={{
-              isAnimationActive: false,
-              dot: <CustomDot />,
-            }}
+            areaProps={annotationAreaProps}
             gridAxis="none"
             tooltipProps={{
               content: ({ payload, active }) => (
@@ -239,23 +240,9 @@ function EvalChart(props: EvalChartProps) {
               fillOpacity={0.8}
               activeDotProps={{ r: 3, strokeWidth: 1 }}
               dotProps={{ r: 0 }}
-              referenceLines={
-                [
-                  {
-                    x: currentPositionName,
-                    color: "var(--cf-primary)",
-                  },
-                  ...(endgamePositionName
-                    ? [
-                        {
-                          x: endgamePositionName,
-                          color: "var(--cf-border-strong)",
-                          strokeDasharray: "5 5",
-                          label: t("Board.Analysis.Endgame"),
-                        },
-                      ]
-                    : []),
-                ] as any
+              referenceLines={referenceLines}
+              areaProps={(series) =>
+                series.name === "White" ? annotationAreaProps : { isAnimationActive: false }
               }
               areaChartProps={{
                 onClick: onChartClick,
@@ -300,7 +287,7 @@ function CustomTooltip({
   return null;
 }
 
-function CustomDot(props: { cx?: number; cy?: number; payload?: any }) {
+function CustomDot(props: { cx?: number; cy?: number; payload?: DataPoint }) {
   const { cx, cy, payload } = props;
   if (!payload || !payload.annotation || !isBasicAnnotation(payload.annotation)) return null;
   return (
