@@ -24970,3 +24970,19 @@ Line-reference correction: in `src/components/common/IconAction.tsx`, the extra 
 * **Fix:** render one control. Either `IconAction component={Link} to="/library"` (Mantine polymorphic) or an `onClick={() => navigate({ to: "/library" })}` on the `IconAction` alone.
 * **Proof:** trace above (the `<a>` from `Link`, the `<button>` from `IconAction`/`ActionIcon`, and one nested inside the other with no `tabIndex` change).
 * **Found by:** Grok Bot general review (chunk 31)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### One imported game with an Elo outside ±32767 makes position search fail for the whole database
+
+* **ID:** f-20261112-75 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** yes (general review, origin/master d30eb171f)
+* **Where:** `src-tauri/src/db/search_index.rs:596-601` (`SearchGameEntry::from_game_data_cancellable` converts `white_elo` / `black_elo` with `i16::try_from(..).map_err(InvalidInput)?`). The values come from `src-tauri/src/db/mod.rs:574-585` (the importer stores `[WhiteElo]` / `[BlackElo]` as `btoi::btoi` → `i32`), and `games.WhiteElo/BlackElo` are unconstrained `INTEGER` columns (`create.sql:39-41`). The row iterator in `generate_search_index_locked` (`db/mod.rs:~1656-1694`) feeds every conversion result into `search_index::write_entries_to_at`, which aborts on the first `Err`. `load_search_index_cancellable` (`db/search.rs:384-397`) returns that generation error unchanged.
+* **Defect:** import accepts any rating that parses as an `i32`, but the search-index row type is `i16`. A single game with, say, `[WhiteElo "40000"]` (a typo, or a non-rating number in the tag) imports and lists normally. After that, every index generation for that database fails with `white_elo out of range: Some(40000)`, so no index is ever written.
+* **Failure scenario:** import a PGN in which one game has `[WhiteElo "40000"]` (or `"-40000"`) into a database, then run a position search or open the local opening explorer on it. The search reports the InvalidInput error instead of results, for every position, until the game is edited or deleted. Nothing tells the user which game is responsible. `preload_reference_db` on that database fails the same way.
+* **Fix:** make import and index agree on one range. Either clamp, or map to "unrated" (0, which the index already uses for a missing rating), any out-of-range rating at import time and in `from_game_data_cancellable`. Or widen the archived fields to `i32` (a search-index `VERSION` bump). Add a generation test with an out-of-range stored Elo.
+* **Proof:** trace to a definite failure. `btoi::btoi::<i32>(b"40000")` is `Ok(40000)` and is stored as-is (no CHECK on the column). `i16::try_from(40000)` is `Err`, which `from_game_data_cancellable` maps to `InvalidInput`; the `?` inside the `write_entries_to_at` iterator (`write_chunked_archive_cancellable`, `search_index.rs:437`) aborts the whole archive, and `load_search_index_cancellable` returns it (`Err(error) => return Err(error)`). The existing tests (`rejects_out_of_range_database_values`, `search_index_row_conversion_failure_preserves_previous_sidecar`) pin this abort, but only for `pawn_home = -1`, which import can't produce. This trace proves the Elo route; it was not run as a probe, so as not to start a cargo build on the shared machine.
+* **Found by:** Grok Bot general review (chunk 41)
