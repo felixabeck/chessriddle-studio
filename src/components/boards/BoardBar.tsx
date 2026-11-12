@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 interface BoardBarProps {
   name: string;
   rating?: string | number | null;
-  onNameClick: () => void;
+  onNameClick?: () => void;
   height: string;
   children?: ReactNode;
 }
@@ -23,13 +23,18 @@ export function BoardBar({ name, rating, onNameClick, height, children }: BoardB
       align="flex-end"
     >
       <Group gap={6} align="baseline">
-        {hasPlayerName && (
-          <UnstyledButton type="button" onClick={onNameClick}>
+        {hasPlayerName &&
+          (onNameClick ? (
+            <UnstyledButton type="button" onClick={onNameClick}>
+              <Text fw="bold" size="md">
+                {name}
+              </Text>
+            </UnstyledButton>
+          ) : (
             <Text fw="bold" size="md">
               {name}
             </Text>
-          </UnstyledButton>
-        )}
+          ))}
         {rating && (
           <Text size="xs" c="dimmed">
             ({rating})

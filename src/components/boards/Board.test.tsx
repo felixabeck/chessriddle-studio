@@ -10,6 +10,10 @@ import { moveInputAtom, showVariationArrowsAtom } from "@/state/atoms";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { focusedDialogButton, press as pressKey } from "@/tests/keyboard";
 import Board from "./Board";
+import type { Chessground } from "@/chessground/Chessground";
+import type { Config } from "@lichess-org/chessground/config";
+import type { BoardBar } from "./BoardBar";
+import type FideInfo from "../databases/FideInfo";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -38,6 +42,11 @@ vi.mock("@/state/atoms", async () => {
     showDestsAtom: atom(true),
     showVariationArrowsAtom: atom(false),
     snapArrowsAtom: atom(false),
+    BOARD_ANIMATION_DURATION_MS: { normal: 200 },
+    boardAnimationSpeedAtom: atom("normal"),
+    boardImageAtom: atom("chessriddle.svg"),
+    boardWoodTextureAtom: atom(false),
+    moveMethodAtom: atom("both"),
   };
 });
 vi.mock("@/state/keybinds", async () => {
@@ -46,25 +55,35 @@ vi.mock("@/state/keybinds", async () => {
 });
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 const boardConfig = vi.hoisted(() => ({ current: {} as any }));
-vi.mock("@/chessground/Chessground", () => ({
-  Chessground: (props: unknown) => {
-    boardConfig.current = props;
-    return null;
-  },
+const nativeBoard = vi.hoisted(() => ({
+  enabled: false,
+  api: { set: vi.fn(), destroy: vi.fn(), state: { dom: { bounds: { clear: vi.fn() } } } },
 }));
+vi.mock("@lichess-org/chessground", () => ({ Chessground: vi.fn(() => nativeBoard.api) }));
+vi.mock("@/chessground/Chessground", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/chessground/Chessground")>();
+  return {
+    Chessground: (props: ComponentProps<typeof Chessground>) => {
+      boardConfig.current = props;
+      return nativeBoard.enabled ? <actual.Chessground {...props} /> : null;
+    },
+  };
+});
 vi.mock("@/chessground/useNodeDrawables", () => ({ useNodeDrawables: () => ({}) }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 vi.mock("./BoardFrame", () => ({ default: ({ children }: { children: ReactNode }) => children }));
-vi.mock("./BoardBar", () => ({
-  BoardBar: ({ children }: { children: ReactNode }) => children,
-}));
+const boardBar = vi.hoisted(() =>
+  vi.fn(({ children }: ComponentProps<typeof BoardBar>) => children),
+);
+vi.mock("./BoardBar", () => ({ BoardBar: boardBar }));
 vi.mock("./Clock", () => ({ default: () => null }));
 vi.mock("./EvalBar", () => ({ default: () => null }));
 vi.mock("./PromotionModal", () => ({ default: () => null }));
 vi.mock("./AnnotationHint", () => ({ default: () => null }));
 vi.mock("../common/ShowMaterial", () => ({ default: () => null }));
 vi.mock("../common/IconAction", () => ({ default: () => null }));
-vi.mock("../databases/FideInfo", () => ({ default: () => null }));
+const fideInfo = vi.hoisted(() => vi.fn((_props: ComponentProps<typeof FideInfo>) => null));
+vi.mock("../databases/FideInfo", () => ({ default: fideInfo }));
 vi.mock("../panels/analysis/BestMoves", () => ({ arrowColors: [] }));
 
 let host: HTMLDivElement;
@@ -72,6 +91,8 @@ let root: Root;
 let tree: TreeStore;
 
 beforeEach(() => {
+  nativeBoard.enabled = false;
+  vi.clearAllMocks();
   installMatchMediaStub();
   host = document.createElement("div");
   document.body.append(host);
@@ -84,6 +105,7 @@ afterEach(async () => {
   tree.dispose();
   host.remove();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 async function render(props: Partial<ComponentProps<typeof Board>> = {}, moveInput = false) {
@@ -93,30 +115,103 @@ async function render(props: Partial<ComponentProps<typeof Board>> = {}, moveInp
   const onMove = vi.fn(async () => true);
   const storeMove = vi.spyOn(tree.getState(), "makeMove");
   const onKeyboardPremove = vi.fn(() => true);
-  await act(async () =>
-    root.render(
-      <JotaiProvider store={atoms}>
-        <MantineProvider>
-          <TreeStateContext.Provider value={tree}>
-            <VariationChooserContext.Provider value={createVariationChooserStore()}>
-              <Board
-                editingMode={false}
-                boardRef={createRef()}
-                onMove={onMove}
-                {...props}
-                onKeyboardPremove={onKeyboardPremove}
-              />
-            </VariationChooserContext.Provider>
-          </TreeStateContext.Provider>
-        </MantineProvider>
-      </JotaiProvider>,
-    ),
-  );
+  const variationChooser = createVariationChooserStore();
+  const boardRef = createRef<HTMLDivElement>();
+  const rerender = async (nextProps: Partial<ComponentProps<typeof Board>>) =>
+    act(async () =>
+      root.render(
+        <JotaiProvider store={atoms}>
+          <MantineProvider>
+            <TreeStateContext.Provider value={tree}>
+              <VariationChooserContext.Provider value={variationChooser}>
+                <Board
+                  editingMode={false}
+                  boardRef={boardRef}
+                  onMove={onMove}
+                  {...nextProps}
+                  onKeyboardPremove={onKeyboardPremove}
+                />
+              </VariationChooserContext.Provider>
+            </TreeStateContext.Provider>
+          </MantineProvider>
+        </JotaiProvider>,
+      ),
+    );
+  await rerender(props);
   const grid = host.querySelector<HTMLDivElement>('[role="grid"]')!;
   grid.focus();
   expect(document.activeElement).toBe(grid);
-  return { onMove, storeMove, onKeyboardPremove, grid };
+  return { onMove, storeMove, onKeyboardPremove, grid, rerender };
 }
+
+test("changing only whiteTime does not set native Chessground config", async () => {
+  nativeBoard.enabled = true;
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(0, 0, 400, 400),
+  );
+  const { rerender } = await render({ whiteTime: 60000 });
+  const before: Config = boardConfig.current;
+  nativeBoard.api.set.mockClear();
+  nativeBoard.api.state.dom.bounds.clear.mockClear();
+  await rerender({ whiteTime: 59900 });
+  // Board still publishes fresh destinations and closures. The generic wrapper decides to skip.
+  expect(boardConfig.current).not.toBe(before);
+  expect(boardConfig.current.movable.dests).not.toBe(before.movable?.dests);
+  expect(nativeBoard.api.set).not.toHaveBeenCalled();
+  expect(nativeBoard.api.state.dom.bounds.clear).not.toHaveBeenCalled();
+});
+
+test.each(["white", "black"] as const)(
+  "repertoire titles are non-clickable and independent of %s orientation",
+  async (orientation) => {
+    tree.getState().setHeaders({
+      ...tree.getState().headers,
+      white: "Italian Game",
+      black: "Quiet plan",
+      white_elo: 2400,
+      black_elo: 2300,
+      orientation,
+    });
+    await render({ repertoire: true });
+    const bars = boardBar.mock.calls.slice(-2).map(([props]) => props);
+    expect(bars.map((props) => props.name)).toEqual(["Quiet plan", "Italian Game"]);
+    for (const props of bars) {
+      expect(props.onNameClick).toBeUndefined();
+      expect(props.rating).toBeUndefined();
+    }
+    expect(fideInfo).not.toHaveBeenCalled();
+  },
+);
+
+test("player bars remain clickable and open FideInfo for that player", async () => {
+  tree.getState().setHeaders({
+    ...tree.getState().headers,
+    white: "White Player",
+    black: "Black Player",
+    white_elo: 2400,
+    black_elo: 2300,
+  });
+  await render();
+  const bars = boardBar.mock.calls.slice(-2).map(([props]) => props);
+  expect(bars.map((props) => props.name)).toEqual(["Black Player", "White Player"]);
+  expect(bars.map((props) => props.rating)).toEqual([2300, 2400]);
+  expect(bars[0].onNameClick).toBeTypeOf("function");
+  expect(bars[1].onNameClick).toBeTypeOf("function");
+  await act(async () => bars[1].onNameClick?.());
+  expect(
+    fideInfo.mock.calls.slice(-2).map(([props]) => ({ name: props.name, opened: props.opened })),
+  ).toEqual([
+    { name: "White Player", opened: true },
+    { name: "Black Player", opened: false },
+  ]);
+});
 
 async function press(grid: HTMLDivElement, ...keys: string[]) {
   for (const key of keys) {

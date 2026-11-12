@@ -56,6 +56,7 @@ import {
   continuationBrushes,
 } from "@/components/boards/continuationArrows";
 import FideInfo from "../databases/FideInfo";
+import { lineTitleOf } from "../files/lineTitle";
 import { arrowColors } from "../panels/analysis/BestMoves";
 import AnnotationHint from "./AnnotationHint";
 import IconAction from "../common/IconAction";
@@ -84,6 +85,7 @@ const VISUALLY_HIDDEN_STYLE = {
 
 interface ChessboardProps {
   editingMode: boolean;
+  repertoire?: boolean;
   viewOnly?: boolean;
   disableVariations?: boolean;
   movable?: "both" | "white" | "black" | "turn" | "none";
@@ -104,6 +106,7 @@ interface ChessboardProps {
 
 function Board({
   editingMode,
+  repertoire,
   viewOnly,
   disableVariations,
   movable = "turn",
@@ -379,6 +382,7 @@ function Board({
 
   const topPlayer = orientation === "white" ? headers.black : headers.white;
   const bottomPlayer = orientation === "white" ? headers.white : headers.black;
+  const lineTitle = repertoire ? lineTitleOf(headers) : undefined;
   const accessibleGrid = accessibleBoardGrid(orientation);
 
   function keyboardMove(event: React.KeyboardEvent<HTMLDivElement>) {
@@ -473,15 +477,25 @@ function Board({
           }}
         >
           <BoardBar
-            name={topPlayer}
-            rating={orientation === "white" ? headers.black_elo : headers.white_elo}
-            onNameClick={() => {
-              if (orientation === "white") {
-                setBlackFideOpen(true);
-              } else {
-                setWhiteFideOpen(true);
-              }
-            }}
+            name={repertoire ? (lineTitle?.idea ?? "") : topPlayer}
+            rating={
+              repertoire
+                ? undefined
+                : orientation === "white"
+                  ? headers.black_elo
+                  : headers.white_elo
+            }
+            onNameClick={
+              repertoire
+                ? undefined
+                : () => {
+                    if (orientation === "white") {
+                      setBlackFideOpen(true);
+                    } else {
+                      setWhiteFideOpen(true);
+                    }
+                  }
+            }
             height={BAR_HEIGHT}
           >
             <ShowMaterial
@@ -714,15 +728,25 @@ function Board({
           </Group>
           <Box h="0.5rem" />
           <BoardBar
-            name={bottomPlayer}
-            rating={orientation === "white" ? headers.white_elo : headers.black_elo}
-            onNameClick={() => {
-              if (orientation === "white") {
-                setWhiteFideOpen(true);
-              } else {
-                setBlackFideOpen(true);
-              }
-            }}
+            name={repertoire ? (lineTitle?.name ?? "") : bottomPlayer}
+            rating={
+              repertoire
+                ? undefined
+                : orientation === "white"
+                  ? headers.white_elo
+                  : headers.black_elo
+            }
+            onNameClick={
+              repertoire
+                ? undefined
+                : () => {
+                    if (orientation === "white") {
+                      setWhiteFideOpen(true);
+                    } else {
+                      setBlackFideOpen(true);
+                    }
+                  }
+            }
             height={BAR_HEIGHT}
           >
             {error && (
@@ -749,8 +773,12 @@ function Board({
           </BoardBar>
         </Box>
       </Box>
-      <FideInfo opened={whiteFideOpen} setOpened={setWhiteFideOpen} name={headers.white} />
-      <FideInfo opened={blackFideOpen} setOpened={setBlackFideOpen} name={headers.black} />
+      {!repertoire && (
+        <>
+          <FideInfo opened={whiteFideOpen} setOpened={setWhiteFideOpen} name={headers.white} />
+          <FideInfo opened={blackFideOpen} setOpened={setBlackFideOpen} name={headers.black} />
+        </>
+      )}
     </>
   );
 }

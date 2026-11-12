@@ -13,7 +13,7 @@ import { Chessground } from "./Chessground";
 const { api, createChessground } = vi.hoisted(() => {
   const api = {
     destroy: vi.fn(),
-    set: vi.fn(),
+    set: vi.fn((_config: Config) => {}),
     setAutoShapes: vi.fn(),
     setShapes: vi.fn(),
     playPremove: vi.fn(() => false),
@@ -330,6 +330,120 @@ test("a re-render after mount clears the bounds cache before set when the board 
     );
   });
   expect(api.set).toHaveBeenCalledOnce();
+  expect(api.state.dom.bounds.clear).not.toHaveBeenCalled();
+});
+
+async function renderConfig(config: Config) {
+  const getBounds = vi
+    .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+    .mockReturnValue(new DOMRect(0, 0, 400, 400));
+  const root = createRoot(document.createElement("div"));
+  mountedRoots.add(root);
+  const rerender = async (next: Config) => {
+    await act(async () =>
+      root.render(
+        <MantineProvider>
+          <Chessground {...next} />
+        </MantineProvider>,
+      ),
+    );
+  };
+  await rerender(config);
+  api.set.mockClear();
+  api.state.dom.bounds.clear.mockClear();
+  return { rerender, getBounds, initial: createChessground.mock.calls[0][1] };
+}
+
+test("identical data with fresh objects and callbacks neither sets config nor clears bounds", async () => {
+  const config = (): Config => ({
+    fen: "start",
+    movable: { events: { after: vi.fn() } },
+    events: { select: vi.fn() },
+  });
+  const { rerender } = await renderConfig(config());
+  await rerender(config());
+  expect(api.set).not.toHaveBeenCalled();
+  expect(api.state.dom.bounds.clear).not.toHaveBeenCalled();
+});
+
+test("destinations apply changed Map content but skip an equal-content new Map", async () => {
+  const { rerender } = await renderConfig({ movable: { dests: new Map([["e2", ["e4"]]]) } });
+  await rerender({ movable: { dests: new Map([["e2", ["e3", "e4"]]]) } });
+  expect(api.set).toHaveBeenCalledOnce();
+  api.set.mockClear();
+  api.state.dom.bounds.clear.mockClear();
+  await rerender({ movable: { dests: new Map([["e2", ["e3", "e4"]]]) } });
+  expect(api.set).not.toHaveBeenCalled();
+  expect(api.state.dom.bounds.clear).not.toHaveBeenCalled();
+});
+
+test("snapshots destinations before Chessground mutates the passed Map", async () => {
+  const { rerender } = await renderConfig({ movable: { dests: new Map() } });
+  api.set.mockImplementationOnce((config: Config) => {
+    config.movable?.dests?.set("e1", ["g1"]);
+  });
+  await rerender({ movable: { dests: new Map([["e1", ["g1", "h1"]]]) } });
+  expect(api.set).toHaveBeenCalledOnce();
+  api.set.mockClear();
+  await rerender({ movable: { dests: new Map([["e1", ["g1", "h1"]]]) } });
+  expect(api.set).not.toHaveBeenCalled();
+});
+
+test("the callback retained at creation reaches the latest committed closure without set", async () => {
+  const f1 = vi.fn();
+  const f2 = vi.fn();
+  const { initial, rerender } = await renderConfig({ movable: { events: { after: f1 } } });
+  await rerender({ movable: { events: { after: f2 } } });
+  await act(async () =>
+    initial.movable?.events?.after?.("e2", "e4", { premove: false, ctrlKey: false }),
+  );
+  expect(f2).toHaveBeenCalledOnce();
+  expect(f1).not.toHaveBeenCalled();
+  expect(api.set).not.toHaveBeenCalled();
+});
+
+test.each(["position", "drawing"])(
+  "a %s change reapplies identical config once, then skips it",
+  async (change) => {
+    const config: Config = { fen: "start" };
+    const { initial, rerender } = await renderConfig(config);
+    await act(async () => {
+      if (change === "position") initial.events?.change?.();
+      else initial.drawable?.onChange?.([]);
+    });
+    await rerender({ ...config });
+    expect(api.set).toHaveBeenCalledOnce();
+    expect(api.state.dom.bounds.clear).toHaveBeenCalledOnce();
+    api.set.mockClear();
+    api.state.dom.bounds.clear.mockClear();
+    await rerender({ ...config });
+    expect(api.set).not.toHaveBeenCalled();
+    expect(api.state.dom.bounds.clear).not.toHaveBeenCalled();
+  },
+);
+
+test("visible to hidden bounds apply an identical config with hidden drawing layers", async () => {
+  const config: Config = { drawable: { autoShapes: [{ orig: "e2", dest: "e4", brush: "green" }] } };
+  const { getBounds, rerender } = await renderConfig(config);
+  await rerender({ ...config });
+  expect(api.set).not.toHaveBeenCalled();
+  getBounds.mockReturnValue(new DOMRect(0, 0, 0, 0));
+  await rerender({ ...config });
+  expect(api.set).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ drawable: expect.objectContaining({ autoShapes: [] }) }),
+  );
+  expect(api.state.dom.bounds.clear).not.toHaveBeenCalled();
+});
+
+test("a fresh automatic-shapes array with identical engine arrows does not set config", async () => {
+  const config = (): Config => ({
+    drawable: {
+      autoShapes: [{ orig: "e2", dest: "e4", brush: "green", modifiers: { lineWidth: 11 } }],
+    },
+  });
+  const { rerender } = await renderConfig(config());
+  await rerender(config());
+  expect(api.set).not.toHaveBeenCalled();
   expect(api.state.dom.bounds.clear).not.toHaveBeenCalled();
 });
 

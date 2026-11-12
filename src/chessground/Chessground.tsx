@@ -3,8 +3,9 @@ import type { Api } from "@lichess-org/chessground/api";
 import type { Config } from "@lichess-org/chessground/config";
 import type { Key } from "@lichess-org/chessground/types";
 import { Box } from "@mantine/core";
+import equal from "fast-deep-equal";
 import { useAtomValue } from "jotai";
-import { type Ref, useEffect, useImperativeHandle, useRef } from "react";
+import { type Ref, type RefObject, useEffect, useImperativeHandle, useRef } from "react";
 import {
   BOARD_ANIMATION_DURATION_MS,
   boardAnimationSpeedAtom,
@@ -86,6 +87,57 @@ function configForBounds(config: Config, { width, height }: DOMRect): Config {
   };
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== "object") return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+type ConfigCallback = (...args: unknown[]) => unknown;
+
+// Chessground retains callbacks when merging config. Stable trampolines read only committed
+// closures, including when an otherwise identical render does not need api.set.
+function withTrampolines(
+  config: Config,
+  appliedConfigRef: RefObject<Config>,
+  callbacks: Map<string, ConfigCallback>,
+): Config {
+  function copy(value: unknown, path: string): unknown {
+    if (typeof value === "function") {
+      let callback = callbacks.get(path);
+      if (!callback) {
+        callback = (...args) => {
+          let current: unknown = appliedConfigRef.current;
+          for (const key of path.split(".")) {
+            current = isPlainObject(current) ? current[key] : undefined;
+          }
+          return (current as ConfigCallback | undefined)?.(...args);
+        };
+        callbacks.set(path, callback);
+      }
+      return callback;
+    }
+    if (!isPlainObject(value)) return value;
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [
+        key,
+        copy(child, path ? `${path}.${key}` : key),
+      ]),
+    );
+  }
+  return copy(config, "") as Config;
+}
+
+function snapshot(value: unknown): unknown {
+  if (typeof value === "function") return "__fn__";
+  if (Array.isArray(value)) return value.map(snapshot);
+  if (value instanceof Map) return [...value].map(([key, child]) => [key, snapshot(child)]);
+  if (isPlainObject(value)) {
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, snapshot(child)]));
+  }
+  return value;
+}
+
 export function Chessground({ ref, ...props }: ChessgroundProps) {
   const boardRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<Api | null>(null);
@@ -93,6 +145,10 @@ export function Chessground({ ref, ...props }: ChessgroundProps) {
   const moveMethod = useAtomValue(moveMethodAtom);
   const animationSpeed = useAtomValue(boardAnimationSpeedAtom);
   const configRef = useRef<Config>(props);
+  const appliedConfigRef = useRef<Config>(configRef.current);
+  const callbacksRef = useRef(new Map<string, ConfigCallback>());
+  const lastAppliedRef = useRef<unknown>(null);
+  const divergedRef = useRef(false);
   configRef.current = {
     ...props,
     drawable: {
@@ -100,6 +156,7 @@ export function Chessground({ ref, ...props }: ChessgroundProps) {
       // Every board must know every colour the drawing modifiers can produce.
       brushes: { ...props.drawable?.brushes, ...pgnDrawingBrushes },
       onChange: (shapes) => {
+        divergedRef.current = true;
         const api = apiRef.current;
         // Chessground clears on empty/opponent-square clicks even when its
         // eraseOnMovablePieceClick is false. Keep the explicit user preference.
@@ -124,6 +181,7 @@ export function Chessground({ ref, ...props }: ChessgroundProps) {
     events: {
       ...props.events,
       change: () => {
+        divergedRef.current = true;
         const api = apiRef.current;
         if (props.setBoardFen && api) props.setBoardFen(api.getFen());
       },
@@ -168,10 +226,17 @@ export function Chessground({ ref, ...props }: ChessgroundProps) {
     const element = boardRef.current;
     if (element == null) return;
     let { width, height } = element.getBoundingClientRect();
-    const chessgroundApi = NativeChessground(element, {
-      ...configForBounds(configRef.current, element.getBoundingClientRect()),
+    appliedConfigRef.current = configRef.current;
+    const initial = {
+      ...configForBounds(
+        withTrampolines(configRef.current, appliedConfigRef, callbacksRef.current),
+        element.getBoundingClientRect(),
+      ),
       addDimensionsCssVarsTo: element,
-    });
+    };
+    // configure mutates movable.dests, so capture the authoritative input before handing it over.
+    lastAppliedRef.current = snapshot(initial);
+    const chessgroundApi = NativeChessground(element, initial);
     apiRef.current = chessgroundApi;
     const observer = new ResizeObserver(() => {
       const bounds = element.getBoundingClientRect();
@@ -199,14 +264,30 @@ export function Chessground({ ref, ...props }: ChessgroundProps) {
   }, []);
 
   useEffect(() => {
+    appliedConfigRef.current = configRef.current;
     const api = apiRef.current;
     const element = boardRef.current;
     if (!api || !element) return;
     const bounds = element.getBoundingClientRect();
+    const next = configForBounds(
+      withTrampolines(configRef.current, appliedConfigRef, callbacksRef.current),
+      bounds,
+    );
+    const snap = snapshot(next);
+    if (
+      !divergedRef.current &&
+      lastAppliedRef.current !== null &&
+      equal(snap, lastAppliedRef.current)
+    )
+      return;
+    // Clock ticks and identical engine arrows need no reset. User changes still require the
+    // authoritative config to be reapplied, even when its values have not changed.
     // The bounds cache still holds the 0×0 box measured at creation until it is cleared. Only a
     // positive size may clear it: a hidden board must not re-cache a 0×0 box.
     if (bounds.width > 0 && bounds.height > 0) api.state.dom.bounds.clear();
-    api.set(configForBounds(configRef.current, bounds));
+    api.set(next);
+    lastAppliedRef.current = snap;
+    divergedRef.current = false;
   }, [props, moveMethod, animationSpeed]);
 
   const boardImage = useAtomValue(boardImageAtom);

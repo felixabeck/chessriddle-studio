@@ -293,6 +293,7 @@ function BoardAnalysis() {
       <Portal target="#left" style={{ height: "100%" }}>
         <Paper withBorder h="100%" style={{ overflow: "hidden" }}>
           <Board
+            repertoire={isRepertoire}
             practiceMove={practicing ? (practiceMoveController ?? undefined) : undefined}
             editingMode={editingMode}
             boardRef={boardRef}
