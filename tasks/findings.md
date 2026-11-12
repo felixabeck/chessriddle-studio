@@ -24311,3 +24311,19 @@ Deferred follow-up (keep at midnight filing):
 - **Fix:** in both hotkey handlers return early when the clamped page equals `gameNumber` (or guard `page === gameNumber` for keyboard paging before `setPage`), and add a test that PageUp on game 0 / PageDown on the last game neither calls `loadFileGame` nor opens the confirmation.
 - **Proof:** ephemeral probe appended to `InfoPanel.test.tsx` harness (tab at gameNumber 0): clean tree + `press("PageUp")` → `loadFileGame` called with page `0`; then `setComment("Unsaved edit")` + `press("PageUp")` → dialog text `Tab.UnsavedChanges…Tab.CloseWithoutSaving…Tab.SaveAndClose`. Probe removed, tree clean. Existing test at `InfoPanel.test.tsx:1297` only covers PageUp from page 1 and PageDown from page 0.
 - **Found by:** Grok Bot general review (chunk 18)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Collapsed notation variations re-expand after any edit to a later move, because collapse state is keyed by TreeNode object identity
+
+* **ID:** f-20261112-35 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/common/GameNotation.tsx:143` (`useState<Set<TreeNode>>`) and `:301-307` (toggle), consumed by `src/components/common/notationRows.ts:186` (`collapsedVariations?.has(parent)`); tree edits go through immer `produce` in `src/state/store/tree.ts`
+- **Defect:** the collapsed set stores the parent `TreeNode` objects themselves. Every tree edit (comment, NAG, new move, delete) produces a fresh immer copy of every ancestor of the edited node, so the stored parents no longer match the new tree and `has(parent)` returns false; the set also keeps the retired node objects alive until the component unmounts.
+- **Failure scenario:** in a game with a side line after 1.e4 (1.d4), clicking the variation toggle hides 1.d4, then navigating to 1.e4 and typing a comment (or playing any further move along the mainline) makes 1.d4 and every other collapsed variation above the edit reappear.
+- **Fix:** key the collapsed set by a stable node identity instead of the object (the move path from `model.index.links`, or a node id if the tree carries one), and drop entries whose path no longer exists; add a GameNotation test that collapses a variation, edits a later node, and asserts the variation stays hidden.
+- **Proof:** ephemeral probe appended to `GameNotation.test.tsx` (root children `[e4, d4]`): after `toggle.click()` `[data-node="d4"]` is absent, still absent after `goToMove([0])`, present again after `setComment("note on e4")` (`{afterCollapse:false, afterNavigate:false, afterComment:true}`). Probe removed, tree clean. Existing collapse tests (`GameNotation.test.tsx:641`, `:819`) never edit the tree after collapsing.
+- **Found by:** Grok Bot general review (chunk 18)
