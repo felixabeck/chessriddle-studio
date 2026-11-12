@@ -24373,7 +24373,7 @@ Handled 2026-11-12 by drain session bdcaf057 (lens tier; lenses correctness, roo
 
 ### Clearing the local explorer "From" date leaves the old date in the field while the filter is removed
 
-* **ID:** f-20261112-37 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-37 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/panels/database/options/LocalOptionsPanel.tsx:95-108` (From `DateInput` gets `value={... : undefined}`), compared with the To input at `:132-143`, which passes `null`
@@ -24382,6 +24382,8 @@ Handled 2026-11-12 by drain session bdcaf057 (lens tier; lenses correctness, roo
 - **Fix:** pass `null` instead of `undefined` for an empty From date (as the To input already does), and add a LocalOptionsPanel test that types a From date, clears it, and asserts the input is empty.
 - **Proof:** ephemeral probe in the `LocalOptionsPanel.test.tsx` harness: typing "2020-01-01" gives `start_date "2020.01.01"`; the 1-year preset gives `"2025.11.12"` / input `"2025-11-12"`; the clear button gives `start_date` undefined but input value `"2020-01-01"`. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 19)
+* **Handled 2026-11-12 (drain 04fc1fe3-785d-40da-8d47-1776fef98a8f):** The From DateInput passes `null` for an empty date (as To already did), so it stays controlled and clearing empties the field. Commit `f0f6c3b11` (pushed to origin/master). Proof: new Vitest tests (fix-revert red/green for f-20261112-40, -36, -37), lenses correctness/root-cause/tests/code-quality/minimalism APPROVED, `pnpm gates:push -- --frontend` green.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"c0d9615e3ad6aa5a3ba3d520e9d404bdbc54b64c9a28aab4843d44189bdd1082","header_sha256":"cdc2d5795ed592442ae6aaeaaba9fdaa70c062584b8ada23794f31b131dcbe66","header_status":"handled","input_sha256":"9d700426b15f6d7abd0e586145dc78f71e53426e6723f409c06ef7a85a15a1d5","kind":"mutation-receipt","operation":"2bc4509962d9503397c56156c01ace7f775825bad2581ab86ba1940d1cd6c19c","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-37"],"target":"f-20261112-37","v":1} -->
 
 ---
 
