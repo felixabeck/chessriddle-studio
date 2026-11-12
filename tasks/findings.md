@@ -24954,3 +24954,19 @@ Line-reference correction: in `src/components/common/IconAction.tsx`, the extra 
 * **Found by:** Grok Bot general review (chunk 30)
 * **Related (2026-11-12, Grok Bot):** f-20261111-95 (open) is the DTZ *display* sign defect in `formatScore`. This entry is the separate DTZ *magnitude* defect in `normalizeScore`, so they share the file but not the cause or the fix.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"bdaa4916974c91fe7277c93d1a63b4f05cc90da40c0d57c5e3053dda81ecff8e","input_sha256":"00ab4d2f3b023886ea82e41d8c4c12ff133138314cd2d1ab8264bc4fc6e556c7","kind":"mutation-receipt","operation":"efe6ebfcf1decae1493d2a7afedbb12e39a9b0b3f220944fc82fa4dc14c09a23","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-73"],"target":"f-20261112-73","v":1} -->
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### The database view's Back control is a button nested inside a link (two tab stops, invalid nesting)
+
+* **ID:** f-20261112-74 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** yes (general review, origin/master d30eb171f)
+* **Where:** `src/components/databases/DatabaseView.tsx:206-210`: `<Link to="/library"><IconAction label={t("Common.Back")} variant="default">…</IconAction></Link>`. `IconAction` (`src/components/common/IconAction.tsx:11,32-47`) renders a Mantine `ActionIcon` `<button>` with its own aria-label. TanStack `Link` renders an `<a href>`. This is the only `<Link>` that wraps a button in `src` (`git grep -A1 '<Link to='`).
+* **Defect:** interactive content is nested inside an `<a>`, which HTML does not allow. The single Back action gets two focus stops: the unlabeled-by-itself link (its name comes from the inner button), then the button. Assistive tech announces a link containing a button.
+* **Failure scenario:** a keyboard user on a database's page presses Tab from the top of the view. Focus lands on the Back link, then again on the Back button, before reaching the Games/Players/Events tabs. Screen readers report "link, Back, button".
+* **Fix:** render one control. Either `IconAction component={Link} to="/library"` (Mantine polymorphic) or an `onClick={() => navigate({ to: "/library" })}` on the `IconAction` alone.
+* **Proof:** trace above (the `<a>` from `Link`, the `<button>` from `IconAction`/`ActionIcon`, and one nested inside the other with no `tabIndex` change).
+* **Found by:** Grok Bot general review (chunk 31)
