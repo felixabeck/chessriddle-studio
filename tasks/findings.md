@@ -24805,3 +24805,19 @@ Correction to the Failure scenario: what gets focus before or after the annotati
 - **Fix:** render the name as a button (`UnstyledButton`/`Anchor component="button"`), and route the open through `useGameOpen` (or an equivalent per-panel pending lock) so repeated activation while pending is ignored. Add tests for Enter activation and for double-click opening one tab.
 - **Proof:** code trace on origin/master d30eb171f. The click target is `Text` with `className={classes.link}` and `onClick` only (`:145-149`). `runTabCreation` simply awaits `create()` (`tabs.ts:609-613`). For this call, `createTab` has no `gameOrigin`/`ownerId`, so it reaches `commitNewTab` every time (`tabs.ts:725-741`). Nothing dedupes by name or opening. No probe: the panel's existing test harness mocks `@mantine/core` wholesale. Tree unchanged.
 - **Found by:** Grok Bot general review (chunk 27)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Puzzle challenge history marks the current puzzle only with a coloured border, with no aria-current
+
+* **ID:** f-20261112-65 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/common/ChallengeHistory.tsx:30-92`: `isCurrent` feeds only `style={{ border: isCurrent ? "2px solid …" : "none" }}` on each `IconAction` (`:44,64,84`). The buttons' names are "Challenge N: correct/incorrect/incomplete" (`:35-38,56-59,76-79`), with no current-state attribute. IconAction forwards extra props to `ActionIcon` (`IconAction.tsx:27-33`), so `aria-current` would reach the button if passed. Sole caller: `src/components/puzzles/Puzzles.tsx:1285-1295`, where activating the current one is a no-op (`if (i === currentPuzzle) return;`).
+- **Defect:** in the Puzzles view's session history, which puzzle is on the board is conveyed only by a 2px border colour. Assistive technology hears a row of identical-pattern buttons and cannot tell which one is current, or why activating one does nothing. This is the same gap f-20261112-48 recorded for the notation's current move, on a different component.
+- **Failure scenario:** solve three puzzles, then use the history to go back to puzzle 2. A screen-reader user tabbing the history hears "Challenge 1: correct", "Challenge 2: correct", "Challenge 3: incomplete", with no "current". Activating "Challenge 2" silently does nothing, because it is already loaded.
+- **Fix:** pass `aria-current={isCurrent ? "true" : undefined}` (or `"step"`) to each IconAction, and optionally fold `isCurrent` into the label. Add a ChallengeHistory test asserting `aria-current` on exactly the current index.
+- **Proof:** code trace on origin/master d30eb171f. The only use of `isCurrent` is the three `style.border` expressions, and no `aria-*` prop is passed to IconAction anywhere in the file. IconAction itself sets only `aria-label`, `aria-busy` and `aria-pressed` (`IconAction.tsx:30-32`). No probe needed; tree unchanged.
+- **Found by:** Grok Bot general review (chunk 27)
