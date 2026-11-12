@@ -23961,7 +23961,7 @@ Handled in 1ab8c70cc. `load_themes_for_puzzle` now shares `themes_query_error` w
 
 ### The Ratings chart tooltip shows a hardcoded English "Rating" series name
 
-* **ID:** f-20261112-12 · **Status:** open · **Area:** i18n · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-12 · **Status:** handled · **Area:** i18n · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** general review chunk (Felix t40u) at HEAD `5c0538a2c` (file identical on origin/master `ba81d9264`), `PersonalCardPanels` pass
 * **Where:** `src/components/home/PersonalCardPanels/RatingsPanel.tsx` `<Area name="Rating" …>` (~195-204). recharts' default `Tooltip` content renders each series as `name : value`. The same component already localises its tooltip label date (`labelFormatter`, ~193) and the Results chart series names go through `t(...)` (`OverviewPanel.tsx` ~367-379). Distinct from open `f-20261111-78` (wrong de-DE strings), `f-20261111-72` (workspace naming) and `f-20261111-51` (stale preserve patterns): this string never reaches i18next at all. Repo convention: user-facing strings go through i18next.
@@ -23970,6 +23970,8 @@ Handled in 1ab8c70cc. `load_themes_for_puzzle` now shares `themes_query_error` w
 * **Fix:** Use a translation key for the series name (there is no generic one: `Puzzle.Rating`, `Board.Practice.Rating` and `Training.Session.Rating` are feature-scoped), e.g. a new `Home.Personal.Ratings.Series` key, run `pnpm i18n:extract`, and extend `TimeRangeSlider.test.tsx`'s recharts mock to assert the `Area` `name` is the translated value.
 * **Proof:** `rg -n 'name="[A-Z][a-z]+' src --glob '*.tsx' --glob '!*test*'` returns only `RatingsPanel.tsx:196: name="Rating"`; `en-US.json` holds no key the component uses for it; recharts `DefaultTooltipContent` prints `entry.name`.
 * **Found by:** Grok Bot, general review (t40u), HEAD `5c0538a2c`.
+* **Handled (2026-11-12, drain session 28007972-017f-4413-bf41-9c3e44928fea, co-located with f-20261112-11):** The rating `Area` series name is now `t("Home.Personal.Ratings.Rating")`. All 16 catalogues carry the key and reuse their existing `Puzzle.Rating` text (de-DE "Wertung"). The recharts mock in `statisticsPanels.test.tsx` renders the `Area` name and asserts the key. `pnpm i18n:check` stays green, and its exact extracted-key-set check fails if the name stops going through `t()`. Commit `acbee0584`, pushed to master with f-20261112-11.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"d7516d653d2a0dbfb609ab9cbf5216d0661e64c2f3ae0eb4b5791aacbd8a11bc","header_sha256":"dbaaa5cef8accc9e3c46aa622f0601bc9d2eec6257757b3880af76f8b16d412a","header_status":"handled","input_sha256":"51f555e4e49fbc21f0a676c4694cda5d306ec5c668bb0896c20b8ff8f98257fc","kind":"mutation-receipt","operation":"b384623a91592768e19cdb1691686b1e01fa6c956ff7f72e213dca340385ce46","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-12"],"target":"f-20261112-12","v":1} -->
 
 ---
 
