@@ -24046,3 +24046,19 @@ Deferred follow-up (keep at midnight filing):
 * **Fix:** Use `total < 600 ? "blitz" : "rapid"` for Chess.com and add a `timeControl.test.ts` table with the boundary cases (179/180, 599/600, `540`, `480+2`, `180+10`, `120+12`).
 * **Proof:** Ephemeral Vitest probe (file deleted, tree clean) calling `getTimeControl("Chess.com", tc)`: `540` -> rapid, `480+2` -> rapid, `180+10` -> rapid (Chess.com: blitz for all three); controls `300+5` -> blitz, `600` -> rapid, `120+12` -> rapid agree with Chess.com.
 * **Found by:** Grok Bot, general review (t40u), HEAD `87bab4d77`.
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Under "All websites" the Time control filter offers only Lichess categories, so Chess.com Daily games can never be selected
+
+* **ID:** f-20261112-19 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** general review chunk 4 (Felix t40u) at HEAD `658369674` (files identical on origin/master `ba81d9264`), OpeningsPanel / WebsiteAccountSelector pass
+* **Where:** `src/components/home/PersonalCardPanels/TimeControlSelector.tsx` (~34-52) builds the Chess.com list (`bullet, blitz, rapid, daily`) only for `website === "Chess.com"`; every other value, including `"All websites"` (the default in `OpeningsPanel`, and selectable in `OverviewPanel` / `RatingsPanel`), gets the Lichess list (`ultra_bullet … classical, correspondence`). Rows are then matched per row site by `matchesTimeControl` (`overviewStatistics.ts` ~125-131) via `getTimeControl`, which returns `"daily"` for a Chess.com `1/…` control and `"correspondence"` only for Lichess `-`. The existing "All websites rapid by each row's site" tests cover only categories both sites share. Related but distinct: f-20261112-18 (Chess.com blitz/rapid cut-off in the same mapping).
+* **Defect:** In the mixed view the category vocabulary and the per-row mapping disagree: no option selects Chess.com Daily games, and "Correspondence" (the only matching concept offered) excludes them.
+* **Failure scenario:** A user with Lichess and Chess.com accounts leaves Website on "All websites" and picks Correspondence to see their slow games: the Openings, Overview and Ratings panels show only Lichess correspondence games and silently drop every Chess.com Daily game; there is no "Daily" entry to choose instead.
+* **Fix:** For "All websites", either map Chess.com `daily` and Lichess `correspondence` to one shared category in `matchesTimeControl` (and label it e.g. "Daily / Correspondence"), or build the option list as the union of both sites' categories. Add an All-websites correspondence/daily case to `statisticsPanels.test.tsx`.
+* **Proof:** Ephemeral Vitest probe (file deleted, tree clean): `matchesTimeControl("Chess.com", "correspondence", "1/86400")` is `false`, while `matchesTimeControl("Lichess", "correspondence", "-")` and `matchesTimeControl("Chess.com", "daily", "1/86400")` are `true`; `TimeControlSelector` offers `daily` only when `website === "Chess.com"`.
+* **Found by:** Grok Bot, general review (t40u), HEAD `658369674`.
