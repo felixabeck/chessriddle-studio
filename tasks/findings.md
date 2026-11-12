@@ -24083,3 +24083,19 @@ Deferred follow-up (keep at midnight filing):
 
 * **Path fix (Grok Bot):** the persistent card is rendered from `src/components/home/AccountsPage.tsx` (~18), not `Accounts.tsx`.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"44ef42d6bbc057f082e41236320532587f3d53d361fbe6385f0fabfe975d6c29","input_sha256":"b01d03d8b4e55379690c2dcbd4a5f8ca08c0301499232d10f6a2ec135e6125d9","kind":"mutation-receipt","operation":"2d48ed29319f2bef27b91cc1261c2e9672e9c32289f5a6d355b6c439778d073c","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-20"],"target":"f-20261112-20","v":1} -->
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### AccountCard keeps the previous download's percentage, so a new download opens at "100%"
+
+* **ID:** f-20261112-21 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** yes
+* **Where:** `src/components/home/AccountCard.tsx` ~173 (`progress` state), ~178-189 (progress listener, the only `setProgress` call), ~457-461 (`{pending && progress && …%}`).
+* **Defect:** `progress` is set only by matching progress frames and is never reset when a download ends or a new one starts. A successful account import ends with a terminal frame of 100 (`report_terminal_progress` in `src-tauri/src/chesscom.rs` ~347 sends 100.0 on success), so the card keeps `progress = 100`. On the next Download click `pending` turns true again immediately (`accountDownloadsInFlightAtom` gets the key with a `null` ticket), and the label renders the stale `100%` while the new download prepares and until a progress frame for the new ticket arrives. The native start frame (progress 0) is usually emitted before the renderer knows the new ticket and would be falsy-hidden anyway.
+* **Failure scenario:** Download Lichess games for an account once and let it finish. Click Download again on the same mounted card: the striped bar runs and the label reads "100%" while preparation, the destination check and the first fetch run, then jumps back to a low percentage when the first real frame arrives. That looks as if the download were already complete.
+* **Fix:** Reset `setProgress(null)` when a download starts (in the Download click handler, before marking the key in flight) or whenever `pending` becomes false. Alternatively, key the stored progress by ticket and render it only when it belongs to the current ticket.
+* **Proof:** Ephemeral Vitest probe that reused `AccountCard.test.tsx` lines 1-102. Sequence: in-flight ticket `job-1`, frame `{id: "job-1", progress: 100}` → "100%" shown; clear in-flight → not shown; set in-flight `lichess_felix → null` (the click's state) → the assertion `not.toContain("100%")` failed. The stale "100%" was rendered. The probe was deleted and the tree is clean.
+* **Found by:** Grok Bot general review 2026-11-12 (AccountCard pass). Related, not the same cause: f-20260914-14 and f-20261001-21 (shared progress ids, both handled).
