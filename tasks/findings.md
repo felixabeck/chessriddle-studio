@@ -24359,3 +24359,19 @@ Deferred follow-up (keep at midnight filing):
 - **Fix:** pass `null` instead of `undefined` for an empty From date (as the To input already does), and add a LocalOptionsPanel test that types a From date, clears it, and asserts the input is empty.
 - **Proof:** ephemeral probe in the `LocalOptionsPanel.test.tsx` harness: typing "2020-01-01" gives `start_date "2020.01.01"`; the 1-year preset gives `"2025.11.12"` / input `"2025-11-12"`; the clear button gives `start_date` undefined but input value `"2020-01-01"`. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 19)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### The analysis explorer Stats table still shows English column titles, "Total" row and "No games found"
+
+* **ID:** f-20261112-38 · **Status:** open · **Area:** i18n · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/panels/database/OpeningsTable.tsx:53-113` (columns `move`, `total`, `results` have no `title`, so mantine-datatable shows the humanised accessor "Move / Total / Results"), `:29` (`move: "Total"` sum row label), `:115` (`emptyState={"No games found"}`)
+- **Defect:** the handled sweep f-20261104-03 (drain 81b6e46b) translated every database table, including the analysis-panel GamesTable, but missed the sibling OpeningsTable on the explorer's Stats tab. Its headers, its sum-row label and its empty state are hard-coded English, although `Databases.Game.NoGamesFound` already exists in all catalogues.
+- **Failure scenario:** with the UI in German, open the analysis Database panel, Stats tab: the header reads "Move / Total / Results", the sticky sum row says "Total", and a position with no games says "No games found", next to translated Stats/Games/Options tabs.
+- **Fix:** give the three columns `title: t(...)` (reusing existing keys where they fit), render the sum row label through `t` while keeping a non-display sentinel for the `move !== "Total"` checks, and use `t("Databases.Game.NoGamesFound")` for `emptyState`; extend the de-DE catalogue test that f-20261104-03 added to cover OpeningsTable.
+- **Proof:** ephemeral Vitest render of `OpeningsTable` with `useTranslation` mocked to `T(key)`: the rendered text contains the literal "No games found" (untranslated). Column titles traced: no `title` on any column, the same pattern f-20261104-03 identified for GameTable. Probe removed, tree clean.
+- **Found by:** Grok Bot general review (chunk 19)
