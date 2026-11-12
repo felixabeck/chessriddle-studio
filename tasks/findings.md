@@ -24872,3 +24872,19 @@ Line-reference correction: in `src/components/common/IconAction.tsx`, the extra 
 - **Fix:** pass `pending={savePending}` to AppModal (the shared contract: "pending work cannot be dismissed"), and/or have `save()` re-check that the same close is still pending (e.g. a request id/ref cleared by `cancel`) before calling `onSaved`/`closeTab`. Add a ConfirmChangesModal test: start a deferred save, dismiss, resolve, and assert `onSaved` is not called.
 - **Proof:** ephemeral Vitest reusing ConfirmChangesModal.test.tsx's harness (first 114 lines), with its AppModal mock extended to expose `onClose`/`pending`, a deferred `writeGame`, and a stateful parent whose `onCancel` clears `pendingClose`. After clicking Save: `pending` was `undefined`, Save disabled, `pickPgnFile` 1 and `writeGame` 1 call in flight. Dismissing called `onCancel` once and closed the dialog. Resolving the write then called `onSaved` 1 time. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 27)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Settings comboboxes (board image, piece set, sound collection) announce only their field name, never the selected value
+
+* **ID:** f-20261112-69 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/settings/SettingsCombobox.tsx:74-86`: the target is `InputBase component="button"` with `aria-label={ariaLabel}`, and the current choice is rendered only as its child content (`selected?.preview ?? selected?.label`). Callers: `BoardSelect.tsx:51-52` ("Settings.Appearance.BoardImage"), `PiecesSelect.tsx:29-30` ("Settings.Appearance.PieceSet"), `SoundSelect.tsx:39-40` ("Settings.Sound.Collection").
+- **Defect:** the explicit `aria-label` overrides the button's content in accessible-name computation, so the three appearance and sound selectors expose only "Board image" / "Piece set" / "Sound collection", never which board, piece set or sound collection is active. A native or Mantine `Select` would expose its value. Same pattern as f-20261112-67 (training motif picker), on the shared settings primitive. The earlier handled SettingsCombobox finding (fixed in `8acf3207`) covered preview/commit state, not naming.
+- **Failure scenario:** in Settings → Appearance with the piece set "cburnett", Tab to the piece-set control: a screen reader says "Piece set, button, collapsed", and the selected set is not announced unless the user opens the list.
+- **Fix:** keep the field name as the label but include the value, e.g. `aria-label={`${ariaLabel}: ${selectedText}`}` (give items a plain-text `name` for this), or label via `aria-labelledby` pointing at a visible label plus the button's own text node. Add a SettingsCombobox test that the accessible name contains the selected item's text.
+- **Proof:** code trace on origin/master d30eb171f: `aria-label` is set unconditionally (`:75`), and the only value-bearing output is the child node (`:83-85`). Mantine `InputBase` forwards `aria-label` to the rendered `<button>`, which then takes precedence over its content per accname. No probe needed; tree unchanged.
+- **Found by:** Grok Bot general review (chunk 27)
