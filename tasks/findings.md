@@ -24058,7 +24058,7 @@ Handled in 1ab8c70cc. `changeCompletion` keeps `timeSpent` undefined for an atte
 
 ### Chess.com games of 501-599 s estimated duration are classified as rapid instead of blitz
 
-* **ID:** f-20261112-18 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-18 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** general review chunk 3 (Felix t40u) at HEAD `87bab4d77` (file identical on origin/master `ba81d9264`), leftover question "getTimeControl Chess.com thresholds"; inherited from upstream En Croissant
 * **Where:** `src/utils/timeControl.ts` (~7-8): for `website === "Chess.com"`, `total = initial + increment * 40` and `total < 180 ? "bullet" : total <= 500 ? "blitz" : "rapid"`. Sole caller `matchesTimeControl` in `src/components/home/PersonalCardPanels/overviewStatistics.ts` (~125-131), which filters the personal Overview / Ratings / Openings panels by the Time control selector. d-20260926 (decisions.md ~4233) keeps this mapping in the renderer per website, so the renderer is the only place the category is decided.
@@ -24067,6 +24067,8 @@ Handled in 1ab8c70cc. `changeCompletion` keeps `timeSpent` undefined for an atte
 * **Fix:** Use `total < 600 ? "blitz" : "rapid"` for Chess.com and add a `timeControl.test.ts` table with the boundary cases (179/180, 599/600, `540`, `480+2`, `180+10`, `120+12`).
 * **Proof:** Ephemeral Vitest probe (file deleted, tree clean) calling `getTimeControl("Chess.com", tc)`: `540` -> rapid, `480+2` -> rapid, `180+10` -> rapid (Chess.com: blitz for all three); controls `300+5` -> blitz, `600` -> rapid, `120+12` -> rapid agree with Chess.com.
 * **Found by:** Grok Bot, general review (t40u), HEAD `87bab4d77`.
+* **Closed 2026-11-12 (drain, Claude Code, co-located with f-20261112-10):** Chess.com branch of `getTimeControl` now uses `total < 600 ? "blitz" : "rapid"` (estimate unchanged: initial + 40×increment). New `src/utils/timeControl.test.ts` table covers 179/180, 599/600, 540, 480+2, 180+10, 120+12, 300+5 and daily; four cases go red with the old `<= 500` cut-off. Commit 966a55aa7.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"ef0cde342b26ab05f34cd56a001eed43122c49e89bda01904ee650eb8f420860","header_sha256":"fdb8964db2e5d7dfe33f376fcc51d482d58f9d509e05e5a611fb9099109a8ba1","header_status":"handled","input_sha256":"5e5839b0fda614f2d2daa1eb996b360dbef378ec0b3d6925688c90c2ad5de27a","kind":"mutation-receipt","operation":"5bdd28d8cde79e40aa6291ac19bf64a9ef8fd5f51fc7a739793501a6aaa7627b","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-18"],"target":"f-20261112-18","v":1} -->
 
 ---
 
