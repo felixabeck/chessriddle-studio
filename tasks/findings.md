@@ -24128,7 +24128,7 @@ Deferred follow-up (keep at midnight filing):
 
 ### Chess.com link import replays every game from the standard start, corrupting Chess960 and from-position games
 
-* **ID:** f-20261112-23 · **Status:** open · **Area:** pgn-import · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-23 · **Status:** handled · **Area:** pgn-import · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** data-loss
 * **Spotted outside diff:** yes
 * **Where:** `src/utils/chess.com/api.tsx` `getChesscomGame` ~133-152: `const chess = Chess.default();` then `makeSan(chess, decodeTCN(move))` / `chess.play(m)` for every TCN pair. The caller is `src/components/tabs/ImportModal.tsx` ~222-228 (Import → Link).
@@ -24137,6 +24137,14 @@ Deferred follow-up (keep at midnight filing):
 * **Fix:** Build the start position from the headers (`startingPosition(game.headers)` from `chessops/pgn`, or `setupPosition("chess" | "chess960", parseFen(FEN))`), set `Variant` handling as for Lichess imports, and replay against that. Also treat an illegal decoded move (`makeSan` yielding `--`) as a failed import with the existing InvalidResponse notification instead of emitting it. Check that 960 castling in TCN (king to rook square vs two-square) maps correctly onto chessops' castling normalisation. Add tests with a 960 and a from-position fixture (this also covers part of f-20261111-74).
 * **Proof:** Payload check: `curl https://www.chess.com/callback/live/game/101679677427` from the review box (public, read-only) returned the headers above with `Variant: Chess960` and the TCN `moveList`. Ephemeral Vitest probe in `src/utils/chess.com/` mocked `tauri.getPublicChessComJson` with that exact payload and called the real `getChesscomGame`. It then parsed the output with `parsePgn` and replayed it with `startingPosition(headers)` + `parseSan`. Result: `first=e4 b6 b3 e5 Rg3 Rg6 Nh3 Qf6 bad=4:Rg3 null=true plies=85`. The probe was deleted and the tree is clean.
 * **Found by:** Grok Bot general review 2026-11-12 (chess.com api pass). Related: f-20261111-74 (missing tests for TCN/getChesscomGame, different finding).
+
+Handled 2026-11-12 by drain session bdcaf057 (lens tier; lenses correctness, root-cause, tests, chess-semantics; Codex leaves and Codex lenses, same family, disclosed).
+* `getChesscomGame` (`src/utils/chess.com/api.tsx`) now builds the start position with `startingPosition(headers)` from `chessops/pgn`, so the position comes from `FEN`, `SetUp` and `Variant: Chess960` (Shredder castling). An unreadable FEN or an illegal decoded TCN move (`!pos.isLegal`) fails the import with the existing `ChessCom.InvalidResponse` notification, and no partial PGN is emitted. An empty move list keeps its headers.
+* 960 castling: Chess.com encodes castling as king to its own rook square. It was checked on the real payload of live game 101679677427 (`c8b8` with the rook on b8 gives `O-O-O`), and chessops normalises both that and the standard `e1g1`, so no custom translation is needed.
+* Tests in `src/utils/chess.com/api.test.ts` cover: all 85 plies of the real 960 game (fixture `src/utils/chess.com/fixtures/live-960-101679677427.json`), a from-position game whose move is illegal from the standard start, illegal moves, a bad FEN, an empty move list and the URL classes. Reverting the source fix made 5 tests fail.
+* Commits: 106c077ed, fb957a15a, be88f1572 (review repair of the from-position test).
+* Rejected: hand-translating TCN castling (chessops already normalises it), and emitting the PGN with `--` moves plus a warning (the game would still be corrupt).
+<!-- ledger-meta {"command":"close","effect_lines":6,"effect_sha256":"5a2a12acb34ff4be7058a586e484307d81e429d0cbd98a2f0e7959872fe05636","header_sha256":"85dfc10a4c747e0271566228266c448185cf1985b32676f087abac70ac2fd3a1","header_status":"handled","input_sha256":"cdeaf619662aa5aee08064a2dd3a1409a97ecc0c0017cae40a806a0c83d6c177","kind":"mutation-receipt","operation":"56dd2322a4f6a1e9e672307f0b04e3f9deb3241d9df02318e0ef6c23dd962dbd","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-23"],"target":"f-20261112-23","v":1} -->
 
 ---
 
