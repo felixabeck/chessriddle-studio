@@ -24295,3 +24295,19 @@ Deferred follow-up (keep at midnight filing):
 * **Found by:** Grok Bot, quality review (t26u/pt40u), origin `5512756fa`.
 * **Line-reference correction (Grok Bot, same session):** at origin `5512756fa` the exact lines are `:1380` (sync `sequence = ++controller.requestSequence`), `:1143` (`controller.writeBlocked = true` in `enqueueWrite`), `:1264-1306` (`observeWrite`) and `:1348-1351` (the `controller.writeBlocked` early return). Behaviour and proof unchanged.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"d6689c7f0077bbeaccfe6039745210043699363c5b48056d4347ea88c626a6ca","input_sha256":"f650f45219efecaf345d8c5549d84767f2d897705eba82122b4e3d75a92563ec","kind":"mutation-receipt","operation":"0cbdfca8da11d25276d43cd9f80e5e111af8a64130ea2efe23b06c007925c5df","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-33"],"target":"f-20261112-33","v":1} -->
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### PageUp on the first game and PageDown on the last game reload the current game and offer to discard unsaved edits
+
+* **ID:** f-20261112-34 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** behaviour
+- **Spotted outside diff:** no
+- **Where:** `src/components/panels/info/InfoPanel.tsx:201-216` (NEXT_GAME/PREVIOUS_GAME hotkeys, bound to pagedown/pageup in `src/state/keybinds.ts:62-63`) and `setPage` at `InfoPanel.tsx:391`
+- **Defect:** the hotkeys clamp the target with `Math.min(gameNumber + 1, numGames - 1)` / `Math.max(0, gameNumber - 1)` and call `setPage` even when the clamped page equals the current `gameNumber`; `setPage` has no same-page guard, so it aborts any in-flight page read and runs the full page-change path (disk reload, or the unsaved-changes confirmation when the tree is dirty).
+- **Failure scenario:** with game 1 of a PGN file open and unsaved annotations, pressing PageUp (no previous game) opens the "Unsaved changes" dialog and "Close without saving" reloads the same game from disk, throwing away the edits; with a clean tree PageUp silently re-reads the game from disk and resets the board position.
+- **Fix:** in both hotkey handlers return early when the clamped page equals `gameNumber` (or guard `page === gameNumber` for keyboard paging before `setPage`), and add a test that PageUp on game 0 / PageDown on the last game neither calls `loadFileGame` nor opens the confirmation.
+- **Proof:** ephemeral probe appended to `InfoPanel.test.tsx` harness (tab at gameNumber 0): clean tree + `press("PageUp")` → `loadFileGame` called with page `0`; then `setComment("Unsaved edit")` + `press("PageUp")` → dialog text `Tab.UnsavedChanges…Tab.CloseWithoutSaving…Tab.SaveAndClose`. Probe removed, tree clean. Existing test at `InfoPanel.test.tsx:1297` only covers PageUp from page 1 and PageDown from page 0.
+- **Found by:** Grok Bot general review (chunk 18)
