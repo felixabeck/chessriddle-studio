@@ -1659,7 +1659,7 @@ export type PlayersTime = { white: number; black: number; winc: number; binc: nu
 export type PositionQueryJs = { fen: string; type_: string }
 /**
  * Only these filters are accepted by position search, which has no pagination
- * and returns at most [`MAX_SAMPLES`] sample games.
+ * and returns at most 500 sample games (`MAX_SAMPLES`).
  */
 export type PositionSearchQuery = { player1?: number | null; player2?: number | null; startDate?: string | null; endDate?: string | null; range1?: [number, number] | null; range2?: [number, number] | null; position?: PositionQueryJs | null; wantedResult?: string | null; excludeFastEvents?: boolean | null; includeUnknownResults?: boolean | null; sampleOrder?: SampleOrder | null }
 export type PositionStats = { move: string; white: number; draw: number; black: number; unknown: number; last_played: string | null; year_counts: YearCount[] }

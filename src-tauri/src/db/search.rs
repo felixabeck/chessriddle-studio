@@ -57,7 +57,7 @@ use super::{GameQuery, SampleOrder};
 const MAX_SAMPLES: usize = 500;
 
 /// Only these filters are accepted by position search, which has no pagination
-/// and returns at most [`MAX_SAMPLES`] sample games.
+/// and returns at most 500 sample games (`MAX_SAMPLES`).
 #[derive(Debug, Clone, Deserialize, Type)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PositionSearchQuery {
