@@ -428,6 +428,49 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn opening_search_waits_for_gateway_but_validates_before_admission() {
+        use crate::infra::blocking::{
+            tests::park_global_gateway_holders, BLOCKING_GATEWAY_PERMITS,
+        };
+        use std::time::Duration;
+
+        let deadline = Duration::from_secs(5);
+        // Every holder has entered its closure when this returns, so all of this thread's permits
+        // are taken; the release-on-drop guards keep a failed assertion from stranding workers.
+        // The default current-thread runtime keeps all admissions on this thread's gateway.
+        let (releases, holders) = park_global_gateway_holders(BLOCKING_GATEWAY_PERMITS).await;
+
+        assert!(
+            tokio::time::timeout(
+                Duration::from_millis(200),
+                search_opening_name("Sicilian".into()),
+            )
+            .await
+            .is_err(),
+            "opening scoring must wait for a gateway permit"
+        );
+        let invalid = tokio::time::timeout(deadline, search_opening_name("é".repeat(257)))
+            .await
+            .expect("overlong queries must be rejected without a gateway permit");
+        assert!(matches!(invalid, Err(Error::InvalidInput(_))));
+
+        drop(releases);
+        for holder in holders {
+            tokio::time::timeout(deadline, holder)
+                .await
+                .expect("released gateway holder must finish")
+                .expect("gateway holder must join")
+                .expect("gateway holder must succeed");
+        }
+        assert!(
+            tokio::time::timeout(deadline, search_opening_name("Sicilian".into()))
+                .await
+                .expect("opening search must complete after gateway holders are released")
+                .is_ok()
+        );
+    }
+
+    #[tokio::test]
     async fn search_marks_only_fischer_random_catalogue_entries_as_chess960() {
         for (name, chess960) in [
             ("Sicilian Defense", false),
