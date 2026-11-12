@@ -23998,3 +23998,19 @@ Deferred follow-up (keep at midnight filing):
 * **Fix:** Record into the summary when the verdict arrives, independent of tab ownership (the `accountIdentity` check in `summary.record` already rejects a verdict from a different account), and keep the `current` guard only for the per-tab `publish`/tree update. Add to the existing "a closed tab ignores late fetch and submit results" test an assertion that `summary.get().attempts` is 1 after the late verdict.
 * **Proof:** Ephemeral Vitest probe (file deleted afterwards, tree clean) built on `chessRiddleTraining.test.ts`'s `fixture`: `next`, fill `e7e5 g1f3 b8c6`, `submit` with a deferred verdict, `remove("tab")`, resolve `verdict` (ratingChange 8, playerRating 1508). Result: submit called once, summary `{attempts: 0, change: 0, rating: 1500}`. Control without `remove`: `{attempts: 1, change: 8, rating: 1508}`.
 * **Found by:** Grok Bot, general review (t40u), HEAD `ffe50e310`.
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Puzzle "Avg time" averages in puzzles solved with time tracking off as 0 s
+
+* **ID:** f-20261112-16 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** general review chunk 3 (Felix t40u) at HEAD `87bab4d77` (file identical on origin/master `ba81d9264`), `Puzzles.tsx` line-by-line pass; inherited from upstream En Croissant (`5603afe1b`)
+* **Where:** `src/components/puzzles/Puzzles.tsx` `avgTimeSeconds` (~373-376) divides the summed `timeSpent` of every `completion === "correct"` puzzle by `wonPuzzles.length`. `changeCompletion` (~544) stores `timeSpent: selectedTimer ? timerElapsed(selectedTimer) : (puzzle.timeSpent ?? 0)`, and the timer effect (~681-697) only creates a timer while `trackTime` is on, so a puzzle solved with tracking off is saved with `timeSpent: 0`, indistinguishable from "tracked, 0 ms". The card is shown only when `trackTime && avgTimeSeconds > 0` (~1033). Distinct from f-20261111-61 (component size) and f-20261111-80 (preference hydration).
+* **Defect:** The average includes solves that were never timed, so it is deflated by every untracked win in the session.
+* **Failure scenario:** The user solves three puzzles with "Track puzzle time" off, switches it on and solves one more in 30 s. The "Avg time" card shows 7.5 s instead of 30 s; untracked solves keep dragging it down for the rest of the session (it is persisted with the session).
+* **Fix:** Store `timeSpent` as `undefined` (the schema already allows it, `puzzleSession.ts` ~39) when the attempt was completed without a timer, and average only won puzzles with a defined `timeSpent`. Add a `Puzzles.test.tsx` case: one untracked correct solve, then a tracked one, asserting the card shows only the tracked time.
+* **Proof:** Trace above: with `trackTime` false there is no `selectedTimer`, `puzzle.timeSpent` is `undefined` for a fresh attempt (no other writer: `rg -n timeSpent src --glob '!*test*'` lists only lines 421, 440, 544, 581, 748, all timer-gated except 544's `?? 0` fallback), so `first.timeSpent` is 0 and is written at ~581. Example: (0+0+0+30000)/4/1000 = 7.5.
+* **Found by:** Grok Bot, general review (t40u), HEAD `87bab4d77`.
