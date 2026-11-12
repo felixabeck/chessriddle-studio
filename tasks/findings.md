@@ -24327,3 +24327,19 @@ Deferred follow-up (keep at midnight filing):
 - **Fix:** key the collapsed set by a stable node identity instead of the object (the move path from `model.index.links`, or a node id if the tree carries one), and drop entries whose path no longer exists; add a GameNotation test that collapses a variation, edits a later node, and asserts the variation stays hidden.
 - **Proof:** ephemeral probe appended to `GameNotation.test.tsx` (root children `[e4, d4]`): after `toggle.click()` `[data-node="d4"]` is absent, still absent after `goToMove([0])`, present again after `setComment("note on e4")` (`{afterCollapse:false, afterNavigate:false, afterComment:true}`). Probe removed, tree clean. Existing collapse tests (`GameNotation.test.tsx:641`, `:819`) never edit the tree after collapsing.
 - **Found by:** Grok Bot general review (chunk 18)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### A partial-position pattern in the local explorer is overwritten by the full board FEN on the next board move
+
+* **ID:** f-20261112-36 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** behaviour
+- **Spotted outside diff:** no
+- **Where:** `src/components/panels/database/DatabasePanel.tsx:179-183` (effect `setLocalOptions((q) => ({ ...q, fen: debouncedFen }))` on every `debouncedFen` change, regardless of `q.type`); patterns are built in `src/components/panels/database/options/LocalOptionsPanel.tsx:42-49` (Similar structure), `:228-250` (board editor) and `:275-283` (Empty board)
+- **Defect:** the effect that keeps the exact search in step with the board also rewrites `fen` while `type` is `"partial"`, so any hand-built or "Similar structure" pattern is replaced by the complete current position as soon as the board position changes (and on every remount of the panel), while the search stays in partial mode.
+- **Failure scenario:** in Local explorer Options the user clicks "Similar structure" (pawn-only pattern) or places pieces on the pattern board, then plays or steps to another move: the pattern is silently replaced by the full FEN (`rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1` in the probe) and Games/Matches now show partial matches of the whole position instead of the pawn structure.
+- **Fix:** only sync `fen` from the board when `type === "exact"` (or keep separate `exactFen` / `pattern` fields), and add a DatabasePanel test that sets a partial pattern, makes a board move, and asserts the pattern is kept.
+- **Proof:** ephemeral probe in the `DatabasePanel.test.tsx` harness (`mountLocal`, readable reference DB): set `localOptionsFamily` to `{type:"partial", fen:"8/pppppppp/8/8/8/8/PPPPPPPP/8 w - - 0 1"}`, then `treeStore.makeMove({payload:"e4"})` → options become `["partial","rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"]`. Probe removed, tree clean.
+- **Found by:** Grok Bot general review (chunk 18)
