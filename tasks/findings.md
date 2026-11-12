@@ -24789,3 +24789,19 @@ Correction to the Failure scenario example: the `!?` button's accessible name is
 
 Correction to the Failure scenario: what gets focus before or after the annotation grid (Generate report, the eval chart) was not checked. The claim rests only on the grid cells themselves having no tab stop (no `tabIndex`, `role` or key handler, per the Proof). Read it as "Tab never lands on any count cell".
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"12dd754a83cee03f105dc98695cf11f02c7b1508a0ff4cd1331984bdea40e3af","input_sha256":"f22d64c74d1cbff68648d90fb7a9110611471e8bf005314ae8e571684bf53e5e","kind":"mutation-receipt","operation":"485032ff345e74fb9aa5d235497bb33d49dc0acf116b2196dfe5d1dbb97e64fd","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-63"],"target":"f-20261112-63","v":1} -->
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Personal card Openings: opening names open only on mouse click and each click opens another analysis tab
+
+* **ID:** f-20261112-64 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/home/PersonalCardPanels/OpeningsPanel.tsx:145-169`: `OpeningDetail` renders the opening name as a Mantine `Text` (a `p`) with `onClick` that calls `runTabCreation({ create: getOpeningFromName → parsePGN → createTab({ tab: { type: "analysis" } }) })`. The only affordance is `.link` (`OpeningsPanel.module.css`: pointer cursor plus hover underline). `runTabCreation` (`src/utils/tabs.ts:600-618`) has no admission lock, and `createTab` with no `gameOrigin` always ends in `commitNewTab` (`:736-741`), which commits a fresh tab.
+- **Defect:** (1) The name is not a focusable control (no `role`, `tabIndex` or key handler), so opening an opening's analysis from the Openings panel is mouse-only. (2) There is no single-flight guard. Each click starts its own two-IPC create (`getOpeningFromName`, then parse), so a double-click or impatient re-click commits one new analysis tab per click. Library and database rows already share `useGameOpen`/`gameRowActivation` (`src/components/common/gameOpen.tsx`) for exactly this. Sibling gaps on other surfaces: f-20261112-57 (explorer Games tab) and f-20261112-59 (explorer Stats rows).
+- **Failure scenario:** Home → a player card → Openings: double-click "Sicilian Defense". Two identical "Sicilian Defense" analysis tabs open. With the keyboard, Tab never reaches any opening name.
+- **Fix:** render the name as a button (`UnstyledButton`/`Anchor component="button"`), and route the open through `useGameOpen` (or an equivalent per-panel pending lock) so repeated activation while pending is ignored. Add tests for Enter activation and for double-click opening one tab.
+- **Proof:** code trace on origin/master d30eb171f. The click target is `Text` with `className={classes.link}` and `onClick` only (`:145-149`). `runTabCreation` simply awaits `create()` (`tabs.ts:609-613`). For this call, `createTab` has no `gameOrigin`/`ownerId`, so it reaches `commitNewTab` every time (`tabs.ts:725-741`). Nothing dedupes by name or opening. No probe: the panel's existing test harness mocks `@mantine/core` wholesale. Tree unchanged.
+- **Found by:** Grok Bot general review (chunk 27)
