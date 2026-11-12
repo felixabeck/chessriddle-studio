@@ -24936,3 +24936,19 @@ Line-reference correction: in `src/components/common/IconAction.tsx`, the extra 
 * **Fix:** add `translationKey: "Miss"` to the `⊗` entry and an `Annotate.Miss` key to every shipped catalogue. Optionally drop the `: name` fallback so a missing key fails the catalogue tests instead of shipping English.
 * **Proof:** trace above. `git grep '"⊗"'` shows the symbol is offered only via AnnotationPanel `EXTRA` and rendered with the shown fallback. `grep '"Annotate\.Miss'` finds no key in en-US, de-DE or fr-FR.
 * **Found by:** Grok Bot general review (chunk 29)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### ChessDB tablebase (DTZ) scores count as a few centipawns, so best-move arrows include tablebase-losing moves
+
+* **ID:** f-20261112-73 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** yes (general review, origin/master d30eb171f)
+* **Where:** `src/utils/score.ts:66-75` (`normalizeScore` maps only `mate` to ±`CP_CEILING`; a `dtz` value passes through as centipawns), consumed by `createBestMovesAtom` in `src/state/atoms.ts:1313-1345` (keeps every line within `BEST_MOVE_ARROW_MAX_WIN_CHANCE_LOSS = 10` win-chance points of the best). ChessDB produces `{ type: "dtz", value: ±N }` for tablebase-range evals in `src/utils/chessdb/api.ts:181-201` (`chessDBevalToScore`, White-relative, sign = winner). The other readers already treat DTZ as decisive: `EvalBar.tsx:77` (`type === "cp" ? getWinChance(...) : value > 0 ? 100 : 0`) and `positionAssessment` (`score.ts:54`).
+* **Defect:** a won tablebase position (DTZ +12) normalizes to +12 cp (≈51 % win chance), and a lost one (DTZ −5) to −5 cp (≈49.5 %). Every tablebase line therefore sits within 10 points of every other, whatever the result. The board's best-move arrows then show moves that throw away a tablebase win, or lose outright. Meanwhile an ordinary −1.5 pawn move is correctly filtered out.
+* **Failure scenario:** with ChessDB enabled as an analysis engine (multi-PV ≥ 2) and best-move arrows on, reach a tablebase endgame where one move wins and others draw or lose. ChessDB returns DTZ scores, and the board draws arrows for the winning move and for the drawing/losing moves alike, as if all were near-equal.
+* **Fix:** in `normalizeScore`, treat `dtz` like `mate` (`CP_CEILING * Math.sign(cp)`), matching EvalBar and `positionAssessment`. Add a `createBestMovesAtom` test with mixed-sign DTZ lines.
+* **Proof:** ephemeral probe built from `src/state/atoms.analysis.test.ts`'s harness (removed afterwards, tree clean). A loaded engine's lines at the start position were `dtz +12`, `cp 0`, `dtz −5`, `cp −150`. `createBestMovesAtom` kept `e2e4` 51.1, `d2d4` 50, `g1f3` 49.54 (the DTZ-losing move) and dropped only the `cp −150` move.
+* **Found by:** Grok Bot general review (chunk 30)
