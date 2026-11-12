@@ -24343,3 +24343,19 @@ Deferred follow-up (keep at midnight filing):
 - **Fix:** only sync `fen` from the board when `type === "exact"` (or keep separate `exactFen` / `pattern` fields), and add a DatabasePanel test that sets a partial pattern, makes a board move, and asserts the pattern is kept.
 - **Proof:** ephemeral probe in the `DatabasePanel.test.tsx` harness (`mountLocal`, readable reference DB): set `localOptionsFamily` to `{type:"partial", fen:"8/pppppppp/8/8/8/8/PPPPPPPP/8 w - - 0 1"}`, then `treeStore.makeMove({payload:"e4"})` → options become `["partial","rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"]`. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 18)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Clearing the local explorer "From" date leaves the old date in the field while the filter is removed
+
+* **ID:** f-20261112-37 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/panels/database/options/LocalOptionsPanel.tsx:95-108` (From `DateInput` gets `value={... : undefined}`), compared with the To input at `:132-143`, which passes `null`
+- **Defect:** with no `start_date` the From `DateInput` receives `value={undefined}`, which Mantine's `useUncontrolled` treats as uncontrolled. A date typed or picked while the field was uncontrolled stays in Mantine's internal state. When the field is later cleared, `start_date` becomes `undefined` again and the input shows that stale internal date even though no start date filter is applied.
+- **Failure scenario:** in the local explorer Options the user types 2020-01-01 into From (optionally clicks "Last 1 year"), then clicks the field's clear button: the stored `start_date` is removed and the search runs unfiltered, but the From field still shows "2020-01-01", so the visible filter no longer matches the search.
+- **Fix:** pass `null` instead of `undefined` for an empty From date (as the To input already does), and add a LocalOptionsPanel test that types a From date, clears it, and asserts the input is empty.
+- **Proof:** ephemeral probe in the `LocalOptionsPanel.test.tsx` harness: typing "2020-01-01" gives `start_date "2020.01.01"`; the 1-year preset gives `"2025.11.12"` / input `"2025-11-12"`; the clear button gives `start_date` undefined but input value `"2020-01-01"`. Probe removed, tree clean.
+- **Found by:** Grok Bot general review (chunk 19)
