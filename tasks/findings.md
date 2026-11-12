@@ -24391,3 +24391,19 @@ Deferred follow-up (keep at midnight filing):
 - **Fix:** include a database revision in the key (as the linked-collection generation already does), or have `refreshDatabaseGameQueries` and the import/save paths also invalidate `{type:"local"}` keys whose `options.path` matches the mutated database; add a test that a mutation followed by a remount refetches.
 - **Proof:** ephemeral probe using `useLocalExplorer` with `useCollectionCurrency` returning `{collection:null}` and a shared SWR cache: first mount shows `white=1`; unmount; `searchPosition` now resolves `white=2`; remount shows `"1"` with `searchPosition` called once in total. Grep finds no `mutate` or `cache.delete` targeting local-explorer keys. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 19)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### PlayerSearchInput keeps the previously selected player id after the text is edited to another name, so filters and Merge players act on a player the field no longer shows
+
+* **ID:** f-20261112-40 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** data-loss
+- **Spotted outside diff:** no
+- **Where:** `src/components/databases/PlayerSearchInput.tsx:70-113` (`handleChange` calls `setValue(player.id)` only for an exact suggestion match and `setValue(undefined)` only for blank text; any other edit leaves the parent's id untouched). Callers: `src/components/databases/useDatabaseLibrary.tsx:754-773` (PlayerMerger, which runs `tauri.mergePlayers(file, player1, player2)` at `:736` with no confirmation), `src/components/databases/GameTable.tsx:133,146` (game filters), `src/components/panels/database/options/LocalOptionsPanel.tsx:62` (explorer player filter)
+- **Defect:** the visible text and the selected id drift apart. After a player is selected, typing a different name (or one whose suggestion has not loaded or been picked yet) changes only `tempValue`; the parent still holds the old id, and nothing marks the selection as stale.
+- **Failure scenario:** in Library > Merge players the user picks "Carlsen, M" as player one, then retypes the field to "Carlsen, Magnus" without picking a suggestion and clicks Merge: `mergePlayers` merges the old "Carlsen, M" id, which the field no longer shows, into player two; the same drift makes the explorer and game-list filters keep filtering on the old player while the box shows another name.
+- **Fix:** clear the selection (`setValue(undefined)`) on any text change that is not an exact suggestion pick, or only commit ids on option submit; disable Merge while either side has no committed id; add PlayerSearchInput and PlayerMerger tests for "select, then edit text".
+- **Proof:** ephemeral probe in the `LocalOptionsPanel.test.tsx` harness: with player 42 selected (input "A player"), `enterPlayer("Someone else entirely")` with no matching suggestions leaves `localOptions.player === 42` while the input shows "Someone else entirely". The merge path uses the same component and passes the stored ids straight to `tauri.mergePlayers` (code trace). Probe removed, tree clean.
+- **Found by:** Grok Bot general review (chunk 19)
