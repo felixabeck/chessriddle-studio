@@ -24505,3 +24505,19 @@ Deferred follow-up (keep at midnight filing):
 - **Fix:** give every option `aria-label={option.name}` and `aria-pressed={option.isToggled}`, wrap the buttons in `role="group"` labelled by the wrapper label (or use Mantine `Chip.Group`/`Button.Group` with those attributes), and add a ToggleButtonGroup test asserting name and pressed state.
 - **Proof:** ephemeral Vitest rendering `ToggleButtonGroup` with `includeTooltips` and two icon options (one toggled): both buttons had empty text and null `aria-label`, `aria-labelledby`, `aria-describedby` and `aria-pressed`, and no `role="group"` element existed. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 22)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### TimeInput rounds the shown value to a whole unit, so after a unit switch the field shows a time the clock will not use
+
+* **ID:** f-20261112-47 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/common/TimeInput.tsx:31-36,39-43` (`displayedValue = value / 1000 / 60` etc., rendered by a `NumberInput` with `allowDecimal={false}`, which Mantine formats with zero decimals; `decimalScale={2}` has no effect); unit changes (`:23-29`, OpponentForm `:126-131,157-162`) only switch the unit and keep the stored milliseconds. Callers: OpponentForm Time / Increment, and GoModeInput's engine time limit.
+- **Defect:** any stored value that is not a whole number of the selected unit is shown rounded to the nearest whole unit, while the stored milliseconds (what the clock or engine actually uses) are unchanged. Values such as 90 s or 1.5 min also cannot be entered in minutes. Not f-20261106-27 (handled; the minimum initial clock and the empty-field 1 ms case).
+- **Failure scenario:** in Play against an engine, enter a time of 30 in seconds, then switch the unit to minutes: the field shows "1 m", but the game starts with a 30-second clock. Likewise an engine Time limit of 2500 ms shown in seconds reads "3".
+- **Fix:** either convert the stored value when the unit changes and allow decimals (`allowDecimal` with `decimalScale={2}`), or show the exact value (for example `1.5` or `0.5`) instead of rounding. Add a TimeInput test for 30 000 ms shown in minutes.
+- **Proof:** ephemeral Vitest rendering `TimeInput` with fixed `type`: the input read `2` for 90 000 ms in `m`, `1` for 30 000 ms in `m`, `3` for 2500 ms in `s` and `2` for 1500 ms in `s`. Code trace confirms the unit change keeps `value`. Probe removed, tree clean.
+- **Found by:** Grok Bot general review (chunk 22)
