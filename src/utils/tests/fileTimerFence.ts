@@ -12,6 +12,20 @@ export interface FileTimerFence {
 const fenceKey = Symbol.for("chessfable.fileTimerFence");
 const promisifyCustom = Symbol.for("nodejs.util.promisify.custom");
 
+export function installedFileTimerFence(host: TimerHost): FileTimerFence | undefined {
+    return (host as TimerHost & { [fenceKey]?: FileTimerFence })[fenceKey];
+}
+
+export function registerFileTimerFence(
+    host: TimerHost,
+    afterAll: (hook: () => void) => void,
+): FileTimerFence {
+    const fence = installFileTimerFence(host);
+    fence.open();
+    afterAll(() => fence.close());
+    return fence;
+}
+
 export function installFileTimerFence(host: TimerHost): FileTimerFence {
     const fencedHost = host as TimerHost & { [fenceKey]?: FileTimerFence };
     if (fencedHost[fenceKey]) return fencedHost[fenceKey];

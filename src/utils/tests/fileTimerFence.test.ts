@@ -1,5 +1,10 @@
 import { expect, test, vi } from "vitest";
-import { installFileTimerFence, type TimerHost } from "./fileTimerFence";
+import {
+    installedFileTimerFence,
+    installFileTimerFence,
+    registerFileTimerFence,
+    type TimerHost,
+} from "./fileTimerFence";
 
 type TimerHandle = ReturnType<TimerHost["setTimeout"]>;
 
@@ -37,6 +42,34 @@ function createHost() {
         },
     };
 }
+
+test("registration opens the fence and registers one hook that clears and suppresses pending timers", () => {
+    const timers = createHost();
+    const afterAll = vi.fn<(hook: () => void) => void>();
+    expect(installedFileTimerFence(timers.host)).toBeUndefined();
+    const fence = registerFileTimerFence(timers.host, afterAll);
+    expect(installedFileTimerFence(timers.host)).toBe(fence);
+    const handler = vi.fn();
+    const fired = timers.host.setTimeout(handler, 0);
+
+    timers.fire(fired);
+    expect(handler).toHaveBeenCalledOnce();
+    const pending = [timers.host.setTimeout(handler, 10), timers.host.setInterval(handler, 20)];
+    expect(afterAll).toHaveBeenCalledOnce();
+    afterAll.mock.calls[0][0]();
+
+    expect(timers.clearTimeout).toHaveBeenCalledTimes(pending.length);
+    for (const handle of pending) {
+        expect(timers.clearTimeout).toHaveBeenCalledWith(handle);
+        timers.fire(handle);
+    }
+    expect(handler).toHaveBeenCalledOnce();
+});
+
+test("setup installs and opens the real global timer fence", async () => {
+    expect(installedFileTimerFence(globalThis)).toBeDefined();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+});
 
 test("an open file's timeout forwards arguments and leaves tracking after firing", () => {
     const timers = createHost();
