@@ -23388,7 +23388,7 @@ Handled (drain aaa22b94, 2026-11-11). `rg 'fuse\.js|Fuse\(|from "fuse' src e2e s
 
 ### Several preferences still hydrate any finite number or any array, so corrupt storage is used rather than repaired
 
-* **ID:** f-20261111-80 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261111-80 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** ux
 * **Spotted outside diff:** fifth-sweep quality review (Felix t26u) at HEAD `9f3c70bc7`, persisted-state robustness lens
 * **Where:** `src/state/utils.ts:130-137` (`schemaForDefault`: numbers are only `z.number().finite()`, and a default array of length ≠ 1 becomes `z.array(z.unknown())` with no length or element type). Callers that go through `createPreferenceStorage` instead of a dedicated `createZodStorage` schema: `src/state/atoms.ts:598-603` (`sound-volume`, default 0.8), `:991-996` (`game-opening-book-max-ply`, default 40), `:1018-1023` (`puzzle-ratings`, default `[1000, 1500]`), `:1030-1034` (`coverage-min-games`, default 50), and `:592-596` (`sound-collection`, any string). Consumers apply the hydrated value unclamped: `src/utils/sound.ts:110` (`player.volume = volume`), `src/components/puzzles/Puzzles.tsx:512` and `:933-941` (`tauri.getPuzzle(db, range[0], range[1], …)` into a `u16` pair, and a Mantine `RangeSlider` whose UI domain is 600–2800), `src/components/boards/BoardGame.tsx:653` (`maxPly: Math.max(1, openingBookMaxPly)` into a Rust `usize`).
@@ -23397,6 +23397,14 @@ Handled (drain aaa22b94, 2026-11-11). `rg 'fuse\.js|Fuse\(|from "fuse' src e2e s
 * **Fix:** Give each of these atoms a dedicated `createZodStorage` schema that matches the control that writes it: volume in `[0, 1]`; opening-book max ply a small positive integer (the NumberInput already `Math.max(1, Math.trunc(value))`); puzzle ratings a length-2 tuple of integers in 600–2800 with min ≤ max; coverage min-games a small non-negative integer; sound collection the known set (or a short string allow-list the sound server already accepts). Out-of-range or wrong-shape values should repair to the default, as `fontScaleSchema` does. Add hydration tests for the corrupt examples above.
 * **Proof:** At HEAD `9f3c70bc7`, a `/tmp` script built the same `schemaForDefault` with the repo's `zod` and checked representative values. `schemaForDefault([1000, 1500])` **accepts** `[1000]`, `[]`, `[null, null]`, `["1000", "1500"]`, `[1500, 1000]`, `[1000, 1500, 2000]` and a 10 000-element array, and only rejects a scalar or a `{0,1}` object. `schemaForDefault(0.8)` **accepts** `2`, `-1` and `1e308`. `schemaForDefault(40)` and `schemaForDefault(50)` accept `0`, negatives and `1e16`/`1e308`. No open finding covers these keys; `f-20261008-10` is handled and is only about `font-size`.
 * **Found by:** Grok Bot, quality review (t26u), HEAD `9f3c70bc7`.
+* **Closed 2026-11-12 (drain 5231bc19):** New `src/state/preferenceSchemas.ts` gives the five atoms dedicated `createZodStorage` schemas, each derived from its writer:
+  * sound collection: the eight bundled collections (`SOUND_COLLECTIONS`, also the source of `SoundSelect`'s options);
+  * volume: `[0, 1]`;
+  * opening-book max ply and coverage min games: safe integers ≥ 1;
+  * puzzle ratings: a length-2 tuple of integers in the native u16 range (`PUZZLE_RATING_MIN` / `PUZZLE_RATING_MAX`) with min ≤ max. It is deliberately not bounded to the slider's 600–2800, because progressive mode writes `[rating + 50, rating + 100]`.
+
+  Corrupt values repair to the default through the existing repair path. The `schemaForDefault` comment was corrected. There are 47 hydration tests. Commits 31cf6b1c6, 046a04f9d.
+<!-- ledger-meta {"command":"close","effect_lines":7,"effect_sha256":"117a00b554bb923edfa731d0a007edca8c8e4c69ddc095a621d0d2e3133d65a8","header_sha256":"f2a455b11b5196662ce6086ed858b0c8625475203c709499b617d4b1a7565e39","header_status":"handled","input_sha256":"13f681e17f8d9ef9f35071910b0525708fc1fdeec94ce8acd0455ed988ad7551","kind":"mutation-receipt","operation":"ee55262a1d439df141431ac7036be1e38ee7ba38f9b7845b9e87023dde505cdc","options":{"section":null},"request_id_sha256":null,"results":["f-20261111-80"],"target":"f-20261111-80","v":1} -->
 
 ---
 
