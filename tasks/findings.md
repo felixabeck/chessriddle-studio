@@ -23685,3 +23685,19 @@ Handled (drain aaa22b94, 2026-11-11). `rg 'fuse\.js|Fuse\(|from "fuse' src e2e s
 * **Fix:** Apply the `d-20261102-06` / `GameSignature` absent-marker set before fingerprinting and before `database_player_name` (the `f-20261111-97` fix), and have `PgnGame::write` emit `"?"` for the id-0 / absent White, Black, Event and Site values. Keep a real, non-sentinel player who is literally named something else unchanged. Update `shared_fingerprint_preserves_complete_identity_and_linked_validation` if empty and missing must now compare equal. Add regressions that sentinel export is `[White "?"]` / `[Event "?"]`, and that fingerprints for missing, `"?"`, `""` and `"Unknown"` White are identical.
 * **Proof:** Ephemeral cargo tests on HEAD `83db03669`, removed afterwards (tree clean). `sweep12_export_writes_unknown_sentinel_instead_of_pgn_question_mark` (`PgnGame::write`) emitted `[White "Unknown"]` and `[Event "Unknown"]` and not `"?"`. `sweep12_fingerprint_treats_unknown_markers_as_distinct_identities` showed `semantic_fingerprint` differs for White missing, `"Unknown"`, `"?"` and `""`.
 * **Found by:** Grok Bot, quality review (t26u), HEAD `83db03669`.
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### `catalog_install_publication_confirmation_admitted_tail_keeps_actual_result` fails under full-suite load because it races a 40 ms worker against a 2 s wall-clock timeout
+
+* **ID:** f-20261112-08 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** build run 2026-11-11-coverage-batch-search (Practice coverage batch search), full `cargo test --bins` on worktree HEAD `411082a48` plus unstaged review fixes in `src-tauri/src/db/search.rs` and `src-tauri/src/main.rs`. Neither touches `src-tauri/src/fs.rs`.
+* **Where:** `src-tauri/src/fs.rs` test `fs::tests::catalog_install_publication_confirmation_admitted_tail_keeps_actual_result`, panic at ~3022. The worker sleeps 40 ms after `permit_rx.blocking_recv()`. The test wraps `await_staging_deadline_with_admission` in `tokio::time::timeout(Duration::from_secs(2), …)` and then asserts on the outcome and the `finished` flag.
+* **Defect:** The assertion depends on wall-clock scheduling. While about 3300 tests compete for CPU, the blocking worker can miss the 2 s window, and the outcome no longer matches the expected variant.
+* **Failure scenario:** `pnpm gate:ensure backend-test` (or CI `rust-test`) goes red on an unrelated change, as observed once in this run: `test result: FAILED. 3297 passed; 1 failed`.
+* **Fix:** Synchronise on the worker's completion signal instead of a wall-clock bound (or use paused tokio time for the deadline), so the outcome does not depend on host load.
+* **Proof:** Full suite red once at 2026-11-11 ~17:52 (panic at `src/fs.rs:3022`). The same test passed 3 out of 3 times when run alone right afterwards.
+* **Found by:** Claude Code (Opus 5.5), build run coverage-batch-search, 2026-11-11.
