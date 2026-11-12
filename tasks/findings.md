@@ -24521,3 +24521,19 @@ Deferred follow-up (keep at midnight filing):
 - **Fix:** either convert the stored value when the unit changes and allow decimals (`allowDecimal` with `decimalScale={2}`), or show the exact value (for example `1.5` or `0.5`) instead of rounding. Add a TimeInput test for 30 000 ms shown in minutes.
 - **Proof:** ephemeral Vitest rendering `TimeInput` with fixed `type`: the input read `2` for 90 000 ms in `m`, `1` for 30 000 ms in `m`, `3` for 2500 ms in `s` and `2` for 1500 ms in `s`. Code trace confirms the unit change keeps `value`. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 22)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### The current move in the notation is marked only by colour, with no aria-current for assistive technology
+
+* **ID:** f-20261112-48 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/common/MoveCell.tsx:80-110` (`isCurrentVariation` only changes the `--dark-bg`/`--light-bg` CSS variables on the move `<button>`; no ARIA attribute); `src/components/common/CompleteMoveCell.tsx:113,158-161` (the current state is computed and written only as `data-notation-current` on the wrapper span). `git grep 'aria-'` finds no ARIA attribute in MoveCell.tsx, CompleteMoveCell.tsx or GameNotation.tsx.
+- **Defect:** the notation is the main navigation surface for a game, and each move is a focusable button, but which move is the board's current position is exposed only as a background tint. Neither the button nor its wrapper carries `aria-current` (or `aria-pressed`/`aria-selected`), so screen-reader users browsing the move list cannot tell where they are.
+- **Failure scenario:** with NVDA or Orca, step through a game with the arrow keys and then Tab or browse into the notation: every move announces as a plain "e4 button", and nothing identifies the move the board is showing.
+- **Fix:** pass `aria-current={isCurrentVariation ? "true" : undefined}` (or `"step"`) through MoveCell onto the move button, and add a CompleteMoveCell test asserting it moves with `goToMove`.
+- **Proof:** code trace: `isCurrentVariation` reaches MoveCell only as colour variables (`MoveCell.tsx:65-85,98-107`) and CompleteMoveCell only as `data-notation-current` (`:160`). A grep for `aria-` across the three notation components returns nothing, so no accessible state is emitted. No probe needed; nothing changed in the tree.
+- **Found by:** Grok Bot general review (chunk 22)
