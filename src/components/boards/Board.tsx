@@ -3,17 +3,20 @@ import type { DrawShape } from "@lichess-org/chessground/draw";
 import { Box, Center, Group, Text, useMantineTheme, VisuallyHidden } from "@mantine/core";
 import { ChevronRight } from "lucide-react";
 import {
+  isNormal,
   makeSquare,
   makeUci,
   type NormalMove,
   type Piece,
   parseSquare,
   parseUci,
+  squareRank,
   type SquareName,
 } from "chessops";
 import { chessgroundDests, chessgroundMove } from "chessops/compat";
 import { makeFen, parseFen } from "chessops/fen";
 import { makeSan, parseSan } from "chessops/san";
+import { squareFromCoords } from "chessops/util";
 import { atom, useAtom, useAtomValue } from "jotai";
 import { memo, type MouseEvent, useCallback, useContext, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -388,10 +391,15 @@ function Board({
 
   useHotkeys(keyMap.TOGGLE_EVAL_BAR.keys, () => setEvalOpen((e) => !e), backgroundHotkeyOptions);
 
-  const square = match(currentNode)
-    .with({ san: "O-O" }, ({ halfMoves }) => parseSquare(halfMoves % 2 === 1 ? "g1" : "g8"))
-    .with({ san: "O-O-O" }, ({ halfMoves }) => parseSquare(halfMoves % 2 === 1 ? "c1" : "c8"))
-    .otherwise((node) => node.move?.to);
+  let square = currentNode.move?.to;
+  if (currentNode.move && isNormal(currentNode.move)) {
+    const rank = squareRank(currentNode.move.from);
+    if (currentNode.san?.startsWith("O-O-O")) {
+      square = squareFromCoords(2, rank);
+    } else if (currentNode.san?.startsWith("O-O")) {
+      square = squareFromCoords(6, rank);
+    }
+  }
 
   const lastMove =
     currentNode.move && square !== undefined

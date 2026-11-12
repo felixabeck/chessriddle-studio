@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { TreeStateContext, VariationChooserContext } from "../common/TreeStateContext";
 import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import { createVariationChooserStore } from "@/state/store/variationChooser";
-import { moveInputAtom, showVariationArrowsAtom } from "@/state/atoms";
+import { moveHighlightAtom, moveInputAtom, showVariationArrowsAtom } from "@/state/atoms";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { focusedDialogButton, press as pressKey } from "@/tests/keyboard";
 import Board from "./Board";
@@ -111,6 +111,7 @@ afterEach(async () => {
 async function render(props: Partial<ComponentProps<typeof Board>> = {}, moveInput = false) {
   const atoms = createJotaiStore();
   atoms.set(moveInputAtom, moveInput);
+  atoms.set(moveHighlightAtom, true);
   atoms.set(showVariationArrowsAtom, true);
   const onMove = vi.fn(async () => true);
   const storeMove = vi.spyOn(tree.getState(), "makeMove");
@@ -382,6 +383,21 @@ test("history with variations disabled refuses a legal text move", async () => {
   expect(tree.getState().position).toEqual([0, 0]);
   expect(input.value).toBe("Bc4");
   expect(input.getAttribute("aria-invalid")).toBe("true");
+  expect(input.getAttribute("aria-label")).toBe("MoveInput.EnterMove");
+  const errorId = input.getAttribute("aria-describedby");
+  expect(errorId).toBeTruthy();
+  const error = document.getElementById(errorId!);
+  expect(error?.textContent).toBe("MoveInput.InvalidMove");
+  expect(error?.getAttribute("aria-live")).toBe("polite");
+
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Bc");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(document.getElementById(errorId!)).toBeNull();
+  expect(host.textContent).not.toContain("MoveInput.InvalidMove");
+  expect(input.hasAttribute("aria-describedby")).toBe(false);
+  expect(input.getAttribute("aria-invalid")).toBe("false");
 });
 
 test.each([
@@ -450,6 +466,22 @@ test("a rejected practice move reapplies the position and legal destinations", a
   expect(boardConfig.current.fen).toBe(before.fen);
   expect(boardConfig.current.movable.dests.get("e2")).toContain("e4");
 });
+
+test.each([
+  ["5k2/8/8/8/8/8/8/4K2R w K - 0 1", "O-O", "O-O+", ["e1", "g1"]],
+  ["3k4/8/8/8/8/8/8/R3K3 w Q - 0 1", "O-O-O", "O-O-O+", ["e1", "c1"]],
+  ["4k2r/8/8/8/8/8/8/5K2 b k - 0 1", "O-O", "O-O+", ["e8", "g8"]],
+  ["4k3/8/8/8/8/8/8/4K2R w K - 0 1", "O-O", "O-O", ["e1", "g1"]],
+] as const)(
+  "castling highlights the king destination from %s",
+  async (fen, move, san, lastMove) => {
+    tree.getState().setFen(fen);
+    tree.getState().makeMove({ payload: move });
+    expect(tree.getState().currentNode().san).toBe(san);
+    await render();
+    expect(boardConfig.current.lastMove).toEqual(lastMove);
+  },
+);
 
 test.each([
   ["O-O", "e1h1"],
