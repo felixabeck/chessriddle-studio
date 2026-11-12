@@ -23575,7 +23575,7 @@ Handled (drain aaa22b94, 2026-11-11). `rg 'fuse\.js|Fuse\(|from "fuse' src e2e s
 
 ### PGN panel, analysis-line and error-page CopyButtons still swallow clipboard rejection, unlike the writeClipboardText path that closed f-20261106-38
 
-* **ID:** f-20261111-91 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261111-91 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** ux
 * **Follow-up of:** f-20261106-38
 * **Spotted outside diff:** eighth-sweep quality review (Felix t26u) at HEAD `077c723a2`, fix-verification lens (findings closed since 2026-11-06)
@@ -23585,6 +23585,8 @@ Handled (drain aaa22b94, 2026-11-11). `rg 'fuse\.js|Fuse\(|from "fuse' src e2e s
 * **Fix:** Drive these three copies through `writeClipboardText` (or pass Mantine `error` through and toast it) and show the existing `Board.CopyFailed` message, or a small dedicated key for the error-page diagnostic. Add a rejected-write / missing-API case for at least the PGN-panel button; do not leave `CopyButton` mocked to `null` if that hides the path.
 * **Proof:** Hook and call sites as cited at HEAD `077c723a2`. `rg CopyButton src` hits only these three production files. `writeClipboardText` is used by `tree.ts`, `TreeRecoveryGate.tsx`, and `GamePreview.tsx` only. f-20261106-38's close note names the tree actions and recovery gate, not PgnInput. No `tasks/decisions.md` entry requires leaving Mantine CopyButton unhandled.
 * **Found by:** Grok Bot, quality review (t26u), HEAD `077c723a2`.
+* **Handled 2026-11-12 (drain, lens tier, sliced with f-20261111-71):** A new shared hook, `src/hooks/useClipboardCopy.ts`, replaces all three Mantine `CopyButton`s (PGN panel, expanded analysis line and error-page stack trace). The hook awaits `writeClipboardText`. On success it shows the existing "Copied" state for the timeout. On a missing API or a rejected write it shows a danger notification. A per-attempt identity and a mounted ref block stale updates, and the reset timer is cleared on unmount and replaced on each repeat copy. Messages: `Board.CopyFailed` (existing) for the PGN panel, plus two new keys, `Board.Analysis.CopyLineFailed` and `Error.CopyFailed`, both translated in all 16 catalogues. The error page keeps Mantine's former 1000 ms feedback as `COPIED_FEEDBACK_MS`. `Notifications` is mounted above `RouterProvider` in `App.tsx`, so the toast also appears on the error page. Tests cover the hook (success timing, missing API, rejection) and the PGN-panel and error-page buttons (success and rejection). `PgnInput.test.tsx` no longer mocks `CopyButton` to null. Removing the toast turned four hook and PGN-panel tests red. Commits `55045baaa` and `14af42972`. Rejected alternative: reading Mantine's `useClipboard` `error` at each site. That would keep three separate failure paths instead of the single awaited helper that f-20261106-38 established.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"3b65e22521531f67e80755de7872c97c258838bedafe86fcdd8b7d6caad0edde","header_sha256":"1bd22129e0b07269582e0aac0d96d27dd4cb598e685f398460ea5b34c20cf03c","header_status":"handled","input_sha256":"e943a6a838439840d34c030d4d17abd89d642b8ef1966ce7251186ee2520f113","kind":"mutation-receipt","operation":"c0b7e4da462928038499b38e6768244ac439861ac3ced055966f041d66af62ca","options":{"section":null},"request_id_sha256":null,"results":["f-20261111-91"],"target":"f-20261111-91","v":1} -->
 
 ---
 
