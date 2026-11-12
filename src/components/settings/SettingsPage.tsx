@@ -560,7 +560,7 @@ export default function Page() {
         category: "directories",
         title: t("Settings.Directories.Files"),
         description: t("Settings.Directories.Files.Desc"),
-        keywords: ["files", "directory", "folder", "path"],
+        keywords: ["files", "directory", "folder", "path", "collection", "pgn"],
         render: () => (
           <DirectorySetting
             value={fileWorkspaceDisplayName || null}

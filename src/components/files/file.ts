@@ -5,6 +5,7 @@ import type {
     WorkspaceEntry,
     WorkspaceListing,
 } from "@/bindings";
+import { i18nKey } from "@/utils/i18nKey";
 import {
     capabilityKey,
     fileWorkspaceHandleSchema,
@@ -14,13 +15,13 @@ import {
 const fileTypeSchema = z.enum(["repertoire", "game", "tournament", "puzzle", "other"]);
 export type FileType = z.infer<typeof fileTypeSchema>;
 
-// Literal keys, so the i18n extractor keeps them.
+// The i18nKey marker keeps these keys for the i18n extractor.
 export const FILE_TYPES = [
-    { translationKey: "Files.FileType.Game", value: "game" },
-    { translationKey: "Files.FileType.Repertoire", value: "repertoire" },
-    { translationKey: "Files.FileType.Tournament", value: "tournament" },
-    { translationKey: "Files.FileType.Puzzle", value: "puzzle" },
-    { translationKey: "Files.FileType.Other", value: "other" },
+    { translationKey: i18nKey("Files.FileType.Game"), value: "game" },
+    { translationKey: i18nKey("Files.FileType.Repertoire"), value: "repertoire" },
+    { translationKey: i18nKey("Files.FileType.Tournament"), value: "tournament" },
+    { translationKey: i18nKey("Files.FileType.Puzzle"), value: "puzzle" },
+    { translationKey: i18nKey("Files.FileType.Other"), value: "other" },
 ] as const satisfies readonly { translationKey: string; value: FileType }[];
 
 export const fileInfoMetadataSchema = z.object({

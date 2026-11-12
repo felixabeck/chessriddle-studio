@@ -16,6 +16,7 @@ import {
   type DatabaseRouteTarget,
 } from "@/components/databases/databaseRoute";
 import { useActiveDatabaseViewStore } from "@/state/store/database";
+import { i18nKey } from "@/utils/i18nKey";
 import classes from "./Sidebar.module.css";
 
 type SidebarPath = "/" | "/accounts" | "/library" | "/databases" | "/engines" | "/settings";
@@ -54,14 +55,14 @@ function NavbarLink({ matchPath, target = { to: matchPath }, icon: Icon, label }
 }
 
 const linksdata = [
-  { icon: ChessKnight, labelKey: "SideBar.Board", matchPath: "/" },
-  { icon: User, labelKey: "SideBar.User", matchPath: "/accounts" },
+  { icon: ChessKnight, labelKey: i18nKey("SideBar.Board"), matchPath: "/" },
+  { icon: User, labelKey: i18nKey("SideBar.User"), matchPath: "/accounts" },
   {
     icon: Library,
-    labelKey: "SideBar.Library",
+    labelKey: i18nKey("SideBar.Library"),
     matchPath: "/library",
   },
-  { icon: Brain, labelKey: "SideBar.Engines", matchPath: "/engines" },
+  { icon: Brain, labelKey: i18nKey("SideBar.Engines"), matchPath: "/engines" },
 ] as const;
 
 export function SideBar({ onSendFeedback }: { onSendFeedback: () => void }) {

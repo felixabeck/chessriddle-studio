@@ -20,6 +20,7 @@ export default defineConfig({
         "de-DE",
     ],
     extract: {
+        functions: ["t", "*.t", "i18nKey"],
         input: ["src/**/*.{ts,tsx}"],
         output: "src/translation/{{language}}.json",
         ignore: ["src/translation/**"],
@@ -31,14 +32,7 @@ export default defineConfig({
         primaryLanguage: "en-US",
         defaultValue: null,
         removeUnusedKeys: true,
-        preservePatterns: [
-            "Files.FileType.*",
-            "SideBar.*",
-            "TimeControl.*",
-            "Annotate.*",
-            "GoMode.*",
-            "Errors.*",
-        ],
+        preservePatterns: ["TimeControl.*", "Annotate.*", "GoMode.*", "Errors.*"],
         sort: true,
     },
     types: {
