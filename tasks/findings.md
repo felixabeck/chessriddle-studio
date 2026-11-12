@@ -24289,7 +24289,7 @@ Handled 2026-11-12 by drain session bdcaf057 (lens tier; lenses correctness, roo
 
 ### Practice Logs show each review's previous due date under "Date" instead of when the review happened
 
-* **ID:** f-20261112-32 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-32 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** ux
 * **Spotted outside diff:** continuous quality review (Felix t26u, resumed pt40u) at origin `5512756fa`, reading the PracticePanel session flow and its modals
 * **Where:** In `src/components/panels/practice/PracticePanel.tsx`, `LogsModal` renders `{formatDate(log.due)}` under the `Common.Date` heading ("Date"). The entries come from `updateCardPerformance` in `src/components/files/opening.ts` as `{ ...log, fen }`, where `log` is ts-fsrs 3.5.1's `ReviewLog`. `src/state/practiceStorage.ts` stores them as opaque `JSON.stringify(mutation.entry)` and keeps every field. In ts-fsrs, `ReviewLog.due` is the card's due date *before* this review, and `ReviewLog.review` is the review timestamp.
@@ -24298,6 +24298,9 @@ Handled 2026-11-12 by drain session bdcaf057 (lens tier; lenses correctness, roo
 * **Fix:** Render `formatDate(log.review)`. Optionally show the old due as a secondary "was due" value. Add a LogsModal render test whose entry has distinct `due` and `review` dates and asserts that the review date is shown.
 * **Proof:** I ran an ephemeral Vitest probe `src/components/files/zzprobe.test.ts` at origin `5512756fa`. It created a card with `createEmptyCard(10 days ago)` and rated it Good via `updateCardPerformance`. The entry had `due` 2026-11-02 (the creation date), and `review` was 2026-11-12, today. The probe was deleted and `git status --short` is clean. Code trace: LogsModal parses `page.entries[].entry` with `JSON.parse` and passes `log.due` straight to `formatDate`. The findings ledger has no entry for this field. f-20260922-03 and f-20261004-23 covered only the move label and the card key.
 * **Found by:** Grok Bot, quality review (t26u/pt40u), origin `5512756fa`.
+
+**Handled 2026-11-12 (drain session a947e652-deb2-4fbd-9635-527cc6a9ed05), commit 642a52e37:** `LogsModal` renders `formatDate(log.review)` under "Date". A PracticePanel test with distinct `due` and `review` dates asserts that the review date is shown and the due date is not. It was red with the fix reverted. No copy changed.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"f37d25e9a3c7219de251afa0f4f168abebd66915bd9dce57a7fa3b6f8fa77270","header_sha256":"db247206d9f5ffd90a57c7882e24c97066b0900a1098851cd0f71ae4e3f5ba56","header_status":"handled","input_sha256":"31f8bd8a45b0da1ace1f084bb13ca0e17bb047ea5c8ddca7961dbc8ab14e379a","kind":"mutation-receipt","operation":"8be69605aea7065cd1b8b0fd4720f4fd29ea75af4b894f302d8aa3892da58ea6","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-32"],"target":"f-20261112-32","v":1} -->
 
 ---
 
