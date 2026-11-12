@@ -24601,3 +24601,19 @@ Deferred follow-up (keep at midnight filing):
 - **Fix:** give the name field a label (for example `t("Board.Opponent.Name")`, prefixed with the side) and let TimeInput accept `label`/`aria-label` for both its NumberInput and unit Select (for example "Time", "Time unit"), passed from OpponentForm with the player's colour. Add an OpponentForm test that queries the fields by label.
 - **Proof:** ephemeral Vitest rendering the real OpponentForm in MantineProvider (EnginesSelect mocked), human opponent with a 3+2 clock: all five non-radio inputs (`Felix`, `3`, `m`, `2`, `s`) had null `aria-label`, null `aria-labelledby`, empty title and placeholder, and `labels.length === 0`. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 23)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### The engine core picker offers only powers of two, so a 6-, 12- or 24-thread CPU can never use all its threads
+
+* **ID:** f-20261112-53 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/panels/analysis/CoresSlider.tsx:9-12` (`Array.from({ length: Math.log2(navigator.hardwareConcurrency) + 1 }, (_, i) => 2 ** i)`), the only Threads control in the app (`EngineSettingsForm.tsx:86-100`; `Threads` is a required setting kept out of the generic option list, `src/utils/engines.ts:18`)
+- **Defect:** the option list is 1, 2, 4, … up to the largest power of two not above the logical-core count. On machines whose thread count is not a power of two, which is most current desktop CPUs (6, 12, 20, 24 threads), the highest offered value is well below the available threads. The engine cannot be set to use the whole CPU from ChessRiddle Studio.
+- **Failure scenario:** on a Ryzen 5 / Core i5 with 12 logical threads, open the engine settings: the core choices are 1, 2, 4 and 8, so analysis runs on at most 8 of the 12 threads (two-thirds of the machine).
+- **Fix:** include `navigator.hardwareConcurrency` itself as the last option (keeping the power-of-two steps below it), or use a slider/NumberInput clamped to 1..hardwareConcurrency. Add a CoresSlider test for 12 threads.
+- **Proof:** ephemeral Vitest rendering CoresSlider with `navigator.hardwareConcurrency` stubbed: 6 → `["1","2","4"]`, 12 → `["1","2","4","8"]`, 24 → `["1","2","4","8","16"]`. Probe removed, tree clean.
+- **Found by:** Grok Bot general review (chunk 23)
