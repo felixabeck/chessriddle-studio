@@ -24585,3 +24585,19 @@ Deferred follow-up (keep at midnight filing):
 - **Fix:** give each field an `aria-label` from i18n (White, Black, White Elo, Black Elo, Event, Site, Date, Round), reusing existing keys where they exist, and extend GameInfo.test.tsx to query the fields by label.
 - **Proof:** ephemeral Vitest on the GameInfo.test.tsx harness listed every rendered input: Event, White, Site, Date, Black and both Elo inputs had `aria-label=null` and `labels.length === 0`, with placeholders `GameInfo.UnknownEvent`, `?`, `GameInfo.UnknownSite`, `????.??.??`, `?` and `GameInfo.UnknownElo` (twice). Only the Result select had a label. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 23)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Play-setup opponent fields are unnamed: the human name, time, increment and unit inputs have no accessible label
+
+* **ID:** f-20261112-52 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/boards/OpponentForm.tsx:68-73` (human-name `TextInput` with no `label`, `aria-label` or placeholder) and `:122-183` (Time / Increment `InputWrapper label=…` wrapping `TimeInput`, which is not associated with the inner input); `src/components/common/TimeInput.tsx:39-62` (the `NumberInput` and its unit `Select` take no label prop). `BoardGame.tsx:1378-1390` renders two of these forms side by side (one per colour), so the unlabelled fields appear twice.
+- **Defect:** none of the editable fields in an OpponentForm exposes an accessible name. The visible "Time" and "Increment" captions come from `InputWrapper`, whose `<label for>` points at its own generated id, not at the NumberInput rendered inside TimeInput. The human-name field has no caption at all, and the unit selects ("m", "s") are unnamed comboboxes. Screen-reader users setting up a game hear a series of bare "edit text" fields, with no indication of which player or setting each belongs to.
+- **Failure scenario:** in Play, with a screen reader, Tab through the setup: the opponent name announces as "edit text, Felix", the clock as "edit text, 3", then an unnamed "m" combobox, the increment as "edit text, 2" and an unnamed "s" combobox, all repeated for the other side.
+- **Fix:** give the name field a label (for example `t("Board.Opponent.Name")`, prefixed with the side) and let TimeInput accept `label`/`aria-label` for both its NumberInput and unit Select (for example "Time", "Time unit"), passed from OpponentForm with the player's colour. Add an OpponentForm test that queries the fields by label.
+- **Proof:** ephemeral Vitest rendering the real OpponentForm in MantineProvider (EnginesSelect mocked), human opponent with a 3+2 clock: all five non-radio inputs (`Felix`, `3`, `m`, `2`, `s`) had null `aria-label`, null `aria-labelledby`, empty title and placeholder, and `labels.length === 0`. Probe removed, tree clean.
+- **Found by:** Grok Bot general review (chunk 23)
