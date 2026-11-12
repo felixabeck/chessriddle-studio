@@ -50,6 +50,7 @@
         "src/bootstrap.tsx",
         "src/i18n.ts",
         "src/index.tsx",
+        "src/utils/i18nKey.ts",
         "src/utils/nativeContextMenu.ts"
       ]
     },
