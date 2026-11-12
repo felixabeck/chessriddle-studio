@@ -24305,7 +24305,7 @@ Handled 2026-11-12 by drain session bdcaf057 (lens tier; lenses correctness, roo
 
 ### A debounced practice sync that fails after a newer write finishes leaves the deck "ready" while every later write is refused
 
-* **ID:** f-20261112-33 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-33 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** continuous quality review (Felix t26u, resumed pt40u) at origin `5512756fa`, reading the practice deck atom after the PracticePanel session flow
 * **Where:** In `src/state/practiceStorage.ts` `createPracticeDeckAtom`, a `sync` mutation takes `sequence = ++controller.requestSequence` (about :1384) and is enqueued only when its `PRACTICE_SYNC_DEBOUNCE_MS` timer fires (:1424-1429). A `rating`/`acknowledge` set in that window takes a newer sequence, is enqueued immediately and finishes first. When the debounced sync's `enqueueWrite` then fails, it sets `controller.writeBlocked = true` (:1146). `observeWrite`'s error branch (:1276-1305) reports the toast but returns early because `sequence !== controller.requestSequence`, so `stateAtom` is never set to `write-blocked`. Every later write takes the `controller.writeBlocked` early return (:1351-1354), which only calls `reportWriteFailure(queuedWriteNotSaved())` and never updates the state either.
@@ -24316,6 +24316,9 @@ Handled 2026-11-12 by drain session bdcaf057 (lens tier; lenses correctness, roo
 * **Found by:** Grok Bot, quality review (t26u/pt40u), origin `5512756fa`.
 * **Line-reference correction (Grok Bot, same session):** at origin `5512756fa` the exact lines are `:1380` (sync `sequence = ++controller.requestSequence`), `:1143` (`controller.writeBlocked = true` in `enqueueWrite`), `:1264-1306` (`observeWrite`) and `:1348-1351` (the `controller.writeBlocked` early return). Behaviour and proof unchanged.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"d6689c7f0077bbeaccfe6039745210043699363c5b48056d4347ea88c626a6ca","input_sha256":"f650f45219efecaf345d8c5549d84767f2d897705eba82122b4e3d75a92563ec","kind":"mutation-receipt","operation":"0cbdfca8da11d25276d43cd9f80e5e111af8a64130ea2efe23b06c007925c5df","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-33"],"target":"f-20261112-33","v":1} -->
+
+**Handled 2026-11-12 (drain session a947e652-deb2-4fbd-9635-527cc6a9ed05), commit ba9f5d82a:** the stale-sequence branch of `observeWrite` now publishes `writeFailureState(visible, error)` when the controller is mounted, the error is not a `PracticeWriteDroppedError`, `controller.writeBlocked` is set and the visible deck is still `ready`. A still-pending newer write is left alone, because its own failure publishes. Regression in `practiceStorage.test.ts` with the exact reorder from the finding: a sync, then an awaited successful rating, then the debounce firing with a native `io` rejection. The deck ends `write-blocked`, and the test was red with the fix reverted.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"597fa03e19482f11e2a193834bec650a64dba5482b5703241ac7da4c83927095","header_sha256":"0691dc8ad2e221bdcb4f288a0623af9dcb13259dc8b396497db0b229f4ca6d9b","header_status":"handled","input_sha256":"3811b2318f11737f07dbd1786a41a0e4ea9b706a7a99a4177b51c9879cf58746","kind":"mutation-receipt","operation":"dcb67aa79201c467a6accb01528304ef0ff4f2b47116ac4b8551cebf0ec97291","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-33"],"target":"f-20261112-33","v":1} -->
 
 ---
 
