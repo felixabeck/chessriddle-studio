@@ -24706,3 +24706,19 @@ Deferred follow-up (keep at midnight filing):
 
 Correction to the Failure scenario example: the `!?` button's accessible name is the translated `Annotate.Interesting` ("Interesting" in en), so it announces as "Interesting, button", not "Interesting move, button". The count of 25 toggles is verified (BASIC 6 + ADVANTAGE 8 + EXTRA 11, `AnnotationPanel.tsx:41-43`). The IconAction refs are `pressed?` at `:19`, destructured at `:27`, and `aria-pressed={pressed}` at `:37`.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"8ce647f7dc69f39b2c1bd8e48340639bb874b750d41fb41f4f4663a000860142","input_sha256":"622bc6379de552fd5ccfea95c4b74890e940bdd5e643a819b38f837d1df89d9f","kind":"mutation-receipt","operation":"0216b82fadd2f80e04dc4b00bc533f53f15395d60fb0f2e6758116a142204c32","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-58"],"target":"f-20261112-58","v":1} -->
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Explorer Stats rows play their move only on mouse click; keyboard users cannot play an explorer move
+
+* **ID:** f-20261112-59 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/panels/database/OpeningsTable.tsx:116`: the only activation path is mantine-datatable `onRowClick={({ record }) => makeMove({ payload: record.move })}`. There are no `customRowAttributes`, `tabIndex` or key handler, and no cell renders a focusable control (`:57-111` render plain `Text`/`Progress`).
+- **Defect:** the explorer's Stats tab is a list of playable moves, but the rows cannot take focus, so there is no keyboard route to play a move from it. This is the same gap as the sibling Games tab (f-20261112-57), with a different action (`makeMove`, not game open), so it needs its own fix. f-20261112-38 (same file) covers only i18n.
+- **Failure scenario:** open the analysis panel's Database → Stats tab for a position with explorer moves and Tab through it: focus never lands on a move row, and Enter/Space cannot play `e4`/`d4`. Only a mouse click plays it.
+- **Fix:** give each non-"Total" row `tabIndex: 0`, a move-describing `aria-label` and an Enter/Space handler via `customRowAttributes` (or render the move cell as a button). Exclude the "Total" sum row, which today silently no-ops on click because `parseSan(pos, "Total")` fails (`src/state/store/tree.ts:513-515`). Add a keyboard-activation test.
+- **Proof:** same harness as f-20261112-57: an ephemeral Vitest render of the real mantine-datatable `DataTable` with `onRowClick` showed the `<tr>` has no `tabindex` (`tabIndex === -1`) and no focusable descendant, and Enter on it does nothing. Here OpeningsTable's cells are plain `Text`/`Progress` (`:57-111`), so the row has no other focus target. Trace on origin/master d30eb171f.
+- **Found by:** Grok Bot general review (chunk 26)
