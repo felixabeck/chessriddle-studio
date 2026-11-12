@@ -94,9 +94,20 @@ vi.mock("./DateRangeTabs", () => ({
     AllTime: "all",
   },
   default: ({ onTimeRangeChange }: { onTimeRangeChange: (value: string | null) => void }) => (
-    <button data-testid="select-seven-days" onClick={() => onTimeRangeChange("7d")}>
-      Seven days
-    </button>
+    <>
+      <button data-testid="select-seven-days" onClick={() => onTimeRangeChange("7d")}>
+        Seven days
+      </button>
+      <button data-testid="select-thirty-days" onClick={() => onTimeRangeChange("30d")}>
+        30d
+      </button>
+      <button data-testid="select-ninety-days" onClick={() => onTimeRangeChange("90d")}>
+        90d
+      </button>
+      <button data-testid="select-one-year" onClick={() => onTimeRangeChange("1y")}>
+        1y
+      </button>
+    </>
   ),
 }));
 vi.mock("./TimeRangeSlider", () => ({
@@ -591,30 +602,57 @@ describe.each(["Europe/Berlin", "America/New_York"])("Ratings timeline in %s", (
   });
 });
 
-test("Ratings Seven Days includes the boundary day across Berlin's autumn DST change", async () => {
-  vi.stubEnv("TZ", "Europe/Berlin");
-  try {
-    vi.setSystemTime(new Date("2026-10-30T12:00:00Z"));
-    expect(new Date(2026, 9, 23).getTimezoneOffset()).toBe(-120);
-    expect(new Date(2026, 9, 30).getTimezoneOffset()).toBe(-60);
+test.each([
+  // Each boundary midnight is CEST while today's is CET (Berlin DST ended 2025-10-26 03:00
+  // and 2026-10-25 03:00), so fixed 24-hour arithmetic would exclude the boundary day.
+  {
+    name: "Seven Days",
+    button: "select-seven-days",
+    now: "2026-10-30",
+    boundaryDate: "2026.10.23",
+  },
+  {
+    name: "Thirty Days",
+    button: "select-thirty-days",
+    now: "2026-10-30",
+    boundaryDate: "2026.09.30",
+  },
+  {
+    name: "Ninety Days",
+    button: "select-ninety-days",
+    now: "2026-10-30",
+    boundaryDate: "2026.08.01",
+  },
+  { name: "One Year", button: "select-one-year", now: "2026-10-26", boundaryDate: "2025.10.26" },
+])(
+  "Ratings $name includes the boundary day across Berlin's autumn DST change",
+  async ({ button, now, boundaryDate }) => {
+    vi.stubEnv("TZ", "Europe/Berlin");
+    try {
+      vi.setSystemTime(new Date(`${now}T12:00:00Z`));
+      const boundary = dayjs(boundaryDate, "YYYY.MM.DD", true).toDate();
+      expect(boundary.getTimezoneOffset()).toBe(-120);
+      expect(dayjs().startOf("day").toDate().getTimezoneOffset()).toBe(-60);
+      const earlierDay = dayjs().subtract(1, "day").format("YYYY.MM.DD");
 
-    await render(
-      <RatingsPanel
-        playerName="Magnus"
-        info={ratingStatisticsForDates(["2026.10.23", "2026.10.29"])}
-        isDatabase
-      />,
-    );
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>("[data-testid='select-seven-days']")!.click();
-    });
+      await render(
+        <RatingsPanel
+          playerName="Magnus"
+          info={ratingStatisticsForDates([boundaryDate, earlierDay])}
+          isDatabase
+        />,
+      );
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>(`[data-testid='${button}']`)!.click();
+      });
 
-    expect(container.textContent).toContain("2 Common.Games");
-    expect(container.querySelector("[data-testid='rating-data']")?.textContent).toBe("1800|1900");
-  } finally {
-    vi.unstubAllEnvs();
-  }
-});
+      expect(container.textContent).toContain("2 Common.Games");
+      expect(container.querySelector("[data-testid='rating-data']")?.textContent).toBe("1800|1900");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  },
+);
 
 test("Ratings excludes out-of-range days from the summary and rating series", async () => {
   await render(<RatingsPanel playerName="Magnus" info={duplicatedDailyStatistics} isDatabase />);
