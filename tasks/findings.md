@@ -24639,3 +24639,19 @@ Deferred follow-up (keep at midnight filing):
 
 **Correction (2026-11-12, Grok Bot chunk 24, same session):** in the Proof, "with radios equally unnamed" means the radio `<input>`s carry no `aria-label` of their own. Through their Mantine `<label>`s they are named only by the option value ("1", "2", …), as the Defect says. It does not mean they have no name at all.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"21a2184266532d1d551dd3462b7c405a2626519a65781992a6c8a52209a8bc69","input_sha256":"30ea17f61a0d9da7ed66d26acc6de4f369c854011b06b01773ecf86e75ba2b85","kind":"mutation-receipt","operation":"4e4eaa7be4fd348a0294cc664ddd2acd7c01a76ba4a4b469853076f9bb323cd6","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-54"],"target":"f-20261112-54","v":1} -->
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### The analysis engine picker's checkboxes have no names, so screen-reader users cannot tell which engine they are loading
+
+* **ID:** f-20261112-55 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/panels/analysis/EngineSelection.tsx:13-29`: each `EngineBox` renders a Mantine `Checkbox` with no `label`/`aria-label` (`:17`, `onChange={() => {}}`), and the engine name in a sibling `<Text>` (`:23-25`). The toggle itself lives on the surrounding `Paper`'s `onClick` (`:15`).
+- **Defect:** the only focusable control per engine is the checkbox, and it has no accessible name. The engine name is not associated with it (no `<label>`, `aria-labelledby` or `aria-label`), so every row announces as "checkbox, checked" or "checkbox, not checked".
+- **Failure scenario:** with two or more engines installed, open the analysis panel's engine list with a screen reader and Tab through it: you hear "checkbox, checked", "checkbox, not checked", … and cannot tell Stockfish from Leela before toggling one.
+- **Fix:** render the name as the Checkbox `label` (and move the toggle to the checkbox's `onChange`, dropping the Paper click handler), or add `aria-label={engine.name}`. Add an EngineSelection test querying the checkbox by engine name.
+- **Proof:** ephemeral Vitest rendering EngineSelection with two engines in `enginesAtom` (EnginePortrait, InstallStockfishButton and router Link mocked): both checkbox inputs had null `aria-label` and `aria-labelledby` and `labels.length === 0`. Probe removed, tree clean.
+- **Found by:** Grok Bot general review (chunk 25)
