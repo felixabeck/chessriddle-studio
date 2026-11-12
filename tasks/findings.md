@@ -24437,7 +24437,7 @@ Handled 2026-11-12 by drain session bdcaf057 (lens tier; lenses correctness, roo
 
 ### Player name suggestions return the five lowest-rated (or unrated) matches, so strong players cannot be picked by partial name
 
-* **ID:** f-20261112-41 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-41 · **Status:** handled · **Area:** db-search · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/databases/PlayerSearchInput.tsx:90-103` (`query_players` with `pageSize: 5, sort: "elo", direction: "asc"`), ordered natively by `players::elo.asc()` in `src-tauri/src/db/mod.rs:3294-3297`; used by the explorer player filter, the GameTable filters and Merge players
@@ -24448,6 +24448,9 @@ Handled 2026-11-12 by drain session bdcaf057 (lens tier; lenses correctness, roo
 - **Found by:** Grok Bot general review (chunk 19)
 * **Correction 2026-11-12 (Grok Bot):** in Fix, drop the clause "which is how the Players list ranks relevance". It is not verified, since the Players list defaults to a name sort. The fix is `direction: "desc"` on Elo, or `games` desc as an alternative, and the choice is left to pickup.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"0730f0e081466f44428db0ccf5e3e450d16580f47ffc950a3320c498e6327f33","input_sha256":"630aa7e968db3576e571068e30b7d6998c57541643cf353945ace5684c891618","kind":"mutation-receipt","operation":"e857292a937b6eb56852c8f4bead80750bdd0155d05e6fe169b9103be076f46c","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-41"],"target":"f-20261112-41","v":1} -->
+
+* **Handled 2026-11-12 (drain 04fc1fe3-785d-40da-8d47-1776fef98a8f):** Player suggestions request `sort: elo, direction: desc` (SQLite DESC puts NULL Elo last), so the strongest matches come first; test asserts the request. Commit `f0f6c3b11` (pushed to origin/master). Proof: new Vitest tests (fix-revert red/green for f-20261112-40, -36, -37), lenses correctness/root-cause/tests/code-quality/minimalism APPROVED, `pnpm gates:push -- --frontend` green.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"d39059b269f6aeb11abd67ffb27cdeab4eddf10a5b53e150166ae25734d3eda4","header_sha256":"9594e21923659c7063bd260afa0820ab3b4652b1ca7aa2664cb1198cbf8e2512","header_status":"handled","input_sha256":"5073b18edd1dc6fb397a878a28d6bbbd2e9f8462656c07832be5fa9ed0f269eb","kind":"mutation-receipt","operation":"c8effca382eac3bd4c653465db35d5c5c1c6d747bc91bfea7a1974436edb3414","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-41"],"target":"f-20261112-41","v":1} -->
 
 ---
 
