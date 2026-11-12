@@ -24738,3 +24738,19 @@ Correction to the Failure scenario example: the `!?` button's accessible name is
 - **Fix:** pass `label={t("Board.Database.Local.Result")}` to the Select (dropping the duplicate Text) or `aria-label`, and give the RangeSlider `thumbFromLabel`/`thumbToLabel` (e.g. minimum/maximum Elo via i18n keys). Optionally name the Color/Position SegmentedControl groups too. Add an accessible-name assertion to the panel test.
 - **Proof:** ephemeral Vitest rendering Mantine `Select` and `RangeSlider` with the same props as `:150-170`/`:181-197`: the Select input had no `aria-label`/`aria-labelledby`, no `<label for>` and an empty placeholder, and both `role="slider"` thumbs had no `aria-label`/`aria-labelledby` (valuenow 0 and 3000). The panel passes no naming props (trace on origin/master d30eb171f). Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 26)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### The Annotate tab's comment editor is an unnamed textbox, and its navigation hint is not tied to it
+
+* **ID:** f-20261112-61 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/panels/annotation/AnnotationEditor.tsx:92-150`: `useEditor` gets no `editorProps.attributes`, so the ProseMirror element has no `aria-label`/`aria-labelledby`/`aria-multiline`. `:128` provides the placeholder only via the Placeholder extension (a CSS `data-placeholder` on the empty paragraph). `:231-239`: the focused-only navigation hint `<Text>` has no id and is not referenced by `aria-describedby`.
+- **Defect:** Tiptap renders the comment area as `role="textbox"`, `contenteditable`, `tabindex=0`, with no accessible name. This is the main input of the Annotate tab, where the move's comment is written, yet a screen reader announces it as just "edit text". The editor-specific shortcuts (next/previous move, Esc to leave) are shown visually but not announced. f-20261013-02 and f-20261106-31 (same file) are about Markdown round-trip and undo, not naming.
+- **Failure scenario:** with a screen reader, open the Annotate tab and Tab past the formatting toolbar into the comment field: it announces as an unnamed textbox, with no "comment" label and no mention of the move-navigation keys displayed beneath it.
+- **Fix:** add `editorProps: { attributes: { "aria-label": t(…comment label…), "aria-multiline": "true", "aria-describedby": hintId } }` (hint id via `useId`; render the hint with that id, or keep it in the DOM visually hidden when not focused). Reuse or add an i18n key such as `Board.Annotate.Comment`. Extend AnnotationEditor.test.tsx with a name assertion.
+- **Proof:** ephemeral Vitest using AnnotationEditor.test.tsx's own `mount("")` harness (real tiptap): the `.tiptap` element's attributes were exactly `class`, `contenteditable="true"`, `role="textbox"`, `tabindex="0"` and `translate="no"`, with no `aria-label`/`aria-labelledby`/`aria-describedby`, and no labelled ancestor. Probe removed, tree clean.
+- **Found by:** Grok Bot general review (chunk 26)
