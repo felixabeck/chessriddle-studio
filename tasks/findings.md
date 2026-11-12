@@ -24904,3 +24904,19 @@ Line-reference correction: in `src/components/common/IconAction.tsx`, the extra 
 * **Fix:** hold `useGameOpen` for this card (`activate` around `openDatabaseGame` + `runTabCreation`), route both the row double-click and the Open button through `gameOpen.activate`, and render the button through `OpenGameButton`/`pending={gameOpen.pending}` like GameCard/FileCard.
 * **Proof:** ephemeral probe built from `PlayerOpeningTree.test.tsx`'s harness (removed afterwards, tree clean): `openDatabaseGame` mocked to a held promise; select the first game, click "Open on board", click it again, then dispatch `dblclick` on the row → `openDatabaseGame` called **3** times before the first resolved; the button had neither `disabled` nor `data-loading`.
 * **Found by:** Grok Bot general review (chunk 28)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Annotate refuses to save a comment whose line break is followed by "1. e4", "- ", "# " or "---"
+
+* **ID:** f-20261112-71 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** yes (general review, origin/master d30eb171f)
+* **Where:** `src/utils/commentSerializer.ts:142-164` (`literal` writes a hard break as `"  \n"` and escapes only inline specials, never a block marker at the start of the following line); the refusal is `compareCommentDocument` (`:259-281`) as used by `src/components/panels/annotation/AnnotationEditor.tsx:140-146`; the parsers are `src/utils/commentMarkdown.ts` (block tokenizers disabled, but marked's paragraph rule still ends a paragraph at a line that would start an ordered or bullet list, ATX heading or thematic break) and `parseNotationComment` (`src/utils/commentNotation.ts`).
+* **Defect:** a paragraph containing a hard break (Shift+Enter) followed by a line that starts with an interrupting block marker serializes to `Line  \n1. e4 …`. Both reparse adapters read that back as two paragraphs, not one paragraph with a hard break, so the round-trip check fails and the edit is refused. Related, distinct: f-20261013-02 (handled) covered literal inline delimiters and merged links, and d-20261013-09 keeps block markers as literal text but does not cover a marker after a soft break.
+* **Failure scenario:** in Annotate, type `Main idea`, press Shift+Enter, then type `1. e4 e5 2. Nf3`, a very common chess comment shape. The alert "This annotation was not saved…" appears and the stored comment stays `Main idea`. Everything typed after the break is lost when the user leaves the move. The same happens for `- a`, `# h`, `---` and `- - -` after a break. The same text without a preceding break saves fine.
+* **Fix:** in `literal`, when a character starts a line after a hard break, escape a marker that would interrupt a paragraph (`1\.`/`1\)` for an ordered-list start of 1, `\-`/`\+`/`\*` followed by a space or a thematic-break run, `\#`). Alternatively, make both parsers keep such a line inside the paragraph. Add the five inputs above to the `commentSerializer` round-trip tests.
+* **Proof:** (1) Ephemeral serializer probe using `commentSerializer.test.ts`'s `reparse` and `parseNotationComment`: `Line↵---`, `Line↵- a`, `Line↵# h`, `Line↵1. e4`, `Line↵- - -` → `saved: false` for both adapters. The same markers without a preceding break (`1. e4 e5 is best`, `- note`, `# Heading idea`, `---`) and `Line↵===`/`Line↵> q`/`Line↵***` save. (2) `createCommentMarkdown().lexer("Main idea  \n1. e4 e5 2. Nf3")` → two `paragraph` tokens, and `parseNotationComment` likewise returns two paragraphs. (3) Real-editor probe built from `AnnotationEditor.test.tsx`'s harness: `insertContent("Main idea")`, `setHardBreak()`, `insertContent("1. e4 e5 2. Nf3")` → alert `Board.Annotate.SaveFailed`, stored comment `Main idea`. All probes were removed and the tree is clean.
+* **Found by:** Grok Bot general review (chunk 29)
