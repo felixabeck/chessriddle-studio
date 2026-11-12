@@ -23995,7 +23995,7 @@ Handled in 1ab8c70cc. `load_themes_for_puzzle` now shares `themes_query_error` w
 
 ### Castling that gives check or mate highlights the rook's square, not the king's destination, as the last move
 
-* **ID:** f-20261112-14 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-14 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** general review chunk (Felix t40u) at HEAD `8927ceb72` (file identical on origin/master `ba81d9264`), board move-handling line-by-line pass
 * **Where:** `src/components/boards/Board.tsx` ~370-377: the last-move destination is `match(currentNode).with({ san: "O-O" }, … "g1"/"g8").with({ san: "O-O-O" }, … "c1"/"c8").otherwise((node) => node.move?.to)`. chessops encodes castling as king-to-rook (`move.to` = h1/a1, or the rook's file in Chess960) and `makeSan` appends `+`/`#`. Only the exact strings `O-O` and `O-O-O` are mapped, so `O-O+`, `O-O#`, `O-O-O+`, `O-O-O#` fall through to `node.move.to`. The result feeds Chessground `lastMove` (~692).
@@ -24004,6 +24004,9 @@ Handled in 1ab8c70cc. `load_themes_for_puzzle` now shares `themes_query_error` w
 * **Fix:** Detect castling from the move and position, not the SAN text, e.g. `san.startsWith("O-O-O")` / `san.startsWith("O-O")` at minimum, or better, derive it from the node's move (king moving onto its own rook) and use the castling target squares. Add a `Board.test.tsx` case for `O-O+` and `O-O-O#` asserting `lastMove` ends on g1/c1.
 * **Proof:** Probe `/tmp/gb-review-20261112/castle_check.mjs` run on atlas with the repo's chessops: from `5k2/8/8/8/8/8/8/4K2R w K - 0 1`, `parseSan("O-O")` then `makeSan` gives `san: O-O+` and `move.to: h1`. Neither string equals `"O-O"`, so the `.with({ san: "O-O" })` arm cannot match and `otherwise` returns h1. `rg '"O-O"' src` shows no other normalisation on this path.
 * **Found by:** Grok Bot, general review (t40u), HEAD `8927ceb72`.
+
+Handled in `8d4c9c216` and `920a91f87` (pushed to master). `Board.tsx` now detects castling by SAN prefix (`O-O-O` before `O-O`), so `+` and `#` suffixes no longer fall through to the rook square. The king destination comes from chessops `kingCastlesTo`, with the colour taken from the rank of the king's origin square (this also covers Chess960, where `move.to` is the rook square). `Board.test.tsx` covers O-O+, O-O-O+, O-O#, O-O-O#, Black O-O+ and plain O-O. Fix-revert proof: reverting the Board.tsx hunk turned the suffix rows red (h1/a1/h8). Rejected alternative: deriving castling from the parent position with `castlingSide`. It needs the parent node's position, while the SAN that `makeSan` stores is already canonical. Review: correctness, root-cause, chess-semantics, tests, code-quality and minimalism lenses approved after one repair round.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"fa155f15a4ddaf69f8b318764a3e8b2214dae362b847fe209d911f781fe9f73a","header_sha256":"7aab93cc6e8a76a590948e54ff872ef77a860e6973882212a1cbae4f30a5ab1e","header_status":"handled","input_sha256":"24515ebc80a46000192f0254bb23f6bbb6ffc2b72b20a486fa1a050be6dc3397","kind":"mutation-receipt","operation":"ff7c63260a7715a0870ed7be140ba04e20db6eb0f09edfa47c1528a42cf0037e","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-14"],"target":"f-20261112-14","v":1} -->
 
 ---
 
