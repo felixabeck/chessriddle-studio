@@ -568,6 +568,7 @@ pub(super) fn date_interval_endpoint_sql(
     impl diesel::query_builder::QueryFragment<diesel::sqlite::Sqlite> + Clone + Send,
 > {
     let (month, day) = if latest { ("12", "31") } else { ("01", "01") };
+    // Fragments 0..3 are separated by the month, latest and day binds, in that order.
     let endpoint_sql = |date: &str| {
         [
             format!(
@@ -1622,11 +1623,12 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
                     if date_order {
                         let date = diesel::dsl::sql::<
                             diesel::sql_types::Nullable<diesel::sql_types::Text>,
-                        >(
+                        >(&format!(
                             r#"CASE WHEN "Games"."Date" IS NULL OR "Games"."Date" = ''
                             OR "Games"."Date" LIKE '?%' THEN NULL
-                            ELSE replace("Games"."Date", '?', '0') END"#,
-                        );
+                            ELSE replace({}, '?', '0') END"#,
+                            super::pgn_date::canonical_sql(r#""Games"."Date""#)
+                        ));
                         query.order((date.desc(), games::id.desc())).load(db)
                     } else {
                         query
@@ -5946,6 +5948,56 @@ mod tests {
             .iter()
             .all(|game| game.date.as_deref() == Some("????.??.??")));
         assert!(result.1[1..].windows(2).all(|pair| pair[0].id > pair[1].id));
+    }
+
+    #[test]
+    fn date_sample_order_canonicalizes_unpadded_dates_before_cap_and_return() {
+        let (_dir, app, handle, database) = filter_search_database(&[]);
+        let mut db = SqliteConnection::establish(database.to_str().unwrap()).unwrap();
+        let (filler_ids, [september, october, january_15, january_16], excluded) = db
+            .transaction::<_, Error, _>(|db| {
+                let mut filler_ids = vec![games::table.select(games::id).first::<i32>(db)?];
+                for _ in 0..495 {
+                    filler_ids.push(insert_white_win_e4_e5(db));
+                }
+                diesel::update(games::table)
+                    .set(games::date.eq("2026.02.01"))
+                    .execute(db)?;
+                let mut insert = |date| {
+                    let id = insert_white_win_e4_e5(db);
+                    diesel::update(games::table.find(id))
+                        .set(games::date.eq(date))
+                        .execute(db)?;
+                    Ok::<_, Error>(id)
+                };
+                let dated_ids = [
+                    insert("2026.9.30")?,
+                    insert("2026.10.01")?,
+                    insert("2026.1.15")?,
+                    insert("2026.01.16")?,
+                ];
+                let excluded = insert("2026.1.01")?;
+                Ok((filler_ids, dated_ids, excluded))
+            })
+            .unwrap();
+        let mut query = exact_position_query(STARTING_FEN);
+        query.sample_order = Some(super::super::SampleOrder::Date);
+        let result = run_position_search(&app, &handle, query, "sample-unpadded-cap").unwrap();
+        let retained_ids = result.1.iter().map(|game| game.id).collect::<Vec<_>>();
+        assert_eq!(result.0[0].white, 501);
+        assert_eq!(retained_ids.len(), 500);
+        assert!(
+            !retained_ids.contains(&excluded),
+            "unpadded January 1 must not displace a later game at the sample cap"
+        );
+        assert_eq!(&retained_ids[..2], &[october, september]);
+        assert_eq!(&retained_ids[498..], &[january_16, january_15]);
+        let mut expected_ids = vec![october, september];
+        expected_ids.extend(filler_ids.into_iter().rev());
+        expected_ids.extend([january_16, january_15]);
+        assert_eq!(retained_ids, expected_ids);
+        assert_eq!(result.1[1].date.as_deref(), Some("2026.9.30"));
+        assert_eq!(result.1[499].date.as_deref(), Some("2026.1.15"));
     }
 
     #[test]
