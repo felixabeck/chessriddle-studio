@@ -2,8 +2,7 @@ import { tauri, withDownloadTicket } from "@/platform/tauri";
 import { notifications } from "@mantine/notifications";
 import { X } from "lucide-react";
 import { error } from "@/platform/native";
-import { Chess } from "chessops";
-import { ChildNode, defaultGame, makePgn, type PgnNodeData } from "chessops/pgn";
+import { ChildNode, defaultGame, makePgn, type PgnNodeData, startingPosition } from "chessops/pgn";
 import { makeSan } from "chessops/san";
 import { z } from "zod";
 import { type ArtifactPublication, type PathRef } from "@/bindings";
@@ -114,32 +113,41 @@ export async function getChesscomGame(gameURL: string) {
   });
 
   const apiData = JSON.parse(response);
-  const gameData = chessComGameSchema.safeParse(apiData);
-  if (!gameData.success) {
-    error(`Invalid response for Chess.com game: ${gameData.error}`);
+  const showInvalidResponse = () => {
     notifications.show({
       title: t("ChessCom.FetchGameFailed"),
       message: t("ChessCom.InvalidResponse", { value: gameURL }),
       color: "danger",
       icon: <X />,
     });
+  };
+  const gameData = chessComGameSchema.safeParse(apiData);
+  if (!gameData.success) {
+    error(`Invalid response for Chess.com game: ${gameData.error}`);
+    showInvalidResponse();
     return null;
   }
 
   const moveList = gameData.data.game.moveList;
   const pgnHeaders = gameData.data.game.pgnHeaders;
-  const moves = moveList.match(/.{1,2}/g);
-  if (!moves) {
-    return "";
+  const headers = new Map(Object.entries(pgnHeaders).map(([k, v]) => [k, v.toString()]));
+  const start = startingPosition(headers);
+  if (start.isErr) {
+    error(`Invalid starting position for Chess.com game: ${start.error}`);
+    showInvalidResponse();
+    return null;
   }
-  const game = defaultGame<PgnNodeData>(
-    () => new Map(Object.entries(pgnHeaders).map(([k, v]) => [k, v.toString()])),
-  );
-  const chess = Chess.default();
+  const game = defaultGame<PgnNodeData>(() => headers);
+  const chess = start.value;
 
   let lastNode = game.moves;
-  for (const move of moves) {
+  for (const move of moveList.match(/.{1,2}/g) ?? []) {
     const m = decodeTCN(move);
+    if (!chess.isLegal(m)) {
+      error(`Illegal move in Chess.com game: ${move}`);
+      showInvalidResponse();
+      return null;
+    }
     lastNode.children.push(
       new ChildNode({
         san: makeSan(chess, m),
