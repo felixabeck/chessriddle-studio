@@ -1,4 +1,4 @@
-import { Chess } from "chessops";
+import { Chess, parseSquare } from "chessops";
 import { INITIAL_FEN } from "chessops/fen";
 import { describe, expect, test } from "vitest";
 import { hasCaptures, isOp1, positionFromFen, swapMove } from "./chessops";
@@ -30,6 +30,16 @@ describe("hasCaptures", () => {
 
     test("returns false for the quiet starting position", () => {
         expect(hasCaptures(Chess.default())).toBe(false);
+    });
+
+    test("finds a legal en-passant capture onto an empty square", () => {
+        expect(hasCaptures(position("knn5/8/8/3pP3/8/8/8/KNN5 w - d6 0 2"))).toBe(true);
+    });
+
+    test("does not count castling onto the own rook square as a capture", () => {
+        const pos = position("4k3/8/8/8/8/8/8/4K2R w K - 0 1");
+        expect(pos.allDests().get(parseSquare("e1")!)?.has(parseSquare("h1")!)).toBe(true);
+        expect(hasCaptures(pos)).toBe(false);
     });
 });
 

@@ -121,12 +121,12 @@ describe("getChesscomGame", () => {
     });
 
     test("replays a from-position game using its FEN", async () => {
-        const fen = "4k3/8/8/8/8/8/4P3/4K3 w - - 0 1";
-        mockGame("mC", { SetUp: "1", FEN: fen });
+        const fen = "4k3/8/8/8/8/8/8/R3K3 w Q - 0 1";
+        mockGame("a4", { SetUp: "1", FEN: fen });
 
         const { game, sans } = replay(await getChesscomGame(gameURL));
 
-        expect(sans).toEqual(["e4"]);
+        expect(sans).toEqual(["Ra8+"]);
         expect(game.headers.get("FEN")).toBe(fen);
     });
 

@@ -5,6 +5,7 @@ import {
     IllegalSetup,
     type Move,
     type PositionError,
+    opposite,
     parseUci,
     type Setup,
     type Square,
@@ -109,10 +110,12 @@ export function getPiecesCount(pos: Chess) {
 }
 
 export function hasCaptures(pos: Chess) {
-    const dests = pos.allDests();
-    for (const to of dests.values()) {
-        for (const square of to) {
-            if (pos.board.get(square)) {
+    for (const [from, dests] of pos.allDests()) {
+        for (const to of dests) {
+            if (
+                pos.board[opposite(pos.turn)].has(to) ||
+                (pos.board.pawn.has(from) && to === pos.epSquare)
+            ) {
                 return true;
             }
         }

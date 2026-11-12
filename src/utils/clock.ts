@@ -2,23 +2,21 @@ import type { Chess } from "chessops";
 import { match } from "ts-pattern";
 import { type GameHeaders, getNodeAtPath, type TreeNode } from "./treeReducer";
 
-function calculateProgress(
-    root: TreeNode,
-    timeControl: TimeControl | null,
-    clock: number | null,
-    tc: TimeControlField | null,
-) {
+function calculateProgress(root: TreeNode, clock: number | null, tc: TimeControlField | null) {
     if (clock === null) {
         return 0;
     }
-    if (tc || timeControl) {
-        const seconds = tc ? tc.seconds : timeControl?.[0]?.seconds;
-        if (seconds === undefined || !Number.isFinite(seconds)) {
+    if (tc) {
+        const seconds = tc.seconds;
+        if (seconds <= 0 || !Number.isFinite(seconds)) {
             return 0;
         }
         return clock / (seconds / 1000);
     }
     if (root.children.length > 0 && root.children[0].clock !== undefined) {
+        if (root.children[0].clock <= 0) {
+            return 0;
+        }
         return clock / root.children[0].clock;
     }
     return 0;
@@ -84,19 +82,18 @@ export function getClockInfo({
 } {
     const timeControl = headers.time_control ? parseTimeControl(headers.time_control) : null;
 
-    let whiteTc: TimeControlField | null = null;
-    let blackTc: TimeControlField | null = null;
-
-    if (headers.white_time_control) {
-        whiteTc = parseTimeControl(headers.white_time_control)?.[0] ?? null;
-    } else if (timeControl) {
-        whiteTc = timeControl[0];
-    }
-    if (headers.black_time_control) {
-        blackTc = parseTimeControl(headers.black_time_control)?.[0] ?? null;
-    } else if (timeControl) {
-        blackTc = timeControl[0];
-    }
+    const whiteTc =
+        (headers.white_time_control
+            ? parseTimeControl(headers.white_time_control)?.[0]
+            : undefined) ??
+        timeControl?.[0] ??
+        null;
+    const blackTc =
+        (headers.black_time_control
+            ? parseTimeControl(headers.black_time_control)?.[0]
+            : undefined) ??
+        timeControl?.[0] ??
+        null;
 
     let { whiteSeconds, blackSeconds } = match(pos?.turn)
         .with("white", () => ({
@@ -131,11 +128,11 @@ export function getClockInfo({
     return {
         white: {
             value: whiteSeconds,
-            progress: calculateProgress(root, timeControl, whiteSeconds ?? null, whiteTc),
+            progress: calculateProgress(root, whiteSeconds ?? null, whiteTc),
         },
         black: {
             value: blackSeconds,
-            progress: calculateProgress(root, timeControl, blackSeconds ?? null, blackTc),
+            progress: calculateProgress(root, blackSeconds ?? null, blackTc),
         },
     };
 }

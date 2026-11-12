@@ -7,6 +7,7 @@ import { createNode, defaultTree, type GameHeaders } from "./treeReducer";
 function clockAfterE4(
     headers: Partial<GameHeaders>,
     liveTimes: { whiteTime?: number; blackTime?: number } = {},
+    nodeClock = 60_000,
 ) {
     const tree = defaultTree();
     const pos = Chess.default();
@@ -17,7 +18,7 @@ function clockAfterE4(
         move,
         san: "e4",
         halfMoves: 1,
-        clock: 60_000,
+        clock: nodeClock,
     });
     tree.root.children.push(node);
     return getClockInfo({
@@ -44,6 +45,7 @@ describe("getClockInfo", () => {
     test.each([
         { timeControl: undefined, expected: { value: undefined, progress: 0 } },
         { timeControl: "600+5", expected: { value: 600, progress: 1 } },
+        { timeControl: "0+1", expected: { value: 0, progress: 0 } },
     ])("returns start-position defaults for $timeControl", ({ timeControl, expected }) => {
         const tree = defaultTree();
         const info = getClockInfo({
@@ -108,15 +110,34 @@ describe("getClockInfo", () => {
         expect(info.black).toEqual({ value: seconds, progress: 1 });
     });
 
-    test("uses shared progress without initial defaults for unparseable side-specific controls", () => {
+    test("falls back to the shared control for empty side-specific controls", () => {
         const info = clockAfterE4({
             time_control: "600+5",
             white_time_control: "-",
             black_time_control: "*",
         });
         expect(info.white).toEqual({ value: 60, progress: 0.1 });
-        expect(info.black).toEqual({ value: undefined, progress: 0 });
+        expect(info.black).toEqual({ value: 600, progress: 1 });
     });
+
+    test.each(["*", "-"])(
+        "uses the shared control at the start for BlackTimeControl %s",
+        (blackTimeControl) => {
+            const tree = defaultTree();
+            const info = getClockInfo({
+                headers: {
+                    ...tree.headers,
+                    time_control: "600+5",
+                    black_time_control: blackTimeControl,
+                },
+                root: tree.root,
+                currentClock: undefined,
+                pos: Chess.default(),
+                position: [],
+            });
+            expect(info.black).toEqual({ value: 600, progress: 1 });
+        },
+    );
 
     test.each([
         { name: "shared", headers: { time_control: "9".repeat(400) } },
@@ -133,4 +154,23 @@ describe("getClockInfo", () => {
         expect(info.white.progress).toBe(0);
         expect(info.black.progress).toBe(0);
     });
+
+    test.each([0, 1_000])(
+        "returns finite zero progress after e4 for 0+1 with live clock %s",
+        (whiteTime) => {
+            const info = clockAfterE4({ time_control: "0+1" }, { whiteTime });
+            expect(info.white).toEqual({ value: whiteTime / 1000, progress: 0 });
+            expect(info.black).toEqual({ value: 0, progress: 0 });
+            expect(Number.isFinite(info.white.progress)).toBe(true);
+            expect(Number.isFinite(info.black.progress)).toBe(true);
+        },
+    );
+
+    test.each([0, -1_000])(
+        "returns zero progress for non-positive fallback clock %s",
+        (nodeClock) => {
+            const info = clockAfterE4({}, { whiteTime: 1_000 }, nodeClock);
+            expect(info.white).toEqual({ value: 1, progress: 0 });
+        },
+    );
 });
