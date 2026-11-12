@@ -362,7 +362,6 @@
     "Common.Cancel": "Cancelar",
     "Common.CannotUndo": "Esta ação não pode ser anulada.",
     "Common.Checkmate": "Chequemate",
-    "Common.Chessboard": "Tabuleiro de xadrez",
     "Common.Close": "Fechar diálogo",
     "Common.Confirm": "Confirmar",
     "Common.ConfirmationError.applied-despite-error": "Parte da operação foi concluída e o conteúdo apresentado pode já não corresponder ao estado atual.",

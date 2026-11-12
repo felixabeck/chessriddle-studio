@@ -362,7 +362,6 @@
     "Common.Cancel": "Cancelar",
     "Common.CannotUndo": "Esta acción no se puede deshacer.",
     "Common.Checkmate": "Jaque mate",
-    "Common.Chessboard": "Tablero de ajedrez",
     "Common.Close": "Cerrar diálogo",
     "Common.Confirm": "Confirmar",
     "Common.ConfirmationError.applied-despite-error": "Se completó parte de la operación y es posible que lo que se muestra ya no refleje el estado actual.",

@@ -16,7 +16,6 @@ import { useNavigate } from "@tanstack/react-router";
 import { useSWRConfig } from "swr";
 import type { AccountIdentity, CollectionDescriptor, FileWorkspaceHandle } from "@/bindings";
 import type { FileMetadata } from "@/components/files/file";
-export { collectionFiles } from "./libraryData";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { tauri } from "@/platform/tauri";
 import { referenceDbAtom } from "@/state/atoms";

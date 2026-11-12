@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type FileMetadata, fileMetadataSchema } from "@/components/files/file";
+import { fileMetadataSchema } from "@/components/files/file";
 import { databaseHandleSchema, linkedGameLocatorSchema } from "@/utils/pathCapabilities";
 
 const gameOriginSchema = z.discriminatedUnion("kind", [
@@ -36,7 +36,6 @@ export const tabSchema = z.union([
 
 export type GameOrigin = z.infer<typeof gameOriginSchema>;
 export type Tab = z.infer<typeof tabSchema>;
-export type TabFile = FileMetadata;
 
 export function getTabTreeKey(tab: Tab): string {
     return tab.treeKey ?? tab.value;

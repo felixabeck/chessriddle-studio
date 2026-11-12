@@ -1,6 +1,3 @@
-import type React from "react";
-import { useEffect } from "react";
-
 export function isPrefix<T>(shorter: T[], longer: T[]): boolean {
     if (shorter.length > longer.length) {
         return false;
@@ -37,19 +34,6 @@ export function* skipWhile<T>(
         }
     }
 }
-
-export const useThrottledEffect = (
-    callback: () => void,
-    delay: number,
-    deps: React.DependencyList,
-) => {
-    useEffect(() => {
-        const handler = setTimeout(() => callback(), delay);
-
-        return () => clearTimeout(handler);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [...(deps || []), delay]);
-};
 
 export function mean(arr: number[]): number {
     return arr.reduce((a, b) => a + b, 0) / arr.length;

@@ -1,6 +1,5 @@
 import { tauri, withDownloadTicket } from "@/platform/tauri";
 import { logFailureSafely, safeFailureContext } from "@/platform/errors";
-import type { Color } from "@lichess-org/chessground/types";
 import { parseUci } from "chessops";
 import { makeFen } from "chessops/fen";
 import { z } from "zod";
@@ -50,8 +49,6 @@ const tablebaseMoveSchema = z
     category: tablebaseCategorySchema,
   })
   .passthrough();
-
-export type TablebaseMove = z.infer<typeof tablebaseMoveSchema>;
 
 const tablebaseDataSchema = z
   .object({
@@ -391,12 +388,6 @@ export async function getMasterGames(
     "masters",
     getMasterGamesQueryParams(fen, options),
   );
-  return parseNativeJson(result, positionDataSchema) as PositionData;
-}
-
-export async function getPlayerGames(fen: string, player: string, color: Color, handle: string) {
-  const params = new URLSearchParams({ fen, player, color });
-  const result = await tauri.getAuthenticatedLichessExplorer(handle, "player", params.toString());
   return parseNativeJson(result, positionDataSchema) as PositionData;
 }
 

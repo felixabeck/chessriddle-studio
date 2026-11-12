@@ -358,7 +358,6 @@
     "Common.Cancel": "Avbryt",
     "Common.CannotUndo": "Denne handlingen kan ikke angres.",
     "Common.Checkmate": "Sjakkmatt",
-    "Common.Chessboard": "Sjakkbrett",
     "Common.Close": "Lukk dialog",
     "Common.Confirm": "Bekreft",
     "Common.ConfirmationError.applied-despite-error": "En del av operasjonen ble fullført, og visningen stemmer kanskje ikke lenger med gjeldende tilstand.",

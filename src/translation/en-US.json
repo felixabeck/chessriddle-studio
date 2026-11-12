@@ -358,7 +358,6 @@
     "Common.Cancel": "Cancel",
     "Common.CannotUndo": "This action cannot be undone.",
     "Common.Checkmate": "Checkmate",
-    "Common.Chessboard": "Chessboard",
     "Common.Close": "Close dialog",
     "Common.Confirm": "Confirm",
     "Common.ConfirmationError.applied-despite-error": "Part of the operation was completed, and what is shown may no longer match.",

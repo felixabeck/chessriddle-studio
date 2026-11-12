@@ -38,12 +38,6 @@ export interface BestMoves {
     nps: number;
 }
 
-export interface MoveAnalysis {
-    best: BestMoves[];
-    novelty: boolean;
-    is_sacrifice: boolean;
-}
-
 // copied from chessops
 export const makeClk = (seconds: number): string => {
     let s = Math.max(0, seconds);
@@ -55,6 +49,10 @@ export const makeClk = (seconds: number): string => {
         maximumFractionDigits: 3,
     })}`;
 };
+
+function safeComment(text: string): string {
+    return text.replace(/\}/g, "");
+}
 
 export function getMoveText(
     tree: TreeNode,
@@ -70,9 +68,10 @@ export function getMoveText(
     const moveNumber = Math.ceil(tree.halfMoves / 2);
     let moveText = "";
 
-    // Verbatim: it may hold commands as well as prose, and neither is modeled on the tree.
+    // Verbatim except for closing braces, which PGN comments cannot contain: it may hold
+    // commands as well as prose, and neither is modeled on the tree.
     if (tree.startingComment && opt.comments) {
-        moveText += `{${tree.startingComment}} `;
+        moveText += `{${safeComment(tree.startingComment)}} `;
     }
 
     if (tree.san) {
@@ -117,11 +116,11 @@ export function getMoveText(
         // They were part of the comment text before the tree modeled them, so they travel with the
         // comments: an "Update" from a PGN shown without extra markups must not drop them.
         if (opt.comments && tree.commands) {
-            content += `${tree.commands} `;
+            content += `${safeComment(tree.commands)} `;
         }
 
         if (opt.comments && tree.comment !== "") {
-            content += tree.comment;
+            content += safeComment(tree.comment);
         }
         content += "} ";
 

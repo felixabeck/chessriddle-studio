@@ -354,7 +354,6 @@
     "Common.Cancel": "取消",
     "Common.CannotUndo": "此操作无法撤销。",
     "Common.Checkmate": "将杀",
-    "Common.Chessboard": "棋盘",
     "Common.Close": "关闭对话框",
     "Common.Confirm": "确认",
     "Common.ConfirmationError.applied-despite-error": "部分操作已完成，显示的内容可能与当前状态不再一致。",

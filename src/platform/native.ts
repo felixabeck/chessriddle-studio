@@ -4,7 +4,7 @@ export { Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/men
 export { getCurrentWebviewWindow, type WebviewWindow } from "@tauri-apps/api/webviewWindow";
 export { getCurrentWindow } from "@tauri-apps/api/window";
 export { getMatches } from "@tauri-apps/plugin-cli";
-export { ask, message } from "@tauri-apps/plugin-dialog";
+export { ask } from "@tauri-apps/plugin-dialog";
 export { error, info, warn } from "@tauri-apps/plugin-log";
 export {
     arch,

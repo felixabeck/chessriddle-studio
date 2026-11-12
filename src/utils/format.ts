@@ -46,37 +46,9 @@ export function formatBytes(bytes: bigint | number | string, decimals = 2) {
     return `${Number.parseFloat((value / k ** i).toFixed(dm))} ${sizes[i]}`;
 }
 
-export function formatDuration(ms: number): string {
-    const seconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    const days = Math.floor(hours / 24);
-    const secondsRemainder = seconds % 60;
-    const minutesRemainder = minutes % 60;
-    const hoursRemainder = hours % 24;
-    const parts = [];
-    if (days > 0) {
-        parts.push(`${days} day${days !== 1 ? "s" : ""}`);
-    }
-    if (hoursRemainder > 0) {
-        parts.push(`${hoursRemainder} hour${hoursRemainder !== 1 ? "s" : ""}`);
-    }
-    if (minutesRemainder > 0) {
-        parts.push(`${minutesRemainder} minute${minutesRemainder !== 1 ? "s" : ""}`);
-    }
-    if (secondsRemainder > 0) {
-        parts.push(`${secondsRemainder} second${secondsRemainder !== 1 ? "s" : ""}`);
-    }
-    return parts.join(", ");
-}
-
 /** "12." before a White move, "12..." before a Black one; `halfMoves` is the ply the move completes. */
 export function formatMoveNumber(halfMoves: number): string {
     return `${Math.ceil(halfMoves / 2)}${halfMoves % 2 === 1 ? "." : "..."}`;
-}
-
-export function formatMove(orientation: string) {
-    return orientation === "w" ? "white" : "black";
 }
 
 export function capitalize(str: string) {

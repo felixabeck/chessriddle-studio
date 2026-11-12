@@ -27,7 +27,6 @@ export const fileInfoMetadataSchema = z.object({
     type: fileTypeSchema,
     tags: z.array(z.string()),
 });
-export type FileInfoMetadata = z.infer<typeof fileInfoMetadataSchema>;
 
 export const fileMetadataSchema = z.object({
     type: z.literal("file"),

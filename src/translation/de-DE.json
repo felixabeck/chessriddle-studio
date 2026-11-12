@@ -358,7 +358,6 @@
     "Common.Cancel": "Abbrechen",
     "Common.CannotUndo": "Diese Aktion kann nicht rückgängig gemacht werden.",
     "Common.Checkmate": "Schachmatt",
-    "Common.Chessboard": "Schachbrett",
     "Common.Close": "Dialog schließen",
     "Common.Confirm": "Bestätigen",
     "Common.ConfirmationError.applied-despite-error": "Ein Teil des Vorgangs wurde abgeschlossen. Die Anzeige entspricht möglicherweise nicht mehr dem aktuellen Stand.",

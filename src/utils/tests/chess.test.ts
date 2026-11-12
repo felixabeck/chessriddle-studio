@@ -2,6 +2,7 @@ import { beforeEach, expect, test, vi } from "vitest";
 import { recognizeGameReferences } from "../gameReferences";
 import { parseUci } from "chessops";
 import { INITIAL_FEN, makeFen, parseFen } from "chessops/fen";
+import { parsePgn } from "chessops/pgn";
 import type { NormalizedGame, Token } from "@/bindings";
 import { createTreeStore } from "@/state/store/tree";
 import { databaseGameToTree } from "../databaseGameTree";
@@ -1043,6 +1044,45 @@ test.each([
 });
 
 const ALL_MARKUPS = { glyphs: true, comments: true, variations: true, extraMarkups: true };
+
+test("PGN comment safety: move prose survives a closing brace", () => {
+    const root = defaultTree().root;
+    const move = addMainlineMove(root, "e4");
+    move.comment = "watch } this";
+
+    const written = getPGN(root, { ...ALL_MARKUPS, headers: null });
+    expect(written).toContain("{watch  this}");
+    const recovered = parsePgn(written)[0].moves.children[0].data.comments?.join(" ");
+    expect(recovered).toContain("watch");
+    expect(recovered).toContain("this");
+});
+
+test("PGN comment safety: variation starting prose survives a closing brace", () => {
+    const root = defaultTree().root;
+    addMainlineMove(root, "e4");
+    const variation = addMainlineMove(root, "d4");
+    variation.startingComment = "lead } cut";
+
+    const written = getPGN(root, { ...ALL_MARKUPS, headers: null });
+    expect(written).toContain("{lead  cut}");
+    const recovered = parsePgn(written)[0].moves.children[1].data.startingComments?.join(" ");
+    expect(recovered).toContain("lead");
+    expect(recovered).toContain("cut");
+});
+
+test("PGN comment safety: opaque commands cannot close the comment body", () => {
+    const root = defaultTree().root;
+    const move = addMainlineMove(root, "e4");
+    move.commands = "[%opaque watch } this]";
+    move.comment = "tail";
+
+    const written = getPGN(root, { ...ALL_MARKUPS, headers: null });
+    expect(written).toBe("1. e4 {[%opaque watch  this] tail}");
+    expect(written.match(/\}/g)).toHaveLength(1);
+    expect(parsePgn(written)[0].moves.children[0].data.comments).toEqual([
+        "[%opaque watch  this] tail",
+    ]);
+});
 
 async function parseTokens(value: Token[]) {
     mocks.lexPgn.mockResolvedValueOnce(value);
