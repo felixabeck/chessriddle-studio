@@ -522,6 +522,33 @@ test("keeps send disabled for a too-long or whitespace email", async () => {
   expect(container.querySelector<HTMLButtonElement>("button[type='submit']")?.disabled).toBe(false);
 });
 
+test("matches native email validation and the local-part length boundary", async () => {
+  await renderModal();
+  await fillMessage("A useful Studio report.");
+  const invalidEmails = [
+    "user.@example.com",
+    ".user@example.com",
+    `${"a".repeat(65)}@example.com`,
+    "usér@example.com",
+    "user@exämple.com",
+    "user\t@example.com",
+    "user@.example.com",
+    "user@example.com.",
+  ];
+  for (const email of invalidEmails) {
+    await fillEmail(email);
+    expect(container.querySelector<HTMLButtonElement>("button[type='submit']")?.disabled).toBe(
+      true,
+    );
+    expect(container.querySelector("[role='status']")?.textContent).toBe("Feedback.EmailInvalid");
+    await submitForm();
+    expect(mocks.submitFeedback).not.toHaveBeenCalled();
+  }
+  await fillEmail(`${"a".repeat(64)}@example.com`);
+  expect(container.querySelector<HTMLButtonElement>("button[type='submit']")?.disabled).toBe(false);
+  expect(container.querySelector("[role='status']")).toBeNull();
+});
+
 test("keeps send disabled for a message over the max", async () => {
   await renderModal();
   await fillMessage("x".repeat(FEEDBACK_MAX_MESSAGE + 1));

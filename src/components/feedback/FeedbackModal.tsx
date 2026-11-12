@@ -24,6 +24,9 @@ const FEEDBACK_MIN_MESSAGE = 10;
 const FEEDBACK_MAX_MESSAGE = 5000;
 const FEEDBACK_MIN_EMAIL = 3;
 const FEEDBACK_MAX_EMAIL = 254;
+// Mirrors MAX_EMAIL_LOCAL_PART_CHARS in src-tauri/src/feedback.rs.
+const FEEDBACK_MAX_EMAIL_LOCAL_PART = 64;
+const EMAIL_ALLOWED_CHARS = /^[\x21-\x7e]+$/;
 const PRIVACY_URL = "https://chessriddle.com/privacy";
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_CAPTURE_PIXEL_RATIO = 2;
@@ -44,13 +47,29 @@ function payloadFingerprint(
   });
 }
 
+// Mirrors email_plausible in src-tauri/src/feedback.rs, which is authoritative.
 function isPlausibleEmail(email: string): boolean {
-  if (email.length < FEEDBACK_MIN_EMAIL || email.length > FEEDBACK_MAX_EMAIL || email.includes(" "))
-    return false;
+  if (email.length < FEEDBACK_MIN_EMAIL || email.length > FEEDBACK_MAX_EMAIL) return false;
+  if (!EMAIL_ALLOWED_CHARS.test(email)) return false;
   const at = email.indexOf("@");
-  if (at < 1) return false;
+  if (at === -1) return false;
+  const local = email.slice(0, at);
   const domain = email.slice(at + 1);
-  return domain.includes(".") && !domain.startsWith(".") && !domain.endsWith(".");
+  if (
+    local.length === 0 ||
+    local.length > FEEDBACK_MAX_EMAIL_LOCAL_PART ||
+    domain.length === 0 ||
+    !domain.includes(".")
+  )
+    return false;
+  if (
+    local.startsWith(".") ||
+    local.endsWith(".") ||
+    domain.startsWith(".") ||
+    domain.endsWith(".")
+  )
+    return false;
+  return true;
 }
 
 function outcomeMessage(
