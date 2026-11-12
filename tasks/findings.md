@@ -24722,3 +24722,19 @@ Correction to the Failure scenario example: the `!?` button's accessible name is
 - **Fix:** give each non-"Total" row `tabIndex: 0`, a move-describing `aria-label` and an Enter/Space handler via `customRowAttributes` (or render the move cell as a button). Exclude the "Total" sum row, which today silently no-ops on click because `parseSan(pos, "Total")` fails (`src/state/store/tree.ts:513-515`). Add a keyboard-activation test.
 - **Proof:** same harness as f-20261112-57: an ephemeral Vitest render of the real mantine-datatable `DataTable` with `onRowClick` showed the `<tr>` has no `tabindex` (`tabIndex === -1`) and no focusable descendant, and Enter on it does nothing. Here OpeningsTable's cells are plain `Text`/`Progress` (`:57-111`), so the row has no other focus target. Trace on origin/master d30eb171f.
 - **Found by:** Grok Bot general review (chunk 26)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Local explorer options: the Result select and both Elo range thumbs have no accessible name
+
+* **ID:** f-20261112-60 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/panels/database/options/LocalOptionsPanel.tsx:146-170`: the "Result" heading is a sibling `<Text>` (`:147-149`), and the `Select` gets no `label`, `aria-label` or `placeholder`. `:174-197`: the "Elo" heading is a sibling `<Text>` (`:175-177`), and the `RangeSlider` gets no `thumbLabel`/`thumbFromLabel`/`thumbToLabel` or `aria-label`. The same file already names its Switch explicitly (`:200-203`).
+- **Defect:** in the analysis panel's Database → Options tab (Local), the visible captions are not associated with their controls. The Result combobox therefore has no name, and the two Elo slider thumbs announce only their numbers ("0", "3000"), with no indication that they are the minimum and maximum rating of both players. f-20261112-36/-37/-40 (same file) are behavioural (partial FEN overwrite, clearing From, player id) and do not cover naming.
+- **Failure scenario:** with a screen reader, Tab through the local explorer options: the result filter announces as an unnamed combobox with value "Any", and the Elo thumbs as "slider 0" and "slider 3000", so you cannot tell what you are filtering.
+- **Fix:** pass `label={t("Board.Database.Local.Result")}` to the Select (dropping the duplicate Text) or `aria-label`, and give the RangeSlider `thumbFromLabel`/`thumbToLabel` (e.g. minimum/maximum Elo via i18n keys). Optionally name the Color/Position SegmentedControl groups too. Add an accessible-name assertion to the panel test.
+- **Proof:** ephemeral Vitest rendering Mantine `Select` and `RangeSlider` with the same props as `:150-170`/`:181-197`: the Select input had no `aria-label`/`aria-labelledby`, no `<label for>` and an empty placeholder, and both `role="slider"` thumbs had no `aria-label`/`aria-labelledby` (valuenow 0 and 3000). The panel passes no naming props (trace on origin/master d30eb171f). Probe removed, tree clean.
+- **Found by:** Grok Bot general review (chunk 26)
