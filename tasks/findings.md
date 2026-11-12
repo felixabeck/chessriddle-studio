@@ -24620,3 +24620,19 @@ Deferred follow-up (keep at midnight filing):
 
 **Correction (2026-11-12, Grok Bot chunk 23, same session):** CoresSlider is not the only Threads control. The Engines page renders every non-button UCI option, Threads included, through `completeOptions`/`visibleOptions` (`src/components/engines/EnginesPage.tsx:405-479`), so the engine-wide Threads value can be set to 12 there. `requiredEngineSettings` (`src/utils/engines.ts:18`) only seeds defaults; it does not hide the option. The defect is narrowed to the analysis/play `EngineSettingsForm` picker (per-tab and per-opponent settings). It still cannot select a non-power-of-two count. And when the stored value is not a power of two (for example 12 set on the Engines page), no segment is selected: an ephemeral probe with `hardwareConcurrency = 12` and `value={12}` rendered radios `1,2,4,8`, all `checked === false`. The failure scenario becomes: set Threads to 12 on the Engines page, then open the analysis engine settings: the core picker shows no selection and offers only up to 8, and touching it lowers the tab's threads. The fix is unchanged.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"f1a8a5fea50279ba8600d0eeda55301484ff72a30f373b2b9842112f88d4412a","input_sha256":"ac15a4c87a7db6c8867e307250828883b575a6186f72e0329ab809447da578a1","kind":"mutation-receipt","operation":"2ce131ce7046749ab561bfb3aacfa4364fb1eabb9b6c68a0f5fcc32e23720d48","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-53"],"target":"f-20261112-53","v":1} -->
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Engine settings sliders are unnamed: the lines, cores and hash controls expose no accessible label
+
+* **ID:** f-20261112-54 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/panels/analysis/EngineSettingsForm.tsx:63-125`: each control sits next to a bold `<Text>` caption (`Engines.Settings.NumOfLines`, `NumOfCores`, `SizeOfHash`) that is not associated with it. `LinesSlider` is rendered without its optional `ariaLabel` (`:68-79`; only DetachedEval passes one), `CoresSlider.tsx:15-21` accepts no label at all, and `HashSlider.tsx:25-46` renders a Mantine `Slider` with no `aria-label`/`thumbLabel`.
+- **Defect:** the three engine-resource controls in the analysis panel (and in the Play engine-opponent form, which reuses EngineSettingsForm) have no accessible name. The lines and cores pickers are unnamed radiogroups whose radios are named only "1", "2", "4" and so on, so the two groups are indistinguishable. The hash slider exposes `role="slider"` with an empty `aria-label`.
+- **Failure scenario:** with a screen reader, Tab into the engine settings: you hear "radio group, 1, selected" twice (lines, then cores), then "slider, 4" for the hash, with no indication which setting each one changes.
+- **Fix:** pass `ariaLabel={t("Engines.Settings.NumOfLines")}` to LinesSlider here, add an `ariaLabel` prop to CoresSlider (SegmentedControl `aria-label`) and HashSlider (`thumbLabel`/`aria-label`), fed from the same captions, and add tests querying them by name.
+- **Proof:** ephemeral Vitest rendering the three components as EngineSettingsForm does (LinesSlider without `ariaLabel`, `tauri.memorySize` mocked): LinesSlider and CoresSlider render `role="radiogroup"` with null `aria-label`/`aria-labelledby`, with radios equally unnamed; HashSlider renders `role="slider"` with `aria-label=""`. Probe removed, tree clean.
+- **Found by:** Grok Bot general review (chunk 24)
