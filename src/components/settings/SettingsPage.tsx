@@ -768,6 +768,7 @@ export default function Page() {
         <TextInput
           ref={searchInputRef}
           placeholder={t("Common.Search")}
+          aria-label={t("Common.Search")}
           leftSection={<Search size="1rem" />}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.currentTarget.value)}

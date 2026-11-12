@@ -1,7 +1,8 @@
-import { Anchor, Button, Code, CopyButton, Group, Stack, Text, Title } from "@mantine/core";
+import { Anchor, Button, Code, Group, Stack, Text, Title } from "@mantine/core";
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Trans, useTranslation } from "react-i18next";
+import { useClipboardCopy } from "@/hooks/useClipboardCopy";
 import { normalizeError } from "@/platform/errors";
 import LazyFeedbackModal from "@/components/feedback/LazyFeedbackModal";
 import { runUnlessCancelled } from "@/components/files/notifyError";
@@ -11,6 +12,7 @@ const issueUrl = `${REPOSITORY_URL}/issues/new?assignees=&labels=bug&projects=&t
 
 export default function ErrorComponent({ error }: { error: unknown }) {
   const { t } = useTranslation();
+  const { copied, copy } = useClipboardCopy(t("Error.CopyFailed"), 1000);
   const navigate = useNavigate();
   const [feedbackOpened, setFeedbackOpened] = useState(false);
   const normalized = normalizeError(error);
@@ -28,13 +30,12 @@ export default function ErrorComponent({ error }: { error: unknown }) {
       <Group>
         <Button onClick={() => setFeedbackOpened(true)}>{t("Menu.Help.SendFeedback")}</Button>
         {showDiagnostic && (
-          <CopyButton value={normalized.diagnostic ?? ""}>
-            {({ copied, copy }) => (
-              <Button color={copied ? "success" : undefined} onClick={copy}>
-                {copied ? t("Common.Copied") : t("Error.CopyStackTrace")}
-              </Button>
-            )}
-          </CopyButton>
+          <Button
+            color={copied ? "success" : undefined}
+            onClick={() => void copy(normalized.diagnostic ?? "")}
+          >
+            {copied ? t("Common.Copied") : t("Error.CopyStackTrace")}
+          </Button>
         )}
         <Button
           variant="default"

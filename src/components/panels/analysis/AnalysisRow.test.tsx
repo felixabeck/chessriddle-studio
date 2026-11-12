@@ -7,12 +7,14 @@ const mocks = vi.hoisted(() => ({
   scoreTypeFamily: vi.fn((_engineId: string) => Symbol("scoreType")),
   setEvalDisplay: vi.fn(),
   makeMoves: vi.fn(),
+  notify: vi.fn(),
 }));
 
 import AnalysisRow from "./AnalysisRow";
 import scoreBubbleClasses from "./ScoreBubble.module.css";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock("@mantine/notifications", () => ({ notifications: { show: mocks.notify } }));
 vi.mock("@/state/atoms", () => ({
   moveHighlightAtom: Symbol("moveHighlightAtom"),
   previewBoardOnHoverAtom: Symbol("previewBoardOnHoverAtom"),
@@ -28,11 +30,6 @@ vi.mock("@mantine/core", () => {
   const Container = ({ children, ...props }: any) => <div {...props}>{children}</div>;
   return {
     Box: Container,
-    CopyButton: ({ value, children }: any) => (
-      <div data-testid="copy-value" data-value={value}>
-        {children({ copied: false, copy: vi.fn() })}
-      </div>
-    ),
     Flex: Container,
     Text: ({ children }: any) => <span>{children}</span>,
     Tooltip: ({ label, children }: any) => <div title={label}>{children}</div>,
@@ -77,47 +74,70 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
+  vi.unstubAllGlobals();
 });
 
-test("keys score display by id while copied output keeps the engine name", async () => {
-  await act(async () => {
-    root.render(
-      <>
-        <AnalysisRow
-          engineId="engine-uuid-1"
-          engineName="Duplicate"
-          score={{ value: { type: "cp", value: 34 }, wdl: null }}
-          moves={[]}
-          halfMoves={0}
-          threat={false}
-          fen="irrelevant"
-          orientation="white"
-        />
-        <AnalysisRow
-          engineId="engine-uuid-2"
-          engineName="Duplicate"
-          score={{ value: { type: "cp", value: 21 }, wdl: null }}
-          moves={[]}
-          halfMoves={0}
-          threat={false}
-          fen="irrelevant"
-          orientation="white"
-        />
-      </>,
+test.each(["success", "failure"])(
+  "keys score display by id while clipboard %s keeps the engine name",
+  async (outcome) => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    if (outcome === "failure") writeText.mockRejectedValue(new Error("clipboard denied"));
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    await act(async () => {
+      root.render(
+        <>
+          <AnalysisRow
+            engineId="engine-uuid-1"
+            engineName="Duplicate"
+            score={{ value: { type: "cp", value: 34 }, wdl: null }}
+            moves={[]}
+            halfMoves={0}
+            threat={false}
+            fen="irrelevant"
+            orientation="white"
+          />
+          <AnalysisRow
+            engineId="engine-uuid-2"
+            engineName="Duplicate"
+            score={{ value: { type: "cp", value: 21 }, wdl: null }}
+            moves={[]}
+            halfMoves={0}
+            threat={false}
+            fen="irrelevant"
+            orientation="white"
+          />
+        </>,
+      );
+    });
+
+    expect(mocks.scoreTypeFamily.mock.calls.map(([id]) => id)).toEqual([
+      "engine-uuid-1",
+      "engine-uuid-2",
+    ]);
+    await act(async () => {
+      (
+        host.querySelectorAll('[aria-label="Board.Analysis.Expand"]')[0] as HTMLButtonElement
+      ).click();
+    });
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[aria-label="Menu.Edit.Copy"]')!.click(),
     );
-  });
-
-  expect(mocks.scoreTypeFamily.mock.calls.map(([id]) => id)).toEqual([
-    "engine-uuid-1",
-    "engine-uuid-2",
-  ]);
-  await act(async () => {
-    (host.querySelectorAll('[aria-label="Board.Analysis.Expand"]')[0] as HTMLButtonElement).click();
-  });
-  const copied = host.querySelector('[data-testid="copy-value"]')?.getAttribute("data-value");
-  expect(copied).toContain("Duplicate");
-  expect(copied).not.toContain("engine-uuid-1");
-});
+    expect(writeText).toHaveBeenCalledExactlyOnceWith("Duplicate +0.34");
+    expect(mocks.notify.mock.calls).toEqual(
+      outcome === "failure"
+        ? [
+            [
+              {
+                message: "Board.Analysis.CopyLineFailed",
+                color: "danger",
+              },
+            ],
+          ]
+        : [],
+    );
+    expect(host.querySelector('[aria-label="Common.Copied"]') !== null).toBe(outcome === "success");
+  },
+);
 
 test.each([
   ["! (30-11)", "49.92", "!", "49.9%"],
@@ -217,5 +237,5 @@ test("inert previous rows ignore insertion, hover preview, context and expansion
     true,
   );
   expect(host.querySelector("[inert]")).not.toBeNull();
-  expect(host.querySelector('[data-testid="copy-value"]')).toBeNull();
+  expect(host.querySelector('[aria-label="Menu.Edit.Copy"]')).toBeNull();
 });

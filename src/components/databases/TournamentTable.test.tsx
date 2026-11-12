@@ -20,10 +20,12 @@ vi.mock("@mantine/core", () => {
     TextInput: ({
       value,
       onChange,
+      "aria-label": ariaLabel,
     }: {
       value: string;
       onChange: ChangeEventHandler<HTMLInputElement>;
-    }) => <input aria-label="Event name" value={value} onChange={onChange} />,
+      "aria-label"?: string;
+    }) => <input aria-label={ariaLabel} value={value} onChange={onChange} />,
   };
 });
 vi.mock("mantine-datatable", () => ({ DataTable: () => null }));
@@ -67,7 +69,8 @@ test("name search debounces rapid typing until 250 ms after the final change", a
   );
   expect(mocks.getTournaments).toHaveBeenCalledOnce();
   mocks.getTournaments.mockClear();
-  const input = container.querySelector<HTMLInputElement>('input[aria-label="Event name"]')!;
+  const input = container.querySelector<HTMLInputElement>('input[aria-label="Common.Search"]')!;
+  expect(input).not.toBeNull();
   for (const name of ["c", "ca", "car"]) {
     await act(async () => vi.advanceTimersByTimeAsync(50));
     await act(async () => {

@@ -70,6 +70,9 @@ test("practice settings expose automatic/manual grading and the session new-move
       </Provider>,
     ),
   );
+  expect(host.querySelector('input[placeholder="Common.Search"]')?.getAttribute("aria-label")).toBe(
+    "Common.Search",
+  );
   const tab = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
     (node) => node.textContent === "Settings.Repertoire",
   )!;

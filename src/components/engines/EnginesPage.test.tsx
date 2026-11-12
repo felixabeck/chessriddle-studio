@@ -95,23 +95,26 @@ vi.mock("@mantine/core", () => ({
   }) => (opened ? <div id={id}>{children}</div> : null),
   Divider: () => <hr />,
   Group: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  Input: Object.assign(() => <input />, {
-    Wrapper: ({
-      children,
-      label,
-      description,
-    }: {
-      children: React.ReactNode;
-      label: string;
-      description?: React.ReactNode;
-    }) => (
-      <div data-option-label={label}>
-        {label}
-        {description}
-        {children}
-      </div>
-    ),
-  }),
+  Input: Object.assign(
+    ({ "aria-label": label }: { "aria-label"?: string }) => <input aria-label={label} />,
+    {
+      Wrapper: ({
+        children,
+        label,
+        description,
+      }: {
+        children: React.ReactNode;
+        label: string;
+        description?: React.ReactNode;
+      }) => (
+        <div data-option-label={label}>
+          {label}
+          {description}
+          {children}
+        </div>
+      ),
+    },
+  ),
   JsonInput: () => <textarea />,
   NumberInput: ({
     label,
@@ -303,6 +306,7 @@ async function renderSettings() {
     renderSettingsPage();
   });
   await vi.waitFor(() => expect(mocks.getEngineConfig).toHaveBeenCalled());
+  expect(host.querySelector('input[aria-label="Common.Search"]')).not.toBeNull();
 }
 
 function resource(id: string, kind: "file" | "directory") {

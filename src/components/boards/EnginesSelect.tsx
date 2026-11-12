@@ -1,6 +1,7 @@
 import { Select } from "@mantine/core";
 import { useAtomValue } from "jotai";
 import { useEffect, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { enginesAtom } from "@/state/atoms";
 import type { LocalEngine } from "@/utils/engines";
 
@@ -11,6 +12,7 @@ export function EnginesSelect({
   engine: LocalEngine | null;
   setEngine: (engine: LocalEngine | null) => void;
 }) {
+  const { t } = useTranslation();
   const allEngines = useAtomValue(enginesAtom);
   const engines = useMemo(
     () => (allEngines ?? []).filter((e): e is LocalEngine => e.type === "local"),
@@ -42,6 +44,7 @@ export function EnginesSelect({
 
   return (
     <Select
+      aria-label={t("Common.Engine")}
       allowDeselect={false}
       data={engines.map((engine) => ({
         label: engine.name,

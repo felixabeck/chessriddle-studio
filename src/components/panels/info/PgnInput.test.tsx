@@ -59,7 +59,6 @@ vi.mock("@mantine/core", () => ({
     <button {...props}>{children}</button>
   ),
   Checkbox: () => null,
-  CopyButton: () => null,
   Group: ({ children }: React.HTMLAttributes<HTMLDivElement>) => <div>{children}</div>,
   rem: (value: number) => `${value}rem`,
   Stack: ({ children }: React.HTMLAttributes<HTMLDivElement>) => <div>{children}</div>,
@@ -74,8 +73,14 @@ vi.mock("@mantine/core", () => ({
   ),
 }));
 vi.mock("@/components/common/IconAction", () => ({
-  IconAction: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
-    <button {...props}>{children}</button>
+  IconAction: ({
+    children,
+    label,
+    ...props
+  }: React.ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) => (
+    <button {...props} aria-label={label}>
+      {children}
+    </button>
   ),
 }));
 
@@ -99,6 +104,7 @@ afterEach(async () => {
   mocks.writeGame.mockReset();
   mocks.showNotification.mockReset();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 const stampA = "a".repeat(64);
@@ -222,6 +228,23 @@ async function update(index = 0) {
 function parseSignal(call = 0): AbortSignal {
   return mocks.parsePGN.mock.calls[call][2].signal;
 }
+
+test("the named PGN editor reports a rejected clipboard write from its Copy action", async () => {
+  const writeText = vi.fn().mockRejectedValue(new Error("clipboard denied"));
+  vi.stubGlobal("navigator", { clipboard: { writeText } });
+  await setup();
+  const textarea = editor().querySelector("textarea")!;
+  expect(textarea.getAttribute("aria-label")).toBe("Common.PGNGame");
+  await act(async () =>
+    editor().querySelector<HTMLButtonElement>('[aria-label="Menu.Edit.Copy"]')!.click(),
+  );
+  expect(writeText).toHaveBeenCalledExactlyOnceWith(textarea.value);
+  expect(mocks.showNotification).toHaveBeenCalledExactlyOnceWith({
+    message: "Board.CopyFailed",
+    color: "danger",
+  });
+  expect(editor().querySelector('[aria-label="Common.Copied"]')).toBeNull();
+});
 
 test("an engine score keeps an unsaved PGN draft when the serialization does not change", async () => {
   const { store } = await setup({ extraMarkups: false });

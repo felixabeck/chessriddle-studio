@@ -140,6 +140,7 @@ export default function EnginesPage() {
                 style={{ flexGrow: 1, minWidth: 0 }}
                 leftSection={<Search size="1rem" />}
                 placeholder={t("Common.Search")}
+                aria-label={t("Common.Search")}
                 value={search}
                 onChange={(e) => setSearch(e.currentTarget.value)}
               />

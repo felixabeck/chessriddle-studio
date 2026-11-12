@@ -1,6 +1,7 @@
 import { Card, CloseButton, Divider } from "@mantine/core";
 import type { Piece } from "chessops";
 import { useContext } from "react";
+import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { TreeStateContext } from "../common/TreeStateContext";
 import FenInput from "../panels/info/FenInput";
@@ -18,6 +19,7 @@ function EditingCard({
   selectedPiece: Piece | null;
   setSelectedPiece: (piece: Piece | null) => void;
 }) {
+  const { t } = useTranslation();
   const store = useContext(TreeStateContext)!;
   const fen = useStore(store, (s) => s.currentNode().fen);
   const headers = useStore(store, (s) => s.headers);
@@ -31,6 +33,7 @@ function EditingCard({
       withBorder
     >
       <CloseButton
+        aria-label={t("Board.EditPosition.Close")}
         style={{ position: "absolute", top: 10, right: 15 }}
         onClick={() => setEditingMode(false)}
       />

@@ -1,8 +1,9 @@
-import { CopyButton, Flex, rem, Table, Text, Tooltip } from "@mantine/core";
+import { Flex, rem, Table, Text, Tooltip } from "@mantine/core";
 import { IconAction } from "@/components/common/IconAction";
 import { Check, ChevronDown, Copy } from "lucide-react";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useClipboardCopy } from "@/hooks/useClipboardCopy";
 import type { Score } from "@/bindings";
 import type { ChessDBLine } from "@/utils/chessdb/api";
 import { formatScore } from "@/utils/score";
@@ -35,6 +36,7 @@ function AnalysisRow({
 }) {
   const [open, setOpen] = useState<boolean>(false);
   const { t } = useTranslation();
+  const { copied, copy } = useClipboardCopy(t("Board.Analysis.CopyLineFailed"));
 
   const allMoves = moves;
   const visibleMoves = open ? allMoves : allMoves.slice(0, 12);
@@ -112,23 +114,15 @@ function AnalysisRow({
             <ChevronDown size={16} />
           </IconAction>
           {open && (
-            <CopyButton value={engineOutput} timeout={2000}>
-              {({ copied, copy }) => (
-                <IconAction
-                  label={copied ? t("Common.Copied") : t("Menu.Edit.Copy")}
-                  color={copied ? "success" : undefined}
-                  variant="subtle"
-                  disabled={inert}
-                  onClick={copy}
-                >
-                  {copied ? (
-                    <Check style={{ width: rem(16) }} />
-                  ) : (
-                    <Copy style={{ width: rem(16) }} />
-                  )}
-                </IconAction>
-              )}
-            </CopyButton>
+            <IconAction
+              label={copied ? t("Common.Copied") : t("Menu.Edit.Copy")}
+              color={copied ? "success" : undefined}
+              variant="subtle"
+              disabled={inert}
+              onClick={() => void copy(engineOutput)}
+            >
+              {copied ? <Check style={{ width: rem(16) }} /> : <Copy style={{ width: rem(16) }} />}
+            </IconAction>
           )}
         </Flex>
       </Table.Th>

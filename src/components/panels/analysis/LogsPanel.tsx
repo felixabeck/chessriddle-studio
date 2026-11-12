@@ -18,6 +18,7 @@ import { engineTerminalLogs, matchingEngineTerminal } from "./useDisplayedEngine
 import EngineLogsView from "../../common/EngineLogsView";
 
 export default function LogsPanel() {
+  const { t } = useTranslation();
   const engines = useAtomValue(enginesAtom);
   const localEngines = (engines ?? [])
     .filter((e): e is LocalEngine => e.type === "local")
@@ -26,6 +27,7 @@ export default function LogsPanel() {
   const engine = localEngines.find((engine) => engine.id === engineId) ?? localEngines[0];
   const selection = (
     <Select
+      aria-label={t("Common.Engine")}
       allowDeselect={false}
       value={engine?.id ?? ""}
       onChange={(id) => setEngineId(id ?? undefined)}

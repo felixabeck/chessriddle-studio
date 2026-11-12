@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { expect, test, vi } from "vitest";
 import { activeDatabaseViewStore } from "@/state/store/database";
 import { installMatchMediaStub } from "@/tests/matchMedia";
+import { installResizeObserverStub } from "@/tests/resizeObserver";
 import { DatabaseViewStateContext } from "../databases/DatabaseViewStateContext";
 import PersonalPlayerCard from "./PersonalCard";
 
@@ -19,6 +20,7 @@ vi.mock("../databases/PlayerOpeningTree", () => ({
 }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 installMatchMediaStub();
+installResizeObserverStub();
 
 test("Accounts retains OpeningsPanel while only the database caller renders the player opening tree", async () => {
   const container = document.createElement("div");
@@ -33,6 +35,7 @@ test("Accounts retains OpeningsPanel while only the database caller renders the 
             <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
               <PersonalPlayerCard
                 name="Player"
+                setName={vi.fn()}
                 info={{ site_stats_data: [] }}
                 isDatabase={database}
                 databasePlayer={
@@ -49,6 +52,9 @@ test("Accounts retains OpeningsPanel while only the database caller renders the 
         ),
       );
       expect(container.querySelector("[data-accounts-openings]") !== null).toBe(!database);
+      expect(
+        container.querySelector('input[aria-label="Home.Accounts.PlayerName"]'),
+      ).not.toBeNull();
       expect(container.querySelector("[data-database-openings]") !== null).toBe(database);
     }
   } finally {

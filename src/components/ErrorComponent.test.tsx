@@ -27,9 +27,6 @@ vi.mock("@mantine/core", () => ({
   Anchor: ({ children, href }: any) => <a href={href}>{children}</a>,
   Button: ({ children, ...props }: any) => <button {...props}>{children}</button>,
   Code: ({ children }: any) => <code>{children}</code>,
-  CopyButton: ({ children, value }: any) => (
-    <div data-copy={value}>{children({ copied: false, copy: () => undefined })}</div>
-  ),
   Group: ({ children }: any) => <div>{children}</div>,
   Stack: ({ children }: any) => <div>{children}</div>,
   Text: ({ children }: any) => <p>{children}</p>,
@@ -97,6 +94,8 @@ test("hides a diagnostic that only repeats the message", async () => {
 });
 
 test("renders an extra diagnostic when it differs from the message", async () => {
+  const writeText = vi.fn().mockRejectedValue(new Error("clipboard denied"));
+  vi.stubGlobal("navigator", { clipboard: { writeText } });
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -113,6 +112,16 @@ test("renders an extra diagnostic when it differs from the message", async () =>
   );
   expect(host.querySelector("code")?.textContent).toBe("safe-code");
   expect(host.textContent).toContain("Error.CopyStackTrace");
+  const copy = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "Error.CopyStackTrace",
+  )!;
+  await act(async () => copy.click());
+  expect(writeText).toHaveBeenCalledExactlyOnceWith("safe-code");
+  expect(mocks.notify).toHaveBeenCalledExactlyOnceWith({
+    message: "Error.CopyFailed",
+    color: "danger",
+  });
+  expect(host.textContent).not.toContain("Common.Copied");
 });
 
 test("send feedback opens the dialog without RootLayout", async () => {

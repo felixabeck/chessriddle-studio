@@ -64,6 +64,7 @@ function PersonalPlayerCard({
         {setName ? (
           <Flex justify="center">
             <Select
+              aria-label={t("Home.Accounts.PlayerName")}
               value={name}
               data={players}
               onChange={(e) => setName(e || "")}

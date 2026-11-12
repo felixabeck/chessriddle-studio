@@ -8,10 +8,23 @@ vi.mock("@/state/atoms", async () => {
   return { enginesAtom: atom<unknown[] | undefined>(undefined) };
 });
 vi.mock("@mantine/core", () => ({
-  Select: ({ value, data }: { value: string; data: Array<{ value: string; label: string }> }) => (
-    <div data-value={value} data-options={data.map((option) => option.value).join(",")} />
+  Select: ({
+    value,
+    data,
+    "aria-label": label,
+  }: {
+    value: string;
+    data: Array<{ value: string; label: string }>;
+    "aria-label"?: string;
+  }) => (
+    <div
+      aria-label={label}
+      data-value={value}
+      data-options={data.map((option) => option.value).join(",")}
+    />
   ),
 }));
+vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 const { getDefaultStore } = await import("jotai");
 const { enginesAtom } = await import("@/state/atoms");
@@ -65,6 +78,7 @@ function render(engine: LocalEngine | null) {
 
 test("an unhydrated engine store leaves the saved selection intact", () => {
   const { selections, getCurrent } = render(localEngine("a"));
+  expect(host.firstElementChild?.getAttribute("aria-label")).toBe("Common.Engine");
 
   expect(selections).toEqual([]);
   expect(getCurrent()?.id).toBe("a");

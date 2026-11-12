@@ -1,20 +1,11 @@
 import { useOwnerTabId, useTabAtom } from "@/state/tabScope";
-import {
-  Box,
-  Button,
-  Checkbox,
-  CopyButton,
-  Group,
-  rem,
-  Stack,
-  Text,
-  Textarea,
-} from "@mantine/core";
+import { Box, Button, Checkbox, Group, rem, Stack, Text, Textarea } from "@mantine/core";
 import { Check, Copy } from "lucide-react";
 import deepEqual from "fast-deep-equal";
 import { useAtom } from "jotai";
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useClipboardCopy } from "@/hooks/useClipboardCopy";
 import { useStore } from "zustand";
 import { isTreeViewDeferred, useTreeView } from "@/state/deferredTreeView";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
@@ -38,6 +29,7 @@ function PgnInput() {
   const setState = useStore(store, (s) => s.setState);
   const [options, setOptions] = useAtom(useTabAtom(pgnOptionsFamily));
   const { t } = useTranslation();
+  const { copied, copy } = useClipboardCopy(t("Board.CopyFailed"));
 
   const realPGN = useMemo(() => {
     if (isTreeViewDeferred(store)) return "";
@@ -194,6 +186,7 @@ function PgnInput() {
     <Box style={{ position: "relative" }}>
       <Textarea
         id="pgn-editor"
+        aria-label={t("Common.PGNGame")}
         autosize
         value={tmp}
         onChange={(e) => {
@@ -201,19 +194,15 @@ function PgnInput() {
           setTmp(e.currentTarget.value);
         }}
       />
-      <CopyButton value={tmp} timeout={2000}>
-        {({ copied, copy }) => (
-          <IconAction
-            label={copied ? t("Common.Copied") : t("Menu.Edit.Copy")}
-            color={copied ? "success" : "gray"}
-            variant="subtle"
-            onClick={copy}
-            style={{ position: "absolute", top: 15, right: 15 }}
-          >
-            {copied ? <Check style={{ width: rem(16) }} /> : <Copy style={{ width: rem(16) }} />}
-          </IconAction>
-        )}
-      </CopyButton>
+      <IconAction
+        label={copied ? t("Common.Copied") : t("Menu.Edit.Copy")}
+        color={copied ? "success" : "gray"}
+        variant="subtle"
+        onClick={() => void copy(tmp)}
+        style={{ position: "absolute", top: 15, right: 15 }}
+      >
+        {copied ? <Check style={{ width: rem(16) }} /> : <Copy style={{ width: rem(16) }} />}
+      </IconAction>
       {realPGN !== tmp && (
         <Button style={{ position: "absolute", bottom: 15, right: 15 }} onClick={() => updatePgn()}>
           {t("Common.Update")}

@@ -62,6 +62,7 @@ function PlayerTable() {
             <TextInput
               style={{ flexGrow: 1 }}
               placeholder={t("Common.Search")}
+              aria-label={t("Common.Search")}
               leftSection={<Search size="1rem" />}
               value={query.name ?? undefined}
               onChange={(e) =>
