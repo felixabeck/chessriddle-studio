@@ -133,8 +133,8 @@ function schemaForDefault(value: unknown): z.ZodTypeAny {
     if (typeof value === "boolean") return z.boolean();
     if (value === null) return z.null();
     if (Array.isArray(value)) {
-        // Empty preference arrays have no element exemplar; their consumers own the
-        // richer domain validation. They still cannot hydrate as a scalar/object.
+        // Arrays without exactly one exemplar get no element validation.
+        // Domain-shaped values need a dedicated schema at their declaration.
         return z.array(value.length === 1 ? schemaForDefault(value[0]) : z.unknown());
     }
     if (typeof value === "object") {

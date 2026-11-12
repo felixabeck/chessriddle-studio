@@ -2,24 +2,20 @@ import { Group, Text } from "@mantine/core";
 import { useAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { soundCollectionAtom } from "@/state/atoms";
+import { SOUND_COLLECTIONS } from "@/state/preferenceSchemas";
 import { playSound } from "@/utils/sound";
 import { SettingsCombobox } from "./SettingsCombobox";
 
-type Item = {
-  label: string;
-  value: string;
+const soundCollectionLabels: Record<(typeof SOUND_COLLECTIONS)[number], string> = {
+  futuristic: "Futuristic",
+  lisp: "Lisp",
+  nes: "NES",
+  piano: "Piano",
+  robot: "Robot",
+  sfx: "SFX",
+  standard: "Standard",
+  woodland: "WoodLand",
 };
-
-const soundCollections: Item[] = [
-  { label: "Futuristic", value: "futuristic" },
-  { label: "Lisp", value: "lisp" },
-  { label: "NES", value: "nes" },
-  { label: "Piano", value: "piano" },
-  { label: "Robot", value: "robot" },
-  { label: "SFX", value: "sfx" },
-  { label: "Standard", value: "standard" },
-  { label: "WoodLand", value: "woodland" },
-];
 
 function SelectOption({ label }: { label: string }) {
   return (
@@ -41,10 +37,10 @@ export default function SoundSelect() {
       value={soundCollection}
       width="10rem"
       withinPortal
-      data={soundCollections.map((item) => ({
-        value: item.value,
-        label: <SelectOption label={item.label} />,
-        preview: <SelectOption label={item.label} />,
+      data={SOUND_COLLECTIONS.map((value) => ({
+        value,
+        label: <SelectOption label={soundCollectionLabels[value]} />,
+        preview: <SelectOption label={soundCollectionLabels[value]} />,
       }))}
       onCommit={(next) => {
         setSoundCollection(next);

@@ -57,7 +57,7 @@ test("the seven eager preferences share declaration-ordered synchronous document
         ["download-destination-capability", { id: "download" }],
         ["file-workspace", { id: { id: "workspace" }, kind: "fileWorkspace" }],
         ["show-coordinates-v2", "all"],
-        ["sound-collection", "custom"],
+        ["sound-collection", "piano"],
         ["sound-volume", 0.25],
         ["lichess-all-options", { color: "black", speeds: ["rapid"], ratings: [1800] }],
         ["lichess-master-options", { moves: 12 }],
@@ -91,7 +91,7 @@ test("the seven eager preferences share declaration-ordered synchronous document
     first.set(atoms.soundVolumeAtom, (volume) => volume / 2);
     atoms.initializeRendererState();
     const second = createStore();
-    expect(second.get(atoms.soundCollectionAtom)).toBe("custom");
+    expect(second.get(atoms.soundCollectionAtom)).toBe("piano");
     expect(second.get(atoms.soundVolumeAtom)).toBe(0.25);
     expect(first.get(atoms.soundVolumeAtom)).toBe(0.125);
     expect(read).not.toHaveBeenCalled();

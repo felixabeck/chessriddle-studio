@@ -57,6 +57,13 @@ import {
     initializeBeforeUse,
 } from "./utils";
 import { FONT_SCALE_DEFAULT, fontScaleSchema } from "./fontScale";
+import {
+    coverageMinGamesSchema,
+    openingBookMaxPlySchema,
+    puzzleRatingRangeSchema,
+    soundCollectionSchema,
+    soundVolumeSchema,
+} from "./preferenceSchemas";
 import { PIECE_SCALE_DEFAULT, pieceScaleSchema } from "./pieceScale";
 import {
     DEFAULT_BOARD_IMAGE,
@@ -592,13 +599,13 @@ export const showCoordinatesAtom = documentPreferences.atomWithStorage<"no" | "e
 export const soundCollectionAtom = documentPreferences.atomWithStorage<string>(
     "sound-collection",
     "standard",
-    createPreferenceStorage("standard"),
+    createZodStorage<string>(soundCollectionSchema, localStorage),
 );
 
 export const soundVolumeAtom = documentPreferences.atomWithStorage<number>(
     "sound-volume",
     0.8,
-    createPreferenceStorage(0.8),
+    createZodStorage(soundVolumeSchema, localStorage),
 );
 
 export const pieceSetAtom = atomWithStorage<PieceSet>(
@@ -991,7 +998,7 @@ export const gameOpeningBookEnabledAtom = atomWithStorage<boolean>(
 export const gameOpeningBookMaxPlyAtom = atomWithStorage<number>(
     "game-opening-book-max-ply",
     40,
-    createPreferenceStorage(40),
+    createZodStorage(openingBookMaxPlySchema, localStorage),
 );
 
 // Puzzles
@@ -1018,7 +1025,7 @@ export const trackPuzzleTimeAtom = atomWithStorage<boolean>(
 export const puzzleRatingRangeAtom = atomWithStorage<[number, number]>(
     "puzzle-ratings",
     [1000, 1500],
-    createPreferenceStorage([1000, 1500]),
+    createZodStorage(puzzleRatingRangeSchema, localStorage),
 );
 
 export const puzzleThemeAtom = atomWithStorage<string | null>(
@@ -1030,7 +1037,7 @@ export const puzzleThemeAtom = atomWithStorage<string | null>(
 export const coverageMinGamesAtom = atomWithStorage<number>(
     "coverage-min-games",
     50,
-    createPreferenceStorage(50),
+    createZodStorage(coverageMinGamesSchema, localStorage),
 );
 
 export type PuzzleTimer = { attemptId: string } & (
