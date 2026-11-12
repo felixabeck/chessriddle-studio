@@ -146,6 +146,14 @@ fn load_puzzles(
     Ok(rows)
 }
 
+fn themes_query_error(error: diesel::result::Error) -> Error {
+    if error.to_string().contains("no such table: themes") {
+        Error::PuzzleThemesUnavailable
+    } else {
+        Error::from(error)
+    }
+}
+
 fn load_puzzle_themes(
     repository: &DatabaseRepository,
     file: crate::infra::inode_ownership::OwnedFile,
@@ -163,13 +171,7 @@ fn load_puzzle_themes(
             .select(themes::name)
             .order(themes::name.asc())
             .load(db)
-            .map_err(|error| {
-                if error.to_string().contains("no such table: themes") {
-                    Error::PuzzleThemesUnavailable
-                } else {
-                    Error::from(error)
-                }
-            })
+            .map_err(themes_query_error)
     })
 }
 
@@ -193,6 +195,7 @@ fn load_themes_for_puzzle(
             .select(themes::name)
             .order(themes::name.asc())
             .load(db)
+            .map_err(themes_query_error)
     })
 }
 
@@ -2376,6 +2379,41 @@ mod tests {
             &CancellationToken::new(),
         )
         .expect_err("empty schema must report missing puzzle themes");
+        let (_serialized, payload) = serialized_payload(&error);
+        assert_eq!(payload["category"], "puzzle-themes-unavailable");
+        assert!(matches!(error, Error::PuzzleThemesUnavailable));
+    }
+
+    #[test]
+    fn missing_themes_table_is_puzzle_themes_unavailable_for_one_puzzle() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("puzzle-without-themes.db3");
+        let repository = DatabaseRepository::default();
+        let mut database_connection = repository
+            .schema_specific_connection(&crate::db::test_target(&path))
+            .unwrap();
+        database_connection
+            .batch_execute(
+                "CREATE TABLE puzzles (id INTEGER PRIMARY KEY, fen TEXT NOT NULL, moves TEXT NOT NULL, rating INTEGER NOT NULL, rating_deviation INTEGER NOT NULL, popularity INTEGER NOT NULL, nb_plays INTEGER NOT NULL);
+                 INSERT INTO puzzles VALUES (1, 'fen', 'e2e4', 1200, 10, 1, 1);"
+            )
+            .unwrap();
+        database_connection
+            .batch_execute("PRAGMA wal_checkpoint(TRUNCATE);")
+            .unwrap();
+        drop(database_connection);
+        repository
+            .close_and_invalidate(&crate::db::test_target(&path))
+            .unwrap();
+        let object = opened_identity(&path);
+        let error = load_themes_for_puzzle(
+            &repository,
+            crate::infra::inode_ownership::OwnedFile::open(&path).unwrap(),
+            object,
+            1,
+            &CancellationToken::new(),
+        )
+        .expect_err("puzzles-only schema must report missing puzzle themes");
         let (_serialized, payload) = serialized_payload(&error);
         assert_eq!(payload["category"], "puzzle-themes-unavailable");
         assert!(matches!(error, Error::PuzzleThemesUnavailable));

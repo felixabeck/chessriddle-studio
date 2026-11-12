@@ -182,7 +182,7 @@ function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
   const firstResult = useRef<{
     attemptId: string | null;
     completion: Completion;
-    timeSpent: number;
+    timeSpent: number | undefined;
   } | null>(null);
   const [completionRetry, setCompletionRetry] = useState<{
     attemptId: string | null;
@@ -370,9 +370,12 @@ function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
     else if (puzzles[i].completion === "incorrect") break;
   }
 
+  const timedWonPuzzles = wonPuzzles.filter((p) => p.timeSpent !== undefined);
   const avgTimeSeconds =
-    wonPuzzles.length > 0
-      ? wonPuzzles.reduce((acc, p) => acc + (p.timeSpent || 0), 0) / wonPuzzles.length / 1000
+    timedWonPuzzles.length > 0
+      ? timedWonPuzzles.reduce((acc, p) => acc + (p.timeSpent ?? 0), 0) /
+        timedWonPuzzles.length /
+        1000
       : 0;
 
   function admitPuzzle(
@@ -541,7 +544,7 @@ function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
       firstResult.current = {
         attemptId,
         completion,
-        timeSpent: selectedTimer ? timerElapsed(selectedTimer) : (puzzle.timeSpent ?? 0),
+        timeSpent: selectedTimer ? timerElapsed(selectedTimer) : puzzle.timeSpent,
       };
     const first = firstResult.current;
     function queueRetry(save: () => boolean | Promise<boolean>, owns = isCurrent) {
@@ -596,7 +599,7 @@ function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
     refreshOwner();
     clearTimer(timer);
 
-    if (effectiveSelectedDb && puzzle?.id) {
+    if (effectiveSelectedDb && puzzle?.id && !themesTableMissing) {
       const database = effectiveSelectedDb;
       const generation = requestGeneration.current;
       completedThemeController.current?.abort();
@@ -631,7 +634,11 @@ function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
         };
         if (!saveThemes()) return false;
       } catch (error) {
-        if (ownsCompletion()) notifyUnlessCancelled(t("Common.Error"), error, "puzzle");
+        if (
+          ownsCompletion() &&
+          normalizeError(error).backendCategory !== "puzzle-themes-unavailable"
+        )
+          notifyUnlessCancelled(t("Common.Error"), error, "puzzle");
       }
     }
     return true;

@@ -40,6 +40,7 @@ function ChallengeHistory({
                   select(i);
                 }}
                 variant="light"
+                aria-current={isCurrent ? "step" : undefined}
                 color="success"
                 style={{ border: isCurrent ? "2px solid var(--cf-chart-2)" : "none" }}
               >
@@ -59,6 +60,7 @@ function ChallengeHistory({
                 })}
                 onClick={() => select(i)}
                 variant="light"
+                aria-current={isCurrent ? "step" : undefined}
                 key={i}
                 color="danger"
                 style={{ border: isCurrent ? "2px solid var(--cf-destructive)" : "none" }}
@@ -79,6 +81,7 @@ function ChallengeHistory({
                 })}
                 onClick={() => select(i)}
                 variant="light"
+                aria-current={isCurrent ? "step" : undefined}
                 key={i}
                 color="warning"
                 style={{ border: isCurrent ? "2px solid var(--cf-warning)" : "none" }}

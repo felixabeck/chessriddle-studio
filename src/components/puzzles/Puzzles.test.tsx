@@ -109,7 +109,8 @@ vi.mock("@/platform/native", async () => ({
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key: string, options?: { value?: string }) =>
+      key === "Common.SecondsShort" ? `${options?.value}s` : key,
   }),
 }));
 vi.mock("@/i18n", async (original) => ({
@@ -843,6 +844,32 @@ function trackingSwitch() {
     ),
   )!;
 }
+
+test("Avg time includes only tracked correct solves", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(10_000);
+  mocks.getPuzzle
+    .mockResolvedValueOnce({ ...puzzleRow(), moves: "e2e4 e7e5" })
+    .mockResolvedValueOnce({ ...puzzleB(), moves: "g1f3 d7d5" });
+  const atoms = await renderPuzzles();
+  await act(async () => atoms.set(jumpToNextPuzzleAtom, false));
+  expect(trackingSwitch().checked).toBe(false);
+  await newPuzzle();
+  await humanMove("e7", "e5");
+  expect(storedPuzzles()[0].completion).toBe("correct");
+  expect(storedPuzzles()[0].timeSpent).toBeUndefined();
+
+  await act(async () => trackingSwitch().click());
+  await newPuzzle();
+  vi.setSystemTime(12_500);
+  await humanMove("d7", "d5");
+  expect(storedPuzzles().map(({ completion }) => completion)).toEqual(["correct", "correct"]);
+  expect(storedPuzzles()[1].timeSpent).toBe(2500);
+  const avgTimeLabel = [...document.querySelectorAll("p")].find(
+    (element) => element.textContent === "Puzzle.AvgTime",
+  );
+  expect(avgTimeLabel?.parentElement?.textContent).toBe("Puzzle.AvgTime2.5s");
+});
 
 test.each(["correct", "incorrect"] as const)(
   "timer cleanup cannot overwrite the first %s completion after the clock advances",
@@ -3804,6 +3831,29 @@ test("shows the outdated-database alert for puzzle-themes-unavailable", async ()
   });
   expect(mocks.notificationShow).not.toHaveBeenCalled();
 });
+
+test.each(["settled", "pending"] as const)(
+  "completing a legacy puzzle stays quiet with the theme list %s",
+  async (listState) => {
+    const list = deferred<string[]>();
+    const unavailable = commandError("puzzle-themes-unavailable", "native failed");
+    if (listState === "pending") mocks.getPuzzleThemes.mockReturnValue(list.promise);
+    else mocks.getPuzzleThemes.mockRejectedValue(unavailable);
+    mocks.getThemesForPuzzle.mockRejectedValue(unavailable);
+    mocks.getPuzzle.mockResolvedValue({ ...puzzleRow(), moves: "e2e4 e7e5" });
+    const atoms = await renderPuzzles();
+    await act(async () => atoms.set(jumpToNextPuzzleAtom, false));
+    await newPuzzle();
+    await humanMove("e7", "e5");
+
+    expect(storedPuzzles()[0].completion).toBe("correct");
+    expect(mocks.getThemesForPuzzle).toHaveBeenCalledTimes(listState === "pending" ? 1 : 0);
+    expect(mocks.notificationShow).not.toHaveBeenCalled();
+    if (listState === "pending") await act(async () => list.reject(unavailable));
+    expect(outdatedAlert()).toBeTruthy();
+    expect(mocks.notificationShow).not.toHaveBeenCalled();
+  },
+);
 
 test("reports a current theme database failure without showing the unavailable alert", async () => {
   mocks.getPuzzleThemes.mockRejectedValue(commandError("database", "no such table: themes"));
