@@ -24355,7 +24355,7 @@ Handled 2026-11-12 by drain session bdcaf057 (lens tier; lenses correctness, roo
 
 ### A partial-position pattern in the local explorer is overwritten by the full board FEN on the next board move
 
-* **ID:** f-20261112-36 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-36 · **Status:** handled · **Area:** db-search · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** behaviour
 - **Spotted outside diff:** no
 - **Where:** `src/components/panels/database/DatabasePanel.tsx:179-183` (effect `setLocalOptions((q) => ({ ...q, fen: debouncedFen }))` on every `debouncedFen` change, regardless of `q.type`); patterns are built in `src/components/panels/database/options/LocalOptionsPanel.tsx:42-49` (Similar structure), `:228-250` (board editor) and `:275-283` (Empty board)
@@ -24364,6 +24364,8 @@ Handled 2026-11-12 by drain session bdcaf057 (lens tier; lenses correctness, roo
 - **Fix:** only sync `fen` from the board when `type === "exact"` (or keep separate `exactFen` / `pattern` fields), and add a DatabasePanel test that sets a partial pattern, makes a board move, and asserts the pattern is kept.
 - **Proof:** ephemeral probe in the `DatabasePanel.test.tsx` harness (`mountLocal`, readable reference DB): set `localOptionsFamily` to `{type:"partial", fen:"8/pppppppp/8/8/8/8/PPPPPPPP/8 w - - 0 1"}`, then `treeStore.makeMove({payload:"e4"})` → options become `["partial","rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"]`. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 18)
+* **Handled 2026-11-12 (drain 04fc1fe3-785d-40da-8d47-1776fef98a8f):** DatabasePanel only syncs the board FEN into local options while `type === exact`; a partial pattern is returned unchanged (same reference) across board moves and remounts. Switching to Exact keeps the existing "Current position" button as the way to resync. Commit `f0f6c3b11` (pushed to origin/master). Proof: new Vitest tests (fix-revert red/green for f-20261112-40, -36, -37), lenses correctness/root-cause/tests/code-quality/minimalism APPROVED, `pnpm gates:push -- --frontend` green.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"18d7a2a84922ee51eb47f7b9cb4b83e2c9bde8f8be6f753edcdd41d9b5acdfa2","header_sha256":"c9a374495f472650f12905a40fbde3d14052316a401f1ea30a488ca816ad8958","header_status":"handled","input_sha256":"30832b9b1599195e74d5a8d4a9a752160d25f7806c1e0b2f6d9d3d8ff5d479d8","kind":"mutation-receipt","operation":"dfbc9e8e43a8c42429be0b9c91abc98a44d8100e4c220499aa9ae4fb29c0dc50","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-36"],"target":"f-20261112-36","v":1} -->
 
 ---
 
