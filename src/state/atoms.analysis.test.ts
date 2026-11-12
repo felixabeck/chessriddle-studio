@@ -121,6 +121,78 @@ const lines = (uci: string): BestMoves[] => [
     },
 ];
 
+test("best-move arrows reuse the Map for deeper identical lines while analysis keeps the new payload", async () => {
+    const store = createStore();
+    const tab = "analysis-arrow-depth-reuse";
+    await store.set(enginesAtom, [engine]);
+    const source = engineMovesFamily({ tab, engine: engine.id });
+    const key = analysisSearch(INITIAL_FEN, [], false).key!;
+    const arrows = createBestMovesAtom(tab, INITIAL_FEN, []);
+    const initial = lines("e2e4");
+    store.set(source, new AnalysisLineMemory(new Map([[key, initial]])));
+    const before = store.get(arrows);
+    expect(before.size).toBe(1);
+    const deeper = initial.map((line) => ({
+        ...line,
+        depth: line.depth + 5,
+        nodes: line.nodes + 100n,
+        uciMoves: [...line.uciMoves],
+        score: { ...line.score, value: { ...line.score.value } },
+    }));
+    store.set(source, new AnalysisLineMemory(new Map([[key, deeper]])));
+    expect(store.get(arrows)).toBe(before);
+    expect(store.get(source).get(key)).toBe(deeper);
+    expect(store.get(source).get(key)?.[0]).toMatchObject({ depth: 25, nodes: 101n });
+    disposeTabAtoms(tab);
+});
+
+test.each(["PV", "score"] as const)(
+    "best-move arrows replace the reused Map when the %s changes",
+    async (change) => {
+        const store = createStore();
+        const tab = `analysis-arrow-change-${change}`;
+        await store.set(enginesAtom, [engine]);
+        const source = engineMovesFamily({ tab, engine: engine.id });
+        const key = analysisSearch(INITIAL_FEN, [], false).key!;
+        const arrows = createBestMovesAtom(tab, INITIAL_FEN, []);
+        store.set(source, new Map([[key, lines("e2e4")]]));
+        const before = store.get(arrows);
+        store.set(source, new Map([[key, lines("e2e4")]]));
+        expect(store.get(arrows)).toBe(before);
+        const changed = lines(change === "PV" ? "d2d4" : "e2e4");
+        if (change === "score") changed[0].score.value = { type: "cp", value: 100 };
+        store.set(source, new Map([[key, changed]]));
+        const after = store.get(arrows);
+        expect(after).not.toBe(before);
+        expect(after.get(0)?.[0].pv).toEqual(changed[0].uciMoves);
+        const beforeWinChance = before.get(0)![0].winChance;
+        const afterWinChance = after.get(0)![0].winChance;
+        expect(afterWinChance >= beforeWinChance).toBe(true);
+        expect(afterWinChance === beforeWinChance).toBe(change === "PV");
+        disposeTabAtoms(tab);
+    },
+);
+
+test("best-move arrows reuse empty Maps for missing lines and unavailable searches", async () => {
+    const store = createStore();
+    const tab = "analysis-arrow-empty-reuse";
+    await store.set(enginesAtom, []);
+    const arrows = createBestMovesAtom(tab, INITIAL_FEN, []);
+    const empty = store.get(arrows);
+    await store.set(enginesAtom, [engine]);
+    expect(store.get(arrows)).toBe(empty);
+    store.set(engineMovesFamily({ tab, engine: engine.id }), new Map());
+    expect(store.get(arrows)).toBe(empty);
+
+    const checkedFen = "4k3/8/8/8/8/8/4r3/4K3 w - - 0 7";
+    store.set(threatFamily(tab), true);
+    const unavailable = createBestMovesAtom(tab, checkedFen, []);
+    const unavailableEmpty = store.get(unavailable);
+    await store.set(enginesAtom, [{ ...engine, loaded: false }]);
+    expect(store.get(unavailable)).toBe(unavailableEmpty);
+    disposeTabAtoms(tab);
+});
+
 test("both atoms select only the current mode with coexisting normal and threat entries", async () => {
     const store = createStore();
     const tab = "analysis-mode-selection";

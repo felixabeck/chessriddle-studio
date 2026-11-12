@@ -50,6 +50,7 @@ import {
 import { useHotkeys } from "@mantine/hooks";
 import { MantineProvider } from "@mantine/core";
 import BoardAnalysis from "./BoardAnalysis";
+import type Board from "./Board";
 import { normalizeError, type AppError } from "@/platform/errors";
 import FileFreshnessGate from "@/components/tabs/FileFreshnessGate";
 import i18n, { initializeI18n } from "@/i18n";
@@ -208,7 +209,8 @@ vi.mock("../panels/analysis/AnalysisPanel", () => ({ default: () => null }));
 vi.mock("../panels/annotation/AnnotationPanel", () => ({ default: () => null }));
 vi.mock("../panels/database/DatabasePanel", () => ({ default: () => null }));
 vi.mock("../panels/practice/PracticePanel", () => ({ default: () => null }));
-vi.mock("./Board", () => ({ default: () => null }));
+const board = vi.hoisted(() => vi.fn((_props: React.ComponentProps<typeof Board>) => null));
+vi.mock("./Board", () => ({ default: board }));
 vi.mock("./BoardControls", () => ({ default: () => null }));
 vi.mock("./EditingCard", () => ({ default: () => null }));
 vi.mock("./EvalListener", () => ({ default: () => null }));
@@ -299,6 +301,7 @@ describe("BoardAnalysis", () => {
   let reset: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
+    board.mockClear();
     mocks.editingMode = false;
     mocks.realTabs = false;
     mocks.compactTabs = false;
@@ -383,6 +386,32 @@ describe("BoardAnalysis", () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
+
+  test.each(["repertoire", "game"] as const)(
+    "passes the %s file metadata type to Board as repertoire",
+    async (type) => {
+      await act(async () =>
+        jotaiStore.set(tabsAtom, (tabs) =>
+          tabs.map((current) =>
+            current.value === tabId && current.gameOrigin.kind === "file"
+              ? {
+                  ...current,
+                  gameOrigin: {
+                    ...current.gameOrigin,
+                    file: {
+                      ...current.gameOrigin.file,
+                      metadata: { ...current.gameOrigin.file.metadata, type },
+                    },
+                  },
+                }
+              : current,
+          ),
+        ),
+      );
+      expect(board).toHaveBeenCalled();
+      expect(board.mock.lastCall?.[0].repertoire).toBe(type === "repertoire");
+    },
+  );
 
   async function modalShortcut(keys: string, key: string, ctrlKey = false) {
     const binding = hotkeys.mock.calls

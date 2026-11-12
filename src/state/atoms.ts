@@ -1316,14 +1316,41 @@ export const engineRetryFamily = atomFamily(
 
 const BEST_MOVE_ARROW_MAX_WIN_CHANCE_LOSS = 10; // win-chance percentage points
 
+type BestMoveArrows = Map<number, { pv: string[]; winChance: number }[]>;
+
+function equalBestMoveArrows(previous: BestMoveArrows, next: BestMoveArrows): boolean {
+    if (previous.size !== next.size) return false;
+    const entries = previous.entries();
+    for (const [key, lines] of next) {
+        const entry = entries.next().value;
+        if (!entry || entry[0] !== key || entry[1].length !== lines.length) return false;
+        for (let i = 0; i < lines.length; i++) {
+            const before = entry[1][i];
+            const after = lines[i];
+            if (
+                before.winChance !== after.winChance ||
+                before.pv.length !== after.pv.length ||
+                !before.pv.every((move, index) => move === after.pv[index])
+            )
+                return false;
+        }
+    }
+    return true;
+}
+
 /** Returns each engine's best moves for the current position. Callers must memoize the result. */
-export const createBestMovesAtom = (tab: string, fen: string, gameMoves: string[]) =>
-    atom<Map<number, { pv: string[]; winChance: number }[]>>((get) => {
+export const createBestMovesAtom = (tab: string, fen: string, gameMoves: string[]) => {
+    let previous: BestMoveArrows = new Map();
+    const reuse = (next: BestMoveArrows) => {
+        if (!equalBestMoveArrows(previous, next)) previous = next;
+        return previous;
+    };
+    return atom<BestMoveArrows>((get) => {
         const engines = get(enginesAtom);
-        if (!engines) return new Map();
-        const bestMoves = new Map<number, { pv: string[]; winChance: number }[]>();
+        if (!engines) return reuse(new Map());
+        const bestMoves: BestMoveArrows = new Map();
         const search = analysisSearch(fen, gameMoves, get(threatFamily(tab)));
-        if (!search.available) return bestMoves;
+        if (!search.available) return reuse(bestMoves);
         const { searchingTurn, key } = search;
         let n = 0;
         for (const engine of engines.filter((e) => e.loaded)) {
@@ -1348,8 +1375,9 @@ export const createBestMovesAtom = (tab: string, fen: string, gameMoves: string[
             }
             n++;
         }
-        return bestMoves;
+        return reuse(bestMoves);
     });
+};
 
 /** Returns the first engine with lines for this position. Callers must memoize the result. */
 export const createFirstEngineWithLinesAtom = (tab: string, fen: string, gameMoves: string[]) =>

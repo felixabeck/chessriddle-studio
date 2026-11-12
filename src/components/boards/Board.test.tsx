@@ -190,6 +190,19 @@ test.each(["white", "black"] as const)(
   },
 );
 
+test("repertoire bars use trimmed line titles with the event fallback for an unknown White header", async () => {
+  tree.getState().setHeaders({
+    ...tree.getState().headers,
+    white: "  ? ",
+    event: "  Najdorf main line  ",
+    black: "  English attack  ",
+  });
+  await render({ repertoire: true });
+  const bars = boardBar.mock.calls.slice(-2).map(([props]) => props);
+  expect(bars.map((props) => props.name)).toEqual(["English attack", "Najdorf main line"]);
+  for (const props of bars) expect(props.onNameClick).toBeUndefined();
+});
+
 test("player bars remain clickable and open FideInfo for that player", async () => {
   tree.getState().setHeaders({
     ...tree.getState().headers,
