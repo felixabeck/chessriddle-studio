@@ -429,9 +429,10 @@ pub struct TempGame {
 }
 
 impl TempGame {
-    pub fn insert_to_db(&self, db: &mut SqliteConnection) -> Result<i32, diesel::result::Error> {
-        let pawn_home = get_pawn_home(self.position.board());
-
+    fn index_ids(
+        &self,
+        db: &mut SqliteConnection,
+    ) -> Result<(i32, i32, i32, i32), diesel::result::Error> {
         let white_id = if let Some(name) = database_index_name(self.white_name.as_deref()) {
             create_player(db, name)?.id
         } else {
@@ -454,6 +455,13 @@ impl TempGame {
         } else {
             0
         };
+
+        Ok((white_id, black_id, event_id, site_id))
+    }
+
+    pub fn insert_to_db(&self, db: &mut SqliteConnection) -> Result<i32, diesel::result::Error> {
+        let pawn_home = get_pawn_home(self.position.board());
+        let (white_id, black_id, event_id, site_id) = self.index_ids(db)?;
 
         let ply_count = iter_mainline_move_bytes(&self.moves).count() as i32;
         let minimum_material = self.material_count.minimum_material(self.position.board());
@@ -5403,26 +5411,7 @@ fn write_parsed_db_game(
     }
     let game_time = temp_game.time.clone().or(existing.time);
 
-    let white_id = if let Some(name) = database_index_name(temp_game.white_name.as_deref()) {
-        create_player(db, name)?.id
-    } else {
-        0
-    };
-    let black_id = if let Some(name) = database_index_name(temp_game.black_name.as_deref()) {
-        create_player(db, name)?.id
-    } else {
-        0
-    };
-    let event_id = if let Some(name) = database_index_name(temp_game.event_name.as_deref()) {
-        create_event(db, name, temp_game.date.as_deref())?.id
-    } else {
-        0
-    };
-    let site_id = if let Some(name) = database_index_name(temp_game.site_name.as_deref()) {
-        create_site(db, name)?.id
-    } else {
-        0
-    };
+    let (white_id, black_id, event_id, site_id) = temp_game.index_ids(db)?;
 
     let minimum_material = temp_game
         .material_count
@@ -7111,6 +7100,37 @@ mod tests {
             let (games, players, events, sites, _) = database_state(db);
             assert_eq!((games, players, events, sites), (1, 1, 1, 1));
         }
+
+        let existing: Game = games::table.find(id).first(db).unwrap();
+        let replacement = parsed_game(&test_game_pgn("unknown", "unknown", "unknown", "unknown"));
+        db.transaction(|db| {
+            write_parsed_db_game(
+                db,
+                id,
+                &replacement,
+                &game_row_stamp(&existing),
+                remove_orphans_and_refresh_derived_data,
+            )
+        })
+        .unwrap();
+        let stored: Game = games::table.find(id).first(db).unwrap();
+        for id in [
+            stored.white_id,
+            stored.black_id,
+            stored.event_id,
+            stored.site_id,
+        ] {
+            assert_ne!(id, 0);
+        }
+        for id in [stored.white_id, stored.black_id] {
+            let player: Player = players::table.find(id).first(db).unwrap();
+            assert_eq!(player.name.as_deref(), Some("unknown"));
+        }
+        let event: Event = events::table.find(stored.event_id).first(db).unwrap();
+        assert_eq!(event.name.as_deref(), Some("unknown"));
+        assert_eq!(event.year, 2026);
+        let site: Site = sites::table.find(stored.site_id).first(db).unwrap();
+        assert_eq!(site.name.as_deref(), Some("unknown"));
     }
 
     #[test]
