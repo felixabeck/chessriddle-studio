@@ -935,7 +935,6 @@
     "Home.ChessRiddle.Title": "ChessRiddle",
     "Home.Databases.Empty.Description": "Wygląda na to, że nie pobrano jeszcze partii tego gracza.",
     "Home.Databases.Empty.Title": "Nie znaleziono partii",
-    "Home.Databases.ErrorLoading": "Błąd wczytywania baz danych: {{error}}",
     "Home.Databases.Failed.Title": "Nie udało się wczytać statystyk",
     "Home.Databases.Incomplete.Description": "Nie udało się odczytać tych baz danych: {{databases}}",
     "Home.Databases.Incomplete.Title": "Statystyki są niekompletne",

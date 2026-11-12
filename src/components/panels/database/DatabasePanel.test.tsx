@@ -1057,14 +1057,16 @@ describe("DatabasePanel", () => {
     mocks.getDatabases.mockResolvedValue(databaseList([readable]));
     mocks.collectionForDatabase.mockRejectedValue(new Error("Collection unavailable"));
     const { store, revalidate } = await mountLocal();
-    expect(container.textContent).toContain("Databases.LoadError.Title");
+    expect(selectedPanel("stats").querySelector('[role="alert"]')?.textContent).toBe(
+      "Collections.Unavailable",
+    );
     expect(container.textContent).not.toContain("Collection unavailable");
     expect(container.textContent).not.toContain("Board.Database.NoReference1");
 
     mocks.getDatabases.mockResolvedValue(databaseList([unreadable]));
     await revalidate();
     expectNoReference();
-    expect(container.textContent).not.toContain("Databases.LoadError.Title");
+    expect(container.textContent).not.toContain("Collections.Unavailable");
     expectSavedChoice(store);
   });
 

@@ -5,6 +5,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { NormalizedGame } from "@/bindings";
+import { type AppError, normalizeError } from "@/platform/errors";
 import { tabsAtom, recentFilesAtom } from "@/state/atoms";
 import { activeDatabaseViewStore } from "@/state/store/database";
 import { tabStorage } from "@/state/store/tabStorage";
@@ -21,7 +22,7 @@ const mocks = vi.hoisted(() => ({
   notify: vi.fn(),
   deleteDbGame: vi.fn(),
   deletedGameId: undefined as number | undefined,
-  queryError: undefined as Error | undefined,
+  queryError: undefined as Error | AppError | undefined,
   table: undefined as
     | {
         sortStatus: { columnAccessor: string; direction: "asc" | "desc" };
@@ -51,6 +52,10 @@ vi.mock("react-i18next", async (original) => ({
   useTranslation: () => ({ t: (key: string, options?: any) => options?.defaultValue ?? key }),
 }));
 vi.mock("@mantine/notifications", () => ({ notifications: { show: mocks.notify } }));
+vi.mock("@/i18n", async (original) => ({
+  ...(await original<typeof import("@/i18n")>()),
+  default: { t: (key: string) => key },
+}));
 vi.mock("@/utils/chess", async (original) => ({
   ...(await original<typeof import("@/utils/chess")>()),
   parsePGN: mocks.parsePGN,
@@ -226,12 +231,18 @@ test("the Games searches distinguish the player and opponent", async () => {
 test.each([
   ["C:\\secret\\path diag", "Databases.LoadError.Title"],
   ["Cancellation", "Databases.Game.NoGamesFound"],
-])("query failure %s renders safe empty-state copy", async (message, expected) => {
-  mocks.queryError = new Error(message);
-  await render();
-  expect(host.querySelector("tbody")?.textContent).toBe(expected);
-  expect(host.textContent).not.toContain(message);
-});
+  ["private database diagnostic", "Databases.LoadError.RootPermission", "permission"],
+])(
+  "query failure %s renders safe empty-state copy",
+  async (message, expected, rootFailure = undefined) => {
+    mocks.queryError = rootFailure
+      ? normalizeError({ tag: "backend-error", category: "io", message, rootFailure })
+      : new Error(message);
+    await render();
+    expect(host.querySelector("tbody")?.textContent).toBe(expected);
+    expect(host.textContent).not.toContain(message);
+  },
+);
 
 test("plies sorting maps the native tag to the row accessor in both directions", async () => {
   await render();

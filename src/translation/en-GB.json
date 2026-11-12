@@ -911,7 +911,6 @@
     "Home.ChessRiddle.Title": "ChessRiddle",
     "Home.Databases.Empty.Description": "It looks like you haven't downloaded any games for this player yet.",
     "Home.Databases.Empty.Title": "No games found",
-    "Home.Databases.ErrorLoading": "Error loading databases: {{error}}",
     "Home.Databases.Failed.Title": "Could not load statistics",
     "Home.Databases.Incomplete.Description": "These databases could not be read: {{databases}}",
     "Home.Databases.Incomplete.Title": "Statistics are incomplete",

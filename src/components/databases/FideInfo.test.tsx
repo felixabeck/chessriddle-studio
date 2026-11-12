@@ -188,6 +188,30 @@ test("an open modal renders the real federation flag", async () => {
   expect(modalText()).toContain("Magnus");
 });
 
+test("a pending player response renders the loader and loading text", async () => {
+  const { FideInfo, SWRConfig } = await importFideInfo();
+  let resolvePlayer!: (value: ReturnType<typeof player>) => void;
+  mocks.getFidePlayer.mockReturnValue(
+    new Promise((resolve) => {
+      resolvePlayer = resolve;
+    }),
+  );
+
+  await renderFideInfo(FideInfo, SWRConfig, {
+    opened: true,
+    setOpened: vi.fn(),
+    name: "Pending Player",
+  });
+
+  expect(mocks.getFidePlayer).toHaveBeenCalledWith("Pending Player");
+  expect(container.querySelector(".mantine-Loader-root")).not.toBeNull();
+  expect(modalText()).toContain("Common.Loading");
+
+  await act(async () => resolvePlayer(player("Pending Player")));
+  expect(container.querySelector(".mantine-Loader-root")).toBeNull();
+  expect(modalText()).not.toContain("Common.Loading");
+});
+
 test("a rejected player response renders translated search error copy without its raw message", async () => {
   const { FideInfo, SWRConfig } = await importFideInfo();
   const rawMessage = "C:\\secret\\path diag";

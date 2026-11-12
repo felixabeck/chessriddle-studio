@@ -3,12 +3,17 @@ import { createRoot, type Root } from "react-dom/client";
 import { SWRConfig, type Cache } from "swr";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { PositionStats } from "@/bindings";
+import { normalizeError } from "@/platform/errors";
 import { databaseHandleKey, type LocalOptions } from "@/utils/db";
 import { useLocalExplorer } from "./useLocalExplorer";
 
 const mocks = vi.hoisted(() => ({ searchPosition: vi.fn(), generation: 1, unavailable: false }));
 vi.mock("@/platform/tauri", () => ({ tauri: { searchPosition: mocks.searchPosition } }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock("@/i18n", async (original) => ({
+  ...(await original<typeof import("@/i18n")>()),
+  default: { t: (key: string) => key },
+}));
 vi.mock("@/state/linkedCollections", () => ({
   useCollectionCurrency: () => ({
     collection: { generation: mocks.generation, status: mocks.unavailable ? "failed" : "ready" },
@@ -47,7 +52,7 @@ function Consumer({
     enabled,
     "progress",
   );
-  return <span>{JSON.stringify({ ...result, error: result.error?.message })}</span>;
+  return <span>{JSON.stringify(result)}</span>;
 }
 let root: Root;
 let container: HTMLDivElement;
@@ -166,12 +171,26 @@ test("linked generation changes the key and disabled or unavailable searches do 
   await render(true, false);
   expect(mocks.searchPosition).toHaveBeenCalledTimes(2);
   expect(container.textContent).toContain('"loading":false');
+  expect(JSON.parse(container.textContent!).error).toBe("Collections.Unavailable");
 });
-test("native errors terminate loading and remain available to the consumer", async () => {
-  mocks.searchPosition.mockRejectedValue(new Error("Search failed"));
+test.each([
+  [new Error("Search failed"), "Databases.LoadError.Title"],
+  [new Error("Cancellation"), undefined],
+  [
+    normalizeError({
+      tag: "backend-error",
+      category: "io",
+      message: "private database diagnostic",
+      rootFailure: "permission",
+    }),
+    "Databases.LoadError.RootPermission",
+  ],
+])("native error %s terminates loading with safe guidance", async (error, expected) => {
+  mocks.searchPosition.mockRejectedValue(error);
   await render(true, false);
-  expect(container.textContent).toContain('"loading":false');
-  expect(container.textContent).toContain('"error":"Search failed"');
+  const result = JSON.parse(container.textContent!);
+  expect(result.loading).toBe(false);
+  expect(result.error).toBe(expected);
 });
 
 test("sample options distinguish cache entries and the last subscriber cancels work", async () => {

@@ -899,7 +899,6 @@
     "Home.ChessRiddle.Title": "ChessRiddle",
     "Home.Databases.Empty.Description": "您似乎还没为此棋手下载任何对局！",
     "Home.Databases.Empty.Title": "未找到对局",
-    "Home.Databases.ErrorLoading": "加载数据库时出错：{{error}}",
     "Home.Databases.Failed.Title": "无法加载统计数据",
     "Home.Databases.Incomplete.Description": "无法读取以下数据库：{{databases}}",
     "Home.Databases.Incomplete.Title": "统计数据不完整",

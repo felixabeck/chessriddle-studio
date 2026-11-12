@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import useSWRImmutable from "swr/immutable";
 import { type DatabaseHandle, type Player } from "@/bindings";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
+import { inlineFailureMessage } from "@/components/files/notifyError";
 import PersonalPlayerCard from "../home/PersonalCard";
 
 function PlayerCard({ player, file }: { player: Player; file: DatabaseHandle }) {
@@ -19,6 +20,7 @@ function PlayerCard({ player, file }: { player: Player; file: DatabaseHandle }) 
       tauri.getPlayersGameInfo(crypto.randomUUID(), file, id, { signal }),
     ),
   );
+  const errorText = inlineFailureMessage(error, "database", t("Databases.LoadError.Title"));
 
   return (
     <>
@@ -32,10 +34,10 @@ function PlayerCard({ player, file }: { player: Player; file: DatabaseHandle }) 
           </Center>
         </Paper>
       )}
-      {error && (
+      {errorText !== undefined && (
         <Paper withBorder h="100%">
           <Center h="100%">
-            <Text ta="center">{t("Home.Databases.ErrorLoading", { error })}</Text>
+            <Text ta="center">{errorText}</Text>
           </Center>
         </Paper>
       )}

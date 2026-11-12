@@ -45,9 +45,7 @@ export function notifyUnlessCancelled(
     if (isErrorReported(error)) return;
     const visible = errorUnlessCancelled(error);
     if (visible) {
-        const fallback =
-            (domain ? rootFailureMessage(domain, visible) : undefined) ?? visible.message;
-        const { message, remoteRejection } = failureMessage(visible, domain, fallback);
+        const { message, remoteRejection } = failureMessage(visible, domain, visible.message);
         notifications.show({
             color: "danger",
             title,

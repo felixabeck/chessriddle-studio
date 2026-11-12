@@ -935,7 +935,6 @@
     "Home.ChessRiddle.Title": "ChessRiddle",
     "Home.Databases.Empty.Description": "Схоже, ви ще не завантажили жодної гри цього гравця.",
     "Home.Databases.Empty.Title": "Ігор не знайдено",
-    "Home.Databases.ErrorLoading": "Помилка завантаження баз даних: {{error}}",
     "Home.Databases.Failed.Title": "Не вдалося завантажити статистику",
     "Home.Databases.Incomplete.Description": "Не вдалося прочитати ці бази даних: {{databases}}",
     "Home.Databases.Incomplete.Title": "Статистика неповна",

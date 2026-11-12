@@ -923,7 +923,6 @@
     "Home.ChessRiddle.Title": "ChessRiddle",
     "Home.Databases.Empty.Description": "Non hai ancora scaricato partite per questo giocatore",
     "Home.Databases.Empty.Title": "Nessuna partita trovata",
-    "Home.Databases.ErrorLoading": "Errore di caricamento database: {{error}}",
     "Home.Databases.Failed.Title": "Impossibile caricare le statistiche",
     "Home.Databases.Incomplete.Description": "Non è stato possibile leggere questi database: {{databases}}",
     "Home.Databases.Incomplete.Title": "Le statistiche sono incomplete",

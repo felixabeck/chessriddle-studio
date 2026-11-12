@@ -911,7 +911,6 @@
     "Home.ChessRiddle.Title": "ChessRiddle",
     "Home.Databases.Empty.Description": "Henüz veritabanınız yok.",
     "Home.Databases.Empty.Title": "Veritabanı yok",
-    "Home.Databases.ErrorLoading": "Veritabanları yüklenirken hata oluştu: {{error}}",
     "Home.Databases.Failed.Title": "İstatistikler yüklenemedi",
     "Home.Databases.Incomplete.Description": "Bu veritabanları okunamadı: {{databases}}",
     "Home.Databases.Incomplete.Title": "İstatistikler eksik",

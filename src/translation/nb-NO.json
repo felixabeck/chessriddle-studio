@@ -911,7 +911,6 @@
     "Home.ChessRiddle.Title": "ChessRiddle",
     "Home.Databases.Empty.Description": "Det ser ut til at du ikke har lastet ned noen partier for denne spilleren ennå.",
     "Home.Databases.Empty.Title": "Ingen partier funnet",
-    "Home.Databases.ErrorLoading": "Feil ved lasting av databaser: {{error}}",
     "Home.Databases.Failed.Title": "Kunne ikke laste statistikk",
     "Home.Databases.Incomplete.Description": "Disse databasene kunne ikke leses: {{databases}}",
     "Home.Databases.Incomplete.Title": "Statistikken er ufullstendig",

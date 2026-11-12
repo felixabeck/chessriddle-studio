@@ -237,7 +237,10 @@ function DatabasePanel() {
   );
   const openingData: OpeningData | undefined = db === "local" ? localExplorer : onlineData;
   const isLoading = db === "local" ? localExplorer.loading : onlineLoading;
-  const error = db === "local" ? localExplorer.error : openingError;
+  const errorMessage: string | undefined =
+    db === "local"
+      ? localExplorer.error
+      : inlineFailureMessage(openingError, undefined, t("Board.Database.ExplorerLoadError"));
 
   const grandTotal = openingData?.openings?.reduce(
     (acc, curr) => acc + curr.black + curr.white + curr.draw,
@@ -326,7 +329,7 @@ function DatabasePanel() {
 
         <PanelWithError
           value="stats"
-          error={error}
+          errorMessage={errorMessage}
           type={db}
           header={header}
           missingExplorerAuthentication={missingExplorerAuthentication}
@@ -336,7 +339,7 @@ function DatabasePanel() {
         </PanelWithError>
         <PanelWithError
           value="games"
-          error={error}
+          errorMessage={errorMessage}
           type={db}
           header={header}
           missingExplorerAuthentication={missingExplorerAuthentication}
@@ -365,7 +368,7 @@ function DatabasePanel() {
         </PanelWithError>
         <PanelWithError
           value="options"
-          error={error}
+          errorMessage={errorMessage}
           type={db}
           header={header}
           missingExplorerAuthentication={missingExplorerAuthentication}
@@ -388,7 +391,7 @@ function DatabasePanel() {
 
 function PanelWithError(props: {
   value: string;
-  error: Error | string | undefined;
+  errorMessage: string | undefined;
   type: string;
   header: React.ReactNode;
   children: React.ReactNode;
@@ -406,17 +409,8 @@ function PanelWithError(props: {
       </Alert>
     );
   }
-  if (props.error != null) {
-    const message = inlineFailureMessage(
-      props.error,
-      props.type === "local" ? "database" : undefined,
-      props.type === "local"
-        ? t("Databases.LoadError.Title")
-        : t("Board.Database.ExplorerLoadError"),
-    );
-    if (message !== undefined) {
-      children = <Alert color="danger">{message}</Alert>;
-    }
+  if (props.errorMessage !== undefined) {
+    children = <Alert color="danger">{props.errorMessage}</Alert>;
   }
   if (props.type === "local" && !props.hasReferenceDatabase) {
     children = <NoDatabaseWarning />;

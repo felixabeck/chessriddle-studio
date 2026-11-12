@@ -935,7 +935,6 @@
     "Home.ChessRiddle.Title": "ChessRiddle",
     "Home.Databases.Empty.Description": "Падобна, вы яшчэ не спампавалі гульні гэтага гульца.",
     "Home.Databases.Empty.Title": "Гульняў не знойдзена",
-    "Home.Databases.ErrorLoading": "Памылка загрузкі баз дадзеных: {{error}}",
     "Home.Databases.Failed.Title": "Не ўдалося загрузіць статыстыку",
     "Home.Databases.Incomplete.Description": "Не ўдалося прачытаць гэтыя базы даных: {{databases}}",
     "Home.Databases.Incomplete.Title": "Статыстыка няпоўная",

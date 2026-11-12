@@ -89,9 +89,11 @@ vi.mock("@mantine/core", () => ({
       <input aria-label={label} type="checkbox" checked={checked} onChange={onChange} />
     </label>
   ),
-  Group: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Group: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement> & { gap?: string }) => (
+    <div {...props}>{children}</div>
+  ),
   InputWrapper: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  Loader: () => <span />,
+  Loader: () => <span data-testid="loader" />,
   Text: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
   Modal: ({
     opened,
@@ -319,8 +321,12 @@ describe("account authentication", () => {
 
     expect(mocks.authenticateLichess).toHaveBeenCalledTimes(1);
     expect(document.querySelector<HTMLButtonElement>("button[type='submit']")?.disabled).toBe(true);
+    const status = container.querySelector('[role="status"]');
+    expect(status?.querySelector('[data-testid="loader"]')).not.toBeNull();
+    expect(status?.textContent).toBe("Common.Loading");
 
     await act(async () => resolveAuthentication?.({ ok: false }));
+    expect(container.querySelector('[role="status"]')).toBeNull();
     await act(async () => root.unmount());
   });
 });

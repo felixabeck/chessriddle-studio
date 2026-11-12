@@ -235,7 +235,7 @@ function OpeningTree({ player, file }: { player: Player; file: DatabaseHandle })
           )}
           {error ? (
             <Text role="alert" c="danger">
-              {t("Home.Databases.ErrorLoading", { error })}
+              {error}
             </Text>
           ) : (
             !loading && (

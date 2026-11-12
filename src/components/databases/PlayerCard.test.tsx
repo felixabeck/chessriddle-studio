@@ -64,13 +64,15 @@ afterEach(async () => {
 });
 
 test("a failed player lookup renders an error instead of a blank panel", async () => {
-  mocks.getPlayersGameInfo.mockRejectedValue(new Error("database error"));
+  const rawMessage = "C:\\secret\\path diag";
+  mocks.getPlayersGameInfo.mockRejectedValue(new Error(rawMessage));
   await renderPlayerCard();
 
   await vi.waitFor(() => {
-    expect(container.textContent).toContain("Home.Databases.ErrorLoading");
+    expect(container.textContent).toContain("Databases.LoadError.Title");
   });
   expect(container.textContent).not.toBe("");
+  expect(container.textContent).not.toContain(rawMessage);
   expect(container.textContent).not.toContain("player-card");
 });
 

@@ -41,7 +41,10 @@ const mocks = vi.hoisted(() => ({
   getPlayer: vi.fn(),
 }));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => mocks.navigate, Link: () => null }));
-vi.mock("@/components/files/notifyError", () => ({ notifyUnlessCancelled: mocks.notify }));
+vi.mock("@/components/files/notifyError", async (original) => ({
+  ...(await original<typeof import("@/components/files/notifyError")>()),
+  notifyUnlessCancelled: mocks.notify,
+}));
 vi.mock("@/utils/tabs", async (original) => {
   const actual = await original<typeof import("@/utils/tabs")>();
   mocks.createTab.mockImplementation(actual.createTab);
@@ -549,7 +552,10 @@ test("loading, empty, failure and truncated samples retain in-card feedback", as
   expect(container.textContent).toContain("No games in this position");
   mocks.searchPosition.mockRejectedValueOnce(new Error("unavailable"));
   await black();
-  expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+    translate("Databases.LoadError.Title"),
+  );
+  expect(container.textContent).not.toContain("unavailable");
   mocks.searchPosition.mockResolvedValueOnce([
     [{ move: "e4", white: 501, draw: 0, black: 0, unknown: 0, last_played: null, year_counts: [] }],
     Array.from({ length: 500 }, (_, index) => ({ ...first, id: index })),

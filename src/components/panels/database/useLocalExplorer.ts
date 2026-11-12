@@ -2,6 +2,7 @@ import { useId } from "react";
 import type { NormalizedGame, PositionStats } from "@/bindings";
 import { useTranslation } from "react-i18next";
 import useSWR from "swr/immutable";
+import { inlineFailureMessage } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { useCollectionCurrency } from "@/state/linkedCollections";
 import { type LocalOptions, searchPosition } from "@/utils/db";
@@ -26,7 +27,7 @@ export type LocalExplorerResult = {
     openings: PositionStats[];
     games: NormalizedGame[];
     loading: boolean;
-    error: Error | undefined;
+    error: string | undefined;
     progressId: string;
 };
 
@@ -58,13 +59,11 @@ export function useLocalExplorer(
         games: data?.games ?? [],
         loading: isLoading,
         error: unavailable
-            ? new Error(
-                  t("Collections.Unavailable", {
-                      defaultValue:
-                          "The search index is unavailable. Retry, or select the collection's source file again.",
-                  }),
-              )
-            : error,
+            ? t("Collections.Unavailable", {
+                  defaultValue:
+                      "The search index is unavailable. Retry, or select the collection's source file again.",
+              })
+            : inlineFailureMessage(error, "database", t("Databases.LoadError.Title")),
         progressId: id,
     };
 }

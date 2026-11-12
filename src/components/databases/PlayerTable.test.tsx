@@ -2,6 +2,7 @@ import { act, type ChangeEventHandler, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { SWRConfig } from "swr";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { normalizeError } from "@/platform/errors";
 import { activeDatabaseViewStore } from "@/state/store/database";
 import { ELO_FILTER_MAX, query_players, type SuccessDatabaseInfo } from "@/utils/db";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
@@ -17,6 +18,10 @@ vi.mock("@/utils/db", async (original) => {
   return { ...actual, query_players: vi.fn(actual.query_players) };
 });
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock("@/i18n", async (original) => ({
+  ...(await original<typeof import("@/i18n")>()),
+  default: { t: (key: string) => key },
+}));
 vi.mock("react-hotkeys-hook", () => ({ useHotkeys: () => undefined }));
 vi.mock("@mantine/core", () => {
   const Wrapper = ({ children }: { children: ReactNode }) => <div>{children}</div>;
@@ -182,21 +187,29 @@ test("name search debounces rapid typing until 250 ms after the final change", a
 test.each([
   ["C:\\secret\\path diag", "Databases.LoadError.Title"],
   ["Cancellation", "Databases.Player.NoPlayersFound"],
-])("query failure %s renders safe empty-state copy", async (message, expected) => {
-  mocks.getPlayers.mockRejectedValue(new Error(message));
-  await act(async () =>
-    root.render(
-      <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false }}>
-        <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
-          <PlayerTable />
-        </DatabaseViewStateContext.Provider>
-      </SWRConfig>,
-    ),
-  );
-  expect(mocks.getPlayers).toHaveBeenCalled();
-  expect(container.querySelector("tbody")?.textContent).toBe(expected);
-  expect(container.textContent).not.toContain(message);
-});
+  ["private database diagnostic", "Databases.LoadError.RootPermission", "permission"],
+])(
+  "query failure %s renders safe empty-state copy",
+  async (message, expected, rootFailure = undefined) => {
+    mocks.getPlayers.mockRejectedValue(
+      rootFailure
+        ? normalizeError({ tag: "backend-error", category: "io", message, rootFailure })
+        : new Error(message),
+    );
+    await act(async () =>
+      root.render(
+        <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false }}>
+          <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
+            <PlayerTable />
+          </DatabaseViewStateContext.Provider>
+        </SWRConfig>,
+      ),
+    );
+    expect(mocks.getPlayers).toHaveBeenCalled();
+    expect(container.querySelector("tbody")?.textContent).toBe(expected);
+    expect(container.textContent).not.toContain(message);
+  },
+);
 
 test("max Elo preserves numeric zero and an empty max restores the omitted full band", async () => {
   await act(async () =>

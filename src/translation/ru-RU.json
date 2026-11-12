@@ -935,7 +935,6 @@
     "Home.ChessRiddle.Title": "ChessRiddle",
     "Home.Databases.Empty.Description": "Похоже, вы ещё не скачали ни одной партии этого игрока.",
     "Home.Databases.Empty.Title": "Партии не найдены",
-    "Home.Databases.ErrorLoading": "Ошибка загрузки баз данных: {{error}}",
     "Home.Databases.Failed.Title": "Не удалось загрузить статистику",
     "Home.Databases.Incomplete.Description": "Не удалось прочитать эти базы данных: {{databases}}",
     "Home.Databases.Incomplete.Title": "Статистика неполная",
