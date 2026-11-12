@@ -24759,7 +24759,7 @@ Correction to the Failure scenario example: the `!?` button's accessible name is
 
 ### Local explorer options: the Result select and both Elo range thumbs have no accessible name
 
-* **ID:** f-20261112-60 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-60 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/panels/database/options/LocalOptionsPanel.tsx:146-170`: the "Result" heading is a sibling `<Text>` (`:147-149`), and the `Select` gets no `label`, `aria-label` or `placeholder`. `:174-197`: the "Elo" heading is a sibling `<Text>` (`:175-177`), and the `RangeSlider` gets no `thumbLabel`/`thumbFromLabel`/`thumbToLabel` or `aria-label`. The same file already names its Switch explicitly (`:200-203`).
@@ -24768,6 +24768,8 @@ Correction to the Failure scenario example: the `!?` button's accessible name is
 - **Fix:** pass `label={t("Board.Database.Local.Result")}` to the Select (dropping the duplicate Text) or `aria-label`, and give the RangeSlider `thumbFromLabel`/`thumbToLabel` (e.g. minimum/maximum Elo via i18n keys). Optionally name the Color/Position SegmentedControl groups too. Add an accessible-name assertion to the panel test.
 - **Proof:** ephemeral Vitest rendering Mantine `Select` and `RangeSlider` with the same props as `:150-170`/`:181-197`: the Select input had no `aria-label`/`aria-labelledby`, no `<label for>` and an empty placeholder, and both `role="slider"` thumbs had no `aria-label`/`aria-labelledby` (valuenow 0 and 3000). The panel passes no naming props (trace on origin/master d30eb171f). Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 26)
+* **Handled 2026-11-12 (drain 04fc1fe3-785d-40da-8d47-1776fef98a8f):** Result Select gets `aria-label` plus an explicit combobox role and aria-expanded (Mantine 8's non-searchable Select sets neither); the Elo RangeSlider gets `thumbFromLabel`/`thumbToLabel` with new keys Board.Database.Local.Elo.Min/Max translated in all 16 catalogues. Commit `f0f6c3b11` (pushed to origin/master). Proof: new Vitest tests (fix-revert red/green for f-20261112-40, -36, -37), lenses correctness/root-cause/tests/code-quality/minimalism APPROVED, `pnpm gates:push -- --frontend` green.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"9cb17019b4fd3577a5d2342f67e0e5a850196e18badfacfda72f625a3ff10620","header_sha256":"9a84094f0e5e05fd3d613ec207ef1437285a006e948b4c075556a6a0ed6a311e","header_status":"handled","input_sha256":"83fcea027b67ef291b542709b5fa426515d044363e66c8f76e9634935a03e811","kind":"mutation-receipt","operation":"e12690df0f66908b6a4085ad09336d2d4e90a6cdbba05492c4164c6738fdafb6","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-60"],"target":"f-20261112-60","v":1} -->
 
 ---
 
