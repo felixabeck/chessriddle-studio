@@ -757,7 +757,8 @@ mod native_tests {
         let found = recent_found(&fixture, database, row.id, &identity);
         assert_eq!(found.white, "A");
         assert_eq!(found.moves, row.moves);
-        assert_eq!(found.site, "?");
+        assert_eq!(found.site, "Unknown");
+        assert_eq!(found.site_id, 0);
         assert_eq!(found.date.as_deref(), Some("????.??.??"));
     }
 

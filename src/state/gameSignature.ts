@@ -1,15 +1,22 @@
 import type { GameSignature, NormalizedGame } from "@/bindings";
 
 /** Match the native index's absent header markers without decoding PGN escapes. */
-export function normalizeGameSignature(signature: GameSignature): GameSignature {
-    const absent = (value: string | null, kind: "name" | "date" | "round" = "name") =>
+export function isAbsentHeader(
+    value: string | null | undefined,
+    kind: "name" | "date" | "round" = "name",
+): boolean {
+    return (
         value == null ||
         value === "" ||
         value === "?" ||
         (kind === "date" && value === "????.??.??") ||
         (kind === "name" && value === "Unknown")
-            ? null
-            : value;
+    );
+}
+
+export function normalizeGameSignature(signature: GameSignature): GameSignature {
+    const absent = (value: string | null, kind: "name" | "date" | "round" = "name") =>
+        isAbsentHeader(value, kind) ? null : value;
     return {
         white: absent(signature.white),
         black: absent(signature.black),

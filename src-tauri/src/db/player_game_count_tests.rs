@@ -171,14 +171,15 @@ fn filtered_players_keep_counts_for_empty_pages_and_honor_skip_count_and_elo() {
     assert_eq!(run(query.clone()).count, Some(0));
     query.name = Some("".into());
     query.name_match = None;
-    assert_eq!(run(query.clone()).count, Some(4));
+    // d-20261102-06: absent-name markers stay hidden, including the legacy empty-name row.
+    assert_eq!(run(query.clone()).count, Some(3));
     query.name = None;
-    assert_eq!(run(query.clone()).count, Some(5));
+    assert_eq!(run(query.clone()).count, Some(4));
     query.name = Some("".into());
     query.name_match = Some(PlayerNameMatch::Exact);
     let exact_empty = run(query);
-    assert_eq!(exact_empty.count, Some(1));
-    assert_eq!(exact_empty.data[0].id, 5);
+    assert_eq!(exact_empty.count, Some(0));
+    assert!(exact_empty.data.is_empty());
 }
 
 /// Run only against a disposable copy. Acquisition includes the production migration.

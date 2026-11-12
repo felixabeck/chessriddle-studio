@@ -1306,6 +1306,31 @@ function mockCommentLexer() {
 }
 
 test.each([
+    { value: "Unknown", expected: "?" },
+    { value: "", expected: "?" },
+    { value: "?", expected: "?" },
+    { value: "Magnus", expected: "Magnus" },
+    { value: "unknown", expected: "unknown" },
+    { value: "UNKNOWN", expected: "UNKNOWN" },
+    { value: " Unknown ", expected: " Unknown " },
+])("headersToPGN writes name $value as $expected", ({ value, expected }) => {
+    const pgn = headersToPGN({
+        ...defaultTree().headers,
+        event: value,
+        site: value,
+        white: value,
+        black: value,
+        date: "Unknown",
+        round: "Unknown",
+    });
+    for (const tag of ["Event", "Site", "White", "Black"]) {
+        expect(pgn).toContain(`[${tag} "${expected}"]\n`);
+    }
+    expect(pgn).toContain('[Date "Unknown"]\n');
+    expect(pgn).toContain('[Round "Unknown"]\n');
+});
+
+test.each([
     { value: 'Open "A" Cup', escaped: String.raw`Open \"A\" Cup` },
     { value: "Berlin\\Hall\\", escaped: String.raw`Berlin\\Hall\\` },
     { value: 'Ada \\"Ace" \\ Labs', escaped: String.raw`Ada \\\"Ace\" \\ Labs` },

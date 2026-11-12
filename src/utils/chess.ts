@@ -1,4 +1,5 @@
 import { cancellationError, tauri } from "@/platform/tauri";
+import { isAbsentHeader } from "@/state/gameSignature";
 import { type Color, type Move, makeUci, parseUci, type Role } from "chessops";
 import { type Chess, normalizeMove } from "chessops/chess";
 import { INITIAL_FEN, makeFen, parseFen } from "chessops/fen";
@@ -193,12 +194,12 @@ export function decodePgnTagValue(value: string): string {
 
 export function headersToPGN(game: GameHeaders): string {
     let headers =
-        pgnTag("Event", game.event || "?") +
-        pgnTag("Site", game.site || "?") +
+        pgnTag("Event", isAbsentHeader(game.event, "name") ? "?" : game.event) +
+        pgnTag("Site", isAbsentHeader(game.site, "name") ? "?" : game.site) +
         pgnTag("Date", game.date || "????.??.??") +
         pgnTag("Round", game.round || "?") +
-        pgnTag("White", game.white || "?") +
-        pgnTag("Black", game.black || "?") +
+        pgnTag("White", isAbsentHeader(game.white, "name") ? "?" : game.white) +
+        pgnTag("Black", isAbsentHeader(game.black, "name") ? "?" : game.black) +
         pgnTag("Result", game.result);
     if (game.time) {
         headers += pgnTag("UTCTime", game.time);

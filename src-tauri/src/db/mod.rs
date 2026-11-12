@@ -432,24 +432,24 @@ impl TempGame {
     pub fn insert_to_db(&self, db: &mut SqliteConnection) -> Result<i32, diesel::result::Error> {
         let pawn_home = get_pawn_home(self.position.board());
 
-        let white_id = if let Some(name) = database_player_name(self.white_name.as_deref()) {
+        let white_id = if let Some(name) = database_index_name(self.white_name.as_deref()) {
             create_player(db, name)?.id
         } else {
             0
         };
-        let black_id = if let Some(name) = database_player_name(self.black_name.as_deref()) {
+        let black_id = if let Some(name) = database_index_name(self.black_name.as_deref()) {
             create_player(db, name)?.id
         } else {
             0
         };
 
-        let event_id = if let Some(name) = &self.event_name {
+        let event_id = if let Some(name) = database_index_name(self.event_name.as_deref()) {
             create_event(db, name, self.date.as_deref())?.id
         } else {
             0
         };
 
-        let site_id = if let Some(name) = &self.site_name {
+        let site_id = if let Some(name) = database_index_name(self.site_name.as_deref()) {
             create_site(db, name)?.id
         } else {
             0
@@ -487,9 +487,13 @@ impl TempGame {
     }
 }
 
-// The schema reserves player 0 for this exact, case-sensitive name.
-fn database_player_name(name: Option<&str>) -> Option<&str> {
-    name.filter(|name| *name != "Unknown")
+// d-20261102-06: absent index names use id 0, with exact, case-sensitive markers.
+fn database_index_name(name: Option<&str>) -> Option<&str> {
+    name.filter(|name| {
+        !SignatureNormalization::Name
+            .markers()
+            .any(|marker| marker == *name)
+    })
 }
 
 fn normalize_pgn_result(value: &str) -> &'static str {
@@ -1197,8 +1201,12 @@ impl AccountImporter {
                 cancellation_check(cancellation)?;
                 after = game.id;
                 let stored = TempGame {
-                    white_name: (white.id != 0).then_some(white.name).flatten(),
-                    black_name: (black.id != 0).then_some(black.name).flatten(),
+                    white_name: white
+                        .name
+                        .filter(|name| white.id != 0 && database_index_name(Some(name)).is_some()),
+                    black_name: black
+                        .name
+                        .filter(|name| black.id != 0 && database_index_name(Some(name)).is_some()),
                     date: game.date,
                     time: game.time,
                     fen: game.fen,
@@ -1228,10 +1236,10 @@ impl AccountImporter {
     }
 
     fn insert(&mut self, db: &mut SqliteConnection, mut game: TempGame) -> Result<bool, Error> {
-        if database_player_name(game.white_name.as_deref()).is_none() {
+        if database_index_name(game.white_name.as_deref()).is_none() {
             game.white_name = None;
         }
-        if database_player_name(game.black_name.as_deref()).is_none() {
+        if database_index_name(game.black_name.as_deref()).is_none() {
             game.black_name = None;
         }
         let start = game
@@ -3230,8 +3238,10 @@ fn get_players_blocking(
         let mut sql_query = players::table.into_boxed();
         let mut count_query = players::table.into_boxed();
         let mut count_with_rows = false;
-        sql_query = sql_query.filter(players::name.is_not("Unknown"));
-        count_query = count_query.filter(players::name.is_not("Unknown"));
+        for marker in SignatureNormalization::Name.markers() {
+            sql_query = sql_query.filter(players::name.is_not(marker));
+            count_query = count_query.filter(players::name.is_not(marker));
+        }
 
         if let Some(name) = query.name {
             if name.is_empty() && !matches!(query.name_match, Some(PlayerNameMatch::Exact)) {
@@ -3422,9 +3432,10 @@ fn get_tournaments_blocking(
             ))
             .into_boxed();
         let mut count_query = events::table.into_boxed();
-        sql_query = sql_query.filter(events::name.is_not("Unknown").and(events::name.is_not("")));
-        count_query =
-            count_query.filter(events::name.is_not("Unknown").and(events::name.is_not("")));
+        for marker in SignatureNormalization::Name.markers() {
+            sql_query = sql_query.filter(events::name.is_not(marker));
+            count_query = count_query.filter(events::name.is_not(marker));
+        }
 
         if let Some(name) = query.name {
             let pattern = like_contains_pattern(&name_identity::normalize_name(&name));
@@ -4914,9 +4925,9 @@ impl PgnGame {
         writeln!(
             writer,
             "[Event \"{}\"]",
-            self.event.as_deref().unwrap_or("")
+            self.event.as_deref().unwrap_or("?")
         )?;
-        writeln!(writer, "[Site \"{}\"]", self.site.as_deref().unwrap_or(""))?;
+        writeln!(writer, "[Site \"{}\"]", self.site.as_deref().unwrap_or("?"))?;
         writeln!(writer, "[Date \"{}\"]", self.date.as_deref().unwrap_or(""))?;
         if let Some(time) = self.time.as_deref() {
             if !time.is_empty() {
@@ -4924,8 +4935,8 @@ impl PgnGame {
             }
         }
         write_decoded_pgn_tag(writer, "Round", self.round.as_deref().unwrap_or(""))?;
-        write_decoded_pgn_tag(writer, "White", self.white.as_deref().unwrap_or(""))?;
-        write_decoded_pgn_tag(writer, "Black", self.black.as_deref().unwrap_or(""))?;
+        write_decoded_pgn_tag(writer, "White", self.white.as_deref().unwrap_or("?"))?;
+        write_decoded_pgn_tag(writer, "Black", self.black.as_deref().unwrap_or("?"))?;
         writeln!(
             writer,
             "[Result \"{}\"]",
@@ -5115,13 +5126,21 @@ where
         })?;
         PgnGame {
             orientation: game.orientation,
-            event: event.name,
-            site: site.name,
+            event: event
+                .name
+                .filter(|name| event.id != 0 && database_index_name(Some(name)).is_some()),
+            site: site
+                .name
+                .filter(|name| site.id != 0 && database_index_name(Some(name)).is_some()),
             date: game.date,
             time: game.time,
             round: game.round,
-            white: white.name,
-            black: black.name,
+            white: white
+                .name
+                .filter(|name| white.id != 0 && database_index_name(Some(name)).is_some()),
+            black: black
+                .name
+                .filter(|name| black.id != 0 && database_index_name(Some(name)).is_some()),
             result: game.result,
             time_control: game.time_control,
             eco: game.eco,
@@ -5384,22 +5403,22 @@ fn write_parsed_db_game(
     }
     let game_time = temp_game.time.clone().or(existing.time);
 
-    let white_id = if let Some(name) = temp_game.white_name.as_deref() {
+    let white_id = if let Some(name) = database_index_name(temp_game.white_name.as_deref()) {
         create_player(db, name)?.id
     } else {
         0
     };
-    let black_id = if let Some(name) = temp_game.black_name.as_deref() {
+    let black_id = if let Some(name) = database_index_name(temp_game.black_name.as_deref()) {
         create_player(db, name)?.id
     } else {
         0
     };
-    let event_id = if let Some(name) = temp_game.event_name.as_deref() {
+    let event_id = if let Some(name) = database_index_name(temp_game.event_name.as_deref()) {
         create_event(db, name, temp_game.date.as_deref())?.id
     } else {
         0
     };
-    let site_id = if let Some(name) = temp_game.site_name.as_deref() {
+    let site_id = if let Some(name) = database_index_name(temp_game.site_name.as_deref()) {
         create_site(db, name)?.id
     } else {
         0
@@ -7032,6 +7051,142 @@ mod tests {
         format!(
             "[Event \"{event}\"]\n[Site \"{site}\"]\n[Date \"2026.08.09\"]\n[White \"{white}\"]\n[Black \"{black}\"]\n[Result \"*\"]\n\n1. e4 e5 *\n"
         )
+    }
+
+    #[test]
+    fn inserting_absent_index_names_uses_only_sentinel_rows() {
+        for (white, black, event, site) in [
+            ("?", "", "?", "?"),
+            ("", "?", "", ""),
+            ("Unknown", "Unknown", "Unknown", "Unknown"),
+        ] {
+            let db = &mut setup_test_db();
+            let id = parsed_game(&test_game_pgn(white, black, event, site))
+                .insert_to_db(db)
+                .unwrap();
+            let stored: Game = games::table.find(id).first(db).unwrap();
+            assert_eq!(
+                (
+                    stored.white_id,
+                    stored.black_id,
+                    stored.event_id,
+                    stored.site_id
+                ),
+                (0, 0, 0, 0)
+            );
+            let (games, players, events, sites, _) = database_state(db);
+            assert_eq!((games, players, events, sites), (1, 1, 1, 1));
+        }
+    }
+
+    #[test]
+    fn writing_absent_index_names_uses_only_sentinel_rows() {
+        let db = &mut setup_test_db();
+        let id = parsed_game(&test_game_pgn("White", "Black", "Event", "Site"))
+            .insert_to_db(db)
+            .unwrap();
+        for marker in SignatureNormalization::Name.markers() {
+            let existing: Game = games::table.find(id).first(db).unwrap();
+            let replacement = parsed_game(&test_game_pgn(marker, marker, marker, marker));
+            db.transaction(|db| {
+                write_parsed_db_game(
+                    db,
+                    id,
+                    &replacement,
+                    &game_row_stamp(&existing),
+                    remove_orphans_and_refresh_derived_data,
+                )
+            })
+            .unwrap();
+            let stored: Game = games::table.find(id).first(db).unwrap();
+            assert_eq!(
+                (
+                    stored.white_id,
+                    stored.black_id,
+                    stored.event_id,
+                    stored.site_id
+                ),
+                (0, 0, 0, 0)
+            );
+            let (games, players, events, sites, _) = database_state(db);
+            assert_eq!((games, players, events, sites), (1, 1, 1, 1));
+        }
+    }
+
+    #[test]
+    fn player_and_event_lists_hide_legacy_absent_names_and_keep_nulls() {
+        let (_dir, app, handle, database) = blocking_database_case();
+        let state = app.state::<AppState>();
+        {
+            let mut db = state
+                .database_repository
+                .connection(&test_target(&database), None)
+                .unwrap();
+            for marker in SignatureNormalization::Name.markers() {
+                create_player(&mut db, marker).unwrap();
+                create_event(&mut db, marker, None).unwrap();
+            }
+            create_player(&mut db, "Magnus").unwrap();
+            create_event(&mut db, "Open", None).unwrap();
+            db.batch_execute(
+                "INSERT INTO Players (Name) VALUES (NULL);
+                INSERT INTO Events (Name) VALUES (NULL);",
+            )
+            .unwrap();
+        }
+        for skip_count in [false, true] {
+            let players = get_players_blocking(
+                &state.pgn_path_authority,
+                &state.database_repository,
+                handle.clone(),
+                PlayerQuery {
+                    options: QueryOptions {
+                        skip_count,
+                        page: None,
+                        page_size: None,
+                        sort: PlayerSort::Name,
+                        direction: SortDirection::Asc,
+                    },
+                    name: None,
+                    name_match: None,
+                    range: None,
+                },
+                &CancellationToken::new(),
+            )
+            .unwrap();
+            assert_eq!(players.count, (!skip_count).then_some(2));
+            assert_eq!(players.data.len(), 2);
+            assert!(players.data.iter().any(|player| player.name.is_none()));
+            assert!(players
+                .data
+                .iter()
+                .any(|player| player.name.as_deref() == Some("Magnus")));
+
+            let events = get_tournaments_blocking(
+                &state.pgn_path_authority,
+                &state.database_repository,
+                handle.clone(),
+                TournamentQuery {
+                    options: QueryOptions {
+                        skip_count,
+                        page: None,
+                        page_size: None,
+                        sort: TournamentSort::Name,
+                        direction: SortDirection::Asc,
+                    },
+                    name: None,
+                },
+                &CancellationToken::new(),
+            )
+            .unwrap();
+            assert_eq!(events.count, (!skip_count).then_some(2));
+            assert_eq!(events.data.len(), 2);
+            assert!(events.data.iter().any(|event| event.name.is_none()));
+            assert!(events
+                .data
+                .iter()
+                .any(|event| event.name.as_deref() == Some("Open")));
+        }
     }
 
     fn insert_test_game(
@@ -9622,6 +9777,69 @@ mod tests {
         whites.sort();
         assert_eq!(whites, vec![Some("First"), Some("Second")]);
         assert_no_atomic_export_residue(dir.path());
+    }
+
+    #[test]
+    fn export_writes_question_marks_for_absent_index_names() {
+        let db = &mut setup_test_db();
+        let id = TempGame::default().insert_to_db(db).unwrap();
+        let game: Game = games::table.find(id).first(db).unwrap();
+        let white: Player = players::table.find(0).first(db).unwrap();
+        let black: Player = players::table.find(0).first(db).unwrap();
+        let event: Event = events::table.find(0).first(db).unwrap();
+        let site: Site = sites::table.find(0).first(db).unwrap();
+        let mut exported = Vec::new();
+        write_pgn_rows(
+            &mut exported,
+            [Ok((game, white, black, event, site))],
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let exported = String::from_utf8(exported).unwrap();
+        for tag in ["White", "Black", "Event", "Site"] {
+            assert!(exported.contains(&format!("[{tag} \"?\"]")));
+        }
+        assert!(exported.contains("[Date \"\"]"));
+        assert!(exported.contains("[Round \"\"]"));
+
+        for (id, name) in std::iter::once((0, "Sentinel")).chain(
+            SignatureNormalization::Name
+                .markers()
+                .map(|marker| (1, marker)),
+        ) {
+            let (game, mut white, mut black, mut event, mut site) = export_row(name.into());
+            white.id = id;
+            black.id = id;
+            event.id = id;
+            site.id = id;
+            white.name = Some(name.into());
+            black.name = Some(name.into());
+            site.name = Some(name.into());
+            let mut exported = Vec::new();
+            write_pgn_rows(
+                &mut exported,
+                [Ok((game, white, black, event, site))],
+                &CancellationToken::new(),
+            )
+            .unwrap();
+            let exported = String::from_utf8(exported).unwrap();
+            for tag in ["White", "Black", "Event", "Site"] {
+                assert!(exported.contains(&format!("[{tag} \"?\"]")));
+            }
+        }
+
+        let (game, mut white, black, event, site) = export_row("Event".into());
+        white.name = Some("Magnus".into());
+        let mut exported = Vec::new();
+        write_pgn_rows(
+            &mut exported,
+            [Ok((game, white, black, event, site))],
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert!(String::from_utf8(exported)
+            .unwrap()
+            .contains("[White \"Magnus\"]"));
     }
 
     #[test]
@@ -15443,6 +15661,54 @@ mod exact_player_tests {
 #[cfg(test)]
 mod unlinked_account_tests {
     use super::*;
+
+    #[test]
+    fn account_import_deduplicates_absent_and_legacy_placeholder_players() {
+        for stored_name in [None, Some("?"), Some("")] {
+            for incoming_name in [None, Some("Unknown"), Some("?"), Some("")] {
+                for white_side in [false, true] {
+                    let fixture = Fixture::new();
+                    let state = fixture.app.state::<AppState>();
+                    let context = fixture.context("chesscom", None);
+                    let mut db = state
+                        .database_repository
+                        .connection(&test_target(&fixture.path), None)
+                        .unwrap();
+                    let mut game = TempGame {
+                        white_name: white_side.then(|| "?".into()),
+                        black_name: (!white_side).then(|| "?".into()),
+                        ..TempGame::default()
+                    };
+                    let id = game.insert_to_db(&mut db).unwrap();
+                    if let Some(name) = stored_name {
+                        // Model non-zero placeholder rows written by older versions.
+                        let player = create_player(&mut db, name).unwrap();
+                        assert_ne!(player.id, 0);
+                        if white_side {
+                            diesel::update(games::table.find(id))
+                                .set(games::white_id.eq(player.id))
+                                .execute(&mut *db)
+                                .unwrap();
+                        } else {
+                            diesel::update(games::table.find(id))
+                                .set(games::black_id.eq(player.id))
+                                .execute(&mut *db)
+                                .unwrap();
+                        }
+                    }
+                    if white_side {
+                        game.white_name = incoming_name.map(str::to_owned);
+                    } else {
+                        game.black_name = incoming_name.map(str::to_owned);
+                    }
+                    let mut importer =
+                        AccountImporter::new(&mut db, context, &CancellationToken::new()).unwrap();
+                    assert!(!importer.insert(&mut db, game).unwrap());
+                    assert_eq!(games::table.count().get_result::<i64>(&mut *db).unwrap(), 1);
+                }
+            }
+        }
+    }
 
     #[test]
     fn account_import_rehashes_old_unicode_fingerprints_before_deduplication() {
