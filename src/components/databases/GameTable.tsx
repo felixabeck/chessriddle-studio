@@ -40,6 +40,20 @@ import { SideInput } from "./SideInput";
 import sideInputClasses from "./SideInput.module.css";
 import classes from "./styles.module.css";
 
+type GameSortAccessor = "date" | "ply_count";
+const gameSortAccessors: Partial<Record<GameSort, GameSortAccessor>> = {
+  date: "date",
+  plyCount: "ply_count",
+};
+const gameSortByAccessor: Record<GameSortAccessor, GameSort> = {
+  date: "date",
+  ply_count: "plyCount",
+};
+
+function isGameSortAccessor(accessor: string): accessor is GameSortAccessor {
+  return accessor === "date" || accessor === "ply_count";
+}
+
 function GameTable() {
   const { t } = useTranslation();
   const store = useContext(DatabaseViewStateContext)!;
@@ -199,11 +213,11 @@ function GameTable() {
                     placeholder={t("Common.StartDate")}
                     clearable
                     valueFormat="YYYY-MM-DD"
-                    value={query.start_date ? dayjs(query.start_date, "YYYY.MM.DD").toDate() : null}
+                    value={query.startDate ? dayjs(query.startDate, "YYYY.MM.DD").toDate() : null}
                     onChange={(value) =>
                       setQuery({
                         ...query,
-                        start_date: value ? dayjs(value).format("YYYY.MM.DD") : undefined,
+                        startDate: value ? dayjs(value).format("YYYY.MM.DD") : undefined,
                       })
                     }
                   />
@@ -212,11 +226,11 @@ function GameTable() {
                     placeholder={t("Common.EndDate")}
                     clearable
                     valueFormat="YYYY-MM-DD"
-                    value={query.end_date ? dayjs(query.end_date, "YYYY.MM.DD").toDate() : null}
+                    value={query.endDate ? dayjs(query.endDate, "YYYY.MM.DD").toDate() : null}
                     onChange={(value) =>
                       setQuery({
                         ...query,
-                        end_date: value ? dayjs(value).format("YYYY.MM.DD") : undefined,
+                        endDate: value ? dayjs(value).format("YYYY.MM.DD") : undefined,
                       })
                     }
                   />
@@ -303,19 +317,21 @@ function GameTable() {
             })
           }
           sortStatus={{
-            columnAccessor: query.options?.sort || "date",
+            columnAccessor: gameSortAccessors[query.options?.sort ?? "date"] ?? "date",
             direction: query.options?.direction || "desc",
           }}
-          onSortStatusChange={(value) =>
+          onSortStatusChange={(value) => {
+            const accessor = value.columnAccessor;
+            if (!isGameSortAccessor(accessor)) return;
             setQuery({
               ...query,
               options: {
                 ...query.options!,
-                sort: value.columnAccessor as GameSort,
+                sort: gameSortByAccessor[accessor],
                 direction: value.direction,
               },
-            })
-          }
+            });
+          }}
           recordsPerPageLabel={t("Common.RecordsPerPage")}
           recordsPerPageOptions={[10, 25, 50]}
           onRowClick={({ record }) => {

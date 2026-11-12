@@ -4,7 +4,7 @@ import { z } from "zod";
 import { createStore, useStore } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type {
-    GameQuery,
+    GameListQuery,
     GameSort,
     PlayerQuery,
     PlayerSort,
@@ -32,7 +32,7 @@ export interface DatabaseViewStore {
     activeTab: "games" | "players" | "tournaments";
     games: {
         isFilterExpanded: boolean;
-        query: GameQuery;
+        query: GameListQuery;
         selectedGameId?: number;
     };
     players: {
@@ -50,7 +50,7 @@ export interface DatabaseViewStore {
     clearDatabase: () => boolean;
     setActiveTab: (mode: DatabaseViewStore["activeTab"]) => boolean;
 
-    setGamesQuery: (filter: GameQuery) => boolean;
+    setGamesQuery: (filter: GameListQuery) => boolean;
     setGamesSelectedGameId: (gameId?: number) => boolean;
     toggleGamesOpenedSettings: () => boolean;
 
@@ -167,27 +167,59 @@ function createQueryOptionsSchema<Sort extends string>(sorts: [Sort, ...Sort[]])
 }
 
 const activeTabSchema = z.enum(["games", "players", "tournaments"]);
-// GameQuery's optional/null options and sides are an API convenience. Persisted UI
+
+function migrateGamesQuery(value: unknown): unknown {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+    const query = { ...value } as Record<string, unknown>;
+    const legacyKeys = {
+        tournament_id: "tournamentId",
+        start_date: "startDate",
+        end_date: "endDate",
+    } as const;
+    for (const [legacy, current] of Object.entries(legacyKeys)) {
+        if (!Object.hasOwn(query, current) && Object.hasOwn(query, legacy)) {
+            query[current] = query[legacy];
+        }
+        delete query[legacy];
+    }
+    delete query.wanted_result;
+    delete query.exclude_fast_events;
+    if (query.options && typeof query.options === "object" && !Array.isArray(query.options)) {
+        const options = { ...query.options } as Record<string, unknown>;
+        if (options.sort === "ply_count") options.sort = "plyCount";
+        query.options = options;
+    }
+    return query;
+}
+
+// GameListQuery's optional/null options and sides are an API convenience. Persisted UI
 // panels need complete options for table edits and a side value for SideInput.
 const persistedGamesSchema: z.ZodType<DatabaseViewStore["games"], z.ZodTypeDef, unknown> = z.object(
     {
         isFilterExpanded: z.boolean(),
         selectedGameId: queryIntegerSchema.nullish().transform((value) => value ?? undefined),
-        query: z.object({
-            options: createQueryOptionsSchema(["id", "date", "whiteElo", "blackElo", "ply_count"]),
-            player1: queryIntegerSchema.nullish(),
-            player2: queryIntegerSchema.nullish(),
-            tournament_id: queryIntegerSchema.nullish(),
-            start_date: z.string().nullish(),
-            end_date: z.string().nullish(),
-            range1: queryRangeSchema,
-            range2: queryRangeSchema,
-            sides: z.enum(["BlackWhite", "WhiteBlack", "Any"]),
-            outcome: z.string().nullish(),
-            position: z.object({ fen: z.string(), type_: z.enum(["exact", "partial"]) }).nullish(),
-            wanted_result: z.string().nullish(),
-            exclude_fast_events: z.boolean().nullish(),
-        }),
+        query: z.preprocess(
+            migrateGamesQuery,
+            z.object({
+                options: createQueryOptionsSchema([
+                    "id",
+                    "date",
+                    "whiteElo",
+                    "blackElo",
+                    "plyCount",
+                ]),
+                player1: queryIntegerSchema.nullish(),
+                player2: queryIntegerSchema.nullish(),
+                playerName: z.string().nullish(),
+                tournamentId: queryIntegerSchema.nullish(),
+                startDate: z.string().nullish(),
+                endDate: z.string().nullish(),
+                range1: queryRangeSchema,
+                range2: queryRangeSchema,
+                sides: z.enum(["BlackWhite", "WhiteBlack", "Any"]),
+                outcome: z.string().nullish(),
+            }),
+        ),
     },
 );
 

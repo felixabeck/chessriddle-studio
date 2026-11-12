@@ -10,10 +10,11 @@ import {
     type DatabaseInfoResult,
     type DatabaseHandle,
     type DatabaseRootHandle,
-    type GameQuery,
+    type GameListQuery,
     type NormalizedGame,
     type Player,
     type PlayerQuery,
+    type PositionSearchQuery,
     type PuzzleDatabaseInfo,
     type QueryResponse,
 } from "@/bindings";
@@ -204,7 +205,7 @@ function normalizeRange(range?: [number, number] | null): [number, number] | und
 
 export async function query_games(
     db: DatabaseHandle,
-    query: GameQuery,
+    query: GameListQuery,
     options?: { signal?: AbortSignal },
 ): Promise<QueryResponse<NormalizedGame[]>> {
     return await tauri.getGames(
@@ -213,14 +214,13 @@ export async function query_games(
             player1: query.player1,
             range1: normalizeRange(query.range1),
             player2: query.player2,
-            player_name: query.player_name,
+            playerName: query.playerName,
             range2: normalizeRange(query.range2),
-            tournament_id: query.tournament_id,
+            tournamentId: query.tournamentId,
             sides: query.sides,
             outcome: query.outcome,
-            start_date: query.start_date,
-            end_date: query.end_date,
-            position: null,
+            startDate: query.startDate,
+            endDate: query.endDate,
             options: {
                 skipCount: query.options?.skipCount ?? false,
                 page: query.options?.page,
@@ -228,7 +228,7 @@ export async function query_games(
                 sort: query.options?.sort || "id",
                 direction: query.options?.direction || "desc",
             },
-        },
+        } satisfies GameListQuery,
         options,
     );
 }
@@ -451,7 +451,7 @@ export type LocalOptions = {
     /** Drop games whose event name contains blitz, bullet, or armageddon. */
     exclude_fast_events?: boolean;
     include_unknown_results?: boolean;
-    sample_order?: NonNullable<GameQuery["sample_order"]>;
+    sample_order?: NonNullable<PositionSearchQuery["sampleOrder"]>;
 };
 
 export function getEffectiveLocalPlayer(
@@ -472,7 +472,7 @@ export async function getTournamentGames(file: DatabaseHandle, id: number, signa
                 sort: "id",
                 skipCount: true,
             },
-            tournament_id: id,
+            tournamentId: id,
         },
         { signal },
     );
@@ -491,16 +491,16 @@ export async function searchPosition(options: LocalOptions, tab: string, signal?
                 fen: options.fen,
                 type_: options.type,
             },
-            start_date: options.start_date,
-            end_date: options.end_date,
-            ...(options.result !== "any" ? { wanted_result: options.result } : {}),
+            startDate: options.start_date,
+            endDate: options.end_date,
+            ...(options.result !== "any" ? { wantedResult: options.result } : {}),
             ...(elo ? { range1: elo, range2: elo } : {}),
-            ...(options.exclude_fast_events ? { exclude_fast_events: true } : {}),
+            ...(options.exclude_fast_events ? { excludeFastEvents: true } : {}),
             ...(options.include_unknown_results !== undefined
-                ? { include_unknown_results: options.include_unknown_results }
+                ? { includeUnknownResults: options.include_unknown_results }
                 : {}),
-            ...(options.sample_order !== undefined ? { sample_order: options.sample_order } : {}),
-        },
+            ...(options.sample_order !== undefined ? { sampleOrder: options.sample_order } : {}),
+        } satisfies PositionSearchQuery,
         tab,
         { signal },
     );

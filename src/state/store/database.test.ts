@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { databaseRouteTarget, resolveDatabaseRoute } from "@/components/databases/databaseRoute";
-import { INITIAL_FEN } from "chessops/fen";
 import type { SuccessDatabaseInfo } from "@/utils/db";
 import { formatBytes } from "@/utils/format";
 
@@ -340,16 +339,14 @@ const validGames = {
         ...defaults.games.query,
         player1: 7,
         player2: null,
-        tournament_id: -2,
+        playerName: "Carlsen",
+        tournamentId: -2,
         range1: [-100, 3500],
         range2: [2500, 1000],
         sides: "Any",
         outcome: "*",
-        start_date: "2020.01.01",
-        end_date: null,
-        position: { fen: INITIAL_FEN, type_: "partial" },
-        wanted_result: "0-1",
-        exclude_fast_events: true,
+        startDate: "2020.01.01",
+        endDate: null,
         options: {
             skipCount: true,
             page: 2_147_483_647,
@@ -375,6 +372,65 @@ const validTournaments = {
 };
 
 describe("database-view panel hydration", () => {
+    it("migrates legacy game query filters and the plies sort", async () => {
+        const { tournamentId, startDate, endDate, ...query } = validGames.query;
+        const store = await hydrate({
+            games: {
+                ...validGames,
+                query: {
+                    ...query,
+                    tournament_id: tournamentId,
+                    start_date: startDate,
+                    end_date: endDate,
+                    wanted_result: "0-1",
+                    exclude_fast_events: true,
+                    position: { fen: "legacy", type_: "partial" },
+                    options: { ...query.options, sort: "ply_count" },
+                },
+            },
+        });
+        expect(store.getState().games).toEqual({
+            ...validGames,
+            query: { ...validGames.query, options: { ...query.options, sort: "plyCount" } },
+        });
+    });
+
+    it("prefers current game query keys over legacy keys, including null", async () => {
+        const store = await hydrate({
+            games: {
+                ...validGames,
+                query: {
+                    ...validGames.query,
+                    tournament_id: 123,
+                    start_date: "1990.01.01",
+                    end_date: "1999.12.31",
+                    wanted_result: "1-0",
+                    exclude_fast_events: false,
+                },
+            },
+        });
+        expect(store.getState().games).toEqual(validGames);
+    });
+
+    it("round trips current game query keys and the plies sort", async () => {
+        const games = {
+            ...validGames,
+            query: {
+                ...validGames.query,
+                options: { ...validGames.query.options, sort: "plyCount" },
+            },
+        };
+        const store = await hydrate({ games });
+        expect(store.getState().games).toEqual(games);
+        store.getState().toggleGamesOpenedSettings();
+        store.getState().toggleGamesOpenedSettings();
+        const persisted = sessionStorage.getItem("database-view")!;
+        const next = await hydrate();
+        sessionStorage.setItem("database-view", persisted);
+        await next.persist.rehydrate();
+        expect(next.getState().games).toEqual(games);
+    });
+
     it("drops a legacy game row index while preserving the rest of the games state", async () => {
         const games = { ...validGames, selectedGameId: undefined };
         const store = await hydrate({ games: { ...games, selectedGame: 0 } });
@@ -391,7 +447,7 @@ describe("database-view panel hydration", () => {
         },
     );
 
-    it.each(["id", "date", "whiteElo", "blackElo", "ply_count"])(
+    it.each(["id", "date", "whiteElo", "blackElo", "plyCount"])(
         "preserves the supported game sort %s",
         async (sort) => {
             const games = {
@@ -491,13 +547,23 @@ describe("database-view panel hydration", () => {
         },
     );
 
-    it.each(["exact", "partial"])("preserves the supported position query %s", async (type_) => {
-        const games = {
-            ...validGames,
-            query: { ...validGames.query, position: { fen: INITIAL_FEN, type_ } },
-        };
-        const store = await hydrate({ games });
-        expect(store.getState().games).toEqual(games);
+    it("discards obsolete search filters without losing valid list filters", async () => {
+        const store = await hydrate({
+            games: {
+                ...validGames,
+                query: {
+                    ...validGames.query,
+                    position: "obsolete",
+                    wantedResult: [],
+                    excludeFastEvents: "obsolete",
+                    includeUnknownResults: true,
+                    sampleOrder: "date",
+                    wanted_result: "draw",
+                    exclude_fast_events: true,
+                },
+            },
+        });
+        expect(store.getState().games).toEqual(validGames);
     });
 
     it("preserves supported filters, nulls, selections, backend bounds and the ratings tab", async () => {
@@ -566,7 +632,8 @@ describe("database-view panel hydration", () => {
         { options: { ...validGames.query.options, pageSize: 1.5 } },
         { player1: "7" },
         { player2: 1.5 },
-        { tournament_id: -2_147_483_649 },
+        { playerName: 7 },
+        { tournamentId: -2_147_483_649 },
         { range1: [1000] },
         { range2: [0, 3000, 3500] },
         { range1: [0, "3000"] },
@@ -575,14 +642,8 @@ describe("database-view panel hydration", () => {
         { sides: null },
         { sides: "Both" },
         { outcome: {} },
-        { start_date: 2020 },
-        { end_date: false },
-        { wanted_result: [] },
-        { exclude_fast_events: "true" },
-        { position: "fen" },
-        { position: { fen: INITIAL_FEN } },
-        { position: { fen: 7, type_: "exact" } },
-        { position: { fen: INITIAL_FEN, type_: "unknown" } },
+        { startDate: 2020 },
+        { endDate: false },
     ])("rejects malformed game query fields %j", async (fields) => {
         const store = await hydrate({
             games: { ...validGames, query: { ...validGames.query, ...fields } },
@@ -705,10 +766,8 @@ describe("database-view panel hydration", () => {
                     range1: null,
                     range2: null,
                     outcome: null,
-                    start_date: null,
-                    position: null,
-                    wanted_result: null,
-                    exclude_fast_events: null,
+                    startDate: null,
+                    playerName: null,
                 },
             },
             players: {
@@ -723,10 +782,8 @@ describe("database-view panel hydration", () => {
             range1: null,
             range2: null,
             outcome: null,
-            start_date: null,
-            position: null,
-            wanted_result: null,
-            exclude_fast_events: null,
+            startDate: null,
+            playerName: null,
         });
         expect(store.getState().players.query).toMatchObject({ name: null, range: null });
         expect(store.getState().games.selectedGameId).toBeUndefined();

@@ -224,7 +224,7 @@ describe("LocalOptionsPanel explorer filters", () => {
 
     expect(store.get(localOptionsFamily(tabId)).exclude_fast_events).toBe(true);
     await searchPosition(store.get(localOptionsFamily(tabId)), tabId);
-    expect(mocks.searchPosition.mock.calls[0][1].exclude_fast_events).toBe(true);
+    expect(mocks.searchPosition.mock.calls[0][1].excludeFastEvents).toBe(true);
   });
 
   test("the 3-year preset sets start_date to today minus three years and leaves end_date", async () => {

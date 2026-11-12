@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DatabaseHandle, GameQuery } from "@/bindings";
+import type { DatabaseHandle, PositionSearchQuery } from "@/bindings";
 import type { tauri } from "@/platform/tauri";
 import type { LocalOptions } from "@/components/panels/database/DatabasePanel";
 import i18n from "i18next";
@@ -71,18 +71,40 @@ beforeEach(() => {
 
 const handle = (id: string): DatabaseHandle => ({ id: { id }, kind: "database" });
 
-it("forwards player_name to the native game query", async () => {
+it("sends camelCase game filters without snake_case keys", async () => {
     const response = { data: [], count: 0 };
     mocks.getGames.mockResolvedValue(response);
     const signal = new AbortController().signal;
-    expect(await query_games(handle("owner"), { player_name: "Magnus Carlsen" }, { signal })).toBe(
-        response,
-    );
+    const query = {
+        playerName: "Magnus Carlsen",
+        tournamentId: 42,
+        startDate: "2020.01.01",
+        endDate: "2026.12.31",
+        player1: 1,
+        player2: 2,
+        range1: [1000, 2000] as [number, number],
+        range2: [1500, 2500] as [number, number],
+        sides: "Any" as const,
+        outcome: "1-0",
+    };
+    expect(await query_games(handle("owner"), query, { signal })).toBe(response);
     expect(mocks.getGames).toHaveBeenCalledExactlyOnceWith(
         handle("owner"),
-        expect.objectContaining({ player_name: "Magnus Carlsen" }),
+        expect.objectContaining(query),
         { signal },
     );
+    expect(Object.keys(mocks.getGames.mock.calls[0][1]).filter((key) => key.includes("_"))).toEqual(
+        [],
+    );
+    for (const field of [
+        "position",
+        "wantedResult",
+        "excludeFastEvents",
+        "includeUnknownResults",
+        "sampleOrder",
+    ]) {
+        expect(mocks.getGames.mock.calls[0][1]).not.toHaveProperty(field);
+    }
 });
 
 it.each([undefined, "contains", "exact"] as const)(
@@ -944,6 +966,29 @@ describe("bundled default catalogs", () => {
 });
 
 describe("searchPosition query mapping", () => {
+    it("sends only supported camelCase filters at the native boundary", async () => {
+        const query = await sentQuery(
+            localOptions({
+                start_date: "2020.01.01",
+                end_date: "2026.12.31",
+                result: "draw",
+                exclude_fast_events: true,
+                include_unknown_results: true,
+                sample_order: "date",
+            }),
+        );
+        expect(query).toMatchObject({
+            startDate: "2020.01.01",
+            endDate: "2026.12.31",
+            wantedResult: "draw",
+            excludeFastEvents: true,
+            includeUnknownResults: true,
+            sampleOrder: "date",
+        });
+        expect(Object.keys(query).filter((key) => key.includes("_"))).toEqual([]);
+        expect(query).not.toHaveProperty("options");
+        expect(query).not.toHaveProperty("playerName");
+    });
     it.each(["white", "black"] as const)(
         "%s player filters require matching ownership, including equivalent handles",
         async (color) => {
@@ -969,16 +1014,16 @@ describe("searchPosition query mapping", () => {
     );
     it("forwards optional result and sample options without changing defaults", async () => {
         const defaults = await sentQuery(localOptions());
-        expect(defaults).not.toHaveProperty("include_unknown_results");
-        expect(defaults).not.toHaveProperty("sample_order");
+        expect(defaults).not.toHaveProperty("includeUnknownResults");
+        expect(defaults).not.toHaveProperty("sampleOrder");
         mocks.searchPosition.mockClear();
         expect(
             await sentQuery(localOptions({ include_unknown_results: true, sample_order: "date" })),
-        ).toMatchObject({ include_unknown_results: true, sample_order: "date" });
+        ).toMatchObject({ includeUnknownResults: true, sampleOrder: "date" });
         mocks.searchPosition.mockClear();
         expect(
             await sentQuery(localOptions({ include_unknown_results: false, sample_order: "elo" })),
-        ).toMatchObject({ include_unknown_results: false, sample_order: "elo" });
+        ).toMatchObject({ includeUnknownResults: false, sampleOrder: "elo" });
     });
     const localOptions = (overrides: Partial<LocalOptions> = {}): LocalOptions => ({
         path: handle("local"),
@@ -989,10 +1034,10 @@ describe("searchPosition query mapping", () => {
         result: "any",
         ...overrides,
     });
-    const sentQuery = async (options: LocalOptions): Promise<GameQuery> => {
+    const sentQuery = async (options: LocalOptions): Promise<PositionSearchQuery> => {
         mocks.searchPosition.mockResolvedValue([[], []]);
         await searchPosition(options, "tab-1");
-        return mocks.searchPosition.mock.calls[0][1] as GameQuery;
+        return mocks.searchPosition.mock.calls[0][1] as PositionSearchQuery;
     };
 
     it("sends the Elo band as both range1 and range2", async () => {
@@ -1021,18 +1066,18 @@ describe("searchPosition query mapping", () => {
 
     it("omits wanted_result when the explorer result is any", async () => {
         const query = await sentQuery(localOptions({ result: "any" }));
-        expect(query).not.toHaveProperty("wanted_result");
+        expect(query).not.toHaveProperty("wantedResult");
     });
 
     it("omits exclude_fast_events when off and sends true when on", async () => {
         for (const off of [undefined, false]) {
             mocks.searchPosition.mockClear();
             const query = await sentQuery(localOptions({ exclude_fast_events: off }));
-            expect(query).not.toHaveProperty("exclude_fast_events");
+            expect(query).not.toHaveProperty("excludeFastEvents");
         }
 
         mocks.searchPosition.mockClear();
         const query = await sentQuery(localOptions({ exclude_fast_events: true }));
-        expect(query.exclude_fast_events).toBe(true);
+        expect(query.excludeFastEvents).toBe(true);
     });
 });

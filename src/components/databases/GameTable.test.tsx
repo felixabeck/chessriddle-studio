@@ -22,6 +22,12 @@ const mocks = vi.hoisted(() => ({
   deleteDbGame: vi.fn(),
   deletedGameId: undefined as number | undefined,
   queryError: undefined as Error | undefined,
+  table: undefined as
+    | {
+        sortStatus: { columnAccessor: string; direction: "asc" | "desc" };
+        onSortStatusChange: (value: { columnAccessor: string; direction: "asc" | "desc" }) => void;
+      }
+    | undefined,
 }));
 vi.mock("@/platform/tauri", async (original) => {
   const actual = await original<typeof import("@/platform/tauri")>();
@@ -67,32 +73,30 @@ vi.mock("./SideInput", () => ({ SideInput: () => null }));
 vi.mock("./GamePreview", () => ({ default: ({ pgn }: { pgn: string }) => <div>{pgn}</div> }));
 vi.mock("../common/GameInfo", () => ({ default: () => null }));
 vi.mock("mantine-datatable", () => ({
-  DataTable: ({
-    records,
-    customRowAttributes,
-    rowClassName,
-    onRowClick,
-    onRowDoubleClick,
-  }: any) => (
-    <table>
-      <tbody>
-        {records.map((record: NormalizedGame, index: number) => (
-          <tr
-            key={record.id}
-            className={rowClassName?.(record, index)}
-            onClick={() => onRowClick({ record, index })}
-            onDoubleClick={() => onRowDoubleClick?.({ record, index })}
-            {...customRowAttributes?.(record, index)}
-          >
-            <td>
-              {record.white}
-              <input aria-label="nested filter" />
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  ),
+  DataTable: (props: any) => {
+    mocks.table = props;
+    const { records, customRowAttributes, rowClassName, onRowClick, onRowDoubleClick } = props;
+    return (
+      <table>
+        <tbody>
+          {records.map((record: NormalizedGame, index: number) => (
+            <tr
+              key={record.id}
+              className={rowClassName?.(record, index)}
+              onClick={() => onRowClick({ record, index })}
+              onDoubleClick={() => onRowDoubleClick?.({ record, index })}
+              {...customRowAttributes?.(record, index)}
+            >
+              <td>
+                {record.white}
+                <input aria-label="nested filter" />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  },
 }));
 
 const file = { id: { id: "captured-database" }, kind: "database" } as const;
@@ -212,6 +216,24 @@ test("the Games searches distinguish the player and opponent", async () => {
   await render();
   expect(host.querySelector('input[placeholder="Board.Database.Local.Player"]')).not.toBeNull();
   expect(host.querySelector('input[placeholder="Board.Database.Local.Opponent"]')).not.toBeNull();
+});
+
+test("plies sorting maps the native tag to the row accessor in both directions", async () => {
+  await render();
+  await act(async () =>
+    mocks.table!.onSortStatusChange({ columnAccessor: "ply_count", direction: "asc" }),
+  );
+  expect(activeDatabaseViewStore.getState().games.query.options?.sort).toBe("plyCount");
+  expect(mocks.table!.sortStatus).toEqual({ columnAccessor: "ply_count", direction: "asc" });
+  await act(async () =>
+    mocks.table!.onSortStatusChange({ columnAccessor: "unknown", direction: "desc" }),
+  );
+  expect(activeDatabaseViewStore.getState().games.query.options?.sort).toBe("plyCount");
+  await act(async () =>
+    mocks.table!.onSortStatusChange({ columnAccessor: "date", direction: "desc" }),
+  );
+  expect(activeDatabaseViewStore.getState().games.query.options?.sort).toBe("date");
+  expect(mocks.table!.sortStatus).toEqual({ columnAccessor: "date", direction: "desc" });
 });
 
 test("confirmed deletion clears the selected preview before the next game occupies its row", async () => {

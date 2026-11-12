@@ -685,10 +685,10 @@ describe("DatabasePanel", () => {
       expect(call).toEqual([
         reference,
         expect.objectContaining({
-          wanted_result: "draw",
+          wantedResult: "draw",
           range1: [1800, 2400],
           range2: [1800, 2400],
-          exclude_fast_events: true,
+          excludeFastEvents: true,
         }),
         tabId,
         { signal: expect.any(AbortSignal) },

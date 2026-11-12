@@ -131,7 +131,7 @@ test("a surviving subscriber retains the shared native request and its sorted un
   await render(true, true);
   expect(mocks.searchPosition).toHaveBeenCalledExactlyOnceWith(
     options.path,
-    expect.objectContaining({ player1: 42, include_unknown_results: true, sample_order: "date" }),
+    expect.objectContaining({ player1: 42, includeUnknownResults: true, sampleOrder: "date" }),
     "progress",
     { signal: expect.any(AbortSignal) },
   );
@@ -182,7 +182,7 @@ test("sample options distinguish cache entries and the last subscriber cancels w
   await render(true, false, "start", true, "elo");
   expect(mocks.searchPosition).toHaveBeenCalledTimes(2);
   expect(originalSignal.aborted).toBe(true);
-  expect(mocks.searchPosition.mock.lastCall?.[1].sample_order).toBe("elo");
+  expect(mocks.searchPosition.mock.lastCall?.[1].sampleOrder).toBe("elo");
   const finalSignal = mocks.searchPosition.mock.lastCall?.[3].signal;
   await render(false, false);
   expect(finalSignal.aborted).toBe(true);

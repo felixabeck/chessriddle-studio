@@ -123,9 +123,9 @@ function querySensitiveSource(games: NormalizedGame[]) {
     api.query_games.mockImplementation(async (_database, query) => {
         const matching = games.filter(
             (candidate) =>
-                (!query.start_date ||
-                    (candidate.date != null && candidate.date >= query.start_date)) &&
-                (!query.end_date || (candidate.date != null && candidate.date <= query.end_date)),
+                (!query.startDate ||
+                    (candidate.date != null && candidate.date >= query.startDate)) &&
+                (!query.endDate || (candidate.date != null && candidate.date <= query.endDate)),
         );
         const pageSize = query.options?.pageSize ?? 100;
         const start = ((query.options?.page ?? 1) - 1) * pageSize;
@@ -241,8 +241,8 @@ test.each(["????.??.??", "2023.01.01"])(
             complete: true,
             candidates: [{ verification: "verified" }],
         });
-        expect(api.query_games.mock.calls[0][1].start_date).toBeUndefined();
-        expect(api.query_games.mock.calls[0][1].end_date).toBeUndefined();
+        expect(api.query_games.mock.calls[0][1].startDate).toBeUndefined();
+        expect(api.query_games.mock.calls[0][1].endDate).toBeUndefined();
     },
 );
 
@@ -342,8 +342,8 @@ test.each([
             sides: "WhiteBlack",
             outcome: "0-1",
         });
-        expect(api.query_games.mock.calls[0][1].start_date).toBeUndefined();
-        expect(api.query_games.mock.calls[0][1].end_date).toBeUndefined();
+        expect(api.query_games.mock.calls[0][1].startDate).toBeUndefined();
+        expect(api.query_games.mock.calls[0][1].endDate).toBeUndefined();
         for (const conflict of [
             { white: "Beerdsen, Alice" },
             { black: "Beerdsen, Thomas" },
@@ -1317,8 +1317,8 @@ test("uses database-local IDs, ordered sides and outcome without premature date 
         }),
         expect.anything(),
     );
-    expect(api.query_games.mock.calls[0][1].start_date).toBeUndefined();
-    expect(api.query_games.mock.calls[0][1].end_date).toBeUndefined();
+    expect(api.query_games.mock.calls[0][1].startDate).toBeUndefined();
+    expect(api.query_games.mock.calls[0][1].endDate).toBeUndefined();
 });
 
 test("reads later player and game pages before establishing uniqueness", async () => {
@@ -1506,8 +1506,8 @@ test("unknown month and day remain eligible when the year is identifiable", asyn
     const { api, search } = setup();
     api.query_games.mockResolvedValue({ data: [{ ...game, date: "2022.??.??" }], count: 1 });
     expect((await search()).candidates).toHaveLength(1);
-    expect(api.query_games.mock.calls[0][1].start_date).toBeUndefined();
-    expect(api.query_games.mock.calls[0][1].end_date).toBeUndefined();
+    expect(api.query_games.mock.calls[0][1].startDate).toBeUndefined();
+    expect(api.query_games.mock.calls[0][1].endDate).toBeUndefined();
 });
 
 test("Unicode discovery uses invariant ASCII fragments and supports stored dotted initials", async () => {

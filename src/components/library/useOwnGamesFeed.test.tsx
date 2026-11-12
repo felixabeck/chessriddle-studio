@@ -112,7 +112,7 @@ test("resets on generation and player-query changes, aborts superseded loads and
   expect(pending[1].signal.aborted).toBe(true);
   expect(query_games).toHaveBeenLastCalledWith(
     expect.anything(),
-    expect.objectContaining({ player_name: "Felix Beck" }),
+    expect.objectContaining({ playerName: "Felix Beck" }),
     expect.anything(),
   );
   await act(async () => root.render(null));

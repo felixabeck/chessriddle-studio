@@ -2,7 +2,7 @@ import type {
     BestMoves as BestMovesT,
     DatabaseHandle,
     DatabaseInfo as DatabaseInfoT,
-    GameQuery,
+    GameListQuery,
     ProgressEvent as ProgressEventT,
     ProgressItem as ProgressItemT,
     Score as ScoreT,
@@ -24,7 +24,7 @@ export type DatabaseInfo =
           type: "success";
           file: DatabaseHandle;
           downloadLink?: string;
-          filter?: GameQuery;
+          filter?: GameListQuery;
       })
     | {
           type: "error";

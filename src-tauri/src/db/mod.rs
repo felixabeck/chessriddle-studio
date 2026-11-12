@@ -2171,7 +2171,7 @@ pub enum GameSort {
     WhiteElo,
     #[serde(rename = "blackElo")]
     BlackElo,
-    #[serde(rename = "ply_count")]
+    #[serde(rename = "plyCount")]
     PlyCount,
 }
 
@@ -2185,7 +2185,7 @@ pub enum SortDirection {
 }
 
 #[derive(Default, Debug, Clone, Deserialize, PartialEq, Eq, Hash, Type)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct QueryOptions<SortT> {
     pub skip_count: bool,
     #[specta(optional)]
@@ -2273,7 +2273,54 @@ fn pagination_limit_offset(
     Ok((limit, offset))
 }
 
+#[derive(Debug, Clone, Default, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GameListQuery {
+    #[specta(optional)]
+    pub options: Option<QueryOptions<GameSort>>,
+    #[specta(optional)]
+    pub player1: Option<i32>,
+    #[specta(optional)]
+    pub player2: Option<i32>,
+    #[specta(optional)]
+    pub player_name: Option<String>,
+    #[specta(optional)]
+    pub tournament_id: Option<i32>,
+    #[specta(optional)]
+    pub start_date: Option<String>,
+    #[specta(optional)]
+    pub end_date: Option<String>,
+    #[specta(optional)]
+    pub range1: Option<(i32, i32)>,
+    #[specta(optional)]
+    pub range2: Option<(i32, i32)>,
+    #[specta(optional)]
+    pub sides: Option<Sides>,
+    #[specta(optional)]
+    pub outcome: Option<String>,
+}
+
+impl From<GameListQuery> for GameQuery {
+    fn from(query: GameListQuery) -> Self {
+        Self {
+            options: query.options,
+            player1: query.player1,
+            player2: query.player2,
+            player_name: query.player_name,
+            tournament_id: query.tournament_id,
+            start_date: query.start_date,
+            end_date: query.end_date,
+            range1: query.range1,
+            range2: query.range2,
+            sides: query.sides,
+            outcome: query.outcome,
+            ..Self::default()
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq, Hash, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GameQuery {
     #[specta(optional)]
     pub options: Option<QueryOptions<GameSort>>,
@@ -2336,7 +2383,7 @@ pub struct QueryResponse<T> {
 #[specta::specta]
 pub async fn get_games(
     file: DatabaseHandle,
-    query: GameQuery,
+    query: GameListQuery,
     ticket: Option<String>,
     window: tauri::WebviewWindow,
     state: tauri::State<'_, AppState>,
@@ -2348,7 +2395,7 @@ pub async fn get_games(
     crate::infra::operations::run_native_operation(operation, "get_games", async move {
         BLOCKING_GATEWAY
             .spawn_cancellable(cancellation, move |token| {
-                get_games_blocking(&authority, &repository, file, query, token)
+                get_games_blocking(&authority, &repository, file, query.into(), token)
             })
             .await
     })
@@ -3068,11 +3115,11 @@ fn normalize_games(
 }
 
 #[derive(Debug, Clone, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PlayerQuery {
     pub options: QueryOptions<PlayerSort>,
     #[specta(optional)]
     pub name: Option<String>,
-    #[serde(rename = "nameMatch")]
     #[specta(optional)]
     pub name_match: Option<PlayerNameMatch>,
     #[specta(optional)]
@@ -3307,6 +3354,7 @@ pub enum TournamentSort {
 }
 
 #[derive(Debug, Clone, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TournamentQuery {
     pub options: QueryOptions<TournamentSort>,
     pub name: Option<String>,
@@ -5596,6 +5644,111 @@ mod tests {
     use std::io::Read;
     use std::path::{Path, PathBuf};
     use tauri::Manager;
+
+    #[test]
+    fn game_list_query_rejects_unused_fields_and_converts_all_filters() {
+        use serde_json::json;
+
+        for invalid in [
+            json!({ "wantedResult": "draw" }),
+            json!({ "position": null }),
+            json!({ "player_name": "Carlsen" }),
+        ] {
+            assert!(serde_json::from_value::<GameListQuery>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("unknown field"));
+        }
+        let query: GameListQuery = serde_json::from_value(json!({
+            "options": { "skipCount": true, "page": 2, "pageSize": 25,
+                "sort": "plyCount", "direction": "asc" },
+            "player1": 1, "player2": 2, "playerName": "Carlsen", "tournamentId": 42,
+            "startDate": "2020.01.01", "endDate": "2026.12.31",
+            "range1": [1000, 2000], "range2": [1500, 2500],
+            "sides": "Any", "outcome": "1-0"
+        }))
+        .unwrap();
+        let expected = GameQuery {
+            options: Some(QueryOptions {
+                skip_count: true,
+                page: Some(2),
+                page_size: Some(25),
+                sort: GameSort::PlyCount,
+                direction: SortDirection::Asc,
+            }),
+            player1: Some(1),
+            player2: Some(2),
+            player_name: Some("Carlsen".into()),
+            tournament_id: Some(42),
+            start_date: Some("2020.01.01".into()),
+            end_date: Some("2026.12.31".into()),
+            range1: Some((1000, 2000)),
+            range2: Some((1500, 2500)),
+            sides: Some(Sides::Any),
+            outcome: Some("1-0".into()),
+            ..GameQuery::default()
+        };
+        assert_eq!(GameQuery::from(query), expected);
+    }
+
+    #[test]
+    fn query_dtos_require_camel_case_and_known_fields() {
+        use serde_json::json;
+
+        let query: GameQuery = serde_json::from_value(json!({
+            "playerName": "Carlsen",
+            "startDate": "2020.01.01",
+            "endDate": "2026.12.31",
+            "tournamentId": 42,
+            "wantedResult": "draw",
+            "excludeFastEvents": true,
+            "includeUnknownResults": false,
+            "sampleOrder": "date"
+        }))
+        .unwrap();
+        assert_eq!(query.player_name.as_deref(), Some("Carlsen"));
+        assert_eq!(query.start_date.as_deref(), Some("2020.01.01"));
+        assert_eq!(query.end_date.as_deref(), Some("2026.12.31"));
+        assert_eq!(query.tournament_id, Some(42));
+        assert_eq!(query.wanted_result.as_deref(), Some("draw"));
+        assert_eq!(query.exclude_fast_events, Some(true));
+        assert_eq!(query.include_unknown_results, Some(false));
+        assert_eq!(query.sample_order, Some(SampleOrder::Date));
+        for invalid in [json!({ "player_name": "Carlsen" }), json!({ "typo": true })] {
+            let error = serde_json::from_value::<GameQuery>(invalid).unwrap_err();
+            assert!(error.to_string().contains("unknown field"));
+        }
+
+        let options = json!({ "skipCount": false, "sort": "name", "direction": "asc" });
+        let player: PlayerQuery = serde_json::from_value(json!({
+            "options": options, "nameMatch": "exact"
+        }))
+        .unwrap();
+        assert!(matches!(player.name_match, Some(PlayerNameMatch::Exact)));
+        assert!(serde_json::from_value::<PlayerQuery>(json!({
+            "options": options, "typo": true
+        }))
+        .unwrap_err()
+        .to_string()
+        .contains("unknown field"));
+        assert!(serde_json::from_value::<TournamentQuery>(json!({
+            "options": options, "name": null, "typo": true
+        }))
+        .unwrap_err()
+        .to_string()
+        .contains("unknown field"));
+        assert!(serde_json::from_value::<QueryOptions<GameSort>>(json!({
+            "skipCount": false, "sort": "date", "direction": "asc", "typo": true
+        }))
+        .unwrap_err()
+        .to_string()
+        .contains("unknown field"));
+        assert_eq!(
+            serde_json::from_value::<GameSort>(json!("plyCount")).unwrap(),
+            GameSort::PlyCount
+        );
+        assert!(serde_json::from_value::<GameSort>(json!("ply_count")).is_err());
+    }
 
     #[test]
     fn recent_signature_normalization_matches_renderer_table() {

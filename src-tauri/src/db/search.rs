@@ -52,7 +52,53 @@ use crate::{
     AppState, PositionStatsKey, SearchCache, SearchIndexIdentity, SearchResultKey,
 };
 
-use super::GameQuery;
+use super::{GameQuery, SampleOrder};
+
+#[derive(Debug, Clone, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PositionSearchQuery {
+    #[specta(optional)]
+    pub player1: Option<i32>,
+    #[specta(optional)]
+    pub player2: Option<i32>,
+    #[specta(optional)]
+    pub start_date: Option<String>,
+    #[specta(optional)]
+    pub end_date: Option<String>,
+    #[specta(optional)]
+    pub range1: Option<(i32, i32)>,
+    #[specta(optional)]
+    pub range2: Option<(i32, i32)>,
+    #[specta(optional)]
+    pub position: Option<PositionQueryJs>,
+    #[specta(optional)]
+    pub wanted_result: Option<String>,
+    #[specta(optional)]
+    pub exclude_fast_events: Option<bool>,
+    #[specta(optional)]
+    pub include_unknown_results: Option<bool>,
+    #[specta(optional)]
+    pub sample_order: Option<SampleOrder>,
+}
+
+impl From<PositionSearchQuery> for GameQuery {
+    fn from(query: PositionSearchQuery) -> Self {
+        Self {
+            player1: query.player1,
+            player2: query.player2,
+            start_date: query.start_date,
+            end_date: query.end_date,
+            range1: query.range1,
+            range2: query.range2,
+            position: query.position,
+            wanted_result: query.wanted_result,
+            exclude_fast_events: query.exclude_fast_events,
+            include_unknown_results: query.include_unknown_results,
+            sample_order: query.sample_order,
+            ..Self::default()
+        }
+    }
+}
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct ExactData {
@@ -1160,7 +1206,7 @@ fn search_positions_stats_blocking<R: tauri::Runtime>(
 #[specta::specta]
 pub async fn search_position(
     file: DatabaseHandle,
-    query: GameQuery,
+    query: PositionSearchQuery,
     app: tauri::AppHandle,
     tab_id: String,
     ticket: Option<String>,
@@ -1183,7 +1229,7 @@ pub async fn search_position(
                 lease,
                 app,
                 file,
-                query,
+                query.into(),
                 token,
                 #[cfg(test)]
                 None,
@@ -3438,6 +3484,49 @@ mod batch_tests {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn position_search_query_rejects_unused_fields_and_converts_all_filters() {
+        use serde_json::json;
+
+        for invalid in [
+            json!({ "options": null }),
+            json!({ "playerName": "Carlsen" }),
+        ] {
+            assert!(serde_json::from_value::<PositionSearchQuery>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("unknown field"));
+        }
+        let query: PositionSearchQuery = serde_json::from_value(json!({
+            "player1": 1, "player2": 2,
+            "startDate": "2020.01.01", "endDate": "2026.12.31",
+            "range1": [1000, 2000], "range2": [1500, 2500],
+            "position": { "fen": "startpos", "type_": "exact" },
+            "wantedResult": "draw", "excludeFastEvents": true,
+            "includeUnknownResults": false, "sampleOrder": "date"
+        }))
+        .unwrap();
+        let expected = GameQuery {
+            player1: Some(1),
+            player2: Some(2),
+            start_date: Some("2020.01.01".into()),
+            end_date: Some("2026.12.31".into()),
+            range1: Some((1000, 2000)),
+            range2: Some((1500, 2500)),
+            position: Some(PositionQueryJs {
+                fen: "startpos".into(),
+                type_: "exact".into(),
+            }),
+            wanted_result: Some("draw".into()),
+            exclude_fast_events: Some(true),
+            include_unknown_results: Some(false),
+            sample_order: Some(SampleOrder::Date),
+            ..GameQuery::default()
+        };
+        assert_eq!(GameQuery::from(query), expected);
+    }
+
     use crate::infra::keyed_locks::KeyedLockLease;
     use crate::{
         db::{

@@ -1220,7 +1220,7 @@ async getDbInfo(file: DatabaseHandle) : Promise<Result<DatabaseInfoResult, Error
     else return { status: "error", error: e  as any };
 }
 },
-async getGames(file: DatabaseHandle, query: GameQuery, ticket: string | null) : Promise<Result<QueryResponse<NormalizedGame[]>, ErrorPayload>> {
+async getGames(file: DatabaseHandle, query: GameListQuery, ticket: string | null) : Promise<Result<QueryResponse<NormalizedGame[]>, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_games", { file, query, ticket }) };
 } catch (e) {
@@ -1236,7 +1236,7 @@ async getDbGame(file: DatabaseHandle, gameId: number, linked: LinkedGameIdentity
     else return { status: "error", error: e  as any };
 }
 },
-async searchPosition(file: DatabaseHandle, query: GameQuery, tabId: string, ticket: string | null) : Promise<Result<[PositionStats[], NormalizedGame[]], ErrorPayload>> {
+async searchPosition(file: DatabaseHandle, query: PositionSearchQuery, tabId: string, ticket: string | null) : Promise<Result<[PositionStats[], NormalizedGame[]], ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("search_position", { file, query, tabId, ticket }) };
 } catch (e) {
@@ -1596,6 +1596,7 @@ export type FileWorkspaceHandleKind = "fileWorkspace"
 export type GameConfig = { white: PlayerConfig; black: PlayerConfig; whiteTimeControl: TimeControl | null; blackTimeControl: TimeControl | null; initialFen: string | null; initialMoves?: string[]; openingBook: OpeningBookConfig | null }
 export type GameEndReason = "checkmate" | "timeout" | "resignation" | "abandonment"
 export type GameInterruptionReason = "engineFailure" | "engineTaskFailed"
+export type GameListQuery = { options?: QueryOptions<GameSort> | null; player1?: number | null; player2?: number | null; playerName?: string | null; tournamentId?: number | null; startDate?: string | null; endDate?: string | null; range1?: [number, number] | null; range2?: [number, number] | null; sides?: Sides | null; outcome?: string | null }
 export type GameMove = { uci: string; san: string; fenAfter: string; 
 /**
  * The mover's remaining clock after this move, including the increment.
@@ -1606,10 +1607,9 @@ export type GameMoveKind = "line" | "section"
 export type GameMoveResult = { changed: boolean; start: number; order: number[] }
 export type GameOmission = "tooLarge"
 export type GameOverEvent = { gameId: string; session: bigint; revision: bigint; result: GameResult; moves: GameMove[] }
-export type GameQuery = { options?: QueryOptions<GameSort> | null; player1?: number | null; player2?: number | null; player_name?: string | null; tournament_id?: number | null; start_date?: string | null; end_date?: string | null; range1?: [number, number] | null; range2?: [number, number] | null; sides?: Sides | null; outcome?: string | null; position?: PositionQueryJs | null; wanted_result?: string | null; exclude_fast_events?: boolean | null; include_unknown_results?: boolean | null; sample_order?: SampleOrder | null }
 export type GameResult = { type: "whiteWins"; reason: GameEndReason } | { type: "blackWins"; reason: GameEndReason } | { type: "draw"; reason: DrawReason } | { type: "interrupted"; reason: GameInterruptionReason; snapshot?: EngineTerminalSnapshot | null }
 export type GameSignature = { white: string | null; black: string | null; event: string | null; site: string | null; date: string | null; round: string | null }
-export type GameSort = "id" | "date" | "newest" | "whiteElo" | "blackElo" | "ply_count"
+export type GameSort = "id" | "date" | "newest" | "whiteElo" | "blackElo" | "plyCount"
 export type GameState = { gameId: string; session: bigint; revision: bigint; status: GameStatus; initialFen: string; moves: GameMove[]; currentFen: string; ply: number; turn: string; whiteTime: bigint | null; blackTime: bigint | null; whitePlayer: string; blackPlayer: string }
 export type GameStatus = "playing" | { finished: { result: GameResult } }
 export type GoMode = { t: "PlayersTime"; c: PlayersTime } | { t: "Depth"; c: number } | { t: "Time"; c: number } | { t: "Nodes"; c: number } | { t: "Infinite" }
@@ -1654,6 +1654,7 @@ export type PlayerQuery = { options: QueryOptions<PlayerSort>; name?: string | n
 export type PlayerSort = "id" | "name" | "elo" | "games"
 export type PlayersTime = { white: number; black: number; winc: number; binc: number }
 export type PositionQueryJs = { fen: string; type_: string }
+export type PositionSearchQuery = { player1?: number | null; player2?: number | null; startDate?: string | null; endDate?: string | null; range1?: [number, number] | null; range2?: [number, number] | null; position?: PositionQueryJs | null; wantedResult?: string | null; excludeFastEvents?: boolean | null; includeUnknownResults?: boolean | null; sampleOrder?: SampleOrder | null }
 export type PositionStats = { move: string; white: number; draw: number; black: number; unknown: number; last_played: string | null; year_counts: YearCount[] }
 export type PositionStatsForFen = { fen: string; openings: PositionStats[] }
 export type PracticeDeckIdentity = { fileId: string; game: number }

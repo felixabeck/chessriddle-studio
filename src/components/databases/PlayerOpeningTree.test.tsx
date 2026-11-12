@@ -5,7 +5,13 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { SWRConfig } from "swr";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { DatabaseHandle, GameQuery, NormalizedGame, Player, PositionStats } from "@/bindings";
+import type {
+  DatabaseHandle,
+  PositionSearchQuery,
+  NormalizedGame,
+  Player,
+  PositionStats,
+} from "@/bindings";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import DatabasePanel from "@/components/panels/database/DatabasePanel";
 import {
@@ -148,23 +154,24 @@ beforeEach(async () => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  mocks.searchPosition.mockImplementation(async (_path: DatabaseHandle, query: GameQuery) =>
-    query.position?.fen === INITIAL_FEN
-      ? [startRows, [first]]
-      : [
-          [
-            {
-              move: "e5",
-              white: 3,
-              draw: 1,
-              black: 1,
-              unknown: 1,
-              last_played: null,
-              year_counts: [],
-            },
+  mocks.searchPosition.mockImplementation(
+    async (_path: DatabaseHandle, query: PositionSearchQuery) =>
+      query.position?.fen === INITIAL_FEN
+        ? [startRows, [first]]
+        : [
+            [
+              {
+                move: "e5",
+                white: 3,
+                draw: 1,
+                black: 1,
+                unknown: 1,
+                last_played: null,
+                year_counts: [],
+              },
+            ],
+            [next],
           ],
-          [next],
-        ],
   );
 });
 afterEach(async () => {
@@ -295,13 +302,13 @@ test("Since keeps one rolling cutoff for the search and Prepare, retains moves a
   vi.setSystemTime(new Date(2026, 10, 8, 12));
   await render();
   expect(container.querySelector("select")?.value).toBe("all");
-  expect(mocks.searchPosition.mock.lastCall?.[1].start_date).toBeUndefined();
+  expect(mocks.searchPosition.mock.lastCall?.[1].startDate).toBeUndefined();
   await click(row("e4"));
   await click(container.querySelector("[data-opening-games] tbody tr")!);
   expect(container.querySelector("[data-opening-preview]")).not.toBeNull();
   await since("1");
   expect(mocks.searchPosition.mock.lastCall?.[1]).toMatchObject({
-    start_date: "2025.11.08",
+    startDate: "2025.11.08",
     position: { fen: e4Fen },
   });
   expect(container.querySelector("[data-opening-games]")?.textContent).toContain("Next opponent");
@@ -309,7 +316,7 @@ test("Since keeps one rolling cutoff for the search and Prepare, retains moves a
   expect(container.querySelector("[data-opening-sequence]")?.textContent).toBe("1. e4");
   vi.setSystemTime(new Date(2026, 10, 9, 12));
   await black();
-  expect(mocks.searchPosition.mock.lastCall?.[1].start_date).toBe("2025.11.08");
+  expect(mocks.searchPosition.mock.lastCall?.[1].startDate).toBe("2025.11.08");
   await click(button("Prepare on board"));
   const id = store.get(tabsAtom).at(-1)!.value;
   expect(store.get(localOptionsFamily(id))).toMatchObject({
@@ -318,12 +325,12 @@ test("Since keeps one rolling cutoff for the search and Prepare, retains moves a
     fen: e4Fen,
   });
   await since("5");
-  expect(mocks.searchPosition.mock.lastCall?.[1].start_date).toBe("2021.11.09");
+  expect(mocks.searchPosition.mock.lastCall?.[1].startDate).toBe("2021.11.09");
   await since("2");
-  expect(mocks.searchPosition.mock.lastCall?.[1].start_date).toBe("2024.11.09");
+  expect(mocks.searchPosition.mock.lastCall?.[1].startDate).toBe("2024.11.09");
   mocks.searchPosition.mockResolvedValueOnce([[], []]);
   await since("all");
-  expect(mocks.searchPosition.mock.lastCall?.[1].start_date).toBeUndefined();
+  expect(mocks.searchPosition.mock.lastCall?.[1].startDate).toBeUndefined();
   expect(container.textContent).toContain("No games in this position");
   await click(button("Prepare on board"));
   const allId = store.get(tabsAtom).at(-1)!.value;
@@ -338,8 +345,8 @@ test("native query, scores, terminal row and navigation follow the player's exac
       player1: 42,
       player2: undefined,
       position: { fen: INITIAL_FEN, type_: "exact" },
-      include_unknown_results: true,
-      sample_order: "date",
+      includeUnknownResults: true,
+      sampleOrder: "date",
     }),
     expect.any(String),
     { signal: expect.any(AbortSignal) },
@@ -464,8 +471,8 @@ test("Prepare admits the mainline and orientation, presets before navigation, th
       { signal: expect.any(AbortSignal) },
     ),
   );
-  expect(mocks.searchPosition.mock.lastCall?.[1]).not.toHaveProperty("include_unknown_results");
-  expect(mocks.searchPosition.mock.lastCall?.[1]).not.toHaveProperty("sample_order");
+  expect(mocks.searchPosition.mock.lastCall?.[1]).not.toHaveProperty("includeUnknownResults");
+  expect(mocks.searchPosition.mock.lastCall?.[1]).not.toHaveProperty("sampleOrder");
   await act(async () => store.set(dbTabFamily(tab.value), "options"));
   expect(container.querySelector<HTMLInputElement>(".mantine-Autocomplete-input")?.value).toBe(
     player.name,

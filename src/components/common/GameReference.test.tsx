@@ -244,8 +244,8 @@ async function useRealLookup(candidate: NormalizedGame) {
     }),
     query_games: async (_database, query) => {
       const inBounds =
-        (!query.start_date || (candidate.date != null && candidate.date >= query.start_date)) &&
-        (!query.end_date || (candidate.date != null && candidate.date <= query.end_date));
+        (!query.startDate || (candidate.date != null && candidate.date >= query.startDate)) &&
+        (!query.endDate || (candidate.date != null && candidate.date <= query.endDate));
       return { data: inBounds ? [candidate] : [], count: inBounds ? 1 : 0 };
     },
   };

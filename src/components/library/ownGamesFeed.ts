@@ -1,7 +1,7 @@
 import type {
     CollectionDescriptor,
     DatabaseHandle,
-    GameQuery,
+    GameListQuery,
     NormalizedGame,
     QueryResponse,
 } from "@/bindings";
@@ -22,7 +22,7 @@ export type OwnGamesSnapshot = {
 };
 export type OwnGamesPageLoader = (
     database: DatabaseHandle,
-    query: GameQuery,
+    query: GameListQuery,
     options: { signal: AbortSignal },
 ) => Promise<QueryResponse<NormalizedGame[]>>;
 
@@ -148,7 +148,7 @@ export class OwnGamesFeed {
                                     const result = await this.load(
                                         cursor.collection.database!,
                                         {
-                                            player_name: boundPlayerQuery(this.query) || undefined,
+                                            playerName: boundPlayerQuery(this.query) || undefined,
                                             options: {
                                                 sort: "newest",
                                                 direction: "desc",

@@ -135,7 +135,7 @@ describe("paged merge", () => {
         expect(
             load.mock.calls.every(
                 ([, query]) =>
-                    query.options?.sort === "newest" && query.player_name === "Felix Beck",
+                    query.options?.sort === "newest" && query.playerName === "Felix Beck",
             ),
         ).toBe(true);
         feed.dispose();
