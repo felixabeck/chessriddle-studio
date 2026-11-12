@@ -238,76 +238,94 @@ function Board({
   }
 
   const { choice } = useVariationChooser();
-  const shapes: DrawShape[] = practiceMove ? [] : chooserArrows(choice);
-  if (practiceMove?.hintSan && pos) {
-    const hint = parseSan(pos, practiceMove.hintSan);
-    if (hint && "from" in hint) {
-      const [orig, dest] = chessgroundMove(hint);
-      shapes.push({ orig, dest, brush: "green" });
+  const isPractice = practiceMove !== undefined;
+  const hintSan = practiceMove?.hintSan;
+  const shapes = useMemo(() => {
+    const [pos] = positionFromFen(currentNode.fen);
+    const shapes: DrawShape[] = isPractice ? [] : chooserArrows(choice);
+    if (hintSan && pos) {
+      const hint = parseSan(pos, hintSan);
+      if (hint && "from" in hint) {
+        const [orig, dest] = chessgroundMove(hint);
+        shapes.push({ orig, dest, brush: "green" });
+      }
     }
-  }
-  if (showArrows && evalOpen && arrows.size > 0 && pos) {
-    const entries = Array.from(arrows.entries()).sort((a, b) => a[0] - b[0]);
-    for (const [i, moves] of entries) {
-      if (i < 4 && enabledEngines[i]) {
-        const bestWinChance = moves[0].winChance;
-        for (const [j, { pv, winChance }] of moves.entries()) {
-          const posClone = pos.clone();
-          let prevSquare = null;
-          for (const [ii, uci] of pv.entries()) {
-            const m = parseUci(uci)! as NormalMove;
+    if (showArrows && evalOpen && arrows.size > 0 && pos) {
+      const entries = Array.from(arrows.entries()).sort((a, b) => a[0] - b[0]);
+      for (const [i, moves] of entries) {
+        if (i < 4 && enabledEngines[i]) {
+          const bestWinChance = moves[0].winChance;
+          for (const [j, { pv, winChance }] of moves.entries()) {
+            const posClone = pos.clone();
+            let prevSquare = null;
+            for (const [ii, uci] of pv.entries()) {
+              const m = parseUci(uci)! as NormalMove;
 
-            posClone.play(m);
-            const from = makeSquare(m.from)!;
-            const to = makeSquare(m.to)!;
-            if (prevSquare === null) {
-              prevSquare = from;
-            }
-            const brushSize = match(bestWinChance - winChance)
-              .when(
-                (d) => d < 2.5,
-                () => LARGE_BRUSH,
-              )
-              .when(
-                (d) => d < 5,
-                () => MEDIUM_BRUSH,
-              )
-              .otherwise(() => SMALL_BRUSH);
+              posClone.play(m);
+              const from = makeSquare(m.from)!;
+              const to = makeSquare(m.to)!;
+              if (prevSquare === null) {
+                prevSquare = from;
+              }
+              const brushSize = match(bestWinChance - winChance)
+                .when(
+                  (d) => d < 2.5,
+                  () => LARGE_BRUSH,
+                )
+                .when(
+                  (d) => d < 5,
+                  () => MEDIUM_BRUSH,
+                )
+                .otherwise(() => SMALL_BRUSH);
 
-            if (ii === 0 || (showConsecutiveArrows && j === 0 && ii % 2 === 0)) {
-              if (
-                ii < 5 && // max 3 arrows
-                !shapes.find((s) => s.orig === from && s.dest === to) &&
-                prevSquare === from
-              ) {
-                shapes.push({
-                  orig: from,
-                  dest: to,
-                  brush: j === 0 ? arrowColors[i].strong : arrowColors[i].pale,
-                  modifiers: {
-                    lineWidth: brushSize,
-                  },
-                });
-                prevSquare = to;
-              } else {
-                break;
+              if (ii === 0 || (showConsecutiveArrows && j === 0 && ii % 2 === 0)) {
+                if (
+                  ii < 5 && // max 3 arrows
+                  !shapes.find((s) => s.orig === from && s.dest === to) &&
+                  prevSquare === from
+                ) {
+                  shapes.push({
+                    orig: from,
+                    dest: to,
+                    brush: j === 0 ? arrowColors[i].strong : arrowColors[i].pale,
+                    modifiers: {
+                      lineWidth: brushSize,
+                    },
+                  });
+                  prevSquare = to;
+                } else {
+                  break;
+                }
               }
             }
           }
         }
       }
     }
-  }
 
-  // Variation arrows: show all children moves when there are alternatives
-  if (!practiceMove && !choice && showVariationArrows && currentNode.children.length > 1) {
-    for (const child of currentNode.children) {
-      const arrow = childMoveArrow(child, "variation", MEDIUM_BRUSH);
-      if (arrow && !shapes.find((s) => s.orig === arrow.orig && s.dest === arrow.dest)) {
-        shapes.push(arrow);
+    // Variation arrows: show all children moves when there are alternatives
+    if (!isPractice && !choice && showVariationArrows && currentNode.children.length > 1) {
+      for (const child of currentNode.children) {
+        const arrow = childMoveArrow(child, "variation", MEDIUM_BRUSH);
+        if (arrow && !shapes.find((s) => s.orig === arrow.orig && s.dest === arrow.dest)) {
+          shapes.push(arrow);
+        }
       }
     }
-  }
+    return shapes;
+  }, [
+    currentNode.fen,
+    choice,
+    isPractice,
+    hintSan,
+    showArrows,
+    evalOpen,
+    arrows,
+    enabledEngines,
+    showConsecutiveArrows,
+    showVariationArrows,
+    currentNode.children,
+  ]);
 
   const hasClock =
     !!whiteTime ||
