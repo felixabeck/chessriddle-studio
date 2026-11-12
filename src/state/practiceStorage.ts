@@ -1278,7 +1278,18 @@ export function createPracticeDeckAtom(
                             mutation.type === "reset" &&
                             normalizeError(error).category === "applied-despite-error";
                         if (resetApplied) clearPracticeIdentityState(identity, false);
-                        if (!controller.mounted || sequence !== controller.requestSequence) return;
+                        if (!controller.mounted) return;
+                        if (sequence !== controller.requestSequence) {
+                            const visible = get(stateAtom);
+                            if (
+                                !(error instanceof PracticeWriteDroppedError) &&
+                                controller.writeBlocked &&
+                                visible.status === "ready"
+                            ) {
+                                set(stateAtom, writeFailureState(visible, error));
+                            }
+                            return;
+                        }
                         if (error instanceof PracticeWriteDroppedError) {
                             set(stateAtom, error.deck);
                             return;

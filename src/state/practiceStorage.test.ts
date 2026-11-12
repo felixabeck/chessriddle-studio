@@ -1357,6 +1357,38 @@ describe("the real practice deck atom", () => {
         },
     );
 
+    test("a stale debounced sync failure blocks a deck after a newer rating succeeds", async () => {
+        const source = position();
+        const rated = position(firstFen, { due: "2026-10-01T00:00:00.000Z", reps: 1 });
+        native.load.mockResolvedValue(snapshot([source]));
+        native.sync.mockRejectedValueOnce({
+            tag: "backend-error",
+            category: "io",
+            message: "disk unavailable",
+        });
+        const { atom, store, unsubscribe } = mountDeck();
+        await waitForReady(store, atom);
+        vi.useFakeTimers();
+
+        const syncWrite = store.set(atom, { type: "sync", positions: [source] });
+        await store.set(atom, ratingMutation([rated], source));
+        expect(store.get(atom).status).toBe("ready");
+        expect(native.record).toHaveBeenCalledOnce();
+        expect(native.sync).not.toHaveBeenCalled();
+
+        await vi.advanceTimersByTimeAsync(PRACTICE_SYNC_DEBOUNCE_MS);
+        await syncWrite;
+
+        expect(native.sync).toHaveBeenCalledOnce();
+        expect(store.get(atom)).toMatchObject({
+            status: "write-blocked",
+            positions: [rated],
+            revision: 5,
+            error: { backendCategory: "io" },
+        });
+        unsubscribe();
+    });
+
     test.each(identityRefreshes)(
         "debounced $name sync retains the last committed equivalent card without merging histories",
         async ({ raw, refreshed }) => {
