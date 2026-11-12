@@ -24473,3 +24473,19 @@ Deferred follow-up (keep at midnight filing):
 - **Fix:** wrap the call in `try { … } catch (error) { notifyUnlessCancelled(t("Common.Error"), error); }`, as BoardControls does, and add an EngineLogsView test for a rejected save.
 - **Proof:** ephemeral Vitest rendering `EngineLogsView` with `tauri.saveEngineLogs` mocked to reject `Error("Permission denied")`: clicking Export logs recorded the rejection as unhandled and no notification text appeared in the document. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 22)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Engine log export writes a .csv file without CSV quoting, so typical UCI lines split into extra columns
+
+* **ID:** f-20261112-45 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/common/EngineLogsView.tsx:70-78` (each row is built as `` `${line.type}, ${line.value.trimEnd()}` ``); native `src-tauri/src/main.rs:1000-1009` saves it as `engine-logs.csv` with a CSV-only filter
+- **Defect:** the export is offered and named as CSV, but fields are never quoted or escaped. Any log line containing a comma or a double quote produces a malformed row, and the second field also gets a leading space. Engine output commonly contains commas: Stockfish's NNUE `info string` lines list network dimensions such as `(133MiB, (22528, 3072, 15, 32, 1))`.
+- **Failure scenario:** export Stockfish logs and open `engine-logs.csv` in a spreadsheet: the NNUE `info string` row spreads across six columns, and a `setoption … value "a,b"` row is split inside the quotes.
+- **Fix:** quote each field RFC 4180 style (wrap it in `"` and double any embedded `"`), drop the space after the separator, and add a unit test for a line with a comma and a quote. Alternatively, export as plain `.log`/`.txt` if CSV is not intended.
+- **Proof:** the same ephemeral EngineLogsView probe as f-20261112-44 captured the exported content as `engine, info string NNUE evaluation using nn-x.nnue (133MiB, (22528, 3072, 15, 32, 1))\ngui, setoption name Foo value "a,b"`, which is unquoted and splits on every comma. The native trace confirms the `.csv` name and filter. Probe removed, tree clean.
+- **Found by:** Grok Bot general review (chunk 22)
