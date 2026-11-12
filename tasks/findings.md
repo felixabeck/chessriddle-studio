@@ -24261,3 +24261,19 @@ Deferred follow-up (keep at midnight filing):
 * **Fix:** Format the interval with `Intl.NumberFormat(i18n.language, { style: "unit", unit: "minute"|"hour"|"day"|"month", unitDisplay: "narrow" })`, or move the suffixes into i18next keys with `{{count}}` plurals. Pass the language from PracticePanel and keep `opening.ts` free of UI copy, or move the helper next to `formatRelativeTime` in `src/utils/format.ts`. Add an en/de unit test for the helper and a German PracticePanel test on one grade button. Apply the same treatment to the `games/s` rate.
 * **Proof:** Ephemeral Vitest probe `src/components/files/zzprobe.test.ts` at origin `5512756fa` called `formatReviewInterval` for due dates 30 s, 10 min, 5 h, 3 d and 90 d ahead. Result: `["1m", "10m", "5h", "3d", "3mo"]`. The helper takes no language input, so the output cannot vary with `i18n.language`. Code trace: PracticePanel passes `formatReviewInterval(reviewTimes[n])` straight into `<Text>`. `grep formatReviewInterval tasks/findings.md` is empty, and f-20261111-70 covered only `NextDue` and New Tab. Probe deleted; `git status --short` clean.
 * **Found by:** Grok Bot, quality review (t26u/pt40u), origin `5512756fa`.
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Practice Logs show each review's previous due date under "Date" instead of when the review happened
+
+* **ID:** f-20261112-32 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** continuous quality review (Felix t26u, resumed pt40u) at origin `5512756fa`, reading the PracticePanel session flow and its modals
+* **Where:** In `src/components/panels/practice/PracticePanel.tsx`, `LogsModal` renders `{formatDate(log.due)}` under the `Common.Date` heading ("Date"). The entries come from `updateCardPerformance` in `src/components/files/opening.ts` as `{ ...log, fen }`, where `log` is ts-fsrs 3.5.1's `ReviewLog`. `src/state/practiceStorage.ts` stores them as opaque `JSON.stringify(mutation.entry)` and keeps every field. In ts-fsrs, `ReviewLog.due` is the card's due date *before* this review, and `ReviewLog.review` is the review timestamp.
+* **Defect:** The log card's only date is the wrong field. For a card's first review, `log.due` is the card's creation time: `createEmptyCard()` at deck build or sync. For later reviews it is the previously scheduled due date, which is not the day the user practised. The review timestamp `log.review` is stored but never shown.
+* **Failure scenario:** Build a repertoire deck on 2 Nov and practise it for the first time on 12 Nov, then open Show Logs → today's reviews are listed as 2026-11-02. A card due on 5 Nov and reviewed on 12 Nov is listed as 5 Nov, and a failed card that is asked again at once is listed by its learning-step due. The history therefore cannot answer "when did I practise this?", and reviews from different sessions can share the deck-creation date.
+* **Fix:** Render `formatDate(log.review)`. Optionally show the old due as a secondary "was due" value. Add a LogsModal render test whose entry has distinct `due` and `review` dates and asserts that the review date is shown.
+* **Proof:** I ran an ephemeral Vitest probe `src/components/files/zzprobe.test.ts` at origin `5512756fa`. It created a card with `createEmptyCard(10 days ago)` and rated it Good via `updateCardPerformance`. The entry had `due` 2026-11-02 (the creation date), and `review` was 2026-11-12, today. The probe was deleted and `git status --short` is clean. Code trace: LogsModal parses `page.entries[].entry` with `JSON.parse` and passes `log.due` straight to `formatDate`. The findings ledger has no entry for this field. f-20260922-03 and f-20261004-23 covered only the move label and the card key.
+* **Found by:** Grok Bot, quality review (t26u/pt40u), origin `5512756fa`.
