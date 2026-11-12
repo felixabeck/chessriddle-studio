@@ -140,6 +140,8 @@
     "Board.Database.Local.CurrentPosition": "Aktuelle Stellung",
     "Board.Database.Local.Elo": "Elo",
     "Board.Database.Local.Elo.BothPlayers": "Beide Spieler",
+    "Board.Database.Local.Elo.Max": "Maximale Elo",
+    "Board.Database.Local.Elo.Min": "Minimale Elo",
     "Board.Database.Local.Exact": "Genau",
     "Board.Database.Local.ExcludeFastEvents": "Blitz-, Bullet- und Armageddon-Turniere ausschließen",
     "Board.Database.Local.ExcludeFastEvents.Description": "Prüft diese Wörter im Turniernamen, nicht ein Bedenkzeit-Tag. Schnellschach-Turniere bleiben erhalten.",

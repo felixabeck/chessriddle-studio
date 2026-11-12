@@ -1,4 +1,4 @@
-import { act, type ReactNode } from "react";
+import { act, type ReactNode, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { DatabaseHandle } from "@/bindings";
@@ -36,6 +36,11 @@ vi.mock("@mantine/core", () => ({
         search
       </button>
       <output>{data.join(",")}</output>
+      {data.map((name) => (
+        <button key={name} data-player={name} type="button" onClick={() => onChange(name)}>
+          {name}
+        </button>
+      ))}
     </>
   ),
 }));
@@ -91,9 +96,76 @@ test("rapid typing starts only the final player search after 250 ms", async () =
   await act(async () => vi.advanceTimersByTimeAsync(1));
   expect(mocks.queryPlayers).toHaveBeenCalledExactlyOnceWith(
     database,
-    expect.objectContaining({ name: "car" }),
+    expect.objectContaining({
+      name: "car",
+      options: expect.objectContaining({ sort: "elo", direction: "desc" }),
+    }),
     { signal: expect.any(AbortSignal) },
   );
+});
+
+async function enterName(name: string) {
+  const input = container.querySelector("input")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, name);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+test("editing a suggestion selection clears its id, preserves typed text, and searches again", async () => {
+  vi.useFakeTimers();
+  const database = file("db");
+  const setValue = vi.fn();
+  mocks.getPlayer.mockImplementation(async (_file: DatabaseHandle, id: number) => ({
+    id,
+    name: id === 1 ? "Ada" : "Bea",
+  }));
+  mocks.queryPlayers
+    .mockResolvedValueOnce({ data: [{ id: 1, name: "Ada" }], count: 1 })
+    .mockResolvedValueOnce({ data: [{ id: 2, name: "Bea" }], count: 1 });
+  function ControlledPlayer() {
+    const [value, commit] = useState<number>();
+    return (
+      <PlayerSearchInput
+        label="Player"
+        file={database}
+        value={value}
+        setValue={(next) => {
+          setValue(next);
+          commit(next);
+        }}
+      />
+    );
+  }
+  await act(async () => root.render(<ControlledPlayer />));
+  await enterName("Ad");
+  expect(setValue).not.toHaveBeenCalled();
+  await act(async () => vi.advanceTimersByTimeAsync(250));
+  await act(async () => container.querySelector<HTMLButtonElement>('[data-player="Ada"]')!.click());
+  expect(setValue).toHaveBeenLastCalledWith(1);
+  setValue.mockClear();
+
+  await enterName("Be");
+  expect(setValue).toHaveBeenCalledExactlyOnceWith(undefined);
+  expect(container.querySelector("input")!.value).toBe("Be");
+  await act(async () => vi.advanceTimersByTimeAsync(250));
+  expect(mocks.queryPlayers).toHaveBeenCalledTimes(2);
+  expect(mocks.queryPlayers.mock.lastCall?.[1].name).toBe("Be");
+  expect(container.querySelector("output")!.textContent).toBe("Bea");
+  await act(async () => container.querySelector<HTMLButtonElement>('[data-player="Bea"]')!.click());
+  expect(setValue).toHaveBeenLastCalledWith(2);
+  expect(container.querySelector("input")!.value).toBe("Bea");
+});
+
+test("an external clear empties the selected player's text", async () => {
+  const database = file("db");
+  mocks.getPlayer.mockResolvedValue({ id: 1, name: "Ada" });
+  await act(async () =>
+    root.render(<PlayerSearchInput label="Player" file={database} value={1} setValue={vi.fn()} />),
+  );
+  expect(container.querySelector("input")!.value).toBe("Ada");
+  await render(database);
+  expect(container.querySelector("input")!.value).toBe("");
 });
 
 test.each(["file replacement", "unmount", "clear"])(

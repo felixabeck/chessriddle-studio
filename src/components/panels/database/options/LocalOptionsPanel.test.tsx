@@ -16,6 +16,12 @@ const mocks = vi.hoisted(() => ({
 }));
 
 function translate(key: string, options?: { count?: number }) {
+  const labels: Record<string, string> = {
+    "Board.Database.Local.Result": "Result",
+    "Board.Database.Local.Elo.Min": "Minimum Elo",
+    "Board.Database.Local.Elo.Max": "Maximum Elo",
+  };
+  if (labels[key]) return labels[key];
   return options?.count === undefined ? key : `${key}:${options.count}`;
 }
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: translate }) }));
@@ -139,6 +145,57 @@ describe("LocalOptionsPanel explorer filters", () => {
   test("captions the Elo band as applying to both players", () => {
     expect(container.textContent).toContain("Board.Database.Local.Elo.BothPlayers");
     expect(container.querySelectorAll(".mantine-RangeSlider-root")).toHaveLength(1);
+  });
+
+  test("names the Result combobox and both Elo slider thumbs", async () => {
+    const result = container.querySelector<HTMLInputElement>(
+      '[role="combobox"][aria-label="Result"]',
+    )!;
+    expect(result).toBeInstanceOf(HTMLInputElement);
+    expect(result.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => result.click());
+    expect(result.getAttribute("aria-expanded")).toBe("true");
+    await act(async () => result.click());
+    expect(result.getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelector('[role="slider"][aria-label="Minimum Elo"]')).not.toBeNull();
+    expect(container.querySelector('[role="slider"][aria-label="Maximum Elo"]')).not.toBeNull();
+  });
+
+  test("clearing a typed From date empties the input and removes the filter", async () => {
+    const input = container.querySelector<HTMLInputElement>('[placeholder="Common.StartDate"]')!;
+    await act(async () => {
+      input.focus();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "2024-03-15",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(store.get(localOptionsFamily(tabId)).start_date).toBe("2024.03.15");
+    expect(input.value).toBe("2024-03-15");
+    await act(async () => input.blur());
+    const clear = input
+      .closest(".mantine-DateInput-wrapper")!
+      .querySelector<HTMLButtonElement>("button")!;
+    expect(clear).not.toBeNull();
+    await act(async () => clear.click());
+    expect(store.get(localOptionsFamily(tabId)).start_date).toBeUndefined();
+    expect(input.value).toBe("");
+  });
+
+  test("editing player 42 to a non-matching name clears the committed player filter", async () => {
+    await act(async () =>
+      store.set(localOptionsFamily(tabId), (options) => ({
+        ...options,
+        player: 42,
+        player_database: databaseHandleKey(databaseA),
+      })),
+    );
+    expect(playerInput().value).toBe("A player");
+    await enterPlayer("Someone else");
+    expect(store.get(localOptionsFamily(tabId)).player).toBeNull();
+    expect(store.get(localOptionsFamily(tabId)).player_database).toBeUndefined();
+    expect(playerInput().value).toBe("Someone else");
   });
 
   test("effective database B ignores A's stored player and path, then records a real B selection", async () => {

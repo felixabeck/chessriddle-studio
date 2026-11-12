@@ -140,6 +140,8 @@
     "Board.Database.Local.CurrentPosition": "Current Position",
     "Board.Database.Local.Elo": "Elo",
     "Board.Database.Local.Elo.BothPlayers": "Both players",
+    "Board.Database.Local.Elo.Max": "Maximum Elo",
+    "Board.Database.Local.Elo.Min": "Minimum Elo",
     "Board.Database.Local.Exact": "Exact",
     "Board.Database.Local.ExcludeFastEvents": "Exclude blitz, bullet, and armageddon events",
     "Board.Database.Local.ExcludeFastEvents.Description": "Matches these words in the event name, not a time-control tag. Rapid events are kept.",

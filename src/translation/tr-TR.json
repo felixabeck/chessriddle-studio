@@ -140,6 +140,8 @@
     "Board.Database.Local.CurrentPosition": "Geçerli pozisyon",
     "Board.Database.Local.Elo": "Elo",
     "Board.Database.Local.Elo.BothPlayers": "Her iki oyuncu",
+    "Board.Database.Local.Elo.Max": "En yüksek Elo",
+    "Board.Database.Local.Elo.Min": "En düşük Elo",
     "Board.Database.Local.Exact": "Tam eşleşme",
     "Board.Database.Local.ExcludeFastEvents": "Blitz, bullet ve armageddon turnuvalarını hariç tut",
     "Board.Database.Local.ExcludeFastEvents.Description": "Bu kelimeleri turnuva adında arar, zaman kontrolü etiketini kullanmaz. Hızlı (rapid) turnuvalar korunur.",

@@ -140,6 +140,8 @@
     "Board.Database.Local.CurrentPosition": "Position actuelle",
     "Board.Database.Local.Elo": "Elo",
     "Board.Database.Local.Elo.BothPlayers": "Les deux joueurs",
+    "Board.Database.Local.Elo.Max": "Elo maximum",
+    "Board.Database.Local.Elo.Min": "Elo minimum",
     "Board.Database.Local.Exact": "Exact",
     "Board.Database.Local.ExcludeFastEvents": "Exclure les tournois blitz, bullet et armageddon",
     "Board.Database.Local.ExcludeFastEvents.Description": "Recherche ces mots dans le nom du tournoi, pas une balise de cadence. Les tournois rapides sont conservés.",

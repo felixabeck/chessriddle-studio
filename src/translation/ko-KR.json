@@ -140,6 +140,8 @@
     "Board.Database.Local.CurrentPosition": "현재 포지션",
     "Board.Database.Local.Elo": "Elo",
     "Board.Database.Local.Elo.BothPlayers": "양쪽 플레이어",
+    "Board.Database.Local.Elo.Max": "최대 Elo",
+    "Board.Database.Local.Elo.Min": "최소 Elo",
     "Board.Database.Local.Exact": "정확히 일치",
     "Board.Database.Local.ExcludeFastEvents": "블리츠, 불릿, 아마겟돈 대회 제외",
     "Board.Database.Local.ExcludeFastEvents.Description": "대회 이름에서 이 단어를 찾으며, 시간 제한 태그는 사용하지 않습니다. 래피드 대회는 유지됩니다.",

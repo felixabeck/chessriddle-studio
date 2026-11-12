@@ -140,6 +140,8 @@
     "Board.Database.Local.CurrentPosition": "Gjeldende stilling",
     "Board.Database.Local.Elo": "Elo",
     "Board.Database.Local.Elo.BothPlayers": "Begge spillere",
+    "Board.Database.Local.Elo.Max": "Høyeste Elo",
+    "Board.Database.Local.Elo.Min": "Laveste Elo",
     "Board.Database.Local.Exact": "Eksakt",
     "Board.Database.Local.ExcludeFastEvents": "Utelat lyn-, bullet- og armageddon-turneringer",
     "Board.Database.Local.ExcludeFastEvents.Description": "Ser etter disse ordene (blitz, bullet, armageddon) i turneringsnavnet, ikke en tidskontroll-tagg. Hurtigsjakkturneringer beholdes.",

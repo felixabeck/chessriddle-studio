@@ -25,12 +25,15 @@ export function PlayerSearchInput({
   const [tempValue, setTempValue] = useState("");
   const [data, setData] = useState<Player[]>([]);
   const playerLookupVersion = useRef(0);
+  const suggestionSearchVersion = useRef(0);
+  const typingClear = useRef(false);
   const searchController = useRef<AbortController | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(
     () => () => {
       playerLookupVersion.current += 1;
+      suggestionSearchVersion.current += 1;
       searchController.current?.abort();
       clearTimeout(searchTimer.current);
     },
@@ -39,6 +42,8 @@ export function PlayerSearchInput({
 
   useEffect(() => {
     playerLookupVersion.current += 1;
+    suggestionSearchVersion.current += 1;
+    typingClear.current = false;
     searchController.current?.abort();
     searchController.current = null;
     clearTimeout(searchTimer.current);
@@ -47,8 +52,15 @@ export function PlayerSearchInput({
 
   useEffect(() => {
     const lookupVersion = ++playerLookupVersion.current;
+    const preserveTypedText = value === undefined && typingClear.current;
+    typingClear.current = false;
+    if (!preserveTypedText) {
+      suggestionSearchVersion.current += 1;
+      searchController.current?.abort();
+      clearTimeout(searchTimer.current);
+    }
     if (value === undefined) {
-      setTempValue("");
+      if (!preserveTypedText) setTempValue("");
       return;
     }
 
@@ -68,24 +80,27 @@ export function PlayerSearchInput({
   }, [file, t, value]);
 
   function handleChange(val: string) {
-    const lookupVersion = ++playerLookupVersion.current;
+    playerLookupVersion.current += 1;
+    const searchVersion = ++suggestionSearchVersion.current;
     searchController.current?.abort();
     clearTimeout(searchTimer.current);
     const controller = new AbortController();
     searchController.current = controller;
     setTempValue(val);
-    if (val.trim().length === 0) {
-      setValue(undefined);
-      setData([]);
-      return;
-    }
     const player = data.find((player) => player.name === val);
     if (player) {
       setValue(player.id);
+    } else if (value !== undefined) {
+      typingClear.current = true;
+      setValue(undefined);
+    }
+    if (val.trim().length === 0) {
+      setData([]);
+      return;
     }
 
     searchTimer.current = setTimeout(async () => {
-      if (playerLookupVersion.current !== lookupVersion || controller.signal.aborted) return;
+      if (suggestionSearchVersion.current !== searchVersion || controller.signal.aborted) return;
       try {
         const res = await query_players(
           file,
@@ -96,16 +111,16 @@ export function PlayerSearchInput({
               pageSize: 5,
               skipCount: true,
               sort: "elo",
-              direction: "asc",
+              direction: "desc",
             },
           },
           { signal: controller.signal },
         );
-        if (playerLookupVersion.current === lookupVersion && !controller.signal.aborted) {
+        if (suggestionSearchVersion.current === searchVersion && !controller.signal.aborted) {
           setData(res.data);
         }
       } catch (cause) {
-        if (playerLookupVersion.current === lookupVersion && !controller.signal.aborted) {
+        if (suggestionSearchVersion.current === searchVersion && !controller.signal.aborted) {
           notifyUnlessCancelled(t("Common.Error"), cause);
         }
       }

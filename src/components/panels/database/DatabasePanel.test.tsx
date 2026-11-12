@@ -100,6 +100,7 @@ vi.mock("@/platform/tauri", async () => {
 
 vi.mock("@/chessground/Chessground", () => ({ Chessground: () => null }));
 vi.mock("@/components/boards/PiecesGrid", () => ({ default: () => null }));
+vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 
 import DatabasePanel, { fetchOpening } from "./DatabasePanel";
 
@@ -664,6 +665,31 @@ describe("DatabasePanel", () => {
     expect(store.get(referenceDbAtom)).toEqual(reference);
     expect(JSON.parse(localStorage.getItem("reference-database")!)).toEqual(reference);
   }
+
+  test.each(["partial", "exact"] as const)(
+    "local: %s position survives remount and follows board moves only in exact mode",
+    async (type) => {
+      mocks.getDatabases.mockResolvedValue(databaseList([readable]));
+      const { store, swrConfig } = await mountLocal();
+      const pattern = "8/pppppppp/8/8/8/8/PPPPPPPP/8 w - - 0 1";
+      await act(async () =>
+        store.set(localOptionsFamily(tabId), (options) => ({ ...options, type, fen: pattern })),
+      );
+      const beforeMove = store.get(localOptionsFamily(tabId));
+      await act(async () => treeStore.getState().makeMove({ payload: "e4" }));
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 80)));
+      expect(store.get(localOptionsFamily(tabId)).fen).toBe(
+        type === "partial" ? pattern : treeStore.getState().currentNode().fen,
+      );
+      expect(store.get(localOptionsFamily(tabId)) === beforeMove).toBe(type === "partial");
+
+      await act(async () => root.render(null));
+      await renderPanel(store, swrConfig);
+      expect(store.get(localOptionsFamily(tabId)).fen).toBe(
+        type === "partial" ? pattern : treeStore.getState().currentNode().fen,
+      );
+    },
+  );
 
   function expectNoReference(value: "stats" | "games" | "options" = "stats") {
     const panel = selectedPanel(value);

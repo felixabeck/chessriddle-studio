@@ -140,6 +140,8 @@
     "Board.Database.Local.CurrentPosition": "Текущая позиция",
     "Board.Database.Local.Elo": "Эло",
     "Board.Database.Local.Elo.BothPlayers": "Оба игрока",
+    "Board.Database.Local.Elo.Max": "Максимальный рейтинг Эло",
+    "Board.Database.Local.Elo.Min": "Минимальный рейтинг Эло",
     "Board.Database.Local.Exact": "Точное",
     "Board.Database.Local.ExcludeFastEvents": "Исключить турниры по блицу, пуле и армагеддону",
     "Board.Database.Local.ExcludeFastEvents.Description": "Ищет эти слова в названии турнира, а не тег контроля времени. Турниры по рапиду сохраняются.",

@@ -140,6 +140,8 @@
     "Board.Database.Local.CurrentPosition": "当前局面",
     "Board.Database.Local.Elo": "等级分",
     "Board.Database.Local.Elo.BothPlayers": "双方棋手",
+    "Board.Database.Local.Elo.Max": "最高 Elo",
+    "Board.Database.Local.Elo.Min": "最低 Elo",
     "Board.Database.Local.Exact": "精确匹配",
     "Board.Database.Local.ExcludeFastEvents": "排除超快棋、子弹棋和绝杀赛事",
     "Board.Database.Local.ExcludeFastEvents.Description": "按赛事名称中的这些词匹配，而非时间控制标签。快棋赛事会保留。",

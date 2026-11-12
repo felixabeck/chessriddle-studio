@@ -179,7 +179,7 @@ function DatabasePanel() {
 
   useEffect(() => {
     if (db === "local") {
-      setLocalOptions((q) => ({ ...q, fen: debouncedFen }));
+      setLocalOptions((q) => (q.type === "exact" ? { ...q, fen: debouncedFen } : q));
     }
   }, [debouncedFen, setLocalOptions, setMasterOptions, setLichessOptions, db]);
 

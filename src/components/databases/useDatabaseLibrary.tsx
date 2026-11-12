@@ -761,6 +761,7 @@ function PlayerMerger({
           {...libraryButtonProps}
           loading={loading}
           onClick={mergePlayers}
+          disabled={player1 === undefined || player2 === undefined}
           rightSection={<ArrowRight size="1rem" />}
         >
           {t("Databases.Settings.Merge")}

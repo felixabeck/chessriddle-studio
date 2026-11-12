@@ -50,6 +50,7 @@ function LocalOptionsPanel({
 
   const [selectedPiece, setSelectedPiece] = useState<Piece | null>(null);
   const [eloDraft, setEloDraft] = useState<[number, number] | null>(null);
+  const [resultDropdownOpened, setResultDropdownOpened] = useState(false);
 
   return (
     <Stack>
@@ -96,9 +97,7 @@ function LocalOptionsPanel({
             placeholder={t("Common.StartDate")}
             valueFormat="YYYY-MM-DD"
             clearable
-            value={
-              options.start_date ? dayjs(options.start_date, "YYYY.MM.DD").toDate() : undefined
-            }
+            value={options.start_date ? dayjs(options.start_date, "YYYY.MM.DD").toDate() : null}
             onChange={(value) =>
               setOptions({
                 ...options,
@@ -148,6 +147,12 @@ function LocalOptionsPanel({
             {t("Board.Database.Local.Result")}
           </Text>
           <Select
+            // Mantine's non-searchable Select does not assign the combobox role or expanded state.
+            role="combobox"
+            aria-label={t("Board.Database.Local.Result")}
+            attributes={{ input: { "aria-expanded": resultDropdownOpened } }}
+            onDropdownOpen={() => setResultDropdownOpened(true)}
+            onDropdownClose={() => setResultDropdownOpened(false)}
             data={[
               { value: "any", label: t("Board.Database.Local.Result.Any") },
               {
@@ -179,6 +184,8 @@ function LocalOptionsPanel({
           {t("Board.Database.Local.Elo.BothPlayers")}
         </Text>
         <RangeSlider
+          thumbFromLabel={t("Board.Database.Local.Elo.Min")}
+          thumbToLabel={t("Board.Database.Local.Elo.Max")}
           step={10}
           min={0}
           max={ELO_FILTER_MAX}
