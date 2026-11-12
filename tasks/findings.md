@@ -24888,3 +24888,19 @@ Line-reference correction: in `src/components/common/IconAction.tsx`, the extra 
 - **Fix:** keep the field name as the label but include the value, e.g. `aria-label={`${ariaLabel}: ${selectedText}`}` (give items a plain-text `name` for this), or label via `aria-labelledby` pointing at a visible label plus the button's own text node. Add a SettingsCombobox test that the accessible name contains the selected item's text.
 - **Proof:** code trace on origin/master d30eb171f: `aria-label` is set unconditionally (`:75`), and the only value-bearing output is the child node (`:83-85`). Mantine `InputBase` forwards `aria-label` to the rendered `<button>`, which then takes precedence over its content per accname. No probe needed; tree unchanged.
 - **Found by:** Grok Bot general review (chunk 27)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### The player opening tree opens a game once per click while the first open is still pending
+
+* **ID:** f-20261112-70 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** yes (general review, origin/master d30eb171f)
+* **Where:** `src/components/databases/PlayerOpeningTree.tsx:85-90` (`open` calls `runTabCreation(openDatabaseGame…)` directly), used by the games-row `onDoubleClick` (`:388`) and the "Open on board" `Button` (`:410-417`, no `loading`/`disabled`). `openDatabaseGame` → `createTab` (`src/utils/tabs.ts:620-742`) awaits `databaseGameToTree`/`seedDatabaseOrientation` and then `commitNewTab` (`:412-436`), which always appends a new tab (no same-database-game dedupe).
+* **Defect:** this surface never adopted the shared single-flight game-open contract (`useGameOpen` in `src/components/common/gameOpen.tsx`, used by GameTable, FileCard, GameReference, NewTabHome). Nothing tracks an in-flight open and the Open button gives no pending state, so every activation during the async tree build starts another independent tab creation.
+* **Failure scenario:** Databases → a player → Opening tree, select a game, then click "Open on board" twice (or click it and double-click the row) while the tree is still being built. Each activation calls `openDatabaseGame`, and each completed `createTab` commits a separate analysis tab of the same game, plus duplicate navigation.
+* **Fix:** hold `useGameOpen` for this card (`activate` around `openDatabaseGame` + `runTabCreation`), route both the row double-click and the Open button through `gameOpen.activate`, and render the button through `OpenGameButton`/`pending={gameOpen.pending}` like GameCard/FileCard.
+* **Proof:** ephemeral probe built from `PlayerOpeningTree.test.tsx`'s harness (removed afterwards, tree clean): `openDatabaseGame` mocked to a held promise; select the first game, click "Open on board", click it again, then dispatch `dblclick` on the row → `openDatabaseGame` called **3** times before the first resolved; the button had neither `disabled` nor `data-loading`.
+* **Found by:** Grok Bot general review (chunk 28)
