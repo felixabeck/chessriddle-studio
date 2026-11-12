@@ -24062,3 +24062,19 @@ Deferred follow-up (keep at midnight filing):
 * **Fix:** For "All websites", either map Chess.com `daily` and Lichess `correspondence` to one shared category in `matchesTimeControl` (and label it e.g. "Daily / Correspondence"), or build the option list as the union of both sites' categories. Add an All-websites correspondence/daily case to `statisticsPanels.test.tsx`.
 * **Proof:** Ephemeral Vitest probe (file deleted, tree clean): `matchesTimeControl("Chess.com", "correspondence", "1/86400")` is `false`, while `matchesTimeControl("Lichess", "correspondence", "-")` and `matchesTimeControl("Chess.com", "daily", "1/86400")` are `true`; `TimeControlSelector` offers `daily` only when `website === "Chess.com"`.
 * **Found by:** Grok Bot, general review (t40u), HEAD `658369674`.
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### The ChessRiddle account card keeps "Disconnected locally" removal warnings after the user reconnects
+
+* **ID:** f-20261112-20 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** general review chunk 5 (Felix t40u) at HEAD `e26ab3d0d` (file identical on origin/master `ba81d9264`), ChessRiddle account card pass
+* **Where:** `src/components/home/ChessRiddleAccountCard.tsx`: `removed` is set only in the disconnect branch of `run` (~60, `setRemoved(outcome.status === "removed" ? outcome : null)`) and is never cleared by a later connect or refresh; the alerts at ~182-191 render from `removed?.revocation_pending` / `removed?.durability_uncertain` regardless of the current `status`. The existing test "disconnect follows native status and independently shows flags" intentionally keeps the warning across a Refresh while still disconnected; no test covers a subsequent connect.
+* **Defect:** The removal outcome describes the previous account removal, but the card keeps showing it after a successful (re)connect, so it contradicts the connected state.
+* **Failure scenario:** The user disconnects while offline (revocation could not reach the server, possibly with uncertain local removal), then connects again. The card shows "Connected as Alex · Gold" together with "Disconnected locally. The server session is still active. Disconnect it on the ChessRiddle website." and "Local removal could not be fully confirmed…", until the view remounts. The same card instance in a training tab's connect prompt behaves the same way.
+* **Fix:** Clear `removed` when a connect (or any status read that returns `connected`) succeeds, or render the removal alerts only while `status` is `disconnected`/`reconnectNeeded`. Add a card test: disconnect with both flags, then Connect, asserting both alerts are gone.
+* **Proof:** Ephemeral Vitest probe reusing `ChessRiddleAccountCard.test.tsx`'s mocks and helpers (file deleted, tree clean): start connected, Disconnect with `{revocation_pending: true, durability_uncertain: true}`, then Connect (`connectChessriddle` resolves connected). Card text contains `ConnectedAs` and still contains `RevocationPending` and `RemovalDurabilityUncertain` (expected both absent).
+* **Found by:** Grok Bot, general review (t40u), HEAD `e26ab3d0d`.
