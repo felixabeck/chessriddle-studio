@@ -24715,7 +24715,7 @@ Handled 2026-11-12 by drain session bdcaf057 (lens tier; lenses correctness, roo
 
 ### The typed-move box never shows its "Invalid move" message: a bare Mantine Input renders `error` only as styling
 
-* **ID:** f-20261112-56 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-56 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/boards/MoveInput.tsx:20-42`: a bare `@mantine/core` `Input` receives `error={error}` with `t("MoveInput.InvalidMove")` (`:27,37`), but has no wrapper and no `aria-label`. Its only caller is `src/components/boards/Board.tsx:735-742` (keyboard move entry, when `moveInput` is enabled).
@@ -24724,6 +24724,9 @@ Handled 2026-11-12 by drain session bdcaf057 (lens tier; lenses correctness, roo
 - **Fix:** use `TextInput` (or wrap in `Input.Wrapper` with `error`) so the message renders and is linked by `aria-describedby`, add `aria-label={t("MoveInput.EnterMove")}`, and add a MoveInput test asserting the message text after an illegal move.
 - **Proof:** ephemeral Vitest rendering MoveInput (i18n mocked to return keys) from the default position: after typing `Ke5` and Enter, the input had `data-error="true"` and `aria-invalid="true"`, null `aria-describedby` and `aria-label`, and the text `MoveInput.InvalidMove` was absent from the DOM. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 25)
+
+Handled in `8d4c9c216` and `920a91f87` (pushed to master). `MoveInput.tsx` now renders the translated "Invalid move" text inline next to the field. The board bar has a fixed height of 1.9rem, so a TextInput error line below the field would overflow it. The text is linked via `aria-describedby` (from `useId`) and announced with `aria-live="polite"`. The field has `aria-label={t("MoveInput.EnterMove")}`. `withAria={false}` together with an explicit `aria-invalid` stops Mantine from overriding the description. The error also clears on a successful submission (a review finding: an unchanged text that became legal after a board move used to leave the message visible). Tests in `Board.test.tsx`. Visual check: a throwaway Playwright probe in WebKit and Chromium showed the message inline and the bar unchanged at 30.4px; the screenshot is `~/Downloads/f-20261112-56-move-input-error-webkit.png`. Container e2e passed with no snapshot moves.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"537a3ba973f67ffefc970fdf60d12ee2f4c99bda6ca9a02b4a358a2192b6aba5","header_sha256":"d1ea203060b54a20e92dd467d62a6004c5de08df973361703d39fb8bee5743a5","header_status":"handled","input_sha256":"12463a10b0098cf5e0656cef46cb24fbcc37c87a39bd76675881e10bb8cc922a","kind":"mutation-receipt","operation":"f0049407cc8887b52b64d838a3585a974f1c8e0637be22c7e4f2b1f43032507d","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-56"],"target":"f-20261112-56","v":1} -->
 
 ---
 
