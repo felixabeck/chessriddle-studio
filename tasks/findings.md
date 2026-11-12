@@ -24770,3 +24770,19 @@ Correction to the Failure scenario example: the `!?` button's accessible name is
 - **Fix:** call `setError(undefined)` in the `currentFen` effect and in `onBlur` when reverting (or on the next `onChange`), so an error lives only while its rejected text is shown. Add a FenSearch test for blur-revert and external-position-change clearing.
 - **Proof:** ephemeral Vitest using FenSearch.test.tsx's own `setup`/`type`/`enter` harness: after Enter on `not a fen`, error `Errors.InvalidTurn` with `aria-invalid="true"`. After blur, value `rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1`, still with that error and `aria-invalid="true"`. After `makeMove("e4")`, value `…/4P3/… b KQkq - 0 1`, still with the error and `aria-invalid="true"`. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 27)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Report tab annotation counts jump to the move only on mouse click; the count cells are not focusable controls
+
+* **ID:** f-20261112-63 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/panels/analysis/ReportPanel.tsx:194-206,217-229`: in `GameStats`, the White and Black count cells are Mantine `Grid.Col` (a plain `div`) carrying `onClick={() => goToAnnotation(s, color)}`. Their only affordance is the `.label` class (`AnalysisPanel.module.css:1-7`: `cursor: pointer` plus hover underline). There is no `role`, `tabIndex`, key handler or accessible name.
+- **Defect:** the report's "jump to the next ?? / ? / ?! / !! / ! / !? by White/Black" navigation is mouse-only. Keyboard users cannot reach the counts, and assistive technology sees bare numbers ("2") with no indication that they are actionable or what they count. The handled report findings (f-20260904-02/-11, f-20260920-03) are about progress, cancel and bundle size, not this.
+- **Failure scenario:** after generating a report for a game with two White blunders, Tab through the Report tab: focus moves from Generate report to the eval chart and never lands on White's "2" in the `??` row, so the keyboard cannot jump to those blunders. A screen reader reads the grid as unlabeled numbers.
+- **Fix:** render each non-zero count as a button (e.g. `UnstyledButton`/`Anchor component="button"`) with an i18n `aria-label` such as "Go to White's next blunder (2)". Keep zero counts as plain text. Add a test that Enter on the button calls `goToAnnotation`.
+- **Proof:** code trace on origin/master d30eb171f. `Grid.Col` renders a `div`, as Mantine Grid columns are Box divs, and these two cells pass only `className`, `span`, `style`, `c` and `onClick` (`:194-206`, `:217-229`). Nothing in `GameStats` sets `tabIndex`, `role`, `onKeyDown` or `aria-*`. No probe needed; tree unchanged.
+- **Found by:** Grok Bot general review (chunk 27)
