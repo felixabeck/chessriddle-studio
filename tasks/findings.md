@@ -24030,3 +24030,19 @@ Deferred follow-up (keep at midnight filing):
 * **Fix:** Keep a fixed semantic order (queen, knight, rook, bishop) for focus and digits, and reverse only the rendered order; put the focus ref on the queen. Add a `PromotionModal.test.tsx` case with `turn="black" orientation="white"` asserting the queen is focused and `1` confirms `queen`.
 * **Proof:** Ephemeral Vitest probe reusing `PromotionModal.test.tsx`'s mocks (file deleted afterwards, tree clean): render with `pendingMove {from: 9, to: 1}`, `turn="black"`, `orientation="white"`; `document.activeElement` is `Promote to bishop` and keydown `1` calls `confirmMove("bishop")` (expected queen / `queen`).
 * **Found by:** Grok Bot, general review (t40u), HEAD `87bab4d77`.
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Chess.com games of 501-599 s estimated duration are classified as rapid instead of blitz
+
+* **ID:** f-20261112-18 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** general review chunk 3 (Felix t40u) at HEAD `87bab4d77` (file identical on origin/master `ba81d9264`), leftover question "getTimeControl Chess.com thresholds"; inherited from upstream En Croissant
+* **Where:** `src/utils/timeControl.ts` (~7-8): for `website === "Chess.com"`, `total = initial + increment * 40` and `total < 180 ? "bullet" : total <= 500 ? "blitz" : "rapid"`. Sole caller `matchesTimeControl` in `src/components/home/PersonalCardPanels/overviewStatistics.ts` (~125-131), which filters the personal Overview / Ratings / Openings panels by the Time control selector. d-20260926 (decisions.md ~4233) keeps this mapping in the renderer per website, so the renderer is the only place the category is decided.
+* **Defect:** Chess.com classifies by the same 40-move estimate but with blitz up to under 10 minutes: "Blitz rating - For games over 3 minutes but under 10 minutes. Rapid rating - For games 10 minutes and longer" (Chess.com Help Center, "Why are there different ratings in live chess?", examples 5|0 Blitz, 10|0 Rapid, 2|12 = 10 min Rapid). The `<= 500` cut-off moves every 501-599 s time control from blitz to rapid.
+* **Failure scenario:** A user's imported Chess.com 9|0 (540 s), 8|2 (560 s) or 3|10 (580 s) games, all Blitz on Chess.com and rated on the Blitz rating, disappear from the Blitz filter and appear under Rapid, mixing two rating pools on the Ratings chart and in the Overview/Openings statistics.
+* **Fix:** Use `total < 600 ? "blitz" : "rapid"` for Chess.com and add a `timeControl.test.ts` table with the boundary cases (179/180, 599/600, `540`, `480+2`, `180+10`, `120+12`).
+* **Proof:** Ephemeral Vitest probe (file deleted, tree clean) calling `getTimeControl("Chess.com", tc)`: `540` -> rapid, `480+2` -> rapid, `180+10` -> rapid (Chess.com: blitz for all three); controls `300+5` -> blitz, `600` -> rapid, `120+12` -> rapid agree with Chess.com.
+* **Found by:** Grok Bot, general review (t40u), HEAD `87bab4d77`.
