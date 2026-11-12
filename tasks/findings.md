@@ -24419,7 +24419,7 @@ Handled 2026-11-12 by drain session bdcaf057 (lens tier; lenses correctness, roo
 
 ### PlayerSearchInput keeps the previously selected player id after the text is edited to another name, so filters and Merge players act on a player the field no longer shows
 
-* **ID:** f-20261112-40 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-40 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** data-loss
 - **Spotted outside diff:** no
 - **Where:** `src/components/databases/PlayerSearchInput.tsx:70-113` (`handleChange` calls `setValue(player.id)` only for an exact suggestion match and `setValue(undefined)` only for blank text; any other edit leaves the parent's id untouched). Callers: `src/components/databases/useDatabaseLibrary.tsx:754-773` (PlayerMerger, which runs `tauri.mergePlayers(file, player1, player2)` at `:736` with no confirmation), `src/components/databases/GameTable.tsx:133,146` (game filters), `src/components/panels/database/options/LocalOptionsPanel.tsx:62` (explorer player filter)
@@ -24428,6 +24428,8 @@ Handled 2026-11-12 by drain session bdcaf057 (lens tier; lenses correctness, roo
 - **Fix:** clear the selection (`setValue(undefined)`) on any text change that is not an exact suggestion pick, or only commit ids on option submit; disable Merge while either side has no committed id; add PlayerSearchInput and PlayerMerger tests for "select, then edit text".
 - **Proof:** ephemeral probe in the `LocalOptionsPanel.test.tsx` harness: with player 42 selected (input "A player"), `enterPlayer("Someone else entirely")` with no matching suggestions leaves `localOptions.player === 42` while the input shows "Someone else entirely". The merge path uses the same component and passes the stored ids straight to `tauri.mergePlayers` (code trace). Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 19)
+* **Handled 2026-11-12 (drain 04fc1fe3-785d-40da-8d47-1776fef98a8f):** PlayerSearchInput now clears the committed id on any edit that is not an exact suggestion match, keeps the typed text (typing-originated clear does not reset it), and splits the name-lookup and suggestion-search version guards so the search for the edited text still runs. Merge players is disabled until both players are committed; e2e snapshots showing the idle Merge button were re-recorded in the container (only that button moved). Commit `f0f6c3b11` (pushed to origin/master). Proof: new Vitest tests (fix-revert red/green for f-20261112-40, -36, -37), lenses correctness/root-cause/tests/code-quality/minimalism APPROVED, `pnpm gates:push -- --frontend` green.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"fe225ea1b3b1509d208218ef3c857bd847129e7c8faf3c5f1453ba8a55b2859d","header_sha256":"b43e68361d4c1e15fd944068633cd371c6e9ace652c30ef8a7e4f4e850a850c3","header_status":"handled","input_sha256":"8bbe9c7ca246c9af50f688130dffbfbefe7776d50ae7758c0e51f878d7d791bf","kind":"mutation-receipt","operation":"548aec5a777a9f1f1675da4536ac3ad32c7d3603fdb9c6437803cd23c0f49704","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-40"],"target":"f-20261112-40","v":1} -->
 
 ---
 
