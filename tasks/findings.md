@@ -24537,3 +24537,19 @@ Deferred follow-up (keep at midnight filing):
 - **Fix:** pass `aria-current={isCurrentVariation ? "true" : undefined}` (or `"step"`) through MoveCell onto the move button, and add a CompleteMoveCell test asserting it moves with `goToMove`.
 - **Proof:** code trace: `isCurrentVariation` reaches MoveCell only as colour variables (`MoveCell.tsx:65-85,98-107`) and CompleteMoveCell only as `data-notation-current` (`:160`). A grep for `aria-` across the three notation components returns nothing, so no accessible state is emitted. No probe needed; nothing changed in the tree.
 - **Found by:** Grok Bot general review (chunk 22)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### The game-info Round field unmounts as soon as it is emptied, and a game without a round has no Round field at all
+
+* **ID:** f-20261112-49 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/common/GameInfo.tsx:119-140`: the Round `<input>` renders only under `!simplified && headers.round && headers.round !== "?"`, and its `onChange` writes `e.currentTarget.value` straight into `headers.round`
+- **Defect:** the field's visibility depends on the value it edits. Deleting the last character writes `round: ""`, the condition turns false, and the input (and its "Round" label) unmounts mid-edit with focus lost, so the round cannot be retyped. Games imported without a Round tag, or with `?`, never show the field, so there is no way to add a round from the Info panel.
+- **Failure scenario:** in a game with `[Round "3"]`, click the round and press Backspace to change it to 4: the field disappears after the 3 is deleted, and the game is left with an empty Round tag that you cannot edit again.
+- **Fix:** always render the Round input in the full (non-simplified) layout, showing the `?` placeholder when it is empty or `?`, like the White/Black fields. Add a GameInfo test that clears and retypes the round.
+- **Proof:** ephemeral Vitest built on the GameInfo.test.tsx harness, with headers `round: "3"`: after a native input event setting the round input to `""`, the store held `round: ""`, the input element was disconnected (`isConnected === false`) and the "GameInfo.Round" label was gone from the DOM. Probe removed, tree clean.
+- **Found by:** Grok Bot general review (chunk 23)
