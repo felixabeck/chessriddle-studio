@@ -102,7 +102,6 @@
     "Board.Analysis.Tablebase.Draw": "Nulle",
     "Board.Analysis.Tablebase.FiftyMoveRule": "*en raison de la règle des 50 coups",
     "Board.Analysis.Tablebase.WhiteWins": "Victoire des blancs",
-    "Board.Analysis.Time": "Temps (ms)",
     "Board.Analysis.Unpin": "Désépingler le moteur",
     "Board.Annotate.NavigationHint": "{{next}} : coup suivant · {{previous}} : coup précédent · Esc : quitter l’éditeur",
     "Board.Annotate.SaveFailed": "Cette annotation n’a pas été enregistrée, car cela modifierait son texte ou sa mise en forme. Le commentaire précédent reste inchangé.",

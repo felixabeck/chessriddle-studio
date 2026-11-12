@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => ({
   ],
   notifyUnlessCancelled: vi.fn(),
   reportPersistError: vi.fn(),
+  formValues: undefined as Record<string, unknown> | undefined,
 }));
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -60,18 +61,35 @@ vi.mock("@/state/atoms", async () => {
   const { atom } = await import("jotai");
   return { enginesAtom: atom(mocks.engines), referenceDbAtom: atom(null) };
 });
-vi.mock("@mantine/form", () => ({
-  useForm: ({ initialValues }: { initialValues: Record<string, unknown> }) => ({
-    values: initialValues,
-    setValues: vi.fn(),
-    setFieldValue: vi.fn(),
-    getInputProps: () => ({}),
-    onSubmit: (submit: () => void) => (event: React.FormEvent) => {
-      event.preventDefault();
-      submit();
+vi.mock("@mantine/form", async () => {
+  const { useReducer, useState } = await import("react");
+  return {
+    useForm: ({ initialValues }: { initialValues: Record<string, unknown> }) => {
+      const [, rerender] = useReducer((value: number) => value + 1, 0);
+      const [form] = useState(() => {
+        const values = { ...initialValues };
+        return {
+          values,
+          setValues: vi.fn((next: Record<string, unknown>) => {
+            Object.assign(values, next);
+            rerender();
+          }),
+          setFieldValue: vi.fn((field: string, next: unknown) => {
+            values[field] = next;
+            rerender();
+          }),
+          getInputProps: () => ({}),
+          onSubmit: (submit: () => void) => (event: React.FormEvent) => {
+            event.preventDefault();
+            submit();
+          },
+        };
+      });
+      mocks.formValues = form.values;
+      return form;
     },
-  }),
-}));
+  };
+});
 vi.mock("@mantine/core", () => ({
   Alert: ({ children }: { children: React.ReactNode }) => <div role="alert">{children}</div>,
   Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
@@ -79,8 +97,32 @@ vi.mock("@mantine/core", () => ({
   ),
   Checkbox: () => <input type="checkbox" />,
   Group: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  NumberInput: () => <input type="number" />,
-  Select: () => <select />,
+  NumberInput: ({ value, rightSection }: { value: number; rightSection?: React.ReactNode }) => (
+    <>
+      <input type="number" value={value} readOnly />
+      {rightSection}
+    </>
+  ),
+  Select: ({
+    data,
+    value,
+    onChange,
+  }: {
+    data: (string | { value: string; label: string })[];
+    value?: string;
+    onChange?: (value: string) => void;
+  }) => (
+    <select value={value} onChange={(event) => onChange?.(event.currentTarget.value)}>
+      {data.map((option) => {
+        const item = typeof option === "string" ? { value: option, label: option } : option;
+        return (
+          <option key={item.value} value={item.value}>
+            {item.label}
+          </option>
+        );
+      })}
+    </select>
+  ),
   Stack: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 vi.mock("../../common/AppModal", () => ({
@@ -232,6 +274,37 @@ async function startUnmountedLinkedReport() {
   await act(async () => root.render(<div>Database panel</div>));
   return { completion, collection };
 }
+
+test("switching report go mode resets Depth to 20 and Time to 500 without mutating the previous mode", async () => {
+  await renderReportModal();
+  const previousGoMode = mocks.formValues!.goMode;
+  expect(previousGoMode).toEqual({ t: "Time", c: 500 });
+  const typeSelect = host.querySelectorAll("select")[1];
+
+  await act(async () => {
+    typeSelect.value = "Depth";
+    typeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await act(async () => host.querySelector("button")!.click());
+
+  expect(mocks.analyzeGame).toHaveBeenCalledOnce();
+  expect(mocks.analyzeGame.mock.calls[0][4]).toEqual({ t: "Depth", c: 20 });
+  expect(mocks.analyzeGame.mock.calls[0][4]).not.toBe(previousGoMode);
+  expect(previousGoMode).toEqual({ t: "Time", c: 500 });
+  const depthGoMode = mocks.analyzeGame.mock.calls[0][4];
+
+  await act(async () => {
+    typeSelect.value = "Time";
+    typeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await act(async () => host.querySelector("button")!.click());
+
+  expect(mocks.analyzeGame).toHaveBeenCalledTimes(2);
+  expect(mocks.analyzeGame.mock.calls[1][4]).toEqual({ t: "Time", c: 500 });
+  expect(mocks.analyzeGame.mock.calls[1][4]).not.toBe(depthGoMode);
+  expect(depthGoMode).toEqual({ t: "Depth", c: 20 });
+  expect(previousGoMode).toEqual({ t: "Time", c: 500 });
+});
 
 test.each(["success", "failure"])(
   "unmounted report %s reads the live Jotai selection and settles only its matching progress",

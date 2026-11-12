@@ -102,7 +102,6 @@
     "Board.Analysis.Tablebase.Draw": "Ничья",
     "Board.Analysis.Tablebase.FiftyMoveRule": "*из-за правила 50 ходов",
     "Board.Analysis.Tablebase.WhiteWins": "Выигрыш белых",
-    "Board.Analysis.Time": "Время (мс)",
     "Board.Analysis.Unpin": "Открепить движок",
     "Board.Annotate.NavigationHint": "{{next}}: следующий ход · {{previous}}: предыдущий ход · Esc: выйти из редактора",
     "Board.Annotate.SaveFailed": "Эта аннотация не сохранена, поскольку при сохранении изменился бы её текст или форматирование. Предыдущий комментарий остался без изменений.",

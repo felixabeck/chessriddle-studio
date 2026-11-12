@@ -1,4 +1,4 @@
-import { Alert, Button, Checkbox, Group, NumberInput, Select, Stack } from "@mantine/core";
+import { Alert, Button, Checkbox, Group, Select, Stack } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { useAtom, useAtomValue, useStore as useJotaiStore } from "jotai";
 import { atomWithStorage } from "jotai/utils";
@@ -6,6 +6,7 @@ import { memo, useContext, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import type { GoMode } from "@/bindings";
+import GoModeInput from "@/components/common/GoModeInput";
 import { tauri } from "@/platform/tauri";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import AppModal from "../../common/AppModal";
@@ -21,6 +22,10 @@ import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { reportEngineFailure } from "./useDisplayedEngineLines";
 
 type ReportGoMode = Extract<GoMode, { t: "Depth" | "Time" | "Nodes" }>;
+
+function isReportGoMode(mode: GoMode): mode is ReportGoMode {
+  return mode.t === "Depth" || mode.t === "Time" || mode.t === "Nodes";
+}
 
 export function reportRootFingerprint(fen: string, moves: string[]): string {
   return `${fen}\u0000${moves.join("\u0000")}`;
@@ -353,36 +358,14 @@ function ReportModal({
             }
             {...form.getInputProps("engine")}
           />
-          <Group wrap="nowrap">
-            <Select
-              allowDeselect={false}
-              comboboxProps={{
-                position: "bottom",
-                middlewares: { flip: false, shift: false },
-              }}
-              data={[
-                { label: t("GoMode.Depth"), value: "Depth" },
-                { label: t("Board.Analysis.Time"), value: "Time" },
-                { label: t("GoMode.Nodes"), value: "Nodes" },
-              ]}
-              value={form.values.goMode.t}
-              onChange={(v) => {
-                const newGo = form.values.goMode;
-                newGo.t = v as "Depth" | "Time" | "Nodes";
-                form.setFieldValue("goMode", newGo);
-              }}
-            />
-            <NumberInput
-              min={1}
-              value={form.values.goMode.c as number}
-              onChange={(v) =>
-                form.setFieldValue("goMode", {
-                  ...(form.values.goMode as any),
-                  c: (v || 1) as number,
-                })
-              }
-            />
-          </Group>
+          <GoModeInput
+            gameMode
+            timeDefault={defaultReportSettings.goMode.c}
+            goMode={form.values.goMode}
+            setGoMode={(next) => {
+              if (isReportGoMode(next)) form.setFieldValue("goMode", next);
+            }}
+          />
 
           <Checkbox
             label={t("Board.Analysis.Reversed")}

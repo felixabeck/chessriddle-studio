@@ -102,7 +102,6 @@
     "Board.Analysis.Tablebase.Draw": "Remis",
     "Board.Analysis.Tablebase.FiftyMoveRule": "*på grunn av 50-trekksregelen",
     "Board.Analysis.Tablebase.WhiteWins": "Hvit vinner",
-    "Board.Analysis.Time": "Tid (ms)",
     "Board.Analysis.Unpin": "Løsne motor",
     "Board.Annotate.NavigationHint": "{{next}}: neste trekk · {{previous}}: forrige trekk · Esc: forlat redigeringen",
     "Board.Annotate.SaveFailed": "Denne merknaden ble ikke lagret fordi lagring ville endre teksten eller formateringen. Den forrige kommentaren er uendret.",

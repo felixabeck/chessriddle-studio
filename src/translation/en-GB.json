@@ -102,7 +102,6 @@
     "Board.Analysis.Tablebase.Draw": "Draw",
     "Board.Analysis.Tablebase.FiftyMoveRule": "*due to the 50-move rule",
     "Board.Analysis.Tablebase.WhiteWins": "White wins",
-    "Board.Analysis.Time": "Time (ms)",
     "Board.Analysis.Unpin": "Unpin engine",
     "Board.Annotate.NavigationHint": "{{next}}: next move · {{previous}}: previous move · Esc: leave editor",
     "Board.Annotate.SaveFailed": "This annotation was not saved because saving it would change its text or formatting. The previous comment is unchanged.",

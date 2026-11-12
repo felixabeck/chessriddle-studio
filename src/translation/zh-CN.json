@@ -102,7 +102,6 @@
     "Board.Analysis.Tablebase.Draw": "和棋",
     "Board.Analysis.Tablebase.FiftyMoveRule": "*因五十步规则",
     "Board.Analysis.Tablebase.WhiteWins": "白胜",
-    "Board.Analysis.Time": "时间 (毫秒)",
     "Board.Analysis.Unpin": "取消固定引擎",
     "Board.Annotate.NavigationHint": "{{next}}：下一步 · {{previous}}：上一步 · Esc：退出编辑器",
     "Board.Annotate.SaveFailed": "此批注未保存，因为保存会更改其文本或格式。原有评论保持不变。",

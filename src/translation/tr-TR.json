@@ -102,7 +102,6 @@
     "Board.Analysis.Tablebase.Draw": "Berabere",
     "Board.Analysis.Tablebase.FiftyMoveRule": "*50 hamle kuralı nedeniyle",
     "Board.Analysis.Tablebase.WhiteWins": "Beyaz kazanır",
-    "Board.Analysis.Time": "Süre (ms)",
     "Board.Analysis.Unpin": "Motor sabitlemesini kaldır",
     "Board.Annotate.NavigationHint": "{{next}}: sonraki hamle · {{previous}}: önceki hamle · Esc: düzenleyiciden çık",
     "Board.Annotate.SaveFailed": "Bu açıklama kaydedilmedi çünkü kaydetmek metnini veya biçimlendirmesini değiştirecekti. Önceki yorum değişmedi.",

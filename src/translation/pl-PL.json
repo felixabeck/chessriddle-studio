@@ -102,7 +102,6 @@
     "Board.Analysis.Tablebase.Draw": "Remis",
     "Board.Analysis.Tablebase.FiftyMoveRule": "*z powodu reguły 50 posunięć",
     "Board.Analysis.Tablebase.WhiteWins": "Białe wygrywają",
-    "Board.Analysis.Time": "Czas (ms)",
     "Board.Analysis.Unpin": "Odepnij silnik",
     "Board.Annotate.NavigationHint": "{{next}}: następny ruch · {{previous}}: poprzedni ruch · Esc: wyjdź z edytora",
     "Board.Annotate.SaveFailed": "Ta adnotacja nie została zapisana, ponieważ zapis zmieniłby jej tekst lub formatowanie. Poprzedni komentarz pozostaje bez zmian.",

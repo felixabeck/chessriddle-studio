@@ -102,7 +102,6 @@
     "Board.Analysis.Tablebase.Draw": "Tablas",
     "Board.Analysis.Tablebase.FiftyMoveRule": "*por la regla de las 50 jugadas",
     "Board.Analysis.Tablebase.WhiteWins": "Ganan las blancas",
-    "Board.Analysis.Time": "Tiempo (ms)",
     "Board.Analysis.Unpin": "Desfijar motor",
     "Board.Annotate.NavigationHint": "{{next}}: siguiente jugada · {{previous}}: jugada anterior · Esc: salir del editor",
     "Board.Annotate.SaveFailed": "Esta anotación no se ha guardado porque al guardarla cambiaría su texto o formato. El comentario anterior no ha cambiado.",

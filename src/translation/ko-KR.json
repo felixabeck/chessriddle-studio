@@ -102,7 +102,6 @@
     "Board.Analysis.Tablebase.Draw": "무승부",
     "Board.Analysis.Tablebase.FiftyMoveRule": "*50수 규칙 때문에",
     "Board.Analysis.Tablebase.WhiteWins": "백 승",
-    "Board.Analysis.Time": "시간 (ms)",
     "Board.Analysis.Unpin": "엔진 고정 해제",
     "Board.Annotate.NavigationHint": "{{next}}: 다음 수 · {{previous}}: 이전 수 · Esc: 편집기 나가기",
     "Board.Annotate.SaveFailed": "저장하면 텍스트나 서식이 변경되므로 이 주석을 저장하지 않았습니다. 이전 주석은 변경되지 않았습니다.",

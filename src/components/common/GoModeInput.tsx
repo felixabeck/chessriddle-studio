@@ -8,10 +8,12 @@ function GoModeInput({
   goMode,
   setGoMode,
   gameMode,
+  timeDefault = 8000,
 }: {
   goMode: GoMode | null;
   setGoMode: (v: GoMode) => void;
   gameMode?: boolean;
+  timeDefault?: number;
 }) {
   const { t } = useTranslation();
 
@@ -23,13 +25,14 @@ function GoModeInput({
   return (
     <Group wrap="nowrap">
       <Select
+        allowDeselect={false}
         data={timeTypes.map((v) => ({ value: v, label: t(`GoMode.${v}`) }))}
         value={goMode?.t || (gameMode ? "Time" : "Infinite")}
         onChange={(v) => {
           const newGo = match<string | null, GoMode>(v)
             .with("Depth", () => ({ t: "Depth", c: 20 }))
             .with("Nodes", () => ({ t: "Nodes", c: 1000000 }))
-            .with("Time", () => ({ t: "Time", c: 8000 }))
+            .with("Time", () => ({ t: "Time", c: timeDefault }))
             .otherwise(() => ({ t: "Infinite" }));
 
           setGoMode(newGo);
