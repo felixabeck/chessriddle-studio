@@ -24920,3 +24920,19 @@ Line-reference correction: in `src/components/common/IconAction.tsx`, the extra 
 * **Fix:** in `literal`, when a character starts a line after a hard break, escape a marker that would interrupt a paragraph (`1\.`/`1\)` for an ordered-list start of 1, `\-`/`\+`/`\*` followed by a space or a thematic-break run, `\#`). Alternatively, make both parsers keep such a line inside the paragraph. Add the five inputs above to the `commentSerializer` round-trip tests.
 * **Proof:** (1) Ephemeral serializer probe using `commentSerializer.test.ts`'s `reparse` and `parseNotationComment`: `Line↵---`, `Line↵- a`, `Line↵# h`, `Line↵1. e4`, `Line↵- - -` → `saved: false` for both adapters. The same markers without a preceding break (`1. e4 e5 is best`, `- note`, `# Heading idea`, `---`) and `Line↵===`/`Line↵> q`/`Line↵***` save. (2) `createCommentMarkdown().lexer("Main idea  \n1. e4 e5 2. Nf3")` → two `paragraph` tokens, and `parseNotationComment` likewise returns two paragraphs. (3) Real-editor probe built from `AnnotationEditor.test.tsx`'s harness: `insertContent("Main idea")`, `setHardBreak()`, `insertContent("1. e4 e5 2. Nf3")` → alert `Board.Annotate.SaveFailed`, stored comment `Main idea`. All probes were removed and the tree is clean.
 * **Found by:** Grok Bot general review (chunk 29)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### The ⊗ (NAG 9) annotation button is labelled "Miss" in English in every locale
+
+* **ID:** f-20261112-72 · **Status:** open · **Area:** i18n · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** yes (general review, origin/master d30eb171f)
+* **Where:** `src/utils/annotation.ts:220` (`"⊗": { name: "Miss", color: "red", nag: 9 }`, the only offered symbol with no `translationKey`), shown through `src/components/panels/annotation/AnnotationPanel.tsx:24-29` (`label={translationKey ? t(\`Annotate.${translationKey}\`) : name}`, `⊗` is in `EXTRA` at `:43`) and the same fallback in `src/components/panels/analysis/AssessmentSymbol.tsx:11-12`. No `Annotate.Miss` key exists in `src/translation/*.json` (en-US, de-DE and fr-FR have every sibling key, e.g. `Annotate.Novelty`, `Annotate.Zugzwang`, `Annotate.OnlyMove`).
+* **Defect:** this is a hard-coded English UI string that bypasses i18next. Every other symbol in the Annotate panel's basic, advantage and extra groups resolves through `Annotate.<key>`. `⊗` falls back to the raw `name`.
+* **Failure scenario:** with the UI in German (or any non-English locale), open Annotate → "more symbols". The ⊗ button's tooltip and accessible name read "Miss" while its neighbours read "Neuerung", "Zugzwang", "Einziger Zug". A NAG 9 move's AssessmentSymbol shows the same English label.
+* **Fix:** add `translationKey: "Miss"` to the `⊗` entry and an `Annotate.Miss` key to every shipped catalogue. Optionally drop the `: name` fallback so a missing key fails the catalogue tests instead of shipping English.
+* **Proof:** trace above. `git grep '"⊗"'` shows the symbol is offered only via AnnotationPanel `EXTRA` and rendered with the shown fallback. `grep '"Annotate\.Miss'` finds no key in en-US, de-DE or fr-FR.
+* **Found by:** Grok Bot general review (chunk 29)
