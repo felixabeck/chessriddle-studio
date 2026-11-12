@@ -24754,3 +24754,19 @@ Correction to the Failure scenario example: the `!?` button's accessible name is
 - **Fix:** add `editorProps: { attributes: { "aria-label": t(…comment label…), "aria-multiline": "true", "aria-describedby": hintId } }` (hint id via `useId`; render the hint with that id, or keep it in the DOM visually hidden when not focused). Reuse or add an i18n key such as `Board.Annotate.Comment`. Extend AnnotationEditor.test.tsx with a name assertion.
 - **Proof:** ephemeral Vitest using AnnotationEditor.test.tsx's own `mount("")` harness (real tiptap): the `.tiptap` element's attributes were exactly `class`, `contenteditable="true"`, `role="textbox"`, `tabindex="0"` and `translate="no"`, with no `aria-label`/`aria-labelledby`/`aria-describedby`, and no labelled ancestor. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 26)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### FenSearch keeps an invalid-FEN error under the field after it reverts to, or moves on to, a valid position
+
+* **ID:** f-20261112-62 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/panels/info/FenSearch.tsx:22,30-45,52-56,121-124`: `error` is set by `addFen` on a parse failure and cleared only by a later successful `addFen`. The `currentFen` effect (`:52-56`) resets value, search and hasTyped but not `error`. `onBlur` (`:121-124`) reverts the text to `value` and leaves `error` alone. Rendered by `InfoPanel.tsx:120` and `FenInput.tsx:104`.
+- **Defect:** after a rejected Enter, the field's red error message and `aria-invalid="true"` stay attached to whatever the field shows next: the reverted current FEN on blur, and every later board position. Only another successful FEN entry clears them. The error describes text that is no longer in the field. f-20261111-82 (same file) is about the unbounded opening-name search, not this state.
+- **Failure scenario:** in the Info panel, type `not a fen` into the FEN field and press Enter (error shown). Click away: the field reverts to the current position's valid FEN but still shows the error in red. Play `e4` on the board: the field shows the new valid FEN, still flagged invalid with the old error.
+- **Fix:** call `setError(undefined)` in the `currentFen` effect and in `onBlur` when reverting (or on the next `onChange`), so an error lives only while its rejected text is shown. Add a FenSearch test for blur-revert and external-position-change clearing.
+- **Proof:** ephemeral Vitest using FenSearch.test.tsx's own `setup`/`type`/`enter` harness: after Enter on `not a fen`, error `Errors.InvalidTurn` with `aria-invalid="true"`. After blur, value `rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1`, still with that error and `aria-invalid="true"`. After `makeMove("e4")`, value `…/4P3/… b KQkq - 0 1`, still with the error and `aria-invalid="true"`. Probe removed, tree clean.
+- **Found by:** Grok Bot general review (chunk 27)
