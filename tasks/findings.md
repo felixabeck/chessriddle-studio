@@ -24014,3 +24014,19 @@ Deferred follow-up (keep at midnight filing):
 * **Fix:** Store `timeSpent` as `undefined` (the schema already allows it, `puzzleSession.ts` ~39) when the attempt was completed without a timer, and average only won puzzles with a defined `timeSpent`. Add a `Puzzles.test.tsx` case: one untracked correct solve, then a tracked one, asserting the card shows only the tracked time.
 * **Proof:** Trace above: with `trackTime` false there is no `selectedTimer`, `puzzle.timeSpent` is `undefined` for a fresh attempt (no other writer: `rg -n timeSpent src --glob '!*test*'` lists only lines 421, 440, 544, 581, 748, all timer-gated except 544's `?? 0` fallback), so `first.timeSpent` is 0 and is written at ~581. Example: (0+0+0+30000)/4/1000 = 7.5.
 * **Found by:** Grok Bot, general review (t40u), HEAD `87bab4d77`.
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### The promotion picker focuses and maps key 1 to the bishop when the promoting side is not the board orientation
+
+* **ID:** f-20261112-17 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** general review chunk 3 (Felix t40u) at HEAD `87bab4d77` (file identical on origin/master `ba81d9264`), leftover-file pass over `PromotionModal`
+* **Where:** `src/components/boards/PromotionModal.tsx`. `promotionPieces` is `["queen","knight","rook","bishop"]` and is `reverse()`d (~50-55) when `turn !== orientation`, so the queen sits next to the promotion square at the bottom of the board. The same reversed array then drives the initial focus (`ref` on `promotionPieces[0]`, ~103, focused by the effect at ~29-35) and the digit shortcuts (`promotionPieces[index]`, ~83-87). Used by `Board.tsx` (~591) and `PuzzleBoardSurface.tsx` (~58). `PromotionModal.test.tsx` only covers `turn === orientation`, where `1` = queen and `2` = knight.
+* **Defect:** The visual order is reversed for display, but keyboard semantics follow it: in the reversed case the default-focused choice is the bishop and `1` promotes to a bishop, `4` to a queen.
+* **Failure scenario:** In an analysis board oriented White, the user drags a black pawn to the first rank and presses Enter (or Space) on the focused choice, or presses `1` as on a normal promotion, and gets an underpromotion to a bishop. The same happens to White promoting on a flipped board, and on a puzzle board whose orientation differs from the side promoting.
+* **Fix:** Keep a fixed semantic order (queen, knight, rook, bishop) for focus and digits, and reverse only the rendered order; put the focus ref on the queen. Add a `PromotionModal.test.tsx` case with `turn="black" orientation="white"` asserting the queen is focused and `1` confirms `queen`.
+* **Proof:** Ephemeral Vitest probe reusing `PromotionModal.test.tsx`'s mocks (file deleted afterwards, tree clean): render with `pendingMove {from: 9, to: 1}`, `turn="black"`, `orientation="white"`; `document.activeElement` is `Promote to bishop` and keydown `1` calls `confirmMove("bishop")` (expected queen / `queen`).
+* **Found by:** Grok Bot, general review (t40u), HEAD `87bab4d77`.
