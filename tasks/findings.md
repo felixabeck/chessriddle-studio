@@ -23934,3 +23934,19 @@ Deferred follow-up (keep at midnight filing):
 * **Fix:** Build the anchor with the same convention as the data, e.g. `dayjs().startOf("day").valueOf()` (or have `parseCompleteDailyDate` and the anchor share one helper), and drop the manual `getTimezoneOffset`/`toISOString` round trip. Add a test that runs the `dates` derivation under a non-UTC `TZ` (or with a mocked offset) and asserts one stop for a game dated today.
 * **Proof:** Probe `/tmp/gb-review-20261112/ratings_today_probe.cjs` on atlas runs `RatingsPanel.tsx` lines 70-73 verbatim plus `parseCompleteDailyDate` for today's date with the repo's `dayjs` + `customParseFormat`. `TZ=Europe/Berlin`: 2 stops `11/12/2026 00:00`, `11/12/2026 01:00`. `TZ=America/New_York`: 2 stops `11/11/2026 19:00`, `11/12/2026 00:00`. `TZ=UTC`: 1 stop. `TimeRangeSlider.test.tsx` pins a noon-UTC timestamp, so the suite cannot see this.
 * **Found by:** Grok Bot, general review (t40u), HEAD `5c0538a2c`.
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### The Ratings chart tooltip shows a hardcoded English "Rating" series name
+
+* **ID:** f-20261112-12 · **Status:** open · **Area:** i18n · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** general review chunk (Felix t40u) at HEAD `5c0538a2c` (file identical on origin/master `ba81d9264`), `PersonalCardPanels` pass
+* **Where:** `src/components/home/PersonalCardPanels/RatingsPanel.tsx` `<Area name="Rating" …>` (~195-204). recharts' default `Tooltip` content renders each series as `name : value`. The same component already localises its tooltip label date (`labelFormatter`, ~193) and the Results chart series names go through `t(...)` (`OverviewPanel.tsx` ~367-379). Distinct from open `f-20261111-78` (wrong de-DE strings), `f-20261111-72` (workspace naming) and `f-20261111-51` (stale preserve patterns): this string never reaches i18next at all. Repo convention: user-facing strings go through i18next.
+* **Defect:** A literal user-facing string bypasses i18next, so `pnpm i18n:check` cannot see it and every non-English locale shows "Rating".
+* **Failure scenario:** With the interface in German, hovering the rating curve shows `Rating : 1850` under a German-formatted date.
+* **Fix:** Use a translation key for the series name (there is no generic one: `Puzzle.Rating`, `Board.Practice.Rating` and `Training.Session.Rating` are feature-scoped), e.g. a new `Home.Personal.Ratings.Series` key, run `pnpm i18n:extract`, and extend `TimeRangeSlider.test.tsx`'s recharts mock to assert the `Area` `name` is the translated value.
+* **Proof:** `rg -n 'name="[A-Z][a-z]+' src --glob '*.tsx' --glob '!*test*'` returns only `RatingsPanel.tsx:196: name="Rating"`; `en-US.json` holds no key the component uses for it; recharts `DefaultTooltipContent` prints `entry.name`.
+* **Found by:** Grok Bot, general review (t40u), HEAD `5c0538a2c`.
