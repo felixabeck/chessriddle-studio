@@ -24441,3 +24441,19 @@ Deferred follow-up (keep at midnight filing):
 - **Fix:** keep a local draft range updated by `onChange` and commit it in `onChangeEnd` (as LocalOptionsPanel does), for both sliders; add a test that a drag updates `aria-valuenow` before release.
 - **Proof:** ephemeral Vitest with Mantine `RangeSlider` (controlled `[0,3000]`, mocked 300px rect), mousedown at x=290 then mousemove to x=200: the control with `onChange` shows `["0","2000"]` during the drag; the GameTable shape (no `onChange`) shows `["0","3000"]` during the drag and `["0","2000"]` only after mouseup. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 20)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### The notation header keeps showing the previous opening name when the new position has no known opening, and the rejection goes unhandled
+
+* **ID:** f-20261112-43 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/common/OpeningName.tsx:13-15` (`getOpening(root, position).then(setOpeningName)` with no `catch`, no reset and no staleness guard), `src/utils/chess.ts:406-419`, native `src-tauri/src/opening.rs:68-75` (`get_opening_from_fens` returns `Err(NoOpeningFound)` when no FEN on the path matches)
+- **Defect:** for a position whose path matches no catalogued opening (custom start FEN, endgame study, puzzle position), the IPC rejects. OpeningName neither clears its state nor handles the rejection, so the last successful name stays on screen and an unhandled promise rejection is raised. Overlapping requests during fast navigation are also applied in completion order, not request order.
+- **Failure scenario:** in an analysis tab showing a Ruy Lopez game, load a game or position that starts from a custom FEN (for example PageDown to a study game with a `FEN` header, or set up an endgame position): the header above the notation still reads "Ruy Lopez" for the endgame.
+- **Fix:** clear the name (or show nothing) on rejection, ignore results from superseded requests (request counter or AbortController), and catch the rejection; add an OpeningName test for a no-opening position after a named one.
+- **Proof:** ephemeral Vitest rendering `OpeningName` with `getOpeningFromFens` mocked: the first call resolves "Ruy Lopez"; after `setState(defaultTree("8/8/8/4k3/8/8/4K3/8 w - - 0 1"))` the second call rejects, the text still reads "Ruy Lopez", and one unhandled rejection is recorded. Native code trace confirms the error return for unmatched paths. Probe removed, tree clean.
+- **Found by:** Grok Bot general review (chunk 21)
