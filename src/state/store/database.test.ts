@@ -373,12 +373,13 @@ const validTournaments = {
 
 describe("database-view panel hydration", () => {
     it("migrates legacy game query filters and the plies sort", async () => {
-        const { tournamentId, startDate, endDate, ...query } = validGames.query;
+        const { playerName, tournamentId, startDate, endDate, ...query } = validGames.query;
         const store = await hydrate({
             games: {
                 ...validGames,
                 query: {
                     ...query,
+                    player_name: playerName,
                     tournament_id: tournamentId,
                     start_date: startDate,
                     end_date: endDate,
@@ -401,6 +402,7 @@ describe("database-view panel hydration", () => {
                 ...validGames,
                 query: {
                     ...validGames.query,
+                    player_name: "Legacy player",
                     tournament_id: 123,
                     start_date: "1990.01.01",
                     end_date: "1999.12.31",

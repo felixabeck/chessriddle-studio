@@ -1596,6 +1596,9 @@ export type FileWorkspaceHandleKind = "fileWorkspace"
 export type GameConfig = { white: PlayerConfig; black: PlayerConfig; whiteTimeControl: TimeControl | null; blackTimeControl: TimeControl | null; initialFen: string | null; initialMoves?: string[]; openingBook: OpeningBookConfig | null }
 export type GameEndReason = "checkmate" | "timeout" | "resignation" | "abandonment"
 export type GameInterruptionReason = "engineFailure" | "engineTaskFailed"
+/**
+ * List filters for `get_games`. Unknown keys are rejected.
+ */
 export type GameListQuery = { options?: QueryOptions<GameSort> | null; player1?: number | null; player2?: number | null; playerName?: string | null; tournamentId?: number | null; startDate?: string | null; endDate?: string | null; range1?: [number, number] | null; range2?: [number, number] | null; sides?: Sides | null; outcome?: string | null }
 export type GameMove = { uci: string; san: string; fenAfter: string; 
 /**
@@ -1654,6 +1657,10 @@ export type PlayerQuery = { options: QueryOptions<PlayerSort>; name?: string | n
 export type PlayerSort = "id" | "name" | "elo" | "games"
 export type PlayersTime = { white: number; black: number; winc: number; binc: number }
 export type PositionQueryJs = { fen: string; type_: string }
+/**
+ * Only these filters are accepted by position search, which has no pagination
+ * and returns at most [`MAX_SAMPLES`] sample games.
+ */
 export type PositionSearchQuery = { player1?: number | null; player2?: number | null; startDate?: string | null; endDate?: string | null; range1?: [number, number] | null; range2?: [number, number] | null; position?: PositionQueryJs | null; wantedResult?: string | null; excludeFastEvents?: boolean | null; includeUnknownResults?: boolean | null; sampleOrder?: SampleOrder | null }
 export type PositionStats = { move: string; white: number; draw: number; black: number; unknown: number; last_played: string | null; year_counts: YearCount[] }
 export type PositionStatsForFen = { fen: string; openings: PositionStats[] }

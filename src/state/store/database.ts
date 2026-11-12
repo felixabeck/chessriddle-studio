@@ -172,6 +172,7 @@ function migrateGamesQuery(value: unknown): unknown {
     if (!value || typeof value !== "object" || Array.isArray(value)) return value;
     const query = { ...value } as Record<string, unknown>;
     const legacyKeys = {
+        player_name: "playerName",
         tournament_id: "tournamentId",
         start_date: "startDate",
         end_date: "endDate",
@@ -182,8 +183,6 @@ function migrateGamesQuery(value: unknown): unknown {
         }
         delete query[legacy];
     }
-    delete query.wanted_result;
-    delete query.exclude_fast_events;
     if (query.options && typeof query.options === "object" && !Array.isArray(query.options)) {
         const options = { ...query.options } as Record<string, unknown>;
         if (options.sort === "ply_count") options.sort = "plyCount";

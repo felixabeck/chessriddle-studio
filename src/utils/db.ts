@@ -211,20 +211,12 @@ export async function query_games(
     return await tauri.getGames(
         db,
         {
-            player1: query.player1,
+            ...query,
             range1: normalizeRange(query.range1),
-            player2: query.player2,
-            playerName: query.playerName,
             range2: normalizeRange(query.range2),
-            tournamentId: query.tournamentId,
-            sides: query.sides,
-            outcome: query.outcome,
-            startDate: query.startDate,
-            endDate: query.endDate,
             options: {
+                ...query.options,
                 skipCount: query.options?.skipCount ?? false,
-                page: query.options?.page,
-                pageSize: query.options?.pageSize,
                 sort: query.options?.sort || "id",
                 direction: query.options?.direction || "desc",
             },
@@ -241,17 +233,13 @@ export async function query_players(
     return await tauri.getPlayers(
         db,
         {
-            options: {
-                skipCount: query.options.skipCount || false,
-                page: query.options.page,
-                pageSize: query.options.pageSize,
-                sort: query.options.sort,
-                direction: query.options.direction,
-            },
-            name: query.name,
-            nameMatch: query.nameMatch,
+            ...query,
             range: normalizeRange(query.range),
-        },
+            options: {
+                ...query.options,
+                skipCount: query.options.skipCount || false,
+            },
+        } satisfies PlayerQuery,
         options,
     );
 }

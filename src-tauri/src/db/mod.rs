@@ -2273,6 +2273,7 @@ fn pagination_limit_offset(
     Ok((limit, offset))
 }
 
+/// List filters for `get_games`. Unknown keys are rejected.
 #[derive(Debug, Clone, Default, Deserialize, Type)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GameListQuery {

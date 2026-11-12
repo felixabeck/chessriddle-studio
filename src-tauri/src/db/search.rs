@@ -54,6 +54,10 @@ use crate::{
 
 use super::{GameQuery, SampleOrder};
 
+const MAX_SAMPLES: usize = 500;
+
+/// Only these filters are accepted by position search, which has no pagination
+/// and returns at most [`MAX_SAMPLES`] sample games.
 #[derive(Debug, Clone, Deserialize, Type)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PositionSearchQuery {
@@ -1437,7 +1441,6 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
             );
 
             let openings: DashMap<String, PositionStats> = DashMap::new();
-            const MAX_SAMPLES: usize = 500;
             let date_order = query.sample_order == Some(super::SampleOrder::Date);
             // The least preferred sample is evicted before the fixed cap is applied.
             // Elo mode retains the existing selection, including its tie behaviour.

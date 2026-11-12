@@ -107,6 +107,58 @@ it("sends camelCase game filters without snake_case keys", async () => {
     }
 });
 
+it("preserves widened game query keys so native decoding can reject them", async () => {
+    mocks.getGames.mockResolvedValue({ data: [], count: 0 });
+    const query = {
+        playerName: "Carlsen",
+        player_name: "Legacy player",
+        range1: [0, ELO_FILTER_MAX] as [number, number],
+        options: {
+            skipCount: false,
+            sort: "date" as const,
+            direction: "asc" as const,
+            strayOption: true,
+        },
+    };
+    await query_games(handle("owner"), query);
+    expect(mocks.getGames).toHaveBeenCalledExactlyOnceWith(
+        handle("owner"),
+        expect.objectContaining({
+            playerName: "Carlsen",
+            player_name: "Legacy player",
+            range1: undefined,
+            options: query.options,
+        }),
+        undefined,
+    );
+});
+
+it("preserves widened player query keys so native decoding can reject them", async () => {
+    mocks.getPlayers.mockResolvedValue({ data: [], count: 0 });
+    const query = {
+        name: "Carlsen",
+        unknownKey: "reject me",
+        range: [0, ELO_FILTER_MAX] as [number, number],
+        options: {
+            skipCount: false,
+            sort: "name" as const,
+            direction: "asc" as const,
+            strayOption: true,
+        },
+    };
+    await query_players(handle("owner"), query);
+    expect(mocks.getPlayers).toHaveBeenCalledExactlyOnceWith(
+        handle("owner"),
+        expect.objectContaining({
+            name: "Carlsen",
+            unknownKey: "reject me",
+            range: undefined,
+            options: query.options,
+        }),
+        undefined,
+    );
+});
+
 it.each([undefined, "contains", "exact"] as const)(
     "forwards player nameMatch %s through the real wrapper",
     async (nameMatch) => {
@@ -1064,7 +1116,7 @@ describe("searchPosition query mapping", () => {
         expect(query.range2).toEqual([1, 3001]);
     });
 
-    it("omits wanted_result when the explorer result is any", async () => {
+    it("omits wantedResult when the explorer result is any", async () => {
         const query = await sentQuery(localOptions({ result: "any" }));
         expect(query).not.toHaveProperty("wantedResult");
     });
