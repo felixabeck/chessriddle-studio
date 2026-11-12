@@ -24489,3 +24489,19 @@ Deferred follow-up (keep at midnight filing):
 - **Fix:** quote each field RFC 4180 style (wrap it in `"` and double any embedded `"`), drop the space after the separator, and add a unit test for a line with a comma and a quote. Alternatively, export as plain `.log`/`.txt` if CSV is not intended.
 - **Proof:** the same ephemeral EngineLogsView probe as f-20261112-44 captured the exported content as `engine, info string NNUE evaluation using nn-x.nnue (133MiB, (22528, 3072, 15, 32, 1))\ngui, setoption name Foo value "a,b"`, which is unquoted and splits on every comma. The native trace confirms the `.csv` name and filter. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 22)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### ToggleButtonGroup renders the Lichess time-control filters as unnamed buttons with no pressed state
+
+* **ID:** f-20261112-46 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/common/ToggleButtonGroup.tsx:20-45` (plain Mantine `Button`; `option.name` only feeds a visual `Tooltip`; toggled state only switches `variant` between `filled` and `default`; the group is not grouped or labelled); its caller `src/components/panels/database/options/LichessOptionsPanel.tsx:34-49,92-104` passes icon-only `content` for all six time controls
+- **Defect:** each time-control button's only content is a lucide SVG, and the Tooltip adds no `aria-label` or `aria-describedby`, so the buttons have no accessible name. No option exposes `aria-pressed`, so whether a time control or rating band is selected is conveyed by fill colour alone. The `InputWrapper` label is not tied to the buttons. This bypasses the repo's rule that `IconAction` is "the only icon-only action primitive".
+- **Failure scenario:** with a screen reader in the Lichess explorer options, tabbing through Time control announces six bare "button"s with no name or on/off state, and the rating buttons announce "1600 button" without saying whether the band is active.
+- **Fix:** give every option `aria-label={option.name}` and `aria-pressed={option.isToggled}`, wrap the buttons in `role="group"` labelled by the wrapper label (or use Mantine `Chip.Group`/`Button.Group` with those attributes), and add a ToggleButtonGroup test asserting name and pressed state.
+- **Proof:** ephemeral Vitest rendering `ToggleButtonGroup` with `includeTooltips` and two icon options (one toggled): both buttons had empty text and null `aria-label`, `aria-labelledby`, `aria-describedby` and `aria-pressed`, and no `role="group"` element existed. Probe removed, tree clean.
+- **Found by:** Grok Bot general review (chunk 22)
