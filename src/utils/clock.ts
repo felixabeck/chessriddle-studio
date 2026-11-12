@@ -113,15 +113,12 @@ export function getClockInfo({
                 blackSeconds: undefined,
             };
         });
-    if (position.length <= 1 && timeControl) {
-        if (timeControl.length > 0) {
-            const seconds = timeControl[0].seconds / 1000;
-            if (whiteSeconds === undefined) {
-                whiteSeconds = seconds;
-            }
-            if (blackSeconds === undefined) {
-                blackSeconds = seconds;
-            }
+    if (position.length <= 1) {
+        if (whiteSeconds === undefined && whiteTc) {
+            whiteSeconds = whiteTc.seconds / 1000;
+        }
+        if (blackSeconds === undefined && blackTc) {
+            blackSeconds = blackTc.seconds / 1000;
         }
     }
     if (whiteTime !== undefined) {
