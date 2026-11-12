@@ -24856,7 +24856,7 @@ Correction to the Failure scenario: what gets focus before or after the annotati
 
 ### Puzzle challenge history marks the current puzzle only with a coloured border, with no aria-current
 
-* **ID:** f-20261112-65 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-65 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/common/ChallengeHistory.tsx:30-92`: `isCurrent` feeds only `style={{ border: isCurrent ? "2px solid …" : "none" }}` on each `IconAction` (`:44,64,84`). The buttons' names are "Challenge N: correct/incorrect/incomplete" (`:35-38,56-59,76-79`), with no current-state attribute. IconAction forwards extra props to `ActionIcon` (`IconAction.tsx:27-33`), so `aria-current` would reach the button if passed. Sole caller: `src/components/puzzles/Puzzles.tsx:1285-1295`, where activating the current one is a no-op (`if (i === currentPuzzle) return;`).
@@ -24868,6 +24868,9 @@ Correction to the Failure scenario: what gets focus before or after the annotati
 
 Line-reference correction: in `src/components/common/IconAction.tsx`, the extra props reach `ActionIcon` via `{...props}` at `:32-33`, and IconAction sets `aria-label`, `aria-busy` and `aria-pressed` at `:35-37`, not `:27-33`/`:30-32` as written. Substance unchanged.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"80325bb5be8285a10330c0cf1be0a3818a0c2653640110f545d503b2d178d629","input_sha256":"39ef8ee23997ba03e4cc1c7a6a7f754d5bd637e240440a4202497dcae764243c","kind":"mutation-receipt","operation":"a917bac726390d8d01ce726d8aa237266c8c72e3ab426346e3f6ae0829ad49e5","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-65"],"target":"f-20261112-65","v":1} -->
+
+Handled in 1ab8c70cc. Each `IconAction` in `ChallengeHistory` carries `aria-current="step"` when it is the current puzzle. New `ChallengeHistory.test.tsx` asserts exactly the current index carries it, across correct, incorrect and incomplete entries.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"fc446dc15cce9ad690021f991eaa9de3bbf13f3047e188c7d373a34f9d44ac33","header_sha256":"20cea23d5229b9a15a356cc8d20c051e2bad38489a6287b590825387678403c8","header_status":"handled","input_sha256":"22a97c461d5033120b42020c19b4e06b57b6db802edad2c619154ad61575aa40","kind":"mutation-receipt","operation":"e03d29652f372c05866a81873df273a0f1a68600c8afeafc9165b9beac1da4bc","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-65"],"target":"f-20261112-65","v":1} -->
 
 ---
 
