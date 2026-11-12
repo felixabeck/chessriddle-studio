@@ -24687,3 +24687,19 @@ Deferred follow-up (keep at midnight filing):
 - **Fix:** mirror GameTable: hold `useGameOpen` for `openDatabaseGame` + `runTabCreation`, and pass `customRowAttributes={(record) => gameRowActivation(record, gameOpen.activate)}` instead of `onRowClick` (or keep click and add the lock). Extend GamesTable.test.tsx with an Enter-on-row case and a double-click case.
 - **Proof:** ephemeral Vitest rendering the real `mantine-datatable` GamesTable (only `openDatabaseGame`, router and i18n mocked) with one game: the row had no `tabindex` (`tabIndex === -1`), no focusable descendant, and Enter on it made 0 open calls; two clicks made 2 `openDatabaseGame` calls. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 26)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Annotation symbol buttons show their on/off state only by fill colour; `pressed` is never passed to IconAction
+
+* **ID:** f-20261112-58 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/panels/annotation/AnnotationPanel.tsx:13-37`: `SymbolButton` computes `isActive = curAnnotations.includes(annotation)` and uses it only for `variant={isActive ? "filled" : "default"}`. `IconAction` exposes `pressed` and renders `aria-pressed` from it (`src/components/common/IconAction.tsx:18-19,37`), and the panel's own Show-more toggle passes it (`AnnotationPanel.tsx:68`).
+- **Defect:** the 25 move-annotation toggles (!!, !, !?, …, ⊗) are toggle buttons whose state matters: clicking an active glyph removes it. But no `aria-pressed` is emitted, so assistive technology cannot tell which glyphs the current move already carries.
+- **Failure scenario:** with a screen reader, select a move annotated `!?` and Tab through the annotation panel: every symbol announces as a plain button ("Interesting move, button"), and nothing says `!?` is applied, so you cannot tell whether activating it will add or remove the glyph.
+- **Fix:** pass `pressed={isActive}` to `IconAction` in `SymbolButton`, and add an AnnotationPanel test that the current move's glyph button has `aria-pressed="true"`.
+- **Proof:** code trace on origin/master: `SymbolButton`'s only use of `isActive` is the `variant` prop (`:25,31`), and IconAction sets `aria-pressed={pressed}`, which is `undefined` (attribute omitted) when not passed (`IconAction.tsx:28,37`). No probe needed; tree unchanged.
+- **Found by:** Grok Bot general review (chunk 26)
