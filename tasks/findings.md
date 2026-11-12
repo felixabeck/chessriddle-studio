@@ -24099,3 +24099,19 @@ Deferred follow-up (keep at midnight filing):
 * **Fix:** Reset `setProgress(null)` when a download starts (in the Download click handler, before marking the key in flight) or whenever `pending` becomes false. Alternatively, key the stored progress by ticket and render it only when it belongs to the current ticket.
 * **Proof:** Ephemeral Vitest probe that reused `AccountCard.test.tsx` lines 1-102. Sequence: in-flight ticket `job-1`, frame `{id: "job-1", progress: 100}` → "100%" shown; clear in-flight → not shown; set in-flight `lichess_felix → null` (the click's state) → the assertion `not.toContain("100%")` failed. The stale "100%" was rendered. The probe was deleted and the tree is clean.
 * **Found by:** Grok Bot general review 2026-11-12 (AccountCard pass). Related, not the same cause: f-20260914-14 and f-20261001-21 (shared progress ids, both handled).
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Re-adding a Chess.com account with different capitalisation creates a second card for the same account
+
+* **ID:** f-20261112-22 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** yes
+* **Where:** `src/components/home/Accounts.tsx` `addChessComSession` ~40-55 (`s.chessCom?.username !== session.username`). The same exact-case comparison is in `src/components/common/AccountCards.tsx`, Chess.com `logout` ~363-367 and `reload` ~372-385.
+* **Defect:** Chess.com usernames are case-insensitive, and `getChessComAccount` accepts any casing without returning a canonical name. The renderer dedups and removes Chess.com sessions with a case-sensitive comparison, while Lichess sessions go through `upsertLichessSession` (`src/utils/session.ts` ~309), which compares `toLocaleLowerCase()`. Everything downstream already treats the account case-insensitively: `accountCompletionKey` lowercases the account and `findAccountDatabase` lowercases the name. So two sessions that differ only in case are two cards for one account, sharing one download/completion state and one database.
+* **Failure scenario:** Add Chess.com account "Felix", then use Add account again with "felix", for example to put it under another player name or after forgetting the original spelling. The Accounts page now shows two Chess.com cards for the same account. Both show the same in-flight download state and resolve the same database. The trash icon on one card removes only the session with that exact spelling. Adding the same Lichess account with different capitalisation replaces the old card instead.
+* **Fix:** Compare Chess.com usernames case-insensitively in `addChessComSession`, as `upsertLichessSession` does (keep the newest spelling and alias), and use the same comparison in the Chess.com `logout`/`reload` filters. Consider a shared `upsertChessComSession` helper in `src/utils/session.ts` with a unit test.
+* **Proof:** Ephemeral Vitest probe built on `Accounts.test.tsx` lines 1-204, using the real `Accounts` component and modal and the mocked `getChessComAccount`. It added Chess.com "Felix", then reopened the modal and added "felix". The Chess.com usernames in `sessionsAtom` were `['Felix', 'felix']`; the probe expected `['felix']`. The probe was deleted and the tree is clean.
+* **Found by:** Grok Bot general review 2026-11-12 (Accounts/AccountCards pass). Related area, different cause: f-20261004-08.
