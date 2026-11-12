@@ -23950,3 +23950,19 @@ Deferred follow-up (keep at midnight filing):
 * **Fix:** Use a translation key for the series name (there is no generic one: `Puzzle.Rating`, `Board.Practice.Rating` and `Training.Session.Rating` are feature-scoped), e.g. a new `Home.Personal.Ratings.Series` key, run `pnpm i18n:extract`, and extend `TimeRangeSlider.test.tsx`'s recharts mock to assert the `Area` `name` is the translated value.
 * **Proof:** `rg -n 'name="[A-Z][a-z]+' src --glob '*.tsx' --glob '!*test*'` returns only `RatingsPanel.tsx:196: name="Rating"`; `en-US.json` holds no key the component uses for it; recharts `DefaultTooltipContent` prints `entry.name`.
 * **Found by:** Grok Bot, general review (t40u), HEAD `5c0538a2c`.
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### `TimeRangeSlider` mirrors its controlled range into state through a mis-parenthesised initializer
+
+* **ID:** f-20261112-13 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** general review chunk (Felix t40u) at HEAD `8927ceb72` (file identical on origin/master `ba81d9264`), selection-math pass over `PersonalCardPanels`
+* **Where:** `src/components/home/PersonalCardPanels/TimeRangeSlider.tsx` ~13-22. The initializer's second element is `(dateRange?.end ?? ratingDates.length > 0) ? ratingDates.length - 1 : 0`: `??` binds tighter than the conditional, so whenever `dateRange.end` is non-zero it yields `ratingDates.length - 1` and ignores `end`. A `useEffect` then copies `dateRange` into `internalRange` after mount, and `onChange` writes both the local state and the parent. The only caller, `RatingsPanel.tsx` ~207-214, always passes `dateRange={timeRange}` and owns the range itself. Same component family as `f-20261112-11` (different defect: day anchor).
+* **Defect:** The slider keeps a second copy of state the parent already controls, and the copy's initial value is wrong for every non-zero `end`. Today the post-mount effect overwrites it, so the user only gets one stale first frame; the precedence bug is latent and will surface as soon as anyone relies on the initializer (e.g. drops the effect, or renders the slider uncontrolled).
+* **Failure scenario:** Not user-visible today beyond a one-frame range of `[start, len-1]` before the effect runs. A maintainer reading `dateRange?.end ?? …` reasonably assumes it honours `end`, and it does not.
+* **Fix:** Make the slider controlled: `value={[dateRange.start, dateRange.end]}` and `onChange={(v) => onDateRangeChange({ start: v[0], end: v[1] })}`, make `dateRange` required, and delete `internalRange` and its effect. If an uncontrolled mode is wanted, parenthesise as `dateRange?.end ?? (ratingDates.length > 0 ? ratingDates.length - 1 : 0)`.
+* **Proof:** Node evaluation of the initializer expression on atlas: `{start:2,end:3}` with 10 dates → `[2,9]` (expected `[2,3]`); `undefined` with 10 dates → `[0,9]`; `{start:0,end:0}` → `[0,0]`. `rg TimeRangeSlider src` shows `RatingsPanel` as the only caller, always passing `dateRange`.
+* **Found by:** Grok Bot, general review (t40u), HEAD `8927ceb72`.
