@@ -23982,3 +23982,19 @@ Deferred follow-up (keep at midnight filing):
 * **Fix:** Detect castling from the move and position, not the SAN text, e.g. `san.startsWith("O-O-O")` / `san.startsWith("O-O")` at minimum, or better, derive it from the node's move (king moving onto its own rook) and use the castling target squares. Add a `Board.test.tsx` case for `O-O+` and `O-O-O#` asserting `lastMove` ends on g1/c1.
 * **Proof:** Probe `/tmp/gb-review-20261112/castle_check.mjs` run on atlas with the repo's chessops: from `5k2/8/8/8/8/8/8/4K2R w K - 0 1`, `parseSan("O-O")` then `makeSan` gives `san: O-O+` and `move.to: h1`. Neither string equals `"O-O"`, so the `.with({ san: "O-O" })` arm cannot match and `otherwise` returns h1. `rg '"O-O"' src` shows no other normalisation on this path.
 * **Found by:** Grok Bot, general review (t40u), HEAD `8927ceb72`.
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Closing a tactics tab mid-submit drops the server-recorded attempt from the shared session summary
+
+* **ID:** f-20261112-15 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** general review chunk 2 (Felix t40u) at HEAD `ffe50e310` (both files identical on origin/master `ba81d9264`), ChessRiddle training session-state pass
+* **Where:** `src/state/chessRiddleTraining.ts` `send` (~245-280): `if (!current(tabId, entry, identity)) return;` (~256) runs before `summary.record(verdict, accountIdentity)` (~257). `current` requires `entries.get(tabId) === entry`, which `remove` (~356-361, called from `disposeTabAtoms` in `src/state/atoms.ts` ~1445 when a tab closes) breaks. `trainingSummary` is app-global, not per tab: d-20261110-08 says "The summary counts the current app run for the connected account across all puzzle tabs", and `send` already captures `accountIdentity` up front so a late verdict is still attributed to the right account.
+* **Defect:** The tab-ownership guard that correctly discards a late verdict for the closed tab's own view also discards it for the global summary. The submit has reached the server (attempt recorded, rating changed), but the "This session" attempts, correct count, rating change and current rating never include it.
+* **Failure scenario:** The user submits a tactic in one puzzle tab and closes that tab while the server is still evaluating (engine work can take seconds), then keeps training in another tab. The other tab's "This session" summary shows one attempt fewer and a rating change and rating that leave out the closed tab's +8/-8, until the next verdict overwrites the rating; attempts and change stay wrong for the rest of the run.
+* **Fix:** Record into the summary when the verdict arrives, independent of tab ownership (the `accountIdentity` check in `summary.record` already rejects a verdict from a different account), and keep the `current` guard only for the per-tab `publish`/tree update. Add to the existing "a closed tab ignores late fetch and submit results" test an assertion that `summary.get().attempts` is 1 after the late verdict.
+* **Proof:** Ephemeral Vitest probe (file deleted afterwards, tree clean) built on `chessRiddleTraining.test.ts`'s `fixture`: `next`, fill `e7e5 g1f3 b8c6`, `submit` with a deferred verdict, `remove("tab")`, resolve `verdict` (ratingChange 8, playerRating 1508). Result: submit called once, summary `{attempts: 0, change: 0, rating: 1500}`. Control without `remove`: `{attempts: 1, change: 8, rating: 1508}`.
+* **Found by:** Grok Bot, general review (t40u), HEAD `ffe50e310`.
