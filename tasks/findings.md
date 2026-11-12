@@ -24569,3 +24569,19 @@ Deferred follow-up (keep at midnight filing):
 - **Fix:** when the date is partial, show the raw header text (for example as the input's displayed value or an adjacent read-only label) instead of the placeholder, and only replace it when the user picks a date. Add a GameInfo test for `1972.??.??`.
 - **Proof:** ephemeral Vitest on the GameInfo.test.tsx harness (customParseFormat extended as in bootstrap.tsx) with `date: "1972.??.??"`: the store kept `"1972.??.??"`, but the DateInput rendered `value=""` with placeholder `????.??.??`. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 23)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### GameInfo header fields have no accessible names: White, Black and both Elo inputs are announced only by their placeholders
+
+* **ID:** f-20261112-51 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/common/GameInfo.tsx:106-117` (Event), `:126-137` (Round), `:194-205` (White), `:214-226` (Site), `:228-243` (Date), `:245-256` (Black), `:257-274` and `:302-319` (White/Black Elo): plain `<input>`/`InlineInput`/`DateInput` with no `aria-label` or `<label>`. Only the Result select is labelled (`:276-280`), and the simplified line-name/idea inputs (`:89,98`).
+- **Defect:** with no label, the accessible name falls back to the placeholder. White and Black are both announced as "?", both Elo fields as "Unknown ELO", and the Date as "????.??.??". Screen-reader users cannot tell White from Black or which player's rating they are editing. The placeholder name also persists once the field has a value (an Event field holding "Candidates 2014" is still named "Unknown event").
+- **Failure scenario:** with Orca or NVDA, Tab through a game's Info panel: you hear "Unknown event, edit", then "?, edit, Carlsen", "?, edit, Anand", "Unknown ELO, edit, 2881", "Unknown ELO, edit, 2770", with no indication of which side each belongs to.
+- **Fix:** give each field an `aria-label` from i18n (White, Black, White Elo, Black Elo, Event, Site, Date, Round), reusing existing keys where they exist, and extend GameInfo.test.tsx to query the fields by label.
+- **Proof:** ephemeral Vitest on the GameInfo.test.tsx harness listed every rendered input: Event, White, Site, Date, Black and both Elo inputs had `aria-label=null` and `labels.length === 0`, with placeholders `GameInfo.UnknownEvent`, `?`, `GameInfo.UnknownSite`, `????.??.??`, `?` and `GameInfo.UnknownElo` (twice). Only the Result select had a label. Probe removed, tree clean.
+- **Found by:** Grok Bot general review (chunk 23)
