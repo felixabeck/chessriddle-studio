@@ -32,6 +32,12 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_CAPTURE_PIXEL_RATIO = 2;
 const FALLBACK_CAPTURE_PIXEL_RATIO = 1;
 const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"] as const;
+// Matches Rust str::trim (Unicode White_Space), which the native feedback validation applies.
+const NATIVE_TRIM = /^\p{White_Space}+|\p{White_Space}+$/gu;
+
+function trimLikeNative(value: string): string {
+  return value.replace(NATIVE_TRIM, "");
+}
 
 function payloadFingerprint(
   type: FeedbackType,
@@ -41,8 +47,8 @@ function payloadFingerprint(
 ): string {
   return JSON.stringify({
     type,
-    message: message.trim(),
-    email: email.trim() || null,
+    message: trimLikeNative(message),
+    email: trimLikeNative(email) || null,
     attachmentId,
   });
 }
@@ -148,8 +154,8 @@ export default function FeedbackModal({
     };
   }, []);
 
-  const trimmedMessage = message.trim();
-  const trimmedEmail = email.trim();
+  const trimmedMessage = trimLikeNative(message);
+  const trimmedEmail = trimLikeNative(email);
   const messageLength = [...trimmedMessage].length;
   const emailError =
     trimmedEmail.length > 0 && !isPlausibleEmail(trimmedEmail) ? t("Feedback.EmailInvalid") : "";

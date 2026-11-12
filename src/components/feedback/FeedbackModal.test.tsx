@@ -341,6 +341,8 @@ function installDeferredFileReader() {
 test("keeps send disabled until the message is long enough", async () => {
   await renderModal();
   expect(container.querySelector<HTMLButtonElement>("button[type='submit']")?.disabled).toBe(true);
+  await fillMessage("\u0085123456789\u0085");
+  expect(container.querySelector<HTMLButtonElement>("button[type='submit']")?.disabled).toBe(true);
   await fillMessage("A useful Studio report.");
   expect(container.querySelector<HTMLButtonElement>("button[type='submit']")?.disabled).toBe(false);
 });
@@ -534,6 +536,9 @@ test("matches native email validation and the local-part length boundary", async
     "user\t@example.com",
     "user@.example.com",
     "user@example.com.",
+    "\uFEFFuser@example.com",
+    "@example.com",
+    "user@examplecom",
   ];
   for (const email of invalidEmails) {
     await fillEmail(email);
@@ -547,6 +552,26 @@ test("matches native email validation and the local-part length boundary", async
   await fillEmail(`${"a".repeat(64)}@example.com`);
   expect(container.querySelector<HTMLButtonElement>("button[type='submit']")?.disabled).toBe(false);
   expect(container.querySelector("[role='status']")).toBeNull();
+});
+
+test.each<[string, string, string | null]>([
+  ["NEL-padded email", "user@example.com\u0085", "user@example.com"],
+  ["space-padded email", " user@example.com ", "user@example.com"],
+  ["whitespace-only email", "   ", null],
+])("trims %s like native validation before submitting", async (_label, email, expectedEmail) => {
+  await renderModal();
+  await fillMessage("A useful Studio report.");
+  await fillEmail(email);
+  expect(sendButton()?.disabled).toBe(false);
+  expect(container.querySelector("[role='status']")).toBeNull();
+  await submitForm();
+  expect(mocks.submitFeedback).toHaveBeenCalledExactlyOnceWith(
+    "bug",
+    "A useful Studio report.",
+    expectedEmail,
+    firstKey,
+    null,
+  );
 });
 
 test("keeps send disabled for a message over the max", async () => {
