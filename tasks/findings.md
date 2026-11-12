@@ -24115,3 +24115,19 @@ Deferred follow-up (keep at midnight filing):
 * **Fix:** Compare Chess.com usernames case-insensitively in `addChessComSession`, as `upsertLichessSession` does (keep the newest spelling and alias), and use the same comparison in the Chess.com `logout`/`reload` filters. Consider a shared `upsertChessComSession` helper in `src/utils/session.ts` with a unit test.
 * **Proof:** Ephemeral Vitest probe built on `Accounts.test.tsx` lines 1-204, using the real `Accounts` component and modal and the mocked `getChessComAccount`. It added Chess.com "Felix", then reopened the modal and added "felix". The Chess.com usernames in `sessionsAtom` were `['Felix', 'felix']`; the probe expected `['felix']`. The probe was deleted and the tree is clean.
 * **Found by:** Grok Bot general review 2026-11-12 (Accounts/AccountCards pass). Related area, different cause: f-20261004-08.
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Chess.com link import replays every game from the standard start, corrupting Chess960 and from-position games
+
+* **ID:** f-20261112-23 · **Status:** open · **Area:** pgn-import · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** data-loss
+* **Spotted outside diff:** yes
+* **Where:** `src/utils/chess.com/api.tsx` `getChesscomGame` ~133-152: `const chess = Chess.default();` then `makeSan(chess, decodeTCN(move))` / `chess.play(m)` for every TCN pair. The caller is `src/components/tabs/ImportModal.tsx` ~222-228 (Import → Link).
+* **Defect:** The Chess.com callback payload carries the real start position in `pgnHeaders` (`SetUp: "1"`, `FEN`, `Variant: "Chess960"`), and those headers are copied into the PGN. The TCN moves, however, are decoded and SAN-encoded against `Chess.default()`, which ignores `FEN`. chessops does not reject illegal moves here: `makeSan` returns `--` and `play` mutates anyway. So any game that does not start from the standard position is turned silently into a PGN whose FEN header and move text disagree.
+* **Failure scenario:** Import → Link with `https://www.chess.com/game/live/101679677427` (Hikaru, Chess960, 2024-02-14; the live callback returns `FEN: brkbqrnn/pppppppp/8/8/8/8/PPPPPPPP/BRKBQRNN w FBfb -`). The import "succeeds" and opens or saves a game whose moves read `e4 b6 b3 e5 Rg3 …` and contain `--` null moves. Replayed from its own FEN header it is illegal from ply 4, so the saved game is garbage with no error shown. The same applies to daily "from position" games, which also carry `SetUp`/`FEN`.
+* **Fix:** Build the start position from the headers (`startingPosition(game.headers)` from `chessops/pgn`, or `setupPosition("chess" | "chess960", parseFen(FEN))`), set `Variant` handling as for Lichess imports, and replay against that. Also treat an illegal decoded move (`makeSan` yielding `--`) as a failed import with the existing InvalidResponse notification instead of emitting it. Check that 960 castling in TCN (king to rook square vs two-square) maps correctly onto chessops' castling normalisation. Add tests with a 960 and a from-position fixture (this also covers part of f-20261111-74).
+* **Proof:** Payload check: `curl https://www.chess.com/callback/live/game/101679677427` from the review box (public, read-only) returned the headers above with `Variant: Chess960` and the TCN `moveList`. Ephemeral Vitest probe in `src/utils/chess.com/` mocked `tauri.getPublicChessComJson` with that exact payload and called the real `getChesscomGame`. It then parsed the output with `parsePgn` and replayed it with `startingPosition(headers)` + `parseSan`. Result: `first=e4 b6 b3 e5 Rg3 Rg6 Nh3 Qf6 bad=4:Rg3 null=true plies=85`. The probe was deleted and the tree is clean.
+* **Found by:** Grok Bot general review 2026-11-12 (chess.com api pass). Related: f-20261111-74 (missing tests for TCN/getChesscomGame, different finding).
