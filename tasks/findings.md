@@ -24824,3 +24824,19 @@ Correction to the Failure scenario: what gets focus before or after the annotati
 
 Line-reference correction: in `src/components/common/IconAction.tsx`, the extra props reach `ActionIcon` via `{...props}` at `:32-33`, and IconAction sets `aria-label`, `aria-busy` and `aria-pressed` at `:35-37`, not `:27-33`/`:30-32` as written. Substance unchanged.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"80325bb5be8285a10330c0cf1be0a3818a0c2653640110f545d503b2d178d629","input_sha256":"39ef8ee23997ba03e4cc1c7a6a7f754d5bd637e240440a4202497dcae764243c","kind":"mutation-receipt","operation":"a917bac726390d8d01ce726d8aa237266c8c72e3ab426346e3f6ae0829ad49e5","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-65"],"target":"f-20261112-65","v":1} -->
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### The report's WDL chart tooltip hard-codes "White / Draw / Black" in English
+
+* **ID:** f-20261112-66 · **Status:** open · **Area:** i18n · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/common/EvalChart.tsx:103-105` builds `wdlText` as a template literal ``\n         White: ${w/10}%\n         Draw: ${d/10}%\n         Black: ${l/10}%``. `CustomTooltip` renders it as the body of the WDL chart's tooltip (`type === "cp" ? cpText : wdlText`, `:296`). The sibling `cpText` on `:100-102` goes through `t("Board.Analysis.Advantage")`, and catalogue keys for the same words already exist (`Board.Analysis.Tablebase.WhiteWins` / `Draw` / `BlackWins`, `Fen.White` / `Fen.Black`).
+- **Defect:** the only per-move text in the WDL view bypasses i18next, so every non-English locale sees English outcome labels. The literal `\n` plus indentation is also meaningless in a normal-white-space `<Text>` (no `white-space: pre*` on it or on `.tooltipTitle`), so the three values run together on one line. f-20261111-50 (same file) covers the duplicated reference-line/dot overlay contract, not this text.
+- **Failure scenario:** with the app in German, generate a report, switch the chart to WDL and hover a move: the tooltip reads "White: 45% Draw: 30% Black: 25%" in English (on one line),, while the CP tooltip shows the translated `Board.Analysis.Advantage` label.
+- **Fix:** build the text from `t()` with the existing outcome keys (or a new interpolated `Board.Analysis.WdlTooltip` key), and render three lines as separate `Text`s/a small list rather than embedded `\n`. Add a de-DE tooltip assertion to the EvalChart test.
+- **Proof:** code trace on origin/master d30eb171f: `wdlText` (`:103-105`) is the only user-facing label text in `data` not built through `t` (`name` is move notation). `CustomTooltip` passes it straight into `<Text>`. `EvalChart.module.css` gives `.tooltipTitle` only `font-weight: bold`, and `.tooltip` (`white-space: nowrap`) is not applied to this Paper. No probe needed; tree unchanged.
+- **Found by:** Grok Bot general review (chunk 27)
