@@ -91,6 +91,8 @@ vi.mock("@mantine/core", () => ({
   ),
   Group: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   InputWrapper: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Loader: () => <span />,
+  Text: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
   Modal: ({
     opened,
     title,

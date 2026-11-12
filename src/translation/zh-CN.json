@@ -129,6 +129,7 @@
     "Board.Database.AverageRating": "平均等级分",
     "Board.Database.ExplorerAuthRequired1": "Lichess 开局探索器现在需要身份验证。",
     "Board.Database.ExplorerAuthRequired2": "请在该页面通过 OAuth 添加 Lichess 账户以继续使用。",
+    "Board.Database.ExplorerLoadError": "无法加载开局浏览器，请重试。",
     "Board.Database.Games": "对局",
     "Board.Database.GamesFailed": "无法加载对局：{{games}}",
     "Board.Database.GamesIncomplete": "无法加载以下对局：{{games}}",

@@ -129,6 +129,7 @@
     "Board.Database.AverageRating": "Ortalama puan",
     "Board.Database.ExplorerAuthRequired1": "Lichess Gezgini artık kimlik doğrulaması gerektiriyor. Şuradan OAuth ile bir Lichess hesabı ekleyin:",
     "Board.Database.ExplorerAuthRequired2": "Devam etmek için sayfa.",
+    "Board.Database.ExplorerLoadError": "Açılış gezgini yüklenemedi. Lütfen tekrar deneyin.",
     "Board.Database.Games": "Oyunlar",
     "Board.Database.GamesFailed": "Oyunlar yüklenemedi: {{games}}",
     "Board.Database.GamesIncomplete": "Şu oyunlar yüklenemedi: {{games}}",

@@ -3,7 +3,12 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import i18n from "@/i18n";
 import { catalogueI18n } from "@/tests/catalogues";
 import { markErrorReported } from "@/platform/errors";
-import { notifyListenerError, notifyUnlessCancelled, runUnlessCancelled } from "./notifyError";
+import {
+    inlineFailureMessage,
+    notifyListenerError,
+    notifyUnlessCancelled,
+    runUnlessCancelled,
+} from "./notifyError";
 
 const fallbackTranslation = vi.mocked(i18n.t).getMockImplementation()!;
 
@@ -16,6 +21,72 @@ for (const locale of ["en-US", "de-DE"] as const) {
         });
         afterEach(() => {
             vi.mocked(i18n.t).mockImplementation(fallbackTranslation);
+        });
+
+        test("inline failures map known errors without exposing diagnostics or notifying", () => {
+            const fallback = catalogue.t("Databases.LoadError.Title");
+            const rawMessage = "C:\\secret\\path diag";
+            expect(
+                inlineFailureMessage(
+                    {
+                        tag: "backend-error",
+                        category: "database",
+                        message: rawMessage,
+                    },
+                    "database",
+                    fallback,
+                ),
+            ).toBe(fallback);
+            expect(
+                inlineFailureMessage(
+                    {
+                        tag: "backend-error",
+                        category: "io",
+                        message: rawMessage,
+                        rootFailure: "missing",
+                        remoteHttpRejection: { status: 404, authorizationSent: false },
+                    },
+                    "database",
+                    fallback,
+                ),
+            ).toBe(catalogue.t("Databases.LoadError.RootMissing"));
+            expect(
+                inlineFailureMessage(
+                    {
+                        tag: "backend-error",
+                        category: "network",
+                        message: rawMessage,
+                        remoteHttpRejection: { status: 429, authorizationSent: false },
+                    },
+                    undefined,
+                    fallback,
+                ),
+            ).toBe(catalogue.t("Common.RemoteRequest.RateLimited"));
+            expect(
+                inlineFailureMessage(
+                    {
+                        tag: "backend-error",
+                        category: "conflict",
+                        message: rawMessage,
+                        nameTaken: true,
+                    },
+                    "database",
+                    fallback,
+                ),
+            ).toBe(catalogue.t("Common.NameAlreadyUsed"));
+            expect(
+                inlineFailureMessage(
+                    {
+                        tag: "backend-error",
+                        category: "operation-and-cleanup",
+                        message: rawMessage,
+                        remoteHttpRejection: { status: 404, authorizationSent: false },
+                    },
+                    "files",
+                    fallback,
+                ),
+            ).toBe(catalogue.t("Files.OperationAndCleanupFailed"));
+            expect(notifications.show).not.toHaveBeenCalled();
         });
 
         test.each(["database", "puzzle", "engine", "files", undefined] as const)(
@@ -166,6 +237,34 @@ vi.mock("@/i18n", async (original) => ({
 
 afterEach(() => {
     vi.mocked(notifications.show).mockClear();
+});
+
+test.each([undefined, null, new Error("Cancellation")])(
+    "inline failures suppress absent or cancelled errors: %s",
+    (error) => {
+        expect(inlineFailureMessage(error, "database", "Translated fallback")).toBeUndefined();
+        expect(notifications.show).not.toHaveBeenCalled();
+    },
+);
+
+test("inline failures keep the fallback for ordinary errors and unmapped root labels", () => {
+    const fallback = "Translated fallback";
+    expect(
+        inlineFailureMessage(new Error("distinctive backend diagnostic"), undefined, fallback),
+    ).toBe(fallback);
+    expect(
+        inlineFailureMessage(
+            {
+                tag: "backend-error",
+                category: "resource-limit",
+                message: "distinctive native diagnostic",
+                rootFailure: "too-large",
+            },
+            "engine",
+            fallback,
+        ),
+    ).toBe(fallback);
+    expect(notifications.show).not.toHaveBeenCalled();
 });
 
 test("keeps the pinned Cancellation display silent", () => {

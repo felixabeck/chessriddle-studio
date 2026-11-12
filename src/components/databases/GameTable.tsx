@@ -22,7 +22,7 @@ import { useStore } from "zustand";
 import type { GameSort, NormalizedGame, Outcome } from "@/bindings";
 import { IconAction } from "@/components/common/IconAction";
 import { gameRowActivation, useGameOpen } from "@/components/common/gameOpen";
-import { notifyUnlessCancelled } from "@/components/files/notifyError";
+import { inlineFailureMessage, notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { addRecentFileAtom, tabsAtom } from "@/state/atoms";
 import { ELO_FILTER_MAX, query_games, sameDatabaseHandle } from "@/utils/db";
@@ -294,9 +294,8 @@ function GameTable() {
           ]}
           rowClassName={(record) => (record.id === selectedGameId ? classes.selected : "")}
           noRecordsText={
-            error
-              ? `${t("Common.Error")}: ${error instanceof Error ? error.message : String(error)}`
-              : t("Databases.Game.NoGamesFound")
+            inlineFailureMessage(error, "database", t("Databases.LoadError.Title")) ??
+            t("Databases.Game.NoGamesFound")
           }
           totalRecords={count!}
           recordsPerPage={query.options?.pageSize ?? 25}

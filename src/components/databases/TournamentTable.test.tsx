@@ -28,10 +28,19 @@ vi.mock("@mantine/core", () => {
     }) => <input aria-label={ariaLabel} value={value} onChange={onChange} />,
   };
 });
-vi.mock("mantine-datatable", () => ({ DataTable: () => null }));
+vi.mock("mantine-datatable", () => ({
+  DataTable: ({ noRecordsText }: { noRecordsText: string }) => (
+    <div role="status">{noRecordsText}</div>
+  ),
+}));
 vi.mock("./TournamentCard", () => ({ default: () => null }));
 vi.mock("./GridLayout", () => ({
-  default: ({ search }: { search: ReactNode }) => <div>{search}</div>,
+  default: ({ search, table }: { search: ReactNode; table: ReactNode }) => (
+    <div>
+      {search}
+      {table}
+    </div>
+  ),
 }));
 
 const file = { id: { id: "event-search-database" }, kind: "database" } as const;
@@ -89,4 +98,23 @@ test("name search debounces rapid typing until 250 ms after the final change", a
     expect.objectContaining({ name: "car" }),
     { signal: expect.any(AbortSignal) },
   );
+});
+
+test.each([
+  ["C:\\secret\\path diag", "Databases.LoadError.Title"],
+  ["Cancellation", "Databases.Tournament.NoneFound"],
+])("query failure %s renders safe empty-state copy", async (message, expected) => {
+  mocks.getTournaments.mockRejectedValue(new Error(message));
+  await act(async () =>
+    root.render(
+      <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false }}>
+        <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
+          <TournamentTable />
+        </DatabaseViewStateContext.Provider>
+      </SWRConfig>,
+    ),
+  );
+  expect(mocks.getTournaments).toHaveBeenCalled();
+  expect(container.querySelector('[role="status"]')?.textContent).toBe(expected);
+  expect(container.textContent).not.toContain(message);
 });

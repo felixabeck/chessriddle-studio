@@ -79,6 +79,11 @@ vi.mock("mantine-datatable", () => ({
     return (
       <table>
         <tbody>
+          {records.length === 0 && (
+            <tr>
+              <td>{props.noRecordsText}</td>
+            </tr>
+          )}
           {records.map((record: NormalizedGame, index: number) => (
             <tr
               key={record.id}
@@ -216,6 +221,16 @@ test("the Games searches distinguish the player and opponent", async () => {
   await render();
   expect(host.querySelector('input[placeholder="Board.Database.Local.Player"]')).not.toBeNull();
   expect(host.querySelector('input[placeholder="Board.Database.Local.Opponent"]')).not.toBeNull();
+});
+
+test.each([
+  ["C:\\secret\\path diag", "Databases.LoadError.Title"],
+  ["Cancellation", "Databases.Game.NoGamesFound"],
+])("query failure %s renders safe empty-state copy", async (message, expected) => {
+  mocks.queryError = new Error(message);
+  await render();
+  expect(host.querySelector("tbody")?.textContent).toBe(expected);
+  expect(host.textContent).not.toContain(message);
 });
 
 test("plies sorting maps the native tag to the row accessor in both directions", async () => {
@@ -521,7 +536,8 @@ test("linked explorer opening admits the original file tree and persists its nat
 test("a failed generation admission withholds previously cached explorer rows", async () => {
   mocks.queryError = new Error("The collection changed on disk");
   await render();
-  expect(host.querySelectorAll("tbody tr")).toHaveLength(0);
+  expect(host.querySelectorAll("tbody tr input")).toHaveLength(0);
+  expect(host.querySelector("tbody")?.textContent).toBe("Databases.LoadError.Title");
   expect(mocks.parsePGN).not.toHaveBeenCalled();
 });
 

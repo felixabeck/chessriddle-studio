@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import useSWR from "swr";
 import { useStore } from "zustand";
 import { type Event, type TournamentSort } from "@/bindings";
+import { inlineFailureMessage } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { NAME_SEARCH_DEBOUNCE_MS } from "@/utils/db";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
@@ -116,9 +117,8 @@ function TournamentTable() {
           ]}
           rowClassName={(t) => (t.id === selected ? classes.selected : "")}
           noRecordsText={
-            error
-              ? `${t("Common.Error")}: ${error instanceof Error ? error.message : String(error)}`
-              : t("Databases.Tournament.NoneFound")
+            inlineFailureMessage(error, "database", t("Databases.LoadError.Title")) ??
+            t("Databases.Tournament.NoneFound")
           }
           totalRecords={count!}
           recordsPerPage={query.options.pageSize ?? 25}

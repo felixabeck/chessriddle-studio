@@ -129,6 +129,7 @@
     "Board.Database.AverageRating": "Gjennomsnittsrating",
     "Board.Database.ExplorerAuthRequired1": "Lichess Explorer krever nå autentisering. Legg til en Lichess-konto med OAuth på",
     "Board.Database.ExplorerAuthRequired2": "-siden for å fortsette.",
+    "Board.Database.ExplorerLoadError": "Kunne ikke laste åpningsutforskeren. Prøv igjen.",
     "Board.Database.Games": "Partier",
     "Board.Database.GamesFailed": "Kunne ikke laste inn partier: {{games}}",
     "Board.Database.GamesIncomplete": "Kunne ikke laste inn disse partiene: {{games}}",

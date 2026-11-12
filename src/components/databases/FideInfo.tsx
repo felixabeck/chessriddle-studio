@@ -1,9 +1,10 @@
-import { Avatar, Badge, Card, Center, Divider, Group, Stack, Text } from "@mantine/core";
+import { Avatar, Badge, Card, Center, Divider, Group, Loader, Stack, Text } from "@mantine/core";
 import { ExternalLink } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import useSWR from "swr/immutable";
 import { getFidePlayer } from "@/utils/lichess/api";
 import { IconAction } from "@/components/common/IconAction";
+import { inlineFailureMessage } from "@/components/files/notifyError";
 import AppModal from "../common/AppModal";
 import { loadFlagpack } from "./flagpack";
 
@@ -61,7 +62,12 @@ function FideInfo({
       onClose={() => setOpened(false)}
     >
       {isLoading ? (
-        <Center>{t("Common.Loading")}</Center>
+        <Center>
+          <Group gap="xs">
+            <Loader size="sm" />
+            <Text size="sm">{t("Common.Loading")}</Text>
+          </Group>
+        </Center>
       ) : player ? (
         <Stack gap="md">
           <Group wrap="nowrap" align="flex-start">
@@ -111,14 +117,8 @@ function FideInfo({
         </Stack>
       ) : (
         <Text>
-          {error ? (
-            <>
-              {t("Databases.FIDE.SearchError", { name })}
-              <br /> {error.message}
-            </>
-          ) : (
-            t("Databases.FIDE.PlayerNotFound")
-          )}
+          {inlineFailureMessage(error, undefined, t("Databases.FIDE.SearchError", { name })) ??
+            t("Databases.FIDE.PlayerNotFound")}
         </Text>
       )}
     </AppModal>

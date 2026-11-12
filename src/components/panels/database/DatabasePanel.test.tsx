@@ -144,6 +144,12 @@ describe("explorer game failure catalogues", () => {
         expect(template === templates[key]).toBe(locale.startsWith("en-"));
       }
       expect(translation[keys[0]]).not.toBe(translation[keys[1]]);
+      const explorerKey = "Board.Database.ExplorerLoadError";
+      expect(translation[explorerKey].trim()).not.toBe("");
+      expect(instance.t(explorerKey)).toBe(translation[explorerKey]);
+      expect(
+        translation[explorerKey] === "Could not load the opening explorer. Please try again.",
+      ).toBe(locale.startsWith("en-"));
     },
   );
 });
@@ -1006,25 +1012,59 @@ describe("DatabasePanel", () => {
     },
   );
 
-  test("local: admitted search failures retain their native error presentation", async () => {
+  test.each(["Database is unreadable", "C:\\secret\\path diag"])(
+    "local: admitted search failure %s renders translated guidance without native diagnostics",
+    async (message) => {
+      mocks.getDatabases.mockResolvedValue(databaseList([readable]));
+      mocks.searchPosition.mockRejectedValue(new Error(message));
+      await mountLocal();
+      expect(container.textContent).toContain("Databases.LoadError.Title");
+      expect(container.textContent).not.toContain(message);
+      expect(container.textContent).not.toContain("Board.Database.NoReference1");
+    },
+  );
+
+  test("local: cancelled search renders the ordinary panel children", async () => {
     mocks.getDatabases.mockResolvedValue(databaseList([readable]));
-    mocks.searchPosition.mockRejectedValue(new Error("Native position search failed"));
+    mocks.searchPosition.mockRejectedValue(new Error("Cancellation"));
     await mountLocal();
-    expect(container.textContent).toContain("Native position search failed");
-    expect(container.textContent).not.toContain("Board.Database.NoReference1");
+    const panel = selectedPanel("stats");
+    expect(panel.textContent).toContain("No games found");
+    expect(panel.querySelector('[role="alert"]')).toBeNull();
+    expect(panel.textContent).not.toContain("Cancellation");
+    expect(panel.textContent).not.toContain("Databases.LoadError.Title");
   });
+
+  test.each(["lch_all", "lch_master"] as const)(
+    "%s: query failures render explorer guidance without diagnostics",
+    async (type) => {
+      const store = createJotaiStore();
+      store.set(tabsAtom, [validTab]);
+      store.set(activeTabAtom, tabId);
+      store.set(dbTypeFamily(tabId), type);
+      store.set(sessionsAtom, [validSession]);
+      const fetcher = type === "lch_all" ? mocks.getLichessGames : mocks.getMasterGames;
+      fetcher.mockRejectedValue(new Error("C:\\secret\\path diag"));
+      await renderPanel(store, { provider: () => new Map(), shouldRetryOnError: false });
+      await vi.waitFor(() =>
+        expect(container.textContent).toContain("Board.Database.ExplorerLoadError"),
+      );
+      expect(container.textContent).not.toContain("C:\\secret\\path diag");
+    },
+  );
 
   test("local: collection-unavailable presentation yields to the missing effective reference warning", async () => {
     mocks.getDatabases.mockResolvedValue(databaseList([readable]));
     mocks.collectionForDatabase.mockRejectedValue(new Error("Collection unavailable"));
     const { store, revalidate } = await mountLocal();
-    expect(container.textContent).toContain("Collections.Unavailable");
+    expect(container.textContent).toContain("Databases.LoadError.Title");
+    expect(container.textContent).not.toContain("Collection unavailable");
     expect(container.textContent).not.toContain("Board.Database.NoReference1");
 
     mocks.getDatabases.mockResolvedValue(databaseList([unreadable]));
     await revalidate();
     expectNoReference();
-    expect(container.textContent).not.toContain("Collections.Unavailable");
+    expect(container.textContent).not.toContain("Databases.LoadError.Title");
     expectSavedChoice(store);
   });
 

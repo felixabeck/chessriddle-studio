@@ -9,6 +9,7 @@ import useSWR from "swr";
 import { useStore } from "zustand";
 import type { Player, PlayerSort } from "@/bindings";
 import { IconAction } from "@/components/common/IconAction";
+import { inlineFailureMessage } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { ELO_FILTER_MAX, NAME_SEARCH_DEBOUNCE_MS, query_players } from "@/utils/db";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
@@ -141,9 +142,8 @@ function PlayerTable() {
           ]}
           rowClassName={(r) => (r.id === selectedPlayer ? classes.selected : "")}
           noRecordsText={
-            error
-              ? `${t("Common.Error")}: ${error instanceof Error ? error.message : String(error)}`
-              : t("Databases.Player.NoPlayersFound")
+            inlineFailureMessage(error, "database", t("Databases.LoadError.Title")) ??
+            t("Databases.Player.NoPlayersFound")
           }
           totalRecords={count!}
           recordsPerPage={query.options.pageSize ?? 25}

@@ -129,6 +129,7 @@
     "Board.Database.AverageRating": "Punteggio medio",
     "Board.Database.ExplorerAuthRequired1": "Per utilizzare l'explorer di Lichess è richiesta l'autenticazione. Aggiungi un account",
     "Board.Database.ExplorerAuthRequired2": "Lichess con OAuth per continuare.",
+    "Board.Database.ExplorerLoadError": "Impossibile caricare l’esploratore delle aperture. Riprova.",
     "Board.Database.Games": "Partite",
     "Board.Database.GamesFailed": "Impossibile caricare le partite: {{games}}",
     "Board.Database.GamesIncomplete": "Impossibile caricare queste partite: {{games}}",

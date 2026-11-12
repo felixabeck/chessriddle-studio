@@ -53,11 +53,13 @@ vi.mock("mantine-datatable", () => ({
     columns,
     sortStatus,
     onSortStatusChange,
+    noRecordsText,
   }: {
     records: import("@/bindings").Player[];
     columns: { accessor: string; title: string; sortable?: boolean }[];
     sortStatus: { columnAccessor: string; direction: "asc" | "desc" };
     onSortStatusChange: (value: { columnAccessor: string; direction: "asc" | "desc" }) => void;
+    noRecordsText: string;
   }) => (
     <table>
       <thead>
@@ -93,6 +95,11 @@ vi.mock("mantine-datatable", () => ({
         </tr>
       </thead>
       <tbody>
+        {records.length === 0 && (
+          <tr>
+            <td>{noRecordsText}</td>
+          </tr>
+        )}
         {records.map((record) => (
           <tr key={record.id}>
             <td>{record.game_count}</td>
@@ -170,6 +177,25 @@ test("name search debounces rapid typing until 250 ms after the final change", a
     expect.objectContaining({ name: "car" }),
     { signal: expect.any(AbortSignal) },
   );
+});
+
+test.each([
+  ["C:\\secret\\path diag", "Databases.LoadError.Title"],
+  ["Cancellation", "Databases.Player.NoPlayersFound"],
+])("query failure %s renders safe empty-state copy", async (message, expected) => {
+  mocks.getPlayers.mockRejectedValue(new Error(message));
+  await act(async () =>
+    root.render(
+      <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false }}>
+        <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
+          <PlayerTable />
+        </DatabaseViewStateContext.Provider>
+      </SWRConfig>,
+    ),
+  );
+  expect(mocks.getPlayers).toHaveBeenCalled();
+  expect(container.querySelector("tbody")?.textContent).toBe(expected);
+  expect(container.textContent).not.toContain(message);
 });
 
 test("max Elo preserves numeric zero and an empty max restores the omitted full band", async () => {

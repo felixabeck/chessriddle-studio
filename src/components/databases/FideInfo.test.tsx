@@ -188,9 +188,10 @@ test("an open modal renders the real federation flag", async () => {
   expect(modalText()).toContain("Magnus");
 });
 
-test("a rejected player response renders the search error and message", async () => {
+test("a rejected player response renders translated search error copy without its raw message", async () => {
   const { FideInfo, SWRConfig } = await importFideInfo();
-  mocks.getFidePlayer.mockRejectedValue(new Error("Lichess returned an invalid response"));
+  const rawMessage = "C:\\secret\\path diag";
+  mocks.getFidePlayer.mockRejectedValue(new Error(rawMessage));
 
   await renderFideInfo(FideInfo, SWRConfig, {
     opened: true,
@@ -200,7 +201,7 @@ test("a rejected player response renders the search error and message", async ()
 
   await vi.waitFor(() => {
     expect(modalText()).toContain("Databases.FIDE.SearchError");
-    expect(modalText()).toContain("Lichess returned an invalid response");
+    expect(modalText()).not.toContain(rawMessage);
   });
 });
 

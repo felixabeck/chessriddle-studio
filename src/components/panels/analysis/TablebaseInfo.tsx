@@ -6,6 +6,7 @@ import useSWRImmutable from "swr/immutable";
 import { match, P } from "ts-pattern";
 import { useStore } from "zustand";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
+import { inlineFailureMessage } from "@/components/files/notifyError";
 import { getTablebaseInfo, type TablebaseCategory } from "@/utils/lichess/api";
 import classes from "./TablebaseInfo.module.css";
 
@@ -22,6 +23,7 @@ function TablebaseInfo({ fen, turn }: { fen: string; turn: "white" | "black" }) 
 
   // SWR owns `data`; sorting it in place changes the cache seen by every view.
   const sortedMoves = data ? [...data.moves].sort(compareTablebaseMoves) : undefined;
+  const errorText = inlineFailureMessage(error, undefined, t("Common.Error"));
 
   return (
     <Paper withBorder>
@@ -41,11 +43,7 @@ function TablebaseInfo({ fen, turn }: { fen: string; turn: "white" | "black" }) 
                   <Badge variant="transparent">{t("Common.Loading")}</Badge>
                 </Group>
               )}
-              {error && (
-                <Text>
-                  {t("Common.Error")}: {error instanceof Error ? error.message : String(error)}
-                </Text>
-              )}
+              {errorText !== undefined && <Text>{errorText}</Text>}
               {data && <OutcomeBadge category={data.category} turn={turn} wins />}
             </Group>
           </Accordion.Control>

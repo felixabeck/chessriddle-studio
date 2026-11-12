@@ -22,6 +22,7 @@ import { match } from "ts-pattern";
 import { useStore } from "zustand";
 import { type NormalizedGame } from "@/bindings";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
+import { inlineFailureMessage } from "@/components/files/notifyError";
 import {
   dbTabFamily,
   dbTypeFamily,
@@ -405,8 +406,17 @@ function PanelWithError(props: {
       </Alert>
     );
   }
-  if (props.error) {
-    children = <Alert color="danger">{props.error.toString()}</Alert>;
+  if (props.error != null) {
+    const message = inlineFailureMessage(
+      props.error,
+      props.type === "local" ? "database" : undefined,
+      props.type === "local"
+        ? t("Databases.LoadError.Title")
+        : t("Board.Database.ExplorerLoadError"),
+    );
+    if (message !== undefined) {
+      children = <Alert color="danger">{message}</Alert>;
+    }
   }
   if (props.type === "local" && !props.hasReferenceDatabase) {
     children = <NoDatabaseWarning />;

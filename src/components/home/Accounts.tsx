@@ -4,7 +4,9 @@ import {
   Checkbox,
   Group,
   InputWrapper,
+  Loader,
   Stack,
+  Text,
   TextInput,
 } from "@mantine/core";
 import { Plus } from "lucide-react";
@@ -286,9 +288,10 @@ function AccountModal({
             {t("Common.Add")}
           </Button>
           {isPending && (
-            <span role="status" aria-live="polite">
-              {t("Common.Loading")}
-            </span>
+            <Group gap="xs" role="status" aria-live="polite">
+              <Loader size="sm" />
+              <Text size="sm">{t("Common.Loading")}</Text>
+            </Group>
           )}
         </Stack>
       </form>

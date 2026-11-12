@@ -129,6 +129,7 @@
     "Board.Database.AverageRating": "Średnia ocena",
     "Board.Database.ExplorerAuthRequired1": "Eksplorator Lichess wymaga teraz uwierzytelnienia. Dodaj konto Lichess przez OAuth na",
     "Board.Database.ExplorerAuthRequired2": "stronie, aby kontynuować.",
+    "Board.Database.ExplorerLoadError": "Nie udało się wczytać eksploratora otwarć. Spróbuj ponownie.",
     "Board.Database.Games": "Gry",
     "Board.Database.GamesFailed": "Nie udało się wczytać partii: {{games}}",
     "Board.Database.GamesIncomplete": "Nie udało się wczytać tych partii: {{games}}",

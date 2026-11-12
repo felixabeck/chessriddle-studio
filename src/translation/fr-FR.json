@@ -129,6 +129,7 @@
     "Board.Database.AverageRating": "Classement moyen",
     "Board.Database.ExplorerAuthRequired1": "Lichess Explorer requiert désormais une authentification. Ajoutez un compte Lichess avec OAuth dans la",
     "Board.Database.ExplorerAuthRequired2": "page pour continuer.",
+    "Board.Database.ExplorerLoadError": "Impossible de charger l’explorateur d’ouvertures. Veuillez réessayer.",
     "Board.Database.Games": "Parties",
     "Board.Database.GamesFailed": "Impossible de charger les parties : {{games}}",
     "Board.Database.GamesIncomplete": "Impossible de charger ces parties : {{games}}",

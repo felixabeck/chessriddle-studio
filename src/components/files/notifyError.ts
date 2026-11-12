@@ -1,9 +1,41 @@
 import { notifications } from "@mantine/notifications";
 import i18n from "@/i18n";
-import { errorUnlessCancelled, isErrorReported } from "@/platform/errors";
+import type { RemoteHttpRejection } from "@/bindings";
+import { type AppError, errorUnlessCancelled, isErrorReported } from "@/platform/errors";
 import { rootFailureMessage, type RootFailureDomain } from "./listingFailure";
 import { workspaceErrorMessage } from "./workspaceError";
 import { remoteHttpGuidance } from "./remoteHttpGuidance";
+
+export function failureMessage(
+    visible: AppError,
+    domain: RootFailureDomain | undefined,
+    fallback: string,
+): { message: string; remoteRejection: RemoteHttpRejection | undefined } {
+    const rootMessage = (domain ? rootFailureMessage(domain, visible) : undefined) ?? fallback;
+    let message =
+        domain === "files"
+            ? workspaceErrorMessage(visible, rootMessage)
+            : visible.nameTaken === true
+              ? i18n.t("Common.NameAlreadyUsed")
+              : rootMessage;
+    const remoteRejection =
+        visible.rootFailure == null && visible.backendCategory !== "operation-and-cleanup"
+            ? visible.remoteHttpRejection
+            : undefined;
+    if (remoteRejection) message = remoteHttpGuidance(remoteRejection);
+    return { message, remoteRejection };
+}
+
+/** Inline failures use translated fallback copy and never notify. */
+export function inlineFailureMessage(
+    error: unknown,
+    domain: RootFailureDomain | undefined,
+    fallback: string,
+): string | undefined {
+    if (error == null) return undefined;
+    const visible = errorUnlessCancelled(error);
+    return visible ? failureMessage(visible, domain, fallback).message : undefined;
+}
 
 export function notifyUnlessCancelled(
     title: string,
@@ -15,19 +47,7 @@ export function notifyUnlessCancelled(
     if (visible) {
         const fallback =
             (domain ? rootFailureMessage(domain, visible) : undefined) ?? visible.message;
-        let message =
-            domain === "files"
-                ? workspaceErrorMessage(visible, fallback)
-                : visible.nameTaken === true
-                  ? i18n.t("Common.NameAlreadyUsed")
-                  : fallback;
-        const remoteRejection =
-            visible.rootFailure == null && visible.backendCategory !== "operation-and-cleanup"
-                ? visible.remoteHttpRejection
-                : undefined;
-        if (remoteRejection) {
-            message = remoteHttpGuidance(remoteRejection);
-        }
+        const { message, remoteRejection } = failureMessage(visible, domain, fallback);
         notifications.show({
             color: "danger",
             title,

@@ -129,6 +129,7 @@
     "Board.Database.AverageRating": "Середній рейтинг",
     "Board.Database.ExplorerAuthRequired1": "Для Lichess Explorer тепер потрібна автентифікація. Додайте обліковий запис Lichess через OAuth на",
     "Board.Database.ExplorerAuthRequired2": "сторінці, щоб продовжити.",
+    "Board.Database.ExplorerLoadError": "Не вдалося завантажити провідник дебютів. Спробуйте ще раз.",
     "Board.Database.Games": "Ігри",
     "Board.Database.GamesFailed": "Не вдалося завантажити партії: {{games}}",
     "Board.Database.GamesIncomplete": "Не вдалося завантажити ці партії: {{games}}",

@@ -129,6 +129,7 @@
     "Board.Database.AverageRating": "Сярэдні рэйтынг",
     "Board.Database.ExplorerAuthRequired1": "Правадыр Lichess цяпер патрабуе аўтэнтыфікацыі. Дадайце ўліковы запіс Lichess з OAuth на старонцы",
     "Board.Database.ExplorerAuthRequired2": ", каб працягнуць.",
+    "Board.Database.ExplorerLoadError": "Не ўдалося загрузіць дэбютны даведнік. Паспрабуйце яшчэ раз.",
     "Board.Database.Games": "Гульні",
     "Board.Database.GamesFailed": "Не ўдалося загрузіць партыі: {{games}}",
     "Board.Database.GamesIncomplete": "Не ўдалося загрузіць гэтыя партыі: {{games}}",

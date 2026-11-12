@@ -139,13 +139,15 @@ test.each([
   },
 );
 
-test("renders a rejected response's message instead of throwing on the Error object", async () => {
-  mocks.error = new Error("Lichess returned an invalid response");
+test("renders translated rejection copy without its raw message", async () => {
+  const rawMessage = "C:\\secret\\path diag";
+  mocks.error = new Error(rawMessage);
   mocks.data = undefined as never;
 
   await render(<TablebaseInfo fen="8/8/8/8/8/8/4P3/8 w - - 0 1" turn="white" />);
 
-  expect(host.textContent).toContain("Common.Error: Lichess returned an invalid response");
+  expect(host.textContent).toContain("Common.Error");
+  expect(host.textContent).not.toContain(rawMessage);
 });
 
 test("bounds SWR error retries so a deterministic rejection does not retry forever", async () => {
