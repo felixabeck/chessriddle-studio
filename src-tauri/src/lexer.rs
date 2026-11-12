@@ -184,7 +184,10 @@ pub fn lex_pgn_cancellable(
         Ok(crate::pgn::RangeGame::Remainder) => {
             Err(Error::InvalidInput(crate::pgn::MORE_THAN_ONE_GAME.into()))
         }
-        Err(e) => Err(Error::InvalidInput(format!("PGN parse error: {e:?}"))),
+        Err(e) => {
+            log::warn!("PGN parse error: {e}");
+            Err(Error::InvalidInput(crate::pgn::PGN_NOT_PARSEABLE.into()))
+        }
     }
 }
 
@@ -505,6 +508,17 @@ mod tests {
         // pgn-reader tolerates malformed movetext and parses it deterministically
         let tokens = lex_pgn_sync("1. e4e5").unwrap();
         assert_eq!(tokens, vec![Token::San("e4e5".to_string())]);
+    }
+
+    #[test]
+    fn unclosed_comment_returns_a_fixed_parse_error() {
+        let error = lex_pgn_sync("1. e4 { no close").unwrap_err();
+        assert_eq!(
+            error,
+            format!("Invalid input: {}", crate::pgn::PGN_NOT_PARSEABLE)
+        );
+        assert!(!error.contains("Kind("));
+        assert!(!error.contains("InvalidData"));
     }
 
     #[test]

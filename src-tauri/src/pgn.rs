@@ -1319,6 +1319,8 @@ pub(crate) enum RangeGame<T> {
 }
 
 pub(crate) const MORE_THAN_ONE_GAME: &str = "PGN text contains more than one game";
+pub(crate) const PGN_NOT_PARSEABLE: &str =
+    "This PGN could not be parsed. Check that comments and headers are closed";
 
 struct SkipRemainder;
 
