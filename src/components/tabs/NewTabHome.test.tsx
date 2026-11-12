@@ -225,6 +225,7 @@ afterEach(async () => {
   host.remove();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 test("recents remain visible and open with owner while the workspace listing stays pending", async () => {
@@ -381,6 +382,32 @@ test.each(["listing", "unreadable", "metadata", "database-listing", "unread-data
     expect(total?.textContent).toContain("Home.DuePractice.Incomplete");
   },
 );
+
+test("player feed search debounces rapid typing until 250 ms after the final change", async () => {
+  vi.useFakeTimers();
+  mocks.listing = {
+    data: [file("Sicilian", "repertoire"), file("French", "repertoire")],
+    isLoading: false,
+    error: undefined,
+  };
+  await render();
+  for (const query of ["S", "Si", "Sic"]) {
+    await act(async () => vi.advanceTimersByTimeAsync(50));
+    await search(query);
+    expect(
+      host.querySelector<HTMLInputElement>('input[placeholder="Home.Library.Search"]')!.value,
+    ).toBe(query);
+    expect(rows()).toHaveLength(1);
+    expect(new Set(mocks.feedArgs.mock.calls.map(([, search]) => search))).toEqual(new Set([""]));
+  }
+  await act(async () => vi.advanceTimersByTimeAsync(249));
+  expect(new Set(mocks.feedArgs.mock.calls.map(([, search]) => search))).toEqual(new Set([""]));
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+  expect(mocks.feedArgs).toHaveBeenLastCalledWith(undefined, "Sic", true);
+  const queries = mocks.feedArgs.mock.calls.map(([, search]) => search);
+  expect(queries).not.toContain("S");
+  expect(queries).not.toContain("Si");
+});
 
 test("search finds a Library file absent from recents and activates player search only where required", async () => {
   mocks.listing = {

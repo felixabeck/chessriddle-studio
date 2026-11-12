@@ -1,4 +1,4 @@
-import { act, type ReactNode } from "react";
+import { act, type ChangeEventHandler, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { SWRConfig } from "swr";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -26,7 +26,13 @@ vi.mock("@mantine/core", () => {
     Flex: Wrapper,
     Group: Wrapper,
     Text: Wrapper,
-    TextInput: () => null,
+    TextInput: ({
+      value,
+      onChange,
+    }: {
+      value?: string;
+      onChange: ChangeEventHandler<HTMLInputElement>;
+    }) => <input aria-label="Player name" value={value ?? ""} onChange={onChange} />,
     NumberInput: ({
       label,
       onChange,
@@ -128,6 +134,39 @@ afterEach(async () => {
   container.remove();
   activeDatabaseViewStore.getState().clearDatabase();
   vi.useRealTimers();
+});
+
+test("name search debounces rapid typing until 250 ms after the final change", async () => {
+  await act(async () =>
+    root.render(
+      <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false }}>
+        <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
+          <PlayerTable />
+        </DatabaseViewStateContext.Provider>
+      </SWRConfig>,
+    ),
+  );
+  expect(query_players).toHaveBeenCalledOnce();
+  vi.mocked(query_players).mockClear();
+  const input = container.querySelector<HTMLInputElement>('input[aria-label="Player name"]')!;
+  for (const name of ["c", "ca", "car"]) {
+    await act(async () => vi.advanceTimersByTimeAsync(50));
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, name);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(input.value).toBe(name);
+    expect(activeDatabaseViewStore.getState().players.query.name).toBe(name);
+    expect(query_players).not.toHaveBeenCalled();
+  }
+  await act(async () => vi.advanceTimersByTimeAsync(249));
+  expect(query_players).not.toHaveBeenCalled();
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+  expect(query_players).toHaveBeenCalledExactlyOnceWith(
+    file,
+    expect.objectContaining({ name: "car" }),
+    { signal: expect.any(AbortSignal) },
+  );
 });
 
 test("max Elo preserves numeric zero and an empty max restores the omitted full band", async () => {
