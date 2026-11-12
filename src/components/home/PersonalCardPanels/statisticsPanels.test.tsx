@@ -158,6 +158,21 @@ import OverviewPanel, { fillMissingMonths } from "./OverviewPanel";
 import RatingsPanel from "./RatingsPanel";
 import type { MonthResults } from "./overviewStatistics";
 
+function timezoneStubTakesEffect(): boolean {
+  try {
+    vi.stubEnv("TZ", "America/New_York");
+    const newYorkOffset = new Date(2026, 0, 1).getTimezoneOffset();
+    vi.stubEnv("TZ", "Asia/Tokyo");
+    const tokyoOffset = new Date(2026, 0, 1).getTimezoneOffset();
+    return newYorkOffset === 300 && tokyoOffset === -540;
+  } finally {
+    vi.unstubAllEnvs();
+  }
+}
+
+// Stryker forces a thread pool, where TZ stubs cannot change the process timezone.
+const canStubTimezone = timezoneStubTakesEffect();
+
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const duplicatedDailyStatistics: PlayerGameInfo = {
@@ -327,90 +342,93 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
-describe.each(["America/New_York", "Europe/Berlin"])("fillMissingMonths in %s", (timezone) => {
-  test.each([
-    {
-      name: "2026-09 through 2026-10",
-      input: [
-        { name: "2026-09", count: 5 },
-        { name: "2026-10", count: 1 },
-      ],
-      expected: [
-        { name: "2026-09", count: 5 },
-        { name: "2026-10", count: 1 },
-      ],
-    },
-    {
-      name: "2026-10 through 2026-11 across autumn DST",
-      input: [
-        { name: "2026-10", count: 2 },
-        { name: "2026-11", count: 3 },
-      ],
-      expected: [
-        { name: "2026-10", count: 2 },
-        { name: "2026-11", count: 3 },
-      ],
-    },
-    {
-      name: "2025-12 through 2026-02 across a year boundary with unsorted input",
-      input: [
-        { name: "2026-02", count: 4 },
-        { name: "2025-12", count: 2 },
-      ],
-      expected: [
-        { name: "2025-12", count: 2 },
-        { name: "2026-01", count: 0 },
-        { name: "2026-02", count: 4 },
-      ],
-    },
-    {
-      name: "2026-07 through 2026-09 with a missing month filled with zero",
-      input: [
-        { name: "2026-07", count: 3 },
-        { name: "2026-09", count: 5 },
-      ],
-      expected: [
-        { name: "2026-07", count: 3 },
-        { name: "2026-08", count: 0 },
-        { name: "2026-09", count: 5 },
-      ],
-    },
-    {
-      name: "2026-09 as a single month",
-      input: [{ name: "2026-09", count: 7 }],
-      expected: [{ name: "2026-09", count: 7 }],
-    },
-    { name: "empty input", input: [], expected: [] },
-    {
-      name: "2026-?? alongside 2026-09 keeps the valid month",
-      input: [
-        { name: "2026-??", count: 1 },
-        { name: "2026-09", count: 5 },
-      ],
-      expected: [{ name: "2026-09", count: 5 }],
-    },
-    {
-      name: "only invalid month keys returns no buckets",
-      input: [
-        { name: "2026-??", count: 1 },
-        { name: "2026-00", count: 2 },
-        { name: "2026-13", count: 3 },
-        { name: "2026-9", count: 4 },
-        { name: "2026-09suffix", count: 5 },
-      ],
-      expected: [],
-    },
-  ])("$name", ({ input, expected }) => {
-    vi.stubEnv("TZ", timezone);
-    try {
-      const results = (rows: { name: string; count: number }[]): MonthResults[] =>
-        rows.map((row) => ({ ...row, won: row.count, drawn: 0, lost: 0 }));
-      expect(fillMissingMonths(results(input))).toEqual(results(expected));
-    } finally {
-      vi.unstubAllEnvs();
-    }
-  });
-});
+describe.runIf(canStubTimezone).each(["America/New_York", "Europe/Berlin"])(
+  "fillMissingMonths in %s",
+  (timezone) => {
+    test.each([
+      {
+        name: "2026-09 through 2026-10",
+        input: [
+          { name: "2026-09", count: 5 },
+          { name: "2026-10", count: 1 },
+        ],
+        expected: [
+          { name: "2026-09", count: 5 },
+          { name: "2026-10", count: 1 },
+        ],
+      },
+      {
+        name: "2026-10 through 2026-11 across autumn DST",
+        input: [
+          { name: "2026-10", count: 2 },
+          { name: "2026-11", count: 3 },
+        ],
+        expected: [
+          { name: "2026-10", count: 2 },
+          { name: "2026-11", count: 3 },
+        ],
+      },
+      {
+        name: "2025-12 through 2026-02 across a year boundary with unsorted input",
+        input: [
+          { name: "2026-02", count: 4 },
+          { name: "2025-12", count: 2 },
+        ],
+        expected: [
+          { name: "2025-12", count: 2 },
+          { name: "2026-01", count: 0 },
+          { name: "2026-02", count: 4 },
+        ],
+      },
+      {
+        name: "2026-07 through 2026-09 with a missing month filled with zero",
+        input: [
+          { name: "2026-07", count: 3 },
+          { name: "2026-09", count: 5 },
+        ],
+        expected: [
+          { name: "2026-07", count: 3 },
+          { name: "2026-08", count: 0 },
+          { name: "2026-09", count: 5 },
+        ],
+      },
+      {
+        name: "2026-09 as a single month",
+        input: [{ name: "2026-09", count: 7 }],
+        expected: [{ name: "2026-09", count: 7 }],
+      },
+      { name: "empty input", input: [], expected: [] },
+      {
+        name: "2026-?? alongside 2026-09 keeps the valid month",
+        input: [
+          { name: "2026-??", count: 1 },
+          { name: "2026-09", count: 5 },
+        ],
+        expected: [{ name: "2026-09", count: 5 }],
+      },
+      {
+        name: "only invalid month keys returns no buckets",
+        input: [
+          { name: "2026-??", count: 1 },
+          { name: "2026-00", count: 2 },
+          { name: "2026-13", count: 3 },
+          { name: "2026-9", count: 4 },
+          { name: "2026-09suffix", count: 5 },
+        ],
+        expected: [],
+      },
+    ])("$name", ({ input, expected }) => {
+      vi.stubEnv("TZ", timezone);
+      try {
+        const results = (rows: { name: string; count: number }[]): MonthResults[] =>
+          rows.map((row) => ({ ...row, won: row.count, drawn: 0, lost: 0 }));
+        expect(fillMissingMonths(results(input))).toEqual(results(expected));
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+  },
+);
 
 test("Overview sums duplicate daily keys into result totals and month buckets", async () => {
   await render(<OverviewPanel playerName="Magnus" info={duplicatedDailyStatistics} isDatabase />);
@@ -577,32 +595,35 @@ function ratingStatisticsForDates(dates: string[]): PlayerGameInfo {
   };
 }
 
-describe.each(["Europe/Berlin", "America/New_York"])("Ratings timeline in %s", (timezone) => {
-  test.each([
-    { name: "deduplicates today's game and anchor", dates: ["2026.10.01", "2026.10.02"] },
-    { name: "anchors today without a same-day game", dates: ["2026.10.01"] },
-  ])("$name", async ({ dates }) => {
-    vi.stubEnv("TZ", timezone);
-    try {
-      const today = new Date(2026, 9, 2);
-      expect(today.getTimezoneOffset()).not.toBe(0);
+describe.runIf(canStubTimezone).each(["Europe/Berlin", "America/New_York"])(
+  "Ratings timeline in %s",
+  (timezone) => {
+    test.each([
+      { name: "deduplicates today's game and anchor", dates: ["2026.10.01", "2026.10.02"] },
+      { name: "anchors today without a same-day game", dates: ["2026.10.01"] },
+    ])("$name", async ({ dates }) => {
+      vi.stubEnv("TZ", timezone);
+      try {
+        const today = new Date(2026, 9, 2);
+        expect(today.getTimezoneOffset()).not.toBe(0);
 
-      await render(
-        <RatingsPanel playerName="Magnus" info={ratingStatisticsForDates(dates)} isDatabase />,
-      );
+        await render(
+          <RatingsPanel playerName="Magnus" info={ratingStatisticsForDates(dates)} isDatabase />,
+        );
 
-      const stops = container
-        .querySelector("[data-testid='rating-dates']")!
-        .textContent!.split("|");
-      expect(stops).toHaveLength(2);
-      expect(Number(stops[stops.length - 1])).toBe(today.getTime());
-    } finally {
-      vi.unstubAllEnvs();
-    }
-  });
-});
+        const stops = container
+          .querySelector("[data-testid='rating-dates']")!
+          .textContent!.split("|");
+        expect(stops).toHaveLength(2);
+        expect(Number(stops[stops.length - 1])).toBe(today.getTime());
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+  },
+);
 
-test.each([
+test.runIf(canStubTimezone).each([
   // Each boundary midnight is CEST while today's is CET (Berlin DST ended 2025-10-26 03:00
   // and 2026-10-25 03:00), so fixed 24-hour arithmetic would exclude the boundary day.
   {
