@@ -157,6 +157,7 @@ export function syncDeck(
     tree: TreeNode,
     color: "white" | "black",
     start: number[],
+    retained?: () => ReadonlySet<string>,
 ): { positions: Position[]; added: number; removed: number; updated: number; reordered: boolean } {
     const freshPositions = buildFromTree(tree, color, start);
 
@@ -184,10 +185,22 @@ export function syncDeck(
     }
 
     // Each retained fresh position keeps one existing card, discarding equivalent duplicates.
-    const removed = existing.length - (freshPositions.length - added);
+    let removed = existing.length - (freshPositions.length - added);
+    if (removed > 0 && retained) {
+        const retainedBoardStates = retained();
+        const mergedBoardStates = new Set(merged.map((pos) => getBoardState(pos.fen)));
+        for (const pos of existing) {
+            const boardState = getBoardState(pos.fen);
+            if (!mergedBoardStates.has(boardState) && retainedBoardStates.has(boardState)) {
+                merged.push(pos);
+                mergedBoardStates.add(boardState);
+                removed--;
+            }
+        }
+    }
 
-    // The deck's order follows the tree's (full-repertoire order, due-date ties), so a reordering of
-    // the same cards is also a change to persist.
+    // Retained cards absent from this tree follow the tree-ordered cards in their existing order.
+    // Reordering the same cards is also a change to persist (full-repertoire order, due-date ties).
     const reordered =
         added === 0 &&
         removed === 0 &&

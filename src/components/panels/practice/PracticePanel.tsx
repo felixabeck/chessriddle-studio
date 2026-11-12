@@ -18,7 +18,7 @@ import {
 import { useToggle } from "@mantine/hooks";
 import AppModal from "../../common/AppModal";
 import { Undo2, ArrowRight, BookOpen, Check, Info, Target, X } from "lucide-react";
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom, useStore as useAtomStore } from "jotai";
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
@@ -44,6 +44,7 @@ import {
 } from "@/components/files/opening";
 import {
   activeTabAtom,
+  tabsAtom,
   evalOpenFamily,
   invisibleFamily,
   practiceTabFamily,
@@ -70,6 +71,7 @@ import { backgroundHotkeyOptions } from "@/utils/keyboardOwnership";
 import { findFen, getBoardState, getNodeAtPath } from "@/utils/treeReducer";
 import RepertoireInfo from "./RepertoireInfo";
 import { useDueBoundaryRerender } from "./useDueBoundaryRerender";
+import { collectRetainedPracticePositions } from "./retainedPositions";
 import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
 import paneClasses from "@/components/common/PaneTabs.module.css";
 import { COMPACT_PANE_TABS_WIDTH_EM } from "@/components/boards/paneTabs";
@@ -101,6 +103,7 @@ function PracticePanel() {
   const treeViewDeferred = useTreeViewDeferred(store);
 
   const [currentTab] = useOwnerTab();
+  const atomStore = useAtomStore();
   const activeTab = useAtomValue(activeTabAtom);
   const tabFile = getTabFile(currentTab);
   const [resetModal, toggleResetModal] = useToggle();
@@ -152,6 +155,13 @@ function PracticePanel() {
         root,
         orientation,
         start,
+        () =>
+          collectRetainedPracticePositions({
+            tabs: atomStore.get(tabsAtom),
+            currentTabId: currentTab?.value,
+            identity: { file: deckIdentity.file, game: deckIdentity.game },
+            existing: deckPositionsRef.current,
+          }),
       );
       if (added > 0 || removed > 0 || updated > 0 || reordered) {
         setDeck((prev) => ({ ...prev, positions }));
@@ -166,7 +176,17 @@ function PracticePanel() {
       }
     }
     lastSyncedRef.current = { root, scope };
-  }, [root, headers, setDeck, deck.status, deckIdentity.file, treeViewDeferred]);
+  }, [
+    root,
+    headers,
+    setDeck,
+    deck.status,
+    deckIdentity.file,
+    deckIdentity.game,
+    treeViewDeferred,
+    atomStore,
+    currentTab?.value,
+  ]);
 
   const stats = getStats(deck.positions);
   useDueBoundaryRerender(
@@ -1466,7 +1486,7 @@ function LogsModal({
                   <Text tt="uppercase" fw="bold" fz="sm">
                     {t("Common.Date")}
                   </Text>
-                  <Text>{formatDate(log.due)}</Text>
+                  <Text>{formatDate(log.review)}</Text>
                 </Stack>
                 {position && (
                   <IconAction

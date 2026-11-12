@@ -25,6 +25,8 @@ const fixtures = vi.hoisted(() => ({
   },
   deck: null as any,
   setDeck: vi.fn(),
+  atomStore: { get: vi.fn() },
+  collectRetainedPracticePositions: vi.fn(() => new Set<string>()),
   practiceState: { phase: "idle" } as any,
   setPracticeState: vi.fn(),
   practiceStats: {
@@ -79,6 +81,7 @@ vi.mock("@/state/atoms", () => ({
   practiceStateFamily: () => fixtures.atoms.practiceState,
 }));
 vi.mock("jotai", () => ({
+  useStore: () => fixtures.atomStore,
   useAtom: (atom: symbol) => {
     if (atom === fixtures.atoms.deck) return [fixtures.deck, fixtures.setDeck];
     if (atom === fixtures.atoms.currentPracticeTab) return ["train", vi.fn()];
@@ -102,6 +105,9 @@ vi.mock("jotai", () => ({
   },
   useSetAtom: (atom: symbol) =>
     atom === fixtures.atoms.practiceMoveController ? fixtures.setPracticeMoveController : vi.fn(),
+}));
+vi.mock("./retainedPositions", () => ({
+  collectRetainedPracticePositions: fixtures.collectRetainedPracticePositions,
 }));
 vi.mock("zustand", () => ({
   useStore: (_store: unknown, selector: (value: typeof fixtures.tree) => unknown) =>
@@ -251,7 +257,7 @@ vi.mock("react-i18next", () => ({
 }));
 vi.mock("ts-fsrs", async (importOriginal) => ({
   ...(await importOriginal<typeof import("ts-fsrs")>()),
-  formatDate: () => "date",
+  formatDate: (date: unknown) => `date:${String(date)}`,
   formatReviewLog: () => "",
 }));
 
@@ -511,6 +517,29 @@ test("re-diffs an unchanged tree when the practised side or start changes", asyn
   expect(fixtures.syncDeck.mock.calls[1][3]).toEqual([0]);
 });
 
+test("deck sync reads the latest tabs only when retention is requested", async () => {
+  expect(fixtures.atomStore.get).not.toHaveBeenCalled();
+  const retained = fixtures.syncDeck.mock.calls[0][4] as () => ReadonlySet<string>;
+  expect(retained).toBeTypeOf("function");
+  const latestTabs = [fixtures.currentTab, { value: "other-tab" }];
+  fixtures.atomStore.get.mockReturnValue(latestTabs);
+  await rerenderPracticePanel();
+  expect(fixtures.syncDeck).toHaveBeenCalledOnce();
+  expect(fixtures.atomStore.get).not.toHaveBeenCalled();
+
+  const collected = new Set(["retained-position"]);
+  fixtures.collectRetainedPracticePositions.mockReturnValueOnce(collected);
+  expect(retained()).toBe(collected);
+
+  expect(fixtures.atomStore.get).toHaveBeenCalledWith(fixtures.atoms.currentTab);
+  expect(fixtures.collectRetainedPracticePositions).toHaveBeenCalledWith({
+    tabs: latestTabs,
+    currentTabId: fixtures.currentTab.value,
+    identity: { file: "file-a", game: 0 },
+    existing: fixtures.deck.positions,
+  });
+});
+
 test("persists a changed answer even when no position was added or removed", async () => {
   const promoted = [{ ...position("in-repertoire"), answer: "d4" }];
   fixtures.syncDeck.mockReturnValue({
@@ -646,6 +675,29 @@ test.each([
         ?.textContent,
     ).toBe(expected),
   );
+});
+
+test("logs show the review date instead of the card's previous due date", async () => {
+  const due = "2026-09-22T00:00:00.000Z";
+  const review = "2026-11-12T12:00:00.000Z";
+  fixtures.loadPracticeReviews.mockResolvedValueOnce({
+    entries: [
+      {
+        id: "review-date",
+        entry: JSON.stringify({ due, review, fen: "in-repertoire", rating: 3 }),
+      },
+    ],
+    nextCursor: null,
+  });
+  const showLogs = [...(container?.querySelectorAll("button") ?? [])].find((button) =>
+    button.textContent?.includes("Board.Practice.ShowLogs"),
+  );
+  expect(showLogs).toBeDefined();
+  await act(async () => showLogs?.click());
+
+  const log = container?.querySelector('[data-practice-entry-id="review-date"]');
+  expect(log?.textContent).toContain(`date:${review}`);
+  expect(log?.textContent).not.toContain(`date:${due}`);
 });
 
 test("pages logs in backend order until the cursor is exhausted and keeps off-repertoire FENs", async () => {

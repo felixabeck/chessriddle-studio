@@ -3,7 +3,7 @@ import { Chess } from "chessops/chess";
 import { makeFen, parseFen } from "chessops/fen";
 import { parseSan } from "chessops/san";
 import { type Card, createEmptyCard } from "ts-fsrs";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
     buildFromTree,
     classifyPracticeAnswer,
@@ -164,6 +164,51 @@ test("setting Start removes a sibling-branch card during deck synchronization", 
     expect(result.positions.map(({ answer }) => answer)).toEqual(["Nf3"]);
     expect(result.positions[0].card).toBe(existing[0].card);
     expect(result).toMatchObject({ added: 0, removed: 1, updated: 0 });
+});
+
+test("deck synchronization retains another tab's rated Bb5 card lazily", () => {
+    const treeA = openingLine(["e4", "e5", "Nf3", "Nc6", "Bb5"]);
+    const treeB = openingLine(["e4", "e5", "Nf3", "Nc6"]);
+    const deck = buildFromTree(treeA, "white", []);
+    const index = deck.findIndex((position) => position.answer === "Bb5");
+    const rated = updateCardPerformance(deck, index, deck[index].card, 3)!.positions;
+    const bb5 = rated[index];
+    expect(bb5.card.reps).toBeGreaterThan(0);
+    const retained = vi.fn(() => new Set([getBoardState(bb5.fen)]));
+
+    const result = syncDeck(rated, treeB, "white", [], retained);
+
+    expect(result).toMatchObject({ removed: 0, added: 0, reordered: false });
+    expect(result.positions[index]).toBe(bb5);
+    expect(result.positions[index].card.reps).toBeGreaterThan(0);
+    expect(result.positions[index].card.due).toEqual(bb5.card.due);
+    expect(retained).toHaveBeenCalledOnce();
+    expect(syncDeck(rated, treeB, "white", []).removed).toBe(1);
+    retained.mockClear();
+    expect(syncDeck(rated, treeA, "white", [], retained).removed).toBe(0);
+    expect(retained).not.toHaveBeenCalled();
+});
+
+test("retained cards follow tree cards in existing order with deduplication and reordering", () => {
+    const tree = openingLine(["e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Ba4"]);
+    const cards = buildFromTree(tree, "white", []);
+    const existing = [cards[1], cards[2], cards[0], cards[1]];
+    const retained = vi.fn(() => new Set(cards.map((position) => getBoardState(position.fen))));
+
+    const result = syncDeck(existing, openingLine(["e4", "e5", "Nf3"]), "white", [], retained);
+
+    expect(result.positions).toEqual([cards[0], cards[1], cards[2]]);
+    expect(result).toMatchObject({ added: 0, removed: 1, reordered: false });
+    expect(retained).toHaveBeenCalledOnce();
+    const reordered = syncDeck(
+        existing.slice(0, 3),
+        openingLine(["e4", "e5", "Nf3"]),
+        "white",
+        [],
+        retained,
+    );
+    expect(reordered).toMatchObject({ removed: 0, reordered: true });
+    expect(reordered.positions).toEqual([cards[0], cards[1], cards[2]]);
 });
 
 const statusNow = new Date("2026-11-08T12:00:00.000Z");
