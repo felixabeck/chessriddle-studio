@@ -24457,3 +24457,19 @@ Deferred follow-up (keep at midnight filing):
 - **Fix:** clear the name (or show nothing) on rejection, ignore results from superseded requests (request counter or AbortController), and catch the rejection; add an OpeningName test for a no-opening position after a named one.
 - **Proof:** ephemeral Vitest rendering `OpeningName` with `getOpeningFromFens` mocked: the first call resolves "Ruy Lopez"; after `setState(defaultTree("8/8/8/4k3/8/8/4K3/8 w - - 0 1"))` the second call rejects, the text still reads "Ruy Lopez", and one unhandled rejection is recorded. Native code trace confirms the error return for unmatched paths. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 21)
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Engine log export swallows save failures and leaks the dialog cancellation as an unhandled rejection
+
+* **ID:** f-20261112-44 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+- **Impact class:** ux
+- **Spotted outside diff:** no
+- **Where:** `src/components/common/EngineLogsView.tsx:69-80` (`exportLogs` awaits `tauri.saveEngineLogs` with no `try`/`catch`) and `:106` (`onClick={() => void exportLogs()}`); native `src-tauri/src/main.rs:933-967` (`save_native_export` returns `Error::Cancellation` when the save dialog is dismissed and a real error when the write fails)
+- **Defect:** the sibling export `BoardControls.tsx:91-98` (`saveBoardSnapshot`) wraps the same native export path in `try`/`notifyUnlessCancelled`. Engine log export has no handler, so a failed write (permission denied, read-only target, full disk) shows nothing, and an ordinary Cancel in the save dialog surfaces as an unhandled promise rejection.
+- **Failure scenario:** in the engine Logs panel, click Export logs and save to a read-only folder: the dialog closes, no file is written and no error appears, so you assume the export worked.
+- **Fix:** wrap the call in `try { … } catch (error) { notifyUnlessCancelled(t("Common.Error"), error); }`, as BoardControls does, and add an EngineLogsView test for a rejected save.
+- **Proof:** ephemeral Vitest rendering `EngineLogsView` with `tauri.saveEngineLogs` mocked to reject `Error("Permission denied")`: clicking Export logs recorded the rejection as unhandled and no notification text appeared in the document. Probe removed, tree clean.
+- **Found by:** Grok Bot general review (chunk 22)
