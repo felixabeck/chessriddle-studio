@@ -433,6 +433,27 @@ test("an invalid text move is refused", async () => {
   expect(input.getAttribute("aria-invalid")).toBe("true");
 });
 
+test("a successful unchanged text move clears the previous error after the position changes", async () => {
+  const { onMove } = await render({}, true);
+  const input = await typeMove("e5");
+  expect(onMove).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("MoveInput.InvalidMove");
+  expect(input.getAttribute("aria-invalid")).toBe("true");
+
+  await act(async () => {
+    tree.getState().makeMove({ payload: "e4" });
+  });
+  expect(input.value).toBe("e5");
+  await act(async () => {
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  });
+
+  expect(onMove).toHaveBeenCalledExactlyOnceWith("e7e5");
+  expect(input.value).toBe("");
+  expect(host.textContent).not.toContain("MoveInput.InvalidMove");
+  expect(input.getAttribute("aria-invalid")).toBe("false");
+});
+
 test("a text move in practice submits SAN without advancing the tree", async () => {
   const submitMove = vi.fn();
   const { onMove, storeMove } = await render({ practiceMove: { canMove: true, submitMove } }, true);
@@ -470,6 +491,8 @@ test("a rejected practice move reapplies the position and legal destinations", a
 test.each([
   ["5k2/8/8/8/8/8/8/4K2R w K - 0 1", "O-O", "O-O+", ["e1", "g1"]],
   ["3k4/8/8/8/8/8/8/R3K3 w Q - 0 1", "O-O-O", "O-O-O+", ["e1", "c1"]],
+  ["5k2/8/4Q2P/8/8/8/8/4K2R w K - 0 1", "O-O", "O-O#", ["e1", "g1"]],
+  ["3k4/8/1P2Q3/8/8/8/8/R3K3 w Q - 0 1", "O-O-O", "O-O-O#", ["e1", "c1"]],
   ["4k2r/8/8/8/8/8/8/5K2 b k - 0 1", "O-O", "O-O+", ["e8", "g8"]],
   ["4k3/8/8/8/8/8/8/4K2R w K - 0 1", "O-O", "O-O", ["e1", "g1"]],
 ] as const)(

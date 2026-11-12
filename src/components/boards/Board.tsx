@@ -4,6 +4,7 @@ import { Box, Center, Group, Text, useMantineTheme, VisuallyHidden } from "@mant
 import { ChevronRight } from "lucide-react";
 import {
   isNormal,
+  kingCastlesTo,
   makeSquare,
   makeUci,
   type NormalMove,
@@ -16,7 +17,6 @@ import {
 import { chessgroundDests, chessgroundMove } from "chessops/compat";
 import { makeFen, parseFen } from "chessops/fen";
 import { makeSan, parseSan } from "chessops/san";
-import { squareFromCoords } from "chessops/util";
 import { atom, useAtom, useAtomValue } from "jotai";
 import { memo, type MouseEvent, useCallback, useContext, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -393,11 +393,11 @@ function Board({
 
   let square = currentNode.move?.to;
   if (currentNode.move && isNormal(currentNode.move)) {
-    const rank = squareRank(currentNode.move.from);
+    const color = squareRank(currentNode.move.from) === 0 ? "white" : "black";
     if (currentNode.san?.startsWith("O-O-O")) {
-      square = squareFromCoords(2, rank);
+      square = kingCastlesTo(color, "a");
     } else if (currentNode.san?.startsWith("O-O")) {
-      square = squareFromCoords(6, rank);
+      square = kingCastlesTo(color, "h");
     }
   }
 

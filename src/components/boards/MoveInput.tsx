@@ -39,6 +39,7 @@ export default function MoveInput({
               const parsed = parseKeyboardMove(m, currentNode.fen);
               if (parsed && isNormal(parsed) && onMove(parsed)) {
                 setMove("");
+                setError("");
               } else {
                 setError(t("MoveInput.InvalidMove"));
               }
