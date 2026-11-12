@@ -24131,3 +24131,19 @@ Deferred follow-up (keep at midnight filing):
 * **Fix:** Build the start position from the headers (`startingPosition(game.headers)` from `chessops/pgn`, or `setupPosition("chess" | "chess960", parseFen(FEN))`), set `Variant` handling as for Lichess imports, and replay against that. Also treat an illegal decoded move (`makeSan` yielding `--`) as a failed import with the existing InvalidResponse notification instead of emitting it. Check that 960 castling in TCN (king to rook square vs two-square) maps correctly onto chessops' castling normalisation. Add tests with a 960 and a from-position fixture (this also covers part of f-20261111-74).
 * **Proof:** Payload check: `curl https://www.chess.com/callback/live/game/101679677427` from the review box (public, read-only) returned the headers above with `Variant: Chess960` and the TCN `moveList`. Ephemeral Vitest probe in `src/utils/chess.com/` mocked `tauri.getPublicChessComJson` with that exact payload and called the real `getChesscomGame`. It then parsed the output with `parsePgn` and replayed it with `startingPosition(headers)` + `parseSan`. Result: `first=e4 b6 b3 e5 Rg3 Rg6 Nh3 Qf6 bad=4:Rg3 null=true plies=85`. The probe was deleted and the tree is clean.
 * **Found by:** Grok Bot general review 2026-11-12 (chess.com api pass). Related: f-20261111-74 (missing tests for TCN/getChesscomGame, different finding).
+
+---
+
+## 2026-11-12 — filed through the inbox spool
+
+### Home statistics jump back to the first player whenever any account session changes
+
+* **ID:** f-20261112-24 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** yes
+* **Where:** `src/components/home/Databases.tsx` ~138-143: `useEffect(() => { if (sessions.length > 0) setName(sessionPlayerName(sessions[0])); }, [sessions]);`
+* **Defect:** The selected player in the personal statistics panel is reset to the first session's player on every `sessionsAtom` change, not only when the selection becomes invalid. `sessionsAtom` gets a new array whenever any account is updated: "Update stats" (`AccountCards.tsx` reload ~319/~372 sets a new `updatedAt`), a Lichess login (`authenticateLichess` → `upsertLichessSession`), adding an account, or renaming a player. So a selection the user made in the panel's Select (or PersonalCard's `setName`) is discarded although that player still exists.
+* **Failure scenario:** The Accounts page has players Bob and Alice. Pick Alice in the statistics panel, then click "Update stats" on any account card (the cards sit beside the panel on the same page). The panel switches back to Bob and refetches Bob's summary. The user has to re-select Alice after every refresh, and also after adding or re-authenticating any account.
+* **Fix:** Keep the current name while it is still among `players`, and fall back to the first player only when the name is empty or no longer present. For example: `setName((current) => current && players.includes(current) ? current : sessionPlayerName(sessions[0]))`, or derive the effective name during render instead of in an effect. Add a Databases.test case: select a second player, replace one session object, and check the selection is kept.
+* **Proof:** Ephemeral Vitest probe built on `Databases.test.tsx` lines 1-207, with the PersonalCard mock extended to expose `name`/`setName`. Steps: sessions Bob (Lichess) + Alice (Chess.com) with one database each; render; `setName("Alice")` → card name Alice; then replace Bob's session with `updatedAt: 2`, as reload does. Result: `before=Alice after=Bob`. The probe was deleted and the tree is clean.
+* **Found by:** Grok Bot general review 2026-11-12 (Databases pass). Related area: f-20261020-01 (alias handling, handled; different cause).
