@@ -278,6 +278,37 @@ export const getNodeAtPath = (node: TreeNode, path: number[]): TreeNode => {
     return currentNode;
 };
 
+/**
+ * A new tree whose mainline is the unique path from `root` to `position`. Sibling variations,
+ * comments, NAGs, shapes and scores are dropped. The cursor sits at the end of that line.
+ */
+export function lineTreeTo(
+    root: TreeNode,
+    headers: Pick<GameHeaders, "orientation">,
+    position: number[],
+): TreeState {
+    const tree = defaultTree(root.fen);
+    tree.headers.orientation = headers.orientation;
+    let dest = tree.root;
+    const resolvedLength = getResolvedPathLength(root, position);
+    const mainline: number[] = [];
+    for (let depth = 1; depth <= resolvedLength; depth++) {
+        const source = getNodeAtPath(root, position.slice(0, depth));
+        if (source.move === null || source.san === null) break;
+        const copy = createNode({
+            fen: source.fen,
+            move: source.move,
+            san: source.san,
+            halfMoves: source.halfMoves,
+        });
+        dest.children = [copy];
+        dest = copy;
+        mainline.push(0);
+    }
+    tree.position = mainline;
+    return tree;
+}
+
 type PathWalkNode = { readonly children: readonly PathWalkNode[] };
 
 // Number.isSafeInteger already rejects non-numbers; this only lets TypeScript see that.

@@ -6,7 +6,12 @@ import { Provider as JotaiProvider, createStore as createJotaiStore } from "jota
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { activeTabAtom, currentTabAtom, gameStateFamily, tabsAtom } from "@/state/atoms";
-import { closeTreeStore, createTreeStore, type TreeStore } from "@/state/store/tree";
+import {
+  closeTreeStore,
+  createTreeStore,
+  getCachedTreeStore,
+  type TreeStore,
+} from "@/state/store/tree";
 import type { Tab } from "@/state/workspaceTypes";
 import BoardControls from "./BoardControls";
 
@@ -48,6 +53,8 @@ vi.mock("@/components/files/notifyError", () => ({
   notifyListenerError: mocks.persistError,
   notifyUnlessCancelled: mocks.notifyUnlessCancelled,
 }));
+
+vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 
 vi.mock("@/platform/native", () => ({
   platform: () => "linux",
@@ -124,9 +131,11 @@ describe("BoardControls tab type durability", () => {
   });
 
   afterEach(async () => {
+    const openTabs = jotaiStore.get(tabsAtom);
     await act(async () => root.unmount());
     container.remove();
     closeTreeStore(tabId);
+    for (const open of openTabs) closeTreeStore(open.value);
     vi.restoreAllMocks();
   });
 
@@ -237,7 +246,7 @@ describe("BoardControls tab type durability", () => {
     expect(mocks.notifyUnlessCancelled).toHaveBeenCalledWith("Common.Error", failure);
   });
 
-  test("starts a game only after the analysis-to-play change is durable", async () => {
+  test("opens a play tab only after the new-tab workspace write is durable", async () => {
     const durableWorkspace = sessionStorage.getItem("workspace");
     const storageFailure = refuseWorkspaceWrites();
 
@@ -247,6 +256,7 @@ describe("BoardControls tab type durability", () => {
         .click();
     });
 
+    expect(jotaiStore.get(tabsAtom)).toEqual([tab]);
     expect(jotaiStore.get(currentTabAtom)?.type).toBe("analysis");
     expect(jotaiStore.get(gameStateFamily(tabId))).toBe("playing");
     expect(sessionStorage.getItem("workspace")).toBe(durableWorkspace);
@@ -258,7 +268,74 @@ describe("BoardControls tab type durability", () => {
         .click();
     });
 
-    expect(jotaiStore.get(currentTabAtom)?.type).toBe("play");
-    expect(jotaiStore.get(gameStateFamily(tabId))).toBe("settingUp");
+    const tabs = jotaiStore.get(tabsAtom);
+    expect(tabs.find((open) => open.value === tabId)?.type).toBe("analysis");
+    const playTab = tabs.find((open) => open.type === "play");
+    expect(playTab).toMatchObject({
+      name: "Home.NewGame",
+      type: "play",
+      gameOrigin: { kind: "none" },
+    });
+    expect(jotaiStore.get(gameStateFamily(tabId))).toBe("playing");
+    expect(jotaiStore.get(gameStateFamily(playTab!.value))).toBe("settingUp");
+  });
+
+  test("Play from here seeds a new play tab from the current line and leaves analysis intact", async () => {
+    await act(async () => {
+      treeStore.getState().makeMoves({ payload: ["e4", "e5", "Nf3"] });
+      treeStore.getState().goToMove([0]);
+      treeStore.getState().makeMove({ payload: "c5" });
+      treeStore.getState().setComment("sicilian");
+      treeStore.getState().setHeaders({
+        ...treeStore.getState().headers,
+        fen: treeStore.getState().root.fen,
+        orientation: "black",
+      });
+    });
+    const analysisRoot = treeStore.getState().root;
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Board.Action.PlayFromHere"]')!
+        .click();
+    });
+
+    const tabs = jotaiStore.get(tabsAtom);
+    expect(tabs.find((open) => open.value === tabId)?.type).toBe("analysis");
+    expect(treeStore.getState().root).toBe(analysisRoot);
+    expect(analysisRoot.children.map((node) => node.san)).toEqual(["e4"]);
+    expect(analysisRoot.children[0].children.map((node) => node.san)).toEqual(["e5", "c5"]);
+    expect(analysisRoot.children[0].children[1].comment).toBe("sicilian");
+    expect(analysisRoot.children[0].children[0].children.map((node) => node.san)).toEqual(["Nf3"]);
+
+    const playTab = tabs.find((open) => open.type === "play");
+    expect(playTab).toMatchObject({
+      name: "Home.NewGame",
+      type: "play",
+      gameOrigin: { kind: "none" },
+    });
+    const playStore = getCachedTreeStore(playTab!.value) ?? createTreeStore(playTab!.value);
+    const playState = playStore.getState();
+    expect(playState.headers.orientation).toBe("black");
+    expect(playState.position).toEqual([0, 0]);
+    expect(playState.root.children.map((node) => node.san)).toEqual(["e4"]);
+    expect(playState.root.children[0].children.map((node) => node.san)).toEqual(["c5"]);
+    expect(playState.root.children[0].children[0].comment).toBe("");
+    expect(playState.root.children[0].children[0].children).toEqual([]);
+  });
+
+  test("converts a play tab to analysis in place without opening another tab", async () => {
+    await act(async () => {
+      jotaiStore.set(tabsAtom, [{ ...tab, type: "play" }], tabId);
+    });
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Board.Action.AnalyzeGame"]')!
+        .click();
+    });
+
+    expect(jotaiStore.get(tabsAtom)).toEqual([{ ...tab, type: "analysis" }]);
+    expect(jotaiStore.get(gameStateFamily(tabId))).toBe("playing");
   });
 });

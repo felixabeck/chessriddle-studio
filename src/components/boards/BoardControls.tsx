@@ -1,4 +1,4 @@
-import { useTabAtom, useOwnerTab } from "@/state/tabScope";
+import { useOwnerTab } from "@/state/tabScope";
 import { Stack } from "@mantine/core";
 import {
   Undo2,
@@ -21,8 +21,10 @@ import { useStore } from "zustand";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import IconAction from "@/components/common/IconAction";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
-import { autoSaveAtom, gameStateFamily, eraseDrawablesOnClickAtom } from "@/state/atoms";
+import { autoSaveAtom, eraseDrawablesOnClickAtom, tabsAtom } from "@/state/atoms";
 import { keyMapAtom } from "@/state/keybinds";
+import { createTab, runTabCreation } from "@/utils/tabs";
+import { lineTreeTo } from "@/utils/treeReducer";
 
 interface BoardControlsProps {
   boardRef: React.RefObject<HTMLDivElement | null>;
@@ -55,12 +57,13 @@ function BoardControls({
   const store = useContext(TreeStateContext)!;
   const headers = useStore(store, (s) => s.headers);
   const root = useStore(store, (s) => s.root);
+  const position = useStore(store, (s) => s.position);
   const setHeaders = useStore(store, (s) => s.setHeaders);
   const clearShapes = useStore(store, (s) => s.clearShapes);
 
   const keyMap = useAtomValue(keyMapAtom);
   const [currentTab, setCurrentTab] = useOwnerTab();
-  const setGameState = useSetAtom(useTabAtom(gameStateFamily));
+  const setTabs = useSetAtom(tabsAtom);
   const autoSave = useAtomValue(autoSaveAtom);
   const eraseDrawablesOnClick = useAtomValue(eraseDrawablesOnClickAtom);
 
@@ -73,14 +76,22 @@ function BoardControls({
     });
 
   function changeTabType() {
-    const startsGame = currentTab?.type === "analysis";
-    const saved = setCurrentTab((t) => {
-      return {
-        ...t,
-        type: t.type === "analysis" ? "play" : "analysis",
-      };
-    });
-    if (saved && startsGame) setGameState("settingUp");
+    if (currentTab?.type === "analysis") {
+      void runTabCreation({
+        create: () =>
+          createTab({
+            tab: { name: t("Home.NewGame"), type: "play" },
+            setTabs,
+            initialTree: lineTreeTo(root, headers, position),
+          }),
+        onError: (error) => notifyUnlessCancelled(t("Common.Error"), error),
+      });
+      return;
+    }
+    setCurrentTab((tab) => ({
+      ...tab,
+      type: "analysis",
+    }));
   }
 
   const takeSnapshot = async () => {

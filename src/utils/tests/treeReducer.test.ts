@@ -12,6 +12,7 @@ import {
     getMemoizedBoardStateMap,
     getNodeAtPath,
     getResolvedPathLength,
+    lineTreeTo,
     normalizeTreeHalfMoves,
     rootHalfMoves,
     treeIterator,
@@ -154,6 +155,54 @@ describe("game display name", () => {
         );
         expect(getGameName({ ...headers, white: "?", black: "?", event: "" })).toBe("Unknown");
     });
+});
+
+test("lineTreeTo copies only the path to a variation node onto a new mainline", () => {
+    const fen = "8/8/8/8/8/8/8/K6k b - - 0 23";
+    const tree = defaultTree(fen);
+    tree.headers.orientation = "black";
+    tree.root.comment = "root note";
+    const first = createNode({
+        fen: "after-first",
+        move: parseUci("h1h2")!,
+        san: "Kh2",
+        halfMoves: 46,
+    });
+    first.comment = "keep me off the copy";
+    first.nags = [1];
+    const mainReply = createNode({
+        fen: "after-main",
+        move: parseUci("a1a2")!,
+        san: "Ka2",
+        halfMoves: 47,
+    });
+    const side = createNode({
+        fen: "after-side",
+        move: parseUci("a1b1")!,
+        san: "Kb1",
+        halfMoves: 47,
+    });
+    side.comment = "side comment";
+    first.children = [mainReply, side];
+    tree.root.children = [first];
+
+    const copied = lineTreeTo(tree.root, tree.headers, [0, 1]);
+
+    expect(copied.headers.fen).toBe(fen);
+    expect(copied.headers.orientation).toBe("black");
+    expect(copied.root.fen).toBe(tree.root.fen);
+    expect(copied.root.comment).toBe("");
+    expect(copied.position).toEqual([0, 0]);
+    expect(copied.root.children).toHaveLength(1);
+    expect(copied.root.children[0].san).toBe("Kh2");
+    expect(copied.root.children[0].comment).toBe("");
+    expect(copied.root.children[0].nags).toEqual([]);
+    expect(copied.root.children[0].children).toHaveLength(1);
+    expect(copied.root.children[0].children[0].san).toBe("Kb1");
+    expect(copied.root.children[0].children[0].comment).toBe("");
+    expect(copied.root.children[0].children[0].children).toHaveLength(0);
+    expect(first.comment).toBe("keep me off the copy");
+    expect(first.children).toHaveLength(2);
 });
 
 test("path lookup stops at the last valid node instead of crossing a missing child", () => {
