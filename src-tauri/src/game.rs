@@ -2264,9 +2264,12 @@ impl GameManager {
 
     /// Aborts every live session whose document label is `owner` and
     /// increments that label's document generation so an in-flight start
-    /// cannot publish afterwards. Matching entries are collected under
-    /// `registration` and aborted after that guard is dropped (see
-    /// `shutdown_all`).
+    /// cannot publish afterwards. The generation bump and the session
+    /// snapshot happen under `registration`, which `publish_live` holds
+    /// across its generation check and insert, so every start either is in
+    /// the snapshot or is refused at publication. The aborts run after the
+    /// guard drops because `abort_game` takes per-game lifecycle and
+    /// session-metadata locks.
     pub async fn abort_owner_games(&self, owner: &str) -> usize {
         let sessions: Vec<_> = {
             let _registration = self.registration.lock().await;
@@ -10350,6 +10353,124 @@ done
     }
 
     #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn abort_owner_games_lets_an_in_flight_start_from_another_window_publish() {
+        let game_id = "abort_owner_games_lets_an_in_flight_start_from_another_window_publish";
+        let other_id =
+            "abort_owner_games_lets_an_in_flight_start_from_another_window_publish-other";
+        let bundle = test_game_engine_bundle(game_id, TestEngineScript::Responsive, true);
+        let other_bundle = test_game_engine_bundle(other_id, TestEngineScript::Responsive, true);
+        let manager = Arc::new(GameManager::new());
+        let supervisor = Arc::new(EngineSupervisor::default());
+        let (white_key, black_key) = game_side_keys(&bundle, game_id, 1);
+        let (other_white, other_black) = game_side_keys(&other_bundle, other_id, 2);
+        let (reached_tx, reached_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::sync_channel(1);
+        let (other_reached_tx, other_reached_rx) = tokio::sync::oneshot::channel();
+        let (other_release_tx, other_release_rx) = std::sync::mpsc::sync_channel(1);
+        GAME_PUBLICATION_WAIT_HOOKS.arm(
+            game_id.into(),
+            Box::new(move || {
+                let _ = reached_tx.send(());
+                let _ = release_rx.recv();
+            }),
+        );
+        GAME_PUBLICATION_WAIT_HOOKS.arm(
+            other_id.into(),
+            Box::new(move || {
+                let _ = other_reached_tx.send(());
+                let _ = other_release_rx.recv();
+            }),
+        );
+        let app = tauri::test::mock_app();
+        tauri_specta::Builder::<tauri::test::MockRuntime>::new()
+            .events(tauri_specta::collect_events!(
+                GameMoveEvent,
+                GameOverEvent,
+                ClockUpdateEvent
+            ))
+            .mount_events(&app);
+
+        let task = tokio::spawn({
+            let manager = manager.clone();
+            let supervisor = supervisor.clone();
+            let config = bundle.config.clone();
+            let authority = bundle.authority.clone();
+            let game_id = game_id.to_owned();
+            let app = app.handle().clone();
+            async move {
+                manager
+                    .start_game(game_id, config, "main".into(), app, authority, supervisor)
+                    .await
+            }
+        });
+        let white_generation = wait_for_generation(&supervisor, &white_key).await;
+        let black_generation = wait_for_generation(&supervisor, &black_key).await;
+        tokio::time::timeout(TEST_WAIT, reached_rx)
+            .await
+            .expect("publication wait hook did not fire")
+            .expect("publication wait signal was dropped");
+
+        let other_task = tokio::spawn({
+            let manager = manager.clone();
+            let supervisor = supervisor.clone();
+            let config = other_bundle.config.clone();
+            let authority = other_bundle.authority.clone();
+            let other_id = other_id.to_owned();
+            let app = app.handle().clone();
+            async move {
+                manager
+                    .start_game(other_id, config, "other".into(), app, authority, supervisor)
+                    .await
+            }
+        });
+        let other_white_generation = wait_for_generation(&supervisor, &other_white).await;
+        let other_black_generation = wait_for_generation(&supervisor, &other_black).await;
+        tokio::time::timeout(TEST_WAIT, other_reached_rx)
+            .await
+            .expect("other publication wait hook did not fire")
+            .expect("other publication wait signal was dropped");
+
+        assert_eq!(manager.abort_owner_games("main").await, 0);
+        let _ = release_tx.send(());
+        let _ = other_release_tx.send(());
+        let error = tokio::time::timeout(TEST_WAIT, task)
+            .await
+            .expect("in-flight start did not finish after the reload sweep")
+            .expect("in-flight start task joined")
+            .expect_err("in-flight start must be refused after the window reload");
+        assert!(matches!(error, Error::Conflict(_)));
+        assert!(matches!(
+            manager.get_game_state(game_id, 1).await,
+            Err(Error::GameNotFound(_))
+        ));
+        wait_for_generation_gone(&supervisor, &white_key, white_generation).await;
+        wait_for_generation_gone(&supervisor, &black_key, black_generation).await;
+        assert!(supervisor.get_exact(&white_key).is_none());
+        assert!(supervisor.get_exact(&black_key).is_none());
+
+        let other_state = tokio::time::timeout(TEST_WAIT, other_task)
+            .await
+            .expect("other in-flight start did not finish after the reload sweep")
+            .expect("other in-flight start task joined")
+            .expect("other in-flight start must publish");
+        assert_eq!(other_state.status, GameStatus::Playing);
+        assert!(supervisor
+            .get_exact(&other_white)
+            .is_some_and(|engine| engine.generation == other_white_generation));
+        assert!(supervisor
+            .get_exact(&other_black)
+            .is_some_and(|engine| engine.generation == other_black_generation));
+
+        manager
+            .abort_game(other_id, other_state.session)
+            .await
+            .unwrap();
+        wait_for_generation_gone(&supervisor, &other_white, other_white_generation).await;
+        wait_for_generation_gone(&supervisor, &other_black, other_black_generation).await;
+    }
+
+    #[cfg(unix)]
     #[tokio::test]
     async fn cancellation_after_publication_retires_the_never_started_session() {
         let game_id = "cancellation_after_publication_retires_the_never_started_session";
@@ -10755,6 +10876,45 @@ done
         assert!(
             compact.contains(".start_game(game_id,config,window.label().to_owned(),"),
             "{command}"
+        );
+    }
+
+    #[test]
+    fn abort_owner_games_and_publish_live_pin_the_generation_lock_protocol() {
+        use crate::infra::blocking::source_scan::body_at_indent;
+        let source = include_str!("game.rs");
+
+        let abort = body_at_indent(source, "pub async fn abort_owner_games(");
+        let registration = abort
+            .find("self.registration.lock().await")
+            .expect("abort_owner_games must take registration");
+        let bump = abort
+            .find("wrapping_add(1)")
+            .expect("abort_owner_games must bump the owner generation");
+        let snapshot = abort
+            .find(".filter(|entry| entry.document.label == owner)")
+            .expect("abort_owner_games must snapshot the owner sessions");
+        let abort_game = abort
+            .find("self.abort_game(")
+            .expect("abort_owner_games must abort after the snapshot");
+        assert!(
+            registration < bump && bump < snapshot && snapshot < abort_game,
+            "{abort}"
+        );
+
+        let publish = body_at_indent(source, "async fn publish_live(");
+        let registration = publish
+            .find("self.registration.lock().await")
+            .expect("publish_live must take registration");
+        let generation = publish
+            .find("self.document_generation(&live.document.label)")
+            .expect("publish_live must check the live document generation");
+        let insert = publish
+            .find("self.games.insert(")
+            .expect("publish_live must insert under registration");
+        assert!(
+            registration < generation && generation < insert,
+            "{publish}"
         );
     }
 
