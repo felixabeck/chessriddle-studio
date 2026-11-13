@@ -24463,7 +24463,7 @@ Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK on
 
 ### Local explorer and player opening tree keep showing pre-change statistics after games are added to or deleted from a plain database
 
-* **ID:** f-20261112-39 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-39 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** lens · **Blocked:** felix-codex-login
 - **Impact class:** behaviour
 - **Spotted outside diff:** no
 - **Where:** `src/components/panels/database/useLocalExplorer.ts:4` (`useSWR` from `swr/immutable`) and `:44-55` (key is `{type:"local", options}` plus a collection generation only for linked collections); `src/components/databases/databaseMutation.ts:49-71` (`refreshDatabaseGameQueries` revalidates only `games`/`players`/`tournaments` keys); callers `DatabasePanel.tsx:217` and `PlayerOpeningTree.tsx:72`
@@ -24478,6 +24478,9 @@ Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK on
   * `useLocalExplorer.ts` key becomes `[dbType, collection?.generation ?? null, writeRevision]`. The local explorer is the only `{type:"local"}` SWR key (DatabasePanel's own `openingKey` is null for `db === "local"`).
   * Rejected: invalidating keys in `refreshDatabaseGameQueries` plus each import/save site, because that needs a call-site list across GameCard, useDatabaseLibrary, AddDatabase, LinkedCollection, tabs.ts and accountCompletions and silently misses the next new writer.
 <!-- ledger-meta {"command":"annotate","effect_lines":5,"effect_sha256":"ccc117c74c19283f94ebcb02ba36e3b625e15a0ce4adbf01466a62a58098b161","input_sha256":"edfbcd3b8d2d6597e85ffce8bda0df62b87c1e0b0521422a884ce8f7ad7a3109","kind":"mutation-receipt","operation":"a10de34d530bde8cd0511e70a0d8b7635dc1731e91c887b52769336f98526a72","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-39"],"target":"f-20261112-39","v":1} -->
+
+* **Pickup 2026-11-13 (drain ddeddf25), blocked on Codex login:** the design annotated above was rechecked against the code and still holds. The brief is ready at `/tmp/nf-39/brief-leaf.md` and covers both this finding and co-located f-20261112-08. The Codex write leaf failed again before doing any work: `turn.failed` reported "refresh token was revoked" (`token_revoked` 401 from `chatgpt.com/backend-api/codex/models`), even though `codex login status` reported "Logged in using ChatGPT". The executor never falls back. **Re-check:** once `codex logout && codex login` has been done, set `Blocked: none` and the next pickup launches the write leaf.
+<!-- ledger-meta {"command":"set-header","effect_lines":1,"effect_sha256":"71d482273dbfd7ec879adbaea7a8f8747e99510b629da5d3f097b2bc561d86a5","header_sha256":"3d6e5aafe6c4112b4e66674b5b6762505d83ccd9677d10064959849f39d54b65","header_status":"open","input_sha256":"f519d95e4772b401d038aebff500639981b7a7a96de495808eda4f00368a8276","kind":"mutation-receipt","operation":"c1a9be41e556bf9068c8c483b2f6b6e07b33bfa9c34de12c49b00932321a72fa","options":{"headers":{"Blocked":"felix-codex-login"},"section":null},"request_id_sha256":null,"results":["f-20261112-39"],"target":"f-20261112-39","v":1} -->
 
 ---
 
