@@ -3135,7 +3135,7 @@ mod tests {
     }
 
     use super::*;
-    use crate::infra::blocking::source_scan::body_at_indent;
+    use crate::infra::blocking::source_scan::{body_at_indent, call_argument_list};
     use std::{
         future::Future,
         io::Write,
@@ -3233,26 +3233,6 @@ mod tests {
             helper.contains("\"download\""),
             "helper must diagnose download progress: {helper}"
         );
-    }
-
-    fn call_argument_list<'a>(body: &'a str, callee: &str) -> &'a str {
-        let start = body
-            .find(callee)
-            .unwrap_or_else(|| panic!("missing {callee}: {body}"));
-        let mut depth = 0;
-        for (offset, byte) in body[start..].bytes().enumerate() {
-            match byte {
-                b'(' => depth += 1,
-                b')' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return &body[start + callee.len()..start + offset];
-                    }
-                }
-                _ => {}
-            }
-        }
-        panic!("unclosed {callee}: {body}");
     }
 
     #[test]
@@ -6337,15 +6317,16 @@ mod tests {
         );
     }
 
-    async fn collect_quantized_progress(total_size: Option<u32>) -> Vec<f32> {
+    async fn collect_quantized_progress(total_size: Option<u32>) -> (Vec<f32>, u32) {
         let mut file = tempfile::tempfile().unwrap();
         let chunk = b"xyz";
         let chunk_count = 1999_u32;
         let total_bytes = u64::from(chunk_count) * chunk.len() as u64;
+        let ticks = (100.0 / PROGRESS_REPORT_STEP_PERCENT) as usize;
         assert_ne!(
-            total_bytes % 1000,
+            total_bytes % ticks as u64,
             0,
-            "content-length must not be a multiple of 1000"
+            "content-length must not be a multiple of {ticks}"
         );
         let chunks = (0..chunk_count).map(|_| Ok(bytes::Bytes::from_static(chunk)));
         let mock = MockTransport {
@@ -6374,18 +6355,19 @@ mod tests {
         )
         .await
         .unwrap();
-        reported
+        (reported, u32::try_from(total_bytes).unwrap())
     }
 
     fn assert_quantized_progress(reported: &[f32]) {
-        let max_reports = (100.0 / PROGRESS_REPORT_STEP_PERCENT) as usize + 1;
+        let ticks = (100.0 / PROGRESS_REPORT_STEP_PERCENT) as usize;
+        let max_reports = ticks + 1;
         assert!(
             reported.len() <= max_reports,
             "progress callbacks must be quantized to {PROGRESS_REPORT_STEP_PERCENT} percent: {} reports",
             reported.len()
         );
         assert!(
-            reported.len() > 500,
+            reported.len() > ticks / 2,
             "progress must report finer than a coarser step: {} reports",
             reported.len()
         );
@@ -6411,8 +6393,10 @@ mod tests {
 
     #[tokio::test]
     async fn download_payload_network_quantizes_progress_across_many_chunks() {
-        assert_quantized_progress(&collect_quantized_progress(None).await);
-        assert_quantized_progress(&collect_quantized_progress(Some(5997)).await);
+        let (without_size, total_bytes) = collect_quantized_progress(None).await;
+        assert_quantized_progress(&without_size);
+        let (with_size, _) = collect_quantized_progress(Some(total_bytes)).await;
+        assert_quantized_progress(&with_size);
     }
 
     #[test]

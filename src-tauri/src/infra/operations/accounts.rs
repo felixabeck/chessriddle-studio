@@ -711,7 +711,10 @@ mod tests {
         ] {
             assert!(body.contains(required), "missing {required}: {body}");
         }
-        let lichess_args = call_argument_list(body, "download_lichess_games_runtime(");
+        let lichess_args = crate::infra::blocking::source_scan::call_argument_list(
+            body,
+            "download_lichess_games_runtime(",
+        );
         assert!(
             lichess_args.contains("ExportScope::Resumable"),
             "Lichess account download must pass Resumable: {lichess_args}"
@@ -720,26 +723,6 @@ mod tests {
             !lichess_args.contains("ExportScope::Complete"),
             "Lichess account download must not pass Complete: {lichess_args}"
         );
-    }
-
-    fn call_argument_list<'a>(body: &'a str, callee: &str) -> &'a str {
-        let start = body
-            .find(callee)
-            .unwrap_or_else(|| panic!("missing {callee}: {body}"));
-        let mut depth = 0;
-        for (offset, byte) in body[start..].bytes().enumerate() {
-            match byte {
-                b'(' => depth += 1,
-                b')' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return &body[start + callee.len()..start + offset];
-                    }
-                }
-                _ => {}
-            }
-        }
-        panic!("unclosed {callee}: {body}");
     }
 
     #[test]

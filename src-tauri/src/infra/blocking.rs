@@ -305,6 +305,26 @@ pub(crate) mod source_scan {
         &source[line_start..]
     }
 
+    pub(crate) fn call_argument_list<'a>(body: &'a str, callee: &str) -> &'a str {
+        let start = body
+            .find(callee)
+            .unwrap_or_else(|| panic!("missing {callee}: {body}"));
+        let mut depth = 0;
+        for (offset, byte) in body[start..].bytes().enumerate() {
+            match byte {
+                b'(' => depth += 1,
+                b')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return &body[start + callee.len()..start + offset];
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!("unclosed {callee}: {body}");
+    }
+
     fn is_same_or_outer_delimiter(line: &str, indent: usize) -> bool {
         if line.trim().is_empty() {
             return false;
