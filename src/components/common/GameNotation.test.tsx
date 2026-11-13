@@ -11,6 +11,7 @@ import {
   buildNotationRows,
   NOTATION_ROW_MAX_MOVES,
   pathForNotationNode,
+  variationCollapseKey,
   type NotationRow,
 } from "./notationRows";
 
@@ -50,6 +51,7 @@ vi.mock("jotai", () => ({
   },
 }));
 vi.mock("react-hotkeys-hook", () => ({ useHotkeys: vi.fn() }));
+vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("lucide-react", () => {
   const Icon = () => null;
@@ -689,7 +691,7 @@ test("scrolls to the nearest listed ancestor inside a collapsed variation", asyn
     showVariations: true,
     showComments: false,
     tableView: false,
-    collapsedVariations: new Set([mainline]),
+    collapsedVariations: new Set([variationCollapseKey([0])]),
   });
   const ancestorRow = collapsedModel.rowForNode.get(mainline);
   expect(ancestorRow).toBeDefined();
@@ -861,4 +863,37 @@ test("collapse still hides variation moves and keeps the toggle in the variation
       ?.closest("[data-index]")
       ?.firstElementChild?.classList.contains(styles.variationBlock),
   ).toBe(true);
+});
+
+test("keeps a collapsed variation hidden after a comment and a mainline move", async () => {
+  store.getState().makeMoves({ payload: ["e4"] });
+  store.getState().goToStart();
+  store.getState().makeMove({ payload: "d4" });
+
+  await act(async () => {
+    root.render(
+      <TreeStateContext.Provider value={store}>
+        <WorkspaceTabScope tabId="notation-test">
+          <GameNotation />
+        </WorkspaceTabScope>
+      </TreeStateContext.Provider>,
+    );
+  });
+
+  expect(host.querySelector('[data-node="d4"]')).not.toBeNull();
+  const toggle = host.querySelector<HTMLButtonElement>('[aria-label="Notation.ToggleVariation"]');
+  expect(toggle).not.toBeNull();
+  await act(async () => toggle!.click());
+  expect(host.querySelector('[data-node="d4"]')).toBeNull();
+
+  await act(async () => {
+    store.getState().goToMove([0]);
+    store.getState().setComment("note on e4");
+    store.getState().makeMove({ payload: "e5" });
+  });
+
+  expect(host.querySelector('[data-node="e4"]')).not.toBeNull();
+  expect(host.querySelector('[data-node="e5"]')).not.toBeNull();
+  expect(host.querySelector('[data-node="d4"]')).toBeNull();
+  expect(store.getState().root.children[0].comment).toBe("note on e4");
 });

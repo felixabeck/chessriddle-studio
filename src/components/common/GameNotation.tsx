@@ -44,6 +44,8 @@ import CompleteMoveCell, {
 } from "./CompleteMoveCell";
 import {
   buildNotationRows,
+  pathForNotationNode,
+  variationCollapseKey,
   type NotationMove,
   type NotationNodeIndex,
   type NotationRow,
@@ -140,7 +142,7 @@ function GameNotation({
   const showComments = useAtomValue(useTabAtom(showCommentsFamily));
   const showVariations = useAtomValue(useTabAtom(showVariationsFamily));
   const [tableView] = useAtom(tableViewAtom);
-  const [collapsedVariations, setCollapsedVariations] = useState<Set<TreeNode>>(() => new Set());
+  const [collapsedVariations, setCollapsedVariations] = useState<Set<string>>(() => new Set());
   const viewport = useRef<HTMLDivElement>(null);
   const [invisibleValue, setInvisible] = useAtom(useTabAtom(invisibleFamily));
   const invisible = topBar && invisibleValue;
@@ -299,10 +301,13 @@ function GameNotation({
                       showComments={showComments}
                       tableView={tableView}
                       onToggleVariation={(parent) => {
+                        const path = pathForNotationNode(model.index, parent);
+                        if (path === undefined) return;
+                        const key = variationCollapseKey(path);
                         setCollapsedVariations((previous) => {
                           const next = new Set(previous);
-                          if (next.has(parent)) next.delete(parent);
-                          else next.add(parent);
+                          if (next.has(key)) next.delete(key);
+                          else next.add(key);
                           return next;
                         });
                       }}

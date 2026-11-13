@@ -75,8 +75,13 @@ export type NotationRowOptions = {
     showVariations: boolean;
     showComments: boolean;
     tableView: boolean;
-    collapsedVariations?: ReadonlySet<TreeNode>;
+    collapsedVariations?: ReadonlySet<string>;
 };
+
+/** Stable identity for a collapsed variation parent: the path from the root, joined by commas. */
+export function variationCollapseKey(path: number[]): string {
+    return path.join(",");
+}
 
 type InlineTask = {
     parent: TreeNode;
@@ -89,6 +94,7 @@ type InlineTask = {
 type RowBuildOptions = NotationRowOptions & {
     gameEnd?: TreeNode;
     analysisNodes: WeakSet<TreeNode>;
+    index: NotationNodeIndex;
 };
 
 type RowTask = InlineTask | GameEndNotationRow;
@@ -183,7 +189,10 @@ function queueVariationTasks(
     options: RowBuildOptions,
     stack: RowTask[],
 ): void {
-    const collapsed = options.collapsedVariations?.has(parent) ?? false;
+    const path = pathForNotationNode(options.index, parent);
+    const collapsed =
+        path !== undefined &&
+        (options.collapsedVariations?.has(variationCollapseKey(path)) ?? false);
     addRow(rows, rowForNode, {
         type: "variation",
         depth,
@@ -405,7 +414,7 @@ export function buildNotationRows(root: TreeNode, options: NotationRowOptions): 
         analysisNodes.add(node);
         for (const child of node.children) stack.push(child);
     }
-    const buildOptions: RowBuildOptions = { ...options, gameEnd, analysisNodes };
+    const buildOptions: RowBuildOptions = { ...options, gameEnd, analysisNodes, index };
 
     if (options.showComments && root.comment.length > 0) {
         addComment(rows, rowForNode, 0, root.comment);
