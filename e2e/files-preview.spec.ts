@@ -292,10 +292,11 @@ test("files-preview: other file types keep their row gestures", async ({ page, m
     expect((await activeWorkspaceTab(page))?.gameOrigin).toMatchObject({ gameNumber: 1 });
 });
 
-test("files-preview: returning to Library restores a late game after section headings load", async ({
-    page,
-    mockScenario,
-}) => {
+async function openSectionedFile(
+    page: Page,
+    mockScenario: (scenario: MockScenario) => Promise<void>,
+    delay: number,
+) {
     const file = { ...repertoireFile, gameCount: 40 };
     const games = Array.from({ length: file.gameCount }, (_, index) => ({
         pgn: `[White "White ${index + 1}"]\n[Black "Black ${index + 1}"]\n[Section "Section ${index + 1}"]\n\n1. e4 c5 *`,
@@ -323,21 +324,31 @@ test("files-preview: returning to Library restores a late game after section hea
             read_games: { pgnGames: games },
             read_game: { pgnGames: games },
             file_revision: { result: "remembered-file-revision" },
-            lex_pgn: { pgnTokens: tokens, delay: 80 },
+            lex_pgn: { pgnTokens: tokens, delay },
         }),
     });
     await page.goto("/library");
     await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, file.name);
     const list = page.getByRole("listbox", { name: "Games", exact: true });
-    const viewport = list.locator("..");
+    const viewport = page.locator(".mantine-ScrollArea-viewport").filter({ has: list });
     const late = list.getByRole("option", { name: /White 40 - Black 40/ });
+    return { file, list, viewport, late };
+}
+
+test("files-preview: returning to Library restores a late game after section headings load", async ({
+    page,
+    mockScenario,
+}) => {
+    const { file, viewport, late } = await openSectionedFile(page, mockScenario, 80);
     // Reach the last game through user scrolling before opening it.
     await expect(async () => {
         await viewport.hover();
         await page.mouse.wheel(0, 3000);
+        await expect(late).toHaveAttribute("aria-description", "Section 40");
         await expect(late).toBeInViewport({ ratio: 1 });
     }).toPass();
+    await expectCellStaysInViewport(late);
     await late.dblclick();
     await expect(page).toHaveURL(/\/$/);
     expect((await activeWorkspaceTab(page))?.gameOrigin).toMatchObject({ gameNumber: 39 });
@@ -348,6 +359,69 @@ test("files-preview: returning to Library restores a late game after section hea
     );
     await expect(late).toHaveAttribute("aria-selected", "true");
     await expect(late).toHaveAttribute("aria-description", "Section 40");
+    await expectCellStaysInViewport(late);
+});
+
+test("files-preview: a late game stays in place when headings above it load", async ({
+    page,
+    mockScenario,
+}) => {
+    const { list, viewport, late } = await openSectionedFile(page, mockScenario, 1000);
+    // End the reveal without a real wheel traversing and loading the middle rows.
+    await viewport.dispatchEvent("wheel");
+    await expect(async () => {
+        await viewport.evaluate((element) => {
+            element.scrollTop = element.scrollHeight;
+        });
+        await expect(late).toHaveAttribute("aria-description", "Section 40");
+        await expect(late).toBeInViewport({ ratio: 1 });
+    }).toPass();
+    await expectCellStaysInViewport(late);
+    const readRanges = () =>
+        page.evaluate(() =>
+            window.__E2E_TAURI__
+                .invocations()
+                .filter(({ command }) => command === "read_games")
+                .map(({ args }) => ({ start: Number(args.start), end: Number(args.end) })),
+        );
+    const readsBefore = await readRanges();
+    const middleIndex = 15;
+    const includesMiddle = ({ start, end }: { start: number; end: number }) =>
+        start <= middleIndex && end >= middleIndex;
+    expect(readsBefore.some(includesMiddle)).toBe(false);
+    await viewport.evaluate((element) => {
+        // The end-jump setup has loaded rows 21–39. This position reaches the unloaded gap.
+        element.scrollTop = element.scrollHeight / 3;
+    });
+    await expect.poll(async () => (await readRanges()).length).toBeGreaterThan(readsBefore.length);
+    expect((await readRanges()).slice(readsBefore.length).some(includesMiddle)).toBe(true);
+    await viewport.evaluate(async (element) => {
+        element.scrollTop = element.scrollHeight;
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    });
+    const relativeTop = () =>
+        late.evaluate(
+            (element) =>
+                element.getBoundingClientRect().top -
+                element.closest(".mantine-ScrollArea-viewport")!.getBoundingClientRect().top,
+        );
+    const top = await relativeTop();
+    const height = await list.evaluate((element) => element.getBoundingClientRect().height);
+    const scrollTop = await viewport.evaluate((element) => element.scrollTop);
+    await expect
+        .poll(() => list.evaluate((element) => element.getBoundingClientRect().height))
+        .toBeGreaterThan(height);
+    // No scrolling after the measurement: late headings must preserve the row's position.
+    // Check the end-row displacement even if the virtualizer unmounts it after a jump.
+    const growth =
+        (await list.evaluate((element) => element.getBoundingClientRect().height)) - height;
+    const correction = (await viewport.evaluate((element) => element.scrollTop)) - scrollTop;
+    expect(
+        Math.abs(growth - correction),
+        "late row position moved when headings arrived",
+    ).toBeLessThanOrEqual(1);
+    expect(Math.abs((await relativeTop()) - top)).toBeLessThanOrEqual(1);
     await expectCellStaysInViewport(late);
 });
 

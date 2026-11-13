@@ -5,7 +5,7 @@ import { SeparatorHorizontal, Trash2 } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import cx from "clsx";
 import { useAtomValue } from "jotai";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { FileWorkspaceHandle, StampedGame } from "@/bindings";
 import ConfirmModal from "@/components/common/ConfirmModal";
@@ -215,21 +215,60 @@ export default function GameSelector({
       },
     });
   }, [canMove, hasRows, path.id.id, reloadGeneration, total, t]);
+  const estimateSize = (index: number) =>
+    (ROW_HEIGHT_PX + sectionSpacePx(games.get(index)?.section, index)) * (fontSize / 100);
   const rowVirtualizer = useVirtualizer({
     count: total,
-    estimateSize: (index) =>
-      (ROW_HEIGHT_PX + sectionSpacePx(games.get(index)?.section, index)) * (fontSize / 100),
+    estimateSize,
     getScrollElement: () => parentRef.current!,
   });
-  const sectionLayout = Array.from(games)
-    .filter(([, game]) => game.section !== undefined)
-    .map(([index, game]) => `${index}:${sectionSpacePx(game.section, index)}`)
-    .join();
+  const sectionSpaces = new Map(
+    Array.from(games)
+      .filter(([, game]) => game.section !== undefined)
+      .map(([index, game]) => [index, sectionSpacePx(game.section, index)]),
+  );
+  const sectionLayout = Array.from(sectionSpaces, ([index, space]) => `${index}:${space}`).join();
+  const reveal = useRef(revealActivePage);
+  if (reloadGeneration > 0) reveal.current = false;
+  const previousLayout = useRef({ sectionSpaces, fontSize, total });
+  const currentSizes = useRef({ sectionSpaces, estimateSize });
+  currentSizes.current = { sectionSpaces, estimateSize };
+  const pendingCorrection = useRef<{ offset: number; sectionLayout: string } | null>(null);
+  // Apply only after measure() has rendered the new height, before the browser paints.
+  useLayoutEffect(() => {
+    const pending = pendingCorrection.current;
+    pendingCorrection.current = null;
+    if (
+      pending &&
+      pending.sectionLayout === sectionLayout &&
+      previousLayout.current.fontSize === fontSize &&
+      previousLayout.current.total === total &&
+      !reveal.current
+    ) {
+      rowVirtualizer.scrollToOffset(pending.offset);
+    }
+  });
   // The virtualizer caches row sizes, so a row that gains or loses a section must be measured again.
   useEffect(() => {
+    const { sectionSpaces, estimateSize } = currentSizes.current;
+    const previous = previousLayout.current;
+    previousLayout.current = { sectionSpaces, fontSize, total };
+    pendingCorrection.current = null;
+    if (previous.fontSize === fontSize && previous.total === total && !reveal.current) {
+      const offset = parentRef.current?.scrollTop ?? 0;
+      let shift = 0;
+      const indices = new Set([...previous.sectionSpaces.keys(), ...sectionSpaces.keys()]);
+      for (const index of indices) {
+        if ((previous.sectionSpaces.get(index) ?? 0) === (sectionSpaces.get(index) ?? 0)) continue;
+        const item = rowVirtualizer.measurementsCache[index];
+        if (item && item.start < offset) shift += estimateSize(index) - item.size;
+      }
+      if (shift !== 0) pendingCorrection.current = { offset: offset + shift, sectionLayout };
+    }
     rowVirtualizer.measure();
-  }, [fontSize, rowVirtualizer, sectionLayout]);
+  }, [fontSize, rowVirtualizer, sectionLayout, total]);
   const virtualItems = rowVirtualizer.getVirtualItems();
+  const totalSize = rowVirtualizer.getTotalSize();
   // React Virtual returns a fresh array on each read.  Effects depend only on
   // this stable primitive range, not on the ephemeral array/getter result.
   const visibleStart = virtualItems[0]?.index ?? -1;
@@ -275,8 +314,6 @@ export default function GameSelector({
     };
   }, [reloadGeneration, path.id.id, total, loadPage, setGames]);
 
-  const reveal = useRef(revealActivePage);
-  if (reloadGeneration > 0) reveal.current = false;
   // Use a single offset write, without scrollToIndex's queued retries, so user scrolling wins.
   useEffect(() => {
     if (!revealActivePage || !reveal.current) return;
@@ -290,9 +327,11 @@ export default function GameSelector({
     rowVirtualizer,
     visibleStart,
     visibleEnd,
+    totalSize,
   ]);
   const stopReveal = () => {
     reveal.current = false;
+    pendingCorrection.current = null;
   };
 
   useEffect(() => {
@@ -314,7 +353,7 @@ export default function GameSelector({
   return (
     <ScrollArea
       viewportRef={parentRef}
-      h={maxHeight === undefined ? "100%" : rowVirtualizer.getTotalSize()}
+      h={maxHeight === undefined ? "100%" : totalSize}
       mah={maxHeight}
       onWheelCapture={stopReveal}
       onTouchMoveCapture={stopReveal}
@@ -327,7 +366,7 @@ export default function GameSelector({
         role="listbox"
         aria-label={t("Common.Games")}
         style={{
-          height: rowVirtualizer.getTotalSize(),
+          height: totalSize,
           width: "100%",
           position: "relative",
         }}

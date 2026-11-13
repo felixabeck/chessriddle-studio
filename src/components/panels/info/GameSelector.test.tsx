@@ -1,10 +1,12 @@
 import { notifications } from "@mantine/notifications";
-import { act, useState } from "react";
+import { getDefaultStore } from "jotai";
+import { act, useReducer, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { FileWorkspaceHandle, StampedGame } from "@/bindings";
 import { cancellationError } from "@/platform/tauri";
 import { catalogueI18n } from "@/tests/catalogues";
+import { fontSizeAtom } from "@/state/atoms";
 import GameSelector, { type GameSelectorRow } from "./GameSelector";
 
 const translation = vi.hoisted(() => ({ t: (value: string) => value }));
@@ -17,13 +19,26 @@ const mocks = vi.hoisted(() => ({
   getOffsetForIndex: vi.fn((_index: number, _align: string) => [240, "auto"]),
   scrollToOffset: vi.fn(),
   estimateSize: (() => 0) as (index: number) => number,
+  modelMeasurements: false,
+  remeasure: false,
+  notify: () => {},
   virtualizer: {
+    measurementsCache: [] as { index: number; start: number; size: number }[],
     getTotalSize: vi.fn(() => 30),
-    measure: () => mocks.measure(),
+    measure: () => {
+      mocks.measure();
+      if (mocks.modelMeasurements) {
+        mocks.remeasure = true;
+        mocks.notify();
+      }
+    },
     getOffsetForIndex: (index: number, align: string) => mocks.getOffsetForIndex(index, align),
     scrollToOffset: (...args: unknown[]) => mocks.scrollToOffset(...args),
     getVirtualItems: () =>
-      mocks.visibleIndices.map((index) => ({ index, size: 30, start: index * 30 })),
+      mocks.visibleIndices.map(
+        (index) =>
+          mocks.virtualizer.measurementsCache[index] ?? { index, size: 30, start: index * 30 },
+      ),
   },
 }));
 
@@ -43,8 +58,20 @@ vi.mock("@mantine/notifications", () => ({
   notifications: { show: vi.fn() },
 }));
 vi.mock("@tanstack/react-virtual", () => ({
-  useVirtualizer: (options: { estimateSize: (index: number) => number }) => {
+  useVirtualizer: (options: { count: number; estimateSize: (index: number) => number }) => {
+    const [, notify] = useReducer((value: number) => value + 1, 0);
+    mocks.notify = notify;
     mocks.estimateSize = options.estimateSize;
+    if (mocks.modelMeasurements && mocks.remeasure) {
+      mocks.remeasure = false;
+      let start = 0;
+      mocks.virtualizer.measurementsCache = Array.from({ length: options.count }, (_, index) => {
+        const item = { index, start, size: options.estimateSize(index) };
+        start += item.size;
+        return item;
+      });
+      mocks.virtualizer.getTotalSize.mockReturnValue(start);
+    }
     return mocks.virtualizer;
   },
 }));
@@ -153,6 +180,12 @@ beforeEach(async () => {
   mocks.parsePGN.mockReset().mockResolvedValue({ headers: { event: "Loaded game" } });
   vi.mocked(notifications.show).mockReset();
   mocks.visibleIndices = [0];
+  mocks.modelMeasurements = false;
+  mocks.remeasure = false;
+  mocks.virtualizer.measurementsCache = [];
+  mocks.measure.mockReset();
+  mocks.getOffsetForIndex.mockReset().mockReturnValue([240, "auto"]);
+  getDefaultStore().set(fontSizeAtom, 100);
   mocks.virtualizer.getTotalSize.mockReset().mockReturnValue(30);
   mocks.getOffsetForIndex.mockClear();
   mocks.scrollToOffset.mockClear();
@@ -1384,6 +1417,147 @@ test("a section reserves its space, and only a change of that space re-measures"
   expect(gap).toBeGreaterThan(plain);
   expect(named).toBeGreaterThan(gap);
   expect(mocks.measure).toHaveBeenCalled();
+});
+
+async function renderAnchor(
+  sections: [number, string][] = [],
+  revealActivePage = false,
+  total = 10,
+) {
+  await act(async () =>
+    root.render(
+      <GameSelector
+        games={
+          new Map(
+            Array.from({ length: total }, (_, index) => [
+              index,
+              { name: `Game ${index}`, section: new Map(sections).get(index) },
+            ]),
+          )
+        }
+        setGames={vi.fn()}
+        setPage={vi.fn()}
+        total={total}
+        path={path}
+        activePage={8}
+        revealActivePage={revealActivePage}
+      />,
+    ),
+  );
+}
+
+function anchorViewport() {
+  return host.querySelector<HTMLElement>('[role="listbox"]')!.parentElement!;
+}
+
+test.each([
+  ["above, straddling and below", 45, 109],
+  ["at the top boundary without batch over-correction", 30, 56],
+])("section anchor counts pre-batch starts %s", async (_name, offset, target) => {
+  mocks.modelMeasurements = true;
+  await renderAnchor();
+  anchorViewport().scrollTop = offset;
+  mocks.scrollToOffset.mockClear();
+  mocks.scrollToOffset.mockImplementationOnce(() => {
+    // The write must see the committed height, rather than the old 300px maximum.
+    expect(host.querySelector<HTMLElement>('[role="listbox"]')!.style.height).toBe("402px");
+  });
+  await renderAnchor([
+    [0, "First"],
+    [1, "Second"],
+    [2, "Third"],
+  ]);
+  expect(mocks.scrollToOffset).toHaveBeenCalledExactlyOnceWith(target);
+});
+
+test("section anchor leaves changes at or below the viewport offset alone", async () => {
+  mocks.modelMeasurements = true;
+  await renderAnchor();
+  anchorViewport().scrollTop = 30;
+  await renderAnchor([
+    [1, "At the top"],
+    [2, "Below"],
+  ]);
+  expect(mocks.scrollToOffset).not.toHaveBeenCalled();
+});
+
+test.each([false, true])(
+  "section anchor handles a lost section, removed row: %s",
+  async (removed) => {
+    mocks.modelMeasurements = true;
+    await renderAnchor([[1, "Heading"]]);
+    anchorViewport().scrollTop = 100;
+    mocks.scrollToOffset.mockClear();
+    if (removed) {
+      await act(async () =>
+        root.render(
+          <GameSelector
+            games={new Map([[0, { name: "First" }]])}
+            setGames={vi.fn()}
+            setPage={vi.fn()}
+            total={10}
+            path={path}
+            activePage={8}
+          />,
+        ),
+      );
+    } else await renderAnchor();
+    expect(mocks.scrollToOffset).toHaveBeenCalledExactlyOnceWith(62);
+  },
+);
+
+test.each(["wheel", "touchmove", "pointerdown", "keydown", "focusin"])(
+  "section anchor drops a pending correction on %s before the height commits",
+  async (type) => {
+    mocks.modelMeasurements = true;
+    await renderAnchor();
+    anchorViewport().scrollTop = 45;
+    mocks.measure.mockImplementationOnce(() => {
+      expect(host.querySelector<HTMLElement>('[role="listbox"]')!.style.height).toBe("300px");
+      expect(mocks.scrollToOffset).not.toHaveBeenCalled();
+      anchorViewport().dispatchEvent(new Event(type, { bubbles: true }));
+    });
+    await renderAnchor([[0, "Heading"]]);
+    expect(mocks.scrollToOffset).not.toHaveBeenCalled();
+  },
+);
+
+test("section anchor yields to reveal, which repeats with committed geometry and an unchanged range", async () => {
+  mocks.modelMeasurements = true;
+  await renderAnchor([], true);
+  anchorViewport().scrollTop = 45;
+  mocks.scrollToOffset.mockClear();
+  mocks.getOffsetForIndex.mockImplementation(() => [
+    Number.parseFloat(host.querySelector<HTMLElement>('[role="listbox"]')!.style.height) - 60,
+    "auto",
+  ]);
+  await renderAnchor([[0, "Heading"]], true);
+  expect(mocks.scrollToOffset.mock.calls.map(([offset]) => offset)).toEqual([240, 266]);
+  expect(mocks.visibleIndices).toEqual([0]);
+});
+
+test.each([false, true])(
+  "section anchor skips font changes, simultaneous section change: %s",
+  async (section) => {
+    mocks.modelMeasurements = true;
+    await renderAnchor();
+    anchorViewport().scrollTop = 45;
+    mocks.measure.mockClear();
+    await act(async () => {
+      getDefaultStore().set(fontSizeAtom, 125);
+      await renderAnchor(section ? [[0, "Heading"]] : []);
+    });
+    expect(mocks.measure).toHaveBeenCalledOnce();
+    expect(mocks.scrollToOffset).not.toHaveBeenCalled();
+  },
+);
+
+test("section anchor skips a total change in the same commit", async () => {
+  mocks.modelMeasurements = true;
+  await renderAnchor();
+  anchorViewport().scrollTop = 45;
+  await renderAnchor([[0, "Heading"]], false, 11);
+  expect(mocks.scrollToOffset).not.toHaveBeenCalled();
 });
 
 async function openEditor(index: number) {
