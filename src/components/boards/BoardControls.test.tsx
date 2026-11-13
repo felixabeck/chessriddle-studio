@@ -322,6 +322,7 @@ describe("BoardControls tab type durability", () => {
     expect(playState.root.children[0].children.map((node) => node.san)).toEqual(["c5"]);
     expect(playState.root.children[0].children[0].comment).toBe("");
     expect(playState.root.children[0].children[0].children).toEqual([]);
+    expect(jotaiStore.get(activeTabAtom)).toBe(playTab!.value);
   });
 
   test("converts a play tab to analysis in place without opening another tab", async () => {

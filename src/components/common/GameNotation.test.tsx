@@ -691,7 +691,7 @@ test("scrolls to the nearest listed ancestor inside a collapsed variation", asyn
     showVariations: true,
     showComments: false,
     tableView: false,
-    collapsedVariations: new Set([variationCollapseKey([0])]),
+    collapsedVariations: new Set([variationCollapseKey(state.root, [0])]),
   });
   const ancestorRow = collapsedModel.rowForNode.get(mainline);
   expect(ancestorRow).toBeDefined();
@@ -896,4 +896,39 @@ test("keeps a collapsed variation hidden after a comment and a mainline move", a
   expect(host.querySelector('[data-node="e5"]')).not.toBeNull();
   expect(host.querySelector('[data-node="d4"]')).toBeNull();
   expect(store.getState().root.children[0].comment).toBe("note on e4");
+});
+
+test("keeps a collapsed variation on its move sequence after promoting a sibling", async () => {
+  store.getState().makeMoves({ payload: ["e4", "e5"] });
+  store.getState().goToMove([0]);
+  store.getState().makeMove({ payload: "c5" });
+
+  await act(async () => {
+    root.render(
+      <TreeStateContext.Provider value={store}>
+        <WorkspaceTabScope tabId="notation-test">
+          <GameNotation />
+        </WorkspaceTabScope>
+      </TreeStateContext.Provider>,
+    );
+  });
+
+  expect(host.querySelector('[data-node="c5"]')).not.toBeNull();
+  const toggle = host.querySelector<HTMLButtonElement>('[aria-label="Notation.ToggleVariation"]');
+  expect(toggle).not.toBeNull();
+  await act(async () => toggle!.click());
+  expect(host.querySelector('[data-node="c5"]')).toBeNull();
+
+  await act(async () => {
+    store.getState().goToStart();
+    store.getState().makeMove({ payload: "d4" });
+    store.getState().promoteVariation([1]);
+  });
+
+  expect(store.getState().root.children.map((node) => node.san)).toEqual(["d4", "e4"]);
+  expect(host.querySelector('[data-node="d4"]')).not.toBeNull();
+  expect(host.querySelector('[data-node="e4"]')).not.toBeNull();
+  expect(host.querySelector('[data-node="e5"]')).not.toBeNull();
+  expect(host.querySelector('[data-node="c5"]')).toBeNull();
+  expect(host.querySelectorAll('[aria-label="Notation.ToggleVariation"]')).toHaveLength(2);
 });

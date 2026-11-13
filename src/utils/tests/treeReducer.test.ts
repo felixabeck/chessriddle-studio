@@ -12,7 +12,7 @@ import {
     getMemoizedBoardStateMap,
     getNodeAtPath,
     getResolvedPathLength,
-    lineTreeTo,
+    lineToTree,
     normalizeTreeHalfMoves,
     rootHalfMoves,
     treeIterator,
@@ -157,7 +157,7 @@ describe("game display name", () => {
     });
 });
 
-test("lineTreeTo copies only the path to a variation node onto a new mainline", () => {
+test("lineToTree copies only the path to a variation node onto a new mainline", () => {
     const fen = "8/8/8/8/8/8/8/K6k b - - 0 23";
     const tree = defaultTree(fen);
     tree.headers.orientation = "black";
@@ -186,7 +186,7 @@ test("lineTreeTo copies only the path to a variation node onto a new mainline", 
     first.children = [mainReply, side];
     tree.root.children = [first];
 
-    const copied = lineTreeTo(tree.root, tree.headers, [0, 1]);
+    const copied = lineToTree(tree.root, tree.headers.orientation, [0, 1]);
 
     expect(copied.headers.fen).toBe(fen);
     expect(copied.headers.orientation).toBe("black");
@@ -203,6 +203,48 @@ test("lineTreeTo copies only the path to a variation node onto a new mainline", 
     expect(copied.root.children[0].children[0].children).toHaveLength(0);
     expect(first.comment).toBe("keep me off the copy");
     expect(first.children).toHaveLength(2);
+});
+
+test("lineToTree copies a mainline interior cursor and an empty root cursor", () => {
+    const tree = defaultTree();
+    const e4 = createNode({
+        fen: "after-e4",
+        move: parseUci("e2e4")!,
+        san: "e4",
+        halfMoves: 1,
+    });
+    const e5 = createNode({
+        fen: "after-e5",
+        move: parseUci("e7e5")!,
+        san: "e5",
+        halfMoves: 2,
+    });
+    const nf3 = createNode({
+        fen: "after-nf3",
+        move: parseUci("g1f3")!,
+        san: "Nf3",
+        halfMoves: 3,
+    });
+    const nc6 = createNode({
+        fen: "after-nc6",
+        move: parseUci("b8c6")!,
+        san: "Nc6",
+        halfMoves: 4,
+    });
+    nf3.children = [nc6];
+    e5.children = [nf3];
+    e4.children = [e5];
+    tree.root.children = [e4];
+
+    const interior = lineToTree(tree.root, "white", [0, 0]);
+    expect(interior.position).toEqual([0, 0]);
+    expect(interior.root.children.map((node) => node.san)).toEqual(["e4"]);
+    expect(interior.root.children[0].children.map((node) => node.san)).toEqual(["e5"]);
+    expect(interior.root.children[0].children[0].children).toEqual([]);
+
+    const atRoot = lineToTree(tree.root, undefined, []);
+    expect(atRoot.position).toEqual([]);
+    expect(atRoot.root.children).toEqual([]);
 });
 
 test("path lookup stops at the last valid node instead of crossing a missing child", () => {

@@ -24,7 +24,7 @@ import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { autoSaveAtom, eraseDrawablesOnClickAtom, tabsAtom } from "@/state/atoms";
 import { keyMapAtom } from "@/state/keybinds";
 import { createTab, runTabCreation } from "@/utils/tabs";
-import { lineTreeTo } from "@/utils/treeReducer";
+import { lineToTree } from "@/utils/treeReducer";
 
 interface BoardControlsProps {
   boardRef: React.RefObject<HTMLDivElement | null>;
@@ -75,14 +75,14 @@ function BoardControls({
       orientation: orientation === "black" ? "white" : "black",
     });
 
-  function changeTabType() {
+  function playFromHereOrAnalyze() {
     if (currentTab?.type === "analysis") {
       void runTabCreation({
         create: () =>
           createTab({
             tab: { name: t("Home.NewGame"), type: "play" },
             setTabs,
-            initialTree: lineTreeTo(root, headers, position),
+            initialTree: lineToTree(root, headers.orientation, position),
           }),
         onError: (error) => notifyUnlessCancelled(t("Common.Error"), error),
       });
@@ -129,7 +129,7 @@ function BoardControls({
             ? "Board.Action.PlayFromHere"
             : "Board.Action.AnalyzeGame",
         )}
-        onClick={changeTabType}
+        onClick={playFromHereOrAnalyze}
       >
         {currentTab?.type === "analysis" ? <Target size="1.2rem" /> : <ScanSearch size="1.2rem" />}
       </IconAction>

@@ -303,7 +303,7 @@ function GameNotation({
                       onToggleVariation={(parent) => {
                         const path = pathForNotationNode(model.index, parent);
                         if (path === undefined) return;
-                        const key = variationCollapseKey(path);
+                        const key = variationCollapseKey(root, path);
                         setCollapsedVariations((previous) => {
                           const next = new Set(previous);
                           if (next.has(key)) next.delete(key);

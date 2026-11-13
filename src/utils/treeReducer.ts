@@ -282,13 +282,13 @@ export const getNodeAtPath = (node: TreeNode, path: number[]): TreeNode => {
  * A new tree whose mainline is the unique path from `root` to `position`. Sibling variations,
  * comments, NAGs, shapes and scores are dropped. The cursor sits at the end of that line.
  */
-export function lineTreeTo(
+export function lineToTree(
     root: TreeNode,
-    headers: Pick<GameHeaders, "orientation">,
+    orientation: GameHeaders["orientation"],
     position: number[],
 ): TreeState {
     const tree = defaultTree(root.fen);
-    tree.headers.orientation = headers.orientation;
+    tree.headers.orientation = orientation;
     let dest = tree.root;
     const resolvedLength = getResolvedPathLength(root, position);
     const mainline: number[] = [];

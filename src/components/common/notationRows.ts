@@ -1,3 +1,4 @@
+import { makeUci } from "chessops";
 import { splitPgnComment } from "@/utils/pgnComment";
 import { getEffectiveGameEnd, type TreeNode } from "@/utils/treeReducer";
 
@@ -57,8 +58,8 @@ export type NodeLink = {
 };
 
 /**
- * The tree index deliberately stores links, not paths. A path is an ephemeral value derived only
- * when a user invokes an action on a mounted move.
+ * The tree index stores parent links, not paths. A path is derived when an action targets a
+ * mounted move, and when a variation collapse key walks the move sequence from the root.
  */
 export type NotationNodeIndex = {
     root: TreeNode;
@@ -78,9 +79,24 @@ export type NotationRowOptions = {
     collapsedVariations?: ReadonlySet<string>;
 };
 
-/** Stable identity for a collapsed variation parent: the path from the root, joined by commas. */
-export function variationCollapseKey(path: number[]): string {
-    return path.join(",");
+function collapseMoveToken(node: TreeNode): string {
+    return node.san ?? (node.move ? makeUci(node.move) : "");
+}
+
+/**
+ * Identity of a variation parent across sibling reorder: SAN (or UCI) of each node from the root
+ * along `path`, joined by spaces. The root path is "". A deleted line no longer matches.
+ */
+export function variationCollapseKey(root: TreeNode, path: number[]): string {
+    const tokens: string[] = [];
+    let node = root;
+    for (const index of path) {
+        const child = node.children[index];
+        if (child === undefined) break;
+        tokens.push(collapseMoveToken(child));
+        node = child;
+    }
+    return tokens.join(" ");
 }
 
 type InlineTask = {
@@ -95,6 +111,7 @@ type RowBuildOptions = NotationRowOptions & {
     gameEnd?: TreeNode;
     analysisNodes: WeakSet<TreeNode>;
     index: NotationNodeIndex;
+    collapseKeys: Map<TreeNode, string>;
 };
 
 type RowTask = InlineTask | GameEndNotationRow;
@@ -189,10 +206,15 @@ function queueVariationTasks(
     options: RowBuildOptions,
     stack: RowTask[],
 ): void {
-    const path = pathForNotationNode(options.index, parent);
-    const collapsed =
-        path !== undefined &&
-        (options.collapsedVariations?.has(variationCollapseKey(path)) ?? false);
+    let key = options.collapseKeys.get(parent);
+    if (key === undefined) {
+        const path = pathForNotationNode(options.index, parent);
+        if (path !== undefined) {
+            key = variationCollapseKey(options.index.root, path);
+            options.collapseKeys.set(parent, key);
+        }
+    }
+    const collapsed = key !== undefined && (options.collapsedVariations?.has(key) ?? false);
     addRow(rows, rowForNode, {
         type: "variation",
         depth,
@@ -414,7 +436,13 @@ export function buildNotationRows(root: TreeNode, options: NotationRowOptions): 
         analysisNodes.add(node);
         for (const child of node.children) stack.push(child);
     }
-    const buildOptions: RowBuildOptions = { ...options, gameEnd, analysisNodes, index };
+    const buildOptions: RowBuildOptions = {
+        ...options,
+        gameEnd,
+        analysisNodes,
+        index,
+        collapseKeys: new Map(),
+    };
 
     if (options.showComments && root.comment.length > 0) {
         addComment(rows, rowForNode, 0, root.comment);

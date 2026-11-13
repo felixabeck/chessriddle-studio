@@ -54,7 +54,7 @@ describe("buildNotationRows", () => {
                     showComments: false,
                     showVariations: true,
                     collapsedVariations: collapsed
-                        ? new Set([variationCollapseKey([0, 0])])
+                        ? new Set([variationCollapseKey(tree.root, [0, 0])])
                         : undefined,
                 });
                 const row = model.rows[model.rowForNode.get(tree.nc6)!];
@@ -177,7 +177,7 @@ describe("buildNotationRows", () => {
                 tableView,
                 showComments: true,
                 showVariations: true,
-                collapsedVariations: new Set(["9,9", variationCollapseKey([0])]),
+                collapsedVariations: new Set(["9,9", variationCollapseKey(tree.root, [0])]),
             });
             expect(model.rows.at(-1)).toEqual({ type: "gameEnd", hasAnalysis: false });
             expect(model.rows.at(-2)).toMatchObject({
@@ -256,7 +256,7 @@ describe("buildNotationRows", () => {
             showVariations: true,
             showComments: true,
             tableView: false,
-            collapsedVariations: new Set([variationCollapseKey([0])]),
+            collapsedVariations: new Set([variationCollapseKey(tree.root, [0])]),
         });
         expect(moveNames(collapsed.rows)).not.toContain("c5");
         expect(collapsed.rows.some((row) => row.type === "variation")).toBe(true);
