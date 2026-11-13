@@ -2247,36 +2247,9 @@ pub(crate) struct OpeningBookDescriptor {
 }
 
 impl OpeningBookDescriptor {
-    /// Reads the already-opened file in bounded chunks. Cancellation is checked
-    /// between reads, keeping the single blocking opening-book worker responsive.
-    pub(crate) fn read_bounded_bytes_cancellable(
-        &mut self,
-        max_bytes: usize,
-        cancellation: &CancellationToken,
-    ) -> Result<Vec<u8>, Error> {
-        if cancellation.is_cancelled() {
-            return Err(Error::Cancellation);
-        }
-        let declared = self.file.metadata()?.len();
-        if declared > max_bytes as u64 {
-            return Err(Error::ResourceLimit(
-                "opening book exceeds the configured size limit".into(),
-            ));
-        }
-
-        read_bounded_bytes(
-            &mut self.file,
-            declared,
-            max_bytes,
-            "opening book exceeds the configured size limit",
-            || {
-                if cancellation.is_cancelled() {
-                    Err(Error::Cancellation)
-                } else {
-                    Ok(())
-                }
-            },
-        )
+    /// The already-opened, authority-validated file moves to the caller's blocking worker.
+    pub(crate) fn into_file(self) -> OwnedFile {
+        self.file
     }
 }
 impl OpeningBookHandle {
@@ -24892,30 +24865,19 @@ mod tests {
     }
 
     #[test]
-    fn opening_book_bounded_reader_keeps_exact_limit_and_cancellation() {
+    fn opening_book_into_file_returns_the_opened_bytes() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("book.bin");
         fs::write(&path, b"book").unwrap();
-        let mut descriptor = OpeningBookDescriptor {
+        let descriptor = OpeningBookDescriptor {
             file_name: "book.bin".into(),
             file: fs::File::open(&path).unwrap().into(),
         };
-        assert_eq!(
-            descriptor
-                .read_bounded_bytes_cancellable(4, &CancellationToken::new())
-                .unwrap(),
-            b"book"
-        );
-        let cancelled = CancellationToken::new();
-        cancelled.cancel();
-        let mut cancelled_descriptor = OpeningBookDescriptor {
-            file_name: "book.bin".into(),
-            file: fs::File::open(path).unwrap().into(),
-        };
-        assert!(matches!(
-            cancelled_descriptor.read_bounded_bytes_cancellable(4, &cancelled),
-            Err(Error::Cancellation)
-        ));
+        let mut file = descriptor.into_file();
+        let mut bytes = Vec::new();
+        use std::io::Read as _;
+        file.read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes, b"book");
     }
 
     #[test]

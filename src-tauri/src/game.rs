@@ -2,7 +2,7 @@
 use crate::infra::path_authority::PathAuthority;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
-    io::{BufRead, BufReader, Cursor, Read},
+    io::{BufRead, BufReader, Cursor, Read, Seek, SeekFrom},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, OnceLock,
@@ -38,6 +38,7 @@ use crate::{
     },
     error::Error,
     infra::blocking::BLOCKING_GATEWAY,
+    infra::inode_ownership::OwnedFile,
     infra::keyed_locks::{KeyedLockLease, KeyedLocks},
     infra::path_authority::{EngineExecutable, EngineHandle, OpeningBookHandle, PathOperation},
 };
@@ -297,7 +298,7 @@ struct GameController {
     move_notify_tx: Option<tokio::sync::mpsc::Sender<()>>,
     engine_thinking: bool,
     active_engine_request: Option<ActiveEngineRequest>,
-    polyglot_book: Option<CancellablePolyglotBook>,
+    polyglot_book: Option<Arc<CancellablePolyglotBook>>,
     polyglot_max_ply: usize,
 }
 
@@ -2249,7 +2250,7 @@ struct OpeningBookSelection {
 
 struct OpeningBookResult {
     config: GameConfig,
-    polyglot_book: Option<CancellablePolyglotBook>,
+    polyglot_book: Option<Arc<CancellablePolyglotBook>>,
     polyglot_max_ply: usize,
 }
 
@@ -2579,22 +2580,25 @@ fn select_random_pgn_entry_cancellable(
     })
 }
 
-const MAX_OPENING_BOOK_BYTES: usize = 32 * 1024 * 1024;
+const MAX_ZIPPED_OPENING_BOOK_BYTES: usize = 32 * 1024 * 1024;
+const ZIPPED_OPENING_BOOK_SIZE_LIMIT_MESSAGE: &str = "zipped opening books are limited to 32 MiB uncompressed; unzip the book and choose the .bin, .pgn or .epd file directly";
 const MAX_OPENING_BOOK_COMPRESSION_RATIO: u64 = 100;
 const MAX_OPENING_BOOK_PGN_MOVES: usize = 10_000;
 const MAX_OPENING_BOOK_EPD_LINE_BYTES: usize = 64 * 1024;
+const MAX_POLYGLOT_ENTRIES_PER_POSITION: usize = 256;
+const POLYGLOT_SCAN_CHUNK_BYTES: usize = 64 * 1024;
 
 #[cfg(test)]
 fn read_zip_inner(zip_bytes: &[u8]) -> Result<(String, Vec<u8>), Error> {
-    read_zip_inner_cancellable(zip_bytes, &CancellationToken::new())
+    read_zip_inner_cancellable(Cursor::new(zip_bytes), &CancellationToken::new())
 }
 
 fn read_zip_inner_cancellable(
-    zip_bytes: &[u8],
+    zip: impl Read + Seek,
     cancellation: &CancellationToken,
 ) -> Result<(String, Vec<u8>), Error> {
     ensure_opening_book_not_cancelled(cancellation)?;
-    let mut archive = zip::ZipArchive::new(Cursor::new(zip_bytes))?;
+    let mut archive = zip::ZipArchive::new(zip)?;
     if archive.len() != 1 {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
@@ -2606,8 +2610,12 @@ fn read_zip_inner_cancellable(
     let name = inner.name().to_string();
     let compressed = inner.compressed_size();
     let uncompressed = inner.size();
-    if uncompressed > MAX_OPENING_BOOK_BYTES as u64
-        || (compressed == 0 && uncompressed > 0)
+    if uncompressed > MAX_ZIPPED_OPENING_BOOK_BYTES as u64 {
+        return Err(Error::ResourceLimit(
+            ZIPPED_OPENING_BOOK_SIZE_LIMIT_MESSAGE.into(),
+        ));
+    }
+    if (compressed == 0 && uncompressed > 0)
         || (compressed > 0
             && uncompressed > compressed.saturating_mul(MAX_OPENING_BOOK_COMPRESSION_RATIO))
     {
@@ -2629,9 +2637,9 @@ fn read_zip_inner_cancellable(
         let new_len = buf.len().checked_add(read).ok_or_else(|| {
             Error::ResourceLimit("opening-book zip exceeds decompression safety limits".into())
         })?;
-        if new_len > MAX_OPENING_BOOK_BYTES {
+        if new_len > MAX_ZIPPED_OPENING_BOOK_BYTES {
             return Err(Error::ResourceLimit(
-                "opening-book zip exceeds decompression safety limits".into(),
+                ZIPPED_OPENING_BOOK_SIZE_LIMIT_MESSAGE.into(),
             ));
         }
         buf.extend_from_slice(&chunk[..read]);
@@ -2715,13 +2723,13 @@ async fn apply_opening_book(
 
 fn apply_opening_book_descriptor(
     config: GameConfig,
-    mut descriptor: crate::infra::path_authority::OpeningBookDescriptor,
+    descriptor: crate::infra::path_authority::OpeningBookDescriptor,
     max_ply: usize,
     cancellation: &CancellationToken,
 ) -> Result<OpeningBookResult, Error> {
     ensure_opening_book_not_cancelled(cancellation)?;
     let file_name = descriptor.file_name.clone();
-    let bytes = descriptor.read_bounded_bytes_cancellable(MAX_OPENING_BOOK_BYTES, cancellation)?;
+    let file = descriptor.into_file();
     let ext = opening_book_ext(&file_name);
 
     let is_human_vs_human = matches!(
@@ -2737,22 +2745,21 @@ fn apply_opening_book_descriptor(
 
     let action = match ext {
         Some("epd") => BookAction::Selection(select_random_epd_entry_cancellable(
-            BufReader::new(Cursor::new(bytes)),
+            BufReader::new(file),
             cancellation,
         )?),
-        Some("pgn") => BookAction::Selection(select_random_pgn_entry_cancellable(
-            Cursor::new(bytes),
-            cancellation,
-        )?),
+        Some("pgn") => {
+            BookAction::Selection(select_random_pgn_entry_cancellable(file, cancellation)?)
+        }
         Some("bin") => {
             if is_human_vs_human {
                 BookAction::Skip
             } else {
-                BookAction::Polyglot(load_polyglot_book_cancellable(&bytes, cancellation)?)
+                BookAction::Polyglot(open_polyglot_file_book_cancellable(file, cancellation)?)
             }
         }
         Some("zip") => {
-            let (inner_name, data) = read_zip_inner_cancellable(&bytes, cancellation)?;
+            let (inner_name, data) = read_zip_inner_cancellable(file, cancellation)?;
             match opening_book_ext(&inner_name) {
                 Some("epd") => BookAction::Selection(select_random_epd_entry_cancellable(
                     BufReader::new(Cursor::new(data)),
@@ -2800,7 +2807,7 @@ fn apply_opening_book_descriptor(
         }
         BookAction::Polyglot(book) => Ok(OpeningBookResult {
             config,
-            polyglot_book: Some(book),
+            polyglot_book: Some(Arc::new(book)),
             polyglot_max_ply: max_ply,
         }),
         BookAction::Skip => Ok(OpeningBookResult {
@@ -2828,39 +2835,175 @@ struct PolyglotMoveEntry {
     weight: u16,
 }
 
-/// A bounded, cancellation-aware Polyglot representation. The upstream
-/// loader parses and sorts a whole file without checkpoints, so it cannot run
-/// inside the shared blocking gateway without making cancellation advisory.
+enum PolyglotBookSource {
+    Memory(Vec<PolyglotRecord>),
+    File {
+        file: std::sync::Mutex<OwnedFile>,
+        records: u64,
+    },
+}
+
+/// A bounded, cancellation-aware Polyglot representation. A zipped book is
+/// decompressed and sorted in memory with cancellation checkpoints; a direct
+/// `.bin` stays on disk, is checked for key order in one streaming pass, and is
+/// binary-searched in place, so its size is not capped.
 struct CancellablePolyglotBook {
-    entries: Vec<PolyglotRecord>,
+    source: PolyglotBookSource,
 }
 
 impl CancellablePolyglotBook {
-    fn get_all_moves_from_fen(&self, fen: &str) -> Vec<PolyglotMoveEntry> {
-        let Ok(key) = polyglot_hash_from_fen(fen) else {
-            return Vec::new();
-        };
-        let Ok(mut index) = self.entries.binary_search_by_key(&key, |entry| entry.key) else {
-            return Vec::new();
-        };
-        while index > 0 && self.entries[index - 1].key == key {
-            index -= 1;
-        }
-        let mut moves = Vec::new();
-        for entry in self.entries[index..]
-            .iter()
-            .take_while(|entry| entry.key == key)
-        {
-            if let Some(move_string) = polyglot_move_to_uci(entry.move_data) {
-                moves.push(PolyglotMoveEntry {
-                    move_string,
-                    weight: entry.weight,
-                });
+    fn moves_for_key(&self, key: u64) -> Result<Vec<PolyglotMoveEntry>, Error> {
+        match &self.source {
+            PolyglotBookSource::Memory(entries) => Ok(memory_moves_for_key(entries, key)),
+            PolyglotBookSource::File { file, records } => {
+                let mut file = file
+                    .lock()
+                    .map_err(|_| Error::Conflict("opening book file lock was poisoned".into()))?;
+                file_moves_for_key(&mut file, *records, key)
             }
         }
-        moves.sort_by_key(|entry| std::cmp::Reverse(entry.weight));
-        moves
     }
+}
+
+fn decode_polyglot_record(record: &[u8; 16]) -> PolyglotRecord {
+    PolyglotRecord {
+        key: u64::from_be_bytes([
+            record[0], record[1], record[2], record[3], record[4], record[5], record[6], record[7],
+        ]),
+        move_data: u16::from_be_bytes([record[8], record[9]]),
+        weight: u16::from_be_bytes([record[10], record[11]]),
+    }
+}
+
+fn collect_polyglot_moves<I>(entries: I) -> Vec<PolyglotMoveEntry>
+where
+    I: IntoIterator<Item = PolyglotRecord>,
+{
+    let mut moves = Vec::new();
+    for entry in entries {
+        if let Some(move_string) = polyglot_move_to_uci(entry.move_data) {
+            moves.push(PolyglotMoveEntry {
+                move_string,
+                weight: entry.weight,
+            });
+        }
+    }
+    moves.sort_by_key(|entry| std::cmp::Reverse(entry.weight));
+    moves
+}
+
+fn memory_moves_for_key(entries: &[PolyglotRecord], key: u64) -> Vec<PolyglotMoveEntry> {
+    let Ok(mut index) = entries.binary_search_by_key(&key, |entry| entry.key) else {
+        return Vec::new();
+    };
+    while index > 0 && entries[index - 1].key == key {
+        index -= 1;
+    }
+    collect_polyglot_moves(
+        entries[index..]
+            .iter()
+            .copied()
+            .take_while(|entry| entry.key == key),
+    )
+}
+
+fn read_polyglot_key_at(file: &mut OwnedFile, index: u64) -> Result<u64, Error> {
+    let offset = index
+        .checked_mul(16)
+        .ok_or_else(|| Error::InvalidInput("Polyglot book record offset overflowed".into()))?;
+    file.seek(SeekFrom::Start(offset))?;
+    let mut key_bytes = [0_u8; 8];
+    file.read_exact(&mut key_bytes)?;
+    Ok(u64::from_be_bytes(key_bytes))
+}
+
+fn file_moves_for_key(
+    file: &mut OwnedFile,
+    records: u64,
+    key: u64,
+) -> Result<Vec<PolyglotMoveEntry>, Error> {
+    let mut lo = 0_u64;
+    let mut hi = records;
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        let mid_key = read_polyglot_key_at(file, mid)?;
+        if mid_key < key {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    if lo >= records {
+        return Ok(Vec::new());
+    }
+    let offset = lo
+        .checked_mul(16)
+        .ok_or_else(|| Error::InvalidInput("Polyglot book record offset overflowed".into()))?;
+    file.seek(SeekFrom::Start(offset))?;
+    let mut matching = Vec::new();
+    let mut index = lo;
+    while index < records && matching.len() < MAX_POLYGLOT_ENTRIES_PER_POSITION {
+        let mut record = [0_u8; 16];
+        file.read_exact(&mut record)?;
+        let decoded = decode_polyglot_record(&record);
+        if decoded.key != key {
+            break;
+        }
+        matching.push(decoded);
+        index += 1;
+    }
+    Ok(collect_polyglot_moves(matching))
+}
+
+fn open_polyglot_file_book_cancellable(
+    mut file: OwnedFile,
+    cancellation: &CancellationToken,
+) -> Result<CancellablePolyglotBook, Error> {
+    ensure_opening_book_not_cancelled(cancellation)?;
+    let declared = file.metadata()?.len();
+    if !declared.is_multiple_of(16) {
+        return Err(Error::InvalidInput(
+            "Polyglot book is not aligned to 16-byte records".into(),
+        ));
+    }
+    let records = declared / 16;
+    let mut buf = [0_u8; POLYGLOT_SCAN_CHUNK_BYTES];
+    let mut remaining = declared;
+    let mut previous_key = None;
+    while remaining > 0 {
+        ensure_opening_book_not_cancelled(cancellation)?;
+        let want = remaining.min(POLYGLOT_SCAN_CHUNK_BYTES as u64) as usize;
+        let mut filled = 0;
+        while filled < want {
+            let read = file.read(&mut buf[filled..want])?;
+            if read == 0 {
+                return Err(Error::InvalidInput(
+                    "Polyglot book file shrank during read".into(),
+                ));
+            }
+            filled += read;
+        }
+        remaining -= want as u64;
+        let (records, remainder) = buf[..want].as_chunks::<16>();
+        debug_assert!(remainder.is_empty());
+        for record in records {
+            let decoded = decode_polyglot_record(record);
+            if let Some(previous) = previous_key {
+                if decoded.key < previous {
+                    return Err(Error::InvalidInput(
+                        "Polyglot book is not sorted by position key".into(),
+                    ));
+                }
+            }
+            previous_key = Some(decoded.key);
+        }
+    }
+    Ok(CancellablePolyglotBook {
+        source: PolyglotBookSource::File {
+            file: std::sync::Mutex::new(file),
+            records,
+        },
+    })
 }
 
 fn polyglot_move_to_uci(move_data: u16) -> Option<String> {
@@ -2891,7 +3034,7 @@ fn load_polyglot_book_cancellable(
     cancellation: &CancellationToken,
 ) -> Result<CancellablePolyglotBook, Error> {
     ensure_opening_book_not_cancelled(cancellation)?;
-    if bytes.len() > MAX_OPENING_BOOK_BYTES {
+    if bytes.len() > MAX_ZIPPED_OPENING_BOOK_BYTES {
         return Err(Error::ResourceLimit(
             "Polyglot book exceeds the configured size limit".into(),
         ));
@@ -2909,17 +3052,12 @@ fn load_polyglot_book_cancellable(
         if index % 1024 == 0 {
             ensure_opening_book_not_cancelled(cancellation)?;
         }
-        entries.push(PolyglotRecord {
-            key: u64::from_be_bytes([
-                record[0], record[1], record[2], record[3], record[4], record[5], record[6],
-                record[7],
-            ]),
-            move_data: u16::from_be_bytes([record[8], record[9]]),
-            weight: u16::from_be_bytes([record[10], record[11]]),
-        });
+        entries.push(decode_polyglot_record(record));
     }
     cancellable_polyglot_sort(&mut entries, cancellation)?;
-    Ok(CancellablePolyglotBook { entries })
+    Ok(CancellablePolyglotBook {
+        source: PolyglotBookSource::Memory(entries),
+    })
 }
 
 fn cancellable_polyglot_sort(
@@ -3242,8 +3380,14 @@ async fn game_loop<R: Runtime>(
     info!("Game loop ended for {}", game_id);
 }
 
-fn try_polyglot_book_move(controller: &GameController) -> Option<String> {
-    let book = controller.polyglot_book.as_ref()?;
+struct PolyglotBookProbe {
+    book: Arc<CancellablePolyglotBook>,
+    key: u64,
+    position: Chess,
+}
+
+fn polyglot_book_probe(controller: &GameController) -> Option<PolyglotBookProbe> {
+    let book = controller.polyglot_book.clone()?;
 
     if controller.moves.len() >= controller.polyglot_max_ply {
         return None;
@@ -3252,30 +3396,40 @@ fn try_polyglot_book_move(controller: &GameController) -> Option<String> {
     // Polyglot hashes the en-passant file when an adjacent pawn can capture, even if it is pinned.
     let fen =
         Fen::from_position(controller.position.clone(), EnPassantMode::PseudoLegal).to_string();
-    let entries = book.get_all_moves_from_fen(&fen);
+    let key = polyglot_hash_from_fen(&fen).ok()?;
+    Some(PolyglotBookProbe {
+        book,
+        key,
+        position: controller.position.clone(),
+    })
+}
 
-    if entries.is_empty() {
-        return None;
+impl PolyglotBookProbe {
+    fn choose_move(self) -> Result<Option<String>, Error> {
+        let entries = self.book.moves_for_key(self.key)?;
+        if entries.is_empty() {
+            return Ok(None);
+        }
+
+        let mut rng = rand::thread_rng();
+        let legal_moves = entries
+            .into_iter()
+            .filter_map(|entry| {
+                let parsed = UciMove::from_ascii(entry.move_string.as_bytes()).ok()?;
+                let mv = parsed.to_move(&self.position).ok()?;
+                let uci = UciMove::from_move(&mv, self.position.castles().mode()).to_string();
+                Some((uci, entry.weight))
+            })
+            .collect::<Vec<_>>();
+
+        if legal_moves.is_empty() {
+            return Ok(None);
+        }
+
+        let weights = legal_moves.iter().map(|(_, w)| *w).collect::<Vec<_>>();
+        let selected = choose_weighted_index(&weights, &mut rng);
+        Ok(Some(legal_moves[selected].0.clone()))
     }
-
-    let mut rng = rand::thread_rng();
-    let legal_moves = entries
-        .into_iter()
-        .filter_map(|entry| {
-            let parsed = UciMove::from_ascii(entry.move_string.as_bytes()).ok()?;
-            let mv = parsed.to_move(&controller.position).ok()?;
-            let uci = UciMove::from_move(&mv, controller.position.castles().mode()).to_string();
-            Some((uci, entry.weight))
-        })
-        .collect::<Vec<_>>();
-
-    if legal_moves.is_empty() {
-        return None;
-    }
-
-    let weights = legal_moves.iter().map(|(_, w)| *w).collect::<Vec<_>>();
-    let selected = choose_weighted_index(&weights, &mut rng);
-    Some(legal_moves[selected].0.clone())
 }
 
 fn select_engine_go(
@@ -3332,10 +3486,24 @@ async fn request_engine_move<R: Runtime>(
 ) -> Result<(), Error> {
     // Try polyglot book move first (only for engine turns with a loaded book)
     {
-        let ctrl = controller.read().await;
-        let book_move = try_polyglot_book_move(&ctrl);
-        let turn = ctrl.position.turn();
-        drop(ctrl);
+        let (book_probe, turn) = {
+            let ctrl = controller.read().await;
+            let probe = polyglot_book_probe(&ctrl);
+            let turn = ctrl.position.turn();
+            (probe, turn)
+        };
+
+        let book_move = if let Some(probe) = book_probe {
+            match BLOCKING_GATEWAY.spawn(move || probe.choose_move()).await {
+                Ok(chosen) => chosen,
+                Err(error) => {
+                    warn!("opening book lookup failed; falling back to the engine: {error}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         if let Some(book_uci) = book_move {
             let Some(manager) = manager.upgrade() else {
@@ -4903,26 +5071,38 @@ mod tests {
         }
     }
 
+    fn encode_polyglot_entry(key: u64, uci: &str, weight: u16) -> [u8; 16] {
+        let uci = uci.as_bytes();
+        assert_eq!(uci.len(), 4);
+        let square = |file: u8, rank: u8| {
+            assert!((b'a'..=b'h').contains(&file));
+            assert!((b'1'..=b'8').contains(&rank));
+            (rank - b'1') as u16 * 8 + (file - b'a') as u16
+        };
+        let from = square(uci[0], uci[1]);
+        let to = square(uci[2], uci[3]);
+        let move_data = (from << 6) | to;
+        let mut bytes = [0_u8; 16];
+        bytes[0..8].copy_from_slice(&key.to_be_bytes());
+        bytes[8..10].copy_from_slice(&move_data.to_be_bytes());
+        bytes[10..12].copy_from_slice(&weight.to_be_bytes());
+        bytes
+    }
+
     fn polyglot_book_bytes(entries: &[(u64, &str, u16)]) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(entries.len() * 16);
         for &(key, uci, weight) in entries {
-            let uci = uci.as_bytes();
-            assert_eq!(uci.len(), 4);
-            let square = |file: u8, rank: u8| {
-                assert!((b'a'..=b'h').contains(&file));
-                assert!((b'1'..=b'8').contains(&rank));
-                (rank - b'1') as u16 * 8 + (file - b'a') as u16
-            };
-            let from = square(uci[0], uci[1]);
-            let to = square(uci[2], uci[3]);
-            let move_data = (from << 6) | to;
-
-            bytes.extend_from_slice(&key.to_be_bytes());
-            bytes.extend_from_slice(&move_data.to_be_bytes());
-            bytes.extend_from_slice(&weight.to_be_bytes());
-            bytes.extend_from_slice(&0_u32.to_be_bytes());
+            bytes.extend_from_slice(&encode_polyglot_entry(key, uci, weight));
         }
         bytes
+    }
+
+    fn assert_same_polyglot_moves(left: &[PolyglotMoveEntry], right: &[PolyglotMoveEntry]) {
+        assert_eq!(left.len(), right.len());
+        for (left_entry, right_entry) in left.iter().zip(right) {
+            assert_eq!(left_entry.move_string, right_entry.move_string);
+            assert_eq!(left_entry.weight, right_entry.weight);
+        }
     }
 
     fn controller_with_polyglot_book(
@@ -4934,9 +5114,15 @@ mod tests {
         config.initial_fen = Some(initial_fen.into());
         let mut controller = GameController::new("polyglot-test".into(), 1, config).unwrap();
         controller.apply_move(move_uci).unwrap();
-        controller.polyglot_book = Some(load_polyglot_book(&polyglot_book_bytes(entries)).unwrap());
+        controller.polyglot_book = Some(Arc::new(
+            load_polyglot_book(&polyglot_book_bytes(entries)).unwrap(),
+        ));
         controller.polyglot_max_ply = 16;
         controller
+    }
+
+    fn try_polyglot_book_move(controller: &GameController) -> Option<String> {
+        polyglot_book_probe(controller)?.choose_move().unwrap()
     }
 
     fn mating_config(white: PlayerConfig) -> GameConfig {
@@ -5699,6 +5885,177 @@ done
     }
 
     #[test]
+    fn pgn_opening_book_is_applied_through_outer_dispatch_from_a_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let pgn_path = dir.path().join("book.pgn");
+        std::fs::write(&pgn_path, b"1. e4 e5 *\n").unwrap();
+
+        let mut authority = PathAuthority::open(dir.path().join("registry.json"), vec![]).unwrap();
+        let book = authority
+            .register_opening_book(&pgn_path, "book.pgn")
+            .unwrap();
+        let descriptor = authority.opening_book_descriptor(&book).unwrap();
+
+        let result = apply_opening_book_descriptor(
+            human_config(),
+            descriptor,
+            40,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            result.config.initial_moves,
+            vec!["e2e4".to_string(), "e7e5".to_string()]
+        );
+    }
+
+    #[test]
+    fn zipped_opening_book_member_over_32_mib_is_resource_limit() {
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        zip.start_file("book.bin", options).unwrap();
+        let chunk = [0_u8; 64 * 1024];
+        let mut remaining = 32 * 1024 * 1024 + 16;
+        while remaining > 0 {
+            let n = remaining.min(chunk.len());
+            zip.write_all(&chunk[..n]).unwrap();
+            remaining -= n;
+        }
+        let bytes = zip.finish().unwrap().into_inner();
+        match read_zip_inner(&bytes) {
+            Err(Error::ResourceLimit(message)) => {
+                assert!(message.contains("32 MiB"), "{message}");
+            }
+            other => panic!("expected ResourceLimit, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn polyglot_book_over_the_old_32_mib_cap_is_selected_and_used() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("large.bin");
+        let record_count: u64 = 2_162_688;
+        let start_fen =
+            Fen::from_position(Chess::default(), EnPassantMode::PseudoLegal).to_string();
+        let target_key = polyglot_hash_from_fen(&start_fen).unwrap();
+        {
+            let file = std::fs::File::create(&path).unwrap();
+            let mut writer = std::io::BufWriter::new(file);
+            let mut next_key = 0_u64;
+            let mut wrote_target = false;
+            for i in 0..record_count {
+                let write_target_now =
+                    !wrote_target && (next_key >= target_key || i + 1 == record_count);
+                if write_target_now {
+                    writer
+                        .write_all(&encode_polyglot_entry(target_key, "e2e4", 1))
+                        .unwrap();
+                    wrote_target = true;
+                    next_key = next_key.max(target_key).saturating_add(1);
+                } else {
+                    if next_key == target_key {
+                        next_key += 1;
+                    }
+                    writer
+                        .write_all(&encode_polyglot_entry(next_key, "a1a2", 1))
+                        .unwrap();
+                    next_key += 1;
+                }
+            }
+            writer.flush().unwrap();
+        }
+        assert!(std::fs::metadata(&path).unwrap().len() > 32 * 1024 * 1024);
+
+        let mut authority = PathAuthority::open(dir.path().join("registry.json"), vec![]).unwrap();
+        let book = authority.register_opening_book(&path, "large.bin").unwrap();
+        let descriptor = authority.opening_book_descriptor(&book).unwrap();
+        let mut config = human_config();
+        config.white = fake_engine_player();
+        let result =
+            apply_opening_book_descriptor(config, descriptor, 16, &CancellationToken::new())
+                .unwrap();
+        let book = result.polyglot_book.expect("polyglot book");
+        let moves = book.moves_for_key(target_key).unwrap();
+        assert_eq!(moves.len(), 1);
+        assert_eq!(moves[0].move_string, "e2e4");
+        assert_eq!(moves[0].weight, 1);
+    }
+
+    #[test]
+    fn file_backed_polyglot_lookup_matches_memory_book() {
+        let entries = [
+            (10_u64, "e2e4", 5_u16),
+            (10, "d2d4", 10),
+            (20, "g1f3", 1),
+            (30, "c2c4", 2),
+        ];
+        let bytes = polyglot_book_bytes(&entries);
+        let memory = load_polyglot_book(&bytes).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("eq.bin");
+        std::fs::write(&path, &bytes).unwrap();
+        let file_book = open_polyglot_file_book_cancellable(
+            std::fs::File::open(&path).unwrap().into(),
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        for key in [0_u64, 9, 10, 15, 20, 30, 31] {
+            assert_same_polyglot_moves(
+                &memory.moves_for_key(key).unwrap(),
+                &file_book.moves_for_key(key).unwrap(),
+            );
+        }
+    }
+
+    #[test]
+    fn file_backed_polyglot_book_rejects_unsorted_misaligned_and_cancelled_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let unsorted_path = dir.path().join("unsorted.bin");
+        std::fs::write(
+            &unsorted_path,
+            polyglot_book_bytes(&[(2, "e2e4", 1), (1, "d2d4", 1)]),
+        )
+        .unwrap();
+        match open_polyglot_file_book_cancellable(
+            std::fs::File::open(&unsorted_path).unwrap().into(),
+            &CancellationToken::new(),
+        ) {
+            Err(Error::InvalidInput(message)) => {
+                assert!(message.contains("sorted"), "{message}");
+            }
+            Err(error) => panic!("expected unsorted InvalidInput, got {error}"),
+            Ok(_) => panic!("expected unsorted InvalidInput, got a book"),
+        }
+
+        let misaligned_path = dir.path().join("misaligned.bin");
+        std::fs::write(&misaligned_path, [0_u8; 17]).unwrap();
+        match open_polyglot_file_book_cancellable(
+            std::fs::File::open(&misaligned_path).unwrap().into(),
+            &CancellationToken::new(),
+        ) {
+            Err(Error::InvalidInput(message)) => {
+                assert!(message.contains("aligned"), "{message}");
+            }
+            Err(error) => panic!("expected misaligned InvalidInput, got {error}"),
+            Ok(_) => panic!("expected misaligned InvalidInput, got a book"),
+        }
+
+        let cancelled_path = dir.path().join("cancelled.bin");
+        std::fs::write(&cancelled_path, polyglot_book_bytes(&[(1, "e2e4", 1)])).unwrap();
+        let cancellation = CancellationToken::new();
+        cancellation.cancel();
+        assert!(matches!(
+            open_polyglot_file_book_cancellable(
+                std::fs::File::open(&cancelled_path).unwrap().into(),
+                &cancellation,
+            ),
+            Err(Error::Cancellation)
+        ));
+    }
+
+    #[test]
     fn opening_book_rejects_malformed_epd_operations_and_extra_fen_fields() {
         let valid = b"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - bm e4;\n";
         assert!(select_random_epd_entry(BufReader::new(Cursor::new(valid))).is_ok());
@@ -5948,7 +6305,7 @@ done
             Err(Error::Cancellation)
         ));
         assert!(matches!(
-            read_zip_inner_cancellable(b"not a zip archive", &cancellation),
+            read_zip_inner_cancellable(Cursor::new(b"not a zip archive"), &cancellation),
             Err(Error::Cancellation)
         ));
         assert!(matches!(
@@ -9839,7 +10196,7 @@ done
     }
 
     if let Some(task) = engine_task.take() {",
-            end_marker: "fn try_polyglot_book_move(",
+            end_marker: "fn polyglot_book_probe(",
             expected_patterns: &[
                 RoutingPattern {
                     text: "task.abort();",
