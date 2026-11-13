@@ -1,7 +1,7 @@
 import { act, Profiler } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { createStore, Provider } from "jotai";
+import { createStore, Provider, type PrimitiveAtom } from "jotai";
 import { enginesAtom, referenceDbAtom } from "@/state/atoms";
 
 import ReportModal from "./ReportModal";
@@ -67,7 +67,10 @@ vi.mock("@/i18n", () => ({
 vi.mock("@/state/persistError", () => ({ reportPersistError: mocks.reportPersistError }));
 vi.mock("@/state/atoms", async () => {
   const { atom } = await import("jotai");
-  return { enginesAtom: atom(mocks.engines), referenceDbAtom: atom(null) };
+  return {
+    enginesAtom: atom<typeof mocks.engines | undefined>(mocks.engines),
+    referenceDbAtom: atom(null),
+  };
 });
 vi.mock("@mantine/core", () => ({
   Alert: ({ children }: { children: React.ReactNode }) => <div role="alert">{children}</div>,
@@ -105,18 +108,23 @@ vi.mock("@mantine/core", () => ({
     data: (string | { value: string; label: string })[];
     value?: string;
     onChange?: (value: string) => void;
-  }) => (
-    <select value={value} onChange={(event) => onChange?.(event.currentTarget.value)}>
-      {data.map((option) => {
-        const item = typeof option === "string" ? { value: option, label: option } : option;
-        return (
+  }) => {
+    const options = data.map((option) =>
+      typeof option === "string" ? { value: option, label: option } : option,
+    );
+    if (value !== undefined && !options.some((item) => item.value === value)) {
+      options.unshift({ value, label: value });
+    }
+    return (
+      <select value={value} onChange={(event) => onChange?.(event.currentTarget.value)}>
+        {options.map((item) => (
           <option key={item.value} value={item.value}>
             {item.label}
           </option>
-        );
-      })}
-    </select>
-  ),
+        ))}
+      </select>
+    );
+  },
   Stack: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 vi.mock("../../common/AppModal", () => ({
@@ -1099,17 +1107,51 @@ test("keeps the stored engine when the engine list hydrates after mount", async 
       engine: "engine-id-2",
     }),
   );
-  atomStore.set(enginesAtom, undefined as unknown as typeof mocks.engines);
+  atomStore.set(
+    enginesAtom as unknown as PrimitiveAtom<typeof mocks.engines | undefined>,
+    undefined,
+  );
   await renderReportModal();
+  const engineSelect = host.querySelectorAll("select")[0] as HTMLSelectElement;
+  expect(engineSelect.value).toBe("engine-id-2");
+  await act(async () => {
+    host.querySelector("button")!.click();
+    await Promise.resolve();
+  });
+  expect(mocks.analyzeGame).not.toHaveBeenCalled();
+  expect(JSON.parse(localStorage.getItem("report-settings")!).engine).toBe("engine-id-2");
   await act(async () => {
     atomStore.set(enginesAtom, mocks.engines);
   });
 
-  const engineSelect = host.querySelectorAll("select")[0] as HTMLSelectElement;
   expect(engineSelect.value).toBe("engine-id-2");
   await act(async () => host.querySelector("button")!.click());
   expect(mocks.analyzeGame).toHaveBeenCalledOnce();
   expect(mocks.analyzeGame.mock.calls[0][3]).toBe("engine-id-2");
+});
+
+test("clears the stored engine when the loaded engine list is empty", async () => {
+  localStorage.setItem(
+    "report-settings",
+    JSON.stringify({
+      novelty: false,
+      reversed: true,
+      variations: true,
+      goMode: { t: "Time", c: 500 },
+      engine: "engine-id-2",
+    }),
+  );
+  atomStore.set(enginesAtom, []);
+  await renderReportModal();
+
+  const engineSelect = host.querySelectorAll("select")[0] as HTMLSelectElement;
+  expect(engineSelect.value).toBe("");
+
+  await act(async () => {
+    host.querySelector("button")!.click();
+    await Promise.resolve();
+  });
+  expect(mocks.analyzeGame).not.toHaveBeenCalled();
 });
 
 test("falls back to the first installed engine without resetting a user-edited checkbox", async () => {

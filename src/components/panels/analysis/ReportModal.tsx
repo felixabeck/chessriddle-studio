@@ -187,10 +187,10 @@ function ReportModal({
     if (engines == null) return;
     const current = formRef.current.getValues().engine;
     if (localEngines.some((engine) => engine.id === current)) return;
-    const fallback = localEngines.some((engine) => engine.id === reportSettings.engine)
+    const nextEngine = localEngines.some((engine) => engine.id === reportSettings.engine)
       ? reportSettings.engine
-      : (localEngines[0]?.id ?? "");
-    if (current !== fallback) formRef.current.setFieldValue("engine", fallback);
+      : (localEngines[0]?.id ?? defaultReportSettings.engine);
+    if (current !== nextEngine) formRef.current.setFieldValue("engine", nextEngine);
   }, [engines, localEngines, reportSettings]);
 
   async function analyze() {
