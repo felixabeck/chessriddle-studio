@@ -8,10 +8,14 @@ use crate::{credentials::LichessAccountHandle, error::Error, AppState};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use std::time::Duration;
 
 const ACCOUNT_URL: &str = "https://lichess.org/api/account";
 const EXPLORER_URL: &str = "https://explorer.lichess.org";
 const MAX_JSON_BYTES: usize = 5 * 1024 * 1024;
+/// Return current player results before the JSON client's 30-second request timeout, even if
+/// Lichess is still streaming indexing updates.
+const PLAYER_EXPLORER_DEADLINE: Duration = Duration::from_secs(20);
 const MAX_EXPLORER_QUERY_BYTES: usize = 8 * 1024;
 const MAX_EXPLORER_QUERY_PAIRS: usize = 64;
 const MIN_LICHESS_USERNAME_BYTES: usize = 2;
@@ -26,6 +30,44 @@ pub(crate) const ACCOUNT_EXPORT_PERFS: &[&str] = &[
 ];
 pub(crate) const MAX_COVERAGE_HOLDS: usize = 1_000_000;
 const MAX_COVERAGE_LINE_BYTES: usize = 64 * 1024;
+
+struct NdjsonLines {
+    line: Vec<u8>,
+    max: usize,
+    too_large: &'static str,
+}
+
+impl NdjsonLines {
+    fn new(max: usize, too_large: &'static str) -> Self {
+        Self {
+            line: Vec::new(),
+            max,
+            too_large,
+        }
+    }
+
+    fn push(
+        &mut self,
+        chunk: &[u8],
+        mut on_line: impl FnMut(&[u8]) -> Result<(), Error>,
+    ) -> Result<(), Error> {
+        for part in chunk.split_inclusive(|byte| *byte == b'\n') {
+            if self.line.len().saturating_add(part.len()) > self.max {
+                return Err(Error::ResourceLimit(self.too_large.into()));
+            }
+            self.line.extend_from_slice(part);
+            if part.last() == Some(&b'\n') {
+                on_line(&self.line)?;
+                self.line.clear();
+            }
+        }
+        Ok(())
+    }
+
+    fn finish(self, mut on_line: impl FnMut(&[u8]) -> Result<(), Error>) -> Result<(), Error> {
+        on_line(&self.line)
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct CoverageHold {
@@ -92,7 +134,10 @@ pub(crate) async fn download_coverage_holds(
         crate::fs::request_download_response(url, headers, transport, Some(token), cancellation)
             .await?;
     let mut holds = Vec::new();
-    let mut line = Vec::new();
+    let mut lines = NdjsonLines::new(
+        MAX_COVERAGE_LINE_BYTES,
+        "Lichess coverage line is too large",
+    );
     let mut received = 0u64;
     loop {
         let item = tokio::select! {
@@ -102,18 +147,7 @@ pub(crate) async fn download_coverage_holds(
         let Some(chunk) = item else { break };
         let chunk = chunk?;
         received = received.saturating_add(chunk.len() as u64);
-        for part in chunk.split_inclusive(|byte| *byte == b'\n') {
-            if line.len().saturating_add(part.len()) > MAX_COVERAGE_LINE_BYTES {
-                return Err(Error::ResourceLimit(
-                    "Lichess coverage line is too large".into(),
-                ));
-            }
-            line.extend_from_slice(part);
-            if part.last() == Some(&b'\n') {
-                coverage_line(&line, &mut holds)?;
-                line.clear();
-            }
-        }
+        lines.push(&chunk, |line| coverage_line(line, &mut holds))?;
     }
     if response
         .content_length
@@ -123,7 +157,7 @@ pub(crate) async fn download_coverage_holds(
             "Actual downloaded size mismatch".into(),
         ));
     }
-    coverage_line(&line, &mut holds)?;
+    lines.finish(|line| coverage_line(line, &mut holds))?;
     Ok(holds)
 }
 
@@ -151,6 +185,14 @@ impl LichessExplorerEndpoint {
             Self::Lichess => "/lichess",
             Self::Masters => "/masters",
             Self::Player => "/player",
+        }
+    }
+
+    /// Lichess streams `/player` as NDJSON snapshots while it indexes; the others are one object.
+    fn body_mode(self) -> AuthenticatedBodyMode {
+        match self {
+            Self::Player => AuthenticatedBodyMode::PlayerExplorer,
+            Self::Lichess | Self::Masters => AuthenticatedBodyMode::SingleObject,
         }
     }
 }
@@ -185,17 +227,69 @@ pub(crate) fn lichess_user_segment(username: &str) -> Result<&str, Error> {
     Ok(username)
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum AuthenticatedBodyMode {
+    SingleObject,
+    PlayerExplorer,
+}
+
+fn json_object(body: &[u8]) -> Result<String, Error> {
+    let value: serde_json::Value = serde_json::from_slice(body)
+        .map_err(|_| Error::InvalidInput("Lichess returned invalid JSON".into()))?;
+    if !value.is_object() {
+        return Err(Error::InvalidInput(
+            "Lichess returned an invalid response".into(),
+        ));
+    }
+    String::from_utf8(body.to_vec())
+        .map_err(|_| Error::InvalidInput("Lichess returned invalid UTF-8".into()))
+}
+
+fn player_snapshot_line(line: &[u8], latest: &mut Option<String>) -> Result<(), Error> {
+    if !line.iter().all(u8::is_ascii_whitespace) {
+        *latest = Some(json_object(line.strip_suffix(b"\n").unwrap_or(line))?);
+    }
+    Ok(())
+}
+
+async fn player_explorer_snapshot(
+    mut stream: impl futures_util::Stream<Item = Result<bytes::Bytes, Error>> + Unpin,
+    deadline: tokio::time::Instant,
+) -> Result<String, Error> {
+    use futures_util::StreamExt;
+
+    let mut lines = NdjsonLines::new(MAX_JSON_BYTES, "Lichess response is too large");
+    let mut latest = None;
+    loop {
+        let item = tokio::select! {
+            biased;
+            _ = tokio::time::sleep_until(deadline), if latest.is_some() => {
+                return latest.ok_or_else(|| {
+                    Error::InvalidInput("Lichess returned an invalid response".into())
+                });
+            }
+            item = stream.next() => item,
+        };
+        let Some(chunk) = item else { break };
+        lines.push(&chunk?, |line| player_snapshot_line(line, &mut latest))?;
+    }
+    lines.finish(|line| player_snapshot_line(line, &mut latest))?;
+    latest.ok_or_else(|| Error::InvalidInput("Lichess returned an invalid response".into()))
+}
+
 async fn authenticated_json(
     handle: &LichessAccountHandle,
     state: &AppState,
     client: &reqwest::Client,
     url: Url,
+    mode: AuthenticatedBodyMode,
 ) -> Result<String, Error> {
     let token = state
         .credentials
         .token_async(handle.clone())
         .await?
         .ok_or_else(|| Error::InvalidInput("Lichess account is unavailable".into()))?;
+    let deadline = tokio::time::Instant::now() + PLAYER_EXPLORER_DEADLINE;
     let response = client
         .get(url)
         .bearer_auth(token)
@@ -211,6 +305,14 @@ async fn authenticated_json(
     {
         return Err(Error::ResourceLimit("Lichess response is too large".into()));
     }
+    if matches!(mode, AuthenticatedBodyMode::PlayerExplorer) {
+        use futures_util::StreamExt;
+
+        let stream = response
+            .bytes_stream()
+            .map(|chunk| chunk.map_err(|_| Error::OAuthFailure("Lichess request failed".into())));
+        return player_explorer_snapshot(stream, deadline).await;
+    }
     let body = response
         .bytes()
         .await
@@ -218,15 +320,7 @@ async fn authenticated_json(
     if body.len() > MAX_JSON_BYTES {
         return Err(Error::ResourceLimit("Lichess response is too large".into()));
     }
-    let value: serde_json::Value = serde_json::from_slice(&body)
-        .map_err(|_| Error::InvalidInput("Lichess returned invalid JSON".into()))?;
-    if !value.is_object() {
-        return Err(Error::InvalidInput(
-            "Lichess returned an invalid response".into(),
-        ));
-    }
-    String::from_utf8(body.to_vec())
-        .map_err(|_| Error::InvalidInput("Lichess returned invalid UTF-8".into()))
+    json_object(&body)
 }
 
 async fn public_json(
@@ -369,7 +463,14 @@ pub async fn get_authenticated_lichess_account(
     state: tauri::State<'_, AppState>,
 ) -> Result<String, Error> {
     let url = exact_url(ACCOUNT_URL, "/api/account", None)?;
-    let body = authenticated_json(&handle, &state, &state.json_http_client, url).await?;
+    let body = authenticated_json(
+        &handle,
+        &state,
+        &state.json_http_client,
+        url,
+        AuthenticatedBodyMode::SingleObject,
+    )
+    .await?;
     let value: serde_json::Value = serde_json::from_str(&body)
         .map_err(|_| Error::InvalidInput("Lichess returned invalid JSON".into()))?;
     if value
@@ -418,12 +519,191 @@ pub async fn get_authenticated_lichess_explorer(
     // accepting a renderer-provided host/path/fragment.
     let encoded = normalized_explorer_query(&query)?;
     let url = exact_url(EXPLORER_URL, endpoint.path(), Some(&encoded))?;
-    authenticated_json(&handle, &state, &state.json_http_client, url).await
+    authenticated_json(
+        &handle,
+        &state,
+        &state.json_http_client,
+        url,
+        endpoint.body_mode(),
+    )
+    .await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures_util::{stream, StreamExt};
+
+    #[test]
+    fn only_the_player_explorer_reads_ndjson_snapshots() {
+        assert_eq!(
+            LichessExplorerEndpoint::Player.body_mode(),
+            AuthenticatedBodyMode::PlayerExplorer
+        );
+        for endpoint in [
+            LichessExplorerEndpoint::Lichess,
+            LichessExplorerEndpoint::Masters,
+        ] {
+            assert_eq!(endpoint.body_mode(), AuthenticatedBodyMode::SingleObject);
+        }
+    }
+
+    #[tokio::test]
+    async fn player_keeps_latest_snapshot_across_chunks_and_blank_keep_alive() -> Result<(), Error>
+    {
+        let chunks: &[&[u8]] = &[
+            b"{\"white\":",
+            b"1}\n \t\r\n{ \"white\": 2, ",
+            b"\"moves\": [] }\n",
+        ];
+        let stream = stream::iter(
+            chunks
+                .iter()
+                .map(|chunk| Ok(bytes::Bytes::copy_from_slice(chunk))),
+        );
+        let snapshot = player_explorer_snapshot(
+            stream,
+            tokio::time::Instant::now() + PLAYER_EXPLORER_DEADLINE,
+        )
+        .await?;
+        assert_eq!(snapshot, r#"{ "white": 2, "moves": [] }"#);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn player_returns_unterminated_final_snapshot() -> Result<(), Error> {
+        let stream = stream::iter([
+            Ok(bytes::Bytes::from_static(b"{\"white\":1}\n")),
+            Ok(bytes::Bytes::from_static(b"{\"white\":")),
+            Ok(bytes::Bytes::from_static(b"2}")),
+        ]);
+        let snapshot = player_explorer_snapshot(
+            stream,
+            tokio::time::Instant::now() + PLAYER_EXPLORER_DEADLINE,
+        )
+        .await?;
+        assert_eq!(snapshot, r#"{"white":2}"#);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn player_rejects_non_objects_invalid_json_and_invalid_utf8() {
+        for (line, message) in [
+            (b"[]\n".as_slice(), "Lichess returned an invalid response"),
+            (b"null", "Lichess returned an invalid response"),
+            (b"{\n", "Lichess returned invalid JSON"),
+            (b"{\"name\":\"\xff\"}\n", "Lichess returned invalid JSON"),
+        ] {
+            let stream = stream::iter([
+                Ok(bytes::Bytes::from_static(b"{}\n")),
+                Ok(bytes::Bytes::from_static(line)),
+            ]);
+            let result = player_explorer_snapshot(
+                stream,
+                tokio::time::Instant::now() + PLAYER_EXPLORER_DEADLINE,
+            )
+            .await;
+            assert!(matches!(result, Err(Error::InvalidInput(actual)) if actual == message));
+        }
+    }
+
+    #[tokio::test]
+    async fn player_rejects_streams_without_snapshots() {
+        for body in [b"\n \t\r\n  ".as_slice(), b""] {
+            let result = player_explorer_snapshot(
+                stream::iter([Ok(bytes::Bytes::from_static(body))]),
+                tokio::time::Instant::now() + PLAYER_EXPLORER_DEADLINE,
+            )
+            .await;
+            assert!(matches!(
+                result,
+                Err(Error::InvalidInput(message)) if message == "Lichess returned an invalid response"
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn player_rejects_lines_over_the_bound_across_chunks() {
+        let stream = stream::iter([
+            Ok(bytes::Bytes::from(vec![b' '; MAX_JSON_BYTES])),
+            Ok(bytes::Bytes::from_static(b"\n")),
+        ]);
+        let result = player_explorer_snapshot(
+            stream,
+            tokio::time::Instant::now() + PLAYER_EXPLORER_DEADLINE,
+        )
+        .await;
+        assert!(matches!(
+            result,
+            Err(Error::ResourceLimit(message)) if message == "Lichess response is too large"
+        ));
+    }
+
+    #[tokio::test]
+    async fn player_propagates_stream_failure_after_a_snapshot() {
+        let stream = stream::iter([
+            Ok(bytes::Bytes::from_static(b"{}\n")),
+            Err(Error::OAuthFailure("Lichess request failed".into())),
+        ]);
+        let result = player_explorer_snapshot(
+            stream,
+            tokio::time::Instant::now() + PLAYER_EXPLORER_DEADLINE,
+        )
+        .await;
+        assert!(matches!(
+            result,
+            Err(Error::OAuthFailure(message)) if message == "Lichess request failed"
+        ));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn player_returns_current_snapshot_at_deadline() -> Result<(), Error> {
+        let stream = stream::iter([Ok(bytes::Bytes::from_static(b"{\"white\":1}\n"))])
+            .chain(stream::pending());
+        let deadline = tokio::time::Instant::now() + PLAYER_EXPLORER_DEADLINE;
+        let snapshot = player_explorer_snapshot(stream, deadline).await?;
+        assert_eq!(snapshot, r#"{"white":1}"#);
+        assert_eq!(tokio::time::Instant::now(), deadline);
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn player_discards_incomplete_snapshot_at_deadline() -> Result<(), Error> {
+        let stream = stream::iter([Ok(bytes::Bytes::from_static(b"{\"white\":1}\n{\"white\":"))])
+            .chain(stream::pending());
+        let deadline = tokio::time::Instant::now() + PLAYER_EXPLORER_DEADLINE;
+        let snapshot = player_explorer_snapshot(stream, deadline).await?;
+        assert_eq!(snapshot, r#"{"white":1}"#);
+        assert_eq!(tokio::time::Instant::now(), deadline);
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn player_keeps_waiting_after_deadline_without_a_snapshot() {
+        let deadline = tokio::time::Instant::now() + PLAYER_EXPLORER_DEADLINE;
+        let result = tokio::time::timeout_at(
+            deadline + Duration::from_millis(1),
+            player_explorer_snapshot(stream::pending(), deadline),
+        )
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn player_accepts_first_snapshot_after_deadline() -> Result<(), Error> {
+        let deadline = tokio::time::Instant::now() + PLAYER_EXPLORER_DEADLINE;
+        let stream = Box::pin(
+            stream::once(async move {
+                tokio::time::sleep_until(deadline + Duration::from_secs(1)).await;
+                Ok(bytes::Bytes::from_static(b"{\"white\":1}\n"))
+            })
+            .chain(stream::pending()),
+        );
+        let snapshot = player_explorer_snapshot(stream, deadline).await?;
+        assert_eq!(snapshot, r#"{"white":1}"#);
+        assert!(tokio::time::Instant::now() > deadline);
+        Ok(())
+    }
 
     #[tokio::test]
     async fn coverage_preserves_partial_lines_across_chunks_and_parses_unterminated_final_line(
