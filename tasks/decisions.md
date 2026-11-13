@@ -13155,3 +13155,31 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Database children already mint a fresh entry when no stored entry matches path and identity (`prepare_database_child_verified`); a fresh id is not reuse of the old capability, so the identity-binding guarantee holds. Identity-first lookup keeps repeated listings and picks on the fresh id. Reversal path: route `register_opening_book` back through `get_or_create_persistent_file`, drop `PickerSelection`, and restore the `Conflict` before the passive fresh branch.
 * **Decided by:** Claude Code (Opus 5.5) drain next-finding f-20261112-76 slice, full auto, 2026-11-13 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"48a9e2921087a2e43f49ab1173f6007e05476f1dd53eb30b41562aa9ceec7cca","input_sha256":"ae2f662e9957cfe818ef9993e09bff0cae30441edbdcdb0716c99a8b6adc7a78","kind":"mutation-receipt","operation":"5adda2ee110b40b7391b0120eb931a137ebc0efdb50dafdd9e276aea446f5c12","options":{"section":null},"request_id_sha256":null,"results":["d-20261113-02"],"target":"decisions-ledger","v":1} -->
+
+### d-20261113-03 — How is one Lichess account export chunk bounded?
+
+* **Question:** How does a resumable Lichess account export bound one chunk so that a very large history fits the 100 MiB staged cap?
+* **Governs:** f-20261112-80
+* **Chosen:** Every resumable chunk first reads the coverage stream (`ongoing=true`, all fields off, `sort=dateAsc`, `max=30000`, `since=P`), stops at the 30,000th object, and exports `since=P&until=U+1` (U = last counted object's `createdAt`; `until=P` when the probe is empty). The probe's holds are the chunk's coverage; a full probe reports floor U, a short probe reports no floor. Measured 2026-11-13: `since` is inclusive, `until` exclusive, `since == until` returns nothing.
+* **Rejected:** An up-front `until` time window (game density per time is unknown). `max` on the export alone (the export omits ongoing games and carries `createdAt` only at second resolution). A second coverage request after the export (the probe window is already closed).
+* **Reason:** One closed window per chunk bounds both the export and its holds. Reversal path: drop the probe and the account path returns to one whole-history export.
+* **Decided by:** Claude (Opus) orchestrator under full auto, drain session 2be14927, 4 plan-review rounds approved, 2026-11-13. · **Superseded-by:** -
+
+### d-20261113-04 — How does a pinned Lichess cursor survive later chunks of the same job?
+
+* **Question:** When an ongoing or unexported game pins a chunk's cursor, how do later chunks avoid moving the persisted cursor past it while the job keeps advancing?
+* **Governs:** f-20261112-80
+* **Chosen:** Inside a chunk the floor never overrides an unresolved hold (`account_sync_cursor`). The job iterates on `since_ms = max(persisted, floor)`; both cursor writers persist a chunk's cursor only when its `since` is unset or at or before the stored cursor (the linked batch rule, now also the unlinked `AccountSyncCursor` writer). The unlinked re-read of the cursor runs only before the job's first chunk.
+* **Rejected:** Chess.com's `.max(floor)` for Lichess (loses the ongoing game). Stopping the loop at a pin (stalls forever). A carried job-local ceiling (a second mechanism for the linked gap rule). A persisted pin field (a second cursor, d-20261104-04).
+* **Reason:** One rule on both targets keeps every pin with no new state. Reversal path: return the unlinked writer to unconditional replacement and the loop to Chess.com only.
+* **Decided by:** Claude (Opus) orchestrator under full auto, drain session 2be14927, 4 plan-review rounds approved, 2026-11-13. · **Superseded-by:** -
+
+### d-20261113-05 — When does an account job continue after a chunk, for either provider?
+
+* **Question:** Does the native account loop's continuation stay Chess.com-only?
+* **Governs:** f-20261112-80
+* **Chosen:** No. For both providers the job ends only when a download in this attempt reported no floor; a recovered chunk is followed by one fresh download, and "<Provider> history could not advance" fires only for a downloaded floor-bearing chunk that does not move the position. Extends d-20261104-02 and d-20261104-05 to Lichess.
+* **Rejected:** Ending a recovered Lichess chunk as success (silently incomplete history after a cleanup Retry).
+* **Reason:** The attempt cannot know whether a recovered chunk was the last. Reversal path: restore the `provider != "chesscom"` end condition.
+* **Decided by:** Claude (Opus) orchestrator under full auto, drain session 2be14927, 4 plan-review rounds approved, 2026-11-13. · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":26,"effect_sha256":"0a5d601b878be87029f6b98d1ad269f89f38f729cf9deea2851cd7e37e7242bc","input_sha256":"6eafa3ec57fb953ca402f821dd25303c3da34050b61e8d2bd822500e3768124f","kind":"mutation-receipt","operation":"3cdc01bc9e68ab974f0c82863497ea59a99f4be12107fc909abfd8b3706f482e","options":{"section":null},"request_id_sha256":null,"results":["d-20261113-03","d-20261113-04","d-20261113-05"],"target":"decisions-ledger","v":1} -->
