@@ -25151,7 +25151,7 @@ Handled (drain 58910785, 2026-11-13). `SearchGameEntry::from_game_data_cancellab
 
 ### Polyglot book moves e1h1/e1a1/e8h8/e8a8 are rewritten as castling even when a rook or queen makes them
 
-* **ID:** f-20261112-78 · **Status:** open · **Area:** chess-tree · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-78 · **Status:** handled · **Area:** chess-tree · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** yes (general review, origin/master 11624873a)
 * **Where:** `src-tauri/src/game.rs:2666-2674` (`normalize_polyglot_uci` maps `e1h1→e1g1`, `e1a1→e1c1`, `e8h8→e8g8`, `e8a8→e8c8` purely by string); `:3267-3283` (`try_polyglot_book_move` applies it to every book entry before legality filtering and returns the rewritten string as the move to play).
@@ -25160,6 +25160,9 @@ Handled (drain 58910785, 2026-11-13). `SearchGameEntry::from_game_data_cancellab
 * **Fix:** normalise only when the from-square holds the side-to-move's king, the target is its own rook on a castling square, and the castling right exists. Equivalently, convert the parsed `Move::Castle` back to standard UCI (`to_uci(CastlingMode::Standard)`) instead of rewriting strings. Add a test with a rook-on-e1 book entry.
 * **Proof:** probe outside the repo. A standalone crate against the locked `shakmaty = "=0.27.1"` contains a verbatim copy of `normalize_polyglot_uci` and the same `UciMove::from_ascii(..).to_move(&pos)` filter `try_polyglot_book_move` uses. It printed `k7/8/8/8/8/8/2K5/4R3 w - - 0 1: book e1h1 = Rh1, try_polyglot_book_move keeps e1g1 = Rg1`, plus `e1a1 = Ra1 → e1c1 = Rc1` (`7k/8/8/8/8/8/6K1/4R3 w`) and `e8h8 = Rh8 → e8g8 = Rg8` (`4r3/2k5/8/8/8/8/8/K7 b`). The unit test at `game.rs:~5748-5756` pins the unconditional mapping. Related: f-20260829-10 (the Polyglot ep-hash fix in the same lookup, handled; a different defect).
 * **Found by:** Grok Bot general review
+
+Handled in d8d11e681. `normalize_polyglot_uci` is deleted; `try_polyglot_book_move` parses the raw book UCI, lets shakmaty's `UciMove::to_move` decide castling (king + castling right only), and re-emits it with `UciMove::from_move(&mv, position.castles().mode())`, so a standard castle is still played as e1g1/e1c1/e8g8/e8c8 and a rook/queen e1h1 stays e1h1. New test `polyglot_lookup_keeps_rook_e_file_moves_and_rewrites_only_legal_castling` covers rook e1h1/e1a1/e8h8, the three castles and a king e1h1 without the right (None); it was red against the old code. Dead `normalize_polyglot_uci` names removed from the mutation filters. Rejected: keeping a string rewrite gated on piece/right checks — it duplicates shakmaty's own castling resolution.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"558c8057c2f63d57993c12e1ce6bf1157ec623d10cb67a25fcbb0f171aae3812","header_sha256":"ab83904a800eba2f818c7a18dee90cbad1f046959a8a6af878a01c8eed3cc849","header_status":"handled","input_sha256":"5993b98f00fb10126f82d7e30448528235d0be5a804583d90200b2084ab634ca","kind":"mutation-receipt","operation":"49e65175b37297e65d06517fca368512ee70c0a06b724f3e8cc30747144536d7","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-78"],"target":"f-20261112-78","v":1} -->
 
 ---
 
