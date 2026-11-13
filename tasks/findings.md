@@ -23771,6 +23771,8 @@ Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK on
 * **Fix:** Synchronise on the worker's completion signal instead of a wall-clock bound (or use paused tokio time for the deadline), so the outcome does not depend on host load.
 * **Proof:** Full suite red once at 2026-11-11 ~17:52 (panic at `src/fs.rs:3022`). The same test passed 3 out of 3 times when run alone right afterwards.
 * **Found by:** Claude Code (Opus 5.5), build run coverage-batch-search, 2026-11-11.
+* **Pickup 2026-11-13 (drain 83bf9b09), mechanism corrected:** the 2 s outer timeout is not the race. `admission` awaits `prepared_rx`, which the `spawn_blocking` worker sends only once a blocking thread starts, and `await_staging_deadline_with_admission` races that against a 5 ms `tokio::time::sleep`. Under full-suite load the blocking thread starts later than 5 ms, the deadline wins, and the outcome becomes `Err(EngineTimeout)`. Fix (test only): `prepared_rx.await.unwrap()` before building `admission`, and make `admission` just `let _ = permit_tx.send(())`. The `biased` select then admits deterministically while the 40 ms post-permit tail still outlives the 5 ms deadline. Not implemented: the Codex write leaf failed with `token_revoked` 401.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"54652db1881465e3e7f69f9a5ad2598ac3b2bd3d3283589f65838330da505486","input_sha256":"93a134f0052146da946918dfb3cc85659bf3f93deeafa572e7db580508592aee","kind":"mutation-receipt","operation":"c69f3082650db0b6c0d0fed7f780aa35ac2e260b9bb5a4f05e9fa494617731c4","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-08"],"target":"f-20261112-08","v":1} -->
 
 ---
 
