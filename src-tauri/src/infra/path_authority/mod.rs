@@ -4545,6 +4545,9 @@ struct AcquiredTarget {
 pub(crate) enum RegistrationDoor {
     ExplicitReauthorization,
     PassiveObservation,
+    /// A path the user picked in a native dialog just now; a file replaced at that path receives a
+    /// fresh capability instead of a Conflict.
+    PickerSelection,
 }
 
 fn acquire_target(path: &Path, shape: AcquireShape) -> Result<AcquiredTarget, Error> {
@@ -5113,12 +5116,10 @@ pub(crate) fn equivalent_sibling_leaves(
     cancellation: &CancellationToken,
 ) -> Result<Vec<DirectoryEntry>, Error> {
     let normalized = nfc_leaf_name(leaf);
-    read_directory_entries_at(
-        directory,
-        cancellation,
-        Some(MAX_DIRECTORY_LISTING_ENTRIES),
-        &mut |name| nfc_leaf_name(name) == normalized,
-    )
+    // Result holds only NFC-equivalent names, so the walk is O(matches) memory and needs no entry cap.
+    read_directory_entries_at(directory, cancellation, None, &mut |name| {
+        nfc_leaf_name(name) == normalized
+    })
 }
 
 /// Keep the selected native spelling and all later identity checks on the same existing file.
@@ -6681,7 +6682,7 @@ impl PathAuthority {
         let desired_operations = purpose
             .map(canonical_operations)
             .unwrap_or_else(|| operations.clone());
-        if let Some(entry) = self.persistent.values().find(|entry| {
+        let same_path = |entry: &Entry| {
             entry.stored.class == PathClass::PersistentFile
                 && match purpose {
                     Some(purpose) => entry.stored.purpose == Some(purpose),
@@ -6692,12 +6693,12 @@ impl PathAuthority {
                     .path
                     .to_path()
                     .is_ok_and(|stored_path| stored_path == path)
-        }) {
-            if entry.stored.identity != binding.identity {
-                return Err(Error::Conflict(
-                    "persistent file changed; acquire a new capability".into(),
-                ));
-            }
+        };
+        if let Some(entry) = self
+            .persistent
+            .values()
+            .find(|entry| same_path(entry) && entry.stored.identity == binding.identity)
+        {
             if entry.stored.parent_identity == binding.parent_identity
                 || door != RegistrationDoor::PassiveObservation
             {
@@ -6710,6 +6711,12 @@ impl PathAuthority {
                 });
             }
             // Passive discovery leaves the old binding refused and prepares a fresh ID.
+        } else if self.persistent.values().any(same_path)
+            && door == RegistrationDoor::ExplicitReauthorization
+        {
+            return Err(Error::Conflict(
+                "persistent file changed; acquire a new capability".into(),
+            ));
         }
         Ok(PreparedEntry {
             stored: Self::fresh_stored_entry(
@@ -7430,10 +7437,13 @@ impl PathAuthority {
         path: &Path,
         display_name: impl Into<String>,
     ) -> Result<OpeningBookHandle, Error> {
-        let commit = self.get_or_create_persistent_file(
+        let commit = self.get_or_create_persistent_file_inner(
             path,
-            display_name,
+            display_name.into(),
             canonical_operations(EntryPurpose::OpeningBook),
+            None,
+            None,
+            RegistrationDoor::PickerSelection,
         )?;
         Ok(keep_adopted_handle(
             commit.durability,
@@ -13842,6 +13852,21 @@ pub(crate) mod portable_tests {
         assert_eq!(fs::read(root.join("José.pgn")).unwrap(), b"1. d4 *");
     }
 
+    #[test]
+    fn pgn_export_destination_succeeds_when_the_folder_exceeds_the_listing_bound() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("exports");
+        fs::create_dir(&root).unwrap();
+        for index in 0..=crate::infra::fs::MAX_DIRECTORY_LISTING_ENTRIES {
+            fs::write(root.join(index.to_string()), b"").unwrap();
+        }
+        let mut authority = authority(&dir, Arc::new(TestClock::new(1)));
+        authority
+            .create_pgn_export_destination(&root.join("games.pgn"), "games.pgn")
+            .unwrap();
+        assert!(root.join("games.pgn").is_file());
+    }
+
     #[cfg(target_os = "linux")]
     #[test]
     fn pgn_export_destination_refuses_existing_unicode_composition_duplicates() {
@@ -17239,6 +17264,27 @@ mod tests {
             )
             .unwrap();
         assert_eq!(file_link.id, file_real.id);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn register_opening_book_mints_a_fresh_capability_for_a_replaced_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let book = dir.path().join("book.bin");
+        fs::write(&book, b"book").unwrap();
+        let mut authority = authority(&dir, Arc::new(TestClock::new(0)));
+        let first = authority.register_opening_book(&book, "book").unwrap();
+        let held = fs::File::open(&book).unwrap();
+        let replacement = dir.path().join("book.replacement");
+        fs::write(&replacement, b"replaced").unwrap();
+        fs::rename(&replacement, &book).unwrap();
+        let current = opened_file_identity(&fs::File::open(&book).unwrap()).unwrap();
+        assert_ne!(current, opened_file_identity(&held).unwrap());
+        let second = authority.register_opening_book(&book, "book").unwrap();
+        assert_ne!(second, first);
+        authority.opening_book_descriptor(&second).unwrap();
+        let third = authority.register_opening_book(&book, "book").unwrap();
+        assert_eq!(third, second);
     }
 
     #[cfg(unix)]
@@ -22420,6 +22466,68 @@ mod tests {
             .values()
             .any(|entry| entry.stored.purpose == Some(EntryPurpose::PuzzleFile)));
         assert_eq!(fs::read_dir(&root_path).unwrap().count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn puzzle_listing_mints_a_stable_capability_for_a_replaced_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let root_path = dir.path().join("puzzles");
+        fs::create_dir(&root_path).unwrap();
+        let x = root_path.join("x.db3");
+        let y = root_path.join("y.db3");
+        fs::write(&x, b"puzzles-x").unwrap();
+        fs::write(&y, b"puzzles-y").unwrap();
+        let mut authority = authority(&dir, Arc::new(TestClock::new(0)));
+        let root = authority
+            .get_or_create_puzzle_root(&root_path, "Puzzles", None)
+            .unwrap();
+        let first = authority
+            .list_puzzle_children_cancellable(&root, &CancellationToken::new())
+            .unwrap();
+        assert_eq!(first.len(), 2);
+        let old_x = first
+            .iter()
+            .find(|entry| entry.filename == "x.db3")
+            .unwrap()
+            .file
+            .clone();
+        let held = fs::File::open(&x).unwrap();
+        let replacement = root_path.join("x.replacement");
+        fs::write(&replacement, b"puzzles-x-new").unwrap();
+        fs::rename(&replacement, &x).unwrap();
+        let current = opened_file_identity(&fs::File::open(&x).unwrap()).unwrap();
+        assert_ne!(current, opened_file_identity(&held).unwrap());
+        let second = authority
+            .list_puzzle_children_cancellable(&root, &CancellationToken::new())
+            .unwrap();
+        assert_eq!(second.len(), 2);
+        let names: BTreeSet<_> = second.iter().map(|entry| entry.filename.as_str()).collect();
+        assert_eq!(names, BTreeSet::from(["x.db3", "y.db3"]));
+        let new_x = second
+            .iter()
+            .find(|entry| entry.filename == "x.db3")
+            .unwrap()
+            .file
+            .clone();
+        assert_ne!(new_x, old_x);
+        authority
+            .resolve(&new_x, PathOperation::PuzzleRead, &[])
+            .unwrap();
+        assert!(matches!(
+            authority.resolve(&old_x, PathOperation::PuzzleRead, &[]),
+            Err(Error::UnknownPathCapability)
+        ));
+        let third = authority
+            .list_puzzle_children_cancellable(&root, &CancellationToken::new())
+            .unwrap();
+        let listed_again = third
+            .iter()
+            .find(|entry| entry.filename == "x.db3")
+            .unwrap()
+            .file
+            .clone();
+        assert_eq!(listed_again, new_x);
     }
 
     /// Test 6 (R3-06): the stored root's ancestor is replaced by a symlink to the same directory
@@ -28384,22 +28492,23 @@ mod workspace_directory_enumeration_tests {
     }
 
     #[test]
-    fn directory_listing_bound_puzzle_identity_change_conflicts_without_retirement(
-    ) -> Result<(), Error> {
+    fn directory_listing_bound_puzzle_identity_change_mints_a_fresh_capability() -> Result<(), Error>
+    {
         let (_directory, root, mut authority, handle) = db3_root_fixture(Db3ListingKind::Puzzle);
         fs::write(root.join("removed.db3"), b"old")?;
-        directory_listing_bound_list_db3(&mut authority, &handle, &CancellationToken::new())?;
-        let before = authority.persistent.clone();
-        let disk = fs::read(&authority.registry_path)?;
+        let original =
+            directory_listing_bound_list_db3(&mut authority, &handle, &CancellationToken::new())?;
         fs::remove_file(root.join("removed.db3"))?;
         fs::rename(root.join("a.db3"), root.with_extension("old-db3"))?;
         fs::write(root.join("a.db3"), b"replacement")?;
-        assert!(matches!(
-            directory_listing_bound_list_db3(&mut authority, &handle, &CancellationToken::new()),
-            Err(Error::Conflict(_))
-        ));
-        assert!(authority.persistent == before);
-        assert_eq!(fs::read(&authority.registry_path)?, disk);
+        let replacement =
+            directory_listing_bound_list_db3(&mut authority, &handle, &CancellationToken::new())?;
+        assert_eq!(replacement.len(), 1);
+        assert_ne!(replacement, original);
+        assert!(original
+            .iter()
+            .all(|id| !authority.persistent.contains_key(&id.id)));
+        authority.resolve(&replacement[0], PathOperation::PuzzleRead, &[])?;
         Ok(())
     }
 
