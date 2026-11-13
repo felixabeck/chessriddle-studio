@@ -24591,7 +24591,7 @@ Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK on
 
 ### Engine log export writes a .csv file without CSV quoting, so typical UCI lines split into extra columns
 
-* **ID:** f-20261112-45 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-45 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/common/EngineLogsView.tsx:70-78` (each row is built as `` `${line.type}, ${line.value.trimEnd()}` ``); native `src-tauri/src/main.rs:1000-1009` saves it as `engine-logs.csv` with a CSV-only filter
@@ -24600,6 +24600,8 @@ Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK on
 - **Fix:** quote each field RFC 4180 style (wrap it in `"` and double any embedded `"`), drop the space after the separator, and add a unit test for a line with a comma and a quote. Alternatively, export as plain `.log`/`.txt` if CSV is not intended.
 - **Proof:** the same ephemeral EngineLogsView probe as f-20261112-44 captured the exported content as `engine, info string NNUE evaluation using nn-x.nnue (133MiB, (22528, 3072, 15, 32, 1))\ngui, setoption name Foo value "a,b"`, which is unquoted and splits on every comma. The native trace confirms the `.csv` name and filter. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 22)
+* **Closed 2026-11-13 (drain 5867a492, joiner of f-20261112-82):** export rows come from the exported `engineLogsCsv` helper: every field RFC 4180 quoted with embedded `"` doubled, `,` separator without a space, the truncation row included. Unit tests cover commas, quotes and the truncation row. Commit fee6b59a7.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"87a5e2dee235ce1b93aa6e7f2fe22427dd235facf92e3122d072fca09619fbf0","header_sha256":"f2254103d42f8853fbfcace59b94db6a6501e8214dcab8ddc934c4d7ddab2707","header_status":"handled","input_sha256":"40cd92b5af62a45b1a609a61e2ceb7b6f46fedc6b2a2cf10c46b1a03c62e8b5d","kind":"mutation-receipt","operation":"295076305b3727860181a224aae21d846491564e268c461a149a8a64b38edf90","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-45"],"target":"f-20261112-45","v":1} -->
 
 ---
 
