@@ -13,9 +13,12 @@ use std::time::Duration;
 const ACCOUNT_URL: &str = "https://lichess.org/api/account";
 const EXPLORER_URL: &str = "https://explorer.lichess.org";
 const MAX_JSON_BYTES: usize = 5 * 1024 * 1024;
-/// Return current player results before the JSON client's 30-second request timeout, even if
-/// Lichess is still streaming indexing updates.
+/// Return current player results before the JSON client's `JSON_REQUEST_TIMEOUT`, even if Lichess
+/// is still streaming indexing updates.
 const PLAYER_EXPLORER_DEADLINE: Duration = Duration::from_secs(20);
+const _: () = assert!(
+    PLAYER_EXPLORER_DEADLINE.as_millis() < crate::infra::net::JSON_REQUEST_TIMEOUT.as_millis()
+);
 const MAX_EXPLORER_QUERY_BYTES: usize = 8 * 1024;
 const MAX_EXPLORER_QUERY_PAIRS: usize = 64;
 const MIN_LICHESS_USERNAME_BYTES: usize = 2;
@@ -296,6 +299,14 @@ async fn authenticated_json(
         .send()
         .await
         .map_err(|_| Error::OAuthFailure("Lichess request failed".into()))?;
+    authenticated_body(response, mode, deadline).await
+}
+
+async fn authenticated_body(
+    response: reqwest::Response,
+    mode: AuthenticatedBodyMode,
+    deadline: tokio::time::Instant,
+) -> Result<String, Error> {
     if !response.status().is_success() {
         return Err(Error::OAuthFailure("Lichess request was rejected".into()));
     }
@@ -546,6 +557,71 @@ mod tests {
         ] {
             assert_eq!(endpoint.body_mode(), AuthenticatedBodyMode::SingleObject);
         }
+    }
+
+    #[tokio::test]
+    async fn authenticated_player_body_returns_latest_snapshot(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let response = reqwest::Response::from(
+            tauri::http::Response::builder()
+                .status(200)
+                .body("{\"white\":1}\n\n{\"white\":2}\n")?,
+        );
+        let snapshot = authenticated_body(
+            response,
+            AuthenticatedBodyMode::PlayerExplorer,
+            tokio::time::Instant::now() + PLAYER_EXPLORER_DEADLINE,
+        )
+        .await?;
+        assert_eq!(snapshot, r#"{"white":2}"#);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn authenticated_single_object_body_rejects_ndjson(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let response = reqwest::Response::from(
+            tauri::http::Response::builder()
+                .status(200)
+                .body("{\"white\":1}\n\n{\"white\":2}\n")?,
+        );
+        let result = authenticated_body(
+            response,
+            AuthenticatedBodyMode::SingleObject,
+            tokio::time::Instant::now() + PLAYER_EXPLORER_DEADLINE,
+        )
+        .await;
+        assert!(matches!(
+            result,
+            Err(Error::InvalidInput(message)) if message == "Lichess returned invalid JSON"
+        ));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn authenticated_body_rejects_unsuccessful_status_in_both_modes(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        for mode in [
+            AuthenticatedBodyMode::PlayerExplorer,
+            AuthenticatedBodyMode::SingleObject,
+        ] {
+            let response = reqwest::Response::from(
+                tauri::http::Response::builder()
+                    .status(401)
+                    .body("{\"white\":1}\n\n{\"white\":2}\n")?,
+            );
+            let result = authenticated_body(
+                response,
+                mode,
+                tokio::time::Instant::now() + PLAYER_EXPLORER_DEADLINE,
+            )
+            .await;
+            assert!(matches!(
+                result,
+                Err(Error::OAuthFailure(message)) if message == "Lichess request was rejected"
+            ));
+        }
+        Ok(())
     }
 
     #[tokio::test]

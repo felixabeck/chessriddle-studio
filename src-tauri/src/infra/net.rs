@@ -59,7 +59,7 @@ pub fn safe_http_client(
 
 const JSON_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const JSON_READ_TIMEOUT: Duration = Duration::from_secs(30);
-const JSON_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+pub(crate) const JSON_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const DOWNLOAD_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const DOWNLOAD_READ_TIMEOUT: Duration = Duration::from_secs(30);
 const DOWNLOAD_REQUEST_TIMEOUT: Duration = Duration::from_secs(3600);
