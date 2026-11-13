@@ -2586,6 +2586,7 @@ const MAX_OPENING_BOOK_COMPRESSION_RATIO: u64 = 100;
 const MAX_OPENING_BOOK_PGN_MOVES: usize = 10_000;
 const MAX_OPENING_BOOK_EPD_LINE_BYTES: usize = 64 * 1024;
 const MAX_POLYGLOT_ENTRIES_PER_POSITION: usize = 256;
+const POLYGLOT_RECORD_BYTES: usize = 16;
 const POLYGLOT_SCAN_CHUNK_BYTES: usize = 64 * 1024;
 
 #[cfg(test)]
@@ -2830,6 +2831,7 @@ struct PolyglotRecord {
     weight: u16,
 }
 
+#[cfg_attr(test, derive(Debug, PartialEq))]
 struct PolyglotMoveEntry {
     move_string: String,
     weight: u16,
@@ -2844,11 +2846,14 @@ enum PolyglotBookSource {
 }
 
 /// A bounded, cancellation-aware Polyglot representation. A zipped book is
-/// decompressed and sorted in memory with cancellation checkpoints; a direct
-/// `.bin` stays on disk, is checked for key order in one streaming pass, and is
-/// binary-searched in place, so its size is not capped.
+/// decompressed and sorted in memory under the zip member limit; a direct `.bin`
+/// stays on disk, is checked once for record alignment and key order with
+/// cancellation checkpoints, then answers each lookup with a bounded binary
+/// search (at most MAX_POLYGLOT_ENTRIES_PER_POSITION records read after the
+/// search).
 struct CancellablePolyglotBook {
     source: PolyglotBookSource,
+    lookup_failed: AtomicBool,
 }
 
 impl CancellablePolyglotBook {
@@ -2865,7 +2870,7 @@ impl CancellablePolyglotBook {
     }
 }
 
-fn decode_polyglot_record(record: &[u8; 16]) -> PolyglotRecord {
+fn decode_polyglot_record(record: &[u8; POLYGLOT_RECORD_BYTES]) -> PolyglotRecord {
     PolyglotRecord {
         key: u64::from_be_bytes([
             record[0], record[1], record[2], record[3], record[4], record[5], record[6], record[7],
@@ -2903,14 +2908,28 @@ fn memory_moves_for_key(entries: &[PolyglotRecord], key: u64) -> Vec<PolyglotMov
         entries[index..]
             .iter()
             .copied()
-            .take_while(|entry| entry.key == key),
+            .take_while(|entry| entry.key == key)
+            .take(MAX_POLYGLOT_ENTRIES_PER_POSITION),
     )
 }
 
+fn polyglot_record_offset(index: u64) -> Result<u64, Error> {
+    index
+        .checked_mul(POLYGLOT_RECORD_BYTES as u64)
+        .ok_or_else(|| Error::InvalidInput("Polyglot book record offset overflowed".into()))
+}
+
+fn polyglot_record_count(len: u64) -> Result<u64, Error> {
+    if !len.is_multiple_of(POLYGLOT_RECORD_BYTES as u64) {
+        return Err(Error::InvalidInput(
+            "Polyglot book is not aligned to 16-byte records".into(),
+        ));
+    }
+    Ok(len / POLYGLOT_RECORD_BYTES as u64)
+}
+
 fn read_polyglot_key_at(file: &mut OwnedFile, index: u64) -> Result<u64, Error> {
-    let offset = index
-        .checked_mul(16)
-        .ok_or_else(|| Error::InvalidInput("Polyglot book record offset overflowed".into()))?;
+    let offset = polyglot_record_offset(index)?;
     file.seek(SeekFrom::Start(offset))?;
     let mut key_bytes = [0_u8; 8];
     file.read_exact(&mut key_bytes)?;
@@ -2936,14 +2955,12 @@ fn file_moves_for_key(
     if lo >= records {
         return Ok(Vec::new());
     }
-    let offset = lo
-        .checked_mul(16)
-        .ok_or_else(|| Error::InvalidInput("Polyglot book record offset overflowed".into()))?;
+    let offset = polyglot_record_offset(lo)?;
     file.seek(SeekFrom::Start(offset))?;
     let mut matching = Vec::new();
     let mut index = lo;
     while index < records && matching.len() < MAX_POLYGLOT_ENTRIES_PER_POSITION {
-        let mut record = [0_u8; 16];
+        let mut record = [0_u8; POLYGLOT_RECORD_BYTES];
         file.read_exact(&mut record)?;
         let decoded = decode_polyglot_record(&record);
         if decoded.key != key {
@@ -2961,12 +2978,7 @@ fn open_polyglot_file_book_cancellable(
 ) -> Result<CancellablePolyglotBook, Error> {
     ensure_opening_book_not_cancelled(cancellation)?;
     let declared = file.metadata()?.len();
-    if !declared.is_multiple_of(16) {
-        return Err(Error::InvalidInput(
-            "Polyglot book is not aligned to 16-byte records".into(),
-        ));
-    }
-    let records = declared / 16;
+    let records = polyglot_record_count(declared)?;
     let mut buf = [0_u8; POLYGLOT_SCAN_CHUNK_BYTES];
     let mut remaining = declared;
     let mut previous_key = None;
@@ -2984,9 +2996,9 @@ fn open_polyglot_file_book_cancellable(
             filled += read;
         }
         remaining -= want as u64;
-        let (records, remainder) = buf[..want].as_chunks::<16>();
+        let (chunk_records, remainder) = buf[..want].as_chunks::<POLYGLOT_RECORD_BYTES>();
         debug_assert!(remainder.is_empty());
-        for record in records {
+        for record in chunk_records {
             let decoded = decode_polyglot_record(record);
             if let Some(previous) = previous_key {
                 if decoded.key < previous {
@@ -3003,6 +3015,7 @@ fn open_polyglot_file_book_cancellable(
             file: std::sync::Mutex::new(file),
             records,
         },
+        lookup_failed: AtomicBool::new(false),
     })
 }
 
@@ -3036,17 +3049,13 @@ fn load_polyglot_book_cancellable(
     ensure_opening_book_not_cancelled(cancellation)?;
     if bytes.len() > MAX_ZIPPED_OPENING_BOOK_BYTES {
         return Err(Error::ResourceLimit(
-            "Polyglot book exceeds the configured size limit".into(),
+            ZIPPED_OPENING_BOOK_SIZE_LIMIT_MESSAGE.into(),
         ));
     }
-    if !bytes.len().is_multiple_of(16) {
-        return Err(Error::InvalidInput(
-            "Polyglot book is not aligned to 16-byte records".into(),
-        ));
-    }
-    let mut entries = Vec::with_capacity(bytes.len() / 16);
-    // The remainder is provably empty: the multiple-of-16 check above returns early otherwise.
-    let (records, _remainder) = bytes.as_chunks::<16>();
+    polyglot_record_count(bytes.len() as u64)?;
+    let mut entries = Vec::with_capacity(bytes.len() / POLYGLOT_RECORD_BYTES);
+    // The remainder is provably empty: polyglot_record_count returns early otherwise.
+    let (records, _remainder) = bytes.as_chunks::<POLYGLOT_RECORD_BYTES>();
     debug_assert!(_remainder.is_empty());
     for (index, record) in records.iter().enumerate() {
         if index % 1024 == 0 {
@@ -3057,6 +3066,7 @@ fn load_polyglot_book_cancellable(
     cancellable_polyglot_sort(&mut entries, cancellation)?;
     Ok(CancellablePolyglotBook {
         source: PolyglotBookSource::Memory(entries),
+        lookup_failed: AtomicBool::new(false),
     })
 }
 
@@ -3380,14 +3390,17 @@ async fn game_loop<R: Runtime>(
     info!("Game loop ended for {}", game_id);
 }
 
-struct PolyglotBookProbe {
+struct PolyglotBookLookup {
     book: Arc<CancellablePolyglotBook>,
     key: u64,
     position: Chess,
 }
 
-fn polyglot_book_probe(controller: &GameController) -> Option<PolyglotBookProbe> {
+fn polyglot_book_lookup_request(controller: &GameController) -> Option<PolyglotBookLookup> {
     let book = controller.polyglot_book.clone()?;
+    if book.lookup_failed.load(Ordering::SeqCst) {
+        return None;
+    }
 
     if controller.moves.len() >= controller.polyglot_max_ply {
         return None;
@@ -3397,14 +3410,14 @@ fn polyglot_book_probe(controller: &GameController) -> Option<PolyglotBookProbe>
     let fen =
         Fen::from_position(controller.position.clone(), EnPassantMode::PseudoLegal).to_string();
     let key = polyglot_hash_from_fen(&fen).ok()?;
-    Some(PolyglotBookProbe {
+    Some(PolyglotBookLookup {
         book,
         key,
         position: controller.position.clone(),
     })
 }
 
-impl PolyglotBookProbe {
+impl PolyglotBookLookup {
     fn choose_move(self) -> Result<Option<String>, Error> {
         let entries = self.book.moves_for_key(self.key)?;
         if entries.is_empty() {
@@ -3477,6 +3490,22 @@ fn select_engine_go(
     ))))
 }
 
+async fn polyglot_book_move(game_id: &str, probe: PolyglotBookLookup) -> Option<String> {
+    let book = Arc::clone(&probe.book);
+    match BLOCKING_GATEWAY.spawn(move || probe.choose_move()).await {
+        Ok(chosen) => chosen,
+        Err(error) => {
+            if !book.lookup_failed.swap(true, Ordering::SeqCst) {
+                warn!(
+                    "game {game_id}: opening book lookup failed; the engine plays without the book from now on: {}",
+                    error.diagnostic()
+                );
+            }
+            None
+        }
+    }
+}
+
 async fn request_engine_move<R: Runtime>(
     game_id: &str,
     controller: &Arc<RwLock<GameController>>,
@@ -3488,19 +3517,13 @@ async fn request_engine_move<R: Runtime>(
     {
         let (book_probe, turn) = {
             let ctrl = controller.read().await;
-            let probe = polyglot_book_probe(&ctrl);
+            let probe = polyglot_book_lookup_request(&ctrl);
             let turn = ctrl.position.turn();
             (probe, turn)
         };
 
         let book_move = if let Some(probe) = book_probe {
-            match BLOCKING_GATEWAY.spawn(move || probe.choose_move()).await {
-                Ok(chosen) => chosen,
-                Err(error) => {
-                    warn!("opening book lookup failed; falling back to the engine: {error}");
-                    None
-                }
-            }
+            polyglot_book_move(game_id, probe).await
         } else {
             None
         };
@@ -5071,7 +5094,7 @@ mod tests {
         }
     }
 
-    fn encode_polyglot_entry(key: u64, uci: &str, weight: u16) -> [u8; 16] {
+    fn encode_polyglot_entry(key: u64, uci: &str, weight: u16) -> [u8; POLYGLOT_RECORD_BYTES] {
         let uci = uci.as_bytes();
         assert_eq!(uci.len(), 4);
         let square = |file: u8, rank: u8| {
@@ -5082,7 +5105,7 @@ mod tests {
         let from = square(uci[0], uci[1]);
         let to = square(uci[2], uci[3]);
         let move_data = (from << 6) | to;
-        let mut bytes = [0_u8; 16];
+        let mut bytes = [0_u8; POLYGLOT_RECORD_BYTES];
         bytes[0..8].copy_from_slice(&key.to_be_bytes());
         bytes[8..10].copy_from_slice(&move_data.to_be_bytes());
         bytes[10..12].copy_from_slice(&weight.to_be_bytes());
@@ -5090,19 +5113,11 @@ mod tests {
     }
 
     fn polyglot_book_bytes(entries: &[(u64, &str, u16)]) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(entries.len() * 16);
+        let mut bytes = Vec::with_capacity(entries.len() * POLYGLOT_RECORD_BYTES);
         for &(key, uci, weight) in entries {
             bytes.extend_from_slice(&encode_polyglot_entry(key, uci, weight));
         }
         bytes
-    }
-
-    fn assert_same_polyglot_moves(left: &[PolyglotMoveEntry], right: &[PolyglotMoveEntry]) {
-        assert_eq!(left.len(), right.len());
-        for (left_entry, right_entry) in left.iter().zip(right) {
-            assert_eq!(left_entry.move_string, right_entry.move_string);
-            assert_eq!(left_entry.weight, right_entry.weight);
-        }
     }
 
     fn controller_with_polyglot_book(
@@ -5122,7 +5137,9 @@ mod tests {
     }
 
     fn try_polyglot_book_move(controller: &GameController) -> Option<String> {
-        polyglot_book_probe(controller)?.choose_move().unwrap()
+        polyglot_book_lookup_request(controller)?
+            .choose_move()
+            .unwrap()
     }
 
     fn mating_config(white: PlayerConfig) -> GameConfig {
@@ -5917,7 +5934,7 @@ done
             .compression_method(zip::CompressionMethod::Stored);
         zip.start_file("book.bin", options).unwrap();
         let chunk = [0_u8; 64 * 1024];
-        let mut remaining = 32 * 1024 * 1024 + 16;
+        let mut remaining = MAX_ZIPPED_OPENING_BOOK_BYTES + POLYGLOT_RECORD_BYTES;
         while remaining > 0 {
             let n = remaining.min(chunk.len());
             zip.write_all(&chunk[..n]).unwrap();
@@ -5936,7 +5953,8 @@ done
     fn polyglot_book_over_the_old_32_mib_cap_is_selected_and_used() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("large.bin");
-        let record_count: u64 = 2_162_688;
+        let record_count: u64 =
+            (MAX_ZIPPED_OPENING_BOOK_BYTES / POLYGLOT_RECORD_BYTES) as u64 + 65_536;
         let start_fen =
             Fen::from_position(Chess::default(), EnPassantMode::PseudoLegal).to_string();
         let target_key = polyglot_hash_from_fen(&start_fen).unwrap();
@@ -5966,7 +5984,7 @@ done
             }
             writer.flush().unwrap();
         }
-        assert!(std::fs::metadata(&path).unwrap().len() > 32 * 1024 * 1024);
+        assert!(std::fs::metadata(&path).unwrap().len() > MAX_ZIPPED_OPENING_BOOK_BYTES as u64);
 
         let mut authority = PathAuthority::open(dir.path().join("registry.json"), vec![]).unwrap();
         let book = authority.register_opening_book(&path, "large.bin").unwrap();
@@ -6002,11 +6020,42 @@ done
         )
         .unwrap();
         for key in [0_u64, 9, 10, 15, 20, 30, 31] {
-            assert_same_polyglot_moves(
-                &memory.moves_for_key(key).unwrap(),
-                &file_book.moves_for_key(key).unwrap(),
+            assert_eq!(
+                memory.moves_for_key(key).unwrap(),
+                file_book.moves_for_key(key).unwrap(),
             );
         }
+    }
+
+    #[tokio::test]
+    async fn truncated_file_backed_polyglot_book_fails_lookup_once_then_skips() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("trunc.bin");
+        let mut controller =
+            GameController::new("polyglot-trunc".into(), 1, human_config()).unwrap();
+        let fen =
+            Fen::from_position(controller.position.clone(), EnPassantMode::PseudoLegal).to_string();
+        let key = polyglot_hash_from_fen(&fen).unwrap();
+        std::fs::write(&path, polyglot_book_bytes(&[(key, "e2e4", 1)])).unwrap();
+        let book = Arc::new(
+            open_polyglot_file_book_cancellable(
+                std::fs::File::open(&path).unwrap().into(),
+                &CancellationToken::new(),
+            )
+            .unwrap(),
+        );
+        {
+            let truncating = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+            truncating.set_len(0).unwrap();
+        }
+        assert!(book.moves_for_key(key).is_err());
+
+        controller.polyglot_book = Some(Arc::clone(&book));
+        controller.polyglot_max_ply = 16;
+        let probe = polyglot_book_lookup_request(&controller).expect("lookup request");
+        assert_eq!(polyglot_book_move("polyglot-trunc", probe).await, None);
+        assert!(book.lookup_failed.load(Ordering::SeqCst));
+        assert!(polyglot_book_lookup_request(&controller).is_none());
     }
 
     #[test]
@@ -6309,7 +6358,7 @@ done
             Err(Error::Cancellation)
         ));
         assert!(matches!(
-            load_polyglot_book_cancellable(&[0_u8; 16], &cancellation),
+            load_polyglot_book_cancellable(&[0_u8; POLYGLOT_RECORD_BYTES], &cancellation),
             Err(Error::Cancellation)
         ));
     }
@@ -10196,7 +10245,7 @@ done
     }
 
     if let Some(task) = engine_task.take() {",
-            end_marker: "fn polyglot_book_probe(",
+            end_marker: "fn polyglot_book_lookup_request(",
             expected_patterns: &[
                 RoutingPattern {
                     text: "task.abort();",
@@ -10212,6 +10261,21 @@ done
                 },
                 RoutingPattern {
                     text: "complete_exact(&game_id, live.session, &controller)",
+                    count: 1,
+                },
+            ],
+        },
+        RoutingAnchor {
+            name: "polyglot_book_move",
+            start_marker: "async fn polyglot_book_move(",
+            end_marker: "if let Some(book_uci) = book_move {",
+            expected_patterns: &[
+                RoutingPattern {
+                    text: "BLOCKING_GATEWAY.spawn(",
+                    count: 1,
+                },
+                RoutingPattern {
+                    text: "polyglot_book_move(",
                     count: 1,
                 },
             ],
@@ -10354,8 +10418,8 @@ done
             }
         }
         assert_eq!(
-            checked_occurrences, 37,
-            "all 37 production routing and cleanup occurrences must be tested individually"
+            checked_occurrences, 39,
+            "all 39 production routing and cleanup occurrences must be tested individually"
         );
     }
 }

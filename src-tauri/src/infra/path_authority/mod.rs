@@ -2247,7 +2247,7 @@ pub(crate) struct OpeningBookDescriptor {
 }
 
 impl OpeningBookDescriptor {
-    /// The already-opened, authority-validated file moves to the caller's blocking worker.
+    /// Hands the already-opened, authority-validated file to the opening-book parser; callers run it on a blocking worker.
     pub(crate) fn into_file(self) -> OwnedFile {
         self.file
     }
