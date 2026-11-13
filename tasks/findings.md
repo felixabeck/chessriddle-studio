@@ -24779,7 +24779,7 @@ Handled in `8d4c9c216` and `920a91f87` (pushed to master). `MoveInput.tsx` now r
 
 ### The explorer's Games tab opens games only by mouse click, with no keyboard activation and no single-flight guard
 
-* **ID:** f-20261112-57 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-57 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/panels/database/GamesTable.tsx:35-52` (DataTable `onRowClick` calls `runTabCreation(openDatabaseGame…)` directly), rendered by `src/components/panels/database/DatabasePanel.tsx:358`. Compare the Library `src/components/databases/GameTable.tsx:89,256-259`, which wraps the same open in `useGameOpen` and spreads `gameRowActivation(record, gameOpen.activate)` (`tabIndex: 0`, Enter handler, `src/components/common/gameOpen.tsx:40-55`) onto each row.
@@ -24788,6 +24788,8 @@ Handled in `8d4c9c216` and `920a91f87` (pushed to master). `MoveInput.tsx` now r
 - **Fix:** mirror GameTable: hold `useGameOpen` for `openDatabaseGame` + `runTabCreation`, and pass `customRowAttributes={(record) => gameRowActivation(record, gameOpen.activate)}` instead of `onRowClick` (or keep click and add the lock). Extend GamesTable.test.tsx with an Enter-on-row case and a double-click case.
 - **Proof:** ephemeral Vitest rendering the real `mantine-datatable` GamesTable (only `openDatabaseGame`, router and i18n mocked) with one game: the row had no `tabindex` (`tabIndex === -1`), no focusable descendant, and Enter on it made 0 open calls; two clicks made 2 `openDatabaseGame` calls. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 26)
+* **Closed 2026-11-13 (drain, Claude Code):** handled in 42812a983 and 1d954b9d7. The player opening tree (Open on board and row double-click), the explorer Games tab, the personal card Openings names, the overview Last games list and the tournament card's Open icon each hold one `useGameOpen` lock, so repeated activation while an open is pending starts one open per surface. Explorer Games rows are focusable and open on Enter while keeping single-click open (rejected: switching to `gameRowActivation`'s double-click, which would change shipped single-click behaviour and, beside click-open, could open a second tab after a fast first open). Opening names are `UnstyledButton`s. The opening tree keeps its "Open on board" label (rejected: `OpenGameButton`, whose label differs) and shows `loading`/`aria-busy`. Each adopter has a held-promise test that went red with the source change reverted. Push review: correctness, root-cause, tests, minimalism and code-quality lenses APPROVED; their should-fix items (TournamentCard sibling, cross-gesture and panel-wide test assertions, GamesTable gesture comment) were fixed in 1d954b9d7.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"ebc0ccdff4c6cbf905c38183f2ed7c12f411aaa00fd3ae0ac418c56d11592f15","header_sha256":"f10bf4f3c34b392a9647c38a1f418201292ce833c26e500a52b096bfa77a0e17","header_status":"handled","input_sha256":"f7e47d6ee2130401b706a435c21f107f8d94960b85c5a8d57da88fba56f41806","kind":"mutation-receipt","operation":"5439b71173a83e7ae8276a6ba9efe938d4180169af11f6c47ee3c2b4ae155943","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-57"],"target":"f-20261112-57","v":1} -->
 
 ---
 
