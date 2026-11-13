@@ -25170,7 +25170,7 @@ Handled in d8d11e681. `normalize_polyglot_uci` is deleted; `try_polyglot_book_mo
 
 ### A PGN opening book drops every game that contains a variation, and fails when all of them do
 
-* **ID:** f-20261112-79 · **Status:** open · **Area:** chess-tree · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-79 · **Status:** handled · **Area:** chess-tree · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** yes (general review, origin/master 11624873a)
 * **Where:** `src-tauri/src/game.rs:2418-2539` (`OpeningBookPgnVisitor`: it overrides `begin_game`, `header`, `end_headers`, `san` and `end_game` but not `begin_variation`); `src-tauri/vendor/pgn-reader/src/visitor.rs:49-51` (the default `begin_variation` returns `Skip(false)`, so the reader visits variation moves); `game.rs:2546-2575` (`select_random_pgn_entry_cancellable`).
@@ -25179,6 +25179,9 @@ Handled in d8d11e681. `normalize_polyglot_uci` is deleted; `try_polyglot_book_mo
 * **Fix:** override `begin_variation` in `OpeningBookPgnVisitor` to return `Skip(true)`, as the vendored crate's own example visitor does at `visitor.rs:70-72`, so that only mainline moves are collected. Add a test with a book game that has a variation.
 * **Proof:** probe outside the repo. A standalone crate against the vendored `pgn-reader` (path dependency on `src-tauri/vendor/pgn-reader`, unchanged from origin/master) and `shakmaty =0.27.1` copies the visitor's `begin_game`/`end_headers`/`san`/`end_game` logic, with no `begin_variation` override. It read four games: `1. e4 e5 (1... c5 2. Nf3) 2. Nf3 Nc6 *`, `1. d4 (1. c4) 1... d5 *` and `1. e4 (1. d4 d5) 1... e5 *` each printed `None` (game dropped), and the control `1. e4 e5 2. Nf3 *` printed `Some(["e2e4", "e7e5", "g1f3"])`. No existing `game.rs` test feeds a book PGN with a variation.
 * **Found by:** Grok Bot general review
+
+Handled in d8d11e681. `OpeningBookPgnVisitor` now overrides `begin_variation` to return `Skip(true)`, so only mainline SANs form the book line. New test `pgn_opening_book_skips_variations_and_keeps_mainline_moves` feeds the three variation games from the finding and asserts the exact mainline moves; it failed with "Opening book PGN has no valid games" before the fix.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"541bac833be58e8c1df7a7d8fe6c76ce9774974823f5ba320f75c61f865ec5f3","header_sha256":"c8bf14fb7c4314e52707f92b5c874f09cb4749cdc405aea9fbcb94f425814d0b","header_status":"handled","input_sha256":"1bd08943b8d8ce7a5ac1f29456a003b077f17e1a87476aa4d068a421f95a78ae","kind":"mutation-receipt","operation":"08ca254681f285a94bb8aca532ba36e1e57412fe18bafa22c15520d7f9634c5f","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-79"],"target":"f-20261112-79","v":1} -->
 
 ---
 
