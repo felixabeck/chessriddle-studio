@@ -255,6 +255,68 @@ test("lineToTree copies a mainline interior cursor and an empty root cursor", ()
     expect(atRoot.root.children).toEqual([]);
 });
 
+test("lineToTree stops copying when a path node has a null move", () => {
+    const tree = defaultTree();
+    const e4 = createNode({
+        fen: "after-e4",
+        move: parseUci("e2e4")!,
+        san: "e4",
+        halfMoves: 1,
+    });
+    const malformed = createNode({
+        fen: "malformed",
+        move: parseUci("e7e5")!,
+        san: "e5",
+        halfMoves: 2,
+    });
+    malformed.move = null;
+    const nf3 = createNode({
+        fen: "after-nf3",
+        move: parseUci("g1f3")!,
+        san: "Nf3",
+        halfMoves: 3,
+    });
+    malformed.children = [nf3];
+    e4.children = [malformed];
+    tree.root.children = [e4];
+
+    const copied = lineToTree(tree.root, tree.headers.orientation, [0, 0, 0]);
+    expect(copied.position).toEqual([0]);
+    expect(copied.root.children.map((node) => node.san)).toEqual(["e4"]);
+    expect(copied.root.children[0].children).toEqual([]);
+});
+
+test("lineToTree stops copying when a path node has a null san", () => {
+    const tree = defaultTree();
+    const e4 = createNode({
+        fen: "after-e4",
+        move: parseUci("e2e4")!,
+        san: "e4",
+        halfMoves: 1,
+    });
+    const malformed = createNode({
+        fen: "malformed",
+        move: parseUci("e7e5")!,
+        san: "e5",
+        halfMoves: 2,
+    });
+    malformed.san = null;
+    const nf3 = createNode({
+        fen: "after-nf3",
+        move: parseUci("g1f3")!,
+        san: "Nf3",
+        halfMoves: 3,
+    });
+    malformed.children = [nf3];
+    e4.children = [malformed];
+    tree.root.children = [e4];
+
+    const copied = lineToTree(tree.root, tree.headers.orientation, [0, 0, 0]);
+    expect(copied.position).toEqual([0]);
+    expect(copied.root.children.map((node) => node.san)).toEqual(["e4"]);
+    expect(copied.root.children[0].children).toEqual([]);
+});
+
 test("path lookup stops at the last valid node instead of crossing a missing child", () => {
     const root = defaultTree().root;
     const first = child("first", 1);
