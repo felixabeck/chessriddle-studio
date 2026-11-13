@@ -24308,7 +24308,7 @@ Handled 2026-11-12 by drain session bdcaf057 (lens tier; lenses correctness, roo
 
 ### Catalog database and puzzle downloads never report progress: both callers pass `totalSize: null`, and the native loop only reports when a total size was passed
 
-* **ID:** f-20261112-30 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-30 · **Status:** handled · **Area:** native-fs · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** ux
 * **Spotted outside diff:** yes (general review)
 * **Where:** `src-tauri/src/fs.rs` `download_payload_network` (~538-640 on origin/master 5512756fa): `progress_updater` is called only inside `if let Some(total_size) = total_size` (~607). The response's `content_length` (`declared_size`) is used for the size checks but never for progress. Callers: `src/components/databases/AddDatabase.tsx:326-334` (`DatabaseCard.downloadDatabase`) and `src/components/puzzles/AddPuzzle.tsx:124-131` both pass `null` as `totalSize`, although `DownloadableDatabaseInfo.storage_size` is known. `src/components/common/ProgressButton.tsx` draws the bar only when `progress !== 0`.
@@ -24317,6 +24317,11 @@ Handled 2026-11-12 by drain session bdcaf057 (lens tier; lenses correctness, roo
 * **Fix:** in `download_payload_network`, report progress against `expected_size` (`total_size` or else `declared_size`) instead of only `total_size`. Optionally also pass `database.storage_size` / the puzzle size from the two renderer callers (sizes fit `u32`). Add a native test where a body with a Content-Length and `total_size: None` produces at least one intermediate progress callback.
 * **Proof:** source trace on origin/master. `rg 'downloadFile\(' src` lists only AddDatabase and AddPuzzle, and both pass `null` in the `totalSize` position (`generated.ts:1123`: `downloadFile(id, url, destination, filename, totalSize, jobId, integrity)`). `download_file_runtime` forwards `total_size` unchanged to `download_to_destination_with_failure` → `download_payload_network`. That function's only `progress_updater(...)` call sits inside `if let Some(total_size) = total_size`. Every other progress emission on this path is the terminal one (`report_download_success` → 100 / Succeeded, or Failed/Cancelled). ProgressButton renders `<Progress>` only for `progress !== 0`.
 * **Found by:** Grok Bot general review 2026-11-12 (chunk 13)
+* **Handled, 2026-11-13:** `download_payload_network` reports progress against the expected size (the passed total or the response Content-Length), floored to `PROGRESS_REPORT_STEP_PERCENT` (0.1 %), at most 1001 Running frames. Every changed value is one IPC event, so per-chunk reporting would flood a 2.8 GB catalog install.
+  * Running progress is best effort through one `report_running_download_progress` helper used by both download closures. A stale lease still cancels, and other emit errors are logged once. This includes the engine-archive download, which now also gets Content-Length progress.
+  * Commits `cda45c007`, `6342fa118`, `532b8961c`, `d8d87a456`, `3c17ba57e`.
+  * The renderer callers still pass `null`; no renderer change was needed.
+<!-- ledger-meta {"command":"close","effect_lines":4,"effect_sha256":"1ced8c74ec676628e098ddd6a9844ee700a59ee29a8cccb288174a9384eb2b3a","header_sha256":"d18775e7caa64fc2970569563b95f3b93e06bd0495293a777afa19b0b38bccaf","header_status":"handled","input_sha256":"dde154cab836e5dc8aa3b2829af5c5be0dd722a55b558dae38e9ce4b0e1663a8","kind":"mutation-receipt","operation":"dc8f2da75d89f32365c5b59de5c80bd1db6158af132a39d01307137a06f549ae","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-30"],"target":"f-20261112-30","v":1} -->
 
 ---
 
