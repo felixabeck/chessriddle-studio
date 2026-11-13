@@ -23065,7 +23065,7 @@ Handled (drain aaa22b94, 2026-11-11). All twelve `FilePath::into_path` conversio
 
 ### `InfoPanel.tsx` still colocates a 530-line `GameSelectorAccordion` after `GameSelector` was extracted
 
-* **ID:** f-20261111-62 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261111-62 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** felix-codex-login
 * **Impact class:** tooling
 * **Spotted outside diff:** general quality review (Felix t26u) at HEAD `bdea41f47`
 * **Where:** `src/components/panels/info/InfoPanel.tsx` (703 lines). `InfoPanel` itself is `:75-139` (the layout). `DatabaseInfo` is `:140-171`. `GameSelectorAccordion` is `:173-702` (530 lines) and ends the file. It already imports and renders `GameSelector` from `./GameSelector` (`:36`, `:683`). `src/components/panels/info/GameSelector.tsx` is itself 551 lines (`GameSelector` `:59-392`, `GameRow` `:393-end`). No decision pins the accordion orchestration to `InfoPanel.tsx`.
@@ -23074,6 +23074,10 @@ Handled (drain aaa22b94, 2026-11-11). All twelve `FilePath::into_path` conversio
 * **Fix:** Move `GameSelectorAccordion` (and the `PageRequest` / `FileTabUpdateResult` types it owns) into `GameSelector.tsx` or a sibling `GameSelectorAccordion.tsx`. Leave `InfoPanel` as the composer of `DatabaseInfo`, the accordion, `FileInfo`, `GameInfo`, `FenSearch` and `PgnInput`. Existing `InfoPanel.test.tsx` and `GameSelector.test.tsx` remain the behaviour contract.
 * **Proof:** At HEAD `bdea41f47`, `GameSelectorAccordion` starts at `InfoPanel.tsx:173` and the file's only later export is `export default InfoPanel` at `:703`. The accordion renders `<GameSelector` at `:683`. `GameSelector.tsx` exports `GameSelector` and `GameSelectorRow` and does not contain the accordion. `tasks/decisions.md` has no entry requiring this orchestration to stay in `InfoPanel.tsx`.
 * **Found by:** Grok Bot, quality review (t26u), HEAD `bdea41f47`.
+
+2026-11-13, drain session 6f337422-5e8c-4c7c-9baa-91015d1a2eac: the finding still holds at HEAD 1cac6ad53. Briefs for one Codex write leaf were written (/tmp/nf-34/brief-paging.md and /tmp/nf-34/brief-keymap.md, together covering f-20261112-34, f-20261111-62 and f-20261111-89). Both leaves failed before doing any work: the Codex CLI 0.167.2 returned `401 token_revoked` with "Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again." A direct `codex exec --profile leaf` probe reproduced it, even though `codex login status` still reports "Logged in using ChatGPT". push-review-policy §5 does not allow a failed write to switch to another writer.
+Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK only.' | codex exec --profile leaf -s read-only --ephemeral --skip-git-repo-check -` must answer without a 401. Then clear Blocked to none and let the drain re-pick the finding. No code was changed.
+<!-- ledger-meta {"command":"set-header","effect_lines":2,"effect_sha256":"764159c0e354f6374f29710242b6e84543fc71081f96b7805ec570ba554ffed9","header_sha256":"ba3a3eadaa5043fd779903dd9e69b4ef35b2ce95e48cb83e6b50db262ac4257d","header_status":"open","input_sha256":"06e2ac9ec68b11e22b3bf7b63ae8b89cbc6387430798b7825188afb34a66ad2d","kind":"mutation-receipt","operation":"7845a42b02b318d8fa1d667d66cef825d159fd0c47869dc00e1fdc6e5a334eb8","options":{"headers":{"Blocked":"felix-codex-login"},"section":null},"request_id_sha256":null,"results":["f-20261111-62"],"target":"f-20261111-62","v":1} -->
 
 ---
 
