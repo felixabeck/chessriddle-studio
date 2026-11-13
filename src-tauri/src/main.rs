@@ -688,15 +688,21 @@ fn cancel_destroyed_window_operations_in_registry(
 
 #[tauri::command]
 #[specta::specta]
-fn release_previous_document_operations(
+async fn release_previous_document_operations(
     window: WebviewWindow,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
-    release_previous_document_operations_in_registry(
+    let label = window.label();
+    let operations = release_previous_document_operations_in_registry(
         &state.operations,
         &state.engine_supervisor,
-        window.label(),
-    )
+        label,
+    );
+    let aborted = state.game_manager.abort_owner_games(label).await;
+    if aborted > 0 {
+        log::info!("reloaded webview {label} aborted {aborted} live game session(s)");
+    }
+    operations
 }
 
 fn release_previous_document_operations_in_registry(
@@ -3229,7 +3235,12 @@ mod native_window_operation_wiring_tests {
         let command = body_at_indent(source, "fn release_previous_document_operations(");
         assert_eq!(command.matches("window.label()").count(), 1, "{command}");
         let compact: String = command.chars().filter(|c| !c.is_whitespace()).collect();
-        assert!(compact.contains("release_previous_document_operations_in_registry(&state.operations,&state.engine_supervisor,window.label(),)"), "{command}");
+        assert!(compact.contains("letlabel=window.label();"), "{command}");
+        assert!(compact.contains("release_previous_document_operations_in_registry(&state.operations,&state.engine_supervisor,label,)"), "{command}");
+        assert!(
+            compact.contains("game_manager.abort_owner_games(label)"),
+            "{command}"
+        );
         for signature in [
             "fn release_previous_document_operations_in_registry(",
             "fn cancel_destroyed_window_operations_in_registry(",

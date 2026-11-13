@@ -1006,6 +1006,7 @@ impl SessionMetadata {
 struct LiveSession {
     cleanup: SessionCleanup,
     session: u64,
+    owner: String,
     controller: Arc<RwLock<GameController>>,
     shutdown: watch::Sender<bool>,
     join: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
@@ -1739,6 +1740,7 @@ impl GameManager {
         self: &Arc<Self>,
         game_id: GameId,
         config: GameConfig,
+        owner: String,
         app: AppHandle<R>,
         authority: crate::infra::path_authority::SharedPathAuthority,
         engine_supervisor: Arc<EngineSupervisor>,
@@ -1844,6 +1846,7 @@ impl GameManager {
                 ..SessionCleanup::default()
             },
             session,
+            owner,
             controller: controller.clone(),
             shutdown: shutdown_tx,
             join: std::sync::Mutex::new(None),
@@ -2227,6 +2230,35 @@ impl GameManager {
         // caller is `shutdown_backend`, which must know whether a child survived.
         let _ = retirement.finish().await;
         Ok(())
+    }
+
+    /// Aborts every live session owned by `owner`. Matching entries are
+    /// collected before the first `await` so a DashMap guard is never held
+    /// across an abort (see `shutdown_all`).
+    pub async fn abort_owner_games(&self, owner: &str) -> usize {
+        let sessions: Vec<_> = self
+            .games
+            .iter()
+            .filter(|entry| entry.owner == owner)
+            .map(|entry| (entry.key().clone(), entry.session))
+            .collect();
+        let mut aborted = 0;
+        for (game_id, session) in sessions {
+            match self.abort_game(&game_id, session).await {
+                Ok(()) => aborted += 1,
+                Err(Error::GameNotFound(_) | Error::Conflict(_)) => {
+                    log::debug!(
+                        "owner {owner} game {game_id} session {session} already gone during abort sweep"
+                    );
+                }
+                Err(error) => {
+                    log::error!(
+                        "failed to abort owner {owner} game {game_id} session {session}: {error}"
+                    );
+                }
+            }
+        }
+        aborted
     }
 
     pub async fn get_engine_logs(
@@ -3737,6 +3769,7 @@ async fn request_engine_move<R: Runtime>(
 pub async fn start_game(
     game_id: String,
     config: GameConfig,
+    window: tauri::WebviewWindow,
     app: AppHandle,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<GameState, Error> {
@@ -3746,6 +3779,7 @@ pub async fn start_game(
         .start_game(
             game_id,
             config,
+            window.label().to_owned(),
             app,
             state.pgn_path_authority.clone(),
             state.engine_supervisor.clone(),
@@ -5081,6 +5115,7 @@ mod tests {
         (
             Arc::new(LiveSession {
                 session,
+                owner: "main".into(),
                 controller: controller.clone(),
                 shutdown,
                 cleanup: SessionCleanup::default(),
@@ -5103,6 +5138,7 @@ mod tests {
             .start_game(
                 game_id.into(),
                 human_config(),
+                "main".into(),
                 app.handle().clone(),
                 crate::infra::path_authority::SharedPathAuthority::uninitialized(),
                 Arc::new(EngineSupervisor::default()),
@@ -5610,6 +5646,7 @@ done
             "resource-game".into(),
             Arc::new(LiveSession {
                 session: 1,
+                owner: "main".into(),
                 controller,
                 shutdown,
                 cleanup: SessionCleanup::default(),
@@ -5739,6 +5776,7 @@ done
             "game".into(),
             Arc::new(LiveSession {
                 session: 4,
+                owner: "main".into(),
                 controller,
                 shutdown,
                 cleanup: SessionCleanup::default(),
@@ -5774,6 +5812,7 @@ done
             .start_game(
                 game_id.into(),
                 human_config(),
+                "main".into(),
                 app.handle().clone(),
                 crate::infra::path_authority::SharedPathAuthority::uninitialized(),
                 Arc::new(EngineSupervisor::default()),
@@ -7195,6 +7234,7 @@ done
             "game".into(),
             Arc::new(LiveSession {
                 session: 1,
+                owner: "main".into(),
                 controller: controller.clone(),
                 shutdown,
                 cleanup: SessionCleanup::default(),
@@ -7221,6 +7261,7 @@ done
             "game".into(),
             Arc::new(LiveSession {
                 session: 2,
+                owner: "main".into(),
                 controller: replacement.clone(),
                 shutdown,
                 cleanup: SessionCleanup::default(),
@@ -7565,6 +7606,7 @@ done
                 game_id.into(),
                 Arc::new(LiveSession {
                     session,
+                    owner: "main".into(),
                     controller,
                     shutdown,
                     cleanup: SessionCleanup::default(),
@@ -7772,6 +7814,7 @@ done
             .start_game(
                 "capacity".into(),
                 human_config(),
+                "main".into(),
                 app.handle().clone(),
                 authority,
                 Arc::new(EngineSupervisor::default()),
@@ -7940,6 +7983,7 @@ done
             "initial".into(),
             Arc::new(LiveSession {
                 session: 1,
+                owner: "main".into(),
                 controller,
                 shutdown,
                 cleanup: SessionCleanup::default(),
@@ -7975,6 +8019,7 @@ done
             "slipped".into(),
             Arc::new(LiveSession {
                 session: 2,
+                owner: "main".into(),
                 controller,
                 shutdown: slipped_shutdown,
                 cleanup: SessionCleanup::default(),
@@ -8004,6 +8049,7 @@ done
             "stuck".into(),
             Arc::new(LiveSession {
                 session: 1,
+                owner: "main".into(),
                 controller,
                 shutdown,
                 cleanup: SessionCleanup::default(),
@@ -8050,6 +8096,7 @@ done
             "parallel".into(),
             Arc::new(LiveSession {
                 session: 1,
+                owner: "main".into(),
                 controller,
                 shutdown,
                 cleanup: SessionCleanup::default(),
@@ -8835,6 +8882,7 @@ done
             .start_game(
                 game_id.into(),
                 bundle.config.clone(),
+                "main".into(),
                 app.handle().clone(),
                 bundle.authority.clone(),
                 supervisor.clone(),
@@ -8882,6 +8930,7 @@ done
             .start_game(
                 game_id.into(),
                 config,
+                "main".into(),
                 app.handle().clone(),
                 bundle.authority.clone(),
                 supervisor.clone(),
@@ -8947,7 +8996,14 @@ done
             let game_id = game_id.to_owned();
             async move {
                 manager
-                    .start_game(game_id, config, app.handle().clone(), authority, supervisor)
+                    .start_game(
+                        game_id,
+                        config,
+                        "main".into(),
+                        app.handle().clone(),
+                        authority,
+                        supervisor,
+                    )
                     .await
             }
         });
@@ -9006,7 +9062,14 @@ done
             let game_id = game_id.to_owned();
             async move {
                 manager
-                    .start_game(game_id, config, app.handle().clone(), authority, supervisor)
+                    .start_game(
+                        game_id,
+                        config,
+                        "main".into(),
+                        app.handle().clone(),
+                        authority,
+                        supervisor,
+                    )
                     .await
             }
         });
@@ -9097,7 +9160,14 @@ done
             let game_id = game_id.to_owned();
             async move {
                 manager
-                    .start_game(game_id, config, app.handle().clone(), authority, supervisor)
+                    .start_game(
+                        game_id,
+                        config,
+                        "main".into(),
+                        app.handle().clone(),
+                        authority,
+                        supervisor,
+                    )
                     .await
             }
         });
@@ -9891,6 +9961,7 @@ done
                     .start_game(
                         game_id,
                         bundle_config,
+                        "main".into(),
                         app.handle().clone(),
                         authority,
                         supervisor,
@@ -9948,7 +10019,14 @@ done
             let game_id = game_id.to_owned();
             async move {
                 manager
-                    .start_game(game_id, config, app.handle().clone(), authority, supervisor)
+                    .start_game(
+                        game_id,
+                        config,
+                        "main".into(),
+                        app.handle().clone(),
+                        authority,
+                        supervisor,
+                    )
                     .await
             }
         });
@@ -9997,6 +10075,7 @@ done
             .start_game(
                 game_id.into(),
                 bundle.config.clone(),
+                "main".into(),
                 app.handle().clone(),
                 bundle.authority.clone(),
                 supervisor.clone(),
@@ -10029,6 +10108,87 @@ done
             .terminate_exact(&unrelated.key, unrelated.generation)
             .await
             .unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn abort_owner_games_reaps_only_that_windows_sessions_and_engines() {
+        let main_id = "abort_owner_games_reaps_only_that_windows_sessions_and_engines-main";
+        let other_id = "abort_owner_games_reaps_only_that_windows_sessions_and_engines-other";
+        let main_bundle = test_game_engine_bundle(main_id, TestEngineScript::Responsive, true);
+        let other_bundle = test_game_engine_bundle(other_id, TestEngineScript::Responsive, true);
+        let manager = Arc::new(GameManager::new());
+        let supervisor = Arc::new(EngineSupervisor::default());
+        let app = tauri::test::mock_app();
+        tauri_specta::Builder::<tauri::test::MockRuntime>::new()
+            .events(tauri_specta::collect_events!(
+                GameMoveEvent,
+                GameOverEvent,
+                ClockUpdateEvent
+            ))
+            .mount_events(&app);
+
+        let main_state = manager
+            .start_game(
+                main_id.into(),
+                main_bundle.config.clone(),
+                "main".into(),
+                app.handle().clone(),
+                main_bundle.authority.clone(),
+                supervisor.clone(),
+            )
+            .await
+            .unwrap();
+        let other_state = manager
+            .start_game(
+                other_id.into(),
+                other_bundle.config.clone(),
+                "other".into(),
+                app.handle().clone(),
+                other_bundle.authority.clone(),
+                supervisor.clone(),
+            )
+            .await
+            .unwrap();
+
+        let (main_white, main_black) = game_side_keys(&main_bundle, main_id, main_state.session);
+        let (other_white, other_black) =
+            game_side_keys(&other_bundle, other_id, other_state.session);
+        let main_white_generation = wait_for_generation(&supervisor, &main_white).await;
+        let main_black_generation = wait_for_generation(&supervisor, &main_black).await;
+        let other_white_generation = wait_for_generation(&supervisor, &other_white).await;
+        let other_black_generation = wait_for_generation(&supervisor, &other_black).await;
+
+        assert_eq!(manager.abort_owner_games("main").await, 1);
+        assert!(matches!(
+            manager.get_game_state(main_id, main_state.session).await,
+            Err(Error::GameNotFound(_))
+        ));
+        wait_for_generation_gone(&supervisor, &main_white, main_white_generation).await;
+        wait_for_generation_gone(&supervisor, &main_black, main_black_generation).await;
+        assert!(supervisor.get_exact(&main_white).is_none());
+        assert!(supervisor.get_exact(&main_black).is_none());
+
+        let other_live = manager
+            .get_game_state(other_id, other_state.session)
+            .await
+            .unwrap();
+        assert_eq!(other_live.status, GameStatus::Playing);
+        assert!(supervisor
+            .get_exact(&other_white)
+            .is_some_and(|engine| engine.generation == other_white_generation));
+        assert!(supervisor
+            .get_exact(&other_black)
+            .is_some_and(|engine| engine.generation == other_black_generation));
+
+        assert_eq!(manager.abort_owner_games("main").await, 0);
+
+        manager
+            .abort_game(other_id, other_state.session)
+            .await
+            .unwrap();
+        wait_for_generation_gone(&supervisor, &other_white, other_white_generation).await;
+        wait_for_generation_gone(&supervisor, &other_black, other_black_generation).await;
     }
 
     #[cfg(unix)]
@@ -10078,7 +10238,14 @@ done
             let game_id = game_id.to_owned();
             async move {
                 manager
-                    .start_game(game_id, config, app.handle().clone(), authority, supervisor)
+                    .start_game(
+                        game_id,
+                        config,
+                        "main".into(),
+                        app.handle().clone(),
+                        authority,
+                        supervisor,
+                    )
                     .await
             }
         });
