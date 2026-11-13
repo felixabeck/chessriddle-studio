@@ -181,14 +181,17 @@ function ReportModal({
   useEffect(() => {
     formRef.current.setValues(reportSettings);
   }, [reportSettings]);
-  // Fall back to the first local engine only when the selected engine is not
-  // installed; the other fields keep the user's edits.
+  // Fall back only once the engine list has loaded and the selected engine is
+  // not installed; prefer the stored engine, and keep the user's other edits.
   useEffect(() => {
+    if (engines == null) return;
     const current = formRef.current.getValues().engine;
     if (localEngines.some((engine) => engine.id === current)) return;
-    const fallback = localEngines[0]?.id ?? "";
+    const fallback = localEngines.some((engine) => engine.id === reportSettings.engine)
+      ? reportSettings.engine
+      : (localEngines[0]?.id ?? "");
     if (current !== fallback) formRef.current.setFieldValue("engine", fallback);
-  }, [localEngines, reportSettings]);
+  }, [engines, localEngines, reportSettings]);
 
   async function analyze() {
     if (referenceUnavailable) return;

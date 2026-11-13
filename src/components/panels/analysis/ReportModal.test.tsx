@@ -191,10 +191,13 @@ function countReportRenders() {
   };
 }
 
-async function renderReportModal(
+async function renderReportModal({
   isCurrentOperation = (_id: string, _fingerprint: string) => true,
   reportingMode = true,
-) {
+}: {
+  isCurrentOperation?: (id: string, fingerprint: string) => boolean;
+  reportingMode?: boolean;
+} = {}) {
   const renders = countReportRenders();
   await act(async () => {
     root.render(
@@ -424,7 +427,9 @@ test.each(
     mocks.collection.mockResolvedValue(collection);
     const completion = deferred<MoveAnalysis[]>();
     mocks.analyzeGame.mockReturnValueOnce(completion.promise);
-    await renderReportModal(() => tree.getState().root === originalRoot);
+    await renderReportModal({
+      isCurrentOperation: () => tree.getState().root === originalRoot,
+    });
     await act(async () => host.querySelector("button")!.click());
     await act(async () => root.render(<div>Database panel</div>));
     const validation = deferred<import("@/bindings").CollectionDescriptor | null>();
@@ -712,7 +717,7 @@ test("P2 report replacement suppresses old failures and the current typed failur
   let currentId = "old";
   mocks.prepareAnalysis.mockResolvedValueOnce("old").mockResolvedValueOnce("current");
   mocks.analyzeGame.mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise);
-  await renderReportModal((id) => id === currentId);
+  await renderReportModal({ isCurrentOperation: (id) => id === currentId });
   await act(async () => {
     host.querySelector("button")!.click();
     await Promise.resolve();
@@ -746,9 +751,9 @@ test("P2 changed root fingerprint suppresses the report failure notification", a
   const result = deferred<never[]>();
   mocks.analyzeGame.mockReturnValueOnce(result.promise);
   let rootMatches = true;
-  await renderReportModal(
-    (_id, fingerprint) => rootMatches && fingerprint === "start-fen\u0000e2e4",
-  );
+  await renderReportModal({
+    isCurrentOperation: (_id, fingerprint) => rootMatches && fingerprint === "start-fen\u0000e2e4",
+  });
   await act(async () => {
     host.querySelector("button")!.click();
     await Promise.resolve();
@@ -1045,10 +1050,10 @@ test("reports a quota-failed settings save while still starting the report", asy
 });
 
 test("report form render count stays bounded while closed and after an edit", async () => {
-  const closed = await renderReportModal(undefined, false);
+  const closed = await renderReportModal({ reportingMode: false });
   expect(closed.renders).toBeLessThan(MAX_STABLE_REPORT_RENDERS);
 
-  const opened = await renderReportModal(undefined, true);
+  const opened = await renderReportModal({ reportingMode: true });
   expect(opened.renders).toBeLessThan(MAX_STABLE_REPORT_RENDERS);
 
   const reversed = host.querySelector(
@@ -1058,7 +1063,7 @@ test("report form render count stays bounded while closed and after an edit", as
   expect(opened.renders).toBeLessThan(MAX_STABLE_REPORT_RENDERS);
 });
 
-test("report form keeps reversed and engine edits after flush", async () => {
+test("report form keeps reversed and engine edits across renders", async () => {
   await renderReportModal();
   const reversed = host.querySelector(
     'input[aria-label="Board.Analysis.Reversed"]',
@@ -1083,6 +1088,30 @@ test("report form keeps reversed and engine edits after flush", async () => {
   expect(mocks.analyzeGame.mock.calls[0][5]).toEqual(expect.objectContaining({ reversed: false }));
 });
 
+test("keeps the stored engine when the engine list hydrates after mount", async () => {
+  localStorage.setItem(
+    "report-settings",
+    JSON.stringify({
+      novelty: false,
+      reversed: true,
+      variations: true,
+      goMode: { t: "Time", c: 500 },
+      engine: "engine-id-2",
+    }),
+  );
+  atomStore.set(enginesAtom, undefined as unknown as typeof mocks.engines);
+  await renderReportModal();
+  await act(async () => {
+    atomStore.set(enginesAtom, mocks.engines);
+  });
+
+  const engineSelect = host.querySelectorAll("select")[0] as HTMLSelectElement;
+  expect(engineSelect.value).toBe("engine-id-2");
+  await act(async () => host.querySelector("button")!.click());
+  expect(mocks.analyzeGame).toHaveBeenCalledOnce();
+  expect(mocks.analyzeGame.mock.calls[0][3]).toBe("engine-id-2");
+});
+
 test("falls back to the first installed engine without resetting a user-edited checkbox", async () => {
   localStorage.setItem(
     "report-settings",
@@ -1105,17 +1134,7 @@ test("falls back to the first installed engine without resetting a user-edited c
   expect(reversed.checked).toBe(false);
 
   await act(async () => {
-    atomStore.set(enginesAtom, [
-      {
-        type: "local" as const,
-        id: "engine-id-2",
-        name: "Komodo",
-        version: "1",
-        filename: "komodo",
-        handle: { id: { id: "engine-handle-2" }, kind: "engine" as const },
-        settings: [],
-      },
-    ]);
+    atomStore.set(enginesAtom, [mocks.engines[1]]);
   });
 
   expect(engineSelect.value).toBe("engine-id-2");
