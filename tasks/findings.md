@@ -24721,7 +24721,7 @@ Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK on
 
 ### The engine core picker offers only powers of two, so a 6-, 12- or 24-thread CPU can never use all its threads
 
-* **ID:** f-20261112-53 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-53 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/panels/analysis/CoresSlider.tsx:9-12` (`Array.from({ length: Math.log2(navigator.hardwareConcurrency) + 1 }, (_, i) => 2 ** i)`), the only Threads control in the app (`EngineSettingsForm.tsx:86-100`; `Threads` is a required setting kept out of the generic option list, `src/utils/engines.ts:18`)
@@ -24733,6 +24733,9 @@ Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK on
 
 **Correction (2026-11-12, Grok Bot chunk 23, same session):** CoresSlider is not the only Threads control. The Engines page renders every non-button UCI option, Threads included, through `completeOptions`/`visibleOptions` (`src/components/engines/EnginesPage.tsx:405-479`), so the engine-wide Threads value can be set to 12 there. `requiredEngineSettings` (`src/utils/engines.ts:18`) only seeds defaults; it does not hide the option. The defect is narrowed to the analysis/play `EngineSettingsForm` picker (per-tab and per-opponent settings). It still cannot select a non-power-of-two count. And when the stored value is not a power of two (for example 12 set on the Engines page), no segment is selected: an ephemeral probe with `hardwareConcurrency = 12` and `value={12}` rendered radios `1,2,4,8`, all `checked === false`. The failure scenario becomes: set Threads to 12 on the Engines page, then open the analysis engine settings: the core picker shows no selection and offers only up to 8, and touching it lowers the tab's threads. The fix is unchanged.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"f1a8a5fea50279ba8600d0eeda55301484ff72a30f373b2b9842112f88d4412a","input_sha256":"ac15a4c87a7db6c8867e307250828883b575a6186f72e0329ab809447da578a1","kind":"mutation-receipt","operation":"2ce131ce7046749ab561bfb3aacfa4364fb1eabb9b6c68a0f5fcc32e23720d48","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-53"],"target":"f-20261112-53","v":1} -->
+
+**Handled (2026-11-13, drain e75f8ae7, co-located with f-20261112-85, commit 6584b550c):** `CoresSlider` offers powers of two below `navigator.hardwareConcurrency`, then the thread count itself, plus the current value when it is a positive integer not already listed (so a Threads value set on the Engines page stays selected). Invalid/missing concurrency falls back to 1. Test `CoresSlider.test.tsx`: 12 → 1,2,4,8,12; 8 → 1,2,4,8; 6 with value 12 → 1,2,4,6,12 with 12 checked.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"a53a7349d629a7a29f639a1bc7bd011781427f25322a4f616bd4b751a4ebf2d3","header_sha256":"ba368822dce8fad2b9ad30bb2723d5355a7f1a08775891cf45ab8ab1cefc161d","header_status":"handled","input_sha256":"e61b98dc662b78556ae5182da10537e61f9f2a46e98aae5bafb03901342f5632","kind":"mutation-receipt","operation":"38068519b42b1877bc0350f3dd0df6156d14d53f54bc6ef223c19313b998f31b","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-53"],"target":"f-20261112-53","v":1} -->
 
 ---
 
