@@ -75,7 +75,7 @@ vi.mock("@/state/atoms", () => ({
   spellCheckAtom: mocks.spellCheckAtom,
   tabsAtom: mocks.tabsAtom,
 }));
-vi.mock("@/state/quitGate", () => ({
+vi.mock("./state/quitGate", () => ({
   scanBlockingTabs: mocks.scanBlockingTabs,
   isQuitGateInProgress: mocks.isQuitGateInProgress,
 }));
@@ -133,6 +133,10 @@ let root: Root;
 let container: HTMLDivElement;
 let storeValues: { referenceDb: string | undefined };
 let atomValues: Map<object, unknown>;
+let tabsInStore: unknown[] = [];
+
+/** Distinct tab list the update-check suite feeds through the store into `scanBlockingTabs`. */
+const storedTabs = [{ value: "t1", name: "Analysis", type: "analysis" }];
 
 function Probe() {
   useAppStartup();
@@ -186,10 +190,11 @@ beforeEach(() => {
   mocks.useAtomValue.mockReset();
 
   storeValues = { referenceDb: undefined };
+  tabsInStore = [];
   mocks.getDefaultStore.mockReturnValue({
     get: (atom: object) => {
       if (atom === mocks.referenceDbAtom) return storeValues.referenceDb;
-      if (atom === mocks.tabsAtom) return [];
+      if (atom === mocks.tabsAtom) return tabsInStore;
       return undefined;
     },
   });
@@ -419,6 +424,10 @@ describe("useAppStartup", () => {
 });
 
 describe("startup update check", () => {
+  beforeEach(() => {
+    tabsInStore = storedTabs;
+  });
+
   test("shows no dialog when no update is available", async () => {
     mockLaunchWithoutCliFile();
 
@@ -551,6 +560,7 @@ describe("startup update check", () => {
 
     expect(update.downloadAndInstall).toHaveBeenCalledOnce();
     expect(mocks.scanBlockingTabs).toHaveBeenCalledOnce();
+    expect(mocks.scanBlockingTabs).toHaveBeenCalledWith(storedTabs);
     expect(mocks.relaunch).toHaveBeenCalledOnce();
     expect(update.close).toHaveBeenCalledOnce();
     expect(update.downloadAndInstall.mock.invocationCallOrder[0]).toBeLessThan(
@@ -565,12 +575,13 @@ describe("startup update check", () => {
     mockLaunchWithoutCliFile();
     const update = mockUpdate();
     mocks.ask.mockResolvedValue(true);
-    mocks.scanBlockingTabs.mockReturnValue([
-      { value: "t1", name: "Analysis", uninspectable: false },
-    ]);
+    mocks.scanBlockingTabs.mockImplementation((tabs) =>
+      tabs === storedTabs ? [{ value: "t1", name: "Analysis", uninspectable: false }] : [],
+    );
 
     await act(async () => root.render(<Probe />));
 
+    expect(mocks.scanBlockingTabs).toHaveBeenCalledWith(storedTabs);
     expect(mocks.relaunch).not.toHaveBeenCalled();
     expect(mocks.showNotification).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -579,6 +590,7 @@ describe("startup update check", () => {
         autoClose: false,
       }),
     );
+    expect(mocks.info).toHaveBeenCalledWith("Update restart deferred: unsaved work in open tabs");
     expect(update.close).toHaveBeenCalledOnce();
   });
 
@@ -595,6 +607,9 @@ describe("startup update check", () => {
       expect.objectContaining({
         title: "Updater.Installed",
       }),
+    );
+    expect(mocks.info).toHaveBeenCalledWith(
+      "Update restart deferred: a quit is already in progress",
     );
     expect(update.close).toHaveBeenCalledOnce();
   });
@@ -616,6 +631,9 @@ describe("startup update check", () => {
       }),
     );
     expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining("store unavailable"));
+    expect(mocks.info).not.toHaveBeenCalledWith(
+      "Update restart deferred: unsaved work in open tabs",
+    );
     expect(update.close).toHaveBeenCalledOnce();
   });
 
