@@ -24292,7 +24292,7 @@ Handled 2026-11-12 by drain session bdcaf057 (lens tier; lenses correctness, roo
 
 ### Download and Chess.com network timeouts are raised as `Error::EngineTimeout`, so users see "Engine timeout: download request timed out" classified as an unexpected error
 
-* **ID:** f-20261112-29 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-29 · **Status:** handled · **Area:** native-fs · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** ux
 * **Spotted outside diff:** yes (general review)
 * **Where:** `src-tauri/src/fs.rs:499` (`request_download_response`: a `DOWNLOAD_REQUEST_TIMEOUT` of 60 s → `Error::EngineTimeout("download request timed out")`). `src-tauri/src/fs.rs:86` (`await_staging_deadline_with_admission`: the 1 h `DOWNLOAD_DEADLINE` and other staging deadlines → `Error::EngineTimeout(timeout_message)`). `src-tauri/src/chesscom.rs:166` ("Chess.com request timed out") and `:592` ("Chess.com export deadline exceeded"). `src-tauri/src/error.rs:308-309` `#[error("Engine timeout: {0}")]` and category `engine-timeout`. `src/platform/errors.ts:74` maps `"engine-timeout"` to `"unexpected"`. Origin/master 5512756fa.
@@ -24301,6 +24301,10 @@ Handled 2026-11-12 by drain session bdcaf057 (lens tier; lenses correctness, roo
 * **Fix:** add a network-timeout variant (for example `Error::NetworkTimeout(String)` with category `network`, or reuse an existing network category), and raise it at the four download/Chess.com sites. `await_staging_deadline_with_admission` keeps its non-cancellation type, so the commit-gate semantics are unchanged. Add a payload test that a download request timeout serializes with a non-engine category and message.
 * **Proof:** the source cites above, plus an ephemeral Vitest probe (removed, tree clean): `normalizeError({tag:"backend-error",category:"engine-timeout",message:"Engine timeout: download request timed out"})` returned `{category:"unexpected", message:"Engine timeout: download request timed out"}`. `renderer_payload` (`error.rs:1099-1112`) copies `self.to_string()` and `self.category()` unchanged, and `sanitize_download_error` only rewrites `Error::Io`. The existing tests `fs.rs:2976`, `:8755`, `:11902` and `chesscom.rs:1178`, `:1777` pin `EngineTimeout` as the download/Chess.com timeout type.
 * **Found by:** Grok Bot general review 2026-11-12 (chunk 12)
+* **Handled, 2026-11-13:** new `Error::NetworkTimeout(String)` ("Network timeout: …") mapped to the existing `ErrorCategory::Network`, raised at the four sites: the download request timeout, the download staging deadline (still non-cancellation, d-20260920-02), and the Chess.com request and export deadlines. Engine timeouts are unchanged. No new category, so the bindings are unchanged.
+  * Tests: the payload is `network` with no "Engine" in the message, and the 60 s request timeout reaches `NetworkTimeout` (paused clock).
+  * Commits `6446589cb`, `6342fa118`.
+<!-- ledger-meta {"command":"close","effect_lines":3,"effect_sha256":"4ff0bba1fdc081f480b589cfa38c4a3c0e322ed81acd8d748eaacd54a6e5a828","header_sha256":"f2b6721fbf97eca7e4d52730c44f1545b2cfd418934905951ed85fa677a3e7eb","header_status":"handled","input_sha256":"85f151c1770630b7f8cbf51158ea80251b0fe4b3878526cdd03f1664c637e6d3","kind":"mutation-receipt","operation":"56ef6786a2eba04b387ceb5750611cf6af3a256f6156bcb0798f371b5f0d1d39","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-29"],"target":"f-20261112-29","v":1} -->
 
 ---
 
