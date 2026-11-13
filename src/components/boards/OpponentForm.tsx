@@ -17,6 +17,7 @@ import {
   switchOpponentType,
   type OpponentSettings,
 } from "@/state/opponentSettings";
+import { effectiveGameGo } from "@/utils/engines";
 import { EnginesSelect } from "./EnginesSelect";
 
 export { DEFAULT_TIME_CONTROL, type OpponentSettings } from "@/state/opponentSettings";
@@ -190,7 +191,7 @@ export function OpponentForm({
           {!opponent.timeControl && (
             <GoModeInput
               gameMode
-              goMode={opponent.go}
+              goMode={effectiveGameGo(opponent.go)}
               setGoMode={(go) =>
                 setOpponent((prev) => {
                   if (prev.type === "human") {

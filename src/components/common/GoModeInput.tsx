@@ -8,7 +8,7 @@ import TimeInput from "./TimeInput";
 // Native GoMode::validate rejects a zero limit.
 const MIN_LIMIT = 1;
 
-function limit(value: string | number, max = Number.POSITIVE_INFINITY): number {
+function limit(value: string | number, max: number): number {
   return typeof value === "number"
     ? Math.min(max, Math.max(MIN_LIMIT, Math.trunc(value)))
     : MIN_LIMIT;
@@ -71,7 +71,9 @@ function GoModeInput({
           <TimeInput
             value={v.c}
             setValue={(next) =>
-              setGoMode(next.t === "Time" ? { t: "Time", c: limit(next.c) } : next)
+              setGoMode(
+                next.t === "Time" ? { t: "Time", c: limit(next.c, MAX_GO_TIME_OR_DEPTH) } : next,
+              )
             }
           />
         ))

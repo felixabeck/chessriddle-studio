@@ -1,6 +1,6 @@
 import type { PlayerConfig } from "@/bindings";
 import { normalizeEngineOptions } from "@/components/engines/engineOptions";
-import type { Engine, LocalEngine } from "@/utils/engines";
+import { effectiveGameGo, type Engine, type LocalEngine } from "@/utils/engines";
 import type { OpponentSettings } from "./OpponentForm";
 
 const MIN_INITIAL_TIME_MS = 1_000;
@@ -68,6 +68,6 @@ export function toPlayerConfig(
         options: normalizeEngineOptions(settings.engineSettings ?? live.settings ?? []).filter(
             (setting) => setting.name !== "MultiPV",
         ),
-        go: settings.timeControl ? null : settings.go,
+        go: settings.timeControl ? null : effectiveGameGo(settings.go),
     };
 }

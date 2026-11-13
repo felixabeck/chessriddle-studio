@@ -52,29 +52,47 @@ export const MAX_GO_TIME_OR_DEPTH = 86_400_000;
 /** Mirrors native `GoMode::Nodes(u32)` in src-tauri/src/engine/types.rs. */
 export const MAX_GO_NODES = 4_294_967_295;
 
-const depthGoModeSchema = z.object({
+const boundedDepthGoModeSchema = z.object({
     t: z.literal("Depth"),
     c: z.number().int().min(1).max(MAX_GO_TIME_OR_DEPTH),
 });
-const timeGoModeSchema = z.object({
+const boundedTimeGoModeSchema = z.object({
     t: z.literal("Time"),
     c: z.number().int().min(1).max(MAX_GO_TIME_OR_DEPTH),
 });
-const nodesGoModeSchema = z.object({
+const boundedNodesGoModeSchema = z.object({
     t: z.literal("Nodes"),
     c: z.number().int().min(1).max(MAX_GO_NODES),
 });
 
-export const limitedGoModeSchema = z.union([
-    depthGoModeSchema,
-    timeGoModeSchema,
-    nodesGoModeSchema,
+/** Depth/Time/Nodes only (no Infinite or PlayersTime), each within the native GoMode::validate bounds. */
+export const boundedGoModeSchema = z.union([
+    boundedDepthGoModeSchema,
+    boundedTimeGoModeSchema,
+    boundedNodesGoModeSchema,
 ]);
+export type BoundedGoMode = z.infer<typeof boundedGoModeSchema>;
+
+export const DEFAULT_GAME_ENGINE_GO: BoundedGoMode = { t: "Depth", c: 24 };
+
+export function effectiveGameGo(go: GoMode | null | undefined): BoundedGoMode {
+    const parsed = boundedGoModeSchema.safeParse(go);
+    return parsed.success ? parsed.data : DEFAULT_GAME_ENGINE_GO;
+}
 
 export const goModeSchema: z.ZodSchema<GoMode> = z.union([
-    depthGoModeSchema,
-    timeGoModeSchema,
-    nodesGoModeSchema,
+    z.object({
+        t: z.literal("Depth"),
+        c: z.number(),
+    }),
+    z.object({
+        t: z.literal("Time"),
+        c: z.number(),
+    }),
+    z.object({
+        t: z.literal("Nodes"),
+        c: z.number(),
+    }),
     z.object({
         t: z.literal("Infinite"),
     }),
@@ -154,7 +172,7 @@ export const localEngineSchema = z.object({
     downloadSize: z.number().nullish(),
     downloadLink: z.string().nullish(),
     loaded: z.boolean().nullish(),
-    go: goModeSchema.nullish().catch(null),
+    go: goModeSchema.nullish(),
     enabled: z.boolean().nullish(),
     settings: persistedEngineSettingsSchema.nullish(),
 });
@@ -258,7 +276,7 @@ const remoteEngineSchema = z.object({
     imageHandle: engineImageHandleSchema.nullish(),
     loaded: z.boolean().nullish(),
     enabled: z.boolean().nullish(),
-    go: goModeSchema.nullish().catch(null),
+    go: goModeSchema.nullish(),
     settings: persistedEngineSettingsSchema.nullish(),
 });
 

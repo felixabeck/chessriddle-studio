@@ -4534,22 +4534,39 @@ mod tests {
     }
 
     #[test]
-    fn engine_player_with_infinite_go_mode_is_refused() {
+    fn engine_player_go_mode_must_be_a_search_limit() {
         for side in [Color::White, Color::Black] {
-            let mut config = human_config();
-            let mut player = fake_engine_player();
-            if let PlayerConfig::Engine { go, .. } = &mut player {
-                *go = Some(GoMode::Infinite);
+            for go in [
+                Some(GoMode::Infinite),
+                Some(GoMode::PlayersTime(PlayersTime::new(1000, 1000, 0, 0))),
+                Some(GoMode::Time(MAX_ENGINE_LIMIT + 1)),
+            ] {
+                let mut config = human_config();
+                let mut player = fake_engine_player();
+                if let PlayerConfig::Engine { go: player_go, .. } = &mut player {
+                    *player_go = go.clone();
+                }
+                match side {
+                    Color::White => config.white = player,
+                    Color::Black => config.black = player,
+                }
+                let result = GameController::new("engine-go".into(), 1, config);
+                match &go {
+                    Some(GoMode::Infinite) | Some(GoMode::PlayersTime(_)) => {
+                        assert!(matches!(
+                            result,
+                            Err(Error::InvalidInput(message))
+                                if message
+                                    == format!(
+                                        "{side} engine go mode must be a depth, time or node limit"
+                                    )
+                        ));
+                    }
+                    _ => {
+                        assert!(matches!(result, Err(Error::InvalidInput(_))));
+                    }
+                }
             }
-            match side {
-                Color::White => config.white = player,
-                Color::Black => config.black = player,
-            }
-            assert!(matches!(
-                GameController::new("infinite".into(), 1, config),
-                Err(Error::InvalidInput(message))
-                    if message == format!("{side} engine go mode must be a depth, time or node limit")
-            ));
         }
     }
 

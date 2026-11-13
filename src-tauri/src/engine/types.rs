@@ -355,6 +355,8 @@ impl GoMode {
             Self::Depth(value) => validate_limit("depth", *value),
             Self::Time(value) => validate_limit("time", *value),
             Self::Nodes(value) => {
+                // Node counts are not durations, so MAX_ENGINE_LIMIT (24 h in ms) does not
+                // apply; the u32 payload is the upper bound (f-20261112-85).
                 if *value == 0 {
                     Err(Error::InvalidInput("nodes must be at least 1".into()))
                 } else {
@@ -474,7 +476,6 @@ mod tests {
             format!("go nodes {}", u32::MAX)
         );
         assert!(GoMode::Nodes(0).to_uci_string().is_err());
-        assert!(GoMode::Time(MAX_ENGINE_LIMIT + 1).to_uci_string().is_err());
     }
 
     #[test]

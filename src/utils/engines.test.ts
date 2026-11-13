@@ -32,7 +32,7 @@ import {
     engineMultiPv,
     engineSchema,
     goModeSchema,
-    limitedGoModeSchema,
+    boundedGoModeSchema,
     isEngineResourcePathOptionName,
     isManifestEngineInstalled,
     installDefaultEngine,
@@ -478,27 +478,34 @@ describe("engineSchema go mode", () => {
         handle: { id: { id: "capability-1" }, kind: "engine" as const },
     };
 
-    it("drops a non-integer stored go and keeps a valid node limit", () => {
-        expect(engineSchema.parse({ ...localEngine, go: { t: "Nodes", c: 1.5 } }).go).toBeNull();
-        expect(
-            engineSchema.parse({ ...localEngine, go: { t: "Nodes", c: 100_000_000 } }).go,
-        ).toEqual({ t: "Nodes", c: 100_000_000 });
+    it("keeps a non-integer stored go unchanged", () => {
+        expect(engineSchema.parse({ ...localEngine, go: { t: "Nodes", c: 1.5 } }).go).toEqual({
+            t: "Nodes",
+            c: 1.5,
+        });
     });
 });
 
-describe("goModeSchema", () => {
-    it("parses a large node limit and rejects zero or a value above u32", () => {
-        expect(goModeSchema.parse({ t: "Nodes", c: 100_000_000 })).toEqual({
+describe("boundedGoModeSchema", () => {
+    it("accepts native-valid Depth/Time/Nodes limits and rejects the rest", () => {
+        expect(boundedGoModeSchema.parse({ t: "Nodes", c: 100_000_000 })).toEqual({
             t: "Nodes",
             c: 100_000_000,
         });
-        expect(limitedGoModeSchema.parse({ t: "Nodes", c: 100_000_000 })).toEqual({
+        expect(boundedGoModeSchema.parse({ t: "Nodes", c: 4_294_967_295 })).toEqual({
             t: "Nodes",
-            c: 100_000_000,
+            c: 4_294_967_295,
         });
-        expect(goModeSchema.safeParse({ t: "Nodes", c: 0 }).success).toBe(false);
-        expect(goModeSchema.safeParse({ t: "Nodes", c: 4_294_967_296 }).success).toBe(false);
-        expect(limitedGoModeSchema.safeParse({ t: "Nodes", c: 0 }).success).toBe(false);
-        expect(limitedGoModeSchema.safeParse({ t: "Nodes", c: 4_294_967_296 }).success).toBe(false);
+        expect(boundedGoModeSchema.safeParse({ t: "Nodes", c: 0 }).success).toBe(false);
+        expect(boundedGoModeSchema.safeParse({ t: "Nodes", c: 4_294_967_296 }).success).toBe(false);
+        expect(boundedGoModeSchema.parse({ t: "Time", c: 86_400_000 })).toEqual({
+            t: "Time",
+            c: 86_400_000,
+        });
+        expect(boundedGoModeSchema.safeParse({ t: "Time", c: 86_400_001 }).success).toBe(false);
+        expect(boundedGoModeSchema.safeParse({ t: "Depth", c: 86_400_001 }).success).toBe(false);
+        expect(boundedGoModeSchema.safeParse({ t: "Depth", c: 1.5 }).success).toBe(false);
+        expect(boundedGoModeSchema.safeParse({ t: "Infinite" }).success).toBe(false);
+        expect(goModeSchema.parse({ t: "Nodes", c: 1.5 })).toEqual({ t: "Nodes", c: 1.5 });
     });
 });

@@ -14,14 +14,14 @@ import { enginesAtom, referenceDbAtom } from "@/state/atoms";
 import { useCollectionCurrency } from "@/state/linkedCollections";
 import { createZodStorage } from "@/state/utils";
 import { captureReportOwner, isReportOwnerCurrent, waitForReportOwner } from "@/state/store/tree";
-import { limitedGoModeSchema, type LocalEngine } from "@/utils/engines";
+import { boundedGoModeSchema, type BoundedGoMode, type LocalEngine } from "@/utils/engines";
 import { capabilityKey } from "@/utils/pathCapabilities";
 import { normalizeEngineOptions } from "@/components/engines/engineOptions";
 import { z } from "zod";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { reportEngineFailure } from "./useDisplayedEngineLines";
 
-type ReportGoMode = Extract<GoMode, { t: "Depth" | "Time" | "Nodes" }>;
+type ReportGoMode = BoundedGoMode;
 
 function isReportGoMode(mode: GoMode): mode is ReportGoMode {
   return mode.t === "Depth" || mode.t === "Time" || mode.t === "Nodes";
@@ -30,8 +30,6 @@ function isReportGoMode(mode: GoMode): mode is ReportGoMode {
 export function reportRootFingerprint(fen: string, moves: string[]): string {
   return `${fen}\u0000${moves.join("\u0000")}`;
 }
-
-const reportGoModeSchema = limitedGoModeSchema;
 
 type ReportSettings = {
   novelty: boolean;
@@ -53,7 +51,7 @@ const reportSettingsSchema: z.ZodType<ReportSettings, z.ZodTypeDef, unknown> = z
   novelty: z.boolean().catch(defaultReportSettings.novelty),
   reversed: z.boolean().catch(defaultReportSettings.reversed),
   variations: z.boolean().catch(defaultReportSettings.variations),
-  goMode: reportGoModeSchema.catch(defaultReportSettings.goMode),
+  goMode: boundedGoModeSchema.catch(defaultReportSettings.goMode),
   engine: z.string().catch(defaultReportSettings.engine),
 });
 

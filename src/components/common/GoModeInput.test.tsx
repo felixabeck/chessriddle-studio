@@ -94,6 +94,38 @@ test("a fractional Nodes value is stored as an integer", () => {
   expect(setGoMode).toHaveBeenCalledExactlyOnceWith({ t: "Nodes", c: 1 });
 });
 
+test("a Depth value above 24h in ms is clamped to 86400000", () => {
+  const setGoMode = vi.fn();
+  act(() => {
+    root.render(<GoModeInput goMode={{ t: "Depth", c: 20 }} setGoMode={setGoMode} />);
+  });
+  act(() => {
+    const input = host.querySelector("input")!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "86400001",
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(setGoMode).toHaveBeenCalledExactlyOnceWith({ t: "Depth", c: 86_400_000 });
+});
+
+test("a Time value above 24h is clamped to 86400000", () => {
+  const setGoMode = vi.fn();
+  act(() => {
+    root.render(<GoModeInput goMode={{ t: "Time", c: 500 }} setGoMode={setGoMode} />);
+  });
+  act(() => {
+    const input = host.querySelector("input")!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "86400001",
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(setGoMode).toHaveBeenCalledExactlyOnceWith({ t: "Time", c: 86_400_000 });
+});
+
 test("a Nodes value above u32::MAX is clamped to 4294967295", () => {
   const setGoMode = vi.fn();
   act(() => {

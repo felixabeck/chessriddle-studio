@@ -141,7 +141,6 @@ test("a time control hands the go mode to the backend instead of fixing it here"
     for (const go of [
         { t: "Depth", c: 20 },
         { t: "Nodes", c: 500_000 },
-        { t: "Infinite" },
     ] satisfies GoMode[]) {
         expect(toPlayerConfig(engineOpponent({ go }), registered)).toMatchObject({ go });
         expect(
@@ -151,6 +150,21 @@ test("a time control hands the go mode to the backend instead of fixing it here"
             ),
         ).toMatchObject({ go: null });
     }
+});
+
+test("an Infinite engine go without a time control is sent as a depth limit", () => {
+    expect(toPlayerConfig(engineOpponent({ go: { t: "Infinite" } }), registered)).toMatchObject({
+        go: { t: "Depth", c: 24 },
+    });
+    expect(
+        toPlayerConfig(
+            engineOpponent({
+                go: { t: "Infinite" },
+                timeControl: { seconds: 180_000, increment: 2_000 },
+            }),
+            registered,
+        ),
+    ).toMatchObject({ go: null });
 });
 
 test("an engine removed after selection is rejected instead of submitted with a retired id", () => {

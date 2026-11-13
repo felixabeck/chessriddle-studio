@@ -1,10 +1,11 @@
 import { z } from "zod";
-import type { GoMode, InstalledEngineResult } from "@/bindings";
+import type { InstalledEngineResult } from "@/bindings";
 import type { TimeType } from "@/components/common/TimeInput";
 import type { TimeControlField } from "@/utils/clock";
 import {
+    DEFAULT_GAME_ENGINE_GO,
     engineSettingsSchema,
-    limitedGoModeSchema,
+    goModeSchema,
     localEngineSchema,
     type EngineSettings,
     type LocalEngine,
@@ -37,8 +38,6 @@ export type OpponentSettings =
           incrementUnit?: TimeType;
       };
 
-const DEFAULT_ENGINE_GO: GoMode = { t: "Depth", c: 24 };
-
 export const opponentSettingsSchema = z.discriminatedUnion("type", [
     z.object({
         type: z.literal("human"),
@@ -51,7 +50,7 @@ export const opponentSettingsSchema = z.discriminatedUnion("type", [
         type: z.literal("engine"),
         timeControl: timeControlSchema.optional(),
         engine: localEngineSchema.nullable(),
-        go: limitedGoModeSchema.catch(DEFAULT_ENGINE_GO),
+        go: goModeSchema,
         engineSettings: engineSettingsSchema.optional(),
         timeUnit: timeTypeSchema.optional(),
         incrementUnit: timeTypeSchema.optional(),
@@ -102,6 +101,6 @@ export function switchOpponentType(
         type: "engine",
         ...shared,
         engine: null,
-        go: opponent.type === "engine" ? opponent.go : { ...DEFAULT_ENGINE_GO },
+        go: opponent.type === "engine" ? opponent.go : { ...DEFAULT_GAME_ENGINE_GO },
     };
 }
