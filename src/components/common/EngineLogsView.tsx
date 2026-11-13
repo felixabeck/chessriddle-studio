@@ -12,6 +12,7 @@ import {
 } from "@mantine/core";
 import { FileOutput, ListFilter, RefreshCw, Terminal } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { tauri } from "@/platform/tauri";
 import { useAtomValue } from "jotai";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -27,6 +28,23 @@ export function truncatedLogCount(logs: EngineLog[]) {
     (count, log) => (log.type === "truncated" ? count + Number(log.value.droppedEntries) : count),
     0,
   );
+}
+
+function csvField(value: string): string {
+  return `"${value.replaceAll('"', '""')}"`;
+}
+
+export function engineLogsCsv(
+  lines: EngineLog[],
+  truncatedLabel: (count: number) => string,
+): string {
+  return lines
+    .map((line) =>
+      line.type === "truncated"
+        ? `${csvField("metadata")},${csvField(truncatedLabel(Number(line.value.droppedEntries)))}`
+        : `${csvField(line.type)},${csvField(line.value.trimEnd())}`,
+    )
+    .join("\n");
 }
 
 interface EngineLogsViewProps {
@@ -67,16 +85,14 @@ export default function EngineLogsView({
   }, [logs.length, search]);
 
   async function exportLogs() {
-    const content = logs
-      .map((line) =>
-        line.type === "truncated"
-          ? `metadata, ${t("Engines.Logs.Truncated", "{{count}} older log entries omitted", {
-              count: Number(line.value.droppedEntries),
-            })}`
-          : `${line.type}, ${line.value.trimEnd()}`,
-      )
-      .join("\n");
-    await tauri.saveEngineLogs(content);
+    const content = engineLogsCsv(logs, (count) =>
+      t("Engines.Logs.Truncated", "{{count}} older log entries omitted", { count }),
+    );
+    try {
+      await tauri.saveEngineLogs(content);
+    } catch (error) {
+      notifyUnlessCancelled(t("Common.Error"), error);
+    }
   }
 
   const rowVirtualizer = useVirtualizer({
