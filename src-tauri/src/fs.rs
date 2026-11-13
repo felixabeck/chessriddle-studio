@@ -581,6 +581,7 @@ where
 
     let mut downloaded: u64 = 0;
     let mut digest = expected_sha256.map(|_| Sha256::new());
+    let mut last_reported_progress = 0.0_f32;
 
     loop {
         let item = tokio::select! {
@@ -604,9 +605,14 @@ where
             }
         }
         file.write_all(&chunk)?;
-        if let Some(total_size) = total_size {
-            let progress = ((downloaded as f64 / total_size as f64) * 100.0).min(100.0) as f32;
-            progress_updater(progress)?;
+        // ProgressStore emits an IPC event on every changed f32; floor to 0.1% so a large body cannot flood.
+        if let Some(expected) = expected_size.filter(|size| *size > 0) {
+            let progress = ((downloaded as f64 / expected as f64) * 100.0).min(100.0) as f32;
+            let floored = (f64::from(progress) * 10.0).floor() / 10.0;
+            if floored > f64::from(last_reported_progress) {
+                progress_updater(progress)?;
+                last_reported_progress = progress;
+            }
         }
     }
 
@@ -6140,6 +6146,89 @@ mod tests {
         assert!(reqs[0].1.contains_key("Authorization"));
         // Second request to evil.com should NOT have the token
         assert!(!reqs[1].1.contains_key("Authorization"));
+    }
+
+    #[tokio::test]
+    async fn download_payload_network_reports_progress_from_content_length_without_total_size() {
+        let mut file = tempfile::tempfile().unwrap();
+        let chunks = vec![
+            Ok(bytes::Bytes::from_static(b"hello")),
+            Ok(bytes::Bytes::from_static(b"world")),
+        ];
+        let mock = MockTransport {
+            responses: Mutex::new(vec![Ok(DownloadResponse {
+                status: 200,
+                headers: HeaderMap::new(),
+                content_length: Some(10),
+                stream: Box::pin(futures_util::stream::iter(chunks)),
+            })]),
+            requests_seen: Mutex::new(vec![]),
+        };
+        let mut reported = Vec::new();
+        download_payload_network(
+            OpClass::Lichess,
+            reqwest::Url::parse("https://lichess.org/test").unwrap(),
+            &mut file,
+            &mock,
+            None,
+            None,
+            CancellationToken::new(),
+            None,
+            |progress| {
+                reported.push(progress);
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+        assert!(
+            reported
+                .iter()
+                .any(|progress| *progress > 0.0 && *progress < 100.0),
+            "content-length progress must include an intermediate Running value: {reported:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn download_payload_network_quantizes_progress_across_many_chunks() {
+        let mut file = tempfile::tempfile().unwrap();
+        let chunk_count = 5000_u32;
+        let chunks = (0..chunk_count).map(|_| Ok(bytes::Bytes::from_static(b"x")));
+        let mock = MockTransport {
+            responses: Mutex::new(vec![Ok(DownloadResponse {
+                status: 200,
+                headers: HeaderMap::new(),
+                content_length: Some(u64::from(chunk_count)),
+                stream: Box::pin(futures_util::stream::iter(chunks)),
+            })]),
+            requests_seen: Mutex::new(vec![]),
+        };
+        let mut reported = Vec::new();
+        download_payload_network(
+            OpClass::Lichess,
+            reqwest::Url::parse("https://lichess.org/test").unwrap(),
+            &mut file,
+            &mock,
+            None,
+            Some(chunk_count),
+            CancellationToken::new(),
+            None,
+            |progress| {
+                reported.push(progress);
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+        assert!(
+            reported.len() <= 1001,
+            "progress callbacks must be quantized to 0.1 percent: {} reports",
+            reported.len()
+        );
+        assert!(
+            reported.windows(2).all(|pair| pair[0] <= pair[1]),
+            "progress must be non-decreasing: {reported:?}"
+        );
     }
 
     #[tokio::test]
