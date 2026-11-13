@@ -4,6 +4,7 @@ use std::{
     future::Future,
     io::{Read, Seek, Write},
     path::{Path, PathBuf},
+    sync::atomic::AtomicBool,
     time::Duration,
 };
 
@@ -18,8 +19,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::error::{Error, ErrorPayload};
 use crate::progress::{
-    begin_progress, handle_running_progress_result, publish_download_failure,
-    update_progress_with_state, ProgressGeneration, ProgressLease, ProgressState,
+    begin_progress, publish_download_failure, update_progress_with_state, ProgressGeneration,
+    ProgressLease, ProgressState,
 };
 use crate::AppState;
 
@@ -1131,6 +1132,42 @@ fn report_download_success<R: tauri::Runtime>(
     );
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static RUNNING_DOWNLOAD_PROGRESS_OVERRIDE: std::cell::RefCell<Option<Result<(), Error>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn report_running_download_progress<R: tauri::Runtime>(
+    state: &AppState,
+    app: &tauri::AppHandle<R>,
+    lease: &ProgressLease,
+    progress: f32,
+    diagnosed: &AtomicBool,
+    cancellation: &CancellationToken,
+) -> Result<(), Error> {
+    crate::progress::handle_running_progress_result(
+        {
+            let result = update_progress_with_state(
+                &state.progress_state,
+                app,
+                lease,
+                progress,
+                ProgressState::Running,
+            );
+            #[cfg(test)]
+            let result = RUNNING_DOWNLOAD_PROGRESS_OVERRIDE
+                .with(|slot| slot.borrow_mut().take())
+                .unwrap_or(result);
+            result
+        },
+        "download",
+        lease,
+        diagnosed,
+        Some(cancellation),
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn download_to_destination_inner<R: tauri::Runtime>(
     id: &str,
@@ -1197,7 +1234,7 @@ async fn download_to_destination_inner<R: tauri::Runtime>(
             file_generation.is_some(),
         );
     };
-    let progress_error_diagnosed = std::sync::atomic::AtomicBool::new(false);
+    let progress_error_diagnosed = AtomicBool::new(false);
     let result = await_staging_deadline(
         DOWNLOAD_DEADLINE,
         &cancellation,
@@ -1214,18 +1251,13 @@ async fn download_to_destination_inner<R: tauri::Runtime>(
                 cancellation.clone(),
                 integrity.map(|metadata| metadata.sha256.as_str()),
                 |progress| {
-                    handle_running_progress_result(
-                        update_progress_with_state(
-                            &state.progress_state,
-                            app,
-                            &progress_lease,
-                            progress,
-                            ProgressState::Running,
-                        ),
-                        "download",
+                    report_running_download_progress(
+                        state,
+                        app,
                         &progress_lease,
+                        progress,
                         &progress_error_diagnosed,
-                        Some(&cancellation),
+                        &cancellation,
                     )
                 },
             )
@@ -1807,6 +1839,7 @@ async fn download_engine_archive_core<R: tauri::Runtime>(
         let (prepared_tx, prepared_rx) = tokio::sync::oneshot::channel();
         let (publish_tx, publish_rx) = tokio::sync::oneshot::channel();
         let publication_authority = state.pgn_path_authority.clone();
+        let progress_error_diagnosed = AtomicBool::new(false);
         let producer = prepare_archive_download(
             ArchiveDownloadRequest {
                 op,
@@ -1827,12 +1860,13 @@ async fn download_engine_archive_core<R: tauri::Runtime>(
             },
             cancellation.clone(),
             |progress| {
-                update_progress_with_state(
-                    &state.progress_state,
+                report_running_download_progress(
+                    &state,
                     &app,
                     &progress_lease,
                     progress * DOWNLOAD_PROGRESS_SHARE,
-                    ProgressState::Running,
+                    &progress_error_diagnosed,
+                    &cancellation,
                 )
             },
             move |mut staging, _pin, token| {
@@ -3137,6 +3171,82 @@ mod tests {
         let installer = body_at_indent(source, "pub(crate) async fn install_staged_pgn_artifact(");
         assert!(installer.contains("into_file()"), "{installer}");
         assert!(!installer.contains(".path()"), "{installer}");
+    }
+
+    #[test]
+    fn download_progress_closures_report_through_the_running_helper() {
+        let source = include_str!("fs.rs");
+        let destination = body_at_indent(source, "async fn download_to_destination_inner<");
+        let engine = body_at_indent(source, "async fn download_engine_archive_core<");
+        for (name, body) in [
+            ("download_to_destination_inner", destination),
+            ("download_engine_archive_core", engine),
+        ] {
+            assert!(
+                body.contains("report_running_download_progress("),
+                "{name} must report running download progress through the helper: {body}"
+            );
+            assert!(
+                !body.contains("update_progress_with_state("),
+                "{name} must not call update_progress_with_state directly: {body}"
+            );
+        }
+        let payload_args = call_argument_list(destination, "download_payload_network(");
+        assert!(
+            payload_args.contains("report_running_download_progress("),
+            "payload download progress closure must call the helper: {payload_args}"
+        );
+        assert!(
+            !payload_args.contains("update_progress_with_state("),
+            "payload download progress closure must not call update_progress_with_state: {payload_args}"
+        );
+        let archive_args = call_argument_list(engine, "prepare_archive_download(");
+        assert!(
+            archive_args.contains("report_running_download_progress("),
+            "engine archive progress closure must call the helper: {archive_args}"
+        );
+        assert!(
+            archive_args.contains("DOWNLOAD_PROGRESS_SHARE"),
+            "engine archive progress must keep the download share: {archive_args}"
+        );
+        assert!(
+            !archive_args.contains("update_progress_with_state("),
+            "engine archive progress closure must not call update_progress_with_state: {archive_args}"
+        );
+        let helper = body_at_indent(source, "fn report_running_download_progress<");
+        let helper_args = call_argument_list(helper, "handle_running_progress_result(");
+        assert!(
+            helper_args.contains("update_progress_with_state("),
+            "helper must wrap update_progress_with_state: {helper_args}"
+        );
+        assert!(
+            helper_args.contains("ProgressState::Running"),
+            "helper must report Running progress: {helper_args}"
+        );
+        assert!(
+            helper.contains("\"download\""),
+            "helper must diagnose download progress: {helper}"
+        );
+    }
+
+    fn call_argument_list<'a>(body: &'a str, callee: &str) -> &'a str {
+        let start = body
+            .find(callee)
+            .unwrap_or_else(|| panic!("missing {callee}: {body}"));
+        let mut depth = 0;
+        for (offset, byte) in body[start..].bytes().enumerate() {
+            match byte {
+                b'(' => depth += 1,
+                b')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return &body[start + callee.len()..start + offset];
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!("unclosed {callee}: {body}");
     }
 
     #[test]
@@ -5649,10 +5759,8 @@ mod tests {
         let (coverage, last) =
             crate::lichess::coverage_objects(crate::lichess::LICHESS_CHUNK_GAMES, false);
         let mut coverage = String::from_utf8(coverage).unwrap();
-        coverage.push_str(
-            r#"{"id":"zzzzzzzz","rated":true,"perf":"blitz","status":"mate","createdAt":999999}
-"#,
-        );
+        coverage.push_str(&crate::lichess::coverage_object("zzzzzzzz", true, 999999));
+        coverage.push('\n');
         let (downloaded, _, transport) = download_resumable_lichess(
             coverage_response(&coverage),
             export_pgn_response(),
@@ -5757,10 +5865,7 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn lichess_runtime_resumable_created_at_at_i64_max_fails_without_publication() {
-        let line = format!(
-            r#"{{"id":"AbCd1234","rated":true,"perf":"blitz","status":"mate","createdAt":{}}}"#,
-            i64::MAX
-        );
+        let line = crate::lichess::coverage_object("AbCd1234", true, i64::MAX);
         let (downloaded, fixture, _) = download_resumable_lichess(
             coverage_response(&format!("{line}\n")),
             export_pgn_response(),
@@ -6228,13 +6333,20 @@ mod tests {
 
     async fn collect_quantized_progress(total_size: Option<u32>) -> Vec<f32> {
         let mut file = tempfile::tempfile().unwrap();
-        let chunk_count = 5000_u32;
-        let chunks = (0..chunk_count).map(|_| Ok(bytes::Bytes::from_static(b"x")));
+        let chunk = b"xyz";
+        let chunk_count = 1999_u32;
+        let total_bytes = u64::from(chunk_count) * chunk.len() as u64;
+        assert_ne!(
+            total_bytes % 1000,
+            0,
+            "content-length must not be a multiple of 1000"
+        );
+        let chunks = (0..chunk_count).map(|_| Ok(bytes::Bytes::from_static(chunk)));
         let mock = MockTransport {
             responses: Mutex::new(vec![Ok(DownloadResponse {
                 status: 200,
                 headers: HeaderMap::new(),
-                content_length: Some(u64::from(chunk_count)),
+                content_length: Some(total_bytes),
                 stream: Box::pin(futures_util::stream::iter(chunks)),
             })]),
             requests_seen: Mutex::new(vec![]),
@@ -6260,9 +6372,15 @@ mod tests {
     }
 
     fn assert_quantized_progress(reported: &[f32]) {
+        let max_reports = (100.0 / PROGRESS_REPORT_STEP_PERCENT) as usize + 1;
         assert!(
-            reported.len() <= 1001,
-            "progress callbacks must be quantized to 0.1 percent: {} reports",
+            reported.len() <= max_reports,
+            "progress callbacks must be quantized to {PROGRESS_REPORT_STEP_PERCENT} percent: {} reports",
+            reported.len()
+        );
+        assert!(
+            reported.len() > 500,
+            "progress must report finer than a coarser step: {} reports",
             reported.len()
         );
         assert!(
@@ -6288,54 +6406,69 @@ mod tests {
     #[tokio::test]
     async fn download_payload_network_quantizes_progress_across_many_chunks() {
         assert_quantized_progress(&collect_quantized_progress(None).await);
-        assert_quantized_progress(&collect_quantized_progress(Some(5000)).await);
+        assert_quantized_progress(&collect_quantized_progress(Some(5997)).await);
     }
 
-    #[tokio::test]
-    async fn download_payload_network_ignores_non_stale_progress_emit_failure() {
-        let mut file = tempfile::tempfile().unwrap();
-        let chunks = vec![
-            Ok(bytes::Bytes::from_static(b"hello")),
-            Ok(bytes::Bytes::from_static(b"world")),
-        ];
-        let mock = MockTransport {
-            responses: Mutex::new(vec![Ok(DownloadResponse {
-                status: 200,
-                headers: HeaderMap::new(),
-                content_length: Some(10),
-                stream: Box::pin(futures_util::stream::iter(chunks)),
-            })]),
-            requests_seen: Mutex::new(vec![]),
-        };
-        let lease: crate::progress::ProgressLease =
-            serde_json::from_value(serde_json::json!({ "id": "download", "generation": "1" }))
-                .unwrap();
+    #[test]
+    fn report_running_download_progress_cancels_stale_leases_and_ignores_other_failures() {
+        let app = test_progress_app();
+        let state = AppState::default();
+        let stale = begin_progress(&state.progress_state, app.handle(), "download".into()).unwrap();
+        let current =
+            begin_progress(&state.progress_state, app.handle(), "download".into()).unwrap();
         let diagnosed = AtomicBool::new(false);
         let cancellation = CancellationToken::new();
-        let progress_cancellation = cancellation.clone();
-        download_payload_network(
-            OpClass::Lichess,
-            reqwest::Url::parse("https://lichess.org/test").unwrap(),
-            &mut file,
-            &mock,
-            None,
-            None,
-            cancellation,
-            None,
-            |_| {
-                crate::progress::handle_running_progress_result(
-                    Err(Error::InvalidInput("progress emit failed".into())),
-                    "download",
-                    &lease,
-                    &diagnosed,
-                    Some(&progress_cancellation),
-                )
-            },
+        let error = report_running_download_progress(
+            &state,
+            app.handle(),
+            &stale,
+            12.0,
+            &diagnosed,
+            &cancellation,
         )
-        .await
+        .unwrap_err();
+        assert!(matches!(error, Error::Cancellation));
+        assert!(cancellation.is_cancelled());
+
+        let diagnosed = AtomicBool::new(false);
+        let cancellation = CancellationToken::new();
+        let capture = crate::error::LogCaptureScope::start();
+        report_running_download_progress(
+            &state,
+            app.handle(),
+            &current,
+            12.0,
+            &diagnosed,
+            &cancellation,
+        )
         .unwrap();
+        assert!(!cancellation.is_cancelled());
+        assert!(!diagnosed.load(Ordering::Relaxed));
+        assert!(capture
+            .records()
+            .iter()
+            .all(|record| record.level != log::Level::Error));
+
+        super::RUNNING_DOWNLOAD_PROGRESS_OVERRIDE.with(|slot| {
+            *slot.borrow_mut() = Some(Err(Error::InvalidInput("progress emit failed".into())));
+        });
+        let diagnosed = AtomicBool::new(false);
+        let cancellation = CancellationToken::new();
+        let capture = crate::error::LogCaptureScope::start();
+        report_running_download_progress(
+            &state,
+            app.handle(),
+            &current,
+            24.0,
+            &diagnosed,
+            &cancellation,
+        )
+        .unwrap();
+        assert!(!cancellation.is_cancelled());
         assert!(diagnosed.load(Ordering::Relaxed));
-        assert!(!progress_cancellation.is_cancelled());
+        assert!(capture.records().iter().any(|record| {
+            record.level == log::Level::Error && record.message.contains("progress emit failed")
+        }));
     }
 
     #[tokio::test]
