@@ -24409,7 +24409,7 @@ Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK on
 
 ### Collapsed notation variations re-expand after any edit to a later move, because collapse state is keyed by TreeNode object identity
 
-* **ID:** f-20261112-35 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-35 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/common/GameNotation.tsx:143` (`useState<Set<TreeNode>>`) and `:301-307` (toggle), consumed by `src/components/common/notationRows.ts:186` (`collapsedVariations?.has(parent)`); tree edits go through immer `produce` in `src/state/store/tree.ts`
@@ -24418,6 +24418,9 @@ Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK on
 - **Fix:** key the collapsed set by a stable node identity instead of the object (the move path from `model.index.links`, or a node id if the tree carries one), and drop entries whose path no longer exists; add a GameNotation test that collapses a variation, edits a later node, and asserts the variation stays hidden.
 - **Proof:** ephemeral probe appended to `GameNotation.test.tsx` (root children `[e4, d4]`): after `toggle.click()` `[data-node="d4"]` is absent, still absent after `goToMove([0])`, present again after `setComment("note on e4")` (`{afterCollapse:false, afterNavigate:false, afterComment:true}`). Probe removed, tree clean. Existing collapse tests (`GameNotation.test.tsx:641`, `:819`) never edit the tree after collapsing.
 - **Found by:** Grok Bot general review (chunk 18)
+* **Handled 2026-11-13 (drain 7437a0c1-354f-4f02-964e-479372e985dd, joiner of f-20261112-89):** GameNotation's collapsed set now holds move-sequence keys (`variationCollapseKey(root, path)` in `src/components/common/notationRows.ts`: the SAN sequence from the root) instead of `TreeNode` objects. Immer copies no longer re-expand collapsed variations, and retired nodes are not retained. Push review round 1 (chess-semantics, correctness) rejected an index-path key because after a promote or delete the same path names another node. A deleted line no longer matches its key. Commits `0f4f542c5`, `d3459e7ff`, `b3df719fb`.
+  * Proof: GameNotation tests (collapse, then a comment plus a mainline move: still hidden; collapse, then add and promote 1.d4: c5 stays hidden, nothing under d4 collapses; red with the old key), and a notationRows test with a literal key for two same-SAN parents on different prefixes. Lenses as for f-20261112-89, all APPROVED.
+<!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"0add0b09ab207ba4c3a401563295d2503dd1e5404fa67b89784a04c8d0500acc","header_sha256":"41e6132648c7d19a38f67da440160058ceaa8adc97241aff30a143e0518d7018","header_status":"handled","input_sha256":"0d0ee5ea3475340f6a2273a1042f90ec56425071fc7efc7b96d081295e3b584c","kind":"mutation-receipt","operation":"6b63046badce3bb5282aecd39998f91d8d7cbb42081ea9b0b067e4d50cb1e9f2","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-35"],"target":"f-20261112-35","v":1} -->
 
 ---
 
