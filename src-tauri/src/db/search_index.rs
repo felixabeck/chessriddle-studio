@@ -559,6 +559,18 @@ pub struct SearchGameData {
     pub black_elo: Option<i32>,
 }
 
+/// Import stores any rating that parses as an `i32`. Saturating it, instead of failing the
+/// row, keeps one out-of-range tag from aborting index generation for the whole database.
+/// The band filter (`search::elo_in_range`) and the max-Elo ordering key still agree with
+/// the SQL path for every band whose bounds lie strictly inside `i16`; only a band touching
+/// `i16::MIN` or `i16::MAX` can admit a saturated rating. `None` is the unrated value, 0.
+fn clamp_elo(elo: Option<i32>) -> i16 {
+    match elo {
+        None => 0,
+        Some(elo) => elo.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16,
+    }
+}
+
 impl SearchGameEntry {
     pub fn from_game_data(data: SearchGameData) -> Result<Self, Error> {
         Self::from_game_data_cancellable(data, &CancellationToken::new())
@@ -593,12 +605,8 @@ impl SearchGameEntry {
                     data.black_material
                 ))
             })?,
-            white_elo: i16::try_from(data.white_elo.unwrap_or(0)).map_err(|_| {
-                Error::InvalidInput(format!("white_elo out of range: {:?}", data.white_elo))
-            })?,
-            black_elo: i16::try_from(data.black_elo.unwrap_or(0)).map_err(|_| {
-                Error::InvalidInput(format!("black_elo out of range: {:?}", data.black_elo))
-            })?,
+            white_elo: clamp_elo(data.white_elo),
+            black_elo: clamp_elo(data.black_elo),
             fen: data.fen,
             moves: data.moves,
         })
@@ -1863,6 +1871,33 @@ mod tests {
         })
         .unwrap_err();
         assert!(matches!(error, Error::InvalidInput(_)));
+    }
+
+    #[test]
+    fn saturates_out_of_range_elo() {
+        let entry = |white_elo, black_elo| {
+            SearchGameEntry::from_game_data(SearchGameData {
+                id: 1,
+                white_id: 2,
+                black_id: 3,
+                date: None,
+                result: None,
+                moves: vec![],
+                fen: None,
+                pawn_home: 0,
+                white_material: 39,
+                black_material: 39,
+                white_elo,
+                black_elo,
+            })
+            .unwrap()
+        };
+        let clamped = entry(Some(40_000), Some(-40_000));
+        assert_eq!((clamped.white_elo, clamped.black_elo), (i16::MAX, i16::MIN));
+        let unrated = entry(None, None);
+        assert_eq!((unrated.white_elo, unrated.black_elo), (0, 0));
+        let rated = entry(Some(2_500), Some(2_400));
+        assert_eq!((rated.white_elo, rated.black_elo), (2_500, 2_400));
     }
 
     #[test]

@@ -6686,6 +6686,38 @@ mod tests {
     }
 
     #[test]
+    fn search_index_generation_saturates_out_of_range_elo() {
+        let (_dir, app, handle, database) = blocking_database_case();
+        let game_id = insert_named_game(&app, &database, "White", "Black", "Event", "Site");
+        {
+            let state = app.state::<AppState>();
+            let mut db = state
+                .database_repository
+                .connection(&test_target(&database), None)
+                .unwrap();
+            diesel::update(games::table.find(game_id))
+                .set(games::white_elo.eq(Some(40_000)))
+                .execute(&mut *db)
+                .unwrap();
+        }
+        let state = app.state::<AppState>();
+        generate_search_index(
+            &handle,
+            &state.pgn_path_authority,
+            &state.database_repository,
+            &state.search_cache,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let index = MmapSearchIndex::open(get_index_path(&database)).unwrap();
+        let entry = index
+            .iter()
+            .find(|entry| entry.id == game_id)
+            .expect("indexed game");
+        assert_eq!(entry.white_elo, i16::MAX);
+    }
+
+    #[test]
     fn pagination_limit_offset_validates_and_uses_i64_arithmetic() {
         struct Case {
             page: Option<i32>,
