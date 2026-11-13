@@ -1446,9 +1446,15 @@ pub(crate) async fn install_staged_pgn_artifact(
     Ok(artifact)
 }
 
-fn lichess_games_url(player: &str, since_ms: Option<i64>) -> Result<(reqwest::Url, String), Error> {
+fn lichess_games_url(
+    player: &str,
+    since_ms: Option<i64>,
+    until_ms: Option<i64>,
+) -> Result<(reqwest::Url, String), Error> {
     let player = crate::lichess::lichess_user_segment(player)?.to_owned();
-    if since_ms.is_some_and(|since_ms| since_ms < 0) {
+    if since_ms.is_some_and(|since_ms| since_ms < 0)
+        || until_ms.is_some_and(|until_ms| until_ms < 0)
+    {
         return Err(Error::InvalidInput(
             "invalid Lichess export timestamp".into(),
         ));
@@ -1466,8 +1472,35 @@ fn lichess_games_url(player: &str, since_ms: Option<i64>) -> Result<(reqwest::Ur
         if let Some(since_ms) = since_ms {
             query.append_pair("since", &since_ms.to_string());
         }
+        if let Some(until_ms) = until_ms {
+            query.append_pair("until", &until_ms.to_string());
+        }
     }
     Ok((url, player))
+}
+
+fn lichess_coverage_url(
+    export_url: &reqwest::Url,
+    since_ms: Option<i64>,
+    max: Option<usize>,
+) -> reqwest::Url {
+    let mut coverage_url = export_url.clone();
+    coverage_url.set_query(None);
+    {
+        let mut query = coverage_url.query_pairs_mut();
+        if let Some(since) = since_ms {
+            query.append_pair("since", &since.to_string());
+        }
+        if let Some(max) = max {
+            query.append_pair("sort", "dateAsc");
+            query.append_pair("max", &max.to_string());
+        }
+        query.append_pair("ongoing", "true");
+        for key in ["moves", "tags", "clocks", "evals", "opening"] {
+            query.append_pair(key, "false");
+        }
+    }
+    coverage_url
 }
 
 /// Authenticated Lichess export. The opaque handle is resolved in the native credential store;
@@ -1497,6 +1530,7 @@ pub async fn download_lichess_games(
             window.label(),
             &app,
             state.inner(),
+            crate::chesscom::ExportScope::Complete,
         )
         .await,
     )
@@ -1523,6 +1557,7 @@ pub(crate) async fn download_lichess_games_runtime<R: tauri::Runtime>(
     owner: &str,
     app: &tauri::AppHandle<R>,
     state: &AppState,
+    scope: crate::chesscom::ExportScope,
 ) -> Result<crate::infra::operations::RuntimeDownload, Error> {
     let admission_key = format!(
         "lichess_{}",
@@ -1545,25 +1580,38 @@ pub(crate) async fn download_lichess_games_runtime<R: tauri::Runtime>(
             "Lichess download requires a Lichess destination".into(),
         ));
     }
-    let (url, _) = lichess_games_url(&player, since_ms)?;
-    let mut coverage_url = url.clone();
-    coverage_url.set_query(None);
-    {
-        let mut query = coverage_url.query_pairs_mut();
-        if let Some(since) = since_ms {
-            query.append_pair("since", &since.to_string());
-        }
-        query.append_pair("ongoing", "true");
-        for key in ["moves", "tags", "clocks", "evals", "opening"] {
-            query.append_pair(key, "false");
-        }
-    }
     let token = state
         .credentials
         .token_async(handle)
         .await?
         .ok_or_else(|| Error::OAuthFailure("authenticated Lichess account unavailable".into()))?;
     let cancellation = lease.token();
+    let (url, coverage_url, probed_holds, coverage_floor_ms) = match scope {
+        crate::chesscom::ExportScope::Complete => {
+            let (url, _) = lichess_games_url(&player, since_ms, None)?;
+            let coverage_url = lichess_coverage_url(&url, since_ms, None);
+            (url, Some(coverage_url), None, None)
+        }
+        crate::chesscom::ExportScope::Resumable => {
+            let (base, _) = lichess_games_url(&player, since_ms, None)?;
+            let probe_url =
+                lichess_coverage_url(&base, since_ms, Some(crate::lichess::LICHESS_CHUNK_GAMES));
+            let probe = crate::lichess::probe_coverage_chunk(
+                probe_url,
+                &token,
+                state.http_transport.as_ref(),
+                &cancellation,
+                crate::lichess::LICHESS_CHUNK_GAMES,
+            )
+            .await?;
+            let until_ms = crate::lichess::coverage_until_ms(probe.last_created_at_ms, since_ms)?;
+            let (url, _) = lichess_games_url(&player, since_ms, Some(until_ms))?;
+            let coverage_floor_ms = (probe.counted >= crate::lichess::LICHESS_CHUNK_GAMES)
+                .then_some(probe.last_created_at_ms)
+                .flatten();
+            (url, None, Some(probe.holds), coverage_floor_ms)
+        }
+    };
     let (publication, coverage_holds) = download_to_destination(
         &job_id,
         url.as_str(),
@@ -1577,7 +1625,7 @@ pub(crate) async fn download_lichess_games_runtime<R: tauri::Runtime>(
         lease,
         true,
         None,
-        Some(coverage_url),
+        coverage_url,
     )
     .await?;
     let publication = publication
@@ -1585,8 +1633,8 @@ pub(crate) async fn download_lichess_games_runtime<R: tauri::Runtime>(
     let mut downloaded = crate::infra::operations::RuntimeDownload {
         publication,
         receipt_error: None,
-        coverage_holds,
-        coverage_floor_ms: None,
+        coverage_holds: probed_holds.or(coverage_holds),
+        coverage_floor_ms,
     };
     downloaded.receipt_error = crate::db::linked_collections::record_download_receipt(
         &state.pgn_path_authority,
@@ -1595,7 +1643,7 @@ pub(crate) async fn download_lichess_games_runtime<R: tauri::Runtime>(
         &player,
         since_ms,
         downloaded.coverage_holds.clone(),
-        None,
+        coverage_floor_ms,
         cancellation,
     )
     .await;
@@ -3744,6 +3792,7 @@ mod tests {
             "test",
             app.handle(),
             &state,
+            crate::chesscom::ExportScope::Complete,
         )
         .await
         .unwrap_err();
@@ -4414,7 +4463,7 @@ mod tests {
     #[test]
     fn download_lichess_games_rejects_traversal_player_before_push() {
         assert!(matches!(
-            lichess_games_url("../account", None),
+            lichess_games_url("../account", None, None),
             Err(Error::InvalidInput(_))
         ));
     }
@@ -5109,6 +5158,7 @@ mod tests {
             "fixture-window",
             app.handle(),
             &state,
+            crate::chesscom::ExportScope::Complete,
         )
         .await
         .unwrap();
@@ -5131,6 +5181,8 @@ mod tests {
             assert_eq!(export.path(), coverage.path());
             let export_query: std::collections::HashMap<_, _> = export.query_pairs().collect();
             let query: std::collections::HashMap<_, _> = coverage.query_pairs().collect();
+            assert!(!export_query.contains_key("max"));
+            assert!(!export_query.contains_key("until"));
             assert_eq!(query.get("since"), export_query.get("since"));
             assert_eq!(query.get("since").unwrap().as_ref(), since.to_string());
             assert_eq!(query.get("ongoing").unwrap(), "true");
@@ -5211,6 +5263,7 @@ mod tests {
                 "fixture-window",
                 app.handle(),
                 &state,
+                crate::chesscom::ExportScope::Complete,
             )
             .await
             .unwrap_err();
@@ -5322,6 +5375,7 @@ mod tests {
             "fixture-window",
             app.handle(),
             &state,
+            crate::chesscom::ExportScope::Complete,
         )
         .await;
         assert!(
@@ -5397,6 +5451,7 @@ mod tests {
                 "fixture-window",
                 app.handle(),
                 &state,
+                crate::chesscom::ExportScope::Complete,
             )
             .await
             .unwrap();
@@ -5455,6 +5510,265 @@ mod tests {
             assert_eq!(retry.appended, 0);
             assert_eq!(transport.requests_seen.lock().unwrap().len(), 2);
         }
+    }
+
+    #[cfg(unix)]
+    fn coverage_ndjson(count: usize, last_rated: bool) -> (String, i64) {
+        let mut body = String::new();
+        let mut last = 0;
+        for index in 0..count {
+            last = 1_000 + index as i64;
+            let rated = last_rated || index + 1 < count;
+            body.push_str(&format!(
+                r#"{{"id":"{index:08}","rated":{rated},"perf":"blitz","status":"mate","createdAt":{last}}}"#
+            ));
+            body.push('\n');
+        }
+        (body, last)
+    }
+
+    #[cfg(unix)]
+    fn lichess_query(url: &str) -> (reqwest::Url, std::collections::HashMap<String, String>) {
+        let parsed = reqwest::Url::parse(url).unwrap();
+        let query = parsed
+            .query_pairs()
+            .map(|(key, value)| (key.into_owned(), value.into_owned()))
+            .collect();
+        (parsed, query)
+    }
+
+    #[cfg(unix)]
+    fn assert_lichess_probe_query(url: &str, since_ms: Option<i64>) {
+        let (_, query) = lichess_query(url);
+        let max = crate::lichess::LICHESS_CHUNK_GAMES.to_string();
+        assert_eq!(query.get("sort").map(String::as_str), Some("dateAsc"));
+        assert_eq!(query.get("max").map(String::as_str), Some(max.as_str()));
+        assert_eq!(query.get("ongoing").map(String::as_str), Some("true"));
+        for key in ["moves", "tags", "clocks", "evals", "opening"] {
+            assert_eq!(query.get(key).map(String::as_str), Some("false"), "{key}");
+        }
+        for key in ["perfType", "rated"] {
+            assert!(!query.contains_key(key), "{key}");
+        }
+        match since_ms {
+            Some(since) => {
+                let since = since.to_string();
+                assert_eq!(query.get("since").map(String::as_str), Some(since.as_str()))
+            }
+            None => assert!(!query.contains_key("since")),
+        }
+    }
+
+    #[cfg(unix)]
+    async fn download_resumable_lichess(
+        coverage: DownloadResponse,
+        export: DownloadResponse,
+        since_ms: Option<i64>,
+        filename: &str,
+    ) -> (
+        Result<crate::infra::operations::RuntimeDownload, Error>,
+        crate::db::linked_collections::tests::Fixture,
+        Arc<MockTransport>,
+    ) {
+        use crate::db::linked_collections::tests::Fixture;
+        let fixture = Fixture::new();
+        let (state, app, account, transport) =
+            authenticated_lichess_runtime_setup(&fixture, "player", coverage_response(""));
+        *transport.responses.lock().unwrap() = vec![Ok(coverage), Ok(export)];
+        let job = state.operations.prepare_download("fixture-window").unwrap();
+        let downloaded = download_lichess_games_runtime(
+            account.handle,
+            fixture.download_destination(),
+            filename.into(),
+            "player".into(),
+            since_ms,
+            job,
+            "fixture-window",
+            app.handle(),
+            &state,
+            crate::chesscom::ExportScope::Resumable,
+        )
+        .await;
+        (downloaded, fixture, transport)
+    }
+
+    #[cfg(unix)]
+    fn export_pgn_response() -> DownloadResponse {
+        use crate::db::linked_collections::tests::game;
+        let body = game(None, "e4 e5", "bounded export")
+            .replace("https://www.chess.com", "https://lichess.org/Blitz001");
+        coverage_response(&body)
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn lichess_runtime_resumable_bounded_probe_exports_until_and_reports_floor() {
+        let (coverage, last) = coverage_ndjson(crate::lichess::LICHESS_CHUNK_GAMES, false);
+        let since = 50;
+        let (downloaded, _, transport) = download_resumable_lichess(
+            coverage_response(&coverage),
+            export_pgn_response(),
+            Some(since),
+            "bounded.pgn",
+        )
+        .await;
+        let downloaded = downloaded.unwrap();
+        assert_eq!(downloaded.coverage_floor_ms, Some(last));
+        assert_eq!(
+            downloaded.coverage_holds.as_ref().map(Vec::len),
+            Some(crate::lichess::LICHESS_CHUNK_GAMES - 1)
+        );
+        let requests = transport.requests_seen.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(
+            requests[0].1.get(reqwest::header::ACCEPT).unwrap(),
+            "application/x-ndjson"
+        );
+        assert_lichess_probe_query(&requests[0].0, Some(since));
+        let (_, export_query) = lichess_query(&requests[1].0);
+        let until = (last + 1).to_string();
+        let since = since.to_string();
+        assert_eq!(
+            export_query.get("until").map(String::as_str),
+            Some(until.as_str())
+        );
+        assert_eq!(
+            export_query.get("since").map(String::as_str),
+            Some(since.as_str())
+        );
+        assert!(!export_query.contains_key("max"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn lichess_runtime_resumable_stops_reading_the_probe_at_the_nth_object() {
+        let (mut coverage, last) = coverage_ndjson(crate::lichess::LICHESS_CHUNK_GAMES, false);
+        coverage.push_str(
+            r#"{"id":"zzzzzzzz","rated":true,"perf":"blitz","status":"mate","createdAt":999999}
+"#,
+        );
+        let (downloaded, _, transport) = download_resumable_lichess(
+            coverage_response(&coverage),
+            export_pgn_response(),
+            Some(50),
+            "bounded-tail.pgn",
+        )
+        .await;
+        let downloaded = downloaded.unwrap();
+        assert_eq!(downloaded.coverage_floor_ms, Some(last));
+        assert_eq!(
+            downloaded.coverage_holds.as_ref().map(Vec::len),
+            Some(crate::lichess::LICHESS_CHUNK_GAMES - 1)
+        );
+        assert_eq!(transport.requests_seen.lock().unwrap().len(), 2);
+        let (_, export_query) = lichess_query(&transport.requests_seen.lock().unwrap()[1].0);
+        let until = (last + 1).to_string();
+        assert_eq!(
+            export_query.get("until").map(String::as_str),
+            Some(until.as_str())
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn lichess_runtime_resumable_final_probe_exports_a_closed_window_without_floor() {
+        let (coverage, last) = coverage_ndjson(3, true);
+        let (downloaded, _, transport) = download_resumable_lichess(
+            coverage_response(&coverage),
+            export_pgn_response(),
+            Some(50),
+            "final.pgn",
+        )
+        .await;
+        let downloaded = downloaded.unwrap();
+        assert_eq!(downloaded.coverage_floor_ms, None);
+        assert_eq!(downloaded.coverage_holds.as_ref().map(Vec::len), Some(3));
+        let requests = transport.requests_seen.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_lichess_probe_query(&requests[0].0, Some(50));
+        let (_, export_query) = lichess_query(&requests[1].0);
+        let until = (last + 1).to_string();
+        assert_eq!(
+            export_query.get("until").map(String::as_str),
+            Some(until.as_str())
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn lichess_runtime_resumable_empty_probe_exports_until_the_start() {
+        let (downloaded, _, transport) = download_resumable_lichess(
+            coverage_response(""),
+            export_pgn_response(),
+            Some(50),
+            "empty.pgn",
+        )
+        .await;
+        let downloaded = downloaded.unwrap();
+        assert_eq!(downloaded.coverage_floor_ms, None);
+        let (_, export_query) = lichess_query(&transport.requests_seen.lock().unwrap()[1].0);
+        assert_eq!(export_query.get("until").map(String::as_str), Some("50"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn lichess_runtime_resumable_probe_failures_publish_nothing() {
+        let (body, _) = coverage_ndjson(3, true);
+        let failures = [
+            DownloadResponse {
+                content_length: Some(body.len() as u64 + 40),
+                ..coverage_response(&body)
+            },
+            DownloadResponse {
+                status: 200,
+                headers: HeaderMap::new(),
+                content_length: Some(body.len() as u64),
+                stream: Box::pin(futures_util::stream::iter(vec![
+                    Ok(bytes::Bytes::from(body.clone())),
+                    Err(Error::InvalidInput("stream cut".into())),
+                ])),
+            },
+        ];
+        for failure in failures {
+            let (downloaded, fixture, _) = download_resumable_lichess(
+                failure,
+                export_pgn_response(),
+                Some(50),
+                "failed-probe.pgn",
+            )
+            .await;
+            assert!(matches!(downloaded, Err(Error::InvalidInput(_))));
+            assert!(!fixture
+                .directory
+                .path()
+                .join("app/collections/batches/failed-probe.pgn")
+                .exists());
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn lichess_runtime_resumable_created_at_at_i64_max_fails_without_publication() {
+        let line = format!(
+            r#"{{"id":"AbCd1234","rated":true,"perf":"blitz","status":"mate","createdAt":{}}}"#,
+            i64::MAX
+        );
+        let (downloaded, fixture, _) = download_resumable_lichess(
+            coverage_response(&format!("{line}\n")),
+            export_pgn_response(),
+            Some(50),
+            "overflow.pgn",
+        )
+        .await;
+        assert!(matches!(
+            downloaded,
+            Err(Error::InvalidInput(message)) if message == "Lichess returned invalid coverage data"
+        ));
+        assert!(!fixture
+            .directory
+            .path()
+            .join("app/collections/batches/overflow.pgn")
+            .exists());
     }
 
     #[async_trait::async_trait]
@@ -10102,6 +10416,7 @@ mod tests {
             "test",
             app.handle(),
             &state,
+            crate::chesscom::ExportScope::Complete,
         )
         .await;
         let runtime_error = result.as_ref().unwrap_err();

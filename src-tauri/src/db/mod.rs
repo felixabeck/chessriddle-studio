@@ -1316,10 +1316,34 @@ impl AccountImporter {
             self.context.coverage_holds.as_deref(),
             self.context.coverage_floor_ms,
         );
-        update_info_count(db, "AccountSyncCursor", cursor)?;
+        let stored = stored_account_sync_cursor(db)?;
+        if self.context.since_ms.is_none()
+            || stored
+                .is_some_and(|stored| self.context.since_ms.is_some_and(|since| since <= stored))
+        {
+            update_info_count(db, "AccountSyncCursor", cursor)?;
+        }
         db.batch_execute("DELETE FROM temp.AccountFingerprints;")?;
         Ok(())
     }
+}
+
+fn stored_account_sync_cursor(db: &mut SqliteConnection) -> Result<Option<i64>, Error> {
+    let value = info::table
+        .filter(info::name.eq("AccountSyncCursor"))
+        .select(info::value)
+        .first::<Option<String>>(db)
+        .optional()?
+        .flatten();
+    value
+        .map(|value| {
+            value
+                .parse::<i64>()
+                .ok()
+                .filter(|value| *value >= 0)
+                .ok_or_else(|| Error::InvalidInput("invalid account sync cursor".into()))
+        })
+        .transpose()
 }
 
 pub(crate) fn account_sync_cursor_blocking(
@@ -1346,21 +1370,7 @@ pub(crate) fn account_sync_cursor_blocking(
             return Ok(None);
         }
         migrations::check_current_database(&mut connection)?;
-        let value = info::table
-            .filter(info::name.eq("AccountSyncCursor"))
-            .select(info::value)
-            .first::<Option<String>>(&mut *connection)
-            .optional()?
-            .flatten();
-        value
-            .map(|value| {
-                value
-                    .parse::<i64>()
-                    .ok()
-                    .filter(|value| *value >= 0)
-                    .ok_or_else(|| Error::InvalidInput("invalid account sync cursor".into()))
-            })
-            .transpose()
+        stored_account_sync_cursor(&mut connection)
     })
 }
 
@@ -15915,6 +15925,40 @@ mod unlinked_account_tests {
             .map(|time| format!("[UTCTime \"{time}\"]\n"))
             .unwrap_or_default();
         format!("[White \"Player\"]\n[Black \"Opponent\"]\n[Date \"{date}\"]\n{identity}{time}\n1. e4 e5 *\n\n")
+    }
+
+    #[test]
+    fn unlinked_account_cursor_write_adopts_the_linked_no_gap_rule() {
+        let fixture = Fixture::new();
+        let first = game("lichess", "game0001", "2026.09.01", Some("12:00:00"));
+        let mut context = fixture.context("lichess", None);
+        context.since_ms = None;
+        context.coverage_floor_ms = Some(1_000);
+        fixture
+            .convert(&first, Some(context), &CancellationToken::new())
+            .unwrap();
+        assert_eq!(fixture.cursor(), Some(1_000));
+        assert_eq!(fixture.count("Games"), 1);
+
+        let later = game("lichess", "game0002", "2026.09.02", Some("12:00:00"));
+        let mut after = fixture.context("lichess", None);
+        after.since_ms = Some(2_000);
+        after.coverage_floor_ms = Some(3_000);
+        fixture
+            .convert(&later, Some(after), &CancellationToken::new())
+            .unwrap();
+        assert_eq!(fixture.cursor(), Some(1_000));
+        assert_eq!(fixture.count("Games"), 2);
+
+        let equal = game("lichess", "game0003", "2026.09.03", Some("12:00:00"));
+        let mut at_cursor = fixture.context("lichess", None);
+        at_cursor.since_ms = Some(1_000);
+        at_cursor.coverage_floor_ms = Some(4_000);
+        fixture
+            .convert(&equal, Some(at_cursor), &CancellationToken::new())
+            .unwrap();
+        assert_eq!(fixture.cursor(), Some(4_000));
+        assert_eq!(fixture.count("Games"), 3);
     }
 
     #[test]

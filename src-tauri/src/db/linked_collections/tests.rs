@@ -257,6 +257,63 @@ mod native_tests {
         );
     }
 
+    #[test]
+    fn account_cursor_unresolved_hold_ignores_floor_and_resolved_holds_keep_newest_max_floor() {
+        use crate::lichess::CoverageHold;
+        let present = HashSet::from(["Present1".into()]);
+        let hold = CoverageHold {
+            id: "Present1".into(),
+            created_at_ms: 101,
+            ongoing: true,
+        };
+        assert_eq!(
+            account_sync_cursor(
+                "lichess",
+                Some(50),
+                Some(500),
+                &present,
+                Some(std::slice::from_ref(&hold)),
+                Some(1000)
+            ),
+            100
+        );
+        let finished = CoverageHold {
+            id: "Present1".into(),
+            created_at_ms: 101,
+            ongoing: false,
+        };
+        assert_eq!(
+            account_sync_cursor(
+                "lichess",
+                Some(50),
+                Some(500),
+                &present,
+                Some(std::slice::from_ref(&finished)),
+                Some(1000)
+            ),
+            1000
+        );
+        assert_eq!(
+            account_sync_cursor("lichess", Some(50), Some(500), &present, None, Some(1000)),
+            1000
+        );
+        assert_eq!(
+            account_sync_cursor("lichess", Some(50), Some(500), &present, None, None),
+            50
+        );
+        assert_eq!(
+            account_sync_cursor(
+                "chesscom",
+                Some(50),
+                Some(500),
+                &present,
+                Some(&[hold]),
+                Some(1000)
+            ),
+            1000
+        );
+    }
+
     #[tokio::test]
     async fn linked_receipt_carries_month_floor_through_empty_batch_and_native_fetch_cursor() {
         let fixture = Fixture::new();

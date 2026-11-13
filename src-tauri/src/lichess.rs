@@ -33,6 +33,9 @@ pub(crate) const ACCOUNT_EXPORT_PERFS: &[&str] = &[
 ];
 pub(crate) const MAX_COVERAGE_HOLDS: usize = 1_000_000;
 const MAX_COVERAGE_LINE_BYTES: usize = 64 * 1024;
+/// 30_000 games is about 22 MiB at the measured 730 bytes per exported game. A chunk exceeds
+/// the 100 MiB staged-body cap only above about 3.5 KiB per game on average.
+pub(crate) const LICHESS_CHUNK_GAMES: usize = 30_000;
 
 struct NdjsonLines {
     line: Vec<u8>,
@@ -54,20 +57,42 @@ impl NdjsonLines {
         chunk: &[u8],
         mut on_line: impl FnMut(&[u8]) -> Result<(), Error>,
     ) -> Result<(), Error> {
+        self.push_while(chunk, |line| {
+            on_line(line)?;
+            Ok(true)
+        })
+        .map(|_| ())
+    }
+
+    fn push_while(
+        &mut self,
+        chunk: &[u8],
+        mut on_line: impl FnMut(&[u8]) -> Result<bool, Error>,
+    ) -> Result<bool, Error> {
         for part in chunk.split_inclusive(|byte| *byte == b'\n') {
             if self.line.len().saturating_add(part.len()) > self.max {
                 return Err(Error::ResourceLimit(self.too_large.into()));
             }
             self.line.extend_from_slice(part);
             if part.last() == Some(&b'\n') {
-                on_line(&self.line)?;
+                let continue_reading = on_line(&self.line)?;
                 self.line.clear();
+                if !continue_reading {
+                    return Ok(false);
+                }
             }
         }
-        Ok(())
+        Ok(true)
     }
 
     fn finish(self, mut on_line: impl FnMut(&[u8]) -> Result<(), Error>) -> Result<(), Error> {
+        on_line(&self.line)
+    }
+
+    fn finish_while(
+        self,
+        mut on_line: impl FnMut(&[u8]) -> Result<bool, Error>,
+    ) -> Result<bool, Error> {
         on_line(&self.line)
     }
 }
@@ -89,20 +114,25 @@ struct CoverageGame {
     created_at: i64,
 }
 
-fn coverage_line(line: &[u8], holds: &mut Vec<CoverageHold>) -> Result<(), Error> {
+fn invalid_coverage() -> Error {
+    Error::InvalidInput("Lichess returned invalid coverage data".into())
+}
+
+fn coverage_game(line: &[u8]) -> Result<Option<CoverageGame>, Error> {
     if line.iter().all(u8::is_ascii_whitespace) {
-        return Ok(());
+        return Ok(None);
     }
-    let game: CoverageGame = serde_json::from_slice(line)
-        .map_err(|_| Error::InvalidInput("Lichess returned invalid coverage data".into()))?;
+    let game: CoverageGame = serde_json::from_slice(line).map_err(|_| invalid_coverage())?;
     if game.id.len() != 8
         || !game.id.bytes().all(|byte| byte.is_ascii_alphanumeric())
         || game.created_at <= 0
     {
-        return Err(Error::InvalidInput(
-            "Lichess returned invalid coverage data".into(),
-        ));
+        return Err(invalid_coverage());
     }
+    Ok(Some(game))
+}
+
+fn push_coverage_hold(game: CoverageGame, holds: &mut Vec<CoverageHold>) -> Result<(), Error> {
     if game.rated
         && ACCOUNT_EXPORT_PERFS.contains(&game.perf.as_str())
         && !matches!(game.status.as_str(), "aborted" | "noStart")
@@ -121,12 +151,61 @@ fn coverage_line(line: &[u8], holds: &mut Vec<CoverageHold>) -> Result<(), Error
     Ok(())
 }
 
+#[cfg(test)]
+fn coverage_line(line: &[u8], holds: &mut Vec<CoverageHold>) -> Result<(), Error> {
+    if let Some(game) = coverage_game(line)? {
+        push_coverage_hold(game, holds)?;
+    }
+    Ok(())
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct CoverageProbe {
+    pub holds: Vec<CoverageHold>,
+    pub last_created_at_ms: Option<i64>,
+    pub counted: usize,
+}
+
+pub(crate) fn coverage_until_ms(
+    last_created_at_ms: Option<i64>,
+    since_ms: Option<i64>,
+) -> Result<i64, Error> {
+    match last_created_at_ms {
+        Some(created_at) => created_at.checked_add(1).ok_or_else(invalid_coverage),
+        None => Ok(since_ms.unwrap_or(0)),
+    }
+}
+
 pub(crate) async fn download_coverage_holds(
     url: Url,
     token: &str,
     transport: &dyn crate::infra::net::DownloadTransport,
     cancellation: &tokio_util::sync::CancellationToken,
 ) -> Result<Vec<CoverageHold>, Error> {
+    Ok(
+        read_coverage_probe(url, token, transport, cancellation, None)
+            .await?
+            .holds,
+    )
+}
+
+pub(crate) async fn probe_coverage_chunk(
+    url: Url,
+    token: &str,
+    transport: &dyn crate::infra::net::DownloadTransport,
+    cancellation: &tokio_util::sync::CancellationToken,
+    max_games: usize,
+) -> Result<CoverageProbe, Error> {
+    read_coverage_probe(url, token, transport, cancellation, Some(max_games)).await
+}
+
+async fn read_coverage_probe(
+    url: Url,
+    token: &str,
+    transport: &dyn crate::infra::net::DownloadTransport,
+    cancellation: &tokio_util::sync::CancellationToken,
+    max_games: Option<usize>,
+) -> Result<CoverageProbe, Error> {
     use futures_util::StreamExt;
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(
@@ -136,12 +215,25 @@ pub(crate) async fn download_coverage_holds(
     let mut response =
         crate::fs::request_download_response(url, headers, transport, Some(token), cancellation)
             .await?;
-    let mut holds = Vec::new();
+    let mut probe = CoverageProbe {
+        holds: Vec::new(),
+        last_created_at_ms: None,
+        counted: 0,
+    };
     let mut lines = NdjsonLines::new(
         MAX_COVERAGE_LINE_BYTES,
         "Lichess coverage line is too large",
     );
     let mut received = 0u64;
+    let on_line = |line: &[u8], probe: &mut CoverageProbe| -> Result<bool, Error> {
+        let Some(game) = coverage_game(line)? else {
+            return Ok(true);
+        };
+        probe.last_created_at_ms = Some(game.created_at);
+        probe.counted = probe.counted.saturating_add(1);
+        push_coverage_hold(game, &mut probe.holds)?;
+        Ok(max_games.is_none_or(|max| probe.counted < max))
+    };
     loop {
         let item = tokio::select! {
             _ = cancellation.cancelled() => return Err(Error::Cancellation),
@@ -150,7 +242,9 @@ pub(crate) async fn download_coverage_holds(
         let Some(chunk) = item else { break };
         let chunk = chunk?;
         received = received.saturating_add(chunk.len() as u64);
-        lines.push(&chunk, |line| coverage_line(line, &mut holds))?;
+        if !lines.push_while(&chunk, |line| on_line(line, &mut probe))? {
+            return Ok(probe);
+        }
     }
     if response
         .content_length
@@ -160,8 +254,8 @@ pub(crate) async fn download_coverage_holds(
             "Actual downloaded size mismatch".into(),
         ));
     }
-    lines.finish(|line| coverage_line(line, &mut holds))?;
-    Ok(holds)
+    let _ = lines.finish_while(|line| on_line(line, &mut probe))?;
+    Ok(probe)
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Type)]
@@ -902,6 +996,220 @@ mod tests {
             line[field] = value;
             assert!(coverage_line(line.to_string().as_bytes(), &mut vec![]).is_err());
         }
+    }
+
+    fn coverage_object(id: &str, rated: bool, created_at: i64) -> String {
+        format!(
+            r#"{{"id":"{id}","rated":{rated},"perf":"blitz","status":"mate","createdAt":{created_at}}}"#
+        )
+    }
+
+    fn coverage_id(index: usize) -> String {
+        format!("{index:08}")
+    }
+
+    fn coverage_objects(count: usize, last_rated: bool) -> (Vec<u8>, i64) {
+        let mut body = Vec::new();
+        let mut last = 0;
+        for index in 0..count {
+            last = 1_000 + index as i64;
+            let rated = last_rated || index + 1 < count;
+            body.extend_from_slice(coverage_object(&coverage_id(index), rated, last).as_bytes());
+            body.push(b'\n');
+        }
+        (body, last)
+    }
+
+    struct ProbeTransport {
+        body: Vec<u8>,
+        content_length: Option<u64>,
+        fail_after_body: bool,
+        requests: std::sync::Mutex<Vec<(String, reqwest::header::HeaderMap)>>,
+    }
+
+    impl ProbeTransport {
+        fn new(body: Vec<u8>) -> Self {
+            let content_length = Some(body.len() as u64);
+            Self {
+                body,
+                content_length,
+                fail_after_body: false,
+                requests: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl crate::infra::net::DownloadTransport for ProbeTransport {
+        async fn request(
+            &self,
+            url: &str,
+            headers: reqwest::header::HeaderMap,
+        ) -> Result<crate::infra::net::DownloadResponse, Error> {
+            self.requests
+                .lock()
+                .unwrap()
+                .push((url.to_string(), headers));
+            let mut chunks = vec![Ok(bytes::Bytes::from(self.body.clone()))];
+            if self.fail_after_body {
+                chunks.push(Err(Error::InvalidInput("stream cut".into())));
+            }
+            Ok(crate::infra::net::DownloadResponse {
+                status: 200,
+                headers: reqwest::header::HeaderMap::new(),
+                content_length: self.content_length,
+                stream: Box::pin(futures_util::stream::iter(chunks)),
+            })
+        }
+    }
+
+    async fn probe_body(body: Vec<u8>, max_games: usize) -> Result<CoverageProbe, Error> {
+        probe_coverage_chunk(
+            Url::parse("https://lichess.org/api/games/user/player").unwrap(),
+            "fixture-token",
+            &ProbeTransport::new(body),
+            &tokio_util::sync::CancellationToken::new(),
+            max_games,
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn probe_counts_terminated_objects_and_stops_at_the_chunk_bound() -> Result<(), Error> {
+        let (body, last) = coverage_objects(LICHESS_CHUNK_GAMES, false);
+        let probe = probe_body(body, LICHESS_CHUNK_GAMES).await?;
+        assert_eq!(probe.counted, LICHESS_CHUNK_GAMES);
+        assert_eq!(probe.last_created_at_ms, Some(last));
+        assert_eq!(probe.holds.len(), LICHESS_CHUNK_GAMES - 1);
+        assert_eq!(
+            coverage_until_ms(probe.last_created_at_ms, Some(50))?,
+            last + 1
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn probe_ignores_objects_past_the_chunk_bound_in_the_same_buffer() -> Result<(), Error> {
+        let (mut body, bound_last) = coverage_objects(LICHESS_CHUNK_GAMES, false);
+        let extra = coverage_object("zzzzzzzz", true, bound_last + 50_000);
+        body.extend_from_slice(extra.as_bytes());
+        body.push(b'\n');
+        let probe = probe_body(body, LICHESS_CHUNK_GAMES).await?;
+        assert_eq!(probe.counted, LICHESS_CHUNK_GAMES);
+        assert_eq!(probe.last_created_at_ms, Some(bound_last));
+        assert_eq!(probe.holds.len(), LICHESS_CHUNK_GAMES - 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn probe_final_window_counts_fewer_than_the_bound_and_empty_leftover_is_not_an_object(
+    ) -> Result<(), Error> {
+        let (body, last) = coverage_objects(3, true);
+        let probe = probe_body(body, LICHESS_CHUNK_GAMES).await?;
+        assert_eq!(probe.counted, 3);
+        assert_eq!(probe.last_created_at_ms, Some(last));
+        assert_eq!(probe.holds.len(), 3);
+        assert_eq!(
+            coverage_until_ms(probe.last_created_at_ms, Some(50))?,
+            last + 1
+        );
+
+        let empty = probe_body(Vec::new(), LICHESS_CHUNK_GAMES).await?;
+        assert_eq!(empty.counted, 0);
+        assert_eq!(empty.last_created_at_ms, None);
+        assert_eq!(coverage_until_ms(empty.last_created_at_ms, Some(50))?, 50);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn probe_rejects_a_stream_error_after_a_short_window() {
+        let (body, _) = coverage_objects(3, true);
+        let transport = ProbeTransport {
+            fail_after_body: true,
+            ..ProbeTransport::new(body)
+        };
+        let error = probe_coverage_chunk(
+            Url::parse("https://lichess.org/api/games/user/player").unwrap(),
+            "fixture-token",
+            &transport,
+            &tokio_util::sync::CancellationToken::new(),
+            LICHESS_CHUNK_GAMES,
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(error, Error::InvalidInput(message) if message == "stream cut"));
+    }
+
+    #[tokio::test]
+    async fn probe_rejects_a_short_window_whose_content_length_exceeds_the_body() {
+        let (body, _) = coverage_objects(3, true);
+        let transport = ProbeTransport {
+            content_length: Some(body.len() as u64 + 40),
+            ..ProbeTransport::new(body)
+        };
+        let error = probe_coverage_chunk(
+            Url::parse("https://lichess.org/api/games/user/player").unwrap(),
+            "fixture-token",
+            &transport,
+            &tokio_util::sync::CancellationToken::new(),
+            LICHESS_CHUNK_GAMES,
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(error, Error::InvalidInput(message) if message == "Actual downloaded size mismatch")
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_bounded_success_keeps_u_from_object_n_when_the_chunk_tails_into_n_plus_one(
+    ) -> Result<(), Error> {
+        let (prefix, last) = coverage_objects(LICHESS_CHUNK_GAMES, false);
+        let mut chunk = prefix;
+        chunk.extend_from_slice(
+            br#"{"id":"tailtail","rated":true,"perf":"blitz","status":"mate","createdAt":"#,
+        );
+        let full_len = chunk.len() as u64 + 20;
+        struct TailTransport {
+            chunk: Vec<u8>,
+            full_len: u64,
+        }
+        #[async_trait::async_trait]
+        impl crate::infra::net::DownloadTransport for TailTransport {
+            async fn request(
+                &self,
+                _: &str,
+                _: reqwest::header::HeaderMap,
+            ) -> Result<crate::infra::net::DownloadResponse, Error> {
+                Ok(crate::infra::net::DownloadResponse {
+                    status: 200,
+                    headers: reqwest::header::HeaderMap::new(),
+                    content_length: Some(self.full_len),
+                    stream: Box::pin(futures_util::stream::iter(vec![Ok(bytes::Bytes::from(
+                        self.chunk.clone(),
+                    ))])),
+                })
+            }
+        }
+        let probe = probe_coverage_chunk(
+            Url::parse("https://lichess.org/api/games/user/player").unwrap(),
+            "fixture-token",
+            &TailTransport { chunk, full_len },
+            &tokio_util::sync::CancellationToken::new(),
+            LICHESS_CHUNK_GAMES,
+        )
+        .await?;
+        assert_eq!(probe.counted, LICHESS_CHUNK_GAMES);
+        assert_eq!(probe.last_created_at_ms, Some(last));
+        Ok(())
+    }
+
+    #[test]
+    fn coverage_until_rejects_created_at_at_i64_max() {
+        let error = coverage_until_ms(Some(i64::MAX), Some(1)).unwrap_err();
+        assert!(
+            matches!(error, Error::InvalidInput(message) if message == "Lichess returned invalid coverage data")
+        );
     }
 
     #[test]

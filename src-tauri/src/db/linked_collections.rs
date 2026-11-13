@@ -3568,13 +3568,15 @@ pub(crate) fn account_sync_cursor(
     let Some(holds) = holds else {
         return since.max(floor);
     };
-    holds
+    match holds
         .iter()
         .filter(|hold| hold.ongoing || !provider_ids.contains(&hold.id))
         .map(|hold| hold.created_at_ms.saturating_sub(1).max(since))
         .min()
-        .map_or(newest, |hold_floor| newest.min(hold_floor))
-        .max(floor)
+    {
+        Some(hold_floor) => newest.min(hold_floor),
+        None => newest.max(floor),
+    }
 }
 
 pub(crate) fn initialize<R: tauri::Runtime>(

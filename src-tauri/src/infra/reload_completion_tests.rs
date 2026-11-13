@@ -793,6 +793,379 @@ async fn unlinked_lichess_failed_conversion_downloads_again_with_fresh_publicati
     Ok(())
 }
 
+fn lichess_chunk_publication(
+    state: &crate::AppState,
+    directory: &std::path::Path,
+    id: usize,
+) -> ArtifactPublication {
+    let path = directory.join(format!("lichess-chunk-{id}.pgn"));
+    std::fs::write(
+        &path,
+        unlinked_lichess_game(&format!("chunk{id:03}"), "2026.10.10"),
+    )
+    .unwrap();
+    let handle = state
+        .pgn_path_authority
+        .with_mut(|authority| {
+            authority.get_or_create_persistent_file(&path, "chunk", vec![PathOperation::ReadPgn])
+        })
+        .unwrap()
+        .unwrap()
+        .id;
+    ArtifactPublication {
+        handle: super::path_authority::FileWorkspaceHandle::new(handle),
+        durability: CommitDurability::Durable,
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn lichess_unlinked_chunks_keep_a_pin_and_advance_the_download_position() {
+    use tauri::Manager as _;
+    let (directory, app, path, mut request, _) = reload_completion_account_fixture();
+    let state = app.state::<crate::AppState>().inner().clone();
+    request.provider = "lichess".into();
+    request.since_ms = Some(9_999_999_999_999);
+    let publications = (1..=3)
+        .map(|id| lichess_chunk_publication(&state, directory.path(), id))
+        .collect::<Vec<_>>();
+    let pin_created = 1_500_000_000_000i64;
+    let floors = [Some(2_000_000_000_000), Some(2_000_100_000_000), None];
+    let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorded = calls.clone();
+    let mut index = 0;
+    let completed = accounts::import_account_games_with_download(
+        request,
+        app,
+        "main".into(),
+        state,
+        move |request, _, _, _, _| {
+            recorded.lock().unwrap().push(request.since_ms);
+            let publication = publications[index].clone();
+            let coverage_floor_ms = floors[index];
+            let coverage_holds = (index == 0).then_some(vec![crate::lichess::CoverageHold {
+                id: "ongoing1".into(),
+                created_at_ms: pin_created,
+                ongoing: true,
+            }]);
+            index += 1;
+            async move {
+                Ok(super::operations::RuntimeDownload {
+                    publication,
+                    receipt_error: None,
+                    coverage_holds,
+                    coverage_floor_ms,
+                })
+            }
+        },
+    )
+    .await
+    .unwrap();
+    assert!(matches!(completed.outcome, CompletionOutcome::Succeeded(_)));
+    assert_eq!(reload_completion_account_rows(&path), 3);
+    assert_eq!(unlinked_cursor(&path), Some(pin_created - 1));
+    assert_eq!(
+        calls.lock().unwrap().clone(),
+        vec![None, Some(2_000_000_000_000), Some(2_000_100_000_000)]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn lichess_unlinked_recovered_chunk_downloads_once_more() {
+    use tauri::Manager as _;
+    let (directory, app, path, mut request, _) = reload_completion_account_fixture();
+    let state = app.state::<crate::AppState>().inner().clone();
+    request.provider = "lichess".into();
+    let publications = (1..=2)
+        .map(|id| lichess_chunk_publication(&state, directory.path(), id))
+        .collect::<Vec<_>>();
+    let second = publications[1].clone();
+    let (attempt, start) = state
+        .operations
+        .admit_account_completion("main", request.clone())
+        .unwrap();
+    let start = start.unwrap();
+    let id = start.snapshot.id.clone();
+    let failure_id = id.clone();
+    let mut index = 0;
+    accounts::start_account_completion(
+        start,
+        app.clone(),
+        "main".into(),
+        state.clone(),
+        move |request, _, _, _, _| {
+            assert_eq!(request.since_ms, [None, Some(2_000_000_000_000)][index]);
+            if index == 0 {
+                accounts::DELETE_FAILURE.arm(
+                    failure_id.clone(),
+                    Error::Conflict("lichess chunk cleanup failed".into()),
+                );
+            }
+            let publication = publications[index].clone();
+            let coverage_floor_ms = Some(2_000_000_000_000 + index as i64 * 100_000_000);
+            index += 1;
+            async move {
+                Ok(super::operations::RuntimeDownload {
+                    publication,
+                    receipt_error: None,
+                    coverage_holds: None,
+                    coverage_floor_ms,
+                })
+            }
+        },
+    )
+    .await;
+    let failed = attempt.await.unwrap();
+    assert!(matches!(failed.outcome, CompletionOutcome::Failed(_)));
+    assert!(failed.deletion_pending);
+    let downloads = Arc::new(AtomicUsize::new(0));
+    let count = downloads.clone();
+    let completed = accounts::import_account_games_with_download(
+        request,
+        app,
+        "main".into(),
+        state,
+        move |_, _, _, _, _| {
+            assert_eq!(count.fetch_add(1, Ordering::SeqCst), 0);
+            let publication = second.clone();
+            async move {
+                Ok(super::operations::RuntimeDownload {
+                    publication,
+                    receipt_error: None,
+                    coverage_holds: None,
+                    coverage_floor_ms: None,
+                })
+            }
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(completed.id, id);
+    assert!(matches!(completed.outcome, CompletionOutcome::Succeeded(_)));
+    assert_eq!(downloads.load(Ordering::SeqCst), 1);
+    assert_eq!(reload_completion_account_rows(&path), 2);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn lichess_unlinked_floor_without_cursor_progress_fails_once() {
+    use tauri::Manager as _;
+    let (_directory, app, path, mut request, publication) = reload_completion_account_fixture();
+    let state = app.state::<crate::AppState>().inner().clone();
+    request.provider = "lichess".into();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let count = calls.clone();
+    let completed = accounts::import_account_games_with_download(
+        request,
+        app,
+        "main".into(),
+        state,
+        move |_, _, _, _, _| {
+            let index = count.fetch_add(1, Ordering::SeqCst);
+            assert!(index < 2);
+            let publication = publication.clone();
+            async move {
+                Ok(super::operations::RuntimeDownload {
+                    publication,
+                    receipt_error: None,
+                    coverage_holds: None,
+                    coverage_floor_ms: Some(1000),
+                })
+            }
+        },
+    )
+    .await
+    .unwrap();
+    let CompletionOutcome::Failed(error) = completed.outcome else {
+        panic!("stalled chunk must fail")
+    };
+    assert_eq!(error.category, crate::error::ErrorCategory::Conflict);
+    assert!(error.message.contains("Lichess history could not advance"));
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(unlinked_cursor(&path), Some(1000));
+}
+
+#[cfg(unix)]
+async fn linked_lichess_chunk(
+    fixture: Arc<crate::db::linked_collections::tests::Fixture>,
+    request: AccountImportRequest,
+    id: usize,
+    floor: Option<i64>,
+    holds: Option<Vec<crate::lichess::CoverageHold>>,
+) -> super::operations::RuntimeDownload {
+    let receipt_holds = holds.clone();
+    let handle = super::blocking::BLOCKING_GATEWAY
+        .spawn(move || {
+            use crate::db::linked_collections::tests::{game, received_provider_batch_with_floor};
+            let body = game(Some(&format!("{id}")), "e4 e5", &format!("chunk {id}")).replace(
+                "https://www.chess.com",
+                &format!("https://lichess.org/Blitz{id:03}"),
+            );
+            Ok(received_provider_batch_with_floor(
+                &fixture,
+                &format!("lichess-chunk-{id}.pgn"),
+                &body,
+                "lichess",
+                request.since_ms,
+                receipt_holds.as_deref(),
+                floor,
+            ))
+        })
+        .await
+        .unwrap();
+    super::operations::RuntimeDownload {
+        publication: ArtifactPublication {
+            handle,
+            durability: CommitDurability::Durable,
+        },
+        receipt_error: None,
+        coverage_holds: holds,
+        coverage_floor_ms: floor,
+    }
+}
+
+#[cfg(unix)]
+fn linked_lichess_request(
+    fixture: &crate::db::linked_collections::tests::Fixture,
+) -> AccountImportRequest {
+    use crate::db::linked_collections::tests::game;
+    fixture.create(
+        "history",
+        &game(Some("0"), "d4 d5", "original")
+            .replace("https://www.chess.com", "https://lichess.org/Origina1"),
+        crate::file_workspace::WorkspaceFileType::Game,
+    );
+    let collection = fixture.list().pop().unwrap();
+    fixture.account(&collection.id, "lichess");
+    AccountImportRequest {
+        provider: "lichess".into(),
+        account: "player".into(),
+        account_handle: None,
+        destination: fixture.download_destination(),
+        pending_batch: None,
+        since_ms: None,
+        target: AccountImportTarget::Linked {
+            collection: collection.id,
+        },
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn lichess_linked_chunks_keep_a_pin_and_advance_the_download_position() {
+    use crate::db::linked_collections::tests::Fixture;
+    let fixture = Arc::new(Fixture::new());
+    let request = linked_lichess_request(&fixture);
+    let app = fixture.app();
+    reload_completion_mount_account_events(app.handle());
+    let native = fixture.clone();
+    let pin_created = 1_500_000_000_000i64;
+    let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorded = calls.clone();
+    let completed = accounts::import_account_games_with_download(
+        request,
+        app.handle().clone(),
+        "main".into(),
+        fixture.state.clone(),
+        move |request, _, _, _, _| {
+            let index = recorded.lock().unwrap().len();
+            recorded.lock().unwrap().push(request.since_ms);
+            let native = native.clone();
+            let holds = (index == 0).then_some(vec![crate::lichess::CoverageHold {
+                id: "ongoing1".into(),
+                created_at_ms: pin_created,
+                ongoing: true,
+            }]);
+            let floor = [Some(2_000_000_000_000), Some(2_000_100_000_000), None][index];
+            async move { Ok(linked_lichess_chunk(native, request, index + 1, floor, holds).await) }
+        },
+    )
+    .await
+    .unwrap();
+    assert!(matches!(completed.outcome, CompletionOutcome::Succeeded(_)));
+    assert_eq!(
+        calls.lock().unwrap().clone(),
+        vec![None, Some(2_000_000_000_000), Some(2_000_100_000_000)]
+    );
+    assert_eq!(
+        fixture.list().pop().unwrap().fetch_since_ms,
+        Some((pin_created - 1).to_string())
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn lichess_linked_recovered_unchanged_cursor_still_downloads_once() {
+    use crate::db::linked_collections::tests::Fixture;
+    let fixture = Arc::new(Fixture::new());
+    let mut request = linked_lichess_request(&fixture);
+    let AccountImportTarget::Linked { collection } = &request.target else {
+        unreachable!()
+    };
+    fixture.set_coverage_cursor(collection, 2_000_000_000_000);
+    request.since_ms = Some(2_000_000_000_000);
+    let recovered = linked_lichess_chunk(fixture.clone(), request.clone(), 1, None, None).await;
+    request.pending_batch = Some(recovered.publication.handle);
+    let app = fixture.app();
+    reload_completion_mount_account_events(app.handle());
+    let native = fixture.clone();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let count = calls.clone();
+    let completed = accounts::import_account_games_with_download(
+        request,
+        app.handle().clone(),
+        "main".into(),
+        fixture.state.clone(),
+        move |request, _, _, _, _| {
+            assert_eq!(count.fetch_add(1, Ordering::SeqCst), 0);
+            assert_eq!(request.since_ms, Some(2_000_000_000_000));
+            let native = native.clone();
+            async move { Ok(linked_lichess_chunk(native, request, 2, None, None).await) }
+        },
+    )
+    .await
+    .unwrap();
+    assert!(matches!(completed.outcome, CompletionOutcome::Succeeded(_)));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn lichess_linked_floor_without_native_cursor_progress_fails_once() {
+    use crate::db::linked_collections::tests::Fixture;
+    let fixture = Arc::new(Fixture::new());
+    let mut request = linked_lichess_request(&fixture);
+    let AccountImportTarget::Linked { collection } = &request.target else {
+        unreachable!()
+    };
+    fixture.set_coverage_cursor(collection, 2_000_000_000_000);
+    request.since_ms = Some(2_000_000_000_000);
+    let app = fixture.app();
+    reload_completion_mount_account_events(app.handle());
+    let native = fixture.clone();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let count = calls.clone();
+    let completed = accounts::import_account_games_with_download(
+        request,
+        app.handle().clone(),
+        "main".into(),
+        fixture.state.clone(),
+        move |request, _, _, _, _| {
+            assert_eq!(count.fetch_add(1, Ordering::SeqCst), 0);
+            let native = native.clone();
+            async move {
+                Ok(linked_lichess_chunk(native, request, 1, Some(2_000_000_000_000), None).await)
+            }
+        },
+    )
+    .await
+    .unwrap();
+    let CompletionOutcome::Failed(error) = completed.outcome else {
+        panic!("stalled linked chunk must fail")
+    };
+    assert_eq!(error.category, crate::error::ErrorCategory::Conflict);
+    assert!(error.message.contains("Lichess history could not advance"));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
 async fn reload_completion_drain(registry: OperationRegistry) {
     assert!(
         tokio::task::spawn_blocking(move || registry.wait_for_drain(Duration::from_secs(10)))
@@ -995,6 +1368,7 @@ async fn reload_completion_account_deletion_checkpoint_survives_ack_and_retries_
         }),
     );
     let count = downloads.clone();
+    let publication = failed.publication.clone().unwrap();
     let success = accounts::import_account_games_with_download(
         request,
         app,
@@ -1002,9 +1376,15 @@ async fn reload_completion_account_deletion_checkpoint_survives_ack_and_retries_
         state.clone(),
         move |_, _, _, _, _| {
             let count = count.clone();
+            let publication = publication.clone();
             async move {
                 count.fetch_add(1, Ordering::SeqCst);
-                Err(Error::Conflict("must not redownload".into()))
+                Ok(super::operations::RuntimeDownload {
+                    publication,
+                    receipt_error: None,
+                    coverage_floor_ms: None,
+                    coverage_holds: None,
+                })
             }
         },
     )
@@ -1014,8 +1394,8 @@ async fn reload_completion_account_deletion_checkpoint_survives_ack_and_retries_
     assert!(matches!(success.outcome, CompletionOutcome::Succeeded(_)));
     assert!(!success.deletion_pending);
     assert_eq!(deletions.load(Ordering::SeqCst), 1);
-    assert_eq!(downloads.load(Ordering::SeqCst), 1);
-    assert_eq!(conversions.load(Ordering::SeqCst), 1);
+    assert_eq!(downloads.load(Ordering::SeqCst), 2);
+    assert_eq!(conversions.load(Ordering::SeqCst), 2);
     assert_eq!(reload_completion_account_rows(&path), 1);
     state
         .operations

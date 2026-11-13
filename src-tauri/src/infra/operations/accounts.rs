@@ -109,6 +109,9 @@ pub(crate) struct AccountCompletion {
     #[serde(skip)]
     #[specta(skip)]
     coverage_floor_ms: Option<i64>,
+    #[serde(skip)]
+    #[specta(skip)]
+    chunk_completed: bool,
 }
 
 type AccountAttempt = futures_util::future::Shared<
@@ -171,6 +174,7 @@ impl OperationRegistry {
                 importing: false,
                 coverage_holds: None,
                 coverage_floor_ms: None,
+                chunk_completed: false,
             }
         };
         let lease = self.accept_in_state(
@@ -346,6 +350,7 @@ async fn download_account<R: tauri::Runtime>(
             &owner,
             &app,
             &state,
+            crate::chesscom::ExportScope::Resumable,
         )
         .await
     } else {
@@ -414,6 +419,7 @@ pub(crate) async fn start_account_completion<R, D, F>(
                     let mut downloaded_in_attempt = false;
                     if !snapshot.deletion_pending {
                         if snapshot.publication.is_none()
+                            && !snapshot.chunk_completed
                             && matches!(
                                 &snapshot.request.target,
                                 AccountImportTarget::Unlinked { .. }
@@ -587,23 +593,33 @@ pub(crate) async fn start_account_completion<R, D, F>(
                             .await?;
                         snapshot.deletion_pending = false;
                     }
-                    if snapshot.request.provider != "chesscom"
-                        || (downloaded_in_attempt && snapshot.coverage_floor_ms.is_none())
-                    {
+                    if downloaded_in_attempt && snapshot.coverage_floor_ms.is_none() {
                         return Ok(AccountImportResult {
                             collection_notice: false,
                         });
                     }
-                    let next = native_account_cursor(
+                    let persisted = native_account_cursor(
                         &snapshot.request.target,
                         &state,
                         cancellation.clone(),
                     )
                     .await?;
-                    if downloaded_in_attempt && next <= snapshot.request.since_ms {
-                        return Err(Error::Conflict(
-                            "Chess.com history could not advance".into(),
-                        ));
+                    let next = match snapshot.coverage_floor_ms {
+                        Some(floor) => Some(persisted.unwrap_or(i64::MIN).max(floor)),
+                        None => persisted,
+                    };
+                    if downloaded_in_attempt
+                        && snapshot.coverage_floor_ms.is_some()
+                        && next <= snapshot.request.since_ms
+                    {
+                        let provider = if snapshot.request.provider == "chesscom" {
+                            "Chess.com"
+                        } else {
+                            "Lichess"
+                        };
+                        return Err(Error::Conflict(format!(
+                            "{provider} history could not advance"
+                        )));
                     }
                     snapshot.request.since_ms = next;
                     snapshot.request.pending_batch = None;
@@ -613,6 +629,7 @@ pub(crate) async fn start_account_completion<R, D, F>(
                     snapshot.committed_database = None;
                     snapshot.deletion_pending = false;
                     snapshot.importing = false;
+                    snapshot.chunk_completed = true;
                 }
             })
             .catch_unwind()
@@ -693,6 +710,35 @@ mod tests {
         ] {
             assert!(body.contains(required), "missing {required}: {body}");
         }
+        let lichess_args = call_argument_list(body, "download_lichess_games_runtime(");
+        assert!(
+            lichess_args.contains("ExportScope::Resumable"),
+            "Lichess account download must pass Resumable: {lichess_args}"
+        );
+        assert!(
+            !lichess_args.contains("ExportScope::Complete"),
+            "Lichess account download must not pass Complete: {lichess_args}"
+        );
+    }
+
+    fn call_argument_list<'a>(body: &'a str, callee: &str) -> &'a str {
+        let start = body
+            .find(callee)
+            .unwrap_or_else(|| panic!("missing {callee}: {body}"));
+        let mut depth = 0;
+        for (offset, byte) in body[start..].bytes().enumerate() {
+            match byte {
+                b'(' => depth += 1,
+                b')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return &body[start + callee.len()..start + offset];
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!("unclosed {callee}: {body}");
     }
 
     #[test]
