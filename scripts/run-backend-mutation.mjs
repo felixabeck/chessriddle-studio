@@ -73,7 +73,7 @@ export const backendMutationPackages = Object.freeze([
     id: "game-rules",
     file: "src/game.rs",
     functions:
-      "validate_time_controls|GameController::apply_move|GameController::check_game_end|GameController::settle_active_clock|GameController::get_current_times|GameController::end_game|split_epd_position_and_operations|validate_epd_operations|normalize_polyglot_uci|choose_weighted_index|choose_weighted_target|opening_book_ext",
+      "validate_time_controls|GameController::apply_move|GameController::check_game_end|GameController::settle_active_clock|GameController::get_current_times|GameController::end_game|split_epd_position_and_operations|validate_epd_operations|choose_weighted_index|choose_weighted_target|opening_book_ext",
     test: "game::tests",
   },
   {

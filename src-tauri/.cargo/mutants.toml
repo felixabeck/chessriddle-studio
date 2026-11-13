@@ -14,7 +14,7 @@ examine_re = [
   "validate_uci_text",
   "DownloadOperation::from_id|DownloadOperation::max_size|DownloadOperation::payload_format|DownloadOperation::limits|validate_download_url|is_bearer_origin|validate_archive_path",
   "validate_time_controls|GameController::apply_move|GameController::check_game_end|GameController::settle_active_clock|GameController::get_current_times|GameController::end_game",
-  "split_epd_position_and_operations|validate_epd_operations|normalize_polyglot_uci|choose_weighted_index|opening_book_ext",
+  "split_epd_position_and_operations|validate_epd_operations|choose_weighted_index|opening_book_ext",
   "Lexer|lex_pgn_sync",
   "is_tag_header|update_brace_comment|read_bounded_line|scan_games|checked_index|checked_range",
   "class_is_root|is_write_operation|validate_persisted_shape|PathAuthority::validate_components",

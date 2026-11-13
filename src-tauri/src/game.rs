@@ -2485,6 +2485,11 @@ impl Visitor for OpeningBookPgnVisitor {
         Skip(self.skip)
     }
 
+    fn begin_variation(&mut self) -> Skip {
+        // Only mainline moves form the book line.
+        Skip(true)
+    }
+
     fn san(&mut self, san: SanPlus) {
         if self.skip {
             return;
@@ -2660,16 +2665,6 @@ fn opening_book_ext(name: &str) -> Option<&str> {
         Some("zip")
     } else {
         None
-    }
-}
-
-fn normalize_polyglot_uci(uci: &str) -> String {
-    match uci {
-        "e1h1" => "e1g1".to_string(),
-        "e1a1" => "e1c1".to_string(),
-        "e8h8" => "e8g8".to_string(),
-        "e8a8" => "e8c8".to_string(),
-        _ => uci.to_string(),
     }
 }
 
@@ -3267,9 +3262,9 @@ fn try_polyglot_book_move(controller: &GameController) -> Option<String> {
     let legal_moves = entries
         .into_iter()
         .filter_map(|entry| {
-            let uci = normalize_polyglot_uci(&entry.move_string);
-            let parsed = UciMove::from_ascii(uci.as_bytes()).ok()?;
-            parsed.to_move(&controller.position).ok()?;
+            let parsed = UciMove::from_ascii(entry.move_string.as_bytes()).ok()?;
+            let mv = parsed.to_move(&controller.position).ok()?;
+            let uci = UciMove::from_move(&mv, controller.position.castles().mode()).to_string();
             Some((uci, entry.weight))
         })
         .collect::<Vec<_>>();
@@ -5745,15 +5740,6 @@ done
         ] {
             assert_eq!(opening_book_ext(name), expected);
         }
-        for (input, expected) in [
-            ("e1h1", "e1g1"),
-            ("e1a1", "e1c1"),
-            ("e8h8", "e8g8"),
-            ("e8a8", "e8c8"),
-            ("e2e4", "e2e4"),
-        ] {
-            assert_eq!(normalize_polyglot_uci(input), expected);
-        }
 
         let weights = [2, 3, 5];
         for (target, expected) in [(0, 0), (1, 0), (2, 1), (4, 1), (5, 2), (9, 2)] {
@@ -5836,6 +5822,92 @@ done
         assert!(!controller
             .position_history
             .contains_key("4r2k/8/8/3pP3/8/8/8/4K3 w - d6"));
+    }
+
+    #[test]
+    fn polyglot_lookup_keeps_rook_e_file_moves_and_rewrites_only_legal_castling() {
+        let cases: &[(&str, &str, &str, &str, Option<&str>)] = &[
+            (
+                "rook e1h1 stays rook",
+                "8/k7/8/8/8/8/2K5/4R3 b - - 0 1",
+                "a7a8",
+                "e1h1",
+                Some("e1h1"),
+            ),
+            (
+                "rook e1a1 stays rook",
+                "8/k7/8/8/8/8/2K5/4R3 b - - 0 1",
+                "a7a8",
+                "e1a1",
+                Some("e1a1"),
+            ),
+            (
+                "black rook e8h8 stays rook",
+                "4r3/2k5/8/8/8/8/7K/8 w - - 0 1",
+                "h2h1",
+                "e8h8",
+                Some("e8h8"),
+            ),
+            (
+                "white kingside polyglot castle",
+                "4k3/8/8/8/8/8/8/4K2R b K - 0 1",
+                "e8d8",
+                "e1h1",
+                Some("e1g1"),
+            ),
+            (
+                "white queenside polyglot castle",
+                "4k3/8/8/8/8/8/8/R3K3 b Q - 0 1",
+                "e8d8",
+                "e1a1",
+                Some("e1c1"),
+            ),
+            (
+                "black kingside polyglot castle",
+                "4k2r/8/8/8/8/8/8/4K3 w k - 0 1",
+                "e1d1",
+                "e8h8",
+                Some("e8g8"),
+            ),
+            (
+                "king e1h1 without castling rights is illegal",
+                "4k3/8/8/8/8/8/8/4K2R b - - 0 1",
+                "e8d8",
+                "e1h1",
+                None,
+            ),
+        ];
+
+        for (name, initial_fen, played, book_uci, expected) in cases {
+            let probe = controller_with_polyglot_book(initial_fen, played, &[]);
+            let fen =
+                Fen::from_position(probe.position.clone(), EnPassantMode::PseudoLegal).to_string();
+            let key = polyglot_hash_from_fen(&fen).unwrap();
+            let controller =
+                controller_with_polyglot_book(initial_fen, played, &[(key, book_uci, 1)]);
+            assert_eq!(
+                try_polyglot_book_move(&controller).as_deref(),
+                *expected,
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn pgn_opening_book_skips_variations_and_keeps_mainline_moves() {
+        let start_fen = Fen::from_position(Chess::default(), EnPassantMode::Legal).to_string();
+        for (pgn, expected_moves) in [
+            (
+                "1. e4 e5 (1... c5 2. Nf3) 2. Nf3 Nc6 *",
+                vec!["e2e4", "e7e5", "g1f3", "b8c6"],
+            ),
+            ("1. d4 (1. c4) 1... d5 *", vec!["d2d4", "d7d5"]),
+            ("1. e4 (1. d4 d5) 1... e5 *", vec!["e2e4", "e7e5"]),
+        ] {
+            let selection = select_random_pgn_entry(Cursor::new(pgn.as_bytes())).unwrap();
+            assert_eq!(selection.initial_fen, start_fen, "{pgn}");
+            assert_eq!(selection.initial_moves, expected_moves, "{pgn}");
+        }
     }
 
     #[test]
