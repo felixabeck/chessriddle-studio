@@ -5731,7 +5731,7 @@ done
     }
 
     #[test]
-    fn opening_book_extension_castling_and_weight_selection_are_exact() {
+    fn opening_book_extension_and_weight_selection_are_exact() {
         for (name, expected) in [
             ("book.EPD", Some("epd")),
             ("book.pgn", Some("pgn")),
@@ -5825,14 +5825,15 @@ done
     }
 
     #[test]
-    fn polyglot_lookup_keeps_rook_e_file_moves_and_rewrites_only_legal_castling() {
-        let cases: &[(&str, &str, &str, &str, Option<&str>)] = &[
+    fn polyglot_lookup_keeps_rook_e_file_moves_and_castles_only_with_the_right() {
+        let cases = &[
             (
                 "rook e1h1 stays rook",
                 "8/k7/8/8/8/8/2K5/4R3 b - - 0 1",
                 "a7a8",
                 "e1h1",
                 Some("e1h1"),
+                Some("Rh1"),
             ),
             (
                 "rook e1a1 stays rook",
@@ -5840,6 +5841,7 @@ done
                 "a7a8",
                 "e1a1",
                 Some("e1a1"),
+                Some("Ra1+"),
             ),
             (
                 "black rook e8h8 stays rook",
@@ -5847,6 +5849,7 @@ done
                 "h2h1",
                 "e8h8",
                 Some("e8h8"),
+                Some("Rh8+"),
             ),
             (
                 "white kingside polyglot castle",
@@ -5854,6 +5857,7 @@ done
                 "e8d8",
                 "e1h1",
                 Some("e1g1"),
+                Some("O-O"),
             ),
             (
                 "white queenside polyglot castle",
@@ -5861,6 +5865,7 @@ done
                 "e8d8",
                 "e1a1",
                 Some("e1c1"),
+                Some("O-O-O+"),
             ),
             (
                 "black kingside polyglot castle",
@@ -5868,6 +5873,7 @@ done
                 "e1d1",
                 "e8h8",
                 Some("e8g8"),
+                Some("O-O"),
             ),
             (
                 "king e1h1 without castling rights is illegal",
@@ -5875,10 +5881,11 @@ done
                 "e8d8",
                 "e1h1",
                 None,
+                None,
             ),
         ];
 
-        for (name, initial_fen, played, book_uci, expected) in cases {
+        for (name, initial_fen, played, book_uci, expected, expected_san) in cases {
             let probe = controller_with_polyglot_book(initial_fen, played, &[]);
             let fen =
                 Fen::from_position(probe.position.clone(), EnPassantMode::PseudoLegal).to_string();
@@ -5890,6 +5897,12 @@ done
                 *expected,
                 "{name}"
             );
+            if let Some(book_move) = expected {
+                let mut played_controller =
+                    controller_with_polyglot_book(initial_fen, played, &[(key, book_uci, 1)]);
+                let game_move = played_controller.apply_move(book_move).unwrap();
+                assert_eq!(game_move.san.as_str(), expected_san.unwrap(), "{name}");
+            }
         }
     }
 
@@ -5903,6 +5916,7 @@ done
             ),
             ("1. d4 (1. c4) 1... d5 *", vec!["d2d4", "d7d5"]),
             ("1. e4 (1. d4 d5) 1... e5 *", vec!["e2e4", "e7e5"]),
+            ("1. e4 e5 (2. Nf3) *", vec!["e2e4", "e7e5"]),
         ] {
             let selection = select_random_pgn_entry(Cursor::new(pgn.as_bytes())).unwrap();
             assert_eq!(selection.initial_fen, start_fen, "{pgn}");
