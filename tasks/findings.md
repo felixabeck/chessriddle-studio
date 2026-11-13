@@ -25542,7 +25542,7 @@ Handled in d8d11e681. `OpeningBookPgnVisitor` now overrides `begin_variation` to
 
 ### Re-adding an engine whose executable was replaced at the same path (package upgrade) is refused with Conflict
 
-* **ID:** f-20261113-03 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261113-03 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** 6a465729-1441-46cd-9e47-c5ceddf86b55
 * **Impact class:** behaviour
 * **Spotted outside diff:** yes (while fixing f-20261112-81, drain/drain-20261112 at 15a240d33)
@@ -25554,6 +25554,8 @@ Handled in d8d11e681. `OpeningBookPgnVisitor` now overrides `begin_variation` to
 * **Proof:** source trace on 15a240d33: `prepare_persistent_file` checks `entry.stored.identity != binding.identity` and returns Conflict for every door except (after f-20261112-81) Passive/Picker; `register_engine_file` passes `ExplicitReauthorization`. Not reproduced in the running app.
 * **Related:** f-20261112-81 (opening-book picker counterpart), f-20261112-77.
 * **Found by:** drain session 6a465729 (Claude orchestrator)
+* **Entry revalidation (2026-11-14, drain session 733b4b0a):** build → lens. The open question (what happens to the stale entry, attachments and supervisor keys) is settled by d-20261113-02 ("a picker leaves it to startup reconciliation once the renderer stops retaining it") plus a source trace at b5cf41fbe: the `EngineExecutable` entry is not an attachment purpose (`is_attachment_purpose` covers only `EngineResource | EngineImage`), engine resources/images are separate entries, supervisor keys use the renderer engine id, and `issue_engine_binary_blocking` (`main.rs:1428-1437`) is the only production caller of `register_engine_file`. The remaining change is one door argument plus a portable test in `path_authority/mod.rs`, a sensitive path, so `lens` with `review-tauri-security`. The rejected draft plan (3 review rounds, all lenses approved at r3) reached the same answer.
+<!-- ledger-meta {"command":"set-header","effect_lines":1,"effect_sha256":"f8bd2ac7d611eb9df6b56022c2935bcfffec45593bd74014b7a47cc8c7b44e84","header_sha256":"2c05381cb9f7a7fde719f980bf9f649c184f649fa80ea11340b17bb480ea7324","header_status":"open","input_sha256":"d25148099f28d1a7693a3fa74b2ee0c99b7cb7f7fbee3d77f499194ea3248c22","kind":"mutation-receipt","operation":"554e885efa86ae8a186ad0de00264249200441134f0aa0adb6859a6ecdce3d28","options":{"headers":{"Entry":"lens"},"section":null},"request_id_sha256":null,"results":["f-20261113-03"],"target":"f-20261113-03","v":1} -->
 
 ---
 
