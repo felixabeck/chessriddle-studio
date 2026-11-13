@@ -24221,7 +24221,7 @@ Handled 2026-11-12 by drain session bdcaf057 (lens tier; lenses correctness, roo
 
 ### New Tab Games feed merges collections by raw PGN date text, so an unpadded date such as 2026.1.5 is listed above 2026.01.20 from another collection
 
-* **ID:** f-20261112-26 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-26 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** felix-codex-relogin
 * **Impact class:** behaviour
 * **Spotted outside diff:** yes (general review; remainder of handled f-20261111-96, whose fix db10f9753/bea1c45f6 changed only native SQL)
 * **Where:** `src/components/library/ownGamesFeed.ts` `compareOwnGames` (origin/master 5512756fa), used by `OwnGamesFeed.showMore` k-way merge; native counterpart `src-tauri/src/db/mod.rs` `GameSort::Newest` and `src-tauri/src/db/pgn_date.rs`.
@@ -24230,6 +24230,8 @@ Handled 2026-11-12 by drain session bdcaf057 (lens tier; lenses correctness, roo
 * **Fix:** add a renderer `canonicalPgnDate` that mirrors `pgn_date::canonical` (pad only the `YYYY.M.D` / `YYYY.M.DD` / `YYYY.MM.D` shapes with digit-or-`?` parts; a lone `?` becomes `??`). Apply it before the `?`→`0` replacement in `compareOwnGames`, and add a parity test against the Rust `CASES` table (or expose the canonical key from native in `NormalizedGame`).
 * **Proof:** ephemeral Vitest probe (removed, tree clean). `OwnGamesFeed` was built with two ready collections whose loader returned A: `[{id:1,date:"2026.1.5",time:null}]` and B: `[{id:2,date:"2026.01.20",time:null}]` on page 1 and `[]` afterwards. After `showMore()`, the expected Newest order `["2026.01.20","2026.1.5"]` was received as `["2026.1.5","2026.01.20"]`. `pgn_date.rs` CASES pin `("2026.1.15","2026.01.15")`, and the Newest SQL uses `canonical_sql`, so native would order these two the other way round.
 * **Found by:** Grok Bot general review 2026-11-12 (chunk 10)
+* **2026-11-13 — external wait (drain session 64b15d3b-688f-48f6-9258-bd98200bec36):** Pickup re-check confirmed both defects at HEAD 581e51060 (`compareOwnGames` compares raw `game.date`; `LastGamesList` still sends `sort: "date"`). The line-precise write brief for the joint -26/-27 fix (renderer `canonicalPgnDate` mirroring `pgn_date::canonical`, parity test that parses the Rust `CASES` table, merge regression, `sort: "newest"` in LastGamesList) is at `/tmp/drain-26/brief-26-27.md`. The Codex write leaf failed twice before any work with `refresh token was revoked` (`/tmp/drain-26/dates-26-27.jsonl`, `/tmp/drain-26/dates-26-27-r2.jsonl`), although `codex login status` reports a login. Under rule 6b a failed write leaf is a failed phase and never a switch of writer, so no code was written. Re-check: after Felix runs `codex login`, a one-line `codex exec` probe succeeds; then clear `Blocked` and relaunch the brief.
+<!-- ledger-meta {"command":"set-header","effect_lines":1,"effect_sha256":"164da079728a599f4ef6c8efc88528c1f282e09f29ecc4f29b06750898d09884","header_sha256":"4efb9b3c0b900c579af66907c82d653f10cc3e4ecd49f677b5eb5b5acd9430b7","header_status":"open","input_sha256":"d2172df16bb48ba2c2984049bb3b20de7cfa78eed4e04fa1b3ded1106c5d0ce1","kind":"mutation-receipt","operation":"ddae527be4b2d6961bf582c555b927ed907087e25e74caa59b828ea6d831ee33","options":{"headers":{"Blocked":"felix-codex-relogin"},"section":null},"request_id_sha256":null,"results":["f-20261112-26"],"target":"f-20261112-26","v":1} -->
 
 ---
 
