@@ -19,6 +19,13 @@ const CHESSCOM_TIME_CONTROLS = [
   { value: "daily", labelKey: "TimeControl.Daily" },
 ];
 
+const ALL_TIME_CONTROLS = [
+  ...LICHESS_TIME_CONTROLS,
+  ...CHESSCOM_TIME_CONTROLS.filter(
+    (control) => !LICHESS_TIME_CONTROLS.some((existing) => existing.value === control.value),
+  ),
+];
+
 interface TimeControlSelectorProps {
   onTimeControlChange: (value: string | null) => void;
   website: string | null;
@@ -31,25 +38,21 @@ const TimeControlSelector = ({
   allowAll,
 }: TimeControlSelectorProps) => {
   const { t } = useTranslation();
-  const timeControls = useMemo(
-    () =>
+  const timeControls = useMemo(() => {
+    const categories =
       website === "Chess.com"
-        ? [
-            ...(allowAll ? [{ value: "any", label: t("Board.Database.Local.Result.Any") }] : []),
-            ...CHESSCOM_TIME_CONTROLS.map((control) => ({
-              ...control,
-              label: t(control.labelKey),
-            })),
-          ]
-        : [
-            ...(allowAll ? [{ value: "any", label: t("Board.Database.Local.Result.Any") }] : []),
-            ...LICHESS_TIME_CONTROLS.map((control) => ({
-              ...control,
-              label: t(control.labelKey),
-            })),
-          ],
-    [allowAll, t, website],
-  );
+        ? CHESSCOM_TIME_CONTROLS
+        : website === "Lichess"
+          ? LICHESS_TIME_CONTROLS
+          : ALL_TIME_CONTROLS;
+    return [
+      ...(allowAll ? [{ value: "any", label: t("Board.Database.Local.Result.Any") }] : []),
+      ...categories.map((control) => ({
+        ...control,
+        label: t(control.labelKey),
+      })),
+    ];
+  }, [allowAll, t, website]);
 
   const defaultTimeControl = allowAll ? "any" : "rapid";
   const [timeControl, setTimeControl] = useState<string | null>(defaultTimeControl);

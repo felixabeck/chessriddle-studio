@@ -80,6 +80,81 @@ afterEach(async () => {
 });
 
 describe("personal card selectors", () => {
+  test.each([
+    {
+      website: "All websites",
+      values: [
+        "any",
+        "ultra_bullet",
+        "bullet",
+        "blitz",
+        "rapid",
+        "classical",
+        "correspondence",
+        "daily",
+      ],
+    },
+    {
+      website: null,
+      values: [
+        "any",
+        "ultra_bullet",
+        "bullet",
+        "blitz",
+        "rapid",
+        "classical",
+        "correspondence",
+        "daily",
+      ],
+    },
+    {
+      website: "Lichess",
+      values: ["any", "ultra_bullet", "bullet", "blitz", "rapid", "classical", "correspondence"],
+    },
+    { website: "Chess.com", values: ["any", "bullet", "blitz", "rapid", "daily"] },
+  ])("offers the expected time controls for $website", async ({ website, values }) => {
+    await act(async () => {
+      root.render(<TimeControlSelector website={website} allowAll onTimeControlChange={vi.fn()} />);
+    });
+
+    const select = container.querySelector<HTMLSelectElement>("select")!;
+    expect(Array.from(select.options, (option) => option.value)).toEqual(values);
+  });
+
+  test("selects Daily across all websites and resets when switching to Lichess", async () => {
+    const onTimeControlChange = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <TimeControlSelector
+          website="All websites"
+          allowAll
+          onTimeControlChange={onTimeControlChange}
+        />,
+      );
+    });
+
+    const select = container.querySelector<HTMLSelectElement>("select")!;
+    await act(async () => {
+      select.value = "daily";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(select.value).toBe("daily");
+    expect(onTimeControlChange).toHaveBeenLastCalledWith("daily");
+
+    await act(async () => {
+      root.render(
+        <TimeControlSelector
+          website="Lichess"
+          allowAll
+          onTimeControlChange={onTimeControlChange}
+        />,
+      );
+    });
+    expect(select.value).toBe("any");
+    expect(onTimeControlChange).toHaveBeenLastCalledWith("any");
+  });
+
   test("notifies a replacement time-control callback with the current selection", async () => {
     const firstCallback = vi.fn();
     const replacementCallback = vi.fn();

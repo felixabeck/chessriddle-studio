@@ -330,6 +330,44 @@ describe("filtering", () => {
         expect(stats.latestRating).toBe(1800);
     });
 
+    test("All websites daily keeps Chess.com Daily and excludes Lichess correspondence in all four aggregates", () => {
+        const info = {
+            site_stats_data: ["Chess.com", "Lichess"].map((website) => {
+                const time_control = website === "Chess.com" ? "1/86400" : "-";
+                return site({
+                    site: website,
+                    daily: [daily({ date: "2026.01.01", time_control, won: 1 })],
+                    openings: [
+                        opening({
+                            opening: `${website} Opening`,
+                            is_player_white: true,
+                            time_control,
+                            won: 1,
+                        }),
+                    ],
+                    colors: [color({ is_player_white: true, time_control, won: 1 })],
+                    latest: [
+                        latest({
+                            date: "2026.01.01",
+                            game_id: 1,
+                            player_elo: 1800,
+                            time_control,
+                        }),
+                    ],
+                });
+            }),
+        };
+        const filtered = filterPlayerStats(info, {
+            website: "All websites",
+            account: "All accounts",
+            timeControl: "daily",
+        });
+        for (const key of ["daily", "openings", "colors", "latest"] as const) {
+            expect(filtered[0][key]).toEqual(info.site_stats_data[0][key]);
+            expect(filtered[1][key]).toEqual([]);
+        }
+    });
+
     test("applies website, account and time control once to daily, openings, colors and latest", () => {
         const info = {
             site_stats_data: [
