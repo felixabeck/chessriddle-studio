@@ -1130,7 +1130,7 @@ test("keeps the stored engine when the engine list hydrates after mount", async 
   expect(mocks.analyzeGame.mock.calls[0][3]).toBe("engine-id-2");
 });
 
-test("clears the stored engine when the loaded engine list is empty", async () => {
+test("clears the engine field when the loaded engine list is empty", async () => {
   localStorage.setItem(
     "report-settings",
     JSON.stringify({
