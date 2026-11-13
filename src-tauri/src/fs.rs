@@ -1146,21 +1146,19 @@ fn report_running_download_progress<R: tauri::Runtime>(
     diagnosed: &AtomicBool,
     cancellation: &CancellationToken,
 ) -> Result<(), Error> {
+    let result = update_progress_with_state(
+        &state.progress_state,
+        app,
+        lease,
+        progress,
+        ProgressState::Running,
+    );
+    #[cfg(test)]
+    let result = RUNNING_DOWNLOAD_PROGRESS_OVERRIDE
+        .with(|slot| slot.borrow_mut().take())
+        .unwrap_or(result);
     crate::progress::handle_running_progress_result(
-        {
-            let result = update_progress_with_state(
-                &state.progress_state,
-                app,
-                lease,
-                progress,
-                ProgressState::Running,
-            );
-            #[cfg(test)]
-            let result = RUNNING_DOWNLOAD_PROGRESS_OVERRIDE
-                .with(|slot| slot.borrow_mut().take())
-                .unwrap_or(result);
-            result
-        },
+        result,
         "download",
         lease,
         diagnosed,
@@ -3214,14 +3212,22 @@ mod tests {
             "engine archive progress closure must not call update_progress_with_state: {archive_args}"
         );
         let helper = body_at_indent(source, "fn report_running_download_progress<");
-        let helper_args = call_argument_list(helper, "handle_running_progress_result(");
         assert!(
-            helper_args.contains("update_progress_with_state("),
-            "helper must wrap update_progress_with_state: {helper_args}"
+            helper.contains("update_progress_with_state("),
+            "helper must call update_progress_with_state: {helper}"
         );
         assert!(
-            helper_args.contains("ProgressState::Running"),
-            "helper must report Running progress: {helper_args}"
+            helper.contains("ProgressState::Running"),
+            "helper must report Running progress: {helper}"
+        );
+        let helper_args = call_argument_list(helper, "handle_running_progress_result(");
+        assert!(
+            helper_args.contains("result"),
+            "helper must pass the update result through handle_running_progress_result: {helper_args}"
+        );
+        assert!(
+            !helper_args.contains("update_progress_with_state("),
+            "update_progress_with_state must be a function-body statement: {helper_args}"
         );
         assert!(
             helper.contains("\"download\""),
