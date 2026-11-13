@@ -163,7 +163,7 @@ async fn fetch_bounded(
     let response = tokio::select! {
         _ = cancellation.cancelled() => return Err(Error::Cancellation),
         response = tokio::time::timeout(REQUEST_TIMEOUT, state.http_transport.request(url.as_str(), reqwest::header::HeaderMap::new())) => {
-            response.map_err(|_| Error::EngineTimeout("Chess.com request timed out".into()))??
+            response.map_err(|_| Error::NetworkTimeout("Chess.com request timed out".into()))??
         }
     };
     if !(200..300).contains(&response.status) {
@@ -589,7 +589,7 @@ async fn download_chess_com_games_core<R: tauri::Runtime>(
 }
 
 fn export_deadline_error() -> Error {
-    Error::EngineTimeout("Chess.com export deadline exceeded".into())
+    Error::NetworkTimeout("Chess.com export deadline exceeded".into())
 }
 
 fn next_month_floor((year, month): (i32, u32)) -> Result<i64, Error> {
@@ -1175,7 +1175,7 @@ mod tests {
             },
         )
         .await;
-        assert!(matches!(result, Err(Error::EngineTimeout(_))));
+        assert!(matches!(result, Err(Error::NetworkTimeout(_))));
         assert_eq!(std::fs::read(root.join("slow.pgn")).unwrap(), b"previous");
     }
 
@@ -1774,7 +1774,7 @@ mod tests {
             .unwrap()
             .unwrap_err();
         held.release.notify_waiters();
-        assert!(matches!(error, Error::EngineTimeout(_)));
+        assert!(matches!(error, Error::NetworkTimeout(_)));
         assert_eq!(
             state.progress_state.get(&job_id).unwrap().unwrap().state,
             ProgressState::Failed

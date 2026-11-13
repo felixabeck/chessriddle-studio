@@ -308,6 +308,9 @@ pub enum Error {
     #[error("Engine timeout: {0}")]
     EngineTimeout(String),
 
+    #[error("Network timeout: {0}")]
+    NetworkTimeout(String),
+
     #[error("Position cannot be played against an engine")]
     EnginePositionRejected(#[source] Box<Error>),
 
@@ -635,6 +638,7 @@ impl Error {
             Self::PartialRemoval { .. } => ErrorCategory::PartialRemoval,
             Self::OperationAndCleanup { .. } => ErrorCategory::OperationAndCleanup,
             Self::EngineTimeout(_) => ErrorCategory::EngineTimeout,
+            Self::NetworkTimeout(_) => ErrorCategory::Network,
             Self::EnginePositionRejected(_) => ErrorCategory::EnginePositionRejected,
             Self::EngineRetired => ErrorCategory::EngineRetired,
             Self::EngineFailure {
@@ -1516,6 +1520,7 @@ mod tests {
                 r"/private/registry C:\private\registry",
             ))),
             Error::EngineTimeout(r"/private/engine C:\private\engine".into()),
+            Error::NetworkTimeout(r"/private/network C:\private\network".into()),
         ] {
             let diagnostic = cause.diagnostic();
             let category = cause.category();
@@ -2287,6 +2292,13 @@ mod tests {
             serde_json::to_string(&Error::EngineTimeout("waiting for readyok".into())).unwrap();
         let payload = parsed_payload(&serialized);
         assert_eq!(payload["category"], "engine-timeout");
+    }
+
+    #[test]
+    fn network_timeout_renderer_payload_is_network_and_not_engine() {
+        let payload = Error::NetworkTimeout("download request timed out".into()).renderer_payload();
+        assert_eq!(payload.category, ErrorCategory::Network);
+        assert!(!payload.message.contains("Engine"));
     }
 
     #[test]

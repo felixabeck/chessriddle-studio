@@ -83,7 +83,7 @@ async fn await_staging_deadline_with_admission<T>(
     }
     cancellation.cancel();
     let _ = producer.await;
-    Err(Error::EngineTimeout(timeout_message.into()))
+    Err(Error::NetworkTimeout(timeout_message.into()))
 }
 
 fn download_target_durability(
@@ -496,7 +496,7 @@ pub(crate) async fn request_download_response(
         let res = tokio::select! {
             _ = cancellation.cancelled() => return Err(Error::Cancellation),
             response = tokio::time::timeout(DOWNLOAD_REQUEST_TIMEOUT, transport.request(req_url.as_str(), headers)) => response
-                .map_err(|_| Error::EngineTimeout("download request timed out".into()))??,
+                .map_err(|_| Error::NetworkTimeout("download request timed out".into()))??,
         };
 
         if res.status >= 300 && res.status < 400 {
@@ -3027,7 +3027,7 @@ mod tests {
             finished.load(Ordering::SeqCst),
             "physical producer must finish before assertion"
         );
-        assert!(matches!(outcome, Ok(Err(Error::EngineTimeout(_)))),
+        assert!(matches!(outcome, Ok(Err(Error::NetworkTimeout(_)))),
             "ADMISSION_DROP_BEFORE_JOIN: the helper must close the permit before awaiting its producer: {outcome:?}");
     }
 
@@ -9155,7 +9155,7 @@ mod tests {
                 .unwrap();
             assert!(
                 if deadline {
-                    matches!(result, Err(Error::EngineTimeout(_)))
+                    matches!(result, Err(Error::NetworkTimeout(_)))
                 } else {
                     matches!(result, Err(Error::Cancellation))
                 },
@@ -12303,7 +12303,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert!(matches!(result, Err(Error::EngineTimeout(_))));
+        assert!(matches!(result, Err(Error::NetworkTimeout(_))));
         assert!(registry.wait_for_drain(Duration::from_secs(1)).unwrap());
         assert!(!dir.path().join("published-engine").exists());
         assert_eq!(leaves(dir.path()), vec!["held.zip"]);
