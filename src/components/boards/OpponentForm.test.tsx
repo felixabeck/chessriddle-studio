@@ -11,7 +11,11 @@ vi.mock("lucide-react", () => ({
   Brain: () => null,
   User: () => null,
 }));
-vi.mock("@/components/common/GoModeInput", () => ({ default: () => null }));
+vi.mock("@/components/common/GoModeInput", () => ({
+  default: ({ goMode }: { goMode: unknown }) => (
+    <div data-testid="go-mode">{JSON.stringify(goMode)}</div>
+  ),
+}));
 vi.mock("@/components/common/TimeInput", () => ({ default: () => null }));
 vi.mock("@/components/panels/analysis/EngineSettingsForm", () => ({ default: () => null }));
 const picker = vi.hoisted(() => ({ setEngine: null as ((engine: unknown) => void) | null }));
@@ -86,6 +90,15 @@ function renderOpponent(opponent: OpponentSettings) {
   });
   return { getCurrent: () => current, setOpponent };
 }
+
+test("an unlimited engine opponent shows Infinite go as a depth limit", () => {
+  renderOpponent({
+    type: "engine",
+    engine: null,
+    go: { t: "Infinite" },
+  });
+  expect(host.querySelector("[data-testid='go-mode']")?.textContent).toBe('{"t":"Depth","c":24}');
+});
 
 test("human to engine creates the exact engine branch", () => {
   const { getCurrent, setOpponent } = renderOpponent({

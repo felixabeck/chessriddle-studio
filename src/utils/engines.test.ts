@@ -484,6 +484,18 @@ describe("engineSchema go mode", () => {
             c: 1.5,
         });
     });
+
+    it("keeps a large node limit unchanged", () => {
+        expect(
+            engineSchema.parse({ ...localEngine, go: { t: "Nodes", c: 100_000_000 } }).go,
+        ).toEqual({ t: "Nodes", c: 100_000_000 });
+    });
+});
+
+describe("goModeSchema", () => {
+    it("accepts a non-integer node count without rewriting it", () => {
+        expect(goModeSchema.parse({ t: "Nodes", c: 1.5 })).toEqual({ t: "Nodes", c: 1.5 });
+    });
 });
 
 describe("boundedGoModeSchema", () => {
@@ -506,6 +518,5 @@ describe("boundedGoModeSchema", () => {
         expect(boundedGoModeSchema.safeParse({ t: "Depth", c: 86_400_001 }).success).toBe(false);
         expect(boundedGoModeSchema.safeParse({ t: "Depth", c: 1.5 }).success).toBe(false);
         expect(boundedGoModeSchema.safeParse({ t: "Infinite" }).success).toBe(false);
-        expect(goModeSchema.parse({ t: "Nodes", c: 1.5 })).toEqual({ t: "Nodes", c: 1.5 });
     });
 });

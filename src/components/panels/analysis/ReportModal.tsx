@@ -14,14 +14,14 @@ import { enginesAtom, referenceDbAtom } from "@/state/atoms";
 import { useCollectionCurrency } from "@/state/linkedCollections";
 import { createZodStorage } from "@/state/utils";
 import { captureReportOwner, isReportOwnerCurrent, waitForReportOwner } from "@/state/store/tree";
-import { boundedGoModeSchema, type BoundedGoMode, type LocalEngine } from "@/utils/engines";
+import { boundedGoModeSchema, type LocalEngine } from "@/utils/engines";
 import { capabilityKey } from "@/utils/pathCapabilities";
 import { normalizeEngineOptions } from "@/components/engines/engineOptions";
 import { z } from "zod";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { reportEngineFailure } from "./useDisplayedEngineLines";
 
-type ReportGoMode = BoundedGoMode;
+type ReportGoMode = Extract<GoMode, { t: "Depth" | "Time" | "Nodes" }>;
 
 function isReportGoMode(mode: GoMode): mode is ReportGoMode {
   return mode.t === "Depth" || mode.t === "Time" || mode.t === "Nodes";

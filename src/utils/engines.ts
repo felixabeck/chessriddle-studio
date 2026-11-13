@@ -47,7 +47,7 @@ export function requiredEngineSettingsDefaults(config: EngineConfig): EngineOpti
         }));
 }
 
-/** Mirrors native `MAX_ENGINE_LIMIT` in src-tauri/src/engine/types.rs (24h in ms). */
+/** Mirrors native `MAX_ENGINE_LIMIT` (src-tauri/src/engine/types.rs), the shared cap for Time (ms) and Depth (plies). */
 export const MAX_GO_TIME_OR_DEPTH = 86_400_000;
 /** Mirrors native `GoMode::Nodes(u32)` in src-tauri/src/engine/types.rs. */
 export const MAX_GO_NODES = 4_294_967_295;
@@ -80,6 +80,10 @@ export function effectiveGameGo(go: GoMode | null | undefined): BoundedGoMode {
     return parsed.success ? parsed.data : DEFAULT_GAME_ENGINE_GO;
 }
 
+/** Persistence-acceptance schema: deliberately unbounded and without `.catch`, because engine owner
+ *  storage (`src/state/engineOwnerStorage.ts` parseHydratableOwner) only hydrates a key when parsing
+ *  leaves the stored value unchanged. Playable values are derived with `effectiveGameGo` /
+ *  `boundedGoModeSchema`. */
 export const goModeSchema: z.ZodSchema<GoMode> = z.union([
     z.object({
         t: z.literal("Depth"),

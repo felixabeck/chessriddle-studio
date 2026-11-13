@@ -937,6 +937,68 @@ test("defaults an invalid goMode during hydration instead of crashing render", a
   );
 });
 
+test("hydrates an over-limit Time goMode to the default report go mode", async () => {
+  localStorage.setItem(
+    "report-settings",
+    JSON.stringify({
+      novelty: false,
+      reversed: true,
+      variations: false,
+      goMode: { t: "Time", c: 86_400_001 },
+      engine: "engine-id",
+    }),
+  );
+  mocks.analyzeGame.mockResolvedValue([]);
+
+  await renderReportModal();
+  await act(async () => {
+    host.querySelector("button")!.click();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(mocks.analyzeGame).toHaveBeenCalledWith(
+    expect.any(String),
+    "tab-id",
+    expect.anything(),
+    "engine-id",
+    { t: "Time", c: 500 },
+    expect.anything(),
+    [],
+  );
+});
+
+test("keeps a stored Nodes goMode of 100_000_000", async () => {
+  localStorage.setItem(
+    "report-settings",
+    JSON.stringify({
+      novelty: false,
+      reversed: true,
+      variations: false,
+      goMode: { t: "Nodes", c: 100_000_000 },
+      engine: "engine-id",
+    }),
+  );
+  mocks.analyzeGame.mockResolvedValue([]);
+
+  await renderReportModal();
+  await act(async () => {
+    host.querySelector("button")!.click();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(mocks.analyzeGame).toHaveBeenCalledWith(
+    expect.any(String),
+    "tab-id",
+    expect.anything(),
+    "engine-id",
+    { t: "Nodes", c: 100_000_000 },
+    expect.anything(),
+    [],
+  );
+});
+
 test("reports a quota-failed settings save while still starting the report", async () => {
   const quota = new DOMException("Storage quota exceeded", "QuotaExceededError");
   const originalSetItem = Storage.prototype.setItem;
