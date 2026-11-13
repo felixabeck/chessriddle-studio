@@ -5116,7 +5116,8 @@ pub(crate) fn equivalent_sibling_leaves(
     cancellation: &CancellationToken,
 ) -> Result<Vec<DirectoryEntry>, Error> {
     let normalized = nfc_leaf_name(leaf);
-    // Result holds only NFC-equivalent names, so the walk is O(matches) memory and needs no entry cap.
+    // The result holds only NFC-equivalent names, so the listing cap protects nothing here
+    // (Windows still reads the names into a transient Vec before filtering).
     read_directory_entries_at(directory, cancellation, None, &mut |name| {
         nfc_leaf_name(name) == normalized
     })
