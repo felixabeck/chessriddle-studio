@@ -8,6 +8,8 @@ import { squareToCoordinates } from "@/utils/chessops";
 import IconAction from "../common/IconAction";
 import Piece from "../common/Piece";
 
+const promotionPieces: Role[] = ["queen", "knight", "rook", "bishop"];
+
 const PromotionModal = memo(function PromotionModal({
   pendingMove,
   cancelMove,
@@ -38,7 +40,7 @@ const PromotionModal = memo(function PromotionModal({
     return null;
   }
   const { file, rank } = squareToCoordinates(pendingMove.to, orientation);
-  const promotionPieces: Role[] = ["queen", "knight", "rook", "bishop"];
+  const displayPieces = turn !== orientation ? [...promotionPieces].reverse() : promotionPieces;
   const pieceLabels: Record<Role, string> = {
     king: t("Board.Promotion.King", { defaultValue: "king" }),
     queen: t("Board.Promotion.Queen", { defaultValue: "queen" }),
@@ -47,13 +49,6 @@ const PromotionModal = memo(function PromotionModal({
     knight: t("Board.Promotion.Knight", { defaultValue: "knight" }),
     pawn: t("Board.Promotion.Pawn", { defaultValue: "pawn" }),
   };
-  if (
-    (turn === "black" && orientation === "white") ||
-    (turn === "white" && orientation === "black")
-  ) {
-    promotionPieces.reverse();
-  }
-
   return (
     <>
       {pendingMove && (
@@ -97,10 +92,10 @@ const PromotionModal = memo(function PromotionModal({
               }}
             >
               <SimpleGrid cols={1} spacing={0} verticalSpacing={0} h="100%">
-                {promotionPieces.map((p) => (
+                {displayPieces.map((p) => (
                   <IconAction
                     key={p}
-                    ref={p === promotionPieces[0] ? firstChoiceRef : undefined}
+                    ref={p === "queen" ? firstChoiceRef : undefined}
                     label={t("Board.Promotion.Choose", {
                       defaultValue: "Promote to {{piece}}",
                       piece: pieceLabels[p],

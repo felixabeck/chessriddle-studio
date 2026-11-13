@@ -116,3 +116,37 @@ test("uses keyboard choice shortcuts and escape", async () => {
   );
   expect(cancelMove).toHaveBeenCalledTimes(1);
 });
+
+test("keeps queen focus and semantic shortcuts when promotion choices render in reverse", async () => {
+  host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  const confirmMove = vi.fn();
+
+  await act(async () =>
+    root.render(
+      <PromotionModal
+        pendingMove={{ from: 9, to: 1 }}
+        cancelMove={vi.fn()}
+        confirmMove={confirmMove}
+        turn="black"
+        orientation="white"
+      />,
+    ),
+  );
+
+  expect(document.activeElement).toBe(host.querySelector('[aria-label="Promote to queen"]'));
+  expect(
+    Array.from(host.querySelectorAll("button"), (button) => button.getAttribute("aria-label")),
+  ).toEqual(["Promote to bishop", "Promote to rook", "Promote to knight", "Promote to queen"]);
+
+  const dialog = host.querySelector('[role="dialog"]')!;
+  await act(async () =>
+    dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "1", bubbles: true })),
+  );
+  expect(confirmMove).toHaveBeenNthCalledWith(1, "queen");
+  await act(async () =>
+    dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "4", bubbles: true })),
+  );
+  expect(confirmMove).toHaveBeenNthCalledWith(2, "bishop");
+});
