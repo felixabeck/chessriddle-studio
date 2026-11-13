@@ -25192,7 +25192,7 @@ Handled in d8d11e681. `OpeningBookPgnVisitor` now overrides `begin_variation` to
 
 ### First Lichess sync of a very large account always fails at the 100 MiB download cap and every retry starts over
 
-* **ID:** f-20261112-80 · **Status:** open · **Area:** pgn-import · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261112-80 · **Status:** handled · **Area:** pgn-import · **Root:** - · **Entry:** build · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** yes (general review, origin/master 11624873a)
 * **Where:** `src-tauri/src/fs.rs:203-210` (`OpClass::max_size`: `Lichess => 100 * 1024 * 1024`) and `:220-236` (`limits().compressed` is that value); `fs.rs:562-598` (`download_payload_network`: `downloaded > limits.compressed` returns `ResourceLimit("File too large")` mid-stream); `fs.rs:1449-1471` (`lichess_games_url`: the whole rated history from `since`, `sort=dateAsc`, with no `until`/`max` chunking); `fs.rs:1516-1603` (`download_lichess_games_runtime` always returns `coverage_floor_ms: None`, so the account workflow in `src-tauri/src/infra/operations/accounts.rs` (~430-470) never gets a floor to advance the cursor).
@@ -25204,7 +25204,24 @@ Handled in d8d11e681. `OpeningBookPgnVisitor` now overrides `begin_variation` to
 * **Found by:** Grok Bot general review
 * **Entry revalidation, 2026-11-13 (lens → build):** the fix is not the mechanical mirror the filing assumed. The Lichess cursor is `account_sync_cursor` (`db/linked_collections.rs` ~3554): min(newest exported start, earliest unresolved coverage hold − 1).max(floor). The holds come from a second NDJSON request (`coverage_url`, `ongoing=true`, `fs.rs` ~1550) over the same `since` range. Chunking the export with `max` or `until` changes which games each request covers, and the account loop in `infra/operations/accounts.rs` (~590) ends after one pass for every provider except `chesscom`. The Chess.com counterpart, f-20261101-29, needed `build`, four plan-review rounds and decisions d-20261104-02..07.
   * **Open question:** how is one Lichess export chunk bounded (`max` games vs an `until` time window), how does its coverage floor compose with the coverage-hold request so that no game at a chunk boundary is skipped or ongoing games are lost, and how does the account loop generalise its Chess.com-only continuation to Lichess?
-<!-- ledger-meta {"command":"set-header","effect_lines":2,"effect_sha256":"62bb3c18f854ccb715ce1548729d07c26769f53bd90ad0532b4e230c990db3c4","header_sha256":"96ff21782feedc67fae43d430eb0f101121e2e0f350efc44169bd5f3368ec0e1","header_status":"open","input_sha256":"095f874079d2c5fb282f93deda33068e7be9f92ba84c9909dd48f848b808f87c","kind":"mutation-receipt","operation":"ee77175a555aaec25fc5b8bd04a6fd10b0814d5122a322c668c630c13a5e0cbd","options":{"headers":{"Entry":"build"},"section":null},"request_id_sha256":null,"results":["f-20261112-80"],"target":"f-20261112-80","v":1} -->
+<!-- ledger-meta {"command":"set-header","effect_lines":2,"effect_sha256":"62bb3c18f854ccb715ce1548729d07c26769f53bd90ad0532b4e230c990db3c4","header_sha256":"f1d0d78415bf4f7b347321439c9d45be719f3180bb59981cf51119ea50ddd09c","header_status":"handled","input_sha256":"095f874079d2c5fb282f93deda33068e7be9f92ba84c9909dd48f848b808f87c","kind":"mutation-receipt","operation":"ee77175a555aaec25fc5b8bd04a6fd10b0814d5122a322c668c630c13a5e0cbd","options":{"headers":{"Entry":"build"},"section":null},"request_id_sha256":null,"results":["f-20261112-80"],"target":"f-20261112-80","v":1} -->
+
+* **Handled, 2026-11-13:** build run (4 plan-review rounds, approved; plan `tasks/plans/2026-11-13-lichess-chunked-account-export.md`, local).
+  * **Chunking.** A resumable Lichess account chunk first reads the coverage stream (`ongoing=true`, all fields off, `sort=dateAsc`, `max=30000`, `since=P`). It stops at the 30,000th object and exports the closed window `since=P&until=U+1`, or `until=P` when the probe is empty, using the probe's holds.
+  * **Floor and pins.** A full probe reports floor U. Inside a chunk the floor never overrides an unresolved hold.
+  * **Cursor writers.** Both writers keep an earlier pin through one no-gap predicate, `coverage_cursor_advances_without_gap`.
+  * **Account loop.** It continues for both providers until a downloaded chunk reports no floor, from `max(cursor, floor)`. The unlinked cursor re-read runs only before the job's first chunk. The standalone command keeps whole-export semantics.
+  * **Live API semantics.** Measured on the public API 2026-11-13: `since` is inclusive, `until` exclusive, and `since == until` is empty.
+  * **Commits.** `2ff79beaf` (implementation, O6 tests), plus review repairs `6342fa118`, `532b8961c`, `d8d87a456` and `3c17ba57e`.
+  * **Decisions.** d-20261113-03, d-20261113-04, d-20261113-05.
+  * **Rejected:**
+    * an up-front `until` window;
+    * `max` on the export alone;
+    * a second coverage request;
+    * Chess.com's `.max(floor)` for Lichess;
+    * a job-local ceiling;
+    * a persisted pin field.
+<!-- ledger-meta {"command":"close","effect_lines":15,"effect_sha256":"3969d4c55a1f405e9f97fad5bb1c55e5deafb1fcacfdbd94304524799af9db57","header_sha256":"f1d0d78415bf4f7b347321439c9d45be719f3180bb59981cf51119ea50ddd09c","header_status":"handled","input_sha256":"bcde1d046631ba3468cbbc8fdac88fc8bb200a9fb489f51fba5034d1f3f587e1","kind":"mutation-receipt","operation":"e2c079abdbdc70e1883138f4c6f5bcd9f58b96e766541275fc25336882048bae","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-80"],"target":"f-20261112-80","v":1} -->
 
 ---
 
