@@ -170,6 +170,8 @@ test("lineToTree copies only the path to a variation node onto a new mainline", 
     });
     first.comment = "keep me off the copy";
     first.nags = [1];
+    first.score = { value: { type: "cp", value: 34 }, wdl: null };
+    first.shapes = [{ orig: "h1", dest: "h2", brush: "green" }];
     const mainReply = createNode({
         fen: "after-main",
         move: parseUci("a1a2")!,
@@ -183,6 +185,8 @@ test("lineToTree copies only the path to a variation node onto a new mainline", 
         halfMoves: 47,
     });
     side.comment = "side comment";
+    side.score = { value: { type: "mate", value: 2 }, wdl: null };
+    side.shapes = [{ orig: "a1", dest: "b1", brush: "red" }];
     first.children = [mainReply, side];
     tree.root.children = [first];
 
@@ -197,9 +201,13 @@ test("lineToTree copies only the path to a variation node onto a new mainline", 
     expect(copied.root.children[0].san).toBe("Kh2");
     expect(copied.root.children[0].comment).toBe("");
     expect(copied.root.children[0].nags).toEqual([]);
+    expect(copied.root.children[0].score).toBe(null);
+    expect(copied.root.children[0].shapes).toEqual([]);
     expect(copied.root.children[0].children).toHaveLength(1);
     expect(copied.root.children[0].children[0].san).toBe("Kb1");
     expect(copied.root.children[0].children[0].comment).toBe("");
+    expect(copied.root.children[0].children[0].score).toBe(null);
+    expect(copied.root.children[0].children[0].shapes).toEqual([]);
     expect(copied.root.children[0].children[0].children).toHaveLength(0);
     expect(first.comment).toBe("keep me off the copy");
     expect(first.children).toHaveLength(2);

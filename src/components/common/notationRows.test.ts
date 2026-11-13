@@ -177,7 +177,7 @@ describe("buildNotationRows", () => {
                 tableView,
                 showComments: true,
                 showVariations: true,
-                collapsedVariations: new Set(["9,9", variationCollapseKey(tree.root, [0])]),
+                collapsedVariations: new Set(["a3 a6 h3", variationCollapseKey(tree.root, [0])]),
             });
             expect(model.rows.at(-1)).toEqual({ type: "gameEnd", hasAnalysis: false });
             expect(model.rows.at(-2)).toMatchObject({
@@ -213,6 +213,56 @@ describe("buildNotationRows", () => {
             ).toBe(false);
         },
     );
+
+    test("collapses a variation by the full move sequence, not SAN or an index path", () => {
+        const root = defaultTree().root;
+        const e4 = fixtureNode("e4");
+        const e5 = fixtureNode("e5", { halfMoves: 2 });
+        const nf3 = fixtureNode("Nf3", { halfMoves: 3 });
+        const nc6 = fixtureNode("Nc6", { halfMoves: 4 });
+        const bc5 = fixtureNode("Bc5", { halfMoves: 4 });
+        const d4 = fixtureNode("d4");
+        const d4e5 = fixtureNode("e5", { halfMoves: 2 });
+        const d4nf3 = fixtureNode("Nf3", { halfMoves: 3 });
+        const d4nc6 = fixtureNode("Nc6", { halfMoves: 4 });
+        const d4d6 = fixtureNode("d6", { halfMoves: 4 });
+        root.children = [e4, d4];
+        e4.children = [e5];
+        e5.children = [nf3];
+        nf3.children = [nc6, bc5];
+        d4.children = [d4e5];
+        d4e5.children = [d4nf3];
+        d4nf3.children = [d4nc6, d4d6];
+
+        expect(variationCollapseKey(root, [0, 0, 0])).toBe("e4 e5 Nf3");
+
+        const model = buildNotationRows(root, {
+            tableView: false,
+            showComments: false,
+            showVariations: true,
+            collapsedVariations: new Set(["e4 e5 Nf3"]),
+        });
+        const variationRows = model.rows.filter((row) => row.type === "variation");
+        expect(variationRows.filter((row) => row.parent === nf3)).toEqual([
+            expect.objectContaining({ type: "variation", parent: nf3, collapsed: true }),
+        ]);
+        expect(variationRows.filter((row) => row.parent === d4nf3)).toEqual([
+            expect.objectContaining({ type: "variation", parent: d4nf3, collapsed: false }),
+        ]);
+        expect(model.rowForNode.has(bc5)).toBe(false);
+        expect(model.rowForNode.has(d4d6)).toBe(true);
+        expect(moveNames(model.rows)).toEqual([
+            "e4",
+            "d4",
+            "e5",
+            "Nf3",
+            "Nc6",
+            "d6",
+            "e5",
+            "Nf3",
+            "Nc6",
+        ]);
+    });
 
     test("renders mainline and nested variations in order", () => {
         const tree = variedTree();
