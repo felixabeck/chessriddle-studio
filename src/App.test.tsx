@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => {
   const pieceSetAtom = {};
   const pieceSizeAtom = {};
   const spellCheckAtom = {};
+  const tabsAtom = {};
 
   return {
     createAppTheme: vi.fn(() => ({})),
@@ -32,11 +33,14 @@ const mocks = vi.hoisted(() => {
     reconcileStartupPathOwners: vi.fn(),
     reconcileEngineAttachments: vi.fn(),
     warn: vi.fn(),
+    scanBlockingTabs: vi.fn(),
+    isQuitGateInProgress: vi.fn(),
     referenceDbAtom,
     fontSizeAtom,
     pieceSetAtom,
     pieceSizeAtom,
     spellCheckAtom,
+    tabsAtom,
   };
 });
 
@@ -69,6 +73,11 @@ vi.mock("@/state/atoms", () => ({
   pieceSizeAtom: mocks.pieceSizeAtom,
   referenceDbAtom: mocks.referenceDbAtom,
   spellCheckAtom: mocks.spellCheckAtom,
+  tabsAtom: mocks.tabsAtom,
+}));
+vi.mock("@/state/quitGate", () => ({
+  scanBlockingTabs: mocks.scanBlockingTabs,
+  isQuitGateInProgress: mocks.isQuitGateInProgress,
 }));
 vi.mock("jotai", () => ({
   getDefaultStore: mocks.getDefaultStore,
@@ -165,6 +174,8 @@ beforeEach(() => {
   resetEngineOwnerCoordinatorForTests();
   mocks.preloadReferenceDb.mockReset();
   mocks.warn.mockReset();
+  mocks.scanBlockingTabs.mockReset().mockReturnValue([]);
+  mocks.isQuitGateInProgress.mockReset().mockReturnValue(false);
 
   mocks.createAppTheme.mockReset().mockReturnValue({});
   mocks.useConversionProgress.mockReset();
@@ -178,6 +189,7 @@ beforeEach(() => {
   mocks.getDefaultStore.mockReturnValue({
     get: (atom: object) => {
       if (atom === mocks.referenceDbAtom) return storeValues.referenceDb;
+      if (atom === mocks.tabsAtom) return [];
       return undefined;
     },
   });
@@ -538,11 +550,73 @@ describe("startup update check", () => {
     await act(async () => root.render(<Probe />));
 
     expect(update.downloadAndInstall).toHaveBeenCalledOnce();
+    expect(mocks.scanBlockingTabs).toHaveBeenCalledOnce();
     expect(mocks.relaunch).toHaveBeenCalledOnce();
     expect(update.close).toHaveBeenCalledOnce();
     expect(update.downloadAndInstall.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.scanBlockingTabs.mock.invocationCallOrder[0],
+    );
+    expect(update.downloadAndInstall.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.relaunch.mock.invocationCallOrder[0],
     );
+  });
+
+  test("does not relaunch when a blocking tab has unsaved work", async () => {
+    mockLaunchWithoutCliFile();
+    const update = mockUpdate();
+    mocks.ask.mockResolvedValue(true);
+    mocks.scanBlockingTabs.mockReturnValue([
+      { value: "t1", name: "Analysis", uninspectable: false },
+    ]);
+
+    await act(async () => root.render(<Probe />));
+
+    expect(mocks.relaunch).not.toHaveBeenCalled();
+    expect(mocks.showNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Updater.Installed",
+        message: "Updater.RestartToApply:9.9.9",
+        autoClose: false,
+      }),
+    );
+    expect(update.close).toHaveBeenCalledOnce();
+  });
+
+  test("does not relaunch when the quit gate is in progress", async () => {
+    mockLaunchWithoutCliFile();
+    const update = mockUpdate();
+    mocks.ask.mockResolvedValue(true);
+    mocks.isQuitGateInProgress.mockReturnValue(true);
+
+    await act(async () => root.render(<Probe />));
+
+    expect(mocks.relaunch).not.toHaveBeenCalled();
+    expect(mocks.showNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Updater.Installed",
+      }),
+    );
+    expect(update.close).toHaveBeenCalledOnce();
+  });
+
+  test("does not relaunch when scanning blocking tabs throws", async () => {
+    mockLaunchWithoutCliFile();
+    const update = mockUpdate();
+    mocks.ask.mockResolvedValue(true);
+    mocks.scanBlockingTabs.mockImplementation(() => {
+      throw new Error("store unavailable");
+    });
+
+    await act(async () => root.render(<Probe />));
+
+    expect(mocks.relaunch).not.toHaveBeenCalled();
+    expect(mocks.showNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Updater.Installed",
+      }),
+    );
+    expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining("store unavailable"));
+    expect(update.close).toHaveBeenCalledOnce();
   });
 
   test("notifies the user and does not relaunch when the install fails", async () => {

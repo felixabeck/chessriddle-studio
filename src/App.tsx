@@ -14,7 +14,9 @@ import {
   pieceSizeAtom,
   referenceDbAtom,
   spellCheckAtom,
+  tabsAtom,
 } from "./state/atoms";
+import { isQuitGateInProgress, scanBlockingTabs } from "@/state/quitGate";
 
 import "@/styles/chessgroundBaseOverride.css";
 import "@/styles/chessgroundColorsOverride.css";
@@ -90,6 +92,16 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
 
 const t = i18n.t.bind(i18n);
 
+function restartWouldDiscardWork(): boolean {
+  if (isQuitGateInProgress()) return true;
+  try {
+    return scanBlockingTabs(getDefaultStore().get(tabsAtom)).length > 0;
+  } catch (e) {
+    warn(`Failed to inspect tabs before update restart: ${e}`);
+    return true;
+  }
+}
+
 async function installUpdate(update: Update, signal: AbortSignal) {
   const accepted = await ask(t("Updater.Available", { version: update.version }), {
     title: t("Updater.Title"),
@@ -111,6 +123,16 @@ async function installUpdate(update: Update, signal: AbortSignal) {
   // The plugin API takes no AbortSignal, so an install that settles after unmount is only
   // prevented from relaunching; the transfer itself is not cancelled.
   if (signal.aborted) return;
+  if (restartWouldDiscardWork()) {
+    notifications.show({
+      color: "success",
+      title: t("Updater.Installed"),
+      message: t("Updater.RestartToApply", { version: update.version }),
+      autoClose: false,
+    });
+    info("Update restart deferred because of unsaved work");
+    return;
+  }
   await relaunch();
 }
 
