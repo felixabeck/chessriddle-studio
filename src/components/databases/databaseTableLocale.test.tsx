@@ -205,7 +205,7 @@ test("TournamentCard renders German game headers and leaves the actions header e
 
 test("PlayerTable renders translated column titles", async () => {
   await render(<PlayerTable />);
-  expect(headers()).toEqual(["Name", "Elo", "Spiele"]);
+  expect(headers()).toEqual(["Name", "Elo", "Partien"]);
   const count = host.querySelectorAll<HTMLElement>("tbody td")[2];
   expect(count.textContent).toBe("15");
   expect(count.style.fontVariantNumeric).toBe("tabular-nums");
@@ -213,7 +213,7 @@ test("PlayerTable renders translated column titles", async () => {
 
 test("TournamentTable renders translated column titles", async () => {
   await render(<TournamentTable />);
-  expect(headers()).toEqual(["Name", "Datum", "Ort", "Spieler", "Spiele", "Ø Elo"]);
+  expect(headers()).toEqual(["Name", "Datum", "Ort", "Spieler", "Partien", "Ø Elo"]);
 });
 
 function expectDate(cell: HTMLElement) {
