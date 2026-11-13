@@ -44,7 +44,18 @@ vi.mock("@mantine/core", () => ({
   Text: ({ children, ...props }: any) => <p {...props}>{children}</p>,
 }));
 vi.mock("../common/AppModal", () => ({
-  default: ({ opened, children }: any) => (opened ? <div role="dialog">{children}</div> : null),
+  default: ({ opened, children, pending, onClose }: any) =>
+    opened ? (
+      <div role="dialog">
+        <button
+          data-testid="dismiss-dialog"
+          onClick={() => {
+            if (!pending) onClose();
+          }}
+        />
+        {children}
+      </div>
+    ) : null,
 }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -108,8 +119,15 @@ afterEach(async () => {
 
 async function saveAndClose() {
   await act(async () => {
-    host.querySelector<HTMLButtonElement>('[role="dialog"] button:last-of-type')!.click();
+    const buttons = host.querySelectorAll<HTMLButtonElement>('[role="dialog"] button');
+    buttons[buttons.length - 1]!.click();
     await Promise.resolve();
+  });
+}
+
+async function dismissDialog() {
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('[data-testid="dismiss-dialog"]')!.click();
   });
 }
 
@@ -650,4 +668,50 @@ test("Save shows the real Gate append failure inside the unavailable-tab modal",
   expect(host.querySelector('[role="dialog"]')?.textContent).toContain(
     "The selected PGN cannot be written",
   );
+});
+
+test("pending save ignores dialog dismiss and still completes onSaved", async () => {
+  let resolveWrite!: (written: { stamp: string; revision: string }) => void;
+  mocks.writeGame.mockReturnValueOnce(
+    new Promise((resolve) => {
+      resolveWrite = resolve;
+    }),
+  );
+  const onSaved = vi.fn();
+  const onCancel = vi.fn();
+
+  function PendingCloseHarness() {
+    const [pendingClose, setPendingClose] = useState<{
+      tabId: string;
+      store: TreeStore;
+    } | null>({ tabId: backgroundTab.value, store: treeStore });
+    return (
+      <Provider store={jotaiStore}>
+        <ConfirmChangesModal
+          pendingClose={pendingClose}
+          tab={backgroundTab}
+          onCancel={() => {
+            onCancel();
+            setPendingClose(null);
+          }}
+          onDiscard={vi.fn()}
+          onSaved={onSaved}
+        />
+      </Provider>
+    );
+  }
+
+  await act(async () => root.render(<PendingCloseHarness />));
+  await saveAndClose();
+  await dismissDialog();
+
+  expect(onCancel).not.toHaveBeenCalled();
+  expect(host.querySelector('[role="dialog"]')).not.toBeNull();
+
+  await act(async () => resolveWrite({ stamp: "b".repeat(64), revision: "new-revision" }));
+  expect(onSaved).toHaveBeenCalledOnce();
+
+  await dismissDialog();
+  expect(onCancel).toHaveBeenCalledOnce();
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
 });

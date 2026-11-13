@@ -143,7 +143,7 @@ function ConfirmChangesModal({
   }
 
   return (
-    <AppModal withCloseButton={false} opened={modalOpen} onClose={cancel}>
+    <AppModal withCloseButton={false} opened={modalOpen} onClose={cancel} pending={savePending}>
       <Stack>
         <div>
           <Text fz="lg" fw="bold" mb={10}>
