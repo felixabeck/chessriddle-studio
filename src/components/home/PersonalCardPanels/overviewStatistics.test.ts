@@ -281,92 +281,74 @@ describe("latest rating chronology", () => {
 });
 
 describe("filtering", () => {
-    test("All websites rapid classifies all four aggregates by their own site", () => {
-        const info = {
-            site_stats_data: ["Chess.com", "Lichess"].map((website) =>
-                site({
-                    site: website,
-                    daily: [
-                        daily({
-                            date: "2026.01.01",
-                            time_control: "1800+0",
-                            won: 2,
-                            max_player_elo: 1800,
-                        }),
-                    ],
-                    openings: [
-                        opening({
-                            opening: `${website} Opening`,
-                            is_player_white: true,
-                            time_control: "1800+0",
-                            won: 2,
-                        }),
-                    ],
-                    colors: [color({ is_player_white: true, time_control: "1800+0", won: 2 })],
-                    latest: [
-                        latest({
-                            date: "2026.01.01",
-                            game_id: 1,
-                            player_elo: 1800,
-                            time_control: "1800+0",
-                        }),
-                    ],
-                }),
-            ),
-        };
-        const filtered = filterPlayerStats(info, {
-            website: "All websites",
-            account: "All accounts",
-            timeControl: "rapid",
-        });
-        for (const key of ["daily", "openings", "colors", "latest"] as const) {
-            expect(filtered[0][key]).toEqual(info.site_stats_data[0][key]);
-            expect(filtered[1][key]).toEqual([]);
-        }
-        const stats = deriveOverviewStatistics(filtered);
-        expect(stats.total.games).toBe(2);
-        expect(stats.months).toEqual([{ name: "2026-01", count: 2, won: 2, drawn: 0, lost: 0 }]);
-        expect(stats.whiteOpenings.map((row) => row.name)).toEqual(["Chess.com Opening"]);
-        expect(stats.latestRating).toBe(1800);
-    });
-
-    test("All websites daily keeps Chess.com Daily and excludes Lichess correspondence in all four aggregates", () => {
-        const info = {
-            site_stats_data: ["Chess.com", "Lichess"].map((website) => {
-                const time_control = website === "Chess.com" ? "1/86400" : "-";
-                return site({
-                    site: website,
-                    daily: [daily({ date: "2026.01.01", time_control, won: 1 })],
-                    openings: [
-                        opening({
-                            opening: `${website} Opening`,
-                            is_player_white: true,
-                            time_control,
-                            won: 1,
-                        }),
-                    ],
-                    colors: [color({ is_player_white: true, time_control, won: 1 })],
-                    latest: [
-                        latest({
-                            date: "2026.01.01",
-                            game_id: 1,
-                            player_elo: 1800,
-                            time_control,
-                        }),
-                    ],
-                });
-            }),
-        };
-        const filtered = filterPlayerStats(info, {
-            website: "All websites",
-            account: "All accounts",
-            timeControl: "daily",
-        });
-        for (const key of ["daily", "openings", "colors", "latest"] as const) {
-            expect(filtered[0][key]).toEqual(info.site_stats_data[0][key]);
-            expect(filtered[1][key]).toEqual([]);
-        }
-    });
+    test.each([
+        {
+            selected: "rapid",
+            timeControls: { "Chess.com": "1800+0", Lichess: "1800+0" },
+        },
+        {
+            selected: "daily",
+            timeControls: { "Chess.com": "1/86400", Lichess: "-" },
+        },
+    ])(
+        "All websites $selected classifies all four aggregates by their own site",
+        ({ selected, timeControls }) => {
+            const info = {
+                site_stats_data: (["Chess.com", "Lichess"] as const).map((website) =>
+                    site({
+                        site: website,
+                        daily: [
+                            daily({
+                                date: "2026.01.01",
+                                time_control: timeControls[website],
+                                won: 2,
+                                max_player_elo: 1800,
+                            }),
+                        ],
+                        openings: [
+                            opening({
+                                opening: `${website} Opening`,
+                                is_player_white: true,
+                                time_control: timeControls[website],
+                                won: 2,
+                            }),
+                        ],
+                        colors: [
+                            color({
+                                is_player_white: true,
+                                time_control: timeControls[website],
+                                won: 2,
+                            }),
+                        ],
+                        latest: [
+                            latest({
+                                date: "2026.01.01",
+                                game_id: 1,
+                                player_elo: 1800,
+                                time_control: timeControls[website],
+                            }),
+                        ],
+                    }),
+                ),
+            };
+            const filtered = filterPlayerStats(info, {
+                website: "All websites",
+                account: "All accounts",
+                timeControl: selected,
+            });
+            for (const key of ["daily", "openings", "colors", "latest"] as const) {
+                expect(filtered[0][key]).toEqual(info.site_stats_data[0][key]);
+                expect(filtered[1][key]).toEqual([]);
+            }
+            const stats = deriveOverviewStatistics(filtered);
+            expect(stats.total.games).toBe(2);
+            expect(stats.months).toEqual([
+                { name: "2026-01", count: 2, won: 2, drawn: 0, lost: 0 },
+            ]);
+            expect(stats.whiteOpenings.map((row) => row.name)).toEqual(["Chess.com Opening"]);
+            expect(stats.latestRating).toBe(1800);
+        },
+    );
 
     test("applies website, account and time control once to daily, openings, colors and latest", () => {
         const info = {
