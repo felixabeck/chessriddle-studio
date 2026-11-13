@@ -40,7 +40,10 @@ const annotationAreaProps = { isAnimationActive: false, dot: <CustomDot /> };
 function getYValue(node: TreeNode): number | undefined {
   if (node.score) {
     let cp: number = node.score.value.value;
-    if (node.score.value.type === "mate") {
+    if (
+      node.score.value.type === "mate" ||
+      (node.score.value.type === "dtz" && node.score.value.value !== 0)
+    ) {
       cp = node.score.value.value > 0 ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
     }
     return 2 / (1 + Math.exp(-0.004 * cp)) - 1;

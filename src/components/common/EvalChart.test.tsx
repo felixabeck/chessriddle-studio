@@ -40,7 +40,7 @@ vi.mock("@mantine/charts", () => ({
                 data-animation-active={String(resolved?.isAnimationActive)}
               >
                 {data.map((point: any, index: number) => (
-                  <svg key={point.name} data-point={point.name}>
+                  <svg key={point.name} data-point={point.name} data-y-value={point.yValue}>
                     {resolved?.dot &&
                       cloneElement(resolved.dot, { payload: point, cx: index * 10, cy: 10 })}
                   </svg>
@@ -155,6 +155,42 @@ test("switching to WDL preserves the current, middlegame and endgame reference l
   await act(async () => atoms.set(reportTypeAtom, "WDL"));
   expect(host.querySelector("[data-chart-type]")?.getAttribute("data-chart-type")).toBe("percent");
   expect(referenceLines()).toEqual(expectedReferenceLines);
+});
+
+test("dtz tablebase scores plot as decisive wins and losses", async () => {
+  store.getState().makeMove({ payload: "d4" });
+  store.setState((state) => {
+    const first = state.root.children[0];
+    const second = first.children[0];
+    const third = second.children[0];
+    return {
+      root: {
+        ...state.root,
+        children: [
+          {
+            ...first,
+            score: { value: { type: "dtz", value: 12 }, wdl: null },
+            children: [
+              {
+                ...second,
+                score: { value: { type: "dtz", value: -5 }, wdl: null },
+                children: [
+                  {
+                    ...third,
+                    score: { value: { type: "dtz", value: 0 }, wdl: null },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    };
+  });
+  await renderChart();
+  expect(host.querySelector('[data-point="1. e4!"]')?.getAttribute("data-y-value")).toBe("1");
+  expect(host.querySelector('[data-point="1... e5"]')?.getAttribute("data-y-value")).toBe("-1");
+  expect(host.querySelector('[data-point="2. d4"]')?.getAttribute("data-y-value")).toBe("0");
 });
 
 test("WDL disables animation on every layer and renders annotation dots on White only", async () => {
