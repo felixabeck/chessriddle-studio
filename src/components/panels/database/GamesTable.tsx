@@ -52,13 +52,13 @@ function GamesTable({
       recordsPerPage={20}
       page={page}
       onPageChange={setPage}
-      onRowClick={(e) => {
-        void gameOpen.activate(e.record);
+      onRowClick={({ record }) => void gameOpen.activate(record)}
+      customRowAttributes={(record) => {
+        // Single click already opens through onRowClick, so the row takes only focus and Enter
+        // from the shared activation; its double-click would open a second tab after a fast open.
+        const { tabIndex, onKeyDown } = gameRowActivation(record, gameOpen.activate);
+        return { tabIndex, onKeyDown };
       }}
-      customRowAttributes={(record) => ({
-        tabIndex: 0,
-        onKeyDown: gameRowActivation(record, gameOpen.activate).onKeyDown,
-      })}
       columns={[
         {
           accessor: "white",

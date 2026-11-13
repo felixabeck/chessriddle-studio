@@ -466,3 +466,20 @@ test("opening a standalone tournament game keeps an ordinary database origin", a
   expect(mocks.createTab.mock.calls[0]?.[0].gameOrigin?.linked ?? null).toBeNull();
   expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/" });
 });
+
+test("a pending tournament open ignores a second Open click", async () => {
+  mocks.createTab.mockReturnValueOnce(new Promise(() => {}));
+  mocks.getTournamentGames.mockResolvedValue({ data: games(2) });
+  await render(file("tournament-open-lock"));
+  await vi.waitFor(() =>
+    expect(container.querySelectorAll('[aria-label="Common.Open"]')).toHaveLength(2),
+  );
+  const [first, second] = container.querySelectorAll<HTMLButtonElement>(
+    '[aria-label="Common.Open"]',
+  );
+  await act(async () => {
+    first.click();
+    second.click();
+  });
+  expect(mocks.createTab).toHaveBeenCalledTimes(1);
+});

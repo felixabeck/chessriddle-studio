@@ -136,15 +136,7 @@ function linkedSource() {
 
 test("board-panel linked results open original PGN bytes and persist the qualified source occurrence", async () => {
   const pgn = '[Event "Original"]\n[Custom "preserved"]\n\n1. e4 $1 (1. d4 d5) e5 *';
-  mocks.resolve.mockResolvedValueOnce({
-    locator,
-    file,
-    name: "Source",
-    ordinal: 4,
-    numGames: 5,
-    purpose: "game",
-    game: { pgn, stamp: locator.stamp, revision: locator.generation, present: true },
-  });
+  mocks.resolve.mockResolvedValueOnce(linkedSource());
   const tree = defaultTree();
   tree.headers.other = { Custom: "preserved" };
   mocks.parse.mockResolvedValueOnce(tree);
@@ -203,6 +195,16 @@ test("a pending open ignores a second click", async () => {
   await act(async () => {
     row().click();
     row().click();
+  });
+  expect(mocks.resolve).toHaveBeenCalledTimes(1);
+});
+
+test("a pending open ignores Enter on the same row", async () => {
+  mocks.resolve.mockReturnValueOnce(new Promise(() => {}));
+  await renderTable();
+  await act(async () => {
+    row().click();
+    row().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
   });
   expect(mocks.resolve).toHaveBeenCalledTimes(1);
 });

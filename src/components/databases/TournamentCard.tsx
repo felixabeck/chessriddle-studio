@@ -10,6 +10,7 @@ import { match } from "ts-pattern";
 import { useStore } from "zustand";
 import type { DatabaseHandle, Event, NormalizedGame } from "@/bindings";
 import { IconAction } from "@/components/common/IconAction";
+import { useGameOpen } from "@/components/common/gameOpen";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { addRecentFileAtom, tabsAtom } from "@/state/atoms";
@@ -66,6 +67,23 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
   const navigate = useNavigate();
   const [, setTabs] = useAtom(tabsAtom);
   const addRecentFile = useSetAtom(addRecentFileAtom);
+  const reportOpenError = (error: unknown) => notifyUnlessCancelled(t("Common.Error"), error);
+  const gameOpen = useGameOpen(
+    (record: NormalizedGame) =>
+      runTabCreation({
+        create: () =>
+          openDatabaseGame({
+            game: record,
+            database: file,
+            setTabs,
+            addRecentFile,
+            databaseTitle: databaseTitle,
+          }),
+        onSuccess: () => navigate({ to: "/" }),
+        onError: reportOpenError,
+      }),
+    reportOpenError,
+  );
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const requestKey = ["tournament-games", file, tournament.id] as const;
@@ -180,20 +198,7 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
                       label={t("Common.Open")}
                       variant="filled"
                       color={theme.primaryColor}
-                      onClick={() => {
-                        void runTabCreation({
-                          create: () =>
-                            openDatabaseGame({
-                              game: game,
-                              database: file,
-                              setTabs,
-                              addRecentFile,
-                              databaseTitle: databaseTitle,
-                            }),
-                          onSuccess: () => navigate({ to: "/" }),
-                          onError: (error) => notifyUnlessCancelled(t("Common.Error"), error),
-                        });
-                      }}
+                      onClick={() => void gameOpen.activate(game)}
                     >
                       <Eye size="1rem" strokeWidth={2} />
                     </IconAction>

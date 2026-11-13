@@ -444,10 +444,7 @@ test("Open on board and double-click share one in-flight open", async () => {
       .dispatchEvent(new MouseEvent("dblclick", { bubbles: true })),
   );
   expect(mocks.openGame).toHaveBeenCalledTimes(1);
-  expect(
-    openButton.getAttribute("aria-busy") === "true" ||
-      openButton.getAttribute("data-loading") === "true",
-  ).toBe(true);
+  expect(openButton.getAttribute("aria-busy")).toBe("true");
   await act(async () => complete("opened-game"));
   await click(container.querySelector("[data-opening-open]")!);
   expect(mocks.openGame).toHaveBeenCalledTimes(2);

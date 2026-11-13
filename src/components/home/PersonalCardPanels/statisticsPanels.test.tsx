@@ -871,10 +871,14 @@ test("opening names are single-flight buttons", async () => {
   const sicilian = [...container.querySelectorAll("button")].find((button) =>
     button.textContent?.includes("Sicilian Defense"),
   )!;
+  const french = [...container.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("French Defense"),
+  )!;
   expect(sicilian.tagName).toBe("BUTTON");
   await act(async () => {
     sicilian.click();
     sicilian.click();
+    french.click();
   });
   expect(mocks.getOpeningFromName).toHaveBeenCalledTimes(1);
 });
