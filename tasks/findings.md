@@ -25003,7 +25003,7 @@ Handled in 1ab8c70cc. Each `IconAction` in `ChallengeHistory` carries `aria-curr
 
 ### The player opening tree opens a game once per click while the first open is still pending
 
-* **ID:** f-20261112-70 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-70 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** yes (general review, origin/master d30eb171f)
 * **Where:** `src/components/databases/PlayerOpeningTree.tsx:85-90` (`open` calls `runTabCreation(openDatabaseGame…)` directly), used by the games-row `onDoubleClick` (`:388`) and the "Open on board" `Button` (`:410-417`, no `loading`/`disabled`). `openDatabaseGame` → `createTab` (`src/utils/tabs.ts:620-742`) awaits `databaseGameToTree`/`seedDatabaseOrientation` and then `commitNewTab` (`:412-436`), which always appends a new tab (no same-database-game dedupe).
@@ -25012,6 +25012,8 @@ Handled in 1ab8c70cc. Each `IconAction` in `ChallengeHistory` carries `aria-curr
 * **Fix:** hold `useGameOpen` for this card (`activate` around `openDatabaseGame` + `runTabCreation`), route both the row double-click and the Open button through `gameOpen.activate`, and render the button through `OpenGameButton`/`pending={gameOpen.pending}` like GameCard/FileCard.
 * **Proof:** ephemeral probe built from `PlayerOpeningTree.test.tsx`'s harness (removed afterwards, tree clean): `openDatabaseGame` mocked to a held promise; select the first game, click "Open on board", click it again, then dispatch `dblclick` on the row → `openDatabaseGame` called **3** times before the first resolved; the button had neither `disabled` nor `data-loading`.
 * **Found by:** Grok Bot general review (chunk 28)
+* **Closed 2026-11-13 (drain, Claude Code):** handled in 42812a983 and 1d954b9d7. The player opening tree (Open on board and row double-click), the explorer Games tab, the personal card Openings names, the overview Last games list and the tournament card's Open icon each hold one `useGameOpen` lock, so repeated activation while an open is pending starts one open per surface. Explorer Games rows are focusable and open on Enter while keeping single-click open (rejected: switching to `gameRowActivation`'s double-click, which would change shipped single-click behaviour and, beside click-open, could open a second tab after a fast first open). Opening names are `UnstyledButton`s. The opening tree keeps its "Open on board" label (rejected: `OpenGameButton`, whose label differs) and shows `loading`/`aria-busy`. Each adopter has a held-promise test that went red with the source change reverted. Push review: correctness, root-cause, tests, minimalism and code-quality lenses APPROVED; their should-fix items (TournamentCard sibling, cross-gesture and panel-wide test assertions, GamesTable gesture comment) were fixed in 1d954b9d7.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"ebc0ccdff4c6cbf905c38183f2ed7c12f411aaa00fd3ae0ac418c56d11592f15","header_sha256":"786dfd495a95e5abe07d8db3399b17b82ab7728d73276004c8b4954a9b39e3ef","header_status":"handled","input_sha256":"f7e47d6ee2130401b706a435c21f107f8d94960b85c5a8d57da88fba56f41806","kind":"mutation-receipt","operation":"2ecc02e43a4018bee1753ebc919290163b6695e501c3564586a79862dff5ac48","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-70"],"target":"f-20261112-70","v":1} -->
 
 ---
 
