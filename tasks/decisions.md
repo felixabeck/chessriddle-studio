@@ -13133,3 +13133,15 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Defect fix for f-20261111-77 (raw backend messages painted inline), measured with the same procedure as d-20261111-01. Reversal path: tighten largest lazy against a future smaller production build. This decision is the forward pointer for the ceilings.
 * **Decided by:** Claude Code (Opus 5.5) drain fe1647a8-84a0-4716-ace7-396690a4bf5d, next-finding f-20261111-77, full auto, 2026-11-12 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"b179860ab8fefd8a0c9a49284f4433eacf686ab5ecd8191ef6109bdc524e9192","input_sha256":"c8c397962ee460ac994d4f9ce5da82d3ccfb691da70876a2db302fedb09bcc57","kind":"mutation-receipt","operation":"d801dd3d35f1603b75f263a7fad1503bb1fe12abd5d8000a6571df9a5ef4db14","options":{"section":null},"request_id_sha256":null,"results":["d-20261112-05"],"target":"decisions-ledger","v":1} -->
+
+## 2026-11-13 — recorded through the decisions lock
+
+### d-20261113-01 — Does the games list keep its scroll anchor when section headings load, or does only the late-game e2e wait for headings?
+
+* **Question:** Does the games list keep its scroll anchor when section headings load, or does only the late-game e2e wait for headings?
+* **Governs:** f-20261113-02
+* **Chosen:** Fix the product: `GameSelector` computes one pre-batch shift for rows above the live scroll offset whose section space changed and writes it once after the taller list commits; the reveal effect also depends on the rendered total size. The late-game e2e additionally waits for a loaded, stable row.
+* **Rejected:** Test-only wait for section headings before scrolling. It hides a visible jump users get on any long sectioned file when an earlier page lands late. Also rejected: the library's per-call `resizeItem` correction, which over-corrects within a batch (virtual-core 3.13.18 `src/index.ts:887-915`).
+* **Reason:** `measure()` never corrects the scroll offset (virtual-core `src/index.ts:1202-1206`), and pages requested on the way down land after arrival, each adding 38 px above the viewport; commit `0abd6c500` already recorded the same row loss. Reversal path: restore the bare `measure()` effect in `GameSelector.tsx`.
+* **Decided by:** drain session c3f1d4ac (adopted reviewed plan, 2026-11-13) · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"e28f031a9e66e420baee658783a13bb3b1883574bf600b45138f5af7539923d9","input_sha256":"7aff8cca96dba92cc44e437c32fdb23a70b0fb78c8bbc44dda9131df9d712d4d","kind":"mutation-receipt","operation":"8c7fe424bf9b4f84e7e5d1f075674cb76bddc5a942d053e519d2a1434498727b","options":{"section":null},"request_id_sha256":null,"results":["d-20261113-01"],"target":"decisions-ledger","v":1} -->
