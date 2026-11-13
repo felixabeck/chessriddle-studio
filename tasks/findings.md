@@ -24573,7 +24573,7 @@ Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK on
 
 ### Engine log export swallows save failures and leaks the dialog cancellation as an unhandled rejection
 
-* **ID:** f-20261112-44 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-44 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/common/EngineLogsView.tsx:69-80` (`exportLogs` awaits `tauri.saveEngineLogs` with no `try`/`catch`) and `:106` (`onClick={() => void exportLogs()}`); native `src-tauri/src/main.rs:933-967` (`save_native_export` returns `Error::Cancellation` when the save dialog is dismissed and a real error when the write fails)
@@ -24582,6 +24582,8 @@ Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK on
 - **Fix:** wrap the call in `try { … } catch (error) { notifyUnlessCancelled(t("Common.Error"), error); }`, as BoardControls does, and add an EngineLogsView test for a rejected save.
 - **Proof:** ephemeral Vitest rendering `EngineLogsView` with `tauri.saveEngineLogs` mocked to reject `Error("Permission denied")`: clicking Export logs recorded the rejection as unhandled and no notification text appeared in the document. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 22)
+* **Closed 2026-11-13 (drain 5867a492, joiner of f-20261112-82):** `exportLogs` now wraps `tauri.saveEngineLogs` in try/catch and reports through `notifyUnlessCancelled(t("Common.Error"), error)`, so a failed write shows an error and a dismissed dialog stays quiet. Render test `EngineLogsView.render.test.tsx` asserts the notification for a rejected save; fix-revert check went red without the fix. Commit fee6b59a7.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"020f5781b2eb08eb97a1513a001d632a10bbcf9a16e06afa7e6fab5e377ed91e","header_sha256":"04529ed4d0bf9133c9f68e831e2578f5bdb06c569c693a099c60cce99779d95f","header_status":"handled","input_sha256":"5b9df78d85fb60db8d4da6156fc9cb19b3aaeed24c36f0fae7aadc9594a29a37","kind":"mutation-receipt","operation":"ac158cf0af29070017ad9912c4e6291e90c7660e338a31061db35c518b86c7c9","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-44"],"target":"f-20261112-44","v":1} -->
 
 ---
 
