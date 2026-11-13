@@ -23560,7 +23560,7 @@ Handled 2026-11-12 by drain session bdcaf057, together with f-20261112-23. The t
 
 ### Default GO_TO_END is `shift+down` while sibling arrow bindings use `arrowdown`, so Settings shows a raw "down" and tests never pin the real default
 
-* **ID:** f-20261111-89 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261111-89 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** felix-codex-login
 * **Impact class:** ux
 * **Spotted outside diff:** seventh-sweep quality review (Felix t26u) at HEAD `bad635bd9`, keyboard-shortcuts lens
 * **Where:** `src/state/keybinds.ts:29` default `GO_TO_END.keys` is `"shift+down"`. The sibling bindings at `:27-28` and `:34` / `:37` use the `arrow*` form (`GO_TO_BRANCH_END: "arrowdown"`, `GO_TO_START: "shift+arrowup"`, `NEXT_BRANCHING: "shift+arrowright"`). `src/utils/formatKeymap.ts` maps only `arrowdown`/`arrowup`/`arrowleft`/`arrowright` to arrows; `down` is left as the word "down". Settings renders that string at `src/components/settings/KeybindInput.tsx:67` via `formatKeymap(keys)`. `src/utils/formatKeymap.test.ts:20` and `src/components/common/MoveControls.test.tsx:29` pin `"shift+arrowdown"`, which is not the production default. `MoveControls.tsx:88` binds `keyMap.GO_TO_END.keys` through `react-hotkeys-hook`.
@@ -23569,6 +23569,10 @@ Handled 2026-11-12 by drain session bdcaf057, together with f-20261112-23. The t
 * **Fix:** Change the `GO_TO_END` default to `"shift+arrowdown"`. Teach `formatKeymap` to treat `up`/`down`/`left`/`right` as aliases of the `arrow*` tokens so already-saved `"shift+down"` values still pretty-print. Point `formatKeymap.test.ts` and the `MoveControls.test.tsx` keymap mock at the production default string.
 * **Proof:** Defaults and formatter as cited at HEAD `bad635bd9`. `formatKeymap("shift+down")` is `"shift+down"`; `formatKeymap("shift+arrowup")` is `"shift+↑"`. `rg 'GO_TO_END' src` shows the production default is only `"shift+down"` in `keybinds.ts`; tests use `"shift+arrowdown"`. `tasks/decisions.md` has no entry requiring the short `down` form.
 * **Found by:** Grok Bot, quality review (t26u), HEAD `bad635bd9`.
+
+2026-11-13, drain session 6f337422-5e8c-4c7c-9baa-91015d1a2eac: the finding still holds at HEAD 1cac6ad53. Briefs for one Codex write leaf were written (/tmp/nf-34/brief-paging.md and /tmp/nf-34/brief-keymap.md, together covering f-20261112-34, f-20261111-62 and f-20261111-89). Both leaves failed before doing any work: the Codex CLI 0.167.2 returned `401 token_revoked` with "Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again." A direct `codex exec --profile leaf` probe reproduced it, even though `codex login status` still reports "Logged in using ChatGPT". push-review-policy §5 does not allow a failed write to switch to another writer.
+Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK only.' | codex exec --profile leaf -s read-only --ephemeral --skip-git-repo-check -` must answer without a 401. Then clear Blocked to none and let the drain re-pick the finding. No code was changed.
+<!-- ledger-meta {"command":"set-header","effect_lines":2,"effect_sha256":"764159c0e354f6374f29710242b6e84543fc71081f96b7805ec570ba554ffed9","header_sha256":"4f006d946ffe562c5392131872894069b532e7c2bf396c766827a84dfa725a01","header_status":"open","input_sha256":"06e2ac9ec68b11e22b3bf7b63ae8b89cbc6387430798b7825188afb34a66ad2d","kind":"mutation-receipt","operation":"abb8906aa1319553356d4c00ab7b5e96ea077c69aa48e691b4293d8e9199d9e5","options":{"headers":{"Blocked":"felix-codex-login"},"section":null},"request_id_sha256":null,"results":["f-20261111-89"],"target":"f-20261111-89","v":1} -->
 
 ---
 
