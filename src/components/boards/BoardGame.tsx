@@ -307,6 +307,8 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
   const invalidateUiSession = useCallback(
     (preserveCommandToken?: symbol) => {
       clearQueuedGameUpdates();
+      // Chessground keeps the stored premove across configure; the board outlives the session.
+      cgRef.current?.cancelPremove();
       if (reconciliationTimerRef.current !== null) {
         clearTimeout(reconciliationTimerRef.current);
         reconciliationTimerRef.current = null;
@@ -932,18 +934,17 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
     }
   }, [applyPendingUpdates]);
 
-  const onTakeBack = useCallback(
-    () =>
-      runGameCommand({
-        command: "takeback",
-        unavailable: undefined,
-        action: ({ gameId, session }) => tauri.takeBackGameMove(gameId, session),
-        onSuccess: (state, { gameId, session, generation }) => {
-          applyAuthoritativeState(state, gameId, session, generation);
-        },
-      }),
-    [applyAuthoritativeState, runGameCommand],
-  );
+  const onTakeBack = useCallback(() => {
+    cgRef.current?.cancelPremove();
+    return runGameCommand({
+      command: "takeback",
+      unavailable: undefined,
+      action: ({ gameId, session }) => tauri.takeBackGameMove(gameId, session),
+      onSuccess: (state, { gameId, session, generation }) => {
+        applyAuthoritativeState(state, gameId, session, generation);
+      },
+    });
+  }, [applyAuthoritativeState, runGameCommand]);
 
   const reportGameEventError = useCallback(
     (error: unknown, event?: { payload?: unknown }) => {

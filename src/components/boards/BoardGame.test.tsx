@@ -21,6 +21,9 @@ const fixtures = vi.hoisted(() => ({
   boardProps: null as any,
   playPremove: vi.fn(),
   queuePremove: vi.fn(),
+  cancelPremove: vi.fn(),
+  storedPremove: false,
+  premovesPlayed: 0,
   resignGame: vi.fn(),
   resetTree: vi.fn(),
   setEngineLogs: [] as unknown[],
@@ -194,6 +197,7 @@ vi.mock("./Board", () => ({
       (props as any).cgRef.current = {
         playPremove: fixtures.playPremove,
         queuePremove: fixtures.queuePremove,
+        cancelPremove: fixtures.cancelPremove,
       };
     }
     return null;
@@ -337,7 +341,20 @@ beforeEach(() => {
   fixtures.logColorChange = null;
   fixtures.boardProps = null;
   fixtures.positionTurn = undefined;
-  fixtures.queuePremove.mockReturnValue(true);
+  fixtures.storedPremove = false;
+  fixtures.premovesPlayed = 0;
+  fixtures.queuePremove.mockImplementation(() => {
+    fixtures.storedPremove = true;
+    return true;
+  });
+  fixtures.cancelPremove.mockImplementation(() => {
+    fixtures.storedPremove = false;
+  });
+  fixtures.playPremove.mockImplementation(() => {
+    if (!fixtures.storedPremove) return false;
+    fixtures.premovesPlayed += 1;
+    return true;
+  });
   fixtures.setEngineLogs = [];
   const rootNode = () => ({ fen: INITIAL_FEN, children: [] as any[] });
   fixtures.tree = {
@@ -1991,6 +2008,78 @@ test("terminal completion cancels the queued premove callback", async () => {
   );
   await act(async () => vi.runAllTimersAsync());
   expect(fixtures.playPremove).not.toHaveBeenCalled();
+  vi.useRealTimers();
+});
+
+test("a premove queued before game over is not played in the next game", async () => {
+  vi.useFakeTimers();
+  await render();
+  await start();
+  expect(fixtures.boardProps.onKeyboardPremove("e2", "e4")).toBe(true);
+  fixtures.cancelPremove.mockClear();
+  const oldGameId = store.get(gameIdFamily("tab-a"));
+  await act(async () =>
+    fixtures.listeners.get("gameOver")?.({
+      payload: {
+        gameId: oldGameId,
+        session: 1n,
+        revision: 2n,
+        result: { type: "draw", reason: "stalemate" },
+        moves: [{ uci: "e2e4", clock: null }],
+      },
+    }),
+  );
+  expect(fixtures.cancelPremove).toHaveBeenCalled();
+  await act(async () => button("Home.NewGame").click());
+  await start();
+  const newGameId = store.get(gameIdFamily("tab-a"));
+  act(() =>
+    fixtures.listeners.get("gameMove")?.({
+      payload: {
+        gameId: newGameId,
+        session: 1n,
+        revision: 1n,
+        moves: [{ uci: "e2e4", clock: null }],
+        whiteTime: null,
+        blackTime: null,
+      },
+    }),
+  );
+  await act(async () => vi.advanceTimersByTimeAsync(150));
+  await act(async () => vi.runOnlyPendingTimersAsync());
+  expect(fixtures.premovesPlayed).toBe(0);
+  expect(fixtures.storedPremove).toBe(false);
+  vi.useRealTimers();
+});
+
+test("take-back cancels the stored premove", async () => {
+  vi.useFakeTimers();
+  const takeback = Promise.withResolvers<any>();
+  fixtures.takeBackGameMove.mockReturnValue(takeback.promise);
+  await render();
+  await start();
+  expect(fixtures.boardProps.onKeyboardPremove("e2", "e4")).toBe(true);
+  const gameId = store.get(gameIdFamily("tab-a"));
+  fixtures.cancelPremove.mockClear();
+  act(() => void fixtures.onTakeBack!());
+  expect(fixtures.cancelPremove).toHaveBeenCalled();
+  act(() =>
+    fixtures.listeners.get("gameMove")?.({
+      payload: {
+        gameId,
+        session: 1n,
+        revision: 1n,
+        moves: [{ uci: "e2e4", clock: null }],
+        whiteTime: null,
+        blackTime: null,
+      },
+    }),
+  );
+  await act(async () => vi.advanceTimersByTimeAsync(150));
+  await act(async () => vi.runOnlyPendingTimersAsync());
+  expect(fixtures.premovesPlayed).toBe(0);
+  expect(fixtures.storedPremove).toBe(false);
+  await act(async () => takeback.resolve(state({ gameId, revision: 1n })));
   vi.useRealTimers();
 });
 
