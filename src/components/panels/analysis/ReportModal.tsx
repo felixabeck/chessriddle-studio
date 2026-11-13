@@ -174,16 +174,21 @@ function ReportModal({
     },
   });
 
+  const formRef = useRef(form);
+  formRef.current = form;
+  // Stored settings replace the form only when they change: storage hydration,
+  // another window, or this dialog's own save in analyze().
   useEffect(() => {
-    const engine =
-      localEngines.length === 0
-        ? ""
-        : !reportSettings.engine || !localEngines.some((l) => l.id === reportSettings.engine)
-          ? localEngines[0].id
-          : reportSettings.engine;
-
-    form.setValues({ ...reportSettings, engine });
-  }, [form, localEngines, reportSettings]);
+    formRef.current.setValues(reportSettings);
+  }, [reportSettings]);
+  // Fall back to the first local engine only when the selected engine is not
+  // installed; the other fields keep the user's edits.
+  useEffect(() => {
+    const current = formRef.current.getValues().engine;
+    if (localEngines.some((engine) => engine.id === current)) return;
+    const fallback = localEngines[0]?.id ?? "";
+    if (current !== fallback) formRef.current.setFieldValue("engine", fallback);
+  }, [localEngines, reportSettings]);
 
   async function analyze() {
     if (referenceUnavailable) return;

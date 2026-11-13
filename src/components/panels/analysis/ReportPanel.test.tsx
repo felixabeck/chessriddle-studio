@@ -137,6 +137,7 @@ vi.mock("./ReportModal", async (importOriginal) => {
 vi.mock("@mantine/form", () => ({
   useForm: () => ({
     values: mocks.reportSettings,
+    getValues: () => mocks.reportSettings,
     setValues: vi.fn(),
     setFieldValue: vi.fn(),
     getInputProps: () => ({}),

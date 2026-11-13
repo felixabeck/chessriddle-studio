@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, Profiler } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createStore, Provider } from "jotai";
@@ -31,10 +31,18 @@ const mocks = vi.hoisted(() => ({
       handle: { id: { id: "engine-handle" }, kind: "engine" as const },
       settings: [],
     },
+    {
+      type: "local" as const,
+      id: "engine-id-2",
+      name: "Komodo",
+      version: "1",
+      filename: "komodo",
+      handle: { id: { id: "engine-handle-2" }, kind: "engine" as const },
+      settings: [],
+    },
   ],
   notifyUnlessCancelled: vi.fn(),
   reportPersistError: vi.fn(),
-  formValues: undefined as Record<string, unknown> | undefined,
 }));
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -61,41 +69,27 @@ vi.mock("@/state/atoms", async () => {
   const { atom } = await import("jotai");
   return { enginesAtom: atom(mocks.engines), referenceDbAtom: atom(null) };
 });
-vi.mock("@mantine/form", async () => {
-  const { useReducer, useState } = await import("react");
-  return {
-    useForm: ({ initialValues }: { initialValues: Record<string, unknown> }) => {
-      const [, rerender] = useReducer((value: number) => value + 1, 0);
-      const [form] = useState(() => {
-        const values = { ...initialValues };
-        return {
-          values,
-          setValues: vi.fn((next: Record<string, unknown>) => {
-            Object.assign(values, next);
-            rerender();
-          }),
-          setFieldValue: vi.fn((field: string, next: unknown) => {
-            values[field] = next;
-            rerender();
-          }),
-          getInputProps: () => ({}),
-          onSubmit: (submit: () => void) => (event: React.FormEvent) => {
-            event.preventDefault();
-            submit();
-          },
-        };
-      });
-      mocks.formValues = form.values;
-      return form;
-    },
-  };
-});
 vi.mock("@mantine/core", () => ({
   Alert: ({ children }: { children: React.ReactNode }) => <div role="alert">{children}</div>,
   Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
     <button {...props}>{children}</button>
   ),
-  Checkbox: () => <input type="checkbox" />,
+  Checkbox: ({
+    checked,
+    onChange,
+    label,
+  }: {
+    checked?: boolean;
+    onChange?: React.ChangeEventHandler<HTMLInputElement>;
+    label?: React.ReactNode;
+  }) => (
+    <input
+      type="checkbox"
+      checked={!!checked}
+      onChange={onChange}
+      aria-label={typeof label === "string" ? label : undefined}
+    />
+  ),
   Group: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   NumberInput: ({ value, rightSection }: { value: number; rightSection?: React.ReactNode }) => (
     <>
@@ -159,7 +153,7 @@ beforeEach(() => {
   localStorage.setItem(
     "report-settings",
     JSON.stringify({
-      novelty: true,
+      novelty: false,
       reversed: true,
       variations: true,
       goMode: { t: "Time", c: 500 },
@@ -180,29 +174,53 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function renderReportModal(isCurrentOperation = (_id: string, _fingerprint: string) => true) {
+const MAX_STABLE_REPORT_RENDERS = 20;
+
+function countReportRenders() {
+  let renders = 0;
+  return {
+    onRender() {
+      renders += 1;
+      if (renders >= MAX_STABLE_REPORT_RENDERS) {
+        throw new Error("report form exceeded stable render bound");
+      }
+    },
+    get renders() {
+      return renders;
+    },
+  };
+}
+
+async function renderReportModal(
+  isCurrentOperation = (_id: string, _fingerprint: string) => true,
+  reportingMode = true,
+) {
+  const renders = countReportRenders();
   await act(async () => {
     root.render(
-      <Provider store={atomStore}>
-        <TreeStateContext.Provider value={tree}>
-          <ReportModal
-            tab="tab-id"
-            initialFen="start-fen"
-            moves={["e2e4"]}
-            reportingMode
-            closeReportingMode={vi.fn()}
-            setInProgress={setInProgress}
-            registerOperation={tree.getState().setReportOperationId}
-            isCurrentOperation={(id, fingerprint) =>
-              tree.getState().report.operationId === id && isCurrentOperation(id, fingerprint)
-            }
-          />
-        </TreeStateContext.Provider>
-      </Provider>,
+      <Profiler id="report-modal" onRender={renders.onRender}>
+        <Provider store={atomStore}>
+          <TreeStateContext.Provider value={tree}>
+            <ReportModal
+              tab="tab-id"
+              initialFen="start-fen"
+              moves={["e2e4"]}
+              reportingMode={reportingMode}
+              closeReportingMode={vi.fn()}
+              setInProgress={setInProgress}
+              registerOperation={tree.getState().setReportOperationId}
+              isCurrentOperation={(id, fingerprint) =>
+                tree.getState().report.operationId === id && isCurrentOperation(id, fingerprint)
+              }
+            />
+          </TreeStateContext.Provider>
+        </Provider>
+      </Profiler>,
     );
     await Promise.resolve();
     await Promise.resolve();
   });
+  return renders;
 }
 
 function deferred<T>() {
@@ -277,9 +295,11 @@ async function startUnmountedLinkedReport() {
 
 test("switching report go mode resets Depth to 20 and Time to 500 without mutating the previous mode", async () => {
   await renderReportModal();
-  const previousGoMode = mocks.formValues!.goMode;
-  expect(previousGoMode).toEqual({ t: "Time", c: 500 });
   const typeSelect = host.querySelectorAll("select")[1];
+  expect(typeSelect).toHaveProperty("value", "Time");
+  await act(async () => host.querySelector("button")!.click());
+  const previousGoMode = mocks.analyzeGame.mock.calls[0][4];
+  expect(previousGoMode).toEqual({ t: "Time", c: 500 });
 
   await act(async () => {
     typeSelect.value = "Depth";
@@ -287,11 +307,11 @@ test("switching report go mode resets Depth to 20 and Time to 500 without mutati
   });
   await act(async () => host.querySelector("button")!.click());
 
-  expect(mocks.analyzeGame).toHaveBeenCalledOnce();
-  expect(mocks.analyzeGame.mock.calls[0][4]).toEqual({ t: "Depth", c: 20 });
-  expect(mocks.analyzeGame.mock.calls[0][4]).not.toBe(previousGoMode);
+  expect(mocks.analyzeGame).toHaveBeenCalledTimes(2);
+  expect(mocks.analyzeGame.mock.calls[1][4]).toEqual({ t: "Depth", c: 20 });
+  expect(mocks.analyzeGame.mock.calls[1][4]).not.toBe(previousGoMode);
   expect(previousGoMode).toEqual({ t: "Time", c: 500 });
-  const depthGoMode = mocks.analyzeGame.mock.calls[0][4];
+  const depthGoMode = mocks.analyzeGame.mock.calls[1][4];
 
   await act(async () => {
     typeSelect.value = "Time";
@@ -299,9 +319,9 @@ test("switching report go mode resets Depth to 20 and Time to 500 without mutati
   });
   await act(async () => host.querySelector("button")!.click());
 
-  expect(mocks.analyzeGame).toHaveBeenCalledTimes(2);
-  expect(mocks.analyzeGame.mock.calls[1][4]).toEqual({ t: "Time", c: 500 });
-  expect(mocks.analyzeGame.mock.calls[1][4]).not.toBe(depthGoMode);
+  expect(mocks.analyzeGame).toHaveBeenCalledTimes(3);
+  expect(mocks.analyzeGame.mock.calls[2][4]).toEqual({ t: "Time", c: 500 });
+  expect(mocks.analyzeGame.mock.calls[2][4]).not.toBe(depthGoMode);
   expect(depthGoMode).toEqual({ t: "Depth", c: 20 });
   expect(previousGoMode).toEqual({ t: "Time", c: 500 });
 });
@@ -1022,4 +1042,82 @@ test("reports a quota-failed settings save while still starting the report", asy
       cause: quota,
     }),
   );
+});
+
+test("report form render count stays bounded while closed and after an edit", async () => {
+  const closed = await renderReportModal(undefined, false);
+  expect(closed.renders).toBeLessThan(MAX_STABLE_REPORT_RENDERS);
+
+  const opened = await renderReportModal(undefined, true);
+  expect(opened.renders).toBeLessThan(MAX_STABLE_REPORT_RENDERS);
+
+  const reversed = host.querySelector(
+    'input[aria-label="Board.Analysis.Reversed"]',
+  ) as HTMLInputElement;
+  await act(async () => reversed.click());
+  expect(opened.renders).toBeLessThan(MAX_STABLE_REPORT_RENDERS);
+});
+
+test("report form keeps reversed and engine edits after flush", async () => {
+  await renderReportModal();
+  const reversed = host.querySelector(
+    'input[aria-label="Board.Analysis.Reversed"]',
+  ) as HTMLInputElement;
+  const engineSelect = host.querySelectorAll("select")[0] as HTMLSelectElement;
+
+  await act(async () => reversed.click());
+  await act(async () => {
+    engineSelect.value = "engine-id-2";
+    engineSelect.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  expect(reversed.checked).toBe(false);
+  expect(engineSelect.value).toBe("engine-id-2");
+
+  await act(async () => host.querySelector("button")!.click());
+  expect(mocks.analyzeGame).toHaveBeenCalledOnce();
+  expect(mocks.analyzeGame.mock.calls[0][3]).toBe("engine-id-2");
+  expect(mocks.analyzeGame.mock.calls[0][5]).toEqual(expect.objectContaining({ reversed: false }));
+});
+
+test("falls back to the first installed engine without resetting a user-edited checkbox", async () => {
+  localStorage.setItem(
+    "report-settings",
+    JSON.stringify({
+      novelty: true,
+      reversed: true,
+      variations: true,
+      goMode: { t: "Time", c: 500 },
+      engine: "missing-engine",
+    }),
+  );
+  await renderReportModal();
+  const engineSelect = host.querySelectorAll("select")[0] as HTMLSelectElement;
+  expect(engineSelect.value).toBe("engine-id");
+
+  const reversed = host.querySelector(
+    'input[aria-label="Board.Analysis.Reversed"]',
+  ) as HTMLInputElement;
+  await act(async () => reversed.click());
+  expect(reversed.checked).toBe(false);
+
+  await act(async () => {
+    atomStore.set(enginesAtom, [
+      {
+        type: "local" as const,
+        id: "engine-id-2",
+        name: "Komodo",
+        version: "1",
+        filename: "komodo",
+        handle: { id: { id: "engine-handle-2" }, kind: "engine" as const },
+        settings: [],
+      },
+    ]);
+  });
+
+  expect(engineSelect.value).toBe("engine-id-2");
+  expect(reversed.checked).toBe(false);
 });
