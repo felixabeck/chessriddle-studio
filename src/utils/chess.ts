@@ -5,6 +5,7 @@ import { type Chess, normalizeMove } from "chessops/chess";
 import { INITIAL_FEN, makeFen, parseFen } from "chessops/fen";
 import { isPawns } from "chessops/pgn";
 import { makeSan } from "chessops/san";
+import { match } from "ts-pattern";
 import { type Outcome, type Score, type Token } from "@/bindings";
 import { isBasicAnnotation, isNagCode, nagGlyph, sortedNags } from "./annotation";
 import { parseSanOrUci, positionFromFen } from "./chessops";
@@ -99,11 +100,12 @@ export function getMoveText(
         if (opt.extraMarkups) {
             if (tree.score !== null) {
                 const depth = tree.depth === null ? "" : `,${tree.depth}`;
-                if (tree.score.value.type === "cp") {
-                    content += `[%eval ${formatScore(tree.score.value)}${depth}] `;
-                } else {
-                    content += `[%eval #${tree.score.value.value}${depth}] `;
-                }
+                const score = tree.score.value;
+                content += match(score.type)
+                    .with("cp", () => `[%eval ${formatScore(score)}${depth}] `)
+                    .with("mate", () => `[%eval #${score.value}${depth}] `)
+                    .with("dtz", () => "")
+                    .exhaustive();
             }
             if (tree.clock !== undefined) {
                 content += `[%clk ${makeClk(tree.clock)}] `;

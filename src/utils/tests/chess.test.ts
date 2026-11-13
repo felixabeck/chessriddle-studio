@@ -1905,6 +1905,14 @@ test("a mate evaluation keeps its depth", async () => {
     expect(getPGN(root, { ...ALL_MARKUPS, headers: null })).toBe("1. e4 {[%eval #-3,24] }");
 });
 
+test("a tablebase evaluation is omitted from PGN %eval", () => {
+    const root = defaultTree().root;
+    const move = addMainlineMove(root, "e4");
+    move.score = { value: { type: "dtz", value: 12 }, wdl: null };
+
+    expect(getPGN(root, { ...ALL_MARKUPS, headers: null })).not.toContain("%eval");
+});
+
 test("a variation nested at a variation's first move is kept with its starting comment", async () => {
     // 1. e4 e5 (1... c5 ({[%evp 0,34]} 1... e6) 2. Nf3) *
     const { root } = await parseTokens([

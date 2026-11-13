@@ -20,13 +20,11 @@ export function formatScore(score: ScoreValue, precision = 2): string {
         .with("mate", () => `M${Math.abs(score.value)}`)
         .with("dtz", () => `DTZ${Math.abs(score.value)}`)
         .exhaustive();
-    if (score.type !== "dtz") {
-        if (score.value > 0) {
-            scoreText = `+${scoreText}`;
-        }
-        if (score.value < 0) {
-            scoreText = `-${scoreText}`;
-        }
+    if (score.value > 0) {
+        scoreText = `+${scoreText}`;
+    }
+    if (score.value < 0) {
+        scoreText = `-${scoreText}`;
     }
     return scoreText;
 }
@@ -68,7 +66,7 @@ export function normalizeScore(score: ScoreValue, color: Color): number {
     if (color === "black") {
         cp *= -1;
     }
-    if (score.type === "mate") {
+    if (score.type !== "cp") {
         cp = CP_CEILING * Math.sign(cp);
     }
     return minMax(cp, -CP_CEILING, CP_CEILING);

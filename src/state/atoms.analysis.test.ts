@@ -498,3 +498,52 @@ test("unavailable threat returns no arrows or line owner despite poisoned cache 
     expect(store.get(createFirstEngineWithLinesAtom(tab, INITIAL_FEN, []))).toBe(engine.id);
     disposeTabAtoms(tab);
 });
+
+test("best-move arrows keep only tablebase-winning dtz lines after normalizing like mate", async () => {
+    const store = createStore();
+    const tab = "analysis-dtz-arrows";
+    store.set(tabsAtom, [
+        { value: tab, name: "Analysis", type: "analysis", gameOrigin: { kind: "none" } },
+    ]);
+    store.set(activeTabAtom, tab);
+    await store.set(enginesAtom, [engine]);
+    store.set(threatFamily(tab), false);
+
+    const line = (uci: string, value: BestMoves["score"]["value"]): BestMoves => ({
+        ...lines(uci)[0],
+        score: { value, wdl: null },
+    });
+    const payload = (sign: 1 | -1): BestMoves[] => [
+        line("e2e4", { type: "dtz", value: 12 * sign }),
+        line("d2d4", { type: "cp", value: 0 }),
+        line("g1f3", { type: "dtz", value: -5 * sign }),
+        line("c2c4", { type: "cp", value: -150 * sign }),
+    ];
+
+    store.set(
+        engineMovesFamily({ tab, engine: engine.id }),
+        new AnalysisLineMemory(
+            new Map([[analysisSearch(INITIAL_FEN, [], false).key!, payload(1)]]),
+        ),
+    );
+    expect(
+        store
+            .get(createBestMovesAtom(tab, INITIAL_FEN, []))
+            .get(0)
+            ?.map((arrow) => arrow.pv),
+    ).toEqual([["e2e4"]]);
+
+    const blackFen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
+    store.set(
+        engineMovesFamily({ tab, engine: engine.id }),
+        new AnalysisLineMemory(new Map([[analysisSearch(blackFen, [], false).key!, payload(-1)]])),
+    );
+    expect(
+        store
+            .get(createBestMovesAtom(tab, blackFen, []))
+            .get(0)
+            ?.map((arrow) => arrow.pv),
+    ).toEqual([["e2e4"]]);
+
+    disposeTabAtoms(tab);
+});

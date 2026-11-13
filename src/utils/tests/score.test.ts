@@ -6,6 +6,7 @@ import {
     getAnnotation,
     getCPLoss,
     getWinChance,
+    normalizeScore,
     positionAssessment,
 } from "../score";
 
@@ -20,6 +21,22 @@ test("should format a negative cp score correctly", () => {
 test("should format a mate score correctly", () => {
     expect(formatScore({ type: "mate", value: 5 })).toBe("+M5");
     expect(formatScore({ type: "mate", value: -5 })).toBe("-M5");
+});
+
+test("should format a dtz score with a leading sign", () => {
+    expect(formatScore({ type: "dtz", value: 12 })).toBe("+DTZ12");
+    expect(formatScore({ type: "dtz", value: -12 })).toBe("-DTZ12");
+    expect(formatScore({ type: "dtz", value: 0 })).toBe("DTZ0");
+    expect(formatScore({ type: "dtz", value: 12 }, 1).slice(1)).toBe("DTZ12");
+});
+
+test("normalizeScore maps dtz like mate to the centipawn ceiling", () => {
+    expect(normalizeScore({ type: "dtz", value: 12 }, "white")).toBe(1000);
+    expect(normalizeScore({ type: "dtz", value: -5 }, "white")).toBe(-1000);
+    expect(normalizeScore({ type: "dtz", value: 12 }, "black")).toBe(-1000);
+    expect(normalizeScore({ type: "dtz", value: -5 }, "black")).toBe(1000);
+    expect(normalizeScore({ type: "dtz", value: 0 }, "white")).toBeCloseTo(0);
+    expect(normalizeScore({ type: "dtz", value: 0 }, "black")).toBeCloseTo(0);
 });
 
 test("should calculate the win chance correctly", () => {
