@@ -185,6 +185,47 @@ test("renders returned games in order and opens the clicked row", async () => {
   expect(mocks.navigate).toHaveBeenCalledWith({ to: "/" });
 });
 
+test("a pending open admits only one click across rows", async () => {
+  const first = game({
+    id: 2,
+    date: "2026.02.02",
+    white: "Magnus",
+    black: "Hikaru",
+  });
+  const second = game({
+    id: 1,
+    date: "2026.01.01",
+    white: "Nepo",
+    white_id: 7,
+    black: "Magnus",
+    black_id: player.id,
+  });
+  mocks.queryGames.mockResolvedValue({ data: [first, second], count: 2 });
+
+  let resolveOpen: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    resolveOpen = resolve;
+  });
+  mocks.runTabCreation.mockImplementation(() => held);
+
+  await renderList();
+  await vi.waitFor(() => expect(container.textContent).toContain("Hikaru"));
+
+  const rows = Array.from(container.querySelectorAll("button"));
+  expect(rows).toHaveLength(2);
+
+  await act(async () => {
+    rows[0].click();
+    rows[0].click();
+    rows[1].click();
+  });
+  expect(mocks.runTabCreation).toHaveBeenCalledTimes(1);
+
+  await act(async () => {
+    resolveOpen();
+  });
+});
+
 test("a non-cancellation error renders inline and does not toast", async () => {
   mocks.queryGames.mockRejectedValue(new Error("disk failed"));
   await renderList();

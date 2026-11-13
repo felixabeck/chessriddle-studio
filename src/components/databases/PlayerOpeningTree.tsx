@@ -17,6 +17,7 @@ import { useTranslation } from "react-i18next";
 import type { DatabaseHandle, NormalizedGame, Player } from "@/bindings";
 import { Chessground } from "@/chessground/Chessground";
 import { IconAction } from "@/components/common/IconAction";
+import { useGameOpen } from "@/components/common/gameOpen";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import ResultsChart from "@/components/home/PersonalCardPanels/ResultsChart";
 import DatabaseLoader from "@/components/panels/database/DatabaseLoader";
@@ -82,12 +83,15 @@ function OpeningTree({ player, file }: { player: Player; file: DatabaseHandle })
   const atoms = useStore();
   const navigate = useNavigate();
   const onError = (cause: unknown) => notifyUnlessCancelled(t("Common.Error"), cause);
-  const open = (game: NormalizedGame) =>
-    void runTabCreation({
-      create: () => openDatabaseGame({ game, database: file, setTabs, addRecentFile }),
-      onSuccess: () => navigate({ to: "/" }),
-      onError,
-    });
+  const gameOpen = useGameOpen(
+    (game: NormalizedGame) =>
+      runTabCreation({
+        create: () => openDatabaseGame({ game, database: file, setTabs, addRecentFile }),
+        onSuccess: () => navigate({ to: "/" }),
+        onError,
+      }),
+    onError,
+  );
   const changeMoves = (next: string[]) => {
     setSelected(null);
     setMoves(next);
@@ -385,7 +389,7 @@ function OpeningTree({ player, file }: { player: Player; file: DatabaseHandle })
                     tabIndex={0}
                     aria-selected={selected?.id === game.id}
                     onClick={() => setSelected(game)}
-                    onDoubleClick={() => open(game)}
+                    onDoubleClick={() => void gameOpen.activate(game)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") setSelected(game);
                     }}
@@ -410,7 +414,9 @@ function OpeningTree({ player, file }: { player: Player; file: DatabaseHandle })
                 <Button
                   size="xs"
                   variant="default"
-                  onClick={() => open(selected)}
+                  loading={gameOpen.pending}
+                  aria-busy={gameOpen.pending}
+                  onClick={() => void gameOpen.activate(selected)}
                   data-opening-open
                 >
                   {t("Databases.OpeningTree.Open", { defaultValue: "Open on board" })}

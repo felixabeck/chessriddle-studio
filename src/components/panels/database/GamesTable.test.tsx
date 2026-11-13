@@ -35,15 +35,22 @@ vi.mock("mantine-datatable", () => ({
   DataTable: ({
     records,
     onRowClick,
+    customRowAttributes,
   }: {
     records: NormalizedGame[];
     onRowClick: (event: { record: NormalizedGame }) => void;
+    customRowAttributes?: (record: NormalizedGame) => Record<string, unknown>;
   }) => (
     <>
       {records.map((record) => (
-        <button key={record.id} onClick={() => onRowClick({ record })}>
+        <div
+          key={record.id}
+          role="row"
+          {...customRowAttributes?.(record)}
+          onClick={() => onRowClick({ record })}
+        >
           {record.white}
-        </button>
+        </div>
       ))}
     </>
   ),
@@ -93,7 +100,7 @@ afterEach(async () => {
   host.remove();
   vi.unstubAllGlobals();
 });
-async function open() {
+async function renderTable() {
   await act(async () =>
     root.render(
       <Provider store={workspace}>
@@ -101,7 +108,30 @@ async function open() {
       </Provider>,
     ),
   );
-  await act(async () => host.querySelector("button")!.click());
+}
+function row() {
+  return host.querySelector<HTMLElement>('[role="row"]')!;
+}
+async function open() {
+  await renderTable();
+  await act(async () => row().click());
+}
+
+function linkedSource() {
+  return {
+    locator,
+    file,
+    name: "Source",
+    ordinal: 4,
+    numGames: 5,
+    purpose: "game",
+    game: {
+      pgn: '[Event "Original"]\n[Custom "preserved"]\n\n1. e4 $1 (1. d4 d5) e5 *',
+      stamp: locator.stamp,
+      revision: locator.generation,
+      present: true,
+    },
+  };
 }
 
 test("board-panel linked results open original PGN bytes and persist the qualified source occurrence", async () => {
@@ -153,4 +183,26 @@ test("an obsolete board-panel result is refused before tab admission", async () 
   expect(workspace.get(tabsAtom)).toEqual([]);
   expect(mocks.parse).not.toHaveBeenCalled();
   expect(mocks.notify).toHaveBeenCalledOnce();
+});
+
+test("rows are focusable and Enter opens the linked game", async () => {
+  mocks.resolve.mockResolvedValueOnce(linkedSource());
+  mocks.parse.mockResolvedValueOnce(defaultTree());
+  await renderTable();
+  expect(row().tabIndex).toBe(0);
+  await act(async () =>
+    row().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
+  expect(mocks.resolve).toHaveBeenCalledExactlyOnceWith(database, 7, locator);
+  expect(workspace.get(tabsAtom)).toHaveLength(1);
+});
+
+test("a pending open ignores a second click", async () => {
+  mocks.resolve.mockReturnValueOnce(new Promise(() => {}));
+  await renderTable();
+  await act(async () => {
+    row().click();
+    row().click();
+  });
+  expect(mocks.resolve).toHaveBeenCalledTimes(1);
 });

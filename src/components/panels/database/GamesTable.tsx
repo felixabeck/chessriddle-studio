@@ -3,6 +3,7 @@ import { useAtom, useSetAtom } from "jotai";
 import { DataTable } from "mantine-datatable";
 import { memo, useEffect, useState } from "react";
 import type { DatabaseHandle, NormalizedGame } from "@/bindings";
+import { gameRowActivation, useGameOpen } from "@/components/common/gameOpen";
 import PlayerRatingCell from "@/components/databases/PlayerRatingCell";
 import { dateColumn, numericColumn } from "@/components/databases/databaseColumns";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
@@ -31,6 +32,16 @@ function GamesTable({
   }, [games]);
 
   const navigate = useNavigate();
+  const reportOpenError = (error: unknown) => notifyUnlessCancelled(t("Common.Error"), error);
+  const gameOpen = useGameOpen(
+    (game: NormalizedGame) =>
+      runTabCreation({
+        create: () => openDatabaseGame({ game, database: databasePath, setTabs, addRecentFile }),
+        onSuccess: () => navigate({ to: "/" }),
+        onError: reportOpenError,
+      }),
+    reportOpenError,
+  );
   return (
     <DataTable
       withTableBorder
@@ -42,14 +53,12 @@ function GamesTable({
       page={page}
       onPageChange={setPage}
       onRowClick={(e) => {
-        const game = e.record;
-        void runTabCreation({
-          create: () =>
-            openDatabaseGame({ game: game, database: databasePath, setTabs, addRecentFile }),
-          onSuccess: () => navigate({ to: "/" }),
-          onError: (error) => notifyUnlessCancelled(t("Common.Error"), error),
-        });
+        void gameOpen.activate(e.record);
       }}
+      customRowAttributes={(record) => ({
+        tabIndex: 0,
+        onKeyDown: gameRowActivation(record, gameOpen.activate).onKeyDown,
+      })}
       columns={[
         {
           accessor: "white",

@@ -8,6 +8,9 @@ import type { PlayerGameInfo } from "@/bindings";
 dayjs.extend(customParseFormat);
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+const mocks = vi.hoisted(() => ({
+  getOpeningFromName: vi.fn(),
+}));
 vi.mock("@mantine/core", () => {
   const Container = ({ children }: { children: React.ReactNode }) => <div>{children}</div>;
   return {
@@ -19,6 +22,11 @@ vi.mock("@mantine/core", () => {
       <div {...props}>{children}</div>
     ),
     Text: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+    UnstyledButton: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+      <button type="button" {...props}>
+        {children}
+      </button>
+    ),
   };
 });
 vi.mock("recharts", () => ({
@@ -137,7 +145,7 @@ vi.mock("./TimeRangeSlider", () => ({
     </>
   ),
 }));
-vi.mock("@/platform/tauri", () => ({ tauri: { getOpeningFromName: vi.fn() } }));
+vi.mock("@/platform/tauri", () => ({ tauri: { getOpeningFromName: mocks.getOpeningFromName } }));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
 vi.mock("@tanstack/react-virtual", () => ({
   useVirtualizer: ({ count }: { count: number }) => ({
@@ -150,7 +158,10 @@ vi.mock("jotai", () => ({ useAtom: () => [[], vi.fn()], useAtomValue: () => 100 
 vi.mock("@/state/atoms", () => ({ fontSizeAtom: {}, tabsAtom: {} }));
 vi.mock("@/components/files/notifyError", () => ({ notifyUnlessCancelled: vi.fn() }));
 vi.mock("@/utils/chess", () => ({ parsePGN: vi.fn() }));
-vi.mock("@/utils/tabs", () => ({ createTab: vi.fn(), runTabCreation: vi.fn() }));
+vi.mock("@/utils/tabs", () => ({
+  createTab: vi.fn(),
+  runTabCreation: vi.fn(async ({ create }: { create: () => Promise<unknown> }) => create()),
+}));
 vi.mock("@/utils/treeReducer", () => ({ countMainPly: vi.fn(), defaultTree: vi.fn() }));
 
 import OpeningsPanel from "./OpeningsPanel";
@@ -852,6 +863,20 @@ test("Ratings manual slider counts incomplete dates only on the full timeline", 
   // Dates always include today, so start: 1 also drops yesterday's dated game.
   // The assertion is that incomplete-date games are not counted.
   expect(container.textContent).toContain("0 Common.Games");
+});
+
+test("opening names are single-flight buttons", async () => {
+  mocks.getOpeningFromName.mockReturnValueOnce(new Promise(() => {}));
+  await render(<OpeningsPanel playerName="Magnus" info={duplicatedOpeningStatistics} isDatabase />);
+  const sicilian = [...container.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Sicilian Defense"),
+  )!;
+  expect(sicilian.tagName).toBe("BUTTON");
+  await act(async () => {
+    sicilian.click();
+    sicilian.click();
+  });
+  expect(mocks.getOpeningFromName).toHaveBeenCalledTimes(1);
 });
 
 test("Openings sums duplicate opening keys and retains each colour's results", async () => {

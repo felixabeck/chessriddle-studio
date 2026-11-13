@@ -425,6 +425,34 @@ test("game selection previews within the card, Open and double-click use the est
   expect(container.querySelector("[data-opening-games]")?.textContent).toContain("First opponent");
 });
 
+test("Open on board and double-click share one in-flight open", async () => {
+  let complete!: (value: string) => void;
+  mocks.openGame.mockReset();
+  mocks.openGame.mockReturnValue(
+    new Promise((resolve) => {
+      complete = resolve;
+    }),
+  );
+  await render();
+  await click(container.querySelector("[data-opening-games] tbody tr")!);
+  const openButton = container.querySelector("[data-opening-open]")!;
+  await click(openButton);
+  await click(openButton);
+  await act(async () =>
+    container
+      .querySelector("[data-opening-games] tbody tr")!
+      .dispatchEvent(new MouseEvent("dblclick", { bubbles: true })),
+  );
+  expect(mocks.openGame).toHaveBeenCalledTimes(1);
+  expect(
+    openButton.getAttribute("aria-busy") === "true" ||
+      openButton.getAttribute("data-loading") === "true",
+  ).toBe(true);
+  await act(async () => complete("opened-game"));
+  await click(container.querySelector("[data-opening-open]")!);
+  expect(mocks.openGame).toHaveBeenCalledTimes(2);
+});
+
 test("Prepare admits the mainline and orientation, presets before navigation, then the real Database panel searches A while reference B stays unchanged", async () => {
   await render();
   await click(row("e4"));

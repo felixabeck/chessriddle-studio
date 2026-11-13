@@ -4,6 +4,7 @@ import { useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import useSWRImmutable from "swr/immutable";
 import type { DatabaseHandle, NormalizedGame, Player } from "@/bindings";
+import { useGameOpen } from "@/components/common/gameOpen";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { errorUnlessCancelled } from "@/platform/errors";
@@ -17,6 +18,19 @@ const LAST_GAMES_LIMIT = 10;
 
 function LastGamesList({ player, file }: { player: Player; file: DatabaseHandle }) {
   const { t } = useTranslation();
+  const setTabs = useSetAtom(tabsAtom);
+  const addRecentFile = useSetAtom(addRecentFileAtom);
+  const navigate = useNavigate();
+  const onError = (cause: unknown) => notifyUnlessCancelled(t("Common.Error"), cause);
+  const gameOpen = useGameOpen(
+    (game: NormalizedGame) =>
+      runTabCreation({
+        create: () => openDatabaseGame({ game, database: file, setTabs, addRecentFile }),
+        onSuccess: () => navigate({ to: "/" }),
+        onError,
+      }),
+    onError,
+  );
   const requestKey = ["player-last-games", file, player.id] as const;
   const requestOwner = useNativeRequestOwner(requestKey);
   const { data, error, isLoading } = useSWRImmutable(
@@ -62,7 +76,13 @@ function LastGamesList({ player, file }: { player: Player; file: DatabaseHandle 
       {!visibleError &&
         !isLoading &&
         data?.data.map((game) => (
-          <LastGameRow key={game.id} game={game} player={player} file={file} />
+          <LastGameRow
+            key={game.id}
+            game={game}
+            player={player}
+            pending={gameOpen.pending}
+            onOpen={() => gameOpen.activate(game)}
+          />
         ))}
     </Stack>
   );
@@ -71,16 +91,15 @@ function LastGamesList({ player, file }: { player: Player; file: DatabaseHandle 
 function LastGameRow({
   game,
   player,
-  file,
+  pending,
+  onOpen,
 }: {
   game: NormalizedGame;
   player: Player;
-  file: DatabaseHandle;
+  pending: boolean;
+  onOpen: () => void;
 }) {
   const { t } = useTranslation();
-  const setTabs = useSetAtom(tabsAtom);
-  const addRecentFile = useSetAtom(addRecentFileAtom);
-  const navigate = useNavigate();
   const isWhite = game.white_id === player.id;
   const opponent = isWhite ? game.black : game.white;
   const opponentElo = isWhite ? game.black_elo : game.white_elo;
@@ -96,16 +115,7 @@ function LastGameRow({
   const opening = game.eco ?? "";
 
   return (
-    <UnstyledButton
-      className={classes.row}
-      onClick={() => {
-        void runTabCreation({
-          create: () => openDatabaseGame({ game, database: file, setTabs, addRecentFile }),
-          onSuccess: () => navigate({ to: "/" }),
-          onError: (cause) => notifyUnlessCancelled(t("Common.Error"), cause),
-        });
-      }}
-    >
+    <UnstyledButton className={classes.row} aria-busy={pending} onClick={() => void onOpen()}>
       <Group gap="xs" wrap="wrap" justify="space-between">
         <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
           <Box

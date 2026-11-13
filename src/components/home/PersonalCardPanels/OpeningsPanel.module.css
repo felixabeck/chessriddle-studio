@@ -1,5 +1,7 @@
 .link {
   cursor: pointer;
+  text-align: start;
+  font: inherit;
 }
 
 .link:hover {
