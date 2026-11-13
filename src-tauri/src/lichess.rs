@@ -88,13 +88,6 @@ impl NdjsonLines {
     fn finish(self, mut on_line: impl FnMut(&[u8]) -> Result<(), Error>) -> Result<(), Error> {
         on_line(&self.line)
     }
-
-    fn finish_while(
-        self,
-        mut on_line: impl FnMut(&[u8]) -> Result<bool, Error>,
-    ) -> Result<bool, Error> {
-        on_line(&self.line)
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -159,6 +152,31 @@ fn coverage_line(line: &[u8], holds: &mut Vec<CoverageHold>) -> Result<(), Error
     Ok(())
 }
 
+#[cfg(test)]
+pub(crate) fn coverage_object(id: &str, rated: bool, created_at: i64) -> String {
+    format!(
+        r#"{{"id":"{id}","rated":{rated},"perf":"blitz","status":"mate","createdAt":{created_at}}}"#
+    )
+}
+
+#[cfg(test)]
+fn coverage_id(index: usize) -> String {
+    format!("{index:08}")
+}
+
+#[cfg(test)]
+pub(crate) fn coverage_objects(count: usize, last_rated: bool) -> (Vec<u8>, i64) {
+    let mut body = Vec::new();
+    let mut last = 0;
+    for index in 0..count {
+        last = 1_000 + index as i64;
+        let rated = last_rated || index + 1 < count;
+        body.extend_from_slice(coverage_object(&coverage_id(index), rated, last).as_bytes());
+        body.push(b'\n');
+    }
+    (body, last)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct CoverageProbe {
     pub holds: Vec<CoverageHold>,
@@ -176,30 +194,7 @@ pub(crate) fn coverage_until_ms(
     }
 }
 
-pub(crate) async fn download_coverage_holds(
-    url: Url,
-    token: &str,
-    transport: &dyn crate::infra::net::DownloadTransport,
-    cancellation: &tokio_util::sync::CancellationToken,
-) -> Result<Vec<CoverageHold>, Error> {
-    Ok(
-        read_coverage_probe(url, token, transport, cancellation, None)
-            .await?
-            .holds,
-    )
-}
-
-pub(crate) async fn probe_coverage_chunk(
-    url: Url,
-    token: &str,
-    transport: &dyn crate::infra::net::DownloadTransport,
-    cancellation: &tokio_util::sync::CancellationToken,
-    max_games: usize,
-) -> Result<CoverageProbe, Error> {
-    read_coverage_probe(url, token, transport, cancellation, Some(max_games)).await
-}
-
-async fn read_coverage_probe(
+pub(crate) async fn read_coverage(
     url: Url,
     token: &str,
     transport: &dyn crate::infra::net::DownloadTransport,
@@ -254,7 +249,7 @@ async fn read_coverage_probe(
             "Actual downloaded size mismatch".into(),
         ));
     }
-    let _ = lines.finish_while(|line| on_line(line, &mut probe))?;
+    lines.finish(|line| on_line(line, &mut probe).map(|_| ()))?;
     Ok(probe)
 }
 
@@ -913,13 +908,15 @@ mod tests {
             }
         }
 
-        let holds = download_coverage_holds(
+        let holds = read_coverage(
             Url::parse("https://lichess.org/api/games/user/player")?,
             "fixture-token",
             &ChunkedCoverageTransport,
             &tokio_util::sync::CancellationToken::new(),
+            None,
         )
-        .await?;
+        .await?
+        .holds;
         assert_eq!(
             holds,
             vec![
@@ -998,30 +995,8 @@ mod tests {
         }
     }
 
-    fn coverage_object(id: &str, rated: bool, created_at: i64) -> String {
-        format!(
-            r#"{{"id":"{id}","rated":{rated},"perf":"blitz","status":"mate","createdAt":{created_at}}}"#
-        )
-    }
-
-    fn coverage_id(index: usize) -> String {
-        format!("{index:08}")
-    }
-
-    fn coverage_objects(count: usize, last_rated: bool) -> (Vec<u8>, i64) {
-        let mut body = Vec::new();
-        let mut last = 0;
-        for index in 0..count {
-            last = 1_000 + index as i64;
-            let rated = last_rated || index + 1 < count;
-            body.extend_from_slice(coverage_object(&coverage_id(index), rated, last).as_bytes());
-            body.push(b'\n');
-        }
-        (body, last)
-    }
-
     struct ProbeTransport {
-        body: Vec<u8>,
+        chunks: Vec<Vec<u8>>,
         content_length: Option<u64>,
         fail_after_body: bool,
         requests: std::sync::Mutex<Vec<(String, reqwest::header::HeaderMap)>>,
@@ -1030,8 +1005,12 @@ mod tests {
     impl ProbeTransport {
         fn new(body: Vec<u8>) -> Self {
             let content_length = Some(body.len() as u64);
+            Self::chunks(vec![body], content_length)
+        }
+
+        fn chunks(chunks: Vec<Vec<u8>>, content_length: Option<u64>) -> Self {
             Self {
-                body,
+                chunks,
                 content_length,
                 fail_after_body: false,
                 requests: std::sync::Mutex::new(Vec::new()),
@@ -1050,7 +1029,12 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push((url.to_string(), headers));
-            let mut chunks = vec![Ok(bytes::Bytes::from(self.body.clone()))];
+            let mut chunks: Vec<Result<bytes::Bytes, Error>> = self
+                .chunks
+                .iter()
+                .cloned()
+                .map(|chunk| Ok(bytes::Bytes::from(chunk)))
+                .collect();
             if self.fail_after_body {
                 chunks.push(Err(Error::InvalidInput("stream cut".into())));
             }
@@ -1064,12 +1048,12 @@ mod tests {
     }
 
     async fn probe_body(body: Vec<u8>, max_games: usize) -> Result<CoverageProbe, Error> {
-        probe_coverage_chunk(
+        read_coverage(
             Url::parse("https://lichess.org/api/games/user/player").unwrap(),
             "fixture-token",
             &ProbeTransport::new(body),
             &tokio_util::sync::CancellationToken::new(),
-            max_games,
+            Some(max_games),
         )
         .await
     }
@@ -1128,12 +1112,12 @@ mod tests {
             fail_after_body: true,
             ..ProbeTransport::new(body)
         };
-        let error = probe_coverage_chunk(
+        let error = read_coverage(
             Url::parse("https://lichess.org/api/games/user/player").unwrap(),
             "fixture-token",
             &transport,
             &tokio_util::sync::CancellationToken::new(),
-            LICHESS_CHUNK_GAMES,
+            Some(LICHESS_CHUNK_GAMES),
         )
         .await
         .unwrap_err();
@@ -1147,12 +1131,12 @@ mod tests {
             content_length: Some(body.len() as u64 + 40),
             ..ProbeTransport::new(body)
         };
-        let error = probe_coverage_chunk(
+        let error = read_coverage(
             Url::parse("https://lichess.org/api/games/user/player").unwrap(),
             "fixture-token",
             &transport,
             &tokio_util::sync::CancellationToken::new(),
-            LICHESS_CHUNK_GAMES,
+            Some(LICHESS_CHUNK_GAMES),
         )
         .await
         .unwrap_err();
@@ -1170,33 +1154,12 @@ mod tests {
             br#"{"id":"tailtail","rated":true,"perf":"blitz","status":"mate","createdAt":"#,
         );
         let full_len = chunk.len() as u64 + 20;
-        struct TailTransport {
-            chunk: Vec<u8>,
-            full_len: u64,
-        }
-        #[async_trait::async_trait]
-        impl crate::infra::net::DownloadTransport for TailTransport {
-            async fn request(
-                &self,
-                _: &str,
-                _: reqwest::header::HeaderMap,
-            ) -> Result<crate::infra::net::DownloadResponse, Error> {
-                Ok(crate::infra::net::DownloadResponse {
-                    status: 200,
-                    headers: reqwest::header::HeaderMap::new(),
-                    content_length: Some(self.full_len),
-                    stream: Box::pin(futures_util::stream::iter(vec![Ok(bytes::Bytes::from(
-                        self.chunk.clone(),
-                    ))])),
-                })
-            }
-        }
-        let probe = probe_coverage_chunk(
+        let probe = read_coverage(
             Url::parse("https://lichess.org/api/games/user/player").unwrap(),
             "fixture-token",
-            &TailTransport { chunk, full_len },
+            &ProbeTransport::chunks(vec![chunk], Some(full_len)),
             &tokio_util::sync::CancellationToken::new(),
-            LICHESS_CHUNK_GAMES,
+            Some(LICHESS_CHUNK_GAMES),
         )
         .await?;
         assert_eq!(probe.counted, LICHESS_CHUNK_GAMES);

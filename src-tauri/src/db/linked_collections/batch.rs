@@ -556,11 +556,7 @@ impl CollectionService {
             if record.account.as_ref() != Some(&receipt.account) {
                 return Err(conflict());
             }
-            if receipt.since_ms.is_none()
-                || record
-                    .coverage_cursor_ms
-                    .is_some_and(|cursor| receipt.since_ms.is_some_and(|since| since <= cursor))
-            {
+            if coverage_cursor_advances_without_gap(receipt.since_ms, record.coverage_cursor_ms) {
                 record.coverage_cursor_ms = Some(receipt.through_ms);
                 record.coverage_cursor_current = receipt.coverage_cursor_current;
             }

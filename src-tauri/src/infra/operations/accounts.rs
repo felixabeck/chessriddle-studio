@@ -111,7 +111,8 @@ pub(crate) struct AccountCompletion {
     coverage_floor_ms: Option<i64>,
     #[serde(skip)]
     #[specta(skip)]
-    chunk_completed: bool,
+    // The loop owns the position; do not re-read the cursor.
+    position_from_job: bool,
 }
 
 type AccountAttempt = futures_util::future::Shared<
@@ -174,7 +175,7 @@ impl OperationRegistry {
                 importing: false,
                 coverage_holds: None,
                 coverage_floor_ms: None,
-                chunk_completed: false,
+                position_from_job: false,
             }
         };
         let lease = self.accept_in_state(
@@ -419,7 +420,7 @@ pub(crate) async fn start_account_completion<R, D, F>(
                     let mut downloaded_in_attempt = false;
                     if !snapshot.deletion_pending {
                         if snapshot.publication.is_none()
-                            && !snapshot.chunk_completed
+                            && !snapshot.position_from_job
                             && matches!(
                                 &snapshot.request.target,
                                 AccountImportTarget::Unlinked { .. }
@@ -629,7 +630,7 @@ pub(crate) async fn start_account_completion<R, D, F>(
                     snapshot.committed_database = None;
                     snapshot.deletion_pending = false;
                     snapshot.importing = false;
-                    snapshot.chunk_completed = true;
+                    snapshot.position_from_job = true;
                 }
             })
             .catch_unwind()

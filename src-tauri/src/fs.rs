@@ -18,14 +18,15 @@ use tokio_util::sync::CancellationToken;
 
 use crate::error::{Error, ErrorPayload};
 use crate::progress::{
-    begin_progress, publish_download_failure, update_progress_with_state, ProgressGeneration,
-    ProgressLease, ProgressState,
+    begin_progress, handle_running_progress_result, publish_download_failure,
+    update_progress_with_state, ProgressGeneration, ProgressLease, ProgressState,
 };
 use crate::AppState;
 
 pub(crate) const MAX_ACTIVE_DOWNLOADS: usize = 32;
 const DOWNLOAD_DEADLINE: Duration = Duration::from_secs(60 * 60);
 const DOWNLOAD_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+const PROGRESS_REPORT_STEP_PERCENT: f64 = 0.1;
 const MAX_DOWNLOAD_REDIRECTS: usize = 10;
 const MAX_ARCHIVE_PATH_BYTES: usize = 1024;
 const TAR_BLOCK_SIZE: usize = 512;
@@ -581,7 +582,7 @@ where
 
     let mut downloaded: u64 = 0;
     let mut digest = expected_sha256.map(|_| Sha256::new());
-    let mut last_reported_progress = 0.0_f32;
+    let mut last_reported_progress = 0.0_f64;
 
     loop {
         let item = tokio::select! {
@@ -607,11 +608,12 @@ where
         file.write_all(&chunk)?;
         // ProgressStore emits an IPC event on every changed f32; floor to 0.1% so a large body cannot flood.
         if let Some(expected) = expected_size.filter(|size| *size > 0) {
-            let progress = ((downloaded as f64 / expected as f64) * 100.0).min(100.0) as f32;
-            let floored = (f64::from(progress) * 10.0).floor() / 10.0;
-            if floored > f64::from(last_reported_progress) {
-                progress_updater(progress)?;
-                last_reported_progress = progress;
+            let progress = ((downloaded as f64 / expected as f64) * 100.0).min(100.0);
+            let scale = 1.0 / PROGRESS_REPORT_STEP_PERCENT;
+            let floored = (progress * scale).floor() / scale;
+            if floored > last_reported_progress {
+                progress_updater(floored as f32)?;
+                last_reported_progress = floored;
             }
         }
     }
@@ -1195,6 +1197,7 @@ async fn download_to_destination_inner<R: tauri::Runtime>(
             file_generation.is_some(),
         );
     };
+    let progress_error_diagnosed = std::sync::atomic::AtomicBool::new(false);
     let result = await_staging_deadline(
         DOWNLOAD_DEADLINE,
         &cancellation,
@@ -1211,12 +1214,18 @@ async fn download_to_destination_inner<R: tauri::Runtime>(
                 cancellation.clone(),
                 integrity.map(|metadata| metadata.sha256.as_str()),
                 |progress| {
-                    update_progress_with_state(
-                        &state.progress_state,
-                        app,
+                    handle_running_progress_result(
+                        update_progress_with_state(
+                            &state.progress_state,
+                            app,
+                            &progress_lease,
+                            progress,
+                            ProgressState::Running,
+                        ),
+                        "download",
                         &progress_lease,
-                        progress,
-                        ProgressState::Running,
+                        &progress_error_diagnosed,
+                        Some(&cancellation),
                     )
                 },
             )
@@ -1226,13 +1235,15 @@ async fn download_to_destination_inner<R: tauri::Runtime>(
                     Error::OAuthFailure("authenticated Lichess account unavailable".into())
                 })?;
                 Some(
-                    crate::lichess::download_coverage_holds(
+                    crate::lichess::read_coverage(
                         url,
                         token,
                         state.http_transport.as_ref(),
                         &cancellation,
+                        None,
                     )
-                    .await?,
+                    .await?
+                    .holds,
                 )
             } else {
                 None
@@ -1602,12 +1613,12 @@ pub(crate) async fn download_lichess_games_runtime<R: tauri::Runtime>(
             let (base, _) = lichess_games_url(&player, since_ms, None)?;
             let probe_url =
                 lichess_coverage_url(&base, since_ms, Some(crate::lichess::LICHESS_CHUNK_GAMES));
-            let probe = crate::lichess::probe_coverage_chunk(
+            let probe = crate::lichess::read_coverage(
                 probe_url,
                 &token,
                 state.http_transport.as_ref(),
                 &cancellation,
-                crate::lichess::LICHESS_CHUNK_GAMES,
+                Some(crate::lichess::LICHESS_CHUNK_GAMES),
             )
             .await?;
             let until_ms = crate::lichess::coverage_until_ms(probe.last_created_at_ms, since_ms)?;
@@ -5519,21 +5530,6 @@ mod tests {
     }
 
     #[cfg(unix)]
-    fn coverage_ndjson(count: usize, last_rated: bool) -> (String, i64) {
-        let mut body = String::new();
-        let mut last = 0;
-        for index in 0..count {
-            last = 1_000 + index as i64;
-            let rated = last_rated || index + 1 < count;
-            body.push_str(&format!(
-                r#"{{"id":"{index:08}","rated":{rated},"perf":"blitz","status":"mate","createdAt":{last}}}"#
-            ));
-            body.push('\n');
-        }
-        (body, last)
-    }
-
-    #[cfg(unix)]
     fn lichess_query(url: &str) -> (reqwest::Url, std::collections::HashMap<String, String>) {
         let parsed = reqwest::Url::parse(url).unwrap();
         let query = parsed
@@ -5609,7 +5605,9 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn lichess_runtime_resumable_bounded_probe_exports_until_and_reports_floor() {
-        let (coverage, last) = coverage_ndjson(crate::lichess::LICHESS_CHUNK_GAMES, false);
+        let (coverage, last) =
+            crate::lichess::coverage_objects(crate::lichess::LICHESS_CHUNK_GAMES, false);
+        let coverage = String::from_utf8(coverage).unwrap();
         let since = 50;
         let (downloaded, _, transport) = download_resumable_lichess(
             coverage_response(&coverage),
@@ -5648,7 +5646,9 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn lichess_runtime_resumable_stops_reading_the_probe_at_the_nth_object() {
-        let (mut coverage, last) = coverage_ndjson(crate::lichess::LICHESS_CHUNK_GAMES, false);
+        let (coverage, last) =
+            crate::lichess::coverage_objects(crate::lichess::LICHESS_CHUNK_GAMES, false);
+        let mut coverage = String::from_utf8(coverage).unwrap();
         coverage.push_str(
             r#"{"id":"zzzzzzzz","rated":true,"perf":"blitz","status":"mate","createdAt":999999}
 "#,
@@ -5678,7 +5678,8 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn lichess_runtime_resumable_final_probe_exports_a_closed_window_without_floor() {
-        let (coverage, last) = coverage_ndjson(3, true);
+        let (coverage, last) = crate::lichess::coverage_objects(3, true);
+        let coverage = String::from_utf8(coverage).unwrap();
         let (downloaded, _, transport) = download_resumable_lichess(
             coverage_response(&coverage),
             export_pgn_response(),
@@ -5719,7 +5720,8 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn lichess_runtime_resumable_probe_failures_publish_nothing() {
-        let (body, _) = coverage_ndjson(3, true);
+        let (body, _) = crate::lichess::coverage_objects(3, true);
+        let body = String::from_utf8(body).unwrap();
         let failures = [
             DownloadResponse {
                 content_length: Some(body.len() as u64 + 40),
@@ -6089,6 +6091,41 @@ mod tests {
         }
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn request_download_response_times_out_as_network_timeout() {
+        struct PendingTransport;
+
+        #[async_trait::async_trait]
+        impl DownloadTransport for PendingTransport {
+            async fn request(&self, _: &str, _: HeaderMap) -> Result<DownloadResponse, Error> {
+                std::future::pending().await
+            }
+        }
+
+        let cancellation = CancellationToken::new();
+        let request = request_download_response(
+            reqwest::Url::parse("https://lichess.org/test").unwrap(),
+            HeaderMap::new(),
+            &PendingTransport,
+            None,
+            &cancellation,
+        );
+        tokio::pin!(request);
+        std::future::poll_fn(|cx| {
+            assert!(request.as_mut().poll(cx).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        tokio::time::advance(DOWNLOAD_REQUEST_TIMEOUT + Duration::from_millis(1)).await;
+        match request.await {
+            Err(Error::NetworkTimeout(message)) => {
+                assert_eq!(message, "download request timed out");
+            }
+            Err(error) => panic!("expected NetworkTimeout, got {error:?}"),
+            Ok(_) => panic!("expected NetworkTimeout, got Ok"),
+        }
+    }
+
     #[tokio::test]
     async fn test_download_file_cross_origin_token_stripping() {
         let mut file = tempfile::tempfile().unwrap();
@@ -6189,8 +6226,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn download_payload_network_quantizes_progress_across_many_chunks() {
+    async fn collect_quantized_progress(total_size: Option<u32>) -> Vec<f32> {
         let mut file = tempfile::tempfile().unwrap();
         let chunk_count = 5000_u32;
         let chunks = (0..chunk_count).map(|_| Ok(bytes::Bytes::from_static(b"x")));
@@ -6210,7 +6246,7 @@ mod tests {
             &mut file,
             &mock,
             None,
-            Some(chunk_count),
+            total_size,
             CancellationToken::new(),
             None,
             |progress| {
@@ -6220,6 +6256,10 @@ mod tests {
         )
         .await
         .unwrap();
+        reported
+    }
+
+    fn assert_quantized_progress(reported: &[f32]) {
         assert!(
             reported.len() <= 1001,
             "progress callbacks must be quantized to 0.1 percent: {} reports",
@@ -6229,6 +6269,73 @@ mod tests {
             reported.windows(2).all(|pair| pair[0] <= pair[1]),
             "progress must be non-decreasing: {reported:?}"
         );
+        assert!(
+            reported
+                .iter()
+                .all(|progress| (0.0..=100.0).contains(progress)),
+            "progress must stay in 0..=100: {reported:?}"
+        );
+        assert!(
+            reported.iter().all(|progress| {
+                let ticks = (f64::from(*progress) / PROGRESS_REPORT_STEP_PERCENT).round();
+                *progress == (ticks * PROGRESS_REPORT_STEP_PERCENT) as f32
+            }),
+            "progress must be a multiple of {PROGRESS_REPORT_STEP_PERCENT}: {reported:?}"
+        );
+        assert_eq!(reported.last().copied(), Some(100.0), "{reported:?}");
+    }
+
+    #[tokio::test]
+    async fn download_payload_network_quantizes_progress_across_many_chunks() {
+        assert_quantized_progress(&collect_quantized_progress(None).await);
+        assert_quantized_progress(&collect_quantized_progress(Some(5000)).await);
+    }
+
+    #[tokio::test]
+    async fn download_payload_network_ignores_non_stale_progress_emit_failure() {
+        let mut file = tempfile::tempfile().unwrap();
+        let chunks = vec![
+            Ok(bytes::Bytes::from_static(b"hello")),
+            Ok(bytes::Bytes::from_static(b"world")),
+        ];
+        let mock = MockTransport {
+            responses: Mutex::new(vec![Ok(DownloadResponse {
+                status: 200,
+                headers: HeaderMap::new(),
+                content_length: Some(10),
+                stream: Box::pin(futures_util::stream::iter(chunks)),
+            })]),
+            requests_seen: Mutex::new(vec![]),
+        };
+        let lease: crate::progress::ProgressLease =
+            serde_json::from_value(serde_json::json!({ "id": "download", "generation": "1" }))
+                .unwrap();
+        let diagnosed = AtomicBool::new(false);
+        let cancellation = CancellationToken::new();
+        let progress_cancellation = cancellation.clone();
+        download_payload_network(
+            OpClass::Lichess,
+            reqwest::Url::parse("https://lichess.org/test").unwrap(),
+            &mut file,
+            &mock,
+            None,
+            None,
+            cancellation,
+            None,
+            |_| {
+                crate::progress::handle_running_progress_result(
+                    Err(Error::InvalidInput("progress emit failed".into())),
+                    "download",
+                    &lease,
+                    &diagnosed,
+                    Some(&progress_cancellation),
+                )
+            },
+        )
+        .await
+        .unwrap();
+        assert!(diagnosed.load(Ordering::Relaxed));
+        assert!(!progress_cancellation.is_cancelled());
     }
 
     #[tokio::test]

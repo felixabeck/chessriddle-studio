@@ -100,13 +100,24 @@ fn unlinked_cursor(path: &std::path::Path) -> Option<i64> {
         .unwrap()
 }
 
-fn chesscom_chunk_publication(
+fn chunk_publication(
     state: &crate::AppState,
     directory: &std::path::Path,
     id: usize,
+    provider: &str,
 ) -> ArtifactPublication {
-    let path = directory.join(format!("chunk-{id}.pgn"));
-    std::fs::write(&path, format!("[Site \"Chess.com\"]\n[Link \"https://www.chess.com/game/daily/{id}\"]\n[White \"Player\"]\n[Black \"Opponent\"]\n[Date \"2026.01.01\"]\n[UTCTime \"12:00:00\"]\n\n1. e4 e5 *\n")).unwrap();
+    let (path, body) = if provider == "lichess" {
+        (
+            directory.join(format!("lichess-chunk-{id}.pgn")),
+            unlinked_lichess_game(&format!("chunk{id:03}"), "2026.10.10"),
+        )
+    } else {
+        (
+            directory.join(format!("chunk-{id}.pgn")),
+            format!("[Site \"Chess.com\"]\n[Link \"https://www.chess.com/game/daily/{id}\"]\n[White \"Player\"]\n[Black \"Opponent\"]\n[Date \"2026.01.01\"]\n[UTCTime \"12:00:00\"]\n\n1. e4 e5 *\n"),
+        )
+    };
+    std::fs::write(&path, body).unwrap();
     let handle = state
         .pgn_path_authority
         .with_mut(|authority| {
@@ -122,22 +133,39 @@ fn chesscom_chunk_publication(
 }
 
 #[cfg(unix)]
-async fn linked_chesscom_chunk(
+async fn linked_chunk(
     fixture: Arc<crate::db::linked_collections::tests::Fixture>,
     request: AccountImportRequest,
     id: usize,
     floor: Option<i64>,
+    holds: Option<Vec<crate::lichess::CoverageHold>>,
 ) -> super::operations::RuntimeDownload {
+    let receipt_holds = holds.clone();
+    let provider = request.provider.clone();
     let handle = super::blocking::BLOCKING_GATEWAY
         .spawn(move || {
             use crate::db::linked_collections::tests::{game, received_provider_batch_with_floor};
+            let (filename, body) = if provider == "lichess" {
+                (
+                    format!("lichess-chunk-{id}.pgn"),
+                    game(Some(&format!("{id}")), "e4 e5", &format!("chunk {id}")).replace(
+                        "https://www.chess.com",
+                        &format!("https://lichess.org/Blitz{id:03}"),
+                    ),
+                )
+            } else {
+                (
+                    format!("chunk-{id}.pgn"),
+                    game(Some(&id.to_string()), "e4 e5", &format!("chunk {id}")),
+                )
+            };
             Ok(received_provider_batch_with_floor(
                 &fixture,
-                &format!("chunk-{id}.pgn"),
-                &game(Some(&id.to_string()), "e4 e5", &format!("chunk {id}")),
-                "chesscom",
+                &filename,
+                &body,
+                &provider,
                 request.since_ms,
-                None,
+                receipt_holds.as_deref(),
                 floor,
             ))
         })
@@ -149,25 +177,30 @@ async fn linked_chesscom_chunk(
             durability: CommitDurability::Durable,
         },
         receipt_error: None,
-        coverage_holds: None,
+        coverage_holds: holds,
         coverage_floor_ms: floor,
     }
 }
 
 #[cfg(unix)]
-fn linked_chesscom_request(
+fn linked_request(
     fixture: &crate::db::linked_collections::tests::Fixture,
+    provider: &str,
 ) -> AccountImportRequest {
     use crate::db::linked_collections::tests::game;
+    let mut body = game(Some("0"), "d4 d5", "original");
+    if provider == "lichess" {
+        body = body.replace("https://www.chess.com", "https://lichess.org/Origina1");
+    }
     fixture.create(
         "history",
-        &game(Some("0"), "d4 d5", "original"),
+        &body,
         crate::file_workspace::WorkspaceFileType::Game,
     );
     let collection = fixture.list().pop().unwrap();
-    fixture.account(&collection.id, "chesscom");
+    fixture.account(&collection.id, provider);
     AccountImportRequest {
-        provider: "chesscom".into(),
+        provider: provider.into(),
         account: "player".into(),
         account_handle: None,
         destination: fixture.download_destination(),
@@ -185,7 +218,7 @@ async fn chesscom_linked_second_chunk_pending_retry_preserves_prefix_and_continu
 ) {
     use crate::db::linked_collections::tests::Fixture;
     let fixture = Arc::new(Fixture::new());
-    let mut request = linked_chesscom_request(&fixture);
+    let mut request = linked_request(&fixture, "chesscom");
     let app = fixture.app();
     reload_completion_mount_account_events(app.handle());
     let native = fixture.clone();
@@ -202,11 +235,12 @@ async fn chesscom_linked_second_chunk_pending_retry_preserves_prefix_and_continu
             assert_eq!(request.since_ms, [None, Some(2_000_000_000_000)][index]);
             let native = native.clone();
             async move {
-                let result = linked_chesscom_chunk(
+                let result = linked_chunk(
                     native.clone(),
                     request,
                     index + 1,
                     Some(2_000_000_000_000 + index as i64 * 100_000_000),
+                    None,
                 )
                 .await;
                 if index == 1 {
@@ -253,7 +287,7 @@ async fn chesscom_linked_second_chunk_pending_retry_preserves_prefix_and_continu
             assert!(request.pending_batch.is_none());
             assert_eq!(request.since_ms, Some(2_000_100_000_000));
             let native = native.clone();
-            async move { Ok(linked_chesscom_chunk(native, request, 3, None).await) }
+            async move { Ok(linked_chunk(native, request, 3, None, None).await) }
         },
     )
     .await
@@ -275,13 +309,13 @@ async fn chesscom_linked_second_chunk_pending_retry_preserves_prefix_and_continu
 async fn chesscom_linked_recovered_unchanged_cursor_still_downloads_once() {
     use crate::db::linked_collections::tests::Fixture;
     let fixture = Arc::new(Fixture::new());
-    let mut request = linked_chesscom_request(&fixture);
+    let mut request = linked_request(&fixture, "chesscom");
     let AccountImportTarget::Linked { collection } = &request.target else {
         unreachable!()
     };
     fixture.set_coverage_cursor(collection, 2_000_000_000_000);
     request.since_ms = Some(2_000_000_000_000);
-    let recovered = linked_chesscom_chunk(fixture.clone(), request.clone(), 1, None).await;
+    let recovered = linked_chunk(fixture.clone(), request.clone(), 1, None, None).await;
     request.pending_batch = Some(recovered.publication.handle);
     let app = fixture.app();
     reload_completion_mount_account_events(app.handle());
@@ -297,7 +331,7 @@ async fn chesscom_linked_recovered_unchanged_cursor_still_downloads_once() {
             assert_eq!(count.fetch_add(1, Ordering::SeqCst), 0);
             assert_eq!(request.since_ms, Some(2_000_000_000_000));
             let native = native.clone();
-            async move { Ok(linked_chesscom_chunk(native, request, 2, None).await) }
+            async move { Ok(linked_chunk(native, request, 2, None, None).await) }
         },
     )
     .await
@@ -315,7 +349,7 @@ async fn chesscom_linked_recovered_unchanged_cursor_still_downloads_once() {
 async fn chesscom_linked_unconfirmed_append_stops_with_notice_before_another_download() {
     use crate::db::linked_collections::tests::Fixture;
     let fixture = Arc::new(Fixture::new());
-    let request = linked_chesscom_request(&fixture);
+    let request = linked_request(&fixture, "chesscom");
     let app = fixture.app();
     reload_completion_mount_account_events(app.handle());
     let native = fixture.clone();
@@ -331,11 +365,12 @@ async fn chesscom_linked_unconfirmed_append_stops_with_notice_before_another_dow
             assert!(index < 2);
             let native = native.clone();
             async move {
-                let result = linked_chesscom_chunk(
+                let result = linked_chunk(
                     native.clone(),
                     request,
                     index + 1,
                     Some(2_000_000_000_000 + index as i64 * 100_000_000),
+                    None,
                 )
                 .await;
                 if index == 1 {
@@ -373,7 +408,7 @@ async fn chesscom_unlinked_chunks_read_native_cursor_and_reset_publication_and_p
     let state = app.state::<crate::AppState>().inner().clone();
     request.since_ms = Some(9_999_999_999_999);
     let publications = (1..=3)
-        .map(|id| chesscom_chunk_publication(&state, directory.path(), id))
+        .map(|id| chunk_publication(&state, directory.path(), id, "chesscom"))
         .collect::<Vec<_>>();
     let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
     let recorded = calls.clone();
@@ -425,7 +460,7 @@ async fn chesscom_unlinked_chunks_read_native_cursor_and_reset_publication_and_p
 async fn chesscom_linked_floor_without_native_cursor_progress_fails_once() {
     use crate::db::linked_collections::tests::Fixture;
     let fixture = Arc::new(Fixture::new());
-    let mut request = linked_chesscom_request(&fixture);
+    let mut request = linked_request(&fixture, "chesscom");
     let AccountImportTarget::Linked { collection } = &request.target else {
         unreachable!()
     };
@@ -436,22 +471,19 @@ async fn chesscom_linked_floor_without_native_cursor_progress_fails_once() {
     let native = fixture.clone();
     let calls = Arc::new(AtomicUsize::new(0));
     let count = calls.clone();
-    let completed =
-        accounts::import_account_games_with_download(
-            request,
-            app.handle().clone(),
-            "main".into(),
-            fixture.state.clone(),
-            move |request, _, _, _, _| {
-                assert_eq!(count.fetch_add(1, Ordering::SeqCst), 0);
-                let native = native.clone();
-                async move {
-                    Ok(linked_chesscom_chunk(native, request, 1, Some(2_000_000_000_000)).await)
-                }
-            },
-        )
-        .await
-        .unwrap();
+    let completed = accounts::import_account_games_with_download(
+        request,
+        app.handle().clone(),
+        "main".into(),
+        fixture.state.clone(),
+        move |request, _, _, _, _| {
+            assert_eq!(count.fetch_add(1, Ordering::SeqCst), 0);
+            let native = native.clone();
+            async move { Ok(linked_chunk(native, request, 1, Some(2_000_000_000_000), None).await) }
+        },
+    )
+    .await
+    .unwrap();
     let CompletionOutcome::Failed(error) = completed.outcome else {
         panic!("stalled linked chunk must fail")
     };
@@ -468,7 +500,7 @@ async fn chesscom_unlinked_second_chunk_cleanup_retry_recovers_then_downloads_re
     let (directory, app, path, request, _) = reload_completion_account_fixture();
     let state = app.state::<crate::AppState>().inner().clone();
     let publications = (1..=3)
-        .map(|id| chesscom_chunk_publication(&state, directory.path(), id))
+        .map(|id| chunk_publication(&state, directory.path(), id, "chesscom"))
         .collect::<Vec<_>>();
     let second = publications[1].clone();
     let final_publication = publications[2].clone();
@@ -793,31 +825,6 @@ async fn unlinked_lichess_failed_conversion_downloads_again_with_fresh_publicati
     Ok(())
 }
 
-fn lichess_chunk_publication(
-    state: &crate::AppState,
-    directory: &std::path::Path,
-    id: usize,
-) -> ArtifactPublication {
-    let path = directory.join(format!("lichess-chunk-{id}.pgn"));
-    std::fs::write(
-        &path,
-        unlinked_lichess_game(&format!("chunk{id:03}"), "2026.10.10"),
-    )
-    .unwrap();
-    let handle = state
-        .pgn_path_authority
-        .with_mut(|authority| {
-            authority.get_or_create_persistent_file(&path, "chunk", vec![PathOperation::ReadPgn])
-        })
-        .unwrap()
-        .unwrap()
-        .id;
-    ArtifactPublication {
-        handle: super::path_authority::FileWorkspaceHandle::new(handle),
-        durability: CommitDurability::Durable,
-    }
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn lichess_unlinked_chunks_keep_a_pin_and_advance_the_download_position() {
     use tauri::Manager as _;
@@ -826,7 +833,7 @@ async fn lichess_unlinked_chunks_keep_a_pin_and_advance_the_download_position() 
     request.provider = "lichess".into();
     request.since_ms = Some(9_999_999_999_999);
     let publications = (1..=3)
-        .map(|id| lichess_chunk_publication(&state, directory.path(), id))
+        .map(|id| chunk_publication(&state, directory.path(), id, "lichess"))
         .collect::<Vec<_>>();
     let pin_created = 1_500_000_000_000i64;
     let floors = [Some(2_000_000_000_000), Some(2_000_100_000_000), None];
@@ -876,7 +883,7 @@ async fn lichess_unlinked_recovered_chunk_downloads_once_more() {
     let state = app.state::<crate::AppState>().inner().clone();
     request.provider = "lichess".into();
     let publications = (1..=2)
-        .map(|id| lichess_chunk_publication(&state, directory.path(), id))
+        .map(|id| chunk_publication(&state, directory.path(), id, "lichess"))
         .collect::<Vec<_>>();
     let second = publications[1].clone();
     let (attempt, start) = state
@@ -984,76 +991,11 @@ async fn lichess_unlinked_floor_without_cursor_progress_fails_once() {
 }
 
 #[cfg(unix)]
-async fn linked_lichess_chunk(
-    fixture: Arc<crate::db::linked_collections::tests::Fixture>,
-    request: AccountImportRequest,
-    id: usize,
-    floor: Option<i64>,
-    holds: Option<Vec<crate::lichess::CoverageHold>>,
-) -> super::operations::RuntimeDownload {
-    let receipt_holds = holds.clone();
-    let handle = super::blocking::BLOCKING_GATEWAY
-        .spawn(move || {
-            use crate::db::linked_collections::tests::{game, received_provider_batch_with_floor};
-            let body = game(Some(&format!("{id}")), "e4 e5", &format!("chunk {id}")).replace(
-                "https://www.chess.com",
-                &format!("https://lichess.org/Blitz{id:03}"),
-            );
-            Ok(received_provider_batch_with_floor(
-                &fixture,
-                &format!("lichess-chunk-{id}.pgn"),
-                &body,
-                "lichess",
-                request.since_ms,
-                receipt_holds.as_deref(),
-                floor,
-            ))
-        })
-        .await
-        .unwrap();
-    super::operations::RuntimeDownload {
-        publication: ArtifactPublication {
-            handle,
-            durability: CommitDurability::Durable,
-        },
-        receipt_error: None,
-        coverage_holds: holds,
-        coverage_floor_ms: floor,
-    }
-}
-
-#[cfg(unix)]
-fn linked_lichess_request(
-    fixture: &crate::db::linked_collections::tests::Fixture,
-) -> AccountImportRequest {
-    use crate::db::linked_collections::tests::game;
-    fixture.create(
-        "history",
-        &game(Some("0"), "d4 d5", "original")
-            .replace("https://www.chess.com", "https://lichess.org/Origina1"),
-        crate::file_workspace::WorkspaceFileType::Game,
-    );
-    let collection = fixture.list().pop().unwrap();
-    fixture.account(&collection.id, "lichess");
-    AccountImportRequest {
-        provider: "lichess".into(),
-        account: "player".into(),
-        account_handle: None,
-        destination: fixture.download_destination(),
-        pending_batch: None,
-        since_ms: None,
-        target: AccountImportTarget::Linked {
-            collection: collection.id,
-        },
-    }
-}
-
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn lichess_linked_chunks_keep_a_pin_and_advance_the_download_position() {
     use crate::db::linked_collections::tests::Fixture;
     let fixture = Arc::new(Fixture::new());
-    let request = linked_lichess_request(&fixture);
+    let request = linked_request(&fixture, "lichess");
     let app = fixture.app();
     reload_completion_mount_account_events(app.handle());
     let native = fixture.clone();
@@ -1075,7 +1017,7 @@ async fn lichess_linked_chunks_keep_a_pin_and_advance_the_download_position() {
                 ongoing: true,
             }]);
             let floor = [Some(2_000_000_000_000), Some(2_000_100_000_000), None][index];
-            async move { Ok(linked_lichess_chunk(native, request, index + 1, floor, holds).await) }
+            async move { Ok(linked_chunk(native, request, index + 1, floor, holds).await) }
         },
     )
     .await
@@ -1096,13 +1038,13 @@ async fn lichess_linked_chunks_keep_a_pin_and_advance_the_download_position() {
 async fn lichess_linked_recovered_unchanged_cursor_still_downloads_once() {
     use crate::db::linked_collections::tests::Fixture;
     let fixture = Arc::new(Fixture::new());
-    let mut request = linked_lichess_request(&fixture);
+    let mut request = linked_request(&fixture, "lichess");
     let AccountImportTarget::Linked { collection } = &request.target else {
         unreachable!()
     };
     fixture.set_coverage_cursor(collection, 2_000_000_000_000);
     request.since_ms = Some(2_000_000_000_000);
-    let recovered = linked_lichess_chunk(fixture.clone(), request.clone(), 1, None, None).await;
+    let recovered = linked_chunk(fixture.clone(), request.clone(), 1, None, None).await;
     request.pending_batch = Some(recovered.publication.handle);
     let app = fixture.app();
     reload_completion_mount_account_events(app.handle());
@@ -1118,7 +1060,7 @@ async fn lichess_linked_recovered_unchanged_cursor_still_downloads_once() {
             assert_eq!(count.fetch_add(1, Ordering::SeqCst), 0);
             assert_eq!(request.since_ms, Some(2_000_000_000_000));
             let native = native.clone();
-            async move { Ok(linked_lichess_chunk(native, request, 2, None, None).await) }
+            async move { Ok(linked_chunk(native, request, 2, None, None).await) }
         },
     )
     .await
@@ -1132,7 +1074,7 @@ async fn lichess_linked_recovered_unchanged_cursor_still_downloads_once() {
 async fn lichess_linked_floor_without_native_cursor_progress_fails_once() {
     use crate::db::linked_collections::tests::Fixture;
     let fixture = Arc::new(Fixture::new());
-    let mut request = linked_lichess_request(&fixture);
+    let mut request = linked_request(&fixture, "lichess");
     let AccountImportTarget::Linked { collection } = &request.target else {
         unreachable!()
     };
@@ -1151,9 +1093,7 @@ async fn lichess_linked_floor_without_native_cursor_progress_fails_once() {
         move |request, _, _, _, _| {
             assert_eq!(count.fetch_add(1, Ordering::SeqCst), 0);
             let native = native.clone();
-            async move {
-                Ok(linked_lichess_chunk(native, request, 1, Some(2_000_000_000_000), None).await)
-            }
+            async move { Ok(linked_chunk(native, request, 1, Some(2_000_000_000_000), None).await) }
         },
     )
     .await

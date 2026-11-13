@@ -1317,10 +1317,7 @@ impl AccountImporter {
             self.context.coverage_floor_ms,
         );
         let stored = stored_account_sync_cursor(db)?;
-        if self.context.since_ms.is_none()
-            || stored
-                .is_some_and(|stored| self.context.since_ms.is_some_and(|since| since <= stored))
-        {
+        if linked_collections::coverage_cursor_advances_without_gap(self.context.since_ms, stored) {
             update_info_count(db, "AccountSyncCursor", cursor)?;
         }
         db.batch_execute("DELETE FROM temp.AccountFingerprints;")?;

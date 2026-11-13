@@ -3550,7 +3550,17 @@ fn fingerprint_with_name_normalizer(
     format!("{:x}", digest.finalize())
 }
 
+/// True when `since` is unset, or `since` is at or behind the stored cursor (no gap).
+pub(crate) fn coverage_cursor_advances_without_gap(
+    since_ms: Option<i64>,
+    stored_cursor_ms: Option<i64>,
+) -> bool {
+    since_ms.is_none()
+        || stored_cursor_ms.is_some_and(|cursor| since_ms.is_some_and(|since| since <= cursor))
+}
+
 /// Computes coverage from every game in the export, including games a merge will deduplicate.
+/// An unresolved hold pins the cursor; below that pin the coverage floor is not applied.
 pub(crate) fn account_sync_cursor(
     provider: &str,
     since_ms: Option<i64>,
@@ -3574,7 +3584,7 @@ pub(crate) fn account_sync_cursor(
         .map(|hold| hold.created_at_ms.saturating_sub(1).max(since))
         .min()
     {
-        Some(hold_floor) => newest.min(hold_floor),
+        Some(hold_pin) => newest.min(hold_pin),
         None => newest.max(floor),
     }
 }
