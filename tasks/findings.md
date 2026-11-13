@@ -25522,3 +25522,21 @@ Handled in d8d11e681. `OpeningBookPgnVisitor` now overrides `begin_variation` to
 * **Proof:** source trace on 15a240d33: `prepare_persistent_file` checks `entry.stored.identity != binding.identity` and returns Conflict for every door except (after f-20261112-81) Passive/Picker; `register_engine_file` passes `ExplicitReauthorization`. Not reproduced in the running app.
 * **Related:** f-20261112-81 (opening-book picker counterpart), f-20261112-77.
 * **Found by:** drain session 6a465729 (Claude orchestrator)
+
+---
+
+## 2026-11-13 — filed through the inbox spool
+
+### `rust-macos-test` lost its runner again on master `7fdf4d564` (second runner loss in three days)
+
+* **ID:** f-20261113-04 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 5867a492-0964-4b01-92ca-9dbfd502f1ef
+* **Impact class:** tooling
+* **CI run:** 43446000106
+* **Where:** `.github/workflows/test.yml` job `rust-macos-test`, step `Run Rust tests`, on master `7fdf4d564`.
+* **Failure scenario:** Test run 43446000106, job `rust-macos-test` 131955471182, started 14:46:54Z and ended 15:37:56Z with the annotation "The hosted runner lost communication with the server." `Run Rust tests` never reported a conclusion. `pnpm ci:remote:check` reports master red and refuses the f-20261112-82 drain push until this run has an owner and a green result.
+* **Defect:** master's newest required macOS result is failure with no test failure on record. The job log returns 404 BlobNotFound, so a test hang cannot be ruled out from the log. This is the same symptom as f-20261110-03 (run 42819791205, closed as runner infrastructure after a green rerun). A second occurrence within three days, each about 50 minutes long against the usual 13-16 minutes, makes a macOS-only test hang that outlives the runner's heartbeat more plausible than before.
+* **Fix:** Rerun the failed job once (`gh run rerun 43446000106 --failed`, started by drain session 5867a492 at about 15:45Z). If it passes, close this as runner infrastructure and note the recurrence. If it hangs or fails again, read the log for the test running at that moment and treat it as a Rust test hang on macOS.
+* **Proof:** a completed green `rust-macos-test` on `7fdf4d564` or a later master commit.
+* **Related:** f-20261110-03 (same symptom, closed as runner infrastructure).
+* **Found by:** Claude Code, `pnpm ci:remote:check` before the f-20261112-82 drain push, drain session 5867a492-0964-4b01-92ca-9dbfd502f1ef.
