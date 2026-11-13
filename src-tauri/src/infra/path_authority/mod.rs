@@ -7120,8 +7120,10 @@ impl PathAuthority {
         Ok(())
     }
 
-    /// Registers one exact executable selected or installed natively. The renderer receives only
-    /// its opaque handle; every later execution and probe revalidates this identity.
+    /// Registers one exact executable picked in a native dialog. The renderer receives only
+    /// its opaque handle; every later execution and probe revalidates this identity. A file
+    /// replaced at a stored path gets a fresh capability, and the stale entry is left for
+    /// startup reconciliation once the renderer stops retaining it (d-20261113-02).
     pub(crate) fn register_engine_file(
         &mut self,
         path: &Path,
@@ -7134,7 +7136,7 @@ impl PathAuthority {
             operations,
             None,
             None,
-            RegistrationDoor::ExplicitReauthorization,
+            RegistrationDoor::PickerSelection,
         )?;
         let registered = self
             .persistent
@@ -14928,6 +14930,36 @@ pub(crate) mod portable_tests {
         assert!(!reloaded.retired_attachments.contains_key(&unknown.id));
         assert!(!reloaded.provisional_attachments.contains(&unknown.id));
         assert!(!reloaded.image_cleanup.contains_key(&unknown.id));
+    }
+
+    #[test]
+    fn picked_engine_replaced_at_same_path_gets_fresh_capability() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("engine");
+        fs::write(&path, b"engine").unwrap();
+        let mut authority = authority(&dir, Arc::new(TestClock::new(0)));
+        let first = authority.register_engine_file(&path, "engine").unwrap();
+        let original_identity = identity(&path).unwrap();
+
+        let replacement = dir.path().join("replacement");
+        fs::write(&replacement, b"replacement").unwrap();
+        fs::remove_file(&path).unwrap();
+        fs::rename(&replacement, &path).unwrap();
+        assert_ne!(identity(&path).unwrap(), original_identity);
+
+        let second = authority.register_engine_file(&path, "engine").unwrap();
+        assert_ne!(second.id, first.id);
+        assert!(authority
+            .resolve(second.path_ref(), PathOperation::EngineBinaryInspect, &[])
+            .is_ok());
+
+        let third = authority.register_engine_file(&path, "engine").unwrap();
+        assert_eq!(third.id, second.id);
+
+        assert!(authority
+            .resolve(first.path_ref(), PathOperation::EngineBinaryInspect, &[])
+            .is_err());
+        assert!(authority.persistent.contains_key(&first.id.id));
     }
 }
 
