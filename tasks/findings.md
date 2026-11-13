@@ -24051,7 +24051,7 @@ Handled in 1ab8c70cc. `changeCompletion` keeps `timeSpent` undefined for an atte
 
 ### The promotion picker focuses and maps key 1 to the bishop when the promoting side is not the board orientation
 
-* **ID:** f-20261112-17 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-17 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** general review chunk 3 (Felix t40u) at HEAD `87bab4d77` (file identical on origin/master `ba81d9264`), leftover-file pass over `PromotionModal`
 * **Where:** `src/components/boards/PromotionModal.tsx`. `promotionPieces` is `["queen","knight","rook","bishop"]` and is `reverse()`d (~50-55) when `turn !== orientation`, so the queen sits next to the promotion square at the bottom of the board. The same reversed array then drives the initial focus (`ref` on `promotionPieces[0]`, ~103, focused by the effect at ~29-35) and the digit shortcuts (`promotionPieces[index]`, ~83-87). Used by `Board.tsx` (~591) and `PuzzleBoardSurface.tsx` (~58). `PromotionModal.test.tsx` only covers `turn === orientation`, where `1` = queen and `2` = knight.
@@ -24060,6 +24060,8 @@ Handled in 1ab8c70cc. `changeCompletion` keeps `timeSpent` undefined for an atte
 * **Fix:** Keep a fixed semantic order (queen, knight, rook, bishop) for focus and digits, and reverse only the rendered order; put the focus ref on the queen. Add a `PromotionModal.test.tsx` case with `turn="black" orientation="white"` asserting the queen is focused and `1` confirms `queen`.
 * **Proof:** Ephemeral Vitest probe reusing `PromotionModal.test.tsx`'s mocks (file deleted afterwards, tree clean): render with `pendingMove {from: 9, to: 1}`, `turn="black"`, `orientation="white"`; `document.activeElement` is `Promote to bishop` and keydown `1` calls `confirmMove("bishop")` (expected queen / `queen`).
 * **Found by:** Grok Bot, general review (t40u), HEAD `87bab4d77`.
+* **Handled (2026-11-13, drain session 0aff3baf):** `af3a7b379` keeps the semantic order queen, knight, rook, bishop in a module constant for the digit shortcuts, renders a reversed copy only when `turn !== orientation`, and puts the focus ref on the queen. New `PromotionModal.test.tsx` case (`turn="black"`, `orientation="white"`, `{from: 9, to: 1}`) asserts queen focus, bishop-rook-knight-queen DOM order, `1` → `queen`, `4` → `bishop`. Fix-revert proof: with the fix stashed the case fails (focused bishop), restored it passes. Rejected: reversing the digit mapping to match the visual order, because `1` = queen is the convention on every other board orientation.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"887fde86c6487295d026ab07cc6b9fc3108543282dbc77803994bb2c128db8a1","header_sha256":"911175b61f9e2901b1b64bfabddb0e53b148e257ca167796e9ec00677e8f1b19","header_status":"handled","input_sha256":"b5e2aa1cda2c090cc629b3ae051291dc09e32a25d6bbf115957b9c8d4daec47a","kind":"mutation-receipt","operation":"cea3a04e03184514468027cfb782ec5e4cf297df772e61464c7795d5a1cdd467","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-17"],"target":"f-20261112-17","v":1} -->
 
 ---
 
