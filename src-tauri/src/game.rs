@@ -1000,13 +1000,21 @@ impl SessionMetadata {
     }
 }
 
-/// One lifecycle owner per public game ID. Keeping controller, shutdown and
+struct SessionDocument {
+    label: String,
+    generation: u64,
+}
+
+/// One lifecycle record per public game ID. Keeping controller, shutdown and
 /// loop handle together makes replacement and natural cleanup exact-session
 /// operations instead of independent best-effort map mutations.
 struct LiveSession {
     cleanup: SessionCleanup,
     session: u64,
-    owner: String,
+    /// The webview window label whose document started the session, plus that
+    /// document's generation at start; the reload sweep aborts by label and
+    /// refuses publication from a superseded generation.
+    document: SessionDocument,
     controller: Arc<RwLock<GameController>>,
     shutdown: watch::Sender<bool>,
     join: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
@@ -1308,6 +1316,9 @@ pub struct GameManager {
     next_session: AtomicU64,
     sealed: AtomicBool,
     registration: Mutex<()>,
+    /// Per-webview-label document generation. Bounded: one entry per webview
+    /// label that ever ran the reload sweep.
+    document_generations: std::sync::Mutex<HashMap<String, u64>>,
     lifecycle: KeyedLocks<GameId>,
     session_metadata: Mutex<SessionMetadata>,
 }
@@ -1593,6 +1604,7 @@ impl GameManager {
             next_session: AtomicU64::new(0),
             sealed: AtomicBool::new(false),
             registration: Mutex::new(()),
+            document_generations: std::sync::Mutex::new(HashMap::new()),
             lifecycle: KeyedLocks::default(),
             session_metadata: Mutex::new(SessionMetadata::default()),
         }
@@ -1609,6 +1621,14 @@ impl GameManager {
         } else {
             Ok(())
         }
+    }
+
+    fn document_generation(&self, label: &str) -> u64 {
+        let generations = match self.document_generations.lock() {
+            Ok(generations) => generations,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        generations.get(label).copied().unwrap_or(0)
     }
 
     fn allocate_session(&self) -> Result<u64, Error> {
@@ -1642,6 +1662,11 @@ impl GameManager {
         GAME_PUBLICATION_WAIT_HOOKS.run(&game_id);
         let registration = self.registration.lock().await;
         self.ensure_accepting_starts()?;
+        if self.document_generation(&live.document.label) != live.document.generation {
+            return Err(Error::Conflict(
+                "the window that started this game was reloaded".into(),
+            ));
+        }
         {
             let mut metadata = self.session_metadata.lock().await;
             self.games.insert(game_id.clone(), live);
@@ -1746,6 +1771,11 @@ impl GameManager {
         engine_supervisor: Arc<EngineSupervisor>,
     ) -> Result<GameState, Error> {
         self.ensure_accepting_starts()?;
+        let generation = self.document_generation(&owner);
+        let document = SessionDocument {
+            label: owner,
+            generation,
+        };
         let lifecycle = self.lifecycle_lease(&game_id);
         let _transition = lifecycle.lock().await;
         let observation_slot = self
@@ -1846,7 +1876,7 @@ impl GameManager {
                 ..SessionCleanup::default()
             },
             session,
-            owner,
+            document,
             controller: controller.clone(),
             shutdown: shutdown_tx,
             join: std::sync::Mutex::new(None),
@@ -2232,28 +2262,35 @@ impl GameManager {
         Ok(())
     }
 
-    /// Aborts every live session owned by `owner`. Matching entries are
-    /// collected before the first `await` so a DashMap guard is never held
-    /// across an abort (see `shutdown_all`).
+    /// Aborts every live session whose document label is `owner` and
+    /// increments that label's document generation so an in-flight start
+    /// cannot publish afterwards. Matching entries are collected under
+    /// `registration` and aborted after that guard is dropped (see
+    /// `shutdown_all`).
     pub async fn abort_owner_games(&self, owner: &str) -> usize {
-        let sessions: Vec<_> = self
-            .games
-            .iter()
-            .filter(|entry| entry.owner == owner)
-            .map(|entry| (entry.key().clone(), entry.session))
-            .collect();
+        let sessions: Vec<_> = {
+            let _registration = self.registration.lock().await;
+            {
+                let mut generations = match self.document_generations.lock() {
+                    Ok(generations) => generations,
+                    Err(poisoned) => poisoned.into_inner(),
+                };
+                let generation = generations.entry(owner.to_owned()).or_insert(0);
+                *generation = generation.wrapping_add(1);
+            }
+            self.games
+                .iter()
+                .filter(|entry| entry.document.label == owner)
+                .map(|entry| (entry.key().clone(), entry.session))
+                .collect()
+        };
         let mut aborted = 0;
         for (game_id, session) in sessions {
             match self.abort_game(&game_id, session).await {
                 Ok(()) => aborted += 1,
-                Err(Error::GameNotFound(_) | Error::Conflict(_)) => {
-                    log::debug!(
-                        "owner {owner} game {game_id} session {session} already gone during abort sweep"
-                    );
-                }
                 Err(error) => {
-                    log::error!(
-                        "failed to abort owner {owner} game {game_id} session {session}: {error}"
+                    log::debug!(
+                        "owner {owner} game {game_id} session {session} already gone during reload sweep: {error}"
                     );
                 }
             }
@@ -5096,6 +5133,13 @@ mod tests {
         );
     }
 
+    fn test_session_document() -> SessionDocument {
+        SessionDocument {
+            label: "main".into(),
+            generation: 0,
+        }
+    }
+
     fn test_live_session(
         game_id: &str,
         session: u64,
@@ -5115,7 +5159,7 @@ mod tests {
         (
             Arc::new(LiveSession {
                 session,
-                owner: "main".into(),
+                document: test_session_document(),
                 controller: controller.clone(),
                 shutdown,
                 cleanup: SessionCleanup::default(),
@@ -5646,7 +5690,7 @@ done
             "resource-game".into(),
             Arc::new(LiveSession {
                 session: 1,
-                owner: "main".into(),
+                document: test_session_document(),
                 controller,
                 shutdown,
                 cleanup: SessionCleanup::default(),
@@ -5776,7 +5820,7 @@ done
             "game".into(),
             Arc::new(LiveSession {
                 session: 4,
-                owner: "main".into(),
+                document: test_session_document(),
                 controller,
                 shutdown,
                 cleanup: SessionCleanup::default(),
@@ -7234,7 +7278,7 @@ done
             "game".into(),
             Arc::new(LiveSession {
                 session: 1,
-                owner: "main".into(),
+                document: test_session_document(),
                 controller: controller.clone(),
                 shutdown,
                 cleanup: SessionCleanup::default(),
@@ -7261,7 +7305,7 @@ done
             "game".into(),
             Arc::new(LiveSession {
                 session: 2,
-                owner: "main".into(),
+                document: test_session_document(),
                 controller: replacement.clone(),
                 shutdown,
                 cleanup: SessionCleanup::default(),
@@ -7606,7 +7650,7 @@ done
                 game_id.into(),
                 Arc::new(LiveSession {
                     session,
-                    owner: "main".into(),
+                    document: test_session_document(),
                     controller,
                     shutdown,
                     cleanup: SessionCleanup::default(),
@@ -7983,7 +8027,7 @@ done
             "initial".into(),
             Arc::new(LiveSession {
                 session: 1,
-                owner: "main".into(),
+                document: test_session_document(),
                 controller,
                 shutdown,
                 cleanup: SessionCleanup::default(),
@@ -8019,7 +8063,7 @@ done
             "slipped".into(),
             Arc::new(LiveSession {
                 session: 2,
-                owner: "main".into(),
+                document: test_session_document(),
                 controller,
                 shutdown: slipped_shutdown,
                 cleanup: SessionCleanup::default(),
@@ -8049,7 +8093,7 @@ done
             "stuck".into(),
             Arc::new(LiveSession {
                 session: 1,
-                owner: "main".into(),
+                document: test_session_document(),
                 controller,
                 shutdown,
                 cleanup: SessionCleanup::default(),
@@ -8096,7 +8140,7 @@ done
             "parallel".into(),
             Arc::new(LiveSession {
                 session: 1,
-                owner: "main".into(),
+                document: test_session_document(),
                 controller,
                 shutdown,
                 cleanup: SessionCleanup::default(),
@@ -10112,10 +10156,12 @@ done
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn abort_owner_games_reaps_only_that_windows_sessions_and_engines() {
-        let main_id = "abort_owner_games_reaps_only_that_windows_sessions_and_engines-main";
-        let other_id = "abort_owner_games_reaps_only_that_windows_sessions_and_engines-other";
-        let main_bundle = test_game_engine_bundle(main_id, TestEngineScript::Responsive, true);
+    async fn abort_owner_games_reaps_only_the_named_window_sessions_and_engines() {
+        let main_a = "abort_owner_games_reaps_only_the_named_window_sessions_and_engines-main-a";
+        let main_b = "abort_owner_games_reaps_only_the_named_window_sessions_and_engines-main-b";
+        let other_id = "abort_owner_games_reaps_only_the_named_window_sessions_and_engines-other";
+        let main_a_bundle = test_game_engine_bundle(main_a, TestEngineScript::Responsive, true);
+        let main_b_bundle = test_game_engine_bundle(main_b, TestEngineScript::Responsive, true);
         let other_bundle = test_game_engine_bundle(other_id, TestEngineScript::Responsive, true);
         let manager = Arc::new(GameManager::new());
         let supervisor = Arc::new(EngineSupervisor::default());
@@ -10128,13 +10174,24 @@ done
             ))
             .mount_events(&app);
 
-        let main_state = manager
+        let main_a_state = manager
             .start_game(
-                main_id.into(),
-                main_bundle.config.clone(),
+                main_a.into(),
+                main_a_bundle.config.clone(),
                 "main".into(),
                 app.handle().clone(),
-                main_bundle.authority.clone(),
+                main_a_bundle.authority.clone(),
+                supervisor.clone(),
+            )
+            .await
+            .unwrap();
+        let main_b_state = manager
+            .start_game(
+                main_b.into(),
+                main_b_bundle.config.clone(),
+                "main".into(),
+                app.handle().clone(),
+                main_b_bundle.authority.clone(),
                 supervisor.clone(),
             )
             .await
@@ -10151,23 +10208,36 @@ done
             .await
             .unwrap();
 
-        let (main_white, main_black) = game_side_keys(&main_bundle, main_id, main_state.session);
+        let (main_a_white, main_a_black) =
+            game_side_keys(&main_a_bundle, main_a, main_a_state.session);
+        let (main_b_white, main_b_black) =
+            game_side_keys(&main_b_bundle, main_b, main_b_state.session);
         let (other_white, other_black) =
             game_side_keys(&other_bundle, other_id, other_state.session);
-        let main_white_generation = wait_for_generation(&supervisor, &main_white).await;
-        let main_black_generation = wait_for_generation(&supervisor, &main_black).await;
+        let main_a_white_generation = wait_for_generation(&supervisor, &main_a_white).await;
+        let main_a_black_generation = wait_for_generation(&supervisor, &main_a_black).await;
+        let main_b_white_generation = wait_for_generation(&supervisor, &main_b_white).await;
+        let main_b_black_generation = wait_for_generation(&supervisor, &main_b_black).await;
         let other_white_generation = wait_for_generation(&supervisor, &other_white).await;
         let other_black_generation = wait_for_generation(&supervisor, &other_black).await;
 
-        assert_eq!(manager.abort_owner_games("main").await, 1);
+        assert_eq!(manager.abort_owner_games("main").await, 2);
         assert!(matches!(
-            manager.get_game_state(main_id, main_state.session).await,
+            manager.get_game_state(main_a, main_a_state.session).await,
             Err(Error::GameNotFound(_))
         ));
-        wait_for_generation_gone(&supervisor, &main_white, main_white_generation).await;
-        wait_for_generation_gone(&supervisor, &main_black, main_black_generation).await;
-        assert!(supervisor.get_exact(&main_white).is_none());
-        assert!(supervisor.get_exact(&main_black).is_none());
+        assert!(matches!(
+            manager.get_game_state(main_b, main_b_state.session).await,
+            Err(Error::GameNotFound(_))
+        ));
+        wait_for_generation_gone(&supervisor, &main_a_white, main_a_white_generation).await;
+        wait_for_generation_gone(&supervisor, &main_a_black, main_a_black_generation).await;
+        wait_for_generation_gone(&supervisor, &main_b_white, main_b_white_generation).await;
+        wait_for_generation_gone(&supervisor, &main_b_black, main_b_black_generation).await;
+        assert!(supervisor.get_exact(&main_a_white).is_none());
+        assert!(supervisor.get_exact(&main_a_black).is_none());
+        assert!(supervisor.get_exact(&main_b_white).is_none());
+        assert!(supervisor.get_exact(&main_b_black).is_none());
 
         let other_live = manager
             .get_game_state(other_id, other_state.session)
@@ -10189,6 +10259,94 @@ done
             .unwrap();
         wait_for_generation_gone(&supervisor, &other_white, other_white_generation).await;
         wait_for_generation_gone(&supervisor, &other_black, other_black_generation).await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn abort_owner_games_refuses_an_in_flight_start_from_a_reloaded_window() {
+        let game_id = "abort_owner_games_refuses_an_in_flight_start_from_a_reloaded_window";
+        let fresh_id = "abort_owner_games_refuses_an_in_flight_start_from_a_reloaded_window-fresh";
+        let bundle = test_game_engine_bundle(game_id, TestEngineScript::Responsive, true);
+        let fresh_bundle = test_game_engine_bundle(fresh_id, TestEngineScript::Responsive, true);
+        let manager = Arc::new(GameManager::new());
+        let supervisor = Arc::new(EngineSupervisor::default());
+        let (white_key, black_key) = game_side_keys(&bundle, game_id, 1);
+        let (reached_tx, reached_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::sync_channel(1);
+        GAME_PUBLICATION_WAIT_HOOKS.arm(
+            game_id.into(),
+            Box::new(move || {
+                let _ = reached_tx.send(());
+                let _ = release_rx.recv();
+            }),
+        );
+        let app = tauri::test::mock_app();
+        tauri_specta::Builder::<tauri::test::MockRuntime>::new()
+            .events(tauri_specta::collect_events!(
+                GameMoveEvent,
+                GameOverEvent,
+                ClockUpdateEvent
+            ))
+            .mount_events(&app);
+
+        let task = tokio::spawn({
+            let manager = manager.clone();
+            let supervisor = supervisor.clone();
+            let config = bundle.config.clone();
+            let authority = bundle.authority.clone();
+            let game_id = game_id.to_owned();
+            let app = app.handle().clone();
+            async move {
+                manager
+                    .start_game(game_id, config, "main".into(), app, authority, supervisor)
+                    .await
+            }
+        });
+        let white_generation = wait_for_generation(&supervisor, &white_key).await;
+        let black_generation = wait_for_generation(&supervisor, &black_key).await;
+        tokio::time::timeout(TEST_WAIT, reached_rx)
+            .await
+            .expect("publication wait hook did not fire")
+            .expect("publication wait signal was dropped");
+
+        assert_eq!(manager.abort_owner_games("main").await, 0);
+        let _ = release_tx.send(());
+        let error = tokio::time::timeout(TEST_WAIT, task)
+            .await
+            .expect("in-flight start did not finish after the reload sweep")
+            .expect("in-flight start task joined")
+            .expect_err("in-flight start must be refused after the window reload");
+        assert!(matches!(error, Error::Conflict(_)));
+        assert!(matches!(
+            manager.get_game_state(game_id, 1).await,
+            Err(Error::GameNotFound(_))
+        ));
+        wait_for_generation_gone(&supervisor, &white_key, white_generation).await;
+        wait_for_generation_gone(&supervisor, &black_key, black_generation).await;
+        assert!(supervisor.get_exact(&white_key).is_none());
+        assert!(supervisor.get_exact(&black_key).is_none());
+
+        let fresh_state = manager
+            .start_game(
+                fresh_id.into(),
+                fresh_bundle.config.clone(),
+                "main".into(),
+                app.handle().clone(),
+                fresh_bundle.authority.clone(),
+                supervisor.clone(),
+            )
+            .await
+            .unwrap();
+        let (fresh_white, fresh_black) =
+            game_side_keys(&fresh_bundle, fresh_id, fresh_state.session);
+        let fresh_white_generation = wait_for_generation(&supervisor, &fresh_white).await;
+        let fresh_black_generation = wait_for_generation(&supervisor, &fresh_black).await;
+        manager
+            .abort_game(fresh_id, fresh_state.session)
+            .await
+            .unwrap();
+        wait_for_generation_gone(&supervisor, &fresh_white, fresh_white_generation).await;
+        wait_for_generation_gone(&supervisor, &fresh_black, fresh_black_generation).await;
     }
 
     #[cfg(unix)]
@@ -10586,6 +10744,18 @@ done
                 );
             }
         }
+    }
+
+    #[test]
+    fn start_game_command_passes_the_window_label_into_the_manager() {
+        use crate::infra::blocking::source_scan::body_at_indent;
+        let source = include_str!("game.rs");
+        let command = body_at_indent(source, "pub async fn start_game(");
+        let compact: String = command.chars().filter(|c| !c.is_whitespace()).collect();
+        assert!(
+            compact.contains(".start_game(game_id,config,window.label().to_owned(),"),
+            "{command}"
+        );
     }
 
     #[test]

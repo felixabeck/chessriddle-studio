@@ -693,7 +693,7 @@ async fn release_previous_document_operations(
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
     let label = window.label();
-    let operations = release_previous_document_operations_in_registry(
+    let released = release_previous_document_operations_in_registry(
         &state.operations,
         &state.engine_supervisor,
         label,
@@ -702,7 +702,7 @@ async fn release_previous_document_operations(
     if aborted > 0 {
         log::info!("reloaded webview {label} aborted {aborted} live game session(s)");
     }
-    operations
+    released
 }
 
 fn release_previous_document_operations_in_registry(
@@ -3236,9 +3236,9 @@ mod native_window_operation_wiring_tests {
         assert_eq!(command.matches("window.label()").count(), 1, "{command}");
         let compact: String = command.chars().filter(|c| !c.is_whitespace()).collect();
         assert!(compact.contains("letlabel=window.label();"), "{command}");
-        assert!(compact.contains("release_previous_document_operations_in_registry(&state.operations,&state.engine_supervisor,label,)"), "{command}");
+        assert!(compact.contains("letreleased=release_previous_document_operations_in_registry(&state.operations,&state.engine_supervisor,label,)"), "{command}");
         assert!(
-            compact.contains("game_manager.abort_owner_games(label)"),
+            compact.contains("letaborted=state.game_manager.abort_owner_games(label).await;"),
             "{command}"
         );
         for signature in [
