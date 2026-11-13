@@ -536,6 +536,7 @@ async function renderReveal(
   games: Map<number, GameSelectorRow>,
   revealActivePage = true,
   setPage = vi.fn(),
+  total = 10,
 ) {
   await act(async () =>
     root.render(
@@ -543,7 +544,7 @@ async function renderReveal(
         games={games}
         setGames={vi.fn()}
         setPage={setPage}
-        total={10}
+        total={total}
         path={path}
         activePage={8}
         revealActivePage={revealActivePage}
@@ -1424,25 +1425,16 @@ async function renderAnchor(
   revealActivePage = false,
   total = 10,
 ) {
-  await act(async () =>
-    root.render(
-      <GameSelector
-        games={
-          new Map(
-            Array.from({ length: total }, (_, index) => [
-              index,
-              { name: `Game ${index}`, section: new Map(sections).get(index) },
-            ]),
-          )
-        }
-        setGames={vi.fn()}
-        setPage={vi.fn()}
-        total={total}
-        path={path}
-        activePage={8}
-        revealActivePage={revealActivePage}
-      />,
+  await renderReveal(
+    new Map(
+      Array.from({ length: total }, (_, index) => [
+        index,
+        { name: `Game ${index}`, section: new Map(sections).get(index) },
+      ]),
     ),
+    revealActivePage,
+    vi.fn(),
+    total,
   );
 }
 
@@ -1489,18 +1481,7 @@ test.each([false, true])(
     anchorViewport().scrollTop = 100;
     mocks.scrollToOffset.mockClear();
     if (removed) {
-      await act(async () =>
-        root.render(
-          <GameSelector
-            games={new Map([[0, { name: "First" }]])}
-            setGames={vi.fn()}
-            setPage={vi.fn()}
-            total={10}
-            path={path}
-            activePage={8}
-          />,
-        ),
-      );
+      await renderReveal(new Map([[0, { name: "First" }]]), false);
     } else await renderAnchor();
     expect(mocks.scrollToOffset).toHaveBeenCalledExactlyOnceWith(62);
   },
