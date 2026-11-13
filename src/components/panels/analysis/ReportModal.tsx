@@ -14,7 +14,7 @@ import { enginesAtom, referenceDbAtom } from "@/state/atoms";
 import { useCollectionCurrency } from "@/state/linkedCollections";
 import { createZodStorage } from "@/state/utils";
 import { captureReportOwner, isReportOwnerCurrent, waitForReportOwner } from "@/state/store/tree";
-import { goModeSchema, type LocalEngine } from "@/utils/engines";
+import { limitedGoModeSchema, type LocalEngine } from "@/utils/engines";
 import { capabilityKey } from "@/utils/pathCapabilities";
 import { normalizeEngineOptions } from "@/components/engines/engineOptions";
 import { z } from "zod";
@@ -31,17 +31,7 @@ export function reportRootFingerprint(fen: string, moves: string[]): string {
   return `${fen}\u0000${moves.join("\u0000")}`;
 }
 
-const reportGoModeSchema = goModeSchema.superRefine((mode, context): mode is ReportGoMode => {
-  if (mode.t === "Infinite" || mode.t === "PlayersTime") {
-    context.addIssue({ code: z.ZodIssueCode.custom });
-    return false;
-  }
-  if (!Number.isFinite(mode.c)) {
-    context.addIssue({ code: z.ZodIssueCode.custom });
-    return false;
-  }
-  return true;
-});
+const reportGoModeSchema = limitedGoModeSchema;
 
 type ReportSettings = {
   novelty: boolean;

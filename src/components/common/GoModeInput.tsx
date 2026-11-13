@@ -2,13 +2,16 @@ import { Group, NumberInput, Select } from "@mantine/core";
 import { useTranslation } from "react-i18next";
 import { match } from "ts-pattern";
 import type { GoMode } from "@/bindings";
+import { MAX_GO_NODES, MAX_GO_TIME_OR_DEPTH } from "@/utils/engines";
 import TimeInput from "./TimeInput";
 
 // Native GoMode::validate rejects a zero limit.
 const MIN_LIMIT = 1;
 
-function limit(value: string | number): number {
-  return typeof value === "number" ? Math.max(MIN_LIMIT, value) : MIN_LIMIT;
+function limit(value: string | number, max = Number.POSITIVE_INFINITY): number {
+  return typeof value === "number"
+    ? Math.min(max, Math.max(MIN_LIMIT, Math.trunc(value)))
+    : MIN_LIMIT;
 }
 
 function GoModeInput({
@@ -49,15 +52,19 @@ function GoModeInput({
         .with({ t: "Depth" }, (v) => (
           <NumberInput
             min={1}
+            max={MAX_GO_TIME_OR_DEPTH}
+            allowDecimal={false}
             value={v.c}
-            onChange={(v) => setGoMode({ t: "Depth", c: limit(v) })}
+            onChange={(v) => setGoMode({ t: "Depth", c: limit(v, MAX_GO_TIME_OR_DEPTH) })}
           />
         ))
         .with({ t: "Nodes" }, (v) => (
           <NumberInput
             min={1}
+            max={MAX_GO_NODES}
+            allowDecimal={false}
             value={v.c}
-            onChange={(v) => setGoMode({ t: "Nodes", c: limit(v) })}
+            onChange={(v) => setGoMode({ t: "Nodes", c: limit(v, MAX_GO_NODES) })}
           />
         ))
         .with({ t: "Time" }, (v) => (

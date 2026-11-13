@@ -31,6 +31,8 @@ import {
     defaultEngineProgressId,
     engineMultiPv,
     engineSchema,
+    goModeSchema,
+    limitedGoModeSchema,
     isEngineResourcePathOptionName,
     isManifestEngineInstalled,
     installDefaultEngine,
@@ -463,5 +465,40 @@ describe("engineMultiPv", () => {
         for (const invalid of ["", "abc", "0", "-3"])
             expect(engineMultiPv(multiPv(invalid))).toBe(1);
         expect(engineMultiPv([{ type: "resource", name: "MultiPV", resources: [] }])).toBe(1);
+    });
+});
+
+describe("engineSchema go mode", () => {
+    const localEngine = {
+        type: "local" as const,
+        id: "engine-1",
+        name: "Stockfish",
+        version: "17",
+        filename: "stockfish",
+        handle: { id: { id: "capability-1" }, kind: "engine" as const },
+    };
+
+    it("drops a non-integer stored go and keeps a valid node limit", () => {
+        expect(engineSchema.parse({ ...localEngine, go: { t: "Nodes", c: 1.5 } }).go).toBeNull();
+        expect(
+            engineSchema.parse({ ...localEngine, go: { t: "Nodes", c: 100_000_000 } }).go,
+        ).toEqual({ t: "Nodes", c: 100_000_000 });
+    });
+});
+
+describe("goModeSchema", () => {
+    it("parses a large node limit and rejects zero or a value above u32", () => {
+        expect(goModeSchema.parse({ t: "Nodes", c: 100_000_000 })).toEqual({
+            t: "Nodes",
+            c: 100_000_000,
+        });
+        expect(limitedGoModeSchema.parse({ t: "Nodes", c: 100_000_000 })).toEqual({
+            t: "Nodes",
+            c: 100_000_000,
+        });
+        expect(goModeSchema.safeParse({ t: "Nodes", c: 0 }).success).toBe(false);
+        expect(goModeSchema.safeParse({ t: "Nodes", c: 4_294_967_296 }).success).toBe(false);
+        expect(limitedGoModeSchema.safeParse({ t: "Nodes", c: 0 }).success).toBe(false);
+        expect(limitedGoModeSchema.safeParse({ t: "Nodes", c: 4_294_967_296 }).success).toBe(false);
     });
 });

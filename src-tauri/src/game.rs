@@ -77,6 +77,25 @@ pub struct TimeControl {
 // unsupported.
 const MIN_INITIAL_TIME_MS: u64 = 1_000;
 
+fn validate_engine_go_modes(config: &GameConfig) -> Result<(), Error> {
+    for (side, player) in [("white", &config.white), ("black", &config.black)] {
+        if let PlayerConfig::Engine {
+            go: Some(go_mode), ..
+        } = player
+        {
+            match go_mode {
+                GoMode::Infinite | GoMode::PlayersTime(_) => {
+                    return Err(Error::InvalidInput(format!(
+                        "{side} engine go mode must be a depth, time or node limit"
+                    )));
+                }
+                _ => go_mode.validate()?,
+            }
+        }
+    }
+    Ok(())
+}
+
 fn validate_time_controls(config: &GameConfig) -> Result<(), Error> {
     let max = u64::from(MAX_ENGINE_LIMIT);
     for (side, control) in [
@@ -319,6 +338,7 @@ struct GameEngineRegistration {
 impl GameController {
     fn new(game_id: GameId, session: u64, config: GameConfig) -> Result<Self, Error> {
         validate_time_controls(&config)?;
+        validate_engine_go_modes(&config)?;
         let initial_fen = config.initial_fen.clone().unwrap_or_else(|| {
             "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string()
         });
@@ -4511,6 +4531,26 @@ mod tests {
                 reason: GameEndReason::Abandonment
             }
         ));
+    }
+
+    #[test]
+    fn engine_player_with_infinite_go_mode_is_refused() {
+        for side in [Color::White, Color::Black] {
+            let mut config = human_config();
+            let mut player = fake_engine_player();
+            if let PlayerConfig::Engine { go, .. } = &mut player {
+                *go = Some(GoMode::Infinite);
+            }
+            match side {
+                Color::White => config.white = player,
+                Color::Black => config.black = player,
+            }
+            assert!(matches!(
+                GameController::new("infinite".into(), 1, config),
+                Err(Error::InvalidInput(message))
+                    if message == format!("{side} engine go mode must be a depth, time or node limit")
+            ));
+        }
     }
 
     #[test]

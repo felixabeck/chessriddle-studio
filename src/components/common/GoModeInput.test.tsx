@@ -65,6 +65,51 @@ afterEach(() => {
   host.remove();
 });
 
+test("typing 100000000 into Nodes keeps the node count", () => {
+  const setGoMode = vi.fn();
+  act(() => {
+    root.render(<GoModeInput goMode={{ t: "Nodes", c: 1_000_000 }} setGoMode={setGoMode} />);
+  });
+  act(() => {
+    const input = host.querySelector("input")!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "100000000",
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(setGoMode).toHaveBeenCalledExactlyOnceWith({ t: "Nodes", c: 100000000 });
+});
+
+test("a fractional Nodes value is stored as an integer", () => {
+  const setGoMode = vi.fn();
+  act(() => {
+    root.render(<GoModeInput goMode={{ t: "Nodes", c: 1_000_000 }} setGoMode={setGoMode} />);
+  });
+  act(() => {
+    const input = host.querySelector("input")!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "1.5");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(setGoMode).toHaveBeenCalledExactlyOnceWith({ t: "Nodes", c: 1 });
+});
+
+test("a Nodes value above u32::MAX is clamped to 4294967295", () => {
+  const setGoMode = vi.fn();
+  act(() => {
+    root.render(<GoModeInput goMode={{ t: "Nodes", c: 1_000_000 }} setGoMode={setGoMode} />);
+  });
+  act(() => {
+    const input = host.querySelector("input")!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "4294967296",
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(setGoMode).toHaveBeenCalledExactlyOnceWith({ t: "Nodes", c: 4294967295 });
+});
+
 test.each(["Time", "Depth", "Nodes"] as const)(
   "typing zero into the %s input emits a minimum of one",
   (t) => {

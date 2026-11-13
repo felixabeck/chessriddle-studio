@@ -354,7 +354,13 @@ impl GoMode {
         match self {
             Self::Depth(value) => validate_limit("depth", *value),
             Self::Time(value) => validate_limit("time", *value),
-            Self::Nodes(value) => validate_limit("nodes", *value),
+            Self::Nodes(value) => {
+                if *value == 0 {
+                    Err(Error::InvalidInput("nodes must be at least 1".into()))
+                } else {
+                    Ok(())
+                }
+            }
             Self::PlayersTime(time) => time.validate(),
             Self::Infinite => Ok(()),
         }
@@ -455,6 +461,20 @@ mod tests {
         assert!(GoMode::PlayersTime(PlayersTime::new(0, 0, 0, 0))
             .to_uci_string()
             .is_err());
+    }
+
+    #[test]
+    fn nodes_accept_the_full_u32_range() {
+        assert_eq!(
+            GoMode::Nodes(100_000_000).to_uci_string().unwrap(),
+            "go nodes 100000000"
+        );
+        assert_eq!(
+            GoMode::Nodes(u32::MAX).to_uci_string().unwrap(),
+            format!("go nodes {}", u32::MAX)
+        );
+        assert!(GoMode::Nodes(0).to_uci_string().is_err());
+        assert!(GoMode::Time(MAX_ENGINE_LIMIT + 1).to_uci_string().is_err());
     }
 
     #[test]

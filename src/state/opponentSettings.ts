@@ -4,7 +4,7 @@ import type { TimeType } from "@/components/common/TimeInput";
 import type { TimeControlField } from "@/utils/clock";
 import {
     engineSettingsSchema,
-    goModeSchema,
+    limitedGoModeSchema,
     localEngineSchema,
     type EngineSettings,
     type LocalEngine,
@@ -37,6 +37,8 @@ export type OpponentSettings =
           incrementUnit?: TimeType;
       };
 
+const DEFAULT_ENGINE_GO: GoMode = { t: "Depth", c: 24 };
+
 export const opponentSettingsSchema = z.discriminatedUnion("type", [
     z.object({
         type: z.literal("human"),
@@ -49,7 +51,7 @@ export const opponentSettingsSchema = z.discriminatedUnion("type", [
         type: z.literal("engine"),
         timeControl: timeControlSchema.optional(),
         engine: localEngineSchema.nullable(),
-        go: goModeSchema,
+        go: limitedGoModeSchema.catch(DEFAULT_ENGINE_GO),
         engineSettings: engineSettingsSchema.optional(),
         timeUnit: timeTypeSchema.optional(),
         incrementUnit: timeTypeSchema.optional(),
@@ -68,8 +70,6 @@ export const defaultPlayerSettings: OpponentSettings = {
     timeUnit: "m",
     incrementUnit: "s",
 };
-
-const DEFAULT_ENGINE_GO: GoMode = { t: "Depth", c: 24 };
 
 export function upgradeOpponentEngine(
     opponent: OpponentSettings,
