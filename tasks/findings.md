@@ -25702,7 +25702,7 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 
 ### On Windows the updater exits the app inside `downloadAndInstall()`, so the unsaved-work check added for f-20261112-90 never runs and dirty tabs are still lost
 
-* **ID:** f-20261114-02 · **Status:** open · **Area:** app-startup · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261114-02 · **Status:** handled · **Area:** app-startup · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** data-loss
 * **Spotted outside diff:** yes (general review of 1a6e3ece0, origin/master f3b063a85)
 * **Where:** `src/App.tsx:112-143` (`installUpdate`: `await update.downloadAndInstall()` at `:119`, then `shouldDeferUpdateRestart()` at `:95-110` / `:133`, then `relaunch()` at `:142`). `src-tauri/src/main.rs:2405` registers `tauri_plugin_updater::Builder::new().build()` with no `on_before_exit` hook. The locked plugin `tauri-plugin-updater` 2.11.0 (`src-tauri/Cargo.lock:6014-6015`), Windows `Update::install_inner` (`src/updater.rs:835-877`): extract the NSIS/MSI installer, run `on_before_exit` if set, `ShellExecuteW` the installer, then `std::process::exit(0)` (`:876`). Its docs say the same at `:749` / `:759` ("Windows: This function exits the app after launching the updater installer successfully"). Windows ships updates: `.github/workflows/release.yml:55` builds `windows-latest`, and `:132-135` refuses to publish a `latest.json` without `windows-x86_64`. The workspace lives in `sessionStorage` (f-20261112-90 Where).
@@ -25712,6 +25712,14 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Proof:** source trace on origin/master f3b063a85 at the lines above, plus the vendored plugin source (`~/.cargo/registry/.../tauri-plugin-updater-2.11.0/src/updater.rs:835-877`, the version in `Cargo.lock`). `src/App.test.tsx` mocks `downloadAndInstall` as resolving, so it covers only the Linux/macOS path. Ledger/decisions grep (downloadAndInstall, install_inner, on_before_exit, ShellExecute, Windows updater) found only f-20261112-90 itself, whose handled note does not mention Windows.
 * **Related:** f-20261112-90 (handled by 1a6e3ece0; this is the Windows path that fix does not reach); d-20261102-08 / d-20261102-10 (quit-gate scan, fail closed).
 * **Found by:** Grok Bot general review
+* **Handled 2026-11-14 (drain c489baf4, session 22045f82-e630-47a9-8173-3354d5227a61, lens tier, commits c79f798ad and 2e388cbec):**
+  `installUpdate` (`src/App.tsx`) now calls `update.download()` and `update.install()` separately. On Windows (`platform() === "windows"`) it runs `shouldDeferUpdateRestart()` between them. That covers a quit already in progress, the shared `scanBlockingTabs` (d-20261102-08) and a failed scan, which blocks (d-20261102-10). When something blocks, `install()` is not called and a persistent `Updater.Postponed` / `Updater.SaveToInstall` notice tells the user to save and restart. Both keys are in all 16 catalogues. Linux and macOS keep the check after the install and before `relaunch()`.
+  The capability now grants `updater:allow-download` and `updater:allow-install` in place of `updater:allow-download-and-install`. Without that the split calls were refused by the ACL, as round-1 `review-root-cause` found. `src/platform/fork-updater.test.ts` and the boundary checker test pin the new grants.
+  `src/App.test.tsx` models the Windows install as a never-resolving promise and asserts the scan runs before `install()`. It also covers the postponed notice for a blocking tab, a quit in progress and a scan failure. For Linux it asserts that `install()` still runs before the scan.
+  Fix-revert: with only the `src/App.tsx` change stashed, 10 tests failed. Restored, all 38 passed.
+  Rejected alternatives, including keeping the download for install on quit, are in d-20261114-02.
+  Review: `review-correctness`, `review-root-cause`, `review-tests` and `review-ipc-contract` all APPROVED in round 2.
+<!-- ledger-meta {"command":"close","effect_lines":7,"effect_sha256":"71cb956f72d7ce6f6f5ba61900bfedccd173ff1cf411a7135cd5d14568e415a0","header_sha256":"8946cfbf1604ec8ec8f78aa5b807a63cea6f8db30c8feb69a8af2d3f5d814918","header_status":"handled","input_sha256":"c9d8420d5c193eff3a4c5e5fb52997a588002f52a250c727cea34ae9c421f0ec","kind":"mutation-receipt","operation":"e83b667e7fb18ca3f3ab55c10bebcf7b9a3b425bb7e3c471fbb5beb695759027","options":{"section":null},"request_id_sha256":null,"results":["f-20261114-02"],"target":"f-20261114-02","v":1} -->
 
 ---
 
