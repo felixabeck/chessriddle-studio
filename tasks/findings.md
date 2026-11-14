@@ -25971,3 +25971,20 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Fix:** remove the normalizing `useEffect`. The checkbox handlers (`setCastlingRights`) already write the changed rights, so derived state never needs pushing back on render. If canonical root FENs are wanted, canonicalize once where the root is created (`defaultTree`/`parsePGN`), not in a view effect. Add a test that renders `FenInput` at a root with a 4-field FEN and moves and expects the tree unchanged.
 * **Related:** d-20261021-17 (swapMove kept for FenInput's side-to-move select); f-20261106-31 (AnnotationEditor across a `setFen` root replacement).
 * **Found by:** Grok Bot general review
+
+---
+
+## 2026-11-14 — filed through the inbox spool
+
+### Game info header shows a year-only or year-month PGN date as fully unknown (????.??.??)
+
+* **ID:** f-20261114-12 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** yes (general review of pre-fork code, origin/master 69856f2ea; the date conversion is upstream code)
+* **Where:** `src/components/common/GameInfo.tsx:47-51` (`const date = headers.date ? dayjs(headers.date, "YYYY.MM.DD").isValid() ? dayjs(headers.date, "YYYY.MM.DD").toDate() : null : null;`) feeding the header's `DateInput` at `:228-243` (`value={date}`, `placeholder="????.??.??"`). `customParseFormat` is the only dayjs parse plugin (`src/bootstrap.tsx:64`).
+* **Defect:** PGN dates with unknown parts (`1972.??.??`, `2024.03.??`) are standard and common for OTB and historical games, but `dayjs(…, "YYYY.MM.DD")` rejects them, so `date` becomes `null` and the header renders the placeholder `????.??.??`. The known year (and month) is still in `headers.date` and is saved unchanged; it is just never shown in the game's info header.
+* **Failure scenario:** Open a PGN game with `[Date "1972.??.??"]` (e.g. a Fischer–Spassky game from a classic collection, or any OTB game entered with year only). The board's game info shows the date as `????.??.??`, i.e. "unknown", although the file says 1972.
+* **Proof:** Node probe on atlas with the repo's `dayjs` + `dayjs/plugin/customParseFormat` (the same parse call): `2024.??.??` → invalid, `2024.03.??` → invalid, `????.??.??` → invalid, `2024.03.05` → valid `2024.03.05`. No files written.
+* **Fix:** when `headers.date` does not parse as a full date, show the raw PGN date text (or render the known parts) instead of the empty placeholder, and keep the picker for full dates. Add a test rendering `GameInfo` with `date: "1972.??.??"` that expects `1972` to be visible.
+* **Related:** f-20261101-10 (partial dates in database date filters, a different code path); d-20261107-03 (partial dates on the Ratings time axis).
+* **Found by:** Grok Bot general review
