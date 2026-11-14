@@ -24450,7 +24450,7 @@ Handled 2026-11-12 by drain session bdcaf057 (lens tier; lenses correctness, roo
 
 ### PageUp on the first game and PageDown on the last game reload the current game and offer to discard unsaved edits
 
-* **ID:** f-20261112-34 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** felix-codex-login
+* **ID:** f-20261112-34 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** behaviour
 - **Spotted outside diff:** no
 - **Where:** `src/components/panels/info/InfoPanel.tsx:201-216` (NEXT_GAME/PREVIOUS_GAME hotkeys, bound to pagedown/pageup in `src/state/keybinds.ts:62-63`) and `setPage` at `InfoPanel.tsx:391`
@@ -24462,7 +24462,10 @@ Handled 2026-11-12 by drain session bdcaf057 (lens tier; lenses correctness, roo
 
 2026-11-13, drain session 6f337422-5e8c-4c7c-9baa-91015d1a2eac: the finding still holds at HEAD 1cac6ad53. Briefs for one Codex write leaf were written (/tmp/nf-34/brief-paging.md and /tmp/nf-34/brief-keymap.md, together covering f-20261112-34, f-20261111-62 and f-20261111-89). Both leaves failed before doing any work: the Codex CLI 0.167.2 returned `401 token_revoked` with "Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again." A direct `codex exec --profile leaf` probe reproduced it, even though `codex login status` still reports "Logged in using ChatGPT". push-review-policy §5 does not allow a failed write to switch to another writer.
 Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK only.' | codex exec --profile leaf -s read-only --ephemeral --skip-git-repo-check -` must answer without a 401. Then clear Blocked to none and let the drain re-pick the finding. No code was changed.
-<!-- ledger-meta {"command":"set-header","effect_lines":2,"effect_sha256":"764159c0e354f6374f29710242b6e84543fc71081f96b7805ec570ba554ffed9","header_sha256":"0ceae12f3577d5af0726608bc39a40a40e1d9a46c256195e1124e5bc0a9e9c9c","header_status":"open","input_sha256":"06e2ac9ec68b11e22b3bf7b63ae8b89cbc6387430798b7825188afb34a66ad2d","kind":"mutation-receipt","operation":"1c18ce16c4cb9c9327749b186087e8bd22aa26ebcd5afeb6869c5cb0056bf126","options":{"headers":{"Blocked":"felix-codex-login"},"section":null},"request_id_sha256":null,"results":["f-20261112-34"],"target":"f-20261112-34","v":1} -->
+<!-- ledger-meta {"command":"set-header","effect_lines":2,"effect_sha256":"764159c0e354f6374f29710242b6e84543fc71081f96b7805ec570ba554ffed9","header_sha256":"e8cb32f4c248465f7577e79fc88a7fedf7e7d5b517b1c8d9c6074e0d5ec4c5f2","header_status":"open","input_sha256":"06e2ac9ec68b11e22b3bf7b63ae8b89cbc6387430798b7825188afb34a66ad2d","kind":"mutation-receipt","operation":"1c18ce16c4cb9c9327749b186087e8bd22aa26ebcd5afeb6869c5cb0056bf126","options":{"headers":{"Blocked":"felix-codex-login"},"section":null},"request_id_sha256":null,"results":["f-20261112-34"],"target":"f-20261112-34","v":1} -->
+
+* **2026-11-14 — blocker cleared (interactive Claude session 92749ccf):** the Codex executor was removed on 2026-11-13 (account deactivated; `leaf-launch.sh` refuses `codex` and names agy, grok, claude or deepseek). No Codex login can become true, so this precondition no longer applies. The finding was spot-checked against HEAD 7e373f3ed and still holds. The recorded brief and settled design stay valid; the next pickup launches the write leaf on the run's selected executor.
+<!-- ledger-meta {"command":"set-header","effect_lines":1,"effect_sha256":"2b5f625b13a056d688f248425dc42bbb0e2e0a49fa8ee452180239a8c58dbf44","header_sha256":"e8cb32f4c248465f7577e79fc88a7fedf7e7d5b517b1c8d9c6074e0d5ec4c5f2","header_status":"open","input_sha256":"c8fdfebae5d33f59bc2479642b78038314d02c36ac13489990313edd055ffab4","kind":"mutation-receipt","operation":"7504a1e216b6bbfc573e8e4d809848e4132d74217a91b64e463166a26f59e853","options":{"headers":{"Blocked":"none"},"section":null},"request_id_sha256":null,"results":["f-20261112-34"],"target":"f-20261112-34","v":1} -->
 
 ---
 
