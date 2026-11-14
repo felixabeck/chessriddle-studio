@@ -17,6 +17,13 @@ const mocks = vi.hoisted(() => ({
   personalCardInfo: vi.fn(),
   personalCardNotice: vi.fn(),
   setName: undefined as ((name: string) => void) | undefined,
+  select: undefined as
+    | {
+        value?: string | null;
+        data?: string[];
+        onChange?: (value: string | null) => void;
+      }
+    | undefined,
 }));
 
 vi.mock("@/platform/tauri", async () => {
@@ -83,7 +90,14 @@ vi.mock("@mantine/core", () => ({
   Loader: () => null,
   Paper: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Progress: ({ value }: { value: number }) => <div data-testid="progress">{value}</div>,
-  Select: () => null,
+  Select: (props: {
+    value?: string | null;
+    data?: string[];
+    onChange?: (value: string | null) => void;
+  }) => {
+    mocks.select = props;
+    return null;
+  },
   Stack: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Text: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
   ThemeIcon: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -188,6 +202,7 @@ function exactOwnerScenario(ownerPresent = true) {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.setName = undefined;
+  mocks.select = undefined;
   localStorage.clear();
   getDefaultStore().set(sessionsAtom, [
     session,
@@ -1432,7 +1447,7 @@ test.each([{}, { perfs: { blitz: { games: 2 } } }, { username: "foreign" }])(
   },
 );
 
-test("a selected player survives unrelated session updates and falls back when removed", async () => {
+function setupBobAndAlice({ bobGames = 2, includeAlice = true } = {}) {
   const bobSession = {
     player: "Bob",
     updatedAt: 1,
@@ -1443,36 +1458,36 @@ test("a selected player survives unrelated session updates and falls back when r
     updatedAt: 1,
     chessCom: { username: "alice", stats: {} },
   };
-  const bobDb = { ...database("db-1"), filename: "bob_lichess.db3" };
+  const bobDb = { ...database("db-1"), filename: "bob_lichess.db3", game_count: bobGames };
   const aliceDb = { ...database("db-2"), filename: "alice_chesscom.db3" };
-  getDefaultStore().set(sessionsAtom, [bobSession, aliceSession]);
+  getDefaultStore().set(sessionsAtom, includeAlice ? [bobSession, aliceSession] : [bobSession]);
   mocks.getDatabases.mockResolvedValue({
-    databases: [bobDb, aliceDb],
+    databases: includeAlice ? [bobDb, aliceDb] : [bobDb],
     unread: [],
     root: { id: { id: "selection-root" }, kind: "databaseRoot" as const },
   });
-  mocks.query_players.mockImplementation(async (_file, query) => ({
-    data: [{ id: 7, name: query.name, elo: null }],
-    count: 1,
-  }));
-  mocks.getPlayersGameInfo.mockImplementation(async (_progress, file) => ({
+  return { bobSession, aliceSession, bobDb, aliceDb };
+}
+
+test("choosing a player via the empty-summary Select or PersonalCard survives session updates and falls back when removed", async () => {
+  const { bobSession, aliceSession } = setupBobAndAlice({ bobGames: 0 });
+  mocks.query_players.mockImplementation(async (file, query) =>
+    file.id.id === "db-1"
+      ? { data: [], count: 0 }
+      : { data: [{ id: 7, name: query.name, elo: null }], count: 1 },
+  );
+  mocks.getPlayersGameInfo.mockResolvedValue({
     site_stats_data: [
-      {
-        site: file.id.id === "db-2" ? "Chess.com" : "Lichess",
-        player: file.id.id === "db-2" ? "alice" : "bob",
-        daily: [],
-        colors: [],
-        latest: [],
-        openings: [],
-      },
+      { site: "Chess.com", player: "alice", daily: [], colors: [], latest: [], openings: [] },
     ],
-  }));
+  });
 
   await renderDatabases();
-  await vi.waitFor(() => expect(container.textContent).toContain("player-card Bob"));
+  await vi.waitFor(() => expect(container.textContent).toContain("Home.Databases.Empty.Title"));
+  expect(mocks.select).toMatchObject({ value: "Bob", data: ["Bob", "Alice"] });
 
   await act(async () => {
-    mocks.setName?.("Alice");
+    mocks.select?.onChange?.("Alice");
   });
   await vi.waitFor(() => expect(container.textContent).toContain("player-card Alice"));
 
@@ -1480,33 +1495,27 @@ test("a selected player survives unrelated session updates and falls back when r
     getDefaultStore().set(sessionsAtom, [{ ...bobSession, updatedAt: 2 }, aliceSession]);
   });
   await vi.waitFor(() => expect(container.textContent).toContain("player-card Alice"));
-  expect(container.textContent).not.toContain("player-card Bob");
+  expect(container.textContent).not.toContain("Home.Databases.Empty.Title");
+
+  await act(async () => {
+    mocks.setName?.("Bob");
+  });
+  await vi.waitFor(() => expect(container.textContent).toContain("Home.Databases.Empty.Title"));
+
+  await act(async () => {
+    mocks.select?.onChange?.("Alice");
+  });
+  await vi.waitFor(() => expect(container.textContent).toContain("player-card Alice"));
 
   await act(async () => {
     getDefaultStore().set(sessionsAtom, [{ ...bobSession, updatedAt: 3 }]);
   });
-  await vi.waitFor(() => expect(container.textContent).toContain("player-card Bob"));
+  await vi.waitFor(() => expect(container.textContent).toContain("Home.Databases.Empty.Title"));
+  expect(mocks.select?.value).toBe("Bob");
 });
 
 test("switching between two players or returning after an aborted fetch does not carry over stale progress", async () => {
-  const bobSession = {
-    player: "Bob",
-    updatedAt: 1,
-    lichess: { username: "bob", account: { id: "bob", username: "bob" } },
-  };
-  const aliceSession = {
-    player: "Alice",
-    updatedAt: 1,
-    chessCom: { username: "alice", stats: {} },
-  };
-  const bobDb = { ...database("db-1"), filename: "bob_lichess.db3" };
-  const aliceDb = { ...database("db-2"), filename: "alice_chesscom.db3" };
-  getDefaultStore().set(sessionsAtom, [bobSession, aliceSession]);
-  mocks.getDatabases.mockResolvedValue({
-    databases: [bobDb, aliceDb],
-    unread: [],
-    root: { id: { id: "progress-switch-root" }, kind: "databaseRoot" as const },
-  });
+  const { bobSession, aliceSession } = setupBobAndAlice();
   mocks.query_players.mockImplementation(async (_file, query) => ({
     data: [{ id: 7, name: query.name, elo: null }],
     count: 1,
@@ -1568,31 +1577,13 @@ test("switching between two players or returning after an aborted fetch does not
   expect(container.querySelector("[data-testid='progress']")?.textContent).toBe("0");
 });
 
-test("refetching a player's summary with the same handle and changed game_count starts at 0%", async () => {
-  const bobSession = {
-    player: "Bob",
-    updatedAt: 1,
-    lichess: { username: "bob", account: { id: "bob", username: "bob" } },
-  };
-  const bobDb = { ...database("db-1"), filename: "bob_lichess.db3", game_count: 2 };
-  getDefaultStore().set(sessionsAtom, [bobSession]);
-  mocks.getDatabases.mockResolvedValue({
-    databases: [bobDb],
-    unread: [],
-    root: { id: { id: "progress-refetch-root" }, kind: "databaseRoot" as const },
-  });
+test("an in-flight same-handle refetch with a changed game_count shows 0% immediately", async () => {
+  const { bobSession, bobDb } = setupBobAndAlice({ bobGames: 2, includeAlice: false });
   mocks.query_players.mockResolvedValue({
     data: [{ id: 7, name: "bob", elo: null }],
     count: 1,
   });
-
-  let resolveFirstFetch!: (value: { site_stats_data: unknown[] }) => void;
-  mocks.getPlayersGameInfo.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        resolveFirstFetch = resolve;
-      }),
-  );
+  mocks.getPlayersGameInfo.mockReturnValue(new Promise(() => undefined));
 
   await renderDatabases();
   await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(1));
@@ -1603,30 +1594,71 @@ test("refetching a player's summary with the same handle and changed game_count 
   });
   expect(displayedProgress()).toContain("80%");
 
-  await act(async () => {
-    resolveFirstFetch({
-      site_stats_data: [
-        { site: "Lichess", player: "bob", daily: [], colors: [], latest: [], openings: [] },
-      ],
-    });
-  });
-  await vi.waitFor(() => expect(container.textContent).toContain("player-card Bob"));
-
+  // Hold the second fetch at query_players while the first fetch is still pending at 80%.
+  let releaseSecondQuery!: () => void;
+  mocks.query_players.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        releaseSecondQuery = () => resolve({ data: [{ id: 7, name: "bob", elo: null }], count: 1 });
+      }),
+  );
   mocks.getDatabases.mockResolvedValue({
     databases: [{ ...bobDb, game_count: 5 }],
     unread: [],
-    root: { id: { id: "progress-refetch-root" }, kind: "databaseRoot" as const },
+    root: { id: { id: "selection-root" }, kind: "databaseRoot" as const },
   });
-  mocks.getPlayersGameInfo.mockReturnValue(new Promise(() => undefined));
 
   await act(async () => {
     getDefaultStore().set(sessionsAtom, [{ ...bobSession, updatedAt: 2 }]);
   });
-  await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(2));
 
   expect(container.textContent).toContain("Home.Databases.ProcessingGames");
   expect(displayedProgress()).toContain("0%");
   expect(displayedProgress()).not.toContain("80%");
-  expect(displayedProgress()).not.toContain("100%");
   expect(container.querySelector("[data-testid='progress']")?.textContent).toBe("0");
+
+  await act(async () => {
+    releaseSecondQuery();
+  });
+  await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(2));
+  expect(displayedProgress()).toContain("0%");
+});
+
+test("overlapping same-key fetches keep the second fetch's progress map when the first finally settles late", async () => {
+  setupBobAndAlice({ includeAlice: false });
+  mocks.query_players.mockResolvedValue({
+    data: [{ id: 7, name: "bob", elo: null }],
+    count: 1,
+  });
+
+  let rejectFirstBob!: (reason?: unknown) => void;
+  mocks.getPlayersGameInfo
+    .mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectFirstBob = reject;
+        }),
+    )
+    .mockImplementationOnce(() => new Promise(() => undefined));
+
+  await renderDatabases();
+  await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(1));
+
+  // Unmount so the first fetch is aborted while its native promise is still unwinding,
+  // then mount a fresh SWR cache that starts a second fetch under the identical progress key.
+  await act(async () => root.render(null));
+  await renderDatabases();
+  await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(2));
+  const secondBobProgressId = mocks.getPlayersGameInfo.mock.calls[1][0] as string;
+
+  // The first fetch's finally settles after the second installed its map:
+  await act(async () => {
+    rejectFirstBob(new DOMException("Cancellation", "AbortError"));
+  });
+
+  await act(async () => {
+    progressListener(progressEvent(secondBobProgressId, 65));
+  });
+  expect(displayedProgress()).toContain("65%");
+  expect(container.querySelector("[data-testid='progress']")?.textContent).toBe("65");
 });

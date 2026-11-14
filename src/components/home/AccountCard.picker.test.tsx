@@ -678,61 +678,14 @@ test.each([
   });
 });
 
-test.each(["event-first", "reply-first"] as const)(
-  "unmounting the only surface during an unlinked import clears its conversion row (%s)",
-  async (order) => {
-    mocks.pendingAccountCompletions.mockImplementation(
-      () => new Promise((resolve) => setTimeout(() => resolve(snapshot), 0)),
-    );
-    const response = deferred<AccountCompletion>();
-    mocks.importAccountGames.mockReturnValue(response.promise);
-
-    await renderCards();
-    await act(async () => {
-      await vi.waitFor(() => expect(mocks.pendingAccountCompletions).toHaveBeenCalledOnce());
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-
-    const caller = runAccountImport(store, request);
-    snapshot = [completion("running", { importing: true })];
-    await act(async () => {
-      changed();
-      await vi.waitFor(() => {
-        expect(store.get(databaseConversionStateAtom)).toEqual([
-          expect.objectContaining({ id: "conversion:account-operation", targetDatabase: database }),
-        ]);
-      });
-    });
-
-    await act(async () => root.render(null));
-    expect(unlisten).not.toHaveBeenCalled();
-
-    const succeeded = completion("succeeded");
-    snapshot = [succeeded];
-    if (order === "event-first") {
-      changed();
-    }
-    await act(async () => {
-      response.resolve(structuredClone(succeeded));
-      await caller;
-    });
-    if (order === "reply-first") {
-      changed();
-    }
-
-    await vi.waitFor(() => {
-      expect(store.get(databaseConversionStateAtom)).toEqual([]);
-      expect(unlisten).toHaveBeenCalledOnce();
-    });
-    expect(store.get(accountCompletionsAtom).get("chesscom_felix")?.outcome.state).toBe(
-      "succeeded",
-    );
-  },
-);
-
-test.each(["event-first", "reply-first"] as const)(
-  "unmounting the only surface during a failing unlinked import clears its conversion row and rejects (%s)",
-  async (order) => {
+test.each([
+  { state: "succeeded", order: "event-first" },
+  { state: "succeeded", order: "reply-first" },
+  { state: "failed", order: "event-first" },
+  { state: "failed", order: "reply-first" },
+] as const)(
+  "unmounting the only surface during a $state unlinked import clears its conversion row ($order)",
+  async ({ state, order }) => {
     mocks.pendingAccountCompletions.mockImplementation(
       () => new Promise((resolve) => setTimeout(() => resolve(snapshot), 0)),
     );
@@ -762,27 +715,165 @@ test.each(["event-first", "reply-first"] as const)(
     await act(async () => root.render(null));
     expect(unlisten).not.toHaveBeenCalled();
 
-    const failed = completion("failed");
-    snapshot = [failed];
+    const terminal = completion(state);
+    snapshot = [terminal];
     if (order === "event-first") {
       changed();
     }
     await act(async () => {
-      response.resolve(structuredClone(failed));
+      response.resolve(structuredClone(terminal));
       await caller;
     });
+    expect(store.get(databaseConversionStateAtom)).toEqual([]);
+    expect(store.get(accountCompletionsAtom).get("chesscom_felix")?.outcome.state).toBe(state);
     if (order === "reply-first") {
       changed();
     }
 
-    expect(caught).toMatchObject({ name: "TauriCommandError", message: "import failed" });
+    expect(
+      caught ? { name: (caught as Error).name, message: (caught as Error).message } : undefined,
+    ).toEqual(
+      state === "failed" ? { name: "TauriCommandError", message: "import failed" } : undefined,
+    );
     await vi.waitFor(() => {
       expect(store.get(databaseConversionStateAtom)).toEqual([]);
       expect(unlisten).toHaveBeenCalledOnce();
     });
-    expect(store.get(accountCompletionsAtom).get("chesscom_felix")?.outcome.state).toBe("failed");
+    expect(store.get(accountCompletionsAtom).get("chesscom_felix")?.outcome.state).toBe(state);
   },
 );
+
+test("with no surface, reply-first settlement clears the conversion row and disposes even if completionChanged never fires", async () => {
+  const response = deferred<AccountCompletion>();
+  mocks.importAccountGames.mockReturnValue(response.promise);
+  snapshot = [completion("running", { importing: true })];
+  await renderCards();
+  expect(store.get(databaseConversionStateAtom)).toEqual([
+    expect.objectContaining({ id: "conversion:account-operation", targetDatabase: database }),
+  ]);
+
+  const caller = runAccountImport(store, request);
+  await act(async () => root.render(null));
+  expect(unlisten).not.toHaveBeenCalled();
+
+  const terminal = completion("succeeded");
+  snapshot = [terminal];
+  await act(async () => {
+    response.resolve(structuredClone(terminal));
+    await caller;
+  });
+
+  // Immediately after runAccountImport settles, without any completionChanged emit:
+  expect(store.get(databaseConversionStateAtom)).toEqual([]);
+  expect(store.get(accountCompletionsAtom).get("chesscom_felix")).toEqual(terminal);
+  expect(unlisten).toHaveBeenCalledOnce();
+});
+
+test("a mounted surface receiving a reply-first deletionPending failure holds the terminal entry and disposes on unmount", async () => {
+  const response = deferred<AccountCompletion>();
+  mocks.importAccountGames.mockReturnValue(response.promise);
+  snapshot = [completion("running", { importing: true })];
+  await renderCards();
+  expect(store.get(accountCompletionsAtom).get("chesscom_felix")?.outcome.state).toBe("running");
+
+  const terminal = completion("failed", { deletionPending: true, committedDatabase: database });
+  let caught: unknown;
+  const caller = runAccountImport(store, request).catch((error) => {
+    caught = error;
+  });
+  snapshot = [terminal];
+  await act(async () => {
+    response.resolve(structuredClone(terminal));
+    await caller;
+  });
+
+  expect(caught).toMatchObject({ name: "TauriCommandError", message: "import failed" });
+  expect(store.get(databaseConversionStateAtom)).toEqual([]);
+  expect(store.get(accountCompletionsAtom).get("chesscom_felix")).toEqual(terminal);
+  expect(unlisten).not.toHaveBeenCalled();
+
+  await act(async () => root.render(null));
+  expect(unlisten).toHaveBeenCalledOnce();
+});
+
+test("a delayed attempt 1 reply does not clear or dispose a running attempt 2", async () => {
+  const firstResponse = deferred<AccountCompletion>();
+  mocks.importAccountGames.mockReturnValueOnce(firstResponse.promise);
+
+  await renderCards();
+  const firstCaller = runAccountImport(store, request);
+
+  snapshot = [completion("running", { attempt: 2, importing: true, deletionPending: true })];
+  await emitChanged();
+  await act(async () => root.render(null));
+  expect(unlisten).not.toHaveBeenCalled();
+
+  await act(async () => {
+    firstResponse.resolve(completion("succeeded", { attempt: 1 }));
+    await firstCaller;
+  });
+
+  expect(unlisten).not.toHaveBeenCalled();
+  expect(store.get(databaseConversionStateAtom)).toEqual([
+    expect.objectContaining({ id: "conversion:account-operation", targetDatabase: database }),
+  ]);
+  expect(store.get(accountCompletionsAtom).get("chesscom_felix")).toMatchObject({
+    attempt: 2,
+    outcome: { state: "running" },
+  });
+});
+
+test("a stale in-flight running snapshot for a settled attempt is ignored while a retry attempt 2 is shown as running again", async () => {
+  const response = deferred<AccountCompletion>();
+  mocks.importAccountGames.mockReturnValueOnce(response.promise);
+  const runningAttempt1 = completion("running", { attempt: 1, importing: true });
+  snapshot = [runningAttempt1];
+  await renderCards();
+  expect(store.get(databaseConversionStateAtom)).toHaveLength(1);
+
+  // Start an earlier refresh whose pendingAccountCompletions resolves after the terminal reply.
+  const staleRefresh = deferred<AccountCompletion[]>();
+  mocks.pendingAccountCompletions.mockImplementationOnce(() => staleRefresh.promise);
+  act(() => {
+    changed();
+  });
+
+  const terminalAttempt1 = completion("failed", {
+    attempt: 1,
+    deletionPending: true,
+    committedDatabase: database,
+  });
+  let caught: unknown;
+  const caller = runAccountImport(store, request).catch((error) => {
+    caught = error;
+  });
+  snapshot = [terminalAttempt1];
+  await act(async () => {
+    response.resolve(structuredClone(terminalAttempt1));
+    await caller;
+  });
+  expect(caught).toMatchObject({ message: "import failed" });
+  expect(store.get(databaseConversionStateAtom)).toEqual([]);
+  expect(store.get(accountCompletionsAtom).get("chesscom_felix")).toEqual(terminalAttempt1);
+
+  // Resolve the earlier in-flight snapshot that still reports attempt 1 as running + importing.
+  await act(async () => {
+    staleRefresh.resolve([structuredClone(runningAttempt1)]);
+  });
+  expect(store.get(databaseConversionStateAtom)).toEqual([]);
+  expect(store.get(accountCompletionsAtom).get("chesscom_felix")).toEqual(terminalAttempt1);
+
+  // A retry on attempt 2 with the same id is shown as running + importing again.
+  snapshot = [completion("running", { attempt: 2, importing: true, deletionPending: true })];
+  await emitChanged();
+  expect(store.get(databaseConversionStateAtom)).toEqual([
+    expect.objectContaining({ id: "conversion:account-operation", targetDatabase: database }),
+  ]);
+  expect(store.get(accountCompletionsAtom).get("chesscom_felix")).toMatchObject({
+    attempt: 2,
+    outcome: { state: "running" },
+  });
+});
 
 test("a reloaded running unlinked import clears its conversion row after the only surface unmounts", async () => {
   snapshot = [completion("running", { importing: true })];

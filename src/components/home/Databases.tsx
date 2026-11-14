@@ -15,6 +15,7 @@ import { DatabaseX } from "lucide-react";
 import { useAtomValue } from "jotai";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { unstable_serialize } from "swr";
 import useSWRImmutable from "swr/immutable";
 import type { PlayerGameInfo } from "@/bindings";
 import { notifyListenerError } from "@/components/files/notifyError";
@@ -25,7 +26,6 @@ import { useCollectionCurrencies } from "@/state/linkedCollections";
 import { useTauriListener } from "@/platform/useTauriListener";
 import { activeDatabaseViewStore } from "@/state/store/database";
 import {
-  databaseHandleKey,
   getDatabases,
   query_players,
   type ManagedDatabaseInfo,
@@ -113,19 +113,15 @@ function StatisticsNotice({
   );
 }
 
-/** Stable identity matching the `["personalInfo", name, playerDatabases]` SWR key. */
+/** Exact SWR key identity (`unstable_serialize`) for `["personalInfo", name, databases]`. */
 function personalInfoProgressKey(name: string, databases: PersonalDatabase[]): string {
-  return JSON.stringify([
-    "personalInfo",
-    name,
-    databases.map(({ db }) => (db.type === "unread" ? db.key : databaseHandleKey(db.file))),
-  ]);
+  return unstable_serialize(["personalInfo", name, databases]);
 }
 
 /**
  * Owned progress ids for an in-flight personalInfo fetch. Module-scoped so a remount
  * can still match ProgressEvents while SWR reuses the original fetcher. The entry is
- * replaced at the start of each fetch so the map cannot grow without bound.
+ * set at fetch start and deleted in that fetch's finally when it is still that fetch's map.
  */
 const ownedProgressByKey = new Map<string, Map<string, number>>();
 

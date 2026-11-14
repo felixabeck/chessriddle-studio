@@ -30,7 +30,7 @@ import { useTranslation } from "react-i18next";
 import { useSWRConfig } from "swr";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { DATABASE_LIST_KEY, refreshDatabaseList } from "@/hooks/useDatabaseList";
-import type { DatabaseHandle, FileWorkspaceHandle, PathRef } from "@/bindings";
+import type { AccountCompletion, DatabaseHandle, FileWorkspaceHandle, PathRef } from "@/bindings";
 import { IconAction } from "@/components/common/IconAction";
 import {
   notifyListenerError,
@@ -170,30 +170,46 @@ export function AccountCard({
   const completions = useAtomValue(accountCompletionsAtom);
   const retained = completions.get(accountKey);
   const pending = downloadsInFlight.has(accountKey) || retained?.outcome.state === "running";
-  const [progress, setProgress] = useState<{ id: string; value: number } | null>(null);
+  const [progress, setProgress] = useState<{
+    id: string;
+    attempt: number | null;
+    value: number;
+  } | null>(null);
   const [migrationWorkspace, setMigrationWorkspace] = useState<FileWorkspaceHandle | null>(null);
   const [collectionNotice, setCollectionNotice] = useState(false);
   const [downloadDestination, setDownloadDestination] = useAtom(downloadDestinationAtom);
 
+  function activeProgressTicket(
+    current: AccountCompletion | undefined,
+    inFlight: ReadonlyMap<string, string | null>,
+  ): { id: string; attempt: number | null } | null {
+    if (current?.outcome.state === "running") {
+      return { id: current.progressId, attempt: current.attempt };
+    }
+    const fallback = inFlight.get(accountKey);
+    return typeof fallback === "string" ? { id: fallback, attempt: null } : null;
+  }
+
   useTauriListener(
     tauriSubscriptions.progress,
     (e) => {
-      const current = store.get(accountCompletionsAtom).get(accountKey);
-      const ticket =
-        current?.outcome.state === "running"
-          ? current.progressId
-          : store.get(accountDownloadsInFlightAtom).get(accountKey);
-      if (typeof ticket === "string" && e.payload.id === ticket) {
-        setProgress({ id: e.payload.id, value: e.payload.progress });
+      const ticket = activeProgressTicket(
+        store.get(accountCompletionsAtom).get(accountKey),
+        store.get(accountDownloadsInFlightAtom),
+      );
+      if (ticket && e.payload.id === ticket.id) {
+        setProgress({ id: ticket.id, attempt: ticket.attempt, value: e.payload.progress });
       }
     },
     { onError: notifyListenerError },
   );
 
-  const currentTicket =
-    retained?.outcome.state === "running" ? retained.progressId : downloadsInFlight.get(accountKey);
+  const currentTicket = activeProgressTicket(retained, downloadsInFlight);
   const currentProgress =
-    pending && typeof currentTicket === "string" && progress?.id === currentTicket
+    pending &&
+    currentTicket !== null &&
+    progress?.id === currentTicket.id &&
+    progress.attempt === currentTicket.attempt
       ? progress.value
       : null;
 
@@ -300,7 +316,6 @@ export function AccountCard({
                 if (store.get(accountCompletionsAtom).get(accountKey)?.outcome.state === "running")
                   return;
                 if (store.get(accountDownloadsInFlightAtom).has(accountKey)) return;
-                setProgress(null);
                 setDownloadsInFlight((previous) => new Map(previous).set(accountKey, null));
                 try {
                   let preparation: Awaited<ReturnType<typeof tauri.prepareAccountCollection>> =

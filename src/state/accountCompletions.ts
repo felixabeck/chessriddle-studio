@@ -29,6 +29,7 @@ function report(error: unknown) {
 function createAccountObserver(store: Store): AccountObserver {
     const surfaces = new Map<string, Set<Surface>>();
     const applications = new Map<string, { attempt: number; result: Promise<void> }>();
+    const settled = new Map<string, number>();
     let live = 0;
     let running = new Map<string, number>();
     let sequence = Promise.resolve();
@@ -36,6 +37,44 @@ function createAccountObserver(store: Store): AccountObserver {
     let unlisten: (() => void) | undefined;
     let initialization: Promise<void> | undefined;
     let active = true;
+
+    function isSettledRunning(entry: AccountCompletion): boolean {
+        if (entry.outcome.state !== "running") return false;
+        const settledAttempt = settled.get(entry.id);
+        return settledAttempt !== undefined && settledAttempt >= entry.attempt;
+    }
+
+    function settle(completion: AccountCompletion) {
+        if (!active || completion.outcome.state === "running") return;
+        const runningAttempt = running.get(completion.id);
+        if (runningAttempt === undefined || runningAttempt <= completion.attempt) {
+            const conversionId = `conversion:${completion.id}`;
+            store.set(databaseConversionStateAtom, (previous) =>
+                previous.some((entry) => entry.id === conversionId)
+                    ? previous.filter((entry) => entry.id !== conversionId)
+                    : previous,
+            );
+            running.delete(completion.id);
+        }
+        const key = accountCompletionKey(completion.request);
+        store.set(accountCompletionsAtom, (previous) => {
+            const current = previous.get(key);
+            if (
+                current?.id !== completion.id ||
+                current.outcome.state !== "running" ||
+                current.attempt > completion.attempt
+            ) {
+                return previous;
+            }
+            const next = new Map(previous);
+            next.set(key, completion);
+            return next;
+        });
+        const previousSettled = settled.get(completion.id);
+        if (previousSettled === undefined || completion.attempt > previousSettled) {
+            settled.set(completion.id, completion.attempt);
+        }
+    }
 
     function apply(completion: AccountCompletion): Promise<void> {
         if (!active || completion.outcome.state === "running") return Promise.resolve();
@@ -63,12 +102,7 @@ function createAccountObserver(store: Store): AccountObserver {
                     }
                     return;
                 }
-                store.set(databaseConversionStateAtom, (previous) =>
-                    previous.filter((entry) => entry.id !== `conversion:${completion.id}`),
-                );
-                if (running.get(completion.id) === completion.attempt) {
-                    running.delete(completion.id);
-                }
+                settle(completion);
                 if (completion.publication && completion.publication.durability !== "Durable") {
                     notifications.show({
                         message: i18n.t("Home.Accounts.DownloadDurabilityUncertain"),
@@ -120,7 +154,7 @@ function createAccountObserver(store: Store): AccountObserver {
         store.set(databaseConversionStateAtom, (previous) => {
             const importing = new Map(
                 snapshot
-                    .filter((entry) => entry.importing)
+                    .filter((entry) => entry.importing && !isSettledRunning(entry))
                     .map((entry) => [`conversion:${entry.id}`, entry]),
             );
             const next = previous.filter(
@@ -141,15 +175,33 @@ function createAccountObserver(store: Store): AccountObserver {
             }
             return next;
         });
-        store.set(
-            accountCompletionsAtom,
-            new Map(snapshot.map((entry) => [accountCompletionKey(entry.request), entry])),
-        );
+        store.set(accountCompletionsAtom, (previous) => {
+            const next = new Map<string, AccountCompletion>();
+            for (const entry of snapshot) {
+                const key = accountCompletionKey(entry.request);
+                if (isSettledRunning(entry)) {
+                    const current = previous.get(key);
+                    if (
+                        current?.id === entry.id &&
+                        (current.outcome.state !== "running" || current.attempt > entry.attempt)
+                    ) {
+                        next.set(key, current);
+                    }
+                } else {
+                    next.set(key, entry);
+                }
+            }
+            return next;
+        });
         running = new Map(
             snapshot
-                .filter((entry) => entry.outcome.state === "running")
+                .filter((entry) => entry.outcome.state === "running" && !isSettledRunning(entry))
                 .map((entry) => [entry.id, entry.attempt]),
         );
+        const snapshotIds = new Set(snapshot.map((entry) => entry.id));
+        for (const id of settled.keys()) {
+            if (!snapshotIds.has(id)) settled.delete(id);
+        }
         for (const completion of snapshot) await apply(completion).catch(notifyListenerError);
         disposeIfIdle();
     }
@@ -204,6 +256,9 @@ function createAccountObserver(store: Store): AccountObserver {
             live++;
             try {
                 const completion = await tauri.importAccountGames(request);
+                if (completion.outcome.state !== "running") {
+                    settle(completion);
+                }
                 await apply(completion);
                 if (completion.outcome.state === "failed") {
                     throw new TauriCommandError(completion.outcome.result);

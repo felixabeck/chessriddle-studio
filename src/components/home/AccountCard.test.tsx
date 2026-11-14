@@ -255,61 +255,54 @@ test("an adapter decoding error notifies only while mounted and leaves progress 
   }
 });
 
-test("retrying a retained terminal completion hides 100% even when native reuses its progressId and renders 0%", async () => {
-  let progressListener!: (event: { payload: { id: string; progress: number } }) => void;
-  mocks.progress.mockImplementation(async (listener) => {
-    progressListener = listener;
-    return vi.fn();
-  });
-  let releaseWorkspace!: (reason?: unknown) => void;
-  mocks.getDatabaseWorkspace.mockImplementation(
-    () =>
-      new Promise((_resolve, reject) => {
-        releaseWorkspace = reject;
-      }),
-  );
-
-  const baseCompletion = {
+function accountCompletionFixture(overrides: Partial<AccountCompletion> = {}): AccountCompletion {
+  return {
     id: "op-1",
     request: {
-      provider: "lichess" as const,
+      provider: "lichess",
       account: "Felix",
       accountHandle: "lichess-account",
       destination: { id: "dest" },
       pendingBatch: null,
       sinceMs: null,
       target: {
-        kind: "unlinked" as const,
-        database: { id: { id: "db" }, kind: "database" as const },
+        kind: "unlinked",
+        database: { id: { id: "db" }, kind: "database" },
         title: "Felix Lichess",
       },
     },
     progressId: "ticket-1",
+    attempt: 1,
     importing: false,
+    outcome: { state: "running" },
     publication: null,
     committedDatabase: null,
-  };
-  const runningAttempt1: AccountCompletion = {
-    ...baseCompletion,
-    attempt: 1,
-    outcome: { state: "running" },
     deletionPending: false,
+    ...overrides,
   };
-  const retainedTerminal: AccountCompletion = {
-    ...baseCompletion,
+}
+
+test("retrying a retained terminal completion hides 100% when native reuses its progressId and renders 0%", async () => {
+  let progressListener!: (event: { payload: { id: string; progress: number } }) => void;
+  mocks.progress.mockImplementation(async (listener) => {
+    progressListener = listener;
+    return vi.fn();
+  });
+
+  const runningAttempt1 = accountCompletionFixture({ attempt: 1, outcome: { state: "running" } });
+  const retainedTerminal = accountCompletionFixture({
     attempt: 1,
     outcome: {
       state: "failed",
       result: { tag: "backend-error", category: "database", message: "cleanup pending" },
     },
     deletionPending: true,
-  };
-  const runningAttempt2: AccountCompletion = {
-    ...baseCompletion,
+  });
+  const runningAttempt2 = accountCompletionFixture({
     attempt: 2,
     outcome: { state: "running" },
     deletionPending: true,
-  };
+  });
 
   const store = getDefaultStore();
   const host = document.createElement("div");
@@ -324,33 +317,17 @@ test("retrying a retained terminal completion hides 100% even when native reuses
     await act(async () => progressListener({ payload: { id: "ticket-1", progress: 100 } }));
     expect(host.textContent).toContain("100%");
 
-    // Direct click-state atoms while progress still holds 100% from attempt 1:
     await act(async () => {
       store.set(accountCompletionsAtom, new Map([["lichess_felix", retainedTerminal]]));
       store.set(accountDownloadsInFlightAtom, new Map([["lichess_felix", null]]));
     });
     expect(host.textContent).not.toContain("100%");
 
-    // Re-enable the Download button and click it so setProgress(null) runs on the retry attempt:
-    await act(async () => {
-      store.set(accountDownloadsInFlightAtom, new Map());
-    });
-    const downloadButton = host.querySelector<HTMLButtonElement>(
-      'button[aria-label="Home.Accounts.DownloadGames"]',
-    )!;
-    expect(downloadButton.disabled).toBe(false);
-    await act(async () => {
-      downloadButton.click();
-    });
-    expect(store.get(accountDownloadsInFlightAtom).get("lichess_felix")).toBeNull();
-    expect(host.textContent).not.toContain("100%");
-
-    // A late frame for the terminal completion's ticket must be ignored before attempt 2 starts:
     await act(async () => progressListener({ payload: { id: "ticket-1", progress: 95 } }));
     expect(host.textContent).not.toContain("95%");
 
-    // Native starts attempt 2 reusing progressId "ticket-1" before emitting a new frame:
     await act(async () => {
+      store.set(accountDownloadsInFlightAtom, new Map());
       store.set(accountCompletionsAtom, new Map([["lichess_felix", runningAttempt2]]));
     });
     expect(host.textContent).not.toContain("100%");
@@ -358,6 +335,177 @@ test("retrying a retained terminal completion hides 100% even when native reuses
 
     await act(async () => progressListener({ payload: { id: "ticket-1", progress: 0 } }));
     expect(host.textContent).toContain("0%");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    store.set(accountDownloadsInFlightAtom, new Map());
+    store.set(accountCompletionsAtom, new Map());
+  }
+});
+
+test("switching to a running completion with a different progressId hides 100% until a matching frame arrives", async () => {
+  let progressListener!: (event: { payload: { id: string; progress: number } }) => void;
+  mocks.progress.mockImplementation(async (listener) => {
+    progressListener = listener;
+    return vi.fn();
+  });
+
+  const store = getDefaultStore();
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await renderAccount(root, new Map(), null, 0, "lichess-account");
+
+    await act(async () => {
+      store.set(
+        accountCompletionsAtom,
+        new Map([["lichess_felix", accountCompletionFixture({ progressId: "ticket-1" })]]),
+      );
+    });
+    await act(async () => progressListener({ payload: { id: "ticket-1", progress: 100 } }));
+    expect(host.textContent).toContain("100%");
+
+    await act(async () => {
+      store.set(
+        accountCompletionsAtom,
+        new Map([
+          ["lichess_felix", accountCompletionFixture({ id: "op-2", progressId: "ticket-2" })],
+        ]),
+      );
+    });
+    expect(host.textContent).not.toContain("100%");
+
+    await act(async () => progressListener({ payload: { id: "ticket-1", progress: 80 } }));
+    expect(host.textContent).not.toContain("80%");
+
+    await act(async () => progressListener({ payload: { id: "ticket-2", progress: 25 } }));
+    expect(host.textContent).toContain("25%");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    store.set(accountCompletionsAtom, new Map());
+  }
+});
+
+test("two mounted AccountCards for the same accountKey never show attempt 1's 100% on attempt 2", async () => {
+  const listeners = new Set<(event: { payload: { id: string; progress: number } }) => void>();
+  mocks.progress.mockImplementation(async (listener) => {
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  });
+  let releaseWorkspace!: (reason?: unknown) => void;
+  mocks.getDatabaseWorkspace.mockImplementation(
+    () =>
+      new Promise((_resolve, reject) => {
+        releaseWorkspace = reject;
+      }),
+  );
+
+  const emitProgress = async (id: string, progress: number) => {
+    await act(async () => {
+      for (const listener of listeners) {
+        listener({ payload: { id, progress } });
+      }
+    });
+  };
+
+  const store = getDefaultStore();
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <SWRConfig value={{ provider: () => new Map() }}>
+            <div data-card="0">
+              <AccountCard
+                type="lichess"
+                database={null}
+                title="Felix"
+                updatedAt={0}
+                total={0}
+                stats={[]}
+                logout={vi.fn()}
+                reload={vi.fn()}
+                accountHandle="lichess-account"
+              />
+            </div>
+            <div data-card="1">
+              <AccountCard
+                type="lichess"
+                database={null}
+                title="Felix"
+                updatedAt={0}
+                total={0}
+                stats={[]}
+                logout={vi.fn()}
+                reload={vi.fn()}
+                accountHandle="lichess-account"
+              />
+            </div>
+          </SWRConfig>
+        </MantineProvider>,
+      );
+    });
+
+    const card0 = host.querySelector<HTMLElement>('[data-card="0"]')!;
+    const card1 = host.querySelector<HTMLElement>('[data-card="1"]')!;
+
+    await act(async () => {
+      store.set(
+        accountCompletionsAtom,
+        new Map([["lichess_felix", accountCompletionFixture({ attempt: 1 })]]),
+      );
+    });
+    await emitProgress("ticket-1", 100);
+    expect(card0.textContent).toContain("100%");
+    expect(card1.textContent).toContain("100%");
+
+    await act(async () => {
+      store.set(
+        accountCompletionsAtom,
+        new Map([
+          [
+            "lichess_felix",
+            accountCompletionFixture({
+              attempt: 1,
+              outcome: {
+                state: "failed",
+                result: { tag: "backend-error", category: "database", message: "cleanup pending" },
+              },
+              deletionPending: true,
+            }),
+          ],
+        ]),
+      );
+    });
+    expect(card0.textContent).not.toContain("100%");
+    expect(card1.textContent).not.toContain("100%");
+
+    // Trigger retry from card 0 only; card 1 receives no click.
+    await act(async () => {
+      card0
+        .querySelector<HTMLButtonElement>('button[aria-label="Home.Accounts.DownloadGames"]')!
+        .click();
+    });
+    await act(async () => {
+      store.set(
+        accountCompletionsAtom,
+        new Map([
+          ["lichess_felix", accountCompletionFixture({ attempt: 2, deletionPending: true })],
+        ]),
+      );
+    });
+    expect(card0.textContent).not.toContain("100%");
+    expect(card1.textContent).not.toContain("100%");
+
+    await emitProgress("ticket-1", 0);
+    expect(card0.textContent).toContain("0%");
+    expect(card1.textContent).toContain("0%");
 
     await act(async () => {
       releaseWorkspace(new DOMException("Cancellation", "AbortError"));
