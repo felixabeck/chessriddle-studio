@@ -44,6 +44,9 @@ export function ChessRiddleAccountCard({ onConnected }: { onConnected?: () => vo
           trainingSettings.reset();
         connected = next.status === "connected" && !next.durability_uncertain;
       };
+      const clearRemovalIfConnected = (next: AccountStatus) => {
+        if (current() && next.status === "connected") setRemoved(null);
+      };
       const report = (cause: unknown) => {
         if (!current()) return;
         connected = false;
@@ -66,6 +69,7 @@ export function ChessRiddleAccountCard({ onConnected }: { onConnected?: () => vo
           try {
             const next = await tauri.connectChessriddle();
             accept(next);
+            clearRemovalIfConnected(next);
           } catch (cause) {
             if (!current()) return;
             // The native owner may have linked before a profile fetch failed. Reconcile once,
@@ -73,6 +77,7 @@ export function ChessRiddleAccountCard({ onConnected }: { onConnected?: () => vo
             try {
               const next = await tauri.chessriddleAccount();
               accept(next);
+              clearRemovalIfConnected(next);
             } catch (refreshCause) {
               report(refreshCause);
             }

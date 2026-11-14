@@ -153,6 +153,58 @@ test("reconnect-needed offers an explicit reconnect", async () => {
   expect(host.textContent).toContain("Home.ChessRiddle.PlanGold");
 });
 
+test("successful connect after a flagged removal clears both removal alerts", async () => {
+  mocks.chessriddleAccount.mockResolvedValueOnce(connected);
+  mocks.disconnectChessriddle.mockResolvedValue({
+    status: "removed",
+    revocation_pending: true,
+    durability_uncertain: true,
+  });
+  await render();
+  await click("Disconnect");
+  expect(host.textContent).toContain("Home.ChessRiddle.Disconnected");
+  expect(host.textContent).toContain("Home.ChessRiddle.RevocationPending");
+  expect(host.textContent).toContain("Home.ChessRiddle.RemovalDurabilityUncertain");
+  await click("Connect");
+  expect(host.textContent).toContain("Home.ChessRiddle.ConnectedAs");
+  expect(host.textContent).not.toContain("Home.ChessRiddle.RevocationPending");
+  expect(host.textContent).not.toContain("Home.ChessRiddle.RemovalDurabilityUncertain");
+});
+
+test("failed connect that stays disconnected keeps the removal alerts", async () => {
+  mocks.chessriddleAccount.mockResolvedValueOnce(connected);
+  mocks.disconnectChessriddle.mockResolvedValue({
+    status: "removed",
+    revocation_pending: true,
+    durability_uncertain: true,
+  });
+  await render();
+  await click("Disconnect");
+  mocks.connectChessriddle.mockRejectedValue(new ChessRiddleCommandError("network"));
+  mocks.chessriddleAccount.mockResolvedValue({ status: "disconnected" });
+  await click("Connect");
+  expect(host.textContent).toContain("Home.ChessRiddle.Disconnected");
+  expect(host.textContent).toContain("Home.ChessRiddle.RevocationPending");
+  expect(host.textContent).toContain("Home.ChessRiddle.RemovalDurabilityUncertain");
+});
+
+test("failed connect that reconciles as connected clears both removal alerts", async () => {
+  mocks.chessriddleAccount.mockResolvedValueOnce(connected);
+  mocks.disconnectChessriddle.mockResolvedValue({
+    status: "removed",
+    revocation_pending: true,
+    durability_uncertain: true,
+  });
+  await render();
+  await click("Disconnect");
+  mocks.connectChessriddle.mockRejectedValue(new ChessRiddleCommandError("network"));
+  mocks.chessriddleAccount.mockResolvedValue(connected);
+  await click("Connect");
+  expect(host.textContent).toContain("Home.ChessRiddle.ConnectedAs");
+  expect(host.textContent).not.toContain("Home.ChessRiddle.RevocationPending");
+  expect(host.textContent).not.toContain("Home.ChessRiddle.RemovalDurabilityUncertain");
+});
+
 test.each([
   [false, false],
   [true, false],
