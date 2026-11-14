@@ -229,38 +229,29 @@ function opening(white: number): PositionStats {
   };
 }
 
-async function renderPlain(mounted: boolean) {
-  mocks.linked = false;
-  await act(async () =>
-    root.render(
-      <SWRConfig value={{ provider: () => cache, dedupingInterval: 0, shouldRetryOnError: false }}>
-        {mounted && <Consumer key="plain" />}
-      </SWRConfig>,
-    ),
-  );
-}
-
 test("a write to a plain database busts the shared explorer cache on remount", async () => {
+  mocks.linked = false;
   mocks.searchPosition
     .mockResolvedValueOnce([[opening(1)], []])
     .mockResolvedValueOnce([[opening(2)], []]);
-  await renderPlain(true);
+  await render(true, false);
   expect(JSON.parse(container.textContent!).openings[0].white).toBe(1);
-  await renderPlain(false);
+  await render(false, false);
   await act(async () => recordDatabaseWrite([options.path]));
-  await renderPlain(true);
+  await render(true, false);
   expect(JSON.parse(container.textContent!).openings[0].white).toBe(2);
   expect(mocks.searchPosition).toHaveBeenCalledTimes(2);
 });
 
 test("remounting a plain database without a write keeps the cached explorer result", async () => {
+  mocks.linked = false;
   mocks.searchPosition
     .mockResolvedValueOnce([[opening(1)], []])
     .mockResolvedValueOnce([[opening(2)], []]);
-  await renderPlain(true);
+  await render(true, false);
   expect(JSON.parse(container.textContent!).openings[0].white).toBe(1);
-  await renderPlain(false);
-  await renderPlain(true);
+  await render(false, false);
+  await render(true, false);
   expect(JSON.parse(container.textContent!).openings[0].white).toBe(1);
   expect(mocks.searchPosition).toHaveBeenCalledOnce();
 });

@@ -36,7 +36,16 @@ const mocks = vi.hoisted(() => ({
     releaseConversion: vi.fn(),
     cancelConversion: vi.fn(),
     convertPgn: vi.fn(),
+    mergePlayers: vi.fn(),
+    deleteDuplicatedGames: vi.fn(),
+    deleteEmptyGames: vi.fn(),
     deleteDbGame: vi.fn(),
+    writeDbGame: vi.fn(),
+    insertDbGame: vi.fn(),
+    deleteDatabase: vi.fn(),
+    editDbInfo: vi.fn(),
+    restoreCollectionArchive: vi.fn(),
+    migrateLinkedCollection: vi.fn(),
     releaseDownload: vi.fn(),
     prepareAnalysis: vi.fn(),
     cancelAnalysis: vi.fn(),
@@ -249,7 +258,16 @@ vi.mock("@/bindings/generated", () => ({
         releaseConversion: mocks.releaseConversion,
         cancelConversion: mocks.cancelConversion,
         convertPgn: mocks.convertPgn,
+        mergePlayers: mocks.mergePlayers,
+        deleteDuplicatedGames: mocks.deleteDuplicatedGames,
+        deleteEmptyGames: mocks.deleteEmptyGames,
         deleteDbGame: mocks.deleteDbGame,
+        writeDbGame: mocks.writeDbGame,
+        insertDbGame: mocks.insertDbGame,
+        deleteDatabase: mocks.deleteDatabase,
+        editDbInfo: mocks.editDbInfo,
+        restoreCollectionArchive: mocks.restoreCollectionArchive,
+        migrateLinkedCollection: mocks.migrateLinkedCollection,
         releaseDownload: mocks.releaseDownload,
         prepareAnalysis: mocks.prepareAnalysis,
         cancelAnalysis: mocks.cancelAnalysis,
@@ -288,6 +306,20 @@ import { databaseWriteRevision } from "./databaseWrites";
 import { normalizeError } from "./errors";
 import { TauriCommandError, tauri, tauriSubscriptions, unwrapCommand } from "./tauri";
 
+const DATABASE_WRITE_COMMANDS = [
+    { name: "mergePlayers", index: 0, arity: 3 },
+    { name: "deleteDuplicatedGames", index: 0, arity: 1 },
+    { name: "deleteEmptyGames", index: 0, arity: 1 },
+    { name: "deleteDbGame", index: 0, arity: 2 },
+    { name: "writeDbGame", index: 0, arity: 4 },
+    { name: "insertDbGame", index: 0, arity: 2 },
+    { name: "deleteDatabase", index: 0, arity: 1 },
+    { name: "editDbInfo", index: 0, arity: 3 },
+    { name: "convertPgn", index: 2, arity: 6 },
+    { name: "restoreCollectionArchive", index: 1, arity: 2 },
+    { name: "migrateLinkedCollection", index: 2, arity: 7 },
+] as const;
+
 const wireState = {
     gameId: "game",
     session: 1,
@@ -316,7 +348,9 @@ describe("tauri command facade", () => {
         mocks.downloadChessComGames.mockReset().mockResolvedValue({ status: "ok", data: null });
         mocks.prepareAnalysis.mockReset();
         mocks.cancelAnalysis.mockReset();
-        mocks.deleteDbGame.mockReset();
+        for (const { name } of DATABASE_WRITE_COMMANDS) {
+            mocks[name].mockReset();
+        }
         mocks.getGames.mockReset();
         mocks.searchPositionsStats.mockReset();
         mocks.countPgnGames.mockReset();
@@ -611,26 +645,28 @@ describe("tauri command facade", () => {
         );
     });
 
-    test("database write commands record their handle on success and on rejection", async () => {
-        const { tauri } = await import("./tauri");
-        const success = { id: { id: "write-success-db" }, kind: "database" as const };
-        const rejected = { id: { id: "write-reject-db" }, kind: "database" as const };
-        mocks.deleteDbGame.mockResolvedValue({ status: "ok", data: null });
-        await tauri.deleteDbGame(success, 1);
-        expect(databaseWriteRevision(success)).toBe(1);
+    test.each(DATABASE_WRITE_COMMANDS)(
+        "$name records the handle at index $index on success and on rejection",
+        async ({ name, index, arity }) => {
+            const { tauri } = await import("./tauri");
+            const recorded = { id: { id: `${name}-recorded` }, kind: "database" as const };
+            const decoy = { id: { id: `${name}-decoy` }, kind: "database" as const };
+            const args = Array.from({ length: arity }, (_, position) =>
+                position === index ? recorded : decoy,
+            );
+            const invoke = tauri[name] as (...commandArgs: unknown[]) => Promise<unknown>;
 
-        mocks.deleteDbGame.mockRejectedValue(new Error("native write failed"));
-        await expect(tauri.deleteDbGame(rejected, 2)).rejects.toBeInstanceOf(TauriCommandError);
-        expect(databaseWriteRevision(rejected)).toBe(1);
-    });
+            mocks[name].mockResolvedValue({ status: "ok", data: null });
+            await invoke(...args);
+            expect(databaseWriteRevision(recorded)).toBe(1);
+            expect(databaseWriteRevision(decoy)).toBe(0);
 
-    test("convertPgn records the database argument at index 2", async () => {
-        const { tauri } = await import("./tauri");
-        const database = { id: { id: "convert-pgn-db" }, kind: "database" as const };
-        mocks.convertPgn.mockResolvedValue({ status: "ok", data: null });
-        await tauri.convertPgn("operation", [], database, "Title", null, null);
-        expect(databaseWriteRevision(database)).toBe(1);
-    });
+            mocks[name].mockRejectedValue(new Error("native write failed"));
+            await expect(invoke(...args)).rejects.toBeInstanceOf(TauriCommandError);
+            expect(databaseWriteRevision(recorded)).toBe(2);
+            expect(databaseWriteRevision(decoy)).toBe(0);
+        },
+    );
 
     test("importAccountGames records the unlinked target and committedDatabase", async () => {
         const { tauri } = await import("./tauri");

@@ -2,6 +2,7 @@ import { expect, test, vi } from "vitest";
 import type { DatabaseHandle } from "@/bindings";
 import {
     databaseWriteRevision,
+    databaseWritesRevision,
     recordDatabaseWrite,
     subscribeDatabaseWrites,
 } from "./databaseWrites";
@@ -49,4 +50,16 @@ test("listeners are notified once per changing write and unsubscribe", () => {
     recordDatabaseWrite([file]);
     expect(listener).toHaveBeenCalledOnce();
     expect(databaseWriteRevision(file)).toBe(2);
+});
+
+test("databaseWritesRevision sums per-handle revisions", () => {
+    const first = handle("writes-sum-a");
+    const second = handle("writes-sum-b");
+    expect(databaseWritesRevision([first, second, null, undefined])).toBe(0);
+    recordDatabaseWrite([first]);
+    expect(databaseWritesRevision([first, second])).toBe(1);
+    recordDatabaseWrite([second]);
+    expect(databaseWritesRevision([first, second])).toBe(2);
+    recordDatabaseWrite([first]);
+    expect(databaseWritesRevision([first, first, second])).toBe(5);
 });

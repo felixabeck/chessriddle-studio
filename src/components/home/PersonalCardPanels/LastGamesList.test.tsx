@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { SWRConfig } from "swr";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { DatabaseHandle, NormalizedGame, Player } from "@/bindings";
+import { recordDatabaseWrite } from "@/platform/databaseWrites";
 
 const mocks = vi.hoisted(() => ({
   queryGames: vi.fn(),
@@ -139,6 +140,36 @@ test("queries the player's last 10 games with sides Any, newest first", async ()
     },
     expect.objectContaining({ signal: expect.any(AbortSignal) }),
   );
+});
+
+test("a write to the player's database refetches last games and a write to another database does not", async () => {
+  const cache = new Map();
+  const first = game({ id: 1, white: "Magnus", black: "Hikaru" });
+  const second = game({ id: 2, white: "Magnus", black: "Nepo" });
+  mocks.queryGames.mockResolvedValueOnce({ data: [first], count: 1 });
+  await act(async () => {
+    root.render(
+      <SWRConfig value={{ provider: () => cache, shouldRetryOnError: false }}>
+        <LastGamesList player={player} file={file} />
+      </SWRConfig>,
+    );
+  });
+  await vi.waitFor(() => expect(container.textContent).toContain("Hikaru"));
+  expect(mocks.queryGames).toHaveBeenCalledOnce();
+
+  mocks.queryGames.mockResolvedValue({ data: [second], count: 1 });
+  await act(async () => {
+    recordDatabaseWrite([{ id: { id: "other-last-games-db" }, kind: "database" }]);
+  });
+  expect(mocks.queryGames).toHaveBeenCalledOnce();
+  expect(container.textContent).toContain("Hikaru");
+  expect(container.textContent).not.toContain("Nepo");
+
+  await act(async () => {
+    recordDatabaseWrite([file]);
+  });
+  await vi.waitFor(() => expect(container.textContent).toContain("Nepo"));
+  expect(mocks.queryGames).toHaveBeenCalledTimes(2);
 });
 
 test("renders returned games in order and opens the clicked row", async () => {

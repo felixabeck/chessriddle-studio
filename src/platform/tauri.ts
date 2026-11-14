@@ -254,7 +254,7 @@ function collectDatabaseWriteHandles(
     if (request?.target?.kind === "unlinked") into.push(request.target.database);
 }
 
-function collectSuccessfulImportDatabase(
+function collectImportCommittedDatabase(
     property: PropertyKey,
     value: unknown,
     into: Array<DatabaseHandle | null | undefined>,
@@ -499,7 +499,7 @@ export const tauri: TauriCommands = new Proxy(commands, {
                     return result;
                 }
                 const value = isCommandResult(result) ? unwrapCommand(result) : result;
-                collectSuccessfulImportDatabase(property, value, recordedHandles);
+                collectImportCommittedDatabase(property, value, recordedHandles);
                 if (property === "clearProgress") return decodeProgressGeneration(value);
                 if (property === "getProgress") {
                     return value === null ? null : normalizeProgressGeneration(value);
@@ -517,10 +517,19 @@ export const tauri: TauriCommands = new Proxy(commands, {
                 if (error instanceof TauriCommandError) throw error;
                 throw new TauriCommandError(error);
             } finally {
+                // Recording runs in finally on purpose: a rejected write may still have
+                // applied, so failure also bumps the revision.
                 try {
                     recordDatabaseWrite(recordedHandles);
-                } catch {
-                    // Recording must never throw out of the facade.
+                } catch (cause) {
+                    void logError(
+                        `database write revision recording failed for ${String(property)}: ${normalizeError(cause).message}`,
+                    ).catch((loggingError) => {
+                        console.error(
+                            `database write revision recording logging failed for ${String(property)}`,
+                            normalizeError(loggingError),
+                        );
+                    });
                 }
                 const mark = (
                     globalThis as {

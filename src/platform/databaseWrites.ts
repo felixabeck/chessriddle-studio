@@ -37,6 +37,14 @@ export function databaseWriteRevision(handle: DatabaseHandle | null | undefined)
     return revisions.get(key) ?? 0;
 }
 
+export function databaseWritesRevision(
+    handles: readonly (DatabaseHandle | null | undefined)[],
+): number {
+    let total = 0;
+    for (const handle of handles) total += databaseWriteRevision(handle);
+    return total;
+}
+
 export function subscribeDatabaseWrites(listener: () => void): () => void {
     listeners.add(listener);
     return () => {
@@ -49,5 +57,15 @@ export function useDatabaseWriteRevision(handle: DatabaseHandle | null | undefin
         subscribeDatabaseWrites,
         () => databaseWriteRevision(handle),
         () => databaseWriteRevision(handle),
+    );
+}
+
+export function useDatabaseWritesRevision(
+    handles: readonly (DatabaseHandle | null | undefined)[],
+): number {
+    return useSyncExternalStore(
+        subscribeDatabaseWrites,
+        () => databaseWritesRevision(handles),
+        () => databaseWritesRevision(handles),
     );
 }

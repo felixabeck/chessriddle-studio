@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { SWRConfig } from "swr";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { recordDatabaseWrite } from "@/platform/databaseWrites";
 import { sessionsAtom } from "@/state/atoms";
 import type { ProgressEvent } from "@/bindings";
 import { sessionsSchema } from "@/utils/session";
@@ -254,6 +255,30 @@ test("exact account lookup combines every casing variant under session spelling 
   expect(container.textContent).toContain('"won":9');
   expect(container.textContent).not.toContain("MagnusOpponent");
   expect(container.textContent).not.toContain('"player":"MAGNUS"');
+});
+
+test("a write to a personal database refetches stats and a write to another database does not", async () => {
+  const cache = new Map();
+  const record = { site: "Lichess", player: "Magnus", daily: [], openings: [] };
+  mocks.getPlayersGameInfo.mockResolvedValue({ site_stats_data: [record] });
+  await act(async () => {
+    root.render(
+      <SWRConfig value={{ provider: () => cache, shouldRetryOnError: false }}>
+        <Databases />
+      </SWRConfig>,
+    );
+  });
+  await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledOnce());
+
+  await act(async () => {
+    recordDatabaseWrite([{ id: { id: "unrelated-personal-db" }, kind: "database" }]);
+  });
+  expect(mocks.getPlayersGameInfo).toHaveBeenCalledOnce();
+
+  await act(async () => {
+    recordDatabaseWrite([database("db-1").file]);
+  });
+  await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(2));
 });
 
 test("a large owner response preserves all 200000 distinct site groups under session spelling", async () => {

@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { SWRConfig, useSWRConfig } from "swr";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { DatabaseHandle, NormalizedGame, Event as Tournament } from "@/bindings";
+import { recordDatabaseWrite } from "@/platform/databaseWrites";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
 
 const mocks = vi.hoisted(() => ({
@@ -215,6 +216,22 @@ test("TournamentCard surfaces a genuine lookup failure", async () => {
   mocks.getTournamentGames.mockRejectedValue(failure);
   await render(file("failed"));
   await vi.waitFor(() => expect(mocks.notify).toHaveBeenCalledWith("Common.Error", failure));
+});
+
+test("a write to the tournament database refetches games and a write to another database does not", async () => {
+  mocks.getTournamentGames.mockResolvedValue({ data: games(3) });
+  await render(file("tournament-write"));
+  await vi.waitFor(() => expect(mocks.getTournamentGames).toHaveBeenCalledOnce());
+
+  await act(async () => {
+    recordDatabaseWrite([file("unrelated-tournament-db")]);
+  });
+  expect(mocks.getTournamentGames).toHaveBeenCalledOnce();
+
+  await act(async () => {
+    recordDatabaseWrite([file("tournament-write")]);
+  });
+  await vi.waitFor(() => expect(mocks.getTournamentGames).toHaveBeenCalledTimes(2));
 });
 
 function games(count = 60): NormalizedGame[] {

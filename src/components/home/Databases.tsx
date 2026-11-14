@@ -20,6 +20,7 @@ import useSWRImmutable from "swr/immutable";
 import type { PlayerGameInfo } from "@/bindings";
 import { notifyListenerError } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
+import { useDatabaseWritesRevision } from "@/platform/databaseWrites";
 import { errorUnlessCancelled, logFailureSafely, safeFailureContext } from "@/platform/errors";
 import { sessionsAtom } from "@/state/atoms";
 import { useCollectionCurrencies } from "@/state/linkedCollections";
@@ -113,9 +114,13 @@ function StatisticsNotice({
   );
 }
 
-/** Exact SWR key identity (`unstable_serialize`) for `["personalInfo", name, databases]`. */
-function personalInfoProgressKey(name: string, databases: PersonalDatabase[]): string {
-  return unstable_serialize(["personalInfo", name, databases]);
+/** Exact SWR key identity (`unstable_serialize`) for `["personalInfo", name, databases, revision]`. */
+function personalInfoProgressKey(
+  name: string,
+  databases: PersonalDatabase[],
+  revision: number,
+): string {
+  return unstable_serialize(["personalInfo", name, databases, revision]);
 }
 
 /**
@@ -203,7 +208,19 @@ function Databases() {
     ) ?? [],
   );
   const playerDatabases = databases?.filter(({ players }) => players.includes(name));
-  const personalKey = playerDatabases && name ? ["personalInfo", name, playerDatabases] : null;
+  const personalRevision = useDatabaseWritesRevision(
+    playerDatabases
+      ?.filter(
+        (
+          item,
+        ): item is PersonalDatabase & {
+          db: Extract<ManagedDatabaseInfo, { type: "success" }>;
+        } => item.db.type === "success",
+      )
+      .map((item) => item.db.file) ?? [],
+  );
+  const personalKey =
+    playerDatabases && name ? ["personalInfo", name, playerDatabases, personalRevision] : null;
   const personalOwner = useNativeRequestOwner(personalKey);
   const {
     data: personalInfo,
@@ -211,9 +228,9 @@ function Databases() {
     error,
   } = useSWRImmutable<PersonalSummary>(
     personalKey,
-    ([, playerName, playerDatabases]: [string, string, PersonalDatabase[]]) =>
+    ([, playerName, playerDatabases, revision]: [string, string, PersonalDatabase[], number]) =>
       personalOwner!.run(async (signal) => {
-        const progressKey = personalInfoProgressKey(playerName, playerDatabases);
+        const progressKey = personalInfoProgressKey(playerName, playerDatabases, revision);
         const map = new Map<string, number>();
         ownedProgressByKey.clear();
         ownedProgressByKey.set(progressKey, map);
@@ -292,7 +309,9 @@ function Databases() {
     null,
   );
   const currentProgressKey =
-    playerDatabases && name ? personalInfoProgressKey(name, playerDatabases) : null;
+    playerDatabases && name
+      ? personalInfoProgressKey(name, playerDatabases, personalRevision)
+      : null;
   const currentProgress =
     currentProgressKey && progress && progress.owner === ownedProgressByKey.get(currentProgressKey)
       ? progress.value
