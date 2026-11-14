@@ -9,8 +9,8 @@
   "measurement": {
     "source": "pnpm build-vite",
     "date": "2026-11-14",
-    "entry": 529757,
-    "largestLazy": 552319,
-    "total": 1840016
+    "entry": 529759,
+    "largestLazy": 552405,
+    "total": 1840115
   }
 }
