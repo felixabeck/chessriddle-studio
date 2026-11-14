@@ -93,7 +93,8 @@
           "src/utils/db.ts",
           "src/utils/directories.ts",
           "src/utils/files.ts",
-          "src/utils/gameReferences.ts"
+          "src/utils/gameReferences.ts",
+          "src/utils/pgnDate.ts"
         ]
       },
       {

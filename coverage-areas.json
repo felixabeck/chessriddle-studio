@@ -111,6 +111,7 @@
         "src/utils/db.ts",
         "src/utils/databaseGame.ts",
         "src/utils/databaseGameTree.ts",
+        "src/utils/pgnDate.ts",
         "src/utils/gameReferences.ts",
         "src/utils/directories.ts",
         "src/utils/files.ts"
