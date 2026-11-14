@@ -4,7 +4,7 @@ import { useStore } from "jotai";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import AppModal from "@/components/common/AppModal";
-import { cancelDownloadJob, useDownloadJob } from "@/hooks/downloadJobs";
+import { cancelDownloadJob, hasDownloadJob, useDownloadJob } from "@/hooks/downloadJobs";
 import {
   installCatalogEngineJob,
   usePendingEngineCompletion,
@@ -18,6 +18,10 @@ import {
 } from "@/utils/engines";
 import { usePlatform } from "@/utils/files";
 import CatalogEngineCard from "./CatalogEngineCard";
+
+function upgradeProgressId(engineId: string, downloadLink: string) {
+  return `engine-upgrade:${engineId}:${downloadLink}`;
+}
 
 export default function UpgradeEngineModal({
   engine,
@@ -37,9 +41,9 @@ export default function UpgradeEngineModal({
   const [upgradedLink, setUpgradedLink] = useState<string | null>(null);
   const active = useRef<string | null>(null);
 
-  async function cancel() {
+  async function cancel(progressId: string | null = active.current) {
     if (pending?.completion.outcome.state === "succeeded") return;
-    if (active.current) return cancelDownloadJob(active.current, t("Common.Error"));
+    if (progressId) return cancelDownloadJob(progressId, t("Common.Error"));
   }
 
   async function upgrade(catalog: DefaultEngine, progressId: string) {
@@ -60,7 +64,12 @@ export default function UpgradeEngineModal({
     <AppModal
       opened={opened}
       onClose={() => {
-        void cancel()?.catch(() => undefined);
+        const inheritedId = defaultEngines
+          ?.map((catalog) =>
+            catalog.downloadLink ? upgradeProgressId(engine.id, catalog.downloadLink) : null,
+          )
+          .find((id): id is string => id !== null && hasDownloadJob(id));
+        void cancel(active.current ?? inheritedId ?? null)?.catch(() => undefined);
         setOpened(false);
       }}
       title={t("Engines.Upgrade.Title")}
@@ -86,7 +95,7 @@ export default function UpgradeEngineModal({
           <SimpleGrid cols={{ base: 1, sm: 2 }}>
             {defaultEngines?.map((catalog) => {
               if (!catalog.downloadLink) return null;
-              const id = `engine-upgrade:${engine.id}:${catalog.downloadLink}`;
+              const id = upgradeProgressId(engine.id, catalog.downloadLink);
               return (
                 <UpgradeCard
                   key={id}
@@ -143,7 +152,7 @@ function UpgradeCard({
   active: boolean;
   committing: boolean;
   upgrade: () => void;
-  cancel: () => Promise<void | { clearedGeneration: bigint | null }>;
+  cancel: (progressId: string | null) => Promise<void | { clearedGeneration: bigint | null }>;
   recovery?: { busy: boolean; retry: () => void };
 }) {
   const { t } = useTranslation();
@@ -166,7 +175,7 @@ function UpgradeCard({
         committing
           ? undefined
           : active || hasJob
-            ? cancel
+            ? () => cancel(id)
             : () => cancelDownloadJob(id, t("Common.Error"))
       }
       inProgress={active || hasJob}

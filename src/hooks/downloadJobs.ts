@@ -217,6 +217,10 @@ export async function cancelDownloadJob(
     throw downloadCancelError("lost");
 }
 
+export function hasDownloadJob(progressId: string): boolean {
+    return jobs.has(progressId);
+}
+
 export function useDownloadJob(progressId: string): boolean {
     return useSyncExternalStore(
         (listener) => {

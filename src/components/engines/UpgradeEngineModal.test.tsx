@@ -10,13 +10,15 @@ const mocks = vi.hoisted(() => ({
   cancel: vi.fn(),
   pending: undefined as { completion: EngineCompletion; applying: boolean } | undefined,
   catalogError: undefined as unknown,
+  hasJob: false,
 }));
 vi.mock("@/state/catalogEngineCompletion", () => ({
   installCatalogEngineJob: mocks.installJob,
   usePendingEngineCompletion: () => mocks.pending,
 }));
 vi.mock("@/hooks/downloadJobs", () => ({
-  useDownloadJob: () => false,
+  useDownloadJob: () => mocks.hasJob,
+  hasDownloadJob: () => mocks.hasJob,
   cancelDownloadJob: mocks.cancel,
 }));
 vi.mock("@/utils/files", () => ({ usePlatform: () => ({ os: "linux" }) }));
@@ -30,7 +32,12 @@ vi.mock("@/utils/engines", async (original) => ({
 }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("../common/AppModal", () => ({
-  default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  default: ({ children, onClose }: { children: React.ReactNode; onClose: () => void }) => (
+    <div>
+      <button data-testid="close" onClick={onClose} />
+      {children}
+    </div>
+  ),
 }));
 vi.mock("@mantine/core", () => {
   const Container = ({ children }: { children: React.ReactNode }) => <div>{children}</div>;
@@ -49,6 +56,7 @@ vi.mock("./CatalogEngineCard", () => ({
     disabled,
     inProgress,
     onClick,
+    onCancel,
     labels,
   }: {
     initInstalled: boolean;
@@ -56,23 +64,32 @@ vi.mock("./CatalogEngineCard", () => ({
     disabled?: boolean;
     inProgress: boolean;
     onClick: () => void;
+    onCancel?: () => void;
     labels: { completed: string; action: string; inProgress: string };
   }) => (
-    <button
-      data-in-progress={inProgress}
-      disabled={recovery ? recovery.busy : disabled || initInstalled}
-      onClick={recovery ? recovery.retry : onClick}
-    >
-      {recovery
-        ? recovery.busy
-          ? "Common.Extracting"
-          : "Common.Install"
-        : initInstalled
-          ? labels.completed
-          : inProgress
-            ? labels.inProgress
-            : labels.action}
-    </button>
+    <>
+      <button
+        data-testid="install"
+        data-in-progress={inProgress}
+        disabled={recovery ? recovery.busy : disabled || initInstalled}
+        onClick={recovery ? recovery.retry : onClick}
+      >
+        {recovery
+          ? recovery.busy
+            ? "Common.Extracting"
+            : "Common.Install"
+          : initInstalled
+            ? labels.completed
+            : inProgress
+              ? labels.inProgress
+              : labels.action}
+      </button>
+      {onCancel ? (
+        <button data-testid="cancel" onClick={onCancel}>
+          Cancel
+        </button>
+      ) : null}
+    </>
   ),
 }));
 
@@ -103,8 +120,10 @@ let host: HTMLDivElement;
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 beforeEach(() => {
   mocks.installJob.mockReset().mockResolvedValue(true);
+  mocks.cancel.mockReset();
   mocks.pending = undefined;
   mocks.catalogError = undefined;
+  mocks.hasJob = false;
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -117,7 +136,8 @@ const render = async (engine = old) =>
   act(async () =>
     root.render(<UpgradeEngineModal engine={engine} opened setOpened={() => undefined} />),
   );
-const click = async () => act(async () => host.querySelector("button")!.click());
+const installButton = () => host.querySelector<HTMLButtonElement>('[data-testid="install"]');
+const click = async () => act(async () => installButton()!.click());
 
 test("submits the immutable engine target and becomes current after full application", async () => {
   let finish!: (result: boolean) => void;
@@ -134,14 +154,14 @@ test("submits the immutable engine target and becomes current after full applica
     old,
     expect.anything(),
   );
-  expect(host.querySelector("button")!.dataset.inProgress).toBe("true");
+  expect(installButton()!.dataset.inProgress).toBe("true");
   expect(host.textContent).toContain("Common.Downloading");
   expect(host.textContent).not.toContain("Engines.Upgrade.Current");
-  expect(host.querySelector("button")!.disabled).toBe(true);
+  expect(installButton()!.disabled).toBe(true);
   await act(async () => finish(true));
   expect(host.textContent).toContain("Engines.Upgrade.Current");
-  expect(host.querySelector("button")!.disabled).toBe(true);
-  expect(host.querySelector("button")!.dataset.inProgress).toBe("false");
+  expect(installButton()!.disabled).toBe(true);
+  expect(installButton()!.dataset.inProgress).toBe("false");
   expect(old.downloadLink).toBe("https://example.com/old.zip");
 });
 
@@ -154,47 +174,49 @@ test("an unsuccessful shared action clears progress and keeps the original catal
   );
   await render();
   await click();
-  expect(host.querySelector("button")!.dataset.inProgress).toBe("true");
+  expect(installButton()!.dataset.inProgress).toBe("true");
   await act(async () => finish(false));
   expect(host.textContent).toContain("Common.Install");
-  expect(host.querySelector("button")!.disabled).toBe(false);
-  expect(host.querySelector("button")!.dataset.inProgress).toBe("false");
+  expect(installButton()!.disabled).toBe(false);
+  expect(installButton()!.dataset.inProgress).toBe("false");
   expect(old.downloadLink).toBe("https://example.com/old.zip");
 });
 
-test("a partially applied current binary still exposes Install to rejoin its original completion", async () => {
-  mocks.pending = {
-    applying: false,
-    completion: {
-      id: crypto.randomUUID(),
-      retired: false,
-      request: {
-        intent: { kind: "upgrade", engine_id: old.id, expected: old.handle },
-        root: { id: { id: "root" }, kind: "engineRoot" },
-        progressId,
-        url: catalog.downloadLink!,
-        sha256: catalog.sha256,
-        signature: catalog.signature,
-        relativePath: catalog.path,
-        name: catalog.name,
-        version: catalog.version,
-        elo: null,
-        downloadSize: null,
-      },
-      outcome: {
-        state: "succeeded",
-        result: {
-          handle: { id: { id: "new" }, kind: "engine" },
-          filename: "new",
-          config: { name: "New", options: [] },
-        },
+const succeededPending = (): { completion: EngineCompletion; applying: boolean } => ({
+  applying: false,
+  completion: {
+    id: crypto.randomUUID(),
+    retired: false,
+    request: {
+      intent: { kind: "upgrade", engine_id: old.id, expected: old.handle },
+      root: { id: { id: "root" }, kind: "engineRoot" },
+      progressId,
+      url: catalog.downloadLink!,
+      sha256: catalog.sha256,
+      signature: catalog.signature,
+      relativePath: catalog.path,
+      name: catalog.name,
+      version: catalog.version,
+      elo: null,
+      downloadSize: null,
+    },
+    outcome: {
+      state: "succeeded",
+      result: {
+        handle: { id: { id: "new" }, kind: "engine" },
+        filename: "new",
+        config: { name: "New", options: [] },
       },
     },
-  };
+  },
+});
+
+test("a partially applied current binary still exposes Install to rejoin its original completion", async () => {
+  mocks.pending = succeededPending();
   const current = { ...old, downloadLink: catalog.downloadLink };
   await render(current);
   expect(host.textContent).toContain("Common.Install");
-  expect(host.querySelector("button")!.disabled).toBe(false);
+  expect(installButton()!.disabled).toBe(false);
   await click();
   expect(mocks.installJob).toHaveBeenCalledExactlyOnceWith(
     catalog,
@@ -207,12 +229,34 @@ test("a partially applied current binary still exposes Install to rejoin its ori
 test("the current catalog choice remains disabled with no pending completion", async () => {
   await render({ ...old, downloadLink: catalog.downloadLink });
   expect(host.textContent).toContain("Engines.Upgrade.Current");
-  expect(host.querySelector("button")!.disabled).toBe(true);
+  expect(installButton()!.disabled).toBe(true);
 });
 
 test("catalog failures use the existing localized load error", async () => {
   mocks.catalogError = new Error("catalog unavailable");
   await render();
   expect(host.textContent).toContain("Engines.Upgrade.ErrorLoad");
-  expect(host.querySelector("button")).toBeNull();
+  expect(installButton()).toBeNull();
+});
+
+test("inherited job cancel from the card uses the card progress id", async () => {
+  mocks.hasJob = true;
+  await render();
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="cancel"]')!.click());
+  expect(mocks.cancel).toHaveBeenCalledExactlyOnceWith(progressId, "Common.Error");
+});
+
+test("closing the modal cancels an inherited job for a card id", async () => {
+  mocks.hasJob = true;
+  await render();
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="close"]')!.click());
+  expect(mocks.cancel).toHaveBeenCalledExactlyOnceWith(progressId, "Common.Error");
+});
+
+test("closing does not cancel when a succeeded completion is pending", async () => {
+  mocks.hasJob = true;
+  mocks.pending = succeededPending();
+  await render();
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="close"]')!.click());
+  expect(mocks.cancel).not.toHaveBeenCalled();
 });
