@@ -74,19 +74,20 @@ function Clock({
 }
 
 export function formatClock(seconds: number) {
-  let s = Math.max(0, seconds);
-  const hours = Math.floor(s / 3600);
-  const minutes = Math.floor((s % 3600) / 60);
-  s = (s % 3600) % 60;
+  const ms = Math.round(Math.max(0, seconds) * 1000);
+  const hours = Math.floor(ms / 3_600_000);
+  const minutes = Math.floor((ms % 3_600_000) / 60_000);
 
   let timeString = `${minutes.toString().padStart(2, "0")}`;
   if (hours > 0) {
     timeString = `${hours}:${timeString}`;
   }
-  if (seconds < 60) {
-    timeString += `:${s.toFixed(1).padStart(4, "0")}`;
+  if (ms < 60_000) {
+    const tenths = Math.floor(ms / 100);
+    timeString += `:${(tenths / 10).toFixed(1).padStart(4, "0")}`;
   } else {
-    timeString += `:${Math.floor(s).toString().padStart(2, "0")}`;
+    const wholeSeconds = Math.floor((ms % 60_000) / 1000);
+    timeString += `:${wholeSeconds.toString().padStart(2, "0")}`;
   }
   return timeString;
 }

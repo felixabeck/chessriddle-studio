@@ -173,4 +173,9 @@ describe("getClockInfo", () => {
             expect(info.white).toEqual({ value: 1, progress: 0 });
         },
     );
+
+    test("returns zero white clock when the first-move clock is 0 and there is no TimeControl", () => {
+        const info = clockAfterE4({}, {}, 0);
+        expect(info.white).toEqual({ value: 0, progress: 0 });
+    });
 });
