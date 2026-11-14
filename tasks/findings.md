@@ -24718,7 +24718,7 @@ Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK on
 
 ### ToggleButtonGroup renders the Lichess time-control filters as unnamed buttons with no pressed state
 
-* **ID:** f-20261112-46 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-46 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/common/ToggleButtonGroup.tsx:20-45` (plain Mantine `Button`; `option.name` only feeds a visual `Tooltip`; toggled state only switches `variant` between `filled` and `default`; the group is not grouped or labelled); its caller `src/components/panels/database/options/LichessOptionsPanel.tsx:34-49,92-104` passes icon-only `content` for all six time controls
@@ -24727,6 +24727,9 @@ Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK on
 - **Fix:** give every option `aria-label={option.name}` and `aria-pressed={option.isToggled}`, wrap the buttons in `role="group"` labelled by the wrapper label (or use Mantine `Chip.Group`/`Button.Group` with those attributes), and add a ToggleButtonGroup test asserting name and pressed state.
 - **Proof:** ephemeral Vitest rendering `ToggleButtonGroup` with `includeTooltips` and two icon options (one toggled): both buttons had empty text and null `aria-label`, `aria-labelledby`, `aria-describedby` and `aria-pressed`, and no `role="group"` element existed. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 22)
+
+Handled in 8730cd25a. `ToggleButtonGroup` now gives every option `aria-label={option.name}` and `aria-pressed={option.isToggled}`, and wraps the buttons in a `role="group"` element whose `aria-labelledby` points at the `InputWrapper` label (id from `useId()`, passed through `labelProps`). This covers both callers in `LichessOptionsPanel` (time control and rating) without changing the props interface. New `src/components/common/ToggleButtonGroup.test.tsx` renders through real Mantine and asserts names, pressed state, the group label link and the click callback; it failed on the reverted component (null button query) and passes on the fix. Rejected: rewriting the options onto `IconAction`/`Chip.Group` — the rating options are text buttons sharing the same group, and the attribute fix closes the defect with no visual change. Review: correctness, root-cause, tests, code-quality and minimalism lenses (Grok executor, same family as the Grok write leaf; disclosed) all APPROVED with no findings.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"ce547156357f346c325ff0e613e80f1b7363313cce23358d49b6e9731deeaf7f","header_sha256":"20874b8e74b9385b35c56ccd8ee68e2c23309be5bb2d8411469b274477b77501","header_status":"handled","input_sha256":"0a8f6cbf94aa879ac5440bd9b3b68a6081e3b7df51f2bbbd2598bc9646f86f6e","kind":"mutation-receipt","operation":"e7a695baeeab5a2079359e9f5a35d9ea41bb5666e685c2bc41ad9f7451db880c","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-46"],"target":"f-20261112-46","v":1} -->
 
 ---
 
