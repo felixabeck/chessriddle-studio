@@ -25937,3 +25937,20 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Failure scenario:** a push to master shows the Test job red at random and holds the post-push install until the job is rerun.
 * **Fix:** wait until the queen's computed `background-image` URL has decoded (e.g. load it through `new Image()` / `img.decode()` in the page) or poll `piecePaintBounds` until paint is detected within the expect timeout; prove with `--repeat-each` in the container.
 * **Found by:** drain session bfce3456-ab46-42ea-bc2c-33851aa0ee67 while waiting on hosted CI for the f-20261112-52 push, 2026-11-15.
+
+---
+
+## 2026-11-14 — filed through the inbox spool
+
+### Game report accuracy and CPL charge each move against the last scored mainline node, not its own parent
+
+* **ID:** f-20261114-10 · **Status:** open · **Area:** chess-tree · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** yes (general review of pre-fork code, origin/master b5bee066a; the loop is unchanged since upstream merge-base 9654961d6)
+* **Where:** `src/utils/chess.ts:786-813` (`getGameStats`: `let prevScore: Score = root.score ?? INITIAL_SCORE;` and, per mainline node, `if (node.score) { …getCPLoss(prevScore.value, node.score.value, color); …getAccuracy(…); prevScore = node.score; }`). Shown by `src/components/panels/analysis/ReportPanel.tsx:88,148-161` (Accuracy/CPL cards whenever both accuracies are > 0). Mainline nodes get scores piecemeal from the live engine (`src/components/boards/EvalListener.tsx:283-286` → `setScore`, `src/state/store/tree.ts:843-852`, only for the node being viewed) and from PGN `[%eval]` comments (`src/utils/chess.ts:466-486`, never on the root), so unscored nodes and an unscored root are normal states, not only report failures.
+* **Defect:** a node's loss is measured against whatever score was seen last, not against its parent. (1) When the parent is unscored, the comparison spans two plies: the mover is credited with the opponent's preceding move, so the opponent's error is never charged to anyone and the mover's own error is masked by it. (2) When the root is unscored, the first move is charged against the fixed `INITIAL_SCORE` (+0.15), which is wrong for any game that starts from a set-up position.
+* **Failure scenario:** Open a game with the analysis engine on and step through only some mainline moves (or import a PGN whose `[%eval]` comments skip a move). If the skipped ply is a blunder that the next move gives back, the Report panel shows both players near 100 % accuracy and ~0 CPL. Import a set-up-position game exported with `[%eval]` (e.g. Lichess "From Position") in which the first mover is worse: that side is charged a large loss on its first move that it never made.
+* **Proof:** Vitest probe in a `/tmp` `git archive` copy of origin/master b5bee066a, calling `getGameStats` on built mainlines. (a) Fully scored, root +0.20 then +0.25, +0.30, −3.00 (White blunder), +0.30 (Black gives it back): White CPL 165 / accuracy 44.3, Black CPL 167.5 / 44.2. (b) Same game with only ply 3 unscored: White CPL 0 / accuracy 100, Black CPL 2.5 / 99.5, so both blunders vanish. (c) Set-up position where Black is better (−3.00) and White keeps the evaluation exactly, every move scored but the root not: White CPL 157.5 / accuracy 46.6, Black 0 / 100. Control with the root scored −3.00: both 0 / 100. Probe removed afterwards.
+* **Fix:** charge a node only when its parent's score is known: track the parent's score per step (`parentScore = node.score ?? null` after each node, starting from `root.score ?? null`) and skip the CPL/accuracy push when it is null, instead of carrying the last seen score forward or falling back to `INITIAL_SCORE` (keep the fallback only if the root FEN is the standard start position, if at all). Add tests for an unscored interior node and an unscored set-up-position root.
+* **Related:** f-20260831-21 / d-20260910-09 (same "missing evaluation is not 0.00" principle, applied to `getAnnotation`).
+* **Found by:** Grok Bot general review
