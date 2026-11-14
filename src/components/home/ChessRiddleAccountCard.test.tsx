@@ -205,6 +205,23 @@ test("failed connect that reconciles as connected clears both removal alerts", a
   expect(host.textContent).not.toContain("Home.ChessRiddle.RemovalDurabilityUncertain");
 });
 
+test("a non-durable disconnect whose own follow-up status read still returns connected keeps both removal alerts", async () => {
+  mocks.chessriddleAccount.mockResolvedValue(connected);
+  mocks.disconnectChessriddle.mockResolvedValue({
+    status: "removed",
+    revocation_pending: true,
+    durability_uncertain: true,
+  });
+  await render();
+  await click("Disconnect");
+  expect(host.textContent).toContain("Home.ChessRiddle.ConnectedAs");
+  expect(host.textContent).toContain("Home.ChessRiddle.RevocationPending");
+  expect(host.textContent).toContain("Home.ChessRiddle.RemovalDurabilityUncertain");
+  await click("Refresh");
+  expect(host.textContent).toContain("Home.ChessRiddle.RevocationPending");
+  expect(host.textContent).toContain("Home.ChessRiddle.RemovalDurabilityUncertain");
+});
+
 test.each([
   [false, false],
   [true, false],
