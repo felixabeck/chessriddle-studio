@@ -26073,3 +26073,20 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Fix:** make the filters read-only views: when any filter is off, render the textarea read-only (or hide Update and show a hint "turn all options on to edit"), and only compare/offer Update against text produced with all options on. Test: with a commented variation in the tree, untick Variations → no Update button and no way to install the filtered text; tick it back, edit a header, Update → the variation survives.
 * **Related:** findings.md:12133 (PgnInput `[FEN ""]` header path, different defect), d-entry at decisions.md:3991 (PgnInput builds its tree with `parsePGN`).
 * **Found by:** Grok Bot general review
+
+---
+
+## 2026-11-14 — filed through the inbox spool
+
+### Game report with "Annotate novelties" never marks a novelty in a game that starts from a position missing from the reference database
+
+* **ID:** f-20261114-18 · **Status:** open · **Area:** chess-tree · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** yes (deep scenario pass over pre-fork code, origin/master 4fc85ccff; the root-first position list and the first-absent novelty loop are upstream En Croissant logic, later moved but not changed in meaning)
+* **Where:** `src-tauri/src/chess.rs:1206-1247` (`collect_report_positions` puts the start position itself at index 0), `:1497-1552` (`analyze_game` queries every collected position in the reference database and sets `analysis[i].novelty = !found` for the first absent one, then stops), `src/state/store/tree.ts:1180-1308` (`addAnalysis` maps `analysis[0]` to `state.root` and pushes the N glyph `$146` onto whichever node gets the flag), `src/utils/chess.ts` `writePGN` (root glyphs are not written).
+* **Defect:** the novelty pass treats the start position like a move. When a game begins from a custom FEN (a study or puzzle position, a Chess960 start, a game set up with Edit position) that no reference game contains, index 0 is the first absent position, so the novelty flag lands on the root and the search stops. No move of the game gets N. The root glyph is not shown in the notation and is dropped when the game is saved, so the user sees nothing. "Annotate novelties" is on by default (`ReportModal.tsx:43`).
+* **Failure scenario:** the user opens a game that starts from the FEN after 1. e4 e5 2. Nf3 Nc6 (or any study position), sets a reference database and runs Game report with the default options. Every position of the game is missing from the reference database, so the first move is the novelty, but the report annotates no move with N and saving the file writes no novelty.
+* **Proof:** vitest probe in /tmp (single probe file, real `parsePGN` with the repo's PGN lexer, real `createTreeStore().addAnalysis`, `getPGN` with all options): for the FEN `r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3` and moves `3. Bb5 a6 4. Ba4 Nf6`, an analysis array shaped as the backend returns it for an absent start (novelty only at index 0) gives `root.nags = [146]`, `3. Bb5` nags `[]`, and the exported PGN has no `$146`. The backend side is a code trace: index 0 is always the start FEN, and `present.get(0) == Some(false)` sets `novelty_found` before any move is considered.
+* **Fix:** exclude the start position from the novelty decision: skip index 0 (the root) when choosing the first absent position (or treat an absent root as "no reference games for this start" and mark the first move as the novelty, matching the usual definition). Do this on the native side so the prefix lookup also stops at the right place, and in `addAnalysis` never put N on the root. Test: a custom-FEN game whose start is absent from a small reference database marks its first move with N; a standard-start game is unchanged.
+* **Related:** f-20261114-14 (a root move symbol is dropped on save; the same root-glyph loss hides this flag), d-20260904-02 (prefix lookup stops at the first absent position; unchanged by this fix).
+* **Found by:** Grok Bot deep scenario review
