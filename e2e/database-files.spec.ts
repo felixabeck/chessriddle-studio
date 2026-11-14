@@ -2359,6 +2359,8 @@ test.describe("database-files: labelled colour filters", () => {
             expect(triggerId).toBeTruthy();
             await expect(page.getByRole("menu")).toHaveAttribute("aria-labelledby", triggerId!);
             await page.getByRole("menuitem", { name: "Schwarz", exact: true }).click();
+            // the player menu must finish closing before the opponent menu opens, or getByRole('menu') matches both
+            await expect(page.getByRole("menu")).toHaveCount(0);
             await expect(
                 page.getByRole("button", { name: "Farbe des Spielers: Schwarz", exact: true }),
             ).toBeVisible();
