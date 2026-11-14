@@ -24182,7 +24182,7 @@ Handled in 1ab8c70cc. `changeCompletion` keeps `timeSpent` undefined for an atte
 
 ### Re-adding a Chess.com account with different capitalisation creates a second card for the same account
 
-* **ID:** f-20261112-22 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-22 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** ux
 * **Spotted outside diff:** yes
 * **Where:** `src/components/home/Accounts.tsx` `addChessComSession` ~40-55 (`s.chessCom?.username !== session.username`). The same exact-case comparison is in `src/components/common/AccountCards.tsx`, Chess.com `logout` ~363-367 and `reload` ~372-385.
@@ -24191,6 +24191,16 @@ Handled in 1ab8c70cc. `changeCompletion` keeps `timeSpent` undefined for an atte
 * **Fix:** Compare Chess.com usernames case-insensitively in `addChessComSession`, as `upsertLichessSession` does (keep the newest spelling and alias), and use the same comparison in the Chess.com `logout`/`reload` filters. Consider a shared `upsertChessComSession` helper in `src/utils/session.ts` with a unit test.
 * **Proof:** Ephemeral Vitest probe built on `Accounts.test.tsx` lines 1-204, using the real `Accounts` component and modal and the mocked `getChessComAccount`. It added Chess.com "Felix", then reopened the modal and added "felix". The Chess.com usernames in `sessionsAtom` were `['Felix', 'felix']`; the probe expected `['felix']`. The probe was deleted and the tree is clean.
 * **Found by:** Grok Bot general review 2026-11-12 (Accounts/AccountCards pass). Related area, different cause: f-20261004-08.
+
+Handled 2026-11-14 by drain session a2da1e2c (lens tier; lenses correctness, root-cause, tests, tauri-security, code-quality, minimalism; agy write leaf and agy lenses, same family, disclosed).
+* `upsertChessComSession` in `src/utils/session.ts` replaces a case-variant Chess.com session (newest spelling and alias win), mirroring `upsertLichessSession`. `Accounts.tsx` adds through it.
+* One predicate, `sameAccountUsername`, now compares Chess.com and Lichess usernames case-insensitively in `upsertChessComSession`, `upsertLichessSession` and the card logout, card reload and group-removal filters in `AccountCards.tsx`.
+* Card reloads update only stats (Chess.com) or the profile (Lichess) and keep the stored session's own username and handle, so a re-add or a sign-in that lands while a reload is in flight is not overwritten (round-1 review finding).
+* Case-variant Chess.com duplicates already persisted before this fix collapse to the newest session at startup (`dedupeChessComSessions` in `initializePersistedSessions`).
+* Tests: session.test.ts (helpers, dedupe, startup collapse), Accounts.test.tsx (Felix then felix with alias), AccountCards.test.tsx (removal with survivors, Chess.com and Lichess reload races, Lichess case-variant removal). Fix-revert: case-sensitive predicate turned 5 tests red; each repair revert turned 1-3 tests red.
+* Commits: 77e2742fe, b1ca2f769.
+* Rejected: a shared removeSession facade for card logout and group removal (they differ deliberately in credential revocation; the comparison is shared), and deduplicating handle-less Lichess duplicates at startup (removal is now case-insensitive and upsertLichessSession already prevents new ones).
+<!-- ledger-meta {"command":"close","effect_lines":8,"effect_sha256":"a157cdc79077d6d3c29ffb67210719f1e140521a82d77062a670295ebf7e3d30","header_sha256":"d14eba2fdf6bf964e3e88e24ca53d5c2591d350e2a0a2a2e9338c1e8e4190247","header_status":"handled","input_sha256":"ce48bf84bb68524ad4d913ba8b482b007c013f3341452a73aa7f3a7a270191ec","kind":"mutation-receipt","operation":"0bc5dbbfdd56bc4362c72d03fdac3ca89c81b5d6728dcd4d0d3de8c32a517274","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-22"],"target":"f-20261112-22","v":1} -->
 
 ---
 
