@@ -118,3 +118,17 @@ test("total row and game-over row have no tabindex and ignore Enter and click", 
   expect(state.position).toEqual([]);
   expect(state.root.children).toHaveLength(0);
 });
+
+test("total row omits percentage while move rows show percentage and count", async () => {
+  await renderTable();
+  const rows = bodyRows();
+  expect(rows).toHaveLength(4);
+
+  const e4TotalCell = rows[0].querySelectorAll("td")[1].textContent;
+  expect(e4TotalCell).toContain("53%");
+  expect(e4TotalCell).toContain("20");
+
+  const sumCell = rows[3].querySelectorAll("td")[1].textContent;
+  expect(sumCell).not.toContain("%");
+  expect(sumCell).toBe("38");
+});
