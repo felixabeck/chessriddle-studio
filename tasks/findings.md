@@ -23664,7 +23664,7 @@ Handled in 0b6412d9e. `formatClock` now derives hours, minutes and sub-minute te
 
 ### Clock progress is NaN (or Infinity) when the first move's clock is 0 and the game has no TimeControl
 
-* **ID:** f-20261111-94 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261111-94 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** ux
 * **Spotted outside diff:** ninth-sweep quality review (Felix t26u) at HEAD `a276f9917`, dense-algorithm second-read lens (clock/time-control math)
 * **Where:** `src/utils/clock.ts` `calculateProgress` (~20-21): if there is no per-side or shared TimeControl, the first child's `clock` is used as the initial time and the function returns `clock / root.children[0].clock` with no zero/non-finite guard. `Clock.tsx` (~61-64) feeds `progress * 100` into Mantine `Progress`. A zero first-move clock is a supported tree value (`src/utils/tests/treeReducer.test.ts` "preserves a zero `[%clk 0:00:00]` clock as a numeric zero"). Distinct from handled `f-20261106-26` / `f-20261106-27` (live-game increment and minimum initial time).
@@ -23673,6 +23673,9 @@ Handled in 0b6412d9e. `formatClock` now derives hours, minutes and sub-minute te
 * **Fix:** Treat a missing, zero, or non-finite denominator as progress `0` (or clamp to `[0, 1]`). Add a regression that `getClockInfo` for a first child with `clock === 0` and no TimeControl header returns a finite progress of 0 for the side whose remaining time is 0.
 * **Proof:** Ephemeral Vitest `src/utils/sweep9_probe.test.ts` on HEAD `a276f9917`, removed afterwards (tree clean). After `1. e4` with `clock: 0`, no `time_control` header, `currentClock: 0`, and Black to move, `getClockInfo` returned `white.value === 0` and `white.progress` `NaN`. No `tasks/decisions.md` entry requires unclamped division by the first-move clock.
 * **Found by:** Grok Bot, quality review (t26u), HEAD `a276f9917`.
+
+The code fix landed earlier in be88f1572 (`calculateProgress` returns 0 when `root.children[0].clock <= 0`), which also added the Infinity-case regression (`returns zero progress for non-positive fallback clock`). 0b6412d9e adds the finding's exact NaN case: no TimeControl, first-move clock 0, remaining time 0 -> `{ value: 0, progress: 0 }`. Removing the guard turns it red.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"555f1fd4687837ccc6836f8983b39f7cf743d51da17fbbbf92f2dc42f31c103c","header_sha256":"c3e37dc43278546a3b6614e1ca3e364261d826673dc4f6a842703bcf6d6c3f35","header_status":"handled","input_sha256":"c24330657f2ba3c7eac939166826d5875823c5c103fc90d9cffd9d54598e60d6","kind":"mutation-receipt","operation":"84afe242c4d2ee8fb09093f72197d4cbe51f5f687d77186ec844d7fdc7a57cc0","options":{"section":null},"request_id_sha256":null,"results":["f-20261111-94"],"target":"f-20261111-94","v":1} -->
 
 ---
 
