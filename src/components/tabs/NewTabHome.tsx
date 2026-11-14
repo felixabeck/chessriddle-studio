@@ -784,16 +784,21 @@ export default function NewTabHome({ id }: { id: string }) {
                 })}
                 {(library.loading ||
                   feed.loading ||
-                  (filter === "due" && due.incomplete && rows.length === 0)) && (
+                  (filter === "due" &&
+                    due.incomplete &&
+                    !due.discoveryFailed &&
+                    rows.length === 0)) && (
                   <Text size="sm" c="dimmed" role="status">
                     {t("Common.Loading")}
                   </Text>
                 )}
                 {rows.length === 0 && !library.loading && !feed.loading && (
                   <Text c="dimmed">
-                    {filter === "due" && !incomplete
-                      ? t("Home.DuePractice.NothingDue")
-                      : t("Home.Library.Empty")}
+                    {filter === "due" && due.discoveryFailed
+                      ? t("Home.DuePractice.Incomplete")
+                      : filter === "due" && !incomplete
+                        ? t("Home.DuePractice.NothingDue")
+                        : t("Home.Library.Empty")}
                   </Text>
                 )}
                 {feed.active && feed.hasMore && (

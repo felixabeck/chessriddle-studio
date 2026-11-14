@@ -223,7 +223,7 @@ test("pure due projection excludes never-trained positions", () => {
     projectLibraryDueCounts(
       [row],
       new Map([[row.key, new Map([[0, deck("ready", [position(Date.now() - 1, 0)])]])]]),
-      "ready",
+      "complete",
     ).total,
   ).toBe(0);
 });
@@ -302,6 +302,132 @@ test("REMOVE of a subscribed identity restarts the effect and lists the inventor
   await act(async () => emit("REMOVE", { file: row.key, game: 0 }));
   expect(mocks.listPracticeDecks).toHaveBeenCalledTimes(2);
   expect(mounted).toEqual(new Set([id(row.key, 0)]));
+});
+
+test("anomaly-only chapter is subscribed and counted; a null game is not", async () => {
+  const row = repertoire(0);
+  mocks.listPracticeDecks.mockResolvedValue({
+    decks: [],
+    anomalies: [
+      { kind: "DamagedDeck", leaf: "x", fileId: row.key, game: 1 },
+      { kind: "DamagedDeck", leaf: "y", fileId: row.key, game: null },
+    ],
+  });
+  await render([row]);
+  await settle(id(row.key, 0), deck("ready"));
+  await settle(id(row.key, 1), deck("ready", [position(Date.now() - 1000, 2)]));
+  expect(latest.dueRows.map((entry) => entry.file.key)).toEqual([row.key]);
+  expect(latest.dueRows[0].count).toBe(1);
+  expect(latest.total).toBe(1);
+  expect(decks.has(id(row.key, 1))).toBe(true);
+  expect(mocks.family.mock.calls.some(([{ game }]) => game == null)).toBe(false);
+});
+
+test("pre-existing family params subscribe even when inventory listing rejects", async () => {
+  const row = repertoire(0);
+  mocks.params.set(id(row.key, 1), { file: row.key, game: 1 });
+  mocks.listPracticeDecks.mockRejectedValue(new Error("inventory unavailable"));
+  await render([row]);
+  await settle(id(row.key, 0), deck("ready"));
+  await settle(id(row.key, 1), deck("ready", [position(Date.now() - 1000, 2)]));
+  expect(decks.has(id(row.key, 1))).toBe(true);
+  expect(latest.dueRows.map((entry) => entry.file.key)).toEqual([row.key]);
+  expect(latest.dueRows[0].count).toBe(1);
+  expect(latest.discoveryFailed).toBe(true);
+  expect(latest.incomplete).toBe(true);
+});
+
+test("unresolved inventory keeps game-0 due visible until later chapters settle", async () => {
+  const row = repertoire(0);
+  let resolveInventory!: (value: {
+    decks: { fileId: string; game: number }[];
+    anomalies: never[];
+  }) => void;
+  mocks.listPracticeDecks.mockReturnValue(
+    new Promise((resolve) => {
+      resolveInventory = resolve;
+    }),
+  );
+  await render([row]);
+  await settle(id(row.key, 0), deck("ready", [position(Date.now() - 1000, 2)]));
+  expect(latest.dueRows.map((entry) => entry.file.key)).toEqual([row.key]);
+  expect(latest.dueRows[0].count).toBe(1);
+  expect(latest.incomplete).toBe(true);
+
+  await act(async () => {
+    resolveInventory({ decks: [{ fileId: row.key, game: 1 }], anomalies: [] });
+  });
+  expect(latest.dueRows.map((entry) => entry.file.key)).toEqual([row.key]);
+  expect(latest.dueRows[0].count).toBe(1);
+  expect(latest.incomplete).toBe(true);
+
+  await settle(id(row.key, 1), deck("ready"));
+  expect(latest.dueRows.map((entry) => entry.file.key)).toEqual([row.key]);
+  expect(latest.dueRows[0].count).toBe(1);
+  expect(latest.incomplete).toBe(false);
+});
+
+test("a failed sibling nulls the file count and keeps the row in Due", async () => {
+  const row = repertoire(0);
+  mocks.listPracticeDecks.mockResolvedValue({
+    decks: [
+      { fileId: row.key, game: 0 },
+      { fileId: row.key, game: 1 },
+    ],
+    anomalies: [],
+  });
+  await render([row]);
+  await settle(id(row.key, 0), deck("ready", [position(Date.now() - 1000, 2)]));
+  await settle(id(row.key, 1), deck("read-failed"));
+  expect(latest.dueRows.map((entry) => entry.file.key)).toEqual([row.key]);
+  expect(latest.dueRows[0].failed).toBe(true);
+  expect(latest.dueRows[0].count).toBeNull();
+  expect(latest.incomplete).toBe(true);
+});
+
+test("REMOVE restart recounts due from the new inventory", async () => {
+  const row = repertoire(0);
+  mocks.listPracticeDecks.mockResolvedValue({
+    decks: [0, 1, 2].map((game) => ({ fileId: row.key, game })),
+    anomalies: [],
+  });
+  await render([row]);
+  await settle(id(row.key, 0), deck("ready"));
+  await settle(id(row.key, 1), deck("ready"));
+  await settle(id(row.key, 2), deck("ready", [position(Date.now() - 1000, 2)]));
+  expect(latest.total).toBe(1);
+
+  mocks.listPracticeDecks.mockResolvedValue({
+    decks: [
+      { fileId: row.key, game: 0 },
+      { fileId: row.key, game: 1 },
+    ],
+    anomalies: [],
+  });
+  mocks.params.delete(id(row.key, 2));
+  await act(async () => emit("REMOVE", { file: row.key, game: 2 }));
+  await settle(id(row.key, 0), deck("ready"));
+  await settle(id(row.key, 1), deck("ready", [position(Date.now() - 1000, 2)]));
+  expect(latest.total).toBe(1);
+  expect(latest.rows[0].count).toBe(1);
+  expect(mounted.has(id(row.key, 2))).toBe(false);
+});
+
+test("inventory failure sets discoveryFailed", async () => {
+  const row = repertoire(0);
+  mocks.listPracticeDecks.mockRejectedValue(new Error("inventory unavailable"));
+  await render([row]);
+  await settle(id(row.key, 0), deck("ready"));
+  expect(latest.discoveryFailed).toBe(true);
+});
+
+test("inventory success leaves discoveryFailed false", async () => {
+  const row = repertoire(0);
+  mocks.listPracticeDecks.mockResolvedValue({ decks: [], anomalies: [] });
+  await render([row]);
+  await settle(id(row.key, 0), deck("ready"));
+  expect(latest.discoveryFailed).toBe(false);
+  expect(latest.incomplete).toBe(false);
 });
 
 test("concurrency bound holds across chapters of several repertoires", async () => {

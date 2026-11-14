@@ -4,6 +4,7 @@ import { deckAtomFamily } from "@/state/atoms";
 import {
     ensurePracticeMigration,
     listPracticeDecks,
+    type PracticeDeckKey,
     type PracticeDeckValue,
 } from "@/state/practiceStorage";
 import { getStats } from "@/components/files/opening";
@@ -11,15 +12,17 @@ import { useDueBoundaryRerender } from "@/components/panels/practice/useDueBound
 import type { LibraryRow } from "./libraryData";
 
 // Per mounted hook instance, at most four deck subscriptions hydrate at once
-// across every chapter of every listed repertoire. Settled subscriptions stay
-// live. Native loads can overlap across remounts without cancellation. Game 0
-// of each repertoire is subscribed on first paint; remaining chapters come from
-// the practice inventory, in-memory family params, and live CREATE events. A
-// REMOVE of a subscribed identity restarts the effect (chapter deletes renumber
-// games).
+// across every chapter of every listed repertoire. Hydration finishes when a
+// deck leaves "loading"; those subscriptions stay live. Countable decks (ready
+// or write-pending) contribute due and nextDue; a still-loading sibling does
+// not null the file's count. Native loads can overlap across remounts without
+// cancellation. Game 0 of each repertoire is subscribed on first paint;
+// remaining chapters come from the practice inventory, in-memory family params,
+// and live CREATE events. A REMOVE of a subscribed identity restarts the
+// effect (chapter deletes renumber games).
 export const LIBRARY_DECK_CONCURRENCY = 4;
 type FileRow = Extract<LibraryRow, { kind: "file" }>;
-type InventoryStatus = "pending" | "ready" | "failed";
+type DueDiscovery = "pending" | "complete" | "failed";
 type ChapterDecks = Map<string, Map<number, PracticeDeckValue>>;
 
 function identityKey(file: string, game: number): string {
@@ -30,7 +33,7 @@ function deckFailed(deck: PracticeDeckValue): boolean {
     return deck.status === "read-failed" || deck.status === "write-blocked" || !!deck.error;
 }
 
-function deckSettled(deck: PracticeDeckValue): boolean {
+function deckCountable(deck: PracticeDeckValue): boolean {
     return deck.status === "ready" || deck.status === "write-pending";
 }
 
@@ -51,29 +54,36 @@ export function libraryRepertoires(rows: readonly LibraryRow[]): FileRow[] {
 export function projectLibraryDueCounts(
     repertoires: readonly FileRow[],
     decks: ReadonlyMap<string, ReadonlyMap<number, PracticeDeckValue>>,
-    inventory: InventoryStatus,
+    discovery: DueDiscovery,
 ) {
     const rows = repertoires.map((file) => {
         const chapters = decks.get(file.key);
         const values = chapters ? [...chapters.values()] : [];
         const failed = values.some(deckFailed);
-        const count =
-            !chapters || chapters.size === 0 || failed || values.some((deck) => !deckSettled(deck))
-                ? null
-                : values.reduce((sum, deck) => sum + getStats(deck.positions).due, 0);
+        let dueSum = 0;
+        let countable = 0;
         let nextDue: Date | null = null;
         for (const deck of values) {
-            if (!deckSettled(deck) || deckFailed(deck)) continue;
-            const due = getStats(deck.positions).nextDue;
-            if (due && (!nextDue || due < nextDue)) nextDue = due;
+            if (!deckCountable(deck)) continue;
+            countable++;
+            const stats = getStats(deck.positions);
+            dueSum += stats.due;
+            if (stats.nextDue && (!nextDue || stats.nextDue < nextDue)) nextDue = stats.nextDue;
         }
+        const count = failed || countable === 0 ? null : dueSum;
         return { file, count, nextDue, failed };
     });
     return {
         rows,
         dueRows: rows.filter((row) => row.failed || (row.count ?? 0) > 0),
         total: rows.reduce((sum, row) => sum + (row.count ?? 0), 0),
-        incomplete: inventory !== "ready" || rows.some((row) => row.count === null),
+        incomplete:
+            discovery !== "complete" ||
+            rows.some((row) => row.count === null) ||
+            [...decks.values()].some((chapters) =>
+                [...chapters.values()].some((deck) => !deckCountable(deck)),
+            ),
+        discoveryFailed: discovery === "failed",
         nextDue: rows.reduce<Date | null>(
             (earliest, row) =>
                 row.nextDue && (!earliest || row.nextDue < earliest) ? row.nextDue : earliest,
@@ -89,25 +99,31 @@ export function useLibraryDueCounts(libraryRows: readonly LibraryRow[]) {
     const identity = JSON.stringify(repertoires.map((row) => row.key).sort());
     const inputs = useRef(repertoires);
     inputs.current = repertoires;
-    const [restart, setRestart] = useState(0);
+    const [reloadGeneration, setReloadGeneration] = useState(0);
     const [state, setState] = useState<{
         identity: string;
         decks: ChapterDecks;
-        inventory: InventoryStatus;
+        discovery: DueDiscovery;
     }>();
     useEffect(() => {
         const controller = new AbortController();
         const repertoireFiles = new Set(inputs.current.map((row) => row.key));
-        const queue: { file: string; game: number }[] = [];
+        const queue: PracticeDeckKey[] = [];
         const queued = new Set<string>();
         const subscribed = new Set<string>();
         const decks: ChapterDecks = new Map();
         const cleanups: (() => void)[] = [];
         let hydrating = 0;
-        let inventory: InventoryStatus = "pending";
+        let listing: DueDiscovery = "pending";
         const publish = () => {
-            if (!controller.signal.aborted)
-                setState({ identity, decks: copyChapterDecks(decks), inventory });
+            if (controller.signal.aborted) return;
+            const discovery: DueDiscovery =
+                listing === "failed"
+                    ? "failed"
+                    : listing === "pending" || queue.length > 0 || hydrating > 0
+                      ? "pending"
+                      : "complete";
+            setState({ identity, decks: copyChapterDecks(decks), discovery });
         };
         const enqueue = (file: string, game: number) => {
             if (!repertoireFiles.has(file)) return;
@@ -127,7 +143,7 @@ export function useLibraryDueCounts(libraryRows: readonly LibraryRow[]) {
                 queued.delete(key);
                 subscribed.add(key);
                 const deck = deckAtomFamily({ file: item.file, game: item.game });
-                let pending = true;
+                let hydratingThis = true;
                 hydrating++;
                 const read = () => {
                     if (controller.signal.aborted) return;
@@ -138,8 +154,8 @@ export function useLibraryDueCounts(libraryRows: readonly LibraryRow[]) {
                         decks.set(item.file, chapters);
                     }
                     chapters.set(item.game, value);
-                    if (pending && value.status !== "loading") {
-                        pending = false;
+                    if (hydratingThis && value.status !== "loading") {
+                        hydratingThis = false;
                         hydrating--;
                         queueMicrotask(pump);
                     }
@@ -161,11 +177,12 @@ export function useLibraryDueCounts(libraryRows: readonly LibraryRow[]) {
                     event.type === "REMOVE" &&
                     subscribed.has(identityKey(event.param.file, event.param.game))
                 ) {
-                    setRestart((count) => count + 1);
+                    setReloadGeneration((count) => count + 1);
                 }
             }),
         );
         for (const row of inputs.current) enqueue(row.key, 0);
+        for (const param of deckAtomFamily.getParams()) enqueue(param.file, param.game);
         pump();
         publish();
         void (async () => {
@@ -179,11 +196,10 @@ export function useLibraryDueCounts(libraryRows: readonly LibraryRow[]) {
                     if (anomaly.fileId != null && anomaly.game != null)
                         enqueue(anomaly.fileId, anomaly.game);
                 }
-                for (const param of deckAtomFamily.getParams()) enqueue(param.file, param.game);
-                inventory = "ready";
+                listing = "complete";
             } catch {
                 if (controller.signal.aborted) return;
-                inventory = "failed";
+                listing = "failed";
             }
             pump();
             publish();
@@ -193,11 +209,11 @@ export function useLibraryDueCounts(libraryRows: readonly LibraryRow[]) {
             queue.length = 0;
             cleanups.forEach((cleanup) => cleanup());
         };
-    }, [store, identity, restart]);
+    }, [store, identity, reloadGeneration]);
     const result = projectLibraryDueCounts(
         repertoires,
         state?.identity === identity ? state.decks : new Map(),
-        state?.identity === identity ? state.inventory : "pending",
+        state?.identity === identity ? state.discovery : "pending",
     );
     useDueBoundaryRerender(result.nextDue, identity);
     return result;

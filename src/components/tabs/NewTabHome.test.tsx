@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
     error: undefined as unknown,
   },
   due: {} as Record<string, { count: number | null; failed: boolean }>,
+  discoveryFailed: false,
   feed: { games: [] as OwnGame[], loading: false, hasMore: false, incompleteCount: 0 },
   feedArgs: vi.fn(),
   showMore: vi.fn(),
@@ -61,7 +62,8 @@ vi.mock("@/components/library/useLibraryDueCounts", () => ({
       rows: values,
       dueRows: values.filter((row) => row.failed || (row.count ?? 0) > 0),
       total: values.reduce((sum, row) => sum + (row.count ?? 0), 0),
-      incomplete: values.some((row) => row.count === null),
+      incomplete: values.some((row) => row.count === null) || mocks.discoveryFailed,
+      discoveryFailed: mocks.discoveryFailed,
     };
   },
 }));
@@ -207,6 +209,7 @@ beforeEach(() => {
   mocks.listing = { data: undefined, isLoading: true, error: undefined };
   mocks.databases = { data: undefined, isLoading: false, error: undefined };
   mocks.due = {};
+  mocks.discoveryFailed = false;
   mocks.feed = { games: [], loading: false, hasMore: false, incompleteCount: 0 };
   mocks.count.mockReset().mockResolvedValue(1);
   mocks.readGames.mockReset().mockResolvedValue(chapterGames());
@@ -313,6 +316,17 @@ test("Due omits the total line when no repertoire has overdue positions", async 
   expect(rows()).toHaveLength(0);
   expect(host.textContent).toContain("Home.DuePractice.NothingDue");
   expect(host.textContent).not.toContain("Home.DuePractice.Total");
+});
+
+test("Due with no rows and a failed inventory shows incomplete without Loading", async () => {
+  mocks.listing = { data: [file("Done", "repertoire")], isLoading: false, error: undefined };
+  mocks.discoveryFailed = true;
+  await render();
+  await filter("due");
+  expect(rows()).toHaveLength(0);
+  expect(host.textContent).toContain("Home.DuePractice.Incomplete");
+  expect(host.textContent).not.toContain("Common.Loading");
+  expect(host.querySelector('[role="status"]')).toBeNull();
 });
 
 test("Due sorts overdue counts, includes failed decks, and keeps their whole row operable", async () => {
