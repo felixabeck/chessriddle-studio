@@ -3098,8 +3098,8 @@ mod tests {
                 }
             });
             let producer = async { (&mut worker).await.unwrap() };
+            prepared_rx.await.unwrap();
             let admission = async move {
-                prepared_rx.await.unwrap();
                 let _ = permit_tx.send(());
             };
             let outcome = tokio::time::timeout(
