@@ -26005,3 +26005,20 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Fix:** carry the response's top-level `white + draws + black` as the online position total and use it for Matches and as the percentage denominator in `OpeningsTable` (keeping the sample-game floor only when the totals are absent). Optionally show a "games ended here / other moves" remainder row so the Total row adds up. Test: a mate-position response with empty `moves` shows its total; a response with totals larger than the move-row sum shows the totals and correct percentages.
 * **Related:** d-20261027-06 (chose the move-row total as "the opening statistics" and the sample-game floor for positions without move rows; it did not consider that the response carries the full totals), f-20261007-10 (handled; failed per-game loads), the earlier online game-list finding at findings.md:21659 (topGames/recentGames selection, a different defect).
 * **Found by:** Grok Bot general review
+
+---
+
+## 2026-11-14 — filed through the inbox spool
+
+### A move symbol set at the starting position is accepted and shown as active, then dropped on save
+
+* **ID:** f-20261114-14 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** yes (general review of pre-fork code, origin/master 69856f2ea; the Annotate panel and the root case of `writePGN` are upstream code)
+* **Where:** `src/components/panels/annotation/AnnotationPanel.tsx:45-103` (every symbol button is enabled on whatever node `position` points at, including the root at `position = []`) → `src/state/store/tree.ts:759-771` (`setAnnotation` writes the NAG into `root.nags` and sets `dirty`) → `src/utils/chess.ts:79-94` (`writePGN` emits NAGs only inside `if (tree.san)`, so the root's NAGs are never written). The reader already treats this as unrepresentable: `parsePGNWithLossReport` reports "NAG on parse root" (`chess.ts` Nag token branch).
+* **Defect:** The editor lets the user put a NAG on the root node, which has no move. The tree keeps it and the button shows it as active, but the PGN writer has nowhere to put it and silently omits it, so it is lost on the next save, copy or export. The root's comment, by contrast, is written.
+* **Failure scenario:** Open a study position (a FEN game or a new analysis board) before any move, go to the Annotate tab and click "+-" (or "!"). The button turns filled and the tab is marked unsaved. Save the file and reopen it, or copy the PGN: the assessment is gone, with no warning.
+* **Proof:** Vitest probe on atlas (throwaway config and test under /tmp, scoped to the one probe file, deleted): `createTreeStore()` then `setAnnotation("+-")` at `position []` gave `root.nags = [18]`; `getPGN(root, { glyphs, comments, variations, extraMarkups, headers })` produced movetext ` *` with no `$18`. After `makeMove("e4")` and the same click, the PGN read `1. e4 $18  *`.
+* **Fix:** disable the symbol buttons (and the annotation hotkeys) while the current node is the root, or route a root assessment to a place PGN can carry (for example the first move, or a `{ }` comment). Test: at `position []` the buttons are disabled and `setAnnotation` leaves `root.nags` unchanged.
+* **Related:** f-20261102-08 (handled; the reader now reports root NAGs as a loss on open, but the editor can still create them).
+* **Found by:** Grok Bot general review
