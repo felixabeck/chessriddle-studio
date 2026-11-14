@@ -111,6 +111,7 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, options?: { value?: string }) =>
       key === "Common.SecondsShort" ? `${options?.value}s` : key,
+    i18n: { language: "en-US" },
   }),
 }));
 vi.mock("@/i18n", async (original) => ({

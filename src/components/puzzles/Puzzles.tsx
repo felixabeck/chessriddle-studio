@@ -52,7 +52,7 @@ import {
 import { persistStorageWriteError } from "@/state/store/tabStorage";
 import { reportPersistError } from "@/state/persistError";
 import { puzzleDatabaseExtension } from "@/utils/db";
-import { formatThemeLabel, formatTime } from "@/utils/format";
+import { formatDecimal, formatThemeLabel, formatTime } from "@/utils/format";
 import { capabilityKey } from "@/utils/pathCapabilities";
 import { normalizeError, runDestructiveWithRefresh } from "@/platform/errors";
 import {
@@ -165,7 +165,7 @@ function OfflinePuzzles({ id, sourceControl }: { id: string; sourceControl: Reac
 }
 
 function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const commonErrorRef = useRef(t("Common.Error"));
   commonErrorRef.current = t("Common.Error");
   const store = useContext(TreeStateContext)!;
@@ -1047,7 +1047,9 @@ function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
                   {t("Puzzle.AvgTime")}
                 </Text>
                 <Text fw={700} size="lg">
-                  {t("Common.SecondsShort", { value: avgTimeSeconds.toFixed(1) })}
+                  {t("Common.SecondsShort", {
+                    value: formatDecimal(avgTimeSeconds, i18n.language),
+                  })}
                 </Text>
               </Paper>
             )}

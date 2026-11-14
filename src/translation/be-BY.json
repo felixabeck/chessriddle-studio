@@ -458,6 +458,7 @@
     "Databases.Add.Convert": "Канвертаваць",
     "Databases.Add.ErrorCatalog": "Убудаваны каталог баз дадзеных не прайшоў праверку подпісу.",
     "Databases.Add.ErrorFetch": "Не ўдалося атрымаць базы дадзеных з сервера.",
+    "Databases.Add.GamesPerSecond": "{{rate}} партый/с",
     "Databases.Add.Title": "Дадаць базу дадзеных",
     "Databases.Add.Web": "Вэб",
     "Databases.Busy.Description": "Гэта база даных выкарыстоўваецца і зараз недаступная для чытання. Спроба будзе паўторана аўтаматычна.",

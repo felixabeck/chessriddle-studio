@@ -450,6 +450,7 @@
     "Databases.Add.Convert": "Convert",
     "Databases.Add.ErrorCatalog": "The bundled database catalog failed signature verification.",
     "Databases.Add.ErrorFetch": "Failed to fetch the database's info from the server.",
+    "Databases.Add.GamesPerSecond": "{{rate}} games/s",
     "Databases.Add.Title": "Add Database",
     "Databases.Add.Web": "Web",
     "Databases.Busy.Description": "This database is in use and cannot be read right now. It is retried automatically.",

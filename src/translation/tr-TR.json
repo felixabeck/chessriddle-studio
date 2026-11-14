@@ -450,6 +450,7 @@
     "Databases.Add.Convert": "Dönüştür",
     "Databases.Add.ErrorCatalog": "Birlikte gelen veritabanı kataloğu imza doğrulamasını geçemedi.",
     "Databases.Add.ErrorFetch": "Veritabanı bilgileri sunucudan aktarılamadı.",
+    "Databases.Add.GamesPerSecond": "{{rate}} oyun/sn",
     "Databases.Add.Title": "Veritabanı Ekle",
     "Databases.Add.Web": "Web",
     "Databases.Busy.Description": "Bu veritabanı kullanımda ve şu anda okunamıyor. Otomatik olarak yeniden denenecek.",

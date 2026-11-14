@@ -217,17 +217,3 @@ export function getNextReviewTimes(card: Card): Record<Grade, Date> {
         4: schedulingCards[4].card.due,
     };
 }
-
-export function formatReviewInterval(dueDate: Date): string {
-    const now = new Date();
-    const diffMs = dueDate.getTime() - now.getTime();
-    const diffMin = Math.round(diffMs / 60000);
-    const diffHrs = Math.round(diffMs / 3600000);
-    const diffDays = Math.round(diffMs / 86400000);
-
-    if (diffMin < 1) return "< 1m";
-    if (diffMin < 60) return `${diffMin}m`;
-    if (diffHrs < 24) return `${diffHrs}h`;
-    if (diffDays < 30) return `${diffDays}d`;
-    return `${Math.round(diffDays / 30)}mo`;
-}

@@ -446,6 +446,7 @@
     "Databases.Add.Convert": "轉換",
     "Databases.Add.ErrorCatalog": "內建資料庫目錄簽名驗證失敗。",
     "Databases.Add.ErrorFetch": "從伺服器取得資料庫資訊失敗。",
+    "Databases.Add.GamesPerSecond": "{{rate}} 局/秒",
     "Databases.Add.Title": "新增資料庫",
     "Databases.Add.Web": "網路",
     "Databases.Busy.Description": "此資料庫正在使用中，目前無法讀取。系統會自動重試。",

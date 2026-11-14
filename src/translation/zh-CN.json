@@ -446,6 +446,7 @@
     "Databases.Add.Convert": "转换",
     "Databases.Add.ErrorCatalog": "内置数据库目录签名校验失败。",
     "Databases.Add.ErrorFetch": "从服务器获取数据库信息失败",
+    "Databases.Add.GamesPerSecond": "{{rate}} 局/秒",
     "Databases.Add.Title": "添加数据库",
     "Databases.Add.Web": "云端",
     "Databases.Busy.Description": "此数据库正在使用中，目前无法读取。系统会自动重试。",

@@ -454,6 +454,7 @@
     "Databases.Add.Convert": "Converti",
     "Databases.Add.ErrorCatalog": "Il catalogo database incluso non ha superato la verifica della firma.",
     "Databases.Add.ErrorFetch": "Impossibile recuperare le informazioni del database dal server.",
+    "Databases.Add.GamesPerSecond": "{{rate}} partite/s",
     "Databases.Add.Title": "Aggiungi database",
     "Databases.Add.Web": "Web",
     "Databases.Busy.Description": "Questo database è in uso e al momento non può essere letto. Il tentativo verrà ripetuto automaticamente.",

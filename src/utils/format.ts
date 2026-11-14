@@ -5,8 +5,10 @@ export function formatNumber(value?: number): string {
 
 const MILLISECONDS_PER_SECOND = 1000;
 const SECONDS_PER_MINUTE = 60;
-const SECONDS_PER_HOUR = 60 * SECONDS_PER_MINUTE;
-const SECONDS_PER_DAY = 24 * SECONDS_PER_HOUR;
+const MINUTES_PER_HOUR = 60;
+const HOURS_PER_DAY = 24;
+const SECONDS_PER_HOUR = MINUTES_PER_HOUR * SECONDS_PER_MINUTE;
+const SECONDS_PER_DAY = HOURS_PER_DAY * SECONDS_PER_HOUR;
 // Months and years are approximations for display.
 const DAYS_PER_MONTH = 30;
 const MONTHS_PER_YEAR = 12;
@@ -32,6 +34,45 @@ export function formatRelativeTime(time: number, now: number, locale: string): s
         Math.trunc(seconds / divisor),
         unit,
     );
+}
+
+function formatShortUnit(
+    value: number,
+    unit: "minute" | "hour" | "day" | "month",
+    locale: string,
+): string {
+    return new Intl.NumberFormat(locale, {
+        style: "unit",
+        unit,
+        unitDisplay: "short",
+    }).format(value);
+}
+
+export function formatReviewInterval(due: number, now: number, locale: string): string {
+    const diffSeconds = (due - now) / MILLISECONDS_PER_SECOND;
+    if (diffSeconds < SECONDS_PER_MINUTE) {
+        return `< ${formatShortUnit(1, "minute", locale)}`;
+    }
+    const diffMinutes = Math.round(diffSeconds / SECONDS_PER_MINUTE);
+    if (diffMinutes < MINUTES_PER_HOUR) {
+        return formatShortUnit(diffMinutes, "minute", locale);
+    }
+    const diffHours = Math.round(diffSeconds / SECONDS_PER_HOUR);
+    if (diffHours < HOURS_PER_DAY) {
+        return formatShortUnit(diffHours, "hour", locale);
+    }
+    const diffDays = Math.round(diffSeconds / SECONDS_PER_DAY);
+    if (diffDays < DAYS_PER_MONTH) {
+        return formatShortUnit(diffDays, "day", locale);
+    }
+    return formatShortUnit(Math.round(diffDays / DAYS_PER_MONTH), "month", locale);
+}
+
+export function formatDecimal(value: number, locale: string, fractionDigits = 1): string {
+    return new Intl.NumberFormat(locale, {
+        minimumFractionDigits: fractionDigits,
+        maximumFractionDigits: fractionDigits,
+    }).format(value);
 }
 
 export function formatBytes(bytes: bigint | number | string, decimals = 2) {

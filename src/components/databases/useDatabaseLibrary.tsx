@@ -52,7 +52,7 @@ import {
 import { activeDatabaseViewStore, useActiveDatabaseViewStore } from "@/state/store/database";
 import { databaseHandleKey, sameDatabaseHandle, type SuccessDatabaseInfo } from "@/utils/db";
 import { pickPgnFile } from "@/utils/files";
-import { formatBytes, formatNumber } from "@/utils/format";
+import { formatBytes, formatDecimal, formatNumber } from "@/utils/format";
 import ConfirmModal from "../common/ConfirmModal";
 import GenericCard from "../common/GenericCard";
 import AddDatabase from "./AddDatabase";
@@ -74,7 +74,7 @@ export function useDatabaseLibrary(
   selected: string | null,
   setSelected: Dispatch<SetStateAction<string | null>>,
 ) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const picker = useSingleFlight();
 
   // Opening the overview ends the active session; mount-only lets double-click and Explore restore the sidebar's database target.
@@ -374,7 +374,7 @@ export function useDatabaseLibrary(
                 <Text size="xs" c="dimmed" className="wrap-anywhere">
                   {t("Files.GameCountSuffix", { number: entry.totalGames })}
                   {entry.elapsedSeconds > 0
-                    ? ` • ${(entry.totalGames / entry.elapsedSeconds).toFixed(1)} games/s`
+                    ? ` • ${t("Databases.Add.GamesPerSecond", { rate: formatDecimal(entry.totalGames / entry.elapsedSeconds, i18n.language) })}`
                     : ""}
                 </Text>
               )}

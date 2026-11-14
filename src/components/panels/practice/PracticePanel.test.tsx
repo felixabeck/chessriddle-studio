@@ -40,6 +40,7 @@ const fixtures = vi.hoisted(() => ({
   setPracticeStats: vi.fn(),
   setPracticeMoveController: vi.fn(),
   buildFromTree: vi.fn(() => []),
+  getNextReviewTimes: vi.fn(() => null as Record<1 | 2 | 3 | 4, Date> | null),
   syncDeck: vi.fn((..._args: unknown[]) => ({
     added: 0,
     positions: [] as unknown[],
@@ -121,8 +122,7 @@ vi.mock("@/state/practiceStorage", () => ({
 vi.mock("@/components/files/opening", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/components/files/opening")>()),
   buildFromTree: fixtures.buildFromTree,
-  formatReviewInterval: () => "",
-  getNextReviewTimes: () => null,
+  getNextReviewTimes: fixtures.getNextReviewTimes,
   getStats: () => fixtures.stats,
   syncDeck: fixtures.syncDeck,
   updateCardPerformance: fixtures.updateCardPerformance,
@@ -311,6 +311,7 @@ beforeEach(() => {
   fixtures.deck = deck();
   fixtures.node = { halfMoves: 0, san: "e4" };
   fixtures.grading = "auto";
+  fixtures.getNextReviewTimes.mockReset().mockReturnValue(null);
   fixtures.updateCardPerformance.mockReset();
   fixtures.syncDeck
     .mockReset()
@@ -357,6 +358,38 @@ test("the next due date follows the German interface language", async () => {
   expect(container?.textContent).toContain("Board.Practice.PracticedAll1");
   expect(container?.textContent).toContain("Board.Practice.NextDue:22. Jan., 15:04");
   expect(container?.textContent).not.toContain("Jan 22");
+});
+
+test("grade buttons format review intervals in the active German locale", async () => {
+  const now = Date.UTC(2026, 10, 11, 12);
+  vi.useFakeTimers();
+  vi.setSystemTime(now);
+  try {
+    fixtures.language = "de-DE";
+    fixtures.grading = "manual";
+    fixtures.practiceState = {
+      phase: "correct",
+      positionKey: "in-repertoire",
+      timeTaken: 2500,
+    };
+    fixtures.getNextReviewTimes.mockReturnValue({
+      1: new Date(now + 30 * 1000),
+      2: new Date(now + 10 * 60 * 1000),
+      3: new Date(now + 5 * 3600 * 1000),
+      4: new Date(now + 3 * 24 * 3600 * 1000),
+    });
+    await rerenderPracticePanel();
+
+    const buttons = [...(container?.querySelectorAll("button") ?? [])];
+    const buttonTextFor = (label: string) =>
+      buttons.find((button) => button.textContent?.includes(label))?.textContent;
+    expect(buttonTextFor("Board.Practice.Again")).toBe("Board.Practice.Again< 1 Min.");
+    expect(buttonTextFor("Board.Practice.Hard")).toBe("Board.Practice.Hard10 Min.");
+    expect(buttonTextFor("Board.Practice.Good")).toBe("Board.Practice.Good5 Std.");
+    expect(buttonTextFor("Board.Practice.Easy")).toBe("Board.Practice.Easy3 Tg.");
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("shows loading without an empty deck, reset, or session start", async () => {

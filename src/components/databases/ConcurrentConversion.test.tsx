@@ -97,8 +97,12 @@ vi.mock("@/utils/files", async () => {
 vi.mock("@mantine/notifications", () => ({ notifications: { show: mocks.notify } }));
 vi.mock("@/platform/native", () => ({ error: mocks.logError }));
 vi.mock("react-i18next", () => {
-  const t = (key: string, options?: { number?: number }) =>
-    options?.number === undefined ? key : `${key}:${options.number}`;
+  const t = (key: string, options?: { number?: number; rate?: string }) =>
+    options?.number !== undefined
+      ? `${key}:${options.number}`
+      : options?.rate !== undefined
+        ? `${key}:${options.rate}`
+        : key;
   return { useTranslation: () => ({ t, i18n: { language: "en-US" } }) };
 });
 vi.mock("@/i18n", async (original) => ({
@@ -979,7 +983,7 @@ test.each(
       databaseHandleKey(handleB),
     );
     expect(conversionRows()).toEqual([
-      "Databases.Add.Convert: more.pgnFiles.GameCountSuffix:42 • 21.0 games/s",
+      "Databases.Add.Convert: more.pgnFiles.GameCountSuffix:42 • Databases.Add.GamesPerSecond:21.0",
     ]);
     expect(addNewDisabled()).toBe(true);
     await act(async () => convertCalls[1]?.resolve());
@@ -1038,14 +1042,14 @@ test("two Add games runs into the same target retain independent ids, frames and
     source_file_name: "second.pgn",
   });
   expect(conversionRows()).toEqual([
-    "Databases.Add.Convert: first.pgnFiles.GameCountSuffix:20 • 10.0 games/s",
-    "Databases.Add.Convert: second.pgnFiles.GameCountSuffix:42 • 14.0 games/s",
+    "Databases.Add.Convert: first.pgnFiles.GameCountSuffix:20 • Databases.Add.GamesPerSecond:10.0",
+    "Databases.Add.Convert: second.pgnFiles.GameCountSuffix:42 • Databases.Add.GamesPerSecond:14.0",
   ]);
   const survivor = activeOperation(1);
   await act(async () => convertCalls[0]?.resolve());
   expect(conversionState()).toEqual([survivor]);
   expect(conversionRows()).toEqual([
-    "Databases.Add.Convert: second.pgnFiles.GameCountSuffix:42 • 14.0 games/s",
+    "Databases.Add.Convert: second.pgnFiles.GameCountSuffix:42 • Databases.Add.GamesPerSecond:14.0",
   ]);
   expect(addNewDisabled()).toBe(true);
   expect(buttonByText("Databases.Add.Convert")?.disabled).toBe(true);
@@ -1056,7 +1060,7 @@ test("two Add games runs into the same target retain independent ids, frames and
     source_file_name: null,
   });
   expect(conversionRows()).toEqual([
-    "Databases.Add.Convert: second.pgnFiles.GameCountSuffix:60 • 15.0 games/s",
+    "Databases.Add.Convert: second.pgnFiles.GameCountSuffix:60 • Databases.Add.GamesPerSecond:15.0",
   ]);
   await act(async () => convertCalls[1]?.resolve());
   expect(conversionState()).toEqual([]);
@@ -1095,7 +1099,7 @@ test.each(
       source_file_name: "survivor.pgn",
     });
     expect(conversionRows()).toEqual([
-      "Databases.Add.Convert: survivor.pgnFiles.GameCountSuffix:30 • 15.0 games/s",
+      "Databases.Add.Convert: survivor.pgnFiles.GameCountSuffix:30 • Databases.Add.GamesPerSecond:15.0",
     ]);
     await act(async () => convertCalls[0]?.resolve());
     expect(conversionState()).toEqual([]);

@@ -450,6 +450,7 @@
     "Databases.Add.Convert": "Konvertieren",
     "Databases.Add.ErrorCatalog": "Der mitgelieferte Datenbank-Katalog hat die Signaturprüfung nicht bestanden.",
     "Databases.Add.ErrorFetch": "Fehler beim Abrufen der Datenbankinformationen vom Server.",
+    "Databases.Add.GamesPerSecond": "{{rate}} Partien/s",
     "Databases.Add.Title": "Datenbank hinzufügen",
     "Databases.Add.Web": "Web",
     "Databases.Busy.Description": "Diese Datenbank wird verwendet und kann gerade nicht gelesen werden. Der Zugriff wird automatisch erneut versucht.",

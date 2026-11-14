@@ -446,6 +446,7 @@
     "Databases.Add.Convert": "변환",
     "Databases.Add.ErrorCatalog": "포함된 데이터베이스 카탈로그의 서명 검증에 실패했습니다.",
     "Databases.Add.ErrorFetch": "서버에서 데이터베이스 정보를 가져오는데 실패했습니다.",
+    "Databases.Add.GamesPerSecond": "{{rate}}판/초",
     "Databases.Add.Title": "데이터베이스 추가",
     "Databases.Add.Web": "웹",
     "Databases.Busy.Description": "이 데이터베이스는 사용 중이므로 지금 읽을 수 없습니다. 자동으로 다시 시도합니다.",

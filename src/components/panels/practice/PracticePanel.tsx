@@ -24,7 +24,12 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
 import { formatDate, type ReviewLog } from "ts-fsrs";
 import { normalizeError, type AppError } from "@/platform/errors";
-import { formatMoveNumber, formatNumber } from "@/utils/format";
+import {
+  formatDecimal,
+  formatMoveNumber,
+  formatNumber,
+  formatReviewInterval,
+} from "@/utils/format";
 import { useStore } from "zustand";
 import { useTreeViewDeferred } from "@/state/deferredTreeView";
 import ConfirmModal from "@/components/common/ConfirmModal";
@@ -33,7 +38,6 @@ import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { IconAction } from "@/components/common/IconAction";
 import {
   buildFromTree,
-  formatReviewInterval,
   classifyPracticeAnswer,
   getCardStatus,
   getNextReviewTimes,
@@ -1180,8 +1184,9 @@ function QualityRatingPanel({
   card?: import("ts-fsrs").Card;
   timeTaken?: number;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const reviewTimes = card ? getNextReviewTimes(card) : null;
+  const now = Date.now();
 
   return (
     <Paper p="sm" withBorder>
@@ -1195,7 +1200,8 @@ function QualityRatingPanel({
           </Text>
           {timeTaken !== undefined && (
             <Text fz="xs" c="dimmed">
-              ({t("Common.SecondsShort", { value: (timeTaken / 1000).toFixed(1) })})
+              ({t("Common.SecondsShort", { value: formatDecimal(timeTaken / 1000, i18n.language) })}
+              )
             </Text>
           )}
         </Group>
@@ -1216,7 +1222,9 @@ function QualityRatingPanel({
                   {t("Board.Practice.Again")}
                 </Text>
                 <Text fz={10} c="dimmed">
-                  {reviewTimes ? formatReviewInterval(reviewTimes[1]) : ""}
+                  {reviewTimes
+                    ? formatReviewInterval(reviewTimes[1].getTime(), now, i18n.language)
+                    : ""}
                 </Text>
               </Stack>
             </Button>
@@ -1234,7 +1242,9 @@ function QualityRatingPanel({
                   {t("Board.Practice.Hard")}
                 </Text>
                 <Text fz={10} c="dimmed">
-                  {reviewTimes ? formatReviewInterval(reviewTimes[2]) : ""}
+                  {reviewTimes
+                    ? formatReviewInterval(reviewTimes[2].getTime(), now, i18n.language)
+                    : ""}
                 </Text>
               </Stack>
             </Button>
@@ -1252,7 +1262,9 @@ function QualityRatingPanel({
                   {t("Board.Practice.Good")}
                 </Text>
                 <Text fz={10} c="dimmed">
-                  {reviewTimes ? formatReviewInterval(reviewTimes[3]) : ""}
+                  {reviewTimes
+                    ? formatReviewInterval(reviewTimes[3].getTime(), now, i18n.language)
+                    : ""}
                 </Text>
               </Stack>
             </Button>
@@ -1270,7 +1282,9 @@ function QualityRatingPanel({
                   {t("Board.Practice.Easy")}
                 </Text>
                 <Text fz={10} c="dimmed">
-                  {reviewTimes ? formatReviewInterval(reviewTimes[4]) : ""}
+                  {reviewTimes
+                    ? formatReviewInterval(reviewTimes[4].getTime(), now, i18n.language)
+                    : ""}
                 </Text>
               </Stack>
             </Button>

@@ -454,6 +454,7 @@
     "Databases.Add.Convert": "Convertir",
     "Databases.Add.ErrorCatalog": "El catálogo de bases de datos incluido no superó la verificación de firma.",
     "Databases.Add.ErrorFetch": "No se pudo obtener la información de la base de datos del servidor.",
+    "Databases.Add.GamesPerSecond": "{{rate}} partidas/s",
     "Databases.Add.Title": "Agregar base de datos",
     "Databases.Add.Web": "Web",
     "Databases.Busy.Description": "Esta base de datos está en uso y no se puede leer en este momento. Se reintentará automáticamente.",

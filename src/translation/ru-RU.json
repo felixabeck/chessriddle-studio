@@ -458,6 +458,7 @@
     "Databases.Add.Convert": "Конвертировать",
     "Databases.Add.ErrorCatalog": "Встроенный каталог баз данных не прошёл проверку подписи.",
     "Databases.Add.ErrorFetch": "Не удалось получить базы данных с сервера.",
+    "Databases.Add.GamesPerSecond": "{{rate}} партий/с",
     "Databases.Add.Title": "Добавить базу данных",
     "Databases.Add.Web": "Веб",
     "Databases.Busy.Description": "Эта база данных используется и сейчас недоступна для чтения. Повторная попытка будет выполнена автоматически.",

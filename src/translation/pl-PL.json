@@ -458,6 +458,7 @@
     "Databases.Add.Convert": "Konwertuj",
     "Databases.Add.ErrorCatalog": "Dołączony katalog baz danych nie przeszedł weryfikacji podpisu.",
     "Databases.Add.ErrorFetch": "Nie udało się pobrać informacji o bazie danych z serwera.",
+    "Databases.Add.GamesPerSecond": "{{rate}} partii/s",
     "Databases.Add.Title": "Dodaj bazę danych",
     "Databases.Add.Web": "Sieć",
     "Databases.Busy.Description": "Ta baza danych jest używana i nie można jej teraz odczytać. Próba zostanie automatycznie ponowiona.",

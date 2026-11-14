@@ -1,5 +1,11 @@
 import { describe, expect, test } from "vitest";
-import { formatBytes, formatMoveNumber, formatRelativeTime } from "./format";
+import {
+    formatBytes,
+    formatDecimal,
+    formatMoveNumber,
+    formatRelativeTime,
+    formatReviewInterval,
+} from "./format";
 
 describe("formatRelativeTime", () => {
     const now = Date.UTC(2026, 10, 11, 12);
@@ -21,6 +27,27 @@ describe("formatRelativeTime", () => {
     ])("formats offset %i seconds in English and German", (seconds, english, german) => {
         expect(formatRelativeTime(now + seconds * 1000, now, "en-US")).toBe(english);
         expect(formatRelativeTime(now + seconds * 1000, now, "de-DE")).toBe(german);
+    });
+});
+
+describe("formatReviewInterval", () => {
+    const now = Date.UTC(2026, 10, 11, 12);
+    test.each([
+        [30, "< 1 min", "< 1 Min."],
+        [10 * 60, "10 min", "10 Min."],
+        [5 * 3600, "5 hr", "5 Std."],
+        [3 * 24 * 3600, "3 days", "3 Tg."],
+        [90 * 24 * 3600, "3 mths", "3 Mon."],
+    ])("formats interval %i seconds in en-US and de-DE", (seconds, english, german) => {
+        expect(formatReviewInterval(now + seconds * 1000, now, "en-US")).toBe(english);
+        expect(formatReviewInterval(now + seconds * 1000, now, "de-DE")).toBe(german);
+    });
+});
+
+describe("formatDecimal", () => {
+    test("formats numbers according to locale", () => {
+        expect(formatDecimal(21, "en-US")).toBe("21.0");
+        expect(formatDecimal(21, "de-DE")).toBe("21,0");
     });
 });
 

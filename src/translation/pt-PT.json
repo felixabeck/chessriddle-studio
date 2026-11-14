@@ -454,6 +454,7 @@
     "Databases.Add.Convert": "Converter",
     "Databases.Add.ErrorCatalog": "O catálogo de bases de dados incluído falhou a verificação de assinatura.",
     "Databases.Add.ErrorFetch": "Não foi possível obter as bases de dados do servidor.",
+    "Databases.Add.GamesPerSecond": "{{rate}} partidas/s",
     "Databases.Add.Title": "Adicionar base de dados",
     "Databases.Add.Web": "Internet",
     "Databases.Busy.Description": "Esta base de dados está em utilização e não pode ser lida neste momento. A tentativa será repetida automaticamente.",
