@@ -5,7 +5,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { SWRConfig } from "swr";
 import { beforeEach, expect, test, vi } from "vitest";
 import { installMatchMediaStub } from "@/tests/matchMedia";
-import { accountDownloadsInFlightAtom } from "@/state/atoms";
+import { accountCompletionsAtom, accountDownloadsInFlightAtom } from "@/state/atoms";
+import type { AccountCompletion } from "@/bindings";
 
 const mocks = vi.hoisted(() => ({
   language: "en-US",
@@ -73,6 +74,7 @@ beforeEach(() => {
   mocks.language = "en-US";
   mocks.progress.mockResolvedValue(vi.fn());
   getDefaultStore().set(accountDownloadsInFlightAtom, new Map());
+  getDefaultStore().set(accountCompletionsAtom, new Map());
 });
 
 async function renderAccount(
@@ -80,6 +82,7 @@ async function renderAccount(
   cache = new Map(),
   database: import("@/utils/db").ManagedDatabaseInfo | null = null,
   updatedAt = 0,
+  accountHandle?: string,
 ) {
   await act(async () => {
     root.render(
@@ -94,6 +97,7 @@ async function renderAccount(
             stats={[]}
             logout={vi.fn()}
             reload={vi.fn()}
+            accountHandle={accountHandle}
           />
         </SWRConfig>
       </MantineProvider>,
@@ -251,41 +255,117 @@ test("an adapter decoding error notifies only while mounted and leaves progress 
   }
 });
 
-test("a new download click clears the previous ticket's 100% progress until a new frame arrives", async () => {
+test("retrying a retained terminal completion hides 100% even when native reuses its progressId and renders 0%", async () => {
   let progressListener!: (event: { payload: { id: string; progress: number } }) => void;
   mocks.progress.mockImplementation(async (listener) => {
     progressListener = listener;
     return vi.fn();
   });
+  let releaseWorkspace!: (reason?: unknown) => void;
+  mocks.getDatabaseWorkspace.mockImplementation(
+    () =>
+      new Promise((_resolve, reject) => {
+        releaseWorkspace = reject;
+      }),
+  );
+
+  const baseCompletion = {
+    id: "op-1",
+    request: {
+      provider: "lichess" as const,
+      account: "Felix",
+      accountHandle: "lichess-account",
+      destination: { id: "dest" },
+      pendingBatch: null,
+      sinceMs: null,
+      target: {
+        kind: "unlinked" as const,
+        database: { id: { id: "db" }, kind: "database" as const },
+        title: "Felix Lichess",
+      },
+    },
+    progressId: "ticket-1",
+    importing: false,
+    publication: null,
+    committedDatabase: null,
+  };
+  const runningAttempt1: AccountCompletion = {
+    ...baseCompletion,
+    attempt: 1,
+    outcome: { state: "running" },
+    deletionPending: false,
+  };
+  const retainedTerminal: AccountCompletion = {
+    ...baseCompletion,
+    attempt: 1,
+    outcome: {
+      state: "failed",
+      result: { tag: "backend-error", category: "database", message: "cleanup pending" },
+    },
+    deletionPending: true,
+  };
+  const runningAttempt2: AccountCompletion = {
+    ...baseCompletion,
+    attempt: 2,
+    outcome: { state: "running" },
+    deletionPending: true,
+  };
+
   const store = getDefaultStore();
-  store.set(accountDownloadsInFlightAtom, new Map([["lichess_felix", "job-1"]]));
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
   try {
-    await renderAccount(root);
-    await act(async () => progressListener({ payload: { id: "job-1", progress: 100 } }));
+    await renderAccount(root, new Map(), null, 0, "lichess-account");
+
+    await act(async () => {
+      store.set(accountCompletionsAtom, new Map([["lichess_felix", runningAttempt1]]));
+    });
+    await act(async () => progressListener({ payload: { id: "ticket-1", progress: 100 } }));
     expect(host.textContent).toContain("100%");
 
-    await act(async () => store.set(accountDownloadsInFlightAtom, new Map()));
+    // Direct click-state atoms while progress still holds 100% from attempt 1:
+    await act(async () => {
+      store.set(accountCompletionsAtom, new Map([["lichess_felix", retainedTerminal]]));
+      store.set(accountDownloadsInFlightAtom, new Map([["lichess_felix", null]]));
+    });
     expect(host.textContent).not.toContain("100%");
 
-    await act(async () =>
-      store.set(accountDownloadsInFlightAtom, new Map([["lichess_felix", null]])),
-    );
+    // Re-enable the Download button and click it so setProgress(null) runs on the retry attempt:
+    await act(async () => {
+      store.set(accountDownloadsInFlightAtom, new Map());
+    });
+    const downloadButton = host.querySelector<HTMLButtonElement>(
+      'button[aria-label="Home.Accounts.DownloadGames"]',
+    )!;
+    expect(downloadButton.disabled).toBe(false);
+    await act(async () => {
+      downloadButton.click();
+    });
+    expect(store.get(accountDownloadsInFlightAtom).get("lichess_felix")).toBeNull();
     expect(host.textContent).not.toContain("100%");
 
-    await act(async () =>
-      store.set(accountDownloadsInFlightAtom, new Map([["lichess_felix", "job-2"]])),
-    );
-    expect(host.textContent).not.toContain("100%");
+    // A late frame for the terminal completion's ticket must be ignored before attempt 2 starts:
+    await act(async () => progressListener({ payload: { id: "ticket-1", progress: 95 } }));
+    expect(host.textContent).not.toContain("95%");
 
-    await act(async () => progressListener({ payload: { id: "job-2", progress: 30 } }));
-    expect(host.textContent).toContain("30%");
+    // Native starts attempt 2 reusing progressId "ticket-1" before emitting a new frame:
+    await act(async () => {
+      store.set(accountCompletionsAtom, new Map([["lichess_felix", runningAttempt2]]));
+    });
     expect(host.textContent).not.toContain("100%");
+    expect(host.textContent).not.toContain("95%");
+
+    await act(async () => progressListener({ payload: { id: "ticket-1", progress: 0 } }));
+    expect(host.textContent).toContain("0%");
+
+    await act(async () => {
+      releaseWorkspace(new DOMException("Cancellation", "AbortError"));
+    });
   } finally {
     await act(async () => root.unmount());
     host.remove();
     store.set(accountDownloadsInFlightAtom, new Map());
+    store.set(accountCompletionsAtom, new Map());
   }
 });

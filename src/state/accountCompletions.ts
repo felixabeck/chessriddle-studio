@@ -15,6 +15,10 @@ type Surface = {
     collectionNotice: (visible: boolean) => void;
 };
 type Store = ReturnType<typeof createStore>;
+type AccountObserver = {
+    observe: (key: string, surface: Surface) => () => void;
+    run: (request: AccountImportRequest) => Promise<void>;
+};
 
 function report(error: unknown) {
     notifyUnlessCancelled(i18n.t("Common.Error"), error, "database");
@@ -22,10 +26,11 @@ function report(error: unknown) {
     return error;
 }
 
-function createAccountObserver(store: Store) {
+function createAccountObserver(store: Store): AccountObserver {
     const surfaces = new Map<string, Set<Surface>>();
     const applications = new Map<string, { attempt: number; result: Promise<void> }>();
     let live = 0;
+    let running = new Map<string, number>();
     let sequence = Promise.resolve();
     let observations = Promise.resolve();
     let unlisten: (() => void) | undefined;
@@ -61,6 +66,9 @@ function createAccountObserver(store: Store) {
                 store.set(databaseConversionStateAtom, (previous) =>
                     previous.filter((entry) => entry.id !== `conversion:${completion.id}`),
                 );
+                if (running.get(completion.id) === completion.attempt) {
+                    running.delete(completion.id);
+                }
                 if (completion.publication && completion.publication.durability !== "Durable") {
                     notifications.show({
                         message: i18n.t("Home.Accounts.DownloadDurabilityUncertain"),
@@ -137,7 +145,13 @@ function createAccountObserver(store: Store) {
             accountCompletionsAtom,
             new Map(snapshot.map((entry) => [accountCompletionKey(entry.request), entry])),
         );
+        running = new Map(
+            snapshot
+                .filter((entry) => entry.outcome.state === "running")
+                .map((entry) => [entry.id, entry.attempt]),
+        );
         for (const completion of snapshot) await apply(completion).catch(notifyListenerError);
+        disposeIfIdle();
     }
 
     function refresh() {
@@ -163,13 +177,18 @@ function createAccountObserver(store: Store) {
     }
 
     function dispose() {
+        if (!active) return;
         active = false;
         unlisten?.();
         window.removeEventListener("pagehide", dispose);
-        observers.delete(store);
+        if (observers.get(store) === self) observers.delete(store);
     }
 
-    return {
+    function disposeIfIdle() {
+        if (!surfaces.size && !live && !running.size) dispose();
+    }
+
+    const self: AccountObserver = {
         observe(key: string, surface: Surface) {
             let views = surfaces.get(key);
             if (!views) surfaces.set(key, (views = new Set()));
@@ -178,43 +197,27 @@ function createAccountObserver(store: Store) {
             return () => {
                 views.delete(surface);
                 if (!views.size) surfaces.delete(key);
-                if (!surfaces.size && !live) dispose();
+                disposeIfIdle();
             };
         },
         async run(request: AccountImportRequest) {
             live++;
-            let completion: AccountCompletion | undefined;
             try {
-                completion = await tauri.importAccountGames(request);
+                const completion = await tauri.importAccountGames(request);
                 await apply(completion);
                 if (completion.outcome.state === "failed") {
                     throw new TauriCommandError(completion.outcome.result);
                 }
             } finally {
-                if (completion && completion.outcome.state !== "running") {
-                    const terminal = completion;
-                    store.set(databaseConversionStateAtom, (previous) =>
-                        previous.filter((entry) => entry.id !== `conversion:${terminal.id}`),
-                    );
-                    store.set(accountCompletionsAtom, (previous) => {
-                        const key = accountCompletionKey(terminal.request);
-                        const existing = previous.get(key);
-                        if (existing?.id !== terminal.id || existing.outcome.state !== "running") {
-                            return previous;
-                        }
-                        const next = new Map(previous);
-                        next.set(key, terminal);
-                        return next;
-                    });
-                }
                 live--;
-                if (!surfaces.size) dispose();
+                disposeIfIdle();
             }
         },
     };
+    return self;
 }
 
-const observers = new WeakMap<Store, ReturnType<typeof createAccountObserver>>();
+const observers = new WeakMap<Store, AccountObserver>();
 function observerFor(store: Store) {
     let observer = observers.get(store);
     if (!observer) {

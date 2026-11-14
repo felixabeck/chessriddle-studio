@@ -1488,7 +1488,7 @@ test("a selected player survives unrelated session updates and falls back when r
   await vi.waitFor(() => expect(container.textContent).toContain("player-card Bob"));
 });
 
-test("switching to another player does not carry over the previous fetch's progress percentage", async () => {
+test("switching between two players or returning after an aborted fetch does not carry over stale progress", async () => {
   const bobSession = {
     player: "Bob",
     updatedAt: 1,
@@ -1499,17 +1499,11 @@ test("switching to another player does not carry over the previous fetch's progr
     updatedAt: 1,
     chessCom: { username: "alice", stats: {} },
   };
-  const charlieSession = {
-    player: "Charlie",
-    updatedAt: 1,
-    lichess: { username: "charlie", account: { id: "charlie", username: "charlie" } },
-  };
   const bobDb = { ...database("db-1"), filename: "bob_lichess.db3" };
   const aliceDb = { ...database("db-2"), filename: "alice_chesscom.db3" };
-  const charlieDb = { ...database("db-3"), filename: "charlie_lichess.db3" };
-  getDefaultStore().set(sessionsAtom, [bobSession, aliceSession, charlieSession]);
+  getDefaultStore().set(sessionsAtom, [bobSession, aliceSession]);
   mocks.getDatabases.mockResolvedValue({
-    databases: [bobDb, aliceDb, charlieDb],
+    databases: [bobDb, aliceDb],
     unread: [],
     root: { id: { id: "progress-switch-root" }, kind: "databaseRoot" as const },
   });
@@ -1519,38 +1513,43 @@ test("switching to another player does not carry over the previous fetch's progr
   }));
 
   let resolveAlice!: (value: { site_stats_data: unknown[] }) => void;
-  const alicePromise = new Promise<{ site_stats_data: unknown[] }>((resolve) => {
-    resolveAlice = resolve;
-  });
-  mocks.getPlayersGameInfo.mockImplementation(async (_progress, file) => {
-    if (file.id.id === "db-1") {
-      return {
-        site_stats_data: [
-          { site: "Lichess", player: "bob", daily: [], colors: [], latest: [], openings: [] },
-        ],
-      };
-    }
-    if (file.id.id === "db-2") {
-      return alicePromise;
-    }
-    return new Promise(() => undefined);
-  });
+  mocks.getPlayersGameInfo.mockImplementation(
+    (_progress, file, _id, options: { signal: AbortSignal }) => {
+      if (file.id.id === "db-2") {
+        return new Promise((resolve) => {
+          resolveAlice = resolve;
+        });
+      }
+      return new Promise((_resolve, reject) => {
+        options.signal.addEventListener(
+          "abort",
+          () => reject(new DOMException("Cancellation", "AbortError")),
+          { once: true },
+        );
+      });
+    },
+  );
 
   await renderDatabases();
-  await vi.waitFor(() => expect(container.textContent).toContain("player-card Bob"));
+  await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(1));
+  const bobProgressId = mocks.getPlayersGameInfo.mock.calls[0][0] as string;
 
   await act(async () => {
-    mocks.setName?.("Alice");
-  });
-  await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(2));
-  const aliceProgressId = mocks.getPlayersGameInfo.mock.calls[1][0] as string;
-
-  await act(async () => {
-    progressListener(progressEvent(aliceProgressId, 80));
+    progressListener(progressEvent(bobProgressId, 80));
   });
   expect(displayedProgress()).toContain("80%");
   expect(container.querySelector("[data-testid='progress']")?.textContent).toBe("80");
 
+  // Switch default player from pending Bob (80%) to pending Alice -> 0%:
+  await act(async () => {
+    getDefaultStore().set(sessionsAtom, [aliceSession, bobSession]);
+  });
+  await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(2));
+  expect(displayedProgress()).toContain("0%");
+  expect(displayedProgress()).not.toContain("80%");
+  expect(container.querySelector("[data-testid='progress']")?.textContent).toBe("0");
+
+  // Complete Alice without emitting progress, then select Bob again so a new Bob fetch starts:
   await act(async () => {
     resolveAlice({
       site_stats_data: [
@@ -1561,10 +1560,73 @@ test("switching to another player does not carry over the previous fetch's progr
   await vi.waitFor(() => expect(container.textContent).toContain("player-card Alice"));
 
   await act(async () => {
-    mocks.setName?.("Charlie");
+    mocks.setName?.("Bob");
   });
   await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(3));
   expect(displayedProgress()).toContain("0%");
   expect(displayedProgress()).not.toContain("80%");
+  expect(container.querySelector("[data-testid='progress']")?.textContent).toBe("0");
+});
+
+test("refetching a player's summary with the same handle and changed game_count starts at 0%", async () => {
+  const bobSession = {
+    player: "Bob",
+    updatedAt: 1,
+    lichess: { username: "bob", account: { id: "bob", username: "bob" } },
+  };
+  const bobDb = { ...database("db-1"), filename: "bob_lichess.db3", game_count: 2 };
+  getDefaultStore().set(sessionsAtom, [bobSession]);
+  mocks.getDatabases.mockResolvedValue({
+    databases: [bobDb],
+    unread: [],
+    root: { id: { id: "progress-refetch-root" }, kind: "databaseRoot" as const },
+  });
+  mocks.query_players.mockResolvedValue({
+    data: [{ id: 7, name: "bob", elo: null }],
+    count: 1,
+  });
+
+  let resolveFirstFetch!: (value: { site_stats_data: unknown[] }) => void;
+  mocks.getPlayersGameInfo.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        resolveFirstFetch = resolve;
+      }),
+  );
+
+  await renderDatabases();
+  await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(1));
+  const firstProgressId = mocks.getPlayersGameInfo.mock.calls[0][0] as string;
+
+  await act(async () => {
+    progressListener(progressEvent(firstProgressId, 80));
+  });
+  expect(displayedProgress()).toContain("80%");
+
+  await act(async () => {
+    resolveFirstFetch({
+      site_stats_data: [
+        { site: "Lichess", player: "bob", daily: [], colors: [], latest: [], openings: [] },
+      ],
+    });
+  });
+  await vi.waitFor(() => expect(container.textContent).toContain("player-card Bob"));
+
+  mocks.getDatabases.mockResolvedValue({
+    databases: [{ ...bobDb, game_count: 5 }],
+    unread: [],
+    root: { id: { id: "progress-refetch-root" }, kind: "databaseRoot" as const },
+  });
+  mocks.getPlayersGameInfo.mockReturnValue(new Promise(() => undefined));
+
+  await act(async () => {
+    getDefaultStore().set(sessionsAtom, [{ ...bobSession, updatedAt: 2 }]);
+  });
+  await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(2));
+
+  expect(container.textContent).toContain("Home.Databases.ProcessingGames");
+  expect(displayedProgress()).toContain("0%");
+  expect(displayedProgress()).not.toContain("80%");
+  expect(displayedProgress()).not.toContain("100%");
   expect(container.querySelector("[data-testid='progress']")?.textContent).toBe("0");
 });

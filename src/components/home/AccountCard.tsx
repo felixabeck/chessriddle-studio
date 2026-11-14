@@ -178,9 +178,11 @@ export function AccountCard({
   useTauriListener(
     tauriSubscriptions.progress,
     (e) => {
+      const current = store.get(accountCompletionsAtom).get(accountKey);
       const ticket =
-        store.get(accountCompletionsAtom).get(accountKey)?.progressId ??
-        store.get(accountDownloadsInFlightAtom).get(accountKey);
+        current?.outcome.state === "running"
+          ? current.progressId
+          : store.get(accountDownloadsInFlightAtom).get(accountKey);
       if (typeof ticket === "string" && e.payload.id === ticket) {
         setProgress({ id: e.payload.id, value: e.payload.progress });
       }
@@ -188,7 +190,8 @@ export function AccountCard({
     { onError: notifyListenerError },
   );
 
-  const currentTicket = retained?.progressId ?? downloadsInFlight.get(accountKey);
+  const currentTicket =
+    retained?.outcome.state === "running" ? retained.progressId : downloadsInFlight.get(accountKey);
   const currentProgress =
     pending && typeof currentTicket === "string" && progress?.id === currentTicket
       ? progress.value
@@ -297,6 +300,7 @@ export function AccountCard({
                 if (store.get(accountCompletionsAtom).get(accountKey)?.outcome.state === "running")
                   return;
                 if (store.get(accountDownloadsInFlightAtom).has(accountKey)) return;
+                setProgress(null);
                 setDownloadsInFlight((previous) => new Map(previous).set(accountKey, null));
                 try {
                   let preparation: Awaited<ReturnType<typeof tauri.prepareAccountCollection>> =

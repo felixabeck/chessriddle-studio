@@ -135,7 +135,7 @@ function Databases() {
 
   const players = Array.from(new Set(sessions.map(sessionPlayerName)));
 
-  const [selectedName, setName] = useState("");
+  const [selectedName, setSelectedName] = useState("");
   const name =
     selectedName && players.includes(selectedName)
       ? selectedName
@@ -221,93 +221,100 @@ function Databases() {
         const map = new Map<string, number>();
         ownedProgressByKey.clear();
         ownedProgressByKey.set(progressKey, map);
-        const candidates = playerDatabases;
-        const { values, failures } = await collectSequential(
-          candidates.filter(
-            (
-              item,
-            ): item is PersonalDatabase & {
-              db: Extract<ManagedDatabaseInfo, { type: "success" }>;
-            } => item.db.type === "success",
-          ),
-          async ({ db, username }) => {
-            const players = await query_players(
-              db.file,
-              {
-                name: username,
-                nameMatch: "exact",
-                options: {
-                  direction: "asc",
-                  sort: "id",
-                  skipCount: false,
-                },
-              },
-              { signal },
-            );
-            if (players.data.length === 0) {
-              return null;
-            }
-            const info: PlayerGameInfo = { site_stats_data: [] };
-            // Variants form one atomic database contribution. The outer collector owns failures.
-            for (const player of players.data) {
-              if (signal.aborted) throw new DOMException("Cancellation", "AbortError");
-              const progressId = crypto.randomUUID();
-              map.set(progressId, 0);
-              const variant = await tauri.getPlayersGameInfo(progressId, db.file, player.id, {
-                signal,
-              });
-              for (const site of variant.site_stats_data) {
-                info.site_stats_data.push({ ...site, player: username });
-              }
-            }
-            return { db, info };
-          },
-          {
-            signal,
-            operation: "personal database summary",
-            describe: ({ db }) => databaseLabel(db),
-          },
-        );
-        const failedItems = new Set(failures.map(({ item }) => item));
-        return {
-          entries: values.filter((entry): entry is PersonalInfo => entry !== null),
-          failed: candidates
-            .filter((item) => !(item.db.type === "error" && item.db.transient))
-            .filter(
-              (item) =>
-                item.db.type !== "success" ||
-                failedItems.has(
-                  item as PersonalDatabase & {
-                    db: Extract<ManagedDatabaseInfo, { type: "success" }>;
+        try {
+          const candidates = playerDatabases;
+          const { values, failures } = await collectSequential(
+            candidates.filter(
+              (
+                item,
+              ): item is PersonalDatabase & {
+                db: Extract<ManagedDatabaseInfo, { type: "success" }>;
+              } => item.db.type === "success",
+            ),
+            async ({ db, username }) => {
+              const players = await query_players(
+                db.file,
+                {
+                  name: username,
+                  nameMatch: "exact",
+                  options: {
+                    direction: "asc",
+                    sort: "id",
+                    skipCount: false,
                   },
-                ),
-            )
-            .map(({ db }) => db),
-        };
+                },
+                { signal },
+              );
+              if (players.data.length === 0) {
+                return null;
+              }
+              const info: PlayerGameInfo = { site_stats_data: [] };
+              // Variants form one atomic database contribution. The outer collector owns failures.
+              for (const player of players.data) {
+                if (signal.aborted) throw new DOMException("Cancellation", "AbortError");
+                const progressId = crypto.randomUUID();
+                map.set(progressId, 0);
+                const variant = await tauri.getPlayersGameInfo(progressId, db.file, player.id, {
+                  signal,
+                });
+                for (const site of variant.site_stats_data) {
+                  info.site_stats_data.push({ ...site, player: username });
+                }
+              }
+              return { db, info };
+            },
+            {
+              signal,
+              operation: "personal database summary",
+              describe: ({ db }) => databaseLabel(db),
+            },
+          );
+          const failedItems = new Set(failures.map(({ item }) => item));
+          return {
+            entries: values.filter((entry): entry is PersonalInfo => entry !== null),
+            failed: candidates
+              .filter((item) => !(item.db.type === "error" && item.db.transient))
+              .filter(
+                (item) =>
+                  item.db.type !== "success" ||
+                  failedItems.has(
+                    item as PersonalDatabase & {
+                      db: Extract<ManagedDatabaseInfo, { type: "success" }>;
+                    },
+                  ),
+              )
+              .map(({ db }) => db),
+          };
+        } finally {
+          if (ownedProgressByKey.get(progressKey) === map) ownedProgressByKey.delete(progressKey);
+        }
       }),
   );
 
   const loadError = databasesError ?? error;
-  const [progress, setProgress] = useState<{ key: string; value: number } | null>(null);
+  const [progress, setProgress] = useState<{ owner: Map<string, number>; value: number } | null>(
+    null,
+  );
   const currentProgressKey =
     playerDatabases && name ? personalInfoProgressKey(name, playerDatabases) : null;
   const currentProgress =
-    currentProgressKey && progress?.key === currentProgressKey ? progress.value : 0;
+    currentProgressKey && progress && progress.owner === ownedProgressByKey.get(currentProgressKey)
+      ? progress.value
+      : 0;
   useTauriListener(
     tauriSubscriptions.progress,
     (e) => {
-      if (!playerDatabases || !name) {
+      if (!currentProgressKey) {
         return;
       }
-      const key = personalInfoProgressKey(name, playerDatabases);
-      const map = ownedProgressByKey.get(key);
+      const map = ownedProgressByKey.get(currentProgressKey);
       if (!map?.has(e.payload.id)) {
         return;
       }
       map.set(e.payload.id, e.payload.progress);
       const values = [...map.values()];
       setProgress({
-        key,
+        owner: map,
         value: values.reduce((sum, value) => sum + value, 0) / values.length,
       });
     },
@@ -384,7 +391,7 @@ function Databases() {
                   aria-label={t("Home.Accounts.SelectPlayer")}
                   value={name}
                   data={players}
-                  onChange={(e) => setName(e || "")}
+                  onChange={(e) => setSelectedName(e || "")}
                   clearable={false}
                   allowDeselect={false}
                   fw="bold"
@@ -403,7 +410,7 @@ function Databases() {
           <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
             <PersonalPlayerCard
               name={name}
-              setName={setName}
+              setName={setSelectedName}
               info={{
                 site_stats_data: personalInfo.entries.flatMap((i) => i.info.site_stats_data),
               }}

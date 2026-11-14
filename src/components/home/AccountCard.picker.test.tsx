@@ -677,3 +677,232 @@ test.each([
     message: `${prop} failed`,
   });
 });
+
+test.each(["event-first", "reply-first"] as const)(
+  "unmounting the only surface during an unlinked import clears its conversion row (%s)",
+  async (order) => {
+    mocks.pendingAccountCompletions.mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve(snapshot), 0)),
+    );
+    const response = deferred<AccountCompletion>();
+    mocks.importAccountGames.mockReturnValue(response.promise);
+
+    await renderCards();
+    await act(async () => {
+      await vi.waitFor(() => expect(mocks.pendingAccountCompletions).toHaveBeenCalledOnce());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const caller = runAccountImport(store, request);
+    snapshot = [completion("running", { importing: true })];
+    await act(async () => {
+      changed();
+      await vi.waitFor(() => {
+        expect(store.get(databaseConversionStateAtom)).toEqual([
+          expect.objectContaining({ id: "conversion:account-operation", targetDatabase: database }),
+        ]);
+      });
+    });
+
+    await act(async () => root.render(null));
+    expect(unlisten).not.toHaveBeenCalled();
+
+    const succeeded = completion("succeeded");
+    snapshot = [succeeded];
+    if (order === "event-first") {
+      changed();
+    }
+    await act(async () => {
+      response.resolve(structuredClone(succeeded));
+      await caller;
+    });
+    if (order === "reply-first") {
+      changed();
+    }
+
+    await vi.waitFor(() => {
+      expect(store.get(databaseConversionStateAtom)).toEqual([]);
+      expect(unlisten).toHaveBeenCalledOnce();
+    });
+    expect(store.get(accountCompletionsAtom).get("chesscom_felix")?.outcome.state).toBe(
+      "succeeded",
+    );
+  },
+);
+
+test.each(["event-first", "reply-first"] as const)(
+  "unmounting the only surface during a failing unlinked import clears its conversion row and rejects (%s)",
+  async (order) => {
+    mocks.pendingAccountCompletions.mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve(snapshot), 0)),
+    );
+    const response = deferred<AccountCompletion>();
+    mocks.importAccountGames.mockReturnValue(response.promise);
+
+    await renderCards();
+    await act(async () => {
+      await vi.waitFor(() => expect(mocks.pendingAccountCompletions).toHaveBeenCalledOnce());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    let caught: unknown;
+    const caller = runAccountImport(store, request).catch((error) => {
+      caught = error;
+    });
+    snapshot = [completion("running", { importing: true })];
+    await act(async () => {
+      changed();
+      await vi.waitFor(() => {
+        expect(store.get(databaseConversionStateAtom)).toEqual([
+          expect.objectContaining({ id: "conversion:account-operation", targetDatabase: database }),
+        ]);
+      });
+    });
+
+    await act(async () => root.render(null));
+    expect(unlisten).not.toHaveBeenCalled();
+
+    const failed = completion("failed");
+    snapshot = [failed];
+    if (order === "event-first") {
+      changed();
+    }
+    await act(async () => {
+      response.resolve(structuredClone(failed));
+      await caller;
+    });
+    if (order === "reply-first") {
+      changed();
+    }
+
+    expect(caught).toMatchObject({ name: "TauriCommandError", message: "import failed" });
+    await vi.waitFor(() => {
+      expect(store.get(databaseConversionStateAtom)).toEqual([]);
+      expect(unlisten).toHaveBeenCalledOnce();
+    });
+    expect(store.get(accountCompletionsAtom).get("chesscom_felix")?.outcome.state).toBe("failed");
+  },
+);
+
+test("a reloaded running unlinked import clears its conversion row after the only surface unmounts", async () => {
+  snapshot = [completion("running", { importing: true })];
+  await renderCards();
+  expect(store.get(databaseConversionStateAtom)).toEqual([
+    expect.objectContaining({ id: "conversion:account-operation", targetDatabase: database }),
+  ]);
+
+  await act(async () => root.render(null));
+  expect(unlisten).not.toHaveBeenCalled();
+  expect(store.get(databaseConversionStateAtom)).toHaveLength(1);
+
+  snapshot = [completion("succeeded")];
+  await emitChanged();
+  expect(store.get(databaseConversionStateAtom)).toEqual([]);
+  expect(unlisten).toHaveBeenCalledOnce();
+});
+
+test("finishing the first of two concurrent headless imports keeps the observer subscribed for the second", async () => {
+  const firstResponse = deferred<AccountCompletion>();
+  const secondResponse = deferred<AccountCompletion>();
+  const secondDatabase: DatabaseHandle = { id: { id: "database-2" }, kind: "database" };
+  const secondRequest: AccountImportRequest = {
+    ...request,
+    provider: "lichess",
+    accountHandle: "lichess-account",
+    target: { kind: "unlinked", database: secondDatabase, title: "Felix Lichess" },
+  };
+  mocks.importAccountGames
+    .mockReturnValueOnce(firstResponse.promise)
+    .mockReturnValueOnce(secondResponse.promise);
+
+  await renderCards();
+  const firstCaller = runAccountImport(store, request);
+  const secondCaller = runAccountImport(store, secondRequest);
+
+  snapshot = [completion("running", { id: "op-1", importing: true })];
+  await emitChanged();
+  expect(store.get(databaseConversionStateAtom)).toEqual([
+    expect.objectContaining({ id: "conversion:op-1", targetDatabase: database }),
+  ]);
+
+  await act(async () => root.render(null));
+
+  const firstDone = completion("succeeded", { id: "op-1" });
+  snapshot = [firstDone];
+  await emitChanged();
+  await act(async () => {
+    firstResponse.resolve(firstDone);
+    await firstCaller;
+  });
+  expect(store.get(databaseConversionStateAtom)).toEqual([]);
+  expect(unlisten).not.toHaveBeenCalled();
+
+  const secondRunning = completion("running", {
+    id: "op-2",
+    request: secondRequest,
+    importing: true,
+  });
+  snapshot = [firstDone, secondRunning];
+  await emitChanged();
+  expect(store.get(databaseConversionStateAtom)).toEqual([
+    expect.objectContaining({ id: "conversion:op-2", targetDatabase: secondDatabase }),
+  ]);
+
+  const secondDone = completion("succeeded", { id: "op-2", request: secondRequest });
+  await act(async () => {
+    secondResponse.resolve(secondDone);
+    await secondCaller;
+  });
+  snapshot = [firstDone, secondDone];
+  await emitChanged();
+  expect(store.get(databaseConversionStateAtom)).toEqual([]);
+  expect(unlisten).toHaveBeenCalledOnce();
+});
+
+test("a stale observer disposing after pagehide does not evict a newer observer for the same store", async () => {
+  const firstResponse = deferred<AccountCompletion>();
+  const secondResponse = deferred<AccountCompletion>();
+  mocks.importAccountGames
+    .mockReturnValueOnce(firstResponse.promise)
+    .mockReturnValueOnce(secondResponse.promise);
+
+  const unlisten1 = unlisten;
+  await renderCards();
+  const firstCaller = runAccountImport(store, request);
+
+  window.dispatchEvent(new Event("pagehide"));
+  await act(async () => root.render(null));
+  expect(unlisten1).toHaveBeenCalledOnce();
+
+  const unlisten2 = vi.fn();
+  unlisten = unlisten2;
+  await renderCards();
+  expect(mocks.completionChanged).toHaveBeenCalledTimes(2);
+
+  const firstDone = completion("succeeded");
+  await act(async () => {
+    firstResponse.resolve(firstDone);
+    await firstCaller;
+  });
+
+  const secondCaller = runAccountImport(store, request);
+  await act(async () => root.render(null));
+  expect(unlisten2).not.toHaveBeenCalled();
+
+  snapshot = [completion("running", { id: "op-2", importing: true })];
+  await emitChanged();
+  expect(store.get(databaseConversionStateAtom)).toEqual([
+    expect.objectContaining({ id: "conversion:op-2", targetDatabase: database }),
+  ]);
+  expect(unlisten1).toHaveBeenCalledOnce();
+
+  const secondDone = completion("succeeded", { id: "op-2" });
+  snapshot = [secondDone];
+  await emitChanged();
+  await act(async () => {
+    secondResponse.resolve(secondDone);
+    await secondCaller;
+  });
+  expect(store.get(databaseConversionStateAtom)).toEqual([]);
+  expect(unlisten2).toHaveBeenCalledOnce();
+});
