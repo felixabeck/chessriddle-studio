@@ -18,7 +18,7 @@ vi.mock("@/state/catalogEngineCompletion", () => ({
   usePendingEngineCompletion: () => mocks.pending,
 }));
 vi.mock("@/hooks/downloadJobs", () => ({
-  useDownloadJob: () => mocks.hasJob,
+  useDownloadJob: (id: string) => mocks.hasJob && id === progressId,
   useRunningDownloadJob: (ids: readonly string[]) =>
     mocks.hasJob ? (ids.find((id) => id === progressId) ?? null) : null,
   cancelDownloadJob: mocks.cancel,

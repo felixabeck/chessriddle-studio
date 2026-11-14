@@ -1,3 +1,5 @@
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -48,7 +50,7 @@ vi.mock("@/platform/tauri", async () => {
 
 import { cancellationError, unwrapCommand } from "@/platform/tauri";
 import { normalizeError } from "@/platform/errors";
-import { cancelDownloadJob, runDownloadJob } from "./downloadJobs";
+import { cancelDownloadJob, runDownloadJob, useRunningDownloadJob } from "./downloadJobs";
 
 beforeEach(() => {
     mocks.cancelDownload.mockReset().mockResolvedValue(true);
@@ -588,6 +590,38 @@ describe("download jobs", () => {
             );
         },
     );
+
+    test("useRunningDownloadJob tracks the first live job among the given ids", async () => {
+        Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+        function Probe() {
+            return createElement("span", null, useRunningDownloadJob(["a", "b"]) ?? "");
+        }
+        const host = document.createElement("div");
+        document.body.append(host);
+        const root = createRoot(host);
+        try {
+            await act(async () => {
+                root.render(createElement(Probe));
+            });
+            expect(host.textContent).toBe("");
+
+            const work = deferred<void>();
+            let running!: Promise<void>;
+            await act(async () => {
+                running = runDownloadJob("b", () => work.promise);
+            });
+            expect(host.textContent).toBe("b");
+
+            await act(async () => {
+                work.resolve();
+                await running;
+            });
+            expect(host.textContent).toBe("");
+        } finally {
+            await act(async () => root.unmount());
+            host.remove();
+        }
+    });
 
     test("a refused duplicate native claim keeps its failure and awaits the surviving generation", async () => {
         const failure = new Error("download progress is already active");
