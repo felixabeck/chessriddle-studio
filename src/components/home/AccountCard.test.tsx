@@ -250,3 +250,42 @@ test("an adapter decoding error notifies only while mounted and leaves progress 
     getDefaultStore().set(accountDownloadsInFlightAtom, new Map());
   }
 });
+
+test("a new download click clears the previous ticket's 100% progress until a new frame arrives", async () => {
+  let progressListener!: (event: { payload: { id: string; progress: number } }) => void;
+  mocks.progress.mockImplementation(async (listener) => {
+    progressListener = listener;
+    return vi.fn();
+  });
+  const store = getDefaultStore();
+  store.set(accountDownloadsInFlightAtom, new Map([["lichess_felix", "job-1"]]));
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await renderAccount(root);
+    await act(async () => progressListener({ payload: { id: "job-1", progress: 100 } }));
+    expect(host.textContent).toContain("100%");
+
+    await act(async () => store.set(accountDownloadsInFlightAtom, new Map()));
+    expect(host.textContent).not.toContain("100%");
+
+    await act(async () =>
+      store.set(accountDownloadsInFlightAtom, new Map([["lichess_felix", null]])),
+    );
+    expect(host.textContent).not.toContain("100%");
+
+    await act(async () =>
+      store.set(accountDownloadsInFlightAtom, new Map([["lichess_felix", "job-2"]])),
+    );
+    expect(host.textContent).not.toContain("100%");
+
+    await act(async () => progressListener({ payload: { id: "job-2", progress: 30 } }));
+    expect(host.textContent).toContain("30%");
+    expect(host.textContent).not.toContain("100%");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    store.set(accountDownloadsInFlightAtom, new Map());
+  }
+});

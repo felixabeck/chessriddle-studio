@@ -183,13 +183,30 @@ function createAccountObserver(store: Store) {
         },
         async run(request: AccountImportRequest) {
             live++;
+            let completion: AccountCompletion | undefined;
             try {
-                const completion = await tauri.importAccountGames(request);
+                completion = await tauri.importAccountGames(request);
                 await apply(completion);
                 if (completion.outcome.state === "failed") {
                     throw new TauriCommandError(completion.outcome.result);
                 }
             } finally {
+                if (completion && completion.outcome.state !== "running") {
+                    const terminal = completion;
+                    store.set(databaseConversionStateAtom, (previous) =>
+                        previous.filter((entry) => entry.id !== `conversion:${terminal.id}`),
+                    );
+                    store.set(accountCompletionsAtom, (previous) => {
+                        const key = accountCompletionKey(terminal.request);
+                        const existing = previous.get(key);
+                        if (existing?.id !== terminal.id || existing.outcome.state !== "running") {
+                            return previous;
+                        }
+                        const next = new Map(previous);
+                        next.set(key, terminal);
+                        return next;
+                    });
+                }
                 live--;
                 if (!surfaces.size) dispose();
             }

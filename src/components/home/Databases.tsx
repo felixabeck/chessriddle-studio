@@ -13,7 +13,7 @@ import {
 } from "@mantine/core";
 import { DatabaseX } from "lucide-react";
 import { useAtomValue } from "jotai";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import useSWRImmutable from "swr/immutable";
 import type { PlayerGameInfo } from "@/bindings";
@@ -135,12 +135,13 @@ function Databases() {
 
   const players = Array.from(new Set(sessions.map(sessionPlayerName)));
 
-  const [name, setName] = useState("");
-  useEffect(() => {
-    if (sessions.length > 0) {
-      setName(sessionPlayerName(sessions[0]));
-    }
-  }, [sessions]);
+  const [selectedName, setName] = useState("");
+  const name =
+    selectedName && players.includes(selectedName)
+      ? selectedName
+      : sessions.length > 0
+        ? sessionPlayerName(sessions[0])
+        : "";
 
   const databasesKey = sessions.length === 0 ? null : ["personalDatabases", sessions];
   const databasesOwner = useNativeRequestOwner(databasesKey);
@@ -287,20 +288,28 @@ function Databases() {
   );
 
   const loadError = databasesError ?? error;
-  const [progress, setProgress] = useState(0);
+  const [progress, setProgress] = useState<{ key: string; value: number } | null>(null);
+  const currentProgressKey =
+    playerDatabases && name ? personalInfoProgressKey(name, playerDatabases) : null;
+  const currentProgress =
+    currentProgressKey && progress?.key === currentProgressKey ? progress.value : 0;
   useTauriListener(
     tauriSubscriptions.progress,
     (e) => {
       if (!playerDatabases || !name) {
         return;
       }
-      const map = ownedProgressByKey.get(personalInfoProgressKey(name, playerDatabases));
+      const key = personalInfoProgressKey(name, playerDatabases);
+      const map = ownedProgressByKey.get(key);
       if (!map?.has(e.payload.id)) {
         return;
       }
       map.set(e.payload.id, e.payload.progress);
       const values = [...map.values()];
-      setProgress(values.reduce((sum, value) => sum + value, 0) / values.length);
+      setProgress({
+        key,
+        value: values.reduce((sum, value) => sum + value, 0) / values.length,
+      });
     },
     { onError: notifyListenerError },
   );
@@ -325,9 +334,9 @@ function Databases() {
                 <Loader color="gold" type="bars" />
               </ThemeIcon>
               <Title order={3}>{t("Home.Databases.ProcessingGames")}</Title>
-              <Progress w="100%" value={progress} animated striped size="md" radius="xl" />
+              <Progress w="100%" value={currentProgress} animated striped size="md" radius="xl" />
               <Text fw="bold" fz="sm" c="dimmed">
-                {Math.round(progress)}%
+                {Math.round(currentProgress)}%
               </Text>
             </Stack>
           </Center>

@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   logError: vi.fn(),
   personalCardInfo: vi.fn(),
   personalCardNotice: vi.fn(),
+  setName: undefined as ((name: string) => void) | undefined,
 }));
 
 vi.mock("@/platform/tauri", async () => {
@@ -47,9 +48,20 @@ vi.mock("@/components/files/notifyError", () => ({
   notifyListenerError: mocks.notifyListenerError,
 }));
 vi.mock("./PersonalCard", () => ({
-  default: ({ name, info, notice }: { name: string; info: unknown; notice?: React.ReactNode }) => {
+  default: ({
+    name,
+    setName,
+    info,
+    notice,
+  }: {
+    name: string;
+    setName?: (name: string) => void;
+    info: unknown;
+    notice?: React.ReactNode;
+  }) => {
     mocks.personalCardInfo(info);
     mocks.personalCardNotice(notice);
+    mocks.setName = setName;
     return (
       <div>
         player-card {name}
@@ -175,6 +187,7 @@ function exactOwnerScenario(ownerPresent = true) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.setName = undefined;
   localStorage.clear();
   getDefaultStore().set(sessionsAtom, [
     session,
@@ -1418,3 +1431,140 @@ test.each([{}, { perfs: { blitz: { games: 2 } } }, { username: "foreign" }])(
     expect(container.querySelector('[role="alert"]')).toBeNull();
   },
 );
+
+test("a selected player survives unrelated session updates and falls back when removed", async () => {
+  const bobSession = {
+    player: "Bob",
+    updatedAt: 1,
+    lichess: { username: "bob", account: { id: "bob", username: "bob" } },
+  };
+  const aliceSession = {
+    player: "Alice",
+    updatedAt: 1,
+    chessCom: { username: "alice", stats: {} },
+  };
+  const bobDb = { ...database("db-1"), filename: "bob_lichess.db3" };
+  const aliceDb = { ...database("db-2"), filename: "alice_chesscom.db3" };
+  getDefaultStore().set(sessionsAtom, [bobSession, aliceSession]);
+  mocks.getDatabases.mockResolvedValue({
+    databases: [bobDb, aliceDb],
+    unread: [],
+    root: { id: { id: "selection-root" }, kind: "databaseRoot" as const },
+  });
+  mocks.query_players.mockImplementation(async (_file, query) => ({
+    data: [{ id: 7, name: query.name, elo: null }],
+    count: 1,
+  }));
+  mocks.getPlayersGameInfo.mockImplementation(async (_progress, file) => ({
+    site_stats_data: [
+      {
+        site: file.id.id === "db-2" ? "Chess.com" : "Lichess",
+        player: file.id.id === "db-2" ? "alice" : "bob",
+        daily: [],
+        colors: [],
+        latest: [],
+        openings: [],
+      },
+    ],
+  }));
+
+  await renderDatabases();
+  await vi.waitFor(() => expect(container.textContent).toContain("player-card Bob"));
+
+  await act(async () => {
+    mocks.setName?.("Alice");
+  });
+  await vi.waitFor(() => expect(container.textContent).toContain("player-card Alice"));
+
+  await act(async () => {
+    getDefaultStore().set(sessionsAtom, [{ ...bobSession, updatedAt: 2 }, aliceSession]);
+  });
+  await vi.waitFor(() => expect(container.textContent).toContain("player-card Alice"));
+  expect(container.textContent).not.toContain("player-card Bob");
+
+  await act(async () => {
+    getDefaultStore().set(sessionsAtom, [{ ...bobSession, updatedAt: 3 }]);
+  });
+  await vi.waitFor(() => expect(container.textContent).toContain("player-card Bob"));
+});
+
+test("switching to another player does not carry over the previous fetch's progress percentage", async () => {
+  const bobSession = {
+    player: "Bob",
+    updatedAt: 1,
+    lichess: { username: "bob", account: { id: "bob", username: "bob" } },
+  };
+  const aliceSession = {
+    player: "Alice",
+    updatedAt: 1,
+    chessCom: { username: "alice", stats: {} },
+  };
+  const charlieSession = {
+    player: "Charlie",
+    updatedAt: 1,
+    lichess: { username: "charlie", account: { id: "charlie", username: "charlie" } },
+  };
+  const bobDb = { ...database("db-1"), filename: "bob_lichess.db3" };
+  const aliceDb = { ...database("db-2"), filename: "alice_chesscom.db3" };
+  const charlieDb = { ...database("db-3"), filename: "charlie_lichess.db3" };
+  getDefaultStore().set(sessionsAtom, [bobSession, aliceSession, charlieSession]);
+  mocks.getDatabases.mockResolvedValue({
+    databases: [bobDb, aliceDb, charlieDb],
+    unread: [],
+    root: { id: { id: "progress-switch-root" }, kind: "databaseRoot" as const },
+  });
+  mocks.query_players.mockImplementation(async (_file, query) => ({
+    data: [{ id: 7, name: query.name, elo: null }],
+    count: 1,
+  }));
+
+  let resolveAlice!: (value: { site_stats_data: unknown[] }) => void;
+  const alicePromise = new Promise<{ site_stats_data: unknown[] }>((resolve) => {
+    resolveAlice = resolve;
+  });
+  mocks.getPlayersGameInfo.mockImplementation(async (_progress, file) => {
+    if (file.id.id === "db-1") {
+      return {
+        site_stats_data: [
+          { site: "Lichess", player: "bob", daily: [], colors: [], latest: [], openings: [] },
+        ],
+      };
+    }
+    if (file.id.id === "db-2") {
+      return alicePromise;
+    }
+    return new Promise(() => undefined);
+  });
+
+  await renderDatabases();
+  await vi.waitFor(() => expect(container.textContent).toContain("player-card Bob"));
+
+  await act(async () => {
+    mocks.setName?.("Alice");
+  });
+  await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(2));
+  const aliceProgressId = mocks.getPlayersGameInfo.mock.calls[1][0] as string;
+
+  await act(async () => {
+    progressListener(progressEvent(aliceProgressId, 80));
+  });
+  expect(displayedProgress()).toContain("80%");
+  expect(container.querySelector("[data-testid='progress']")?.textContent).toBe("80");
+
+  await act(async () => {
+    resolveAlice({
+      site_stats_data: [
+        { site: "Chess.com", player: "alice", daily: [], colors: [], latest: [], openings: [] },
+      ],
+    });
+  });
+  await vi.waitFor(() => expect(container.textContent).toContain("player-card Alice"));
+
+  await act(async () => {
+    mocks.setName?.("Charlie");
+  });
+  await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(3));
+  expect(displayedProgress()).toContain("0%");
+  expect(displayedProgress()).not.toContain("80%");
+  expect(container.querySelector("[data-testid='progress']")?.textContent).toBe("0");
+});

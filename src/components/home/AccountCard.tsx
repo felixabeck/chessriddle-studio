@@ -170,7 +170,7 @@ export function AccountCard({
   const completions = useAtomValue(accountCompletionsAtom);
   const retained = completions.get(accountKey);
   const pending = downloadsInFlight.has(accountKey) || retained?.outcome.state === "running";
-  const [progress, setProgress] = useState<number | null>(null);
+  const [progress, setProgress] = useState<{ id: string; value: number } | null>(null);
   const [migrationWorkspace, setMigrationWorkspace] = useState<FileWorkspaceHandle | null>(null);
   const [collectionNotice, setCollectionNotice] = useState(false);
   const [downloadDestination, setDownloadDestination] = useAtom(downloadDestinationAtom);
@@ -182,11 +182,17 @@ export function AccountCard({
         store.get(accountCompletionsAtom).get(accountKey)?.progressId ??
         store.get(accountDownloadsInFlightAtom).get(accountKey);
       if (typeof ticket === "string" && e.payload.id === ticket) {
-        setProgress(e.payload.progress);
+        setProgress({ id: e.payload.id, value: e.payload.progress });
       }
     },
     { onError: notifyListenerError },
   );
+
+  const currentTicket = retained?.progressId ?? downloadsInFlight.get(accountKey);
+  const currentProgress =
+    pending && typeof currentTicket === "string" && progress?.id === currentTicket
+      ? progress.value
+      : null;
 
   const downloadedGames = database?.type === "success" ? database.game_count : 0;
   const effectiveTotal = Math.max(total, downloadedGames);
@@ -454,9 +460,9 @@ export function AccountCard({
                 interpolation: { escapeValue: false },
               })}
             </Text>
-            {pending && progress && (
+            {currentProgress !== null && (
               <Text size="xs" c="dimmed">
-                {progress.toFixed(0)}%
+                {currentProgress.toFixed(0)}%
               </Text>
             )}
           </Group>
