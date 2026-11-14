@@ -24219,7 +24219,7 @@ Handled 2026-11-12 by drain session bdcaf057 (lens tier; lenses correctness, roo
 
 ### Home statistics jump back to the first player whenever any account session changes
 
-* **ID:** f-20261112-24 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-24 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** ux
 * **Spotted outside diff:** yes
 * **Where:** `src/components/home/Databases.tsx` ~138-143: `useEffect(() => { if (sessions.length > 0) setName(sessionPlayerName(sessions[0])); }, [sessions]);`
@@ -24228,6 +24228,8 @@ Handled 2026-11-12 by drain session bdcaf057 (lens tier; lenses correctness, roo
 * **Fix:** Keep the current name while it is still among `players`, and fall back to the first player only when the name is empty or no longer present. For example: `setName((current) => current && players.includes(current) ? current : sessionPlayerName(sessions[0]))`, or derive the effective name during render instead of in an effect. Add a Databases.test case: select a second player, replace one session object, and check the selection is kept.
 * **Proof:** Ephemeral Vitest probe built on `Databases.test.tsx` lines 1-207, with the PersonalCard mock extended to expose `name`/`setName`. Steps: sessions Bob (Lichess) + Alice (Chess.com) with one database each; render; `setName("Alice")` → card name Alice; then replace Bob's session with `updatedAt: 2`, as reload does. Result: `before=Alice after=Bob`. The probe was deleted and the tree is clean.
 * **Found by:** Grok Bot general review 2026-11-12 (Databases pass). Related area: f-20261020-01 (alias handling, handled; different cause).
+* **Handled (2026-11-14, drain e5f1087c):** commit ab0d59e2c. The reset effect is gone. `Databases` keeps the user's `selectedName` and derives the effective `name` (selection while it is still among `players`, otherwise the first session's player), following the persisted-state rule's "derive an effective value rather than reset". Proof: a new `Databases.test.tsx` case (select Alice, replace Bob's session with a new `updatedAt`, selection stays Alice; remove Alice, falls back to Bob) fails with the effect restored and passes with the fix.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"9b7c356b279f0fd24d5e0b89cf8b66cb1ab3be5c0e30eb734d583866aff90b5a","header_sha256":"b2e1a9121d52a41028f8a151471b8b49576a733ecf36cda3830662ce24d86f49","header_status":"handled","input_sha256":"58d17a87c8aa9cccf056e45fa600c0c5ae41708fe451767a2dd07087acf7dd9f","kind":"mutation-receipt","operation":"91fbfbbf48cd833ac9af664afd4c6e95c8c5d4219b48b6de147fbfd54c58c837","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-24"],"target":"f-20261112-24","v":1} -->
 
 ---
 
