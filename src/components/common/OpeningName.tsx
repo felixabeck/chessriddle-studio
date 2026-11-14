@@ -15,20 +15,20 @@ function OpeningName() {
   const position = useStore(store, (s) => s.position);
 
   useEffect(() => {
-    let current = true;
+    let cancelled = false;
     void getOpening(root, position).then(
       (name) => {
-        if (current) setOpeningName(name);
+        if (!cancelled) setOpeningName(name);
       },
       (error: unknown) => {
-        if (!current) return;
+        if (cancelled) return;
         setOpeningName("");
         const message = normalizeError(error).message;
         if (message !== NO_OPENING_FOUND) warnSafely(message);
       },
     );
     return () => {
-      current = false;
+      cancelled = true;
     };
   }, [root, position]);
 

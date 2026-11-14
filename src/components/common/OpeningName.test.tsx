@@ -79,7 +79,7 @@ async function renderOpeningName() {
   );
 }
 
-async function flushUnhandled() {
+async function flushPromises() {
   await act(async () => {
     await Promise.resolve();
     await Promise.resolve();
@@ -95,7 +95,7 @@ test("clears a named opening when the next position has none, without warning", 
   await act(async () => {
     store.setState(defaultTree(ENDGAME_FEN));
   });
-  await flushUnhandled();
+  await flushPromises();
 
   expect(host.textContent).toBe("");
   expect(mocks.warnSafely).not.toHaveBeenCalled();
@@ -111,7 +111,7 @@ test("clears the name and warns once for an unexpected lookup failure", async ()
   await act(async () => {
     store.setState(defaultTree(ENDGAME_FEN));
   });
-  await flushUnhandled();
+  await flushPromises();
 
   expect(host.textContent).toBe("");
   expect(mocks.warnSafely).toHaveBeenCalledExactlyOnceWith("boom");
@@ -150,7 +150,7 @@ test("ignores a stale rejected opening lookup after a newer success", async () =
     first.reject(new Error("boom"));
     await first.promise.catch(() => undefined);
   });
-  await flushUnhandled();
+  await flushPromises();
 
   expect(host.textContent).toBe("Sicilian Defense");
   expect(mocks.warnSafely).not.toHaveBeenCalled();
