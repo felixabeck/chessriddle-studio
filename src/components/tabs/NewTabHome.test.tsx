@@ -316,6 +316,7 @@ test("Due omits the total line when no repertoire has overdue positions", async 
   expect(rows()).toHaveLength(0);
   expect(host.textContent).toContain("Home.DuePractice.NothingDue");
   expect(host.textContent).not.toContain("Home.DuePractice.Total");
+  expect(host.querySelector('[role="status"]')).toBeNull();
 });
 
 test("Due with no rows and a failed inventory shows incomplete without Loading", async () => {
