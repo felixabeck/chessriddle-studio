@@ -67,6 +67,36 @@ test("a pointer click navigates and releases focus so no stale focus ring stays 
   expect(document.activeElement).not.toBe(button);
 });
 
+test("the current move is marked for assistive tech", async () => {
+  await act(async () =>
+    root.render(
+      <MoveCell
+        annotations={[]}
+        isStart={false}
+        isCurrentVariation={true}
+        move="c6"
+        onClick={onClick}
+        onContextMenu={() => {}}
+      />,
+    ),
+  );
+  expect(cell().getAttribute("aria-current")).toBe("true");
+
+  await act(async () =>
+    root.render(
+      <MoveCell
+        annotations={[]}
+        isStart={false}
+        isCurrentVariation={false}
+        move="c6"
+        onClick={onClick}
+        onContextMenu={() => {}}
+      />,
+    ),
+  );
+  expect(cell().hasAttribute("aria-current")).toBe(false);
+});
+
 test("keyboard activation navigates and keeps focus on the move", async () => {
   const button = cell();
   button.focus();

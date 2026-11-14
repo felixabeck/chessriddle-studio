@@ -1,19 +1,29 @@
 import { WorkspaceTabScope, EphemeralTabScope } from "@/state/tabScope";
 import { parseUci } from "chessops";
-import { act } from "react";
+import { act, useContext } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { useStore } from "zustand";
 import { createTreeStore } from "@/state/store/tree";
-import { createNode, defaultTree } from "@/utils/treeReducer";
+import { createNode, defaultTree, type TreeNode } from "@/utils/treeReducer";
 import { TreeStateContext } from "./TreeStateContext";
-import { createNotationNodeIndex } from "./notationRows";
+import { createNotationNodeIndex, type NotationNodeIndex } from "./notationRows";
 
-const { currentTabAtom } = vi.hoisted(() => ({ currentTabAtom: Symbol("current-tab") }));
+const { currentTabAtom, moveCell } = vi.hoisted(() => ({
+  currentTabAtom: Symbol("current-tab"),
+  moveCell: { useReal: false },
+}));
 
-vi.mock("@/state/atoms", () => ({ tabsAtom: currentTabAtom, updateTabById: vi.fn() }));
+vi.mock("@/state/atoms", () => ({
+  tabsAtom: currentTabAtom,
+  updateTabById: vi.fn(),
+  showCommentsFamily: Object.assign((id: string) => `comments:${id}`, { remove: () => {} }),
+  moveNotationTypeAtom: "type",
+}));
 vi.mock("jotai", () => ({
   useAtomValue: () => [{ value: "tab" }],
   useSetAtom: () => vi.fn(),
+  useAtom: (atom: unknown) => [atom === "type" ? "letters" : true],
 }));
 vi.mock("@/utils/tabs", () => ({
   getTabFile: (tab: unknown) => (tab ? { metadata: { type: "repertoire" } } : undefined),
@@ -39,20 +49,26 @@ vi.mock("@/components/common/IconAction", () => ({
     </button>
   ),
 }));
-vi.mock("./MoveCell", async (importOriginal) => ({
-  releasePointerFocus: (await importOriginal<typeof import("./MoveCell")>()).releasePointerFocus,
-  default: ({ move, onClick, onContextMenu, analysis }: any) => (
-    <button
-      type="button"
-      data-move={move}
-      data-analysis={analysis ? "true" : undefined}
-      onClick={onClick}
-      onContextMenu={onContextMenu}
-    >
-      {move}
-    </button>
-  ),
-}));
+vi.mock("./MoveCell", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./MoveCell")>();
+  return {
+    releasePointerFocus: original.releasePointerFocus,
+    default: (props: any) => {
+      if (moveCell.useReal) return <original.default {...props} />;
+      return (
+        <button
+          type="button"
+          data-move={props.move}
+          data-analysis={props.analysis ? "true" : undefined}
+          onClick={props.onClick}
+          onContextMenu={props.onContextMenu}
+        >
+          {props.move}
+        </button>
+      );
+    },
+  };
+});
 vi.mock("@mantine/core", () => {
   const Menu = ({ children }: any) => <div>{children}</div>;
   Menu.Target = ({ children }: any) => <>{children}</>;
@@ -63,10 +79,16 @@ vi.mock("@mantine/core", () => {
     </button>
   );
   return {
-    Box: ({ children, ...props }: any) => <span {...props}>{children}</span>,
+    Box: ({ component: Component = "span", children, ...props }: any) => (
+      <Component {...props}>{children}</Component>
+    ),
     Menu,
     Portal: ({ children }: any) => <>{children}</>,
     Text: ({ children }: any) => <span>{children}</span>,
+    rgba: () => "transparent",
+    useMantineTheme: () => ({
+      colors: { gray: Array(10).fill("#888"), teal: Array(10).fill("#099") },
+    }),
   };
 });
 
@@ -75,12 +97,48 @@ import CompleteMoveCell, {
   type NotationMoveActions,
 } from "./CompleteMoveCell";
 
+function CurrentGameMoves({
+  first,
+  second,
+  root,
+  nodeIndex,
+}: {
+  first: TreeNode;
+  second: TreeNode;
+  root: TreeNode;
+  nodeIndex: NotationNodeIndex;
+}) {
+  const store = useContext(TreeStateContext)!;
+  const current = useStore(store, (s) => s.currentNode());
+  const cell = (node: TreeNode) => (
+    <CompleteMoveCell
+      node={node}
+      nodeIndex={nodeIndex}
+      root={root}
+      halfMoves={node.halfMoves}
+      move={node.san}
+      fen={node.fen}
+      comment=""
+      annotations={[]}
+      showComments={false}
+      isCurrentVariation={node === current}
+    />
+  );
+  return (
+    <WorkspaceTabScope tabId="tab">
+      {cell(first)}
+      {cell(second)}
+    </WorkspaceTabScope>
+  );
+}
+
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 let host: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  moveCell.useReal = false;
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -583,3 +641,49 @@ test.each([
     expect(clearGameEnd.mock.calls).toEqual(expectedClearCalls);
   },
 );
+
+test("marks the current move for screen readers and follows goToMove", async () => {
+  moveCell.useReal = true;
+  const tree = defaultTree();
+  const first = createNode({
+    fen: "first w - - 0 1",
+    move: parseUci("e2e4")!,
+    san: "e4",
+    halfMoves: 1,
+  });
+  const second = createNode({
+    fen: "second b - - 0 1",
+    move: parseUci("e7e5")!,
+    san: "e5",
+    halfMoves: 2,
+  });
+  first.children = [second];
+  tree.root.children = [first];
+  const store = createTreeStore();
+  store.setState({ ...store.getState(), root: tree.root, position: [0] });
+  const nodeIndex = createNotationNodeIndex(tree.root);
+
+  await act(async () => {
+    root.render(
+      <TreeStateContext.Provider value={store}>
+        <CurrentGameMoves first={first} second={second} root={tree.root} nodeIndex={nodeIndex} />
+      </TreeStateContext.Provider>,
+    );
+  });
+
+  const moveButton = (name: string) => {
+    const button = [...host.querySelectorAll("button")].find((el) => el.textContent === name);
+    if (!button) throw new Error(`move ${name} not rendered`);
+    return button;
+  };
+
+  expect(moveButton("e4").getAttribute("aria-current")).toBe("true");
+  expect(moveButton("e5").hasAttribute("aria-current")).toBe(false);
+
+  await act(async () => {
+    store.getState().goToMove([0, 0]);
+  });
+
+  expect(moveButton("e5").getAttribute("aria-current")).toBe("true");
+  expect(moveButton("e4").hasAttribute("aria-current")).toBe(false);
+});

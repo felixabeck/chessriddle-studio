@@ -95,6 +95,7 @@ function MoveCell(props: MoveCellProps) {
       component="button"
       className={`${classes.cell} ${props.fullWidth ? classes.cellFullWidth : ""}`}
       data-notation-analysis={props.analysis ? "true" : undefined}
+      aria-current={props.isCurrentVariation ? "true" : undefined}
       style={{
         "--light-color":
           color === "gray" ? `var(--notation-unannotated-move-color, ${baseLight})` : baseLight,
