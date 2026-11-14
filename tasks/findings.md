@@ -24664,7 +24664,7 @@ Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK on
 
 ### The notation header keeps showing the previous opening name when the new position has no known opening, and the rejection goes unhandled
 
-* **ID:** f-20261112-43 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-43 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/common/OpeningName.tsx:13-15` (`getOpening(root, position).then(setOpeningName)` with no `catch`, no reset and no staleness guard), `src/utils/chess.ts:406-419`, native `src-tauri/src/opening.rs:68-75` (`get_opening_from_fens` returns `Err(NoOpeningFound)` when no FEN on the path matches)
@@ -24673,6 +24673,8 @@ Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK on
 - **Fix:** clear the name (or show nothing) on rejection, ignore results from superseded requests (request counter or AbortController), and catch the rejection; add an OpeningName test for a no-opening position after a named one.
 - **Proof:** ephemeral Vitest rendering `OpeningName` with `getOpeningFromFens` mocked: the first call resolves "Ruy Lopez"; after `setState(defaultTree("8/8/8/4k3/8/8/4K3/8 w - - 0 1"))` the second call rejects, the text still reads "Ruy Lopez", and one unhandled rejection is recorded. Native code trace confirms the error return for unmatched paths. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 21)
+* **Handled (2026-11-14):** `OpeningName` now guards its effect with a per-request `current` flag cleared in the cleanup, so superseded lookups (success or failure) are ignored; a rejection clears the name, and only failures other than the pinned `Error::NoOpeningFound` Display ("No opening found", exact equality) are reported through `warnSafely`. New `src/components/common/OpeningName.test.tsx` covers named → no-opening, unexpected failure, stale success and stale rejection; reverting the component turns all four red (three assertions, one unhandled rejection). Commit 89f6aaab2. Rejected: making `getOpening` resolve `null` for no-opening — it has a single caller, and the component-level guard is needed for staleness anyway.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"609a075abaa36000e2b08dd492e33303f12045191d17b2b207eac8f65bfd0586","header_sha256":"2c8a8152efa6e77f22cf4c756866b2da1d476648a9ccf4041e0711e12b9501ba","header_status":"handled","input_sha256":"3eec5c005aad1fdd598fb978f3483747b14ed56b6a2262d2d62a00ce176c1284","kind":"mutation-receipt","operation":"97014fe0dcb7751e082dc8c52e6ecc084865fb3b9e753b2e1a31bd5d9bdae3d7","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-43"],"target":"f-20261112-43","v":1} -->
 
 ---
 
