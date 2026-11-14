@@ -24158,7 +24158,7 @@ Handled in 1ab8c70cc. `changeCompletion` keeps `timeSpent` undefined for an atte
 
 ### AccountCard keeps the previous download's percentage, so a new download opens at "100%"
 
-* **ID:** f-20261112-21 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-21 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** ux
 * **Spotted outside diff:** yes
 * **Where:** `src/components/home/AccountCard.tsx` ~173 (`progress` state), ~178-189 (progress listener, the only `setProgress` call), ~457-461 (`{pending && progress && …%}`).
@@ -24169,6 +24169,9 @@ Handled in 1ab8c70cc. `changeCompletion` keeps `timeSpent` undefined for an atte
 * **Found by:** Grok Bot general review 2026-11-12 (AccountCard pass). Related, not the same cause: f-20260914-14 and f-20261001-21 (shared progress ids, both handled).
 * **Same pattern elsewhere (Grok Bot, 2026-11-12, traced, not probed):** `src/components/home/Databases.tsx` ~290 `const [progress, setProgress] = useState(0)` is likewise set only by matching progress frames and never reset when a new personal-summary fetch starts. After switching player (new SWR key), the "Processing games" view can open at the previous fetch's percentage until the first frame for a new id arrives. If this is fixed, reset both components the same way.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"19a19122335e465c0ba7a7d10dd5f361e0a83ed7130b5470c145dde5a4a3b032","input_sha256":"ddcb10d94d9dde3366214d78de3a56268085bf0d28974ccc1d025a3018c94cdf","kind":"mutation-receipt","operation":"76b68626bdcd21216ffc6340d2f236e1c1dad6b4d23d570a899dda4ed812da84","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-21"],"target":"f-20261112-21","v":1} -->
+
+* **Handled (2026-11-14, drain e5f1087c):** commit ab0d59e2c. `AccountCard` stores progress as `{ id, value }` and renders the percentage only when the id equals the current ticket (`retained?.progressId ?? downloadsInFlight.get(accountKey)`), so a new Download click no longer shows the previous run's 100%. The same pattern in `Databases.tsx`: progress is stored with its `personalInfoProgressKey` and shown only for the current fetch key, otherwise 0. Rejected: an effect-based `setProgress(null)` on click, because a second mounted card or a remount would still show the stale value. Proof: new tests in `AccountCard.test.tsx` and `Databases.test.tsx` fail with the source hunk reverted and pass with it.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"d824194d03fdba26b4141c3d80ca55184c06372335cce4968e8ccdc80faa8ccc","header_sha256":"f2c3ce65b8b684d9e1f6804d2da2a796e5b650ef527f2a47289fe7c9005d677d","header_status":"handled","input_sha256":"8b7f870a6f37391bc26f442bd9b4226d77af4b9c5b2df67c32e26ce12c50dd28","kind":"mutation-receipt","operation":"5dcecbc02c7fb7dc793d4df1610466d2dfad027ed7d80e7467979ffa85af078a","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-21"],"target":"f-20261112-21","v":1} -->
 
 ---
 
