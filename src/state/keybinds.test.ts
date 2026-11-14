@@ -11,6 +11,13 @@ const defaults = {
     CLOSE: { name: "Close", keys: "ctrl+w" },
 };
 
+test("shipped GO_TO_END and GO_TO_START defaults use arrow tokens", () => {
+    localStorage.removeItem("keybinds");
+    const map = createStore().get(keyMapAtom);
+    expect(map.GO_TO_END.keys).toBe("shift+arrowdown");
+    expect(map.GO_TO_START.keys).toBe("shift+arrowup");
+});
+
 test("refused storage read reports the error and returns defaults without writing", () => {
     const refused = new DOMException("Storage unavailable", "SecurityError");
     const backing = {

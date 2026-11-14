@@ -6,6 +6,10 @@ const mapToOs = (key: string): string => {
         arrowright: "→",
         arrowup: "↑",
         arrowdown: "↓",
+        left: "←",
+        right: "→",
+        up: "↑",
+        down: "↓",
     };
     if (arrows[key.toLowerCase()]) return arrows[key.toLowerCase()];
     const isMacos = platform() === "macos";

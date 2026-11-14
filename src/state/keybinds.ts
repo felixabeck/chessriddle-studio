@@ -26,7 +26,7 @@ const keys: KeyMap = {
     GO_TO_BRANCH_START: { name: "Go to start of branch", keys: "arrowup" },
     GO_TO_BRANCH_END: { name: "Go to end of branch", keys: "arrowdown" },
     GO_TO_START: { name: "Go to start of game", keys: "shift+arrowup" },
-    GO_TO_END: { name: "Go to end of game", keys: "shift+down" },
+    GO_TO_END: { name: "Go to end of game", keys: "shift+arrowdown" },
     NEXT_BRANCH: { name: "Next branch", keys: "c" },
     PREVIOUS_BRANCH: { name: "Previous branch", keys: "shift+c" },
     PLAY_BEST_ENGINE_MOVE: { name: "Play best engine move", keys: "space" },

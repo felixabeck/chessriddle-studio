@@ -18,6 +18,9 @@ test.each([
     ["linux", "arrowright", "→"],
     ["linux", "ctrl+ArrowUp", "ctrl+↑"],
     ["macos", "shift+arrowdown", "⇧+↓"],
+    ["linux", "shift+down", "shift+↓"],
+    ["macos", "shift+down", "⇧+↓"],
+    ["linux", "left", "←"],
 ] as const)("formats %s keymap %s as %s", (os, keys, expected) => {
     vi.mocked(platform).mockReturnValue(os);
     expect(formatKeymap(keys)).toBe(expected);
