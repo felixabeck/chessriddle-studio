@@ -20,8 +20,9 @@ test("de-DE practice empty state and its button name the visible Build tab label
 });
 
 test("de-DE catalogue never says Spiel or Position for a chess game or position", () => {
-    // Catches Spiel, Spiele, Spiels and compounds such as Spieldatei while leaving Spieler and the verb spielen alone.
-    const wrongTerm = /Spiel(?!er|en\b)|\bPosition(en)?\b/;
+    // Candidates: Spiel, Spiele, Spiels and compounds such as Spieldatei. Spieler… compounds
+    // (Spielerin, Spielerinfo) and the verb spielen are never candidates.
+    const suspectTerm = /Spiel(?!er|en\b)|\bPosition(en)?\b/;
     // Imperative of spielen, plus Spielstärke/Spielphase/Spielsteuerung compounds.
     const legitimateSpielUses: Record<string, string> = {
         "Board.Action.PlayFromHere": "Spiele von hier",
@@ -38,7 +39,7 @@ test("de-DE catalogue never says Spiel or Position for a chess game or position"
         "Training.Settings.Categories.Phases": "Spielphase",
     };
     const offenders = Object.entries(de).filter(
-        ([key, value]) => wrongTerm.test(value) && legitimateSpielUses[key] !== value,
+        ([key, value]) => suspectTerm.test(value) && legitimateSpielUses[key] !== value,
     );
     expect(offenders).toEqual([]);
 });
