@@ -7,6 +7,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { activeTabAtom, localOptionsFamily, tabsAtom } from "@/state/atoms";
 import { installMatchMediaStub } from "@/tests/matchMedia";
+import { dragRangeSlider, rangeSliderThumbs } from "@/tests/rangeSliderDrag";
 import type { DatabaseHandle, Player } from "@/bindings";
 
 const mocks = vi.hoisted(() => ({
@@ -296,5 +297,21 @@ describe("LocalOptionsPanel explorer filters", () => {
     const options = store.get(localOptionsFamily(tabId));
     expect(options.start_date).toBe(dayjs().subtract(3, "year").format("YYYY.MM.DD"));
     expect(options.end_date).toBeUndefined();
+  });
+
+  test("dragging the Elo slider keeps store elo unchanged until release", async () => {
+    const slider = container.querySelector<HTMLElement>(".mantine-RangeSlider-root")!;
+    await dragRangeSlider(
+      slider,
+      { from: 290, to: 200 },
+      {
+        beforeRelease: () => {
+          expect(rangeSliderThumbs(slider)[1].getAttribute("aria-valuenow")).toBe("2000");
+          expect(store.get(localOptionsFamily(tabId)).elo).toBeUndefined();
+        },
+      },
+    );
+
+    expect(store.get(localOptionsFamily(tabId)).elo).toEqual([0, 2000]);
   });
 });

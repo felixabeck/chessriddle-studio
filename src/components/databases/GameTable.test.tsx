@@ -10,8 +10,9 @@ import { tabsAtom, recentFilesAtom } from "@/state/atoms";
 import { activeDatabaseViewStore } from "@/state/store/database";
 import { tabStorage } from "@/state/store/tabStorage";
 import { defaultTree } from "@/utils/treeReducer";
-import type { SuccessDatabaseInfo } from "@/utils/db";
+import { ELO_FILTER_MAX, type SuccessDatabaseInfo } from "@/utils/db";
 import { installMatchMediaStub } from "@/tests/matchMedia";
+import { dragRangeSlider, rangeSliderThumbs } from "@/tests/rangeSliderDrag";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
 import GameTable from "./GameTable";
 import { resolveDatabaseRoute } from "./databaseRoute";
@@ -651,5 +652,40 @@ test.each(["button", "double-click", "Enter"])(
     await doubleClick(1);
     expect(jotai.get(tabsAtom)).toHaveLength(1);
     expect(mocks.navigate).toHaveBeenCalledOnce();
+  },
+);
+
+test.each([
+  { sliderIndex: 0, field: "range1" as const, otherField: "range2" as const },
+  { sliderIndex: 1, field: "range2" as const, otherField: "range1" as const },
+])(
+  "dragging ELO slider $sliderIndex updates thumb live and commits $field on release",
+  async ({ sliderIndex, field, otherField }) => {
+    await render();
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('[aria-label="Common.MoreOptions"]')!.click();
+    });
+
+    const sliders = host.querySelectorAll<HTMLElement>(".mantine-RangeSlider-root");
+    expect(sliders).toHaveLength(2);
+
+    await dragRangeSlider(
+      sliders[sliderIndex],
+      { from: 290, to: 200 },
+      {
+        beforeRelease: () => {
+          expect(rangeSliderThumbs(sliders[sliderIndex])[1].getAttribute("aria-valuenow")).toBe(
+            "2000",
+          );
+          expect(activeDatabaseViewStore.getState().games.query[field]).toEqual([
+            0,
+            ELO_FILTER_MAX,
+          ]);
+        },
+      },
+    );
+
+    expect(activeDatabaseViewStore.getState().games.query[field]).toEqual([0, 2000]);
+    expect(activeDatabaseViewStore.getState().games.query[otherField]).toEqual([0, ELO_FILTER_MAX]);
   },
 );
