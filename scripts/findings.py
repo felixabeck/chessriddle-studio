@@ -1,5 +1,5 @@
 #!/usr/bin/env -S uv run --script
-# agent-kit-sha256: 787274c1ab76e63f61b453da8638d6c5c64d1647359e880b69152a3e9615899d
+# agent-kit-sha256: 58b9584b8d517eb112c9ad097118cec6afe7d32d57d4745d7858428ab5ed820f
 # /// script
 # requires-python = ">=3.14"
 # ///
@@ -5248,7 +5248,7 @@ def _pick_owner_identity() -> tuple[int, int] | None:
         if fields is None or raw is None:
             break
         comm = raw[raw.find("(") + 1:raw.rfind(") ")]
-        if comm in {"claude", "codex", "grok"}:
+        if comm in {"claude", "grok"}:
             return pid, int(fields[PICK_STAT_STARTTIME_INDEX])
         if not fields[PICK_STAT_PPID_INDEX].isdigit():
             break
