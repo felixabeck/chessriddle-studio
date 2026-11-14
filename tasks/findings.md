@@ -23645,7 +23645,7 @@ Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK on
 
 ### formatClock rounds last-minute tenths to `00:60.0` instead of carrying into the next minute
 
-* **ID:** f-20261111-93 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261111-93 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** ux
 * **Spotted outside diff:** ninth-sweep quality review (Felix t26u) at HEAD `a276f9917`, dense-algorithm second-read lens (clock formatting)
 * **Where:** `src/components/boards/Clock.tsx` `formatClock` (~76-91). When the remaining total is under 60 seconds it appends `s.toFixed(1)` after already taking `s = (seconds % 3600) % 60`. It never carries a rounded `60.0` into the minutes field. The Clock strip uses this for both imported `[%clk]` values and live times passed through `getClockInfo`. Distinct from handled `f-20261106-26` (pre-increment `%clk` capture) and `f-20261106-27` (zero initial time rejected at game start). `makeClk` in `src/utils/chess.ts` (~48-57) has the same carry gap at three decimal places, but an integer-millisecond sweep of the last 12 ms of each of 180 minutes produced no `:60` overflow; last-minute `toFixed(1)` is the user-visible path.
@@ -23654,6 +23654,9 @@ Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK on
 * **Fix:** After computing hours, minutes, and the one-decimal remainder, if the rounded tenths equal 60, set the display seconds to `0` and carry into minutes (and hours if needed). Add a regression that `formatClock(59950 / 1000)` and `formatClock(59.96)` are `01:00.0` (or the chosen truncated form), never `00:60.0`.
 * **Proof:** Ephemeral Vitest `src/utils/sweep9_probe.test.ts` on HEAD `a276f9917`, removed afterwards (tree clean). `formatClock(59.96)`, `formatClock(59960 / 1000)`, and `formatClock(59950 / 1000)` were all `"00:60.0"`; `formatClock(59.94)` was `"00:59.9"`. No `tasks/decisions.md` entry pins last-minute display to an uncarried tenth.
 * **Found by:** Grok Bot, quality review (t26u), HEAD `a276f9917`.
+
+Handled in 0b6412d9e. `formatClock` now derives hours, minutes and sub-minute tenths from one integer-millisecond value and floors the tenths (`Math.floor(ms / 100)`), so remaining time in [59.95, 60) s renders `00:59.9`, consistent with the whole-second floor the at/above-60 s branch already used. Output at/above 60 s is unchanged. Regression: `Clock.test.ts` pins 59.96 and 59950/1000 to `00:59.9` and sweeps every ms in 59000..59999 against `/^00:59\.\d$/`; reverting the fix turns 3 tests red. Rejected: carrying to `01:00.0`, because the clock elsewhere truncates and `01:00` (no tenths) is what exactly 60 s already shows. Review: correctness, root-cause and tests lenses (Grok) approved.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"490c91f59ab2bf70027a72380979a295df83787856263867ce46dbcc336b8136","header_sha256":"e3dc3fc25cecb07359453f3ade42a2608ef3409111cb99c44f652ef8115fc72b","header_status":"handled","input_sha256":"af74c0d6a70e63775207424abc8abef63eea523dfaf6eafbf6de15cf26a85937","kind":"mutation-receipt","operation":"14413b98a7b51e5a5e006b86066c645f107e5c9f3f7777bca0698517bb6ba1e1","options":{"section":null},"request_id_sha256":null,"results":["f-20261111-93"],"target":"f-20261111-93","v":1} -->
 
 ---
 
