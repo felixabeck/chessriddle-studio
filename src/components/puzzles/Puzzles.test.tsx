@@ -848,11 +848,19 @@ function trackingSwitch() {
 }
 
 test.each([
-  { language: "en-US", expectedSeconds: "Common.SecondsShort:2.5" },
-  { language: "de-DE", expectedSeconds: "Common.SecondsShort:2,5" },
+  {
+    language: "en-US",
+    expectedTime: "2.5s",
+    expectedAvgSeconds: "Common.SecondsShort:2.5",
+  },
+  {
+    language: "de-DE",
+    expectedTime: "2,5 Sek.",
+    expectedAvgSeconds: "Common.SecondsShort:2,5",
+  },
 ])(
   "Avg time and stopwatch in $language include only tracked correct solves",
-  async ({ language, expectedSeconds }) => {
+  async ({ language, expectedTime, expectedAvgSeconds }) => {
     mocks.language = language;
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(10_000);
@@ -876,11 +884,11 @@ test.each([
     const timeLabel = [...document.querySelectorAll("p")].find(
       (element) => element.textContent === "Puzzle.Time",
     );
-    expect(timeLabel?.parentElement?.textContent).toBe(`Puzzle.Time${expectedSeconds}`);
+    expect(timeLabel?.parentElement?.textContent).toBe(`Puzzle.Time${expectedTime}`);
     const avgTimeLabel = [...document.querySelectorAll("p")].find(
       (element) => element.textContent === "Puzzle.AvgTime",
     );
-    expect(avgTimeLabel?.parentElement?.textContent).toBe(`Puzzle.AvgTime${expectedSeconds}`);
+    expect(avgTimeLabel?.parentElement?.textContent).toBe(`Puzzle.AvgTime${expectedAvgSeconds}`);
   },
 );
 

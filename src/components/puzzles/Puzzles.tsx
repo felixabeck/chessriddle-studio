@@ -1011,9 +1011,7 @@ function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
                   {t("Puzzle.Time")}
                 </Text>
                 <Text fw={700} size="lg" ff="monospace">
-                  {formatTime(elapsedTime, i18n.language, (value) =>
-                    t("Common.SecondsShort", { value }),
-                  )}
+                  {formatTime(elapsedTime, i18n.language)}
                 </Text>
               </Paper>
             )}

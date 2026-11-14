@@ -135,11 +135,7 @@ export function formatNodes(nodes: number | bigint, decimals = 0) {
     return `${value.toFixed(decimals)}${units[i]}`;
 }
 
-export function formatTime(
-    ms: number,
-    locale: string,
-    formatSeconds: (value: string) => string,
-): string {
+export function formatTime(ms: number, locale: string): string {
     const totalSeconds = Math.floor(ms / MILLISECONDS_PER_SECOND);
     const minutes = Math.floor(totalSeconds / SECONDS_PER_MINUTE);
     const seconds = totalSeconds % SECONDS_PER_MINUTE;
@@ -150,7 +146,13 @@ export function formatTime(
                 ?.value ?? ".";
         return `${minutes}:${seconds.toString().padStart(2, "0")}${decimalSeparator}${tenths}`;
     }
-    return formatSeconds(formatDecimal(seconds + tenths / TENTHS_PER_SECOND, locale));
+    return new Intl.NumberFormat(locale, {
+        style: "unit",
+        unit: "second",
+        unitDisplay: "narrow",
+        minimumFractionDigits: DECIMAL_FRACTION_DIGITS,
+        maximumFractionDigits: DECIMAL_FRACTION_DIGITS,
+    }).format(seconds + tenths / TENTHS_PER_SECOND);
 }
 
 export function getInitials(name: string) {

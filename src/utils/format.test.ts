@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import {
     formatBytes,
     formatDecimal,
@@ -55,17 +55,11 @@ describe("formatDecimal", () => {
 
 describe("formatTime", () => {
     test.each([
-        ["en-US", 2_549, "2.5", "2.5s"],
-        ["de-DE", 2_549, "2,5", "2,5s"],
-    ])(
-        "truncates sub-minute elapsed time in %s and passes localized decimal to formatSeconds",
-        (locale, ms, expectedValue, expectedFormatted) => {
-            const formatSeconds = vi.fn((value: string) => `${value}s`);
-            expect(formatTime(ms, locale, formatSeconds)).toBe(expectedFormatted);
-            expect(formatSeconds).toHaveBeenCalledTimes(1);
-            expect(formatSeconds).toHaveBeenCalledWith(expectedValue);
-        },
-    );
+        ["en-US", 2_549, "2.5s"],
+        ["de-DE", 2_549, "2,5 Sek."],
+    ])("truncates sub-minute elapsed time in %s", (locale, ms, expected) => {
+        expect(formatTime(ms, locale)).toBe(expected);
+    });
 
     test.each([
         ["en-US", 65_349, "1:05.3"],
@@ -73,9 +67,7 @@ describe("formatTime", () => {
     ])(
         "formats minute-plus elapsed time in %s with locale decimal separator",
         (locale, ms, expected) => {
-            const formatSeconds = vi.fn((value: string) => `${value}s`);
-            expect(formatTime(ms, locale, formatSeconds)).toBe(expected);
-            expect(formatSeconds).not.toHaveBeenCalled();
+            expect(formatTime(ms, locale)).toBe(expected);
         },
     );
 });
