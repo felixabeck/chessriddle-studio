@@ -13,8 +13,13 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 let host: HTMLDivElement;
 let root: Root;
+const originalScroll = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
 
 beforeEach(() => {
+  Object.defineProperty(Element.prototype, "scrollIntoView", {
+    configurable: true,
+    value: vi.fn(),
+  });
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -23,6 +28,8 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
+  if (originalScroll) Object.defineProperty(Element.prototype, "scrollIntoView", originalScroll);
+  else Reflect.deleteProperty(Element.prototype, "scrollIntoView");
 });
 
 function numberField() {
@@ -166,4 +173,47 @@ test("clamped typing 0 s then blur shows stored 0.001", async () => {
   await typeInto(numberField(), "0");
   await blurField();
   expect(numberField().value).toBe("0.001");
+});
+
+function BoundUnit({ initial, initialType }: { initial: number; initialType: TimeType }) {
+  const [value, setMs] = useState(initial);
+  const [unit, setUnit] = useState(initialType);
+  return (
+    <TimeInput
+      value={value}
+      type={unit}
+      onTypeChange={setUnit}
+      setValue={(next) => {
+        if (next.t === "Time") setMs(next.c);
+      }}
+    />
+  );
+}
+
+async function selectUnit(unit: TimeType) {
+  const select = host.querySelector<HTMLInputElement>(".mantine-Select-input")!;
+  await act(async () => {
+    select.focus();
+    select.click();
+  });
+  const option = [...document.body.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (node) => node.textContent === unit,
+  )!;
+  await act(async () => option.click());
+}
+
+test("changing unit through the Select clears the draft and shows stored ms", async () => {
+  await act(async () => {
+    root.render(
+      <MantineProvider env="test">
+        <BoundUnit initial={60_000} initialType="m" />
+      </MantineProvider>,
+    );
+  });
+  await typeInto(numberField(), "1");
+  await typeInto(numberField(), "1.");
+  await typeInto(numberField(), "1.5");
+  expect(numberField().value).toBe("1.5");
+  await selectUnit("s");
+  expect(numberField().value).toBe("90");
 });
