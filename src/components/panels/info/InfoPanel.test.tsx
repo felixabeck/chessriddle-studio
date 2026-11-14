@@ -1341,6 +1341,40 @@ describe("InfoPanel game loading and cancellation", () => {
     },
   );
 
+  test.each([
+    { key: "PageUp", gameNumber: 0, numGames: 5, dirty: false, tree: "clean" },
+    { key: "PageUp", gameNumber: 0, numGames: 5, dirty: true, tree: "dirty" },
+    { key: "PageDown", gameNumber: 4, numGames: 5, dirty: false, tree: "clean" },
+    { key: "PageDown", gameNumber: 4, numGames: 5, dirty: true, tree: "dirty" },
+  ])(
+    "$key at game $gameNumber of $numGames is a no-op on a $tree tree",
+    async ({ key, gameNumber, numGames, dirty }) => {
+      const origin = tabA.gameOrigin;
+      if (origin.kind !== "file") throw new Error("Paging fixture needs a file tab");
+      jotaiStore.set(tabsAtom, [
+        {
+          ...tabA,
+          gameOrigin: { ...origin, gameNumber, file: { ...origin.file, numGames } },
+        },
+        tabB,
+      ]);
+      if (dirty) treeStore.getState().setComment("Unsaved original comment");
+      await act(async () => root.render(renderPanel()));
+      const before = treeStore.getState();
+      const tab = jotaiStore.get(currentTabAtom);
+
+      await act(async () => {
+        press(key);
+      });
+
+      expect(mocks.loadFileGame).not.toHaveBeenCalled();
+      expect(treeStore.getState()).toBe(before);
+      expect(jotaiStore.get(currentTabAtom)).toBe(tab);
+      expect(document.body.textContent).not.toContain("Tab.UnsavedChanges");
+      expect(document.body.textContent).not.toContain("Tab.CloseWithoutSaving");
+    },
+  );
+
   test("successful setPage loads game and updates tab and tree state", async () => {
     const mockTree = defaultTree();
     mockTree.headers.event = "Next chapter";
