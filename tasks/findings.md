@@ -25954,3 +25954,20 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Fix:** charge a node only when its parent's score is known: track the parent's score per step (`parentScore = node.score ?? null` after each node, starting from `root.score ?? null`) and skip the CPL/accuracy push when it is null, instead of carrying the last seen score forward or falling back to `INITIAL_SCORE` (keep the fallback only if the root FEN is the standard start position, if at all). Add tests for an unscored interior node and an unscored set-up-position root.
 * **Related:** f-20260831-21 / d-20260910-09 (same "missing evaluation is not 0.00" principle, applied to `getAnnotation`).
 * **Found by:** Grok Bot general review
+
+---
+
+## 2026-11-14 — filed through the inbox spool
+
+### Opening Edit position at a root with a 4-field or stale-castling start FEN deletes the whole game without any edit
+
+* **ID:** f-20261114-11 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** data-loss
+* **Spotted outside diff:** yes (general review of pre-fork code, origin/master b5bee066a; the effect is unchanged since upstream merge-base 9654961d6)
+* **Where:** `src/components/panels/info/FenInput.tsx:79-97`: a mount/update `useEffect` rebuilds the castling rights from the derived checkboxes, computes `makeFen({ ...setup, castlingRights })` and calls `setFen(newFen)` whenever `newFen !== currentFen`. `setFen` (`src/state/store/tree.ts:439-445`) is `installRoot(state, defaultTree(fen).root)`, which replaces the root and drops every move. `FenInput` is rendered by `EditingCard` (`src/components/boards/EditingCard.tsx:24,40`) with the current node's FEN as soon as edit mode opens (`BoardAnalysis.tsx:381-384`, `BoardGame.tsx:1520`). The root FEN is stored as given: `defaultTree` only trims it (`src/utils/treeReducer.ts:140-159`), and `parsePGN` builds the tree with `defaultTree(fen)` from the `FEN` header (`src/utils/chess.ts:430`).
+* **Defect:** the effect is meant to apply checkbox changes, but it also fires on mount and treats any non-canonical spelling of the same position as a change. `makeFen` always writes six fields and only the castling rights chessops can attach to a real king and rook. A root FEN without the halfmove and fullmove counters (EPD style, `… w KQkq -`), or one that lists a castling right whose rook is gone, therefore differs from its own re-serialization, and merely opening the editor runs `setFen`. Node FENs below the root are produced by `makeFen(pos.toSetup())` and are canonical, so the trigger is the root.
+* **Failure scenario:** Open a PGN whose `[FEN]` tag is `rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -` (or `…/RNBQKBN1 w KQkq - 0 1`) with moves, stay on the start position and click Edit position without touching anything. All moves are gone and the tab is dirty; closing the editor does not bring them back.
+* **Proof:** Vitest probe in a `/tmp` `git archive` copy of origin/master b5bee066a, rendering the real `FenInput` (FenSearch mocked) against a real `createTreeStore()`: `setFen(start)`, `makeMoves(["e4","e5","Nc3"], mainline)`, `goToStart()`, render. 4-field start FEN: root children 1 → 0, root FEN rewritten to `… w KQkq - 0 1`. `RNBQKBN1 w KQkq - 0 1`: children 1 → 0, FEN rewritten to `w Qkq`. Control with the canonical 6-field start FEN: children stay 1. Probe removed afterwards.
+* **Fix:** remove the normalizing `useEffect`. The checkbox handlers (`setCastlingRights`) already write the changed rights, so derived state never needs pushing back on render. If canonical root FENs are wanted, canonicalize once where the root is created (`defaultTree`/`parsePGN`), not in a view effect. Add a test that renders `FenInput` at a root with a 4-field FEN and moves and expects the tree unchanged.
+* **Related:** d-20261021-17 (swapMove kept for FenInput's side-to-move select); f-20261106-31 (AnnotationEditor across a `setFen` root replacement).
+* **Found by:** Grok Bot general review
