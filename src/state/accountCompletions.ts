@@ -254,6 +254,7 @@ function createAccountObserver(store: Store): AccountObserver {
         },
         async run(request: AccountImportRequest) {
             live++;
+            if (!initialization) void initialize().then(refresh).catch(notifyListenerError);
             try {
                 const completion = await tauri.importAccountGames(request);
                 if (completion.outcome.state !== "running") {

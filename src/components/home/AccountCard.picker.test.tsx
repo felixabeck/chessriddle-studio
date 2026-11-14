@@ -997,3 +997,127 @@ test("a stale observer disposing after pagehide does not evict a newer observer 
   expect(store.get(databaseConversionStateAtom)).toEqual([]);
   expect(unlisten2).toHaveBeenCalledOnce();
 });
+
+test("runAccountImport with no surface ever observed subscribes, publishes conversion row, and disposes on terminal reply", async () => {
+  const response = deferred<AccountCompletion>();
+  mocks.importAccountGames.mockReturnValueOnce(response.promise);
+  snapshot = [completion("running", { importing: true })];
+
+  const caller = runAccountImport(store, request);
+  await vi.waitFor(() => {
+    expect(mocks.completionChanged).toHaveBeenCalledOnce();
+    expect(store.get(databaseConversionStateAtom)).toEqual([
+      expect.objectContaining({ id: "conversion:account-operation", targetDatabase: database }),
+    ]);
+  });
+
+  const terminal = completion("succeeded");
+  snapshot = [terminal];
+  await act(async () => {
+    response.resolve(structuredClone(terminal));
+    await caller;
+  });
+
+  expect(store.get(databaseConversionStateAtom)).toEqual([]);
+  expect(unlisten).toHaveBeenCalledOnce();
+});
+
+test("a stale running snapshot for a settled attempt does not block observer disposal when the last surface unmounts", async () => {
+  await renderCards();
+  const terminal = completion("succeeded");
+  mocks.importAccountGames.mockImplementationOnce(async () => {
+    snapshot = [terminal];
+    return structuredClone(terminal);
+  });
+  await act(async () => {
+    await runAccountImport(store, request);
+  });
+
+  mocks.pendingAccountCompletions.mockResolvedValueOnce([
+    completion("running", { attempt: 1, importing: true }),
+  ]);
+  await emitChanged();
+
+  await act(async () => root.render(null));
+  expect(unlisten).toHaveBeenCalledOnce();
+});
+
+test("a stale running snapshot after a settled acknowledged completion leaves accountCompletionsAtom absent", async () => {
+  await renderCards();
+  const terminal = completion("succeeded");
+  mocks.importAccountGames.mockImplementationOnce(async () => {
+    snapshot = [terminal];
+    return structuredClone(terminal);
+  });
+  await act(async () => {
+    await runAccountImport(store, request);
+  });
+  expect(store.get(accountCompletionsAtom).size).toBe(0);
+
+  mocks.pendingAccountCompletions.mockResolvedValueOnce([
+    completion("running", { attempt: 1, importing: true }),
+  ]);
+  await emitChanged();
+
+  expect(store.get(accountCompletionsAtom).size).toBe(0);
+});
+
+test("a mounted event-first import does not re-add an acknowledged completion when the caller settles", async () => {
+  await renderCards();
+  const response = deferred<AccountCompletion>();
+  mocks.importAccountGames.mockReturnValueOnce(response.promise);
+  const caller = runAccountImport(store, request);
+
+  const terminal = completion("succeeded");
+  snapshot = [terminal];
+  await emitChanged();
+  expect(store.get(accountCompletionsAtom).size).toBe(0);
+
+  await act(async () => {
+    response.resolve(structuredClone(terminal));
+    await caller;
+  });
+  expect(store.get(accountCompletionsAtom).size).toBe(0);
+});
+
+test("a delayed reply for op-1 does not overwrite a running op-2 for the same account key", async () => {
+  await renderCards();
+  const firstResponse = deferred<AccountCompletion>();
+  mocks.importAccountGames.mockReturnValueOnce(firstResponse.promise);
+  const firstCaller = runAccountImport(store, request);
+
+  const op2Running = completion("running", { id: "op-2", importing: true });
+  snapshot = [op2Running];
+  await emitChanged();
+  expect(store.get(accountCompletionsAtom).get("chesscom_felix")).toEqual(op2Running);
+
+  await act(async () => {
+    firstResponse.resolve(completion("succeeded", { id: "op-1" }));
+    await firstCaller;
+  });
+  expect(store.get(accountCompletionsAtom).get("chesscom_felix")).toEqual(op2Running);
+});
+
+test("readSnapshot keeps a terminal deletionPending completion after a reply-first settle with an empty atom", async () => {
+  await renderCards();
+  const response = deferred<AccountCompletion>();
+  mocks.importAccountGames.mockReturnValueOnce(response.promise);
+  let caught: unknown;
+  const caller = runAccountImport(store, request).catch((error) => {
+    caught = error;
+  });
+  await act(async () => {});
+  expect(store.get(accountCompletionsAtom).size).toBe(0);
+
+  const terminal = completion("failed", { deletionPending: true, committedDatabase: database });
+  snapshot = [terminal];
+  await act(async () => {
+    response.resolve(structuredClone(terminal));
+    await caller;
+  });
+  expect(caught).toMatchObject({ name: "TauriCommandError", message: "import failed" });
+  expect(store.get(accountCompletionsAtom).size).toBe(0);
+
+  await emitChanged();
+  expect(store.get(accountCompletionsAtom).get("chesscom_felix")).toEqual(terminal);
+});

@@ -1662,3 +1662,60 @@ test("overlapping same-key fetches keep the second fetch's progress map when the
   expect(displayedProgress()).toContain("65%");
   expect(container.querySelector("[data-testid='progress']")?.textContent).toBe("65");
 });
+
+test("aborting Bob at 80% by switching to a cached player clears Bob's progress so switching back shows 0%", async () => {
+  const { bobSession, aliceSession } = setupBobAndAlice();
+  getDefaultStore().set(sessionsAtom, [aliceSession, bobSession]);
+  mocks.query_players.mockImplementation(async (_file, query) => ({
+    data: [{ id: 7, name: query.name, elo: null }],
+    count: 1,
+  }));
+  mocks.getPlayersGameInfo.mockImplementation(
+    (_progress, file, _id, options: { signal: AbortSignal }) => {
+      if (file.id.id === "db-2") {
+        return Promise.resolve({
+          site_stats_data: [
+            { site: "Chess.com", player: "alice", daily: [], colors: [], latest: [], openings: [] },
+          ],
+        });
+      }
+      return new Promise((_resolve, reject) => {
+        options.signal.addEventListener(
+          "abort",
+          () => reject(new DOMException("Cancellation", "AbortError")),
+          { once: true },
+        );
+      });
+    },
+  );
+
+  await renderDatabases();
+  await vi.waitFor(() => expect(container.textContent).toContain("player-card Alice"));
+
+  await act(async () => {
+    mocks.setName?.("Bob");
+  });
+  await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(2));
+  const bobProgressId = mocks.getPlayersGameInfo.mock.calls[1][0] as string;
+
+  await act(async () => {
+    progressListener(progressEvent(bobProgressId, 80));
+  });
+  expect(displayedProgress()).toContain("80%");
+
+  // Abort Bob by switching back to Alice, whose summary is already cached in SWR (no fetcher runs).
+  await act(async () => {
+    getDefaultStore().set(sessionsAtom, [aliceSession]);
+  });
+  await vi.waitFor(() => expect(container.textContent).toContain("player-card Alice"));
+  expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(2);
+
+  // Switch back to Bob: processing view must show 0%, not 80%.
+  await act(async () => {
+    getDefaultStore().set(sessionsAtom, [aliceSession, bobSession]);
+  });
+  expect(container.textContent).toContain("Home.Databases.ProcessingGames");
+  expect(displayedProgress()).toContain("0%");
+  expect(displayedProgress()).not.toContain("80%");
+  expect(container.querySelector("[data-testid='progress']")?.textContent).toBe("0");
+});
