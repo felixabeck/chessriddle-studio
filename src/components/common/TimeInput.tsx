@@ -4,6 +4,9 @@ import { match } from "ts-pattern";
 import type { GoMode } from "@/bindings";
 
 export type TimeType = "ms" | "s" | "m" | "h";
+// Native GoMode::validate rejects a zero time.
+const EMPTY_FIELD_MS = 1;
+
 function TimeInput({
   value,
   setValue,
@@ -18,9 +21,11 @@ function TimeInput({
   onTypeChange?: (type: TimeType) => void;
 }) {
   const [internalTimeType, setInternalTimeType] = useState<TimeType>(defaultType ?? "ms");
+  const [draft, setDraft] = useState<string | number | null>(null);
 
   const timeType = type ?? internalTimeType;
   const handleTypeChange = (newType: TimeType) => {
+    setDraft(null);
     if (onTypeChange) {
       onTypeChange(newType);
     } else {
@@ -68,16 +73,19 @@ function TimeInput({
         />
       }
       rightSectionWidth={"30%"}
-      value={displayedValue}
+      value={draft ?? displayedValue}
+      onBlur={() => setDraft(null)}
       onChange={(v) => {
+        setDraft(v);
         if (typeof v === "number") {
           setValue({ t: "Time", c: toMilliseconds(v) });
           return;
         }
         if (v === "") {
-          setValue({ t: "Time", c: 1 });
+          setValue({ t: "Time", c: EMPTY_FIELD_MS });
           return;
         }
+        // Mantine passes intermediate text such as "1." or "0.0" as a string.
         const parsed = Number(v);
         if (Number.isFinite(parsed)) {
           setValue({ t: "Time", c: toMilliseconds(parsed) });
