@@ -24133,7 +24133,7 @@ Handled in 1ab8c70cc. `changeCompletion` keeps `timeSpent` undefined for an atte
 
 ### The ChessRiddle account card keeps "Disconnected locally" removal warnings after the user reconnects
 
-* **ID:** f-20261112-20 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-20 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** ux
 * **Spotted outside diff:** general review chunk 5 (Felix t40u) at HEAD `e26ab3d0d` (file identical on origin/master `ba81d9264`), ChessRiddle account card pass
 * **Where:** `src/components/home/ChessRiddleAccountCard.tsx`: `removed` is set only in the disconnect branch of `run` (~60, `setRemoved(outcome.status === "removed" ? outcome : null)`) and is never cleared by a later connect or refresh; the alerts at ~182-191 render from `removed?.revocation_pending` / `removed?.durability_uncertain` regardless of the current `status`. The existing test "disconnect follows native status and independently shows flags" intentionally keeps the warning across a Refresh while still disconnected; no test covers a subsequent connect.
@@ -24147,6 +24147,10 @@ Handled in 1ab8c70cc. `changeCompletion` keeps `timeSpent` undefined for an atte
 
 * **Path fix (Grok Bot):** the persistent card is rendered from `src/components/home/AccountsPage.tsx` (~18), not `Accounts.tsx`.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"44ef42d6bbc057f082e41236320532587f3d53d361fbe6385f0fabfe975d6c29","input_sha256":"b01d03d8b4e55379690c2dcbd4a5f8ca08c0301499232d10f6a2ec135e6125d9","kind":"mutation-receipt","operation":"2d48ed29319f2bef27b91cc1261c2e9672e9c32289f5a6d355b6c439778d073c","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-20"],"target":"f-20261112-20","v":1} -->
+
+* **Handled (drain d1bbe148, 2026-11-14):** `ChessRiddleAccountCard.tsx` clears the removal outcome once a connect, or the connect's reconcile read after a failure, yields a `connected` status for the current view (`bffdeecd7`). Refresh, the disconnect's own status read and a failed connect that stays disconnected keep the warnings, because a non-durable removal can still read connected and the server session is still active after a failed connect. Three card tests cover successful connect, failed connect staying disconnected, and failed connect reconciling as connected. Two of them go red with the source change stashed.
+  * **Rejected:** clearing `removed` in `accept` for every connected read, which would hide `RemovalDurabilityUncertain` exactly when the post-disconnect read shows the credential survived; gating the alerts on `status`, which would hide the same case.
+<!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"080f1453b77aed660ea25f7ac1fee7f4060d24923909a385267b97f71eabf9d5","header_sha256":"5f6c779387f7c16d7be2812d9d47936a02a39383db0511a599520d9fcb16e6f9","header_status":"handled","input_sha256":"88d0721827dd25a770ceaa766284db52d4a2e5e989ee99da9b42013ea0d87e9b","kind":"mutation-receipt","operation":"1f283d7f37a09b846ddbb6b664a98d828e78f431e1d9d4a0b727a8312b207824","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-20"],"target":"f-20261112-20","v":1} -->
 
 ---
 
