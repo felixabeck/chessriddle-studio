@@ -25764,3 +25764,20 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Proof:** Vitest probe in a `/tmp` `git archive` copy of origin/master (f3b063a85), same mocks as `RepertoireMinGamesSetting.test.tsx` but with `useAtom` backed by a real `useState(7)`: typing `5` → preset `custom`, input shown; `50` → preset `standard`, input gone; `500` → no input to type into, preset stays `standard`. Probe removed afterwards.
 * **Related:** -
 * **Found by:** Grok Bot general review
+
+---
+
+## 2026-11-14 — filed through the inbox spool
+
+### Engine upgrade modal reopened while its download still runs shows a Cancel button that does nothing
+
+* **ID:** f-20261114-08 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** yes (general review, origin/master 35ff5f24a)
+* **Where:** `src/components/engines/UpgradeEngineModal.tsx:38-43` (`cancel()` only acts through the per-instance `active` ref, which starts `null` in a new mount) and `:165-171` (`onCancel={committing ? undefined : active || hasJob ? cancel : () => cancelDownloadJob(id, …)}`). `hasJob` comes from `useDownloadJob(id)`, i.e. the module-level `jobs` map in `src/hooks/downloadJobs.ts` (`runDownloadJob`, `useDownloadJob`), which outlives the component. The modal is also closed through the same `cancel()` (`:62-65`).
+* **Defect:** when the job was started by an earlier mount, `active` is false but `hasJob` is true, so the card gets `cancel`, and `cancel()` returns without doing anything because `active.current` is `null`. The working branch `() => cancelDownloadJob(id, …)` is only chosen when no local job exists. `ProgressButton.handleCancel` then calls `fence(null)` and the no-op `setInProgress`, so the bar stays and the download keeps running.
+* **Failure scenario:** Engines → an engine → Upgrade → Install on a catalog card. While it downloads, use File → New tab (native menu or its shortcut; `__root.tsx` `createNewTab` → `createNewTabFromMenu` navigates to `/` without consulting open modals). EnginesPage unmounts and the job continues. Go back to Engines, open Upgrade for the same engine: the card shows Downloading with a Cancel button. Clicking Cancel, or closing the modal, does nothing. The download finishes and the upgrade is applied against the user's explicit cancel.
+* **Fix:** have the card's cancel always target the job by id when this instance does not own it (`active ? cancel : () => cancelDownloadJob(id, …)`), or make `cancel()` fall back to `cancelDownloadJob(progressId)` for the pending card's id. Keep the "succeeded → no cancel" guard. Add a test that mounts with `useDownloadJob` true and expects `cancelDownloadJob` on Cancel.
+* **Proof:** Vitest probe in a `/tmp` `git archive` copy of origin/master 35ff5f24a, built on `UpgradeEngineModal.test.tsx`'s mocks with `useDownloadJob` returning a mutable flag and the card mock exposing `onCancel`. (1) Mount with `hasJob=true` and click Cancel: `cancelDownloadJob` is not called (test passes). (2) Control: in the instance that clicked Install, Cancel calls `cancelDownloadJob(progressId, "Common.Error")` once. Probe removed afterwards.
+* **Related:** -
+* **Found by:** Grok Bot general review
