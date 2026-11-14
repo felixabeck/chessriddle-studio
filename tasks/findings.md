@@ -26158,3 +26158,20 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Fix:** give the three card keys the collection generation as well (`useCollectionCurrency(file)` → `currency.collection?.generation ?? null`, as `useLocalExplorer` does), or have the facade record the collection's `database` handle (from the command result or the collection record) for the four linked-collection writers. Test: a linked edit followed by a remount of PlayerCard/TournamentCard refetches.
 * **Related:** f-20261112-39 (handled by 30ce3fd79; this is the linked-collection half it did not cover), 2873b8abe (personal statistics refetch, same mechanism).
 * **Found by:** Grok Bot priority-2 review
+
+---
+
+## 2026-11-15 — filed through the inbox spool
+
+### Database import turns Latin-1 PGN names into U+FFFD and merges distinct players and events
+
+* **ID:** f-20261115-01 · **Status:** open · **Area:** pgn-import · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** data-loss
+* **Spotted outside diff:** yes (cross-cutting locale sweep, old upstream importer)
+* **Where:** `src-tauri/src/db/mod.rs` `Importer::header` decodes White, Black, Round, TimeControl and ECO with `RawHeader::decode_utf8_lossy` and Event, Site and Date with `String::from_utf8_lossy`; `read_import_games` feeds the raw file bytes (`decompressing_reader`) to the vendored pgn-reader with no encoding check; `db/ops.rs` `create_player` is `INSERT OR IGNORE` on `Players.Name UNIQUE` and then selects by that name (events likewise by name and year). The same lossy decode is used by the linked-collection indexer (`db/linked_collections.rs`). The file library, by contrast, refuses such files ("PGN is not valid UTF-8", `pgn.rs`).
+* **Defect:** the PGN standard (section 4.1) specifies ISO 8859-1, and many older PGN files and ChessBase/Windows exports are Latin-1/Windows-1252. Importing one into a database silently replaces every non-ASCII byte with U+FFFD. Names that differ only in such a byte collapse to the same string, so the UNIQUE player (and event) row is shared: different players are merged into one player with combined games, statistics and Elo, and the original spelling is unrecoverable from the database and from its PGN export.
+* **Failure scenario:** a Latin-1 PGN with games of "Müller" and "Möller" (or "Réti"/"Rèti", "Jürgen"/"Jørgen") is added via Databases → Add database (convertPgn) or imported into an existing database. Both players appear as one "M�ller" with all games under one ID; player cards, leaderboards, opening trees and player search show the merged record, and searching "Müller" finds nothing. No warning is shown.
+* **Proof:** scratch crate under /tmp depending on the vendored `src-tauri/vendor/pgn-reader` by path, visitor using the same `decode_utf8_lossy` call as `Importer::header`, input bytes `M\xFCller`, `M\xF6ller`, `R\xE9ti`: decoded to `"M\u{FFFD}ller"` (bytes 4d ef bf bd 6c 6c 65 72) for both players and `"R\u{FFFD}ti"`; `names[0] == names[2]` printed `true`. Code trace: `read_import_games` → `Importer::header` → insert path → `create_player` (`insert_or_ignore_into(players)` + `filter(players::name.eq(name))`), schema `Players (… Name TEXT UNIQUE …)`.
+* **Fix:** decode each header/comment value as UTF-8 and, when it is not valid UTF-8, fall back to Windows-1252/ISO 8859-1 (what SCID, ChessBase and lichess's importer do), applied in the shared decode used by the importer and the linked-collection indexer; or, minimally, refuse the import with the same "not valid UTF-8" error the file library gives instead of writing replacement characters. Test: import the two-game Latin-1 fixture above and assert two distinct players named "Müller" and "Möller".
+* **Related:** f-entries on `RawHeader::decode` escapes (quote/backslash handling, fixed in 0a8392d7) touch the same decode path but not encoding; d-20261108-19 (events keyed by name and year) makes event merging follow from the same collision.
+* **Found by:** Grok Bot cross-cutting locale sweep
