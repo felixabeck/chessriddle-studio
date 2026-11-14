@@ -24737,7 +24737,7 @@ Handled in 8730cd25a. `ToggleButtonGroup` now gives every option `aria-label={op
 
 ### TimeInput rounds the shown value to a whole unit, so after a unit switch the field shows a time the clock will not use
 
-* **ID:** f-20261112-47 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-47 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/common/TimeInput.tsx:31-36,39-43` (`displayedValue = value / 1000 / 60` etc., rendered by a `NumberInput` with `allowDecimal={false}`, which Mantine formats with zero decimals; `decimalScale={2}` has no effect); unit changes (`:23-29`, OpponentForm `:126-131,157-162`) only switch the unit and keep the stored milliseconds. Callers: OpponentForm Time / Increment, and GoModeInput's engine time limit.
@@ -24746,6 +24746,12 @@ Handled in 8730cd25a. `ToggleButtonGroup` now gives every option `aria-label={op
 - **Fix:** either convert the stored value when the unit changes and allow decimals (`allowDecimal` with `decimalScale={2}`), or show the exact value (for example `1.5` or `0.5`) instead of rounding. Add a TimeInput test for 30 000 ms shown in minutes.
 - **Proof:** ephemeral Vitest rendering `TimeInput` with fixed `type`: the input read `2` for 90 000 ms in `m`, `1` for 30 000 ms in `m`, `3` for 2500 ms in `s` and `2` for 1500 ms in `s`. Code trace confirms the unit change keeps `value`. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 22)
+- **Handled (2026-11-15, drain session 6366db9e-641e-4631-b518-d1678c6702ec):** TimeInput now shows the exact stored time in the selected unit and accepts decimals: `allowDecimal={false}` removed, `decimalScale={3}` (millisecond precision in seconds). Intermediate decimal text that Mantine passes as a string (`"1."`, `"0.0"`) is converted instead of collapsing to 1 ms; the empty field still stores 1 ms (`EMPTY_FIELD_MS`, f-20261106-27). A local draft keeps the typed text until blur or a unit change, because GoModeInput clamps every limit to at least 1 ms and the controlled field otherwise jumped from "0" to "0.001" mid-typing. Stored milliseconds stay unchanged on a unit switch (no silent re-rounding of the clock).
+- **Commits:** d4397f7b0 (fix), b6aa511c7 (draft + keystroke/precision tests), 91ee4fc4c (unit-change test).
+- **Proof:** new `src/components/common/TimeInput.test.tsx` renders the real Mantine NumberInput: 30 000 ms in m reads "0.5", 2500 ms in s reads "2.5", 1 ms in s "0.001", 180 000 ms in h "0.05", keystroke typing "1"/"1."/"1.5", clamped "0"/"0."/"0.5" in s, unit change m→s after typing shows "90"; each was seen red on revert. Ephemeral Playwright container probe on the Play tab: 1.5 m switched to s showed 90, 2.5 s switched to m showed 0.042, mirrored to Black; probe removed.
+- **Rejected:** converting the stored value to a whole unit on a unit switch — it would silently change the clock the user set.
+- **Review:** Grok lenses correctness, root-cause, tests, code-quality, minimalism (round 1); correctness, tests, root-cause (round 2); tests (round 3 closure) — all APPROVED at the end.
+<!-- ledger-meta {"command":"close","effect_lines":5,"effect_sha256":"7a6e619e04a523371dd005bbd73da6bed8eec862eea52a58a03b5d972ab3cf01","header_sha256":"581ce4a5645412533c30e603bd116f07198e7f1deca2843f539a012d344f0f91","header_status":"handled","input_sha256":"b9bae6b7aa7496937b65f25eb20b313d3abfa99c0a8167173c1416b3cd707302","kind":"mutation-receipt","operation":"c2e7b5098cc9531d80664b232eb16e14254229a3c9741b92059dfb409bcbb089","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-47"],"target":"f-20261112-47","v":1} -->
 
 ---
 
