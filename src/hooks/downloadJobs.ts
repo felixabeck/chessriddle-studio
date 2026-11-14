@@ -217,10 +217,6 @@ export async function cancelDownloadJob(
     throw downloadCancelError("lost");
 }
 
-export function hasDownloadJob(progressId: string): boolean {
-    return jobs.has(progressId);
-}
-
 export function useDownloadJob(progressId: string): boolean {
     return useSyncExternalStore(
         (listener) => {
@@ -228,5 +224,15 @@ export function useDownloadJob(progressId: string): boolean {
             return () => subscribers.delete(listener);
         },
         () => jobs.has(progressId),
+    );
+}
+
+export function useRunningDownloadJob(progressIds: readonly string[]): string | null {
+    return useSyncExternalStore(
+        (listener) => {
+            subscribers.add(listener);
+            return () => subscribers.delete(listener);
+        },
+        () => progressIds.find((id) => jobs.has(id)) ?? null,
     );
 }

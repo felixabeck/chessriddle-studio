@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   pending: undefined as { completion: EngineCompletion; applying: boolean } | undefined,
   catalogError: undefined as unknown,
   hasJob: false,
+  catalogs: [] as DefaultEngine[],
 }));
 vi.mock("@/state/catalogEngineCompletion", () => ({
   installCatalogEngineJob: mocks.installJob,
@@ -18,14 +19,15 @@ vi.mock("@/state/catalogEngineCompletion", () => ({
 }));
 vi.mock("@/hooks/downloadJobs", () => ({
   useDownloadJob: () => mocks.hasJob,
-  hasDownloadJob: () => mocks.hasJob,
+  useRunningDownloadJob: (ids: readonly string[]) =>
+    mocks.hasJob ? (ids.find((id) => id === progressId) ?? null) : null,
   cancelDownloadJob: mocks.cancel,
 }));
 vi.mock("@/utils/files", () => ({ usePlatform: () => ({ os: "linux" }) }));
 vi.mock("@/utils/engines", async (original) => ({
   ...(await original<typeof import("@/utils/engines")>()),
   useDefaultEngines: () => ({
-    defaultEngines: [catalog],
+    defaultEngines: mocks.catalogs,
     error: mocks.catalogError,
     isLoading: false,
   }),
@@ -124,6 +126,7 @@ beforeEach(() => {
   mocks.pending = undefined;
   mocks.catalogError = undefined;
   mocks.hasJob = false;
+  mocks.catalogs = [catalog];
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -136,7 +139,8 @@ const render = async (engine = old) =>
   act(async () =>
     root.render(<UpgradeEngineModal engine={engine} opened setOpened={() => undefined} />),
   );
-const installButton = () => host.querySelector<HTMLButtonElement>('[data-testid="install"]');
+const installButton = (index = 0) =>
+  host.querySelectorAll<HTMLButtonElement>('[data-testid="install"]')[index] ?? null;
 const click = async () => act(async () => installButton()!.click());
 
 test("submits the immutable engine target and becomes current after full application", async () => {
@@ -259,4 +263,21 @@ test("closing does not cancel when a succeeded completion is pending", async () 
   await render();
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="close"]')!.click());
   expect(mocks.cancel).not.toHaveBeenCalled();
+});
+
+test("closing does not cancel when no job is running", async () => {
+  await render();
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="close"]')!.click());
+  expect(mocks.cancel).not.toHaveBeenCalled();
+});
+
+test("a remounted modal disables other cards while an inherited job runs", async () => {
+  mocks.catalogs = [catalog, { ...catalog, downloadLink: "https://example.com/other.zip" }];
+  mocks.hasJob = true;
+  await render();
+  const other = installButton(1);
+  expect(other).not.toBeNull();
+  expect(other!.disabled).toBe(true);
+  await act(async () => other!.click());
+  expect(mocks.installJob).not.toHaveBeenCalled();
 });

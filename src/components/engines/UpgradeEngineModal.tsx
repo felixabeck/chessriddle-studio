@@ -4,7 +4,7 @@ import { useStore } from "jotai";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import AppModal from "@/components/common/AppModal";
-import { cancelDownloadJob, hasDownloadJob, useDownloadJob } from "@/hooks/downloadJobs";
+import { cancelDownloadJob, useDownloadJob, useRunningDownloadJob } from "@/hooks/downloadJobs";
 import {
   installCatalogEngineJob,
   usePendingEngineCompletion,
@@ -37,17 +37,23 @@ export default function UpgradeEngineModal({
   const { defaultEngines, error, isLoading } = useDefaultEngines(os, opened);
   const store = useStore();
   const pending = usePendingEngineCompletion(null, engine.id);
+  const progressIds =
+    defaultEngines?.flatMap((c) =>
+      c.downloadLink ? [upgradeProgressId(engine.id, c.downloadLink)] : [],
+    ) ?? [];
+  const runningId = useRunningDownloadJob(progressIds);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [upgradedLink, setUpgradedLink] = useState<string | null>(null);
   const active = useRef<string | null>(null);
 
-  async function cancel(progressId: string | null = active.current) {
+  async function cancel(progressId: string | null) {
     if (pending?.completion.outcome.state === "succeeded") return;
     if (progressId) return cancelDownloadJob(progressId, t("Common.Error"));
   }
 
   async function upgrade(catalog: DefaultEngine, progressId: string) {
     if (active.current) return;
+    if (runningId !== null && runningId !== progressId) return;
     active.current = progressId;
     setActiveId(progressId);
     try {
@@ -64,12 +70,7 @@ export default function UpgradeEngineModal({
     <AppModal
       opened={opened}
       onClose={() => {
-        const inheritedId = defaultEngines
-          ?.map((catalog) =>
-            catalog.downloadLink ? upgradeProgressId(engine.id, catalog.downloadLink) : null,
-          )
-          .find((id): id is string => id !== null && hasDownloadJob(id));
-        void cancel(active.current ?? inheritedId ?? null)?.catch(() => undefined);
+        void cancel(active.current ?? runningId)?.catch(() => undefined);
         setOpened(false);
       }}
       title={t("Engines.Upgrade.Title")}
@@ -104,6 +105,7 @@ export default function UpgradeEngineModal({
                   current={catalog.downloadLink === (upgradedLink ?? engine.downloadLink)}
                   busy={
                     activeId !== null ||
+                    (runningId !== null && runningId !== id) ||
                     Boolean(pending && pending.completion.request.progressId !== id)
                   }
                   active={activeId === id}
