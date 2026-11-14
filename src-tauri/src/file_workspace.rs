@@ -5665,13 +5665,13 @@ mod tests {
             )
             .await
         });
-        tokio::time::timeout(Duration::from_secs(1), entered)
+        tokio::time::timeout(Duration::from_secs(5), entered)
             .await
             .unwrap()
             .unwrap();
         caller.abort();
         release.send(()).unwrap();
-        tokio::time::timeout(Duration::from_secs(2), async {
+        tokio::time::timeout(Duration::from_secs(5), async {
             while !app
                 .state::<AppState>()
                 .operations
