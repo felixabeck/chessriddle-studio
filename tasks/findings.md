@@ -26022,3 +26022,20 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Fix:** disable the symbol buttons (and the annotation hotkeys) while the current node is the root, or route a root assessment to a place PGN can carry (for example the first move, or a `{ }` comment). Test: at `position []` the buttons are disabled and `setAnnotation` leaves `root.nags` unchanged.
 * **Related:** f-20261102-08 (handled; the reader now reports root NAGs as a loss on open, but the editor can still create them).
 * **Found by:** Grok Bot general review
+
+---
+
+## 2026-11-14 — filed through the inbox spool
+
+### During repertoire practice, Arrow Down, Shift+Arrow Down, Shift+Arrow Right or "Go to end" jump the board past the card and show the answer
+
+* **ID:** f-20261114-15 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** yes (general review of pre-fork code, origin/master 69856f2ea; `goToEnd`, `goToBranchEnd`, `nextBranching`, `nextBranch` and `previousBranch` are upstream code that the later drill guard did not reach)
+* **Where:** `src/state/store/tree.ts:447-461` (`goToNext` refuses to advance at or past `practicePath`, d-20260923-04/-05) versus the unguarded `goToEnd` (560-571), `goToBranchEnd` (602-612, reached from `goToBranchEndOrNextLine` 614-620 whenever the current node has children; only its next-line half checks `practicePath`), `nextBranching` (671-685) and `nextBranch`/`previousBranch` (626-669). They are bound in `src/components/common/MoveControls.tsx:85-120` (defaults in `src/state/keybinds.ts:27-35`: ArrowDown, Shift+ArrowDown, Shift+ArrowRight, C/Shift+C) and on its visible buttons, and `MoveControls` stays mounted during practice (`src/components/boards/BoardAnalysis.tsx:404`) while the practice panel hides the notation (`PracticePanel.tsx` `setInvisible(true)`).
+* **Defect:** The practice drill relies on `practicePath` to stop navigation from revealing the card's answer (d-20260923-04: "the only thing stopping goToNext from revealing the answer"; d-20261021-05 rejected letting "ordinary arrows disclose the answer"). Only `goToNext` (Arrow Right) honours it. The other forward navigation actions walk the tree's first children freely, so the board jumps to the answer move and the rest of the line.
+* **Failure scenario:** A White repertoire 1.e4 e5 2.Nf3 Nc6 is being practised and the card asks for White's move after 1.e4 e5 (notation blurred, Arrow Right correctly does nothing). Pressing Arrow Down (the default "Go to end of branch"), Shift+Arrow Down, Shift+Arrow Right or the "Go to end" button moves the board to the end of the line, showing 2.Nf3 (and everything after it) before the user has answered. The user has seen the answer before answering the card.
+* **Proof:** Vitest probe on atlas (throwaway config and test under /tmp, scoped to the one probe file, deleted): a store with mainline e4 e5 Nf3 Nc6, cursor `[0]` and `setPracticePath([0])`. `goToNext()` stayed at `[0]`; `goToBranchEndOrNextLine()`, `goToEnd()` and `nextBranching()` each moved to `[0,0,0,0]` (Nc6).
+* **Fix:** apply the drill guard to every forward or sideways navigation action while `practicePath !== null`: refuse moves that leave the prefix of `practicePath` or go past its end (`goToEnd`, `goToBranchEnd`, `nextBranching`, `nextBranch`/`previousBranch`). Backward moves (`goToPrevious`, `goToStart`, `goToBranchStart`, `previousBranching`) can stay. Test: with a practice path set, each of these actions leaves `position` unchanged at the frontier.
+* **Related:** d-20260923-04, d-20260923-05 (the `goToNext` drill guard), d-20261021-05 (rejected arrows disclosing the answer), f-20261011-10 (incorrect-answer reveal), the 2026-11-10 build-ledger entry for Arrow Down at a line end (kept the practice refusal for the next-line half only).
+* **Found by:** Grok Bot general review
