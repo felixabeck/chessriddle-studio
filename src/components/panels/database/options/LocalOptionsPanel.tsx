@@ -3,7 +3,6 @@ import {
   Box,
   Button,
   Group,
-  RangeSlider,
   SegmentedControl,
   Select,
   SimpleGrid,
@@ -20,10 +19,11 @@ import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Chessground } from "@/chessground/Chessground";
 import PiecesGrid from "@/components/boards/PiecesGrid";
+import { EloRangeSlider } from "@/components/common/EloRangeSlider";
 import { PlayerSearchInput } from "@/components/databases/PlayerSearchInput";
 import { localOptionsFamily } from "@/state/atoms";
 import type { DatabaseHandle } from "@/bindings";
-import { databaseHandleKey, ELO_FILTER_MAX, getEffectiveLocalPlayer } from "@/utils/db";
+import { databaseHandleKey, getEffectiveLocalPlayer } from "@/utils/db";
 
 const YEAR_PRESETS = [1, 3, 5, 10];
 
@@ -49,7 +49,6 @@ function LocalOptionsPanel({
   };
 
   const [selectedPiece, setSelectedPiece] = useState<Piece | null>(null);
-  const [eloDraft, setEloDraft] = useState<[number, number] | null>(null);
   const [resultDropdownOpened, setResultDropdownOpened] = useState(false);
 
   return (
@@ -183,24 +182,11 @@ function LocalOptionsPanel({
         <Text c="dimmed" fz="xs">
           {t("Board.Database.Local.Elo.BothPlayers")}
         </Text>
-        <RangeSlider
+        <EloRangeSlider
           thumbFromLabel={t("Board.Database.Local.Elo.Min")}
           thumbToLabel={t("Board.Database.Local.Elo.Max")}
-          step={10}
-          min={0}
-          max={ELO_FILTER_MAX}
-          marks={[
-            { value: 1000, label: String(1000) },
-            { value: 2000, label: String(2000) },
-            { value: ELO_FILTER_MAX, label: String(ELO_FILTER_MAX) },
-          ]}
-          value={eloDraft ?? options.elo ?? [0, ELO_FILTER_MAX]}
-          onChange={setEloDraft}
-          onChangeEnd={(value) => {
-            // Commit once per drag so the search does not rerun on every tick.
-            setEloDraft(null);
-            setOptions((q) => ({ ...q, elo: value }));
-          }}
+          value={options.elo}
+          onCommit={(value) => setOptions((q) => ({ ...q, elo: value }))}
         />
       </Stack>
 

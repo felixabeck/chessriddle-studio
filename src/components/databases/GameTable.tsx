@@ -1,13 +1,4 @@
-import {
-  Box,
-  Collapse,
-  Flex,
-  Group,
-  InputWrapper,
-  RangeSlider,
-  Select,
-  Stack,
-} from "@mantine/core";
+import { Box, Collapse, Flex, Group, InputWrapper, Select, Stack } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import { useHotkeys } from "@mantine/hooks";
 import { EllipsisVertical } from "lucide-react";
@@ -20,12 +11,13 @@ import { useTranslation } from "react-i18next";
 import useSWR from "swr";
 import { useStore } from "zustand";
 import type { GameSort, NormalizedGame, Outcome } from "@/bindings";
+import { EloRangeSlider } from "@/components/common/EloRangeSlider";
 import { IconAction } from "@/components/common/IconAction";
 import { gameRowActivation, useGameOpen } from "@/components/common/gameOpen";
 import { inlineFailureMessage, notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { addRecentFileAtom, tabsAtom } from "@/state/atoms";
-import { ELO_FILTER_MAX, query_games, sameDatabaseHandle } from "@/utils/db";
+import { query_games, sameDatabaseHandle } from "@/utils/db";
 import { runTabCreation } from "@/utils/tabs";
 import { openDatabaseGame } from "@/utils/databaseGame";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
@@ -161,32 +153,16 @@ function GameTable() {
               <Stack mt="md">
                 <Group grow>
                   <InputWrapper label="ELO">
-                    <RangeSlider
-                      step={10}
-                      min={0}
-                      max={ELO_FILTER_MAX}
-                      marks={[
-                        { value: 1000, label: String(1000) },
-                        { value: 2000, label: String(2000) },
-                        { value: ELO_FILTER_MAX, label: String(ELO_FILTER_MAX) },
-                      ]}
-                      value={query.range1 ?? undefined}
-                      onChangeEnd={(value) => setQuery({ ...query, range1: value })}
+                    <EloRangeSlider
+                      value={query.range1}
+                      onCommit={(value) => setQuery({ ...query, range1: value })}
                     />
                   </InputWrapper>
 
                   <InputWrapper label="ELO">
-                    <RangeSlider
-                      step={10}
-                      min={0}
-                      max={ELO_FILTER_MAX}
-                      marks={[
-                        { value: 1000, label: String(1000) },
-                        { value: 2000, label: String(2000) },
-                        { value: ELO_FILTER_MAX, label: String(ELO_FILTER_MAX) },
-                      ]}
-                      value={query.range2 ?? undefined}
-                      onChangeEnd={(value) => setQuery({ ...query, range2: value })}
+                    <EloRangeSlider
+                      value={query.range2}
+                      onCommit={(value) => setQuery({ ...query, range2: value })}
                     />
                   </InputWrapper>
                 </Group>
