@@ -25609,3 +25609,20 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Proof:** a completed green `rust-macos-test` on `7fdf4d564` or a later master commit.
 * **Related:** f-20261110-03 (same symptom, closed as runner infrastructure).
 * **Found by:** Claude Code, `pnpm ci:remote:check` before the f-20261112-82 drain push, drain session 5867a492-0964-4b01-92ca-9dbfd502f1ef.
+
+---
+
+## 2026-11-14 — filed through the inbox spool
+
+### Switching back to a player whose personal-summary fetch was aborted shows "Failed" next to the processing view
+
+* **ID:** f-20261114-01 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Filed from:** e5f1087c-0110-4c22-a7c9-dab757ea1c9f
+* **Impact class:** ux
+* **Spotted outside diff:** yes (observed by the f-20261112-21 repair leaf, 2026-11-14)
+* **Where:** `src/components/home/Databases.tsx` `const loadError = databasesError ?? error;` (~line 291) and the `{loadError && <Text>{t("Home.Databases.Failed.Title")}</Text>}` branch; `src/hooks/useNativeRequestOwner.ts` ~119/~135 rejects a superseded run with `DOMException("Cancellation", "AbortError")`.
+* **Defect:** when the selected player changes while that player's personal-summary fetch is running, `useNativeRequestOwner` supersedes the run and the fetcher rejects with `AbortError`. SWR caches that rejection as the key's `error`. When the user switches back, SWR revalidates (no data cached) and `isLoading` is true, but `error` still holds the AbortError, so the panel renders "Processing games" and the "Failed" title at the same time until the new fetch settles. Nothing filters cancellation out of `loadError`.
+* **Failure scenario:** Accounts page with players Bob and Alice; Alice's summary already loaded. Select Bob and switch to Alice before Bob's summary finishes, then switch back to Bob. The statistics panel shows the processing view and the "Failed" text together while Bob's summary reloads.
+* **Fix:** do not surface a cancellation as a load failure: ignore `AbortError`/cancellation errors in `loadError` (the codebase already has `errorUnlessCancelled`), or keep SWR from storing a superseded run's rejection. Check the other `useNativeRequestOwner` + SWR callers for the same display, and add a Databases test asserting no "Failed" text after an aborted fetch is resumed.
+* **Proof:** observed in the Vitest test `aborting Bob at 80% by switching to a cached player clears Bob's progress so switching back shows 0%` (`src/components/home/Databases.test.tsx`, commit d0613174b): the rendered text was `Home.Databases.ProcessingGames…0%Home.Databases.Failed.Title`. Not yet reproduced in the real app.
+* **Found by:** next-finding drain session e5f1087c (f-20261112-21 repair round 3). Related: f-20261112-21 (progress identity in the same view, handled; different cause).
