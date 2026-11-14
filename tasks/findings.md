@@ -24759,7 +24759,7 @@ Handled in 8730cd25a. `ToggleButtonGroup` now gives every option `aria-label={op
 
 ### The current move in the notation is marked only by colour, with no aria-current for assistive technology
 
-* **ID:** f-20261112-48 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-48 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/common/MoveCell.tsx:80-110` (`isCurrentVariation` only changes the `--dark-bg`/`--light-bg` CSS variables on the move `<button>`; no ARIA attribute); `src/components/common/CompleteMoveCell.tsx:113,158-161` (the current state is computed and written only as `data-notation-current` on the wrapper span). `git grep 'aria-'` finds no ARIA attribute in MoveCell.tsx, CompleteMoveCell.tsx or GameNotation.tsx.
@@ -24768,6 +24768,9 @@ Handled in 8730cd25a. `ToggleButtonGroup` now gives every option `aria-label={op
 - **Fix:** pass `aria-current={isCurrentVariation ? "true" : undefined}` (or `"step"`) through MoveCell onto the move button, and add a CompleteMoveCell test asserting it moves with `goToMove`.
 - **Proof:** code trace: `isCurrentVariation` reaches MoveCell only as colour variables (`MoveCell.tsx:65-85,98-107`) and CompleteMoveCell only as `data-notation-current` (`:160`). A grep for `aria-` across the three notation components returns nothing, so no accessible state is emitted. No probe needed; nothing changed in the tree.
 - **Found by:** Grok Bot general review (chunk 22)
+
+Handled in 9bccc0316. `MoveCell` now sets `aria-current="true"` on the move button while `isCurrentVariation` is true and omits the attribute otherwise, so the existing current-node flag that drove the tint also reaches assistive technology. Tests: `MoveCell.test.tsx` asserts both sides of the flag; `CompleteMoveCell.test.tsx` renders the real `MoveCell` for two moves and asserts the attribute follows `goToMove`. Fix-revert proof: with the attribute removed both new tests fail (`expected null to be 'true'`), restored they pass. Rejected `aria-current="step"`: the move list is a set of positions, not a process with steps, and `"true"` is the generic current-item token. Lenses (Grok executor, same-family as the Grok write leaf, no family separation): correctness, root-cause, tests, minimalism and code-quality all approved.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"431b77d398d7a439f54e7b9c01880dd4b0bffff45d426010040623c3b0f1843c","header_sha256":"5e5d5e7b0af0bba2349bd715ce026422fa8d6049c442a914de7d6016e08e49aa","header_status":"handled","input_sha256":"804234622ae8b73d39736064f38907af8ab1e1792c2e9625dc1549ae4643b780","kind":"mutation-receipt","operation":"24829b7c3a2066fadff7393204fe6eda123cfcc32d68c159fe591241f3d785b9","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-48"],"target":"f-20261112-48","v":1} -->
 
 ---
 
