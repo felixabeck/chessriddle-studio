@@ -14,7 +14,7 @@ paths:
 > `info` lines, caching engine options, or consuming a `best_moves` payload.
 >
 > *Path-scoped: this file loads automatically when Claude Code touches the paths in the frontmatter
-> above. Codex and other agents never auto-load it — read it directly, as the rules table in the
+> above. Other agents never auto-load it — read it directly, as the rules table in the
 > repo-root `CLAUDE.md` instructs.*
 
 ## The single rule

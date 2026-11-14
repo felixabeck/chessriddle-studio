@@ -5,8 +5,7 @@ description: Verify ChessRiddle Studio UI changes. Pixels are Playwright e2e; th
 
 # Verify UI (ChessRiddle Studio)
 
-This file is the source of truth. Codex follows
-`.agents/skills/verify-ui/SKILL.md` after reading this contract.
+This file is the source of truth.
 
 TypeScript + vitest catch code correctness, not layout. Chrome MCP cannot
 attach to the Tauri webview and never will: the window is WebKitGTK, which
@@ -117,9 +116,8 @@ claim `pnpm verify:app` verified a menu, a dialog or a window decoration.
 ## Project UI prerequisites
 
 
-`.claude/skills/verify-ui/SKILL.md` is the canonical contract (`.agents/skills/verify-ui/SKILL.md`
-is its Codex bridge). **Read it before verifying any visible change.** Chrome MCP cannot attach to
-the Tauri webview — the window is WebKitGTK and speaks no CDP — and `pnpm start-vite` plus a browser is not evidence,
+`.claude/skills/verify-ui/SKILL.md` is the canonical contract. **Read it before verifying any
+visible change.** Chrome MCP cannot attach to the Tauri webview — the window is WebKitGTK and speaks no CDP — and `pnpm start-vite` plus a browser is not evidence,
 because `TopBar.tsx` calls `getCurrentWebviewWindow()` at module scope and the page crashes without
 a Tauri backend.
 
@@ -141,9 +139,8 @@ download and registers the engine.
 ## Other-agent UI verification
 
 
-`.claude/skills/verify-ui/SKILL.md` is the canonical contract; `.agents/skills/verify-ui/SKILL.md`
-is its bridge for you. **Read it before verifying any UI change.** Chrome MCP cannot attach to the
-Tauri webview, and `pnpm start-vite` plus a browser is not evidence — `TopBar.tsx` calls
+`.claude/skills/verify-ui/SKILL.md` is the canonical contract. **Read it before verifying any UI
+change.** Chrome MCP cannot attach to the Tauri webview, and `pnpm start-vite` plus a browser is not evidence — `TopBar.tsx` calls
 `getCurrentWebviewWindow()` at module scope and the page crashes without a Tauri backend. Automated
 proof for pixels is `pnpm test:e2e:container`, which runs the suite inside the pinned Playwright
 image so the committed screenshots do not depend on which machine recorded them. Never re-record

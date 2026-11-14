@@ -47,7 +47,7 @@ interrupted runs, and accumulated work from another session.
 - This repository's expected remote is `felixabeck/chessriddle-studio` in either of its two legitimate forms — `git@github.com:felixabeck/chessriddle-studio.git` (the `tuxedo-atlas` clone) or `https://github.com/felixabeck/chessriddle-studio.git`. Any other owner, repository or host is a stop. Reject a separate `remote.origin.pushurl`. In an opted-in linked worktree, require `.project.json`'s `worktreeBuilds.target` to be `master` and the branch's configured upstream to be `origin/master`. Otherwise the current local branch must track the same-named `origin/<branch>`, so `master` must track `origin/master`. Commits on a `build/*` or `drain/*` branch may reach `master` only through that opted-in worktree push route. Stop for Felix if any identity is missing or different. Never invent or change a remote/upstream.
 - Build an explicit owned-path manifest from files created or edited in the invoking conversation plus file scopes assigned to its finished workers. Compare it with the initial status. Ambiguous or foreign paths are excluded and left untouched. Commits already ahead of the upstream in this single-user checkout are Felix's own agents' unpushed work: they are in the reviewed range (`~/.claude/references/push-review-policy.md` §2) and are carried by this push, never a reason to stop for Felix; stop only for a committer outside the Multi-Agent rubric or an unexpected remote (§1). A drain session (`--yes` at drain start) or a `build` run invoking this skill is the explicit push request. Commit only manifest paths in cohesive atomic commits and never use `git add -A`.
 - Gates execute against the complete worktree. Therefore stop before any compile, generator, formatter, or browser gate when a foreign dirty path is code, generated output, dependency/configuration, test, asset, locale, workflow, or another input to an affected gate. Only clearly inert foreign Markdown/planning files may remain. Never generate or commit an owned output from foreign dirty inputs.
-- Every workflow-created commit sets `GIT_COMMITTER_NAME` to the acting agent per `~/.claude/references/push-review-policy.md` §1 (`Claude Code`, `Codex`, or `Grok`). Leave the author untouched and add no co-author trailer.
+- Every workflow-created commit sets `GIT_COMMITTER_NAME` to the acting agent per `~/.claude/references/push-review-policy.md` §1 (`Claude Code` or `Grok`). Leave the author untouched and add no co-author trailer.
 - Determine pushed files from `BASE=$(git merge-base HEAD @{u})` and both the committed and owned dirty diffs. Review `git diff "$BASE"..HEAD`, `git diff -- <owned tracked paths>`, `git diff --cached -- <owned tracked paths>`, plus each owned untracked file as a new-file diff. An explicit push includes already-ahead commits, so review their effective diff too.
 
 Markdown/planning-only changes need no *build* gate; the contract gate still runs. They still require the shared review and clean-diff checks.
@@ -488,19 +488,15 @@ a diff touches `tasks/`.
 ## Multi-agent coordination
 
 Shared contract: `/home/felixb/Projekte/agent-kit/references/multi-agent-coordination.md`.
-This repository is worked on by Claude Code, Codex, and Grok.
+This repository is worked on by Claude Code, Grok and Antigravity (`agy`) leaves.
 
 **Division of labour.** The selected orchestrator uses the user-wide `build` skill
 (`~/.claude/skills/build/SKILL.md`) when its proportionality rule calls for it, and reads project
 gates from `.claude/skills/push/SKILL.md`. Executor selection and leaf launch belong to
-`~/.claude/references/executor-profiles.md`; Codex orchestration uses
-`~/.codex/skills/build/SKILL.md`. An interactive Codex session
-follows `~/.claude/references/codex-interactive-workflow.md`, including its scoped commit
-authorization.
+`~/.claude/references/executor-profiles.md`.
 
-* Claude Code reads `.claude/skills/push/SKILL.md` directly; Codex reaches it through
-  `.agents/skills/push/SKILL.md`, whose Codex delta names its own committer; and
-  `.grok/rules/grok-chessfable.md` points at the canonical file.
+* Claude Code reads `.claude/skills/push/SKILL.md` directly, and
+  `.grok/rules/grok-chessfable.md` points Grok at the canonical file.
 * Gate scope is split. Per commit and after every repair batch, run `pnpm checks:pre-review` from
   `.claude/skills/push/SKILL.md`. Once per task, after the last commit, run the full affected set.
   Never commit on red.
@@ -517,10 +513,8 @@ authorization.
 ## Other-agent coordination
 
 
-* Set `GIT_COMMITTER_NAME` to the acting agent (`Claude Code`, `Codex`, or `Grok`); author stays
-  Felix Beck, with no co-author or AI trailer. Claude Code reads `.claude/skills/push/SKILL.md`,
-  Codex reaches it through `.agents/skills/push/SKILL.md`, whose delta names `Codex`, and
-  `.grok/rules/grok-chessfable.md` points at the canonical file.
+* Set `GIT_COMMITTER_NAME` to the acting agent (`Claude Code` or `Grok`); author stays
+  Felix Beck, with no co-author or AI trailer.
 * Per commit, run the narrowest affected checks from the canonical push mapping; once per task,
   after the last commit, run the full affected set. Never commit on red.
 * Handoffs longer than a few lines go in `tasks/handoffs/YYYY-MM-DD-<slug>.md`, never through Felix;

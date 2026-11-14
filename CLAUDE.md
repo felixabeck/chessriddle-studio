@@ -37,7 +37,7 @@ project's name.
 | `gate-tooling.md` | running, changing or recovering a gate, including a gate command typed before any file is opened | `scripts/**`, `.github/workflows/**`, `package.json`, `pnpm-workspace.yaml`, `stryker.config.mjs`, `*coverage-*.json`, `bundle-budgets.json`, `.claude/skills/push/**`, `mutants.out/**` |
 | `desktop-installation.md` | installing the desktop app, its desktop entry or launcher identity | `scripts/install-local*`, `src-tauri/tauri.conf.json`, `src-tauri/icons/**`, `.claude/skills/push/**` |
 
-Claude Code loads the always rule and matching path rules automatically. Codex, Grok and review
+Claude Code loads the always rule and matching path rules automatically. Grok, agy and review
 subagents open applicable rules before work. Rules bind regardless of delivery. Add a missing
 matching glob to the rule rather than working around it. Interactive Grok reads the always rule
 at session start and applicable rules before work or replies, leaves read their assigned rules.
@@ -46,7 +46,7 @@ at session start and applicable rules before work or replies, leaves read their 
 
 Read `.claude/skills/push/SKILL.md` for gates, review-lens triggers, findings commands and coordination/worktree procedures.
 Read `.claude/skills/verify-ui/SKILL.md` before visible-change verification, including UI prerequisites and proof limits.
-Interactive Codex follows `~/.claude/references/codex-interactive-workflow.md`, delegated leaves follow their supplied scope and never stage, commit, push or deploy.
+Delegated leaves follow their supplied scope and never stage, commit, push or deploy.
 
 ## Findings ledger
 

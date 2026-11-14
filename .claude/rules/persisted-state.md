@@ -12,7 +12,7 @@ paths:
 > with persistence, the per-tab zustand tree stores, or the tab open/close/switch flows.
 >
 > *Path-scoped: this file loads automatically when Claude Code touches the paths in the frontmatter
-> above, and the rule additionally binds for any direct web-storage access anywhere. Codex and other
+> above, and the rule additionally binds for any direct web-storage access anywhere. Other
 > agents never auto-load it — read it directly, as the rules table in the repo-root `CLAUDE.md`
 > instructs.*
 

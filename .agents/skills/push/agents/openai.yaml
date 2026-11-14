@@ -1,4 +1,0 @@
-interface:
-  display_name: "Push ChessRiddle Studio"
-  short_description: "Validate, review and push ChessRiddle Studio safely"
-  default_prompt: "Use $push to validate, independently review, commit, and push the current ChessRiddle Studio changes."

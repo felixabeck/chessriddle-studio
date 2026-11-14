@@ -16,7 +16,7 @@ paths:
 >
 > *Path-scoped: this file loads automatically when Claude Code touches the paths in the frontmatter
 > above, but the rule binds for **any** file that emits or listens — the glob cannot express that.
-> Codex and other agents never auto-load it — read it directly, as the rules table in the repo-root
+> Other agents never auto-load it — read it directly, as the rules table in the repo-root
 > `CLAUDE.md` instructs.*
 
 ## The single rule

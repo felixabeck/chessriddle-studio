@@ -4,7 +4,7 @@
 > registry that outlives one call — in Rust and in the renderer alike.
 >
 > *Not path-scoped: this file has no `paths:` frontmatter because it applies to essentially every
-> diff in this repository, the same way `git-ci-workflow.md` does in ChessRiddles. Codex and other
+> diff in this repository, the same way `git-ci-workflow.md` does in ChessRiddles. Other
 > agents never auto-load it — read it directly, as the rules table in the repo-root `CLAUDE.md`
 > instructs.*
 
