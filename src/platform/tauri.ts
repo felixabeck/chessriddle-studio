@@ -265,16 +265,6 @@ function collectImportCommittedDatabase(
     into.push((value as AccountCompletion).committedDatabase);
 }
 
-function recordedWriteHandleIds(handles: readonly (DatabaseHandle | null | undefined)[]): string {
-    try {
-        return handles
-            .flatMap((handle) => (handle == null ? [] : [capabilityKey(handle)]))
-            .join(", ");
-    } catch {
-        return "unavailable";
-    }
-}
-
 type EventEnvelope<T> = { payload: T };
 type EventAdapterError<T> = (error: unknown, event: EventEnvelope<T>) => void;
 
@@ -535,7 +525,7 @@ export const tauri: TauriCommands = new Proxy(commands, {
                 } catch (cause) {
                     try {
                         void logError(
-                            `database write revision recording failed for ${String(property)} (${recordedWriteHandleIds(recordedHandles)}): ${normalizeError(cause).message}`,
+                            `database write revision recording failed for ${String(property)} (${recordedHandles.flatMap((handle) => (handle == null ? [] : [capabilityKey(handle)])).join(", ")}): ${normalizeError(cause).message}`,
                         ).catch((loggingError) => {
                             console.error(
                                 `database write revision recording logging failed for ${String(property)}`,
