@@ -23,6 +23,7 @@ import type { LibraryRow } from "./libraryData";
 export const LIBRARY_DECK_CONCURRENCY = 4;
 type FileRow = Extract<LibraryRow, { kind: "file" }>;
 type DueDiscovery = "pending" | "complete" | "failed";
+type InventoryListing = "pending" | "listed" | "failed";
 type ChapterDecks = Map<string, Map<number, PracticeDeckValue>>;
 
 function identityKey(file: string, game: number): string {
@@ -83,7 +84,7 @@ export function projectLibraryDueCounts(
             [...decks.values()].some((chapters) =>
                 [...chapters.values()].some((deck) => !deckCountable(deck)),
             ),
-        discoveryFailed: discovery === "failed",
+        inventoryFailed: discovery === "failed",
         nextDue: rows.reduce<Date | null>(
             (earliest, row) =>
                 row.nextDue && (!earliest || row.nextDue < earliest) ? row.nextDue : earliest,
@@ -114,7 +115,7 @@ export function useLibraryDueCounts(libraryRows: readonly LibraryRow[]) {
         const decks: ChapterDecks = new Map();
         const cleanups: (() => void)[] = [];
         let hydrating = 0;
-        let listing: DueDiscovery = "pending";
+        let listing: InventoryListing = "pending";
         const publish = () => {
             if (controller.signal.aborted) return;
             const discovery: DueDiscovery =
@@ -196,7 +197,7 @@ export function useLibraryDueCounts(libraryRows: readonly LibraryRow[]) {
                     if (anomaly.fileId != null && anomaly.game != null)
                         enqueue(anomaly.fileId, anomaly.game);
                 }
-                listing = "complete";
+                listing = "listed";
             } catch {
                 if (controller.signal.aborted) return;
                 listing = "failed";

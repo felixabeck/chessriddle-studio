@@ -323,6 +323,21 @@ test("anomaly-only chapter is subscribed and counted; a null game is not", async
   expect(mocks.family.mock.calls.some(([{ game }]) => game == null)).toBe(false);
 });
 
+test("pre-existing family params subscribe and count while inventory listing is still pending", async () => {
+  const row = repertoire(0);
+  mocks.params.set(id(row.key, 1), { file: row.key, game: 1 });
+  mocks.listPracticeDecks.mockReturnValue(new Promise(() => {}));
+  await render([row]);
+  expect(decks.has(id(row.key, 1))).toBe(true);
+  await settle(id(row.key, 0), deck("ready"));
+  await settle(id(row.key, 1), deck("ready", [position(Date.now() - 1000, 2)]));
+  expect(latest.dueRows.map((entry) => entry.file.key)).toEqual([row.key]);
+  expect(latest.dueRows[0].count).toBe(1);
+  expect(latest.total).toBe(1);
+  expect(latest.incomplete).toBe(true);
+  expect(latest.inventoryFailed).toBe(false);
+});
+
 test("pre-existing family params subscribe even when inventory listing rejects", async () => {
   const row = repertoire(0);
   mocks.params.set(id(row.key, 1), { file: row.key, game: 1 });
@@ -333,7 +348,7 @@ test("pre-existing family params subscribe even when inventory listing rejects",
   expect(decks.has(id(row.key, 1))).toBe(true);
   expect(latest.dueRows.map((entry) => entry.file.key)).toEqual([row.key]);
   expect(latest.dueRows[0].count).toBe(1);
-  expect(latest.discoveryFailed).toBe(true);
+  expect(latest.inventoryFailed).toBe(true);
   expect(latest.incomplete).toBe(true);
 });
 
@@ -413,20 +428,20 @@ test("REMOVE restart recounts due from the new inventory", async () => {
   expect(mounted.has(id(row.key, 2))).toBe(false);
 });
 
-test("inventory failure sets discoveryFailed", async () => {
+test("inventory failure sets inventoryFailed", async () => {
   const row = repertoire(0);
   mocks.listPracticeDecks.mockRejectedValue(new Error("inventory unavailable"));
   await render([row]);
   await settle(id(row.key, 0), deck("ready"));
-  expect(latest.discoveryFailed).toBe(true);
+  expect(latest.inventoryFailed).toBe(true);
 });
 
-test("inventory success leaves discoveryFailed false", async () => {
+test("inventory success leaves inventoryFailed false", async () => {
   const row = repertoire(0);
   mocks.listPracticeDecks.mockResolvedValue({ decks: [], anomalies: [] });
   await render([row]);
   await settle(id(row.key, 0), deck("ready"));
-  expect(latest.discoveryFailed).toBe(false);
+  expect(latest.inventoryFailed).toBe(false);
   expect(latest.incomplete).toBe(false);
 });
 

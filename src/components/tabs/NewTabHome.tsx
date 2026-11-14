@@ -786,7 +786,7 @@ export default function NewTabHome({ id }: { id: string }) {
                   feed.loading ||
                   (filter === "due" &&
                     due.incomplete &&
-                    !due.discoveryFailed &&
+                    !due.inventoryFailed &&
                     rows.length === 0)) && (
                   <Text size="sm" c="dimmed" role="status">
                     {t("Common.Loading")}
@@ -794,7 +794,7 @@ export default function NewTabHome({ id }: { id: string }) {
                 )}
                 {rows.length === 0 && !library.loading && !feed.loading && (
                   <Text c="dimmed">
-                    {filter === "due" && due.discoveryFailed
+                    {filter === "due" && due.inventoryFailed
                       ? t("Home.DuePractice.Incomplete")
                       : filter === "due" && !incomplete
                         ? t("Home.DuePractice.NothingDue")

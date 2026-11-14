@@ -28,7 +28,7 @@ const mocks = vi.hoisted(() => ({
     error: undefined as unknown,
   },
   due: {} as Record<string, { count: number | null; failed: boolean }>,
-  discoveryFailed: false,
+  inventoryFailed: false,
   feed: { games: [] as OwnGame[], loading: false, hasMore: false, incompleteCount: 0 },
   feedArgs: vi.fn(),
   showMore: vi.fn(),
@@ -62,8 +62,8 @@ vi.mock("@/components/library/useLibraryDueCounts", () => ({
       rows: values,
       dueRows: values.filter((row) => row.failed || (row.count ?? 0) > 0),
       total: values.reduce((sum, row) => sum + (row.count ?? 0), 0),
-      incomplete: values.some((row) => row.count === null) || mocks.discoveryFailed,
-      discoveryFailed: mocks.discoveryFailed,
+      incomplete: values.some((row) => row.count === null) || mocks.inventoryFailed,
+      inventoryFailed: mocks.inventoryFailed,
     };
   },
 }));
@@ -209,7 +209,7 @@ beforeEach(() => {
   mocks.listing = { data: undefined, isLoading: true, error: undefined };
   mocks.databases = { data: undefined, isLoading: false, error: undefined };
   mocks.due = {};
-  mocks.discoveryFailed = false;
+  mocks.inventoryFailed = false;
   mocks.feed = { games: [], loading: false, hasMore: false, incompleteCount: 0 };
   mocks.count.mockReset().mockResolvedValue(1);
   mocks.readGames.mockReset().mockResolvedValue(chapterGames());
@@ -320,13 +320,24 @@ test("Due omits the total line when no repertoire has overdue positions", async 
 
 test("Due with no rows and a failed inventory shows incomplete without Loading", async () => {
   mocks.listing = { data: [file("Done", "repertoire")], isLoading: false, error: undefined };
-  mocks.discoveryFailed = true;
+  mocks.inventoryFailed = true;
   await render();
   await filter("due");
   expect(rows()).toHaveLength(0);
   expect(host.textContent).toContain("Home.DuePractice.Incomplete");
   expect(host.textContent).not.toContain("Common.Loading");
   expect(host.querySelector('[role="status"]')).toBeNull();
+});
+
+test("Due with no rows while a repertoire count is still pending shows Loading", async () => {
+  mocks.listing = { data: [file("Pending", "repertoire")], isLoading: false, error: undefined };
+  mocks.due.Pending = { count: null, failed: false };
+  await render();
+  await filter("due");
+  expect(rows()).toHaveLength(0);
+  expect(host.textContent).toContain("Common.Loading");
+  expect(host.querySelector('[role="status"]')?.textContent).toBe("Common.Loading");
+  expect(host.textContent).not.toContain("Home.DuePractice.NothingDue");
 });
 
 test("Due sorts overdue counts, includes failed decks, and keeps their whole row operable", async () => {
