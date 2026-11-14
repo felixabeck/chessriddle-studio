@@ -1055,7 +1055,7 @@ describe("DatabasePanel", () => {
     mocks.searchPosition.mockRejectedValue(new Error("Cancellation"));
     await mountLocal();
     const panel = selectedPanel("stats");
-    expect(panel.textContent).toContain("No games found");
+    expect(panel.textContent).toContain("Databases.Game.NoGamesFound");
     expect(panel.querySelector('[role="alert"]')).toBeNull();
     expect(panel.textContent).not.toContain("Cancellation");
     expect(panel.textContent).not.toContain("Databases.LoadError.Title");

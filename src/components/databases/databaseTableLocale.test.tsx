@@ -6,8 +6,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { Event as Tournament, NormalizedGame } from "@/bindings";
+import { TreeStateContext } from "@/components/common/TreeStateContext";
 import PanelGamesTable from "@/components/panels/database/GamesTable";
+import OpeningsTable from "@/components/panels/database/OpeningsTable";
 import { activeDatabaseViewStore } from "@/state/store/database";
+import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { catalogueI18n } from "@/tests/catalogues";
 import { supportedLocales } from "@/i18n";
@@ -90,12 +93,14 @@ let host: HTMLDivElement;
 let root: Root;
 let locale: i18n;
 let jotai: ReturnType<typeof createStore>;
+let treeStore: TreeStore;
 beforeEach(async () => {
   mocks.empty = false;
   sessionStorage.clear();
   activeDatabaseViewStore.getState().clearDatabase();
   activeDatabaseViewStore.getState().setDatabase({ file, title: "Fixture" } as SuccessDatabaseInfo);
   jotai = createStore();
+  treeStore = createTreeStore();
   locale = await catalogueI18n("de-DE");
   host = document.createElement("div");
   document.body.append(host);
@@ -104,6 +109,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
+  treeStore.dispose();
   activeDatabaseViewStore.getState().clearDatabase();
 });
 
@@ -113,9 +119,11 @@ async function render(children: ReactNode) {
       <MantineProvider env="test">
         <I18nextProvider i18n={locale}>
           <Provider store={jotai}>
-            <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
-              {children}
-            </DatabaseViewStateContext.Provider>
+            <TreeStateContext.Provider value={treeStore}>
+              <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
+                {children}
+              </DatabaseViewStateContext.Provider>
+            </TreeStateContext.Provider>
           </Provider>
         </I18nextProvider>
       </MantineProvider>,
@@ -343,4 +351,37 @@ test("TournamentCard renders the German empty leaderboard", async () => {
   expect(host.querySelector('[role="tabpanel"][id$="-panel-leaderboard"]')?.textContent).toContain(
     "Keine Spieler gefunden",
   );
+});
+
+test("OpeningsTable renders German column headers", async () => {
+  await render(
+    <OpeningsTable
+      openings={[
+        { move: "e4", white: 10, draw: 5, black: 5 },
+        { move: "d4", white: 8, draw: 4, black: 4 },
+      ]}
+      loading={false}
+    />,
+  );
+  expect(headers()).toEqual(["Zug", "Gesamt", "Ergebnisse"]);
+});
+
+test("OpeningsTable renders the German total row label in the last row", async () => {
+  await render(
+    <OpeningsTable
+      openings={[
+        { move: "e4", white: 10, draw: 5, black: 5 },
+        { move: "d4", white: 8, draw: 4, black: 4 },
+      ]}
+      loading={false}
+    />,
+  );
+  const rows = host.querySelectorAll("tbody tr");
+  expect(rows).toHaveLength(3);
+  expect(rows[rows.length - 1].querySelector("td")?.textContent).toBe("Gesamt");
+});
+
+test("OpeningsTable renders the German empty state", async () => {
+  await render(<OpeningsTable openings={[]} loading={false} />);
+  expect(host.textContent).toContain("Keine Partien gefunden");
 });
