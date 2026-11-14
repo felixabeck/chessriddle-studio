@@ -24593,7 +24593,7 @@ Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK on
 
 ### Database Games filter Elo sliders do not move while dragged; the thumbs jump only on release
 
-* **ID:** f-20261112-42 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-42 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/databases/GameTable.tsx:164-190` (both `RangeSlider`s get `value={query.range1 ?? undefined}` / `range2` and only `onChangeEnd`); the default query sets `range1`/`range2` to `[0, ELO_FILTER_MAX]` (`src/state/store/database.ts:95`), so the sliders are always controlled
@@ -24602,6 +24602,8 @@ Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK on
 - **Fix:** keep a local draft range updated by `onChange` and commit it in `onChangeEnd` (as LocalOptionsPanel does), for both sliders; add a test that a drag updates `aria-valuenow` before release.
 - **Proof:** ephemeral Vitest with Mantine `RangeSlider` (controlled `[0,3000]`, mocked 300px rect), mousedown at x=290 then mousemove to x=200: the control with `onChange` shows `["0","2000"]` during the drag; the GameTable shape (no `onChange`) shows `["0","3000"]` during the drag and `["0","2000"]` only after mouseup. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 20)
+* **Handled 2026-11-14 (drain a87c5f04-1570-4d4a-a44d-1f2dc590c31f):** Both Games-filter Elo sliders now follow the pointer during a drag and commit once on release. The draft-then-commit slider that LocalOptionsPanel already had is extracted into `src/components/common/EloRangeSlider.tsx` (rule 11), and all three Elo sliders route through it. Commits `afb3536a3` (fix), `e7fe9fffa` (coverage mapping into databases-files, scope-only baseline edit after the ea080c441 precedent), `bba6475a7` (drag tests through GameTable range1/range2, LocalOptionsPanel and the component, with a shared `src/tests/rangeSliderDrag.ts` helper). Proof: revert checks went red for the pre-fix GameTable slider, swapped range1/range2, a removed draft reset, a removed null fallback and a no-op panel commit. Lenses correctness, root-cause, code-quality and minimalism APPROVED in round 1, and tests APPROVED in round 2 after its REVISE was fixed. `pnpm gates:push -- --frontend` green; pushed to origin/master at `bba6475a7`.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"f8539fdf5f4dadbaf4cc060499f1e87ff644a8d3fdb381b8229787e00ebabb71","header_sha256":"42492cffdc3dfb8749e156c6541e1730dd6ea1ce9a12541b819630dab78dc689","header_status":"handled","input_sha256":"c4c18b2a8c568fcb55e5e0cee97674bd22b9b5e59af9c1a7ab386e59bbb2c147","kind":"mutation-receipt","operation":"32f6b962bc1682cc3b8482e7dad6192bd906ae39b39177110b4ce22a5829b197","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-42"],"target":"f-20261112-42","v":1} -->
 
 ---
 
