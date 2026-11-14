@@ -111,7 +111,7 @@ vi.mock("@/platform/native", async () => ({
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, options?: { value?: string }) =>
-      key === "Common.SecondsShort" ? `${options?.value}s` : key,
+      key === "Common.SecondsShort" ? `${key}:${options?.value}` : key,
     i18n: { language: mocks.language },
   }),
 }));
@@ -848,8 +848,8 @@ function trackingSwitch() {
 }
 
 test.each([
-  { language: "en-US", expectedSeconds: "2.5s" },
-  { language: "de-DE", expectedSeconds: "2,5s" },
+  { language: "en-US", expectedSeconds: "Common.SecondsShort:2.5" },
+  { language: "de-DE", expectedSeconds: "Common.SecondsShort:2,5" },
 ])(
   "Avg time and stopwatch in $language include only tracked correct solves",
   async ({ language, expectedSeconds }) => {

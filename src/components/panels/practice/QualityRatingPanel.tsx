@@ -1,6 +1,7 @@
 import { Button, Group, Paper, SimpleGrid, Stack, Text, ThemeIcon, Tooltip } from "@mantine/core";
 import { Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import type { Card } from "ts-fsrs";
 import { formatDecimal, formatReviewInterval } from "@/utils/format";
 import { getNextReviewTimes } from "@/components/files/opening";
 
@@ -10,7 +11,7 @@ export function QualityRatingPanel({
   timeTaken,
 }: {
   onRate: (grade: 1 | 2 | 3 | 4) => void;
-  card?: import("ts-fsrs").Card;
+  card?: Card;
   timeTaken?: number;
 }) {
   const { t, i18n } = useTranslation();

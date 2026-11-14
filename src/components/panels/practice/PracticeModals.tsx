@@ -16,7 +16,7 @@ import {
   type PracticeDeckValue,
   type PracticeDeckKey,
 } from "@/state/practiceStorage";
-import { findFen, getBoardState, getNodeAtPath } from "@/utils/treeReducer";
+import { getBoardState } from "@/utils/treeReducer";
 
 export function PositionsModal({
   open,
@@ -120,6 +120,7 @@ export function LogsModal({
   const { t } = useTranslation();
   const store = useContext(TreeStateContext)!;
   const root = useStore(store, (s) => s.root);
+  const headers = useStore(store, (s) => s.headers);
   const goToMove = useStore(store, (s) => s.goToMove);
   const [logs, setLogs] = useState<Array<ReviewLog & { fen: string; id: string }>>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -183,8 +184,13 @@ export function LogsModal({
           <Text>{t("Board.Practice.NoLogsYet")}</Text>
         )}
         {logs.map((log) => {
-          const position = findFen(log.fen, root);
-          const node = position ? getNodeAtPath(root, position) : null;
+          const resolved = resolvePracticeCard(
+            root,
+            getBoardState(log.fen),
+            headers.orientation || "white",
+            headers.start || [],
+          );
+          const node = resolved?.frame.node ?? null;
 
           return (
             <Card key={log.id} data-practice-entry-id={log.id}>
@@ -222,12 +228,20 @@ export function LogsModal({
                   </Text>
                   <Text>{formatDate(log.review)}</Text>
                 </Stack>
-                {position && (
+                {resolved && (
                   <IconAction
                     label={t("Board.Practice.GoBackToPosition")}
                     variant="subtle"
                     onClick={() => {
-                      goToMove(position);
+                      const state = store.getState();
+                      const current = resolvePracticeCard(
+                        state.root,
+                        getBoardState(log.fen),
+                        state.headers.orientation || "white",
+                        state.headers.start || [],
+                      );
+                      if (!current) return;
+                      goToMove(current.frame.position);
                       setOpen(false);
                     }}
                   >

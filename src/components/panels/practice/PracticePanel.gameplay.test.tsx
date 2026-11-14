@@ -1448,3 +1448,34 @@ test("actual log writer keeps distinct repeated-FEN IDs and historical fallbacks
   ]);
   expect(getNodeAtPath(tree.getState().root, tree.getState().position).fen).toBe(card.fen);
 });
+
+test("LogsModal resolves a log whose FEN differs only in halfmove/fullmove clocks and navigates to its path", async () => {
+  const card = await mountStudy(cases[0], undefined, false, { startPractice: false });
+  const written = updateCardPerformance([card], 0, card.card, 3)!;
+  const staleFen = card.fen.replace(/\d+ \d+$/, "4 10");
+  expect(staleFen).not.toBe(card.fen);
+  expect(getBoardState(staleFen)).toBe(getBoardState(card.fen));
+
+  reviews = [
+    {
+      id: "clock-shifted-log",
+      entry: JSON.stringify({ ...written.entry, fen: staleFen }),
+    },
+  ];
+  expect(tree.getState().position).toEqual([]);
+
+  await click("Board.Practice.ShowLogs");
+  const logCard = document.querySelector<HTMLElement>(
+    '[data-practice-entry-id="clock-shifted-log"]',
+  );
+  expect(logCard).not.toBeNull();
+  expect(logCard?.firstElementChild?.textContent).toBe("1... e5");
+  expect(logCard?.textContent).not.toContain(staleFen);
+
+  const goBack = logCard?.querySelector<HTMLButtonElement>(
+    'button[aria-label="Board.Practice.GoBackToPosition"]',
+  );
+  expect(goBack).not.toBeNull();
+  await act(async () => goBack!.click());
+  expect(tree.getState().position).toEqual([0, 0]);
+});

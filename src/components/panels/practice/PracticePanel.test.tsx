@@ -692,6 +692,7 @@ test.each([
   { halfMoves: 1, san: "e4", expected: "1. e4" },
 ])("renders the exact logs card label $expected", async ({ halfMoves, san, expected }) => {
   fixtures.node = { halfMoves, san };
+  fixtures.tree.headers = { orientation: halfMoves % 2 === 0 ? "white" : "black", start: [] };
   fixtures.loadPracticeReviews.mockResolvedValueOnce({
     entries: [
       {
