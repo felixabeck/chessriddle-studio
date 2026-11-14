@@ -22962,7 +22962,7 @@ Review repair 75c9a98ac (push round 1, review-correctness REVISE): JS `trim()` k
 
 ### PracticePanel.tsx still colocates three already-extracted modal components after the main panel
 
-* **ID:** f-20261111-56 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261111-56 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** tooling
 * **Spotted outside diff:** general quality review (Felix t26u) at HEAD `23abece0d`
 * **Where:** `src/components/panels/practice/PracticePanel.tsx` (1503 lines). `PracticePanel` itself is `:93-1149` (1056 lines). Three siblings are already standalone functions in the same file: `QualityRatingPanel` (`:1150-1262`, 112 lines), `PositionsModal` (`:1263-1348`, 85 lines) and `LogsModal` (`:1349-1503`, 153 lines). No decision pins these to this module.
@@ -22971,6 +22971,9 @@ Review repair 75c9a98ac (push round 1, review-correctness REVISE): JS `trim()` k
 * **Fix:** Move `QualityRatingPanel`, `PositionsModal` and `LogsModal` to a sibling module (for example `PracticePanelModals.tsx`, or one file each). Keep `PracticePanel` as the session controller and import the three. Existing `PracticePanel.test.tsx` / `PracticePanel.gameplay.test.tsx` remain the behaviour contract.
 * **Proof:** Function starts at depth 0 at the line ranges above; the file ends at 1503 with `LogsModal`. `tasks/decisions.md` has no entry requiring these components to share a file.
 * **Found by:** Grok Bot, quality review (t26u), HEAD `23abece0d`.
+
+**Handled 2026-11-14 (drain session a078be2b-0a1b-4a4d-bde8-780156f46f8d), co-located joiner of f-20261112-31, commit da43533b0:** `QualityRatingPanel`, `PositionsModal` and `LogsModal` moved byte-identically (only `export` added; checked by diffing the old file tail against the new module) into `src/components/panels/practice/PracticePanelModals.tsx`. `PracticePanel.tsx` keeps the session controller and imports them. Practice Vitest 297/297 unchanged, `pnpm lint` green.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"800c12c8a8339459d4781193dde5834bfd2d8ca745037c658f0a8b5d2e84c6eb","header_sha256":"cc81c25a48c76bd28c2fe9ddfbaa98a622682dcefe8388ffb1a76f76d80fea5e","header_status":"handled","input_sha256":"b1a77ec3da8779b98f7619fd57066c996097de1ebce50e507ddf1ca00f6a8e4d","kind":"mutation-receipt","operation":"c1e4123ab42e3ed4f48eda27a81fb76d5a8c5fbb95660ef48845cd2e6910f1b6","options":{"section":null},"request_id_sha256":null,"results":["f-20261111-56"],"target":"f-20261111-56","v":1} -->
 
 ---
 
