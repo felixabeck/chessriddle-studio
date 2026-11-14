@@ -26056,3 +26056,20 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Fix:** treat 0 as unrated in the statistics: skip `player_elo == 0` for the rating series (keep the game in win/draw/loss counts), e.g. make `max_player_elo` an `Option` per day and omit days without a rated game from `ratingData`. Test: a player with one rated (2100) and one unrated (0) day yields a single rating point of 2100.
 * **Related:** d-20260919-08 (explorer band excludes unrated, indexed 0), f-20261101-22 / `PlayerRatingCell` "Unrated" label, findings.md:20399 (unrated "?" saved as "NaN", a different path).
 * **Found by:** Grok Bot general review
+
+---
+
+## 2026-11-14 — filed through the inbox spool
+
+### PGN editor with Comments, Glyphs, Variations or Extra markups unticked offers "Update" unprompted and deletes the hidden content when used
+
+* **ID:** f-20261114-17 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** data-loss
+* **Spotted outside diff:** yes (general review of pre-fork code, origin/master 69856f2ea; the filter checkboxes and the `realPGN !== tmp` Update condition are upstream En Croissant code from 2023, c95aecb3e)
+* **Where:** `src/components/panels/info/PgnInput.tsx:34-54` (`realPGN` is serialized with every option on; the editor text `pgn` uses the per-tab `pgnOptionsFamily` checkboxes at `:86-111`), `:56-79` (the textarea draft is reset to the filtered `pgn`), `:206-210` (Update is shown whenever `realPGN !== tmp`), `:115-177` (`updatePgn` parses the textarea and, when it differs from the current tree, installs it via `setState({ ...tree, dirty: true, position: [] })`). Filtering happens in `writePGN` (`src/utils/chess.ts:97-134` comments/markups, `:323-370` variations).
+* **Defect:** the checkboxes are presented as display filters for the editor text, but the textarea is also the edit source. As soon as one is unticked on a game that has that content, the filtered text differs from `realPGN`, so the Update button appears although the user typed nothing. Update (or any real edit followed by Update) parses the filtered text and replaces the whole tree with it, so every comment, NAG, side variation or arrow/highlight that the filter hid is deleted. There is no warning or confirmation; the tab is only marked dirty (and autosave writes it for a file-backed game).
+* **Failure scenario:** a repertoire file with commented side lines is open. In Info → PGN editor the user unticks "Variations" to read the main line, then corrects a typo in the Event tag (or simply clicks the Update button that appeared on its own) and clicks Update. All side variations and their comments disappear from the board and notation; with autosave on, the file is overwritten without them.
+* **Proof:** code trace on origin/master 69856f2ea (no probe; every step is unconditional): `pgnOptionsFamily` defaults to all true (`src/state/atoms.ts:1141-1148`) and is toggled by the four checkboxes; `pgn` passes the toggled flags to `getPGN`, `realPGN` passes `true` for all four; `writePGN` emits comments/commands only under `opt.comments`, glyphs under `opt.glyphs`, `[%cal/%csl]` under `opt.extraMarkups`, variations only under `variations`; the draft effect sets `tmp = pgn`; the render shows Update for `realPGN !== tmp`; `updatePgn` only skips installation when the parsed root deep-equals the captured root, which is false once content was filtered out.
+* **Fix:** make the filters read-only views: when any filter is off, render the textarea read-only (or hide Update and show a hint "turn all options on to edit"), and only compare/offer Update against text produced with all options on. Test: with a commented variation in the tree, untick Variations → no Update button and no way to install the filtered text; tick it back, edit a header, Update → the variation survives.
+* **Related:** findings.md:12133 (PgnInput `[FEN ""]` header path, different defect), d-entry at decisions.md:3991 (PgnInput builds its tree with `parsePGN`).
+* **Found by:** Grok Bot general review
