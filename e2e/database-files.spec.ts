@@ -2590,7 +2590,7 @@ test("database-files: long player metadata leaves nested preview tabs and charts
                         return (
                             query?.player1 === 1 &&
                             query.sides === "Any" &&
-                            query.options?.sort === "date" &&
+                            query.options?.sort === "newest" &&
                             query.options?.direction === "desc" &&
                             query.options?.pageSize === 10
                         );

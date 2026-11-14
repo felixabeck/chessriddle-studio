@@ -1299,7 +1299,7 @@ const tauriBootstrap = () => {
                 query != null &&
                 query.player1 != null &&
                 query.sides === "Any" &&
-                query.options?.sort === "date" &&
+                query.options?.sort === "newest" &&
                 query.options?.direction === "desc" &&
                 query.options?.pageSize === 10
             ) {
