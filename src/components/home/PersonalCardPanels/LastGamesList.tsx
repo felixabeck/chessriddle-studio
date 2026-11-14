@@ -43,7 +43,7 @@ function LastGamesList({ player, file }: { player: Player; file: DatabaseHandle 
             player1: playerId,
             sides: "Any",
             options: {
-              sort: "date",
+              sort: "newest",
               direction: "desc",
               pageSize: LAST_GAMES_LIMIT,
               page: 1,

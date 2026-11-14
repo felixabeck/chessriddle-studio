@@ -5,6 +5,7 @@ import type {
     NormalizedGame,
     QueryResponse,
 } from "@/bindings";
+import { canonicalPgnDate } from "@/utils/pgnDate";
 
 export const OWN_GAMES_PAGE_SIZE = 25;
 // At most four collection page requests run concurrently for a feed.
@@ -49,8 +50,8 @@ function compareText(left: string, right: string): number {
 /** Exactly GameSort::Newest's date, nullable time and id order, then collection id. */
 export function compareOwnGames(left: OwnGame, right: OwnGame): number {
     const date = compareText(
-        (right.game.date ?? "").replaceAll("?", "0"),
-        (left.game.date ?? "").replaceAll("?", "0"),
+        canonicalPgnDate(right.game.date ?? "").replaceAll("?", "0"),
+        canonicalPgnDate(left.game.date ?? "").replaceAll("?", "0"),
     );
     if (date) return date;
     const leftTime = left.game.time;

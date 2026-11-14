@@ -130,7 +130,7 @@ test("queries the player's last 10 games with sides Any, newest first", async ()
       player1: 42,
       sides: "Any",
       options: {
-        sort: "date",
+        sort: "newest",
         direction: "desc",
         pageSize: 10,
         page: 1,

@@ -91,6 +91,28 @@ describe("own game ordering", () => {
         ).toBe(0);
     });
 
+    test("zero-pads unpadded PGN dates so 2026.01.20 sorts before 2026.1.5", () => {
+        const c = collection("a");
+        expect(
+            compareOwnGames(
+                { collection: c, game: game(1, "2026.01.20") },
+                { collection: c, game: game(2, "2026.1.5") },
+            ),
+        ).toBeLessThan(0);
+        expect(
+            compareOwnGames(
+                { collection: c, game: game(1, "2026.1.5") },
+                { collection: c, game: game(1, "2026.01.05") },
+            ),
+        ).toBe(0);
+        expect(
+            compareOwnGames(
+                { collection: c, game: game(1, "2026.1.5") },
+                { collection: c, game: game(2, "2026.01.05") },
+            ),
+        ).toBe(2 - 1);
+    });
+
     test("bounds player input to the native token and Unicode character limits", () => {
         const result = boundPlayerQuery(
             `  Felix,Beck\u0085${"😀".repeat(140)} ${Array.from({ length: 20 }, (_, i) => i).join(" ")} `,
@@ -238,6 +260,23 @@ describe("paged merge", () => {
         }
         await loading;
         expect(peak).toBe(4);
+        feed.dispose();
+    });
+
+    test("merges an unpadded collection date after a padded later date", async () => {
+        const load = vi.fn<OwnGamesPageLoader>(async (database, query) => {
+            if ((query.options?.page ?? 1) !== 1) return { data: [], count: null };
+            return {
+                data: database.id.id === "a" ? [game(1, "2026.1.5")] : [game(2, "2026.01.20")],
+                count: null,
+            };
+        });
+        const feed = new OwnGamesFeed([collection("a"), collection("b")], "", load, () => {});
+        await feed.showMore();
+        expect(feed.snapshot().games.map((item) => item.game.date)).toEqual([
+            "2026.01.20",
+            "2026.1.5",
+        ]);
         feed.dispose();
     });
 });
