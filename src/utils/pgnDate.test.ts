@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
 import { canonicalPgnDate } from "./pgnDate";
 
-const rustSourceModule = "node:fs";
+const fileSystemModule = "node:fs";
 const rustSource = await (
-    import(rustSourceModule) as Promise<{
+    import(fileSystemModule) as Promise<{
         readFileSync(path: string, encoding: "utf8"): string;
     }>
 ).then((fs) => fs.readFileSync("src-tauri/src/db/pgn_date.rs", "utf8"));
@@ -24,19 +24,21 @@ function unescapeRustString(raw: string): string {
     return result;
 }
 
-function rustCanonicalCases(source: string): [string, string][] {
+function rustCanonicalCases(source: string): { cases: [string, string][]; rowCount: number } {
     const block = source.match(/const CASES: &\[\(&str, &str\)\] = &\[([\s\S]*?)\];/)?.[1];
-    if (block === undefined) return [];
-    return [...block.matchAll(/\("((?:\\.|[^"\\])*)",\s*"((?:\\.|[^"\\])*)"\)/g)].map((match) => [
-        unescapeRustString(match[1]),
-        unescapeRustString(match[2]),
-    ]);
+    if (block === undefined) return { cases: [], rowCount: 0 };
+    const cases = [...block.matchAll(/\("((?:\\.|[^"\\])*)",\s*"((?:\\.|[^"\\])*)"\)/g)].map(
+        (match) => [unescapeRustString(match[1]), unescapeRustString(match[2])] as [string, string],
+    );
+    const rowCount = block.match(/^\s*\(/gm)?.length ?? 0;
+    return { cases, rowCount };
 }
 
 describe("canonicalPgnDate", () => {
     test("mirrors src-tauri/src/db/pgn_date.rs canonical cases", () => {
-        const cases = rustCanonicalCases(rustSource);
-        expect(cases.length).toBeGreaterThanOrEqual(20);
+        const { cases, rowCount } = rustCanonicalCases(rustSource);
+        expect(cases.length).toBe(rowCount);
+        expect(cases.length).toBeGreaterThan(0);
         for (const [input, expected] of cases) {
             expect(canonicalPgnDate(input)).toBe(expected);
         }

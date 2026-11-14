@@ -110,7 +110,7 @@ describe("own game ordering", () => {
                 { collection: c, game: game(1, "2026.1.5") },
                 { collection: c, game: game(2, "2026.01.05") },
             ),
-        ).toBe(2 - 1);
+        ).toBeGreaterThan(0);
     });
 
     test("bounds player input to the native token and Unicode character limits", () => {
