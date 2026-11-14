@@ -24507,7 +24507,7 @@ Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK on
 
 ### The analysis explorer Stats table still shows English column titles, "Total" row and "No games found"
 
-* **ID:** f-20261112-38 · **Status:** open · **Area:** i18n · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-38 · **Status:** handled · **Area:** i18n · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/panels/database/OpeningsTable.tsx:53-113` (columns `move`, `total`, `results` have no `title`, so mantine-datatable shows the humanised accessor "Move / Total / Results"), `:29` (`move: "Total"` sum row label), `:115` (`emptyState={"No games found"}`)
@@ -24516,6 +24516,9 @@ Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK on
 - **Fix:** give the three columns `title: t(...)` (reusing existing keys where they fit), render the sum row label through `t` while keeping a non-display sentinel for the `move !== "Total"` checks, and use `t("Databases.Game.NoGamesFound")` for `emptyState`; extend the de-DE catalogue test that f-20261104-03 added to cover OpeningsTable.
 - **Proof:** ephemeral Vitest render of `OpeningsTable` with `useTranslation` mocked to `T(key)`: the rendered text contains the literal "No games found" (untranslated). Column titles traced: no `title` on any column, the same pattern f-20261104-03 identified for GameTable. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 19)
+
+**Handled 2026-11-14 (drain 90a2aa88 cluster C3, released by interactive session e6988d99).** `988a311ca`: the analysis explorer's Stats table column titles, sum row and empty message go through i18next (`Board.Database.StatsTable.Move/Total/Results` in all 16 catalogues; empty state reuses the existing "No games found" key); the sum row no longer identifies itself by the display word "Total"; the German catalogue test covers the table. `5a7c92215`: test that the sum row shows no percentage (review-tests round 1). Lenses correctness, root-cause, tests, code-quality and minimalism approved; full frontend gates green; pushed in `f3b063a85..79149f91b`. Rejected: reusing another screen's "Move" key.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"226c992fa94e44c1587bcc042457656d4d4076ea78a84b5d6b2a9aa18368fced","header_sha256":"d7a622f99ad12922c9bd18a05c05ff0568612d8a557beabe9a265c5dd734cc73","header_status":"handled","input_sha256":"01855bae1fd40670f2471f94844b00d50776acbc5291c14fa70c2b346775be2c","kind":"mutation-receipt","operation":"7cc0dabb684f2be3bb616aee021657e673d8009ad570f86703745c630b198fda","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-38"],"target":"f-20261112-38","v":1} -->
 
 ---
 
