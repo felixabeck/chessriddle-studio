@@ -25645,3 +25645,34 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Fix:** do not surface a cancellation as a load failure: ignore `AbortError`/cancellation errors in `loadError` (the codebase already has `errorUnlessCancelled`), or keep SWR from storing a superseded run's rejection. Check the other `useNativeRequestOwner` + SWR callers for the same display, and add a Databases test asserting no "Failed" text after an aborted fetch is resumed.
 * **Proof:** observed in the Vitest test `aborting Bob at 80% by switching to a cached player clears Bob's progress so switching back shows 0%` (`src/components/home/Databases.test.tsx`, commit d0613174b): the rendered text was `Home.Databases.ProcessingGames…0%Home.Databases.Failed.Title`. Not yet reproduced in the real app.
 * **Found by:** next-finding drain session e5f1087c (f-20261112-21 repair round 3). Related: f-20261112-21 (progress identity in the same view, handled; different cause).
+
+---
+
+## 2026-11-14 — filed through the inbox spool
+
+### Library Players and Tournaments tables cannot select a first row from the keyboard
+
+* **ID:** f-20261114-03 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Filed from:** dfffe27f-6598-4673-8fb7-83898f979f3b
+- **Impact class:** ux
+- **Spotted outside diff:** yes
+- **Where:** `src/components/databases/PlayerTable.tsx:186` and `src/components/databases/TournamentTable.tsx:174` select a record only via mantine-datatable `onRowClick`; no `customRowAttributes`, `tabIndex` or key handler on rows, and cells render plain text. The ArrowUp/ArrowDown hotkeys (`PlayerTable.tsx:45-56`, `TournamentTable.tsx:47-58`) call `getAdjacentRecordId` (`src/components/databases/pageSelection.ts:6-10`), which returns `undefined` when nothing is selected yet.
+- **Defect:** without a mouse there is no way to select the first player or tournament: rows cannot take focus, and the arrow keys only move an existing selection. The explorer Games/Stats tabs (f-20261112-57, f-20261112-59) and the Library Games table already use the shared `gameRowActivation` row contract.
+- **Failure scenario:** open a database's Players (or Tournaments) view and Tab through it, then press ArrowDown: focus never lands on a row and ArrowDown selects nothing, so the player/tournament card cannot be opened by keyboard.
+- **Fix:** make rows focusable with an Enter (and focus) selection via `customRowAttributes`, reusing `gameRowActivation` as the siblings do, and let ArrowDown/ArrowUp with no selection pick the first/last loaded row; add keyboard tests to `PlayerTournamentTable.test.tsx`.
+- **Proof:** code trace on 988a311ca: no `customRowAttributes` in either file (`git grep customRowAttributes src/components/databases` lists only GameTable), and `getAdjacentRecordId` returns `undefined` for `currentIndex === -1`. Reported by the root-cause lens on the f-20261112-38/-59 push.
+- **Found by:** review-root-cause lens (agy), drain dfffe27f
+
+### Windows CI: production_workspace_file_tail_finishes_after_command_caller_drop times out on its 1 s "entered" wait
+
+* **ID:** f-20261114-04 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Filed from:** dfffe27f-6598-4673-8fb7-83898f979f3b
+- **Impact class:** tooling
+- **Spotted outside diff:** yes
+- **CI run:** 43583975358
+- **Where:** `src-tauri/src/file_workspace.rs:5668-5671`: `tokio::time::timeout(Duration::from_secs(1), entered).await.unwrap().unwrap()` in test `file_workspace::tests::production_workspace_file_tail_finishes_after_command_caller_drop`; the 2 s wait below it has the same shape.
+- **Defect:** the test bounds the spawned `create_workspace_file` caller's arrival at the hook with a 1 s wall-clock timeout. On the shared Windows runner, under a 2127-test parallel run, that arrival can take longer, so the test fails with `Elapsed(())` although the code under test is unchanged.
+- **Failure scenario:** `Test` run 43583975358, job `rust-windows-test` (job 132414430795) on f3b063a85, a ledger-only commit: `panicked at src\file_workspace.rs:5670:14: called Result::unwrap() on an Err value: Elapsed(())`; 2126 passed, 1 failed. The same job passed on its parent d4d6e728f and on the six runs before it. The red remote refuses every push (`pnpm ci:remote:check`) until an owning finding is handled.
+- **Fix:** wait on the `entered` signal without a tight wall-clock bound (or with a generous bound such as 30 s that only guards against hangs), likewise the follow-up 2 s wait. Check the module's sibling tests for the same 1–2 s pattern and widen them consistently.
+- **Proof:** job log via `gh api repos/felixabeck/chessriddle-studio/actions/jobs/132414430795/logs`; job history via `gh run list --workflow Test --branch master` (rust-windows-test success on the 7 preceding runs).
+- **Found by:** drain dfffe27f push (`ci:remote:check` RED)
