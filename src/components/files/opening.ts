@@ -169,8 +169,8 @@ export function syncDeck(
     let added = 0;
     // A retained card whose answer moved (a promoted variation) or whose full FEN changed (the same
     // board state reached at another move number) is a change to persist even though no position
-    // was added or removed. The rebuilt FEN is carried forward: consumers look cards up in the tree
-    // by the exact FEN string, so a stale one would drop the card (f-20260922-02).
+    // was added or removed. The rebuilt FEN is carried forward so the persisted card stays equal
+    // to the tree's current FEN; lookups go through `getBoardState` (f-20260922-02).
     let updated = 0;
     const merged: Position[] = [];
     for (const pos of freshPositions) {

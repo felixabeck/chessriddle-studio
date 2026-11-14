@@ -65,20 +65,6 @@ export function* treeIterator(node: TreeNode): Generator<ListNode> {
     }
 }
 
-/**
- * Resolves a position in a repertoire tree. `[]` is deliberately reserved for
- * the root node; callers must treat `undefined` as a removed or unknown card.
- */
-export function findFen(fen: string, node: TreeNode): number[] | undefined {
-    const iterator = treeIterator(node);
-    for (const item of iterator) {
-        if (item.node.fen === fen) {
-            return item.position;
-        }
-    }
-    return undefined;
-}
-
 export function* treeIteratorMainLine(node: TreeNode): Generator<ListNode> {
     let currentNode: TreeNode | undefined = node;
     let position: number[] = [];

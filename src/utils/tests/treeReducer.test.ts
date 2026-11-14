@@ -6,7 +6,6 @@ import {
     countMainPly,
     createNode,
     defaultTree,
-    findFen,
     getBoardState,
     getGameName,
     getMemoizedBoardStateMap,
@@ -27,12 +26,6 @@ const child = (fen: string, halfMoves: number): TreeNode =>
         san: "e4",
         halfMoves,
     });
-
-test("findFen distinguishes the root from a removed practice card", () => {
-    const tree = defaultTree().root;
-    expect(findFen(tree.fen, tree)).toEqual([]);
-    expect(findFen("removed-card", tree)).toBeUndefined();
-});
 
 test("preserves a zero [%clk 0:00:00] clock as a numeric zero", () => {
     const node = createNode({

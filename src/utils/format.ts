@@ -4,6 +4,8 @@ export function formatNumber(value?: number): string {
 }
 
 const MILLISECONDS_PER_SECOND = 1000;
+const TENTHS_PER_SECOND = 10;
+const MILLISECONDS_PER_TENTH = MILLISECONDS_PER_SECOND / TENTHS_PER_SECOND;
 const SECONDS_PER_MINUTE = 60;
 const MINUTES_PER_HOUR = 60;
 const HOURS_PER_DAY = 24;
@@ -138,17 +140,17 @@ export function formatTime(
     locale: string,
     formatSeconds: (value: string) => string,
 ): string {
-    const totalSeconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    const tenths = Math.floor((ms % 1000) / 100);
+    const totalSeconds = Math.floor(ms / MILLISECONDS_PER_SECOND);
+    const minutes = Math.floor(totalSeconds / SECONDS_PER_MINUTE);
+    const seconds = totalSeconds % SECONDS_PER_MINUTE;
+    const tenths = Math.floor((ms % MILLISECONDS_PER_SECOND) / MILLISECONDS_PER_TENTH);
     if (minutes > 0) {
         const decimalSeparator =
             new Intl.NumberFormat(locale).formatToParts(1.1).find((part) => part.type === "decimal")
                 ?.value ?? ".";
         return `${minutes}:${seconds.toString().padStart(2, "0")}${decimalSeparator}${tenths}`;
     }
-    return formatSeconds(formatDecimal(seconds + tenths / 10, locale));
+    return formatSeconds(formatDecimal(seconds + tenths / TENTHS_PER_SECOND, locale));
 }
 
 export function getInitials(name: string) {

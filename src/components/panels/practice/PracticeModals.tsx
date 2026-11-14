@@ -16,7 +16,44 @@ import {
   type PracticeDeckValue,
   type PracticeDeckKey,
 } from "@/state/practiceStorage";
-import { getBoardState } from "@/utils/treeReducer";
+import { getBoardState, type TreeState } from "@/utils/treeReducer";
+
+function resolveCardInTree(root: TreeState["root"], headers: TreeState["headers"], fen: string) {
+  return resolvePracticeCard(
+    root,
+    getBoardState(fen),
+    headers.orientation || "white",
+    headers.start || [],
+  );
+}
+
+function GoToPracticePositionAction({
+  fen,
+  onNavigated,
+}: {
+  fen: string;
+  onNavigated: () => void;
+}) {
+  const { t } = useTranslation();
+  const store = useContext(TreeStateContext)!;
+  const goToMove = useStore(store, (s) => s.goToMove);
+
+  return (
+    <IconAction
+      label={t("Board.Practice.GoBackToPosition")}
+      variant="subtle"
+      onClick={() => {
+        const state = store.getState();
+        const current = resolveCardInTree(state.root, state.headers, fen);
+        if (!current) return;
+        goToMove(current.frame.position);
+        onNavigated();
+      }}
+    >
+      <ArrowRight />
+    </IconAction>
+  );
+}
 
 export function PositionsModal({
   open,
@@ -32,7 +69,6 @@ export function PositionsModal({
   const store = useContext(TreeStateContext)!;
   const root = useStore(store, (s) => s.root);
   const headers = useStore(store, (s) => s.headers);
-  const goToMove = useStore(store, (s) => s.goToMove);
   return (
     <AppModal
       opened={open}
@@ -43,12 +79,7 @@ export function PositionsModal({
       {deck.positions.length === 0 && <Text>{t("Board.Practice.NoPositionsYet")}</Text>}
       <SimpleGrid cols={2}>
         {deck.positions.map((c) => {
-          const resolved = resolvePracticeCard(
-            root,
-            getBoardState(c.fen),
-            headers.orientation || "white",
-            headers.start || [],
-          );
+          const resolved = resolveCardInTree(root, headers, c.fen);
           if (!resolved) return null;
           const node = resolved.frame.node;
           const status = getCardStatus(c.card);
@@ -77,24 +108,7 @@ export function PositionsModal({
                   </Text>
                   <Text>{formatDate(c.card.due)}</Text>
                 </Stack>
-                <IconAction
-                  label={t("Board.Practice.GoBackToPosition")}
-                  variant="subtle"
-                  onClick={() => {
-                    const state = store.getState();
-                    const current = resolvePracticeCard(
-                      state.root,
-                      getBoardState(c.fen),
-                      state.headers.orientation || "white",
-                      state.headers.start || [],
-                    );
-                    if (!current) return;
-                    goToMove(current.frame.position);
-                    setOpen(false);
-                  }}
-                >
-                  <ArrowRight />
-                </IconAction>
+                <GoToPracticePositionAction fen={c.fen} onNavigated={() => setOpen(false)} />
               </Group>
             </Card>
           );
@@ -121,7 +135,6 @@ export function LogsModal({
   const store = useContext(TreeStateContext)!;
   const root = useStore(store, (s) => s.root);
   const headers = useStore(store, (s) => s.headers);
-  const goToMove = useStore(store, (s) => s.goToMove);
   const [logs, setLogs] = useState<Array<ReviewLog & { fen: string; id: string }>>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -184,12 +197,7 @@ export function LogsModal({
           <Text>{t("Board.Practice.NoLogsYet")}</Text>
         )}
         {logs.map((log) => {
-          const resolved = resolvePracticeCard(
-            root,
-            getBoardState(log.fen),
-            headers.orientation || "white",
-            headers.start || [],
-          );
+          const resolved = resolveCardInTree(root, headers, log.fen);
           const node = resolved?.frame.node ?? null;
 
           return (
@@ -229,24 +237,7 @@ export function LogsModal({
                   <Text>{formatDate(log.review)}</Text>
                 </Stack>
                 {resolved && (
-                  <IconAction
-                    label={t("Board.Practice.GoBackToPosition")}
-                    variant="subtle"
-                    onClick={() => {
-                      const state = store.getState();
-                      const current = resolvePracticeCard(
-                        state.root,
-                        getBoardState(log.fen),
-                        state.headers.orientation || "white",
-                        state.headers.start || [],
-                      );
-                      if (!current) return;
-                      goToMove(current.frame.position);
-                      setOpen(false);
-                    }}
-                  >
-                    <ArrowRight />
-                  </IconAction>
+                  <GoToPracticePositionAction fen={log.fen} onNavigated={() => setOpen(false)} />
                 )}
               </Group>
             </Card>

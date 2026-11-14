@@ -1479,3 +1479,75 @@ test("LogsModal resolves a log whose FEN differs only in halfmove/fullmove clock
   await act(async () => goBack!.click());
   expect(tree.getState().position).toEqual([0, 0]);
 });
+
+test("LogsModal uses the in-scope occurrence for label and navigation when headers.start is set", async () => {
+  await mountStudy(
+    { ...cases[1], moves: ["Nf3", "Nf6", "g3", "g6", "Bg2", "Bg7"] },
+    ["g3", "g6", "Bg2", "Nf6", "Nf3", "d5"],
+    false,
+    { start: [1], startPractice: false },
+  );
+  const inScopeNode = getNodeAtPath(tree.getState().root, [1, 0, 0, 0, 0]);
+  const outsideNode = getNodeAtPath(tree.getState().root, [0, 0, 0, 0, 0]);
+  expect(getBoardState(inScopeNode.fen)).toBe(getBoardState(outsideNode.fen));
+  expect(inScopeNode.san).toBe("Nf3");
+  expect(outsideNode.san).toBe("Bg2");
+
+  const inScopeCard = buildFromTree(tree.getState().root, "black", [1]).find(
+    (c) => getBoardState(c.fen) === getBoardState(inScopeNode.fen),
+  )!;
+  const written = updateCardPerformance([inScopeCard], 0, inScopeCard.card, 3)!;
+  reviews = [{ id: "scoped-log", entry: JSON.stringify(written.entry) }];
+  expect(tree.getState().position).toEqual([]);
+
+  await click("Board.Practice.ShowLogs");
+  const logCard = document.querySelector<HTMLElement>('[data-practice-entry-id="scoped-log"]');
+  expect(logCard).not.toBeNull();
+  expect(logCard?.firstElementChild?.textContent).toBe("3. Nf3");
+  expect(logCard?.firstElementChild?.textContent).not.toBe("3. Bg2");
+
+  const goBack = logCard?.querySelector<HTMLButtonElement>(
+    'button[aria-label="Board.Practice.GoBackToPosition"]',
+  );
+  expect(goBack).not.toBeNull();
+  await act(async () => goBack!.click());
+  expect(tree.getState().position).toEqual([1, 0, 0, 0, 0]);
+});
+
+test("LogsModal re-resolves from store.getState() when the tree changes between render and Go-back click", async () => {
+  await mountStudy(
+    { ...cases[1], moves: ["Nf3", "Nf6", "g3", "g6", "Bg2", "Bg7"] },
+    ["g3", "g6", "Nf3", "Nf6", "Ng1", "Ng8", "Nf3", "Nf6", "Bg2", "d5"],
+    false,
+    { startPractice: false },
+  );
+  const initialBoard = getBoardState(getNodeAtPath(tree.getState().root, [0, 0, 0, 0, 0]).fen);
+  expect(getBoardState(getNodeAtPath(tree.getState().root, [1, 0, 0, 0, 0, 0, 0, 0, 0]).fen)).toBe(
+    initialBoard,
+  );
+
+  const loggedCard = buildFromTree(tree.getState().root, "black", []).find(
+    (c) => getBoardState(c.fen) === initialBoard,
+  )!;
+  const written = updateCardPerformance([loggedCard], 0, loggedCard.card, 3)!;
+  reviews = [{ id: "moved-log", entry: JSON.stringify(written.entry) }];
+
+  const goToMove = vi.fn(tree.getState().goToMove);
+  tree.setState({ goToMove });
+
+  await click("Board.Practice.ShowLogs");
+  const logCard = document.querySelector<HTMLElement>('[data-practice-entry-id="moved-log"]');
+  expect(logCard).not.toBeNull();
+  const goBack = logCard?.querySelector<HTMLButtonElement>(
+    'button[aria-label="Board.Practice.GoBackToPosition"]',
+  );
+  expect(goBack).not.toBeNull();
+
+  await act(async () => {
+    tree.getState().promoteVariation([1]);
+    goBack!.click();
+  });
+
+  expect(goToMove).toHaveBeenCalledWith([0, 0, 0, 0, 0, 0, 0, 0, 0]);
+  expect(tree.getState().position).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0]);
+});

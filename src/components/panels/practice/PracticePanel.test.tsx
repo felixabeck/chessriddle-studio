@@ -138,8 +138,6 @@ vi.mock("@/utils/treeReducer", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/utils/treeReducer")>();
   return {
     ...actual,
-    findFen: (fen: string) => (fen === "gone" || fen === "root" ? null : [0]),
-    getNodeAtPath: () => fixtures.node,
     treeIterator: function* (root: TreeNode) {
       if (Array.isArray(root.children)) {
         yield* actual.treeIterator(root);
