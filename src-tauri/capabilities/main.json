@@ -33,7 +33,8 @@
         "process:allow-exit",
         "process:allow-restart",
         "updater:allow-check",
-        "updater:allow-download-and-install",
+        "updater:allow-download",
+        "updater:allow-install",
         "log:allow-log"
     ]
 }

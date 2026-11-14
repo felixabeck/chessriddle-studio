@@ -474,7 +474,7 @@ describe("capability and CSP boundaries", () => {
     );
     expect(
       inspectCapability({
-        permissions: ["updater:allow-check", "updater:allow-download-and-install"],
+        permissions: ["updater:allow-check", "updater:allow-download", "updater:allow-install"],
       }),
     ).toEqual([]);
   });

@@ -600,6 +600,10 @@ describe("startup update check", () => {
 
     await act(async () => root.render(<Probe />));
 
+    expect(update.install).toHaveBeenCalledOnce();
+    expect(update.install.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.scanBlockingTabs.mock.invocationCallOrder[0],
+    );
     expect(mocks.scanBlockingTabs).toHaveBeenCalledWith(storedTabs);
     expect(mocks.relaunch).not.toHaveBeenCalled();
     expect(mocks.showNotification).toHaveBeenCalledWith(
@@ -621,6 +625,7 @@ describe("startup update check", () => {
 
     await act(async () => root.render(<Probe />));
 
+    expect(update.install).toHaveBeenCalledOnce();
     expect(mocks.relaunch).not.toHaveBeenCalled();
     expect(mocks.showNotification).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -643,6 +648,10 @@ describe("startup update check", () => {
 
     await act(async () => root.render(<Probe />));
 
+    expect(update.install).toHaveBeenCalledOnce();
+    expect(update.install.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.scanBlockingTabs.mock.invocationCallOrder[0],
+    );
     expect(mocks.relaunch).not.toHaveBeenCalled();
     expect(mocks.showNotification).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -775,6 +784,13 @@ describe("startup update check", () => {
 
     expect(update.install).not.toHaveBeenCalled();
     expect(mocks.relaunch).not.toHaveBeenCalled();
+    expect(mocks.showNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Updater.Postponed",
+        message: "Updater.SaveToInstall:9.9.9",
+        autoClose: false,
+      }),
+    );
     expect(update.close).toHaveBeenCalledOnce();
   });
 

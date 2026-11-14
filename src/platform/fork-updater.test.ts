@@ -60,14 +60,15 @@ test("capability grants exact updater permissions, never updater:default", () =>
     expect(permissions).toEqual(
         expect.arrayContaining([
             "updater:allow-check",
-            "updater:allow-download-and-install",
+            "updater:allow-download",
+            "updater:allow-install",
             "process:allow-restart",
         ]),
     );
     expect(permissions).not.toContain("updater:default");
     expect(
         permissions.filter((p) => typeof p === "string" && p.startsWith("updater:")).sort(),
-    ).toEqual(["updater:allow-check", "updater:allow-download-and-install"]);
+    ).toEqual(["updater:allow-check", "updater:allow-download", "updater:allow-install"]);
 });
 
 test("release.yml builds on tags into one draft and publishes only a complete matrix", () => {
