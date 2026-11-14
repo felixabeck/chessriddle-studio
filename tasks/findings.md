@@ -26219,3 +26219,24 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Found by:** Grok Bot, cross-cutting engine-output robustness sweep
 * **Line correction (Grok Bot, 2026-11-15):** the two silent `Err(Error::NoMovesFound) => {}` arms cited in Proof are at `src-tauri/src/chess.rs:800` (interactive loop) and `:1282` (report loop) on origin `75e823799`, not `:799`/`:1283`. In the report loop (`analyze_position_with_owner`) the same truncation means a report position whose search crosses 10^12 nodes keeps the lines from before the threshold as its stored analysis.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"648861587ce123b5ec7a89c56ffe1e3fc93a61a9d77328d185de47f409b32cc1","input_sha256":"1ba5e6a6fbc1256300a2d9f6ee8778390880b2f07e5dd9d16b6f885e67545230","kind":"mutation-receipt","operation":"54636316df6430bcdb18bdabca73b5f130278c9a400b75bf7464fc01391f4a14","options":{"section":null},"request_id_sha256":null,"results":["f-20261115-03"],"target":"f-20261115-03","v":1} -->
+
+---
+
+## 2026-11-15 — filed through the inbox spool
+
+### Database import silently drops a whole game when any one move, even in a sideline, cannot be played
+
+* **ID:** f-20261115-04 · **Status:** open · **Area:** pgn-import · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** data-loss
+* **Spotted outside diff:** yes (cross-cutting silent-error-arm sweep, old upstream importer)
+* **Where:** `src-tauri/src/db/mod.rs` `Importer::san` (`let m = san.san.to_move(&frame.position).ok();` … `else { self.skip = true; }`, ~line 650-678), `Importer::begin_variation` (returns `Skip(false)`, so variation moves reach `san` on their own frame), `Importer::end_game` (`if self.skip { … None }`, line 726), and `read_import_games`, which inserts only `Some` games. The only feedback is `ConvertProgress.imported_games` (`src/hooks/useConversionProgress.ts:39`). Reached from Databases → Add database (`AddDatabase.tsx:107`), import into an existing database (`databaseMutation.ts:145`) and the library's convert (`useDatabaseLibrary.tsx:539`).
+* **Defect:** `skip` is one flag per game and is set by an unplayable SAN in any frame. A single bad move in a sideline therefore discards the entire game: mainline, headers, comments and every other variation. A bad move in the mainline also discards the moves before it. Nothing reports it: no count of skipped games, no log line, no diagnostic, so the import looks complete. Annotated PGNs commonly contain such moves (a typo'd sideline, an ambiguous SAN from older tools, a variation attached one ply off). The same game opens fine in the Files view, where `innerParsePGN` skips only the unplayable token (d-20261103-13 deliberately keeps typo games viewable). f-20261101-09 was the same silent-skip class for one cause (stale castling rights) and was handled as data loss; this is the general cause.
+* **Failure scenario:** a user imports an annotated collection of 2,000 games into a database. 37 games have one mistyped move in a sideline, e.g. `1. e4 e5 (1... c5 2. Nf6) 2. Nf3 …`. The progress shows 1,963 games and the import reports success. The 37 games, including their correct mainlines, are missing from the database, its player and event stats, and its position search, and nothing tells the user which ones or that any are missing.
+* **Proof:** scratch crate under /tmp against the vendored `src-tauri/vendor/pgn-reader` (path dependency) and `shakmaty 0.27.1`, with a visitor mirroring the importer's control flow (frame stack, `san` on the last frame with `skip = true` on an unplayable SAN, `begin_variation` → `Skip(false)`, `end_game` → `None` on skip):
+  - `1. e4 e5 (1... c5 2. Nf3) 2. Nf3 Nc6 3. Bb5 a6 1-0` → `Some(8)` (control).
+  - the same game with the sideline `(1... c5 2. Nf6)` → `None` (whole game dropped).
+  - a game with an impossible mainline move `4. Qh8` → `None` (the three good moves before it dropped too).
+  - The existing test `import_failure_physical_ordinal_counts_skipped_games` (`db/mod.rs:10405`) confirms skipped games are counted only for ordinal bookkeeping, not reported.
+* **Fix:** keep the game and drop only what cannot be played. On an unplayable SAN inside a variation, skip the rest of that variation (set a per-frame flag and ignore moves until its `end_variation`). On an unplayable mainline SAN, keep the game up to that point, as the Files view does. Keep `skip` for genuinely unusable games (bad FEN). In addition, return the number of games skipped and the number truncated from `convert_pgn` and show it next to the imported count, so remaining losses are visible.
+* **Related:** f-20261101-09 (silent skip on stale castling rights, handled in 56125d43); f-20261112-79 (opening-book visitor dropping variation games, handled in d8d11e681); d-20261103-13 (a typo game stays viewable); f-20261115-01 (same importer, encoding).
+* **Found by:** Grok Bot, cross-cutting silent-error-arm sweep
