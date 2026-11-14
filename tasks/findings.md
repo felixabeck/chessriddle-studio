@@ -24883,7 +24883,7 @@ Correction to the Failure scenario example: the `!?` button's accessible name is
 
 ### Explorer Stats rows play their move only on mouse click; keyboard users cannot play an explorer move
 
-* **ID:** f-20261112-59 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-59 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/panels/database/OpeningsTable.tsx:116`: the only activation path is mantine-datatable `onRowClick={({ record }) => makeMove({ payload: record.move })}`. There are no `customRowAttributes`, `tabIndex` or key handler, and no cell renders a focusable control (`:57-111` render plain `Text`/`Progress`).
@@ -24892,6 +24892,9 @@ Correction to the Failure scenario example: the `!?` button's accessible name is
 - **Fix:** give each non-"Total" row `tabIndex: 0`, a move-describing `aria-label` and an Enter/Space handler via `customRowAttributes` (or render the move cell as a button). Exclude the "Total" sum row, which today silently no-ops on click because `parseSan(pos, "Total")` fails (`src/state/store/tree.ts:513-515`). Add a keyboard-activation test.
 - **Proof:** same harness as f-20261112-57: an ephemeral Vitest render of the real mantine-datatable `DataTable` with `onRowClick` showed the `<tr>` has no `tabindex` (`tabIndex === -1`) and no focusable descendant, and Enter on it does nothing. Here OpeningsTable's cells are plain `Text`/`Progress` (`:57-111`), so the row has no other focus target. Trace on origin/master d30eb171f.
 - **Found by:** Grok Bot general review (chunk 26)
+
+**Handled 2026-11-14 (drain 90a2aa88 cluster C3 as co-located joiner of f-20261112-38, released by interactive session e6988d99).** `988a311ca`: Stats table move rows take focus and Enter plays the move, as on the sibling Games tab; single click still plays it; the sum row and game-over row cannot be activated; tests in `OpeningsTable.test.tsx`. Lenses approved; full frontend gates green; pushed in `f3b063a85..79149f91b`. Rejected: a click guard the tests cannot observe.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"c12f28060448482487b0cdfadea967c70df81aec5537c032727c1b81f1ec8665","header_sha256":"c0b6352530e579f59f726b82cba31eb2eef3c8f3ddaa19d91a03729d2c71b9d4","header_status":"handled","input_sha256":"1ad0953eed5e39cad40e5699ec02baeed2fd20f5b25611318678dd8f049ee345","kind":"mutation-receipt","operation":"c3ddf5e4677a5d80bc8ca786deef1bde1ce0111d385ab2acfd9b0cbcbe353690","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-59"],"target":"f-20261112-59","v":1} -->
 
 ---
 
