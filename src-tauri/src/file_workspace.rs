@@ -5670,6 +5670,7 @@ mod tests {
             .unwrap()
             .unwrap();
         caller.abort();
+        let _ = caller.await;
         release.send(()).unwrap();
         tokio::time::timeout(Duration::from_secs(5), async {
             while !app
