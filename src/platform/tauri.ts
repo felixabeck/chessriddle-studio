@@ -11,7 +11,14 @@ import {
     type Result as GeneratedResult,
     type TimeControl,
 } from "@/bindings/generated";
-import type { ProgressEvent, ProgressItem } from "@/bindings";
+import type {
+    AccountCompletion,
+    AccountImportRequest,
+    DatabaseHandle,
+    ProgressEvent,
+    ProgressItem,
+} from "@/bindings";
+import { recordDatabaseWrite } from "./databaseWrites";
 import { normalizeError } from "./errors";
 import { ChessRiddleCommandError } from "./chessriddle";
 import { error as logError, getCurrentWindow } from "./native";
@@ -221,6 +228,41 @@ const GAME_STATE_COMMANDS = new Set<PropertyKey>([
     "takeBackGameMove",
     "resignGame",
 ]);
+const DATABASE_WRITE_ARGUMENTS: ReadonlyMap<PropertyKey, number> = new Map([
+    ["mergePlayers", 0],
+    ["deleteDuplicatedGames", 0],
+    ["deleteEmptyGames", 0],
+    ["deleteDbGame", 0],
+    ["writeDbGame", 0],
+    ["insertDbGame", 0],
+    ["deleteDatabase", 0],
+    ["editDbInfo", 0],
+    ["convertPgn", 2],
+    ["restoreCollectionArchive", 1],
+    ["migrateLinkedCollection", 2],
+]);
+
+function collectDatabaseWriteHandles(
+    property: PropertyKey,
+    args: unknown[],
+    into: Array<DatabaseHandle | null | undefined>,
+): void {
+    const index = DATABASE_WRITE_ARGUMENTS.get(property);
+    if (index !== undefined) into.push(args[index] as DatabaseHandle);
+    if (property !== "importAccountGames") return;
+    const request = args[0] as AccountImportRequest | undefined;
+    if (request?.target?.kind === "unlinked") into.push(request.target.database);
+}
+
+function collectSuccessfulImportDatabase(
+    property: PropertyKey,
+    value: unknown,
+    into: Array<DatabaseHandle | null | undefined>,
+): void {
+    if (property !== "importAccountGames" || value == null || typeof value !== "object") return;
+    if (!("committedDatabase" in value)) return;
+    into.push((value as AccountCompletion).committedDatabase);
+}
 
 type EventEnvelope<T> = { payload: T };
 type EventAdapterError<T> = (error: unknown, event: EventEnvelope<T>) => void;
@@ -413,6 +455,8 @@ export const tauri: TauriCommands = new Proxy(commands, {
                 property === "readGame"
                     ? (args[0] as { id?: { id?: string } } | undefined)?.id?.id
                     : undefined;
+            const recordedHandles: Array<DatabaseHandle | null | undefined> = [];
+            collectDatabaseWriteHandles(property, args, recordedHandles);
             try {
                 if (property === "prepareAnalysis") {
                     return await prepareAnalysis(
@@ -455,6 +499,7 @@ export const tauri: TauriCommands = new Proxy(commands, {
                     return result;
                 }
                 const value = isCommandResult(result) ? unwrapCommand(result) : result;
+                collectSuccessfulImportDatabase(property, value, recordedHandles);
                 if (property === "clearProgress") return decodeProgressGeneration(value);
                 if (property === "getProgress") {
                     return value === null ? null : normalizeProgressGeneration(value);
@@ -472,6 +517,11 @@ export const tauri: TauriCommands = new Proxy(commands, {
                 if (error instanceof TauriCommandError) throw error;
                 throw new TauriCommandError(error);
             } finally {
+                try {
+                    recordDatabaseWrite(recordedHandles);
+                } catch {
+                    // Recording must never throw out of the facade.
+                }
                 const mark = (
                     globalThis as {
                         __verifyAppRecordReadGame?: (durationMs: number, fileId?: string) => void;

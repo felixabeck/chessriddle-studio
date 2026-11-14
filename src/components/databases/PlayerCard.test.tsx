@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { SWRConfig } from "swr";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { DatabaseHandle, Player } from "@/bindings";
+import { recordDatabaseWrite } from "@/platform/databaseWrites";
 
 const mocks = vi.hoisted(() => ({
   getPlayersGameInfo: vi.fn(),
@@ -86,4 +87,27 @@ test("the database caller passes its own player and database to the shared perso
     isDatabase: true,
     databasePlayer: { player, file },
   });
+});
+
+test("a write to the player's database refetches game info and a write to another database does not", async () => {
+  const cache = new Map();
+  mocks.getPlayersGameInfo.mockResolvedValue({ site_stats_data: [] });
+  await act(async () => {
+    root.render(
+      <SWRConfig value={{ provider: () => cache, shouldRetryOnError: false }}>
+        <PlayerCard player={player} file={file} />
+      </SWRConfig>,
+    );
+  });
+  await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledOnce());
+
+  await act(async () => {
+    recordDatabaseWrite([{ id: { id: "other-player-db" }, kind: "database" }]);
+  });
+  expect(mocks.getPlayersGameInfo).toHaveBeenCalledOnce();
+
+  await act(async () => {
+    recordDatabaseWrite([file]);
+  });
+  await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(2));
 });

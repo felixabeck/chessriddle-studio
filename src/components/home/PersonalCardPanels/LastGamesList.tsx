@@ -7,6 +7,7 @@ import type { DatabaseHandle, NormalizedGame, Player } from "@/bindings";
 import { useGameOpen } from "@/components/common/gameOpen";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
+import { useDatabaseWriteRevision } from "@/platform/databaseWrites";
 import { errorUnlessCancelled } from "@/platform/errors";
 import { addRecentFileAtom, tabsAtom } from "@/state/atoms";
 import { openDatabaseGame } from "@/utils/databaseGame";
@@ -31,7 +32,8 @@ function LastGamesList({ player, file }: { player: Player; file: DatabaseHandle 
       }),
     onError,
   );
-  const requestKey = ["player-last-games", file, player.id] as const;
+  const revision = useDatabaseWriteRevision(file);
+  const requestKey = ["player-last-games", file, player.id, revision] as const;
   const requestOwner = useNativeRequestOwner(requestKey);
   const { data, error, isLoading } = useSWRImmutable(
     requestKey,

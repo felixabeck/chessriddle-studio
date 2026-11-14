@@ -36,6 +36,7 @@ const mocks = vi.hoisted(() => ({
     releaseConversion: vi.fn(),
     cancelConversion: vi.fn(),
     convertPgn: vi.fn(),
+    deleteDbGame: vi.fn(),
     releaseDownload: vi.fn(),
     prepareAnalysis: vi.fn(),
     cancelAnalysis: vi.fn(),
@@ -248,6 +249,7 @@ vi.mock("@/bindings/generated", () => ({
         releaseConversion: mocks.releaseConversion,
         cancelConversion: mocks.cancelConversion,
         convertPgn: mocks.convertPgn,
+        deleteDbGame: mocks.deleteDbGame,
         releaseDownload: mocks.releaseDownload,
         prepareAnalysis: mocks.prepareAnalysis,
         cancelAnalysis: mocks.cancelAnalysis,
@@ -282,6 +284,7 @@ vi.mock("@/bindings/generated", () => ({
     ),
 }));
 
+import { databaseWriteRevision } from "./databaseWrites";
 import { normalizeError } from "./errors";
 import { TauriCommandError, tauri, tauriSubscriptions, unwrapCommand } from "./tauri";
 
@@ -313,6 +316,7 @@ describe("tauri command facade", () => {
         mocks.downloadChessComGames.mockReset().mockResolvedValue({ status: "ok", data: null });
         mocks.prepareAnalysis.mockReset();
         mocks.cancelAnalysis.mockReset();
+        mocks.deleteDbGame.mockReset();
         mocks.getGames.mockReset();
         mocks.searchPositionsStats.mockReset();
         mocks.countPgnGames.mockReset();
@@ -605,6 +609,62 @@ describe("tauri command facade", () => {
             null,
             null,
         );
+    });
+
+    test("database write commands record their handle on success and on rejection", async () => {
+        const { tauri } = await import("./tauri");
+        const success = { id: { id: "write-success-db" }, kind: "database" as const };
+        const rejected = { id: { id: "write-reject-db" }, kind: "database" as const };
+        mocks.deleteDbGame.mockResolvedValue({ status: "ok", data: null });
+        await tauri.deleteDbGame(success, 1);
+        expect(databaseWriteRevision(success)).toBe(1);
+
+        mocks.deleteDbGame.mockRejectedValue(new Error("native write failed"));
+        await expect(tauri.deleteDbGame(rejected, 2)).rejects.toBeInstanceOf(TauriCommandError);
+        expect(databaseWriteRevision(rejected)).toBe(1);
+    });
+
+    test("convertPgn records the database argument at index 2", async () => {
+        const { tauri } = await import("./tauri");
+        const database = { id: { id: "convert-pgn-db" }, kind: "database" as const };
+        mocks.convertPgn.mockResolvedValue({ status: "ok", data: null });
+        await tauri.convertPgn("operation", [], database, "Title", null, null);
+        expect(databaseWriteRevision(database)).toBe(1);
+    });
+
+    test("importAccountGames records the unlinked target and committedDatabase", async () => {
+        const { tauri } = await import("./tauri");
+        const target = { id: { id: "import-target-db" }, kind: "database" as const };
+        const committed = { id: { id: "import-committed-db" }, kind: "database" as const };
+        const request = {
+            provider: "lichess",
+            account: "Player",
+            accountHandle: null,
+            destination: { id: "destination" },
+            pendingBatch: null,
+            sinceMs: null,
+            target: { kind: "unlinked" as const, database: target, title: "Player Lichess" },
+        };
+        mocks.importAccountGames.mockResolvedValue({
+            status: "ok",
+            data: { committedDatabase: committed },
+        });
+        await tauri.importAccountGames(request);
+        expect(databaseWriteRevision(target)).toBe(1);
+        expect(databaseWriteRevision(committed)).toBe(1);
+
+        mocks.importAccountGames.mockRejectedValue(new Error("import failed"));
+        await expect(tauri.importAccountGames(request)).rejects.toBeInstanceOf(TauriCommandError);
+        expect(databaseWriteRevision(target)).toBe(2);
+        expect(databaseWriteRevision(committed)).toBe(1);
+    });
+
+    test("a read command does not record a database write", async () => {
+        const { tauri } = await import("./tauri");
+        const database = { id: { id: "read-get-games-db" }, kind: "database" as const };
+        mocks.getGames.mockResolvedValue({ status: "ok", data: { data: [], count: 0 } });
+        await tauri.getGames(database, {} as never);
+        expect(databaseWriteRevision(database)).toBe(0);
     });
 
     test("pgn and workspace reads reserve tickets and pass outside positional arguments", async () => {

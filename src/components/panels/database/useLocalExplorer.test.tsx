@@ -4,10 +4,16 @@ import { SWRConfig, type Cache } from "swr";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { PositionStats } from "@/bindings";
 import { normalizeError } from "@/platform/errors";
+import { recordDatabaseWrite } from "@/platform/databaseWrites";
 import { databaseHandleKey, type LocalOptions } from "@/utils/db";
 import { useLocalExplorer } from "./useLocalExplorer";
 
-const mocks = vi.hoisted(() => ({ searchPosition: vi.fn(), generation: 1, unavailable: false }));
+const mocks = vi.hoisted(() => ({
+  searchPosition: vi.fn(),
+  generation: 1,
+  unavailable: false,
+  linked: true,
+}));
 vi.mock("@/platform/tauri", () => ({ tauri: { searchPosition: mocks.searchPosition } }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("@/i18n", async (original) => ({
@@ -16,7 +22,9 @@ vi.mock("@/i18n", async (original) => ({
 }));
 vi.mock("@/state/linkedCollections", () => ({
   useCollectionCurrency: () => ({
-    collection: { generation: mocks.generation, status: mocks.unavailable ? "failed" : "ready" },
+    collection: mocks.linked
+      ? { generation: mocks.generation, status: mocks.unavailable ? "failed" : "ready" }
+      : null,
   }),
 }));
 
@@ -62,6 +70,7 @@ beforeEach(() => {
   mocks.searchPosition.mockReset().mockResolvedValue([[], []]);
   mocks.generation = 1;
   mocks.unavailable = false;
+  mocks.linked = true;
   cache = new Map();
   container = document.createElement("div");
   document.body.append(container);
@@ -206,4 +215,52 @@ test("sample options distinguish cache entries and the last subscriber cancels w
   await render(false, false);
   expect(finalSignal.aborted).toBe(true);
   await act(async () => pending.resolve([[], []]));
+});
+
+function opening(white: number): PositionStats {
+  return {
+    move: "e4",
+    white,
+    draw: 0,
+    black: 0,
+    unknown: 0,
+    last_played: null,
+    year_counts: [],
+  };
+}
+
+async function renderPlain(mounted: boolean) {
+  mocks.linked = false;
+  await act(async () =>
+    root.render(
+      <SWRConfig value={{ provider: () => cache, dedupingInterval: 0, shouldRetryOnError: false }}>
+        {mounted && <Consumer key="plain" />}
+      </SWRConfig>,
+    ),
+  );
+}
+
+test("a write to a plain database busts the shared explorer cache on remount", async () => {
+  mocks.searchPosition
+    .mockResolvedValueOnce([[opening(1)], []])
+    .mockResolvedValueOnce([[opening(2)], []]);
+  await renderPlain(true);
+  expect(JSON.parse(container.textContent!).openings[0].white).toBe(1);
+  await renderPlain(false);
+  await act(async () => recordDatabaseWrite([options.path]));
+  await renderPlain(true);
+  expect(JSON.parse(container.textContent!).openings[0].white).toBe(2);
+  expect(mocks.searchPosition).toHaveBeenCalledTimes(2);
+});
+
+test("remounting a plain database without a write keeps the cached explorer result", async () => {
+  mocks.searchPosition
+    .mockResolvedValueOnce([[opening(1)], []])
+    .mockResolvedValueOnce([[opening(2)], []]);
+  await renderPlain(true);
+  expect(JSON.parse(container.textContent!).openings[0].white).toBe(1);
+  await renderPlain(false);
+  await renderPlain(true);
+  expect(JSON.parse(container.textContent!).openings[0].white).toBe(1);
+  expect(mocks.searchPosition).toHaveBeenCalledOnce();
 });

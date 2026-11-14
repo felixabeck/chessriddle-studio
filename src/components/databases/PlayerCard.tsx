@@ -1,3 +1,4 @@
+import { useDatabaseWriteRevision } from "@/platform/databaseWrites";
 import { tauri } from "@/platform/tauri";
 import { Center, Loader, Paper, Stack, Text } from "@mantine/core";
 import { useTranslation } from "react-i18next";
@@ -9,7 +10,8 @@ import PersonalPlayerCard from "../home/PersonalCard";
 
 function PlayerCard({ player, file }: { player: Player; file: DatabaseHandle }) {
   const { t } = useTranslation();
-  const requestKey = ["player-game-info", file, player.id] as const;
+  const revision = useDatabaseWriteRevision(file);
+  const requestKey = ["player-game-info", file, player.id, revision] as const;
   const requestOwner = useNativeRequestOwner(requestKey);
   const {
     data: info,

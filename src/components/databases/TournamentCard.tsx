@@ -13,6 +13,7 @@ import { IconAction } from "@/components/common/IconAction";
 import { useGameOpen } from "@/components/common/gameOpen";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
+import { useDatabaseWriteRevision } from "@/platform/databaseWrites";
 import { addRecentFileAtom, tabsAtom } from "@/state/atoms";
 import type { DatabaseViewStore } from "@/state/store/database";
 import { getTournamentGames } from "@/utils/db";
@@ -86,7 +87,8 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
   );
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
-  const requestKey = ["tournament-games", file, tournament.id] as const;
+  const revision = useDatabaseWriteRevision(file);
+  const requestKey = ["tournament-games", file, tournament.id, revision] as const;
   const requestOwner = useNativeRequestOwner(requestKey);
 
   const {
