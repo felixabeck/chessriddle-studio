@@ -102,6 +102,7 @@
       "source": "frontend",
       "minimumCoverage": { "lines": 10, "functions": 15, "branches": 7 },
       "paths": [
+        "src/components/common/EloRangeSlider.tsx",
         "src/components/common/gameOpen.tsx",
         "src/components/databases/**",
         "src/components/files/**",

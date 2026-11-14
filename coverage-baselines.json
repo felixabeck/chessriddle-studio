@@ -82,6 +82,7 @@
         "id": "databases-files",
         "source": "frontend",
         "paths": [
+          "src/components/common/EloRangeSlider.tsx",
           "src/components/common/gameOpen.tsx",
           "src/components/databases/**",
           "src/components/files/**",
