@@ -259,6 +259,13 @@ test("exact account lookup combines every casing variant under session spelling 
 
 test("a write to a personal database refetches stats and a write to another database does not", async () => {
   const cache = new Map();
+  const first = database("db-1");
+  const second = database("db-2");
+  mocks.getDatabases.mockResolvedValue({
+    databases: [first, second],
+    unread: [],
+    root: { id: { id: "listing-test-root" }, kind: "databaseRoot" as const },
+  });
   const record = { site: "Lichess", player: "Magnus", daily: [], openings: [] };
   mocks.getPlayersGameInfo.mockResolvedValue({ site_stats_data: [record] });
   await act(async () => {
@@ -268,17 +275,17 @@ test("a write to a personal database refetches stats and a write to another data
       </SWRConfig>,
     );
   });
-  await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledOnce());
+  await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(2));
 
   await act(async () => {
     recordDatabaseWrite([{ id: { id: "unrelated-personal-db" }, kind: "database" }]);
   });
-  expect(mocks.getPlayersGameInfo).toHaveBeenCalledOnce();
+  expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(2);
 
   await act(async () => {
-    recordDatabaseWrite([database("db-1").file]);
+    recordDatabaseWrite([second.file]);
   });
-  await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(2));
+  await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(4));
 });
 
 test("a large owner response preserves all 200000 distinct site groups under session spelling", async () => {

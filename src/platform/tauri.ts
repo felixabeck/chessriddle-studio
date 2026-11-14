@@ -22,6 +22,7 @@ import { recordDatabaseWrite } from "./databaseWrites";
 import { normalizeError } from "./errors";
 import { ChessRiddleCommandError } from "./chessriddle";
 import { error as logError, getCurrentWindow } from "./native";
+import { capabilityKey } from "@/utils/pathCapabilities";
 
 const MAX_SAFE_COUNTER = BigInt(Number.MAX_SAFE_INTEGER);
 const CHESSRIDDLE_COMMANDS = new Set<PropertyKey>([
@@ -262,6 +263,16 @@ function collectImportCommittedDatabase(
     if (property !== "importAccountGames" || value == null || typeof value !== "object") return;
     if (!("committedDatabase" in value)) return;
     into.push((value as AccountCompletion).committedDatabase);
+}
+
+function recordedWriteHandleIds(handles: readonly (DatabaseHandle | null | undefined)[]): string {
+    try {
+        return handles
+            .flatMap((handle) => (handle == null ? [] : [capabilityKey(handle)]))
+            .join(", ");
+    } catch {
+        return "unavailable";
+    }
 }
 
 type EventEnvelope<T> = { payload: T };
@@ -522,14 +533,21 @@ export const tauri: TauriCommands = new Proxy(commands, {
                 try {
                     recordDatabaseWrite(recordedHandles);
                 } catch (cause) {
-                    void logError(
-                        `database write revision recording failed for ${String(property)}: ${normalizeError(cause).message}`,
-                    ).catch((loggingError) => {
+                    try {
+                        void logError(
+                            `database write revision recording failed for ${String(property)} (${recordedWriteHandleIds(recordedHandles)}): ${normalizeError(cause).message}`,
+                        ).catch((loggingError) => {
+                            console.error(
+                                `database write revision recording logging failed for ${String(property)}`,
+                                normalizeError(loggingError),
+                            );
+                        });
+                    } catch (loggingError) {
                         console.error(
                             `database write revision recording logging failed for ${String(property)}`,
                             normalizeError(loggingError),
                         );
-                    });
+                    }
                 }
                 const mark = (
                     globalThis as {

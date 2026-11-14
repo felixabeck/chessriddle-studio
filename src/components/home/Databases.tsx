@@ -209,15 +209,7 @@ function Databases() {
   );
   const playerDatabases = databases?.filter(({ players }) => players.includes(name));
   const personalRevision = useDatabaseWritesRevision(
-    playerDatabases
-      ?.filter(
-        (
-          item,
-        ): item is PersonalDatabase & {
-          db: Extract<ManagedDatabaseInfo, { type: "success" }>;
-        } => item.db.type === "success",
-      )
-      .map((item) => item.db.file) ?? [],
+    playerDatabases?.map((item) => (item.db.type === "success" ? item.db.file : undefined)) ?? [],
   );
   const personalKey =
     playerDatabases && name ? ["personalInfo", name, playerDatabases, personalRevision] : null;

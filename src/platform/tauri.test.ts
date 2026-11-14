@@ -302,6 +302,7 @@ vi.mock("@/bindings/generated", () => ({
     ),
 }));
 
+import * as databaseWrites from "./databaseWrites";
 import { databaseWriteRevision } from "./databaseWrites";
 import { normalizeError } from "./errors";
 import { TauriCommandError, tauri, tauriSubscriptions, unwrapCommand } from "./tauri";
@@ -667,6 +668,40 @@ describe("tauri command facade", () => {
             expect(databaseWriteRevision(decoy)).toBe(0);
         },
     );
+
+    test("recording failure is logged and does not change the command result or error", async () => {
+        const { tauri } = await import("./tauri");
+        const handle = { id: { id: "recording-fail-db" }, kind: "database" as const };
+        const spy = vi.spyOn(databaseWrites, "recordDatabaseWrite").mockImplementation(() => {
+            throw new Error("revision store exploded");
+        });
+        try {
+            mocks.deleteDbGame.mockResolvedValue({ status: "ok", data: null });
+            await expect(tauri.deleteDbGame(handle, 1)).resolves.toBeNull();
+            expect(mocks.logError).toHaveBeenCalledWith(
+                expect.stringContaining(
+                    "database write revision recording failed for deleteDbGame",
+                ),
+            );
+            expect(mocks.logError.mock.calls[0][0]).toContain("recording-fail-db");
+            expect(mocks.logError.mock.calls[0][0]).toContain("revision store exploded");
+
+            mocks.logError.mockClear();
+            mocks.deleteDbGame.mockRejectedValue(new Error("native write failed"));
+            await expect(tauri.deleteDbGame(handle, 2)).rejects.toMatchObject({
+                name: "TauriCommandError",
+                message: "native write failed",
+            });
+            expect(mocks.logError).toHaveBeenCalledWith(
+                expect.stringContaining(
+                    "database write revision recording failed for deleteDbGame",
+                ),
+            );
+            expect(mocks.logError.mock.calls[0][0]).toContain("recording-fail-db");
+        } finally {
+            spy.mockRestore();
+        }
+    });
 
     test("importAccountGames records the unlinked target and committedDatabase", async () => {
         const { tauri } = await import("./tauri");
