@@ -25519,7 +25519,7 @@ Handled in d8d11e681. `OpeningBookPgnVisitor` now overrides `begin_variation` to
 
 ### The database colour-filter e2e opens the opponent menu while the player menu is still closing, and fails under full-gate load
 
-* **ID:** f-20261113-01 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261113-01 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 0aff3baf-70d0-4338-b626-46aef7945d29
 * **Impact class:** tooling
 * **Where:** `e2e/database-files.spec.ts:2270` ("database-files: labelled colour filters › BlackWhite and Any remain legible at desktop"), the step at ~2381-2388: after choosing `Schwarz` in the player-colour menu, it clicks `Farbe des Gegners: Weiß` and asserts `getByRole("menu").locator('[data-side="black"]')` is visible.
@@ -25527,6 +25527,9 @@ Handled in d8d11e681. `OpeningBookPgnVisitor` now overrides `begin_variation` to
 * **Failure scenario:** `pnpm gates:push -- --frontend` on drain HEAD `959c06e4b` (2026-11-13, run `artifacts/gates/20261113T003340890Z-1533352/e2e.log`): the desktop case failed on its first run and its retry with `strict mode violation: getByRole('menu').locator('[data-side="black"]') resolved to 2 elements`, one inside `getByLabel('Schwarz')` and one inside `getByLabel('Weiß')`. 448 other tests passed. The same test alone (`pnpm test:e2e:container -- --project database-files --grep "BlackWhite and Any" --repeat-each 3`) passed 6/6, and remote CI on master is green, so it is a load-dependent race that reddens a local push gate. The pushed diff (PromotionModal) does not touch this surface.
 * **Fix:** after the player-menu choice, wait for `page.getByRole("menu")` to have count 0 before clicking the opponent trigger, or scope the locator to the menu owned by the opponent trigger (`aria-controls`). Prove with the full `--frontend` gate or a `--repeat-each` run under parallel load.
 * **Found by:** Claude Code drain session 0aff3baf, final gates for f-20261112-17.
+
+Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the race blocked its German snapshot re-record: two isolated `--update-snapshots` runs of the desktop case failed 2/2 with the recorded strict-mode violation). After the player-menu choice the journey now waits for `page.getByRole("menu")` to reach count 0 before opening the opponent menu. Proof: container `--grep "remain legible" --repeat-each 5 --workers 4` 10/10, then the full `--frontend` gate. Rejected: scoping the locator via `aria-controls` (the wait also keeps the later screenshot free of a fading menu). Review: root-cause and tests lenses approved.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"af0c3641e331ce0f592457ccf2ab3bc694b2149206428aa7c9c273d7a7a0880d","header_sha256":"5d2db8607a330a51291b1bbe47d674f06987a669473e3090460f7c333721af47","header_status":"handled","input_sha256":"9ff33bca39e1d1eca981a7e9046d5f004419800575184f5c4ed38c5b9d486820","kind":"mutation-receipt","operation":"dd0becaa0e70494828aa7a143faa87423cbef6a71b750b9c09954dc2d21a9763","options":{"section":null},"request_id_sha256":null,"results":["f-20261113-01"],"target":"f-20261113-01","v":1} -->
 
 ### The late-game Library e2e loses its target row under full-gate load when section headings land after the scroll
 
