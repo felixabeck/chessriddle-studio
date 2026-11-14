@@ -246,12 +246,14 @@ vi.mock("@mantine/hooks", async () => {
 });
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { count?: number; cause?: string; date?: string }) =>
+    t: (key: string, options?: { count?: number; cause?: string; date?: string; value?: string }) =>
       options?.date !== undefined
         ? `${key}:${options.date}`
-        : options?.count === undefined
-          ? key
-          : `${key}:${options.count}`,
+        : options?.value !== undefined
+          ? `${key}:${options.value}`
+          : options?.count === undefined
+            ? key
+            : `${key}:${options.count}`,
     i18n: { language: fixtures.language },
   }),
 }));
@@ -373,13 +375,14 @@ test("grade buttons format review intervals in the active German locale", async 
       timeTaken: 2500,
     };
     fixtures.getNextReviewTimes.mockReturnValue({
-      1: new Date(now + 30 * 1000),
+      1: new Date(now + 20 * 1000),
       2: new Date(now + 10 * 60 * 1000),
       3: new Date(now + 5 * 3600 * 1000),
       4: new Date(now + 3 * 24 * 3600 * 1000),
     });
     await rerenderPracticePanel();
 
+    expect(container?.textContent).toContain("(Common.SecondsShort:2,5)");
     const buttons = [...(container?.querySelectorAll("button") ?? [])];
     const buttonTextFor = (label: string) =>
       buttons.find((button) => button.textContent?.includes(label))?.textContent;

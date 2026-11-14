@@ -50,10 +50,10 @@ function formatShortUnit(
 
 export function formatReviewInterval(due: number, now: number, locale: string): string {
     const diffSeconds = (due - now) / MILLISECONDS_PER_SECOND;
-    if (diffSeconds < SECONDS_PER_MINUTE) {
+    const diffMinutes = Math.round(diffSeconds / SECONDS_PER_MINUTE);
+    if (diffMinutes < 1) {
         return `< ${formatShortUnit(1, "minute", locale)}`;
     }
-    const diffMinutes = Math.round(diffSeconds / SECONDS_PER_MINUTE);
     if (diffMinutes < MINUTES_PER_HOUR) {
         return formatShortUnit(diffMinutes, "minute", locale);
     }
@@ -68,10 +68,13 @@ export function formatReviewInterval(due: number, now: number, locale: string): 
     return formatShortUnit(Math.round(diffDays / DAYS_PER_MONTH), "month", locale);
 }
 
-export function formatDecimal(value: number, locale: string, fractionDigits = 1): string {
+const DECIMAL_FRACTION_DIGITS = 1;
+
+/** Formats `value` with one decimal place in `locale`. */
+export function formatDecimal(value: number, locale: string): string {
     return new Intl.NumberFormat(locale, {
-        minimumFractionDigits: fractionDigits,
-        maximumFractionDigits: fractionDigits,
+        minimumFractionDigits: DECIMAL_FRACTION_DIGITS,
+        maximumFractionDigits: DECIMAL_FRACTION_DIGITS,
     }).format(value);
 }
 
@@ -130,15 +133,22 @@ export function formatNodes(nodes: number | bigint, decimals = 0) {
     return `${value.toFixed(decimals)}${units[i]}`;
 }
 
-export function formatTime(ms: number) {
+export function formatTime(
+    ms: number,
+    locale: string,
+    formatSeconds: (value: string) => string,
+): string {
     const totalSeconds = Math.floor(ms / 1000);
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
     const tenths = Math.floor((ms % 1000) / 100);
     if (minutes > 0) {
-        return `${minutes}:${seconds.toString().padStart(2, "0")}.${tenths}`;
+        const decimalSeparator =
+            new Intl.NumberFormat(locale).formatToParts(1.1).find((part) => part.type === "decimal")
+                ?.value ?? ".";
+        return `${minutes}:${seconds.toString().padStart(2, "0")}${decimalSeparator}${tenths}`;
     }
-    return `${seconds}.${tenths}s`;
+    return formatSeconds(formatDecimal(seconds + tenths / 10, locale));
 }
 
 export function getInitials(name: string) {

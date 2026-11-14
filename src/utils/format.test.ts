@@ -1,10 +1,11 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
     formatBytes,
     formatDecimal,
     formatMoveNumber,
     formatRelativeTime,
     formatReviewInterval,
+    formatTime,
 } from "./format";
 
 describe("formatRelativeTime", () => {
@@ -33,14 +34,15 @@ describe("formatRelativeTime", () => {
 describe("formatReviewInterval", () => {
     const now = Date.UTC(2026, 10, 11, 12);
     test.each([
-        [30, "< 1 min", "< 1 Min."],
-        [10 * 60, "10 min", "10 Min."],
-        [5 * 3600, "5 hr", "5 Std."],
-        [3 * 24 * 3600, "3 days", "3 Tg."],
-        [90 * 24 * 3600, "3 mths", "3 Mon."],
-    ])("formats interval %i seconds in en-US and de-DE", (seconds, english, german) => {
-        expect(formatReviewInterval(now + seconds * 1000, now, "en-US")).toBe(english);
-        expect(formatReviewInterval(now + seconds * 1000, now, "de-DE")).toBe(german);
+        [20_000, "< 1 min", "< 1 Min."],
+        [59_999, "1 min", "1 Min."],
+        [10 * 60_000, "10 min", "10 Min."],
+        [5 * 3600_000, "5 hr", "5 Std."],
+        [3 * 24 * 3600_000, "3 days", "3 Tg."],
+        [90 * 24 * 3600_000, "3 mths", "3 Mon."],
+    ])("formats interval %i ms in en-US and de-DE", (ms, english, german) => {
+        expect(formatReviewInterval(now + ms, now, "en-US")).toBe(english);
+        expect(formatReviewInterval(now + ms, now, "de-DE")).toBe(german);
     });
 });
 
@@ -49,6 +51,33 @@ describe("formatDecimal", () => {
         expect(formatDecimal(21, "en-US")).toBe("21.0");
         expect(formatDecimal(21, "de-DE")).toBe("21,0");
     });
+});
+
+describe("formatTime", () => {
+    test.each([
+        ["en-US", 2_549, "2.5", "2.5s"],
+        ["de-DE", 2_549, "2,5", "2,5s"],
+    ])(
+        "truncates sub-minute elapsed time in %s and passes localized decimal to formatSeconds",
+        (locale, ms, expectedValue, expectedFormatted) => {
+            const formatSeconds = vi.fn((value: string) => `${value}s`);
+            expect(formatTime(ms, locale, formatSeconds)).toBe(expectedFormatted);
+            expect(formatSeconds).toHaveBeenCalledTimes(1);
+            expect(formatSeconds).toHaveBeenCalledWith(expectedValue);
+        },
+    );
+
+    test.each([
+        ["en-US", 65_349, "1:05.3"],
+        ["de-DE", 65_349, "1:05,3"],
+    ])(
+        "formats minute-plus elapsed time in %s with locale decimal separator",
+        (locale, ms, expected) => {
+            const formatSeconds = vi.fn((value: string) => `${value}s`);
+            expect(formatTime(ms, locale, formatSeconds)).toBe(expected);
+            expect(formatSeconds).not.toHaveBeenCalled();
+        },
+    );
 });
 
 describe("formatBytes", () => {

@@ -15,6 +15,7 @@ import { databaseHandleKey, type SuccessDatabaseInfo } from "@/utils/db";
 import { useConversionProgress } from "@/hooks/useConversionProgress";
 
 const mocks = vi.hoisted(() => ({
+  language: "en-US",
   convertPgn: vi.fn(),
   deleteDatabase: vi.fn(),
   cancelConversion: vi.fn().mockResolvedValue(true),
@@ -103,7 +104,7 @@ vi.mock("react-i18next", () => {
       : options?.rate !== undefined
         ? `${key}:${options.rate}`
         : key;
-  return { useTranslation: () => ({ t, i18n: { language: "en-US" } }) };
+  return { useTranslation: () => ({ t, i18n: { language: mocks.language } }) };
 });
 vi.mock("@/i18n", async (original) => ({
   ...(await original<typeof import("@/i18n")>()),
@@ -411,6 +412,7 @@ async function emitConvertProgress(payload: ConvertProgress) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.language = "en-US";
   convertCalls = [];
   convertProgressListener = undefined;
   localStorage.clear();
@@ -926,10 +928,30 @@ test.each(
       source: "Felix_chesscom.pgn",
       startup: [selectExistingDatabase, startAccountDownload],
     },
-  ].flatMap((route) => ["success", "failure"].map((outcome) => ({ ...route, outcome }))),
+  ]
+    .flatMap((route) =>
+      ["success", "failure"].map((outcome) => ({
+        ...route,
+        outcome,
+        language: "en-US",
+        expectedRate: "21.0",
+      })),
+    )
+    .concat({
+      route: "AddDatabase",
+      account: false,
+      target: handleA,
+      title: "Local target",
+      source: "PGN",
+      startup: [startAddDatabase, selectExistingDatabase],
+      outcome: "success",
+      language: "de-DE",
+      expectedRate: "21,0",
+    }),
 )(
-  "$route $outcome removes only its own entry beside Add games",
-  async ({ account, target, title, source, startup, outcome }) => {
+  "$route $outcome ($language) removes only its own entry beside Add games",
+  async ({ account, target, title, source, startup, outcome, language, expectedRate }) => {
+    mocks.language = language;
     mocks.getDatabases.mockResolvedValue({
       databases: [successDatabase(target, title), successDatabase(handleB, "Existing")],
       unread: [],
@@ -983,7 +1005,7 @@ test.each(
       databaseHandleKey(handleB),
     );
     expect(conversionRows()).toEqual([
-      "Databases.Add.Convert: more.pgnFiles.GameCountSuffix:42 • Databases.Add.GamesPerSecond:21.0",
+      `Databases.Add.Convert: more.pgnFiles.GameCountSuffix:42 • Databases.Add.GamesPerSecond:${expectedRate}`,
     ]);
     expect(addNewDisabled()).toBe(true);
     await act(async () => convertCalls[1]?.resolve());

@@ -66,6 +66,7 @@ import { tabStorage } from "@/state/store/tabStorage";
 import { deserializeStorageValue, serializeStorageValue } from "@/state/store/debouncedStorage";
 
 const mocks = vi.hoisted(() => ({
+  language: "en-US",
   chessriddleTrainingAvailable: vi.fn(),
   chessriddleTrainingSettings: vi.fn(),
   chessriddleSaveTrainingSettings: vi.fn(),
@@ -111,7 +112,7 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, options?: { value?: string }) =>
       key === "Common.SecondsShort" ? `${options?.value}s` : key,
-    i18n: { language: "en-US" },
+    i18n: { language: mocks.language },
   }),
 }));
 vi.mock("@/i18n", async (original) => ({
@@ -846,31 +847,42 @@ function trackingSwitch() {
   )!;
 }
 
-test("Avg time includes only tracked correct solves", async () => {
-  vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(10_000);
-  mocks.getPuzzle
-    .mockResolvedValueOnce({ ...puzzleRow(), moves: "e2e4 e7e5" })
-    .mockResolvedValueOnce({ ...puzzleB(), moves: "g1f3 d7d5" });
-  const atoms = await renderPuzzles();
-  await act(async () => atoms.set(jumpToNextPuzzleAtom, false));
-  expect(trackingSwitch().checked).toBe(false);
-  await newPuzzle();
-  await humanMove("e7", "e5");
-  expect(storedPuzzles()[0].completion).toBe("correct");
-  expect(storedPuzzles()[0].timeSpent).toBeUndefined();
+test.each([
+  { language: "en-US", expectedSeconds: "2.5s" },
+  { language: "de-DE", expectedSeconds: "2,5s" },
+])(
+  "Avg time and stopwatch in $language include only tracked correct solves",
+  async ({ language, expectedSeconds }) => {
+    mocks.language = language;
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(10_000);
+    mocks.getPuzzle
+      .mockResolvedValueOnce({ ...puzzleRow(), moves: "e2e4 e7e5" })
+      .mockResolvedValueOnce({ ...puzzleB(), moves: "g1f3 d7d5" });
+    const atoms = await renderPuzzles();
+    await act(async () => atoms.set(jumpToNextPuzzleAtom, false));
+    expect(trackingSwitch().checked).toBe(false);
+    await newPuzzle();
+    await humanMove("e7", "e5");
+    expect(storedPuzzles()[0].completion).toBe("correct");
+    expect(storedPuzzles()[0].timeSpent).toBeUndefined();
 
-  await act(async () => trackingSwitch().click());
-  await newPuzzle();
-  vi.setSystemTime(12_500);
-  await humanMove("d7", "d5");
-  expect(storedPuzzles().map(({ completion }) => completion)).toEqual(["correct", "correct"]);
-  expect(storedPuzzles()[1].timeSpent).toBe(2500);
-  const avgTimeLabel = [...document.querySelectorAll("p")].find(
-    (element) => element.textContent === "Puzzle.AvgTime",
-  );
-  expect(avgTimeLabel?.parentElement?.textContent).toBe("Puzzle.AvgTime2.5s");
-});
+    await act(async () => trackingSwitch().click());
+    await newPuzzle();
+    vi.setSystemTime(12_500);
+    await humanMove("d7", "d5");
+    expect(storedPuzzles().map(({ completion }) => completion)).toEqual(["correct", "correct"]);
+    expect(storedPuzzles()[1].timeSpent).toBe(2500);
+    const timeLabel = [...document.querySelectorAll("p")].find(
+      (element) => element.textContent === "Puzzle.Time",
+    );
+    expect(timeLabel?.parentElement?.textContent).toBe(`Puzzle.Time${expectedSeconds}`);
+    const avgTimeLabel = [...document.querySelectorAll("p")].find(
+      (element) => element.textContent === "Puzzle.AvgTime",
+    );
+    expect(avgTimeLabel?.parentElement?.textContent).toBe(`Puzzle.AvgTime${expectedSeconds}`);
+  },
+);
 
 test.each(["correct", "incorrect"] as const)(
   "timer cleanup cannot overwrite the first %s completion after the clock advances",
@@ -2644,6 +2656,7 @@ let portals: HTMLDivElement;
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.language = "en-US";
   trainingSettings.reset();
   trainingSummary.reset();
   mocks.chessriddleTrainingSettings.mockRejectedValue("updateRequired");
