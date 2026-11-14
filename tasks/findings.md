@@ -25665,7 +25665,7 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 
 ### Windows CI: production_workspace_file_tail_finishes_after_command_caller_drop times out on its 1 s "entered" wait
 
-* **ID:** f-20261114-04 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261114-04 · **Status:** handled · **Area:** native-fs · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** dfffe27f-6598-4673-8fb7-83898f979f3b
 - **Impact class:** tooling
 - **Spotted outside diff:** yes
@@ -25676,3 +25676,9 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 - **Fix:** wait on the `entered` signal without a tight wall-clock bound (or with a generous bound such as 30 s that only guards against hangs), likewise the follow-up 2 s wait. Check the module's sibling tests for the same 1–2 s pattern and widen them consistently.
 - **Proof:** job log via `gh api repos/felixabeck/chessriddle-studio/actions/jobs/132414430795/logs`; job history via `gh run list --workflow Test --branch master` (rust-windows-test success on the 7 preceding runs).
 - **Found by:** drain dfffe27f push (`ci:remote:check` RED)
+
+**Handled 2026-11-14 (interactive full-auto session e6988d99, Claude Code orchestrator, agy write leaf).**
+- `0083e1c99`: both event-observation waits in `production_workspace_file_tail_finishes_after_command_caller_drop` (the 1 s `entered` wait and the 2 s operations-drain wait) move to the inline 5 s ceiling, the class repair d-20261031-02 decided; no production code, constant or other test changed.
+- `7106c412f`: review-tests (round 1) found the test released the count hook right after `caller.abort()`, so the blocking count could finish before the caller future was dropped and a cancel-on-drop regression could pass. The test now awaits the aborted caller first, like `every_workspace_command_finishes_its_tail_after_caller_abort`. Closure round approved. Local proof: 20/20 passes.
+- Skipped: a sweep of the sibling 2 s `entered` wait in `create_workspace_file_listing_during_count_does_not_block_a_retry` (d-20261031-02 rejects a file-wide sweep of unobserved waits). The Windows proof is the post-push `rust-windows-test` run; the runner load cannot be reproduced locally.
+<!-- ledger-meta {"command":"close","effect_lines":4,"effect_sha256":"61c021f48b9195aec2598b759ed7ae054f7825a87259cf6869c3bc9a1fd05eb0","header_sha256":"2af0a6262481e805ff0cb3f9ba550604ffa3d53b3bb5862391804926ddeccc33","header_status":"handled","input_sha256":"94610037feca9239ce96acae960573a738c49ded9e83e6b25438f22577ef7160","kind":"mutation-receipt","operation":"ec80d7bedd7260e303bfe8d2ac3b59ffb17408a3b4a902e8ec9200c07eba0b36","options":{"section":null},"request_id_sha256":null,"results":["f-20261114-04"],"target":"f-20261114-04","v":1} -->
