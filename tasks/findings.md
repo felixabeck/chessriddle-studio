@@ -26039,3 +26039,20 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Fix:** apply the drill guard to every forward or sideways navigation action while `practicePath !== null`: refuse moves that leave the prefix of `practicePath` or go past its end (`goToEnd`, `goToBranchEnd`, `nextBranching`, `nextBranch`/`previousBranch`). Backward moves (`goToPrevious`, `goToStart`, `goToBranchStart`, `previousBranching`) can stay. Test: with a practice path set, each of these actions leaves `position` unchanged at the frontier.
 * **Related:** d-20260923-04, d-20260923-05 (the `goToNext` drill guard), d-20261021-05 (rejected arrows disclosing the answer), f-20261011-10 (incorrect-answer reveal), the 2026-11-10 build-ledger entry for Arrow Down at a line end (kept the practice refusal for the next-line half only).
 * **Found by:** Grok Bot general review
+
+---
+
+## 2026-11-14 — filed through the inbox spool
+
+### A database player's rating chart plots unrated games (Elo "0" or "-") as a rating of 0
+
+* **ID:** f-20261114-16 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** yes (general review of pre-fork code, origin/master 69856f2ea; the importer's Elo handling and the statistics row filter are upstream code)
+* **Where:** `src-tauri/src/db/mod.rs:574-585` (the importer stores `WhiteElo "-"` as `Some(0)` and `"0"` via `btoi` as `Some(0)`; the exporter at 4966-4979 writes 0 back as `"-"`, so 0 is the database's "unrated" value, and the UI labels it "Unrated" via `PlayerRatingCell`; the explorer Elo band excludes "Unrated (indexed 0)", d-20260919-08) → `get_players_game_info` base query (3723-3728, no Elo filter) → `evaluate_player_statistics_row` (4102-4117, only `None` is excluded, so `Some(0)` becomes `player_elo = 0`) → `PlayerStatisticsAccumulator::add` (`max_player_elo` per day) → `src/components/home/PersonalCardPanels/RatingsPanel.tsx:109-136` (each day's `max_player_elo` is a chart point, and the Y domain is floored from the minimum).
+* **Defect:** Unrated games are not excluded from the player's rating history. Any day on which all of the player's games carry Elo 0 / "-" yields a data point of 0, and the Y axis is stretched down to 0.
+* **Failure scenario:** A local database (for example an OTB collection or a file exported by ChessRiddle Studio itself) contains a player rated about 2100 whose games on a few dates have `[WhiteElo "0"]` or `[WhiteElo "-"]` (unrated event or no rating yet). In Databases → Players → that player → Ratings, the curve drops to 0 on those dates and the axis runs from 0 to 2150, so the real rating movement is flattened into a thin band at the top.
+* **Proof:** code trace on origin/master 69856f2ea (no probe; every step is unconditional): importer lines 574-585 yield `Some(0)`; the statistics query filters only by player id and `fen IS NULL`; `evaluate_player_statistics_row` returns early only for `None`; the per-day accumulator takes `max(player_elo)`, which stays 0 when every game that day is unrated; `RatingsPanel` maps `max_player_elo` to points and computes `playerEloDomain` as `[floor(min/50)*50, ...]`, i.e. 0. The Ratings tab is shown for database players (`PlayerCard.tsx` → `PersonalPlayerCard isDatabase`).
+* **Fix:** treat 0 as unrated in the statistics: skip `player_elo == 0` for the rating series (keep the game in win/draw/loss counts), e.g. make `max_player_elo` an `Option` per day and omit days without a rated game from `ratingData`. Test: a player with one rated (2100) and one unrated (0) day yields a single rating point of 2100.
+* **Related:** d-20260919-08 (explorer band excludes unrated, indexed 0), f-20261101-22 / `PlayerRatingCell` "Unrated" label, findings.md:20399 (unrated "?" saved as "NaN", a different path).
+* **Found by:** Grok Bot general review
