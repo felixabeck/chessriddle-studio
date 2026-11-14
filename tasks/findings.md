@@ -25815,3 +25815,20 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Proof:** Vitest probe in a `/tmp` `git archive` copy of origin/master 35ff5f24a, built on `UpgradeEngineModal.test.tsx`'s mocks with `useDownloadJob` returning a mutable flag and the card mock exposing `onCancel`. (1) Mount with `hasJob=true` and click Cancel: `cancelDownloadJob` is not called (test passes). (2) Control: in the instance that clicked Install, Cancel calls `cancelDownloadJob(progressId, "Common.Error")` once. Probe removed afterwards.
 * **Related:** -
 * **Found by:** Grok Bot general review
+
+---
+
+## 2026-11-14 — filed through the inbox spool
+
+### `reload_completion_actual_engine_workflow_retains_registered_configuration_after_receiver_drop` fails intermittently with `I/O failure` in the full backend-test gate
+
+* **ID:** f-20261114-09 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Filed from:** 22045f82-e630-47a9-8173-3354d5227a61
+* **Impact class:** tooling
+* **Spotted outside diff:** yes (final push gate of f-20261114-02, drain session 22045f82-e630-47a9-8173-3354d5227a61, HEAD 3ac6003a7; that diff changes no Rust source, only `src-tauri/capabilities/main.json`)
+* **Where:** `src-tauri/src/fs.rs:12224` (test), panic at `src-tauri/src/fs.rs:12369` (`native engine workflow did not retain success`).
+* **Defect:** in the full `pnpm gate:ensure backend-test` run the native engine install workflow in this test retained `Failed(ErrorPayload { category: Io, message: "I/O failure", .. })` instead of `Succeeded`. Run alone the same test passed 5 of 5 times, about 0.38 s each. Under full-suite load some step of the install path can therefore fail with a bare I/O error that the test does not expect. That is either a test-isolation defect, such as a shared temp or launch root or a timing-dependent fixture, or a real I/O race in the install path. Different root from f-20261023's macOS `Conflict: engine launch root is not initialized` (findings.md ~14910).
+* **Failure scenario:** any push whose `--rust` gates run the full backend suite can go red on this test without a related change, blocking the push until a rerun. Observed 2026-11-14 15:06Z on tuxedo: `test result: FAILED. 3381 passed; 1 failed; 7 ignored`, transcript `artifacts/gates/20261114T150650436Z-4080714/receipt-backend-test.log` lines 3579-3590.
+* **Fix:** find which step returns `ErrorKind`→`Io` here by logging the inner diagnostic in the test failure (the payload is redacted to "I/O failure"). Then make the fixture independent of concurrent tests, or fix the race if it is in production code.
+* **Proof:** the gate transcript above; `cargo test --manifest-path src-tauri/Cargo.toml --locked --bins -- fs::tests::reload_completion_actual_engine_workflow_retains_registered_configuration_after_receiver_drop` passed 5/5 in isolation right after.
+* **Found by:** Claude Code (Opus 5.5) drain session 22045f82-e630-47a9-8173-3354d5227a61
