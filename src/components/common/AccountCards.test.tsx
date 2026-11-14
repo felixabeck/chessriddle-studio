@@ -4,7 +4,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { sessionsAtom } from "@/state/atoms";
 import { decodeCompressedOrJson } from "@/state/store/debouncedStorage";
+import { getChessComAccount, type ChessComStats } from "@/utils/chess.com/api";
 import type { ManagedDatabaseInfo } from "@/utils/db";
+import { getLichessAccount, type LichessAccount } from "@/utils/lichess/api";
 import type { Session } from "@/utils/session";
 
 const mocks = vi.hoisted(() => ({
@@ -696,9 +698,21 @@ test.each(["lichess", "chesscom"] as const)(
 );
 
 describe("Chess.com case-insensitive removal", () => {
+  const unrelatedChessCom: Session = {
+    player: "Other",
+    updatedAt: 3,
+    chessCom: { username: "other", stats: {} },
+  };
+  const unrelatedLichess: Session = {
+    player: "Carol",
+    updatedAt: 4,
+    lichess: { username: "carol", account: { id: "carol", username: "carol" } },
+  };
   const legacyDuplicates: Session[] = [
     { player: "Felix", updatedAt: 1, chessCom: { username: "Felix", stats: {} } },
     { player: "felix", updatedAt: 2, chessCom: { username: "felix", stats: {} } },
+    unrelatedChessCom,
+    unrelatedLichess,
   ];
 
   test("logging out one Chess.com card removes legacy case-variant duplicates", async () => {
@@ -707,7 +721,7 @@ describe("Chess.com case-insensitive removal", () => {
 
     await logout();
 
-    expect(getDefaultStore().get(sessionsAtom)).toEqual([]);
+    expect(getDefaultStore().get(sessionsAtom)).toEqual([unrelatedChessCom, unrelatedLichess]);
   });
 
   test("removing a player group removes legacy case-variant Chess.com duplicates", async () => {
@@ -716,6 +730,171 @@ describe("Chess.com case-insensitive removal", () => {
 
     await removeGroup("Felix");
 
-    expect(getDefaultStore().get(sessionsAtom)).toEqual([]);
+    expect(getDefaultStore().get(sessionsAtom)).toEqual([unrelatedChessCom, unrelatedLichess]);
+  });
+});
+
+describe("Account card reload and Lichess case-insensitive removal", () => {
+  const statsA: ChessComStats = {
+    chess_rapid: { last: { rating: 1500, date: 1, rd: 50 }, record: { win: 1, loss: 0, draw: 0 } },
+  };
+  const statsB: ChessComStats = {
+    chess_rapid: { last: { rating: 1600, date: 2, rd: 45 }, record: { win: 2, loss: 0, draw: 0 } },
+  };
+
+  test("Chess.com reload updates a re-added case-variant session without reverting its spelling", async () => {
+    const unrelatedChessCom: Session = {
+      player: "Other",
+      updatedAt: 2,
+      chessCom: { username: "other", stats: statsA },
+    };
+    const unrelatedLichess: Session = {
+      player: "Carol",
+      updatedAt: 3,
+      lichess: { username: "carol", account: { id: "carol", username: "carol" } },
+    };
+    getDefaultStore().set(sessionsAtom, [
+      { player: "Felix", updatedAt: 1, chessCom: { username: "Felix", stats: statsA } },
+      unrelatedChessCom,
+      unrelatedLichess,
+    ]);
+
+    let resolveStats!: (stats: ChessComStats | null) => void;
+    vi.mocked(getChessComAccount).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveStats = resolve;
+        }),
+    );
+
+    await renderCards();
+    const felixCard = mocks.accountCard.mock.calls.find((call) => call[0]?.title === "Felix")?.[0];
+    expect(felixCard).toBeDefined();
+
+    const reloadPromise = felixCard.reload();
+    act(() => {
+      getDefaultStore().set(sessionsAtom, [
+        unrelatedChessCom,
+        unrelatedLichess,
+        { player: "felix", updatedAt: 10, chessCom: { username: "felix", stats: statsA } },
+      ]);
+    });
+
+    vi.spyOn(Date, "now").mockReturnValue(99);
+    await act(async () => {
+      resolveStats(statsB);
+      await reloadPromise;
+    });
+
+    expect(getDefaultStore().get(sessionsAtom)).toEqual([
+      unrelatedChessCom,
+      unrelatedLichess,
+      { player: "felix", updatedAt: 99, chessCom: { username: "felix", stats: statsB } },
+    ]);
+  });
+
+  test("Lichess reload preserves a handle that appeared while reload was in flight", async () => {
+    const initialAccount: LichessAccount = { id: "alice", username: "alice" };
+    const refreshedAccount: LichessAccount = {
+      id: "alice",
+      username: "Alice",
+      perfs: { blitz: { games: 10, rating: 1800, rd: 60, prog: 5, prov: false } },
+    };
+    getDefaultStore().set(sessionsAtom, [
+      {
+        player: "alice",
+        updatedAt: 1,
+        lichess: { username: "alice", account: initialAccount },
+      },
+    ]);
+
+    let resolveAccount!: (account: LichessAccount | null) => void;
+    vi.mocked(getLichessAccount).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveAccount = resolve;
+        }),
+    );
+
+    await renderCards();
+    const aliceCard = mocks.accountCard.mock.calls.find((call) => call[0]?.title === "alice")?.[0];
+    expect(aliceCard).toBeDefined();
+
+    const reloadPromise = aliceCard.reload();
+    act(() => {
+      getDefaultStore().set(sessionsAtom, [
+        {
+          player: "alice",
+          updatedAt: 2,
+          lichess: { username: "Alice", handle: "native-handle", account: initialAccount },
+        },
+      ]);
+    });
+
+    vi.spyOn(Date, "now").mockReturnValue(88);
+    await act(async () => {
+      resolveAccount(refreshedAccount);
+      await reloadPromise;
+    });
+
+    expect(getDefaultStore().get(sessionsAtom)).toEqual([
+      {
+        player: "alice",
+        updatedAt: 88,
+        lichess: { username: "Alice", handle: "native-handle", account: refreshedAccount },
+      },
+    ]);
+  });
+
+  test("Lichess handle-less logout removes case-variant Alice/alice duplicates", async () => {
+    const unrelatedLichess: Session = {
+      player: "Carol",
+      updatedAt: 3,
+      lichess: { username: "carol", account: { id: "carol", username: "carol" } },
+    };
+    getDefaultStore().set(sessionsAtom, [
+      {
+        player: "Alice",
+        updatedAt: 1,
+        lichess: { username: "Alice", account: { id: "alice", username: "Alice" } },
+      },
+      {
+        player: "alice",
+        updatedAt: 2,
+        lichess: { username: "alice", account: { id: "alice", username: "alice" } },
+      },
+      unrelatedLichess,
+    ]);
+
+    await renderCards();
+    await logout();
+
+    expect(getDefaultStore().get(sessionsAtom)).toEqual([unrelatedLichess]);
+  });
+
+  test("removing a player group removes case-variant handle-less Lichess duplicates", async () => {
+    const unrelatedLichess: Session = {
+      player: "Carol",
+      updatedAt: 3,
+      lichess: { username: "carol", account: { id: "carol", username: "carol" } },
+    };
+    getDefaultStore().set(sessionsAtom, [
+      {
+        player: "Alice",
+        updatedAt: 1,
+        lichess: { username: "Alice", account: { id: "alice", username: "Alice" } },
+      },
+      {
+        player: "alice",
+        updatedAt: 2,
+        lichess: { username: "alice", account: { id: "alice", username: "alice" } },
+      },
+      unrelatedLichess,
+    ]);
+
+    await renderCards();
+    await removeGroup("Alice");
+
+    expect(getDefaultStore().get(sessionsAtom)).toEqual([unrelatedLichess]);
   });
 });

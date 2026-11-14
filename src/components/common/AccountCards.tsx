@@ -12,7 +12,7 @@ import { getChessComAccount, getStats } from "@/utils/chess.com/api";
 import { findAccountDatabase, type AccountDatabaseListing } from "../home/accountDatabase";
 import { getLichessAccount } from "@/utils/lichess/api";
 import { revocationReason, revocationReasonText } from "@/utils/lichess/revocation";
-import { sameChessComAccount, type Session, sessionPlayerName } from "@/utils/session";
+import { sameAccountUsername, type Session, sessionPlayerName } from "@/utils/session";
 import { notifyUnlessCancelled } from "../files/notifyError";
 import { AccountCard } from "../home/AccountCard";
 import { EmptyAccounts } from "../home/EmptyAccounts";
@@ -195,14 +195,15 @@ function PlayerSession({
                     setSessions((current) =>
                       current.filter(
                         (s) =>
-                          s.lichess?.username !== member.lichess?.username || s.lichess?.handle,
+                          !sameAccountUsername(s.lichess?.username, member.lichess?.username) ||
+                          s.lichess?.handle,
                       ),
                     );
                   } else if (member.chessCom) {
                     setSessions((current) =>
                       current.filter(
                         (s) =>
-                          !sameChessComAccount(s.chessCom?.username, member.chessCom?.username) ||
+                          !sameAccountUsername(s.chessCom?.username, member.chessCom?.username) ||
                           s.lichess?.handle,
                       ),
                     );
@@ -305,7 +306,9 @@ function LichessOrChessCom({
           } else {
             setSessions((sessions) =>
               sessions.filter(
-                (s) => s.lichess?.username !== lichessSession.username || s.lichess?.handle,
+                (s) =>
+                  !sameAccountUsername(s.lichess?.username, lichessSession.username) ||
+                  s.lichess?.handle,
               ),
             );
           }
@@ -319,13 +322,12 @@ function LichessOrChessCom({
           if (!account) return;
           setSessions((sessions) =>
             sessions.map((s) =>
-              s.lichess?.username === lichessSession.username
+              s.lichess && sameAccountUsername(s.lichess.username, lichessSession.username)
                 ? {
                     ...s,
                     lichess: {
-                      account: account,
-                      username: lichessSession.username,
-                      handle: lichessSession.handle,
+                      ...s.lichess,
+                      account,
                     },
                     updatedAt: Date.now(),
                   }
@@ -338,48 +340,47 @@ function LichessOrChessCom({
     );
   }
   if (session.chessCom?.stats) {
+    const chessComSession = session.chessCom;
     const association = findAccountDatabase(
       listing,
       "chesscom",
-      session.chessCom.username,
+      chessComSession.username,
       listingAvailable,
     );
     let totalGames = 0;
-    for (const stat of Object.values(session.chessCom.stats)) {
+    for (const stat of Object.values(chessComSession.stats)) {
       if (stat.record) {
         totalGames += stat.record.win + stat.record.loss + stat.record.draw;
       }
     }
     return (
       <AccountCard
-        key={session.chessCom.username}
+        key={chessComSession.username}
         type="chesscom"
-        title={session.chessCom.username}
+        title={chessComSession.username}
         database={association?.type === "unavailable" ? null : association}
         associationIssue={association?.type === "unavailable" ? association : undefined}
         associationPending={listingPending}
         updatedAt={session.updatedAt}
         total={totalGames}
-        stats={getStats(session.chessCom.stats)}
+        stats={getStats(chessComSession.stats)}
         logout={() => {
           setSessions((sessions) =>
             sessions.filter(
-              (s) => !sameChessComAccount(s.chessCom?.username, session.chessCom?.username),
+              (s) => !sameAccountUsername(s.chessCom?.username, chessComSession.username),
             ),
           );
         }}
         reload={async () => {
-          if (!session.chessCom) return;
-          const stats = await getChessComAccount(session.chessCom?.username);
+          const stats = await getChessComAccount(chessComSession.username);
           if (!stats) return;
           setSessions((sessions) =>
             sessions.map((s) =>
-              session.chessCom &&
-              sameChessComAccount(s.chessCom?.username, session.chessCom?.username)
+              s.chessCom && sameAccountUsername(s.chessCom.username, chessComSession.username)
                 ? {
                     ...s,
                     chessCom: {
-                      username: session.chessCom?.username,
+                      ...s.chessCom,
                       stats,
                     },
                     updatedAt: Date.now(),

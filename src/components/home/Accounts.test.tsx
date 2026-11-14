@@ -158,6 +158,17 @@ function fillUsername(username = "player") {
   });
 }
 
+function fillPlayerName(player: string) {
+  const input = document.querySelector<HTMLInputElement>(
+    "input[aria-label='Home.Accounts.PlayerName']",
+  )!;
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, player);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
 function openModal() {
   const addButton = container.querySelector("button");
   expect(addButton).not.toBeNull();
@@ -344,10 +355,16 @@ describe("account authentication", () => {
     await submit();
 
     openModal();
+    fillPlayerName("Updated Alias");
     fillUsername("felix");
     chooseChessCom();
     await submit();
 
-    expect(store.get(sessionsAtom).map((session) => session.chessCom?.username)).toEqual(["felix"]);
+    expect(store.get(sessionsAtom)).toEqual([
+      expect.objectContaining({
+        player: "Updated Alias",
+        chessCom: { username: "felix", stats: {} },
+      }),
+    ]);
   });
 });

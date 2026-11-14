@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { decodeCompressedOrJson, deserializeStorageValue } from "@/state/store/debouncedStorage";
+import {
+    decodeCompressedOrJson,
+    deserializeStorageValue,
+    serializeStorageValue,
+} from "@/state/store/debouncedStorage";
 
 const mocks = vi.hoisted(() => ({
     migrateLegacyLichessToken: vi.fn(),
@@ -18,11 +22,12 @@ vi.mock("@/bindings/generated", () => ({
 vi.mock("@/utils/lichess/api", () => ({ getLichessAccount: mocks.getLichessAccount }));
 
 import {
+    dedupeChessComSessions,
     initializePersistedSessions,
     getSessionPersistenceSnapshot,
     savePublicSessions,
     retrySessionPersistence,
-    sameChessComAccount,
+    sameAccountUsername,
     sessionPlayerName,
     SessionSanitizationError,
     upsertChessComSession,
@@ -112,6 +117,17 @@ describe("upsertLichessSession", () => {
     });
 });
 
+describe("sameAccountUsername", () => {
+    test("compares defined usernames case-insensitively and rejects undefined", () => {
+        expect(sameAccountUsername("Felix", "felix")).toBe(true);
+        expect(sameAccountUsername("felix", "FELIX")).toBe(true);
+        expect(sameAccountUsername("Felix", "bob")).toBe(false);
+        expect(sameAccountUsername(undefined, "felix")).toBe(false);
+        expect(sameAccountUsername("Felix", undefined)).toBe(false);
+        expect(sameAccountUsername(undefined, undefined)).toBe(false);
+    });
+});
+
 describe("upsertChessComSession", () => {
     const stats = {};
     const existing = {
@@ -129,15 +145,6 @@ describe("upsertChessComSession", () => {
         updatedAt: 3,
         lichess: { username: "alice", account: { id: "alice", username: "alice" } },
     };
-
-    test("sameChessComAccount compares defined usernames case-insensitively", () => {
-        expect(sameChessComAccount("Felix", "felix")).toBe(true);
-        expect(sameChessComAccount("felix", "FELIX")).toBe(true);
-        expect(sameChessComAccount("Felix", "bob")).toBe(false);
-        expect(sameChessComAccount(undefined, "felix")).toBe(false);
-        expect(sameChessComAccount("Felix", undefined)).toBe(false);
-        expect(sameChessComAccount(undefined, undefined)).toBe(false);
-    });
 
     test("replacing Felix with felix yields one session with the new username and alias while keeping others", () => {
         vi.spyOn(Date, "now").mockReturnValue(123);
@@ -176,7 +183,89 @@ describe("upsertChessComSession", () => {
     });
 });
 
+describe("dedupeChessComSessions", () => {
+    const stats = {};
+    const lichessFirst = {
+        player: "Alice",
+        updatedAt: 5,
+        lichess: { username: "alice", account: { id: "alice", username: "alice" } },
+    };
+    const otherChessCom = {
+        player: "Bob",
+        updatedAt: 3,
+        chessCom: { username: "bob", stats },
+    };
+    const combinedSession = {
+        player: "Combined",
+        updatedAt: 99,
+        lichess: { username: "felix", account: { id: "felix", username: "felix" } },
+        chessCom: { username: "FELIX", stats },
+    };
+
+    test("keeps the highest updatedAt regardless of order and preserves relative order of survivors and others", () => {
+        const olderUpper = {
+            player: "Felix",
+            updatedAt: 1,
+            chessCom: { username: "Felix", stats },
+        };
+        const newerLower = {
+            player: "felix",
+            updatedAt: 10,
+            chessCom: { username: "felix", stats },
+        };
+
+        expect(
+            dedupeChessComSessions([
+                olderUpper,
+                lichessFirst,
+                newerLower,
+                otherChessCom,
+                combinedSession,
+            ]),
+        ).toEqual([lichessFirst, newerLower, otherChessCom, combinedSession]);
+
+        expect(
+            dedupeChessComSessions([
+                newerLower,
+                lichessFirst,
+                olderUpper,
+                otherChessCom,
+                combinedSession,
+            ]),
+        ).toEqual([newerLower, lichessFirst, otherChessCom, combinedSession]);
+    });
+
+    test("breaks updatedAt ties in favour of the later session", () => {
+        const first = { player: "First", updatedAt: 4, chessCom: { username: "Felix", stats } };
+        const second = { player: "Second", updatedAt: 4, chessCom: { username: "felix", stats } };
+
+        expect(dedupeChessComSessions([first, lichessFirst, second])).toEqual([
+            lichessFirst,
+            second,
+        ]);
+    });
+});
+
 describe("initializePersistedSessions", () => {
+    test("collapses legacy case-variant Chess.com duplicates in localStorage to the newest session", async () => {
+        localStorage.setItem(
+            "sessions",
+            serializeStorageValue([
+                { player: "Felix", updatedAt: 1, chessCom: { username: "Felix", stats: {} } },
+                { player: "felix", updatedAt: 2, chessCom: { username: "felix", stats: {} } },
+            ]),
+        );
+
+        const snapshot = await initializePersistedSessions();
+
+        expect(snapshot).toEqual({
+            status: "saved",
+            sessions: [
+                { player: "felix", updatedAt: 2, chessCom: { username: "felix", stats: {} } },
+            ],
+        });
+        expect(decodeCompressedOrJson(localStorage.getItem("sessions"))).toEqual(snapshot.sessions);
+    });
     test("persists one card for a listed native account after a successful profile read", async () => {
         const profile = { id: "player", username: "Player", count: { all: 42 } };
         mocks.listLichessAccounts.mockResolvedValue([

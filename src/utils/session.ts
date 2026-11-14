@@ -303,7 +303,8 @@ export async function initializePersistedSessions(): Promise<SessionPersistenceS
             // successful reconciliation rather than synthesising unverified profile data.
         }
     }
-    return savePublicSessions(reconciled);
+    // Collapse case-variant Chess.com duplicates written before adds were deduplicated case-insensitively.
+    return savePublicSessions(dedupeChessComSessions(reconciled));
 }
 
 export function upsertLichessSession(
@@ -311,14 +312,15 @@ export function upsertLichessSession(
     player: string,
     lichess: LichessSession,
 ): Session[] {
-    const username = lichess.username.toLocaleLowerCase();
     const existingHandle = sessions.find(
         (session) =>
-            session.lichess?.username.toLocaleLowerCase() === username &&
-            session.lichess.handle !== undefined,
+            sameAccountUsername(session.lichess?.username, lichess.username) &&
+            session.lichess?.handle !== undefined,
     )?.lichess?.handle;
     return [
-        ...sessions.filter((session) => session.lichess?.username.toLocaleLowerCase() !== username),
+        ...sessions.filter(
+            (session) => !sameAccountUsername(session.lichess?.username, lichess.username),
+        ),
         {
             lichess:
                 lichess.handle === undefined && existingHandle !== undefined
@@ -330,9 +332,25 @@ export function upsertLichessSession(
     ];
 }
 
-/** Chess.com usernames are case-insensitive. */
-export function sameChessComAccount(a: string | undefined, b: string | undefined): boolean {
+/** Chess.com and Lichess usernames are case-insensitive. */
+export function sameAccountUsername(a: string | undefined, b: string | undefined): boolean {
     return a !== undefined && b !== undefined && a.toLowerCase() === b.toLowerCase();
+}
+
+export function dedupeChessComSessions(sessions: Session[]): Session[] {
+    const winnerByUsername = new Map<string, number>();
+    sessions.forEach((session, index) => {
+        if (!session.chessCom || session.lichess) return;
+        const key = session.chessCom.username.toLowerCase();
+        const prevIndex = winnerByUsername.get(key);
+        if (prevIndex === undefined || session.updatedAt >= sessions[prevIndex].updatedAt) {
+            winnerByUsername.set(key, index);
+        }
+    });
+    return sessions.filter((session, index) => {
+        if (!session.chessCom || session.lichess) return true;
+        return winnerByUsername.get(session.chessCom.username.toLowerCase()) === index;
+    });
 }
 
 export function upsertChessComSession(
@@ -342,7 +360,7 @@ export function upsertChessComSession(
 ): Session[] {
     return [
         ...sessions.filter(
-            (session) => !sameChessComAccount(session.chessCom?.username, chessCom.username),
+            (session) => !sameAccountUsername(session.chessCom?.username, chessCom.username),
         ),
         {
             chessCom,
