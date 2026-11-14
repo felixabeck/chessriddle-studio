@@ -26240,3 +26240,20 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Fix:** keep the game and drop only what cannot be played. On an unplayable SAN inside a variation, skip the rest of that variation (set a per-frame flag and ignore moves until its `end_variation`). On an unplayable mainline SAN, keep the game up to that point, as the Files view does. Keep `skip` for genuinely unusable games (bad FEN). In addition, return the number of games skipped and the number truncated from `convert_pgn` and show it next to the imported count, so remaining losses are visible.
 * **Related:** f-20261101-09 (silent skip on stale castling rights, handled in 56125d43); f-20261112-79 (opening-book visitor dropping variation games, handled in d8d11e681); d-20261103-13 (a typo game stays viewable); f-20261115-01 (same importer, encoding).
 * **Found by:** Grok Bot, cross-cutting silent-error-arm sweep
+
+---
+
+## 2026-11-15 — filed through the inbox spool
+
+### Games played in the Play tab get the UTC calendar date in their Date tag, so evening or early-morning games carry the wrong day
+
+* **ID:** f-20261115-05 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** yes (cross-cutting finished-game-flow sweep)
+* **Where:** `src/components/boards/BoardGame.tsx:678-680` (`const dateStr = now.toISOString().slice(0, 10).replace(/-/g, ".")`, `timeStr = now.toISOString().slice(11, 19)`), written as `date`/`time` headers at `:704-728`; `src/utils/chess.ts:207` exports `time` as `UTCTime`, but `date` goes out as the plain `Date` tag; the database importer stores `Date` (or `UTCDate`) as the game date (`db/mod.rs` `Importer::header`).
+* **Defect:** `toISOString()` is UTC, so the `Date` tag holds the UTC calendar date, not the local date of play. The PGN standard defines `Date` as the game's (local) starting date and keeps UTC in the separate `UTCDate`/`UTCTime` pair. Because the time is written as `UTCTime` while the date goes into `Date`, any game started while the local date and the UTC date differ is saved with the wrong day: east of UTC between local midnight and the offset (Berlin 00:00-01:00, or 02:00 in summer; Tokyo 00:00-09:00) it is dated the previous day, and west of UTC in the evening (New York after 19:00/20:00) the next day.
+* **Failure scenario:** a Tokyo user plays an engine game at 08:00 on 15 November. The saved game reads `[Date "2026.11.14"]`; stored in a database it sorts and filters as 14 November, and date-based personal statistics count it on the wrong day. A New York user's 21:00 game on 14 November is dated 15 November.
+* **Proof:** the two production lines run under node with fixed local times: `TZ=Europe/Berlin` 2026-11-15 00:30 → `Date 2026.11.14`, `UTCTime 23:30:00` (and 2026-07-15 01:30 → `2026.07.14`); `TZ=Asia/Tokyo` 2026-11-15 00:30 → `2026.11.14` (2026-07-15 01:30 → `2026.07.14`); `TZ=America/New_York` 2026-11-14 20:30 → `2026.11.15`, `UTCTime 01:30:00`.
+* **Fix:** write the local date into `Date` (e.g. `dayjs().format("YYYY.MM.DD")`), and if the UTC moment should be kept, write it as `UTCDate` + `UTCTime` together, so date and time agree on the clock they use. Add a test with a mocked non-UTC zone.
+* **Related:** f-20261112-11 (RatingsPanel mixing UTC and local day conventions, handled); f-20261111-96 (date comparison of imported tags).
+* **Found by:** Grok Bot, cross-cutting finished-game-flow sweep
