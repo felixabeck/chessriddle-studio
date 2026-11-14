@@ -25741,3 +25741,20 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Proof:** (1) `/tmp` serializer probe on origin/master copies of `commentSerializer.ts`, `commentNotation.ts`, `commentMarkdown.ts`: `compareCommentDocument(…, [parseNotationComment])` → refused for `["Idea ", BR, "next"]` (source `"Idea   \nnext"`, reparsed text `Idea`), `["a", BR, BR, "b"]` (source `"a  \n  \nb"`, reparsed as paragraphs `a  ` and `b`), `[BR, "b"]` (reparsed `b`), `["b", BR]` (reparsed `b  `); `["Idea", BR, " next"]` saves. (2) Real-editor Vitest probe in a `/tmp` `git archive` copy of origin/master using `AnnotationEditor.test.tsx`'s `mount`, typing character by character with `setHardBreak()` for Shift+Enter: `Main idea ` ⇧↵ `1.e4 e5 is best` → alert `Board.Annotate.SaveFailed`, stored `Main idea `; `Main idea` ⇧↵ ⇧↵ `Second thought` → alert, stored `Main idea`; Shift+Enter at the start of `Old text` then ` more` → alert, stored `Old text`; `Line` ⇧↵ → alert, stored `Line`. (jsdom also logged `getClientRects is not a function` from `focus()` scrolling, unrelated to the save path.) Probes removed afterwards.
 * **Related:** f-20261112-71, f-20261114-05, f-20261013-02, d-20261018-09.
 * **Found by:** Grok Bot general review
+
+---
+
+## 2026-11-14 — filed through the inbox spool
+
+### Repertoire minimum-games "Custom" field collapses to a preset while typing, so values like 500 or 2000 cannot be typed
+
+* **ID:** f-20261114-07 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** yes (general review, origin/master f3b063a85)
+* **Where:** `src/components/settings/RepertoireMinGamesSetting.tsx:25-27` (the effect re-derives `preset` from `minGames` on every change) together with `:65-74` (the Custom `NumberInput` is mounted only while `preset === "custom"`, and its `onChange` writes every keystroke straight into `coverageMinGamesAtom`, with `Number(val) || 50` for an empty field).
+* **Defect:** in Custom mode every intermediate keystroke is committed to the atom, and the effect then switches the select to whichever preset equals that intermediate value and unmounts the input. Any custom number whose typed prefix is 20, 50 or 200 (500, 501, 2000, 205, …) can never be entered by typing: the field disappears at the prefix and the setting is left at the preset (50, 20 or 200). Clearing the field to retype it writes 50 and likewise switches to Standard and hides the field.
+* **Failure scenario:** Settings → Repertoire minimum games → choose Custom (field shows e.g. 7), select its text and type `500`. After `5` the field shows 5; after `50` the select jumps to "Standard (50)" and the field vanishes, so the final `0` goes nowhere. The stored minimum is 50, not 500, and coverage is computed against 50. Same for `2000` (stops at Deep, 20) or for clearing the field first (stops at Standard).
+* **Fix:** keep the Custom mode sticky while the user is in it: only derive `preset` from `minGames` on mount/external change (e.g. track whether the last change came from the Custom input), or hold a local draft in the input and commit on blur/Enter; and treat an empty field as "no change" instead of 50. Add a typing case (`5`, `50`, `500` → stays Custom, stores 500) to `RepertoireMinGamesSetting.test.tsx`.
+* **Proof:** Vitest probe in a `/tmp` `git archive` copy of origin/master (f3b063a85), same mocks as `RepertoireMinGamesSetting.test.tsx` but with `useAtom` backed by a real `useState(7)`: typing `5` → preset `custom`, input shown; `50` → preset `standard`, input gone; `500` → no input to type into, preset stays `standard`. Probe removed afterwards.
+* **Related:** -
+* **Found by:** Grok Bot general review
