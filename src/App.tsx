@@ -2,7 +2,16 @@ import { localStorageColorSchemeManager, MantineProvider } from "@mantine/core";
 import { Notifications, notifications } from "@mantine/notifications";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import i18n from "@/i18n";
-import { ask, check, getMatches, info, relaunch, type Update, warn } from "@/platform/native";
+import {
+  ask,
+  check,
+  getMatches,
+  info,
+  platform,
+  relaunch,
+  type Update,
+  warn,
+} from "@/platform/native";
 import { getDefaultStore, useAtomValue } from "jotai";
 import { ContextMenuProvider } from "mantine-contextmenu";
 import { useEffect, useMemo, useRef } from "react";
@@ -109,15 +118,19 @@ function shouldDeferUpdateRestart(): boolean {
   }
 }
 
+/** On Windows the updater plugin starts the installer and ends the process inside `install()` (tauri-plugin-updater `install_inner` calls `std::process::exit`), so nothing after it runs. */
+function installEndsProcess(): boolean {
+  return platform() === "windows";
+}
+
 async function installUpdate(update: Update, signal: AbortSignal) {
   const accepted = await ask(t("Updater.Available", { version: update.version }), {
     title: t("Updater.Title"),
     kind: "info",
   });
   if (!accepted || signal.aborted) return;
-  try {
-    await update.downloadAndInstall();
-  } catch (e) {
+
+  const reportInstallFailure = (e: unknown) => {
     if (signal.aborted) return;
     warn(`Failed to install update ${update.version}: ${e}`);
     notifications.show({
@@ -125,6 +138,28 @@ async function installUpdate(update: Update, signal: AbortSignal) {
       title: t("Updater.InstallFailed"),
       message: String(e),
     });
+  };
+
+  try {
+    await update.download();
+  } catch (e) {
+    reportInstallFailure(e);
+    return;
+  }
+  if (signal.aborted) return;
+  if (installEndsProcess() && shouldDeferUpdateRestart()) {
+    notifications.show({
+      color: "warning",
+      title: t("Updater.Postponed"),
+      message: t("Updater.SaveToInstall", { version: update.version }),
+      autoClose: false,
+    });
+    return;
+  }
+  try {
+    await update.install();
+  } catch (e) {
+    reportInstallFailure(e);
     return;
   }
   // The plugin API takes no AbortSignal, so an install that settles after unmount is only

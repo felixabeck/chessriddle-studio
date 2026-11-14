@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => {
     reconcileStartupPathOwners: vi.fn(),
     reconcileEngineAttachments: vi.fn(),
     warn: vi.fn(),
+    platform: vi.fn(),
     scanBlockingTabs: vi.fn(),
     isQuitGateInProgress: vi.fn(),
     referenceDbAtom,
@@ -50,6 +51,7 @@ vi.mock("@/platform/native", () => ({
   check: mocks.check,
   getMatches: mocks.getMatches,
   info: mocks.info,
+  platform: mocks.platform,
   relaunch: mocks.relaunch,
   warn: mocks.warn,
 }));
@@ -151,15 +153,27 @@ function mockLaunchWithoutCliFile() {
   mocks.getMatches.mockResolvedValue(noCliFileArgs);
 }
 
-/** An available update whose install can be driven by the test. */
-function mockUpdate(downloadAndInstall: () => Promise<void> = () => Promise.resolve()) {
+/** An available update whose download and install can be driven by the test. */
+function mockUpdate({
+  download = () => Promise.resolve(),
+  install = () => Promise.resolve(),
+}: {
+  download?: () => Promise<void>;
+  install?: () => Promise<void>;
+} = {}) {
   const update = {
     version: "9.9.9",
-    downloadAndInstall: vi.fn(downloadAndInstall),
+    download: vi.fn(download),
+    install: vi.fn(install),
     close: vi.fn(() => Promise.resolve()),
   };
   mocks.check.mockResolvedValue(update);
   return update;
+}
+
+/** Models Windows `install()` never returning because the process exits. */
+function neverResolves(): Promise<void> {
+  return new Promise(() => undefined);
 }
 
 beforeEach(() => {
@@ -178,6 +192,7 @@ beforeEach(() => {
   resetEngineOwnerCoordinatorForTests();
   mocks.preloadReferenceDb.mockReset();
   mocks.warn.mockReset();
+  mocks.platform.mockReset().mockReturnValue("linux");
   mocks.scanBlockingTabs.mockReset().mockReturnValue([]);
   mocks.isQuitGateInProgress.mockReset().mockReturnValue(false);
 
@@ -477,7 +492,8 @@ describe("startup update check", () => {
 
     expect(update.close).toHaveBeenCalledOnce();
     expect(mocks.ask).not.toHaveBeenCalled();
-    expect(update.downloadAndInstall).not.toHaveBeenCalled();
+    expect(update.download).not.toHaveBeenCalled();
+    expect(update.install).not.toHaveBeenCalled();
     expect(mocks.relaunch).not.toHaveBeenCalled();
   });
 
@@ -504,7 +520,8 @@ describe("startup update check", () => {
 
       expect(update.close).toHaveBeenCalledOnce();
       expect(mocks.ask).not.toHaveBeenCalled();
-      expect(update.downloadAndInstall).not.toHaveBeenCalled();
+      expect(update.download).not.toHaveBeenCalled();
+      expect(update.install).not.toHaveBeenCalled();
       expect(mocks.relaunch).not.toHaveBeenCalled();
     },
   );
@@ -546,7 +563,8 @@ describe("startup update check", () => {
     await act(async () => root.render(<Probe />));
 
     expect(mocks.ask).toHaveBeenCalledWith("Updater.Available:9.9.9", expect.any(Object));
-    expect(update.downloadAndInstall).not.toHaveBeenCalled();
+    expect(update.download).not.toHaveBeenCalled();
+    expect(update.install).not.toHaveBeenCalled();
     expect(mocks.relaunch).not.toHaveBeenCalled();
     expect(update.close).toHaveBeenCalledOnce();
   });
@@ -558,15 +576,16 @@ describe("startup update check", () => {
 
     await act(async () => root.render(<Probe />));
 
-    expect(update.downloadAndInstall).toHaveBeenCalledOnce();
+    expect(update.download).toHaveBeenCalledOnce();
+    expect(update.install).toHaveBeenCalledOnce();
     expect(mocks.scanBlockingTabs).toHaveBeenCalledOnce();
     expect(mocks.scanBlockingTabs).toHaveBeenCalledWith(storedTabs);
     expect(mocks.relaunch).toHaveBeenCalledOnce();
     expect(update.close).toHaveBeenCalledOnce();
-    expect(update.downloadAndInstall.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(update.download.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.scanBlockingTabs.mock.invocationCallOrder[0],
     );
-    expect(update.downloadAndInstall.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(update.install.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.relaunch.mock.invocationCallOrder[0],
     );
   });
@@ -637,9 +656,11 @@ describe("startup update check", () => {
     expect(update.close).toHaveBeenCalledOnce();
   });
 
-  test("notifies the user and does not relaunch when the install fails", async () => {
+  test("notifies the user and does not install when the download fails", async () => {
     mockLaunchWithoutCliFile();
-    const update = mockUpdate(() => Promise.reject(new Error("signature mismatch")));
+    const update = mockUpdate({
+      download: () => Promise.reject(new Error("signature mismatch")),
+    });
     mocks.ask.mockResolvedValue(true);
 
     await act(async () => root.render(<Probe />));
@@ -650,6 +671,26 @@ describe("startup update check", () => {
         message: expect.stringContaining("signature mismatch"),
       }),
     );
+    expect(update.install).not.toHaveBeenCalled();
+    expect(mocks.relaunch).not.toHaveBeenCalled();
+    expect(update.close).toHaveBeenCalledOnce();
+  });
+
+  test("notifies the user and does not relaunch when the install fails", async () => {
+    mockLaunchWithoutCliFile();
+    const update = mockUpdate({
+      install: () => Promise.reject(new Error("installer refused")),
+    });
+    mocks.ask.mockResolvedValue(true);
+
+    await act(async () => root.render(<Probe />));
+
+    expect(mocks.showNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Updater.InstallFailed",
+        message: expect.stringContaining("installer refused"),
+      }),
+    );
     expect(mocks.relaunch).not.toHaveBeenCalled();
     expect(update.close).toHaveBeenCalledOnce();
   });
@@ -657,16 +698,16 @@ describe("startup update check", () => {
   test("does not relaunch when the install settles after unmount", async () => {
     mockLaunchWithoutCliFile();
     let finishInstall: () => void = () => undefined;
-    const update = mockUpdate(
-      () =>
+    const update = mockUpdate({
+      install: () =>
         new Promise<void>((resolve) => {
           finishInstall = resolve;
         }),
-    );
+    });
     mocks.ask.mockResolvedValue(true);
 
     await act(async () => root.render(<Probe />));
-    expect(update.downloadAndInstall).toHaveBeenCalledOnce();
+    expect(update.install).toHaveBeenCalledOnce();
 
     await act(async () => root.unmount());
     await act(async () => finishInstall());
@@ -674,6 +715,82 @@ describe("startup update check", () => {
     expect(mocks.relaunch).not.toHaveBeenCalled();
     expect(mocks.showNotification).not.toHaveBeenCalled();
     expect(update.close).toHaveBeenCalledOnce();
+  });
+
+  test("on Windows postpones install when a blocking tab has unsaved work", async () => {
+    mocks.platform.mockReturnValue("windows");
+    mockLaunchWithoutCliFile();
+    const update = mockUpdate({ install: neverResolves });
+    mocks.ask.mockResolvedValue(true);
+    mocks.scanBlockingTabs.mockImplementation((tabs) =>
+      tabs === storedTabs ? [{ value: "t1", name: "Analysis", uninspectable: false }] : [],
+    );
+
+    await act(async () => root.render(<Probe />));
+
+    expect(update.install).not.toHaveBeenCalled();
+    expect(mocks.relaunch).not.toHaveBeenCalled();
+    expect(mocks.showNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Updater.Postponed",
+        message: "Updater.SaveToInstall:9.9.9",
+        autoClose: false,
+      }),
+    );
+    expect(update.download.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.scanBlockingTabs.mock.invocationCallOrder[0],
+    );
+    expect(update.close).toHaveBeenCalledOnce();
+  });
+
+  test("on Windows postpones install when the quit gate is in progress", async () => {
+    mocks.platform.mockReturnValue("windows");
+    mockLaunchWithoutCliFile();
+    const update = mockUpdate({ install: neverResolves });
+    mocks.ask.mockResolvedValue(true);
+    mocks.isQuitGateInProgress.mockReturnValue(true);
+
+    await act(async () => root.render(<Probe />));
+
+    expect(update.install).not.toHaveBeenCalled();
+    expect(mocks.relaunch).not.toHaveBeenCalled();
+    expect(mocks.showNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Updater.Postponed",
+      }),
+    );
+    expect(update.close).toHaveBeenCalledOnce();
+  });
+
+  test("on Windows does not install when scanning blocking tabs throws", async () => {
+    mocks.platform.mockReturnValue("windows");
+    mockLaunchWithoutCliFile();
+    const update = mockUpdate({ install: neverResolves });
+    mocks.ask.mockResolvedValue(true);
+    mocks.scanBlockingTabs.mockImplementation(() => {
+      throw new Error("store unavailable");
+    });
+
+    await act(async () => root.render(<Probe />));
+
+    expect(update.install).not.toHaveBeenCalled();
+    expect(mocks.relaunch).not.toHaveBeenCalled();
+    expect(update.close).toHaveBeenCalledOnce();
+  });
+
+  test("on Windows scans for unsaved work before installing", async () => {
+    mocks.platform.mockReturnValue("windows");
+    mockLaunchWithoutCliFile();
+    const update = mockUpdate({ install: neverResolves });
+    mocks.ask.mockResolvedValue(true);
+
+    await act(async () => root.render(<Probe />));
+
+    expect(mocks.scanBlockingTabs.mock.invocationCallOrder[0]).toBeLessThan(
+      update.install.mock.invocationCallOrder[0],
+    );
+    expect(update.install).toHaveBeenCalledOnce();
+    expect(mocks.relaunch).not.toHaveBeenCalled();
   });
 
   test("skips the check when startup was cancelled", async () => {
