@@ -25634,6 +25634,8 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Proof:** a completed green `rust-macos-test` on `7fdf4d564` or a later master commit.
 * **Related:** f-20261110-03 (same symptom, closed as runner infrastructure).
 * **Found by:** Claude Code, `pnpm ci:remote:check` before the f-20261112-82 drain push, drain session 5867a492-0964-4b01-92ca-9dbfd502f1ef.
+* **Third occurrence (2026-11-14, Claude Code, required CI wait after the remove-codex push):** **CI run:** 43593993978 — job `rust-macos-test` 132444507963 on master `cd0275e23` started 12:16:34Z, entered `Run Rust tests` at 12:17:57Z and ended 13:10:36Z with the annotation "The hosted runner lost communication with the server." The step has no conclusion and the job log returns 404 BlobNotFound. `cd0275e23` and its parent range touch no `src-tauri` file; every other job of the run succeeded, and `rust-macos-test` passed in about 17 minutes on the two preceding master runs. Per this finding's Fix, the failed job gets one rerun (`gh run rerun 43593993978 --failed`); three losses in five days, each about 50 minutes long, strengthen the macOS test-hang hypothesis if the rerun also hangs.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"25536bf3deea1447723476d3e38ae10937a1414fc8964fd47f059a56ae711454","input_sha256":"e69dd5c737694df9215ed9d8c82287adb291c3af807c3f171d26300f7ee06c37","kind":"mutation-receipt","operation":"7f157954db2d036b1678f75d0efb2c1ee86952208c610abd70335277ffde20ad","options":{"section":null},"request_id_sha256":null,"results":["f-20261113-04"],"target":"f-20261113-04","v":1} -->
 
 ---
 
