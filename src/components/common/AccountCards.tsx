@@ -12,7 +12,7 @@ import { getChessComAccount, getStats } from "@/utils/chess.com/api";
 import { findAccountDatabase, type AccountDatabaseListing } from "../home/accountDatabase";
 import { getLichessAccount } from "@/utils/lichess/api";
 import { revocationReason, revocationReasonText } from "@/utils/lichess/revocation";
-import { type Session, sessionPlayerName } from "@/utils/session";
+import { sameChessComAccount, type Session, sessionPlayerName } from "@/utils/session";
 import { notifyUnlessCancelled } from "../files/notifyError";
 import { AccountCard } from "../home/AccountCard";
 import { EmptyAccounts } from "../home/EmptyAccounts";
@@ -202,7 +202,8 @@ function PlayerSession({
                     setSessions((current) =>
                       current.filter(
                         (s) =>
-                          s.chessCom?.username !== member.chessCom?.username || s.lichess?.handle,
+                          !sameChessComAccount(s.chessCom?.username, member.chessCom?.username) ||
+                          s.lichess?.handle,
                       ),
                     );
                   }
@@ -362,7 +363,9 @@ function LichessOrChessCom({
         stats={getStats(session.chessCom.stats)}
         logout={() => {
           setSessions((sessions) =>
-            sessions.filter((s) => s.chessCom?.username !== session.chessCom?.username),
+            sessions.filter(
+              (s) => !sameChessComAccount(s.chessCom?.username, session.chessCom?.username),
+            ),
           );
         }}
         reload={async () => {
@@ -371,7 +374,8 @@ function LichessOrChessCom({
           if (!stats) return;
           setSessions((sessions) =>
             sessions.map((s) =>
-              session.chessCom && s.chessCom?.username === session.chessCom?.username
+              session.chessCom &&
+              sameChessComAccount(s.chessCom?.username, session.chessCom?.username)
                 ? {
                     ...s,
                     chessCom: {

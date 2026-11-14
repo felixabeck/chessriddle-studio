@@ -22,8 +22,10 @@ import {
     getSessionPersistenceSnapshot,
     savePublicSessions,
     retrySessionPersistence,
+    sameChessComAccount,
     sessionPlayerName,
     SessionSanitizationError,
+    upsertChessComSession,
     upsertLichessSession,
 } from "./session";
 
@@ -107,6 +109,70 @@ describe("upsertLichessSession", () => {
             },
         ]);
         expect(sessions[0].lichess?.handle).toBeUndefined();
+    });
+});
+
+describe("upsertChessComSession", () => {
+    const stats = {};
+    const existing = {
+        player: "Original alias",
+        updatedAt: 1,
+        chessCom: { username: "Felix", stats },
+    };
+    const otherAccount = {
+        player: "Bob",
+        updatedAt: 2,
+        chessCom: { username: "bob", stats },
+    };
+    const lichessOnly = {
+        player: "Lichess",
+        updatedAt: 3,
+        lichess: { username: "alice", account: { id: "alice", username: "alice" } },
+    };
+
+    test("sameChessComAccount compares defined usernames case-insensitively", () => {
+        expect(sameChessComAccount("Felix", "felix")).toBe(true);
+        expect(sameChessComAccount("felix", "FELIX")).toBe(true);
+        expect(sameChessComAccount("Felix", "bob")).toBe(false);
+        expect(sameChessComAccount(undefined, "felix")).toBe(false);
+        expect(sameChessComAccount("Felix", undefined)).toBe(false);
+        expect(sameChessComAccount(undefined, undefined)).toBe(false);
+    });
+
+    test("replacing Felix with felix yields one session with the new username and alias while keeping others", () => {
+        vi.spyOn(Date, "now").mockReturnValue(123);
+        const sessions = upsertChessComSession([existing, otherAccount, lichessOnly], "New alias", {
+            username: "felix",
+            stats,
+        });
+
+        expect(sessions).toEqual([
+            otherAccount,
+            lichessOnly,
+            {
+                player: "New alias",
+                updatedAt: 123,
+                chessCom: { username: "felix", stats },
+            },
+        ]);
+        expect(
+            sessions
+                .filter((session) => session.chessCom !== undefined)
+                .map((s) => s.chessCom?.username),
+        ).toEqual(["bob", "felix"]);
+    });
+
+    test("empty alias falls back to the Chess.com username", () => {
+        vi.spyOn(Date, "now").mockReturnValue(123);
+        const sessions = upsertChessComSession([], "", { username: "felix", stats });
+
+        expect(sessions).toEqual([
+            {
+                player: "felix",
+                updatedAt: 123,
+                chessCom: { username: "felix", stats },
+            },
+        ]);
     });
 });
 

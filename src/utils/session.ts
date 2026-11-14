@@ -329,3 +329,25 @@ export function upsertLichessSession(
         },
     ];
 }
+
+/** Chess.com usernames are case-insensitive. */
+export function sameChessComAccount(a: string | undefined, b: string | undefined): boolean {
+    return a !== undefined && b !== undefined && a.toLowerCase() === b.toLowerCase();
+}
+
+export function upsertChessComSession(
+    sessions: Session[],
+    player: string,
+    chessCom: ChessComSession,
+): Session[] {
+    return [
+        ...sessions.filter(
+            (session) => !sameChessComAccount(session.chessCom?.username, chessCom.username),
+        ),
+        {
+            chessCom,
+            player: player || chessCom.username,
+            updatedAt: Date.now(),
+        },
+    ];
+}

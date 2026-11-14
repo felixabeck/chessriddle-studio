@@ -694,3 +694,28 @@ test.each(["lichess", "chesscom"] as const)(
     );
   },
 );
+
+describe("Chess.com case-insensitive removal", () => {
+  const legacyDuplicates: Session[] = [
+    { player: "Felix", updatedAt: 1, chessCom: { username: "Felix", stats: {} } },
+    { player: "felix", updatedAt: 2, chessCom: { username: "felix", stats: {} } },
+  ];
+
+  test("logging out one Chess.com card removes legacy case-variant duplicates", async () => {
+    getDefaultStore().set(sessionsAtom, legacyDuplicates);
+    await renderCards();
+
+    await logout();
+
+    expect(getDefaultStore().get(sessionsAtom)).toEqual([]);
+  });
+
+  test("removing a player group removes legacy case-variant Chess.com duplicates", async () => {
+    getDefaultStore().set(sessionsAtom, legacyDuplicates);
+    await renderCards();
+
+    await removeGroup("Felix");
+
+    expect(getDefaultStore().get(sessionsAtom)).toEqual([]);
+  });
+});

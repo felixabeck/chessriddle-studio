@@ -24,6 +24,7 @@ import {
   type ChessComSession,
   type LichessSession,
   sessionPlayerName,
+  upsertChessComSession,
   upsertLichessSession,
 } from "@/utils/session";
 import AccountCards from "../common/AccountCards";
@@ -41,17 +42,7 @@ function Accounts() {
 
   const addChessComSession = useCallback(
     (alias: string, session: ChessComSession) => {
-      setSessions((sessions) => {
-        const newSessions = sessions.filter((s) => s.chessCom?.username !== session.username);
-        return [
-          ...newSessions,
-          {
-            chessCom: session,
-            player: alias,
-            updatedAt: Date.now(),
-          },
-        ];
-      });
+      setSessions((sessions) => upsertChessComSession(sessions, alias, session));
     },
     [setSessions],
   );

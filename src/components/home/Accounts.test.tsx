@@ -149,7 +149,10 @@ function fillUsername(username = "player") {
     "input[aria-label='Home.Accounts.Username']",
   )!;
   act(() => {
-    input.value = username;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+      input,
+      username,
+    );
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
   });
@@ -328,5 +331,23 @@ describe("account authentication", () => {
     await act(async () => resolveAuthentication?.({ ok: false }));
     expect(container.querySelector('[role="status"]')).toBeNull();
     await act(async () => root.unmount());
+  });
+
+  test("deduplicates Chess.com accounts case-insensitively when adding Felix then felix", async () => {
+    const { sessionsAtom } = await import("@/state/atoms");
+    const { getDefaultStore } = await import("jotai");
+    const store = getDefaultStore();
+
+    openModal();
+    fillUsername("Felix");
+    chooseChessCom();
+    await submit();
+
+    openModal();
+    fillUsername("felix");
+    chooseChessCom();
+    await submit();
+
+    expect(store.get(sessionsAtom).map((session) => session.chessCom?.username)).toEqual(["felix"]);
   });
 });
