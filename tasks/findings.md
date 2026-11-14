@@ -26194,3 +26194,24 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Fix:** size the depth bound for real games rather than for the parser's comfort: either raise `MAX_TREE_DEPTH` well beyond the longest legal games seen in practice (e.g. 2048+, after measuring that the Zod `z.lazy` recursion still fits the WebKit stack at that depth), or validate the mainline iteratively so depth is no longer a recursion risk. Keep the 100 000-node bound as the size guard. In either case, the refusal message should say that the game is too long to open, not that it is invalid.
 * **Related:** f-20260922-11 (writer/reader asymmetry for over-deep trees, handled by c449fbb2d: the bound is now enforced symmetrically, which is what makes it a hard refusal at open time); d-20260923-01 notes the bound when regenerating its fixture. Neither assessed whether 512 plies covers real games.
 * **Found by:** Grok Bot, cross-cutting resource-limit sweep
+
+---
+
+## 2026-11-15 — filed through the inbox spool
+
+### Once an engine's node count reaches 10^12, the UCI grammar cuts every info line at `nodes` and live analysis silently freezes
+
+* **ID:** f-20261115-03 · **Status:** open · **Area:** engine-uci · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** yes (cross-cutting engine-output robustness sweep, vendored upstream parser)
+* **Where:** `src-tauri/vendor/vampirc-uci/res/uci.pest`: `number = {sign? ~ digit{1,12} }` (also `milliseconds`), used by `info_nodes`, `info_nps`, `info_tbhits`, `info_time` and the others; `parse_one` (`src/parser.rs:117`) parses `single_message_per_line`, which does not require end of input, so a partial match is returned as a successful `Info`. Consumers: `src-tauri/src/chess.rs:751` (interactive loop) and `:1267` (report loop) → `parse_uci_attrs` (`:463-507`) returns `Error::NoMovesFound` when no `Pv` attribute is present, which both loops ignore silently.
+* **Defect:** a 13-digit number matches only its first 12 digits. The next `info_attribute` then fails on the remaining digit, and because the top rule accepts a prefix, `parse_one` returns `Info` with every attribute after the number silently dropped. Stockfish prints `... score … nodes N nps … hashfull … tbhits … time … pv …`, so from 1 000 000 000 000 nodes on every info line arrives without its PV (Lc0 prints `nodes` before `score`, losing the score as well). `parse_uci_attrs` rejects each such line as `NoMovesFound`, and the panel keeps the last lines from before the threshold while the engine keeps searching. This is not the integer-overflow case settled in d-20261110-03 (which assumed an overflowing counter "leaves the score real"); the value fits in u64 and is cut by the grammar's digit bound, taking the rest of the line with it.
+* **Failure scenario:** the user leaves infinite analysis running on a position (overnight, or for a few hours on a many-core machine: at 50 Mnps 10^12 nodes take ~5.5 h; at 150-200 Mnps ~1.5-2 h). Once the engine passes 10^12 nodes, depth, evaluation and lines stop updating for good, with no error. The user reads the frozen depth/eval as the engine's current verdict, although the engine has searched many plies deeper since. A `go nodes`/time search that crosses the threshold publishes its final `bestmove` with the stale lines as the 100% result.
+* **Proof:** scratch crate under /tmp depending on the vendored `src-tauri/vendor/vampirc-uci` by path (CARGO_TARGET_DIR under /tmp, offline), calling the production `parse_one`:
+  - `info depth 30 score cp 10 nodes 1234567890123 pv e2e4` → `Info([Depth(30), Score(Cp(10)…), Nodes(123456789012)])`: no `Pv`, nodes wrong by a factor of 10.
+  - `info nodes 1234567890123 depth 30 score cp 10 pv e2e4` → `Info([Nodes(123456789012)])`: depth, score and PV all gone.
+  - Control: the same line with a 7-digit node count parses all attributes including `Pv`.
+  - `parse_uci_attrs` returns `NoMovesFound` when `san_moves` is empty (`chess.rs:505-507`; pinned by the existing `parse_uci_attrs_rejects_pv_without_score` path), and both loops drop `NoMovesFound` without a warning (`chess.rs:799`, `:1283`).
+* **Fix:** widen `number`/`milliseconds` to the u64 range (`digit{1,20}`) and decode them fallibly (a value that does not fit becomes the field's existing overflow handling rather than truncating the line), and record the grammar change in `vendor/vampirc-uci/CHESSRIDDLE.md` with a `uci_numeric_` test for a 13-digit `nodes` before `pv` and before `score`. Optionally make an `info` line that does not consume to end of line a `warn!` rather than a silent prefix.
+* **Related:** f-20261106-46 / d-20261110-03 (score and WDL overflow; the grammar was deliberately left unchanged and other numeric fields were assumed not to affect the score); f-20260831-10 (bound scores are not evaluations).
+* **Found by:** Grok Bot, cross-cutting engine-output robustness sweep
