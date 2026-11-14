@@ -35,11 +35,20 @@ function TimeInput({
     .with("h", () => value / 1000 / 60 / 60)
     .exhaustive();
 
+  const toMilliseconds = (amount: number) =>
+    Math.round(
+      match(timeType)
+        .with("ms", () => amount)
+        .with("s", () => amount * 1000)
+        .with("m", () => amount * 1000 * 60)
+        .with("h", () => amount * 1000 * 60 * 60)
+        .exhaustive(),
+    );
+
   return (
     <NumberInput
       min={0}
-      decimalScale={2}
-      allowDecimal={false}
+      decimalScale={3}
       hideControls
       rightSection={
         <Select
@@ -60,23 +69,20 @@ function TimeInput({
       }
       rightSectionWidth={"30%"}
       value={displayedValue}
-      onChange={(v) =>
-        // setValue({ t: "Time", c: typeof v === "number" ? v : 1 })
-        setValue({
-          t: "Time",
-          c:
-            typeof v === "number"
-              ? Math.round(
-                  match(timeType)
-                    .with("ms", () => v)
-                    .with("s", () => v * 1000)
-                    .with("m", () => v * 1000 * 60)
-                    .with("h", () => v * 1000 * 60 * 60)
-                    .exhaustive(),
-                )
-              : 1,
-        })
-      }
+      onChange={(v) => {
+        if (typeof v === "number") {
+          setValue({ t: "Time", c: toMilliseconds(v) });
+          return;
+        }
+        if (v === "") {
+          setValue({ t: "Time", c: 1 });
+          return;
+        }
+        const parsed = Number(v);
+        if (Number.isFinite(parsed)) {
+          setValue({ t: "Time", c: toMilliseconds(parsed) });
+        }
+      }}
     />
   );
 }
