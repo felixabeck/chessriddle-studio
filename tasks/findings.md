@@ -25834,7 +25834,7 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 
 ### Engine upgrade modal reopened while its download still runs shows a Cancel button that does nothing
 
-* **ID:** f-20261114-08 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261114-08 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** yes (general review, origin/master 35ff5f24a)
 * **Where:** `src/components/engines/UpgradeEngineModal.tsx:38-43` (`cancel()` only acts through the per-instance `active` ref, which starts `null` in a new mount) and `:165-171` (`onCancel={committing ? undefined : active || hasJob ? cancel : () => cancelDownloadJob(id, …)}`). `hasJob` comes from `useDownloadJob(id)`, i.e. the module-level `jobs` map in `src/hooks/downloadJobs.ts` (`runDownloadJob`, `useDownloadJob`), which outlives the component. The modal is also closed through the same `cancel()` (`:62-65`).
@@ -25844,6 +25844,14 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Proof:** Vitest probe in a `/tmp` `git archive` copy of origin/master 35ff5f24a, built on `UpgradeEngineModal.test.tsx`'s mocks with `useDownloadJob` returning a mutable flag and the card mock exposing `onCancel`. (1) Mount with `hasJob=true` and click Cancel: `cancelDownloadJob` is not called (test passes). (2) Control: in the instance that clicked Install, Cancel calls `cancelDownloadJob(progressId, "Common.Error")` once. Probe removed afterwards.
 * **Related:** -
 * **Found by:** Grok Bot general review
+* **Closed:** 2026-11-14, drain session 91cdc837-b561-4db0-8e97-14b12c6b6399 (lens tier, grok write leaf, Claude Code orchestrator).
+  * `3c0d21c88` — `cancel()` takes the target progress id; a card with an inherited job (`useDownloadJob(id)` true, per-mount `active` null) now cancels `cancelDownloadJob(id, "Common.Error")`. The succeeded-pending guard is kept; the no-job arm (`cancel_download_for_progress` after a reload, d-20261005-12) is unchanged.
+  * `af68616d9` — review round 1 (root-cause lens): a remounted modal also left the other catalog cards enabled while the inherited job ran, so a second upgrade could start. New `useRunningDownloadJob(progressIds)` in `src/hooks/downloadJobs.ts` subscribes to the module job map; the modal uses it for card `busy`, the `upgrade()` start guard, and close (`cancel(active.current ?? runningId)`).
+  * `706da4675` — review round 2 (tests lens): real-map hook test and a per-id `useDownloadJob` mock.
+  * Proof: `UpgradeEngineModal.test.tsx` inherited-cancel, inherited-close, close-with-no-job, succeeded-pending-close and remount-disables-other-card tests; fix-revert turned the cancel/close tests red (2 failed) and the remount test red; the hook test went red with the snapshot forced to `null`.
+  * Rejected: collapsing the two `onCancel` arms into `cancel(id)` — that would put the succeeded-pending guard in front of the no-job native cancel.
+  * Review: correctness, root-cause, tests, code-quality, minimalism, error-handling APPROVED (engine-protocol, persisted-state not applicable); closure rounds 2 and 3 APPROVED. The tests-lens point that `upgrade()`'s new early return has no revert-sensitive assertion was skipped: it backs a disabled button and no enabled path reaches it.
+<!-- ledger-meta {"command":"close","effect_lines":7,"effect_sha256":"81597be9ae87b896896136d4738b039da7e7b64482155a16c5450c5ebae39125","header_sha256":"7b22cd9e6f7acde6daf1f4f71399ea22916f42883a3d0dfe8dc1f234341a0d1b","header_status":"handled","input_sha256":"c3890193e8056f4ddc842658a6e297cb4c999ed983fc6de35915c6cfe5c45535","kind":"mutation-receipt","operation":"6ae3f01d488ec0d479e1d5af55bcad3ce1729053c9ed729fd9ce5ffc62e00bbe","options":{"section":null},"request_id_sha256":null,"results":["f-20261114-08"],"target":"f-20261114-08","v":1} -->
 
 ---
 
