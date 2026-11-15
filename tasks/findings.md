@@ -24816,7 +24816,7 @@ Handled 2026-11-15 (drain session 03e75071). A Date header that does not parse a
 
 ### GameInfo header fields have no accessible names: White, Black and both Elo inputs are announced only by their placeholders
 
-* **ID:** f-20261112-51 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-51 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/common/GameInfo.tsx:106-117` (Event), `:126-137` (Round), `:194-205` (White), `:214-226` (Site), `:228-243` (Date), `:245-256` (Black), `:257-274` and `:302-319` (White/Black Elo): plain `<input>`/`InlineInput`/`DateInput` with no `aria-label` or `<label>`. Only the Result select is labelled (`:276-280`), and the simplified line-name/idea inputs (`:89,98`).
@@ -24825,6 +24825,9 @@ Handled 2026-11-15 (drain session 03e75071). A Date header that does not parse a
 - **Fix:** give each field an `aria-label` from i18n (White, Black, White Elo, Black Elo, Event, Site, Date, Round), reusing existing keys where they exist, and extend GameInfo.test.tsx to query the fields by label.
 - **Proof:** ephemeral Vitest on the GameInfo.test.tsx harness listed every rendered input: Event, White, Site, Date, Black and both Elo inputs had `aria-label=null` and `labels.length === 0`, with placeholders `GameInfo.UnknownEvent`, `?`, `GameInfo.UnknownSite`, `????.??.??`, `?` and `GameInfo.UnknownElo` (twice). Only the Result select had a label. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 23)
+
+Handled 2026-11-15 (drain session 03e75071). Every full-layout header field has an i18n aria-label: Event (Databases.Game.Event), Site (Databases.Game.Site), Date (Common.Date), White/Black (Fen.White/Fen.Black), Round (GameInfo.Round) and the new GameInfo.WhiteElo / GameInfo.BlackElo keys, translated in all 17 catalogues. Mantine DateInput forwards aria-label to its input. Test queries every field by label. Commit: e87f3ff33.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"c18660c8eb98ad16ca759b954d5579a535dfdaab358a9f9fc3821654eccf0d8e","header_sha256":"9632be44e5969a9ca428dbdd5ee0f82a5025c1168c1201b139686cc8821e68f7","header_status":"handled","input_sha256":"a489060eedb57f3462ed602404c527988cd445cf1e510f543c9a11f2323eef80","kind":"mutation-receipt","operation":"c1892d0acb3d0677033f72f7cad4943ab3e75aeebdd01fa138303745674cf40d","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-51"],"target":"f-20261112-51","v":1} -->
 
 ---
 
