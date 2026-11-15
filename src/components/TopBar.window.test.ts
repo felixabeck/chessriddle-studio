@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import capabilityText from "../../src-tauri/capabilities/main.json?raw";
 import { bindWindowControls, runWindowAction, watchMaximized } from "@/routes/-appMenu";
 
 function deferred<T>() {
@@ -187,4 +188,12 @@ test("watchMaximized swallows a rejecting unlisten", async () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(notified).toEqual([]);
+});
+
+// Tauri's data-tauri-drag-region script sends `internal_toggle_maximize` on a title-bar
+// double-click. Without this permission Tauri refuses it silently and double-click does nothing.
+test("main capability lets the title-bar drag region toggle maximize", () => {
+    const capability = JSON.parse(capabilityText) as { windows: string[]; permissions: string[] };
+    expect(capability.windows).toContain("main");
+    expect(capability.permissions).toContain("core:window:allow-internal-toggle-maximize");
 });
