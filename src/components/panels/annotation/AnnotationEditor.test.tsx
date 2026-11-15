@@ -336,9 +336,11 @@ test("ordinary line-end navigation keeps focus", async () => {
 test("live bindings and hint are scoped to the focused editor and Escape leaves it", async () => {
   await mount("");
   await addLine();
-  expect(host.textContent).not.toContain("Esc: leave editor");
+  const hint = () => document.getElementById(editorElement().getAttribute("aria-describedby")!);
+  expect(hint()?.hidden).toBe(true);
   await focusEditor();
-  expect(host.textContent).toContain(
+  expect(hint()?.hidden).toBe(false);
+  expect(hint()?.textContent).toContain(
     "tab: next move · shift+tab: previous move · Esc: leave editor",
   );
   await act(async () =>
@@ -348,14 +350,24 @@ test("live bindings and hint are scoped to the focused editor and Escape leaves 
       ANNOTATION_PREVIOUS_MOVE: { name: "Previous", keys: "p" },
     }),
   );
-  expect(host.textContent).toContain("n: next move · p: previous move");
+  expect(hint()?.hidden).toBe(false);
+  expect(hint()?.textContent).toContain("n: next move · p: previous move");
   await press("n", "KeyN");
   expect(store.getState().position).toEqual([0, 0]);
   await press("p", "KeyP");
   expect(store.getState().position).toEqual([0]);
   await press("Escape", "Escape");
   expect(document.activeElement).not.toBe(editorElement());
-  expect(host.textContent).not.toContain("Esc: leave editor");
+  expect(hint()?.hidden).toBe(true);
+});
+
+test("the comment editor has an accessible name and a described navigation hint", async () => {
+  await mount("");
+  expect(editorElement().getAttribute("aria-label")).toBe("Board.Annotate.Comment");
+  expect(editorElement().getAttribute("aria-multiline")).toBe("true");
+  const hint = document.getElementById(editorElement().getAttribute("aria-describedby")!);
+  expect(hint).not.toBeNull();
+  expect(hint?.textContent).toContain("next move");
 });
 
 test("the focused hint formats live keymaps for macOS", async () => {

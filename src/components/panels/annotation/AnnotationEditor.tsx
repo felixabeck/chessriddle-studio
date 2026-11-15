@@ -14,7 +14,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { useAtomValue } from "jotai";
 import equal from "fast-deep-equal";
 import type { marked } from "marked";
-import { useContext, useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useId, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
@@ -89,6 +89,7 @@ function AnnotationEditor() {
 
   const currentNode = getNodeAtPath(root, position);
   const spellCheck = useAtomValue(spellCheckAtom);
+  const hintId = useId();
   const editor = useEditor(
     {
       extensions: [
@@ -144,6 +145,13 @@ function AnnotationEditor() {
         ]);
         if (result.saved) setComment(result.source);
         setSaveFailed(!result.saved);
+      },
+      editorProps: {
+        attributes: {
+          "aria-label": t("Board.Annotate.Comment"),
+          "aria-multiline": "true",
+          "aria-describedby": hintId,
+        },
       },
     },
     [position.join(), documentId],
@@ -228,14 +236,12 @@ function AnnotationEditor() {
       >
         <RichTextEditor.Content />
       </div>
-      {focused && (
-        <Text c="dimmed" size="xs">
-          {t("Board.Annotate.NavigationHint", {
-            next: formatKeymap(keyMap.ANNOTATION_NEXT_MOVE.keys),
-            previous: formatKeymap(keyMap.ANNOTATION_PREVIOUS_MOVE.keys),
-          })}
-        </Text>
-      )}
+      <Text id={hintId} c="dimmed" size="xs" hidden={!focused}>
+        {t("Board.Annotate.NavigationHint", {
+          next: formatKeymap(keyMap.ANNOTATION_NEXT_MOVE.keys),
+          previous: formatKeymap(keyMap.ANNOTATION_PREVIOUS_MOVE.keys),
+        })}
+      </Text>
       {saveFailed && <div role="alert">{t("Board.Annotate.SaveFailed")}</div>}
     </RichTextEditor>
   );

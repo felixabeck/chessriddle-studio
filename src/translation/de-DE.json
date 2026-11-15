@@ -105,6 +105,7 @@
     "Board.Analysis.Tablebase.FiftyMoveRule": "50-Züge-Regel",
     "Board.Analysis.Tablebase.WhiteWins": "Weiß gewinnt",
     "Board.Analysis.Unpin": "Engine lösen",
+    "Board.Annotate.Comment": "Kommentar",
     "Board.Annotate.NavigationHint": "{{next}}: nächster Zug · {{previous}}: vorheriger Zug · Esc: Editor verlassen",
     "Board.Annotate.SaveFailed": "Diese Anmerkung wurde nicht gespeichert, da sich dabei ihr Text oder ihre Formatierung ändern würde. Der bisherige Kommentar bleibt unverändert.",
     "Board.Annotate.WriteHere": "Hier schreiben...",

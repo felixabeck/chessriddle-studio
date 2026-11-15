@@ -105,6 +105,7 @@
     "Board.Analysis.Tablebase.FiftyMoveRule": "*devido à regra dos 50 lances",
     "Board.Analysis.Tablebase.WhiteWins": "As brancas vencem",
     "Board.Analysis.Unpin": "Desafixar motor",
+    "Board.Annotate.Comment": "Comentário",
     "Board.Annotate.NavigationHint": "{{next}}: próximo lance · {{previous}}: lance anterior · Esc: sair do editor",
     "Board.Annotate.SaveFailed": "Esta anotação não foi guardada porque isso alteraria o seu texto ou formatação. O comentário anterior permanece inalterado.",
     "Board.Annotate.WriteHere": "Escreve aqui...",

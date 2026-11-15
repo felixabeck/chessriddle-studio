@@ -105,6 +105,7 @@
     "Board.Analysis.Tablebase.FiftyMoveRule": "*regola delle 50 mosse",
     "Board.Analysis.Tablebase.WhiteWins": "Bianco vince",
     "Board.Analysis.Unpin": "Sgancia motore",
+    "Board.Annotate.Comment": "Commento",
     "Board.Annotate.NavigationHint": "{{next}}: mossa successiva · {{previous}}: mossa precedente · Esc: esci dall’editor",
     "Board.Annotate.SaveFailed": "Questa annotazione non è stata salvata perché il salvataggio ne modificherebbe il testo o la formattazione. Il commento precedente rimane invariato.",
     "Board.Annotate.WriteHere": "Scrivi qui...",
