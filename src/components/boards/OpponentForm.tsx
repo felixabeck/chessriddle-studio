@@ -8,6 +8,7 @@ import {
   TextInput,
 } from "@mantine/core";
 import { Brain, User } from "lucide-react";
+import { useId } from "react";
 import { useTranslation } from "react-i18next";
 import GoModeInput from "@/components/common/GoModeInput";
 import TimeInput from "@/components/common/TimeInput";
@@ -27,20 +28,24 @@ export function OpponentForm({
   opponent,
   setOpponent,
   setOtherOpponent,
+  sideLabel,
 }: {
   sameTimeControl: boolean;
   opponent: OpponentSettings;
   setOpponent: React.Dispatch<React.SetStateAction<OpponentSettings>>;
   setOtherOpponent: React.Dispatch<React.SetStateAction<OpponentSettings>>;
+  sideLabel: string;
 }) {
   const { t } = useTranslation();
+  const timeId = useId();
+  const incrementId = useId();
 
   function updateType(type: "engine" | "human") {
     setOpponent((prev) => switchOpponentType(prev, type));
   }
 
   return (
-    <Stack flex={1}>
+    <Stack flex={1} role="group" aria-label={sideLabel}>
       <SegmentedControl
         data={[
           {
@@ -70,6 +75,7 @@ export function OpponentForm({
         <TextInput
           value={opponent.name ?? ""}
           onChange={(e) => setOpponent((prev) => ({ ...prev, name: e.target.value }))}
+          aria-label={t("Common.Name")}
         />
       )}
 
@@ -120,8 +126,10 @@ export function OpponentForm({
       <Group grow wrap="nowrap">
         {opponent.timeControl && (
           <>
-            <InputWrapper label={t("GoMode.Time")}>
+            <InputWrapper label={t("GoMode.Time")} id={timeId}>
               <TimeInput
+                id={timeId}
+                unitLabel={t("Board.Opponent.TimeUnit")}
                 defaultType="m"
                 type={opponent.timeUnit}
                 onTypeChange={(t) => {
@@ -151,8 +159,10 @@ export function OpponentForm({
                 }}
               />
             </InputWrapper>
-            <InputWrapper label={t("Board.Opponent.Increment")}>
+            <InputWrapper label={t("Board.Opponent.Increment")} id={incrementId}>
               <TimeInput
+                id={incrementId}
+                unitLabel={t("Board.Opponent.IncrementUnit")}
                 defaultType="s"
                 type={opponent.incrementUnit}
                 onTypeChange={(t) => {

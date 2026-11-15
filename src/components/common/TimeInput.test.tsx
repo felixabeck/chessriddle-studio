@@ -202,6 +202,20 @@ async function selectUnit(unit: TimeType) {
   await act(async () => option.click());
 }
 
+test("id and unitLabel reach the number input and unit select", async () => {
+  await act(async () => {
+    root.render(
+      <MantineProvider env="test">
+        <TimeInput id="t1" unitLabel="Unit" value={1000} type="s" setValue={vi.fn()} />
+      </MantineProvider>,
+    );
+  });
+  expect(numberField().id).toBe("t1");
+  expect(
+    host.querySelector<HTMLInputElement>(".mantine-Select-input")!.getAttribute("aria-label"),
+  ).toBe("Unit");
+});
+
 test("changing unit through the Select clears the draft and shows stored ms", async () => {
   await act(async () => {
     root.render(

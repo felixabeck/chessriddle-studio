@@ -85,6 +85,7 @@ function renderOpponent(opponent: OpponentSettings) {
         opponent={opponent}
         setOpponent={setOpponent}
         setOtherOpponent={setOtherOpponent}
+        sideLabel="White"
       />,
     );
   });

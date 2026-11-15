@@ -177,6 +177,17 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
   const [player1Settings, setPlayer1Settings] = useAtom(gamePlayer1SettingsAtom);
   const [player2Settings, setPlayer2Settings] = useAtom(gamePlayer2SettingsAtom);
 
+  const player1Side = match(inputColor)
+    .with("white", () => t("Fen.White"))
+    .with("random", () => t("Board.Opponent.Random"))
+    .with("black", () => t("Fen.Black"))
+    .exhaustive();
+  const player2Side = match(inputColor)
+    .with("white", () => t("Fen.Black"))
+    .with("random", () => t("Board.Opponent.Random"))
+    .with("black", () => t("Fen.White"))
+    .exhaustive();
+
   function getPlayers() {
     let isPlayer1White = inputColor === "white";
 
@@ -1354,11 +1365,7 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
                     <Stack>
                       <Group>
                         <Text flex={1} ta="center" fz="lg" fw="bold">
-                          {match(inputColor)
-                            .with("white", () => t("Fen.White"))
-                            .with("random", () => t("Board.Opponent.Random"))
-                            .with("black", () => t("Fen.Black"))
-                            .exhaustive()}
+                          {player1Side}
                         </Text>
                         <IconAction
                           label={t("Board.Action.SwapColors", { defaultValue: "Swap colors" })}
@@ -1367,11 +1374,7 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
                           <ArrowRightLeft />
                         </IconAction>
                         <Text flex={1} ta="center" fz="lg" fw="bold">
-                          {match(inputColor)
-                            .with("white", () => t("Fen.Black"))
-                            .with("random", () => t("Board.Opponent.Random"))
-                            .with("black", () => t("Fen.White"))
-                            .exhaustive()}
+                          {player2Side}
                         </Text>
                       </Group>
                       <Box flex={1}>
@@ -1381,6 +1384,7 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
                             opponent={player1Settings}
                             setOpponent={setPlayer1Settings}
                             setOtherOpponent={setPlayer2Settings}
+                            sideLabel={player1Side}
                           />
                           <Divider orientation="vertical" />
                           <OpponentForm
@@ -1388,6 +1392,7 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
                             opponent={player2Settings}
                             setOpponent={setPlayer2Settings}
                             setOtherOpponent={setPlayer1Settings}
+                            sideLabel={player2Side}
                           />
                         </Group>
                       </Box>

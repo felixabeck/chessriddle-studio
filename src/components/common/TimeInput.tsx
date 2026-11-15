@@ -13,12 +13,16 @@ function TimeInput({
   defaultType,
   type,
   onTypeChange,
+  id,
+  unitLabel,
 }: {
   value: number;
   setValue: (v: GoMode) => void;
   defaultType?: TimeType;
   type?: TimeType;
   onTypeChange?: (type: TimeType) => void;
+  id?: string;
+  unitLabel?: string;
 }) {
   const [internalTimeType, setInternalTimeType] = useState<TimeType>(defaultType ?? "ms");
   const [draft, setDraft] = useState<string | number | null>(null);
@@ -52,11 +56,13 @@ function TimeInput({
 
   return (
     <NumberInput
+      id={id}
       min={0}
       decimalScale={3}
       hideControls
       rightSection={
         <Select
+          aria-label={unitLabel}
           withCheckIcon={false}
           data={["ms", "s", "m", "h"]}
           defaultValue="ms"
