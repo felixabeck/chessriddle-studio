@@ -22,8 +22,7 @@ function QuitConfirmModal({
   tabs: BlockingTab[];
   onCancel: () => void;
   onQuitWithoutSaving: () => void;
-  /** Omitted where the host cannot save; the dialog then offers only cancel and discard. */
-  onSaveAndQuit?: () => Promise<QuitSaveOutcome>;
+  onSaveAndQuit: () => Promise<QuitSaveOutcome>;
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -38,8 +37,7 @@ function QuitConfirmModal({
       t(tab.name, { defaultValue: tab.name }),
     );
   // An unreadable tab has nothing to save; an emptied list means every save already landed.
-  const canSave =
-    !!onSaveAndQuit && !failClosed && (tabs.length === 0 || tabs.some((tab) => !tab.uninspectable));
+  const canSave = !failClosed && (tabs.length === 0 || tabs.some((tab) => !tab.uninspectable));
 
   const cancel = () => {
     const first = tabs[0];
@@ -52,7 +50,7 @@ function QuitConfirmModal({
   };
 
   async function saveAndQuit() {
-    if (!onSaveAndQuit || savePending) return;
+    if (savePending) return;
     setSavePending(true);
     setSaveMessage(null);
     try {

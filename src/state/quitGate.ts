@@ -49,8 +49,8 @@ export type QuitGateHost = {
     openDialog: (state: QuitDialogState) => boolean;
     destroyWindow: () => Promise<void>;
     exitProcess: (code: number) => void | Promise<void>;
-    /** Runs the tab's ordinary user save; only needed by hosts that offer Save and quit. */
-    saveTab?: (tab: Tab) => Promise<SaveResult>;
+    /** Runs the tab's ordinary user save for Save and quit. */
+    saveTab: (tab: Tab) => Promise<SaveResult>;
     notify: (error: unknown) => void;
     log: (message: string) => Promise<void>;
     warn: (message: string) => void;
@@ -249,7 +249,7 @@ export async function quitWithoutSaving(): Promise<void> {
  */
 export async function saveAndQuit(): Promise<QuitSaveOutcome> {
     const host = activeHost;
-    if (!host?.saveTab || proceeding || saving) return { kind: "cancelled" };
+    if (!host || proceeding || saving) return { kind: "cancelled" };
     saving = true;
     try {
         // Each tab is attempted once, re-read from the live workspace because an earlier save
@@ -288,8 +288,13 @@ export async function saveAndQuit(): Promise<QuitSaveOutcome> {
             // Saved tabs no longer block; show what is still open.
             try {
                 host.openDialog({ failClosed: false, tabs: scanBlockingTabs(host.getTabs()) });
-            } catch {
+            } catch (error) {
                 // The existing dialog stays as it was.
+                host.warn(
+                    `Quit dialog could not be refreshed after Save and quit: ${
+                        error instanceof Error ? error.message : String(error)
+                    }`,
+                );
             }
         }
     }

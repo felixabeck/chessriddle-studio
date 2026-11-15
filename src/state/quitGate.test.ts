@@ -4,6 +4,7 @@ import { getFileFreshness, removeFileFreshness, setFileFreshness } from "@/state
 import { tabStorage, TREE_STORAGE_VERSION } from "@/state/store/tabStorage";
 import { closeTreeStore, createTreeStore, getCachedTreeStore } from "@/state/store/tree";
 import type { Tab } from "@/state/workspaceTypes";
+import type { SaveResult } from "@/utils/tabs";
 import { defaultTree } from "@/utils/treeReducer";
 import { serializeStorageValue } from "@/state/store/debouncedStorage";
 import {
@@ -101,6 +102,7 @@ function host(overrides: Partial<QuitGateHost> = {}) {
         openDialog: vi.fn(() => true),
         destroyWindow: vi.fn(async () => undefined),
         exitProcess: vi.fn((_code: number) => undefined),
+        saveTab: vi.fn(async (_tab: Tab): Promise<SaveResult> => "cancelled"),
         notify: vi.fn((_error: unknown) => undefined),
         log: vi.fn(async (_message: string) => undefined),
         warn: vi.fn((_message: string) => undefined),
@@ -489,6 +491,86 @@ test("a pending Save and quit ignores cancel, discard and a second submission", 
     await expect(pending).resolves.toEqual({ kind: "quit" });
     expect(saveTab).toHaveBeenCalledOnce();
     expect(gate.destroyWindow).toHaveBeenCalledOnce();
+});
+
+test("a save that throws rejects, warns, refreshes the list and releases the save lock", async () => {
+    const saved = uuid();
+    const broken = uuid();
+    seedStoredTree(saved, true);
+    seedStoredTree(broken, true);
+    const saveTab = vi.fn(async (tab: Tab) => {
+        if (tab.value === broken) throw new Error("picker crashed");
+        return markStoredTreeSaved(tab.value);
+    });
+    const gate = host({
+        getTabs: () => [saved, broken].map((value) => tab({ value, type: "analysis" })),
+        saveTab,
+    });
+    await runQuitGate(gate);
+    await expect(saveAndQuit()).rejects.toThrow("picker crashed");
+    expect(gate.warn).toHaveBeenCalledWith("Save and quit stopped: picker crashed");
+    expect(gate.openDialog).toHaveBeenLastCalledWith({
+        failClosed: false,
+        tabs: [{ value: broken, name: broken, uninspectable: false }],
+    });
+    expect(gate.destroyWindow).not.toHaveBeenCalled();
+    // The lock is released: discard still works after the failure.
+    await quitWithoutSaving();
+    expect(gate.destroyWindow).toHaveBeenCalledOnce();
+});
+
+test("a dialog refresh that throws after a blocked save is logged, not raised", async () => {
+    const id = uuid();
+    seedStoredTree(id, true);
+    const openDialog = vi
+        .fn<QuitGateHost["openDialog"]>()
+        .mockReturnValueOnce(true)
+        .mockImplementation(() => {
+            throw new Error("render failed");
+        });
+    const gate = host({
+        getTabs: () => [tab({ value: id, type: "analysis" })],
+        saveTab: vi.fn(async () => "conflict" as const),
+        openDialog,
+    });
+    await runQuitGate(gate);
+    await expect(saveAndQuit()).resolves.toMatchObject({ kind: "blocked", reason: "attention" });
+    expect(gate.warn).toHaveBeenCalledWith(
+        "Quit dialog could not be refreshed after Save and quit: render failed",
+    );
+});
+
+test("a tab still dirty after a reported save is attempted once and blocks the quit", async () => {
+    const id = uuid();
+    seedStoredTree(id, true);
+    const saveTab = vi.fn(async () => "saved" as const);
+    const gate = host({ getTabs: () => [tab({ value: id, type: "analysis" })], saveTab });
+    await runQuitGate(gate);
+    await expect(saveAndQuit()).resolves.toEqual({
+        kind: "blocked",
+        tab: { value: id, name: id, uninspectable: false },
+        reason: "attention",
+    });
+    expect(saveTab).toHaveBeenCalledOnce();
+    expect(gate.destroyWindow).not.toHaveBeenCalled();
+});
+
+test("each save receives the tab as the live workspace holds it after earlier saves", async () => {
+    const first = uuid();
+    const second = uuid();
+    seedStoredTree(first, true);
+    seedStoredTree(second, true);
+    let tabs = [first, second].map((value) => tab({ value, type: "analysis" }));
+    const saveTab = vi.fn(async (saved: Tab) => {
+        // Saving the first tab rebinds the second, as appending to a shared file does.
+        if (saved.value === first)
+            tabs = [tabs[0]!, { ...tabs[1]!, name: "rebound", gameOrigin: fileOrigin() }];
+        return markStoredTreeSaved(saved.value);
+    });
+    const gate = host({ getTabs: () => tabs, saveTab });
+    await runQuitGate(gate);
+    await expect(saveAndQuit()).resolves.toEqual({ kind: "quit" });
+    expect(saveTab.mock.calls[1]?.[0]).toMatchObject({ name: "rebound", gameOrigin: fileOrigin() });
 });
 
 test("blocking tabs request a dialog and do not destroy", async () => {

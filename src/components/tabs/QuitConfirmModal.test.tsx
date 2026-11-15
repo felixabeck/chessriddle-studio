@@ -86,6 +86,8 @@ async function renderModal(props: {
 }) {
   const onCancel = props.onCancel ?? vi.fn();
   const onQuitWithoutSaving = props.onQuitWithoutSaving ?? vi.fn();
+  const onSaveAndQuit =
+    props.onSaveAndQuit ?? vi.fn(async (): Promise<QuitSaveOutcome> => ({ kind: "quit" }));
   await act(async () =>
     root.render(
       <Provider store={jotaiStore}>
@@ -95,7 +97,7 @@ async function renderModal(props: {
           tabs={props.tabs}
           onCancel={onCancel}
           onQuitWithoutSaving={onQuitWithoutSaving}
-          onSaveAndQuit={props.onSaveAndQuit}
+          onSaveAndQuit={onSaveAndQuit}
         />
       </Provider>,
     ),
@@ -181,6 +183,39 @@ test("a tab named by a translation key is listed translated, with its file", asy
   ]);
 });
 
+test("uninspectable entries and save messages use the same readable label", async () => {
+  const keyNamed: Tab = { ...currentTab, name: "Tab.NewTab" };
+  jotaiStore.set(tabsAtom, [keyNamed, otherTab], keyNamed.value);
+  const named: BlockingTab = { value: keyNamed.value, name: keyNamed.name, uninspectable: false };
+  const onSaveAndQuit = vi.fn(
+    async (): Promise<QuitSaveOutcome> => ({ kind: "blocked", tab: named, reason: "attention" }),
+  );
+  await renderModal({
+    failClosed: false,
+    tabs: [named, { ...named, uninspectable: true }],
+    onSaveAndQuit,
+  });
+  expect(host.querySelectorAll("li")[1]?.textContent).toBe("Tab.QuitUninspectable:New tab");
+  await act(async () => button("Tab.SaveAndQuit")?.click());
+  expect(host.textContent).toContain("Tab.QuitSaveNeedsAttention:New tab");
+});
+
+test("Cancel clears a save message so a reopened dialog starts clean", async () => {
+  const onSaveAndQuit = vi.fn(
+    async (): Promise<QuitSaveOutcome> => ({
+      kind: "blocked",
+      tab: blocking[0]!,
+      reason: "failed",
+      message: "disk full",
+    }),
+  );
+  await renderModal({ failClosed: false, tabs: blocking, onSaveAndQuit });
+  await act(async () => button("Tab.SaveAndQuit")?.click());
+  expect(host.textContent).toContain("disk full");
+  await act(async () => button("Common.Cancel")?.click());
+  expect(host.textContent).not.toContain("disk full");
+});
+
 test("Save and quit is offered only when something can be saved", async () => {
   const onSaveAndQuit = vi.fn(async (): Promise<QuitSaveOutcome> => ({ kind: "quit" }));
   await renderModal({ failClosed: false, tabs: blocking, onSaveAndQuit });
@@ -188,8 +223,6 @@ test("Save and quit is offered only when something can be saved", async () => {
   await renderModal({ failClosed: false, tabs: [blocking[1]!], onSaveAndQuit });
   expect(button("Tab.SaveAndQuit")).toBeUndefined();
   await renderModal({ failClosed: true, tabs: [], onSaveAndQuit });
-  expect(button("Tab.SaveAndQuit")).toBeUndefined();
-  await renderModal({ failClosed: false, tabs: blocking });
   expect(button("Tab.SaveAndQuit")).toBeUndefined();
 });
 

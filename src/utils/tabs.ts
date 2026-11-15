@@ -69,13 +69,13 @@ export function isPersistentGameOrigin(tab?: Tab | null): boolean {
     return tab.gameOrigin.kind !== "none";
 }
 
-/** Coverage only: persistent origin, or an analysis tab of any origin. Does not read dirty. */
 /** A tab's display name, prefixed by its file so same-named games stay distinguishable. */
 export function tabLabelWithFile(tab: Tab | null | undefined, name: string): string {
     const file = getTabFile(tab);
     return file ? `${file.name.replace(/\.pgn$/i, "")} › ${name}` : name;
 }
 
+/** Coverage only: persistent origin, or an analysis tab of any origin. Does not read dirty. */
 export function asksBeforeDiscardingChanges(tab?: Tab | null): boolean {
     if (!tab || tab.type === "new") return false;
     return isPersistentGameOrigin(tab) || tab.type === "analysis";
