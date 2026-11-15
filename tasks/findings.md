@@ -25206,7 +25206,7 @@ Handled in 1ab8c70cc. Each `IconAction` in `ChallengeHistory` carries `aria-curr
 
 ### The ⊗ (NAG 9) annotation button is labelled "Miss" in English in every locale
 
-* **ID:** f-20261112-72 · **Status:** open · **Area:** i18n · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-72 · **Status:** handled · **Area:** i18n · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** ux
 * **Spotted outside diff:** yes (general review, origin/master d30eb171f)
 * **Where:** `src/utils/annotation.ts:220` (`"⊗": { name: "Miss", color: "red", nag: 9 }`, the only offered symbol with no `translationKey`), shown through `src/components/panels/annotation/AnnotationPanel.tsx:24-29` (`label={translationKey ? t(\`Annotate.${translationKey}\`) : name}`, `⊗` is in `EXTRA` at `:43`) and the same fallback in `src/components/panels/analysis/AssessmentSymbol.tsx:11-12`. No `Annotate.Miss` key exists in `src/translation/*.json` (en-US, de-DE and fr-FR have every sibling key, e.g. `Annotate.Novelty`, `Annotate.Zugzwang`, `Annotate.OnlyMove`).
@@ -25215,6 +25215,9 @@ Handled in 1ab8c70cc. Each `IconAction` in `ChallengeHistory` carries `aria-curr
 * **Fix:** add `translationKey: "Miss"` to the `⊗` entry and an `Annotate.Miss` key to every shipped catalogue. Optionally drop the `: name` fallback so a missing key fails the catalogue tests instead of shipping English.
 * **Proof:** trace above. `git grep '"⊗"'` shows the symbol is offered only via AnnotationPanel `EXTRA` and rendered with the shown fallback. `grep '"Annotate\.Miss'` finds no key in en-US, de-DE or fr-FR.
 * **Found by:** Grok Bot general review (chunk 29)
+
+**Handled 2026-11-15 (drain c489baf4, co-located joiner of f-20261112-58).** `72ad6006a`: `⊗` carries `translationKey: "Miss"`, and `Annotate.Miss` is in all 16 shipped catalogues (de-DE "Verpasste Chance"). `29ba302aa`: `src/utils/tests/annotation.test.ts` requires every `ANNOTATION_INFO` symbol except the `""` None sentinel to have a key with a non-empty value in every `shippedCatalogues()` locale. It went red with the key removed. Rejected: dropping the `: name` fallback. `translationKey` stays optional for the never-offered `""` sentinel, and the catalogue test already fails on any untranslated offered symbol.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"a0aa5147cfa0b99175943253eb533aa277ae48867225d56e32fb4928bdedf388","header_sha256":"5d52b06487f35e0dc8396f5ac957ed1447bd6f4b195d8a0b3d9e05aaec0dcf50","header_status":"handled","input_sha256":"c018a9335db4ee1a1a4e064fd0cb12a120aa921fbbca98e22c3fb4641696bca4","kind":"mutation-receipt","operation":"b29bdab901c06948ac37b513b1cd8a9e403dfdf5e9fd4f5a42116c842928f517","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-72"],"target":"f-20261112-72","v":1} -->
 
 ---
 
