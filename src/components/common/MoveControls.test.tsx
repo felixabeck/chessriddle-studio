@@ -178,6 +178,20 @@ test("next move at a branch lists every continuation, main line first, without m
   ]);
 });
 
+test("ArrowDown on the open variation listbox still changes the chooser selection", () => {
+  render();
+  press("ArrowRight");
+  const listbox = document.querySelector<HTMLElement>('[role="listbox"]');
+  expect(listbox).not.toBeNull();
+  act(() => listbox!.focus());
+  expect(document.activeElement).toBe(listbox);
+  expect(options().map((option) => option.selected)).toEqual([true, false, false]);
+
+  press("ArrowDown", { target: listbox! });
+
+  expect(options().map((option) => option.selected)).toEqual([false, true, false]);
+});
+
 test("arrow down then next move plays the selected variation and closes the list", () => {
   render();
 

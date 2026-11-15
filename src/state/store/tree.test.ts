@@ -649,6 +649,18 @@ test.each([
     expect(store.getState().position).toEqual([0, 0]);
 });
 
+test.each(["goToEnd", "goToBranchEnd", "goToBranchEndOrNextLine"] as const)(
+    "%s follows the drill prefix to the practice card",
+    (action) => {
+        const store = createTreeStore(undefined, practiceDrillTree());
+        store.getState().setPracticePath([0, 0, 0, 0]);
+
+        store.getState()[action]();
+
+        expect(store.getState().position).toEqual([0, 0, 0, 0]);
+    },
+);
+
 test("goToAnnotation does not leave the practice drill line", () => {
     const tree = practiceDrillTree();
     const nf3 = getNodeAtPath(tree.root, [0, 0, 0]);

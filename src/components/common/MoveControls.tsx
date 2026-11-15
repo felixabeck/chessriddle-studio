@@ -72,7 +72,8 @@ function MoveControls({ readOnly }: { readOnly?: boolean }) {
   const shortcutOptions = (enabled = true) => ({
     enabled,
     // ignoreEventWhen runs before preventDefault/enabled, so suspended keys neither fire
-    // nor prevent default or stop propagation inside the owning dialog.
+    // nor prevent default or stop propagation inside the owning dialog, and keys a slider
+    // or the board grid handles itself stay with that widget.
     ignoreEventWhen: (event: KeyboardEvent) => isHotkeySuppressed(event, groupRef.current),
   });
 

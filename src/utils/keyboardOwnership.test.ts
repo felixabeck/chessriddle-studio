@@ -134,6 +134,8 @@ test.each([
     { role: "grid", key: "Home", nested: false, handled: false },
     { role: "slider", key: "Delete", nested: true, handled: false },
     { role: "button", key: "ArrowLeft", nested: false, handled: false },
+    // VariationChooserCard's focusable listbox is driven by MoveControls' arrow hotkeys.
+    { role: "listbox", key: "ArrowDown", nested: false, handled: false },
 ])("$key on $role is handled=$handled", ({ role, key, nested, handled }) => {
     const widget = document.createElement(role === "button" ? "button" : "div");
     if (role !== "button") widget.setAttribute("role", role);

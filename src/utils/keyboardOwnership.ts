@@ -24,7 +24,7 @@ export function isKeyboardOwnedElsewhere(event: KeyboardEvent, surface: Element 
 }
 
 const ARROW_KEYS = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"] as const;
-/** Focused widgets that act on these keys themselves, so a document hotkey must not act on the same press. */
+/** Widgets that act on these keys themselves when the event target is inside them, so a document hotkey must not act on the same press. role="listbox" is deliberately omitted because VariationChooserCard's listbox is driven by MoveControls' arrow hotkeys. */
 const KEY_HANDLING_WIDGETS: { selector: string; keys: readonly string[] }[] = [
     // Mantine Slider / RangeSlider thumbs
     { selector: '[role="slider"]', keys: [...ARROW_KEYS, "Home", "End"] },
@@ -32,6 +32,7 @@ const KEY_HANDLING_WIDGETS: { selector: string; keys: readonly string[] }[] = [
     { selector: '[role="grid"]', keys: [...ARROW_KEYS] },
 ];
 
+/** True when the event target is inside a widget that handles this key itself (keydown targets the focused element). */
 export function isKeyHandledByFocusedWidget(event: KeyboardEvent): boolean {
     const target = event.target;
     if (!(target instanceof Element)) return false;
@@ -44,7 +45,7 @@ export function isHotkeySuppressed(event: KeyboardEvent, surface: Element | null
     return isKeyboardOwnedElsewhere(event, surface) || isKeyHandledByFocusedWidget(event);
 }
 
-/** react-hotkeys-hook options for a surface that is never rendered inside a dialog: keys owned by an open dialog are ignored (not fired, not prevented, not stopped). */
+/** react-hotkeys-hook options for a surface that is never rendered inside a dialog: keys owned by an open dialog and keys a focused slider/board grid handles itself are ignored (not fired, not prevented, not stopped). */
 export const backgroundHotkeyOptions = {
     ignoreEventWhen: (event: KeyboardEvent) => isHotkeySuppressed(event, null),
 };
