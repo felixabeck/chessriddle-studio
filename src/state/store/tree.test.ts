@@ -622,6 +622,60 @@ test("goToBranchEndOrNextLine stays at a line end during a practice drill", () =
     expect(store.getState().position).toEqual([2]);
 });
 
+/** 1.e4 e5 2.Nf3 Nc6, with 1...c5 as a sibling of 1...e5. */
+function practiceDrillTree() {
+    const tree = defaultTree();
+    const e4 = addMove(tree.root, "e2e4");
+    const e5 = addMove(e4, "e7e5");
+    addMove(e4, "c7c5");
+    addMove(addMove(e5, "g1f3"), "b8c6");
+    tree.position = [0, 0];
+    return tree;
+}
+
+test.each([
+    "goToEnd",
+    "goToBranchEnd",
+    "goToBranchEndOrNextLine",
+    "nextBranching",
+    "nextBranch",
+    "previousBranch",
+] as const)("%s stays at the practice card", (action) => {
+    const store = createTreeStore(undefined, practiceDrillTree());
+    store.getState().setPracticePath([0, 0]);
+
+    store.getState()[action]();
+
+    expect(store.getState().position).toEqual([0, 0]);
+});
+
+test("goToAnnotation does not leave the practice drill line", () => {
+    const tree = practiceDrillTree();
+    const nf3 = getNodeAtPath(tree.root, [0, 0, 0]);
+    nf3.nags = [1];
+    const store = createTreeStore(undefined, tree);
+    store.getState().setPracticePath([0, 0]);
+
+    store.getState().goToAnnotation("!", "white");
+
+    expect(store.getState().position).toEqual([0, 0]);
+});
+
+test.each([
+    { action: "goToEnd", expected: [0, 0, 0, 0] },
+    { action: "goToBranchEnd", expected: [0, 0, 0, 0] },
+    { action: "goToBranchEndOrNextLine", expected: [0, 0, 0, 0] },
+    { action: "nextBranching", expected: [0, 0, 0, 0] },
+    { action: "nextBranch", expected: [0, 1] },
+    { action: "previousBranch", expected: [0, 1] },
+] as const)("$action still moves when practicePath is null", ({ action, expected }) => {
+    const store = createTreeStore(undefined, practiceDrillTree());
+
+    store.getState()[action]();
+
+    expect(store.getState().position).toEqual(expected);
+});
+
 test.each([
     { action: "nextBranch", indices: [1, 2, 0] },
     { action: "previousBranch", indices: [2, 1, 0] },

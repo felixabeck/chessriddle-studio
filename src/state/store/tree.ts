@@ -337,6 +337,11 @@ export function nextSiblingVariationOrMainMove(
     return [...prefix, next < parent.children.length ? next : 0];
 }
 
+/** d-20260923-04/-05: during a practice drill navigation may only land on the drill line up to the card position; anything past or beside it shows the answer. */
+function drillAllows(practicePath: number[] | null, target: number[]): boolean {
+    return practicePath === null || isPrefix(target, practicePath);
+}
+
 function stepIntoChild(
     path: number[],
     children: TreeNode[],
@@ -496,6 +501,7 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
                             node.nags.some((code) => nagGlyph(code) === annotation) &&
                             node.halfMoves % 2 === colorN
                         ) {
+                            if (!drillAllows(state.practicePath, p)) return;
                             state.position = p;
                             break;
                         }
@@ -560,13 +566,14 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
         goToEnd: () =>
             set(
                 produce((state) => {
-                    const endPosition: number[] = [];
+                    const target: number[] = [];
                     let currentNode = state.root;
                     while (currentNode.children.length > 0) {
-                        endPosition.push(0);
+                        target.push(0);
                         currentNode = currentNode.children[0];
                     }
-                    state.position = endPosition;
+                    if (!drillAllows(state.practicePath, target)) return;
+                    state.position = target;
                 }),
             ),
         goToStart: () =>
@@ -602,11 +609,14 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
         goToBranchEnd: () => {
             set(
                 produce((state) => {
-                    let currentNode = getNodeAtPath(state.root, state.position);
+                    const target = [...state.position];
+                    let currentNode = getNodeAtPath(state.root, target);
                     while (currentNode.children.length > 0) {
-                        state.position.push(0);
+                        target.push(0);
                         currentNode = currentNode.children[0];
                     }
+                    if (!drillAllows(state.practicePath, target)) return;
+                    state.position = target;
                 }),
             );
         },
@@ -628,21 +638,21 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
                 produce((state) => {
                     if (state.position.length === 0) return;
 
-                    let parent = getNodeAtPath(state.root, state.position.slice(0, -1));
-                    let branchIndex = state.position[state.position.length - 1];
+                    const target = [...state.position];
+                    let parent = getNodeAtPath(state.root, target.slice(0, -1));
+                    let branchIndex = target[target.length - 1];
                     const node = parent.children[branchIndex];
 
                     // Makes the navigation more fluid and compatible with next/previous branching
                     if (node.children.length >= 2 && parent.children.length <= 1) {
-                        state.position.push(0);
-                        parent = getNodeAtPath(state.root, state.position.slice(0, -1));
-                        branchIndex = state.position[state.position.length - 1];
+                        target.push(0);
+                        parent = getNodeAtPath(state.root, target.slice(0, -1));
+                        branchIndex = target[target.length - 1];
                     }
 
-                    state.position = [
-                        ...state.position.slice(0, -1),
-                        (branchIndex + 1) % parent.children.length,
-                    ];
+                    target[target.length - 1] = (branchIndex + 1) % parent.children.length;
+                    if (!drillAllows(state.practicePath, target)) return;
+                    state.position = target;
                 }),
             ),
         previousBranch: () =>
@@ -650,37 +660,41 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
                 produce((state) => {
                     if (state.position.length === 0) return;
 
-                    let parent = getNodeAtPath(state.root, state.position.slice(0, -1));
-                    let branchIndex = state.position[state.position.length - 1];
+                    const target = [...state.position];
+                    let parent = getNodeAtPath(state.root, target.slice(0, -1));
+                    let branchIndex = target[target.length - 1];
                     const node = parent.children[branchIndex];
 
                     // Makes the navigation more fluid and compatible with next/previous branching
                     if (node.children.length >= 2 && parent.children.length <= 1) {
-                        state.position.push(0);
-                        parent = getNodeAtPath(state.root, state.position.slice(0, -1));
-                        branchIndex = state.position[state.position.length - 1];
+                        target.push(0);
+                        parent = getNodeAtPath(state.root, target.slice(0, -1));
+                        branchIndex = target[target.length - 1];
                     }
 
-                    state.position = [
-                        ...state.position.slice(0, -1),
-                        (branchIndex + parent.children.length - 1) % parent.children.length,
-                    ];
+                    target[target.length - 1] =
+                        (branchIndex + parent.children.length - 1) % parent.children.length;
+                    if (!drillAllows(state.practicePath, target)) return;
+                    state.position = target;
                 }),
             ),
 
         nextBranching: () =>
             set(
                 produce((state) => {
-                    let node = getNodeAtPath(state.root, state.position);
+                    const target = [...state.position];
+                    let node = getNodeAtPath(state.root, target);
                     let branchCount = node.children.length;
 
                     if (branchCount === 0) return;
 
                     do {
-                        state.position.push(0);
+                        target.push(0);
                         node = node.children[0];
                         branchCount = node.children.length;
                     } while (branchCount === 1);
+                    if (!drillAllows(state.practicePath, target)) return;
+                    state.position = target;
                 }),
             ),
 

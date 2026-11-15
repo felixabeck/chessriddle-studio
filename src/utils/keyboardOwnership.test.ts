@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { focusedDialogButton, press } from "@/tests/keyboard";
 import {
+    isKeyHandledByFocusedWidget,
     isKeyboardOwnedElsewhere,
     keyboardOwner,
     withKeyboardOwnership,
@@ -124,4 +125,38 @@ test.each([
 
     expect(handler).toHaveBeenCalledExactlyOnceWith(event);
     expect(event.defaultPrevented).toBe(prevented);
+});
+
+test.each([
+    { role: "slider", key: "ArrowLeft", nested: true, handled: true },
+    { role: "slider", key: "Home", nested: true, handled: true },
+    { role: "grid", key: "ArrowLeft", nested: false, handled: true },
+    { role: "grid", key: "Home", nested: false, handled: false },
+    { role: "slider", key: "Delete", nested: true, handled: false },
+    { role: "button", key: "ArrowLeft", nested: false, handled: false },
+])("$key on $role is handled=$handled", ({ role, key, nested, handled }) => {
+    const widget = document.createElement(role === "button" ? "button" : "div");
+    if (role !== "button") widget.setAttribute("role", role);
+    const target = nested ? document.createElement("span") : widget;
+    if (nested) widget.append(target);
+    host.append(widget);
+    const event = new KeyboardEvent("keydown", { key, bubbles: true });
+    target.dispatchEvent(event);
+
+    expect(isKeyHandledByFocusedWidget(event)).toBe(handled);
+});
+
+test("withKeyboardOwnership does not call the handler for ArrowLeft on a slider", () => {
+    const handler = vi.fn();
+    root = createRoot(host);
+    act(() => root!.render(createElement(Shortcuts, { hotkeys: [["arrowleft", handler]] })));
+    const slider = document.createElement("div");
+    slider.setAttribute("role", "slider");
+    slider.tabIndex = 0;
+    host.append(slider);
+    act(() => slider.focus());
+
+    press("ArrowLeft", { target: slider });
+
+    expect(handler).not.toHaveBeenCalled();
 });

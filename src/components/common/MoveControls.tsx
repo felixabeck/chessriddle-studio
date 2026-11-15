@@ -8,7 +8,7 @@ import { useStore } from "zustand";
 import { chooseVariationAtom } from "@/state/atoms";
 import { keyMapAtom } from "@/state/keybinds";
 import { nextContinuation } from "@/state/store/tree";
-import { isKeyboardOwnedElsewhere } from "@/utils/keyboardOwnership";
+import { isHotkeySuppressed } from "@/utils/keyboardOwnership";
 import { TreeStateContext, useVariationChooser } from "@/components/common/TreeStateContext";
 import IconAction from "./IconAction";
 import { releaseFocusOnMoveKey } from "./MoveCell";
@@ -73,7 +73,7 @@ function MoveControls({ readOnly }: { readOnly?: boolean }) {
     enabled,
     // ignoreEventWhen runs before preventDefault/enabled, so suspended keys neither fire
     // nor prevent default or stop propagation inside the owning dialog.
-    ignoreEventWhen: (event: KeyboardEvent) => isKeyboardOwnedElsewhere(event, groupRef.current),
+    ignoreEventWhen: (event: KeyboardEvent) => isHotkeySuppressed(event, groupRef.current),
   });
 
   const moveKey = (action: (event: KeyboardEvent) => void) => (event: KeyboardEvent) => {

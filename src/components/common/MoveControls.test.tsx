@@ -682,6 +682,30 @@ test.each(["ArrowUp", "ArrowDown"])(
   },
 );
 
+test.each(["slider", "grid"] as const)(
+  "arrows on a focused %s leave the tree position unchanged",
+  (role) => {
+    settings.chooseVariation = false;
+    store = middleGameStore();
+    render();
+    const widget = document.createElement("div");
+    widget.setAttribute("role", role);
+    widget.tabIndex = 0;
+    host.append(widget);
+    act(() => widget.focus());
+    expect(document.activeElement).toBe(widget);
+
+    for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) {
+      press(key, { target: widget });
+      expect(store.getState().position).toEqual([0]);
+    }
+
+    widget.remove();
+    press("ArrowLeft", { target: document.body });
+    expect(store.getState().position).toEqual([]);
+  },
+);
+
 test("readOnly keeps Delete harmless while ArrowLeft still navigates", () => {
   store = middleGameStore();
   render({ readOnly: true });
