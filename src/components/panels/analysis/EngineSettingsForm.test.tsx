@@ -128,13 +128,13 @@ afterEach(async () => {
   host.remove();
 });
 
-async function render(setSettings = vi.fn()) {
+async function render(setSettings = vi.fn(), formSettings: Settings = settings) {
   await act(async () => {
     root.render(
       <WorkspaceTabScope tabId="tab-A">
         <EngineSettingsForm
           engine={engines[1]}
-          settings={settings}
+          settings={formSettings}
           setSettings={setSettings}
           remote={false}
         />
@@ -218,24 +218,13 @@ test("a successful kill disables the engine", async () => {
 });
 
 test("names the lines, cores, and hash controls with the settings captions", async () => {
-  await act(async () => {
-    root.render(
-      <WorkspaceTabScope tabId="tab-A">
-        <EngineSettingsForm
-          engine={engines[1]}
-          settings={{
-            ...settings,
-            settings: [
-              { type: "string", name: "MultiPV", value: "2" },
-              { type: "string", name: "Threads", value: "4" },
-              { type: "string", name: "Hash", value: "16" },
-            ],
-          }}
-          setSettings={vi.fn()}
-          remote={false}
-        />
-      </WorkspaceTabScope>,
-    );
+  await render(vi.fn(), {
+    ...settings,
+    settings: [
+      { type: "string", name: "MultiPV", value: "2" },
+      { type: "string", name: "Threads", value: "4" },
+      { type: "string", name: "Hash", value: "16" },
+    ],
   });
 
   expect(

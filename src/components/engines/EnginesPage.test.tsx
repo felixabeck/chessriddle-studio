@@ -219,7 +219,9 @@ vi.mock("../common/AppModal", () => ({ default: () => null }));
 vi.mock("../common/GenericCard", () => ({ default: () => null }));
 vi.mock("../common/GoModeInput", () => ({ default: () => null }));
 vi.mock("../common/OpenFolderButton", () => ({ default: () => null }));
-vi.mock("../panels/analysis/LinesSlider", () => ({ default: () => null }));
+vi.mock("../panels/analysis/LinesSlider", () => ({
+  default: ({ ariaLabel }: { ariaLabel?: string }) => <div role="group" aria-label={ariaLabel} />,
+}));
 vi.mock("./AddEngine", () => ({ default: () => null }));
 vi.mock("@/components/common/IconAction", () => ({
   IconAction: ({ label, onClick }: { label: string; onClick?: () => void }) => (
@@ -958,4 +960,13 @@ test("no expert toggle appears for an engine with only essential or unknown opti
   await renderSettings();
   expect(host.querySelector("button[aria-expanded]")).toBeNull();
   expect(optionInput("Unknown Option")).not.toBeNull();
+});
+
+test("names the cloud lines control with the settings caption", async () => {
+  atomEngines = [{ type: "lichess", id: "cloud", name: "Cloud", url: "https://lichess.org" }];
+  await act(async () => renderSettingsPage());
+
+  expect(host.querySelector('[role="group"]')?.getAttribute("aria-label")).toBe(
+    "Engines.Settings.NumOfLines",
+  );
 });
