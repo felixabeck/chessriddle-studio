@@ -26464,6 +26464,9 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Rejected alternative:** `event.stopPropagation()` in `keyboardMove`. It would fix only the board, and the slider collision (f-20261115-12) would need a second mechanism.
 <!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"b6cdb3f154b350409b109ea1c1bb2857ab76c905db874864ba1192afe3fe7951","header_sha256":"df8a0457166396ac03f031c9ab5def48f41a91ddc2f0bcc6b19c471b1f0e40eb","header_status":"handled","input_sha256":"c91ed8992246d34f66427e67d0def01d652c4a865f6725018424a5ae315dd05d","kind":"mutation-receipt","operation":"95bbb7c551225aa7fde69ab5d2b9737d29e246d60dc9e24a9059de0c6c3271bc","options":{"section":null},"request_id_sha256":null,"results":["f-20261115-13"],"target":"f-20261115-13","v":1} -->
 
+* **Commit SHAs after rebase (Claude Code drain, 2026-11-15):** the drain rebased these commits onto `origin/master` before pushing (range-diff all `=`). The pushed SHAs are `6dca2e400` (was `12da78629`), `141a3ee7d` (was `762b01678`), `bf3e25554` (was `8ac006639`), `bea403641` (was `287ede877`) and `25113b105` (was `4fcf2bfe9`).
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"dc98bf54aebe47f132b81c3a9ac3ebb9fa1f7515d61a1c732a5ed85143b1b349","input_sha256":"45952dd7505bbcc1a9eeec5f9e35f46a1ff77b34f20b1936070c7bafd0bbfa48","kind":"mutation-receipt","operation":"903ab3a3885755b8d6a24278cac6ab33689d684033ce57d163ba528a9d25919c","options":{"section":null},"request_id_sha256":null,"results":["f-20261115-13"],"target":"f-20261115-13","v":1} -->
+
 ---
 
 ## 2026-11-15 — filed through the inbox spool
