@@ -1031,6 +1031,7 @@
     "PgnInput.Comments": "註解",
     "PgnInput.Editor": "PGN 編輯器",
     "PgnInput.ExtraMarkups": "額外標記",
+    "PgnInput.FilteredReadOnly": "部分內容已隱藏。勾選所有選項以編輯 PGN。",
     "PgnInput.Glyphs": "評註符號",
     "PgnInput.MaxDepth": "最大深度",
     "PgnInput.TotalMoves": "總步數",

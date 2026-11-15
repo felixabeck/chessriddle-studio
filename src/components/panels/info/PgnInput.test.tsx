@@ -58,7 +58,25 @@ vi.mock("@mantine/core", () => ({
   Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
     <button {...props}>{children}</button>
   ),
-  Checkbox: () => null,
+  Checkbox: ({
+    label,
+    checked,
+    onChange,
+  }: {
+    label?: React.ReactNode;
+    checked?: boolean;
+    onChange?: React.ChangeEventHandler<HTMLInputElement>;
+  }) => (
+    <label>
+      <input
+        type="checkbox"
+        aria-label={typeof label === "string" ? label : undefined}
+        checked={checked}
+        onChange={onChange}
+      />
+      {label}
+    </label>
+  ),
   Group: ({ children }: React.HTMLAttributes<HTMLDivElement>) => <div>{children}</div>,
   rem: (value: number) => `${value}rem`,
   Stack: ({ children }: React.HTMLAttributes<HTMLDivElement>) => <div>{children}</div>,
@@ -127,6 +145,20 @@ function parsedTree(event: string) {
   };
 }
 
+function annotatedTree(event: string) {
+  const tree = createTreeStore();
+  tree.getState().makeMove({ payload: "e4" });
+  tree.getState().setComment("Key idea");
+  tree.getState().makeMove({ payload: "e5" });
+  tree.getState().goToPrevious();
+  tree.getState().makeMove({ payload: "c5" });
+  return {
+    ...defaultTree(),
+    root: tree.getState().root,
+    headers: { ...tree.getState().headers, event },
+  };
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason: unknown) => void;
@@ -137,7 +169,12 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-async function setup({ linked = true, appendAttempted = false, extraMarkups = true } = {}) {
+async function setup({
+  linked = true,
+  appendAttempted = false,
+  extraMarkups = true,
+  tree = parsedTree("Initial game"),
+} = {}) {
   sessionStorage.clear();
   const id = crypto.randomUUID();
   const physical = crypto.randomUUID();
@@ -162,7 +199,7 @@ async function setup({ linked = true, appendAttempted = false, extraMarkups = tr
   };
   const workspace = createStore();
   tabStorage.seed(physical, {
-    ...parsedTree("Initial game"),
+    ...tree,
     linkedSource: linked ? locator : null,
     sourceStamp: stampA,
     appendAttempted,
@@ -217,12 +254,32 @@ async function draft(text: string, index = 0) {
   });
 }
 
-async function update(index = 0) {
-  const button = Array.from(editor(index).querySelectorAll("button")).find(
+function updateButton(index = 0) {
+  return Array.from(editor(index).querySelectorAll("button")).find(
     (candidate) => candidate.textContent === "Common.Update",
   );
+}
+
+async function update(index = 0) {
+  const button = updateButton(index);
   expect(button).toBeDefined();
   await act(async () => button!.click());
+}
+
+function optionCheckbox(label: string, index = 0) {
+  return editor(index).querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+}
+
+async function toggleOption(label: string, index = 0) {
+  const input = optionCheckbox(label, index);
+  await act(async () => input.click());
+}
+
+function expectAnnotatedRoot(store: TreeStore) {
+  const e4 = store.getState().root.children[0];
+  expect(e4?.san).toBe("e4");
+  expect(e4?.comment).toBe("Key idea");
+  expect(e4?.children.map((child) => child.san)).toEqual(["e5", "c5"]);
 }
 
 function parseSignal(call = 0): AbortSignal {
@@ -665,3 +722,68 @@ test.each(["mounted", "unmounted", "remounted", "cancelled", "abort-message"] as
     expect(fixture.store.getState().headers.event).toBe("Edit after refusal");
   },
 );
+
+test.each(["PgnInput.Variations", "PgnInput.Comments"] as const)(
+  "filtering %s on a game with hidden content does not offer Update or parse the filtered PGN",
+  async (option) => {
+    const fixture = await setup({ tree: annotatedTree("Initial game") });
+    const dirty = fixture.store.getState().dirty;
+    expect(updateButton()).toBeUndefined();
+    expect(editor().querySelector("textarea")!.readOnly).toBe(false);
+    expect(editor().textContent).not.toContain("PgnInput.FilteredReadOnly");
+    await toggleOption(option);
+    expect(updateButton()).toBeUndefined();
+    expect(editor().querySelector("textarea")!.hasAttribute("readonly")).toBe(true);
+    expect(editor().textContent).toContain("PgnInput.FilteredReadOnly");
+    expect(mocks.parsePGN).not.toHaveBeenCalled();
+    expectAnnotatedRoot(fixture.store);
+    expect(fixture.store.getState().dirty).toBe(dirty);
+  },
+);
+
+test("ticking Variations back on keeps comments and variations in the text sent to Update", async () => {
+  const fixture = await setup({ tree: annotatedTree("Initial game") });
+  mocks.parsePGN.mockResolvedValueOnce(parsedTree("Edited event"));
+  await toggleOption("PgnInput.Variations");
+  expect(editor().querySelector("textarea")!.hasAttribute("readonly")).toBe(true);
+  await toggleOption("PgnInput.Variations");
+  const textarea = editor().querySelector("textarea")!;
+  expect(textarea.hasAttribute("readonly")).toBe(false);
+  const edited = textarea.value.replace('[Event "Initial game"]', '[Event "Edited event"]');
+  expect(edited).toContain("(1... c5");
+  expect(edited).toContain("Key idea");
+  await draft(edited);
+  await update();
+  expect(mocks.parsePGN).toHaveBeenCalledOnce();
+  const sent = mocks.parsePGN.mock.calls[0][0] as string;
+  expect(sent).toContain("(1... c5");
+  expect(sent).toContain("Key idea");
+  expect(sent).toContain('[Event "Edited event"]');
+  expect(fixture.store.getState().headers.event).toBe("Edited event");
+});
+
+test("re-ticking Variations does not offer Update on the stale filtered draft", async () => {
+  await setup({ tree: annotatedTree("Initial game") });
+  await toggleOption("PgnInput.Variations");
+  expect(updateButton()).toBeUndefined();
+  expect(editor().querySelector("textarea")!.value).not.toContain("(1... c5");
+
+  await act(async () => {
+    optionCheckbox("PgnInput.Variations").click();
+    expect(updateButton()).toBeUndefined();
+    expect(
+      mocks.parsePGN.mock.calls.filter(([text]) => !String(text).includes("(1... c5")),
+    ).toEqual([]);
+  });
+  expect(updateButton()).toBeUndefined();
+  expect(editor().querySelector("textarea")!.value).toContain("(1... c5");
+  expect(mocks.parsePGN).not.toHaveBeenCalled();
+});
+
+test("unticking Variations on a game with nothing to hide leaves the editor editable", async () => {
+  await setup();
+  await toggleOption("PgnInput.Variations");
+  expect(editor().querySelector("textarea")!.hasAttribute("readonly")).toBe(false);
+  expect(editor().textContent).not.toContain("PgnInput.FilteredReadOnly");
+  expect(updateButton()).toBeUndefined();
+});

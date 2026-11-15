@@ -1044,6 +1044,7 @@
     "PgnInput.Comments": "Kommentare",
     "PgnInput.Editor": "PGN-Editor",
     "PgnInput.ExtraMarkups": "Zusätzliche Markierungen",
+    "PgnInput.FilteredReadOnly": "Einige Inhalte sind ausgeblendet. Aktiviere alle Optionen, um die PGN zu bearbeiten.",
     "PgnInput.Glyphs": "Glyphen",
     "PgnInput.MaxDepth": "Maximale Tiefe",
     "PgnInput.TotalMoves": "Gesamtzüge",

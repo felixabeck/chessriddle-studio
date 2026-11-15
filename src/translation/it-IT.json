@@ -1057,6 +1057,7 @@
     "PgnInput.Comments": "Commenti",
     "PgnInput.Editor": "Editor PGN",
     "PgnInput.ExtraMarkups": "Annotazioni extra",
+    "PgnInput.FilteredReadOnly": "Alcuni contenuti sono nascosti. Seleziona tutte le opzioni per modificare il PGN.",
     "PgnInput.Glyphs": "Simboli",
     "PgnInput.MaxDepth": "Profondità massima",
     "PgnInput.TotalMoves": "Mosse totali",

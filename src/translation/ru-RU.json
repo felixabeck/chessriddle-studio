@@ -1070,6 +1070,7 @@
     "PgnInput.Comments": "Комментарии",
     "PgnInput.Editor": "Редактор PGN",
     "PgnInput.ExtraMarkups": "Дополнительные аннотации",
+    "PgnInput.FilteredReadOnly": "Некоторое содержимое скрыто. Включите все параметры, чтобы редактировать PGN.",
     "PgnInput.Glyphs": "Символы",
     "PgnInput.MaxDepth": "Максимальная глубина",
     "PgnInput.TotalMoves": "Всего ходов",

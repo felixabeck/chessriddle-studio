@@ -1031,6 +1031,7 @@
     "PgnInput.Comments": "주석",
     "PgnInput.Editor": "PGN 편집기",
     "PgnInput.ExtraMarkups": "추가 마크업",
+    "PgnInput.FilteredReadOnly": "일부 내용이 숨겨져 있습니다. PGN을 편집하려면 모든 옵션을 선택하세요.",
     "PgnInput.Glyphs": "글리프",
     "PgnInput.MaxDepth": "최대 깊이",
     "PgnInput.TotalMoves": "전체 수",

@@ -1044,6 +1044,7 @@
     "PgnInput.Comments": "Kommentarer",
     "PgnInput.Editor": "PGN-redigerer",
     "PgnInput.ExtraMarkups": "Markups",
+    "PgnInput.FilteredReadOnly": "Noe innhold er skjult. Huk av alle alternativene for å redigere PGN-en.",
     "PgnInput.Glyphs": "Symboler",
     "PgnInput.MaxDepth": "Maks dybde",
     "PgnInput.TotalMoves": "Totalt antall trekk",

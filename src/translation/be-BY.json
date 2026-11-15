@@ -1070,6 +1070,7 @@
     "PgnInput.Comments": "Каментарыі",
     "PgnInput.Editor": "Рэдактар PGN",
     "PgnInput.ExtraMarkups": "Дадатковыя пазнакі",
+    "PgnInput.FilteredReadOnly": "Некаторы змест схаваны. Уключы ўсе параметры, каб рэдагаваць PGN.",
     "PgnInput.Glyphs": "Сімвалы",
     "PgnInput.MaxDepth": "Максімальная глыбіня",
     "PgnInput.TotalMoves": "Агульная колькасць хадоў",

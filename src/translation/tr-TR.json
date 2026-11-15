@@ -1044,6 +1044,7 @@
     "PgnInput.Comments": "Yorumlar",
     "PgnInput.Editor": "PGN düzenleyicisi",
     "PgnInput.ExtraMarkups": "Ek İşaretler",
+    "PgnInput.FilteredReadOnly": "Bazı içerikler gizlendi. PGN'yi düzenlemek için tüm seçenekleri işaretleyin.",
     "PgnInput.Glyphs": "Semboller",
     "PgnInput.MaxDepth": "Maksimum Derinlik",
     "PgnInput.TotalMoves": "Toplam Hamle",

@@ -53,10 +53,13 @@ function PgnInput() {
     });
   }, [root, headers, options, store]);
 
-  const [editor, setEditor] = useState({ text: pgn, root });
+  const hidesContent = pgn !== realPGN;
+
+  const [editor, setEditor] = useState({ text: pgn, root, base: pgn });
   const tmp = editor.text;
-  const setTmp = (text: string) => setEditor({ text, root });
+  const setTmp = (text: string) => setEditor((current) => ({ text, root, base: current.base }));
   const serializedPgn = useRef(pgn);
+  const draftIsComplete = editor.base === realPGN;
 
   useEffect(() => {
     mounted.current = true;
@@ -73,8 +76,9 @@ function PgnInput() {
     serializedPgn.current = pgn;
     setEditor((current) => {
       const text = serializedChanged ? pgn : current.text;
-      if (current.text === text && current.root === root) return current;
-      return { text, root };
+      const base = serializedChanged ? pgn : current.base;
+      if (current.text === text && current.root === root && current.base === base) return current;
+      return { text, root, base };
     });
   }, [pgn, root]);
 
@@ -109,10 +113,16 @@ function PgnInput() {
           onChange={() => setOptions({ ...options, extraMarkups: !options.extraMarkups })}
         />
       </Group>
+      {hidesContent && (
+        <Text size="xs" c="dimmed">
+          {t("PgnInput.FilteredReadOnly")}
+        </Text>
+      )}
     </>
   );
 
   async function updatePgn() {
+    if (hidesContent || !draftIsComplete) return;
     if (root !== store.getState().root || editor.root !== store.getState().root) return;
     const owner = getTab(tabId);
     if (!owner || getCachedTreeStore(tabId) !== store || workspace.get(closingTabsAtom).has(tabId))
@@ -188,6 +198,7 @@ function PgnInput() {
         id="pgn-editor"
         aria-label={t("Common.PGNGame")}
         autosize
+        readOnly={hidesContent}
         value={tmp}
         onChange={(e) => {
           pendingPgnEdits.get(store)?.retire();
@@ -203,7 +214,7 @@ function PgnInput() {
       >
         {copied ? <Check style={{ width: rem(16) }} /> : <Copy style={{ width: rem(16) }} />}
       </IconAction>
-      {realPGN !== tmp && (
+      {!hidesContent && draftIsComplete && realPGN !== tmp && (
         <Button style={{ position: "absolute", bottom: 15, right: 15 }} onClick={() => updatePgn()}>
           {t("Common.Update")}
         </Button>

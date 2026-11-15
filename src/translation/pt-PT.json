@@ -1057,6 +1057,7 @@
     "PgnInput.Comments": "Comentários",
     "PgnInput.Editor": "Editor de PGN",
     "PgnInput.ExtraMarkups": "Anotações extras",
+    "PgnInput.FilteredReadOnly": "Alguns conteúdos estão ocultos. Marca todas as opções para editar o PGN.",
     "PgnInput.Glyphs": "Símbolos",
     "PgnInput.MaxDepth": "Profundidade máxima",
     "PgnInput.TotalMoves": "Total de jogadas",

@@ -1070,6 +1070,7 @@
     "PgnInput.Comments": "Коментарі",
     "PgnInput.Editor": "Редактор PGN",
     "PgnInput.ExtraMarkups": "Додаткові позначки",
+    "PgnInput.FilteredReadOnly": "Деякий вміст приховано. Увімкни всі параметри, щоб редагувати PGN.",
     "PgnInput.Glyphs": "Символи",
     "PgnInput.MaxDepth": "Максимальна глибина",
     "PgnInput.TotalMoves": "Загальна кількість ходів",

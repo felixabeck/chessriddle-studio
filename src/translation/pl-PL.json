@@ -1070,6 +1070,7 @@
     "PgnInput.Comments": "Komentarze",
     "PgnInput.Editor": "Edytor PGN",
     "PgnInput.ExtraMarkups": "Dodatkowe oznaczenia",
+    "PgnInput.FilteredReadOnly": "Część treści jest ukryta. Zaznacz wszystkie opcje, aby edytować PGN.",
     "PgnInput.Glyphs": "Symbole",
     "PgnInput.MaxDepth": "Maksymalna głębokość",
     "PgnInput.TotalMoves": "Całkowita liczba ruchów",
