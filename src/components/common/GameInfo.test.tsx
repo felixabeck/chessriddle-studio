@@ -260,6 +260,7 @@ test.each([undefined, "?"] as const)(
     const field = host.querySelector<HTMLInputElement>('input[aria-label="GameInfo.Round"]')!;
     expect(field).not.toBeNull();
     expect(field.value).toBe("");
+    expect(field.placeholder).toBe("?");
     await act(async () => setNativeInputValue(field, "2"));
     expect(store.getState().headers.round).toBe("2");
   },
@@ -274,6 +275,20 @@ test("read-only view hides an empty round", async () => {
     ),
   );
   expect(host.querySelector('input[aria-label="GameInfo.Round"]')).toBeNull();
+});
+
+test("read-only view shows a filled round", async () => {
+  await act(async () =>
+    root.render(
+      <MantineProvider env="test">
+        <GameInfo headers={{ ...defaultTree().headers, round: "5" }} />
+      </MantineProvider>,
+    ),
+  );
+  expect(host.textContent).toContain("GameInfo.Round");
+  const field = host.querySelector<HTMLInputElement>('input[aria-label="GameInfo.Round"]');
+  expect(field).not.toBeNull();
+  expect(field?.value).toBe("5");
 });
 
 test("a partial PGN date is shown as the date placeholder", async () => {
@@ -306,7 +321,4 @@ test("full layout names every header field", async () => {
   ]) {
     expect(host.querySelector(`input[aria-label="${label}"]`)).not.toBeNull();
   }
-  const white = host.querySelector('input[aria-label="Fen.White"]')!;
-  const black = host.querySelector('input[aria-label="Fen.Black"]')!;
-  expect(white.getAttribute("aria-label")).not.toBe(black.getAttribute("aria-label"));
 });

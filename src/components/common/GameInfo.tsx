@@ -49,13 +49,13 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
       ? dayjs(headers.date, "YYYY.MM.DD").toDate()
       : null
     : null;
-  const partialDate =
-    headers.date && date === null && headers.date !== "????.??.??" ? headers.date : null;
+  const partialDate = headers.date && date === null ? headers.date : null;
   const [whiteOpened, setWhiteOpened] = useState(false);
   const [blackOpened, setBlackOpened] = useState(false);
 
   const event = headers.event === "?" ? "" : headers.event;
   const site = headers.site === "?" ? "" : headers.site;
+  const round = headers.round === "?" ? "" : (headers.round ?? "");
   const sitePlatform = sitePlatformLabel(headers.site);
   // Keep raw White text so spaces survive typing, using the normalized Event fallback only
   // when White is empty.
@@ -119,7 +119,7 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
               }}
             />
           )}
-          {!simplified && (!disabled || (!!headers.round && headers.round !== "?")) && (
+          {!simplified && (!disabled || round !== "") && (
             <>
               {"-"}
               <Group gap={0} wrap="nowrap">
@@ -130,7 +130,7 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
                   className={classes.roundInput}
                   placeholder="?"
                   aria-label={t("GameInfo.Round")}
-                  value={headers.round && headers.round !== "?" ? headers.round : ""}
+                  value={round}
                   onChange={(e) =>
                     setHeaders({
                       ...headers,
