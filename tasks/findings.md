@@ -26503,3 +26503,38 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Fix:** treat a handle-level Conflict with `RootFailure::Changed`, or the "persistent file changed" refusal, as a dead handle. Prune the recent row as for `not-found` (in both the mount check and `reportFileError`), or mark it "file was replaced" and offer re-pick, which works once f-20261115-17 is fixed. Also add a "Remove from recent" action for recent rows so a stuck entry can always be cleared. Keep retaining rows on transient errors (busy, cancellation, I/O).
 * **Related:** f-20261115-17 (re-picking the replaced path fails; this row's retention keeps the stale entry alive), f-20261112-81 / f-20261112-77 (replaced-file handling, d-20261113-02).
 * **Found by:** Grok Bot, stale recent-file sweep
+
+---
+
+## 2026-11-15 — filed through the inbox spool
+
+### Practice progress for a repertoire disappears when another program saves, replaces, renames or moves the PGN
+
+* **ID:** f-20261115-19 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** yes (dead-handle / outside-rename sweep, origin `fb8bca5f4`)
+* **Where:** practice decks are keyed by the file's path-authority id. `src-tauri/src/pgn.rs` `practice_file` (~436-445) uses `rebind.path_ref.id` as the deck file id. `src/state/practiceStorage.ts` `PracticeDeckKey { file, game }` (~67) and `identityKey` (~131), and the renderer builds keys with `deckAtomFamily({ file: fileWorkspaceKey(handle), … })`. That id is bound to the file's inode and path. `src-tauri/src/infra/path_authority/mod.rs` `prepare_workspace_child` (~9323-9384) reuses an entry only when path, identity, parent identity, type and purpose all match, and otherwise mints `PathRef::fresh()`. `file_workspace.rs` `rename_workspace_file` keeps the id only for renames done inside the app (`rename_workspace_file_moves_pgn_sidecar_and_registry_entry`). Nothing carries decks from a retired or stale id to the fresh one. The only deck migrations in `practice.rs` (`migrate_practice_deck*`) are the legacy localStorage import.
+* **Defect:** every outside change that gives the repertoire PGN a new inode or path gives it a new handle the next time the Library lists it:
+  - an atomic save by an editor or another chess program (temp file renamed over the original);
+  - a sync tool (Dropbox, Syncthing, Nextcloud) delivering a newer copy;
+  - `git checkout`/`pull`;
+  - restoring from a backup;
+  - renaming or moving the file in the file manager.
+
+  The repertoire's practice decks (ratings, due dates, review history, per-game deck map) stay stored under the old id. The new handle starts with empty decks. Home's Due count for that repertoire drops to the fresh state, and Practice treats every position as new. The old data isn't deleted. It's unreachable: the old id is still retained through the `practiceDeck` owner family (`state/pathOwners.ts`), and no UI can re-attach it. The PGN content and its repertoire sidecar metadata (kept by path) look unchanged to the user, so the loss is silent. Repeated outside saves orphan the progress again each time. d-20261104-17 lists only outside reorders/deletes as a known limit (ordinal shift). Whole-file identity changes aren't covered, and here the loss is total, not a shift.
+* **Failure scenario:** in the Library folder, a repertoire `london.pgn` has been practised for weeks: Home shows "London — 12 due", and the cards have intervals. Open `london.pgn` in a text editor that saves atomically, fix a typo in a comment and save (or let Syncthing deliver the same edit from another machine, or rename it to `london-system.pgn` in the file manager). Back in ChessFable, the open tab turns unavailable. The Library shows the file again (under its new handle). Opening it and starting Practice shows every position as new, and the Due count reflects the fresh state. The weeks of review history are gone from the UI, and nothing reports it.
+* **Proof:** source trace on unchanged origin/master `fb8bca5f4`, plus runtime checks of the identity rules on the existing test binary `chessriddle_studio-434130da127e1e9a`. `prepare_workspace_child` is byte-identical between `9fcf8790b` and `fb8bca5f4`.
+  - `passive_workspace_listing_mints_a_fresh_id_after_a_parent_change` passes: a passive listing mints a new id once the stored binding no longer matches.
+  - `rename_workspace_file_moves_pgn_sidecar_and_registry_entry` passes: only the in-app rename carries the registry entry.
+  - `file_revision_reports_delete_and_external_rename_replace_categories` pins that the old handle refuses after an outside rename-replace.
+  - The deck key is the handle id at both ends (`pgn.rs` ~444, `fileWorkspaceKey` in the renderer).
+  - No in-repo code or test was changed.
+* **Fix:** decide how a deck follows a file whose handle changed. Options:
+  - **(a)** When a passive listing or picker mints a fresh `PgnFile` entry for a path whose stale entry (different identity, same path) has practice decks, move or alias the deck map and leaves to the new id under the practice lock. Possibly ask first ("This file was replaced outside ChessFable — keep practice progress?"), since a replaced file can be a different repertoire.
+  - **(b)** Key decks by a stable per-file identity stored in the repertoire sidecar (which already travels with the file by path, and with in-app renames).
+  - **(c)** At least detect an orphaned deck set whose former path now has a fresh handle and offer to re-attach it.
+
+  Cover outside renames and moves too (same sidecar or directory but a new path), or document them as a limit. Tests: replace a practised repertoire by rename-over, relist, and expect its decks (or the re-attach offer) under the new handle.
+* **Open question:** what identity should a practice deck follow when its PGN's handle changes outside the app: the stored path (re-attach on same-path replacement, maybe after confirmation), a stable id in the repertoire sidecar, or an explicit user re-attach. And should outside renames and moves be covered or stated as a limit?
+* **Related:** f-20261115-17 (re-picking a replaced PGN fails), f-20261115-18 (replaced recent stays forever), f-20261101-17 / d-20261104-17 (deck identity across in-app deletes; outside reorders/deletes are a stated limit).
+* **Found by:** Grok Bot, dead-handle sweep
