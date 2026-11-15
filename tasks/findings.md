@@ -24778,7 +24778,7 @@ Handled in 9bccc0316. `MoveCell` now sets `aria-current="true"` on the move butt
 
 ### The game-info Round field unmounts as soon as it is emptied, and a game without a round has no Round field at all
 
-* **ID:** f-20261112-49 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-49 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/common/GameInfo.tsx:119-140`: the Round `<input>` renders only under `!simplified && headers.round && headers.round !== "?"`, and its `onChange` writes `e.currentTarget.value` straight into `headers.round`
@@ -24787,6 +24787,9 @@ Handled in 9bccc0316. `MoveCell` now sets `aria-current="true"` on the move butt
 - **Fix:** always render the Round input in the full (non-simplified) layout, showing the `?` placeholder when it is empty or `?`, like the White/Black fields. Add a GameInfo test that clears and retypes the round.
 - **Proof:** ephemeral Vitest built on the GameInfo.test.tsx harness, with headers `round: "3"`: after a native input event setting the round input to `""`, the store held `round: ""`, the input element was disconnected (`isConnected === false`) and the "GameInfo.Round" label was gone from the DOM. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 23)
+
+Handled 2026-11-15 (drain session 03e75071). The editable Info panel now always renders the Round input (`!simplified && (!disabled || round !== "")`, with `round` mapping `?`/missing to ""), so clearing it no longer unmounts it and a game without a round can get one. Read-only views (database GameCard) still hide an empty or `?` round. Because the always-shown Round pushed BLACK out of a normal-width panel (seen in the e2e screenshots), the editable Event/Round cluster now wraps without the dash separator. The read-only layout is unchanged. Tests: clear-and-retype, empty/`?` editable, read-only hide for missing/`?`, read-only filled round. Nine Info-panel e2e snapshots re-recorded in the container, diffs confined to the header row. Commits: e87f3ff33, cf38dd3a2, e09a1a578, adc3a7d7e, bece957de. Rejected: wrapping the read-only header too, because it changed the database preview geometry (database-files drag test, 320px snapshot) where Round was never added.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"654c76639a00c68e5bac69662b3f98a124f75f829c7348466481b142d44cd3c8","header_sha256":"44cf51e503d0297f7cdcb2f07df9485eaa7c1f0834072921a21bdd16e4cb2c8b","header_status":"handled","input_sha256":"2dfbc9a8077baf9912f37b34aa81ac52e1455bbef9b6646ca9d591ba515b4afd","kind":"mutation-receipt","operation":"e717a134b05e789bb58c35122c952a89e0b18413b168121873d9d92861ea544a","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-49"],"target":"f-20261112-49","v":1} -->
 
 ---
 
