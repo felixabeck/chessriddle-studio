@@ -132,10 +132,10 @@ export function OpponentForm({
                 unitLabel={t("Board.Opponent.TimeUnit")}
                 defaultType="m"
                 type={opponent.timeUnit}
-                onTypeChange={(t) => {
-                  setOpponent((prev) => ({ ...prev, timeUnit: t }));
+                onTypeChange={(unit) => {
+                  setOpponent((prev) => ({ ...prev, timeUnit: unit }));
                   if (sameTimeControl) {
-                    setOtherOpponent((prev) => ({ ...prev, timeUnit: t }));
+                    setOtherOpponent((prev) => ({ ...prev, timeUnit: unit }));
                   }
                 }}
                 value={opponent.timeControl.seconds}
@@ -165,10 +165,10 @@ export function OpponentForm({
                 unitLabel={t("Board.Opponent.IncrementUnit")}
                 defaultType="s"
                 type={opponent.incrementUnit}
-                onTypeChange={(t) => {
-                  setOpponent((prev) => ({ ...prev, incrementUnit: t }));
+                onTypeChange={(unit) => {
+                  setOpponent((prev) => ({ ...prev, incrementUnit: unit }));
                   if (sameTimeControl) {
-                    setOtherOpponent((prev) => ({ ...prev, incrementUnit: t }));
+                    setOtherOpponent((prev) => ({ ...prev, incrementUnit: unit }));
                   }
                 }}
                 value={opponent.timeControl.increment ?? 0}

@@ -12,14 +12,17 @@ vi.mock("@mantine/core", () => ({
     value,
     rightSection,
     onChange,
+    "aria-label": ariaLabel,
   }: {
     value: number;
     rightSection?: React.ReactNode;
     onChange: (value: number) => void;
+    "aria-label"?: string;
   }) => (
     <>
       <input
         type="number"
+        aria-label={ariaLabel}
         value={value}
         onChange={(event) => onChange(Number(event.currentTarget.value))}
       />
@@ -31,10 +34,15 @@ vi.mock("@mantine/core", () => ({
     value: string;
     onChange: (value: string | null) => void;
     allowDeselect?: boolean;
+    "aria-label"?: string;
   }) => {
     mocks.select(props);
     return (
-      <select value={props.value} onChange={(event) => props.onChange(event.currentTarget.value)}>
+      <select
+        aria-label={props["aria-label"]}
+        value={props.value}
+        onChange={(event) => props.onChange(event.currentTarget.value)}
+      >
         {props.data.map((option) => {
           const item = typeof option === "string" ? { value: option, label: option } : option;
           return (
@@ -195,6 +203,27 @@ test.each([
   expect(setGoMode).toHaveBeenCalledExactlyOnceWith({ t: type, c: count });
   expect(setGoMode.mock.calls[0][0]).not.toBe(goMode);
   expect(goMode).toEqual({ t: "Time", c: 500 });
+});
+
+test.each([
+  ["Depth", "GoMode.Depth"],
+  ["Nodes", "GoMode.Nodes"],
+] as const)("%s mode names the limit Select and the value control", (mode, valueName) => {
+  act(() => {
+    root.render(<GoModeInput goMode={{ t: mode, c: 20 }} setGoMode={vi.fn()} />);
+  });
+  expect(host.querySelector("select")!.getAttribute("aria-label")).toBe("GoMode.Limit");
+  expect(host.querySelector("input")!.getAttribute("aria-label")).toBe(valueName);
+});
+
+test("Time mode names the limit Select, the time field, and the unit Select", () => {
+  act(() => {
+    root.render(<GoModeInput goMode={{ t: "Time", c: 20 }} setGoMode={vi.fn()} />);
+  });
+  const selects = host.querySelectorAll("select");
+  expect(selects[0]!.getAttribute("aria-label")).toBe("GoMode.Limit");
+  expect(host.querySelector("input")!.getAttribute("aria-label")).toBe("GoMode.Time");
+  expect(selects[1]!.getAttribute("aria-label")).toBe("GoMode.TimeUnit");
 });
 
 test.each([true, false])("the type Select cannot be deselected with gameMode %s", (gameMode) => {

@@ -35,6 +35,7 @@ function GoModeInput({
   return (
     <Group wrap="nowrap">
       <Select
+        aria-label={t("GoMode.Limit")}
         allowDeselect={false}
         data={timeTypes.map((v) => ({ value: v, label: t(`GoMode.${v}`) }))}
         value={goMode?.t || (gameMode ? "Time" : "Infinite")}
@@ -51,6 +52,7 @@ function GoModeInput({
       {match(goMode || { t: "Infinite" })
         .with({ t: "Depth" }, (v) => (
           <NumberInput
+            aria-label={t("GoMode.Depth")}
             min={1}
             max={MAX_GO_TIME_OR_DEPTH}
             allowDecimal={false}
@@ -60,6 +62,7 @@ function GoModeInput({
         ))
         .with({ t: "Nodes" }, (v) => (
           <NumberInput
+            aria-label={t("GoMode.Nodes")}
             min={1}
             max={MAX_GO_NODES}
             allowDecimal={false}
@@ -70,6 +73,8 @@ function GoModeInput({
         .with({ t: "Time" }, (v) => (
           <TimeInput
             value={v.c}
+            label={t("GoMode.Time")}
+            unitLabel={t("GoMode.TimeUnit")}
             setValue={(next) =>
               setGoMode(
                 next.t === "Time" ? { t: "Time", c: limit(next.c, MAX_GO_TIME_OR_DEPTH) } : next,

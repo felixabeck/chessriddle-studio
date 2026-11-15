@@ -187,7 +187,9 @@ vi.mock("@mantine/core", () => {
     Text: ({ children, role }: any) => <div role={role}>{children}</div>,
   };
 });
-vi.mock("./OpponentForm", () => ({ OpponentForm: () => null }));
+vi.mock("./OpponentForm", () => ({
+  OpponentForm: ({ sideLabel }: { sideLabel: string }) => <div data-side={sideLabel} />,
+}));
 vi.mock("./Board", () => ({
   default: (props: { onMove: (uci: string) => Promise<boolean> }) => {
     const { onMove } = props;
@@ -237,6 +239,7 @@ import {
   enginesAtom,
   flipBoardAfterMoveAtom,
   gameIdFamily,
+  gameInputColorAtom,
   gamePlayer1SettingsAtom,
   gamePlayer2SettingsAtom,
   gameSameTimeControlAtom,
@@ -299,6 +302,10 @@ function button(label: string) {
   const found = [...host.querySelectorAll("button")].find((item) => item.textContent === label);
   if (!found) throw new Error(`Missing button ${label}`);
   return found;
+}
+
+function opponentSides() {
+  return [...host.querySelectorAll("[data-side]")].map((el) => el.getAttribute("data-side"));
 }
 
 function treeMoves(rootNode = fixtures.tree.root) {
@@ -435,6 +442,7 @@ beforeEach(() => {
   store.set(gamePlayer1SettingsAtom, { type: "human", name: "Alice" });
   store.set(gamePlayer2SettingsAtom, { type: "human", name: "Bob" });
   store.set(gameSameTimeControlAtom, true);
+  store.set(gameInputColorAtom, "white");
   fixtures.abortGame.mockResolvedValue(undefined);
   fixtures.getGameEngineLogs.mockResolvedValue([]);
   fixtures.logError.mockResolvedValue(undefined);
@@ -761,6 +769,13 @@ test("two-engine terminal diagnostics follow only the failed side's selected col
   expect(host.textContent).not.toContain("Engines.Logs.TerminalDiagnostics");
   expect(fixtures.setEngineLogs).toEqual([]);
   expect(fixtures.getGameEngineLogs).not.toHaveBeenCalled();
+});
+
+test("settingUp opponent forms receive the side headings and swap with colour", async () => {
+  await render();
+  expect(opponentSides()).toEqual(["Fen.White", "Fen.Black"]);
+  await act(async () => button("Board.Action.SwapColors").click());
+  expect(opponentSides()).toEqual(["Fen.Black", "Fen.White"]);
 });
 
 test("starting a human game sends numeric configuration and records ChessRiddle Studio as the PGN Site", async () => {
