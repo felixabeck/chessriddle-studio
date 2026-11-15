@@ -25015,7 +25015,7 @@ Correction to the Failure scenario example: the `!?` button's accessible name is
 
 ### The Annotate tab's comment editor is an unnamed textbox, and its navigation hint is not tied to it
 
-* **ID:** f-20261112-61 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-61 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/panels/annotation/AnnotationEditor.tsx:92-150`: `useEditor` gets no `editorProps.attributes`, so the ProseMirror element has no `aria-label`/`aria-labelledby`/`aria-multiline`. `:128` provides the placeholder only via the Placeholder extension (a CSS `data-placeholder` on the empty paragraph). `:231-239`: the focused-only navigation hint `<Text>` has no id and is not referenced by `aria-describedby`.
@@ -25024,6 +25024,9 @@ Correction to the Failure scenario example: the `!?` button's accessible name is
 - **Fix:** add `editorProps: { attributes: { "aria-label": t(…comment label…), "aria-multiline": "true", "aria-describedby": hintId } }` (hint id via `useId`; render the hint with that id, or keep it in the DOM visually hidden when not focused). Reuse or add an i18n key such as `Board.Annotate.Comment`. Extend AnnotationEditor.test.tsx with a name assertion.
 - **Proof:** ephemeral Vitest using AnnotationEditor.test.tsx's own `mount("")` harness (real tiptap): the `.tiptap` element's attributes were exactly `class`, `contenteditable="true"`, `role="textbox"`, `tabindex="0"` and `translate="no"`, with no `aria-label`/`aria-labelledby`/`aria-describedby`, and no labelled ancestor. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 26)
+
+**Handled, 2026-11-15 (drain 9dd5e0d1, commit cf70a3c18):** `AnnotationEditor.tsx` passes `editorProps.attributes` with `aria-label` = `t("Board.Annotate.Comment")` (new key, all 16 catalogues), `aria-multiline="true"` and `aria-describedby` = a `useId` hint id. The navigation hint `<Text>` is now always rendered with that id and `hidden` while the editor is unfocused, so the description resolves at focus time instead of racing the `focused` state render. Tests: new case asserting name, multiline and the described hint; the scoping test now asserts the hint's `hidden` state instead of its absence from `textContent`. Proof: `AnnotationEditor.test.tsx` 167/167, `i18n:check`, `i18n:jsx`, `tsgo`, `lint`, `oxfmt --check` green. Rejected: rendering the hint only on focus with `aria-describedby` pointing at a missing id (the description would be absent when focus first lands).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"1c2b92f1dd22172897ab3d4f06ec12bdfcc71f73209fe8f4135c64d2825f7ec8","header_sha256":"7dc031e422a7660dd2b6aac7b34f2f7d84d0bdcf2107e1277cb646695890d4e3","header_status":"handled","input_sha256":"eec1a5c64ef5a2a27709dd8015783efee40577b88b40e95cc22680ecb908ab10","kind":"mutation-receipt","operation":"41985ce999a224f77c88514691607fc9d215b7e34973d7b5578a3467013c70f0","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-61"],"target":"f-20261112-61","v":1} -->
 
 ---
 
