@@ -26374,7 +26374,7 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 
 ### Pressing Enter in the Info panel's untouched FEN field at a later move turns the current position into the start position and deletes every move
 
-* **ID:** f-20261115-11 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261115-11 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** data-loss
 * **Spotted outside diff:** yes (FEN-search exact-match sweep, origin `179c9f23c`; the field and the Enter handler are upstream code)
 * **Where:** `src/components/panels/info/FenSearch.tsx`. The field is seeded from the current node's FEN (`fen = currentNode().fen`, `search`/`value` reset to it on every move, ~24-55). The `onKeyDown` Enter branch (~122-131) calls `addFen(search, …)` without checking whether the user typed anything. `addFen` (~31-45) calls `setHeaders({ ...headers, fen })`. `src/state/store/tree.ts` `setHeaders` (~819-828) installs `defaultTree(headers.fen).root` whenever `headers.fen !== root.fen`, which replaces the whole tree. The Info panel renders this `FenSearch` without `currentFen` (`InfoPanel.tsx` ~70), so it always shows the position at the cursor, not the start position.
@@ -26384,6 +26384,8 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Fix:** in the Enter handler, only apply when the user typed (`hasTyped`) and the value differs from what was shown. Better, seed the Info panel field from `root.fen`/`headers.fen` (the start position it edits) instead of the current node, or label it as the current-position FEN and make "set as start position" an explicit action. If the tree has moves, ask for confirmation before replacing the root. Regression test: at a later move, Enter on the untouched field leaves the tree unchanged.
 * **Related:** f-20261114-11 (opening Edit position wipes the game through FenInput's normalizing effect; a different trigger on the same `setFen`/root replacement); d-20260923 root-installer decision (`installRoot` keeps `headers.fen` equal to `root.fen`, which makes `setHeaders({fen})` a root replacement).
 * **Found by:** Grok Bot, FEN-search exact-match sweep
+* **Handled (2026-11-15, drain dffa80ea):** FenSearch's Enter branch and the `$create` option now require `hasTyped`, so the untouched field seeded with the current node's FEN can no longer be applied as the start FEN. Reseeding the Info panel field from `root.fen` or adding a confirmation dialog was not done (changes what the field shows; the typed-input guard removes the accidental path). Regression in `FenSearch.test.tsx`. Commit 61734be53.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"e370ba9deac2a5d990feab228d097b33d3f99f0c2f0280f81c69199093cb7a44","header_sha256":"cbe087afe53ea42ef35878bba3bc7f4c786ea8f4e3698a89ae34da17276b30ce","header_status":"handled","input_sha256":"2774bf269f35f0050c07d4689b6464b3f79c81f44f00dce6464670ce6cfe5330","kind":"mutation-receipt","operation":"5f5ef2980cb89f3eac3fdb16d5d3c4437739bad6bda0d5ceb96a7a2a656be48e","options":{"section":null},"request_id_sha256":null,"results":["f-20261115-11"],"target":"f-20261115-11","v":1} -->
 
 ---
 
