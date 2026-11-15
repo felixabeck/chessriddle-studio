@@ -26659,3 +26659,22 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Fix:** where these paths install the root, drop an illegal ep field (e.g. rewrite it to `-` when `makeFen(position.toSetup())` would drop it), keeping other fields byte-identical so `headers.fen`/root identity stays stable. Regressions for Import → FEN and a PGN `[FEN]` tag with an impossible ep square.
 * **Related:** f-20261114-20 (editor side-to-move entry point, handled in the same session), f-20261004-22.
 * **Found by:** Grok Bot deep scenario review (split by the f-20261114-11 drain session)
+
+---
+
+## 2026-11-15 — filed through the inbox spool
+
+### The async-errors directory-trash confirmation snapshot fails on hosted CI by 35 pixels on a commit that does not touch it
+
+* **ID:** f-20261115-26 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Filed from:** a57ec908-49bb-4089-bb08-4a310a095a32
+* **Impact class:** tooling
+* **Spotted outside diff:** yes (post-push CI wait of drain session a57ec908-49bb-4089-bb08-4a310a095a32 for f-20261114-17)
+* **CI run:** 43716253124 (job `e2e`, master `cbfc71d03`, 2026-11-15)
+* **Where:** `e2e/async-errors.spec.ts:1130-1160` (`async-errors: localizes directory-trash failures in the confirmation dialog`, `toHaveScreenshot("confirmation-error.png", { fullPage: true })` at `:1159`), snapshot `e2e/async-errors.spec.ts-snapshots/confirmation-error-async-errors.png`.
+* **Defect:** the full-page capture differs from the committed snapshot in 35 pixels (ratio 0.01) after Playwright reported "captured a stable screenshot". The pushed range (`70a6d327c`, `cbfc71d03`) changes only the Info panel PGN editor (`PgnInput.tsx`), its tests, the `FileFreshnessPublication` test and one new translation key; it does not render or style the Files confirmation dialog. The same tree passed this spec in the pinned container locally (`pnpm gates:push -- --frontend`, e2e lane exit 0, 2026-11-15 13:40). A snapshot that fails on unchanged inputs measures rendering nondeterminism, and its red job makes `pnpm ci:remote:check` refuse every later push.
+* **Failure scenario:** any push after `cbfc71d03` is refused by `ci:remote:check` until the e2e job is green again, which stops drains and interactive pushes on every machine.
+* **Proof:** `gh api repos/felixabeck/chessriddle-studio/actions/jobs/<e2e job of run 43716253124>/logs`, lines ~1046-1101: one failed test of the suite, "35 pixels (ratio 0.01 of all image pixels) are different" on both attempts within the 8 s expectation. The CI diff image is in the run's `frontend-browser-audit` artifact under `async-errors-async-errors--6a375--in-the-confirmation-dialog-async-errors/`.
+* **Fix:** read the CI diff image, find the element that differs (a focus ring, scroll position from `scrollIntoViewIfNeeded` on the "Löschen" button at `:1158`, a transition, or async text), and make the capture deterministic (wait for that state to settle, or mask the element) instead of re-recording the snapshot. Prove it under CPU load with `--repeat-each` in the container, as f-20261105-07 did. Rerun the failed job once only after the repair is pushed, per the push skill.
+* **Related:** f-20261105-06 (handled; other hosted-CI timing flakes), f-20261101-03 (different snapshot instability), the 2026-10-11 dialog-screenshot flake entry at findings.md ~17029.
+* **Found by:** Claude Code drain session a57ec908-49bb-4089-bb08-4a310a095a32
