@@ -26552,7 +26552,7 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 
 ### Autosave stops for good when the game is edited while an autosave is being written
 
-* **ID:** f-20261115-20 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261115-20 · **Status:** rejected · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** yes (autosave / non-stale refusal sweep, origin `fb8bca5f4`)
 * **Where:** `src/components/boards/BoardAnalysis.tsx` (~86-124). The autosave effect `useEffect(() => { if (hasPersistentOrigin && autoSave && dirty) saveFile(); }, [hasPersistentOrigin, saveFile, autoSave, dirty])` only runs again when `dirty` (or the tab object / `saveFile` identity) changes. `src/utils/tabs.ts` `finishWrite` (~1302-1322): when the tree changed during the write (`serializeStoreTree(store) !== pgn`) it only calls `setSourceStamp` and returns `"superseded"`, so `dirty` stays `true` without ever passing through `false`.
@@ -26562,3 +26562,5 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Fix:** after a `"superseded"` result whose owner is still current and still dirty (and autosave is on), schedule another autosave, for example by keying the effect on a store revision/generation counter instead of the `dirty` boolean, or by having `saveFile` loop while the tree changed during the write. Keep supersession silent and keep the existing no-spam behaviour for failures (or retry failures only on the next edit, not in a loop).
 * **Related:** f-20261010-22 (autosave silently discarded typed write failures, handled by 7b363143), f-20261010-19 (save completion cleared edits made during the write, handled); this is the follow-on: the edits stay dirty but are never autosaved.
 * **Found by:** Grok Bot, autosave / non-stale refusal sweep
+* **Why rejected:** Duplicate of f-20261115-15; filed in error, no code change. Same root (the BoardAnalysis autosave effect keyed on `dirty`, and the save path keeping `dirty` true after a write the tree outran); the pre-filing duplicate check missed -15. The one extra observation (no retry after a failed autosave) is an addendum on f-20261115-15.
+<!-- ledger-meta {"command":"set-header","effect_lines":1,"effect_sha256":"c33d484a2f55ea891bcf67b3617f6d78d3fac83d519893372cbc1f0af62da82a","header_sha256":"58b0ce55232ad267f456498ea3d39b9d368d4bd152fb3718cc8b211cac6c7f6c","header_status":"rejected","input_sha256":"94c004fb28d3ef0054ee19c5479224be23cdba787fad4d79efeed1102ca89105","kind":"mutation-receipt","operation":"bd1b06fc101ef54bd03f424d04ffb1842cf7e68c32c48b30c5ffc399a0b3cebe","options":{"headers":{"Status":"rejected"},"section":null},"request_id_sha256":null,"results":["f-20261115-20"],"target":"f-20261115-20","v":1} -->
