@@ -791,7 +791,7 @@ export function getGameStats(root: TreeNode) {
         };
     }
 
-    let prevScore: Score = root.score ?? INITIAL_SCORE;
+    let parentScore: Score | null = root.score ?? (root.fen === INITIAL_FEN ? INITIAL_SCORE : null);
     const cplosses: ColorMap<number[]> = {
         white: [],
         black: [],
@@ -814,11 +814,11 @@ export function getGameStats(root: TreeNode) {
             }
         }
         const color = node.halfMoves % 2 === 1 ? "white" : "black";
-        if (node.score) {
-            cplosses[color].push(getCPLoss(prevScore.value, node.score.value, color));
-            accuracies[color].push(getAccuracy(prevScore.value, node.score.value, color));
-            prevScore = node.score;
+        if (parentScore && node.score) {
+            cplosses[color].push(getCPLoss(parentScore.value, node.score.value, color));
+            accuracies[color].push(getAccuracy(parentScore.value, node.score.value, color));
         }
+        parentScore = node.score ?? null;
     }
     const whiteCPL = mean(cplosses.white);
     const blackCPL = mean(cplosses.black);

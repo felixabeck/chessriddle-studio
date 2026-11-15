@@ -890,6 +890,81 @@ test("game stats count every basic NAG including duplicates", () => {
     });
 });
 
+function cpScore(value: number) {
+    return { value: { type: "cp" as const, value }, wdl: null };
+}
+
+test("game stats charge each side against its parent's score", () => {
+    const root = defaultTree().root;
+    root.score = cpScore(20);
+    const ply1 = addMainlineMove(root, "e4");
+    ply1.score = cpScore(25);
+    const ply2 = addMainlineMove(ply1, "e5");
+    ply2.score = cpScore(30);
+    const ply3 = addMainlineMove(ply2, "Nf3");
+    ply3.score = cpScore(-300);
+    const ply4 = addMainlineMove(ply3, "Nc6");
+    ply4.score = cpScore(30);
+
+    const stats = getGameStats(root);
+    expect(stats.whiteCPL).toBe(165);
+    expect(stats.blackCPL).toBe(167.5);
+    expect(stats.whiteAccuracy).toBeCloseTo(44.34485, 5);
+    expect(stats.blackAccuracy).toBeCloseTo(44.24158, 5);
+});
+
+test("game stats skip a ply whose parent is unscored and do not span it", () => {
+    const root = defaultTree().root;
+    root.score = cpScore(20);
+    const ply1 = addMainlineMove(root, "e4");
+    ply1.score = cpScore(25);
+    const ply2 = addMainlineMove(ply1, "e5");
+    ply2.score = cpScore(30);
+    const ply3 = addMainlineMove(ply2, "Nf3");
+    const ply4 = addMainlineMove(ply3, "Nc6");
+    ply4.score = cpScore(30);
+
+    const stats = getGameStats(root);
+    expect(stats.whiteCPL).toBe(0);
+    expect(stats.blackCPL).toBe(5);
+    expect(stats.whiteAccuracy).toBe(100);
+    expect(stats.blackAccuracy).toBeCloseTo(98.95824, 5);
+});
+
+test("game stats do not invent a baseline for an unscored set-up root", () => {
+    const fen = "4k3/8/8/8/8/8/8/4K2R w K - 0 1";
+    const root = defaultTree(fen).root;
+    expect(root.fen).not.toBe(INITIAL_FEN);
+    let node = root;
+    for (let i = 0; i < 4; i++) {
+        node = addMainlineMove(node, `move-${i}`);
+        node.score = cpScore(-300);
+    }
+
+    const unscoredRoot = getGameStats(root);
+    expect(unscoredRoot.whiteCPL).toBe(0);
+    expect(unscoredRoot.blackCPL).toBe(0);
+
+    root.score = cpScore(-300);
+    const scoredRoot = getGameStats(root);
+    expect(scoredRoot.whiteCPL).toBe(0);
+    expect(scoredRoot.blackCPL).toBe(0);
+});
+
+test("game stats still charge ply 1 of a standard start against INITIAL_SCORE", () => {
+    const root = defaultTree().root;
+    const ply1 = addMainlineMove(root, "e4");
+    ply1.score = cpScore(-300);
+    const ply2 = addMainlineMove(ply1, "e5");
+    ply2.score = cpScore(-300);
+
+    const stats = getGameStats(root);
+    expect(stats.whiteCPL).toBe(315);
+    expect(stats.blackCPL).toBe(0);
+    expect(stats.whiteAccuracy).toBeCloseTo(30.38523, 5);
+    expect(stats.blackAccuracy).toBe(100);
+});
+
 function addMainlineMove(parent: TreeNode, san: string): TreeNode {
     const child = createNode({
         fen: parent.fen,
