@@ -413,6 +413,14 @@ describe("BoardAnalysis", () => {
     },
   );
 
+  async function resetToFirstMove() {
+    await act(async () => {
+      treeStore.setState({ root: defaultTree().root, position: [], dirty: false });
+      treeStore.getState().makeMove({ payload: "e4" });
+      treeStore.setState({ dirty: false });
+    });
+  }
+
   async function modalShortcut(keys: string, key: string, ctrlKey = false) {
     const binding = hotkeys.mock.calls
       .flatMap(([bindings]) => bindings)
@@ -653,7 +661,7 @@ describe("BoardAnalysis", () => {
   });
 
   test("annotation shortcut ignores a key from a focused blocking dialog button", async () => {
-    await act(async () => treeStore.setState({ root: defaultTree().root, dirty: false }));
+    await resetToFirstMove();
     const key = jotaiStore.get(keyMapAtom).ANNOTATION_BRILLIANT.keys;
     const binding = hotkeys.mock.calls
       .flatMap(([bindings]) => bindings)
@@ -663,11 +671,11 @@ describe("BoardAnalysis", () => {
     const event = await modalShortcut(key, "1");
 
     expect(treeStore.getState().root).toBe(before.root);
-    expect(treeStore.getState().root.nags).toEqual([]);
+    expect(treeStore.getState().currentNode().nags).toEqual([]);
     expect(treeStore.getState().dirty).toBe(false);
     expect(event.defaultPrevented).toBe(false);
     await act(async () => binding[1](new KeyboardEvent("keydown", { key })));
-    expect(treeStore.getState().root.nags).toEqual([3]);
+    expect(treeStore.getState().currentNode().nags).toEqual([3]);
     expect(treeStore.getState().dirty).toBe(true);
   });
 
@@ -715,13 +723,13 @@ describe("BoardAnalysis", () => {
         jotaiStore.set(practiceStateFamily(tabId), { phase });
       });
       for (const [keys, nag] of annotations) {
-        await act(async () => treeStore.setState({ root: defaultTree().root, dirty: false }));
+        await resetToFirstMove();
         const binding = hotkeys.mock.calls
           .flatMap(([bindings]) => bindings)
           .findLast(([bound]) => bound === keys);
         expect(binding).toBeDefined();
         await act(async () => binding![1](new KeyboardEvent("keydown")));
-        expect(treeStore.getState().root.nags).toEqual(blocked ? [] : [nag]);
+        expect(treeStore.getState().currentNode().nags).toEqual(blocked ? [] : [nag]);
         expect(treeStore.getState().dirty).toBe(!blocked);
       }
     }

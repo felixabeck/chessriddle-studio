@@ -11,6 +11,7 @@ import {
     dragMosaicDivider,
     activeWorkspaceTab,
     playBoardMove,
+    drawMark,
     assertNothingClipped,
 } from "./fixtures";
 import { deserializeStorageValue } from "../src/state/store/debouncedStorage";
@@ -648,7 +649,7 @@ for (const surface of [
                 search_positions_stats: {
                     outcomes: [
                         { result: coverage },
-                        // A stable annotation edit then fails the new coverage batch.
+                        // A stable board-arrow edit then fails the new coverage batch.
                         {
                             error: {
                                 tag: "backend-error",
@@ -691,9 +692,17 @@ for (const surface of [
         );
         expect(await queries()).toHaveLength(1);
         const tab = (await activeWorkspaceTab(page))!;
-        // BoardAnalysis's existing good-move hotkey edits the current tree without changing FEN,
+        // A right-dragged board arrow edits the root without changing FEN,
         // reference metadata, position-cache ownership or the mounted Practice/Build panel.
-        await page.keyboard.press("2");
+        const board = page.locator("cg-board").first();
+        let drawn = false;
+        const drawing = drawMark(page, board, "a3", "a5").finally(() => {
+            drawn = true;
+        });
+        for (let frame = 0; frame < 60 && !drawn; frame++) {
+            await page.clock.runFor(16);
+        }
+        await drawing;
         await page.clock.runFor(300);
         const raw = await page.evaluate(
             (key) => sessionStorage.getItem(key),
@@ -701,7 +710,10 @@ for (const surface of [
         );
         expect(raw).not.toBeNull();
         expect(deserializeStorageValue(raw!)).toMatchObject({
-            state: { dirty: true, root: { nags: [1] } },
+            state: {
+                dirty: true,
+                root: { shapes: [expect.objectContaining({ orig: "a3", dest: "a5" })] },
+            },
         });
         const error = build.getByRole("alert");
         const retry = error.getByRole("button", { name: "Retry", exact: true });

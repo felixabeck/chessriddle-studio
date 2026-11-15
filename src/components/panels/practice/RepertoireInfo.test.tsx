@@ -670,8 +670,8 @@ test("initial ready-reference cache reset can deliver the second native query fa
     status: "error",
     error: { tag: "backend-error", category: "database", message: "Stable edited coverage failed" },
   });
-  await act(async () => tree.getState().setAnnotation("!"));
-  expect(tree.getState()).toMatchObject({ dirty: true, root: { nags: [1] } });
+  await act(async () => tree.getState().setComment("edited"));
+  expect(tree.getState()).toMatchObject({ dirty: true, root: { comment: "edited" } });
   expect(batch).toHaveBeenCalledTimes(2);
   expect(mocks.computeTreeCoverage).toHaveBeenCalledTimes(2);
   expect(mocks.fetchPositionMoves).toHaveBeenCalledTimes(2);
@@ -805,7 +805,7 @@ test.each(["success", "error"] as const)(
         message: "Current edited coverage failed",
       },
     });
-    await act(async () => tree.getState().setAnnotation("!"));
+    await act(async () => tree.getState().setComment("edited"));
     expect(mocks.computeTreeCoverage).toHaveBeenCalledTimes(2);
     expect(query).toHaveBeenCalledTimes(2);
     expectUnknownCoverage();
