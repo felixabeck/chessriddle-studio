@@ -24901,7 +24901,7 @@ Handled 2026-11-15 (drain session 03e75071). Every full-layout header field has 
 
 ### The analysis engine picker's checkboxes have no names, so screen-reader users cannot tell which engine they are loading
 
-* **ID:** f-20261112-55 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-55 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/panels/analysis/EngineSelection.tsx:13-29`: each `EngineBox` renders a Mantine `Checkbox` with no `label`/`aria-label` (`:17`, `onChange={() => {}}`), and the engine name in a sibling `<Text>` (`:23-25`). The toggle itself lives on the surrounding `Paper`'s `onClick` (`:15`).
@@ -24910,6 +24910,8 @@ Handled 2026-11-15 (drain session 03e75071). Every full-layout header field has 
 - **Fix:** render the name as the Checkbox `label` (and move the toggle to the checkbox's `onChange`, dropping the Paper click handler), or add `aria-label={engine.name}`. Add an EngineSelection test querying the checkbox by engine name.
 - **Proof:** ephemeral Vitest rendering EngineSelection with two engines in `enginesAtom` (EnginePortrait, InstallStockfishButton and router Link mocked): both checkbox inputs had null `aria-label` and `aria-labelledby` and `labels.length === 0`. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 25)
+* **Closed 2026-11-15 (drain 9ca78617-ff01-4415-8bd5-129fb37b7911):** `EngineBox`'s Checkbox now carries `aria-label={engine.name}` (284a6760c). `EngineSelection.test.tsx` gained "names each engine checkbox after its engine" (two engines, asserts the labels `["Stockfish", "Leela"]`); it fails with the aria-label removed. Rejected: moving the toggle into the Checkbox `onChange` with the name as `label` — that double-toggles with the Paper click handler the publication test and pointer users rely on, and a Space press on the focused checkbox already bubbles to the Paper, so keyboard toggling needed no change.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"e8ca9928dc91e0a811b500a0ff53809edb3195c80c357287ab4afaa3af8101cf","header_sha256":"49aba0c62b7008f77a5b7ddd4b5e758573d320bed3a3465fdf499411be8e79f5","header_status":"handled","input_sha256":"18642e0739c2853cb9aa57096ab952022f04789b2e6b319d53220d4fbfe4ef68","kind":"mutation-receipt","operation":"fb96bbc5c870892dc96d9dea357fc94a82e0e9ca6f8c353e6a2a7d0e3f367b39","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-55"],"target":"f-20261112-55","v":1} -->
 
 ---
 
