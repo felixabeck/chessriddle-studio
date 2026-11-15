@@ -25964,7 +25964,7 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 
 ### Opening Edit position at a root with a 4-field or stale-castling start FEN deletes the whole game without any edit
 
-* **ID:** f-20261114-11 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261114-11 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** data-loss
 * **Spotted outside diff:** yes (general review of pre-fork code, origin/master b5bee066a; the effect is unchanged since upstream merge-base 9654961d6)
 * **Where:** `src/components/panels/info/FenInput.tsx:79-97`: a mount/update `useEffect` rebuilds the castling rights from the derived checkboxes, computes `makeFen({ ...setup, castlingRights })` and calls `setFen(newFen)` whenever `newFen !== currentFen`. `setFen` (`src/state/store/tree.ts:439-445`) is `installRoot(state, defaultTree(fen).root)`, which replaces the root and drops every move. `FenInput` is rendered by `EditingCard` (`src/components/boards/EditingCard.tsx:24,40`) with the current node's FEN as soon as edit mode opens (`BoardAnalysis.tsx:381-384`, `BoardGame.tsx:1520`). The root FEN is stored as given: `defaultTree` only trims it (`src/utils/treeReducer.ts:140-159`), and `parsePGN` builds the tree with `defaultTree(fen)` from the `FEN` header (`src/utils/chess.ts:430`).
@@ -25974,6 +25974,8 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Fix:** remove the normalizing `useEffect`. The checkbox handlers (`setCastlingRights`) already write the changed rights, so derived state never needs pushing back on render. If canonical root FENs are wanted, canonicalize once where the root is created (`defaultTree`/`parsePGN`), not in a view effect. Add a test that renders `FenInput` at a root with a 4-field FEN and moves and expects the tree unchanged.
 * **Related:** d-20261021-17 (swapMove kept for FenInput's side-to-move select); f-20261106-31 (AnnotationEditor across a `setFen` root replacement).
 * **Found by:** Grok Bot general review
+* **Handled (2026-11-15, drain dffa80ea):** removed FenInput's normalizing mount effect; `setCastlingRights` now writes `makeFen({ ...setup, castlingRights })` without mutating the memoized setup. Root canonicalization at creation was not added (rejected: changes stored root/`headers.fen` identity for every parsed PGN for no user benefit). Regression: `src/components/panels/info/FenInput.test.tsx` (4-field EPD and stale-castling roots keep their moves and FEN on mount; checkbox toggle still writes). Commit 61734be53.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"cc5951e8b927e72378ad7df0e20520ef81979cf587403bee0767c9aa2191287a","header_sha256":"a096c2f124b5e4c9ca2666eebaa064a258fb4a33b988a061e41c17a2c690dc96","header_status":"handled","input_sha256":"0afebcc80dbd0f114f81af68bdf882c064b4b5834b0f9be53a104682cf664a20","kind":"mutation-receipt","operation":"9fe996bd47986993c1a95d0df0eb9bb654872a7179cc0c882b992803a075bf42","options":{"section":null},"request_id_sha256":null,"results":["f-20261114-11"],"target":"f-20261114-11","v":1} -->
 
 ---
 
