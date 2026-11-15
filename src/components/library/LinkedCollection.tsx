@@ -28,7 +28,7 @@ import AppModal from "@/components/common/AppModal";
 import { wrappingButton } from "@/components/common/wrappingButton";
 import { libraryButtonProps } from "./presentation";
 import NewDatabaseGameButton from "@/components/boards/NewDatabaseGameButton";
-import AddGamesTooltip from "@/components/databases/AddGamesTooltip";
+import ExplainedAction from "@/components/library/ExplainedAction";
 
 const playerFieldStyles = {
   label: { maxWidth: "100%", overflowWrap: "anywhere" },
@@ -142,7 +142,10 @@ export function LinkedCollection({
         >
           {t("Collections.Rebuild")}
         </Button>
-        <AddGamesTooltip>
+        <ExplainedAction
+          explanation={t("Databases.Settings.AddGames.Desc")}
+          disabled={!ready || pending}
+        >
           <Button
             {...libraryButtonProps}
             disabled={!ready || pending}
@@ -156,7 +159,7 @@ export function LinkedCollection({
           >
             {t("Databases.Settings.AddGames")}
           </Button>
-        </AddGamesTooltip>
+        </ExplainedAction>
         <Button
           {...libraryButtonProps}
           disabled={!ready || pending}

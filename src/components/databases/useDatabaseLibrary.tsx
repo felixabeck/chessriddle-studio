@@ -4,7 +4,7 @@ import {
   libraryClasses,
 } from "@/components/library/presentation";
 import NewDatabaseGameButton from "@/components/boards/NewDatabaseGameButton";
-import AddGamesTooltip from "@/components/databases/AddGamesTooltip";
+import ExplainedAction from "@/components/library/ExplainedAction";
 import { tauri } from "@/platform/tauri";
 import { listingFailure } from "@/components/files/listingFailure";
 import { useSingleFlight } from "@/hooks/useSingleFlight";
@@ -526,7 +526,7 @@ export function useDatabaseLibrary(
               {selectedDatabase.type === "success" && (
                 <Group>
                   <NewDatabaseGameButton database={selectedDatabase.file} />
-                  <AddGamesTooltip>
+                  <ExplainedAction explanation={t("Databases.Settings.AddGames.Desc")}>
                     <Button
                       {...libraryButtonProps}
                       variant="default"
@@ -567,7 +567,7 @@ export function useDatabaseLibrary(
                     >
                       {t("Databases.Settings.AddGames")}
                     </Button>
-                  </AddGamesTooltip>
+                  </ExplainedAction>
                   <Button
                     {...libraryButtonProps}
                     rightSection={<ArrowRight size="1rem" />}

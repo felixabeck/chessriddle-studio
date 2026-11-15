@@ -221,6 +221,36 @@ test.each(["unavailable", "retired"] as const)(
   },
 );
 
+async function hover(key: string) {
+  // React derives onMouseEnter from mouseover; a disabled button is reached through its wrapper.
+  const target = button(key).disabled ? button(key).parentElement! : button(key);
+  await act(async () => {
+    target.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    target.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+  });
+}
+const tooltips = () =>
+  [...document.querySelectorAll('[role="tooltip"]')].map((tip) => tip.textContent);
+
+test("linked detail explains New game versus Add Games on hover", async () => {
+  await render(<LinkedCollection collection={collection} workspace={workspace} files={[source]} />);
+  for (const key of ["Databases.NewGame", "Databases.Settings.AddGames"]) {
+    await hover(key);
+    await vi.waitFor(() => expect(tooltips()).toContain(label(`${key}.Desc`)));
+  }
+});
+
+test("disabled New game and Add Games still explain themselves on hover", async () => {
+  const retired = { ...collection, status: "retired" as const };
+  mocks.collectionForDatabase.mockResolvedValue(retired);
+  await render(<LinkedCollection collection={retired} workspace={workspace} files={[source]} />);
+  for (const key of ["Databases.NewGame", "Databases.Settings.AddGames"]) {
+    expect(button(key).disabled).toBe(true);
+    await hover(key);
+    await vi.waitFor(() => expect(tooltips()).toContain(label(`${key}.Desc`)));
+  }
+});
+
 test("Library recovery resumes the preserved native batch without selecting or substituting another input", async () => {
   const owned = { id: { id: "owned-pending-input" }, kind: "fileWorkspace" as const };
   const pending = { ...collection, pendingBatch: owned };

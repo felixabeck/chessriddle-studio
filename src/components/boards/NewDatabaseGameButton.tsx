@@ -1,4 +1,4 @@
-import { Button, Tooltip } from "@mantine/core";
+import { Button } from "@mantine/core";
 import { Plus } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useSetAtom } from "jotai";
@@ -8,6 +8,7 @@ import { tabsAtom } from "@/state/atoms";
 import { createTab, runTabCreation } from "@/utils/tabs";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { libraryButtonProps } from "@/components/library/presentation";
+import ExplainedAction from "@/components/library/ExplainedAction";
 
 export default function NewDatabaseGameButton({
   database,
@@ -19,11 +20,12 @@ export default function NewDatabaseGameButton({
   const { t } = useTranslation();
   const setTabs = useSetAtom(tabsAtom);
   const navigate = useNavigate();
+  const unavailable = disabled || !database;
   return (
-    <Tooltip label={t("Databases.NewGame.Desc")} multiline w={260}>
+    <ExplainedAction explanation={t("Databases.NewGame.Desc")} disabled={unavailable}>
       <Button
         {...libraryButtonProps}
-        disabled={disabled || !database}
+        disabled={unavailable}
         leftSection={<Plus size="1rem" />}
         onClick={() =>
           database &&
@@ -41,6 +43,6 @@ export default function NewDatabaseGameButton({
       >
         {t("Databases.NewGame", { defaultValue: "New game" })}
       </Button>
-    </Tooltip>
+    </ExplainedAction>
   );
 }
