@@ -74,6 +74,7 @@ use std::ffi::OsStr;
 #[cfg(all(test, unix))]
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{
+    borrow::Cow,
     collections::HashMap,
     fs::File,
     sync::Arc,
@@ -85,7 +86,6 @@ use std::{
 };
 
 use log::info;
-use std::borrow::Cow;
 use tauri::Manager;
 use tauri_specta::Event as _;
 use tokio_util::sync::CancellationToken;
@@ -550,9 +550,12 @@ struct Importer {
 struct ImportFrame {
     position: Chess,
     pre_move_positions: Vec<Chess>,
-    dead: bool,
+    /// An unplayable SAN was met in this frame; the rest of the frame (moves,
+    /// comments, NAGs, nested variations) is ignored but the game is kept,
+    /// unlike `Importer::skip`, which discards the whole game (bad FEN, encode
+    /// failure, unbalanced `)`).
+    unplayable: bool,
     moves_start: usize,
-    played: usize,
 }
 
 impl ImportFrame {
@@ -560,9 +563,8 @@ impl ImportFrame {
         Self {
             position,
             pre_move_positions: Vec::new(),
-            dead: false,
+            unplayable: false,
             moves_start: 0,
-            played: 0,
         }
     }
 }
@@ -575,6 +577,28 @@ impl Importer {
             capture_provider_headers: account.is_some(),
             skip: false,
             frames: Vec::new(),
+        }
+    }
+
+    fn close_variation_frame(&mut self) {
+        let drop_empty_unplayable = self
+            .frames
+            .last()
+            .is_some_and(|frame| frame.unplayable && frame.pre_move_positions.is_empty());
+        if drop_empty_unplayable {
+            if let Some(moves_start) = self.frames.last().map(|frame| frame.moves_start) {
+                self.game.moves.truncate(moves_start);
+            }
+        } else {
+            self.game.moves.push(VARIATION_END_MARKER);
+        }
+        if self.frames.len() > 1 {
+            self.frames.pop();
+        } else {
+            self.skip = true;
+        }
+        if let Some(root) = self.frames.first() {
+            self.game.position = root.position.clone();
         }
     }
 }
@@ -622,6 +646,7 @@ impl Visitor for Importer {
         } else if key == b"Round" {
             self.game.round = Some(decode_pgn_text(&value.decode()).into_owned());
         } else if key == b"Date" || key == b"UTCDate" {
+            // Event/Site/Date/UTCTime/Result decode value.as_bytes() (raw escaped spelling kept for existing databases; see PgnGame::write). Other text tags decode value.decode().
             self.game.date = Some(decode_pgn_text(value.as_bytes()).into_owned());
         } else if key == b"UTCTime" {
             self.game.time = Some(decode_pgn_text(value.as_bytes()).into_owned());
@@ -678,7 +703,7 @@ impl Visitor for Importer {
             self.skip = true;
             return;
         };
-        if frame.dead {
+        if frame.unplayable {
             return;
         }
         let pre_move_position = frame.position.clone();
@@ -703,7 +728,6 @@ impl Visitor for Importer {
                 }
             }
             self.game.moves.push(encoded);
-            frame.played = frame.played.saturating_add(1);
             frame.pre_move_positions.push(pre_move_position);
             frame.position.play_unchecked(&m);
 
@@ -711,7 +735,7 @@ impl Visitor for Importer {
                 self.game.position = frame.position.clone();
             }
         } else {
-            frame.dead = true;
+            frame.unplayable = true;
         }
     }
 
@@ -725,15 +749,15 @@ impl Visitor for Importer {
             self.skip = true;
             return Skip(true);
         };
-        if parent.dead {
-            // skip_variation leaves the matching ')' unconsumed, so read_movetext
-            // still calls end_variation (vendor/pgn-reader/src/reader.rs). Push a
-            // marker-less dead frame so that close pops this frame, not the parent.
-            let mut skipped = ImportFrame::new(parent.position.clone());
-            skipped.dead = true;
-            skipped.moves_start = self.game.moves.len();
-            self.frames.push(skipped);
-            return Skip(true);
+        if parent.unplayable {
+            // Keep the reader lexing this variation. SAN/comment/NAG are ignored
+            // because the frame is unplayable; nested variations get their own
+            // ignored frames; end_variation pops it without writing markers.
+            let mut ignored = ImportFrame::new(parent.position.clone());
+            ignored.unplayable = true;
+            ignored.moves_start = self.game.moves.len();
+            self.frames.push(ignored);
+            return Skip(false);
         }
         let variation_start = parent
             .pre_move_positions
@@ -749,30 +773,11 @@ impl Visitor for Importer {
     }
 
     fn end_variation(&mut self) {
-        let drop_empty_dead = self
-            .frames
-            .last()
-            .is_some_and(|frame| frame.dead && frame.played == 0);
-        if drop_empty_dead {
-            if let Some(moves_start) = self.frames.last().map(|frame| frame.moves_start) {
-                self.game.moves.truncate(moves_start);
-            }
-        } else {
-            self.game.moves.push(VARIATION_END_MARKER);
-        }
-        if self.frames.len() > 1 {
-            self.frames.pop();
-        } else {
-            self.skip = true;
-        }
-
-        if let Some(root) = self.frames.first() {
-            self.game.position = root.position.clone();
-        }
+        self.close_variation_frame();
     }
 
     fn comment(&mut self, comment: pgn_reader::RawComment<'_>) {
-        if self.frames.last().is_some_and(|frame| frame.dead) {
+        if self.frames.last().is_some_and(|frame| frame.unplayable) {
             return;
         }
         encode_comment(
@@ -782,7 +787,7 @@ impl Visitor for Importer {
     }
 
     fn nag(&mut self, nag: Nag) {
-        if self.frames.last().is_some_and(|frame| frame.dead) {
+        if self.frames.last().is_some_and(|frame| frame.unplayable) {
             return;
         }
         encode_nag(&nag.to_string(), &mut self.game.moves);
@@ -797,6 +802,9 @@ impl Visitor for Importer {
     }
 
     fn end_game(&mut self) -> Self::Result {
+        while self.frames.len() > 1 {
+            self.close_variation_frame();
+        }
         self.frames.clear();
         if self.skip {
             self.game = TempGame::default();
@@ -866,22 +874,19 @@ mod lexer {
     }
 
     #[test]
-    fn importer_decodes_latin1_header_values() {
+    fn importer_decodes_latin1_and_windows1252_header_values() {
         let latin1 = b"[Event \"Gr\xFCnfeld Open\"]\n[Site \"K\xF6ln\"]\n[Round \"1\"]\n[White \"M\xFCller\"]\n[Black \"R\xE9ti\"]\n[Annotator \"x\"]\n\n1. e4 { Sch\xF6n } e5 *\n";
         let game = parse_importer_pgn(latin1).unwrap();
         assert_eq!(game.white_name.as_deref(), Some("Müller"));
         assert_eq!(game.black_name.as_deref(), Some("Réti"));
         assert_eq!(game.event_name.as_deref(), Some("Grünfeld Open"));
         assert_eq!(game.site_name.as_deref(), Some("Köln"));
-        let mut encoded_comment = Vec::new();
-        encode_comment("Schön", &mut encoded_comment);
         assert!(
             game.moves
                 .windows("Schön".len())
                 .any(|window| window == "Schön".as_bytes()),
-            "comment encoding {:?} should contain {:?}",
-            game.moves,
-            encoded_comment
+            "{:?}",
+            game.moves
         );
 
         let moeller = parse_importer_pgn(b"[White \"M\xF6ller\"]\n\n1. d4 *\n").unwrap();
@@ -921,7 +926,7 @@ mod lexer {
     #[test]
     fn importer_truncates_mainline_at_an_unplayable_move() {
         let truncated = parse_importer_pgn(
-            b"1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Qh8 { lost } Nf6 (4... d6) 5. O-O 1-0",
+            b"1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Qh8 $2 { lost } Nf6 $1 (4... d6) 5. O-O !? 1-0",
         )
         .unwrap();
         let control = parse_importer_pgn(b"1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0").unwrap();
@@ -932,6 +937,65 @@ mod lexer {
     #[test]
     fn importer_still_skips_game_with_unusable_fen() {
         assert!(parse_importer_pgn(b"[FEN \"garbage\"]\n\n1. e4 *\n").is_none());
+    }
+
+    struct StreamedImport {
+        event: Option<String>,
+        moves: Vec<u8>,
+    }
+
+    fn read_importer_stream(pgn: &[u8]) -> Vec<StreamedImport> {
+        let mut reader = BufferedReader::new(pgn);
+        let mut importer = Importer::new(None);
+        let mut games = Vec::new();
+        for _ in 0..8 {
+            match reader.read_game(&mut importer) {
+                Ok(None) => break,
+                Ok(Some(Some(game))) => games.push(StreamedImport {
+                    event: game.event_name,
+                    moves: game.moves,
+                }),
+                Ok(Some(None)) | Err(_) => {}
+            }
+        }
+        games
+    }
+
+    #[test]
+    fn importer_ignored_variation_does_not_cross_game_boundary() {
+        let unplayable = b"[Event \"A\"]\n\n1. e4 e5 2. Qh8 ( { lost\n\n[Event \"B\"]\n\n1. d4 {note} d5 *\n\n[Event \"C\"]\n\n1. c4 c5 *\n";
+        let legal = b"[Event \"A\"]\n\n1. e4 e5 2. Nf3 ( { lost\n\n[Event \"B\"]\n\n1. d4 {note} d5 *\n\n[Event \"C\"]\n\n1. c4 c5 *\n";
+        let events = |games: &[StreamedImport]| {
+            games
+                .iter()
+                .filter_map(|game| game.event.clone())
+                .collect::<Vec<_>>()
+        };
+        let unplayable_games = read_importer_stream(unplayable);
+        let legal_games = read_importer_stream(legal);
+        assert_eq!(events(&unplayable_games), events(&legal_games));
+        assert_eq!(events(&unplayable_games), ["A", "C"]);
+        assert_eq!(
+            unplayable_games[0].moves,
+            parse_importer_pgn(b"1. e4 e5").unwrap().moves
+        );
+        assert_eq!(
+            unplayable_games.last().unwrap().moves,
+            parse_importer_pgn(b"1. c4 c5 *").unwrap().moves
+        );
+    }
+
+    #[test]
+    fn importer_closes_open_variations_at_end_of_game() {
+        let truncated = parse_importer_pgn(b"1. e4 e5 (1... Ke3").unwrap();
+        let control = parse_importer_pgn(b"1. e4 e5").unwrap();
+        crate::db::encoding::try_iter_mainline_move_bytes(&truncated.moves).unwrap();
+        decode_game_to_movetext(&truncated.moves, Fen::default()).unwrap();
+        assert_eq!(truncated.moves, control.moves);
+
+        let live = parse_importer_pgn(b"1. e4 (1. d4").unwrap();
+        crate::db::encoding::try_iter_mainline_move_bytes(&live.moves).unwrap();
+        decode_game_to_movetext(&live.moves, Fen::default()).unwrap();
     }
 }
 

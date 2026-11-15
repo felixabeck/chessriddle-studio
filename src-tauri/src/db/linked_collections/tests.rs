@@ -8559,7 +8559,7 @@ mod native_tests {
     }
 
     #[tokio::test]
-    async fn account_batch_skips_drop_game_and_appends_normal_games() {
+    async fn account_batch_skips_unindexable_game_and_appends_normal_games() {
         let (fixture, id) = account_fixture(&game(Some("100"), "e4 e5", "source"));
         let body = format!(
             "{}{}{}",
@@ -8727,6 +8727,7 @@ mod native_tests {
     async fn account_oversized_batch_range_completes_through_retry() {
         let (fixture, id) = account_fixture(&game(Some("100"), "e4 e5", "source"));
         // Keep lines below the scanner line limit while exceeding the bounded 10 MiB game read.
+        // N@f3 stays: omission here is the size limit, not an unplayable SAN.
         let oversized = game(Some("101"), "N@f3", &"padding\n".repeat(1_500_000));
         let body = format!("{}{}", oversized, game(Some("102"), "d4 d5", "new"));
         let input = fixture.create("incoming", &body, WorkspaceFileType::Other);
@@ -8829,7 +8830,11 @@ mod native_tests {
             .map_err(batch::batch_error)?;
         assert_eq!(assigned, 1);
         drop(evidence);
-        let original = format!("{}{}", legacy_game, game(Some("100"), "N@f3", "variant"));
+        let original = format!(
+            "{}{}",
+            legacy_game,
+            unindexable_game(Some("100"), "variant")
+        );
         std::fs::write(fixture.path("source"), &original)?;
         let body = game(Some("100"), "d4 d5", "conflicting");
         let input = fixture.create("incoming", &body, WorkspaceFileType::Other);
@@ -8953,7 +8958,7 @@ mod native_tests {
         let original = format!(
             "{}{}",
             game(Some("100"), "e4 e5", "valid"),
-            game(Some("100"), "N@f3", "variant")
+            unindexable_game(Some("100"), "variant")
         );
         let (fixture, id) = account_fixture(&original);
         let body = game(Some("100"), "d4 d5", "conflicting");
