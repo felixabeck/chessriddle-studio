@@ -77,25 +77,32 @@ export interface TreeStoreState extends TreeState {
     getNode: (path: number[]) => TreeNode | null;
 
     goToNext: () => void;
-    /** Plays continuation `index` of nextContinuation; refused during a practice drill. */
+    /** Plays continuation `index` of nextContinuation; refused during a practice drill (d-20260923-04/-05). */
     goToContinuation: (index: number) => void;
     goToPrevious: () => void;
     goToStart: () => void;
+    /** During a practice drill (practicePath set) does nothing when the target would leave the drill line up to the card (d-20260923-04/-05). */
     goToEnd: () => void;
     goToMove: (move: number[]) => void;
     goToBranchStart: () => void;
+    /** During a practice drill (practicePath set) does nothing when the target would leave the drill line up to the card (d-20260923-04/-05). */
     goToBranchEnd: () => void;
     /**
      * Inside a line, goes to its end. At a variation end, goes to the next sibling variation,
      * or child 0 of the same fork after the last sibling. Stays at the main line end.
      * Refused at a line end during a practice drill.
+     * During a practice drill (practicePath set) does nothing when the target would leave the drill line up to the card (d-20260923-04/-05).
      */
     goToBranchEndOrNextLine: () => void;
+    /** During a practice drill (practicePath set) does nothing when the target would leave the drill line up to the card (d-20260923-04/-05). */
     nextBranch: () => void;
+    /** During a practice drill (practicePath set) does nothing when the target would leave the drill line up to the card (d-20260923-04/-05). */
     previousBranch: () => void;
+    /** During a practice drill (practicePath set) does nothing when the target would leave the drill line up to the card (d-20260923-04/-05). */
     nextBranching: () => void;
     previousBranching: () => void;
 
+    /** During a practice drill (practicePath set) does nothing when the target would leave the drill line up to the card (d-20260923-04/-05). */
     goToAnnotation: (annotation: Annotation, color: "white" | "black") => void;
 
     makeMove: (args: {

@@ -710,8 +710,9 @@ test.each(["slider", "grid"] as const)(
     expect(document.activeElement).toBe(widget);
 
     for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) {
-      press(key, { target: widget });
+      const event = press(key, { target: widget });
       expect(store.getState().position).toEqual([0]);
+      expect(event.defaultPrevented).toBe(false);
     }
 
     widget.remove();
