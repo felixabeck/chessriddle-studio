@@ -25898,3 +25898,29 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Fix:** find which step returns `ErrorKind`→`Io` here by logging the inner diagnostic in the test failure (the payload is redacted to "I/O failure"). Then make the fixture independent of concurrent tests, or fix the race if it is in production code.
 * **Proof:** the gate transcript above; `cargo test --manifest-path src-tauri/Cargo.toml --locked --bins -- fs::tests::reload_completion_actual_engine_workflow_retains_registered_configuration_after_receiver_drop` passed 5/5 in isolation right after.
 * **Found by:** Claude Code (Opus 5.5) drain session 22045f82-e630-47a9-8173-3354d5227a61
+
+---
+
+## 2026-11-15 — filed through the inbox spool
+
+### Save-to-database modal axe check can catch the Save button mid-transition (white on #f1eee9, contrast 1.15)
+
+* **ID:** f-20261115-22 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Filed from:** bfce3456-ab46-42ea-bc2c-33851aa0ee67
+* **Impact class:** tooling
+* **Where:** `e2e/new-game-to-database.spec.ts:152-155` (option click, then `assertNothingClipped(modal)` and `assertAccessible()` immediately), `e2e/fixtures.ts:1585-1598` (axe run).
+* **Defect:** in hosted Test run 43667977907 on 5a017f767 (a ledger-only commit; job e2e), "New game inserts on explicit save, updates that row, and Save to database rebinds" failed axe `color-contrast` on the modal's `Save` button label: fg `#ffffff` on bg `#f1eee9`, ratio 1.15. The run on db7b75bda (same code, run 43667946397) and the local e2e container gate both passed. The background is the disabled-button tone; selecting the database enables the button, so axe most likely sampled the colour mid background transition right after the option click. No other related finding owns this; the handled siblings f-20261030-18, f-20261102-02 and f-20261104-02 are different races in the same spec.
+* **Failure scenario:** a push to master shows the Test job red at random and holds the post-push install until the job is rerun.
+* **Fix:** before `assertAccessible()` wait until the modal Save button is enabled and its computed background has settled (or disable transitions for axe via reduced motion / a settled-style poll in the fixture), then prove with `--repeat-each` in the container.
+* **Found by:** drain session bfce3456-ab46-42ea-bc2c-33851aa0ee67 while waiting on hosted CI for the f-20261112-52 push, 2026-11-15.
+
+### piece-size e2e samples the merida queen before its background image is painted (paintDetected false)
+
+* **ID:** f-20261115-23 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Filed from:** bfce3456-ab46-42ea-bc2c-33851aa0ee67
+* **Impact class:** tooling
+* **Where:** `e2e/piece-size.spec.ts:195-207` (`selectMeridaPieceSet` waits only for `merida.css` to have a `sheet`, then `piecePaintBounds` screenshots the queen with and without visibility and expects a pixel difference), `e2e/piece-size.spec.ts:57-69`.
+* **Defect:** in the rerun of hosted Test run 43667977907 (attempt 2, job 132675707054, ledger-only commit 5a017f767), "piece-size: merida paint at 100% extends outside the centred 70% box, and at 70% lies inside" failed at `:207` `expect(atFull.paintDetected).toBe(true)` (received false). The same spec passed in attempt 1 of that run and in run 43667946397 on db7b75bda with identical code. The wait proves the stylesheet is parsed, not that the piece's background image is decoded and painted, so under hosted load both screenshots can show an empty square.
+* **Failure scenario:** a push to master shows the Test job red at random and holds the post-push install until the job is rerun.
+* **Fix:** wait until the queen's computed `background-image` URL has decoded (e.g. load it through `new Image()` / `img.decode()` in the page) or poll `piecePaintBounds` until paint is detected within the expect timeout; prove with `--repeat-each` in the container.
+* **Found by:** drain session bfce3456-ab46-42ea-bc2c-33851aa0ee67 while waiting on hosted CI for the f-20261112-52 push, 2026-11-15.
