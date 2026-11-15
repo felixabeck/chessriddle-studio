@@ -556,6 +556,10 @@ mod native_tests {
         format!("[Event \"Collection fixture\"]\n[Site \"https://www.chess.com\"]\n[Date \"2026.10.01\"]\n[UTCTime \"12:00:00\"]\n[White \"Player\"]\n[Black \"Opponent\"]\n[Result \"1-0\"]\n{}[Custom \"keep this tag\"]\n\n1. {moves} {{{note}}} 1-0\n\n", id.map(|id| format!("[Link \"https://www.chess.com/game/live/{id}\"]\n")).unwrap_or_default())
     }
 
+    fn unindexable_game(id: Option<&str>, note: &str) -> String {
+        game(id, "e4 e5", note).replacen("[Custom", "[FEN \"invalid\"]\n[Custom", 1)
+    }
+
     #[test]
     fn linked_refresh_keeps_event_summaries_current() {
         let fixture = Fixture::new();
@@ -8560,7 +8564,7 @@ mod native_tests {
         let body = format!(
             "{}{}{}",
             game(Some("101"), "d4 d5", "normal"),
-            game(Some("102"), "N@f3", "variant"),
+            unindexable_game(Some("102"), "variant"),
             game(Some("103"), "c4 c5", "normal")
         );
         let input = fixture.create("incoming", &body, WorkspaceFileType::Other);
@@ -8568,7 +8572,7 @@ mod native_tests {
         assert_eq!(result.appended, 2);
         assert!(result.committed && result.index_ready);
         let source = std::fs::read_to_string(fixture.path("source")).unwrap();
-        assert!(!source.contains("N@f3"));
+        assert!(!source.contains("[FEN \"invalid\"]"));
         assert_eq!(fixture.rows(&fixture.list().pop().unwrap()).len(), 3);
         assert_batch_complete(&fixture, id);
     }
@@ -8577,7 +8581,7 @@ mod native_tests {
     async fn account_source_preserves_omitted_game_verbatim() {
         let original = format!(
             "{}{}",
-            game(Some("100"), "N@f3", "variant"),
+            unindexable_game(Some("100"), "variant"),
             game(Some("101"), "e4 e5", "source")
         );
         let (fixture, id) = account_fixture(&original);
@@ -8607,7 +8611,7 @@ mod native_tests {
         let (mut fixture, id) = account_fixture(&game(Some("100"), "e4 e5", "source"));
         let body = format!(
             "{}{}",
-            game(Some("101"), "N@f3", "variant"),
+            unindexable_game(Some("101"), "variant"),
             game(Some("102"), "d4 d5", "new")
         );
         let input = fixture.create("incoming", &body, WorkspaceFileType::Other);
@@ -8669,7 +8673,7 @@ mod native_tests {
             }).unwrap()
         };
         let before = evidence_row();
-        let omitted = game(Some("100"), "N@f3", "now omitted");
+        let omitted = unindexable_game(Some("100"), "now omitted");
         std::fs::write(fixture.path("source"), &omitted).unwrap();
         let body = format!("{}{}", known, game(Some("101"), "d4 d5", "new"));
         let input = fixture.create("incoming", &body, WorkspaceFileType::Other);
@@ -8752,7 +8756,7 @@ mod native_tests {
     #[tokio::test]
     async fn unparsable_receipt_retains_ids_and_advances_coverage_after_append() {
         let (fixture, id) = account_fixture("");
-        let variant = game(Some("100"), "N@f3", "variant").replace("2026.10.01", "2026.10.02");
+        let variant = unindexable_game(Some("100"), "variant").replace("2026.10.01", "2026.10.02");
         let normal = game(Some("101"), "e4 e5", "normal");
         let start = NaiveDate::from_ymd_opt(2026, 10, 1)
             .unwrap()
@@ -8901,7 +8905,7 @@ mod native_tests {
             let variant = if oversized {
                 game(None, "e4 e5", &"padding\n".repeat(1_500_000))
             } else {
-                game(None, "N@f3", "variant")
+                unindexable_game(None, "variant")
             }
             .replace("https://www.chess.com", "https://lichess.org/Omitted1");
             let normal = game(None, "e4 e5", "normal")

@@ -85,6 +85,7 @@ use std::{
 };
 
 use log::info;
+use std::borrow::Cow;
 use tauri::Manager;
 use tauri_specta::Event as _;
 use tokio_util::sync::CancellationToken;
@@ -513,6 +514,31 @@ fn normalize_pgn_result(value: &str) -> &'static str {
     }
 }
 
+// PGN spec §4.1 names ISO 8859-1. Windows-1252 is a strict superset for the
+// printable C1 bytes that actually appear in files. Decision is per value:
+// valid UTF-8 is never reinterpreted.
+const WINDOWS_1252_C1: [char; 32] = [
+    '\u{20AC}', '\u{0081}', '\u{201A}', '\u{0192}', '\u{201E}', '\u{2026}', '\u{2020}', '\u{2021}',
+    '\u{02C6}', '\u{2030}', '\u{0160}', '\u{2039}', '\u{0152}', '\u{008D}', '\u{017D}', '\u{008F}',
+    '\u{0090}', '\u{2018}', '\u{2019}', '\u{201C}', '\u{201D}', '\u{2022}', '\u{2013}', '\u{2014}',
+    '\u{02DC}', '\u{2122}', '\u{0161}', '\u{203A}', '\u{0153}', '\u{009D}', '\u{017E}', '\u{0178}',
+];
+
+fn decode_pgn_text(bytes: &[u8]) -> Cow<'_, str> {
+    if let Ok(text) = std::str::from_utf8(bytes) {
+        return Cow::Borrowed(text);
+    }
+    Cow::Owned(
+        bytes
+            .iter()
+            .map(|&byte| match byte {
+                0x00..=0x7F | 0xA0..=0xFF => char::from(byte),
+                c1 @ 0x80..=0x9F => WINDOWS_1252_C1[usize::from(c1 - 0x80)],
+            })
+            .collect(),
+    )
+}
+
 struct Importer {
     game: TempGame,
     games_started: usize,
@@ -524,6 +550,9 @@ struct Importer {
 struct ImportFrame {
     position: Chess,
     pre_move_positions: Vec<Chess>,
+    dead: bool,
+    moves_start: usize,
+    played: usize,
 }
 
 impl ImportFrame {
@@ -531,6 +560,9 @@ impl ImportFrame {
         Self {
             position,
             pre_move_positions: Vec::new(),
+            dead: false,
+            moves_start: 0,
+            played: 0,
         }
     }
 }
@@ -568,9 +600,9 @@ impl Visitor for Importer {
             self.game.provider_headers.extend_from_slice(b"\"]\n");
         }
         if key == b"White" {
-            self.game.white_name = Some(value.decode_utf8_lossy().into_owned());
+            self.game.white_name = Some(decode_pgn_text(&value.decode()).into_owned());
         } else if key == b"Black" {
-            self.game.black_name = Some(value.decode_utf8_lossy().into_owned());
+            self.game.black_name = Some(decode_pgn_text(&value.decode()).into_owned());
         } else if key == b"WhiteElo" {
             if value.as_bytes() == b"-" {
                 self.game.white_elo = Some(0);
@@ -584,24 +616,25 @@ impl Visitor for Importer {
                 self.game.black_elo = btoi::btoi(value.as_bytes()).ok();
             }
         } else if key == b"TimeControl" {
-            self.game.time_control = Some(value.decode_utf8_lossy().into_owned());
+            self.game.time_control = Some(decode_pgn_text(&value.decode()).into_owned());
         } else if key == b"ECO" {
-            self.game.eco = Some(value.decode_utf8_lossy().into_owned());
+            self.game.eco = Some(decode_pgn_text(&value.decode()).into_owned());
         } else if key == b"Round" {
-            self.game.round = Some(value.decode_utf8_lossy().into_owned());
+            self.game.round = Some(decode_pgn_text(&value.decode()).into_owned());
         } else if key == b"Date" || key == b"UTCDate" {
-            self.game.date = Some(String::from_utf8_lossy(value.as_bytes()).to_string());
+            self.game.date = Some(decode_pgn_text(value.as_bytes()).into_owned());
         } else if key == b"UTCTime" {
-            self.game.time = Some(String::from_utf8_lossy(value.as_bytes()).to_string());
+            self.game.time = Some(decode_pgn_text(value.as_bytes()).into_owned());
         } else if key == b"Site" {
-            self.game.site_name = Some(String::from_utf8_lossy(value.as_bytes()).to_string());
+            self.game.site_name = Some(decode_pgn_text(value.as_bytes()).into_owned());
         } else if key == b"Event" {
-            self.game.event_name = Some(String::from_utf8_lossy(value.as_bytes()).to_string());
+            self.game.event_name = Some(decode_pgn_text(value.as_bytes()).into_owned());
         } else if key == b"Result" {
             self.game.result =
-                Some(normalize_pgn_result(&String::from_utf8_lossy(value.as_bytes())).to_string());
+                Some(normalize_pgn_result(&decode_pgn_text(value.as_bytes())).to_string());
         } else if key == b"Orientation" {
-            let value = value.decode_utf8_lossy();
+            let decoded = value.decode();
+            let value = decode_pgn_text(&decoded);
             self.game.orientation = BoardOrientation::from_pgn(&value).map(|_| value.into_owned());
         } else if key == b"FEN" {
             if value.as_bytes() == b"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" {
@@ -610,7 +643,7 @@ impl Visitor for Importer {
             } else {
                 let fen = Fen::from_ascii(value.as_bytes());
                 if let Ok(fen) = fen {
-                    self.game.fen = Some(value.decode_utf8_lossy().into_owned());
+                    self.game.fen = Some(decode_pgn_text(&value.decode()).into_owned());
                     if let Ok(setup) = database_setup_to_chess(fen.into_setup()) {
                         self.game.position = setup;
                     } else {
@@ -645,6 +678,9 @@ impl Visitor for Importer {
             self.skip = true;
             return;
         };
+        if frame.dead {
+            return;
+        }
         let pre_move_position = frame.position.clone();
 
         let m = san.san.to_move(&frame.position).ok();
@@ -667,6 +703,7 @@ impl Visitor for Importer {
                 }
             }
             self.game.moves.push(encoded);
+            frame.played = frame.played.saturating_add(1);
             frame.pre_move_positions.push(pre_move_position);
             frame.position.play_unchecked(&m);
 
@@ -674,7 +711,7 @@ impl Visitor for Importer {
                 self.game.position = frame.position.clone();
             }
         } else {
-            self.skip = true;
+            frame.dead = true;
         }
     }
 
@@ -688,19 +725,41 @@ impl Visitor for Importer {
             self.skip = true;
             return Skip(true);
         };
+        if parent.dead {
+            // skip_variation leaves the matching ')' unconsumed, so read_movetext
+            // still calls end_variation (vendor/pgn-reader/src/reader.rs). Push a
+            // marker-less dead frame so that close pops this frame, not the parent.
+            let mut skipped = ImportFrame::new(parent.position.clone());
+            skipped.dead = true;
+            skipped.moves_start = self.game.moves.len();
+            self.frames.push(skipped);
+            return Skip(true);
+        }
         let variation_start = parent
             .pre_move_positions
             .last()
             .cloned()
             .unwrap_or_else(|| parent.position.clone());
 
+        let mut frame = ImportFrame::new(variation_start);
+        frame.moves_start = self.game.moves.len();
         self.game.moves.push(VARIATION_START_MARKER);
-        self.frames.push(ImportFrame::new(variation_start));
+        self.frames.push(frame);
         Skip(false)
     }
 
     fn end_variation(&mut self) {
-        self.game.moves.push(VARIATION_END_MARKER);
+        let drop_empty_dead = self
+            .frames
+            .last()
+            .is_some_and(|frame| frame.dead && frame.played == 0);
+        if drop_empty_dead {
+            if let Some(moves_start) = self.frames.last().map(|frame| frame.moves_start) {
+                self.game.moves.truncate(moves_start);
+            }
+        } else {
+            self.game.moves.push(VARIATION_END_MARKER);
+        }
         if self.frames.len() > 1 {
             self.frames.pop();
         } else {
@@ -713,11 +772,19 @@ impl Visitor for Importer {
     }
 
     fn comment(&mut self, comment: pgn_reader::RawComment<'_>) {
-        let comment = String::from_utf8_lossy(comment.as_bytes());
-        encode_comment(comment.as_ref(), &mut self.game.moves);
+        if self.frames.last().is_some_and(|frame| frame.dead) {
+            return;
+        }
+        encode_comment(
+            decode_pgn_text(comment.as_bytes()).as_ref(),
+            &mut self.game.moves,
+        );
     }
 
     fn nag(&mut self, nag: Nag) {
+        if self.frames.last().is_some_and(|frame| frame.dead) {
+            return;
+        }
         encode_nag(&nag.to_string(), &mut self.game.moves);
     }
 
@@ -789,6 +856,82 @@ mod lexer {
         ] {
             assert_eq!(parse(pgn).result.as_deref(), expected, "{pgn:?}");
         }
+    }
+
+    fn parse_importer_pgn(pgn: &[u8]) -> Option<TempGame> {
+        BufferedReader::new(pgn)
+            .read_game(&mut Importer::new(None))
+            .unwrap()
+            .unwrap()
+    }
+
+    #[test]
+    fn importer_decodes_latin1_header_values() {
+        let latin1 = b"[Event \"Gr\xFCnfeld Open\"]\n[Site \"K\xF6ln\"]\n[Round \"1\"]\n[White \"M\xFCller\"]\n[Black \"R\xE9ti\"]\n[Annotator \"x\"]\n\n1. e4 { Sch\xF6n } e5 *\n";
+        let game = parse_importer_pgn(latin1).unwrap();
+        assert_eq!(game.white_name.as_deref(), Some("Müller"));
+        assert_eq!(game.black_name.as_deref(), Some("Réti"));
+        assert_eq!(game.event_name.as_deref(), Some("Grünfeld Open"));
+        assert_eq!(game.site_name.as_deref(), Some("Köln"));
+        let mut encoded_comment = Vec::new();
+        encode_comment("Schön", &mut encoded_comment);
+        assert!(
+            game.moves
+                .windows("Schön".len())
+                .any(|window| window == "Schön".as_bytes()),
+            "comment encoding {:?} should contain {:?}",
+            game.moves,
+            encoded_comment
+        );
+
+        let moeller = parse_importer_pgn(b"[White \"M\xF6ller\"]\n\n1. d4 *\n").unwrap();
+        assert_eq!(moeller.white_name.as_deref(), Some("Möller"));
+        assert_ne!(moeller.white_name, game.white_name);
+
+        let euro = parse_importer_pgn(b"[White \"\x80uro\"]\n\n1. c4 *\n").unwrap();
+        assert_eq!(euro.white_name.as_deref(), Some("€uro"));
+
+        let utf8 = parse_importer_pgn("[White \"Müller\"]\n\n1. Nf3 *\n".as_bytes()).unwrap();
+        assert_eq!(utf8.white_name.as_deref(), Some("Müller"));
+    }
+
+    #[test]
+    fn importer_keeps_game_when_a_sideline_move_is_unplayable() {
+        let unplayable =
+            parse_importer_pgn(b"1. e4 e5 (1... c5 2. Nf6) 2. Nf3 Nc6 3. Bb5 a6 1-0").unwrap();
+        let control =
+            parse_importer_pgn(b"1. e4 e5 (1... c5 2. Nf3) 2. Nf3 Nc6 3. Bb5 a6 1-0").unwrap();
+        let truncated_sideline =
+            parse_importer_pgn(b"1. e4 e5 (1... c5) 2. Nf3 Nc6 3. Bb5 a6 1-0").unwrap();
+        assert_eq!(iter_mainline_move_bytes(&unplayable.moves).count(), 6);
+        assert_eq!(
+            iter_mainline_move_bytes(&unplayable.moves).count(),
+            iter_mainline_move_bytes(&control.moves).count()
+        );
+        assert_eq!(unplayable.moves, truncated_sideline.moves);
+    }
+
+    #[test]
+    fn importer_drops_a_variation_whose_first_move_is_unplayable() {
+        let unplayable = parse_importer_pgn(b"1. e4 e5 (1... Ke3 { bad }) 2. Nf3 1-0").unwrap();
+        let control = parse_importer_pgn(b"1. e4 e5 2. Nf3 1-0").unwrap();
+        assert_eq!(unplayable.moves, control.moves);
+    }
+
+    #[test]
+    fn importer_truncates_mainline_at_an_unplayable_move() {
+        let truncated = parse_importer_pgn(
+            b"1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Qh8 { lost } Nf6 (4... d6) 5. O-O 1-0",
+        )
+        .unwrap();
+        let control = parse_importer_pgn(b"1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0").unwrap();
+        assert_eq!(truncated.moves, control.moves);
+        assert_eq!(truncated.result.as_deref(), Some("1-0"));
+    }
+
+    #[test]
+    fn importer_still_skips_game_with_unusable_fen() {
+        assert!(parse_importer_pgn(b"[FEN \"garbage\"]\n\n1. e4 *\n").is_none());
     }
 }
 
@@ -10448,11 +10591,14 @@ mod tests {
         mount_convert_progress_events(&app);
         let source = dir.path().join("skipped-games.pgn");
         let skipped = "[Event \"Illegal\"]\n\n1. e5 *\n\n";
-        // Prove both preceding games actually take the Importer's None branch.
+        // Unplayable SAN now keeps the game with an empty mainline; the file
+        // still has two complete games before the unreadable third.
         let mut importer = Importer::new(None);
         let mut reader = BufferedReader::new_cursor(skipped.repeat(2));
-        assert!(matches!(reader.read_game(&mut importer), Ok(Some(None))));
-        assert!(matches!(reader.read_game(&mut importer), Ok(Some(None))));
+        let first = reader.read_game(&mut importer).unwrap().unwrap().unwrap();
+        let second = reader.read_game(&mut importer).unwrap().unwrap().unwrap();
+        assert!(iter_mainline_move_bytes(&first.moves).next().is_none());
+        assert!(iter_mainline_move_bytes(&second.moves).next().is_none());
         std::fs::write(
             &source,
             import_failure_unterminated_fixture(&skipped.repeat(2)),
@@ -10751,7 +10897,7 @@ mod tests {
             &CancellationToken::new(),
         )
         .unwrap();
-        let comment = "\u{fffd}".repeat(4 * 1024 * 1024);
+        let comment = "ÿ".repeat(4 * 1024 * 1024);
         let expected_moves = format!("1. e4 {{{comment}}} e5 1-0");
         assert_eq!(response.data.len(), 1);
         assert_eq!(response.data[0].moves, expected_moves);
@@ -15558,7 +15704,10 @@ mod setup_policy_tests {
             decode_game_to_movetext(&custom.moves, custom_fen).unwrap(),
             "1. Kf2"
         );
-        assert!(reader.read_game(&mut importer).unwrap().unwrap().is_none());
+        let repeated = reader.read_game(&mut importer).unwrap().unwrap().unwrap();
+        assert!(repeated.fen.is_none());
+        assert!(iter_mainline_move_bytes(&repeated.moves).next().is_none());
+        assert_ne!(repeated.moves, custom.moves);
         assert!(reader.read_game(&mut importer).unwrap().is_none());
     }
 
