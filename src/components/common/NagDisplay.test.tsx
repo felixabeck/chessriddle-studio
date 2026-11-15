@@ -180,7 +180,12 @@ test.each([
       (button) => button.textContent === glyph,
     )!;
     expect(button.getAttribute("data-variant")).toBe(active ? "filled" : "default");
+    expect(button.getAttribute("aria-pressed")).toBe(String(active));
     await act(async () => button.click());
     expect(store.getState().currentNode().nags).toEqual(result);
+    const toggled = [...host.querySelectorAll("button")].find(
+      (button) => button.textContent === glyph,
+    )!;
+    expect(toggled.getAttribute("aria-pressed")).toBe(String(!active));
   },
 );
