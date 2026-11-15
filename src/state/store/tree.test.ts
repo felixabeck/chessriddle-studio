@@ -661,6 +661,40 @@ test.each(["goToEnd", "goToBranchEnd", "goToBranchEndOrNextLine", "nextBranching
     },
 );
 
+test.each(["nextBranch", "previousBranch"] as const)(
+    "%s follows the drill prefix onto the sibling card",
+    (action) => {
+        const store = createTreeStore(undefined, practiceDrillTree());
+        store.getState().setPracticePath([0, 1]);
+
+        store.getState()[action]();
+
+        expect(store.getState().position).toEqual([0, 1]);
+    },
+);
+
+test("nextBranch's fluid arm follows the drill prefix onto the child card", () => {
+    const tree = practiceDrillTree();
+    tree.position = [0];
+    const store = createTreeStore(undefined, tree);
+    store.getState().setPracticePath([0, 1]);
+
+    store.getState().nextBranch();
+
+    expect(store.getState().position).toEqual([0, 1]);
+});
+
+test("nextBranch's fluid arm stays put when the sibling is off the drill", () => {
+    const tree = practiceDrillTree();
+    tree.position = [0];
+    const store = createTreeStore(undefined, tree);
+    store.getState().setPracticePath([0, 0]);
+
+    store.getState().nextBranch();
+
+    expect(store.getState().position).toEqual([0]);
+});
+
 test("goToAnnotation does not leave the practice drill line", () => {
     const tree = practiceDrillTree();
     const nf3 = getNodeAtPath(tree.root, [0, 0, 0]);

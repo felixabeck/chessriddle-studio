@@ -51,7 +51,7 @@ export const backgroundHotkeyOptions = {
     ignoreEventWhen: (event: KeyboardEvent) => isHotkeySuppressed(event, null),
 };
 
-/** Applies isHotkeySuppressed to each hotkey. */
+/** Wraps each Mantine hotkey handler so keys suppressed by isHotkeySuppressed are ignored (not fired, not prevented); otherwise the handler runs and preventDefault is applied as its options request. */
 export function withKeyboardOwnership(hotkeys: HotkeyItem[]): HotkeyItem[] {
     return hotkeys.map(([keys, handler, options]) => {
         const resolvedOptions = options ?? { preventDefault: true, usePhysicalKeys: false };

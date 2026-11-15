@@ -90,8 +90,7 @@ export interface TreeStoreState extends TreeState {
     /**
      * Inside a line, goes to its end. At a variation end, goes to the next sibling variation,
      * or child 0 of the same fork after the last sibling. Stays at the main line end.
-     * Refused at a line end during a practice drill.
-     * During a practice drill, inside a line it stops unless the line end is on practicePath, and at a line end it is refused.
+     * During a practice drill, inside a line it does nothing unless the line end is a prefix of practicePath; at a line end it is refused.
      */
     goToBranchEndOrNextLine: () => void;
     /** During a practice drill, does nothing unless its target is on practicePath up to and including the card (a prefix of practicePath; d-20260923-04/-05). */
