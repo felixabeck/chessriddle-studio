@@ -14,7 +14,7 @@ function EngineBox({ engine, toggleLoaded }: { engine: Engine; toggleLoaded: () 
   return (
     <Paper withBorder p="sm" w="100%" h="3rem" onClick={toggleLoaded} style={{ cursor: "pointer" }}>
       <Group wrap="nowrap">
-        <Checkbox checked={!!engine.loaded} onChange={() => {}} />
+        <Checkbox aria-label={engine.name} checked={!!engine.loaded} onChange={() => {}} />
         <EnginePortrait
           engine={engine}
           imageProps={{ w: "1.5rem" }}

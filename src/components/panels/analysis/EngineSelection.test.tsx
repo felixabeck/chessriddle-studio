@@ -43,8 +43,8 @@ vi.mock("jotai", async (importOriginal) => {
 });
 vi.mock("@mantine/core", () => ({
   Center: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  Checkbox: ({ checked }: { checked: boolean }) => (
-    <input type="checkbox" checked={checked} readOnly />
+  Checkbox: ({ checked, "aria-label": ariaLabel }: { checked: boolean; "aria-label"?: string }) => (
+    <input type="checkbox" checked={checked} readOnly aria-label={ariaLabel} />
   ),
   Group: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Paper: ({ children, onClick }: { children: React.ReactNode; onClick: () => void }) => (
@@ -113,6 +113,27 @@ test("a rejected save does not stop the engine and notifies", async () => {
   expect(mocks.stopEngine).not.toHaveBeenCalled();
   expect(mocks.setEngines).toHaveBeenCalledOnce();
   expect(mocks.notifyUnlessCancelled).toHaveBeenCalledWith("Common.Error", failure);
+});
+
+test("names each engine checkbox after its engine", async () => {
+  mocks.engines = [
+    mocks.engines[0]!,
+    {
+      type: "local",
+      id: "engine-2",
+      name: "Leela",
+      loaded: false,
+      handle: { id: { id: "handle-2" }, kind: "engine" },
+      filename: "leela",
+      version: "1",
+    },
+  ];
+  await act(async () => root.render(<EngineSelection />));
+  expect(
+    [...host.querySelectorAll('input[type="checkbox"]')].map((input) =>
+      input.getAttribute("aria-label"),
+    ),
+  ).toEqual(["Stockfish", "Leela"]);
 });
 
 test("unload submits a save without issuing a generationless stop", async () => {
