@@ -13,8 +13,8 @@ export function createQuitTabSaver(
     showWorkspace: () => void,
 ): (tab: Tab) => Promise<SaveResult> {
     return (tab) => {
-        if (tab.gameOrigin.kind === "none") {
-            // This save asks for a destination file, so show the game the picker is about.
+        if (tab.gameOrigin.kind === "none" || tab.gameOrigin.kind === "temp_file") {
+            // These saves ask for a destination file, so show the game the picker is about.
             showWorkspace();
             jotaiStore.set(activeTabAtom, tab.value);
         }

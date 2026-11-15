@@ -67,16 +67,34 @@ test("a tab with a save target is saved as a user save without changing the view
     expect(jotaiStore.get(activeTabAtom)).toBe(draft.value);
 });
 
-test("a tab without a save target is shown before its file picker opens", async () => {
+const tempFile: Tab = {
+    ...analysis,
+    gameOrigin: {
+        kind: "temp_file",
+        gameNumber: 0,
+        file: {
+            type: "file",
+            handle: { id: { id: "scratch" }, kind: "fileWorkspace" },
+            name: "scratch.pgn",
+            numGames: 1,
+            metadata: { type: "game", tags: [] },
+            lastModified: 1,
+        },
+    },
+};
+
+test.each([
+    ["without a save target", analysis],
+    ["in a temporary file", tempFile],
+])("a tab %s is shown before its file picker opens", async (_case, picked) => {
+    jotaiStore.set(tabsAtom, [draft, picked], draft.value);
     const showWorkspace = vi.fn();
     mocks.saveToFile.mockImplementation(async () => {
         expect(showWorkspace).toHaveBeenCalledOnce();
-        expect(jotaiStore.get(activeTabAtom)).toBe(analysis.value);
+        expect(jotaiStore.get(activeTabAtom)).toBe(picked.value);
         return "cancelled";
     });
-    await expect(createQuitTabSaver(jotaiStore, showWorkspace)(analysis)).resolves.toBe(
-        "cancelled",
-    );
+    await expect(createQuitTabSaver(jotaiStore, showWorkspace)(picked)).resolves.toBe("cancelled");
     expect(mocks.saveToFile).toHaveBeenCalledOnce();
 });
 
