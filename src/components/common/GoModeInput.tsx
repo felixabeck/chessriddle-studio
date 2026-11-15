@@ -73,7 +73,7 @@ function GoModeInput({
         .with({ t: "Time" }, (v) => (
           <TimeInput
             value={v.c}
-            label={t("GoMode.Time")}
+            ariaLabel={t("GoMode.Time")}
             unitLabel={t("GoMode.TimeUnit")}
             setValue={(next) =>
               setGoMode(

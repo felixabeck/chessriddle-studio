@@ -49,6 +49,12 @@ afterEach(async () => {
   else Reflect.deleteProperty(Element.prototype, "scrollIntoView");
 });
 
+function cssEscape(id: string): string {
+  return typeof CSS !== "undefined" && typeof CSS.escape === "function"
+    ? CSS.escape(id)
+    : id.replace(/[^A-Za-z0-9_-]/g, (ch) => `\\${ch}`);
+}
+
 function byAccessibleName(container: ParentNode, name: string): HTMLElement[] {
   const matches: HTMLElement[] = [];
   if (container instanceof HTMLElement && container.getAttribute("aria-label") === name) {
@@ -59,8 +65,10 @@ function byAccessibleName(container: ParentNode, name: string): HTMLElement[] {
   }
   for (const caption of container.querySelectorAll("label")) {
     if (caption.textContent?.trim() !== name || !caption.htmlFor) continue;
-    const control = document.getElementById(caption.htmlFor);
-    if (control && container.contains(control)) matches.push(control);
+    const selector = `#${cssEscape(caption.htmlFor)}`;
+    expect(document.querySelectorAll(selector)).toHaveLength(1);
+    const control = container.querySelector<HTMLElement>(selector);
+    if (control) matches.push(control);
   }
   return [...new Set(matches)];
 }
@@ -115,7 +123,7 @@ test("Play-setup opponent fields expose accessible names", async () => {
   expect(namedInput(group, "Board.Opponent.IncrementUnit").value).toBe("s");
 });
 
-test("each side group scopes its name field", async () => {
+test("each side group scopes its name, time, increment, and unit fields", async () => {
   await act(async () => {
     root.render(
       <MantineProvider env="test">
@@ -128,7 +136,11 @@ test("each side group scopes its name field", async () => {
         />
         <OpponentForm
           sameTimeControl={false}
-          opponent={{ ...felixSettings, name: "Anna" }}
+          opponent={{
+            ...felixSettings,
+            name: "Anna",
+            timeControl: { seconds: 300000, increment: 3000 },
+          }}
           setOpponent={vi.fn()}
           setOtherOpponent={vi.fn()}
           sideLabel="Black"
@@ -140,5 +152,13 @@ test("each side group scopes its name field", async () => {
   const white = namedGroup(host, "White");
   const black = namedGroup(host, "Black");
   expect(namedInput(white, "Common.Name").value).toBe("Felix");
+  expect(namedInput(white, "GoMode.Time").value).toBe("3");
+  expect(namedInput(white, "Board.Opponent.Increment").value).toBe("2");
+  expect(namedInput(white, "Board.Opponent.TimeUnit").value).toBe("m");
+  expect(namedInput(white, "Board.Opponent.IncrementUnit").value).toBe("s");
   expect(namedInput(black, "Common.Name").value).toBe("Anna");
+  expect(namedInput(black, "GoMode.Time").value).toBe("5");
+  expect(namedInput(black, "Board.Opponent.Increment").value).toBe("3");
+  expect(namedInput(black, "Board.Opponent.TimeUnit").value).toBe("m");
+  expect(namedInput(black, "Board.Opponent.IncrementUnit").value).toBe("s");
 });

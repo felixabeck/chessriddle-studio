@@ -15,7 +15,7 @@ function TimeInput({
   onTypeChange,
   id,
   unitLabel,
-  label,
+  ariaLabel,
 }: {
   value: number;
   setValue: (v: GoMode) => void;
@@ -24,7 +24,7 @@ function TimeInput({
   onTypeChange?: (type: TimeType) => void;
   id?: string;
   unitLabel?: string;
-  label?: string;
+  ariaLabel?: string;
 }) {
   const [internalTimeType, setInternalTimeType] = useState<TimeType>(defaultType ?? "ms");
   const [draft, setDraft] = useState<string | number | null>(null);
@@ -59,7 +59,7 @@ function TimeInput({
   return (
     <NumberInput
       id={id}
-      aria-label={label}
+      aria-label={ariaLabel}
       min={0}
       decimalScale={3}
       hideControls

@@ -202,11 +202,11 @@ async function selectUnit(unit: TimeType) {
   await act(async () => option.click());
 }
 
-test("label reaches the NumberInput aria-label", async () => {
+test("ariaLabel reaches the NumberInput aria-label", async () => {
   await act(async () => {
     root.render(
       <MantineProvider env="test">
-        <TimeInput label="Time" id="t1" value={1000} type="s" setValue={vi.fn()} />
+        <TimeInput ariaLabel="Time" id="t1" value={1000} type="s" setValue={vi.fn()} />
       </MantineProvider>,
     );
   });

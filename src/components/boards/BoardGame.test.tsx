@@ -776,6 +776,8 @@ test("settingUp opponent forms receive the side headings and swap with colour", 
   expect(opponentSides()).toEqual(["Fen.White", "Fen.Black"]);
   await act(async () => button("Board.Action.SwapColors").click());
   expect(opponentSides()).toEqual(["Fen.Black", "Fen.White"]);
+  await act(async () => button("Board.Action.SwapColors").click());
+  expect(opponentSides()).toEqual(["Board.Opponent.Random", "Board.Opponent.Random"]);
 });
 
 test("starting a human game sends numeric configuration and records ChessRiddle Studio as the PGN Site", async () => {
