@@ -273,6 +273,11 @@ test("Enter after typing then deleting back to the seeded FEN does not replace t
   const seeded = input().value;
   await typeWithoutWaiting(`${seeded}x`);
   await typeWithoutWaiting(seeded);
+  expect(
+    [...document.querySelectorAll('[role="option"]')].some(
+      (option) => option.textContent === seeded,
+    ),
+  ).toBe(false);
   await enter();
   expectTreeUnchanged(headersFen);
 });

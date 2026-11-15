@@ -30,22 +30,35 @@ afterEach(async () => {
   mocks.putPiece = undefined;
 });
 
-test("dropping a white knight on h1 clears the matching castling right", async () => {
-  const onPut = vi.fn();
+async function renderGrid(fen: string) {
+  const onPut = vi.fn<(fen: string) => void>();
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
   await act(async () => {
     root.render(
       <MantineProvider>
-        <PiecesGrid fen={INITIAL_FEN} boardRef={createRef()} onPut={onPut} />
+        <PiecesGrid fen={fen} boardRef={createRef()} onPut={onPut} />
       </MantineProvider>,
     );
   });
-
   expect(mocks.putPiece).toBeTruthy();
+  return onPut;
+}
+
+test("dropping a white knight on h1 clears the matching castling right", async () => {
+  const onPut = await renderGrid(INITIAL_FEN);
   await act(async () => {
     mocks.putPiece!(parseSquare("h1")!, { role: "knight", color: "white" });
   });
   expect(onPut).toHaveBeenCalledWith("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNN w Qkq - 0 1");
+});
+
+test("dropping a piece clears a stale en-passant square", async () => {
+  const onPut = await renderGrid("rnbqkb1r/ppp1pppp/5n2/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3");
+  await act(async () => {
+    mocks.putPiece!(parseSquare("a3")!, { role: "knight", color: "white" });
+  });
+  expect(onPut).toHaveBeenCalledOnce();
+  expect(onPut.mock.calls[0][0].split(" ")[3]).toBe("-");
 });
