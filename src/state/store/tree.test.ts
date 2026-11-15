@@ -673,6 +673,18 @@ test("goToAnnotation does not leave the practice drill line", () => {
     expect(store.getState().position).toEqual([0, 0]);
 });
 
+test("goToAnnotation follows the drill prefix to an annotated card line node", () => {
+    const tree = practiceDrillTree();
+    const nf3 = getNodeAtPath(tree.root, [0, 0, 0]);
+    nf3.nags = [1];
+    const store = createTreeStore(undefined, tree);
+    store.getState().setPracticePath([0, 0, 0, 0]);
+
+    store.getState().goToAnnotation("!", "white");
+
+    expect(store.getState().position).toEqual([0, 0, 0]);
+});
+
 test.each([
     { action: "goToEnd", expected: [0, 0, 0, 0] },
     { action: "goToBranchEnd", expected: [0, 0, 0, 0] },

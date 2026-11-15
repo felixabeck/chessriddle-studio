@@ -81,28 +81,28 @@ export interface TreeStoreState extends TreeState {
     goToContinuation: (index: number) => void;
     goToPrevious: () => void;
     goToStart: () => void;
-    /** During a practice drill (practicePath set) does nothing when the target would leave the drill line up to the card (d-20260923-04/-05). */
+    /** During a practice drill, does nothing unless its target is on practicePath up to and including the card (a prefix of practicePath; d-20260923-04/-05). */
     goToEnd: () => void;
     goToMove: (move: number[]) => void;
     goToBranchStart: () => void;
-    /** During a practice drill (practicePath set) does nothing when the target would leave the drill line up to the card (d-20260923-04/-05). */
+    /** During a practice drill, does nothing unless its target is on practicePath up to and including the card (a prefix of practicePath; d-20260923-04/-05). */
     goToBranchEnd: () => void;
     /**
      * Inside a line, goes to its end. At a variation end, goes to the next sibling variation,
      * or child 0 of the same fork after the last sibling. Stays at the main line end.
      * Refused at a line end during a practice drill.
-     * During a practice drill (practicePath set) does nothing when the target would leave the drill line up to the card (d-20260923-04/-05).
+     * During a practice drill, inside a line it stops unless the line end is on practicePath, and at a line end it is refused.
      */
     goToBranchEndOrNextLine: () => void;
-    /** During a practice drill (practicePath set) does nothing when the target would leave the drill line up to the card (d-20260923-04/-05). */
+    /** During a practice drill, does nothing unless its target is on practicePath up to and including the card (a prefix of practicePath; d-20260923-04/-05). */
     nextBranch: () => void;
-    /** During a practice drill (practicePath set) does nothing when the target would leave the drill line up to the card (d-20260923-04/-05). */
+    /** During a practice drill, does nothing unless its target is on practicePath up to and including the card (a prefix of practicePath; d-20260923-04/-05). */
     previousBranch: () => void;
-    /** During a practice drill (practicePath set) does nothing when the target would leave the drill line up to the card (d-20260923-04/-05). */
+    /** During a practice drill, does nothing unless its target is on practicePath up to and including the card (a prefix of practicePath; d-20260923-04/-05). */
     nextBranching: () => void;
     previousBranching: () => void;
 
-    /** During a practice drill (practicePath set) does nothing when the target would leave the drill line up to the card (d-20260923-04/-05). */
+    /** During a practice drill, does nothing unless its target is on practicePath up to and including the card (a prefix of practicePath; d-20260923-04/-05). */
     goToAnnotation: (annotation: Annotation, color: "white" | "black") => void;
 
     makeMove: (args: {

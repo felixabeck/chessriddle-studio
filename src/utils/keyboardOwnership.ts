@@ -41,6 +41,7 @@ export function isKeyHandledByFocusedWidget(event: KeyboardEvent): boolean {
     );
 }
 
+/** Hotkey filter: true when an open dialog owns the key (relative to `surface`) or when the event target is inside a slider/board grid that handles this key itself (independent of `surface`). */
 export function isHotkeySuppressed(event: KeyboardEvent, surface: Element | null): boolean {
     return isKeyboardOwnedElsewhere(event, surface) || isKeyHandledByFocusedWidget(event);
 }
@@ -50,6 +51,7 @@ export const backgroundHotkeyOptions = {
     ignoreEventWhen: (event: KeyboardEvent) => isHotkeySuppressed(event, null),
 };
 
+/** Applies isHotkeySuppressed to each hotkey. */
 export function withKeyboardOwnership(hotkeys: HotkeyItem[]): HotkeyItem[] {
     return hotkeys.map(([keys, handler, options]) => {
         const resolvedOptions = options ?? { preventDefault: true, usePhysicalKeys: false };
