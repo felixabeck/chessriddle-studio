@@ -1146,12 +1146,11 @@ async function assertPurgeInvocationAndRefresh(page: Page) {
 const LATE_FONT_RELEASE_MS = 1_000;
 
 for (const fontArrival of ["immediate", "late"] as const) {
-    test(`async-errors: localizes directory-trash failures in the confirmation dialog${fontArrival === "late" ? " after a late web font" : ""}`, async ({
-        page,
-        mockScenario,
-        assertAccessible,
-        assertNoHorizontalOverflow,
-    }) => {
+    const title =
+        fontArrival === "late"
+            ? "async-errors: keeps the directory-trash failure snapshot when the web font arrives late"
+            : "async-errors: localizes directory-trash failures in the confirmation dialog";
+    test(title, async ({ page, mockScenario, assertAccessible, assertNoHorizontalOverflow }) => {
         if (fontArrival === "late") {
             let release: Promise<void> | undefined;
             await page.route("**/fonts/inter/*.woff2", async (route) => {
