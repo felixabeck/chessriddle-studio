@@ -26444,7 +26444,7 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 
 ### Arrow keys on the focused board grid also navigate the game, so keyboard move entry plays the move in a different position
 
-* **ID:** f-20261115-13 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261115-13 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** yes (board keyboard move entry sweep, origin `fb8bca5f4`)
 * **Where:** `src/components/boards/Board.tsx` `keyboardMove` (~414-433: ArrowLeft/Right/Up/Down move the focused square of the `role="grid"` board and only call `preventDefault`) and `src/components/common/MoveControls.tsx` ~72-88 and ~96-103 (`PREVIOUS_MOVE` arrowleft, `NEXT_MOVE` arrowright, `GO_TO_BRANCH_START` arrowup, `GO_TO_BRANCH_END` arrowdown, registered with `react-hotkeys-hook` on the document; `shortcutOptions().ignoreEventWhen` only checks dialog ownership through `isKeyboardOwnedElsewhere`, which returns false for the board grid).
@@ -26454,6 +26454,9 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Fix:** in MoveControls' `ignoreEventWhen` (or the shared helper proposed in f-20261115-12) also ignore events whose target is inside the board grid (`[role="grid"]`, or a `data-` marker on the board). Alternatively call `event.stopPropagation()` for handled arrow keys in `keyboardMove`. Add a test that renders Board and MoveControls together and checks that arrows on the grid leave `position` unchanged.
 * **Related:** f-20261115-12 (same MoveControls arrow hotkeys colliding with Mantine sliders; its proposed role list does not include `grid`, so fixing it as written leaves this open). f-20261106-18 is ARIA `aria-selected` on the grid, not navigation. d-20261105-08 covers Space on the grid, not arrows.
 * **Found by:** Grok Bot, board keyboard move entry sweep
+* **Handled (Claude Code drain, 2026-11-15):** fixed with f-20261115-12's helper: `isHotkeySuppressed` treats arrow keys whose target is inside the board's `role="grid"` (Board.tsx `keyboardMove`) as handled by the grid, so MoveControls' PREVIOUS_MOVE/NEXT_MOVE/GO_TO_BRANCH_START/GO_TO_BRANCH_END hotkeys no longer step the tree while the user moves the keyboard square, and keyboard move entry plays the move in the position shown. Test: `MoveControls.test.tsx` "arrows on a focused grid leave the tree position unchanged" (all four arrows, `defaultPrevented` false; reverting MoveControls to `isKeyboardOwnedElsewhere` makes it fail). Commits `12da78629`, `762b01678`, `8ac006639`.
+* **Rejected alternative:** `event.stopPropagation()` in `keyboardMove`. It would fix only the board, and the slider collision (f-20261115-12) would need a second mechanism.
+<!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"b6cdb3f154b350409b109ea1c1bb2857ab76c905db874864ba1192afe3fe7951","header_sha256":"df8a0457166396ac03f031c9ab5def48f41a91ddc2f0bcc6b19c471b1f0e40eb","header_status":"handled","input_sha256":"c91ed8992246d34f66427e67d0def01d652c4a865f6725018424a5ae315dd05d","kind":"mutation-receipt","operation":"95bbb7c551225aa7fde69ab5d2b9737d29e246d60dc9e24a9059de0c6c3271bc","options":{"section":null},"request_id_sha256":null,"results":["f-20261115-13"],"target":"f-20261115-13","v":1} -->
 
 ---
 
