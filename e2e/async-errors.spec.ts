@@ -16,6 +16,7 @@ import {
     selectFilesTreeRow,
     test,
     waitForTransitionsSettled,
+    waitForFontsSettled,
     type MockScenario,
 } from "./fixtures";
 
@@ -939,6 +940,20 @@ const listingReasons = [
     [undefined, "Files.LoadFailed", "Databases.LoadError"],
 ] as const;
 
+/**
+ * Opens the Library and chooses the mocked folder after the web fonts have settled. A face that
+ * finishes loading after the first scroll reflows the page under its stale scroll offsets
+ * (f-20261115-26, the same mechanism as f-20261101-03), so the wait sits after the first rendered
+ * control, when the faces it needs are already loading, and before the first click.
+ */
+async function chooseLibraryFolder(page: Page) {
+    await page.goto("/library");
+    const chooseFolder = page.getByRole("button", { name: "Ordner auswählen", exact: true });
+    await expect(chooseFolder).toBeVisible();
+    await waitForFontsSettled(page);
+    await chooseFolder.click();
+}
+
 for (const [rootFailure, filesKey, databasesKey] of listingReasons) {
     const error = {
         tag: "backend-error",
@@ -957,8 +972,7 @@ for (const [rootFailure, filesKey, databasesKey] of listingReasons) {
                 list_file_workspace: { error },
             }),
         });
-        await page.goto("/library");
-        await page.getByRole("button", { name: "Ordner auswählen", exact: true }).click();
+        await chooseLibraryFolder(page);
         const alert = page.getByRole("alert");
         await expect(alert).toBeVisible();
         await expect(alert).toHaveText(germanListingCopy[filesKey]);
@@ -1034,8 +1048,7 @@ async function submitPurgeAndOpenFailureDialog(
             delete_workspace_trash_item: { error: purgeError },
         }),
     });
-    await page.goto("/library");
-    await page.getByRole("button", { name: "Ordner auswählen" }).click();
+    await chooseLibraryFolder(page);
     const deleteEntry = page
         .getByRole("treeitem", { name: "Openings", exact: true })
         .getByRole("button", { name: "Löschen" });
@@ -1073,9 +1086,8 @@ test("async-errors: post-trash undo bar is accessible in the dark theme", async 
             trash_workspace_entry: { result: "11111111-1111-4111-8111-111111111111" },
         }),
     });
-    await page.goto("/library");
+    await chooseLibraryFolder(page);
     await expect(page.locator("html")).toHaveAttribute("data-mantine-color-scheme", "dark");
-    await page.getByRole("button", { name: "Ordner auswählen" }).click();
     await page
         .getByRole("treeitem", { name: "Openings", exact: true })
         .getByRole("button", { name: "Löschen" })
@@ -1138,8 +1150,7 @@ test("async-errors: localizes directory-trash failures in the confirmation dialo
             trash_workspace_entry: { error: "private native diagnostic at /private/file.pgn" },
         }),
     });
-    await page.goto("/library");
-    await page.getByRole("button", { name: "Ordner auswählen" }).click();
+    await chooseLibraryFolder(page);
     await page
         .getByRole("treeitem", { name: "Openings", exact: true })
         .getByRole("button", { name: "Löschen" })
@@ -1168,8 +1179,7 @@ test("async-errors: fits a selected PGN file and its card at 320px", async ({
     await mockScenario({
         commands: filesWorkspaceCommands([[openingDirectory, pgnFile]], pgnFileCommands),
     });
-    await page.goto("/library");
-    await page.getByRole("button", { name: "Ordner auswählen" }).click();
+    await chooseLibraryFolder(page);
     const fileRow = await selectFilesTreeRow(page, pgnFile.name);
     // Nothing before this line depends on the card, so an overflowing page fails here.
     await assertNoHorizontalOverflow();
