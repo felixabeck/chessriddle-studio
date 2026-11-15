@@ -26441,6 +26441,9 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Rejected alternative:** the finding's broad role list (radiogroup, tablist, listbox, spinbutton, contenteditable). Radio inputs and spinbutton inputs are already filtered by react-hotkeys-hook's form-tag filter, the listbox entry would break the variation chooser, and no tablist/contenteditable collision was observed (rule 4d).
 <!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"0e48a0d1b9bfe892057e2115b9ff55295e7b124d15bf058b22cdfd446ab7478a","header_sha256":"29a278a8125b8801d786633d7d8f149230c4e9d1c8b94ee93d609fc01a38ff81","header_status":"handled","input_sha256":"bf4209839646a9923aaecda370c729a25e59f0fef382728ac3dc3401227cf728","kind":"mutation-receipt","operation":"5907d163e14bb5318efaa893f09c5ecd6a965010696d29195d54aa5cfa814bba","options":{"section":null},"request_id_sha256":null,"results":["f-20261115-12"],"target":"f-20261115-12","v":1} -->
 
+* **Commit SHAs after rebase (Claude Code drain, 2026-11-15):** the drain rebased these commits onto `origin/master` before pushing (range-diff all `=`). The pushed SHAs are `6dca2e400` (was `12da78629`), `141a3ee7d` (was `762b01678`), `bf3e25554` (was `8ac006639`), `bea403641` (was `287ede877`) and `25113b105` (was `4fcf2bfe9`).
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"dc98bf54aebe47f132b81c3a9ac3ebb9fa1f7515d61a1c732a5ed85143b1b349","input_sha256":"45952dd7505bbcc1a9eeec5f9e35f46a1ff77b34f20b1936070c7bafd0bbfa48","kind":"mutation-receipt","operation":"babced85b9b9a7f31d73ffe44ac375889525d55d9b4ff09c9235458b91255bc1","options":{"section":null},"request_id_sha256":null,"results":["f-20261115-12"],"target":"f-20261115-12","v":1} -->
+
 ---
 
 ## 2026-11-15 — filed through the inbox spool
