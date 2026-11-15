@@ -291,6 +291,7 @@ function CloudSettings({
           <LinesSlider
             value={engineMultiPv(displayed.settings ?? [])}
             setValue={(value) => submit({ kind: "option", name: "MultiPV", value: String(value) })}
+            ariaLabel={t("Engines.Settings.NumOfLines")}
           />
         </Stack>
         <Group justify="right">

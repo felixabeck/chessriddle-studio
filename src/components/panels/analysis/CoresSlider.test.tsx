@@ -37,12 +37,12 @@ function stubHardwareConcurrency(value: unknown) {
   });
 }
 
-async function renderSlider(hardwareConcurrency: number, value: number) {
+async function renderSlider(hardwareConcurrency: number, value: number, ariaLabel?: string) {
   stubHardwareConcurrency(hardwareConcurrency);
   await act(async () => {
     root.render(
       <MantineProvider env="test">
-        <CoresSlider value={value} setValue={() => undefined} />
+        <CoresSlider value={value} setValue={() => undefined} ariaLabel={ariaLabel} />
       </MantineProvider>,
     );
   });
@@ -69,5 +69,12 @@ test("includes the current value when it is missing from the hardware list", asy
   expect(segmentValues()).toEqual(["1", "2", "4", "6", "12"]);
   expect(host.querySelector<HTMLInputElement>('input[type="radio"][value="12"]')?.checked).toBe(
     true,
+  );
+});
+
+test("exposes the provided ariaLabel on the radiogroup", async () => {
+  await renderSlider(8, 1, "Number of cores");
+  expect(host.querySelector('[role="radiogroup"]')?.getAttribute("aria-label")).toBe(
+    "Number of cores",
   );
 });

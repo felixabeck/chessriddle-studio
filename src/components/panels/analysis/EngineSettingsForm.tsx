@@ -76,6 +76,7 @@ function EngineSettingsForm({
               })
             }
             color={color}
+            ariaLabel={t("Engines.Settings.NumOfLines")}
           />
         </Group>
       )}
@@ -99,6 +100,7 @@ function EngineSettingsForm({
                 }))
               }
               color={color}
+              ariaLabel={t("Engines.Settings.NumOfCores")}
             />
           </Group>
 
@@ -120,6 +122,7 @@ function EngineSettingsForm({
                   }))
                 }
                 color={color}
+                ariaLabel={t("Engines.Settings.SizeOfHash")}
               />
             </Group>
           )}

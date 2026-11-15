@@ -75,11 +75,24 @@ vi.mock("@/components/common/IconAction", () => ({
   ),
 }));
 vi.mock("@/components/common/GoModeInput", () => ({ default: () => null }));
-vi.mock("./CoresSlider", () => ({ default: () => null }));
-vi.mock("./HashSlider", () => ({ default: () => null }));
+vi.mock("./CoresSlider", () => ({
+  default: ({ ariaLabel }: { ariaLabel?: string }) => <div role="group" aria-label={ariaLabel} />,
+}));
+vi.mock("./HashSlider", () => ({
+  default: ({ ariaLabel }: { ariaLabel?: string }) => <div role="group" aria-label={ariaLabel} />,
+}));
 vi.mock("./LinesSlider", () => ({
-  default: ({ value, setValue }: { value: number; setValue: (value: number) => void }) => (
+  default: ({
+    value,
+    setValue,
+    ariaLabel,
+  }: {
+    value: number;
+    setValue: (value: number) => void;
+    ariaLabel?: string;
+  }) => (
     <>
+      <div role="group" aria-label={ariaLabel} />
       <output data-testid="multipv">{value}</output>
       <button type="button" onClick={() => setValue(5)}>
         5 lines
@@ -202,4 +215,36 @@ test("a successful kill disables the engine", async () => {
   expect(setSettings).toHaveBeenCalled();
   const update = setSettings.mock.calls[0][0] as (value: Settings) => Settings;
   expect(update(settings).enabled).toBe(false);
+});
+
+test("names the lines, cores, and hash controls with the settings captions", async () => {
+  await act(async () => {
+    root.render(
+      <WorkspaceTabScope tabId="tab-A">
+        <EngineSettingsForm
+          engine={engines[1]}
+          settings={{
+            ...settings,
+            settings: [
+              { type: "string", name: "MultiPV", value: "2" },
+              { type: "string", name: "Threads", value: "4" },
+              { type: "string", name: "Hash", value: "16" },
+            ],
+          }}
+          setSettings={vi.fn()}
+          remote={false}
+        />
+      </WorkspaceTabScope>,
+    );
+  });
+
+  expect(
+    [...host.querySelectorAll('[role="group"]')].map((control) =>
+      control.getAttribute("aria-label"),
+    ),
+  ).toEqual([
+    "Engines.Settings.NumOfLines",
+    "Engines.Settings.NumOfCores",
+    "Engines.Settings.SizeOfHash",
+  ]);
 });

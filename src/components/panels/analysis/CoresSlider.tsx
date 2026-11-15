@@ -21,6 +21,7 @@ export default function CoresSlider(props: {
   value: number;
   setValue: (v: number) => void;
   color?: string;
+  ariaLabel?: string;
 }) {
   const theme = useMantineTheme();
   const values = coreCountOptions(hardwareConcurrencyLimit(), props.value);
@@ -28,6 +29,7 @@ export default function CoresSlider(props: {
   return (
     <SegmentedControl
       size="xs"
+      aria-label={props.ariaLabel}
       color={props.color || theme.primaryColor}
       value={props.value.toString()}
       onChange={(v) => props.setValue(Number.parseInt(v))}
