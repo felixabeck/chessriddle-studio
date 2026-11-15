@@ -247,8 +247,6 @@ beforeEach(async () => {
   workspace.set(tabsAtom, [tab], tabId);
   workspace.set(activeTabAtom, tabId);
   workspace.set(referenceDbAtom, { id: { id: "reference" }, kind: "database" });
-  const options = workspace.get(pgnOptionsFamily(tabId));
-  workspace.set(pgnOptionsFamily(tabId), { ...options, comments: false });
   setFileFreshness(tabId, "verified", { verifiedRevision: "old" });
   mocks.parse.mockImplementation(async () => replacement);
   host = document.createElement("div");
@@ -368,7 +366,22 @@ function button(scope: ParentNode, text: string) {
   return match;
 }
 
-test("retained notation, chart, repertoire moves and comments-off Update refuse the new root", async () => {
+function infoPanel() {
+  return host.querySelector('[data-panel="info"]')!;
+}
+
+async function draftInfoPgn(text: string) {
+  const textarea = infoPanel().querySelector("textarea");
+  if (!textarea) throw new Error("Missing info PGN editor");
+  const assign = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+  await act(async () => {
+    assign.call(textarea, text);
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    textarea.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+test("retained notation, chart, repertoire moves and a draft Update refuse the new root", async () => {
   const goToMove = vi.spyOn(store.getState(), "goToMove");
   const setState = vi.spyOn(store.getState(), "setState");
   let clicks = 0;
@@ -388,11 +401,16 @@ test("retained notation, chart, repertoire moves and comments-off Update refuse 
     );
     if (!move) throw new Error("Missing retained repertoire move");
     move.click();
-    button(host.querySelector('[data-panel="info"]')!, "Common.Update").click();
+    button(infoPanel(), "Common.Update").click();
     clicks = 4;
     stateCallsAfter = setState.mock.calls.length;
     release(owner);
   });
+
+  const textarea = infoPanel().querySelector("textarea");
+  if (!textarea) throw new Error("Missing info PGN editor");
+  await draftInfoPgn(`${textarea.value} `);
+  expect(button(infoPanel(), "Common.Update")).toBeDefined();
 
   await install();
 
@@ -401,8 +419,21 @@ test("retained notation, chart, repertoire moves and comments-off Update refuse 
   expect(stateCallsBefore).toBe(1);
   expect(stateCallsAfter).toBe(stateCallsBefore);
   expect(mocks.parse).toHaveBeenCalledTimes(parseCallsBefore);
-  expect(workspace.get(pgnOptionsFamily(tabId)).comments).toBe(false);
   expect(store.getState().root).toBe(replacement.root);
+});
+
+test("a comments-off PGN editor is read-only and offers no Update", async () => {
+  const options = workspace.get(pgnOptionsFamily(tabId));
+  await act(async () => {
+    workspace.set(pgnOptionsFamily(tabId), { ...options, comments: false });
+  });
+  const panel = infoPanel();
+  expect(
+    [...panel.querySelectorAll("button")].some(
+      (element) => element.textContent === "Common.Update",
+    ),
+  ).toBe(false);
+  expect(panel.querySelector("textarea")!.hasAttribute("readonly")).toBe(true);
 });
 
 test("a thrown follow-up walk leaves deferral clear and the next successful render rebuilds", async () => {
