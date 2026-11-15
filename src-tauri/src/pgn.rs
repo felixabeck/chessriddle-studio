@@ -151,6 +151,19 @@ impl PgnCapabilityRebind {
         })?
     }
 
+    /// Resolves WritePgn so practice recovery can re-establish the same structural
+    /// publication the interrupted edit used. Windows parent flush needs a writable
+    /// parent descriptor; a ReadPgn parent handle fails FlushFileBuffers with os error 5.
+    fn resolve_publication(&self) -> Result<crate::infra::path_authority::ResolvedPath, Error> {
+        self.authority.with_mut(|authority| {
+            authority.resolve(
+                &self.path_ref,
+                crate::infra::path_authority::PathOperation::WritePgn,
+                &[],
+            )
+        })?
+    }
+
     fn practice_storage_key(&self) -> Result<String, Error> {
         self.authority
             .with_mut(|authority| authority.practice_storage_key(&self.path_ref))?
@@ -1906,7 +1919,7 @@ async fn resolve_practice_before_mutation(
         .cloned()
         .ok_or_else(|| Error::Conflict("practice recovery requires a capability binding".into()))?;
     let current = BLOCKING_GATEWAY
-        .spawn(move || binding.resolve_read())
+        .spawn(move || binding.resolve_publication())
         .await?;
     resolve_practice_pending_locked(&current, repository, directory, file_id, cancellation).await
 }
@@ -1989,7 +2002,7 @@ pub(crate) async fn resolve_practice_pending(
     let lock = prepared.edit_lock(&repository, identity)?;
     let _guard = lock.lock().await;
     let resolved = BLOCKING_GATEWAY
-        .spawn(move || prepared.resolve_read())
+        .spawn(move || prepared.resolve_publication())
         .await?;
     resolve_practice_pending_locked(
         &resolved,
