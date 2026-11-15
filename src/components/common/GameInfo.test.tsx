@@ -1,4 +1,6 @@
 import { MantineProvider } from "@mantine/core";
+import dayjs from "dayjs";
+import customParseFormat from "dayjs/plugin/customParseFormat";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -10,6 +12,8 @@ import { fixtureNode } from "@/tests/treeFixtures";
 import { defaultTree, getEffectiveTermination } from "@/utils/treeReducer";
 import GameInfo from "./GameInfo";
 import { TreeStateContext } from "./TreeStateContext";
+
+dayjs.extend(customParseFormat);
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("../databases/FideInfo", () => ({ default: () => null }));
@@ -113,6 +117,11 @@ test.each(["", "?", "   "])(
     });
   },
 );
+
+function setNativeInputValue(field: HTMLInputElement, value: string) {
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, value);
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+}
 
 function expectSiteLink(site: string, label: string) {
   const anchors = host.querySelectorAll("a");
@@ -225,4 +234,79 @@ test("the Termination field is hidden without an effective end", async () => {
   store.getState().setState(state);
   await act(async () => root.render(<Editor />));
   expect(host.querySelector('[aria-label="GameInfo.Termination"]')).toBeNull();
+});
+
+test("clearing the round keeps the field mounted so it can be retyped", async () => {
+  store.getState().setHeaders({ ...defaultTree().headers, round: "3" });
+  await act(async () => root.render(<Editor />));
+  const field = host.querySelector<HTMLInputElement>('input[aria-label="GameInfo.Round"]')!;
+  expect(field.value).toBe("3");
+
+  await act(async () => setNativeInputValue(field, ""));
+  expect(store.getState().headers.round).toBe("");
+  expect(field.isConnected).toBe(true);
+  expect(host.textContent).toContain("GameInfo.Round");
+
+  await act(async () => setNativeInputValue(field, "4"));
+  expect(store.getState().headers.round).toBe("4");
+  expect(field.value).toBe("4");
+});
+
+test.each([undefined, "?"] as const)(
+  "editable view shows an empty round field when round is %j",
+  async (round) => {
+    store.getState().setHeaders({ ...defaultTree().headers, round });
+    await act(async () => root.render(<Editor />));
+    const field = host.querySelector<HTMLInputElement>('input[aria-label="GameInfo.Round"]')!;
+    expect(field).not.toBeNull();
+    expect(field.value).toBe("");
+    await act(async () => setNativeInputValue(field, "2"));
+    expect(store.getState().headers.round).toBe("2");
+  },
+);
+
+test("read-only view hides an empty round", async () => {
+  await act(async () =>
+    root.render(
+      <MantineProvider env="test">
+        <GameInfo headers={defaultTree().headers} />
+      </MantineProvider>,
+    ),
+  );
+  expect(host.querySelector('input[aria-label="GameInfo.Round"]')).toBeNull();
+});
+
+test("a partial PGN date is shown as the date placeholder", async () => {
+  store.getState().setHeaders({ ...defaultTree().headers, date: "1972.??.??" });
+  await act(async () => root.render(<Editor />));
+  const partial = host.querySelector<HTMLInputElement>('input[aria-label="Common.Date"]')!;
+  expect(partial).not.toBeNull();
+  expect(partial.value).toBe("");
+  expect(partial.placeholder).toBe("1972.??.??");
+  expect(store.getState().headers.date).toBe("1972.??.??");
+
+  await act(async () =>
+    store.getState().setHeaders({ ...store.getState().headers, date: "2024.05.17" }),
+  );
+  const full = host.querySelector<HTMLInputElement>('input[aria-label="Common.Date"]')!;
+  expect(full.placeholder).toBe("????.??.??");
+});
+
+test("full layout names every header field", async () => {
+  await act(async () => root.render(<Editor />));
+  for (const label of [
+    "Databases.Game.Event",
+    "Databases.Game.Site",
+    "Common.Date",
+    "Fen.White",
+    "Fen.Black",
+    "GameInfo.WhiteElo",
+    "GameInfo.BlackElo",
+    "GameInfo.Round",
+  ]) {
+    expect(host.querySelector(`input[aria-label="${label}"]`)).not.toBeNull();
+  }
+  const white = host.querySelector('input[aria-label="Fen.White"]')!;
+  const black = host.querySelector('input[aria-label="Fen.Black"]')!;
+  expect(white.getAttribute("aria-label")).not.toBe(black.getAttribute("aria-label"));
 });

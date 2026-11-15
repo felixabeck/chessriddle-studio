@@ -49,6 +49,8 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
       ? dayjs(headers.date, "YYYY.MM.DD").toDate()
       : null
     : null;
+  const partialDate =
+    headers.date && date === null && headers.date !== "????.??.??" ? headers.date : null;
   const [whiteOpened, setWhiteOpened] = useState(false);
   const [blackOpened, setBlackOpened] = useState(false);
 
@@ -106,6 +108,7 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
             <InlineInput
               disabled={disabled}
               value={event}
+              aria-label={t("Databases.Game.Event")}
               placeholder={t("GameInfo.UnknownEvent")}
               className={classes.input}
               onChange={(e) => {
@@ -116,7 +119,7 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
               }}
             />
           )}
-          {!simplified && headers.round && headers.round !== "?" && (
+          {!simplified && (!disabled || (!!headers.round && headers.round !== "?")) && (
             <>
               {"-"}
               <Group gap={0} wrap="nowrap">
@@ -126,7 +129,8 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
                 <input
                   className={classes.roundInput}
                   placeholder="?"
-                  value={headers.round}
+                  aria-label={t("GameInfo.Round")}
+                  value={headers.round && headers.round !== "?" ? headers.round : ""}
                   onChange={(e) =>
                     setHeaders({
                       ...headers,
@@ -194,6 +198,7 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
           <input
             className={classes.textInput}
             placeholder="?"
+            aria-label={t("Fen.White")}
             value={headers.white}
             onChange={(e) =>
               setHeaders({
@@ -213,6 +218,7 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
             ) : (
               <InlineInput
                 className={classes.input}
+                aria-label={t("Databases.Game.Site")}
                 placeholder={t("GameInfo.UnknownSite")}
                 value={site}
                 onFocus={(e) => e.target.select()}
@@ -229,7 +235,8 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
               w="4.5rem"
               variant="unstyled"
               valueFormat="YYYY.MM.DD"
-              placeholder="????.??.??"
+              placeholder={partialDate ?? "????.??.??"}
+              aria-label={t("Common.Date")}
               value={date}
               allowDeselect
               onChange={(date) => {
@@ -245,6 +252,7 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
           <input
             className={cx(classes.textInput, classes.right)}
             placeholder="?"
+            aria-label={t("Fen.Black")}
             value={headers.black}
             onChange={(e) =>
               setHeaders({
@@ -256,6 +264,7 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
           />
           <input
             className={classes.textInput}
+            aria-label={t("GameInfo.WhiteElo")}
             placeholder={t("GameInfo.UnknownElo")}
             value={headers.white_elo === 0 ? t("GameInfo.Unrated") : headers.white_elo || ""}
             onChange={(n) => {
@@ -301,6 +310,7 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
           </Box>
           <input
             className={cx(classes.textInput, classes.right)}
+            aria-label={t("GameInfo.BlackElo")}
             placeholder={t("GameInfo.UnknownElo")}
             value={headers.black_elo === 0 ? t("GameInfo.Unrated") : headers.black_elo || ""}
             onChange={(n) => {
