@@ -26627,3 +26627,21 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Recommend:** (A). Viewing should not modify the user's files. Source evals and explicit reports still round-trip, and it also removes the main write-amplification risk from the f-20261115-15 fix. (B) only if keeping engine evals in the PGN is a feature you want to offer.
 * **Product impact:** with (A) or (B, off), opening and analysing a game no longer changes the file or database row, marks the tab unsaved, triggers sync uploads or conflicts, or shows a conflict panel in another tab. Under (C) every analysed position keeps rewriting the user's PGN with `[%eval]` comments.
 * **Session:** Grok Bot executor, ChessFable review session 2026-11-15 (batches 48-52; filed on Felix's request t61u)
+
+---
+
+## 2026-11-15 — filed through the inbox spool
+
+### Importing a FEN or opening a PGN whose start FEN carries an impossible en-passant square makes the engine, game report and database reject the whole tab
+
+* **ID:** f-20261115-25 · **Status:** open · **Area:** chess-tree · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Filed from:** dffa80ea-b9be-4de8-8939-c6bc1521ecf2
+* **Impact class:** ux
+* **Spotted outside diff:** yes (split from f-20261114-20's 2026-11-15 annotation; the editor entry point is fixed there, these entry points are not)
+* **Where:** `src/components/tabs/ImportModal.tsx` ~254-262 (Import → FEN installs `makeFen(parseFen(input))`), `src/utils/chess.ts` `parsePGN` → `innerParsePGN` → `defaultTree(fen)` (`src/utils/treeReducer.ts` `normalizeFen` only trims).
+* **Defect:** neither path drops an en-passant square that chessops' legal-ep check would discard. `4k3/8/8/8/4P3/8/8/4K3 b - e6 0 1`, `rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq e3 0 1` and `4k3/8/8/8/8/8/8/4K3 w - e6 0 1` are kept as the root FEN; `Chess.fromSetup` accepts them but shakmaty (`setup.position(..)` in `engine/uci.rs`, `chess.rs` `collect_report_positions`, `db/encoding.rs` `database_setup_to_chess`) returns `invalid ep square`.
+* **Failure scenario:** Import → FEN with one of the FENs above, or open a PGN with such a `[FEN]` tag: engine panel shows a rejection for every position of the tab, Game report fails, and saving to a database skips the game.
+* **Proof:** Grok Bot node/shakmaty probes recorded in f-20261114-20's 2026-11-15 annotation (origin `179c9f23c`).
+* **Fix:** where these paths install the root, drop an illegal ep field (e.g. rewrite it to `-` when `makeFen(position.toSetup())` would drop it), keeping other fields byte-identical so `headers.fen`/root identity stays stable. Regressions for Import → FEN and a PGN `[FEN]` tag with an impossible ep square.
+* **Related:** f-20261114-20 (editor side-to-move entry point, handled in the same session), f-20261004-22.
+* **Found by:** Grok Bot deep scenario review (split by the f-20261114-11 drain session)
