@@ -24835,7 +24835,7 @@ Handled 2026-11-15 (drain session 03e75071). Every full-layout header field has 
 
 ### Play-setup opponent fields are unnamed: the human name, time, increment and unit inputs have no accessible label
 
-* **ID:** f-20261112-52 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-52 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/boards/OpponentForm.tsx:68-73` (human-name `TextInput` with no `label`, `aria-label` or placeholder) and `:122-183` (Time / Increment `InputWrapper label=…` wrapping `TimeInput`, which is not associated with the inner input); `src/components/common/TimeInput.tsx:39-62` (the `NumberInput` and its unit `Select` take no label prop). `BoardGame.tsx:1378-1390` renders two of these forms side by side (one per colour), so the unlabelled fields appear twice.
@@ -24844,6 +24844,12 @@ Handled 2026-11-15 (drain session 03e75071). Every full-layout header field has 
 - **Fix:** give the name field a label (for example `t("Board.Opponent.Name")`, prefixed with the side) and let TimeInput accept `label`/`aria-label` for both its NumberInput and unit Select (for example "Time", "Time unit"), passed from OpponentForm with the player's colour. Add an OpponentForm test that queries the fields by label.
 - **Proof:** ephemeral Vitest rendering the real OpponentForm in MantineProvider (EnginesSelect mocked), human opponent with a 3+2 clock: all five non-radio inputs (`Felix`, `3`, `m`, `2`, `s`) had null `aria-label`, null `aria-labelledby`, empty title and placeholder, and `labels.length === 0`. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 23)
+* **Handled 2026-11-15 (drain, lens tier):** commits e807c878d, 4254f6097, db7b75bda on master.
+  * OpponentForm is a `role="group"` named by its side heading (BoardGame hoists `player1Side`/`player2Side` and passes them as `sideLabel`); the human name field carries `aria-label` `Common.Name`; the Time and Increment `InputWrapper` captions are associated with their NumberInputs through a shared `useId` passed to `TimeInput`'s new `id` prop; the unit selects are named through `unitLabel` (`Board.Opponent.TimeUnit` / `Board.Opponent.IncrementUnit`).
+  * Review round 1 extended the fix to GoModeInput, which the engine + unlimited Play path mounts: its limit Select (`GoMode.Limit`), Depth/Nodes fields and Time field (`TimeInput` `ariaLabel`, `GoMode.TimeUnit`) are named. Four new keys in all 16 catalogues.
+  * Proof: `OpponentForm.labels.test.tsx` (real Mantine) finds every control by accessible name inside each of two side groups and refuses duplicate ids; `BoardGame.test.tsx` proves the side labels follow cycleColor through white, black and random; GoModeInput/TimeInput tests assert the names. Reverts failed each new assertion. Final gates `pnpm gates:push -- --frontend` green at db7b75bda.
+  * No visible change (aria only), so no browser pass. Rejected: visible captions for the name field, which would have changed the layout.
+<!-- ledger-meta {"command":"close","effect_lines":5,"effect_sha256":"28a1a6c27f0221e994e2c3975450b4969bca99bb6e1817d53d439f669251ae04","header_sha256":"8defe341c1faa4ed6d31b8e9c0f8f8076bf3f1743dd6e18ed01fdbb5341e4a6f","header_status":"handled","input_sha256":"584ff688090984dc9207f10c4419772d018c8aaf061fe9f883f9409637c98f06","kind":"mutation-receipt","operation":"f0b07daf1891aad282e48042c0e7c94f41e3ef2fb1cb3e776bafd7fe5f6c2c22","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-52"],"target":"f-20261112-52","v":1} -->
 
 ---
 
