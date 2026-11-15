@@ -1,7 +1,7 @@
 import { Button, Checkbox, Group, Select, Stack, Text } from "@mantine/core";
-import { type Setup, SquareSet } from "chessops";
+import { type Setup } from "chessops";
 import { EMPTY_FEN, INITIAL_FEN, makeFen, parseFen } from "chessops/fen";
-import { memo, useCallback, useContext, useEffect, useMemo } from "react";
+import { memo, useCallback, useContext, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
@@ -68,33 +68,17 @@ function FenInputInner({ currentFen, setup }: { currentFen: string; setup: Setup
       if (setup) {
         const castlingSquare = getCastlingSquare(setup, color, side);
         if (castlingSquare !== undefined) {
-          setup.castlingRights = setup.castlingRights.set(castlingSquare, value);
-          setFen(makeFen(setup));
+          setFen(
+            makeFen({
+              ...setup,
+              castlingRights: setup.castlingRights.set(castlingSquare, value),
+            }),
+          );
         }
       }
     },
     [setup, setFen],
   );
-
-  useEffect(() => {
-    let newCastlingRights = SquareSet.empty();
-    if (whiteCastling.q) {
-      newCastlingRights = newCastlingRights.set(getCastlingSquare(setup, "w", "q")!, true);
-    }
-    if (blackCastling.q) {
-      newCastlingRights = newCastlingRights.set(getCastlingSquare(setup, "b", "q")!, true);
-    }
-    if (whiteCastling.k) {
-      newCastlingRights = newCastlingRights.set(getCastlingSquare(setup, "w", "k")!, true);
-    }
-    if (blackCastling.k) {
-      newCastlingRights = newCastlingRights.set(getCastlingSquare(setup, "b", "k")!, true);
-    }
-    const newFen = makeFen({ ...setup, castlingRights: newCastlingRights });
-    if (newFen !== currentFen) {
-      setFen(newFen);
-    }
-  }, [blackCastling, setCastlingRights, setup, whiteCastling, setFen, currentFen]);
 
   return (
     <Stack gap="sm">

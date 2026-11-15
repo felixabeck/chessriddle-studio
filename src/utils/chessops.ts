@@ -31,12 +31,21 @@ export function positionFromFen(fen: string): [Chess, null] | [null, FenError | 
     );
 }
 
+/**
+ * Flip or set the side to move. An en-passant square belongs to the side that
+ * just moved, so it is cleared whenever the resulting turn differs from the
+ * parsed turn. Passing the current color leaves the position unchanged.
+ */
 export function swapMove(fen: string, color?: Color) {
     const setup = parseFen(fen).unwrap();
+    const parsedTurn = setup.turn;
     if (color) {
         setup.turn = color;
     } else {
         setup.turn = setup.turn === "white" ? "black" : "white";
+    }
+    if (setup.turn !== parsedTurn) {
+        setup.epSquare = undefined;
     }
 
     return makeFen(setup);

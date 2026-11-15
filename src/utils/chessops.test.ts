@@ -21,6 +21,14 @@ describe("swapMove", () => {
         expect(swapMove(swapMove(INITIAL_FEN), "white")).toBe(INITIAL_FEN);
         expect(swapMove(INITIAL_FEN, "black")).toBe(swapMove(INITIAL_FEN));
     });
+
+    test("clears an en-passant square when the turn actually changes", () => {
+        const withEp = "rnbqkb1r/ppp1pppp/5n2/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3";
+        expect(swapMove(withEp, "black")).toBe(
+            "rnbqkb1r/ppp1pppp/5n2/3pP3/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 3",
+        );
+        expect(swapMove(withEp, "white")).toBe(withEp);
+    });
 });
 
 describe("hasCaptures", () => {
