@@ -26721,3 +26721,35 @@ Push review follow-up: the review-tests lens (REVISE) found that nothing committ
 **What does not work (measured 2026-11-15 in the Playwright container):** installing the clock a minute earlier (`11:59:01Z`) removes the throw but makes the screenshot unstable. The displayed timer then depends on the real time elapsed before the pause: 5 repeats per layout all differed from a freshly recorded snapshot by 25 pixels in the timer digits. The change was reverted.
 
 **Direction:** make the timer's start deterministic instead of widening the window, for example by installing the clock before the Puzzles tab mounts the timer, or by pausing first and advancing with `runFor`, then re-record `en-US-desktop-timer` and `en-US-scaled-timer` if the shown value changes. Related: f-20261111-01 (handled, another CI-only difference in this spec, different cause).
+
+---
+
+## 2026-11-15 — filed through the inbox spool
+
+### Frontend-coverage push gate fails on 5 s timeouts of SettingsPage and Puzzles tests that pass alone in about 1-2 s
+
+* **ID:** f-20261115-27 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Filed from:** 1fde4d64-7fd9-43cb-91c4-6038d580aca8
+* **Impact class:** tooling
+* **Spotted outside diff:** yes (final push gates of the f-20261114-10/-14 drain push, 2026-11-15; the diff touches neither test nor any module they import beyond the shared tree store)
+* **Where:** `src/components/settings/SettingsPage.test.tsx:59` (`practice settings expose automatic/manual grading and the session new-move limit`) and `src/components/puzzles/Puzzles.test.tsx` (`completion retention keeps B's board and fetches a native successor after A eviction`), run by the `frontend-coverage` lane of `pnpm gates:push -- --frontend` concurrently with the e2e container.
+* **Defect:** each test exceeded vitest's 5000 ms default only in the instrumented coverage lane under load (other repos held both heavy-gate slots while the lane waited, and e2e ran beside it), and each passes alone in about 1-2 s. This is the cold-transform-under-load class already fixed per test in f-20261029-16, f-20261101-01 and f-20261109-08; these two tests were not covered by those fixes.
+* **Failure scenario:** a push whose diff is unrelated goes red in `frontend-coverage` with one `Test timed out in 5000ms` and needs a full gate rerun (about 10-15 minutes), which is what happened twice in this session.
+* **Proof:** gate run `artifacts/gates/20261115T170359564Z-521935/frontend-coverage.log` (tree `3fa14f1da`): `Puzzles.test.tsx` completion-retention test `Test timed out in 5000ms` (5488 ms), alongside five real failures from the diff that were repaired. Gate run `artifacts/gates/20261115T175523550Z-1466751/frontend-coverage.log` (tree `1060ad6d6`): only `SettingsPage.test.tsx` practice-settings test, `Test timed out in 5000ms` (5409 ms), 8627 passed. Alone: `pnpm exec vitest run src/components/settings/SettingsPage.test.tsx -t "practice settings expose"` passed in 2.38 s total; the Puzzles test alone passed (2 passed).
+* **Fix:** as for f-20261109-08: measure where the time goes under coverage instrumentation (module-graph import charged to the first test, sequential renders and Select interactions) and remove the cost at its source; d-20260901-36 rejects raising the timeout.
+* **Related:** f-20261109-08, f-20261101-01, f-20261029-16 (same class, other tests, handled); d-20260901-36.
+* **Found by:** Claude Code drain session 1fde4d64-7fd9-43cb-91c4-6038d580aca8
+
+### Local frontend-mutation gate: the tree-path package's 6986-test dry run exceeds Stryker's 10-minute limit under shared-machine load
+
+* **ID:** f-20261115-28 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** build · **Blocked:** none
+* **Filed from:** 1fde4d64-7fd9-43cb-91c4-6038d580aca8
+* **Impact class:** tooling
+* **Spotted outside diff:** yes (final push gates of the f-20261114-10/-14 drain push, 2026-11-15)
+* **Where:** `stryker.config.mjs` (`dryRunTimeoutMinutes: 10`, `vitest.related: true`, `coverageAnalysis: "perTest"`), `scripts/run-frontend-mutation.mjs` (tree-path package, local incremental reuse of the daily sweep).
+* **Defect:** any push that changes a tree-path mutated file (here `src/state/store/tree.ts` and `src/utils/chess.ts`) makes the local gate dry-run every related test: `Found 2 of 1631 file(s) to be mutated ... 275 mutant(s), and 6986 test(s)`. f-20261015-08 sized the 10-minute allowance for a 2698-test tree package (4m58s hosted). The related set has grown 2.6x since. In the same local run the workspace-storage package needed 9m41s for 5586 tests (overhead 300 s), so tree-path cannot finish inside 10 minutes while other repositories' gates load the machine (load average 30-36 on 24 cores).
+* **Failure scenario:** `pnpm gates:push -- --frontend` for a diff touching `tree.ts` or `chess.ts` fails `frontend-mutation` with `ERROR DryRunExecutor Initial test run timed out!` and no mutant result. Every rerun costs about 11 minutes plus slot waits and fails the same way while the machine stays loaded.
+* **Proof:** `artifacts/gates/20261115T180649634Z-2358253/frontend-mutation.log` (dry run 19:13:24 → timed out 19:23:26) and `artifacts/gates/20261115T190109740Z-2610987/frontend-mutation.log` (20:04:53 → timed out 20:14:55, beside workspace-storage `Ran 5586 tests in 9 minutes and 41 seconds`), tree `1060ad6d6`. Hosted daily sweep 43699956736 job `frontend-mutation (tree-path)` succeeded (idle runner, 30 min job), so the hosted path is not shown failing.
+* **Open question:** how should the local push gate keep the complete tree-path mutation proof within its startup bound on a shared machine (narrower related selection, splitting the package, scheduling it alone, or a load-aware allowance), given d-20261015-20's bounded allowance?
+* **Related:** f-20261015-08 (handled; set the 10-minute allowance at 2698 tests), d-20261015-20, f-20261022-04.
+* **Found by:** Claude Code drain session 1fde4d64-7fd9-43cb-91c4-6038d580aca8
