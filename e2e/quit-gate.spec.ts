@@ -1,6 +1,16 @@
 import { INITIAL_FEN } from "chessops/fen";
 import { deserializeStorageValue } from "../src/state/store/debouncedStorage";
-import { activeWorkspaceTab, expect, playBoardMove, test, waitForFontsSettled } from "./fixtures";
+import {
+    activeWorkspaceTab,
+    expect,
+    filesWorkspaceCommands,
+    gameOpeningCommands,
+    gameOpeningFixture,
+    playBoardMove,
+    selectFilesTreeRow,
+    test,
+    waitForFontsSettled,
+} from "./fixtures";
 import type { Page } from "@playwright/test";
 
 const liveState = {
@@ -209,3 +219,62 @@ for (const gesture of gestures) {
         await expectImmediateDestroy(page);
     });
 }
+
+async function openDirtyDatabaseDraft(page: Page) {
+    await page.addInitScript(() => localStorage.setItem("auto-save", "false"));
+    await page.goto("/library");
+    await waitForCloseRequestedListener(page);
+    await selectFilesTreeRow(page, gameOpeningFixture.databaseTitle);
+    await page.getByRole("button", { name: "New game", exact: true }).click();
+    await expect(page).toHaveURL("/");
+    const tab = (await activeWorkspaceTab(page))!;
+    expect(tab.gameOrigin.kind).toBe("databaseDraft");
+    expect(tab.name).toBe("New game");
+    await playBoardMove(page, page.locator("cg-board").first(), "e2", "e4");
+    await expect.poll(() => activeTabTreeDirty(page)).toBe(true);
+}
+
+const saveAndQuit = (page: Page) =>
+    quitDialog(page).getByRole("button", { name: "Save and quit", exact: true });
+
+test("quit-gate: Save and quit stores a new database game, then destroys once", async ({
+    page,
+    mockScenario,
+}) => {
+    await mockScenario({
+        commands: filesWorkspaceCommands([[]], {
+            ...gameOpeningCommands,
+            insert_db_game: { result: { id: 501, stamp: "a".repeat(64) } },
+        }),
+    });
+    await openDirtyDatabaseDraft(page);
+    await clickTitleBarClose(page);
+    await expectQuitDialog(page, "dirty-database-draft.png");
+    await expect(quitDialog(page).getByRole("listitem")).toHaveText(["New game"]);
+    await saveAndQuit(page).click();
+    await expect.poll(() => ipcCount(page, "plugin:window|destroy")).toBe(1);
+    expect(await ipcCount(page, "insert_db_game")).toBe(1);
+});
+
+test("quit-gate: a failed Save and quit keeps the window, names the tab, and can be cancelled", async ({
+    page,
+    mockScenario,
+}) => {
+    await mockScenario({
+        commands: filesWorkspaceCommands([[]], {
+            ...gameOpeningCommands,
+            insert_db_game: { error: "The database is locked." },
+        }),
+    });
+    await openDirtyDatabaseDraft(page);
+    await clickTitleBarClose(page);
+    await saveAndQuit(page).click();
+    await expect(quitDialog(page)).toContainText("“New game” could not be saved.");
+    await expect(quitDialog(page).getByRole("listitem")).toHaveText(["New game"]);
+    expect(await ipcCount(page, "plugin:window|destroy")).toBe(0);
+    await waitForFontsSettled(page);
+    await expect(page).toHaveScreenshot("failed-save-and-quit.png", { fullPage: true });
+    await quitDialog(page).getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(quitDialog(page)).toHaveCount(0);
+    expect(await activeTabTreeDirty(page)).toBe(true);
+});

@@ -4,7 +4,7 @@ import { Provider, createStore } from "jotai";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { activeTabAtom, tabsAtom } from "@/state/atoms";
 import type { Tab } from "@/state/workspaceTypes";
-import type { BlockingTab } from "@/state/quitGate";
+import type { BlockingTab, QuitSaveOutcome } from "@/state/quitGate";
 import QuitConfirmModal from "./QuitConfirmModal";
 
 const navigate = vi.fn();
@@ -14,20 +14,26 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { name?: string }) =>
-      options?.name ? `${key}:${options.name}` : key,
+    t: (key: string, options?: { name?: string; message?: string; defaultValue?: string }) =>
+      key === "Tab.NewTab"
+        ? "New tab"
+        : options?.name
+          ? `${key}:${options.name}${options.message ? `:${options.message}` : ""}`
+          : key,
   }),
 }));
 vi.mock("@mantine/core", () => ({
-  Button: ({ children, ...props }: any) => <button {...props}>{children}</button>,
+  Button: ({ children, loading: _loading, variant: _variant, ...props }: any) => (
+    <button {...props}>{children}</button>
+  ),
   Group: ({ children }: any) => <div>{children}</div>,
   Stack: ({ children }: any) => <div>{children}</div>,
   Text: ({ children, ...props }: any) => <p {...props}>{children}</p>,
 }));
 vi.mock("../common/AppModal", () => ({
-  default: ({ opened, children, onClose }: any) =>
+  default: ({ opened, children, onClose, pending }: any) =>
     opened ? (
-      <div role="dialog">
+      <div role="dialog" data-pending={String(!!pending)}>
         <button type="button" aria-label="outside" onClick={onClose} />
         {children}
       </div>
@@ -76,6 +82,7 @@ async function renderModal(props: {
   tabs: BlockingTab[];
   onCancel?: () => void;
   onQuitWithoutSaving?: () => void;
+  onSaveAndQuit?: () => Promise<QuitSaveOutcome>;
 }) {
   const onCancel = props.onCancel ?? vi.fn();
   const onQuitWithoutSaving = props.onQuitWithoutSaving ?? vi.fn();
@@ -88,6 +95,7 @@ async function renderModal(props: {
           tabs={props.tabs}
           onCancel={onCancel}
           onQuitWithoutSaving={onQuitWithoutSaving}
+          onSaveAndQuit={props.onSaveAndQuit}
         />
       </Provider>,
     ),
@@ -135,4 +143,95 @@ test("Quit without saving destroys exactly once", async () => {
   });
   expect(onQuitWithoutSaving).toHaveBeenCalledOnce();
   expect(navigate).not.toHaveBeenCalled();
+});
+
+const button = (name: string) =>
+  [...host.querySelectorAll("button")].find((candidate) => candidate.textContent === name);
+
+test("a tab named by a translation key is listed translated, with its file", async () => {
+  const fileTab: Tab = {
+    name: "Tab.NewTab",
+    value: "33333333-3333-4333-8333-333333333333",
+    type: "analysis",
+    gameOrigin: {
+      kind: "file",
+      gameNumber: 0,
+      file: {
+        type: "file",
+        handle: { id: { id: "games" }, kind: "fileWorkspace" },
+        name: "games.pgn",
+        numGames: 1,
+        metadata: { type: "game", tags: [] },
+        lastModified: 1,
+      },
+    },
+  };
+  const keyNamed: Tab = { ...currentTab, name: "Tab.NewTab" };
+  jotaiStore.set(tabsAtom, [keyNamed, fileTab], keyNamed.value);
+  await renderModal({
+    failClosed: false,
+    tabs: [
+      { value: keyNamed.value, name: keyNamed.name, uninspectable: false },
+      { value: fileTab.value, name: fileTab.name, uninspectable: false },
+    ],
+  });
+  expect([...host.querySelectorAll("li")].map((item) => item.textContent)).toEqual([
+    "New tab",
+    "games › New tab",
+  ]);
+});
+
+test("Save and quit is offered only when something can be saved", async () => {
+  const onSaveAndQuit = vi.fn(async (): Promise<QuitSaveOutcome> => ({ kind: "quit" }));
+  await renderModal({ failClosed: false, tabs: blocking, onSaveAndQuit });
+  expect(button("Tab.SaveAndQuit")).toBeDefined();
+  await renderModal({ failClosed: false, tabs: [blocking[1]!], onSaveAndQuit });
+  expect(button("Tab.SaveAndQuit")).toBeUndefined();
+  await renderModal({ failClosed: true, tabs: [], onSaveAndQuit });
+  expect(button("Tab.SaveAndQuit")).toBeUndefined();
+  await renderModal({ failClosed: false, tabs: blocking });
+  expect(button("Tab.SaveAndQuit")).toBeUndefined();
+});
+
+test("a pending save locks the dialog, and a blocked save names the tab and the reason", async () => {
+  let finish!: (outcome: QuitSaveOutcome) => void;
+  const onSaveAndQuit = vi.fn(
+    () =>
+      new Promise<QuitSaveOutcome>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await renderModal({ failClosed: false, tabs: blocking, onSaveAndQuit });
+  await act(async () => button("Tab.SaveAndQuit")?.click());
+  expect(host.querySelector("[role=dialog]")?.getAttribute("data-pending")).toBe("true");
+  expect(button("Common.Cancel")?.disabled).toBe(true);
+  expect(button("Tab.QuitWithoutSaving")?.disabled).toBe(true);
+  await act(async () =>
+    finish({ kind: "blocked", tab: blocking[0]!, reason: "failed", message: "disk full" }),
+  );
+  expect(host.querySelector("[role=dialog]")?.getAttribute("data-pending")).toBe("false");
+  expect(host.textContent).toContain("Tab.QuitSaveFailed:Current:disk full");
+  expect(button("Common.Cancel")?.disabled).toBe(false);
+});
+
+test.each([
+  ["attention", "Tab.QuitSaveNeedsAttention:Current"],
+  ["superseded", "Tab.QuitSaveFailed:Current:Tab.SaveSuperseded"],
+] as const)("a %s outcome shows its own message", async (reason, text) => {
+  const onSaveAndQuit = vi.fn(
+    async (): Promise<QuitSaveOutcome> => ({ kind: "blocked", tab: blocking[0]!, reason }),
+  );
+  await renderModal({ failClosed: false, tabs: blocking, onSaveAndQuit });
+  await act(async () => button("Tab.SaveAndQuit")?.click());
+  expect(host.textContent).toContain(text);
+});
+
+test("a thrown save shows its message and unlocks the dialog", async () => {
+  const onSaveAndQuit = vi.fn(async (): Promise<QuitSaveOutcome> => {
+    throw new Error("scan exploded");
+  });
+  await renderModal({ failClosed: false, tabs: blocking, onSaveAndQuit });
+  await act(async () => button("Tab.SaveAndQuit")?.click());
+  expect(host.textContent).toContain("scan exploded");
+  expect(host.querySelector("[role=dialog]")?.getAttribute("data-pending")).toBe("false");
 });

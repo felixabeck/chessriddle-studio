@@ -32,7 +32,10 @@ export default function NewDatabaseGameButton({
           void runTabCreation({
             create: () =>
               createTab({
-                tab: { name: "Tab.NewTab", type: "analysis" },
+                tab: {
+                  name: t("Databases.NewGame", { defaultValue: "New game" }),
+                  type: "analysis",
+                },
                 gameOrigin: { kind: "databaseDraft", database },
                 setTabs,
               }),

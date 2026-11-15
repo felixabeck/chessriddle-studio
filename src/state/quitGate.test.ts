@@ -14,6 +14,7 @@ import {
     registerQuitCloseListener,
     resetQuitGateForTests,
     runQuitGate,
+    saveAndQuit,
     scanBlockingTabs,
     type QuitGateHost,
     type TabInspection,
@@ -367,6 +368,127 @@ test("Quit without saving destroys exactly once while destroy is pending", async
     await Promise.all([first, second]);
     expect(gate.destroyWindow).toHaveBeenCalledOnce();
     expect(isQuitGateInProgress()).toBe(false);
+});
+
+function markStoredTreeSaved(id: string) {
+    seedStoredTree(id, false);
+    return "saved" as const;
+}
+
+test("Save and quit saves every dirty tab in order, then destroys once", async () => {
+    const first = uuid();
+    const second = uuid();
+    seedStoredTree(first, true);
+    seedStoredTree(second, true);
+    const tabs = [
+        tab({ value: first, type: "analysis" }),
+        tab({ value: uuid(), type: "new" }),
+        tab({ value: second, type: "analysis", gameOrigin: draftOrigin() }),
+    ];
+    const saveTab = vi.fn(async (saved: Tab) => markStoredTreeSaved(saved.value));
+    const gate = host({ getTabs: () => tabs, saveTab });
+    await runQuitGate(gate);
+    await expect(saveAndQuit()).resolves.toEqual({ kind: "quit" });
+    expect(saveTab.mock.calls.map(([saved]) => saved.value)).toEqual([first, second]);
+    expect(gate.destroyWindow).toHaveBeenCalledOnce();
+    expect(gate.openDialog).toHaveBeenCalledOnce();
+    expect(isQuitGateInProgress()).toBe(false);
+});
+
+test("Save and quit stops at the first failed save, keeps earlier saves, and refreshes the list", async () => {
+    const first = uuid();
+    const second = uuid();
+    const third = uuid();
+    for (const id of [first, second, third]) seedStoredTree(id, true);
+    const tabs = [first, second, third].map((value) => tab({ value, type: "analysis" }));
+    const saveTab = vi.fn(async (saved: Tab) =>
+        saved.value === second
+            ? {
+                  status: "failed" as const,
+                  error: { category: "unexpected" as const, message: "disk full" },
+              }
+            : markStoredTreeSaved(saved.value),
+    );
+    const gate = host({ getTabs: () => tabs, saveTab });
+    await runQuitGate(gate);
+    await expect(saveAndQuit()).resolves.toEqual({
+        kind: "blocked",
+        tab: { value: second, name: second, uninspectable: false },
+        reason: "failed",
+        message: "disk full",
+    });
+    expect(saveTab).toHaveBeenCalledTimes(2);
+    expect(gate.destroyWindow).not.toHaveBeenCalled();
+    expect(gate.openDialog).toHaveBeenLastCalledWith({
+        failClosed: false,
+        tabs: [second, third].map((value) => ({ value, name: value, uninspectable: false })),
+    });
+    expect(isQuitGateInProgress()).toBe(true);
+});
+
+test.each([
+    ["cancelled", { kind: "cancelled" }],
+    ["conflict", { kind: "blocked", reason: "attention" }],
+    ["superseded", { kind: "blocked", reason: "superseded" }],
+] as const)("Save and quit does not quit after a %s save", async (result, outcome) => {
+    const id = uuid();
+    seedStoredTree(id, true);
+    const gate = host({
+        getTabs: () => [tab({ value: id, type: "analysis" })],
+        saveTab: vi.fn(async () => result),
+    });
+    await runQuitGate(gate);
+    await expect(saveAndQuit()).resolves.toMatchObject(outcome);
+    expect(gate.destroyWindow).not.toHaveBeenCalled();
+    expect(isQuitGateInProgress()).toBe(true);
+});
+
+test("Save and quit leaves a clean conflicted file tab blocking and never saves over it", async () => {
+    const dirty = uuid();
+    const conflicted = uuid();
+    seedStoredTree(dirty, true);
+    seedStoredTree(conflicted, false);
+    setFileFreshness(conflicted, "conflict");
+    const saveTab = vi.fn(async (saved: Tab) => markStoredTreeSaved(saved.value));
+    const gate = host({
+        getTabs: () => [
+            tab({ value: dirty, type: "analysis" }),
+            tab({ value: conflicted, type: "analysis", gameOrigin: fileOrigin() }),
+        ],
+        saveTab,
+    });
+    await runQuitGate(gate);
+    await expect(saveAndQuit()).resolves.toEqual({
+        kind: "blocked",
+        tab: { value: conflicted, name: conflicted, uninspectable: false },
+        reason: "attention",
+    });
+    expect(saveTab.mock.calls.map(([saved]) => saved.value)).toEqual([dirty]);
+    expect(gate.destroyWindow).not.toHaveBeenCalled();
+});
+
+test("a pending Save and quit ignores cancel, discard and a second submission", async () => {
+    const id = uuid();
+    seedStoredTree(id, true);
+    let finish!: (result: "saved") => void;
+    const saveTab = vi.fn(
+        () =>
+            new Promise<"saved">((resolve) => {
+                finish = resolve;
+            }),
+    );
+    const gate = host({ getTabs: () => [tab({ value: id, type: "analysis" })], saveTab });
+    await runQuitGate(gate);
+    const pending = saveAndQuit();
+    await expect(saveAndQuit()).resolves.toEqual({ kind: "cancelled" });
+    cancelQuitGate();
+    await quitWithoutSaving();
+    expect(isQuitGateInProgress()).toBe(true);
+    expect(gate.destroyWindow).not.toHaveBeenCalled();
+    finish(markStoredTreeSaved(id));
+    await expect(pending).resolves.toEqual({ kind: "quit" });
+    expect(saveTab).toHaveBeenCalledOnce();
+    expect(gate.destroyWindow).toHaveBeenCalledOnce();
 });
 
 test("blocking tabs request a dialog and do not destroy", async () => {

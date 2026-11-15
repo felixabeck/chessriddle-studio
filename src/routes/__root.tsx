@@ -18,12 +18,13 @@ import TopBar from "@/components/TopBar";
 import { WindowResizeHandles } from "@/components/WindowResizeHandles";
 import QuitConfirmModal from "@/components/tabs/QuitConfirmModal";
 import i18n from "@/i18n";
-import { nativeBarAtom, tabsAtom } from "@/state/atoms";
+import { activeTabAtom, nativeBarAtom, tabsAtom, updateTabById } from "@/state/atoms";
 import {
   cancelQuitGate,
   quitWithoutSaving,
   registerQuitCloseListener,
   runQuitGate,
+  saveAndQuit,
   type BlockingTab,
   type QuitGateHost,
 } from "@/state/quitGate";
@@ -38,7 +39,9 @@ import {
 } from "@/state/practiceStorage";
 import { openFile, pickPgnFile } from "@/utils/files";
 import { backgroundHotkeyOptions } from "@/utils/keyboardOwnership";
-import { createTab, type Tab } from "@/utils/tabs";
+import { createTreeStore } from "@/state/store/tree";
+import { getTabTreeKey } from "@/state/workspaceTypes";
+import { createTab, saveToFile, type Tab } from "@/utils/tabs";
 import {
   assembleNativeMenuResources,
   bindAppMenuCallbacks,
@@ -226,6 +229,22 @@ export function RootLayout() {
     },
     destroyWindow: () => getCurrentWebviewWindow().destroy(),
     exitProcess: (code) => exit(code),
+    saveTab: (tab) => {
+      if (tab.gameOrigin.kind === "none") {
+        // This save asks for a destination file, so show the game the picker is about.
+        void navigate({ to: "/" });
+        jotaiStore.set(activeTabAtom, tab.value);
+      }
+      return saveToFile({
+        tab,
+        // The tab's cached store, or one hydrated from its stored tree if it never mounted.
+        store: createTreeStore(tab.value, undefined, getTabTreeKey(tab)),
+        getTab: (tabId) => jotaiStore.get(tabsAtom).find((candidate) => candidate.value === tabId),
+        updateTab: (tabId, update, onAdmitted) =>
+          updateTabById((...args) => jotaiStore.set(tabsAtom, ...args), tabId, update, onAdmitted),
+        isUserSave: true,
+      });
+    },
     notify: notifyQuitError,
     log: (message) =>
       logFailureSafely(
@@ -381,6 +400,7 @@ export function RootLayout() {
         onQuitWithoutSaving={() => {
           void quitWithoutSaving();
         }}
+        onSaveAndQuit={saveAndQuit}
       />
       {showTopBar && (
         <AppShell.Header>

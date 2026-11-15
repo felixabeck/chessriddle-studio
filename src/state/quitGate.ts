@@ -8,7 +8,7 @@ import {
 } from "@/state/store/tabStorage";
 import { getCachedTreeStore } from "@/state/store/tree";
 import { getTabTreeKey, type Tab } from "@/state/workspaceTypes";
-import { asksBeforeDiscardingChanges, isFileBackedTab } from "@/utils/tabs";
+import { asksBeforeDiscardingChanges, isFileBackedTab, type SaveResult } from "@/utils/tabs";
 
 export type BlockingTab = {
     value: string;
@@ -20,6 +20,17 @@ export type QuitDialogState = {
     failClosed: boolean;
     tabs: BlockingTab[];
 };
+
+/** Why Save and quit stopped before quitting; `attention` needs the user inside the tab. */
+export type QuitSaveOutcome =
+    | { kind: "quit" }
+    | { kind: "cancelled" }
+    | {
+          kind: "blocked";
+          tab: BlockingTab;
+          reason: "failed" | "superseded" | "attention";
+          message?: string;
+      };
 
 export type CloseRequestedEvent = {
     preventDefault: () => void;
@@ -38,6 +49,8 @@ export type QuitGateHost = {
     openDialog: (state: QuitDialogState) => boolean;
     destroyWindow: () => Promise<void>;
     exitProcess: (code: number) => void | Promise<void>;
+    /** Runs the tab's ordinary user save; only needed by hosts that offer Save and quit. */
+    saveTab?: (tab: Tab) => Promise<SaveResult>;
     notify: (error: unknown) => void;
     log: (message: string) => Promise<void>;
     warn: (message: string) => void;
@@ -53,6 +66,7 @@ const defaultInspection: TabInspection = {
 
 let inProgress = false;
 let proceeding = false;
+let saving = false;
 let activeHost: QuitGateHost | null = null;
 
 export function isQuitGateInProgress(): boolean {
@@ -62,6 +76,7 @@ export function isQuitGateInProgress(): boolean {
 export function resetQuitGateForTests(): void {
     inProgress = false;
     proceeding = false;
+    saving = false;
     activeHost = null;
 }
 
@@ -80,11 +95,13 @@ function isUninspectableStatus(
     return kind === "unreadable" || kind === "unavailable";
 }
 
-export function scanBlockingTabs(
+type TabVerdict = { tab: Tab; uninspectable: boolean; dirty: boolean };
+
+function inspectBlockingTabs(
     tabs: readonly Tab[],
     inspection: TabInspection = defaultInspection,
-): BlockingTab[] {
-    const blocking: BlockingTab[] = [];
+): TabVerdict[] {
+    const blocking: TabVerdict[] = [];
     for (const tab of tabs) {
         if (tab.type === "new") continue;
 
@@ -115,25 +132,36 @@ export function scanBlockingTabs(
         }
 
         if (uninspectable) {
-            blocking.push({ value: tab.value, name: tab.name, uninspectable: true });
+            blocking.push({ tab, uninspectable: true, dirty: false });
             continue;
         }
 
         if (!asksBeforeDiscardingChanges(tab)) continue;
 
         if (dirty) {
-            blocking.push({ value: tab.value, name: tab.name, uninspectable: false });
+            blocking.push({ tab, uninspectable: false, dirty: true });
             continue;
         }
 
         if (isFileBackedTab(tab)) {
             const freshness = inspection.getFileFreshness(tab.value);
             if (freshness.state === "conflict" || freshness.state === "unavailable") {
-                blocking.push({ value: tab.value, name: tab.name, uninspectable: false });
+                blocking.push({ tab, uninspectable: false, dirty: false });
             }
         }
     }
     return blocking;
+}
+
+function toBlockingTab({ tab, uninspectable }: TabVerdict): BlockingTab {
+    return { value: tab.value, name: tab.name, uninspectable };
+}
+
+export function scanBlockingTabs(
+    tabs: readonly Tab[],
+    inspection: TabInspection = defaultInspection,
+): BlockingTab[] {
+    return inspectBlockingTabs(tabs, inspection).map(toBlockingTab);
 }
 
 function releaseLatch(): void {
@@ -204,14 +232,67 @@ export async function runQuitGate(host: QuitGateHost): Promise<void> {
 }
 
 export function cancelQuitGate(): void {
-    if (!inProgress || proceeding) return;
+    if (!inProgress || proceeding || saving) return;
     releaseLatch();
 }
 
 export async function quitWithoutSaving(): Promise<void> {
     const host = activeHost;
-    if (!host) return;
+    if (!host || saving) return;
     await proceedQuit(host);
+}
+
+/**
+ * Saves every dirty tab through its ordinary user save, one at a time, and quits only when no
+ * tab blocks afterwards. The first save that does not complete stops the run: tabs saved before
+ * it stay saved and the dialog stays open on the refreshed list.
+ */
+export async function saveAndQuit(): Promise<QuitSaveOutcome> {
+    const host = activeHost;
+    if (!host?.saveTab || proceeding || saving) return { kind: "cancelled" };
+    saving = true;
+    try {
+        // Each tab is attempted once, re-read from the live workspace because an earlier save
+        // can rebind it; the attempted set bounds the loop by the number of tabs.
+        const attempted = new Set<string>();
+        for (;;) {
+            const next = inspectBlockingTabs(host.getTabs()).find(
+                (verdict) => verdict.dirty && !attempted.has(verdict.tab.value),
+            );
+            if (!next) break;
+            attempted.add(next.tab.value);
+            const result = await host.saveTab(next.tab);
+            if (result === "saved") continue;
+            if (result === "cancelled") return { kind: "cancelled" };
+            const tab = toBlockingTab(next);
+            if (result === "conflict") return { kind: "blocked", tab, reason: "attention" };
+            if (result === "superseded") return { kind: "blocked", tab, reason: "superseded" };
+            return { kind: "blocked", tab, reason: "failed", message: result.error.message };
+        }
+        const remaining = scanBlockingTabs(host.getTabs());
+        const first = remaining[0];
+        if (!first) {
+            saving = false;
+            await proceedQuit(host);
+            return { kind: "quit" };
+        }
+        return { kind: "blocked", tab: first, reason: "attention" };
+    } catch (error) {
+        host.warn(
+            `Save and quit stopped: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        throw error;
+    } finally {
+        saving = false;
+        if (inProgress && !proceeding && activeHost === host) {
+            // Saved tabs no longer block; show what is still open.
+            try {
+                host.openDialog({ failClosed: false, tabs: scanBlockingTabs(host.getTabs()) });
+            } catch {
+                // The existing dialog stays as it was.
+            }
+        }
+    }
 }
 
 export function createCloseRequestedHandler(

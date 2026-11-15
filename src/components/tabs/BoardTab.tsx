@@ -3,7 +3,7 @@ import { type MouseEventHandler, useEffect, useRef, useState } from "react";
 import type { DraggableProvidedDragHandleProps } from "@hello-pangea/dnd";
 import { ChessKnight, Database, Puzzle, ScanSearch } from "lucide-react";
 import cx from "clsx";
-import { getTabFile, type Tab } from "@/utils/tabs";
+import { getTabFile, tabLabelWithFile, type Tab } from "@/utils/tabs";
 import classes from "./BoardTab.module.css";
 import { FileIcon } from "../files/FileIcon";
 import { useTranslation } from "react-i18next";
@@ -29,7 +29,7 @@ export function BoardTab({
   const [truncated, setTruncated] = useState(false);
   const name = t(tab.name, { defaultValue: tab.name });
   const file = getTabFile(tab);
-  const tooltip = file ? `${file.name.replace(/\.pgn$/i, "")} › ${name}` : name;
+  const tooltip = tabLabelWithFile(tab, name);
 
   // Non-file tabs show the full-name tooltip only while the ellipsis cuts the label.
   useEffect(() => {
