@@ -24879,7 +24879,7 @@ Handled 2026-11-15 (drain session 03e75071). Every full-layout header field has 
 
 ### Engine settings sliders are unnamed: the lines, cores and hash controls expose no accessible label
 
-* **ID:** f-20261112-54 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-54 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/panels/analysis/EngineSettingsForm.tsx:63-125`: each control sits next to a bold `<Text>` caption (`Engines.Settings.NumOfLines`, `NumOfCores`, `SizeOfHash`) that is not associated with it. `LinesSlider` is rendered without its optional `ariaLabel` (`:68-79`; only DetachedEval passes one), `CoresSlider.tsx:15-21` accepts no label at all, and `HashSlider.tsx:25-46` renders a Mantine `Slider` with no `aria-label`/`thumbLabel`.
@@ -24891,6 +24891,9 @@ Handled 2026-11-15 (drain session 03e75071). Every full-layout header field has 
 
 **Correction (2026-11-12, Grok Bot chunk 24, same session):** in the Proof, "with radios equally unnamed" means the radio `<input>`s carry no `aria-label` of their own. Through their Mantine `<label>`s they are named only by the option value ("1", "2", …), as the Defect says. It does not mean they have no name at all.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"21a2184266532d1d551dd3462b7c405a2626519a65781992a6c8a52209a8bc69","input_sha256":"30ea17f61a0d9da7ed66d26acc6de4f369c854011b06b01773ecf86e75ba2b85","kind":"mutation-receipt","operation":"4e4eaa7be4fd348a0294cc664ddd2acd7c01a76ba4a4b469853076f9bb323cd6","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-54"],"target":"f-20261112-54","v":1} -->
+
+**Handled (2026-11-15, drain 6b00070a-55f2-422d-86b7-5d87d392c60c):** the lines, cores and hash controls in EngineSettingsForm now take their accessible name from the adjacent captions (`Engines.Settings.NumOfLines`, `NumOfCores`, `SizeOfHash`): LinesSlider through its existing `ariaLabel`, CoresSlider through a new `ariaLabel` → SegmentedControl `aria-label`, HashSlider through a new `ariaLabel` → Mantine `thumbLabel` (the `role="slider"` thumb's `aria-label`). The cloud-engine lines control in `EnginesPage.tsx` CloudSettings had the same unassociated caption and is named the same way. Tests: CoresSlider, HashSlider (new) and LinesSlider (new) assert the radiogroup/slider name; EngineSettingsForm and EnginesPage assert the form wires the caption keys. Each new assertion was observed red with its wiring removed. Commits `154465f1c` (fix), `b214ce61c` (review round 1 test repairs). Review: correctness, root-cause, tests, engine-protocol (not applicable), code-quality, minimalism; round 2 closure by tests and minimalism, all APPROVED. Rejected alternative: `aria-labelledby` pointing at the caption `<Text>` with `useId` — the same result with more wiring per call site, and DetachedEval already uses the `ariaLabel` prop convention.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"454abb00e8884d72ecb4ecc51b7ed5237854971574ec2d3af6dd5cde29c36167","header_sha256":"641a6ee854d745fb2da44365ae43fbd8cc3f381d6d78fd1e635e7057a9fc9b85","header_status":"handled","input_sha256":"410930a5ca25cdb8fde78610bfa180fdf55ea5f4484a4a17d23c3d67110db7d3","kind":"mutation-receipt","operation":"4feec82f40e79780f1257ed7365ddb05f2909a0efe221e27c71d26e174fe3b45","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-54"],"target":"f-20261112-54","v":1} -->
 
 ---
 
