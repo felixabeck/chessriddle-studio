@@ -732,6 +732,7 @@ mod windows_tests {
             identity: identity(&file).unwrap(),
             parent_identity: None,
             target_is_dir: false,
+            practice_key: None,
         };
         let mut candidate = authority.persistent.clone();
         candidate.insert(
@@ -787,6 +788,7 @@ mod windows_tests {
             identity: identity(&junction.join("changed.pgn")).unwrap(),
             parent_identity: None,
             target_is_dir: false,
+            practice_key: None,
         };
         let stable = StoredEntry {
             id: PathRef {
@@ -800,6 +802,7 @@ mod windows_tests {
             identity: identity(&junction.join("stable.pgn")).unwrap(),
             parent_identity: None,
             target_is_dir: false,
+            practice_key: None,
         };
         fs::write(real.join("replacement.pgn"), b"new").unwrap();
         fs::remove_file(real.join("changed.pgn")).unwrap();
@@ -4637,6 +4640,107 @@ struct StoredEntry {
     target_is_dir: bool,
     #[serde(default)]
     purpose: Option<EntryPurpose>,
+    /// Practice store addressing key. Absent means the entry's own id, so existing
+    /// decks and registries keep working without a data migration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    practice_key: Option<String>,
+}
+
+fn practice_storage_key(stored: &StoredEntry) -> &str {
+    stored
+        .practice_key
+        .as_deref()
+        .unwrap_or(stored.id.id.as_str())
+}
+
+fn listing_practice_paths_match(left: &StoredEntry, right: &StoredEntry) -> Option<bool> {
+    let left = left.path.to_path().ok()?;
+    let right = right.path.to_path().ok()?;
+    Some(listing_paths_match(&left, &right))
+}
+
+fn assign_unique_practice_key_matches(
+    fresh: &[&StoredEntry],
+    donors: &[&StoredEntry],
+    matches: impl Fn(&StoredEntry, &StoredEntry) -> bool,
+    claimed: &mut BTreeSet<String>,
+    inherited: &mut BTreeMap<String, String>,
+) {
+    let mut fresh_hits: Vec<Vec<usize>> = vec![Vec::new(); fresh.len()];
+    let mut donor_hits: Vec<Vec<usize>> = vec![Vec::new(); donors.len()];
+    for (fi, fresh_entry) in fresh.iter().enumerate() {
+        for (di, donor) in donors.iter().enumerate() {
+            if matches(fresh_entry, donor) {
+                fresh_hits[fi].push(di);
+                donor_hits[di].push(fi);
+            }
+        }
+    }
+    for (fi, hits) in fresh_hits.iter().enumerate() {
+        if hits.len() != 1 {
+            continue;
+        }
+        let di = hits[0];
+        if donor_hits[di].len() != 1 {
+            continue;
+        }
+        let donor = donors[di];
+        inherited.insert(
+            fresh[fi].id.id.clone(),
+            practice_storage_key(donor).to_owned(),
+        );
+        claimed.insert(donor.id.id.clone());
+    }
+}
+
+/// Inherit a removed PgnFile's practice storage key onto a fresh PgnFile in the same
+/// listing commit. Ambiguous or undecidable matches inherit nothing; this stays infallible.
+fn inherit_listing_practice_keys(
+    removed: &[StoredEntry],
+    prepared: &[PreparedEntry],
+) -> BTreeMap<String, String> {
+    let donors: Vec<&StoredEntry> = removed
+        .iter()
+        .filter(|entry| entry.purpose == Some(EntryPurpose::PgnFile))
+        .collect();
+    let fresh: Vec<&StoredEntry> = prepared
+        .iter()
+        .filter(|entry| !entry.reused && entry.stored.purpose == Some(EntryPurpose::PgnFile))
+        .map(|entry| &entry.stored)
+        .collect();
+    let mut inherited = BTreeMap::new();
+    let mut claimed = BTreeSet::new();
+    assign_unique_practice_key_matches(
+        &fresh,
+        &donors,
+        |fresh, donor| {
+            donor.identity == fresh.identity
+                && listing_practice_paths_match(donor, fresh) == Some(false)
+        },
+        &mut claimed,
+        &mut inherited,
+    );
+    let remaining_fresh: Vec<&StoredEntry> = fresh
+        .iter()
+        .copied()
+        .filter(|entry| !inherited.contains_key(&entry.id.id))
+        .collect();
+    let remaining_donors: Vec<&StoredEntry> = donors
+        .iter()
+        .copied()
+        .filter(|entry| !claimed.contains(&entry.id.id))
+        .collect();
+    assign_unique_practice_key_matches(
+        &remaining_fresh,
+        &remaining_donors,
+        |fresh, donor| {
+            donor.identity != fresh.identity
+                && listing_practice_paths_match(donor, fresh) == Some(true)
+        },
+        &mut claimed,
+        &mut inherited,
+    );
+    inherited
 }
 
 fn is_engine_root_use(stored: &StoredEntry, operation: PathOperation) -> bool {
@@ -4844,6 +4948,7 @@ impl DirectoryListingSnapshot {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct PreparedEntry {
     stored: StoredEntry,
     reused: bool,
@@ -5253,6 +5358,7 @@ impl PathAuthority {
             .collect();
         // Clone at commit time, preserving registrations made during the unlocked walk.
         let mut candidate = self.persistent.clone();
+        let mut removed = Vec::new();
         for recorded in &snapshot.entries {
             if !reused.contains(recorded.id.id.as_str())
                 && !retained.contains(&recorded.id.id)
@@ -5262,14 +5368,21 @@ impl PathAuthority {
                         && current.stored.purpose == recorded.purpose
                 })
             {
-                candidate.remove(&recorded.id.id);
+                if let Some(entry) = candidate.remove(&recorded.id.id) {
+                    removed.push(entry.stored);
+                }
             }
         }
+        let inherited = inherit_listing_practice_keys(&removed, prepared);
         for entry in prepared {
+            let mut stored = entry.stored.clone();
+            if let Some(key) = inherited.get(&stored.id.id) {
+                stored.practice_key = Some(key.clone());
+            }
             candidate.insert(
-                entry.stored.id.id.clone(),
+                stored.id.id.clone(),
                 Entry {
-                    stored: entry.stored.clone(),
+                    stored,
                     availability: PathAvailability::Available,
                 },
             );
@@ -5890,6 +6003,7 @@ impl PathAuthority {
                 identity: validate_target(&root.path, PathClass::AppOwnedRoot)?,
                 parent_identity: None,
                 target_is_dir: true,
+                practice_key: None,
             };
             persistent.insert(
                 stored.id.id.clone(),
@@ -6248,6 +6362,7 @@ impl PathAuthority {
             identity: acquired.identity,
             parent_identity: acquired.parent_identity,
             target_is_dir: acquired.target_is_dir,
+            practice_key: None,
         };
         self.dialogs.insert(
             id.id.clone(),
@@ -6391,6 +6506,7 @@ impl PathAuthority {
             identity: expected,
             parent_identity: acquired.parent_identity,
             target_is_dir,
+            practice_key: None,
         };
         let mut candidate = self.persistent.clone();
         candidate.insert(
@@ -6449,6 +6565,7 @@ impl PathAuthority {
             identity: binding.identity,
             parent_identity: binding.parent_identity,
             target_is_dir,
+            practice_key: None,
         }
     }
 
@@ -6887,6 +7004,7 @@ impl PathAuthority {
                         identity: binding.identity.clone(),
                         parent_identity: None,
                         target_is_dir: true,
+                        practice_key: None,
                     };
                     candidate.insert(
                         new_root.id.clone(),
@@ -7373,6 +7491,7 @@ impl PathAuthority {
                 }),
                 target_is_dir: false,
                 purpose: Some(EntryPurpose::EngineImage),
+                practice_key: None,
             },
         );
         let mut write_started = false;
@@ -7642,22 +7761,70 @@ impl PathAuthority {
         &mut self,
         id: &PathRef,
         requires_read_pgn: bool,
-    ) -> Result<(), Error> {
+    ) -> Result<String, Error> {
         if self.pending_unpersisted_removals.contains(&id.id) {
             return Err(Error::InvalidInput(
                 "unknown or revoked practice deck".into(),
             ));
         }
-        let authorized = self.persistent.get(&id.id).is_some_and(|entry| {
-            !requires_read_pgn || entry.stored.operations.contains(&PathOperation::ReadPgn)
-        });
-        if !authorized {
+        let Some(entry) = self.persistent.get(&id.id) else {
+            return Err(Error::InvalidInput(
+                "unknown or unauthorized practice deck".into(),
+            ));
+        };
+        if requires_read_pgn && !entry.stored.operations.contains(&PathOperation::ReadPgn) {
             return Err(Error::InvalidInput(
                 "unknown or unauthorized practice deck".into(),
             ));
         }
+        let storage_key = practice_storage_key(&entry.stored).to_owned();
         self.refresh_persistent_id(id);
-        Ok(())
+        Ok(storage_key)
+    }
+
+    pub(crate) fn practice_storage_key(&self, id: &PathRef) -> Result<String, Error> {
+        if self.pending_unpersisted_removals.contains(&id.id) {
+            return Err(Error::InvalidInput(
+                "unknown or revoked practice deck".into(),
+            ));
+        }
+        let Some(entry) = self.persistent.get(&id.id) else {
+            return Err(Error::InvalidInput(
+                "unknown or unauthorized practice deck".into(),
+            ));
+        };
+        Ok(practice_storage_key(&entry.stored).to_owned())
+    }
+
+    pub(crate) fn live_handle_for_practice_storage_key(
+        &self,
+        key: &str,
+    ) -> Result<Option<PathRef>, Error> {
+        let mut found = None;
+        for entry in self.persistent.values() {
+            if self
+                .pending_unpersisted_removals
+                .contains(&entry.stored.id.id)
+            {
+                continue;
+            }
+            if practice_storage_key(&entry.stored) == key {
+                if found.is_some() {
+                    return Err(Error::Conflict("practice storage key is ambiguous".into()));
+                }
+                found = Some(entry.stored.id.clone());
+            }
+        }
+        Ok(found)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_practice_key_for_test(&mut self, id: &PathRef, key: impl Into<String>) {
+        self.persistent
+            .get_mut(&id.id)
+            .expect("test registry entry")
+            .stored
+            .practice_key = Some(key.into());
     }
 
     pub(crate) fn set_active_database_root(
@@ -8052,6 +8219,7 @@ impl PathAuthority {
             },
             parent_identity: Some(parent_identity),
             target_is_dir: false,
+            practice_key: None,
         };
         Ok(PreparedEntry {
             stored,
@@ -9376,6 +9544,7 @@ impl PathAuthority {
             identity: binding.identity,
             parent_identity,
             target_is_dir: is_dir,
+            practice_key: None,
         };
         Ok(PreparedEntry {
             stored,
@@ -9595,6 +9764,7 @@ impl PathAuthority {
             identity: verified.verified_identity,
             parent_identity: Some(parent_identity),
             target_is_dir: false,
+            practice_key: None,
         };
         let mut candidate = self.persistent.clone();
         candidate.insert(
@@ -11203,6 +11373,7 @@ pub(crate) mod portable_tests {
                 }),
                 target_is_dir: false,
                 purpose: Some(EntryPurpose::EngineImage),
+                practice_key: None,
             };
             for _ in 0..MAX_AUTHORITY_IDS {
                 let mut entry = template.clone();
@@ -13432,6 +13603,310 @@ pub(crate) mod portable_tests {
         Ok(())
     }
 
+    fn replace_by_rename_over(path: &Path, contents: &[u8]) {
+        let staging = path.with_file_name(format!(
+            ".{}-staging",
+            path.file_name().unwrap().to_string_lossy()
+        ));
+        fs::write(&staging, contents).unwrap();
+        fs::rename(&staging, path).unwrap();
+    }
+
+    fn published_listing_child(
+        authority: &mut PathAuthority,
+        workspace: &FileWorkspaceHandle,
+        root: &Path,
+        name: &str,
+    ) -> Result<PathRef, Error> {
+        let prepared = directory_listing_bound_prepare(authority, workspace, root, name)?;
+        Ok(authority.publish_prepared_entry(prepared)?.id)
+    }
+
+    fn relist_workspace_files(
+        authority: &mut PathAuthority,
+        workspace: &FileWorkspaceHandle,
+        root: &Path,
+        names: &[&str],
+        retained: &BTreeSet<String>,
+    ) -> Result<Vec<PreparedEntry>, Error> {
+        let snapshot = authority.workspace_listing_snapshot(workspace, OsStr::new("trash"))?;
+        let mut prepared = Vec::new();
+        for name in names {
+            prepared.push(directory_listing_bound_prepare(
+                authority, workspace, root, name,
+            )?);
+        }
+        authority.commit_directory_listing(
+            snapshot,
+            prepared.clone(),
+            retained,
+            &CancellationToken::new(),
+        )?;
+        Ok(prepared)
+    }
+
+    fn practice_key_of(authority: &PathAuthority, id: &PathRef) -> Option<String> {
+        authority
+            .persistent
+            .get(&id.id)
+            .and_then(|entry| entry.stored.practice_key.clone())
+    }
+
+    #[test]
+    fn listing_inherits_practice_key_on_same_path_replacement() -> Result<(), Error> {
+        let (_directory, mut authority, workspace, root) = directory_listing_bound_fixture()?;
+        fs::write(root.join("a.pgn"), b"old")?;
+        let donor = published_listing_child(&mut authority, &workspace, &root, "a.pgn")?;
+        let before = identity(&root.join("a.pgn"))?;
+        replace_by_rename_over(&root.join("a.pgn"), b"new");
+        let after = identity(&root.join("a.pgn"))?;
+        assert_ne!(before, after);
+        let prepared = relist_workspace_files(
+            &mut authority,
+            &workspace,
+            &root,
+            &["a.pgn"],
+            &BTreeSet::new(),
+        )?;
+        let fresh = prepared[0].id();
+        assert_ne!(fresh.id, donor.id);
+        assert!(!authority.persistent.contains_key(&donor.id));
+        assert_eq!(practice_key_of(&authority, &fresh), Some(donor.id));
+        Ok(())
+    }
+
+    #[test]
+    fn listing_inherits_practice_key_on_same_identity_rename() -> Result<(), Error> {
+        let (_directory, mut authority, workspace, root) = directory_listing_bound_fixture()?;
+        fs::write(root.join("a.pgn"), b"*")?;
+        let donor = published_listing_child(&mut authority, &workspace, &root, "a.pgn")?;
+        let before = identity(&root.join("a.pgn"))?;
+        fs::rename(root.join("a.pgn"), root.join("b.pgn"))?;
+        assert_eq!(identity(&root.join("b.pgn"))?, before);
+        let prepared = relist_workspace_files(
+            &mut authority,
+            &workspace,
+            &root,
+            &["b.pgn"],
+            &BTreeSet::new(),
+        )?;
+        let fresh = prepared[0].id();
+        assert_ne!(fresh.id, donor.id);
+        assert_eq!(practice_key_of(&authority, &fresh), Some(donor.id));
+        Ok(())
+    }
+
+    #[test]
+    fn listing_inherits_original_practice_key_across_chained_replacement() -> Result<(), Error> {
+        let (_directory, mut authority, workspace, root) = directory_listing_bound_fixture()?;
+        fs::write(root.join("a.pgn"), b"first")?;
+        let original = published_listing_child(&mut authority, &workspace, &root, "a.pgn")?;
+        replace_by_rename_over(&root.join("a.pgn"), b"second");
+        let mid = relist_workspace_files(
+            &mut authority,
+            &workspace,
+            &root,
+            &["a.pgn"],
+            &BTreeSet::new(),
+        )?[0]
+            .id();
+        assert_eq!(practice_key_of(&authority, &mid), Some(original.id.clone()));
+        replace_by_rename_over(&root.join("a.pgn"), b"third");
+        let last = relist_workspace_files(
+            &mut authority,
+            &workspace,
+            &root,
+            &["a.pgn"],
+            &BTreeSet::new(),
+        )?[0]
+            .id();
+        assert_ne!(last.id, mid.id);
+        assert_eq!(practice_key_of(&authority, &last), Some(original.id));
+        Ok(())
+    }
+
+    #[test]
+    fn listing_inherits_nothing_for_ambiguous_identity_pair() -> Result<(), Error> {
+        let (_directory, mut authority, workspace, root) = directory_listing_bound_fixture()?;
+        fs::write(root.join("a.pgn"), b"*")?;
+        fs::write(root.join("b.pgn"), b"*")?;
+        fs::write(root.join("c.pgn"), b"*")?;
+        let shared = identity(&root.join("a.pgn"))?;
+        let donor_a = published_listing_child(&mut authority, &workspace, &root, "a.pgn")?;
+        let donor_b = published_listing_child(&mut authority, &workspace, &root, "b.pgn")?;
+        if let Some(entry) = authority.persistent.get_mut(&donor_b.id) {
+            entry.stored.identity = shared.clone();
+        }
+        let snapshot = authority.workspace_listing_snapshot(&workspace, OsStr::new("trash"))?;
+        let mut fresh =
+            directory_listing_bound_prepare(&mut authority, &workspace, &root, "c.pgn")?;
+        fresh.stored.identity = shared;
+        fresh.reused = false;
+        authority.commit_directory_listing(
+            snapshot,
+            vec![fresh.clone()],
+            &BTreeSet::new(),
+            &CancellationToken::new(),
+        )?;
+        assert!(practice_key_of(&authority, &fresh.id()).is_none());
+        assert!(!authority.persistent.contains_key(&donor_a.id));
+        assert!(!authority.persistent.contains_key(&donor_b.id));
+        Ok(())
+    }
+
+    #[test]
+    fn listing_inherits_nothing_from_reused_hard_link_donor() -> Result<(), Error> {
+        let (_directory, mut authority, workspace, root) = directory_listing_bound_fixture()?;
+        fs::write(root.join("a.pgn"), b"*")?;
+        fs::hard_link(root.join("a.pgn"), root.join("b.pgn"))?;
+        assert_eq!(
+            identity(&root.join("a.pgn"))?,
+            identity(&root.join("b.pgn"))?
+        );
+        let donor = published_listing_child(&mut authority, &workspace, &root, "a.pgn")?;
+        let prepared = relist_workspace_files(
+            &mut authority,
+            &workspace,
+            &root,
+            &["a.pgn", "b.pgn"],
+            &BTreeSet::new(),
+        )?;
+        let reused = prepared
+            .iter()
+            .find(|entry| entry.stored.id.id == donor.id)
+            .expect("original path is reused");
+        assert!(reused.reused);
+        let fresh = prepared
+            .iter()
+            .find(|entry| entry.stored.id.id != donor.id)
+            .expect("second link is fresh");
+        assert!(!fresh.reused);
+        assert!(practice_key_of(&authority, &fresh.id()).is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn listing_inherits_nothing_from_unread_retained_donor() -> Result<(), Error> {
+        let (_directory, mut authority, workspace, root) = directory_listing_bound_fixture()?;
+        fs::write(root.join("a.pgn"), b"old")?;
+        let donor = published_listing_child(&mut authority, &workspace, &root, "a.pgn")?;
+        replace_by_rename_over(&root.join("a.pgn"), b"new");
+        let mut retained = BTreeSet::new();
+        retained.insert(donor.id.clone());
+        let prepared =
+            relist_workspace_files(&mut authority, &workspace, &root, &["a.pgn"], &retained)?;
+        let fresh = prepared[0].id();
+        assert!(authority.persistent.contains_key(&donor.id));
+        assert_ne!(fresh.id, donor.id);
+        assert!(practice_key_of(&authority, &fresh).is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn listing_inherits_nothing_for_non_pgn_file() -> Result<(), Error> {
+        let (_directory, mut authority, workspace, root) = directory_listing_bound_fixture()?;
+        fs::write(root.join("a.pgn"), b"old")?;
+        let donor = published_listing_child(&mut authority, &workspace, &root, "a.pgn")?;
+        if let Some(entry) = authority.persistent.get_mut(&donor.id) {
+            entry.stored.purpose = Some(EntryPurpose::OpeningBook);
+            entry.stored.operations = canonical_operations(EntryPurpose::OpeningBook);
+        }
+        let snapshot = DirectoryListingSnapshot {
+            root: root.clone(),
+            entries: vec![authority.persistent.get(&donor.id).unwrap().stored.clone()],
+        };
+        replace_by_rename_over(&root.join("a.pgn"), b"new");
+        let fresh = directory_listing_bound_prepare(&mut authority, &workspace, &root, "a.pgn")?;
+        authority.commit_directory_listing(
+            snapshot,
+            vec![fresh.clone()],
+            &BTreeSet::new(),
+            &CancellationToken::new(),
+        )?;
+        assert!(practice_key_of(&authority, &fresh.id()).is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn listing_inherits_nothing_when_donor_path_does_not_convert() -> Result<(), Error> {
+        let (_directory, mut authority, workspace, root) = directory_listing_bound_fixture()?;
+        fs::write(root.join("a.pgn"), b"*")?;
+        fs::write(root.join("b.pgn"), b"*")?;
+        let donor = published_listing_child(&mut authority, &workspace, &root, "a.pgn")?;
+        let shared = identity(&root.join("b.pgn"))?;
+        if let Some(entry) = authority.persistent.get_mut(&donor.id) {
+            entry.stored.identity = shared.clone();
+            #[cfg(unix)]
+            {
+                entry.stored.path = NativePath::Windows {
+                    utf16: vec![u16::from(b'x')],
+                };
+            }
+            #[cfg(windows)]
+            {
+                entry.stored.path = NativePath::Unix { bytes: "eA".into() };
+            }
+        }
+        let snapshot = DirectoryListingSnapshot {
+            root: root.clone(),
+            entries: vec![authority.persistent.get(&donor.id).unwrap().stored.clone()],
+        };
+        let mut fresh =
+            directory_listing_bound_prepare(&mut authority, &workspace, &root, "b.pgn")?;
+        fresh.stored.identity = shared;
+        authority.commit_directory_listing(
+            snapshot,
+            vec![fresh.clone()],
+            &BTreeSet::new(),
+            &CancellationToken::new(),
+        )?;
+        assert!(practice_key_of(&authority, &fresh.id()).is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn practice_key_survives_registry_reload_and_pgn_replace_rebind() -> Result<(), Error> {
+        let (directory, mut authority, workspace, root) = directory_listing_bound_fixture()?;
+        fs::write(root.join("a.pgn"), b"old")?;
+        let id = published_listing_child(&mut authority, &workspace, &root, "a.pgn")?;
+        if let Some(entry) = authority.persistent.get_mut(&id.id) {
+            entry.stored.practice_key = Some("kept-key".into());
+        }
+        require_durable(authority.save()?)?;
+        let registry = directory.path().join("registry.json");
+        let raw = fs::read_to_string(&registry)?;
+        assert!(raw.contains("kept-key"));
+        let expected = {
+            let entry = authority.persistent.get(&id.id).unwrap();
+            (entry.stored.identity.a, entry.stored.identity.b)
+        };
+        replace_by_rename_over(&root.join("a.pgn"), b"installed");
+        let installed = identity(&root.join("a.pgn"))?;
+        authority.rebind_pgn_file_after_replace(&id, expected, (installed.a, installed.b))?;
+        assert_eq!(
+            practice_key_of(&authority, &id).as_deref(),
+            Some("kept-key")
+        );
+        let reloaded = PathAuthority::open(registry, vec![])?;
+        assert_eq!(practice_key_of(&reloaded, &id).as_deref(), Some("kept-key"));
+        Ok(())
+    }
+
+    #[test]
+    fn registry_without_practice_key_loads_unchanged() -> Result<(), Error> {
+        let (directory, mut authority, workspace, root) = directory_listing_bound_fixture()?;
+        fs::write(root.join("a.pgn"), b"*")?;
+        let id = published_listing_child(&mut authority, &workspace, &root, "a.pgn")?;
+        require_durable(authority.save()?)?;
+        let registry = directory.path().join("registry.json");
+        let raw = fs::read_to_string(&registry)?;
+        assert!(!raw.contains("practice_key"));
+        let reloaded = PathAuthority::open(registry, vec![])?;
+        assert!(practice_key_of(&reloaded, &id).is_none());
+        assert_eq!(reloaded.practice_storage_key(&id)?, id.id);
+        Ok(())
+    }
+
     pub(super) struct TestClock(AtomicU64);
     impl TestClock {
         pub(super) fn new(v: u64) -> Self {
@@ -14064,6 +14539,7 @@ pub(crate) mod portable_tests {
             identity: identity(&file).unwrap(),
             parent_identity: None,
             target_is_dir: false,
+            practice_key: None,
         };
         authority.persistent.insert(
             "practice".into(),
@@ -14091,6 +14567,7 @@ pub(crate) mod portable_tests {
             identity: identity(&wrong_path).unwrap(),
             parent_identity: None,
             target_is_dir: false,
+            practice_key: None,
         };
         authority.persistent.insert(
             "wrong".into(),
@@ -14134,6 +14611,7 @@ pub(crate) mod portable_tests {
             identity: identity(&file).unwrap(),
             parent_identity: None,
             target_is_dir: false,
+            practice_key: None,
         };
 
         authority.persistent.insert(
@@ -14223,6 +14701,7 @@ pub(crate) mod portable_tests {
             identity: identity(&file).unwrap(),
             parent_identity: None,
             target_is_dir: false,
+            practice_key: None,
         };
         authority.persistent.insert(
             "revoked".into(),
@@ -19336,6 +19815,7 @@ mod tests {
             identity: identity(&file).unwrap(),
             parent_identity: None,
             target_is_dir: false,
+            practice_key: None,
         };
         let mut candidate = a.persistent.clone();
         candidate.insert(
@@ -21298,6 +21778,7 @@ mod tests {
             identity: Identity { a: 0, b: 0 },
             parent_identity: None,
             target_is_dir: false,
+            practice_key: None,
         };
         let valid = stored_entry_for(
             &valid_path,
@@ -25117,6 +25598,7 @@ mod tests {
             },
             target_is_dir,
             purpose,
+            practice_key: None,
         }
     }
 
@@ -26657,6 +27139,7 @@ mod tests {
             parent_identity: None,
             target_is_dir: false,
             purpose: None,
+            practice_key: None,
         };
         authority.persistent.insert(
             unrelated.id.id.clone(),

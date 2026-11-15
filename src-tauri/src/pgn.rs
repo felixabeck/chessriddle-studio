@@ -150,6 +150,11 @@ impl PgnCapabilityRebind {
             )
         })?
     }
+
+    fn practice_storage_key(&self) -> Result<String, Error> {
+        self.authority
+            .with_mut(|authority| authority.practice_storage_key(&self.path_ref))?
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -437,11 +442,13 @@ impl PgnRepository {
         &self,
         rebind: Option<&PgnCapabilityRebind>,
     ) -> Result<Option<(Arc<crate::infra::path_authority::AuthorizedDir>, String)>, Error> {
-        Ok(self
-            .inner()?
-            .practice_directory
-            .clone()
-            .zip(rebind.map(|binding| binding.path_ref.id.clone())))
+        let Some(directory) = self.inner()?.practice_directory.clone() else {
+            return Ok(None);
+        };
+        let Some(rebind) = rebind else {
+            return Ok(None);
+        };
+        Ok(Some((directory, rebind.practice_storage_key()?)))
     }
 
     /// Atomic replacement changes the inode. Keep practice evidence serialized across that
@@ -1949,7 +1956,21 @@ pub(crate) async fn resolve_practice_pending(
     repository: PgnRepository,
     directory: Arc<crate::infra::path_authority::AuthorizedDir>,
 ) -> Result<(), Error> {
-    let practice_lock = repository.practice_edit_lock(file_id.clone())?;
+    let lookup_authority = authority.clone();
+    let handle_id = file_id.clone();
+    let storage_key = BLOCKING_GATEWAY
+        .spawn(move || {
+            lookup_authority
+                .with_mut(|authority| {
+                    authority.practice_storage_key(&crate::infra::path_authority::PathRef {
+                        id: handle_id,
+                    })
+                })
+                .map_err(Error::from)
+                .and_then(std::convert::identity)
+        })
+        .await?;
+    let practice_lock = repository.practice_edit_lock(storage_key.clone())?;
     let _practice_guard = practice_lock.lock().await;
     let handle = crate::infra::path_authority::FileWorkspaceHandle::new(
         crate::infra::path_authority::PathRef {
@@ -1974,7 +1995,7 @@ pub(crate) async fn resolve_practice_pending(
         &resolved,
         &repository,
         directory,
-        file_id,
+        storage_key,
         &CancellationToken::new(),
     )
     .await
@@ -4214,6 +4235,109 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
+    async fn delete_game_through_inherited_handle_updates_practice_via_practice_file() {
+        use crate::infra::path_authority::{
+            ensure_app_owned_default_dir, AppDataDir, AppOwnedDefaultRoot, PathAuthority,
+            PathOperation,
+        };
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("london.pgn");
+        std::fs::write(
+            &path,
+            "[Event \"White\"]\n\n1. e4 *\n\n[Event \"Black\"]\n\n1. d4 *\n",
+        )
+        .unwrap();
+        let mut authority =
+            PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap();
+        let workspace = promote_pgn_workspace(&mut authority, &root);
+        let app = mock_app();
+        let state = app.state::<AppState>();
+        state.pgn_path_authority.install(authority).unwrap();
+        let handle_a = listed_workspace_file(&state.pgn_path_authority, &workspace, "london");
+        let practice = ensure_app_owned_default_dir(
+            &AppDataDir::for_test(directory.path()),
+            AppOwnedDefaultRoot::Practice,
+        )
+        .unwrap();
+        let donor_key = handle_a.path_ref().id.clone();
+        let positions = r#"{"positions":[{"fen":"start"}]}"#;
+        for number in [0, 1] {
+            crate::practice::sync_practice_positions_in(
+                &practice, &donor_key, number, 0, 0, positions,
+            )
+            .unwrap();
+        }
+        crate::practice::record_practice_review_in(
+            &practice,
+            &donor_key,
+            1,
+            0,
+            1,
+            1,
+            positions,
+            r#"{"fen":"kept","rating":3}"#,
+            "review",
+        )
+        .unwrap();
+        let expected = crate::practice::load_practice_deck_in(&practice, &donor_key, 1)
+            .unwrap()
+            .unwrap();
+        state.pgn_repository.initialize_practice(practice).unwrap();
+        let practice = state
+            .pgn_repository
+            .inner()
+            .unwrap()
+            .practice_directory
+            .clone()
+            .unwrap();
+        let staging = path.with_file_name(".london.pgn-staging");
+        std::fs::write(
+            &staging,
+            "[Event \"White\"]\n\n1. e4 e5 *\n\n[Event \"Black\"]\n\n1. d4 *\n",
+        )
+        .unwrap();
+        std::fs::rename(&staging, &path).unwrap();
+        let handle_b = listed_workspace_file(&state.pgn_path_authority, &workspace, "london");
+        assert_ne!(handle_a.path_ref().id, handle_b.path_ref().id);
+        let selected = read_game_core(
+            resolve_pgn(&state, &handle_b, PathOperation::ReadPgn).unwrap(),
+            0,
+            &CancellationToken::new(),
+            &state.pgn_repository,
+        )
+        .await
+        .unwrap();
+        delete_through_capability(&app, &handle_b, 0, selected.stamp, selected.revision)
+            .await
+            .unwrap();
+        assert!(
+            crate::practice::load_practice_deck_in(&practice, &donor_key, 0)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            crate::practice::load_practice_deck_in(&practice, &donor_key, 1)
+                .unwrap()
+                .unwrap(),
+            expected
+        );
+        let storage_key = crate::practice::authorize_practice_command(
+            &state.pgn_path_authority,
+            &handle_b.path_ref().id,
+            true,
+        )
+        .unwrap();
+        assert_eq!(storage_key, donor_key);
+        let loaded =
+            crate::practice::load_mapped_practice_deck_in(&practice, &storage_key, 0).unwrap();
+        assert_eq!(loaded.deck.unwrap(), expected);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
     async fn every_content_mutation_resolves_pending_before_it_can_change_count() {
         use crate::infra::path_authority::{
             ensure_app_owned_default_dir, AppDataDir, AppOwnedDefaultRoot, PathAuthority,
@@ -5572,6 +5696,36 @@ mod tests {
             )
             .expect("promote PGN workspace");
         crate::infra::path_authority::FileWorkspaceHandle::new(committed.id)
+    }
+
+    #[cfg(unix)]
+    fn listed_workspace_file(
+        authority: &crate::infra::path_authority::SharedPathAuthority,
+        workspace: &crate::infra::path_authority::FileWorkspaceHandle,
+        name: &str,
+    ) -> crate::infra::path_authority::FileWorkspaceHandle {
+        fn search(
+            entries: &[crate::file_workspace::WorkspaceEntry],
+            name: &str,
+        ) -> Option<crate::infra::path_authority::FileWorkspaceHandle> {
+            for entry in entries {
+                if entry.name == name {
+                    return Some(entry.handle.clone());
+                }
+                if let Some(found) = search(&entry.children, name) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        let listing = crate::file_workspace::collect_tree_entries(
+            authority,
+            workspace,
+            &CancellationToken::new(),
+        )
+        .expect("workspace listing")
+        .0;
+        search(&listing.entries, name).expect("listed file")
     }
 
     #[cfg(unix)]
