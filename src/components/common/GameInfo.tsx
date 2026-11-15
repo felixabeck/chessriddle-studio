@@ -56,8 +56,9 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
   const event = headers.event === "?" ? "" : headers.event;
   const site = headers.site === "?" ? "" : headers.site;
   const round = headers.round === "?" ? "" : (headers.round ?? "");
-  // The editable layout always shows Round, so its header row wraps instead of pushing BLACK out of view.
-  const wrapHeader = !simplified && !disabled;
+  // The editable full layout always shows Round, so its Event/Round cluster wraps
+  // (without the dash separator) instead of pushing BLACK out of view.
+  const editableHeader = !simplified && !disabled;
   const sitePlatform = sitePlatformLabel(headers.site);
   // Keep raw White text so spaces survive typing, using the normalized Event fallback only
   // when White is empty.
@@ -85,11 +86,11 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
           </Text>
         )}
         <Group
-          wrap={wrapHeader ? "wrap" : "nowrap"}
+          wrap={editableHeader ? "wrap" : "nowrap"}
           justify={simplified ? "start" : "center"}
           w="100%"
           style={
-            wrapHeader
+            editableHeader
               ? { minWidth: 0, rowGap: 0, columnGap: "var(--mantine-spacing-xs)" }
               : undefined
           }
@@ -132,7 +133,7 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
           )}
           {!simplified && (!disabled || round !== "") && (
             <>
-              {!wrapHeader && "-"}
+              {!editableHeader && "-"}
               <Group gap={0} wrap="nowrap">
                 <Text c="dimmed" size="sm" mr="xs">
                   {t("GameInfo.Round")}
