@@ -8474,6 +8474,49 @@ mod tests {
         assert!(loaded.deck.is_some());
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn pending_recovery_succeeds_for_a_write_denied_unix_pgn() {
+        use std::os::unix::fs::PermissionsExt;
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+        let (_temp, authority, workspace, root, practice) = library_workspace();
+        let pgn = b"[Event \"A\"]\n\n1. e4 *\n\n[Event \"B\"]\n\n1. d4 *\n";
+        let path = root.join("london.pgn");
+        fs::write(&path, pgn).unwrap();
+        let first = list_library(&authority, &workspace);
+        let handle_a = listed_handle(&first, "london");
+        for game in [0, 1] {
+            sync_practice_positions_in(
+                &practice,
+                &handle_a.path_ref().id,
+                game,
+                0,
+                0,
+                &positions(),
+            )
+            .unwrap();
+        }
+        prepare_delete_in(&practice, &handle_a.path_ref().id, 0, 2).unwrap();
+        replace_by_rename_over(&path, b"[Event \"B\"]\n\n1. d4 *\n");
+        let second = list_library(&authority, &workspace);
+        let handle_b = listed_handle(&second, "london");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o444)).unwrap();
+        let practice = std::sync::Arc::new(practice);
+        let repository = crate::pgn::PgnRepository::default();
+        let recovered = crate::pgn::resolve_practice_pending(
+            authority.clone(),
+            handle_b.path_ref().id.clone(),
+            repository,
+            practice.clone(),
+        )
+        .await;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        recovered.unwrap();
+        assert!(!has_pending_structural_mutation(&practice, &handle_a.path_ref().id).unwrap());
+    }
+
     #[tokio::test]
     async fn inventory_recovery_maps_inherited_handle_without_damaged_deck() {
         let (_temp, authority, workspace, root, practice) = library_workspace();

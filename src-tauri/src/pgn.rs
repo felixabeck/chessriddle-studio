@@ -151,16 +151,19 @@ impl PgnCapabilityRebind {
         })?
     }
 
-    /// Resolves WritePgn so practice recovery can re-establish the same structural
-    /// publication the interrupted edit used. Windows parent flush needs a writable
-    /// parent descriptor; a ReadPgn parent handle fails FlushFileBuffers with os error 5.
+    /// Resolves the PGN for practice publication recovery.
+    /// On Unix a read-only directory fd can be fsynced, so ReadPgn still recovers a
+    /// write-denied leaf. On Windows FlushFileBuffers needs a GENERIC_WRITE parent,
+    /// which only write operations open (see resolved.rs parent/child access comment).
     fn resolve_publication(&self) -> Result<crate::infra::path_authority::ResolvedPath, Error> {
+        #[cfg(windows)]
+        const PRACTICE_RECOVERY_OPERATION: crate::infra::path_authority::PathOperation =
+            crate::infra::path_authority::PathOperation::WritePgn;
+        #[cfg(not(windows))]
+        const PRACTICE_RECOVERY_OPERATION: crate::infra::path_authority::PathOperation =
+            crate::infra::path_authority::PathOperation::ReadPgn;
         self.authority.with_mut(|authority| {
-            authority.resolve(
-                &self.path_ref,
-                crate::infra::path_authority::PathOperation::WritePgn,
-                &[],
-            )
+            authority.resolve(&self.path_ref, PRACTICE_RECOVERY_OPERATION, &[])
         })?
     }
 
