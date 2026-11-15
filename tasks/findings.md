@@ -24797,7 +24797,7 @@ Handled 2026-11-15 (drain session 03e75071). The editable Info panel now always 
 
 ### GameInfo shows a partial PGN date such as 1972.??.?? as blank, hiding the known year
 
-* **ID:** f-20261112-50 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-50 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/common/GameInfo.tsx:47-51` (`dayjs(headers.date, "YYYY.MM.DD").isValid() ? … : null`) feeding the `DateInput` at `:228-243`
@@ -24806,6 +24806,9 @@ Handled 2026-11-15 (drain session 03e75071). The editable Info panel now always 
 - **Fix:** when the date is partial, show the raw header text (for example as the input's displayed value or an adjacent read-only label) instead of the placeholder, and only replace it when the user picks a date. Add a GameInfo test for `1972.??.??`.
 - **Proof:** ephemeral Vitest on the GameInfo.test.tsx harness (customParseFormat extended as in bootstrap.tsx) with `date: "1972.??.??"`: the store kept `"1972.??.??"`, but the DateInput rendered `value=""` with placeholder `????.??.??`. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 23)
+
+Handled 2026-11-15 (drain session 03e75071). A Date header that does not parse as YYYY.MM.DD (a PGN partial date such as 1972.??.??) is now shown as the DateInput placeholder instead of the blank `????.??.??` mask. The stored header is kept, and picking a date still replaces it. Test: `1972.??.??` shows that placeholder and the store keeps it, while a full date keeps the mask placeholder. Commit: e87f3ff33 (simplified in e09a1a578's predecessor cf38dd3a2).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"64326fdb4ad4106d94a2ba506997bfbfbf8e4542ba32e9e694a83bae4a8c3fd3","header_sha256":"62b91ab90366f2e62b14f236f0a0ce98964b86aadab5ddc169b4cab0ff64fa18","header_status":"handled","input_sha256":"2fa13e3e6572f98dc96a6db41acbff9d36e85da38d4ac3e064be8778cc6fbc41","kind":"mutation-receipt","operation":"070513dec8fd14cda9a6c893b5850de6fb97c7c1fe94e0456648e195620abd1e","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-50"],"target":"f-20261112-50","v":1} -->
 
 ---
 
