@@ -3,6 +3,7 @@ import type { Piece as PieceT } from "chessops";
 import { COLORS, ROLES } from "chessops";
 import { makeFen, parseFen } from "chessops/fen";
 import type { RefObject } from "react";
+import { normalizeEditedFen } from "@/utils/chessops";
 import Piece from "../common/Piece";
 
 function PiecesGrid({
@@ -34,7 +35,8 @@ function PiecesGrid({
               putPiece={(to, piece) => {
                 const setup = parseFen(fen).unwrap();
                 setup.board.set(to, piece);
-                onPut(makeFen(setup));
+                const normalized = normalizeEditedFen(makeFen(setup));
+                if (normalized) onPut(normalized);
               }}
               boardRef={boardRef}
               piece={piece}

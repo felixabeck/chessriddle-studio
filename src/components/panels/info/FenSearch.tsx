@@ -121,10 +121,12 @@ export default function FenSearch({ currentFen: currentFenInput }: { currentFen?
           onBlur={() => {
             combobox.closeDropdown();
             setSearch(value || "");
+            setHasTyped(false);
           }}
           onKeyDown={(event) => {
             if (
               hasTyped &&
+              search !== currentFen &&
               (event.nativeEvent.code === "Enter" || event.nativeEvent.code === "NumpadEnter") &&
               prev.current !== "ArrowDown" &&
               prev.current !== "ArrowUp"
@@ -143,7 +145,7 @@ export default function FenSearch({ currentFen: currentFenInput }: { currentFen?
         <Combobox.Options>
           <ScrollArea.Autosize mah={200} type="scroll">
             {options}
-            {!exactOptionMatch && hasTyped && search.trim().length > 0 && (
+            {!exactOptionMatch && hasTyped && search !== currentFen && search.trim().length > 0 && (
               <Combobox.Option value="$create">{search}</Combobox.Option>
             )}
           </ScrollArea.Autosize>

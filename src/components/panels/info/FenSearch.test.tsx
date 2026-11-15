@@ -122,6 +122,22 @@ async function enter() {
   });
 }
 
+async function setupAfterFourMoves() {
+  await setup([]);
+  await act(async () => {
+    expect(tree.getState().makeMoves({ payload: ["e4", "e5", "Nf3", "Nc6"] }).success).toBe(true);
+  });
+  const headersFen = tree.getState().headers.fen;
+  expect(tree.getState().root.children).toHaveLength(1);
+  expect(input().value).toBe(tree.getState().currentNode().fen);
+  return headersFen;
+}
+
+function expectTreeUnchanged(headersFen: string) {
+  expect(tree.getState().root.children).toHaveLength(1);
+  expect(tree.getState().headers.fen).toBe(headersFen);
+}
+
 function expectPosition(fen: string, variant?: "Chess960") {
   const state = tree.getState();
   expect(state.root.fen).toBe(fen);
@@ -235,19 +251,30 @@ test("suggestions sharing the standard FEN remain independently selectable", asy
 });
 
 test("Enter without typing does not replace the tree with the current node FEN", async () => {
-  await setup([]);
-  await act(async () => {
-    expect(tree.getState().makeMoves({ payload: ["e4", "e5", "Nf3", "Nc6"] }).success).toBe(true);
-  });
-  const headersFen = tree.getState().headers.fen;
-  expect(tree.getState().root.children).toHaveLength(1);
-  expect(input().value).toBe(tree.getState().currentNode().fen);
-
+  const headersFen = await setupAfterFourMoves();
   input().focus();
   await enter();
+  expectTreeUnchanged(headersFen);
+});
 
-  expect(tree.getState().root.children).toHaveLength(1);
-  expect(tree.getState().headers.fen).toBe(headersFen);
+test("Enter after typing, blur, and focus does not replace the tree", async () => {
+  const headersFen = await setupAfterFourMoves();
+  await act(async () => input().focus());
+  await typeWithoutWaiting(`${input().value}x`);
+  await act(async () => input().blur());
+  expect(input().value).toBe(tree.getState().currentNode().fen);
+  await act(async () => input().focus());
+  await enter();
+  expectTreeUnchanged(headersFen);
+});
+
+test("Enter after typing then deleting back to the seeded FEN does not replace the tree", async () => {
+  const headersFen = await setupAfterFourMoves();
+  const seeded = input().value;
+  await typeWithoutWaiting(`${seeded}x`);
+  await typeWithoutWaiting(seeded);
+  await enter();
+  expectTreeUnchanged(headersFen);
 });
 
 test("typed Enter requires exclusively FRC matches and unmatched created FENs clear the variant", async () => {

@@ -10,7 +10,7 @@ function position(fen: string) {
 }
 
 describe("swapMove", () => {
-    test("toggles the side to move without changing other FEN fields", () => {
+    test("toggles the side to move", () => {
         const blackToMove = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1";
         expect(swapMove(INITIAL_FEN)).toBe(blackToMove);
         expect(swapMove(blackToMove)).toBe(INITIAL_FEN);
