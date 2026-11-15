@@ -283,3 +283,19 @@ test("linked collection New game appends to its PGN without inserting into the i
         args: { file: file.handle, n: 2, expected: { kind: "append" } },
     });
 });
+
+test("assertAccessible waits for a running colour transition before axe samples it", async ({
+    page,
+    assertAccessible,
+}) => {
+    await page.setContent(
+        `<!doctype html><html lang="en"><head><title>Transition contrast</title></head><body><main><h1>Transition contrast</h1><button type="button" style="color:#ffffff;background-color:#f1eee9;transition:background-color 2000ms linear">Save</button></main></body></html>`,
+    );
+    // The 2 s transition starts on the white label's failing #f1eee9 background, so the check is red if assertAccessible stops settling transitions (f-20261115-22).
+    await page.getByRole("button", { name: "Save", exact: true }).evaluate((el) => {
+        const startColor = getComputedStyle(el).backgroundColor;
+        el.style.backgroundColor = "#1f3a5f";
+        return startColor;
+    });
+    await assertAccessible();
+});
