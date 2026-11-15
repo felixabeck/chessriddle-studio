@@ -25905,7 +25905,7 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 
 ### Save-to-database modal axe check can catch the Save button mid-transition (white on #f1eee9, contrast 1.15)
 
-* **ID:** f-20261115-22 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261115-22 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** bfce3456-ab46-42ea-bc2c-33851aa0ee67
 * **Impact class:** tooling
 * **Where:** `e2e/new-game-to-database.spec.ts:152-155` (option click, then `assertNothingClipped(modal)` and `assertAccessible()` immediately), `e2e/fixtures.ts:1585-1598` (axe run).
@@ -25913,6 +25913,8 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Failure scenario:** a push to master shows the Test job red at random and holds the post-push install until the job is rerun.
 * **Fix:** before `assertAccessible()` wait until the modal Save button is enabled and its computed background has settled (or disable transitions for axe via reduced motion / a settled-style poll in the fixture), then prove with `--repeat-each` in the container.
 * **Found by:** drain session bfce3456-ab46-42ea-bc2c-33851aa0ee67 while waiting on hosted CI for the f-20261112-52 push, 2026-11-15.
+* **Handled** (drain session d8215509-f09f-4b80-9a56-3f90a480e135, 2026-11-15): root cause confirmed in `src/styles/Button.module.css:4-7`, which transitions `background-color` over 150 ms while the filled label colour switches instantly, so axe could read the disabled `#f1eee9` fill under the enabled white label. `bd98e8fe6` makes the shared `assertAccessible` fixture await `waitForTransitionsSettled` (d-20261105-14's helper) before every axe run, and the spec now waits for the enabled Save button after the option click. `086f543d4` adds a standalone revert-red test in which a 2 s transition starts on the failing tone. Proof: with Button transitions forced to 2000 ms the journey failed color-contrast without the settle and passed with it. The new test fails without the settle (1.22) and passes with it. Journey 10/10 with `--repeat-each` and the whole spec 6/6 in the e2e container. Rejected alternatives: reduced motion or disabled transitions for axe, since d-20261105-14 keeps e2e on the real stylesheet. A spec-only wait would leave every other `assertAccessible` caller exposed.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"5fbe2700d1264a02e373de1bc594c583e46d54f08d692a8031eeb4c0b477b157","header_sha256":"b85f0cf17c904178857eb3ff34dead83795deea12b10fb54eeb8e3c42e6a5db5","header_status":"handled","input_sha256":"300fe70ff66a778400613439d8ce1544417ab0bb0e3a55ddf8d86148d256a87d","kind":"mutation-receipt","operation":"c67ffee095c6e397ddc194a1c31ea4706ab0fa07b0e165ea4b3461671f0704bf","options":{"section":null},"request_id_sha256":null,"results":["f-20261115-22"],"target":"f-20261115-22","v":1} -->
 
 ### piece-size e2e samples the merida queen before its background image is painted (paintDetected false)
 
