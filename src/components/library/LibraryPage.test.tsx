@@ -370,6 +370,24 @@ test("one tree distinguishes equal-name and equal-key file/database identities a
   expect(rows().map((row) => row.getAttribute("aria-selected"))).toEqual(["false", "true"]);
 });
 
+test("database detail explains New game versus Add Games on hover", async () => {
+  await click(rows()[1]);
+  for (const [name, explanation] of [
+    ["New game", "Enter a new game move by move and save it to this database."],
+    ["Add Games", "Import games from a PGN file into this database."],
+  ]) {
+    await act(async () => {
+      button(name).dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+      button(name).dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+    });
+    await vi.waitFor(() =>
+      expect(
+        [...document.querySelectorAll('[role="tooltip"]')].map((tip) => tip.textContent),
+      ).toContain(explanation),
+    );
+  }
+});
+
 test("section counts track displayed entries and filtering without changing the tree or hidden selection", async () => {
   const count = (name: string) =>
     [...host.querySelectorAll("h2")].find((heading) => heading.textContent?.startsWith(name))

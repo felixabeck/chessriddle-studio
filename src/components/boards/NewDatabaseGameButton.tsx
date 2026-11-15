@@ -1,4 +1,4 @@
-import { Button } from "@mantine/core";
+import { Button, Tooltip } from "@mantine/core";
 import { Plus } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useSetAtom } from "jotai";
@@ -20,25 +20,27 @@ export default function NewDatabaseGameButton({
   const setTabs = useSetAtom(tabsAtom);
   const navigate = useNavigate();
   return (
-    <Button
-      {...libraryButtonProps}
-      disabled={disabled || !database}
-      leftSection={<Plus size="1rem" />}
-      onClick={() =>
-        database &&
-        void runTabCreation({
-          create: () =>
-            createTab({
-              tab: { name: "Tab.NewTab", type: "analysis" },
-              gameOrigin: { kind: "databaseDraft", database },
-              setTabs,
-            }),
-          onSuccess: () => navigate({ to: "/" }),
-          onError: (error) => notifyUnlessCancelled(t("Common.Error"), error),
-        })
-      }
-    >
-      {t("Databases.NewGame", { defaultValue: "New game" })}
-    </Button>
+    <Tooltip label={t("Databases.NewGame.Desc")} multiline w={260}>
+      <Button
+        {...libraryButtonProps}
+        disabled={disabled || !database}
+        leftSection={<Plus size="1rem" />}
+        onClick={() =>
+          database &&
+          void runTabCreation({
+            create: () =>
+              createTab({
+                tab: { name: "Tab.NewTab", type: "analysis" },
+                gameOrigin: { kind: "databaseDraft", database },
+                setTabs,
+              }),
+            onSuccess: () => navigate({ to: "/" }),
+            onError: (error) => notifyUnlessCancelled(t("Common.Error"), error),
+          })
+        }
+      >
+        {t("Databases.NewGame", { defaultValue: "New game" })}
+      </Button>
+    </Tooltip>
   );
 }

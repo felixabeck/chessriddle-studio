@@ -4,6 +4,7 @@ import {
   libraryClasses,
 } from "@/components/library/presentation";
 import NewDatabaseGameButton from "@/components/boards/NewDatabaseGameButton";
+import AddGamesTooltip from "@/components/databases/AddGamesTooltip";
 import { tauri } from "@/platform/tauri";
 import { listingFailure } from "@/components/files/listingFailure";
 import { useSingleFlight } from "@/hooks/useSingleFlight";
@@ -525,46 +526,48 @@ export function useDatabaseLibrary(
               {selectedDatabase.type === "success" && (
                 <Group>
                   <NewDatabaseGameButton database={selectedDatabase.file} />
-                  <Button
-                    {...libraryButtonProps}
-                    variant="default"
-                    rightSection={<Plus size="1rem" />}
-                    onClick={() => {
-                      const dest = selectedDatabase.file;
-                      void runAddGamesToDatabase({
-                        pickPgnFile,
-                        convertPgn: async (progressId, files, destination, ticket) => {
-                          await refreshAfterDatabaseConversion(
-                            () =>
-                              tauri.convertPgn(progressId, files, destination, "", null, ticket),
-                            async () => {
-                              await refreshDatabaseList(databaseOwner!, mutateCache);
-                            },
-                            setImportRefreshFailed,
-                            t("Common.Error"),
-                          );
-                        },
-                        dest,
-                        notifyTitle: t("Common.Error"),
-                        runConversion: (sourceFileName, convert) =>
-                          runDatabaseConversion(
-                            setConversionState,
-                            {
-                              targetDatabase: dest,
-                              targetDatabaseTitle: selectedDatabase.title,
-                              sourceFileName,
-                            },
-                            convert,
-                            {
-                              onCancelError: (cause) =>
-                                notifyUnlessCancelled(t("Common.Error"), cause, "database"),
-                            },
-                          ),
-                      });
-                    }}
-                  >
-                    {t("Databases.Settings.AddGames")}
-                  </Button>
+                  <AddGamesTooltip>
+                    <Button
+                      {...libraryButtonProps}
+                      variant="default"
+                      rightSection={<Plus size="1rem" />}
+                      onClick={() => {
+                        const dest = selectedDatabase.file;
+                        void runAddGamesToDatabase({
+                          pickPgnFile,
+                          convertPgn: async (progressId, files, destination, ticket) => {
+                            await refreshAfterDatabaseConversion(
+                              () =>
+                                tauri.convertPgn(progressId, files, destination, "", null, ticket),
+                              async () => {
+                                await refreshDatabaseList(databaseOwner!, mutateCache);
+                              },
+                              setImportRefreshFailed,
+                              t("Common.Error"),
+                            );
+                          },
+                          dest,
+                          notifyTitle: t("Common.Error"),
+                          runConversion: (sourceFileName, convert) =>
+                            runDatabaseConversion(
+                              setConversionState,
+                              {
+                                targetDatabase: dest,
+                                targetDatabaseTitle: selectedDatabase.title,
+                                sourceFileName,
+                              },
+                              convert,
+                              {
+                                onCancelError: (cause) =>
+                                  notifyUnlessCancelled(t("Common.Error"), cause, "database"),
+                              },
+                            ),
+                        });
+                      }}
+                    >
+                      {t("Databases.Settings.AddGames")}
+                    </Button>
+                  </AddGamesTooltip>
                   <Button
                     {...libraryButtonProps}
                     rightSection={<ArrowRight size="1rem" />}

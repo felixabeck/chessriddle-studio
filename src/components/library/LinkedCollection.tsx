@@ -28,6 +28,7 @@ import AppModal from "@/components/common/AppModal";
 import { wrappingButton } from "@/components/common/wrappingButton";
 import { libraryButtonProps } from "./presentation";
 import NewDatabaseGameButton from "@/components/boards/NewDatabaseGameButton";
+import AddGamesTooltip from "@/components/databases/AddGamesTooltip";
 
 const playerFieldStyles = {
   label: { maxWidth: "100%", overflowWrap: "anywhere" },
@@ -141,19 +142,21 @@ export function LinkedCollection({
         >
           {t("Collections.Rebuild")}
         </Button>
-        <Button
-          {...libraryButtonProps}
-          disabled={!ready || pending}
-          onClick={() =>
-            void run(async () => {
-              const input = await pickPgnFile();
-              if (!input) return;
-              await append(input.handle);
-            })
-          }
-        >
-          {t("Databases.Settings.AddGames")}
-        </Button>
+        <AddGamesTooltip>
+          <Button
+            {...libraryButtonProps}
+            disabled={!ready || pending}
+            onClick={() =>
+              void run(async () => {
+                const input = await pickPgnFile();
+                if (!input) return;
+                await append(input.handle);
+              })
+            }
+          >
+            {t("Databases.Settings.AddGames")}
+          </Button>
+        </AddGamesTooltip>
         <Button
           {...libraryButtonProps}
           disabled={!ready || pending}
