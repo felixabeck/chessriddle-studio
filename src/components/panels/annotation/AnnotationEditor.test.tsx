@@ -32,12 +32,17 @@ import { createCommentMarkdown } from "@/utils/commentMarkdown";
 import { flattenCommentDocument } from "@/utils/commentSerializer";
 import AnnotationEditor, { includeHardBreakMarks, parseNotationComment } from "./AnnotationEditor";
 
+const i18nState = vi.hoisted(() => ({ language: "en-US" }));
+
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { next: string; previous: string }) =>
-      key === "Board.Annotate.NavigationHint" && options
+    i18n: { language: i18nState.language },
+    t: (key: string, options?: { next: string; previous: string }) => {
+      if (i18nState.language !== "en-US") return `${i18nState.language}:${key}`;
+      return key === "Board.Annotate.NavigationHint" && options
         ? `${options.next}: next move · ${options.previous}: previous move · Esc: leave editor`
-        : key,
+        : key;
+    },
   }),
 }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
@@ -79,6 +84,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  i18nState.language = "en-US";
   await act(async () => root.unmount());
   store?.dispose();
   host.remove();
@@ -95,6 +101,22 @@ function CurrentFenInput() {
   return <FenInput currentFen={fen} />;
 }
 
+function editorTree(controls = false, fenInput = false) {
+  return (
+    <MantineProvider>
+      <Provider store={atoms}>
+        <TreeStateContext.Provider value={store}>
+          <VariationChooserContext.Provider value={chooser}>
+            <AnnotationEditor />
+            {controls && <MoveControls />}
+            {fenInput && <CurrentFenInput />}
+          </VariationChooserContext.Provider>
+        </TreeStateContext.Provider>
+      </Provider>
+    </MantineProvider>
+  );
+}
+
 async function mount(comment: string, controls = false, fenInput = false) {
   const initial = defaultTree();
   initial.root.comment = comment;
@@ -103,19 +125,13 @@ async function mount(comment: string, controls = false, fenInput = false) {
   writeComment = vi.fn(originalSetComment);
   store.setState({ setComment: writeComment });
   await act(async () => {
-    root.render(
-      <MantineProvider>
-        <Provider store={atoms}>
-          <TreeStateContext.Provider value={store}>
-            <VariationChooserContext.Provider value={chooser}>
-              <AnnotationEditor />
-              {controls && <MoveControls />}
-              {fenInput && <CurrentFenInput />}
-            </VariationChooserContext.Provider>
-          </TreeStateContext.Provider>
-        </Provider>
-      </MantineProvider>,
-    );
+    root.render(editorTree(controls, fenInput));
+  });
+}
+
+async function rerender(controls = false, fenInput = false) {
+  await act(async () => {
+    root.render(editorTree(controls, fenInput));
   });
 }
 
@@ -368,6 +384,18 @@ test("the comment editor has an accessible name and a described navigation hint"
   const hint = document.getElementById(editorElement().getAttribute("aria-describedby")!);
   expect(hint).not.toBeNull();
   expect(hint?.textContent).toContain("next move");
+});
+
+test("changing the locale rebuilds the editor name and placeholder", async () => {
+  await mount("");
+  expect(editorElement().getAttribute("aria-label")).toBe("Board.Annotate.Comment");
+  i18nState.language = "de-DE";
+  await rerender();
+  expect(editorElement().getAttribute("aria-label")).toBe("de-DE:Board.Annotate.Comment");
+  expect(editorElement().querySelector("p")?.getAttribute("data-placeholder")).toBe(
+    "de-DE:Board.Annotate.WriteHere",
+  );
+  i18nState.language = "en-US";
 });
 
 test("the focused hint formats live keymaps for macOS", async () => {

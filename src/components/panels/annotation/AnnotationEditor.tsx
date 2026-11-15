@@ -75,7 +75,7 @@ export { parseNotationComment } from "@/utils/commentNotation";
 function AnnotationEditor() {
   "use no memo";
   // The React compiler would retain the mutable Marked instance across editor recreations.
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [saveFailed, setSaveFailed] = useState<boolean>();
   const [focused, setFocused] = useState(false);
   const focusDestination = useRef<string | null>(null);
@@ -154,7 +154,7 @@ function AnnotationEditor() {
         },
       },
     },
-    [position.join(), documentId],
+    [position.join(), documentId, i18n.language],
   );
 
   const nodeIdentity = `${position.join()}:${currentNode.fen}`;
