@@ -1442,15 +1442,79 @@ test.each([
     expect(headersToPGN(reparsed.headers)).toContain(`[Result "${expected}"]`);
 });
 
-test.each(["*", "1-0", "0-1", "1/2-1/2"])(
-    "trailing canonical outcome %s overrides a legacy Result header",
-    async (outcome) => {
+test.each([
+    { outcome: "*", expected: "1/2-1/2" },
+    { outcome: "1-0", expected: "1-0" },
+    { outcome: "0-1", expected: "0-1" },
+    { outcome: "1/2-1/2", expected: "1/2-1/2" },
+])(
+    "trailing canonical outcome $outcome yields $expected over a legacy Result header",
+    async ({ outcome, expected }) => {
         mockCommentLexer();
         const parsed = await parsePGN(`[Result " ½-½ "]\n\n1. e4 e5 ${outcome}`);
-        expect(parsed.headers.result).toBe(outcome);
-        expect(headersToPGN(parsed.headers)).toContain(`[Result "${outcome}"]`);
+        expect(parsed.headers.result).toBe(expected);
+        expect(headersToPGN(parsed.headers)).toContain(`[Result "${expected}"]`);
     },
 );
+
+test.each([
+    {
+        name: "no tag and 1-0 outcome",
+        tokens: [
+            sanToken("e4"),
+            sanToken("e5"),
+            { type: "Outcome", value: "1-0" },
+        ] satisfies Token[],
+        expected: "1-0",
+    },
+    {
+        name: "1-0 tag and star outcome",
+        tokens: [
+            { type: "Header", value: { tag: "Result", value: "1-0" } },
+            sanToken("e4"),
+            sanToken("e5"),
+            { type: "Outcome", value: "*" },
+        ] satisfies Token[],
+        expected: "1-0",
+    },
+    {
+        name: "0-1 tag and 1-0 outcome",
+        tokens: [
+            { type: "Header", value: { tag: "Result", value: "0-1" } },
+            sanToken("e4"),
+            sanToken("e5"),
+            { type: "Outcome", value: "1-0" },
+        ] satisfies Token[],
+        expected: "1-0",
+    },
+    {
+        name: "star tag and 0-1 outcome",
+        tokens: [
+            { type: "Header", value: { tag: "Result", value: "*" } },
+            sanToken("e4"),
+            sanToken("e5"),
+            { type: "Outcome", value: "0-1" },
+        ] satisfies Token[],
+        expected: "0-1",
+    },
+    {
+        name: "1-0 outcome inside a variation",
+        tokens: [
+            sanToken("e4"),
+            { type: "ParenOpen" },
+            sanToken("d4"),
+            { type: "Outcome", value: "1-0" },
+            { type: "ParenClose" },
+            sanToken("e5"),
+            { type: "Outcome", value: "*" },
+        ] satisfies Token[],
+        expected: "*",
+    },
+])("getPgnHeaders $name", async ({ tokens, expected }) => {
+    mocks.lexPgn.mockResolvedValueOnce(tokens);
+    const parsed = await parsePGN("1. e4 e5");
+    expect(parsed.headers.result).toBe(expected);
+});
 
 test("parsePGN models WhiteTimeControl, BlackTimeControl, ECO and UTCTime", async () => {
     mocks.lexPgn.mockResolvedValueOnce([

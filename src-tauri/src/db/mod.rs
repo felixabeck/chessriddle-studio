@@ -721,6 +721,14 @@ impl Visitor for Importer {
         encode_nag(&nag.to_string(), &mut self.game.moves);
     }
 
+    fn outcome(&mut self, outcome: Option<shakmaty::Outcome>) {
+        if self.frames.len() <= 1 {
+            if let Some(outcome) = outcome {
+                self.game.result = Some(normalize_pgn_result(&outcome.to_string()).to_string());
+            }
+        }
+    }
+
     fn end_game(&mut self) -> Self::Result {
         self.frames.clear();
         if self.skip {
@@ -759,6 +767,28 @@ mod lexer {
             .unwrap()
             .iter()
             .any(|token| matches!(token, crate::lexer::Token::Unparsed(_))));
+    }
+
+    #[test]
+    fn importer_result_prefers_mainline_termination_marker() {
+        let parse = |pgn: &str| {
+            BufferedReader::new(pgn.as_bytes())
+                .read_game(&mut Importer::new(None))
+                .unwrap()
+                .unwrap()
+                .unwrap()
+        };
+        for (pgn, expected) in [
+            ("1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7# 1-0", Some("1-0")),
+            ("[Result \"*\"]\n\n1. e4 e5 0-1", Some("0-1")),
+            ("[Result \"?\"]\n\n1. e4 e5 1/2-1/2", Some("1/2-1/2")),
+            ("[Result \"1-0\"]\n\n1. e4 e5 *", Some("1-0")),
+            ("[Result \"0-1\"]\n\n1. e4 e5 1-0", Some("1-0")),
+            ("1. e4 (1. d4 1-0) e5 *", None),
+            ("[Result \"1/2\"]\n\n1. e4 e5", Some("1/2-1/2")),
+        ] {
+            assert_eq!(parse(pgn).result.as_deref(), expected, "{pgn:?}");
+        }
     }
 }
 
@@ -7521,6 +7551,17 @@ mod tests {
                 Some("0-1".into())
             ]
         );
+    }
+
+    #[test]
+    fn import_stores_tagless_mainline_checkmate_result() {
+        let parsed = parsed_game("1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7# 1-0");
+        assert_eq!(parsed.result.as_deref(), Some("1-0"));
+
+        let db = &mut setup_test_db();
+        parsed.insert_to_db(db).unwrap();
+        let stored: Vec<Option<String>> = games::table.select(games::result).load(db).unwrap();
+        assert_eq!(stored, vec![Some("1-0".into())]);
     }
 
     #[test]

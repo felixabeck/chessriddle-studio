@@ -670,12 +670,20 @@ function normalizePgnResult(value: string | undefined): Outcome {
 
 function getPgnHeaders(tokens: Token[]): GameHeaders {
     const headersN = new Map<string, string>();
+    let variationDepth = 0;
 
     for (const token of tokens) {
         if (token.type === "Header") {
             const { tag, value } = token.value;
             headersN.set(tag, decodePgnTagValue(value));
-        } else if (token.type === "Outcome") {
+        } else if (token.type === "ParenOpen") {
+            variationDepth += 1;
+        } else if (token.type === "ParenClose") {
+            if (variationDepth > 0) {
+                variationDepth -= 1;
+            }
+        } else if (token.type === "Outcome" && variationDepth === 0 && token.value !== "*") {
+            // Same mainline-marker rule as Importer::outcome in src-tauri/src/db/mod.rs.
             headersN.set("Result", token.value);
         }
     }
