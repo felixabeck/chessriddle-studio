@@ -24956,7 +24956,7 @@ Handled in `8d4c9c216` and `920a91f87` (pushed to master). `MoveInput.tsx` now r
 
 ### Annotation symbol buttons show their on/off state only by fill colour; `pressed` is never passed to IconAction
 
-* **ID:** f-20261112-58 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-58 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/panels/annotation/AnnotationPanel.tsx:13-37`: `SymbolButton` computes `isActive = curAnnotations.includes(annotation)` and uses it only for `variant={isActive ? "filled" : "default"}`. `IconAction` exposes `pressed` and renders `aria-pressed` from it (`src/components/common/IconAction.tsx:18-19,37`), and the panel's own Show-more toggle passes it (`AnnotationPanel.tsx:68`).
@@ -24968,6 +24968,9 @@ Handled in `8d4c9c216` and `920a91f87` (pushed to master). `MoveInput.tsx` now r
 
 Correction to the Failure scenario example: the `!?` button's accessible name is the translated `Annotate.Interesting` ("Interesting" in en), so it announces as "Interesting, button", not "Interesting move, button". The count of 25 toggles is verified (BASIC 6 + ADVANTAGE 8 + EXTRA 11, `AnnotationPanel.tsx:41-43`). The IconAction refs are `pressed?` at `:19`, destructured at `:27`, and `aria-pressed={pressed}` at `:37`.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"8ce647f7dc69f39b2c1bd8e48340639bb874b750d41fb41f4f4663a000860142","input_sha256":"622bc6379de552fd5ccfea95c4b74890e940bdd5e643a819b38f837d1df89d9f","kind":"mutation-receipt","operation":"0216b82fadd2f80e04dc4b00bc533f53f15395d60fb0f2e6758116a142204c32","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-58"],"target":"f-20261112-58","v":1} -->
+
+**Handled 2026-11-15 (drain c489baf4, inline/lens slice with co-located f-20261112-72).** `72ad6006a`: `SymbolButton` passes `pressed={isActive}` to `IconAction`, so every annotation symbol toggle emits `aria-pressed` from the same state that fills it. `29ba302aa`: the proof sits in the existing `NagDisplay.test.tsx` toggle table, which checks `aria-pressed` before and after each click. It went red with the fix reverted. Review: correctness, root-cause, tests, code-quality and minimalism (Grok lenses). Round 1 asked to reuse the existing harnesses, round 2 approved.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"9d91047cebf91d18cb488af7335485779b72bace753d566577a572ff80b76392","header_sha256":"f677568063581e52bb268134f43e5a41869f6b9f3d22d914173ebec73a124458","header_status":"handled","input_sha256":"1531981df6335d820feec7ccbd9151cfc8b198ddde1d0a5ca434f2b99fe847a0","kind":"mutation-receipt","operation":"04c78621c44e3100f0ffdc8f56e897c8bf42c930a46bec4eb99e1dc825a70a61","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-58"],"target":"f-20261112-58","v":1} -->
 
 ---
 
