@@ -151,6 +151,7 @@ test("New game inserts on explicit save, updates that row, and Save to database 
     const modal = page.getByRole("dialog", { name: "Save to database…", exact: true });
     await modal.getByRole("textbox", { name: "Database", exact: true }).click();
     await page.getByRole("option", { name: gameOpeningFixture.databaseTitle, exact: true }).click();
+    await expect(modal.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
     await assertNothingClipped(modal);
     await assertAccessible();
     await expect(page).toHaveScreenshot("save-to-database-modal.png");

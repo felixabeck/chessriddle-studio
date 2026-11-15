@@ -1583,6 +1583,8 @@ export const test = base.extend<{
 
     assertAccessible: async ({ page }, use) => {
         await use(async () => {
+            // Axe samples computed colours, so a running background transition is read mid-way.
+            await waitForTransitionsSettled(page);
             const results = await new AxeBuilder({ page })
                 // The app owns these semantic/layout checks; no generic third-party exception is hidden.
                 .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
