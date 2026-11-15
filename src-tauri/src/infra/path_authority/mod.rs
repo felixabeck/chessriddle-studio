@@ -4710,12 +4710,14 @@ fn inherit_listing_practice_keys(
         .collect();
     let mut inherited = BTreeMap::new();
     let mut claimed = BTreeSet::new();
+    // Same-identity donors inherit when both stored paths convert. Path inequality is
+    // not required: a removed same-identity donor is the same file object, including
+    // an ASCII case-only outside rename that listing_paths_match folds as equal.
     assign_unique_practice_key_matches(
         &fresh,
         &donors,
         |fresh, donor| {
-            donor.identity == fresh.identity
-                && listing_practice_paths_match(donor, fresh) == Some(false)
+            donor.identity == fresh.identity && listing_practice_paths_match(donor, fresh).is_some()
         },
         &mut claimed,
         &mut inherited,
@@ -7764,47 +7766,45 @@ impl PathAuthority {
         Ok(EngineRootDescriptor { root, display_name })
     }
 
+    fn live_practice_stored(&self, id: &PathRef) -> Result<&StoredEntry, Error> {
+        if self.pending_unpersisted_removals.contains(&id.id) {
+            return Err(Error::InvalidInput(
+                "unknown or revoked practice deck".into(),
+            ));
+        }
+        let Some(entry) = self.persistent.get(&id.id) else {
+            return Err(Error::InvalidInput(
+                "unknown or unauthorized practice deck".into(),
+            ));
+        };
+        Ok(&entry.stored)
+    }
+
     /// Checks a practice deck capability without making availability part of authorisation.
     /// Membership and the operation bit are inspected before refresh so a wrong-purpose id
     /// cannot cause filesystem validation of its target. Migration and repair intentionally pass
     /// `false`: membership is enough for those recovery operations.
+    /// Returns the practice storage key callers must use for store addressing.
     pub(crate) fn authorize_practice_deck(
         &mut self,
         id: &PathRef,
         requires_read_pgn: bool,
     ) -> Result<String, Error> {
-        if self.pending_unpersisted_removals.contains(&id.id) {
-            return Err(Error::InvalidInput(
-                "unknown or revoked practice deck".into(),
-            ));
-        }
-        let Some(entry) = self.persistent.get(&id.id) else {
-            return Err(Error::InvalidInput(
-                "unknown or unauthorized practice deck".into(),
-            ));
+        let storage_key = {
+            let stored = self.live_practice_stored(id)?;
+            if requires_read_pgn && !stored.operations.contains(&PathOperation::ReadPgn) {
+                return Err(Error::InvalidInput(
+                    "unknown or unauthorized practice deck".into(),
+                ));
+            }
+            practice_storage_key(stored).to_owned()
         };
-        if requires_read_pgn && !entry.stored.operations.contains(&PathOperation::ReadPgn) {
-            return Err(Error::InvalidInput(
-                "unknown or unauthorized practice deck".into(),
-            ));
-        }
-        let storage_key = practice_storage_key(&entry.stored).to_owned();
         self.refresh_persistent_id(id);
         Ok(storage_key)
     }
 
     pub(crate) fn practice_storage_key(&self, id: &PathRef) -> Result<String, Error> {
-        if self.pending_unpersisted_removals.contains(&id.id) {
-            return Err(Error::InvalidInput(
-                "unknown or revoked practice deck".into(),
-            ));
-        }
-        let Some(entry) = self.persistent.get(&id.id) else {
-            return Err(Error::InvalidInput(
-                "unknown or unauthorized practice deck".into(),
-            ));
-        };
-        Ok(practice_storage_key(&entry.stored).to_owned())
+        Ok(practice_storage_key(self.live_practice_stored(id)?).to_owned())
     }
 
     pub(crate) fn live_handle_for_practice_storage_key(
@@ -13708,6 +13708,65 @@ pub(crate) mod portable_tests {
     }
 
     #[test]
+    fn listing_inherits_practice_key_on_ascii_case_only_rename() -> Result<(), Error> {
+        let (_directory, mut authority, workspace, root) = directory_listing_bound_fixture()?;
+        fs::write(root.join("a.pgn"), b"*")?;
+        let donor = published_listing_child(&mut authority, &workspace, &root, "a.pgn")?;
+        let before = identity(&root.join("a.pgn"))?;
+        fs::rename(root.join("a.pgn"), root.join("tmp.pgn"))?;
+        fs::rename(root.join("tmp.pgn"), root.join("A.pgn"))?;
+        assert_eq!(identity(&root.join("A.pgn"))?, before);
+        let prepared = relist_workspace_files(
+            &mut authority,
+            &workspace,
+            &root,
+            &["A.pgn"],
+            &BTreeSet::new(),
+        )?;
+        let fresh = prepared[0].id();
+        assert_ne!(fresh.id, donor.id);
+        assert!(!authority.persistent.contains_key(&donor.id));
+        assert_eq!(practice_key_of(&authority, &fresh), Some(donor.id));
+        Ok(())
+    }
+
+    #[test]
+    fn listing_inherits_identity_before_same_path_in_one_commit() -> Result<(), Error> {
+        let (_directory, mut authority, workspace, root) = directory_listing_bound_fixture()?;
+        fs::write(root.join("a.pgn"), b"donor")?;
+        let donor = published_listing_child(&mut authority, &workspace, &root, "a.pgn")?;
+        let donor_identity = identity(&root.join("a.pgn"))?;
+        fs::rename(root.join("a.pgn"), root.join("b.pgn"))?;
+        assert_eq!(identity(&root.join("b.pgn"))?, donor_identity);
+        fs::write(root.join("a.pgn"), b"unrelated")?;
+        assert_ne!(identity(&root.join("a.pgn"))?, donor_identity);
+        let prepared = relist_workspace_files(
+            &mut authority,
+            &workspace,
+            &root,
+            &["a.pgn", "b.pgn"],
+            &BTreeSet::new(),
+        )?;
+        let renamed = prepared
+            .iter()
+            .find(|entry| entry.stored.display_name == "b.pgn")
+            .expect("renamed listing child");
+        let replacement = prepared
+            .iter()
+            .find(|entry| entry.stored.display_name == "a.pgn")
+            .expect("replacement listing child");
+        assert!(!authority.persistent.contains_key(&donor.id));
+        assert_ne!(renamed.id().id, donor.id);
+        assert_ne!(replacement.id().id, donor.id);
+        assert_eq!(
+            practice_key_of(&authority, &renamed.id()),
+            Some(donor.id.clone())
+        );
+        assert!(practice_key_of(&authority, &replacement.id()).is_none());
+        Ok(())
+    }
+
+    #[test]
     fn listing_inherits_original_practice_key_across_chained_replacement() -> Result<(), Error> {
         let (_directory, mut authority, workspace, root) = directory_listing_bound_fixture()?;
         fs::write(root.join("a.pgn"), b"first")?;
@@ -15470,19 +15529,43 @@ pub(crate) mod portable_tests {
                 .promote_dialog(&grant, PathClass::PersistentFile, "study", operations)
                 .unwrap()
         }
+        fn btree_first_same_path_id(authority: &PathAuthority, path: &Path) -> Option<String> {
+            authority.persistent.values().find_map(|entry| {
+                (entry.stored.class == PathClass::PersistentFile
+                    && entry.stored.purpose == Some(EntryPurpose::PgnFile)
+                    && entry.stored.path.to_path().ok().as_deref() == Some(path))
+                .then(|| entry.stored.id.id.clone())
+            })
+        }
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("study.pgn");
         fs::write(&path, b"1. e4 *").unwrap();
         let mut authority = authority(&dir, Arc::new(TestClock::new(0)));
-        let first = promote(&mut authority, &path);
-        let before = identity(&path).unwrap();
-        replace_by_rename_over(&path, b"1. d4 *");
-        assert_ne!(identity(&path).unwrap(), before);
-        let second = promote(&mut authority, &path);
-        assert_ne!(second.id, first.id);
-        assert!(authority.persistent.contains_key(&first.id.id));
-        let third = promote(&mut authority, &path);
-        assert_eq!(third.id, second.id);
+        let mut newest = promote(&mut authority, &path);
+        for round in 0..5 {
+            let before = identity(&path).unwrap();
+            replace_by_rename_over(&path, format!("1. e{round} *").as_bytes());
+            assert_ne!(identity(&path).unwrap(), before);
+            let picked = promote(&mut authority, &path);
+            assert_ne!(picked.id, newest.id);
+            assert!(authority.persistent.contains_key(&newest.id.id));
+            newest = picked;
+        }
+        let mut extra = 0u32;
+        while btree_first_same_path_id(&authority, &path).as_ref() == Some(&newest.id.id) {
+            extra += 1;
+            let before = identity(&path).unwrap();
+            replace_by_rename_over(&path, format!("1. d{extra} *").as_bytes());
+            assert_ne!(identity(&path).unwrap(), before);
+            newest = promote(&mut authority, &path);
+        }
+        let first_unchanged = promote(&mut authority, &path);
+        assert_eq!(first_unchanged.id, newest.id);
+        let second_unchanged = promote(&mut authority, &path);
+        assert_eq!(second_unchanged.id, newest.id);
+        assert!(authority
+            .resolve(&newest.id, PathOperation::ReadPgn, &[])
+            .is_ok());
     }
 }
 

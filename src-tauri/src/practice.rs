@@ -2607,6 +2607,14 @@ pub(crate) fn list_practice_decks_in(
     Ok(inventory)
 }
 
+fn list_practice_decks_for_renderer(
+    directory: &AuthorizedDir,
+    authority: &crate::infra::path_authority::SharedPathAuthority,
+) -> Result<PracticeDeckInventory, Error> {
+    let inventory = list_practice_decks_in(directory)?;
+    authority.with_mut(|authority| remap_practice_inventory_handles(authority, inventory))?
+}
+
 fn remap_practice_inventory_handles(
     authority: &crate::infra::path_authority::PathAuthority,
     mut inventory: PracticeDeckInventory,
@@ -2829,16 +2837,37 @@ where
     T: Send + 'static,
     F: FnOnce(&AuthorizedDir, &str) -> Result<T, Error> + Send + 'static,
 {
+    let directory = BLOCKING_GATEWAY
+        .spawn(move || practice_directory(&app).map(Arc::new))
+        .await?;
+    run_practice_command_in(
+        authority,
+        repository,
+        directory,
+        file_id,
+        requires_read_pgn,
+        operation,
+    )
+    .await
+}
+
+async fn run_practice_command_in<T, F>(
+    authority: crate::infra::path_authority::SharedPathAuthority,
+    repository: crate::pgn::PgnRepository,
+    directory: Arc<AuthorizedDir>,
+    file_id: String,
+    requires_read_pgn: bool,
+    operation: F,
+) -> Result<T, Error>
+where
+    T: Send + 'static,
+    F: FnOnce(&AuthorizedDir, &str) -> Result<T, Error> + Send + 'static,
+{
     let preparation_authority = authority.clone();
     let preparation_id = file_id.clone();
-    let (directory, storage_key) = BLOCKING_GATEWAY
+    let storage_key = BLOCKING_GATEWAY
         .spawn(move || {
-            let storage_key = authorize_practice_command(
-                &preparation_authority,
-                &preparation_id,
-                requires_read_pgn,
-            )?;
-            Ok((Arc::new(practice_directory(&app)?), storage_key))
+            authorize_practice_command(&preparation_authority, &preparation_id, requires_read_pgn)
         })
         .await?;
     let check_directory = directory.clone();
@@ -3122,7 +3151,7 @@ pub async fn load_practice_deck(
         state.pgn_repository.clone(),
         file_id,
         true,
-        move |directory, file_id| load_mapped_practice_deck_in(directory, file_id, game),
+        move |directory, storage_key| load_mapped_practice_deck_in(directory, storage_key, game),
     )
     .await
 }
@@ -3141,7 +3170,7 @@ pub async fn practice_epoch(
         state.pgn_repository.clone(),
         file_id,
         false,
-        move |directory, file_id| practice_epoch_in(directory, file_id, game),
+        move |directory, storage_key| practice_epoch_in(directory, storage_key, game),
     )
     .await
 }
@@ -3162,8 +3191,8 @@ pub async fn record_practice_review(
         state.pgn_repository.clone(),
         file_id,
         true,
-        move |directory, file_id| {
-            record_mapped_practice_review_in(directory, file_id, game, &expected_epoch, write)
+        move |directory, storage_key| {
+            record_mapped_practice_review_in(directory, storage_key, game, &expected_epoch, write)
         },
     )
     .await
@@ -3190,10 +3219,10 @@ pub async fn sync_practice_positions(
         state.pgn_repository.clone(),
         file_id,
         true,
-        move |directory, file_id| {
+        move |directory, storage_key| {
             sync_mapped_practice_positions_in(
                 directory,
-                file_id,
+                storage_key,
                 game,
                 &expected_epoch,
                 generation,
@@ -3226,10 +3255,10 @@ pub async fn reset_practice_deck(
         state.pgn_repository.clone(),
         file_id,
         true,
-        move |directory, file_id| {
+        move |directory, storage_key| {
             reset_mapped_practice_deck_in(
                 directory,
-                file_id,
+                storage_key,
                 game,
                 &expected_epoch,
                 generation,
@@ -3258,10 +3287,10 @@ pub async fn load_practice_reviews(
         state.pgn_repository.clone(),
         file_id,
         true,
-        move |directory, file_id| {
+        move |directory, storage_key| {
             load_mapped_practice_reviews_in(
                 directory,
-                file_id,
+                storage_key,
                 game,
                 &expected_epoch,
                 cursor,
@@ -3292,10 +3321,10 @@ pub async fn migrate_practice_deck(
             state.pgn_repository.clone(),
             file_id,
             false,
-            move |directory, file_id| {
+            move |directory, storage_key| {
                 migrate_mapped_practice_deck_in(
                     directory,
-                    file_id,
+                    storage_key,
                     game,
                     &expected_epoch,
                     &legacy_document,
@@ -3323,10 +3352,10 @@ pub async fn acknowledge_practice_orphans(
         state.pgn_repository.clone(),
         file_id,
         true,
-        move |directory, file_id| {
+        move |directory, storage_key| {
             acknowledge_mapped_practice_orphans_in(
                 directory,
-                file_id,
+                storage_key,
                 game,
                 &expected_epoch,
                 generation,
@@ -3352,8 +3381,8 @@ pub async fn repair_practice_deck(
         state.pgn_repository.clone(),
         file_id,
         false,
-        move |directory, file_id| {
-            repair_mapped_practice_deck_in(directory, file_id, game, expected_epoch.as_deref())
+        move |directory, storage_key| {
+            repair_mapped_practice_deck_in(directory, storage_key, game, expected_epoch.as_deref())
         },
     )
     .await
@@ -3367,8 +3396,7 @@ pub async fn list_practice_decks(
 ) -> Result<PracticeDeckInventory, Error> {
     let authority = state.pgn_path_authority.clone();
     run_accepted_practice_command(app, &state, "list_practice_decks", move |directory| {
-        let inventory = list_practice_decks_in(directory)?;
-        authority.with_mut(|authority| remap_practice_inventory_handles(authority, inventory))?
+        list_practice_decks_for_renderer(directory, &authority)
     })
     .await
 }
@@ -3438,6 +3466,7 @@ mod tests {
         sync::{atomic::AtomicUsize, Arc, Barrier},
         thread,
     };
+    use tauri::Manager;
 
     fn mapped_sync(
         directory: &AuthorizedDir,
@@ -8261,10 +8290,19 @@ mod tests {
         authority: &crate::infra::path_authority::SharedPathAuthority,
         directory: &AuthorizedDir,
     ) -> PracticeDeckInventory {
-        let inventory = list_practice_decks_in(directory).unwrap();
-        authority
-            .with_mut(|authority| remap_practice_inventory_handles(authority, inventory))
-            .unwrap()
+        list_practice_decks_for_renderer(directory, authority).unwrap()
+    }
+
+    fn practice_command_app(
+        authority: crate::infra::path_authority::SharedPathAuthority,
+    ) -> tauri::App<tauri::test::MockRuntime> {
+        let state = crate::AppState {
+            pgn_path_authority: authority,
+            ..Default::default()
+        };
+        tauri::test::mock_builder()
+            .manage(state)
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .unwrap()
     }
 
@@ -8472,5 +8510,60 @@ mod tests {
                 game: 0
             }]
         );
+    }
+
+    #[tokio::test]
+    async fn load_practice_deck_command_follows_inherited_handle() {
+        let (_temp, authority, workspace, root, practice) = library_workspace();
+        fs::write(root.join("london.pgn"), b"[Event \"A\"]\n\n1. e4 *\n").unwrap();
+        let first = list_library(&authority, &workspace);
+        let handle_a = listed_handle(&first, "london");
+        let expected = record_review(&practice, &handle_a.path_ref().id);
+        replace_by_rename_over(&root.join("london.pgn"), b"[Event \"A\"]\n\n1. e4 e5 *\n");
+        let second = list_library(&authority, &workspace);
+        let handle_b = listed_handle(&second, "london");
+        assert_ne!(handle_a.path_ref().id, handle_b.path_ref().id);
+        let app = practice_command_app(authority.clone());
+        let state = app.state::<crate::AppState>();
+        let loaded = run_practice_command_in(
+            state.pgn_path_authority.clone(),
+            state.pgn_repository.clone(),
+            Arc::new(practice),
+            handle_b.path_ref().id.clone(),
+            true,
+            |directory, storage_key| load_mapped_practice_deck_in(directory, storage_key, 0),
+        )
+        .await
+        .unwrap();
+        assert_eq!(loaded.deck.unwrap(), expected);
+    }
+
+    #[tokio::test]
+    async fn list_practice_decks_command_reports_inherited_handle() {
+        let (_temp, authority, workspace, root, practice) = library_workspace();
+        fs::write(root.join("london.pgn"), b"[Event \"A\"]\n\n1. e4 *\n").unwrap();
+        let first = list_library(&authority, &workspace);
+        let handle_a = listed_handle(&first, "london");
+        record_review(&practice, &handle_a.path_ref().id);
+        replace_by_rename_over(&root.join("london.pgn"), b"[Event \"A\"]\n\n1. e4 e5 *\n");
+        let second = list_library(&authority, &workspace);
+        let handle_b = listed_handle(&second, "london");
+        assert_ne!(handle_a.path_ref().id, handle_b.path_ref().id);
+        let app = practice_command_app(authority.clone());
+        let state = app.state::<crate::AppState>();
+        let inventory =
+            list_practice_decks_for_renderer(&practice, &state.pgn_path_authority).unwrap();
+        assert_eq!(
+            inventory.decks,
+            vec![PracticeDeckIdentity {
+                file_id: handle_b.path_ref().id.clone(),
+                game: 0
+            }]
+        );
+        assert!(inventory
+            .decks
+            .iter()
+            .all(|deck| deck.file_id != handle_a.path_ref().id));
+        assert!(inventory.anomalies.is_empty());
     }
 }
