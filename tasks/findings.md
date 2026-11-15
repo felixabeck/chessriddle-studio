@@ -26706,3 +26706,18 @@ Fixed in 91d123381. The CI diff image (run 43716253124, `frontend-browser-audit`
 
 Push review follow-up: the review-tests lens (REVISE) found that nothing committed would go red if the settle wait were removed or moved directly after `goto`. Repaired in 40af5cf69: the directory-trash confirmation test also runs with the Inter faces held 1 s from the first request (same `confirmation-error.png`). Staged in the pinned container with `--repeat-each=3`: as committed 6/6 green; wait removed, the late variant fails 3/3 with the CI's 35 px diff; wait moved after `goto`, it fails 3/3. Decision d-20261115-02 narrows d-20261101-02's rejection of a committed font hold to the test-released form.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"cea40284eda31bbfc9f76f4e861e48bbfa164b25d22a1a30016c92d50a9b48cf","input_sha256":"cbef52f690421baa1e44089c0224a39e2e2ef9425f01bccbc2c0fb393ac8dac3","kind":"mutation-receipt","operation":"a54d44c61c3e4ce0d2c52bb177702d175d174043a0e1287814a4471ace1014ae","options":{"section":null},"request_id_sha256":null,"results":["f-20261115-26"],"target":"f-20261115-26","v":1} -->
+
+---
+
+## 2026-11-15 — filed through the inbox spool
+
+### The "solving with timer" e2e test fails in CI when the runner stalls between clock install and pause
+* **ID:** f-20261115-29 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+
+**CI run:** 43770143503 (job `e2e`, pushed SHA `9ba40fad8`, 2026-11-15). `e2e/chessriddle-training.spec.ts:923` threw `clock.pauseAt: Error: Cannot fast-forward to the past` in `desktop: solving with timer`; the other 453 tests passed, and the same tree passed the local e2e gate.
+
+**Cause (read from the test, lines 921-923):** `page.clock.install({ time: 12:00:00Z })` leaves the fake clock running, and `page.clock.pauseAt(12:00:01Z)` refuses a time the clock has already passed. Whenever more than one real second elapses between the two calls (a stalled hosted runner), the test throws. Both layouts (`desktop`, `scaled`) share the two lines.
+
+**What does not work (measured 2026-11-15 in the Playwright container):** installing the clock a minute earlier (`11:59:01Z`) removes the throw but makes the screenshot unstable. The displayed timer then depends on the real time elapsed before the pause: 5 repeats per layout all differed from a freshly recorded snapshot by 25 pixels in the timer digits. The change was reverted.
+
+**Direction:** make the timer's start deterministic instead of widening the window, for example by installing the clock before the Puzzles tab mounts the timer, or by pausing first and advancing with `runFor`, then re-record `en-US-desktop-timer` and `en-US-scaled-timer` if the shown value changes. Related: f-20261111-01 (handled, another CI-only difference in this spec, different cause).
