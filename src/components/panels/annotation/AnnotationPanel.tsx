@@ -29,6 +29,7 @@ const SymbolButton = memo(function SymbolButton({
       label={translationKey ? t(`Annotate.${translationKey}`) : name}
       onClick={() => setAnnotation(annotation)}
       variant={isActive ? "filled" : "default"}
+      pressed={isActive}
       color={isBasicAnnotation(annotation) ? color : theme.primaryColor}
     >
       <Text>{annotation}</Text>
