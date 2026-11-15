@@ -117,13 +117,13 @@ function editorTree(controls = false, fenInput = false) {
   );
 }
 
-async function mount(comment: string, controls = false, fenInput = false, onMove = false) {
+async function mount(comment: string, controls = false, fenInput = false, onFirstMove = false) {
   const initial = defaultTree();
-  if (!onMove) {
+  if (!onFirstMove) {
     initial.root.comment = comment;
   }
   store = createTreeStore(undefined, initial);
-  if (onMove) {
+  if (onFirstMove) {
     store.getState().makeMove({ payload: "e4" });
     store.getState().setComment(comment);
   }

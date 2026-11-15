@@ -762,17 +762,13 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
                     if (state.position.length === 0) {
                         return;
                     }
+                    state.dirty = true;
                     const node = getNodeAtPath(state.root, state.position);
                     if (node) {
-                        const nextNags = node.nags.some((code) => nagGlyph(code) === payload)
-                            ? node.nags.filter((code) => nagGlyph(code) !== payload)
-                            : replaceInGroup(node.nags, payload);
-                        if (
-                            nextNags.length !== node.nags.length ||
-                            nextNags.some((code, index) => code !== node.nags[index])
-                        ) {
-                            node.nags = nextNags;
-                            state.dirty = true;
+                        if (node.nags.some((code) => nagGlyph(code) === payload)) {
+                            node.nags = node.nags.filter((code) => nagGlyph(code) !== payload);
+                        } else {
+                            node.nags = replaceInGroup(node.nags, payload);
                         }
                     }
                 }),
