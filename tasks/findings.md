@@ -26058,6 +26058,9 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Rejected alternative:** clamping a refused jump to the card instead of doing nothing. It would make "Go to end" during a drill behave differently from `goToNext`, which d-20260923-05 makes a no-op off the path.
 <!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"e82ebab28afc0e17e4a6bdeb1ddbe19bf3d02cff074b113eedb81251f90715a2","header_sha256":"a0b7c35faf0c5cc5f1f78ad5e3194a367cf4681b4a8e159e37451da9ee02067e","header_status":"handled","input_sha256":"812dc19628bfae100e9f53477cae64c9805295574384d0da4793e3ad2fb6aac9","kind":"mutation-receipt","operation":"ebd9451eb1c967d65dbc11a221e51bbf4f4fce2b71ffeabf4bc5ecb3653b13b8","options":{"section":null},"request_id_sha256":null,"results":["f-20261114-15"],"target":"f-20261114-15","v":1} -->
 
+* **Commit SHAs after rebase (Claude Code drain, 2026-11-15):** the drain rebased these commits onto `origin/master` before pushing (range-diff all `=`). The pushed SHAs are `6dca2e400` (was `12da78629`), `141a3ee7d` (was `762b01678`), `bf3e25554` (was `8ac006639`), `bea403641` (was `287ede877`) and `25113b105` (was `4fcf2bfe9`).
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"dc98bf54aebe47f132b81c3a9ac3ebb9fa1f7515d61a1c732a5ed85143b1b349","input_sha256":"45952dd7505bbcc1a9eeec5f9e35f46a1ff77b34f20b1936070c7bafd0bbfa48","kind":"mutation-receipt","operation":"46713468a842a3d5f5f291a4140ff7b5c4470c56ecc08c61ccb742aa0bfaa3f3","options":{"section":null},"request_id_sha256":null,"results":["f-20261114-15"],"target":"f-20261114-15","v":1} -->
+
 ---
 
 ## 2026-11-14 — filed through the inbox spool
