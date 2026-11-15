@@ -6472,17 +6472,21 @@ impl PathAuthority {
         }
         let expected = acquired.identity.clone();
         if let Some(purpose) = purpose {
-            if let Some(existing) = self.persistent.values().find(|entry| {
+            let same_path = |entry: &Entry| {
                 entry.stored.class == persistent_class
                     && entry.stored.purpose == Some(purpose)
                     && entry.stored.path.to_path().ok().as_ref() == Some(&path)
-            }) {
-                if existing.stored.identity != expected {
-                    return Err(Error::Conflict(
-                        "persistent target changed; acquire a new capability".into(),
-                    )
-                    .with_root_failure(crate::error::RootFailure::Changed));
-                }
+            };
+            // Reuse is identity-first so a Library listing that already minted the current
+            // object at this path is reused. A same-path PersistentFile whose identity no
+            // longer matches is left in place for startup reconciliation (d-20261113-02);
+            // the picker mints a fresh entry with no practice key (d-20261115-01). Custom
+            // workspace roots still refuse with Changed.
+            if let Some(existing) = self
+                .persistent
+                .values()
+                .find(|entry| same_path(entry) && entry.stored.identity == expected)
+            {
                 let id = existing.stored.id.clone();
                 let mut candidate = self.persistent.clone();
                 if let Some(entry) = candidate.get_mut(&id.id) {
@@ -6492,6 +6496,13 @@ impl PathAuthority {
                 let durability = self.commit_candidate(candidate, Some(dialog))?;
                 self.session_protected_ids.insert(id.id.clone());
                 return Ok(PathCommit { id, durability });
+            } else if persistent_class == PathClass::PersistentCustomRoot
+                && self.persistent.values().any(same_path)
+            {
+                return Err(Error::Conflict(
+                    "persistent target changed; acquire a new capability".into(),
+                )
+                .with_root_failure(crate::error::RootFailure::Changed));
             }
         }
         let id = PathRef::fresh();
@@ -15439,6 +15450,39 @@ pub(crate) mod portable_tests {
             .resolve(first.path_ref(), PathOperation::EngineBinaryInspect, &[])
             .is_err());
         assert!(authority.persistent.contains_key(&first.id.id));
+    }
+
+    #[test]
+    fn promote_dialog_mints_a_fresh_capability_for_a_replaced_pgn_file() {
+        fn promote(authority: &mut PathAuthority, path: &Path) -> PathCommit {
+            let operations = vec![PathOperation::ReadPgn, PathOperation::WritePgn];
+            let grant = authority
+                .grant_dialog_operations(
+                    path,
+                    "study",
+                    PathClass::BoundedDialogGrant,
+                    operations.clone(),
+                    Duration::from_secs(60),
+                    1,
+                )
+                .unwrap();
+            authority
+                .promote_dialog(&grant, PathClass::PersistentFile, "study", operations)
+                .unwrap()
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("study.pgn");
+        fs::write(&path, b"1. e4 *").unwrap();
+        let mut authority = authority(&dir, Arc::new(TestClock::new(0)));
+        let first = promote(&mut authority, &path);
+        let before = identity(&path).unwrap();
+        replace_by_rename_over(&path, b"1. d4 *");
+        assert_ne!(identity(&path).unwrap(), before);
+        let second = promote(&mut authority, &path);
+        assert_ne!(second.id, first.id);
+        assert!(authority.persistent.contains_key(&first.id.id));
+        let third = promote(&mut authority, &path);
+        assert_eq!(third.id, second.id);
     }
 }
 
