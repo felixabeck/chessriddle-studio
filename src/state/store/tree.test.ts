@@ -67,6 +67,20 @@ test("ordinary edits keep the document identity", () => {
     expect(store.getState().documentId).toBe(id);
 });
 
+test("setAnnotation ignores the root and annotates a move node", () => {
+    const store = createTreeStore();
+    expect(store.getState().position).toEqual([]);
+    store.getState().setAnnotation("+-");
+    expect(store.getState().root.nags).toEqual([]);
+    expect(store.getState().dirty).toBe(false);
+
+    store.getState().makeMove({ payload: "e4" });
+    expect(store.getState().position).toEqual([0]);
+    store.getState().setAnnotation("+-");
+    expect(store.getState().root.children[0].nags).toEqual([18]);
+    expect(store.getState().dirty).toBe(true);
+});
+
 test("retargeting installs a fresh document identity only on installation", () => {
     const id = crypto.randomUUID();
     persistedIds.push(id);

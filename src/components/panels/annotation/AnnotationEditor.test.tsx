@@ -117,10 +117,16 @@ function editorTree(controls = false, fenInput = false) {
   );
 }
 
-async function mount(comment: string, controls = false, fenInput = false) {
+async function mount(comment: string, controls = false, fenInput = false, onMove = false) {
   const initial = defaultTree();
-  initial.root.comment = comment;
+  if (!onMove) {
+    initial.root.comment = comment;
+  }
   store = createTreeStore(undefined, initial);
+  if (onMove) {
+    store.getState().makeMove({ payload: "e4" });
+    store.getState().setComment(comment);
+  }
   const originalSetComment = store.getState().setComment;
   writeComment = vi.fn(originalSetComment);
   store.setState({ setComment: writeComment });
@@ -222,7 +228,8 @@ test.each(["different FEN", "same FEN", "setState"])(
 );
 
 test.each(["NAG", "shapes"])("%s edits retain annotation typing history", async (edit) => {
-  await mount("old position commentary");
+  await mount("old position commentary", false, false, edit === "NAG");
+  const node = () => (edit === "NAG" ? store.getState().currentNode() : store.getState().root);
   const originalEditor = editor();
   await act(async () =>
     editor().commands.insertContentAt(editor().state.doc.content.size - 1, " draft"),
@@ -235,11 +242,9 @@ test.each(["NAG", "shapes"])("%s edits retain annotation typing history", async 
   await act(async () => {
     expect(editor().commands.undo()).toBe(true);
   });
-  expect(store.getState().root.comment).toBe("old position commentary");
+  expect(node().comment).toBe("old position commentary");
   expect(editor().getText()).toBe("old position commentary");
-  expect(
-    edit === "NAG" ? store.getState().root.nags.length : store.getState().root.shapes.length,
-  ).toBe(1);
+  expect(edit === "NAG" ? node().nags.length : node().shapes.length).toBe(1);
 });
 
 async function focusEditor() {

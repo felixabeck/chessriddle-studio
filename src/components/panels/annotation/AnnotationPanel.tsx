@@ -21,6 +21,7 @@ const SymbolButton = memo(function SymbolButton({
 
   const store = useContext(TreeStateContext)!;
   const setAnnotation = useStore(store, (s) => s.setAnnotation);
+  const atRoot = useStore(store, (s) => s.position.length === 0);
   const { translationKey, name, color } = ANNOTATION_INFO[annotation];
   const isActive = curAnnotations.includes(annotation);
   const theme = useMantineTheme();
@@ -30,6 +31,7 @@ const SymbolButton = memo(function SymbolButton({
       onClick={() => setAnnotation(annotation)}
       variant={isActive ? "filled" : "default"}
       pressed={isActive}
+      disabled={atRoot}
       color={isBasicAnnotation(annotation) ? color : theme.primaryColor}
     >
       <Text>{annotation}</Text>
