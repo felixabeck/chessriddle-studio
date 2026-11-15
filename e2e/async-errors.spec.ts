@@ -1139,36 +1139,55 @@ async function assertPurgeInvocationAndRefresh(page: Page) {
     );
 }
 
-test("async-errors: localizes directory-trash failures in the confirmation dialog", async ({
-    page,
-    mockScenario,
-    assertAccessible,
-    assertNoHorizontalOverflow,
-}) => {
-    await mockScenario({
-        commands: filesWorkspaceCommands([[openingDirectory]], {
-            trash_workspace_entry: { error: "private native diagnostic at /private/file.pgn" },
-        }),
+// "late" holds the Inter faces until well after the first click would have run without the
+// settle wait in chooseLibraryFolder, so removing or misplacing that wait reflows the page under
+// the dialog and changes the snapshot (f-20261115-26). The release is a timer, never tied to the
+// wait itself, so a slow run can only weaken the guard, never fail the green path.
+const LATE_FONT_RELEASE_MS = 1_000;
+
+for (const fontArrival of ["immediate", "late"] as const) {
+    test(`async-errors: localizes directory-trash failures in the confirmation dialog${fontArrival === "late" ? " after a late web font" : ""}`, async ({
+        page,
+        mockScenario,
+        assertAccessible,
+        assertNoHorizontalOverflow,
+    }) => {
+        if (fontArrival === "late") {
+            let release: Promise<void> | undefined;
+            await page.route("**/fonts/inter/*.woff2", async (route) => {
+                release ??= new Promise((resolve) => setTimeout(resolve, LATE_FONT_RELEASE_MS));
+                await release;
+                await route.continue();
+            });
+        }
+        await mockScenario({
+            commands: filesWorkspaceCommands([[openingDirectory]], {
+                trash_workspace_entry: { error: "private native diagnostic at /private/file.pgn" },
+            }),
+        });
+        await chooseLibraryFolder(page);
+        await page
+            .getByRole("treeitem", { name: "Openings", exact: true })
+            .getByRole("button", { name: "Löschen" })
+            .click();
+        const dialog = page.getByRole("dialog", {
+            name: "In den Papierkorb verschieben",
+            exact: true,
+        });
+        await dialog.getByRole("button", { name: "Löschen", exact: true }).click();
+        await expect(dialog.getByRole("alert")).toHaveText(
+            "Die Aktion konnte nicht abgeschlossen werden. Bitte versuche es erneut.",
+        );
+        await expect(dialog.getByRole("button", { name: "Löschen", exact: true })).toBeEnabled();
+        await expect(page.locator("body")).not.toContainText("private native diagnostic");
+        await expect(page.locator("body")).not.toContainText("/private/file.pgn");
+        await assertNoHorizontalOverflow();
+        await assertPageNotClipped(page);
+        await assertAccessible();
+        await dialog.getByRole("button", { name: "Löschen", exact: true }).scrollIntoViewIfNeeded();
+        await expect(page).toHaveScreenshot("confirmation-error.png", { fullPage: true });
     });
-    await chooseLibraryFolder(page);
-    await page
-        .getByRole("treeitem", { name: "Openings", exact: true })
-        .getByRole("button", { name: "Löschen" })
-        .click();
-    const dialog = page.getByRole("dialog", { name: "In den Papierkorb verschieben", exact: true });
-    await dialog.getByRole("button", { name: "Löschen", exact: true }).click();
-    await expect(dialog.getByRole("alert")).toHaveText(
-        "Die Aktion konnte nicht abgeschlossen werden. Bitte versuche es erneut.",
-    );
-    await expect(dialog.getByRole("button", { name: "Löschen", exact: true })).toBeEnabled();
-    await expect(page.locator("body")).not.toContainText("private native diagnostic");
-    await expect(page.locator("body")).not.toContainText("/private/file.pgn");
-    await assertNoHorizontalOverflow();
-    await assertPageNotClipped(page);
-    await assertAccessible();
-    await dialog.getByRole("button", { name: "Löschen", exact: true }).scrollIntoViewIfNeeded();
-    await expect(page).toHaveScreenshot("confirmation-error.png", { fullPage: true });
-});
+}
 
 test("async-errors: fits a selected PGN file and its card at 320px", async ({
     page,
