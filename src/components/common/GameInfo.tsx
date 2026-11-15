@@ -56,6 +56,8 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
   const event = headers.event === "?" ? "" : headers.event;
   const site = headers.site === "?" ? "" : headers.site;
   const round = headers.round === "?" ? "" : (headers.round ?? "");
+  // The editable layout always shows Round, so its header row wraps instead of pushing BLACK out of view.
+  const wrapHeader = !simplified && !disabled;
   const sitePlatform = sitePlatformLabel(headers.site);
   // Keep raw White text so spaces survive typing, using the normalized Event fallback only
   // when White is empty.
@@ -82,7 +84,16 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
             {t("Fen.White")}
           </Text>
         )}
-        <Group wrap="nowrap" justify={simplified ? "start" : "center"} w="100%">
+        <Group
+          wrap={wrapHeader ? "wrap" : "nowrap"}
+          justify={simplified ? "start" : "center"}
+          w="100%"
+          style={
+            wrapHeader
+              ? { minWidth: 0, rowGap: 0, columnGap: "var(--mantine-spacing-xs)" }
+              : undefined
+          }
+        >
           {simplified ? (
             <>
               <InlineInput
@@ -121,7 +132,7 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
           )}
           {!simplified && (!disabled || round !== "") && (
             <>
-              {"-"}
+              {!wrapHeader && "-"}
               <Group gap={0} wrap="nowrap">
                 <Text c="dimmed" size="sm" mr="xs">
                   {t("GameInfo.Round")}

@@ -266,16 +266,20 @@ test.each([undefined, "?"] as const)(
   },
 );
 
-test("read-only view hides an empty round", async () => {
-  await act(async () =>
-    root.render(
-      <MantineProvider env="test">
-        <GameInfo headers={defaultTree().headers} />
-      </MantineProvider>,
-    ),
-  );
-  expect(host.querySelector('input[aria-label="GameInfo.Round"]')).toBeNull();
-});
+test.each([undefined, "?"] as const)(
+  "read-only view hides an empty round when round is %j",
+  async (round) => {
+    await act(async () =>
+      root.render(
+        <MantineProvider env="test">
+          <GameInfo headers={{ ...defaultTree().headers, round }} />
+        </MantineProvider>,
+      ),
+    );
+    expect(host.querySelector('input[aria-label="GameInfo.Round"]')).toBeNull();
+    expect(host.textContent).not.toContain("GameInfo.Round");
+  },
+);
 
 test("read-only view shows a filled round", async () => {
   await act(async () =>
