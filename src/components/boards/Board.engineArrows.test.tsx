@@ -184,3 +184,22 @@ test("a changed engine PV sets its new arrow once and a later equal score skips 
   expect(nativeBoard.set).toHaveBeenCalledOnce();
   expect(parseUci).not.toHaveBeenCalled();
 });
+
+test("the eval bar shows the live engine score ahead of the node's saved score", async () => {
+  await mountBoard();
+  await act(async () => {
+    tree.setState((state) => ({
+      root: { ...state.root, score: { value: { type: "cp", value: -300 }, wdl: null } },
+    }));
+  });
+  // mountBoard published a live cp 10 for this node; it stays the shown score.
+  expect(host.textContent).toContain("0.1");
+  expect(host.textContent).not.toContain("3.0");
+  await act(async () => {
+    tree.getState().setEngineScore({ value: { type: "cp", value: 250 }, wdl: null });
+  });
+  expect(host.textContent).toContain("2.5");
+  expect(host.textContent).not.toContain("3.0");
+  expect(tree.getState().root.score).toEqual({ value: { type: "cp", value: -300 }, wdl: null });
+  expect(tree.getState().dirty).toBe(false);
+});

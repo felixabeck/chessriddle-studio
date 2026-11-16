@@ -72,7 +72,7 @@ test.each([
     unsubscribe();
 });
 
-test("keeps the choice when a score write copies a transposed ancestor's continuations", () => {
+test("keeps the choice when an engine score write copies a transposed ancestor's continuations", () => {
     const tree = createTreeStore();
     tree.getState().makeMove({ payload: "d4", changePosition: false, changeHeaders: false });
     expect(
