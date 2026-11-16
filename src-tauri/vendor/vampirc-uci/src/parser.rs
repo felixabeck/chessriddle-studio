@@ -524,9 +524,10 @@ fn do_parse_uci(
                                     info_attr.push(info_depth);
                                 }
                                 Rule::info_time => {
-                                    let info_time = UciInfoAttribute::Time(Duration::milliseconds(
-                                        parse_number(spi),
-                                    ));
+                                    let info_time = UciInfoAttribute::Time(
+                                        Duration::try_milliseconds(parse_number(spi))
+                                            .unwrap_or_default(),
+                                    );
                                     info_attr.push(info_time);
                                 }
                                 Rule::info_nodes => {

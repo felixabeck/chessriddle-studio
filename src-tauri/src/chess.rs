@@ -5182,6 +5182,51 @@ done
         assert_eq!(parsed.score.value, ScoreValue::Cp(34));
     }
 
+    #[test]
+    fn uci_numeric_thirteen_digit_nodes_keeps_the_rest_of_the_line() {
+        let parsed = parsed_info("info depth 30 score cp 10 nodes 1234567890123 pv e2e4");
+        assert_eq!(parsed.depth, 30);
+        assert_eq!(parsed.score.value, ScoreValue::Cp(10));
+        assert_eq!(parsed.nodes, 1_234_567_890_123);
+        assert_eq!(parsed.san_moves, ["e4"]);
+
+        let parsed = parsed_info("info nodes 1234567890123 depth 30 score cp 10 pv e2e4");
+        assert_eq!(parsed.depth, 30);
+        assert_eq!(parsed.score.value, ScoreValue::Cp(10));
+        assert_eq!(parsed.nodes, 1_234_567_890_123);
+        assert_eq!(parsed.san_moves, ["e4"]);
+    }
+
+    #[test]
+    fn uci_numeric_counters_beyond_u64_keep_the_line() {
+        let parsed = parsed_info(
+            "info depth 30 score cp 10 nodes 18446744073709551616 nps 99999999999999999999 \
+             tbhits 123456789012345678901234 pv e2e4",
+        );
+        assert_eq!(parsed.nodes, 0);
+        assert_eq!(parsed.nps, 0);
+        assert_eq!(parsed.score.value, ScoreValue::Cp(10));
+        assert_eq!(parsed.san_moves, ["e4"]);
+    }
+
+    #[test]
+    fn uci_numeric_time_outside_duration_range_does_not_unwind() {
+        for line in [
+            "info depth 30 time -9223372036854775808 score cp 10 pv e2e4",
+            "info depth 30 time 9223372036854775808 score cp 10 pv e2e4",
+            "info depth 30 time 1234567890123 score cp 10 pv e2e4",
+        ] {
+            let parsed = std::panic::catch_unwind(|| parse_one(line));
+            let Ok(UciMessage::Info(attrs)) = parsed else {
+                panic!("expected info without unwind for {line}");
+            };
+            assert!(
+                attrs.iter().any(|a| matches!(a, UciInfoAttribute::Pv(_))),
+                "{line}"
+            );
+        }
+    }
+
     fn parsed_black_info(line: &str) -> BestMoves {
         let UciMessage::Info(attrs) = parse_one(line) else {
             panic!("expected info for {line}");

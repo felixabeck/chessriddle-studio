@@ -11,7 +11,15 @@ An overflowing number makes the whole info line Unknown with its original text.
 This avoids WDL panics and scores silently becoming exact zeroes.
 Missing score or WDL numbers also fail decoding.
 Other numeric fields keep their upstream default on overflow.
-The grammar in res/uci.pest is unchanged. All other upstream bytes are unchanged.
+An info time outside the Duration range becomes zero instead of panicking.
+
+The patch in res/uci.pest lets the number rule match any digit count.
+Upstream capped it at 12 digits, so a 13-digit nodes count matched only its
+first 12 digits and the rest of the info line, including its pv, was silently
+dropped. Decoding, not the grammar, now handles a value that does not fit.
+The milliseconds rule keeps its 12-digit cap: only go commands use it,
+which the application sends and never parses from an engine.
+All other upstream bytes are unchanged.
 
 A future upstream bump must re-apply this patch or demonstrate its replacement
 and pass the application's uci_numeric_ tests.

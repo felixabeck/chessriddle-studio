@@ -179,7 +179,7 @@ info_upperbound = { ^"upperbound" }
 
 sign = _{PLUS | MINUS}
 milliseconds = {sign? ~ digit{1,12} }
-number = {sign? ~ digit{1,12} }
+number = {sign? ~ digit+ }
 
 
 token = @{ (!(WHITESPACE | NEWLINE) ~ ANY)+ }
