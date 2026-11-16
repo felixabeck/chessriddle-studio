@@ -19,6 +19,7 @@ import {
   appendStoreGame,
   getAddGameLease,
   subscribeAddGame,
+  isDraftGameOrigin,
   isFileBackedTab,
   matchesFileGameTab,
   serializeStoreTree,
@@ -94,8 +95,7 @@ function isUnavailableFileError(error: ReturnType<typeof normalizeError>) {
 
 export default function FileFreshnessGate({ tab, closeTab, children }: Props) {
   // Drafts have no stored game to poll or recover. Resolve their target only on explicit save.
-  if (tab.gameOrigin.kind === "databaseDraft" || tab.gameOrigin.kind === "fileDraft")
-    return <>{children}</>;
+  if (isDraftGameOrigin(tab.gameOrigin)) return <>{children}</>;
   if (tab.gameOrigin.kind === "database")
     return (
       <DatabaseOriginGate tab={tab} closeTab={closeTab}>

@@ -32,7 +32,7 @@ interface BoardControlsProps {
   toggleEditingMode: () => void;
   dirty: boolean;
   saveFile?: () => void;
-  saveDatabase?: () => void;
+  saveTo?: () => void;
   canTakeBack?: boolean;
   onTakeBack?: () => void;
   takeBackPending?: boolean;
@@ -46,7 +46,7 @@ function BoardControls({
   toggleEditingMode,
   dirty,
   saveFile,
-  saveDatabase,
+  saveTo,
   canTakeBack,
   onTakeBack,
   takeBackPending,
@@ -157,8 +157,8 @@ function BoardControls({
           <Save size="1.2rem" />
         </IconAction>
       )}
-      {saveDatabase && (
-        <IconAction label={t("Board.Database.Save")} onClick={saveDatabase}>
+      {saveTo && (
+        <IconAction label={t("Board.Database.Save")} onClick={saveTo}>
           <Database size="1.2rem" />
         </IconAction>
       )}

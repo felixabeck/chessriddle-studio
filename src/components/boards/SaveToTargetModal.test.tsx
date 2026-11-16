@@ -14,7 +14,7 @@ import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
 import type { SuccessDatabaseInfo } from "@/utils/db";
 import { saveToDatabase, saveToLibraryFile } from "@/utils/tabs";
-import SaveToDatabaseModal from "./SaveToDatabaseModal";
+import SaveToTargetModal from "./SaveToTargetModal";
 
 vi.mock("@/hooks/useDatabaseList", () => ({ useDatabaseList: vi.fn() }));
 vi.mock("@/components/library/useWorkspaceListing", () => ({
@@ -93,7 +93,7 @@ async function renderModal(
     root.render(
       <Provider store={jotai}>
         <MantineProvider env="test">
-          <SaveToDatabaseModal
+          <SaveToTargetModal
             opened
             onClose={onClose}
             tab={undefined}
@@ -157,6 +157,12 @@ function saveButton() {
   )!;
 }
 
+function noTargetsAlert() {
+  return [...host.querySelectorAll('[role="alert"]')].find(
+    (alert) => alert.textContent === "Board.Database.NoTargets",
+  );
+}
+
 function deferredSave() {
   let resolve!: (value: Awaited<ReturnType<typeof saveToDatabase>>) => void;
   const promise = new Promise<Awaited<ReturnType<typeof saveToDatabase>>>((resolvePromise) => {
@@ -198,7 +204,7 @@ test("pending save prevents dismissal and repeated saves, then completes once an
   await act(async () => save.resolve("saved"));
 
   expect(onClose).toHaveBeenCalledOnce();
-  expect(notifications.show).toHaveBeenCalledExactlyOnceWith({ message: "Board.Database.Saved" });
+  expect(notifications.show).toHaveBeenCalledExactlyOnceWith({ message: "Board.SavedTo" });
   expect(mutate).toHaveBeenCalledOnce();
   expect(host.querySelector('[role="dialog"]')?.getAttribute("data-pending")).toBe("false");
   expect(host.querySelector('[aria-label="Close dialog"]')).not.toBeNull();
@@ -219,7 +225,7 @@ test("unmount during a pending save still announces success and skips late close
   await act(async () => save.resolve("saved"));
 
   expect(onClose).not.toHaveBeenCalled();
-  expect(notifications.show).toHaveBeenCalledExactlyOnceWith({ message: "Board.Database.Saved" });
+  expect(notifications.show).toHaveBeenCalledExactlyOnceWith({ message: "Board.SavedTo" });
   expect(mutate).not.toHaveBeenCalled();
 });
 
@@ -322,7 +328,7 @@ test("saving a collection-backed file uses its real metadata", async () => {
   );
   expect(saveToDatabase).not.toHaveBeenCalled();
   expect(onClose).toHaveBeenCalledOnce();
-  expect(notifications.show).toHaveBeenCalledExactlyOnceWith({ message: "Board.Database.Saved" });
+  expect(notifications.show).toHaveBeenCalledExactlyOnceWith({ message: "Board.SavedTo" });
 });
 
 test("a files-only library can save to a file", async () => {
@@ -330,6 +336,7 @@ test("a files-only library can save to a file", async () => {
   mockDatabases([]);
   vi.mocked(saveToLibraryFile).mockResolvedValue("saved");
   await renderModal(vi.fn(), workspace);
+  expect(noTargetsAlert()).toBeUndefined();
   await chooseOption("Games");
   expect(saveButton().disabled).toBe(false);
   await act(async () => saveButton().click());
@@ -343,12 +350,20 @@ test("a databases-only library keeps saving to a database", async () => {
   mockDatabases([standaloneDatabase]);
   vi.mocked(saveToDatabase).mockResolvedValue("saved");
   await renderModal();
+  expect(noTargetsAlert()).toBeUndefined();
   await chooseOption("Standalone");
   await act(async () => saveButton().click());
   expect(saveToDatabase).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({ database: standaloneDatabase.file }),
   );
   expect(saveToLibraryFile).not.toHaveBeenCalled();
+});
+
+test("shows NoTargets when both listings succeed with zero targets", async () => {
+  mockFiles([]);
+  mockDatabases([]);
+  await renderModal(vi.fn(), workspace);
+  expect(noTargetsAlert()?.textContent).toBe("Board.Database.NoTargets");
 });
 
 test("a files listing failure uses files-domain copy and still saves a selected database", async () => {

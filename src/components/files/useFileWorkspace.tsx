@@ -84,7 +84,7 @@ export function useFileWorkspace(
   selectedEntry: Entry | null,
   setSelectedEntry: (entry: Entry | null) => void,
   selectedWorkspaceKey?: string,
-  linkedCollection = false,
+  omitNewGame = false,
 ) {
   const { t, i18n } = useTranslation();
   const listingCache = useSWRConfig();
@@ -744,7 +744,7 @@ export function useFileWorkspace(
               <FileCard
                 key={`file:${fileWorkspaceKey(selected.handle)}`}
                 selected={selected}
-                linkedCollection={linkedCollection}
+                omitNewGame={omitNewGame}
                 onEditMetadata={() => {
                   openAction(fileAction.edit);
                 }}

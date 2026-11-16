@@ -33,7 +33,7 @@ function databaseValue(database: SuccessDatabaseInfo) {
   return `${DATABASE_PREFIX}${databaseHandleKey(database.file)}`;
 }
 
-export default function SaveToDatabaseModal({
+export default function SaveToTargetModal({
   opened,
   onClose,
   tab,
@@ -131,7 +131,7 @@ export default function SaveToDatabaseModal({
           if (isMounted()) notifyUnlessCancelled(t("Common.Error"), result.error);
         } else if (result === "saved") {
           notifications.show({
-            message: t("Board.Database.Saved", { database: file ? file.name : database!.title }),
+            message: t("Board.SavedTo", { target: file ? file.name : database!.title }),
           });
           if (!isMounted()) return;
           onClose();

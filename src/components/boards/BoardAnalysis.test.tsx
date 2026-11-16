@@ -47,6 +47,7 @@ import {
   serializeStoreTree,
   saveToFile,
 } from "@/utils/tabs";
+import * as tabs from "@/utils/tabs";
 import { useHotkeys } from "@mantine/hooks";
 import { MantineProvider } from "@mantine/core";
 import BoardAnalysis from "./BoardAnalysis";
@@ -1191,33 +1192,39 @@ describe("BoardAnalysis", () => {
   }
 
   test("a fileDraft tab does not auto-save", async () => {
-    await act(async () => {
-      updateTabById(
-        (...args) => jotaiStore.set(tabsAtom, ...args),
-        tabId,
-        (previous) => ({
-          ...previous,
-          gameOrigin: {
-            kind: "fileDraft",
-            file: {
-              type: "file",
-              handle: fileHandle,
-              name: "Weiß_Caro Kann.pgn",
-              numGames: 0,
-              metadata: { type: "repertoire", tags: [] },
-              lastModified: 1,
+    const save = vi.spyOn(tabs, "saveToFile");
+    try {
+      await act(async () => {
+        updateTabById(
+          (...args) => jotaiStore.set(tabsAtom, ...args),
+          tabId,
+          (previous) => ({
+            ...previous,
+            gameOrigin: {
+              kind: "fileDraft",
+              file: {
+                type: "file",
+                handle: fileHandle,
+                name: "Weiß_Caro Kann.pgn",
+                numGames: 0,
+                metadata: { type: "repertoire", tags: [] },
+                lastModified: 1,
+              },
             },
-          },
-        }),
-      );
-      jotaiStore.set(autoSaveAtom, true);
-    });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    });
-    expect(mocks.writeGame).not.toHaveBeenCalled();
-    expect(mocks.countPgnGames).not.toHaveBeenCalled();
-    expect(mocks.writeDbGame).not.toHaveBeenCalled();
+          }),
+        );
+        jotaiStore.set(autoSaveAtom, true);
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+      expect(save).not.toHaveBeenCalled();
+      expect(mocks.writeGame).not.toHaveBeenCalled();
+      expect(mocks.countPgnGames).not.toHaveBeenCalled();
+      expect(mocks.writeDbGame).not.toHaveBeenCalled();
+    } finally {
+      save.mockRestore();
+    }
   });
 
   test("a database orientation flip autosaves its PGN tag and advances the row stamp", async () => {

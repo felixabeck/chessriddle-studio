@@ -33,11 +33,12 @@ const GAME_LIST_MIN_HEIGHT = "8rem";
 function FileCard({
   selected,
   onEditMetadata,
-  linkedCollection = false,
+  omitNewGame = false,
 }: {
   selected: FileMetadata;
   onEditMetadata: () => void;
-  linkedCollection?: boolean;
+  // The LinkedCollection panel above the card owns New game for that file.
+  omitNewGame?: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -173,7 +174,7 @@ function FileCard({
             pending={gameOpen.pending}
             disabled={previewOmitted || selected.numGames <= 0 || page >= selected.numGames}
           />
-          {!linkedCollection && (
+          {!omitNewGame && (
             <NewGameButton
               origin={{ kind: "fileDraft", file: selected }}
               explanation={t("Files.NewGame.Desc", {

@@ -22,6 +22,7 @@ import {
 } from "@/state/fileFreshness";
 import { defaultTree } from "@/utils/treeReducer";
 import { getTabTreeKey, saveToFile, serializeStoreTree } from "@/utils/tabs";
+import * as tabs from "@/utils/tabs";
 import type { Tab } from "@/utils/tabs";
 import type { NormalizedGame } from "@/bindings";
 import FileFreshnessGate from "./FileFreshnessGate";
@@ -357,15 +358,21 @@ const databaseRow: NormalizedGame = {
 };
 
 test("a fileDraft tab renders without polling or recovering a stored game", async () => {
-  await setup({
-    tab: {
-      ...fileTab,
-      gameOrigin: { kind: "fileDraft", file },
-    },
-  });
-  expect(host.querySelector('[data-testid="board-and-panels"]')).not.toBeNull();
-  expect(mocks.readFileGame).not.toHaveBeenCalled();
-  expect(mocks.getDbGame).not.toHaveBeenCalled();
+  const isFileBacked = vi.spyOn(tabs, "isFileBackedTab");
+  try {
+    await setup({
+      tab: {
+        ...fileTab,
+        gameOrigin: { kind: "fileDraft", file },
+      },
+    });
+    expect(host.querySelector('[data-testid="board-and-panels"]')).not.toBeNull();
+    expect(mocks.readFileGame).not.toHaveBeenCalled();
+    expect(mocks.getDbGame).not.toHaveBeenCalled();
+    expect(isFileBacked).not.toHaveBeenCalled();
+  } finally {
+    isFileBacked.mockRestore();
+  }
 });
 
 test("an unverified database tab shows the board until a conflict unmounts it", async () => {

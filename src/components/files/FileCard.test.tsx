@@ -881,7 +881,7 @@ describe("FileCard", () => {
   test("omits New game when the file backs a linked collection", async () => {
     mocks.readGames.mockResolvedValue([stampedGame("Preview")]);
     await renderWithMantine(
-      <FileCard onEditMetadata={vi.fn()} selected={sampleFileA} linkedCollection />,
+      <FileCard onEditMetadata={vi.fn()} selected={sampleFileA} omitNewGame />,
       root,
     );
     expect(newGameButton()).toBeUndefined();

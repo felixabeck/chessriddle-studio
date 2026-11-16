@@ -61,13 +61,12 @@ export default function LibraryPage() {
   );
   const selectedLibraryFile =
     selection?.kind === "workspace" && selection.entry?.type === "file" ? selection.entry : null;
-  const linkedCollection =
-    !!selectedLibraryFile &&
-    databases.collections.some(
-      (collection) =>
-        collection.status !== "retired" &&
-        fileWorkspaceKey(collection.file) === fileWorkspaceKey(selectedLibraryFile.handle),
-    );
+  const { byFile } = joinLibraryCollections(
+    selectedLibraryFile ? [selectedLibraryFile] : [],
+    databases.collections,
+  );
+  const omitNewGame =
+    selectedLibraryFile != null && byFile.has(fileWorkspaceKey(selectedLibraryFile.handle));
   const files = useFileWorkspace(
     selection?.kind === "workspace" ? selection.entry : null,
     (entry) => {
@@ -80,7 +79,7 @@ export default function LibraryPage() {
       );
     },
     selection?.kind === "workspace" ? selection.workspaceKey : undefined,
-    linkedCollection,
+    omitNewGame,
   );
   const workspaceKey = files.workspace ? fileWorkspaceKey(files.workspace) : null;
   useEffect(() => {
@@ -114,11 +113,10 @@ export default function LibraryPage() {
   ]);
   const normalizedSearch = search.trim().toLowerCase();
   useCollectionCurrencies(databases.collections);
-  const {
-    files: sourceFiles,
-    byFile,
-    missing,
-  } = joinLibraryCollections(files.data ?? [], databases.collections);
+  const { files: sourceFiles, missing } = joinLibraryCollections(
+    files.data ?? [],
+    databases.collections,
+  );
   const linked =
     fileSelection?.type === "file" ? byFile.get(fileWorkspaceKey(fileSelection.handle)) : undefined;
   const selectedMissing =

@@ -31,11 +31,12 @@ import type { Annotation } from "@/utils/annotation";
 import {
   AddGameContext,
   getTabFile,
+  isDraftGameOrigin,
   isPersistentGameOrigin,
   saveToFile,
   useTabActions,
 } from "@/utils/tabs";
-import SaveToDatabaseModal from "./SaveToDatabaseModal";
+import SaveToTargetModal from "./SaveToTargetModal";
 import DetachedEval from "../common/DetachedEval";
 import GameNotation from "../common/GameNotation";
 import MoveControls from "../common/MoveControls";
@@ -66,10 +67,8 @@ function BoardAnalysis() {
   const [addGameConfirm, setAddGameConfirm] = useState(false);
   const tabFile = getTabFile(currentTab);
   const hasPersistentOrigin =
-    isPersistentGameOrigin(currentTab) &&
-    currentTab?.gameOrigin.kind !== "databaseDraft" &&
-    currentTab?.gameOrigin.kind !== "fileDraft";
-  const [databaseModal, setDatabaseModal] = useState(false);
+    !!currentTab && isPersistentGameOrigin(currentTab) && !isDraftGameOrigin(currentTab.gameOrigin);
+  const [saveToModal, setSaveToModal] = useState(false);
   const autoSave = useAtomValue(autoSaveAtom);
   const boardRef = useRef(null);
 
@@ -272,10 +271,10 @@ function BoardAnalysis() {
 
   return (
     <>
-      {databaseModal && (
-        <SaveToDatabaseModal
+      {saveToModal && (
+        <SaveToTargetModal
           opened
-          onClose={() => setDatabaseModal(false)}
+          onClose={() => setSaveToModal(false)}
           tab={currentTab}
           store={store}
         />
@@ -399,7 +398,7 @@ function BoardAnalysis() {
                   toggleEditingMode={toggleEditingMode}
                   dirty={dirty}
                   saveFile={userSaveFile}
-                  saveDatabase={() => setDatabaseModal(true)}
+                  saveTo={() => setSaveToModal(true)}
                 />
               }
             />

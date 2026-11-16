@@ -1357,7 +1357,7 @@ export function saveToFile(args: SaveArguments): Promise<SaveResult> {
                     : { kind: "database", database: owner.gameOrigin.database };
             // A queued draft save follows the current origin after an earlier store rebinds it.
             return withStoreFlight(args, request, (tab, target) =>
-                saveToFileNow({ ...args, tab, resolvedStore: target }),
+                saveToFileNow({ ...args, tab, target }),
             );
         }
         if (!saveFlights.get(args.store)?.storing) return Promise.resolve("cancelled");
@@ -1391,14 +1391,14 @@ async function saveToFileNow({
     getTab,
     store,
     isUserSave,
-    resolvedStore,
+    target,
 }: {
     tab: Tab | undefined;
     updateTab: UpdateTab;
     getTab: (tabId: string) => Tab | undefined;
     store: StoreApi<TreeStoreState>;
     isUserSave?: boolean;
-    resolvedStore?: ResolvedStoreTarget;
+    target?: ResolvedStoreTarget;
 }): Promise<SaveResult> {
     if (!tab) return failed(new Error("There is no active tab to save."));
     const tabId = tab.value;
@@ -1417,13 +1417,13 @@ async function saveToFileNow({
     try {
         if (!owns()) return "superseded";
         if (isDraftGameOrigin(currentOrigin)) {
-            if (!isUserSave || !resolvedStore) return "cancelled";
+            if (!isUserSave || !target) return "cancelled";
             return applyResolvedStore({
                 tab,
                 store,
                 getTab,
                 updateTab,
-                target: resolvedStore,
+                target,
             });
         }
         const fileOrigin = isFileBackedTab(tab) ? tab.gameOrigin : undefined;
