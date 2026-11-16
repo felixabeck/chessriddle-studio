@@ -281,9 +281,9 @@ function EngineListener({
           setEngineVariation((prev) => {
             const newMap = new AnalysisLineMemory(prev);
             const replaced = newMap.remember(searchedKey, ev, attempt);
-            const shouldSetScore =
+            const shouldSetEngineScore =
               firstEngineWithLines === engine.id || firstEngineWithLines === null;
-            if (replaced && !threat && shouldSetScore) setEngineScore(ev[0].score);
+            if (replaced && !threat && shouldSetEngineScore) setEngineScore(ev[0].score);
             return newMap;
           });
           setProgress(payload.progress);
