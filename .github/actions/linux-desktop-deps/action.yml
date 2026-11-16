@@ -362,6 +362,7 @@ runs:
             pkg=${rest%%_*}
             ver=${rest#*_}
             ver=${ver%_*}
+            # apt percent-encodes the epoch colon in archive filenames (`1%3a2.0-1` for `1:2.0-1`).
             ver=${ver//%3a/:}
             candidates[$pkg]=$ver
           done < "$set_file"

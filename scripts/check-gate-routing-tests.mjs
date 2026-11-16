@@ -1014,6 +1014,8 @@ test("detects missing scripts used by both executable schedules", async (t) => {
   }
 });
 
+const depsManifestName = "linux-desktop-deps-manifest.txt";
+
 // Keep these contracts in gates:routing:test, which gates:contract:check already runs.
 function ciWorkflowContracts(texts) {
   const jobs = (source) => new Map(workflowJobs(source).map((job) => [job.name, job.body]));
@@ -1265,9 +1267,8 @@ function ciWorkflowContracts(texts) {
     depsStep("resolve")?.text.includes(`\n        archives=${archiveAssignments[0][1]}\n`)
       ? archiveAssignments[0][1]
       : undefined;
-  const manifestName = "linux-desktop-deps-manifest.txt";
   const expectedCachePathBody = archives
-    ? `          ${archives}/*.deb\n          ${archives}/${manifestName}\n`
+    ? `          ${archives}/*.deb\n          ${archives}/${depsManifestName}\n`
     : undefined;
   for (const [name, id, uses] of [
     ["restore", "restore", "actions/cache/restore@v4"],
@@ -1333,7 +1334,7 @@ function ciWorkflowContracts(texts) {
     "deps every Dir::Cache::Archives option uses the archive directory source",
     () =>
       assert.ok(
-        depsText.split('"Dir::Cache::Archives=$archives"').length - 1 >= 3 &&
+        depsText.split('"Dir::Cache::Archives=$archives"').length - 1 === 4 &&
           depsText.split("Dir::Cache::Archives").length ===
             depsText.split('"Dir::Cache::Archives=$archives"').length,
         "deps every Dir::Cache::Archives option uses the archive directory source",
@@ -1342,11 +1343,29 @@ function ciWorkflowContracts(texts) {
   for (const [label, id, needle] of [
     ["deps resolve passes the cache path directory to apt", "resolve", "install --print-uris"],
     ["deps download passes the cache path directory to apt", "download", "install --download-only"],
-    ["deps install passes the cache path directory to apt", "install", "install --no-download"],
   ])
     pinDepsStep(label, id, (step) =>
       assert.ok(step.text.includes(`-o "Dir::Cache::Archives=$archives" ${needle}`), label),
     );
+  pinDepsStep(
+    "deps install success path passes the cache path directory to apt",
+    "install",
+    (step) =>
+      assert.ok(
+        step.text.includes(
+          'sudo apt-get -o "Dir::Cache::Archives=$archives" install --no-download --no-install-recommends -y "${packages[@]}"\n          exit $?',
+        ),
+        "deps install success path passes the cache path directory to apt",
+      ),
+  );
+  pinDepsStep("deps install fallback passes the cache path directory to apt", "install", (step) =>
+    assert.ok(
+      step.text.includes(
+        'sudo apt-get -o "Dir::Cache::Archives=$archives" install --no-download --no-install-recommends -y "${packages[@]}" "${pins[@]}"',
+      ),
+      "deps install fallback passes the cache path directory to apt",
+    ),
+  );
   // The cache population chain: verify and prune exist, their producers feed the save guard, and
   // restore and save agree on the keys.
   pinDepsStep("deps has a verify step", "verify", () => {});
@@ -1370,7 +1389,7 @@ function ciWorkflowContracts(texts) {
     assert.ok(
       step.text.includes("declare -p packages archives manifest;") &&
         archives !== undefined &&
-        step.text.includes(`\n        manifest=${archives}/${manifestName}\n`),
+        step.text.includes(`\n        manifest=${archives}/${depsManifestName}\n`),
       "deps library carries the manifest path",
     ),
   );
@@ -1568,7 +1587,6 @@ test("CI workflow wiring preserves parallel gates and bounded incremental reuse"
 
 const depsCall = "uses: ./.github/actions/linux-desktop-deps";
 const depsArchives = "/tmp/linux-desktop-apt-archives";
-const depsManifestName = "linux-desktop-deps-manifest.txt";
 const depsCachePathBlock = `        path: |\n          ${depsArchives}/*.deb\n          ${depsArchives}/${depsManifestName}\n`;
 const depsSaveStepFragment = `${depsCachePathBlock}        key: ${"$"}{{ steps.resolve.outputs.save-key }}\n\n`;
 const depsRestoreStepFragment = `${depsCachePathBlock}        key: ${"$"}{{ steps.resolve.outputs.save-key }}\n        restore-keys`;
@@ -1729,11 +1747,18 @@ const linuxDesktopDepsRows = [
     "deps download passes the cache path directory to apt",
   ],
   [
-    "install loses the archive directory",
+    "success install loses the archive directory",
     "deps",
-    'apt-get -o "Dir::Cache::Archives=$archives" install --no-download',
-    "apt-get install --no-download",
-    "deps install passes the cache path directory to apt",
+    'sudo apt-get -o "Dir::Cache::Archives=$archives" install --no-download --no-install-recommends -y "${packages[@]}"\n          exit $?',
+    'sudo apt-get install --no-download --no-install-recommends -y "${packages[@]}"\n          exit $?',
+    "deps install success path passes the cache path directory to apt",
+  ],
+  [
+    "fallback install loses the archive directory",
+    "deps",
+    'sudo apt-get -o "Dir::Cache::Archives=$archives" install --no-download --no-install-recommends -y "${packages[@]}" "${pins[@]}"',
+    'sudo apt-get install --no-download --no-install-recommends -y "${packages[@]}" "${pins[@]}"',
+    "deps install fallback passes the cache path directory to apt",
   ],
   [
     "download passes a literal archive directory",
@@ -1834,35 +1859,35 @@ const linuxDesktopDepsRows = [
     "deps has a verify step",
   ],
   [
-    "verify dispatch removed",
+    "check helper dispatch removed",
     "deps",
     'case "${checksum%%:*}" in',
     "case MD5Sum in",
     "deps check helper dispatches on the checksum type",
   ],
   [
-    "verify loses the MD5Sum arm",
+    "check helper loses the MD5Sum arm",
     "deps",
     "            MD5Sum) tool=md5sum ;;\n",
     "",
     "deps check helper handles MD5Sum",
   ],
   [
-    "verify loses the SHA256 arm",
+    "check helper loses the SHA256 arm",
     "deps",
     "            SHA256) tool=sha256sum ;;\n",
     "",
     "deps check helper handles SHA256",
   ],
   [
-    "verify stops dropping a size mismatch",
+    "check helper stops rejecting a size mismatch",
     "deps",
     'if [ "$actual_size" != "$size" ]; then',
     "if false; then",
     "deps check helper rejects a size mismatch",
   ],
   [
-    "verify stops dropping a checksum mismatch",
+    "check helper stops rejecting a checksum mismatch",
     "deps",
     'if [ "$digest" != "${checksum#*:}" ]; then',
     "if false; then",
@@ -2080,10 +2105,10 @@ const depsHelperNames = [
 ];
 const fakeNow = 1_800_000_000;
 
-function depsHelperSource(depsText) {
+function depsHelperSource(depsText, names = depsHelperNames) {
   const resolve = workflowStepBlocks(depsText).find((step) => step.id === "resolve");
   assert.ok(resolve, "linux-desktop-deps has a resolve step");
-  return depsHelperNames
+  return names
     .map((name) => {
       const definition = new RegExp(`^ {8}${name}\\(\\) \\{\\n[\\s\\S]*?\\n {8}\\}$`, "mu").exec(
         resolve.text,
@@ -2351,16 +2376,20 @@ test("linux-desktop-deps helpers behave when executed", async (t) => {
 // directory. The `mkdir` and `rm` shims fail loudly if that ever stops being true.
 const resolveEpoch = 1_800_000_000;
 
-function depsResolveBody(depsText) {
-  const resolve = workflowStepBlocks(depsText).find((step) => step.id === "resolve");
-  assert.ok(resolve, "linux-desktop-deps has a resolve step");
-  const lines = resolve.text.split("\n");
+function depsStepRunBody(depsText, id) {
+  const step = workflowStepBlocks(depsText).find((candidate) => candidate.id === id);
+  assert.ok(step, `linux-desktop-deps has a ${id} step`);
+  const lines = step.text.split("\n");
   const runIndex = lines.indexOf("      run: |");
-  assert.ok(runIndex >= 0, "the resolve step has a run body");
+  assert.ok(runIndex >= 0, `the ${id} step has a run body`);
   return lines
     .slice(runIndex + 1)
     .map((line) => line.slice(8))
     .join("\n");
+}
+
+function depsResolveBody(depsText) {
+  return depsStepRunBody(depsText, "resolve");
 }
 
 function runResolveBody(body, timeoutMinutes) {
@@ -2602,32 +2631,9 @@ function debRecord(name, content) {
   return `${name} ${Buffer.byteLength(content)} SHA256:${sha256Hex(content)}`;
 }
 
-function depsCheckFileHelper(depsText) {
-  const resolve = workflowStepBlocks(depsText).find((step) => step.id === "resolve");
-  assert.ok(resolve, "linux-desktop-deps has a resolve step");
-  const definition = new RegExp(
-    `^ {8}desktop_deps_check_file\\(\\) \\{\\n[\\s\\S]*?\\n {8}\\}$`,
-    "mu",
-  ).exec(resolve.text);
-  assert.ok(definition, "the resolve step defines desktop_deps_check_file");
-  return definition[0];
-}
-
-function depsStepRunBody(depsText, id) {
-  const step = workflowStepBlocks(depsText).find((candidate) => candidate.id === id);
-  assert.ok(step, `linux-desktop-deps has a ${id} step`);
-  const lines = step.text.split("\n");
-  const runIndex = lines.indexOf("      run: |");
-  assert.ok(runIndex >= 0, `the ${id} step has a run body`);
-  return lines
-    .slice(runIndex + 1)
-    .map((line) => line.slice(8))
-    .join("\n");
-}
-
 function pipelineParts(depsText) {
   return {
-    helper: depsCheckFileHelper(depsText),
+    helper: depsHelperSource(depsText, ["desktop_deps_check_file"]),
     verify: depsStepRunBody(depsText, "verify"),
     install: depsStepRunBody(depsText, "install"),
   };
@@ -2736,7 +2742,7 @@ rest=\${base%.deb}
 pkg=\${rest%%_*}
 rest=\${rest#*_}
 ver=\${rest%_*}
-ver=\${ver//%3a/:}
+ver=\${ver//%3a/:} # apt percent-encodes the epoch colon in archive filenames (\`1%3a2.0-1\` for \`1:2.0-1\`).
 case "$3" in
   Package) printf '%s\\n' "$pkg" ;;
   Version) printf '%s\\n' "$ver" ;;
@@ -2819,9 +2825,16 @@ const pipelineCases = [
       assert.equal(result.verify.status, 0, result.verify.output);
       assert.equal(result.install.status, 0, result.install.output);
       assert.equal(result.install.calls.length, 1);
-      const tokens = argvTokens(result.install.calls[0]);
-      const installAt = tokens.indexOf("install");
-      assert.deepEqual(tokens.slice(installAt + 4), pipelinePackages);
+      assert.deepEqual(argvTokens(result.install.calls[0]), [
+        "apt-get",
+        "-o",
+        `Dir::Cache::Archives=${result.archives}`,
+        "install",
+        "--no-download",
+        "--no-install-recommends",
+        "-y",
+        ...pipelinePackages,
+      ]);
       assert.ok(!result.install.output.includes(fallbackWarning), result.install.output);
     },
   ],
@@ -2887,6 +2900,58 @@ const pipelineCases = [
     },
   ],
   [
+    "failed download with matching versions warns without candidate text",
+    (parts) => {
+      const result = runDepsPipeline(parts, {
+        downloadOutcome: "failure",
+        files: {
+          [pipelineDebs.alphaOld]: pipelineContents.alphaOld,
+          [pipelineDebs.commonOld]: pipelineContents.commonOld,
+          [pipelineDebs.betaOld]: pipelineContents.beta,
+          [pipelineDebs.gamma]: pipelineContents.gamma,
+        },
+        currentSet: [
+          debRecord(pipelineDebs.alphaOld, pipelineContents.alphaOld),
+          debRecord(pipelineDebs.commonOld, pipelineContents.commonOld),
+          debRecord(pipelineDebs.betaOld, pipelineContents.beta),
+        ],
+        manifest: incidentManifest(),
+      });
+      assert.equal(result.verify.status, 0, result.verify.output);
+      assert.equal(result.install.status, 0, result.install.output);
+      assert.equal(result.install.calls.length, 1);
+      assertFallbackArgv(result.install.calls[0], result.archives, incidentPins());
+      const warnings = result.install.output
+        .split("\n")
+        .filter((line) => line.startsWith("::warning::"));
+      assert.deepEqual(warnings, [fallbackWarning]);
+      assert.ok(!result.install.output.includes("(candidate"), result.install.output);
+    },
+  ],
+  [
+    "verify discards every restored file on a check error",
+    (parts) => {
+      const result = runDepsPipeline(parts, {
+        downloadOutcome: "success",
+        files: {
+          ...incidentFiles(),
+          [pipelineDebs.alphaNew]: pipelineContents.alphaNew,
+        },
+        currentSet: [
+          `${pipelineDebs.alphaNew} ${Buffer.byteLength(pipelineContents.alphaNew)} UNKNOWN:${sha256Hex(pipelineContents.alphaNew)}`,
+        ],
+      });
+      assert.equal(result.verify.status, 0, result.verify.output);
+      assert.deepEqual(result.debsAfterVerify, []);
+      assert.ok(
+        result.verify.output.includes(
+          "::warning::linux-desktop-deps: verifying the restored apt archives failed (unsupported checksum type UNKNOWN); discarding them, every package comes from the mirror",
+        ),
+        result.verify.output,
+      );
+    },
+  ],
+  [
     "size mismatch prints the no-usable-set error and never calls apt",
     (parts) => {
       const result = runDepsPipeline(parts, {
@@ -2925,7 +2990,7 @@ const pipelineCases = [
     },
   ],
   [
-    "missing manifest file prints the no-usable-set error and never calls apt",
+    "missing cached file prints the no-usable-set error and never calls apt",
     (parts) => {
       const files = incidentFiles();
       delete files[pipelineDebs.gamma];
@@ -3026,6 +3091,15 @@ const pipelineMutations = [
     "success outcome: one apt call without pins",
   ],
   [
+    "success install loses the archive directory",
+    replacePipeline(
+      "install",
+      'sudo apt-get -o "Dir::Cache::Archives=$archives" install --no-download --no-install-recommends -y "${packages[@]}"\n  exit $?',
+      'sudo apt-get install --no-download --no-install-recommends -y "${packages[@]}"\n  exit $?',
+    ),
+    "success outcome: one apt call without pins",
+  ],
+  [
     "fallback loses the version pins",
     replacePipeline("install", ' "${packages[@]}" "${pins[@]}"', ' "${packages[@]}"'),
     "failed download installs the verified previous set",
@@ -3045,6 +3119,16 @@ const pipelineMutations = [
     "failed download pins a current-set file and a newer sibling to the manifest versions",
   ],
   [
+    "empty stale warning branch deleted",
+    replacePipeline("install", 'else\n  echo "::warning::$warning"\n', ""),
+    "failed download with matching versions warns without candidate text",
+  ],
+  [
+    "verify check error continues instead of discarding",
+    replacePipeline("verify", "else\n      return 1", "else\n      continue"),
+    "verify discards every restored file on a check error",
+  ],
+  [
     "helper accepts a size mismatch",
     replacePipeline("helper", '[ "$actual_size" != "$size" ]', "false"),
     "size mismatch prints the no-usable-set error and never calls apt",
@@ -3057,7 +3141,7 @@ const pipelineMutations = [
   [
     "missing cached file is skipped",
     replacePipeline("install", 'reason="cached file $name is missing"\n      return 1', "continue"),
-    "missing manifest file prints the no-usable-set error and never calls apt",
+    "missing cached file prints the no-usable-set error and never calls apt",
   ],
   [
     "missing manifest is treated as empty",
