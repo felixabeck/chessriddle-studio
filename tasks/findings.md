@@ -25724,7 +25724,7 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 
 ### `rust-macos-test` lost its runner again on master `7fdf4d564` (second runner loss in three days)
 
-* **ID:** f-20261113-04 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261113-04 · **Status:** handled · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 5867a492-0964-4b01-92ca-9dbfd502f1ef
 * **Impact class:** tooling
 * **CI run:** 43446000106
@@ -25737,6 +25737,9 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Found by:** Claude Code, `pnpm ci:remote:check` before the f-20261112-82 drain push, drain session 5867a492-0964-4b01-92ca-9dbfd502f1ef.
 * **Third occurrence (2026-11-14, Claude Code, required CI wait after the remove-codex push):** **CI run:** 43593993978 — job `rust-macos-test` 132444507963 on master `cd0275e23` started 12:16:34Z, entered `Run Rust tests` at 12:17:57Z and ended 13:10:36Z with the annotation "The hosted runner lost communication with the server." The step has no conclusion and the job log returns 404 BlobNotFound. `cd0275e23` and its parent range touch no `src-tauri` file; every other job of the run succeeded, and `rust-macos-test` passed in about 17 minutes on the two preceding master runs. Per this finding's Fix, the failed job gets one rerun (`gh run rerun 43593993978 --failed`); three losses in five days, each about 50 minutes long, strengthen the macOS test-hang hypothesis if the rerun also hangs.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"25536bf3deea1447723476d3e38ae10937a1414fc8964fd47f059a56ae711454","input_sha256":"e69dd5c737694df9215ed9d8c82287adb291c3af807c3f171d26300f7ee06c37","kind":"mutation-receipt","operation":"7f157954db2d036b1678f75d0efb2c1ee86952208c610abd70335277ffde20ad","options":{"section":null},"request_id_sha256":null,"results":["f-20261113-04"],"target":"f-20261113-04","v":1} -->
+
+* **Closed (2026-11-16, Claude drain orchestrator, co-located joiner of f-20261112-97):** handled as runner infrastructure, per this entry's Fix. The rerun of the third loss (run 43593993978, `rust-macos-test`) passed, 13:11:37Z–13:23:35Z on 2026-11-14 (12 minutes). Every test.yml run created after 2026-11-14T13:30Z (about 53, checked with `gh run list`/`gh run view` on 2026-11-16) has a successful `rust-macos-test`, including the newest master run 43937053495 on `e058ed982`. Three "hosted runner lost communication" losses on 2026-11-10, 2026-11-13 and 2026-11-14, each followed by a green rerun and none since, point at GitHub-hosted macOS runner loss rather than a test hang; no code change. If a fourth loss occurs, file a new finding linking this one and capture the test that is running before the log blob expires.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"c8fde66208a03e2acb39bbb7879405aa96b04731153bdcc2b8a2c60335b78a1d","header_sha256":"e46aa5c82a1338378dddc0852dbc0ee0ea25e30e40fb50bf7fb7a2ffa3c6f8fa","header_status":"handled","input_sha256":"c28911bbaa87d53a7b6abaef2e8a4332b9b83d89e4ff1abee784f2b6b8bc421c","kind":"mutation-receipt","operation":"bf729348ff31c56b5148ffc1effd002d50d746ad93df0c5660d196a192a732ac","options":{"section":null},"request_id_sha256":null,"results":["f-20261113-04"],"target":"f-20261113-04","v":1} -->
 
 ---
 
