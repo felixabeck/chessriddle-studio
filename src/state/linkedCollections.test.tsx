@@ -3,11 +3,13 @@ import { createRoot } from "react-dom/client";
 import useSWR, { SWRConfig } from "swr";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { CollectionDescriptor, DatabaseHandle } from "@/bindings";
+import { recordDatabaseWrite } from "@/platform/databaseWrites";
 import { registerCollectionCheck, startFileRevisionPoll } from "./fileFreshness";
 import {
   isCollectionConsumer,
   useCollectionCurrencies,
   useCollectionCurrency,
+  useDatabaseContentRevision,
 } from "./linkedCollections";
 
 const mocks = vi.hoisted(() => ({ read: vi.fn(), rebuild: vi.fn() }));
@@ -663,4 +665,64 @@ test("deadline retries do not starve collections still waiting for their first c
     complete.splice(0).forEach((resolve) => resolve());
     await flush();
   }
+});
+
+test("database content revision keys on pending lookup, generation, writes, and unavailability", async () => {
+  const file: DatabaseHandle = { id: { id: "content-revision" }, kind: "database" };
+  const ready = (generation: string): CollectionDescriptor => ({
+    ...collection,
+    database: file,
+    generation,
+    status: "ready",
+  });
+  let settle!: (value: CollectionDescriptor) => void;
+  mocks.read.mockReturnValueOnce(
+    new Promise<CollectionDescriptor>((done) => {
+      settle = done;
+    }),
+  );
+
+  function View() {
+    const state = useDatabaseContentRevision(file);
+    return <output>{JSON.stringify(state)}</output>;
+  }
+  const snapshot = () =>
+    JSON.parse(host.textContent ?? "null") as {
+      revision: [string | null, number] | null;
+      unavailable: boolean;
+    };
+
+  await act(async () => root.render(<View />));
+  await flush();
+  expect(snapshot()).toEqual({ revision: null, unavailable: false });
+
+  await act(async () => settle(ready("g1")));
+  await flush();
+  expect(snapshot()).toEqual({ revision: ["g1", 0], unavailable: false });
+
+  mocks.read.mockResolvedValue(ready("g2"));
+  await act(async () => focus());
+  await flush();
+  expect(snapshot()).toEqual({ revision: ["g2", 0], unavailable: false });
+
+  await act(async () => {
+    recordDatabaseWrite([file]);
+  });
+  expect(snapshot()).toEqual({ revision: ["g2", 1], unavailable: false });
+
+  mocks.read.mockResolvedValue(null);
+  await act(async () => focus());
+  await flush();
+  expect(snapshot()).toEqual({ revision: [null, 1], unavailable: false });
+
+  mocks.rebuild.mockReturnValue(new Promise(() => {}));
+  mocks.read.mockResolvedValue({ ...ready("g2"), status: "stale" });
+  await act(async () => focus());
+  await flush();
+  expect(snapshot().unavailable).toBe(true);
+
+  mocks.read.mockRejectedValue(new Error("metadata unavailable"));
+  await act(async () => focus());
+  await flush();
+  expect(snapshot().unavailable).toBe(true);
 });

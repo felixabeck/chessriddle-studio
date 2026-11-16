@@ -23,6 +23,17 @@ import TournamentTable from "./TournamentTable";
 
 const mocks = vi.hoisted(() => ({ empty: false }));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
+vi.mock("@/state/linkedCollections", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/state/linkedCollections")>();
+  const { useDatabaseWriteRevision } = await import("@/platform/databaseWrites");
+  return {
+    ...actual,
+    useDatabaseContentRevision: (file: import("@/bindings").DatabaseHandle | null | undefined) => {
+      const writes = useDatabaseWriteRevision(file);
+      return { revision: [null, writes] as const, unavailable: false };
+    },
+  };
+});
 vi.mock("swr", async (original) => ({
   ...(await original<typeof import("swr")>()),
   default: (key: readonly unknown[]) => ({

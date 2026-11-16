@@ -11,7 +11,25 @@ const mocks = vi.hoisted(() => ({
   runTabCreation: vi.fn(),
   navigate: vi.fn(),
   notify: vi.fn(),
+  generation: null as string | null,
+  pending: false,
+  unavailable: false,
 }));
+
+vi.mock("@/state/linkedCollections", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/state/linkedCollections")>();
+  const { useDatabaseWriteRevision } = await import("@/platform/databaseWrites");
+  return {
+    ...actual,
+    useDatabaseContentRevision: (file: DatabaseHandle | null | undefined) => {
+      const writes = useDatabaseWriteRevision(file);
+      return {
+        revision: mocks.pending ? null : ([mocks.generation, writes] as const),
+        unavailable: mocks.unavailable,
+      };
+    },
+  };
+});
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -92,6 +110,9 @@ async function renderList(swrValue?: React.ComponentProps<typeof SWRConfig>["val
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.generation = null;
+  mocks.pending = false;
+  mocks.unavailable = false;
   mocks.runTabCreation.mockImplementation(
     async ({
       create,

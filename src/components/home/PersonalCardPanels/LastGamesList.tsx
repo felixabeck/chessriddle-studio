@@ -7,9 +7,9 @@ import type { DatabaseHandle, NormalizedGame, Player } from "@/bindings";
 import { useGameOpen } from "@/components/common/gameOpen";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
-import { useDatabaseWriteRevision } from "@/platform/databaseWrites";
 import { errorUnlessCancelled } from "@/platform/errors";
 import { addRecentFileAtom, tabsAtom } from "@/state/atoms";
+import { useDatabaseContentRevision } from "@/state/linkedCollections";
 import { openDatabaseGame } from "@/utils/databaseGame";
 import { query_games } from "@/utils/db";
 import { runTabCreation } from "@/utils/tabs";
@@ -32,8 +32,11 @@ function LastGamesList({ player, file }: { player: Player; file: DatabaseHandle 
       }),
     onError,
   );
-  const revision = useDatabaseWriteRevision(file);
-  const requestKey = ["player-last-games", file, player.id, revision] as const;
+  const { revision, unavailable } = useDatabaseContentRevision(file);
+  const requestKey =
+    revision && !unavailable
+      ? (["player-last-games", file, player.id, ...revision] as const)
+      : null;
   const requestOwner = useNativeRequestOwner(requestKey);
   const { data, error, isLoading } = useSWRImmutable(
     requestKey,
@@ -60,23 +63,33 @@ function LastGamesList({ player, file }: { player: Player; file: DatabaseHandle 
 
   const visibleError = error ? errorUnlessCancelled(error) : null;
   if (error && visibleError === null) return null;
+  const loading = isLoading || revision === null;
 
   return (
     <Stack gap="xs" data-last-games>
       <Text fw={500}>{t("Home.Personal.Overview.LastGames")}</Text>
-      {visibleError && (
+      {unavailable && (
+        <Text c="danger" size="sm">
+          {t("Collections.Unavailable", {
+            defaultValue:
+              "The search index is unavailable. Retry, or select the collection's source file again.",
+          })}
+        </Text>
+      )}
+      {visibleError && !unavailable && (
         <Text c="danger" size="sm">
           {t("Home.Personal.Overview.LastGamesError", { error: visibleError.message })}
         </Text>
       )}
-      {!visibleError && isLoading && (
+      {!unavailable && !visibleError && loading && (
         <Group gap="xs">
           <Loader size="sm" />
           <Text size="sm">{t("Common.Loading")}</Text>
         </Group>
       )}
-      {!visibleError &&
-        !isLoading &&
+      {!unavailable &&
+        !visibleError &&
+        !loading &&
         data?.data.map((game) => (
           <LastGameRow
             key={game.id}

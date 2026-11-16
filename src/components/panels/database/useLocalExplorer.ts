@@ -4,8 +4,7 @@ import { useTranslation } from "react-i18next";
 import useSWR from "swr/immutable";
 import { inlineFailureMessage } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
-import { useDatabaseWriteRevision } from "@/platform/databaseWrites";
-import { useCollectionCurrency } from "@/state/linkedCollections";
+import { useDatabaseContentRevision } from "@/state/linkedCollections";
 import { type LocalOptions, searchPosition } from "@/utils/db";
 
 export async function fetchLocalOpening(
@@ -40,14 +39,11 @@ export function useLocalExplorer(
     const fallbackId = useId();
     const id = progressId ?? `local-explorer:${fallbackId}`;
     const { t } = useTranslation();
-    const currency = useCollectionCurrency(options.path);
-    const writeRevision = useDatabaseWriteRevision(options.path);
-    const unavailable =
-        !!currency.error || (!!currency.collection && currency.collection.status !== "ready");
+    const { revision, unavailable } = useDatabaseContentRevision(options.path);
     const dbType = { type: "local", options } as const;
     const key =
-        enabled && options.path && !unavailable
-            ? ([dbType, currency.collection?.generation ?? null, writeRevision] as const)
+        enabled && options.path && !unavailable && revision
+            ? ([dbType, ...revision] as const)
             : null;
     const owner = useNativeRequestOwner(key);
     const { data, isLoading, error } = useSWR<Awaited<ReturnType<typeof fetchLocalOpening>>, Error>(

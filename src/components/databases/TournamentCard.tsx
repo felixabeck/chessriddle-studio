@@ -13,8 +13,8 @@ import { IconAction } from "@/components/common/IconAction";
 import { useGameOpen } from "@/components/common/gameOpen";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
-import { useDatabaseWriteRevision } from "@/platform/databaseWrites";
 import { addRecentFileAtom, tabsAtom } from "@/state/atoms";
+import { useDatabaseContentRevision } from "@/state/linkedCollections";
 import type { DatabaseViewStore } from "@/state/store/database";
 import { getTournamentGames } from "@/utils/db";
 import { runTabCreation } from "@/utils/tabs";
@@ -87,8 +87,11 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
   );
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
-  const revision = useDatabaseWriteRevision(file);
-  const requestKey = ["tournament-games", file, tournament.id, revision] as const;
+  const { revision, unavailable } = useDatabaseContentRevision(file);
+  const requestKey =
+    revision && !unavailable
+      ? (["tournament-games", file, tournament.id, ...revision] as const)
+      : null;
   const requestOwner = useNativeRequestOwner(requestKey);
 
   const {
@@ -160,119 +163,129 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
         <Text fz="lg" fw={500}>
           {tournament.name}
         </Text>
-        <Tabs
-          value={tournamentsActiveTab}
-          onChange={(tab) =>
-            setTournamentsActiveTab(tab as DatabaseViewStore["tournaments"]["activeTab"])
-          }
-          style={{ flexDirection: "column", overflow: "hidden" }}
-          display="flex"
-          h="100%"
-        >
-          <Tabs.List>
-            <Tabs.Tab value="games">{t("Common.Games")}</Tabs.Tab>
-            <Tabs.Tab value="leaderboard">{t("Databases.Tournament.Leaderboard")}</Tabs.Tab>
-          </Tabs.List>
-          <Tabs.Panel value="games" flex={1} style={{ overflow: "hidden" }}>
-            <DataTable<NormalizedGame>
-              fetching={isLoading}
-              withTableBorder
-              highlightOnHover
-              records={paginatedGames}
-              totalRecords={sortedGames.length}
-              recordsPerPage={pageSize}
-              onRecordsPerPageChange={(size) => {
-                setPageSize(size);
-                setPage(1);
-              }}
-              recordsPerPageLabel={t("Common.RecordsPerPage")}
-              recordsPerPageOptions={[10, 25, 50]}
-              page={page}
-              onPageChange={setPage}
-              sortStatus={sort}
-              onSortStatusChange={setSort}
-              columns={[
-                {
-                  accessor: "actions",
-                  title: "",
-                  render: (game) => (
-                    <IconAction
-                      label={t("Common.Open")}
-                      variant="filled"
-                      color={theme.primaryColor}
-                      onClick={() => void gameOpen.activate(game)}
-                    >
-                      <Eye size="1rem" strokeWidth={2} />
-                    </IconAction>
-                  ),
-                },
-                {
-                  accessor: "white",
-                  title: t("Fen.White"),
-                  render: ({ white, white_elo }) => (
-                    <PlayerRatingCell name={white} elo={white_elo} />
-                  ),
-                },
-                {
-                  accessor: "black",
-                  title: t("Fen.Black"),
-                  render: ({ black, black_elo }) => (
-                    <PlayerRatingCell name={black} elo={black_elo} />
-                  ),
-                },
-                { ...dateColumn, accessor: "date", title: t("Common.Date"), sortable: true },
-                { accessor: "result", title: t("Board.Database.Local.Result") },
-                {
-                  ...numericColumn,
-                  accessor: "ply_count",
-                  title: t("Databases.Game.Plies"),
-                  sortable: true,
-                },
-              ]}
-              noRecordsText={t("Databases.Game.NoGamesFound")}
-            />
-          </Tabs.Panel>
-          <Tabs.Panel value="leaderboard" flex={1} style={{ overflow: "hidden" }}>
-            <DataTable
-              fetching={isLoading}
-              withTableBorder
-              highlightOnHover
-              records={players}
-              columns={[
-                {
-                  ...numericColumn,
-                  accessor: "rank",
-                  title: t("Databases.Tournament.Rank"),
-                  render: (player, index) => (
-                    <Text size="sm" fw={500}>
-                      {index + 1}
-                    </Text>
-                  ),
-                },
-                {
-                  accessor: "name",
-                  title: t("Databases.Tournament.Player"),
-                  render: (player) => (
-                    <Text size="sm" fw={500}>
-                      {player.name}
-                    </Text>
-                  ),
-                },
-                {
-                  ...numericColumn,
-                  accessor: "points",
-                  title: t("Databases.Tournament.Points"),
-                  render: (player) => (
-                    <Text size="sm" fw={500}>
-                      {player.points}
-                    </Text>
-                  ),
-                },
-              ]}
-              noRecordsText={t("Databases.Player.NoPlayersFound")}
-            />
-          </Tabs.Panel>
-        </Tabs>
+        {unavailable && (
+          <Text>
+            {t("Collections.Unavailable", {
+              defaultValue:
+                "The search index is unavailable. Retry, or select the collection's source file again.",
+            })}
+          </Text>
+        )}
+        {!unavailable && (
+          <Tabs
+            value={tournamentsActiveTab}
+            onChange={(tab) =>
+              setTournamentsActiveTab(tab as DatabaseViewStore["tournaments"]["activeTab"])
+            }
+            style={{ flexDirection: "column", overflow: "hidden" }}
+            display="flex"
+            h="100%"
+          >
+            <Tabs.List>
+              <Tabs.Tab value="games">{t("Common.Games")}</Tabs.Tab>
+              <Tabs.Tab value="leaderboard">{t("Databases.Tournament.Leaderboard")}</Tabs.Tab>
+            </Tabs.List>
+            <Tabs.Panel value="games" flex={1} style={{ overflow: "hidden" }}>
+              <DataTable<NormalizedGame>
+                fetching={isLoading || revision === null}
+                withTableBorder
+                highlightOnHover
+                records={paginatedGames}
+                totalRecords={sortedGames.length}
+                recordsPerPage={pageSize}
+                onRecordsPerPageChange={(size) => {
+                  setPageSize(size);
+                  setPage(1);
+                }}
+                recordsPerPageLabel={t("Common.RecordsPerPage")}
+                recordsPerPageOptions={[10, 25, 50]}
+                page={page}
+                onPageChange={setPage}
+                sortStatus={sort}
+                onSortStatusChange={setSort}
+                columns={[
+                  {
+                    accessor: "actions",
+                    title: "",
+                    render: (game) => (
+                      <IconAction
+                        label={t("Common.Open")}
+                        variant="filled"
+                        color={theme.primaryColor}
+                        onClick={() => void gameOpen.activate(game)}
+                      >
+                        <Eye size="1rem" strokeWidth={2} />
+                      </IconAction>
+                    ),
+                  },
+                  {
+                    accessor: "white",
+                    title: t("Fen.White"),
+                    render: ({ white, white_elo }) => (
+                      <PlayerRatingCell name={white} elo={white_elo} />
+                    ),
+                  },
+                  {
+                    accessor: "black",
+                    title: t("Fen.Black"),
+                    render: ({ black, black_elo }) => (
+                      <PlayerRatingCell name={black} elo={black_elo} />
+                    ),
+                  },
+                  { ...dateColumn, accessor: "date", title: t("Common.Date"), sortable: true },
+                  { accessor: "result", title: t("Board.Database.Local.Result") },
+                  {
+                    ...numericColumn,
+                    accessor: "ply_count",
+                    title: t("Databases.Game.Plies"),
+                    sortable: true,
+                  },
+                ]}
+                noRecordsText={t("Databases.Game.NoGamesFound")}
+              />
+            </Tabs.Panel>
+            <Tabs.Panel value="leaderboard" flex={1} style={{ overflow: "hidden" }}>
+              <DataTable
+                fetching={isLoading || revision === null}
+                withTableBorder
+                highlightOnHover
+                records={players}
+                columns={[
+                  {
+                    ...numericColumn,
+                    accessor: "rank",
+                    title: t("Databases.Tournament.Rank"),
+                    render: (player, index) => (
+                      <Text size="sm" fw={500}>
+                        {index + 1}
+                      </Text>
+                    ),
+                  },
+                  {
+                    accessor: "name",
+                    title: t("Databases.Tournament.Player"),
+                    render: (player) => (
+                      <Text size="sm" fw={500}>
+                        {player.name}
+                      </Text>
+                    ),
+                  },
+                  {
+                    ...numericColumn,
+                    accessor: "points",
+                    title: t("Databases.Tournament.Points"),
+                    render: (player) => (
+                      <Text size="sm" fw={500}>
+                        {player.points}
+                      </Text>
+                    ),
+                  },
+                ]}
+                noRecordsText={t("Databases.Player.NoPlayersFound")}
+              />
+            </Tabs.Panel>
+          </Tabs>
+        )}
       </Stack>
     </Paper>
   );

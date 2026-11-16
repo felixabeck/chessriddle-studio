@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSWRConfig } from "swr";
 import type { CollectionDescriptor, DatabaseHandle } from "@/bindings";
+import { useDatabaseWriteRevision } from "@/platform/databaseWrites";
 import { tauri } from "@/platform/tauri";
 import { registerCollectionCheck } from "./fileFreshness";
 import { capabilityKey } from "@/utils/pathCapabilities";
@@ -113,4 +114,23 @@ export function useCollectionCurrency(
         );
     }, [key, initial?.id, mutate]);
     return snapshot.key === key ? snapshot : { key, collection: null, pending: !!file };
+}
+
+/** Content identity of a database for read caches: the linked collection's generation plus this
+ * renderer's write revision. `revision` is null while the collection lookup is pending, so a
+ * consumer never keys a read on a generation it has not observed yet. */
+export function useDatabaseContentRevision(file: DatabaseHandle | null | undefined): {
+    revision: readonly [generation: string | null, writes: number] | null;
+    unavailable: boolean;
+} {
+    const currency = useCollectionCurrency(file);
+    const writes = useDatabaseWriteRevision(file);
+    const unavailable =
+        !!currency.error || (!!currency.collection && currency.collection.status !== "ready");
+    const generation = currency.collection?.generation ?? null;
+    const revision = useMemo(
+        () => (currency.pending ? null : ([generation, writes] as const)),
+        [currency.pending, generation, writes],
+    );
+    return { revision, unavailable };
 }

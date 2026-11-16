@@ -10,9 +10,10 @@ import { useLocalExplorer } from "./useLocalExplorer";
 
 const mocks = vi.hoisted(() => ({
   searchPosition: vi.fn(),
-  generation: 1,
+  generation: "1" as string | null,
   unavailable: false,
   linked: true,
+  pending: false,
 }));
 vi.mock("@/platform/tauri", () => ({ tauri: { searchPosition: mocks.searchPosition } }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -20,13 +21,21 @@ vi.mock("@/i18n", async (original) => ({
   ...(await original<typeof import("@/i18n")>()),
   default: { t: (key: string) => key },
 }));
-vi.mock("@/state/linkedCollections", () => ({
-  useCollectionCurrency: () => ({
-    collection: mocks.linked
-      ? { generation: mocks.generation, status: mocks.unavailable ? "failed" : "ready" }
-      : null,
-  }),
-}));
+vi.mock("@/state/linkedCollections", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/state/linkedCollections")>();
+  const { useDatabaseWriteRevision } = await import("@/platform/databaseWrites");
+  return {
+    ...actual,
+    useDatabaseContentRevision: (file: import("@/bindings").DatabaseHandle | null | undefined) => {
+      const writes = useDatabaseWriteRevision(file);
+      const generation = mocks.linked ? mocks.generation : null;
+      return {
+        revision: mocks.pending ? null : ([generation, writes] as const),
+        unavailable: mocks.unavailable,
+      };
+    },
+  };
+});
 
 const options: LocalOptions = {
   path: { id: { id: "database" }, kind: "database" },
@@ -68,9 +77,10 @@ let cache: Cache;
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 beforeEach(() => {
   mocks.searchPosition.mockReset().mockResolvedValue([[], []]);
-  mocks.generation = 1;
+  mocks.generation = "1";
   mocks.unavailable = false;
   mocks.linked = true;
+  mocks.pending = false;
   cache = new Map();
   container = document.createElement("div");
   document.body.append(container);
@@ -169,11 +179,15 @@ test("a surviving subscriber retains the shared native request and its sorted un
   expect(mocks.searchPosition).toHaveBeenCalledOnce();
 });
 test("linked generation changes the key and disabled or unavailable searches do not run", async () => {
+  mocks.pending = true;
+  await render(true, false);
+  expect(mocks.searchPosition).not.toHaveBeenCalled();
+  mocks.pending = false;
   await render(true, false, "start", false);
   expect(mocks.searchPosition).not.toHaveBeenCalled();
   await render(true, false);
   expect(mocks.searchPosition).toHaveBeenCalledOnce();
-  mocks.generation = 2;
+  mocks.generation = "2";
   await render(true, false);
   expect(mocks.searchPosition).toHaveBeenCalledTimes(2);
   mocks.unavailable = true;

@@ -22,7 +22,8 @@ vi.mock("@/state/persistError", () => ({ reportPersistError: mocks.report }));
 vi.mock("@/hooks/useDatabaseList", () => ({
   useDatabaseList: () => ({ data: mocks.data, mutate: mocks.mutate }),
 }));
-vi.mock("@/state/linkedCollections", () => ({
+vi.mock("@/state/linkedCollections", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/state/linkedCollections")>()),
   useCollectionCurrency: () => ({ collection: { status: "ready" } }),
 }));
 vi.mock("react-i18next", () => ({

@@ -8,6 +8,9 @@ import { recordDatabaseWrite } from "@/platform/databaseWrites";
 const mocks = vi.hoisted(() => ({
   getPlayersGameInfo: vi.fn(),
   personalCard: vi.fn(),
+  generation: null as string | null,
+  pending: false,
+  unavailable: false,
 }));
 
 vi.mock("@/platform/tauri", async () => {
@@ -15,6 +18,20 @@ vi.mock("@/platform/tauri", async () => {
   return {
     ...actual,
     tauri: { getPlayersGameInfo: mocks.getPlayersGameInfo },
+  };
+});
+vi.mock("@/state/linkedCollections", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/state/linkedCollections")>();
+  const { useDatabaseWriteRevision } = await import("@/platform/databaseWrites");
+  return {
+    ...actual,
+    useDatabaseContentRevision: (file: DatabaseHandle | null | undefined) => {
+      const writes = useDatabaseWriteRevision(file);
+      return {
+        revision: mocks.pending ? null : ([mocks.generation, writes] as const),
+        unavailable: mocks.unavailable,
+      };
+    },
   };
 });
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -54,6 +71,9 @@ async function renderPlayerCard() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.generation = null;
+  mocks.pending = false;
+  mocks.unavailable = false;
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -87,6 +107,44 @@ test("the database caller passes its own player and database to the shared perso
     isDatabase: true,
     databasePlayer: { player, file },
   });
+});
+
+test("a linked collection generation change refetches game info and a pending lookup does not fetch", async () => {
+  const cache = new Map();
+  async function renderCached() {
+    await act(async () => {
+      root.render(
+        <SWRConfig value={{ provider: () => cache, shouldRetryOnError: false }}>
+          <PlayerCard player={player} file={file} />
+        </SWRConfig>,
+      );
+    });
+  }
+  mocks.pending = true;
+  mocks.getPlayersGameInfo.mockResolvedValue({ site_stats_data: [{ site: "g1" }] });
+  await renderCached();
+  expect(mocks.getPlayersGameInfo).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("Databases.Player.ProcessingData");
+
+  mocks.pending = false;
+  mocks.generation = "g1";
+  await renderCached();
+  await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledOnce());
+  await vi.waitFor(() =>
+    expect(mocks.personalCard).toHaveBeenCalledWith(
+      expect.objectContaining({ info: { site_stats_data: [{ site: "g1" }] } }),
+    ),
+  );
+
+  mocks.generation = "g2";
+  mocks.getPlayersGameInfo.mockResolvedValue({ site_stats_data: [{ site: "g2" }] });
+  await renderCached();
+  await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(2));
+  await vi.waitFor(() =>
+    expect(mocks.personalCard).toHaveBeenCalledWith(
+      expect.objectContaining({ info: { site_stats_data: [{ site: "g2" }] } }),
+    ),
+  );
 });
 
 test("a write to the player's database refetches game info and a write to another database does not", async () => {

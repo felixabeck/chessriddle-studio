@@ -12,7 +12,24 @@ const mocks = vi.hoisted(() => ({
   createTab: vi.fn(async (_args: { gameOrigin?: { linked?: unknown } }) => "opened"),
   addRecentFile: vi.fn(),
   navigate: vi.fn(),
+  generation: null as string | null,
+  pending: false,
+  unavailable: false,
 }));
+vi.mock("@/state/linkedCollections", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/state/linkedCollections")>();
+  const { useDatabaseWriteRevision } = await import("@/platform/databaseWrites");
+  return {
+    ...actual,
+    useDatabaseContentRevision: (file: DatabaseHandle | null | undefined) => {
+      const writes = useDatabaseWriteRevision(file);
+      return {
+        revision: mocks.pending ? null : ([mocks.generation, writes] as const),
+        unavailable: mocks.unavailable,
+      };
+    },
+  };
+});
 vi.mock("@/utils/db", () => ({ getTournamentGames: mocks.getTournamentGames }));
 vi.mock("@/components/files/notifyError", () => ({ notifyUnlessCancelled: mocks.notify }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -164,6 +181,9 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   cache.clear();
   vi.clearAllMocks();
+  mocks.generation = null;
+  mocks.pending = false;
+  mocks.unavailable = false;
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -216,6 +236,28 @@ test("TournamentCard surfaces a genuine lookup failure", async () => {
   mocks.getTournamentGames.mockRejectedValue(failure);
   await render(file("failed"));
   await vi.waitFor(() => expect(mocks.notify).toHaveBeenCalledWith("Common.Error", failure));
+});
+
+test("a linked collection generation change refetches games and a pending lookup does not fetch", async () => {
+  const database = file("tournament-generation");
+  mocks.pending = true;
+  mocks.getTournamentGames.mockResolvedValue({ data: games(1) });
+  await render(database);
+  expect(mocks.getTournamentGames).not.toHaveBeenCalled();
+
+  mocks.pending = false;
+  mocks.generation = "g1";
+  mocks.getTournamentGames.mockResolvedValue({ data: [{ ...games(1)[0], white: "Gen One" }] });
+  await render(database);
+  await vi.waitFor(() => expect(mocks.getTournamentGames).toHaveBeenCalledOnce());
+  await vi.waitFor(() => expect(container.textContent).toContain("Gen One"));
+
+  mocks.generation = "g2";
+  mocks.getTournamentGames.mockResolvedValue({ data: [{ ...games(1)[0], white: "Gen Two" }] });
+  await render(database);
+  await vi.waitFor(() => expect(mocks.getTournamentGames).toHaveBeenCalledTimes(2));
+  await vi.waitFor(() => expect(container.textContent).toContain("Gen Two"));
+  expect(container.textContent).not.toContain("Gen One");
 });
 
 test("a write to the tournament database refetches games and a write to another database does not", async () => {

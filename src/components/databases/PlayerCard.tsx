@@ -1,4 +1,3 @@
-import { useDatabaseWriteRevision } from "@/platform/databaseWrites";
 import { tauri } from "@/platform/tauri";
 import { Center, Loader, Paper, Stack, Text } from "@mantine/core";
 import { useTranslation } from "react-i18next";
@@ -6,12 +5,14 @@ import useSWRImmutable from "swr/immutable";
 import { type DatabaseHandle, type Player } from "@/bindings";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { inlineFailureMessage } from "@/components/files/notifyError";
+import { useDatabaseContentRevision } from "@/state/linkedCollections";
 import PersonalPlayerCard from "../home/PersonalCard";
 
 function PlayerCard({ player, file }: { player: Player; file: DatabaseHandle }) {
   const { t } = useTranslation();
-  const revision = useDatabaseWriteRevision(file);
-  const requestKey = ["player-game-info", file, player.id, revision] as const;
+  const { revision, unavailable } = useDatabaseContentRevision(file);
+  const requestKey =
+    revision && !unavailable ? (["player-game-info", file, player.id, ...revision] as const) : null;
   const requestOwner = useNativeRequestOwner(requestKey);
   const {
     data: info,
@@ -22,11 +23,16 @@ function PlayerCard({ player, file }: { player: Player; file: DatabaseHandle }) 
       tauri.getPlayersGameInfo(crypto.randomUUID(), file, id, { signal }),
     ),
   );
-  const errorText = inlineFailureMessage(error, "database", t("Databases.LoadError.Title"));
+  const errorText = unavailable
+    ? t("Collections.Unavailable", {
+        defaultValue:
+          "The search index is unavailable. Retry, or select the collection's source file again.",
+      })
+    : inlineFailureMessage(error, "database", t("Databases.LoadError.Title"));
 
   return (
     <>
-      {isLoading && (
+      {(isLoading || revision === null) && !unavailable && (
         <Paper withBorder h="100%">
           <Center h="100%">
             <Stack align="center">

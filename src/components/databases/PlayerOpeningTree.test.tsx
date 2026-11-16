@@ -58,9 +58,18 @@ vi.mock("@/platform/tauri", async (original) => {
     tauri: { ...actual.tauri, searchPosition: mocks.searchPosition, getPlayer: mocks.getPlayer },
   };
 });
-vi.mock("@/state/linkedCollections", () => ({
-  useCollectionCurrency: () => ({ collection: null }),
-}));
+vi.mock("@/state/linkedCollections", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/state/linkedCollections")>();
+  const { useDatabaseWriteRevision } = await import("@/platform/databaseWrites");
+  return {
+    ...actual,
+    useCollectionCurrency: () => ({ collection: null, pending: false }),
+    useDatabaseContentRevision: (file: DatabaseHandle | null | undefined) => {
+      const writes = useDatabaseWriteRevision(file);
+      return { revision: [null, writes] as const, unavailable: false };
+    },
+  };
+});
 vi.mock("@/hooks/useDatabaseList", () => ({
   useDatabaseList: () => ({
     data: {
