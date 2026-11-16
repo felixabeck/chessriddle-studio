@@ -25,8 +25,9 @@ import type { FileMetadata } from "./file";
 import { reorderFileLines, type MoveLines } from "./reorderLines";
 import classes from "./FileCard.module.css";
 
-// Below this card width the preview's move list has no room beside the board. In rem, because the
-// list's needs grow with the font scale while a window width in px does not.
+// Below this card width the preview's move list has no room beside the board, and the action row
+// stacks Open game, New game, and the pencil. In rem, because both needs grow with the font scale
+// while a window width in px does not.
 const PREVIEW_CONTROLS_MIN_WIDTH_REM = 26;
 const GAME_LIST_MIN_HEIGHT = "8rem";
 
@@ -161,6 +162,7 @@ function FileCard({
       onOpen={() => activateGame(page)}
       pending={gameOpen.pending}
       disabled={previewOmitted || selected.numGames <= 0 || page >= selected.numGames}
+      fullWidth={narrow}
     />
   );
   const newGame = !omitNewGame && (
@@ -169,6 +171,7 @@ function FileCard({
       explanation={t("Files.NewGame.Desc", {
         defaultValue: "Enter a new game move by move and save it to this file.",
       })}
+      fullWidth={narrow}
     />
   );
   const edit = (
@@ -199,8 +202,8 @@ function FileCard({
 
       {narrow ? (
         <Stack gap="xs" px={{ base: 0, lg: "xs" }} className={classes.stacked}>
-          <div className={classes.actionSlot}>{openGame}</div>
-          {newGame ? <div className={classes.actionSlot}>{newGame}</div> : null}
+          {openGame}
+          {newGame}
           <Group gap="xs" wrap="wrap">
             {edit}
             {gameCount}

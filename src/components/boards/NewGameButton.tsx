@@ -16,10 +16,12 @@ export default function NewGameButton({
   origin,
   explanation,
   disabled,
+  fullWidth = false,
 }: {
   origin: NewGameDraftOrigin | null;
   explanation: string;
   disabled?: boolean;
+  fullWidth?: boolean;
 }) {
   const { t } = useTranslation();
   const setTabs = useSetAtom(tabsAtom);
@@ -30,6 +32,8 @@ export default function NewGameButton({
       <Button
         {...libraryButtonProps}
         disabled={unavailable}
+        fullWidth={fullWidth}
+        className={fullWidth ? "wrap-button" : undefined}
         leftSection={<Plus size="1rem" />}
         onClick={() =>
           origin &&

@@ -429,7 +429,28 @@ test("font-scaled-breakpoints: visible library open controls wrap at 320px and 2
     await expect(gameOpen).toBeEnabled();
     await gameOpen.scrollIntoViewIfNeeded();
     await assertNothingClipped(gameOpen);
+    const newGame = page.getByRole("button", { name: "New game", exact: true });
+    await expect(newGame).toBeVisible();
+    await newGame.scrollIntoViewIfNeeded();
+    await assertNothingClipped(newGame);
+    await newGame.hover();
+    const explanation = page.getByRole("tooltip");
+    await expect(explanation).toBeVisible();
     await assertNoHorizontalOverflow();
+    const box = await explanation.boundingBox();
+    expect(box, "New game explanation has a box").not.toBeNull();
+    const viewport = page.viewportSize()!;
+    expect(box!.x, "explanation left edge stays in the viewport").toBeGreaterThanOrEqual(0);
+    expect(box!.y, "explanation top edge stays in the viewport").toBeGreaterThanOrEqual(0);
+    expect(
+        box!.x + box!.width,
+        "explanation right edge stays in the 320px viewport",
+    ).toBeLessThanOrEqual(viewport.width);
+    expect(
+        box!.y + box!.height,
+        "explanation bottom edge stays in the viewport",
+    ).toBeLessThanOrEqual(viewport.height);
+    // files-open-320-200.png already records this explanation open over Open game.
     await capture("files-open-320-200");
     await expect(page).toHaveScreenshot("files-open-320-200.png", { fullPage: true });
 });

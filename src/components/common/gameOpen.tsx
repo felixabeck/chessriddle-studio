@@ -58,10 +58,12 @@ export function OpenGameButton({
   onOpen,
   pending = false,
   disabled = false,
+  fullWidth = false,
 }: {
   onOpen: () => void | Promise<void>;
   pending?: boolean;
   disabled?: boolean;
+  fullWidth?: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -73,6 +75,8 @@ export function OpenGameButton({
       onClick={() => void onOpen()}
       miw={0}
       maw="100%"
+      fullWidth={fullWidth}
+      className={fullWidth ? "wrap-button" : undefined}
       styles={{
         ...wrappingButton,
         root: { ...wrappingButton.root, flexShrink: 0 },

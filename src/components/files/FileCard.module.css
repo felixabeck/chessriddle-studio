@@ -1,4 +1,4 @@
-/* Stacked FileCard actions: each slot is the card width so labels wrap on words, not per letter. */
+/* Stacked FileCard actions: the column is the card width so fullWidth wrap-buttons fill it. */
 .header {
   flex-shrink: 0;
 }
@@ -8,44 +8,4 @@
   width: 100%;
   max-width: 100%;
   min-width: 0;
-}
-
-.actionSlot {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-}
-
-.actionSlot :global(.mantine-Button-root) {
-  /* wrappingButton sets display:inline-flex as an inline style; this width fills the
-     slot without overriding that display. Padding follows .wrap-button so a 320px card
-     keeps the recorded label wrapping. */
-  width: 100%;
-  max-width: 100%;
-  box-sizing: border-box;
-  --wrap-button-min-label: 6em;
-  --wrap-button-min-padding: 0.25em;
-  --wrap-button-room: max(
-    var(--wrap-button-min-padding),
-    calc((100% - var(--wrap-button-min-label)) / 2)
-  );
-  --wrap-button-section-padding: min(calc(var(--button-padding-x) / 1.5), var(--wrap-button-room));
-  padding-inline: min(var(--button-padding-x), var(--wrap-button-room));
-}
-
-.actionSlot :global(.mantine-Button-root[data-with-left-section]) {
-  padding-inline-start: var(--wrap-button-section-padding);
-}
-
-.actionSlot :global(.mantine-Button-inner) {
-  flex: 1 1 auto;
-  height: auto;
-}
-
-.actionSlot :global(.mantine-Button-label) {
-  height: auto;
-  padding-block: 2px;
-  text-align: center;
 }
