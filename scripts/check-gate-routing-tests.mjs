@@ -1,5 +1,14 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -1245,7 +1254,8 @@ function ciWorkflowContracts(texts) {
   const depsStep = (id) => depsSteps.find((step) => step.id === id);
   const pinDepsStep = (label, id, check) =>
     pinStep(label, depsSteps, (step) => step.id === id, check);
-  const cachePath = depsStep("restore")?.withValues.get("path");
+  const cachePathBody = (step) =>
+    /\n        path: \|\n(?<body>(?:          [^\n]+\n)+)/u.exec(step?.text ?? "")?.groups.body;
   const depsText = depsSteps.map((step) => step.text).join("\n");
   // The one shell source of the archive directory: a single assignment, in the resolve step. The
   // cache `path:` literals and every `Dir::Cache::Archives` option must agree with it.
@@ -1255,6 +1265,10 @@ function ciWorkflowContracts(texts) {
     depsStep("resolve")?.text.includes(`\n        archives=${archiveAssignments[0][1]}\n`)
       ? archiveAssignments[0][1]
       : undefined;
+  const manifestName = "linux-desktop-deps-manifest.txt";
+  const expectedCachePathBody = archives
+    ? `          ${archives}/*.deb\n          ${archives}/${manifestName}\n`
+    : undefined;
   for (const [name, id, uses] of [
     ["restore", "restore", "actions/cache/restore@v4"],
     ["save", "save", "actions/cache/save@v4"],
@@ -1291,18 +1305,18 @@ function ciWorkflowContracts(texts) {
       ),
   ]);
   contracts.push([
-    "deps cache paths are the archive directory's .deb files",
+    "deps cache paths are the archive directory's .deb files and the manifest",
     () =>
       assert.equal(
-        cachePath,
-        `${archives}/*.deb`,
-        "deps cache paths are the archive directory's .deb files",
+        cachePathBody(depsStep("restore")),
+        expectedCachePathBody,
+        "deps cache paths are the archive directory's .deb files and the manifest",
       ),
   ]);
   pinDepsStep("deps restore and save share one cache path", "save", (step) =>
     assert.equal(
-      step.withValues.get("path"),
-      `${archives}/*.deb`,
+      cachePathBody(step),
+      cachePathBody(depsStep("restore")),
       "deps restore and save share one cache path",
     ),
   );
@@ -1336,30 +1350,86 @@ function ciWorkflowContracts(texts) {
   // The cache population chain: verify and prune exist, their producers feed the save guard, and
   // restore and save agree on the keys.
   pinDepsStep("deps has a verify step", "verify", () => {});
-  // The verify step's working lines: the checksum-type dispatch, both drops and the error discard.
-  const dropBranch = (opener, echoed) =>
-    `            ${opener}\n              echo "linux-desktop-deps: dropping restored $name: ${echoed}"\n              rm -f -- "$file"`;
+  // The file-check helper lives in the library the resolve step writes. Verify keeps the per-file
+  // drop and the discard-all; the helper holds the checksum-type dispatch and the comparisons.
   for (const [label, needle] of [
-    ["deps verify dispatches on the checksum type", 'case "${checksum%%:*}" in'],
-    ["deps verify handles MD5Sum", "MD5Sum) tool=md5sum ;;"],
-    ["deps verify handles SHA256", "SHA256) tool=sha256sum ;;"],
+    ["deps check helper dispatches on the checksum type", 'case "${checksum%%:*}" in'],
+    ["deps check helper handles MD5Sum", "MD5Sum) tool=md5sum ;;"],
+    ["deps check helper handles SHA256", "SHA256) tool=sha256sum ;;"],
     [
-      "deps verify drops a size mismatch",
-      dropBranch('if [ "$actual_size" != "$size" ]; then', "size $actual_size, expected $size"),
+      "deps check helper rejects a size mismatch",
+      'if [ "$actual_size" != "$size" ]; then\n            reason="size $actual_size, expected $size"\n            return 1',
     ],
     [
-      "deps verify drops a checksum mismatch",
-      dropBranch(
-        'elif [ "$digest" != "${checksum#*:}" ]; then',
-        "${checksum%%:*} $digest, expected ${checksum#*:}",
-      ),
-    ],
-    [
-      "deps verify discards every file on a verification error",
-      "find \"$archives\" -maxdepth 1 -name '*.deb' -delete",
+      "deps check helper rejects a checksum mismatch",
+      'if [ "$digest" != "${checksum#*:}" ]; then\n            reason="${checksum%%:*} $digest, expected ${checksum#*:}"\n            return 1',
     ],
   ])
-    pinDepsStep(label, "verify", (step) => assert.ok(step.text.includes(needle), label));
+    pinDepsStep(label, "resolve", (step) => assert.ok(step.text.includes(needle), label));
+  pinDepsStep("deps library carries the manifest path", "resolve", (step) =>
+    assert.ok(
+      step.text.includes("declare -p packages archives manifest;") &&
+        archives !== undefined &&
+        step.text.includes(`\n        manifest=${archives}/${manifestName}\n`),
+      "deps library carries the manifest path",
+    ),
+  );
+  pinDepsStep("deps library writes the file-check helper", "resolve", (step) =>
+    assert.ok(
+      step.text.includes("declare -f desktop_deps_label_stall desktop_deps_apt desktop_deps_check_file;"),
+      "deps library writes the file-check helper",
+    ),
+  );
+  pinDepsStep("deps verify uses the file-check helper", "verify", (step) =>
+    assert.ok(
+      step.text.includes('desktop_deps_check_file "$file" "$size" "$checksum" && status=0 || status=$?'),
+      "deps verify uses the file-check helper",
+    ),
+  );
+  pinDepsStep("deps verify drops a restored file that fails the check", "verify", (step) =>
+    assert.ok(
+      step.text.includes(
+        '            elif [ "$status" -eq 1 ]; then\n              echo "linux-desktop-deps: dropping restored $name: $reason"\n              rm -f -- "$file"',
+      ),
+      "deps verify drops a restored file that fails the check",
+    ),
+  );
+  pinDepsStep("deps verify discards every file on a verification error", "verify", (step) =>
+    assert.ok(
+      step.text.includes("find \"$archives\" -maxdepth 1 -name '*.deb' -delete"),
+      "deps verify discards every file on a verification error",
+    ),
+  );
+  pinDepsStep("deps download continues on error", "download", (step) =>
+    assert.equal(step.continueOnError, "true", "deps download continues on error"),
+  );
+  pinDepsStep("deps prune runs only after a successful download", "prune", (step) =>
+    assert.equal(
+      step.ifValue,
+      "steps.download.outcome == 'success'",
+      "deps prune runs only after a successful download",
+    ),
+  );
+  pinDepsStep("deps prune writes the manifest", "prune", (step) =>
+    assert.ok(
+      step.text.includes('if prune_unneeded && cp -- "$set_file" "$manifest"; then'),
+      "deps prune writes the manifest",
+    ),
+  );
+  pinDepsStep("deps install maps the download outcome", "install", (step) =>
+    assert.ok(
+      step.text.includes(
+        "      env:\n        DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}\n      run:",
+      ),
+      "deps install maps the download outcome",
+    ),
+  );
+  pinDepsStep("deps install fallback uses the file-check helper", "install", (step) =>
+    assert.ok(
+      step.text.includes('if ! desktop_deps_check_file "$file" "$size" "$checksum"; then'),
+      "deps install fallback uses the file-check helper",
+    ),
+  );
   pinDepsStep("deps has a prune step", "prune", () => {});
   pinDepsStep("deps download emits fetched=true", "download", (step) =>
     assert.ok(
@@ -1494,8 +1564,10 @@ test("CI workflow wiring preserves parallel gates and bounded incremental reuse"
 
 const depsCall = "uses: ./.github/actions/linux-desktop-deps";
 const depsArchives = "/tmp/linux-desktop-apt-archives";
-const depsSaveStepFragment = `path: ${depsArchives}/*.deb\n        key: ${"$"}{{ steps.resolve.outputs.save-key }}\n\n`;
-const depsRestoreStepFragment = `path: ${depsArchives}/*.deb\n        key: ${"$"}{{ steps.resolve.outputs.save-key }}\n        restore-keys`;
+const depsManifestName = "linux-desktop-deps-manifest.txt";
+const depsCachePathBlock = `        path: |\n          ${depsArchives}/*.deb\n          ${depsArchives}/${depsManifestName}\n`;
+const depsSaveStepFragment = `${depsCachePathBlock}        key: ${"$"}{{ steps.resolve.outputs.save-key }}\n\n`;
+const depsRestoreStepFragment = `${depsCachePathBlock}        key: ${"$"}{{ steps.resolve.outputs.save-key }}\n        restore-keys`;
 // [label, file, before (a string or a global RegExp), after, contract that must turn red]
 const linuxDesktopDepsRows = [
   [
@@ -1636,7 +1708,7 @@ const linuxDesktopDepsRows = [
     "deps",
     depsRestoreStepFragment,
     depsRestoreStepFragment.replace("/*.deb", ""),
-    "deps cache paths are the archive directory's .deb files",
+    "deps cache paths are the archive directory's .deb files and the manifest",
   ],
   [
     "resolve loses the archive directory",
@@ -1669,9 +1741,9 @@ const linuxDesktopDepsRows = [
   [
     "resolve archive directory drifts",
     "deps",
-    `archives=${depsArchives}\n        lib=`,
-    "archives=/tmp/other-archives\n        lib=",
-    "deps cache paths are the archive directory's .deb files",
+    `archives=${depsArchives}\n`,
+    "archives=/tmp/other-archives\n",
+    "deps cache paths are the archive directory's .deb files and the manifest",
   ],
   [
     "save path drifts from the archive directory",
@@ -1685,7 +1757,7 @@ const linuxDesktopDepsRows = [
     "deps",
     depsRestoreStepFragment,
     depsRestoreStepFragment.replace(depsArchives, "/tmp/other-archives"),
-    "deps cache paths are the archive directory's .deb files",
+    "deps cache paths are the archive directory's .deb files and the manifest",
   ],
   [
     "verify assigns its own archive directory",
@@ -1762,35 +1834,35 @@ const linuxDesktopDepsRows = [
     "deps",
     'case "${checksum%%:*}" in',
     "case MD5Sum in",
-    "deps verify dispatches on the checksum type",
+    "deps check helper dispatches on the checksum type",
   ],
   [
     "verify loses the MD5Sum arm",
     "deps",
-    "              MD5Sum) tool=md5sum ;;\n",
+    "            MD5Sum) tool=md5sum ;;\n",
     "",
-    "deps verify handles MD5Sum",
+    "deps check helper handles MD5Sum",
   ],
   [
     "verify loses the SHA256 arm",
     "deps",
-    "              SHA256) tool=sha256sum ;;\n",
+    "            SHA256) tool=sha256sum ;;\n",
     "",
-    "deps verify handles SHA256",
+    "deps check helper handles SHA256",
   ],
   [
     "verify stops dropping a size mismatch",
     "deps",
     'if [ "$actual_size" != "$size" ]; then',
     "if false; then",
-    "deps verify drops a size mismatch",
+    "deps check helper rejects a size mismatch",
   ],
   [
     "verify stops dropping a checksum mismatch",
     "deps",
-    'elif [ "$digest" != "${checksum#*:}" ]; then',
-    "elif false; then",
-    "deps verify drops a checksum mismatch",
+    'if [ "$digest" != "${checksum#*:}" ]; then',
+    "if false; then",
+    "deps check helper rejects a checksum mismatch",
   ],
   [
     "verify error discard removed",
@@ -1804,7 +1876,7 @@ const linuxDesktopDepsRows = [
     "deps",
     /(      id: verify\n      shell: bash\n      run: \|\n)[\s\S]*?(?=\n    - name: Download)/gu,
     "$1        exit 0\n",
-    "deps verify dispatches on the checksum type",
+    "deps verify uses the file-check helper",
   ],
   [
     "prune step id lost",
@@ -1861,6 +1933,62 @@ const linuxDesktopDepsRows = [
     "install --no-download ",
     "install ",
     "deps install uses --no-download",
+  ],
+  [
+    "download continue-on-error removed",
+    "deps",
+    "      id: download\n      continue-on-error: true\n",
+    "      id: download\n",
+    "deps download continues on error",
+  ],
+  [
+    "prune if uses success()",
+    "deps",
+    "if: steps.download.outcome == 'success'",
+    "if: success()",
+    "deps prune runs only after a successful download",
+  ],
+  [
+    "prune if uses conclusion",
+    "deps",
+    "if: steps.download.outcome == 'success'",
+    "if: steps.download.conclusion == 'success'",
+    "deps prune runs only after a successful download",
+  ],
+  [
+    "prune if removed",
+    "deps",
+    "      id: prune\n      if: steps.download.outcome == 'success'\n",
+    "      id: prune\n",
+    "deps prune runs only after a successful download",
+  ],
+  [
+    "install maps conclusion instead of outcome",
+    "deps",
+    "DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}",
+    "DOWNLOAD_OUTCOME: ${{ steps.download.conclusion }}",
+    "deps install maps the download outcome",
+  ],
+  [
+    "prune stops writing the manifest",
+    "deps",
+    'if prune_unneeded && cp -- "$set_file" "$manifest"; then',
+    "if prune_unneeded; then",
+    "deps prune writes the manifest",
+  ],
+  [
+    "library stops carrying the manifest",
+    "deps",
+    "declare -p packages archives manifest;",
+    "declare -p packages archives;",
+    "deps library carries the manifest path",
+  ],
+  [
+    "restore path loses the manifest",
+    "deps",
+    depsRestoreStepFragment,
+    depsRestoreStepFragment.replace(`\n          ${depsArchives}/${depsManifestName}`, ""),
+    "deps restore and save share one cache path",
   ],
 ];
 
@@ -2300,8 +2428,10 @@ const resolveCases = [
       assert.equal(result.env, exportedEnv(1080, resolveEpoch + 1080));
       assert.match(result.library, /^declare -a packages=/mu);
       assert.match(result.library, /^declare -- archives="\/tmp\/[^"]+"$/mu);
+      assert.match(result.library, /^declare -- manifest="\/tmp\/[^"]+"$/mu);
       assert.match(result.library, /^desktop_deps_label_stall \(\) *$/mu);
       assert.match(result.library, /^desktop_deps_apt \(\) *$/mu);
+      assert.match(result.library, /^desktop_deps_check_file \(\) *$/mu);
     },
   ],
   [
@@ -2399,22 +2529,35 @@ const resolveMutations = [
   ],
   [
     "library stops carrying archives",
-    replaceText("declare -p packages archives;", "declare -p packages;"),
+    replaceText("declare -p packages archives manifest;", "declare -p packages manifest;"),
+    cases18,
+  ],
+  [
+    "library stops carrying the manifest",
+    replaceText("declare -p packages archives manifest;", "declare -p packages archives;"),
     cases18,
   ],
   [
     "library drops the label function",
     replaceText(
-      "declare -f desktop_deps_label_stall desktop_deps_apt;",
-      "declare -f desktop_deps_apt;",
+      "declare -f desktop_deps_label_stall desktop_deps_apt desktop_deps_check_file;",
+      "declare -f desktop_deps_apt desktop_deps_check_file;",
     ),
     cases18,
   ],
   [
     "library drops the apt function",
     replaceText(
+      "declare -f desktop_deps_label_stall desktop_deps_apt desktop_deps_check_file;",
+      "declare -f desktop_deps_label_stall desktop_deps_check_file;",
+    ),
+    cases18,
+  ],
+  [
+    "library drops the file-check helper",
+    replaceText(
+      "declare -f desktop_deps_label_stall desktop_deps_apt desktop_deps_check_file;",
       "declare -f desktop_deps_label_stall desktop_deps_apt;",
-      "declare -f desktop_deps_label_stall;",
     ),
     cases18,
   ],
@@ -2430,6 +2573,553 @@ test("linux-desktop-deps resolve prologue behaves when executed", async (t) => {
         original: body,
         mutate,
         failedFor: failedResolveCases,
+        expected,
+        report: (failed) => subtest.diagnostic(`red: ${failed.join(" | ")}`),
+      }),
+    );
+});
+
+// Executed pipeline test: the real verify body, then the real install body, with the real
+// file-check helper extracted from action.yml. Only archives, packages and the manifest path are
+// test-written. sudo records argv; dpkg-deb -f is shimmed.
+const pipelinePackages = ["alpha", "alpha-common", "beta"];
+const noUsableSetError =
+  "::error::linux-desktop-deps: the package download failed and no usable cached package set is available";
+const cachedInstallFailedError =
+  "::error::linux-desktop-deps: installing the cached package set failed";
+const fallbackWarning =
+  "::warning::linux-desktop-deps: the job tests against cached versions because the mirror download failed";
+
+function sha256Hex(content) {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+function debRecord(name, content) {
+  return `${name} ${Buffer.byteLength(content)} SHA256:${sha256Hex(content)}`;
+}
+
+function depsCheckFileHelper(depsText) {
+  const resolve = workflowStepBlocks(depsText).find((step) => step.id === "resolve");
+  assert.ok(resolve, "linux-desktop-deps has a resolve step");
+  const definition = new RegExp(
+    `^ {8}desktop_deps_check_file\\(\\) \\{\\n[\\s\\S]*?\\n {8}\\}$`,
+    "mu",
+  ).exec(resolve.text);
+  assert.ok(definition, "the resolve step defines desktop_deps_check_file");
+  return definition[0];
+}
+
+function depsStepRunBody(depsText, id) {
+  const step = workflowStepBlocks(depsText).find((candidate) => candidate.id === id);
+  assert.ok(step, `linux-desktop-deps has a ${id} step`);
+  const lines = step.text.split("\n");
+  const runIndex = lines.indexOf("      run: |");
+  assert.ok(runIndex >= 0, `the ${id} step has a run body`);
+  return lines
+    .slice(runIndex + 1)
+    .map((line) => line.slice(8))
+    .join("\n");
+}
+
+function pipelineParts(depsText) {
+  return {
+    helper: depsCheckFileHelper(depsText),
+    verify: depsStepRunBody(depsText, "verify"),
+    install: depsStepRunBody(depsText, "install"),
+  };
+}
+
+function argvTokens(call) {
+  return [...call.matchAll(/<([^>]*)>/gu)].map((match) => match[1]);
+}
+
+function assertFallbackArgv(call, archives, pins) {
+  const tokens = argvTokens(call);
+  const optionAt = tokens.indexOf("-o");
+  assert.ok(optionAt >= 0, `no -o in ${call}`);
+  assert.equal(tokens[optionAt + 1], `Dir::Cache::Archives=${archives}`);
+  const installAt = tokens.indexOf("install");
+  assert.deepEqual(tokens.slice(installAt, installAt + 4), [
+    "install",
+    "--no-download",
+    "--no-install-recommends",
+    "-y",
+  ]);
+  const rest = tokens.slice(installAt + 4);
+  for (const pkg of pipelinePackages)
+    assert.ok(rest.includes(pkg), `missing package ${pkg} in ${rest}`);
+  for (const pin of pins) assert.ok(rest.includes(pin), `missing pin ${pin} in ${rest}`);
+  assert.deepEqual(
+    rest.filter((token) => !pipelinePackages.includes(token) && !pins.includes(token)),
+    [],
+    `unexpected apt arguments in ${rest}`,
+  );
+  assert.equal(rest.length, pipelinePackages.length + pins.length);
+}
+
+const pipelineDebs = {
+  alphaOld: "alpha_1.0_amd64.deb",
+  alphaNew: "alpha_2.0_amd64.deb",
+  commonOld: "alpha-common_1.0_amd64.deb",
+  commonNew: "alpha-common_2.0_amd64.deb",
+  betaOld: "beta_1.0_amd64.deb",
+  betaNew: "beta_2.0_amd64.deb",
+  gamma: "gamma_9.0_amd64.deb",
+  delta: "delta_3.0_amd64.deb",
+};
+const pipelineContents = {
+  alphaOld: "alpha-old\n",
+  alphaNew: "alpha-new\n",
+  commonOld: "common-old\n",
+  commonNew: "common-new\n",
+  beta: "beta-same\n",
+  gamma: "gamma-extra\n",
+  delta: "delta-only\n",
+};
+
+function incidentFiles() {
+  return {
+    [pipelineDebs.alphaOld]: pipelineContents.alphaOld,
+    [pipelineDebs.commonOld]: pipelineContents.commonOld,
+    [pipelineDebs.betaOld]: pipelineContents.beta,
+    [pipelineDebs.gamma]: pipelineContents.gamma,
+  };
+}
+
+function incidentCurrentSet() {
+  return [
+    debRecord(pipelineDebs.alphaNew, pipelineContents.alphaNew),
+    debRecord(pipelineDebs.commonNew, pipelineContents.commonNew),
+    debRecord(pipelineDebs.betaNew, pipelineContents.beta),
+  ];
+}
+
+function incidentManifest() {
+  return [
+    debRecord(pipelineDebs.alphaOld, pipelineContents.alphaOld),
+    debRecord(pipelineDebs.commonOld, pipelineContents.commonOld),
+    debRecord(pipelineDebs.betaOld, pipelineContents.beta),
+    debRecord(pipelineDebs.gamma, pipelineContents.gamma),
+  ];
+}
+
+function incidentPins() {
+  return ["alpha=1.0", "alpha-common=1.0", "beta=1.0"];
+}
+
+function runDepsPipeline(parts, fixture) {
+  const dir = mkdtempSync(join(tmpdir(), "linux-desktop-deps-pipeline-"));
+  try {
+    const bin = join(dir, "bin");
+    const archives = join(dir, "archives");
+    const runnerTemp = join(dir, "runner-temp");
+    mkdirSync(bin);
+    mkdirSync(archives);
+    mkdirSync(runnerTemp);
+    const manifestPath = join(archives, depsManifestName);
+    const shim = (name, text) =>
+      writeFileSync(join(bin, name), `#!/bin/bash\n${text}\n`, { mode: 0o755 });
+    shim(
+      "sudo",
+      `printf 'sudo-argv:'; printf '<%s>' "$@"; printf '\\n'; exit "\${SUDO_STATUS:-0}"`,
+    );
+    shim(
+      "dpkg-deb",
+      `if [ "$1" != "-f" ] || [ "$#" -ne 3 ]; then echo "dpkg-deb: unexpected arguments: $*" >&2; exit 2; fi
+if [ -f "$SHIM_DIR/dpkg-fail" ]; then echo "dpkg-deb failed" >&2; exit 1; fi
+base=\${2##*/}
+rest=\${base%.deb}
+pkg=\${rest%%_*}
+rest=\${rest#*_}
+ver=\${rest%_*}
+ver=\${ver//%3a/:}
+case "$3" in
+  Package) printf '%s\\n' "$pkg" ;;
+  Version) printf '%s\\n' "$ver" ;;
+  *) echo "dpkg-deb: unexpected field $3" >&2; exit 2 ;;
+esac`,
+    );
+    for (const [name, content] of Object.entries(fixture.files ?? {}))
+      writeFileSync(join(archives, name), content);
+    writeFileSync(
+      join(runnerTemp, "linux-desktop-deps-set.txt"),
+      fixture.currentSet?.length ? `${fixture.currentSet.join("\n")}\n` : "",
+    );
+    if (fixture.manifest)
+      writeFileSync(manifestPath, `${fixture.manifest.join("\n")}\n`);
+    if (fixture.dpkgFail) writeFileSync(join(dir, "dpkg-fail"), "");
+    writeFileSync(
+      join(runnerTemp, "linux-desktop-deps-lib.sh"),
+      [
+        `packages=(${pipelinePackages.join(" ")})`,
+        `archives=${JSON.stringify(archives)}`,
+        `manifest=${JSON.stringify(manifestPath)}`,
+        parts.helper,
+        "",
+      ].join("\n"),
+    );
+    const env = {
+      PATH: `${bin}:${process.env.PATH}`,
+      RUNNER_TEMP: runnerTemp,
+      DOWNLOAD_OUTCOME: fixture.downloadOutcome,
+      SUDO_STATUS: String(fixture.sudoStatus ?? 0),
+      SHIM_DIR: dir,
+    };
+    const run = (name, body) => {
+      const script = join(dir, `${name}.sh`);
+      writeFileSync(script, body);
+      const result = spawnSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", script], {
+        encoding: "utf8",
+        env,
+      });
+      assert.equal(result.error, undefined, "bash ran");
+      const combined = `${result.stdout}${result.stderr}`;
+      return {
+        status: result.status,
+        output: combined,
+        calls: combined
+          .split("\n")
+          .filter((line) => line.startsWith("sudo-argv:"))
+          .map((line) => line.slice(10)),
+      };
+    };
+    const verify = run("verify", parts.verify);
+    const debsAfterVerify = readdirSync(archives)
+      .filter((name) => name.endsWith(".deb"))
+      .sort();
+    const install = run("install", parts.install);
+    return { archives, verify, install, debsAfterVerify };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function assertNoUsableSet(install, reason) {
+  assert.equal(install.status, 1, install.output);
+  assert.deepEqual(install.calls, []);
+  assert.ok(
+    install.output.includes(`${noUsableSetError} (${reason})`),
+    install.output,
+  );
+}
+
+const pipelineCases = [
+  [
+    "success outcome: one apt call without pins",
+    (parts) => {
+      const result = runDepsPipeline(parts, {
+        downloadOutcome: "success",
+        files: {
+          [pipelineDebs.alphaNew]: pipelineContents.alphaNew,
+          [pipelineDebs.commonNew]: pipelineContents.commonNew,
+          [pipelineDebs.betaNew]: pipelineContents.beta,
+        },
+        currentSet: incidentCurrentSet(),
+      });
+      assert.equal(result.verify.status, 0, result.verify.output);
+      assert.equal(result.install.status, 0, result.install.output);
+      assert.equal(result.install.calls.length, 1);
+      const tokens = argvTokens(result.install.calls[0]);
+      const installAt = tokens.indexOf("install");
+      assert.deepEqual(tokens.slice(installAt + 4), pipelinePackages);
+      assert.ok(!result.install.output.includes(fallbackWarning), result.install.output);
+    },
+  ],
+  [
+    "failed download installs the verified previous set",
+    (parts) => {
+      const result = runDepsPipeline(parts, {
+        downloadOutcome: "failure",
+        files: incidentFiles(),
+        currentSet: incidentCurrentSet(),
+        manifest: incidentManifest(),
+      });
+      assert.equal(result.verify.status, 0, result.verify.output);
+      assert.deepEqual(result.debsAfterVerify, Object.keys(incidentFiles()).sort());
+      assert.equal(result.install.status, 0, result.install.output);
+      assert.equal(result.install.calls.length, 1);
+      assertFallbackArgv(result.install.calls[0], result.archives, incidentPins());
+      assert.ok(result.install.output.includes(fallbackWarning), result.install.output);
+      for (const named of [
+        "alpha 1.0 (candidate 2.0)",
+        "alpha-common 1.0 (candidate 2.0)",
+        "beta 1.0 (candidate 2.0)",
+      ])
+        assert.ok(result.install.output.includes(named), result.install.output);
+      assert.ok(!result.install.calls[0].includes("gamma="), result.install.calls[0]);
+    },
+  ],
+  [
+    "failed download pins a current-set file and a newer sibling to the manifest versions",
+    (parts) => {
+      const result = runDepsPipeline(parts, {
+        downloadOutcome: "failure",
+        files: {
+          [pipelineDebs.alphaOld]: pipelineContents.alphaOld,
+          [pipelineDebs.commonOld]: pipelineContents.commonOld,
+          [pipelineDebs.commonNew]: pipelineContents.commonNew,
+          [pipelineDebs.betaOld]: pipelineContents.beta,
+        },
+        currentSet: [
+          debRecord(pipelineDebs.alphaNew, pipelineContents.alphaNew),
+          debRecord(pipelineDebs.commonNew, pipelineContents.commonNew),
+          debRecord(pipelineDebs.betaOld, pipelineContents.beta),
+        ],
+        manifest: [
+          debRecord(pipelineDebs.alphaOld, pipelineContents.alphaOld),
+          debRecord(pipelineDebs.commonOld, pipelineContents.commonOld),
+          debRecord(pipelineDebs.betaOld, pipelineContents.beta),
+        ],
+      });
+      assert.equal(result.verify.status, 0, result.verify.output);
+      assert.ok(result.debsAfterVerify.includes(pipelineDebs.commonNew));
+      assert.ok(result.debsAfterVerify.includes(pipelineDebs.betaOld));
+      assert.equal(result.install.status, 0, result.install.output);
+      assert.equal(result.install.calls.length, 1);
+      assertFallbackArgv(result.install.calls[0], result.archives, incidentPins());
+      assert.ok(result.install.output.includes(fallbackWarning), result.install.output);
+      assert.ok(result.install.output.includes("alpha 1.0 (candidate 2.0)"), result.install.output);
+      assert.ok(
+        result.install.output.includes("alpha-common 1.0 (candidate 2.0)"),
+        result.install.output,
+      );
+      assert.ok(!result.install.output.includes("beta 1.0 (candidate"), result.install.output);
+    },
+  ],
+  [
+    "size mismatch prints the no-usable-set error and never calls apt",
+    (parts) => {
+      const result = runDepsPipeline(parts, {
+        downloadOutcome: "failure",
+        files: { ...incidentFiles(), [pipelineDebs.alphaOld]: `${pipelineContents.alphaOld}x` },
+        currentSet: incidentCurrentSet(),
+        manifest: incidentManifest(),
+      });
+      const actual = Buffer.byteLength(`${pipelineContents.alphaOld}x`);
+      const expected = Buffer.byteLength(pipelineContents.alphaOld);
+      assertNoUsableSet(
+        result.install,
+        `${pipelineDebs.alphaOld}: size ${actual}, expected ${expected}`,
+      );
+    },
+  ],
+  [
+    "checksum mismatch prints the no-usable-set error and never calls apt",
+    (parts) => {
+      const size = Buffer.byteLength(pipelineContents.alphaOld);
+      const actual = sha256Hex(pipelineContents.alphaOld);
+      const expected = "0".repeat(64);
+      const result = runDepsPipeline(parts, {
+        downloadOutcome: "failure",
+        files: incidentFiles(),
+        currentSet: incidentCurrentSet(),
+        manifest: [
+          `${pipelineDebs.alphaOld} ${size} SHA256:${expected}`,
+          ...incidentManifest().slice(1),
+        ],
+      });
+      assertNoUsableSet(
+        result.install,
+        `${pipelineDebs.alphaOld}: SHA256 ${actual}, expected ${expected}`,
+      );
+    },
+  ],
+  [
+    "missing manifest file prints the no-usable-set error and never calls apt",
+    (parts) => {
+      const files = incidentFiles();
+      delete files[pipelineDebs.gamma];
+      const result = runDepsPipeline(parts, {
+        downloadOutcome: "failure",
+        files,
+        currentSet: incidentCurrentSet(),
+        manifest: incidentManifest(),
+      });
+      assertNoUsableSet(result.install, `cached file ${pipelineDebs.gamma} is missing`);
+    },
+  ],
+  [
+    "missing manifest prints the no-usable-set error and never calls apt",
+    (parts) => {
+      const result = runDepsPipeline(parts, {
+        downloadOutcome: "failure",
+        files: incidentFiles(),
+        currentSet: incidentCurrentSet(),
+      });
+      assertNoUsableSet(result.install, "restored manifest is missing");
+    },
+  ],
+  [
+    "malformed manifest line prints the no-usable-set error and never calls apt",
+    (parts) => {
+      const result = runDepsPipeline(parts, {
+        downloadOutcome: "failure",
+        files: incidentFiles(),
+        currentSet: incidentCurrentSet(),
+        manifest: ["not a valid line", ...incidentManifest()],
+      });
+      assertNoUsableSet(result.install, "malformed manifest line");
+    },
+  ],
+  [
+    "current name without a manifest entry prints the no-usable-set error and never calls apt",
+    (parts) => {
+      const result = runDepsPipeline(parts, {
+        downloadOutcome: "failure",
+        files: incidentFiles(),
+        currentSet: [
+          ...incidentCurrentSet(),
+          debRecord(pipelineDebs.delta, pipelineContents.delta),
+        ],
+        manifest: incidentManifest(),
+      });
+      assertNoUsableSet(result.install, "current-set package delta has no cached version");
+    },
+  ],
+  [
+    "dpkg-deb failure prints the no-usable-set error and never calls apt",
+    (parts) => {
+      const result = runDepsPipeline(parts, {
+        downloadOutcome: "failure",
+        files: incidentFiles(),
+        currentSet: incidentCurrentSet(),
+        manifest: incidentManifest(),
+        dpkgFail: true,
+      });
+      assertNoUsableSet(result.install, `cannot read Package from ${pipelineDebs.alphaOld}`);
+    },
+  ],
+  [
+    "fallback apt failure prints the install-failed error with apt's status",
+    (parts) => {
+      const result = runDepsPipeline(parts, {
+        downloadOutcome: "failure",
+        files: incidentFiles(),
+        currentSet: incidentCurrentSet(),
+        manifest: incidentManifest(),
+        sudoStatus: 100,
+      });
+      assert.equal(result.install.status, 100, result.install.output);
+      assert.equal(result.install.calls.length, 1);
+      assert.ok(result.install.output.includes(cachedInstallFailedError), result.install.output);
+    },
+  ],
+];
+
+function failedPipelineCases(parts) {
+  return failingNames(pipelineCases.map(([name, run]) => [name, () => run(parts)]));
+}
+
+const replacePipeline = (field, before, after) => (parts) => {
+  assert.ok(parts[field].includes(before), `the ${field} body lacks: ${before}`);
+  return { ...parts, [field]: parts[field].replaceAll(before, after) };
+};
+
+const pipelineMutations = [
+  [
+    "success branch never matches",
+    replacePipeline("install", '"${DOWNLOAD_OUTCOME:-}" = "success"', '"${DOWNLOAD_OUTCOME:-}" = "never"'),
+    "success outcome: one apt call without pins",
+  ],
+  [
+    "fallback loses the version pins",
+    replacePipeline("install", ' "${packages[@]}" "${pins[@]}"', ' "${packages[@]}"'),
+    "failed download installs the verified previous set",
+  ],
+  [
+    "fallback pins only when the version differs",
+    replacePipeline(
+      "install",
+      'pins+=("${pkg}=${cached[$pkg]}")\n    candidate=${candidates[$pkg]}',
+      'candidate=${candidates[$pkg]}\n    if [ "${cached[$pkg]}" != "$candidate" ]; then pins+=("${pkg}=${cached[$pkg]}"); fi',
+    ),
+    "failed download pins a current-set file and a newer sibling to the manifest versions",
+  ],
+  [
+    "fallback warning names every pinned package",
+    replacePipeline(
+      "install",
+      'if [ "${cached[$pkg]}" != "$candidate" ]; then',
+      "if true; then",
+    ),
+    "failed download pins a current-set file and a newer sibling to the manifest versions",
+  ],
+  [
+    "helper accepts a size mismatch",
+    replacePipeline("helper", '[ "$actual_size" != "$size" ]', "false"),
+    "size mismatch prints the no-usable-set error and never calls apt",
+  ],
+  [
+    "helper accepts a checksum mismatch",
+    replacePipeline("helper", '[ "$digest" != "${checksum#*:}" ]', "false"),
+    "checksum mismatch prints the no-usable-set error and never calls apt",
+  ],
+  [
+    "missing cached file is skipped",
+    replacePipeline(
+      "install",
+      'reason="cached file $name is missing"\n      return 1',
+      "continue",
+    ),
+    "missing manifest file prints the no-usable-set error and never calls apt",
+  ],
+  [
+    "missing manifest is treated as empty",
+    replacePipeline(
+      "install",
+      'if [ ! -r "$manifest" ]; then reason="restored manifest is missing"; return 1; fi\n',
+      "",
+    ),
+    "missing manifest prints the no-usable-set error and never calls apt",
+  ],
+  [
+    "malformed manifest line is skipped",
+    replacePipeline(
+      "install",
+      'reason="malformed manifest line"\n      return 1',
+      "continue",
+    ),
+    "malformed manifest line prints the no-usable-set error and never calls apt",
+  ],
+  [
+    "current name without a cached version is skipped",
+    replacePipeline(
+      "install",
+      'if [ -z "${cached[$pkg]:-}" ]; then',
+      "if false; then",
+    ),
+    "current name without a manifest entry prints the no-usable-set error and never calls apt",
+  ],
+  [
+    "dpkg-deb failure is ignored",
+    replacePipeline(
+      "install",
+      'pkg=$(dpkg-deb -f "$file" Package) || { reason="cannot read Package from $name"; return 1; }',
+      "pkg=alpha",
+    ),
+    "dpkg-deb failure prints the no-usable-set error and never calls apt",
+  ],
+  [
+    "fallback apt failure loses its error",
+    replacePipeline(
+      "install",
+      'echo "::error::linux-desktop-deps: installing the cached package set failed"\n',
+      "",
+    ),
+    "fallback apt failure prints the install-failed error with apt's status",
+  ],
+];
+
+test("linux-desktop-deps verify then install fallback behaves when executed", async (t) => {
+  const { deps } = await readCiWorkflowTexts();
+  const parts = pipelineParts(deps);
+  assert.deepEqual(failedPipelineCases(parts), []);
+  for (const [label, mutate, expected] of pipelineMutations)
+    await t.test(label, (subtest) =>
+      assertMutationRed({
+        original: parts,
+        mutate,
+        failedFor: failedPipelineCases,
         expected,
         report: (failed) => subtest.diagnostic(`red: ${failed.join(" | ")}`),
       }),

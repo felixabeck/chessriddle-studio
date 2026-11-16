@@ -23,6 +23,9 @@ runs:
         # later step. The `path:` of the cache steps must repeat this literal, because actions/cache
         # derives the entry version from the path string. The routing test pins that equality.
         archives=/tmp/linux-desktop-apt-archives
+        # Saved next to the archives and listed in the cache `path:` block. A saved manifest always
+        # describes exactly the saved `.deb` files.
+        manifest=/tmp/linux-desktop-apt-archives/linux-desktop-deps-manifest.txt
         lib="$RUNNER_TEMP/linux-desktop-deps-lib.sh"
         set_file="$RUNNER_TEMP/linux-desktop-deps-set.txt"
         packages=(
@@ -87,9 +90,37 @@ runs:
           fi
           echo "$seconds"
         }
-        # The later steps of this action source the helpers, the package list and the archive
-        # directory from one file.
-        { declare -p packages archives; declare -f desktop_deps_label_stall desktop_deps_apt; } > "$lib" || exit 1
+        # desktop_deps_check_file <file> <size> <checksum-type:hex>: checks a .deb against the
+        # apt-verified size and digest. Returns 0 on match, 1 on a size or checksum mismatch, and
+        # 2 on a check error (unsupported checksum type, stat or hash failure). Sets `reason` on a
+        # non-zero return; verify drops a mismatch and discards the set on a check error, and the
+        # install fallback treats any failure as an unusable cached set.
+        desktop_deps_check_file() {
+          local file=$1 size=$2 checksum=$3 tool actual_size digest base=${1##*/}
+          case "${checksum%%:*}" in
+            MD5Sum) tool=md5sum ;;
+            SHA1) tool=sha1sum ;;
+            SHA256) tool=sha256sum ;;
+            SHA512) tool=sha512sum ;;
+            *) reason="unsupported checksum type ${checksum%%:*}"; return 2 ;;
+          esac
+          actual_size=$(stat -c %s "$file") || { reason="cannot stat $base"; return 2; }
+          digest=$("$tool" "$file") || { reason="$tool failed on $base"; return 2; }
+          digest=${digest%% *}
+          if [ -z "$digest" ]; then reason="$tool printed no digest for $base"; return 2; fi
+          if [ "$actual_size" != "$size" ]; then
+            reason="size $actual_size, expected $size"
+            return 1
+          fi
+          if [ "$digest" != "${checksum#*:}" ]; then
+            reason="${checksum%%:*} $digest, expected ${checksum#*:}"
+            return 1
+          fi
+          return 0
+        }
+        # The later steps of this action source the helpers, the package list, the archive
+        # directory and the manifest path from one file.
+        { declare -p packages archives manifest; declare -f desktop_deps_label_stall desktop_deps_apt desktop_deps_check_file; } > "$lib" || exit 1
 
         bound=$(desktop_deps_bound_seconds "$TIMEOUT_MINUTES") || { printf '%s\n' "$bound"; exit 1; }
         LINUX_DESKTOP_DEPS_START=$(date +%s)
@@ -159,7 +190,9 @@ runs:
       continue-on-error: true
       uses: actions/cache/restore@v4
       with:
-        path: /tmp/linux-desktop-apt-archives/*.deb
+        path: |
+          /tmp/linux-desktop-apt-archives/*.deb
+          /tmp/linux-desktop-apt-archives/linux-desktop-deps-manifest.txt
         key: ${{ steps.resolve.outputs.save-key }}
         restore-keys: |
           ${{ steps.resolve.outputs.set-prefix }}
@@ -169,12 +202,13 @@ runs:
     # corrupted file would pass the download and fail later in dpkg. Check each restored file
     # against its size and checksum from the resolved set. A size or checksum mismatch drops that
     # file; a verification error (unsupported checksum type, stat or hash failure) discards every
-    # restored file. The download refetches whatever is missing.
+    # restored file. Files whose names are not in the current set stay on disk for the fallback.
+    # The download refetches whatever is missing from the current set.
     - name: Verify the restored apt archives
       id: verify
       shell: bash
       run: |
-        # `archives` comes from the sourced library.
+        # `archives` and `desktop_deps_check_file` come from the sourced library.
         # shellcheck disable=SC2154
         set -uo pipefail
         set_file="$RUNNER_TEMP/linux-desktop-deps-set.txt"
@@ -182,29 +216,19 @@ runs:
         source "$RUNNER_TEMP/linux-desktop-deps-lib.sh" || exit 1
         reason=""
         verify_restored() {
-          local name size checksum file tool actual_size digest
+          local name size checksum file status
           if [ ! -r "$set_file" ]; then reason="no download set"; return 1; fi
           while read -r name size checksum; do
             file="$archives/$name"
             if [ ! -f "$file" ]; then continue; fi
-            # The checksum type is the prefix of the --print-uris column.
-            case "${checksum%%:*}" in
-              MD5Sum) tool=md5sum ;;
-              SHA1) tool=sha1sum ;;
-              SHA256) tool=sha256sum ;;
-              SHA512) tool=sha512sum ;;
-              *) reason="unsupported checksum type ${checksum%%:*}"; return 1 ;;
-            esac
-            actual_size=$(stat -c %s "$file") || { reason="cannot stat $name"; return 1; }
-            digest=$("$tool" "$file") || { reason="$tool failed on $name"; return 1; }
-            digest=${digest%% *}
-            if [ -z "$digest" ]; then reason="$tool printed no digest for $name"; return 1; fi
-            if [ "$actual_size" != "$size" ]; then
-              echo "linux-desktop-deps: dropping restored $name: size $actual_size, expected $size"
+            desktop_deps_check_file "$file" "$size" "$checksum" && status=0 || status=$?
+            if [ "$status" -eq 0 ]; then
+              continue
+            elif [ "$status" -eq 1 ]; then
+              echo "linux-desktop-deps: dropping restored $name: $reason"
               rm -f -- "$file" || { reason="cannot delete $name"; return 1; }
-            elif [ "$digest" != "${checksum#*:}" ]; then
-              echo "linux-desktop-deps: dropping restored $name: ${checksum%%:*} $digest, expected ${checksum#*:}"
-              rm -f -- "$file" || { reason="cannot delete $name"; return 1; }
+            else
+              return 1
             fi
           done < "$set_file"
           return 0
@@ -215,8 +239,11 @@ runs:
         fi
         exit 0
 
+    # `continue-on-error` keeps later steps running after a failed download. Only
+    # `steps.download.outcome` reports the failure; `success()` and `conclusion` do not.
     - name: Download the missing apt archives
       id: download
+      continue-on-error: true
       shell: bash
       run: |
         # `packages`, `archives` and `desktop_deps_apt` come from the sourced library.
@@ -246,12 +273,13 @@ runs:
 
     # Bound the cache: keep one resolved set (about 64 MB). A failing prune keeps every file,
     # which a --no-download install tolerates, and reports ok=false so the unpruned set is not
-    # saved.
+    # saved. Skip after a failed download so the previous set stays on disk for the fallback.
     - name: Prune archives outside the download set
       id: prune
+      if: steps.download.outcome == 'success'
       shell: bash
       run: |
-        # `archives` comes from the sourced library.
+        # `archives` and `manifest` come from the sourced library.
         # shellcheck disable=SC2154
         set -uo pipefail
         set_file="$RUNNER_TEMP/linux-desktop-deps-set.txt"
@@ -275,10 +303,10 @@ runs:
           done
           return 0
         }
-        if prune_unneeded; then
+        if prune_unneeded && cp -- "$set_file" "$manifest"; then
           echo "ok=true" >> "$GITHUB_OUTPUT"
         else
-          echo "::warning::linux-desktop-deps: pruning the apt archives failed ($reason); the cache is not saved"
+          echo "::warning::linux-desktop-deps: pruning the apt archives failed (${reason:-cannot write the manifest}); the cache is not saved"
           echo "ok=false" >> "$GITHUB_OUTPUT"
         fi
         exit 0
@@ -291,18 +319,104 @@ runs:
       continue-on-error: true
       uses: actions/cache/save@v4
       with:
-        path: /tmp/linux-desktop-apt-archives/*.deb
+        path: |
+          /tmp/linux-desktop-apt-archives/*.deb
+          /tmp/linux-desktop-apt-archives/linux-desktop-deps-manifest.txt
         key: ${{ steps.resolve.outputs.save-key }}
 
     # `--no-download`: a missing archive fails at once and by name instead of starting an
-    # unbounded mirror fetch.
+    # unbounded mirror fetch. A failed download installs the whole verified cached set, or
+    # nothing: every current-set package is pinned to its cached version.
     - name: Install the Linux desktop build dependencies
       id: install
       shell: bash
+      env:
+        DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
       run: |
-        # `packages` and `archives` come from the sourced library.
+        # `packages`, `archives`, `manifest` and `desktop_deps_check_file` come from the sourced library.
         # shellcheck disable=SC2154
         set -uo pipefail
+        set_file="$RUNNER_TEMP/linux-desktop-deps-set.txt"
         # shellcheck source=/dev/null
         source "$RUNNER_TEMP/linux-desktop-deps-lib.sh" || exit 1
-        sudo apt-get -o "Dir::Cache::Archives=$archives" install --no-download --no-install-recommends -y "${packages[@]}"
+        if [ "${DOWNLOAD_OUTCOME:-}" = "success" ]; then
+          sudo apt-get -o "Dir::Cache::Archives=$archives" install --no-download --no-install-recommends -y "${packages[@]}"
+          exit $?
+        fi
+        reason=""
+        pins=()
+        stale=()
+        use_cached_set() {
+          local name size checksum extra file pkg ver rest candidate
+          local -A candidates=() cached=()
+          if [ ! -r "$manifest" ]; then reason="restored manifest is missing"; return 1; fi
+          if [ ! -s "$manifest" ]; then reason="restored manifest is empty"; return 1; fi
+          if [ ! -r "$set_file" ]; then reason="no download set"; return 1; fi
+          while read -r name _; do
+            [ -z "$name" ] && continue
+            rest=${name%.deb}
+            if [ "$rest" = "$name" ] || [[ "$rest" != *_*_* ]]; then
+              reason="malformed current-set filename $name"
+              return 1
+            fi
+            pkg=${rest%%_*}
+            ver=${rest#*_}
+            ver=${ver%_*}
+            ver=${ver//%3a/:}
+            candidates[$pkg]=$ver
+          done < "$set_file"
+          while read -r name size checksum extra || [ -n "${name:-}" ]; do
+            if [ -z "${name:-}" ] || [ -z "${size:-}" ] || [ -z "${checksum:-}" ] || [ -n "${extra:-}" ]; then
+              reason="malformed manifest line"
+              return 1
+            fi
+            if ! [[ "$size" =~ ^[0-9]+$ && "$checksum" =~ ^[[:alnum:]]+:[[:xdigit:]]+$ ]]; then
+              reason="malformed manifest line"
+              return 1
+            fi
+            file="$archives/$name"
+            if [ ! -f "$file" ]; then
+              reason="cached file $name is missing"
+              return 1
+            fi
+            if ! desktop_deps_check_file "$file" "$size" "$checksum"; then
+              reason="$name: $reason"
+              return 1
+            fi
+            pkg=$(dpkg-deb -f "$file" Package) || { reason="cannot read Package from $name"; return 1; }
+            ver=$(dpkg-deb -f "$file" Version) || { reason="cannot read Version from $name"; return 1; }
+            if [ -z "$pkg" ] || [ -z "$ver" ]; then
+              reason="cannot read Package and Version from $name"
+              return 1
+            fi
+            cached[$pkg]=$ver
+          done < "$manifest"
+          for pkg in "${!candidates[@]}"; do
+            if [ -z "${cached[$pkg]:-}" ]; then
+              reason="current-set package $pkg has no cached version"
+              return 1
+            fi
+            pins+=("${pkg}=${cached[$pkg]}")
+            candidate=${candidates[$pkg]}
+            if [ "${cached[$pkg]}" != "$candidate" ]; then
+              stale+=("${pkg} ${cached[$pkg]} (candidate ${candidate})")
+            fi
+          done
+          return 0
+        }
+        if ! use_cached_set; then
+          echo "::error::linux-desktop-deps: the package download failed and no usable cached package set is available ($reason)"
+          exit 1
+        fi
+        sudo apt-get -o "Dir::Cache::Archives=$archives" install --no-download --no-install-recommends -y "${packages[@]}" "${pins[@]}" || {
+          status=$?
+          echo "::error::linux-desktop-deps: installing the cached package set failed"
+          exit "$status"
+        }
+        warning="linux-desktop-deps: the job tests against cached versions because the mirror download failed"
+        if [ "${#stale[@]}" -gt 0 ]; then
+          printf -v joined '%s, ' "${stale[@]}"
+          echo "::warning::${warning}: ${joined%, }"
+        else
+          echo "::warning::$warning"
+        fi
