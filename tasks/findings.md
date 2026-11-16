@@ -26812,3 +26812,59 @@ Push review follow-up: the review-tests lens (REVISE) found that nothing committ
 
 * **Released (2026-11-16):** landed on `master` as bcb38973b (fix dea891e5d). Test run 43788854711 green on that SHA, all four frontend-mutation packages included. Installed locally at bcb38973b (provenance reviewed). No release or deployment occurred.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"70ea21fb077b9ad45ec3d6635938b25e21150cd1be56ea289026cade17ba0447","input_sha256":"e99044044a5ba187f5588f4878235307c06536dcc737f65e57f1b9b9a108460d","kind":"mutation-receipt","operation":"b98656f87f696a00f2db82f1256fddd1ef7b30411edba113f81eff2e27367536","options":{"section":null},"request_id_sha256":null,"results":["f-20261115-28"],"target":"f-20261115-28","v":1} -->
+
+---
+
+## 2026-11-16 — filed through the inbox spool
+
+### e2e `files-preview: returning to Library restores a late game after section headings load` timed out once on an unchanged tree and passed on rerun
+
+* **ID:** f-20261112-94 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Filed from:** 05f42646-de5d-4da2-96b0-1e9a8533ea66
+* **Spotted outside diff:** final push gates for f-20261111-81 (drain 05f42646), HEAD `0e7612453`
+* **Where:** `e2e/files-preview.spec.ts:295-343`. The `toPass` block (`:335-340`) wheels the Games listbox until the `White 40 - Black 40` option is fully in viewport, then `late.dblclick()` at `:341` runs outside the retry.
+* **Defect:** On one container e2e run the `dblclick` at `:341` waited the whole 45 s test timeout for `getByRole('listbox', { name: 'Games' }).getByRole('option', { name: /White 40 - Black 40/ })` after the in-viewport assertion had just passed. The row stopped resolving between the two steps. A plausible cause is the virtualized list re-rendering or re-scrolling when the delayed `lex_pgn` section headings (mock `delay: 80`) land, but this was not confirmed. The same test passed in the run before (tree `c7713b5dd`) and the run after (unchanged tree `0e7612453`), and the diff under test does not touch the Library or the files preview.
+* **Failure scenario:** A push gate goes red on an unrelated change and costs a full e2e rerun (about 4 min) for the drain or the pushing agent.
+* **Fix:** Read the retained trace to see whether the option detached or scrolled out after `toBeInViewport`. Then either fold the `dblclick` into the retried block, or fix the list if section headings landing after the user has scrolled move the scroll position. That second case would be a product defect: a user who scrolled to the end loses their place.
+* **Proof:** Failing transcript `artifacts/gates/20261112T003638632Z-954524/receipt-e2e-container.log` (`✘ 411 [files-preview] … (45.1s)`, `locator.dblclick: Test timeout of 45000ms exceeded`), trace `artifacts/frontend-audit/test-results/files-preview-files-previe-2a3c3-after-section-headings-load-files-preview/trace.zip` (may be overwritten by later runs). Rerun with no tree change: `/tmp/nf-81/gates3.log` `finish e2e duration=220.2s exit=0`.
+* **Found by:** Claude Code (drain orchestrator), 2026-11-12.
+
+### e2e `files-preview` late-game restore test times out on dblclick under gate load
+* **ID:** f-20261112-95 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Filed from:** aaa22b94-1b05-4422-9cb7-0b3305fd107b
+* **Impact class:** tooling
+* **Where:** `e2e/files-preview.spec.ts:295-341` (`files-preview: returning to Library restores a late game after section headings load`). The `toPass` block scrolls until the option `White 40 - Black 40` is in the viewport, then `late.dblclick()` runs outside that block at `:341`.
+* **Defect:** The games listbox is virtualized and the mocked `lex_pgn` resolves section headings with an 80 ms delay per game, so rows keep shifting after the `toPass` check succeeds. The `dblclick` that follows waits for an option that may have left the rendered window again, and the 45 s test timeout expires.
+* **Failure scenario:** Final push gate on 2026-11-11 (drain aaa22b94, HEAD `82bdb612`, gate log `artifacts/gates/20261111T132043581Z-123504/e2e.log`): 447 passed, 1 failed, `locator.dblclick: Test timeout of 45000ms exceeded` waiting for `getByRole('option', { name: /White 40 - Black 40/ })`. The gate went red and the release had to be re-gated. The same test passed in the gate run on `a5492ef2` earlier that day. On the same tree, `pnpm test:e2e:container -- e2e/files-preview.spec.ts --project files-preview --repeat-each 5` passed 120/120. The failure only shows when the e2e container shares the machine with frontend coverage.
+* **Fix:** Make the open step robust to the late heading reflow: wait until every section heading has loaded (or the list height is stable) before scrolling, or move the `dblclick` inside the `toPass` retry so it re-locates the option after a reflow. Do not raise the test timeout. Prove it with `--repeat-each` under a concurrent `pnpm test:coverage` load.
+* **Proof:** Gate log and rerun as above. The test was not changed in that diff (drain range `8050c6fb..82bdb612` touched no e2e or Library list code).
+* **Found by:** Claude Code drain session aaa22b94, final push gate.
+
+### macOS CI: bound_sqlite FIFO-SHM repository witness fails with "attempt to write a readonly database"
+
+* **ID:** f-20261112-96 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** build · **Blocked:** none
+* **Filed from:** fe1647a8-84a0-4716-ace7-396690a4bf5d
+* **Impact class:** tooling
+* **Spotted outside diff:** Test run 43239229290 (job 131254785925, `rust-macos-test`) on pushed master `12d2654ce`. The pushed diff touched only `src-tauri/src/{lexer,pgn}.rs` and renderer files, with no `src-tauri/src/db/**` change. The five previous master Test runs (`f5ed52932`, `7085efff0`, `9d7502ee7`, `bb77b38ce`, `e01e8dfc4`) were green.
+* **Where:** `src-tauri/src/db/repository.rs:11724` in `db::repository::bound_sqlite_witnesses::bound_sqlite_fifo_shm_repository_failures_and_regular_fallback_recovery`.
+* **Defect:** On macOS the test's `unwrap()` at `:11724:132` received `Err(DatabaseError(Unknown, "attempt to write a readonly database"))`. The regular-file fallback recovery after the FIFO `-shm` failure apparently does not reliably restore a writable connection on macOS, or the test races the reopen. This run's code diff cannot cause it, so the cause is either intermittent or macOS-runner-dependent.
+* **Failure scenario:** A push whose diff does not touch `db/**` turns master's `rust-macos-test` red. Policy §8 then refuses the next push until the job is green, which blocks unrelated work.
+* **Open question:** Is the macOS readonly error a production defect in the FIFO-shm regular-file fallback (it reopens over a read-only handle or stale shm state), or a test ordering race? The answer decides whether the fix is in `db/repository.rs` production code or only in the witness.
+* **Fix:** Reproduce on macOS (`cargo test --bins -- db::repository::bound_sqlite_witnesses::bound_sqlite_fifo_shm_repository_failures_and_regular_fallback_recovery` in a loop). Determine whether the fallback reopen reuses a read-only handle or SQLite's shm state, or whether the test lacks a wait/ordering guarantee. Then fix the production fallback, or the test's ordering, at its cause. A one-off `gh run rerun --failed` was started for this run and its outcome is recorded in the closing note of the run that filed this entry.
+* **Proof:** `gh api repos/felixabeck/chessriddle-studio/actions/jobs/131254785925/logs`: `panicked at src/db/repository.rs:11724:132: called Result::unwrap() on an Err value: DatabaseError(Unknown, "attempt to write a readonly database")`, `test result: FAILED. 0 passed; 1 failed`.
+* **Found by:** Claude Code (Opus 5.5), drain session fe1647a8, next-finding f-20261111-77 push CI wait, 2026-11-12.
+
+### Linux desktop-deps install fails outright when mirrors are unreachable and only a few freshly updated packages are missing from the apt cache
+
+* **ID:** f-20261112-97 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** build · **Blocked:** none
+* **Filed from:** 225bdd69-ab5b-49ff-b563-eb2026f4a779
+* **Impact class:** tooling
+* **Spotted outside diff:** push of c9d55205 to master (drain session 225bdd69), Test run 43048574259
+* **Where:** `.github/actions/linux-desktop-deps` (the composite action introduced for f-20261106-07), called from `setup-ci` in the `frontend` and `rust` jobs of `.github/workflows/test.yml`.
+* **Defect:** The apt archive cache restored (key `linux-desktop-apt-resolute-amd64-95b0f366…-42893290423-1`) and covered 61.4 of 63.7 MB, but Ubuntu had published security updates (`libsoup-3.0-*` 3.6.6-1ubuntu0.1, `gstreamer1.0-plugins-base` / `libgstreamer-*` 1.28.2-1ubuntu0.1). apt resolved to those new versions, needed 2340 kB more, and could not fetch them: `Temporary failure resolving 'security.ubuntu.com'`, `Ign:` from `azure.archive.ubuntu.com`, then `E: Some files failed to download`, exit 100. Nothing falls back to the cached (previous) package versions, so a short mirror/DNS outage right after a security update reds every Linux job that needs WebKitGTK, before any repository check starts.
+* **Failure scenario:** Run 43048574259 (commit c9d55205): `frontend` job 130619131973 and `rust` job 130619132044 failed in "Set up repository dependencies" with apt exit 100; the one permitted `gh run rerun --failed` (jobs 130631037525, 130631038122) failed identically at 15:57Z. `e2e`, `frontend-mutation`, Windows and macOS jobs on the same run passed. The pushed diff touched only renderer TypeScript and an e2e spec.
+* **Fix:** Open design question: whether the action should install from the cached archives when the fresh download fails (e.g. retry `apt-get install` with `--no-download` / pinned cached versions, or `--fix-missing` plus a version-pinned fallback), refresh the cache key on new package versions sooner, or simply retry with backoff across a longer window. Related: f-20261106-07 (handled) bounded and cached the download but assumed the cache would satisfy the resolved versions.
+* **Open question:** Which fallback keeps CI green during a mirror outage without silently testing against stale security-patched libraries?
+* **Proof:** `gh api repos/felixabeck/chessriddle-studio/actions/jobs/130631037525/logs` lines 15:51:39–15:57:01Z show the cache restore, `Need to get 2340 kB/63.7 MB`, the `Ign:` lines, the `Temporary failure resolving 'security.ubuntu.com'` errors and exit 100.
+* **Found by:** Claude Code drain session 225bdd69, push CI wait.
