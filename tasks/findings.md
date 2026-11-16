@@ -26893,3 +26893,18 @@ Push review follow-up: the review-tests lens (REVISE) found that nothing committ
 * **Failure scenario:** CI run 43878646803 on `8d9bc1814`: frontend-mutation (workspace-storage, game-practice, annotate-comment, tree-path) all failed with "There were failed tests in the initial test run", which made the remote red and refused every later push. Reproduced locally with `pnpm vitest run --pool=threads src/utils/pgnDate.test.ts` (the New York case fails).
 * **Fix:** stub the local calendar and clock getters on a fixed instant instead of changing `TZ`, so the tests prove the local-versus-UTC split in any zone and pool.
 * **Found by:** Claude (drain orchestrator), post-push CI wait for f-20261115-05
+
+---
+
+## 2026-11-16 — filed through the inbox spool
+
+### `spawn_io_take_failures_force_kill_and_reap_child` fails its NoStdout assertion intermittently in CI coverage
+
+* **ID:** f-20261116-02 · **Status:** open · **Area:** engine-uci · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Filed from:** 9f329033-8968-4081-82ba-13addb46d30d
+* **Where:** `src-tauri/src/engine/process.rs` test `spawn_io_take_failures_force_kill_and_reap_child` (line 15833), the `SpawnIoFailure::NoStdout` arm `assert!(matches!(result, Err(Error::NoStdout)))` at line 15859; the injection is the thread-local `SPAWN_IO_FAILURE` taken by `take_spawn_io_failure()` in `spawn_owned` (≈line 4000).
+* **Defect:** the `rust` job of `Test` run 43917472455 (HEAD `26ef84818`, a frontend-only push; no `src-tauri` file differs from `04384ff7b`, whose `Test` run passed) failed in the backend branch-coverage step with `assertion failed: matches!(result, Err(Error::NoStdout))` at `src/engine/process.rs:15859:45`. The child pid had been published (the earlier `child_pid_published_when_spawn_completed` passed), so the spawn itself succeeded and returned something other than `NoStdout`. The assertion does not print `result`, so the actual outcome is unknown. Same commit tree passed on the previous master run (`04384ff7b`). This is a third symptom of this test's flakiness after f-20261008-09 (timeout) and the stale-observer-guard fix (`left: None`), both handled.
+* **Evidence:** job 133475396385 log, `failures: engine::process::tests::spawn_io_take_failures_force_kill_and_reap_child`, `test result: FAILED. 3422 passed; 1 failed; 7 ignored`; read 2026-11-16 by session 9f329033-8968-4081-82ba-13addb46d30d during the f-20261115-24 push.
+* **Fix:** make both arms print the actual `result` on mismatch (`assert!(matches!(..), "{result:?}")`), then trace which path returns a different error while the thread-local injection is set — candidates: the injection being consumed by a concurrent spawn on the same worker thread, or a deadline/timeout path (`EngineTimeout`) under the instrumented, loaded runner before the stdout check.
+* **Proof:** the test passes repeatedly under `pnpm gate:ensure backend-coverage` with a CPU-stress background load, and a deliberately mismatched injection fails it with the printed outcome.
+* **Related:** f-20261008-09, f-20261011-06.
