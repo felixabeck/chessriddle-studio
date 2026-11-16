@@ -14,6 +14,8 @@ import {
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { startFileRevisionPoll } from "@/state/fileFreshness";
 import type { MoveAnalysis } from "@/bindings";
+import { parseUci } from "chessops";
+import { createNode, defaultTree } from "@/utils/treeReducer";
 
 const mocks = vi.hoisted(() => ({
   analyzeGame: vi.fn(),
@@ -285,6 +287,27 @@ const completedAnalysis: MoveAnalysis[] = [
         nps: 1n,
       },
     ],
+    // Index 0 is the start position, which is never the novelty.
+    novelty: false,
+    is_sacrifice: false,
+  },
+];
+
+// The report of a game with one move whose position is absent from the reference.
+const noveltyAnalysis: MoveAnalysis[] = [
+  completedAnalysis[0],
+  {
+    best: [
+      {
+        nodes: 1n,
+        depth: 1,
+        score: { value: { type: "cp", value: -40 }, wdl: null },
+        uciMoves: ["e7e5"],
+        sanMoves: ["e5"],
+        multipv: 1,
+        nps: 1n,
+      },
+    ],
     novelty: true,
     is_sacrifice: false,
   },
@@ -356,15 +379,26 @@ test.each(["success", "failure"])(
 );
 
 test("unchanged linked reference publishes analysis and novelty after panel unmount", async () => {
+  const e4 = defaultTree();
+  e4.root.children.push(
+    createNode({
+      fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+      move: parseUci("e2e4")!,
+      san: "e4",
+      halfMoves: 1,
+    }),
+  );
+  tree.getState().setState(e4);
   const { completion } = await startUnmountedLinkedReport();
   const reads = mocks.collection.mock.calls.length;
-  await act(async () => completion.resolve(completedAnalysis));
+  await act(async () => completion.resolve(noveltyAnalysis));
   expect(mocks.collection).toHaveBeenCalledTimes(reads + 1);
-  expect(analysisPublished).toHaveBeenCalledExactlyOnceWith(completedAnalysis, {
+  expect(analysisPublished).toHaveBeenCalledExactlyOnceWith(noveltyAnalysis, {
     showVariations: true,
   });
-  expect(tree.getState().root.score).toEqual(completedAnalysis[0].best[0].score);
-  expect(tree.getState().root.nags).toHaveLength(1);
+  expect(tree.getState().root.score).toEqual(noveltyAnalysis[0].best[0].score);
+  expect(tree.getState().root.nags).toEqual([]);
+  expect(tree.getState().root.children[0].nags).toContain(146);
   expect(tree.getState().report.inProgress).toBe(false);
   expect(mocks.cancelAnalysis).not.toHaveBeenCalled();
 });
