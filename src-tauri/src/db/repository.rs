@@ -11727,6 +11727,10 @@ mod bound_sqlite_witnesses {
                 fs::copy(&good_shm, &shm).unwrap();
                 fs::set_permissions(&shm, fs::Permissions::from_mode(0o400)).unwrap();
                 assert_eq!(repository.read_revision(&target, &CancellationToken::new()).unwrap(), 10, "read-only regular SHM fallback reads WAL revision");
+                assert!(
+                    !repository.state.lock().unwrap().entries.contains_key(&key),
+                    "no entry is built during the read-only -shm window"
+                );
                 fs::set_permissions(&shm, fs::Permissions::from_mode(0o600)).unwrap();
                 let mut connection = repository.initialization_connection(&target, None).unwrap();
                 connection.batch_execute("UPDATE Info SET Value='11' WHERE Name='DataRevision'; PRAGMA wal_checkpoint(TRUNCATE);").unwrap();
