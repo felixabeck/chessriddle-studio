@@ -57,6 +57,10 @@ describe("pgnDateTags", () => {
         vi.spyOn(date, "getFullYear").mockReturnValue(local[0]);
         vi.spyOn(date, "getMonth").mockReturnValue(local[1] - 1);
         vi.spyOn(date, "getDate").mockReturnValue(local[2]);
+        // A local clock that never matches the UTC one, so UTCTime must come from UTC getters.
+        vi.spyOn(date, "getHours").mockReturnValue(7);
+        vi.spyOn(date, "getMinutes").mockReturnValue(59);
+        vi.spyOn(date, "getSeconds").mockReturnValue(58);
         return date;
     }
 

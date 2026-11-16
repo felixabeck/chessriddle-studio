@@ -804,6 +804,7 @@ test("starting a game dates it by the local day and keeps the UTC moment in UTCD
     vi.spyOn(Date.prototype, "getFullYear").mockReturnValue(2026),
     vi.spyOn(Date.prototype, "getMonth").mockReturnValue(10),
     vi.spyOn(Date.prototype, "getDate").mockReturnValue(15),
+    vi.spyOn(Date.prototype, "getHours").mockReturnValue(8),
   ];
   try {
     await render();
