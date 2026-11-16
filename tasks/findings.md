@@ -26697,7 +26697,7 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 
 ### Engine analysis alone marks file and database tabs unsaved, and autosave rewrites the PGN or row with [%eval] comments
 
-* **ID:** f-20261115-24 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261115-24 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** build · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** yes (engine-analysis / autosave sweeps, origin `7beaf8a56`)
 * **Where:**
@@ -26716,6 +26716,11 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Product impact:** with (A) or (B, off), opening and analysing a game no longer changes the file or database row, marks the tab unsaved, triggers sync uploads or conflicts, or shows a conflict panel in another tab. Under (C) every analysed position keeps rewriting the user's PGN with `[%eval]` comments.
 * **Session:** Grok Bot executor, ChessFable review session 2026-11-15 (batches 48-52; filed on Felix's request t61u)
 * **Decision made:** (A) engine scores are view-only state: they do not mark the tab unsaved and are never written by autosave or save; source-file [%eval] comments and explicit game reports still round-trip — Felix: chosen after the recommendation: viewing a game must not modify the user's PGN file or database row.
+
+Handled per Felix's decision (option A): live engine scores are view-only. The engine writes a new optional TreeNode.engineScore through setEngineScore, which leaves dirty, node.score and node.depth untouched, and getPGN never serializes it, so analysis alone no longer marks a file or database tab unsaved and autosave no longer rewrites the PGN or row with [%eval] comments. node.score stays the game's own evaluation (source PGN or game report); addAnalysis clears engineScore on the nodes it writes. The eval bar, notation, eval chart and game stats read displayedScore(node) = engineScore ?? score, so the live score still shows. The persisted tab schema accepts engineScore, so a tab reload keeps it in sessionStorage; reopening the game drops it. Copy PGN and save no longer include live engine evals. Commits 0e4de2c2a (fix), 3d935a6c7, 2d0e5a818, f9bf5f2fc (tests), 26ef84818 (rename).
+
+Proof: BoardAnalysis.test.tsx asserts for file- and database-backed tabs that a live engine score neither marks the tab dirty nor writes it under autosave; store.test.ts pins the unchanged serialized [%eval] and the report precedence; tabStorage.test.ts the hydration round trip. Reverting displayedScore to node.score turned every new display test red. pnpm gates:push --frontend green (build, contract, coverage, bundle, e2e container, mutation); CI Test run 43917472455 green after one rerun of the rust job, whose failure is the unrelated flake f-20261116-02. Grok review lenses approved over four rounds. Not driven in the real app (verify:app needs a native file dialog and an engine). f-20261115-15 can now be fixed without a score-only exclusion.
+<!-- ledger-meta {"command":"close","effect_lines":3,"effect_sha256":"875a43148c93effa7e8e1d02219458b6d995e96677142037ba10c3c586d5448e","header_sha256":"e15f15211753b051c08f5eeeebea151268d697dcd64865c0146add06a302d9c9","header_status":"handled","input_sha256":"932a4aba49c0040fb3228348f7696fec65a12fd0c4e8fb17b580d47bbac62cea","kind":"mutation-receipt","operation":"affd46f60b2fba6d4da9a5d7df95cefbc412e4b5a13ee0ee14792bf579548792","options":{"section":null},"request_id_sha256":null,"results":["f-20261115-24"],"target":"f-20261115-24","v":1} -->
 
 ---
 
