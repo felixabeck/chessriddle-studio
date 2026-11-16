@@ -80,7 +80,7 @@ fn append_absent(
             .map_err(batch_error)?;
         for (ordinal, range) in ranges.iter().enumerate() {
             cancellation_check(cancellation)?;
-            let (bytes, game) = identity_range(source, *range, cancellation)?;
+            let (bytes, game) = identity_range(source, *range, Some(account), cancellation)?;
             let id = readable_provider_game_id(&bytes, account)?;
             let Some(game) = game else {
                 if let Some(id) = id {
@@ -107,7 +107,7 @@ fn append_absent(
         let mut skipped = 0usize;
         for (ordinal, range) in batch_ranges.iter().enumerate() {
             cancellation_check(cancellation)?;
-            let (bytes, game) = identity_range(batch, *range, cancellation)?;
+            let (bytes, game) = identity_range(batch, *range, Some(account), cancellation)?;
             let Some(game) = game else {
                 skipped += 1;
                 continue;
@@ -850,6 +850,42 @@ mod tests {
     }
 
     #[test]
+    fn identity_range_dates_account_games_by_utc_date_and_files_by_date() {
+        let account = AccountIdentity {
+            provider: "lichess".into(),
+            account: "Player".into(),
+        };
+        for pgn in [
+            "[Date \"2026.11.15\"]\n[UTCDate \"2026.11.14\"]\n[UTCTime \"23:30:00\"]\n\n1. e4 *\n",
+            "[UTCDate \"2026.11.14\"]\n[Date \"2026.11.15\"]\n[UTCTime \"23:30:00\"]\n\n1. e4 *\n",
+        ] {
+            let range = pgn::GameRange {
+                start: 0,
+                end: pgn.len() as u64,
+            };
+            let date = |account: Option<&AccountIdentity>| {
+                identity_range(
+                    &mut std::io::Cursor::new(pgn.as_bytes()),
+                    range,
+                    account,
+                    &CancellationToken::new(),
+                )
+                .unwrap()
+                .1
+                .unwrap()
+                .date
+            };
+            // The sync cursor reads this date with UTCTime as one UTC moment.
+            assert_eq!(
+                date(Some(&account)).as_deref(),
+                Some("2026.11.14"),
+                "{pgn:?}"
+            );
+            assert_eq!(date(None).as_deref(), Some("2026.11.15"), "{pgn:?}");
+        }
+    }
+
+    #[test]
     fn identity_range_omits_two_games_and_accepts_one_game() {
         for (bytes, usable) in [
             (b"1. e4 *\n\n1. d4 *\n".as_slice(), false),
@@ -862,6 +898,7 @@ mod tests {
             let (_, game) = identity_range(
                 &mut std::io::Cursor::new(bytes),
                 range,
+                None,
                 &CancellationToken::new(),
             )
             .unwrap();

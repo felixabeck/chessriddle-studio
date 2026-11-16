@@ -884,7 +884,7 @@ impl CollectionService {
         let mut newest_start_ms = None;
         let mut provider_ids = HashSet::new();
         for range in ranges.iter() {
-            let (body, game) = identity_range(&mut bytes, *range, token)?;
+            let (body, game) = identity_range(&mut bytes, *range, Some(&account), token)?;
             if let Some(id) = readable_provider_game_id(&body, &account)? {
                 provider_ids.insert(id);
             }
@@ -2418,7 +2418,7 @@ impl CollectionService {
                     let mut omitted = 0;
                     for (ordinal, range) in ranges.iter().enumerate() {
                         cancellation_check(cancellation)?;
-                        let (bytes, game) = identity_range(&mut source, *range, cancellation)?;
+                        let (bytes, game) = identity_range(&mut source, *range, record.account.as_ref(), cancellation)?;
                         let Some(game) = game else { omitted += 1; continue; };
                         game.insert_to_db(db)?;
                         let ordinal = i32::try_from(ordinal).map_err(|_| Error::ResourceLimit("collection has too many games".into()))?;
@@ -3415,6 +3415,7 @@ const MAX_IDENTITY_PREFIX_BYTES: u64 = 1024 * 1024;
 fn identity_range(
     source: &mut (impl Read + Seek),
     range: pgn::GameRange,
+    account: Option<&AccountIdentity>,
     cancellation: &CancellationToken,
 ) -> Result<(Vec<u8>, Option<TempGame>), Error> {
     cancellation_check(cancellation)?;
@@ -3433,7 +3434,7 @@ fn identity_range(
     };
     let game = match pgn::read_one_range_game(
         &mut BufferedReader::new(bytes.as_slice()),
-        &mut Importer::new(None),
+        &mut Importer::for_identity(account),
     ) {
         Ok(pgn::RangeGame::One(Some(game))) => Some(game),
         _ => None,

@@ -81,6 +81,11 @@ pub(super) fn canonical_sql(expr: &str) -> String {
 mod tests {
     use super::*;
 
+    use diesel::{
+        prelude::*,
+        sql_types::{Nullable, Text},
+    };
+
     #[test]
     fn is_complete_requires_a_known_year_month_and_day() {
         for date in ["2026.11.15", "2026.1.5", "2026.01.5"] {
@@ -98,10 +103,6 @@ mod tests {
             assert!(!is_complete(date), "{date:?}");
         }
     }
-    use diesel::{
-        prelude::*,
-        sql_types::{Nullable, Text},
-    };
 
     const CASES: &[(&str, &str)] = &[
         ("2026.1.15", "2026.01.15"),

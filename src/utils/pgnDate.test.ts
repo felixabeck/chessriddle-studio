@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { canonicalPgnDate, gameStartTags } from "./pgnDate";
+import { canonicalPgnDate, pgnDateTags } from "./pgnDate";
 
 const fileSystemModule = "node:fs";
 const rustSource = await (
@@ -45,7 +45,7 @@ describe("canonicalPgnDate", () => {
     });
 });
 
-describe("gameStartTags", () => {
+describe("pgnDateTags", () => {
     afterEach(() => {
         vi.unstubAllEnvs();
     });
@@ -60,6 +60,6 @@ describe("gameStartTags", () => {
         ["UTC", "2026-01-02T03:04:05Z", "2026.01.02", "2026.01.02", "03:04:05"],
     ])("in %s at %s dates the game by the local day", (tz, instant, date, utcDate, utcTime) => {
         vi.stubEnv("TZ", tz);
-        expect(gameStartTags(new Date(instant))).toEqual({ date, utcDate, utcTime });
+        expect(pgnDateTags(new Date(instant))).toEqual({ date, utcDate, utcTime });
     });
 });

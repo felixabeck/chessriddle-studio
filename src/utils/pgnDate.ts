@@ -11,7 +11,7 @@ function pad(value: number, width = 2): string {
     return String(value).padStart(width, "0");
 }
 
-export interface GameStartTags {
+interface PgnDateTags {
     /** PGN `Date`: the local calendar date the game started on. */
     date: string;
     /** PGN `UTCDate`: the UTC calendar date of the same moment, paired with `utcTime`. */
@@ -24,7 +24,7 @@ export interface GameStartTags {
  * The PGN standard keeps `Date` on the local clock and the UTC moment in the
  * `UTCDate`/`UTCTime` pair, so a game started near midnight is not dated a day off.
  */
-export function gameStartTags(now: Date): GameStartTags {
+export function pgnDateTags(now: Date): PgnDateTags {
     return {
         date: `${pad(now.getFullYear(), 4)}.${pad(now.getMonth() + 1)}.${pad(now.getDate())}`,
         utcDate: `${pad(now.getUTCFullYear(), 4)}.${pad(now.getUTCMonth() + 1)}.${pad(now.getUTCDate())}`,

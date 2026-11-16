@@ -795,7 +795,7 @@ test("starting a human game sends numeric configuration and records ChessRiddle 
   );
 });
 
-test("starting a game dates it by the local day and keeps the UTC moment as UTCDate/UTCTime", async () => {
+test("starting a game dates it by the local day and keeps the UTC moment in UTCDate and the time header", async () => {
   vi.stubEnv("TZ", "Asia/Tokyo");
   vi.useFakeTimers({ toFake: ["Date"] });
   // 08:00 on 15 November in Tokyo is 23:00 on 14 November in UTC.

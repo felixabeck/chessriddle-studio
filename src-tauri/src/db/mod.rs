@@ -543,6 +543,8 @@ struct Importer {
     game: TempGame,
     games_started: usize,
     capture_provider_headers: bool,
+    /// Store `UTCDate` before `Date`, the way account-sync rows are dated.
+    utc_date_preferred: bool,
     skip: bool,
     frames: Vec<ImportFrame>,
     date_tag: Option<String>,
@@ -577,6 +579,7 @@ impl Importer {
             game: TempGame::default(),
             games_started: 0,
             capture_provider_headers: account.is_some(),
+            utc_date_preferred: account.is_some(),
             skip: false,
             frames: Vec::new(),
             date_tag: None,
@@ -584,14 +587,23 @@ impl Importer {
         }
     }
 
+    /// Parses a linked collection's game for its identity, dated by the same rule as the rows
+    /// that collection stores: account collections by `UTCDate`, other files by `Date`.
+    fn for_identity(account: Option<&linked_collections::AccountIdentity>) -> Importer {
+        Importer {
+            capture_provider_headers: false,
+            ..Importer::new(account)
+        }
+    }
+
     /// Picks the stored game date independent of tag order. A file's `Date` is the local date
     /// of play and wins when complete; `UTCDate` fills in when `Date` is absent or partial.
-    /// Account sync keeps `UTCDate` first: its cursor pairs the date with `UTCTime` as one UTC
-    /// moment, and earlier synced rows were stored that way.
+    /// Account-sync rows prefer `UTCDate`: the sync cursor pairs the date with `UTCTime` as one
+    /// UTC moment, and rows synced before this rule were stored with that date.
     fn resolve_date(&mut self) -> Option<String> {
         let date = self.date_tag.take();
         let utc_date = self.utc_date_tag.take();
-        if self.capture_provider_headers {
+        if self.utc_date_preferred {
             return utc_date.or(date);
         }
         match date {
@@ -939,7 +951,7 @@ mod lexer {
             assert_eq!(date_of(pgn, None).as_deref(), expected, "{pgn:?}");
         }
 
-        // Account sync pairs the date with UTCTime as one UTC moment, so UTCDate stays first.
+        // Account sync pairs the date with UTCTime as one UTC moment, so UTCDate wins there.
         let account = linked_collections::AccountIdentity {
             provider: "lichess".into(),
             account: "Player".into(),
