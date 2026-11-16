@@ -913,6 +913,17 @@ test("game stats charge each side against its parent's score", () => {
     expect(stats.blackAccuracy).toBeCloseTo(44.24158, 5);
 });
 
+test("game stats use a live engine score ahead of the saved one", () => {
+    const root = defaultTree().root;
+    root.score = cpScore(20);
+    const ply1 = addMainlineMove(root, "e4");
+    ply1.score = cpScore(25);
+    expect(getGameStats(root).whiteCPL).toBe(0);
+
+    ply1.engineScore = cpScore(-300);
+    expect(getGameStats(root).whiteCPL).toBe(320);
+});
+
 test("game stats skip a ply whose parent is unscored and do not span it", () => {
     const root = defaultTree().root;
     root.score = cpScore(20);

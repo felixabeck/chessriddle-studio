@@ -94,6 +94,7 @@ vi.mock("./CompleteMoveCell", async () => ({
         data-node={props.node.san}
         data-current={props.isCurrentVariation ? "true" : "false"}
         data-starting-comment={props.startingComment}
+        data-score-text={props.scoreText}
         data-analysis={props.analysis ? "true" : "false"}
         onClick={() => store.getState().goToMove(path)}
       >
@@ -512,6 +513,33 @@ test.each([false, true])(
     }
   },
 );
+
+test("table notation shows the live engine score ahead of the saved one", async () => {
+  notationSettings.showComments = true;
+  notationSettings.tableView = true;
+  const state = defaultTree();
+  const e4 = createNode({ fen: "e4 b - - 0 1", move: parseUci("e2e4")!, san: "e4", halfMoves: 1 });
+  e4.score = { value: { type: "cp", value: 30 }, wdl: null };
+  const e5 = createNode({ fen: "e5 w - - 0 2", move: parseUci("e7e5")!, san: "e5", halfMoves: 2 });
+  e5.score = { value: { type: "cp", value: 20 }, wdl: null };
+  e5.engineScore = { value: { type: "cp", value: -150 }, wdl: null };
+  e4.children = [e5];
+  state.root.children = [e4];
+  store.getState().setState(state);
+
+  await act(async () => {
+    root.render(
+      <TreeStateContext.Provider value={store}>
+        <WorkspaceTabScope tabId="notation-test">
+          <GameNotation />
+        </WorkspaceTabScope>
+      </TreeStateContext.Provider>,
+    );
+  });
+
+  expect(host.querySelector('[data-node="e4"]')?.getAttribute("data-score-text")).toBe("+0.3");
+  expect(host.querySelector('[data-node="e5"]')?.getAttribute("data-score-text")).toBe("-1.5");
+});
 
 test("forwards a variation's starting comment prose to its mounted move cell", async () => {
   notationSettings.showComments = true;

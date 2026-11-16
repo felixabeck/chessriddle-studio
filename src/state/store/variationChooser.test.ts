@@ -41,7 +41,7 @@ test.each([
 
 test.each([
     {
-        input: "score",
+        input: "engine score",
         change: (tree: ReturnType<typeof createTreeStore>) =>
             tree.getState().setEngineScore({ value: { type: "cp", value: 42 }, wdl: null }),
     },

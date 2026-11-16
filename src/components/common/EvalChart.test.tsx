@@ -157,6 +157,20 @@ test("switching to WDL preserves the current, middlegame and endgame reference l
   expect(referenceLines()).toEqual(expectedReferenceLines);
 });
 
+test("a live engine score is plotted ahead of the saved score", async () => {
+  store.setState((state) => {
+    const first = state.root.children[0];
+    return {
+      root: {
+        ...state.root,
+        children: [{ ...first, engineScore: { value: { type: "mate", value: -2 }, wdl: null } }],
+      },
+    };
+  });
+  await renderChart();
+  expect(host.querySelector('[data-point="1. e4!"]')?.getAttribute("data-y-value")).toBe("-1");
+});
+
 test("dtz tablebase scores plot as decisive wins and losses", async () => {
   store.getState().makeMove({ payload: "d4" });
   store.setState((state) => {

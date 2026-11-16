@@ -342,7 +342,7 @@ test.each([
 test.each([
   { input: "comment", write: (tree: TreeStore) => tree.getState().setComment("x") },
   {
-    input: "score",
+    input: "engine score",
     write: (tree: TreeStore) =>
       tree.getState().setEngineScore({ value: { type: "cp", value: 42 }, wdl: null }),
   },
