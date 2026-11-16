@@ -66,14 +66,14 @@ function treeLimitAdmissionMessage(limit: TreeStorageLimit): string {
     if (limit === "depth") {
         return `This game is too long to open in a tab: a tab holds at most ${formatTreeLimitCount(MAX_TREE_MOVES)} moves (${formatTreeLimitCount(MAX_TREE_DEPTH)} half-moves).`;
     }
-    return `This game is too large to open in a tab: a tab holds at most ${formatTreeLimitCount(MAX_TREE_NODES)} moves including variations.`;
+    return `This game is too large to open in a tab: a tab holds at most ${formatTreeLimitCount(MAX_TREE_NODES)} positions including variations.`;
 }
 
 function treeLimitFlushMessage(limit: TreeStorageLimit): string {
     if (limit === "depth") {
         return `Could not save this game: it is longer than ${formatTreeLimitCount(MAX_TREE_MOVES)} moves (${formatTreeLimitCount(MAX_TREE_DEPTH)} half-moves), the most a tab can hold.`;
     }
-    return `Could not save this game: it has more than ${formatTreeLimitCount(MAX_TREE_NODES)} moves including variations, the most a tab can hold.`;
+    return `Could not save this game: it has more than ${formatTreeLimitCount(MAX_TREE_NODES)} positions including variations, the most a tab can hold.`;
 }
 
 export function createTabIdSchema() {
@@ -267,7 +267,8 @@ function migrateReport(report: unknown): { inProgress: boolean; operationId: str
  * (c449fbb2), trees carried `[%…]` commands inside `comment` and no `commands` field.
  * Split those once. Current prose stays untouched, while opaque drawing commands can acquire
  * newly supported shapes. Consumed entries leave commands, making repeated reads idempotent.
- * Depth is bounded like the storage walk: nodes past MAX_TREE_DEPTH keep their stored identity.
+ * The walk stops at MAX_TREE_DEPTH and returns deeper nodes unchanged; the bound
+ * preflight then refuses the tree, so migration never does unbounded work.
  * Legacy glyph arrays become canonical NAG codes, preserving their order and multiplicity.
  * The empty glyph has lost its code already; invalid legacy glyphs remain unreadable.
  */
@@ -552,17 +553,22 @@ export function persistStorageWriteError(cause: unknown): Error {
     return new Error("Could not save this game. Session storage rejected the write.", { cause });
 }
 
-export function decodeLegacyOrCompressed(value: string): ValidatedStoredTree | null {
+function decodeLegacyOrCompressedResult(value: string): ParseTreeResult {
     const decoded = decodeCompressedOrJson(value);
     const envelope = z
         .object({ version: z.number().int().nonnegative(), state: z.unknown() })
         .safeParse(decoded);
-    if (envelope.success) return parseTree(envelope.data.state);
+    if (envelope.success) return parseTreeResult(envelope.data.state);
 
     // The earliest sessions stored TreeState itself as plain JSON, without the
     // zustand envelope or compression. Keep that recovery path deliberately
     // narrow so corrupt blobs are retained for explicit recovery rather than trusted.
-    return parseTree(decoded);
+    return parseTreeResult(decoded);
+}
+
+export function decodeLegacyOrCompressed(value: string): ValidatedStoredTree | null {
+    const result = decodeLegacyOrCompressedResult(value);
+    return result.kind === "ok" ? result.value : null;
 }
 
 /**
@@ -754,7 +760,10 @@ export class TabStorageRepository {
         const source = this.readTree(sourceTabId, requireExisting);
         if (source.kind !== "available") return source;
         const copy = this.validatedClone(source.value);
-        if (!copy) {
+        if (copy.kind === "limit") {
+            return { kind: "copy-failed", error: copy.error };
+        }
+        if (copy.kind !== "ok") {
             return {
                 kind: "copy-failed",
                 error: new Error("Could not validate the source tree."),
@@ -770,7 +779,7 @@ export class TabStorageRepository {
                         : new Error("The destination tree key cannot be replaced."),
             };
         }
-        this.pending.set(targetTabId, copy);
+        this.pending.set(targetTabId, copy.value);
         this.setReadStatus(targetTabId, { kind: "available" });
         this.scheduleFlush();
         return { kind: "copied" };
@@ -829,8 +838,10 @@ export class TabStorageRepository {
             throw new Error("Cannot duplicate a tab whose saved tree is unreadable.");
         }
         const copy = this.validatedClone(source.value);
-        if (!copy) throw new Error("Could not validate the source tree for duplication.");
-        return copy.state as TreeState;
+        if (copy.kind === "limit") throw copy.error;
+        if (copy.kind !== "ok")
+            throw new Error("Could not validate the source tree for duplication.");
+        return copy.value.state as TreeState;
     }
 
     /** Creates an immediately durable clone without flushing any unrelated pending tree. */
@@ -1043,8 +1054,9 @@ export class TabStorageRepository {
                 if (!notify) continue;
                 const isLimit = error instanceof TreeStorageLimitError;
                 if (isLimit && this.notifiedLimitTabs.has(tabId)) continue;
+                if (notifyError !== undefined) continue;
+                notifyError = error;
                 if (isLimit) this.notifiedLimitTabs.add(tabId);
-                if (notifyError === undefined) notifyError = error;
             }
         }
         if (notify && notifyError !== undefined) {
@@ -1108,14 +1120,29 @@ export class TabStorageRepository {
         for (const listener of this.statusListeners.get(tabId) ?? []) listener();
     }
 
-    private validatedClone(source: StorageValue<unknown>): ValidatedStoredTree | null {
+    private validatedClone(
+        source: StorageValue<unknown>,
+    ):
+        | { kind: "ok"; value: ValidatedStoredTree }
+        | { kind: "limit"; error: TreeStorageLimitError }
+        | { kind: "invalid" } {
         // Round-trip through serialize/parse so a pending partialized store
         // (which still carries action functions) cannot reach structuredClone.
-        const copy = decodeLegacyOrCompressed(serializeStorageValue(source));
-        if (!copy) return null;
+        const decoded = decodeLegacyOrCompressedResult(serializeStorageValue(source));
+        if (decoded.kind === "limit") {
+            return {
+                kind: "limit",
+                error: new TreeStorageLimitError(
+                    decoded.limit,
+                    treeLimitAdmissionMessage(decoded.limit),
+                ),
+            };
+        }
+        if (decoded.kind !== "ok") return { kind: "invalid" };
+        const copy = decoded.value;
         // A duplicate tab must not share a live analysis lease.
         copy.state.report = { ...copy.state.report, inProgress: false, operationId: null };
-        return copy;
+        return { kind: "ok", value: copy };
     }
 
     private bindFlushHandlers() {

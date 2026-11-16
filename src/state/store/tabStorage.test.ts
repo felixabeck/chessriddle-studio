@@ -14,6 +14,7 @@ import {
     PGN_TEXT_MAX,
     TabStorageRepository,
     TREE_STORAGE_VERSION,
+    TreeStorageLimitError,
 } from "./tabStorage";
 
 const native = vi.hoisted(() => ({ warn: vi.fn().mockResolvedValue(undefined) }));
@@ -1856,9 +1857,18 @@ test("rejects excessive recursive nesting before schema hydration", () => {
 test("accepts the maximum recursive depth and rejects its first overflow", () => {
     storage.seed("depth-boundary", treeOfDepth(2048));
     expect(storage.read("depth-boundary")).not.toBeNull();
-    expect(() => storage.seed("depth-overflow", treeOfDepth(2049))).toThrow(
-        "This game is too long to open in a tab: a tab holds at most 1,024 moves (2,048 half-moves).",
-    );
+    let thrown: unknown;
+    try {
+        storage.seed("depth-overflow", treeOfDepth(2049));
+    } catch (error) {
+        thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(TreeStorageLimitError);
+    expect(thrown).toMatchObject({
+        limit: "depth",
+        message:
+            "This game is too long to open in a tab: a tab holds at most 1,024 moves (2,048 half-moves).",
+    });
 });
 
 const KNIGHT_CYCLE = [
@@ -1906,9 +1916,18 @@ test("a 538-ply mainline seeds, flushes, and reads back every ply", () => {
 test("seed refuses a tree that exceeds the node-count bound", () => {
     const tree = defaultTree();
     tree.root.children = Array(100_000).fill({ ...tree.root, children: [] });
-    expect(() => storage.seed("too-many-nodes", tree)).toThrow(
-        "This game is too large to open in a tab: a tab holds at most 100,000 moves including variations.",
-    );
+    let thrown: unknown;
+    try {
+        storage.seed("too-many-nodes", tree);
+    } catch (error) {
+        thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(TreeStorageLimitError);
+    expect(thrown).toMatchObject({
+        limit: "nodes",
+        message:
+            "This game is too large to open in a tab: a tab holds at most 100,000 positions including variations.",
+    });
 });
 
 test("flush notifies a depth-limit refusal once per tab until a successful store or remove", () => {
@@ -1942,6 +1961,129 @@ test("flush notifies a depth-limit refusal once per tab until a successful store
     storage.write(tabId, { version: 0, state: treeOfDepth(2049) });
     expect(storage.flush({ notify: true })).toEqual([tabId]);
     expect(persistError.reportPersistError).toHaveBeenCalledTimes(notified + 2);
+});
+
+test("flush reports a node-count refusal as a typed TreeStorageLimitError", () => {
+    const tabId = "limit-nodes-flush";
+    storage.seed(tabId, defaultTree());
+    const tree = defaultTree();
+    tree.root.children = Array(100_000).fill({ ...tree.root, children: [] });
+    storage.write(tabId, { version: 0, state: tree });
+    expect(storage.flush({ notify: true })).toEqual([tabId]);
+    expect(persistError.reportPersistError).toHaveBeenCalledOnce();
+    const reported = persistError.reportPersistError.mock.calls[0][0];
+    expect(reported).toBeInstanceOf(TreeStorageLimitError);
+    expect(reported).toMatchObject({
+        limit: "nodes",
+        message:
+            "Could not save this game: it has more than 100,000 positions including variations, the most a tab can hold.",
+    });
+});
+
+test("seed and discardUnreadable clear a notified limit so the next refusal reports", () => {
+    const seeded = "limit-seed-clears";
+    storage.seed(seeded, treeOfDepth(2048));
+    storage.write(seeded, { version: 0, state: treeOfDepth(2049) });
+    expect(storage.flush({ notify: true })).toEqual([seeded]);
+    expect(persistError.reportPersistError).toHaveBeenCalledOnce();
+
+    storage.seed(seeded, treeOfDepth(2048));
+    storage.write(seeded, { version: 0, state: treeOfDepth(2049) });
+    expect(storage.flush({ notify: true })).toEqual([seeded]);
+    expect(persistError.reportPersistError).toHaveBeenCalledTimes(2);
+    storage.remove(seeded);
+
+    const discarded = "limit-discard-clears";
+    storage.seed(discarded, treeOfDepth(2048));
+    storage.write(discarded, { version: 0, state: treeOfDepth(2049) });
+    expect(storage.flush({ notify: true })).toEqual([discarded]);
+    expect(persistError.reportPersistError).toHaveBeenCalledTimes(3);
+
+    sessionStorage.setItem(discarded, "corrupt bytes");
+    const status = vi.spyOn(storage, "getStatus").mockReturnValue({
+        kind: "unreadable",
+        rawValue: "corrupt bytes",
+    });
+    storage.read(discarded);
+    expect(storage.discardUnreadable(discarded)).toBe(true);
+    status.mockRestore();
+
+    storage.write(discarded, { version: 0, state: treeOfDepth(2049) });
+    expect(storage.flush({ notify: true })).toEqual([discarded]);
+    expect(persistError.reportPersistError).toHaveBeenCalledTimes(4);
+});
+
+test("a notifying flush marks only the tab whose limit error is reported", () => {
+    storage.seed("limit-A", treeOfDepth(2048));
+    storage.seed("limit-B", treeOfDepth(2048));
+    storage.write("limit-A", { version: 0, state: treeOfDepth(2049) });
+    storage.write("limit-B", { version: 0, state: treeOfDepth(2049) });
+    expect(storage.flush({ notify: true })).toEqual(["limit-A", "limit-B"]);
+    expect(persistError.reportPersistError).toHaveBeenCalledOnce();
+
+    storage.write("limit-A", { version: 0, state: treeOfDepth(2049) });
+    storage.write("limit-B", { version: 0, state: treeOfDepth(2049) });
+    expect(storage.flush({ notify: true })).toEqual(["limit-A", "limit-B"]);
+    expect(persistError.reportPersistError).toHaveBeenCalledTimes(2);
+
+    storage.write("limit-A", { version: 0, state: treeOfDepth(2049) });
+    storage.write("limit-B", { version: 0, state: treeOfDepth(2049) });
+    expect(storage.flush({ notify: true })).toEqual(["limit-A", "limit-B"]);
+    expect(persistError.reportPersistError).toHaveBeenCalledTimes(2);
+
+    storage.seed("limit-late-A", treeOfDepth(2048));
+    storage.write("limit-late-A", { version: 0, state: treeOfDepth(2049) });
+    expect(storage.flush({ notify: true })).toEqual(["limit-A", "limit-B", "limit-late-A"]);
+    expect(persistError.reportPersistError).toHaveBeenCalledTimes(3);
+});
+
+test("a stored cursor along a long mainline survives seed, flush, and read", () => {
+    const longGame = treeWithMainlinePlies(538);
+    longGame.position = Array(538).fill(0);
+    storage.seed("cursor-538", longGame);
+    expect(storage.flush()).toEqual([]);
+    expect(storage.read<ReturnType<typeof defaultTree>>("cursor-538")!.state.position).toHaveLength(
+        538,
+    );
+
+    const maxGame = treeOfDepth(2048);
+    maxGame.position = Array(2048).fill(0);
+    storage.seed("cursor-2048", maxGame);
+    expect(storage.flush()).toEqual([]);
+    expect(
+        storage.read<ReturnType<typeof defaultTree>>("cursor-2048")!.state.position,
+    ).toHaveLength(2048);
+});
+
+test("clone of a pending over-depth tree surfaces a typed admission error", () => {
+    storage.write("limit-clone-source", { version: 0, state: treeOfDepth(2049) });
+    const copied = storage.clone("limit-clone-source", "limit-clone-target");
+    expect(copied).toMatchObject({
+        kind: "copy-failed",
+        error: expect.any(TreeStorageLimitError),
+    });
+    expect(copied).toEqual({
+        kind: "copy-failed",
+        error: expect.objectContaining({
+            limit: "depth",
+            message:
+                "This game is too long to open in a tab: a tab holds at most 1,024 moves (2,048 half-moves).",
+        }),
+    });
+    expect(sessionStorage.getItem("limit-clone-target")).toBeNull();
+
+    let thrown: unknown;
+    try {
+        storage.readForClone("limit-clone-source");
+    } catch (error) {
+        thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(TreeStorageLimitError);
+    expect(thrown).toMatchObject({
+        limit: "depth",
+        message:
+            "This game is too long to open in a tab: a tab holds at most 1,024 moves (2,048 half-moves).",
+    });
 });
 
 test("a silent flush does not suppress the next notified depth-limit refusal", () => {
