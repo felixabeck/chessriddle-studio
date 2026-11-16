@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vitest";
-import { canonicalPgnDate } from "./pgnDate";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { canonicalPgnDate, gameStartTags } from "./pgnDate";
 
 const fileSystemModule = "node:fs";
 const rustSource = await (
@@ -42,5 +42,24 @@ describe("canonicalPgnDate", () => {
         for (const [input, expected] of cases) {
             expect(canonicalPgnDate(input)).toBe(expected);
         }
+    });
+});
+
+describe("gameStartTags", () => {
+    afterEach(() => {
+        vi.unstubAllEnvs();
+    });
+
+    test.each([
+        // Berlin, 00:30 local on 15 November is still 14 November in UTC.
+        ["Europe/Berlin", "2026-11-14T23:30:00Z", "2026.11.15", "2026.11.14", "23:30:00"],
+        ["Europe/Berlin", "2026-07-14T23:30:00Z", "2026.07.15", "2026.07.14", "23:30:00"],
+        ["Asia/Tokyo", "2026-11-14T23:00:00Z", "2026.11.15", "2026.11.14", "23:00:00"],
+        // New York, 20:30 local on 14 November is already 15 November in UTC.
+        ["America/New_York", "2026-11-15T01:30:00Z", "2026.11.14", "2026.11.15", "01:30:00"],
+        ["UTC", "2026-01-02T03:04:05Z", "2026.01.02", "2026.01.02", "03:04:05"],
+    ])("in %s at %s dates the game by the local day", (tz, instant, date, utcDate, utcTime) => {
+        vi.stubEnv("TZ", tz);
+        expect(gameStartTags(new Date(instant))).toEqual({ date, utcDate, utcTime });
     });
 });

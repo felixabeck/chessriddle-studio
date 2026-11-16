@@ -77,6 +77,7 @@ import {
 import { OpponentForm, type OpponentSettings } from "./OpponentForm";
 import { hasStartableTimeControl, toPlayerConfig } from "./playerConfig";
 import { PRODUCT_NAME } from "@/utils/product.json";
+import { gameStartTags } from "@/utils/pgnDate";
 import {
   engineFailureMessage,
   engineTerminalLogs,
@@ -686,9 +687,7 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
         }
         applyAuthoritativeState(state, newGameId, state.session, generation, true);
 
-        const now = new Date();
-        const dateStr = now.toISOString().slice(0, 10).replace(/-/g, ".");
-        const timeStr = now.toISOString().slice(11, 19);
+        const startTags = gameStartTags(new Date());
 
         const whiteIsEngine = playerSettings.white.type === "engine";
         const blackIsEngine = playerSettings.black.type === "engine";
@@ -717,8 +716,9 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
           black: state.blackPlayer,
           event: eventStr,
           site: PRODUCT_NAME,
-          date: dateStr,
-          time: timeStr,
+          date: startTags.date,
+          time: startTags.utcTime,
+          other: { ...store.getState().headers.other, UTCDate: startTags.utcDate },
           time_control: undefined,
           orientation: boardOrientation,
         };

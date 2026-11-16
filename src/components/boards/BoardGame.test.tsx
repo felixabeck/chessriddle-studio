@@ -795,6 +795,27 @@ test("starting a human game sends numeric configuration and records ChessRiddle 
   );
 });
 
+test("starting a game dates it by the local day and keeps the UTC moment as UTCDate/UTCTime", async () => {
+  vi.stubEnv("TZ", "Asia/Tokyo");
+  vi.useFakeTimers({ toFake: ["Date"] });
+  // 08:00 on 15 November in Tokyo is 23:00 on 14 November in UTC.
+  vi.setSystemTime(new Date("2026-11-14T23:00:00Z"));
+  try {
+    await render();
+    await start();
+    expect(fixtures.setHeaders).toHaveBeenCalledWith(
+      expect.objectContaining({
+        date: "2026.11.15",
+        time: "23:00:00",
+        other: expect.objectContaining({ UTCDate: "2026.11.14" }),
+      }),
+    );
+  } finally {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  }
+});
+
 for (const [player, settingsAtom] of [
   [1, gamePlayer1SettingsAtom],
   [2, gamePlayer2SettingsAtom],

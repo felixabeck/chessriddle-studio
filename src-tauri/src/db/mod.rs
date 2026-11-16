@@ -545,6 +545,8 @@ struct Importer {
     capture_provider_headers: bool,
     skip: bool,
     frames: Vec<ImportFrame>,
+    date_tag: Option<String>,
+    utc_date_tag: Option<String>,
 }
 
 struct ImportFrame {
@@ -577,6 +579,24 @@ impl Importer {
             capture_provider_headers: account.is_some(),
             skip: false,
             frames: Vec::new(),
+            date_tag: None,
+            utc_date_tag: None,
+        }
+    }
+
+    /// Picks the stored game date independent of tag order. A file's `Date` is the local date
+    /// of play and wins when complete; `UTCDate` fills in when `Date` is absent or partial.
+    /// Account sync keeps `UTCDate` first: its cursor pairs the date with `UTCTime` as one UTC
+    /// moment, and earlier synced rows were stored that way.
+    fn resolve_date(&mut self) -> Option<String> {
+        let date = self.date_tag.take();
+        let utc_date = self.utc_date_tag.take();
+        if self.capture_provider_headers {
+            return utc_date.or(date);
+        }
+        match date {
+            Some(date) if pgn_date::is_complete(&date) => Some(date),
+            date => utc_date.or(date),
         }
     }
 
@@ -611,6 +631,8 @@ impl Visitor for Importer {
         self.game = TempGame::default();
         self.skip = false;
         self.frames.clear();
+        self.date_tag = None;
+        self.utc_date_tag = None;
     }
 
     fn header(&mut self, key: &[u8], value: RawHeader<'_>) {
@@ -647,7 +669,12 @@ impl Visitor for Importer {
             self.game.round = Some(decode_pgn_text(&value.decode()).into_owned());
         } else if key == b"Date" || key == b"UTCDate" {
             // Event/Site/Date/UTCTime/Result decode value.as_bytes() (raw escaped spelling kept for existing databases; see PgnGame::write). Other text tags decode value.decode().
-            self.game.date = Some(decode_pgn_text(value.as_bytes()).into_owned());
+            let date = Some(decode_pgn_text(value.as_bytes()).into_owned());
+            if key == b"Date" {
+                self.date_tag = date;
+            } else {
+                self.utc_date_tag = date;
+            }
         } else if key == b"UTCTime" {
             self.game.time = Some(decode_pgn_text(value.as_bytes()).into_owned());
         } else if key == b"Site" {
@@ -685,6 +712,7 @@ impl Visitor for Importer {
         // Skip games without ELO
         // self.skip |= self.current.white_elo.is_none() || self.current.black_elo.is_none();
 
+        self.game.date = self.resolve_date();
         self.frames.clear();
         self.frames
             .push(ImportFrame::new(self.game.position.clone()));
@@ -871,6 +899,71 @@ mod lexer {
             .read_game(&mut Importer::new(None))
             .unwrap()
             .unwrap()
+    }
+
+    #[test]
+    fn importer_prefers_a_complete_date_over_utc_date_in_either_order() {
+        let date_of = |pgn: &str, account: Option<&linked_collections::AccountIdentity>| {
+            BufferedReader::new(pgn.as_bytes())
+                .read_game(&mut Importer::new(account))
+                .unwrap()
+                .unwrap()
+                .unwrap()
+                .date
+        };
+        for (pgn, expected) in [
+            (
+                "[Date \"2026.11.15\"]\n[UTCDate \"2026.11.14\"]\n\n1. e4 *",
+                Some("2026.11.15"),
+            ),
+            (
+                "[UTCDate \"2026.11.14\"]\n[Date \"2026.11.15\"]\n\n1. e4 *",
+                Some("2026.11.15"),
+            ),
+            (
+                "[UTCDate \"2026.11.14\"]\n[Date \"2026.1.5\"]\n\n1. e4 *",
+                Some("2026.1.5"),
+            ),
+            (
+                "[Date \"????.??.??\"]\n[UTCDate \"2026.11.14\"]\n\n1. e4 *",
+                Some("2026.11.14"),
+            ),
+            (
+                "[UTCDate \"2026.11.14\"]\n[Date \"2026.11.??\"]\n\n1. e4 *",
+                Some("2026.11.14"),
+            ),
+            ("[UTCDate \"2026.11.14\"]\n\n1. e4 *", Some("2026.11.14")),
+            ("[Date \"2026.11.??\"]\n\n1. e4 *", Some("2026.11.??")),
+            ("1. e4 *", None),
+        ] {
+            assert_eq!(date_of(pgn, None).as_deref(), expected, "{pgn:?}");
+        }
+
+        // Account sync pairs the date with UTCTime as one UTC moment, so UTCDate stays first.
+        let account = linked_collections::AccountIdentity {
+            provider: "lichess".into(),
+            account: "Player".into(),
+        };
+        for pgn in [
+            "[Date \"2026.11.15\"]\n[UTCDate \"2026.11.14\"]\n\n1. e4 *",
+            "[UTCDate \"2026.11.14\"]\n[Date \"2026.11.15\"]\n\n1. e4 *",
+        ] {
+            assert_eq!(
+                date_of(pgn, Some(&account)).as_deref(),
+                Some("2026.11.14"),
+                "{pgn:?}"
+            );
+        }
+
+        // The tags of one game never leak into the next.
+        let mut reader = BufferedReader::new(
+            "[UTCDate \"2026.11.14\"]\n\n1. e4 *\n\n[Date \"2026.11.??\"]\n\n1. d4 *\n".as_bytes(),
+        );
+        let mut importer = Importer::new(None);
+        let first = reader.read_game(&mut importer).unwrap().unwrap().unwrap();
+        let second = reader.read_game(&mut importer).unwrap().unwrap().unwrap();
+        assert_eq!(first.date.as_deref(), Some("2026.11.14"));
+        assert_eq!(second.date.as_deref(), Some("2026.11.??"));
     }
 
     #[test]

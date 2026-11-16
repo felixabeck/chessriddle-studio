@@ -32,6 +32,19 @@ pub(super) fn canonical(date: &str) -> Cow<'_, str> {
     Cow::Owned(result)
 }
 
+/// A date with a known year, month and day, in either the one- or two-digit spelling.
+pub(super) fn is_complete(date: &str) -> bool {
+    let date = canonical(date);
+    let bytes = date.as_bytes();
+    bytes.len() == 10
+        && bytes[4] == b'.'
+        && bytes[7] == b'.'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| index == 4 || index == 7 || byte.is_ascii_digit())
+}
+
 pub(super) fn canonical_sql(expr: &str) -> String {
     let expr = format!("({expr})");
     let year = "[0-9?][0-9?][0-9?][0-9?]";
@@ -67,6 +80,24 @@ pub(super) fn canonical_sql(expr: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn is_complete_requires_a_known_year_month_and_day() {
+        for date in ["2026.11.15", "2026.1.5", "2026.01.5"] {
+            assert!(is_complete(date), "{date:?}");
+        }
+        for date in [
+            "",
+            "????.??.??",
+            "2026.11.??",
+            "2026.?.5",
+            "2026-11-15",
+            "2026.11.155",
+            "26.11.15",
+        ] {
+            assert!(!is_complete(date), "{date:?}");
+        }
+    }
     use diesel::{
         prelude::*,
         sql_types::{Nullable, Text},
