@@ -130,6 +130,7 @@ test("release.yml never lets a macOS bundle out that is not a notarized Develope
     expect(build).toContain(
         '[ -n "${!name}" ] || { echo "::error::secret $name is empty"; missing=1; }',
     );
+    expect(build).toContain('[ "$missing" -eq 0 ] || exit 1\n');
     expect(build).toContain('echo "APPLE_API_KEY_PATH=$key_path" >> "$GITHUB_ENV"');
     // The build receives them on the macOS legs only.
     for (const secret of appleSecrets) {
@@ -140,7 +141,13 @@ test("release.yml never lets a macOS bundle out that is not a notarized Develope
     // The leg fails, and with it the publish job, unless Gatekeeper names the notarized build.
     expect(build).toContain('codesign --verify --deep --strict --verbose=2 "$app"');
     expect(build).toContain('xcrun stapler validate "$app"');
+    expect(build).toContain(
+        'assessment=$(spctl --assess --type execute --verbose=4 "$app" 2>&1) || { echo "$assessment"; exit 1; }',
+    );
     expect(build).toContain('*"source=Notarized Developer ID"*) ;;');
+    expect(build).toMatch(
+        /^ {12}\*\) echo "::error::Gatekeeper accepted the app, .*"; exit 1 ;;$/m,
+    );
     expect(build).toContain('codesign --verify --strict --verbose=2 "$dmg"');
 });
 
@@ -148,6 +155,6 @@ test("a manual dispatch of release.yml rehearses the build and can never publish
     expect(releaseWorkflow).toMatch(/^ {2}workflow_dispatch:$/m);
     // The legs run without a draft, so tauri-action has no release to upload into.
     expect(jobBlock("release")).toContain(
-        "(github.event_name == 'workflow_dispatch' && needs.create-release.result == 'skipped')",
+        "if: ${{ !cancelled() && (needs.create-release.result == 'success' || (github.event_name == 'workflow_dispatch' && needs.create-release.result == 'skipped')) }}\n",
     );
 });
