@@ -1498,17 +1498,7 @@ async fn analyze_game_core<R: tauri::Runtime>(
         let Some(reference) = options.reference_db.clone() else {
             fail_analysis_progress!(None, Error::MissingReferenceDatabase);
         };
-        // The start position is not a move, so it is never the novelty.
-        let queries: Vec<GameQuery> = fens
-            .iter()
-            .skip(1)
-            .map(|(fen, _, _)| {
-                GameQuery::new().position(PositionQueryJs {
-                    fen: fen.to_string(),
-                    type_: "exact".to_string(),
-                })
-            })
-            .collect();
+        let queries = novelty_queries(&fens);
         let authority = state.pgn_path_authority.clone();
         let repository = std::sync::Arc::clone(&state.database_repository);
         let search_cache = std::sync::Arc::clone(&state.search_cache);
@@ -1555,6 +1545,21 @@ async fn analyze_game_core<R: tauri::Runtime>(
         ProgressState::Succeeded,
     )?;
     Ok(analysis)
+}
+
+/// One exact-position query per position reached by a move, in game order.
+/// The start position is not a move, so it is never queried and never the
+/// novelty; [`mark_first_novelty`] maps the resulting flags back.
+fn novelty_queries(fens: &[(Fen, Vec<String>, bool)]) -> Vec<GameQuery> {
+    fens.iter()
+        .skip(1)
+        .map(|(fen, _, _)| {
+            GameQuery::new().position(PositionQueryJs {
+                fen: fen.to_string(),
+                type_: "exact".to_string(),
+            })
+        })
+        .collect()
 }
 
 /// Marks the move that first reaches a position absent from the reference
@@ -5231,6 +5236,25 @@ done
                 "{line}"
             );
         }
+    }
+
+    #[test]
+    fn novelty_queries_cover_positions_after_each_move_but_not_the_start() {
+        let custom: Fen = "4k3/8/8/8/8/8/4P3/4K3 w - - 0 1".parse().unwrap();
+        let moves = ["e2e4".to_string(), "e8d7".to_string()];
+        let fens =
+            collect_report_positions(custom.clone(), &moves, false, &CancellationToken::new())
+                .unwrap();
+        assert_eq!(fens.len(), 3);
+        let queried: Vec<String> = novelty_queries(&fens)
+            .into_iter()
+            .map(|query| query.position.unwrap().fen)
+            .collect();
+        assert_eq!(
+            queried,
+            [fens[1].0.to_string(), fens[2].0.to_string()],
+            "the start position {custom} must not be queried"
+        );
     }
 
     fn novelty_flags(present: &[bool], len: usize) -> Vec<bool> {
