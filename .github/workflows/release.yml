@@ -38,8 +38,11 @@ jobs:
 
   # macOS legs build `app` beside `dmg`: the updater's darwin entry is the signed .app.tar.gz,
   # which only the app bundle produces (run 42296138869 lacked darwin in latest.json).
+  # A manual dispatch has no tag and no draft: every leg builds, signs and notarizes, and
+  # uploads nothing. That is the rehearsal for a signing change.
   release:
     needs: create-release
+    if: ${{ !cancelled() && (needs.create-release.result == 'success' || github.event_name == 'workflow_dispatch') }}
     permissions:
       contents: write
     strategy:
@@ -48,8 +51,10 @@ jobs:
         include:
           - platform: 'macos-latest' # for Arm based macs (M1 and above).
             args: '--target aarch64-apple-darwin --bundles app,dmg'
+            target: aarch64-apple-darwin
           - platform: 'macos-latest' # for Intel based macs.
             args: '--target x86_64-apple-darwin --bundles app,dmg'
+            target: x86_64-apple-darwin
           - platform: 'ubuntu-24.04'
             args: ''
           - platform: 'windows-latest'
@@ -101,6 +106,20 @@ jobs:
       - name: Install app dependencies
         run: pnpm install --frozen-lockfile
 
+      # Notarization reads the App Store Connect key from a file. A missing secret fails the leg:
+      # without it the bundler would fall back to the ad-hoc identity in tauri.conf.json and ship
+      # an app Gatekeeper blocks.
+      - name: Write the notarization key (macOS only)
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          [ -n "$APPLE_API_KEY_P8" ] || { echo "::error::secret APPLE_API_KEY_P8 is empty"; exit 1; }
+          key_path="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s\n' "$APPLE_API_KEY_P8" > "$key_path"
+          echo "APPLE_API_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+
       - name: Build the app
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
 
@@ -108,11 +127,34 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+          # Developer ID signing and notarization; the Apple secrets stay off the other legs.
+          APPLE_CERTIFICATE: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_API_KEY: ${{ runner.os == 'macOS' && secrets.APPLE_API_KEY || '' }}
+          APPLE_API_ISSUER: ${{ runner.os == 'macOS' && secrets.APPLE_API_ISSUER || '' }}
           CI: false
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           includeUpdaterJson: true
           args: ${{ matrix.args }}
+
+      # The publish job needs every leg green, so a bundle that is not signed with the Developer ID
+      # and notarized never leaves the draft.
+      - name: Verify signature and notarization (macOS only)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          app=$(find "src-tauri/target/${{ matrix.target }}/release/bundle/macos" -maxdepth 1 -name '*.app' | head -n 1)
+          [ -n "$app" ] || { echo "::error::no .app bundle for ${{ matrix.target }}"; exit 1; }
+          codesign --verify --deep --strict --verbose=2 "$app"
+          xcrun stapler validate "$app"
+          assessment=$(spctl --assess --type execute --verbose=4 "$app" 2>&1) || { echo "$assessment"; exit 1; }
+          echo "$assessment"
+          case "$assessment" in
+            *"source=Notarized Developer ID"*) ;;
+            *) echo "::error::Gatekeeper accepted the app, but not as a notarized Developer ID build"; exit 1 ;;
+          esac
 
   # Undrafts only after every leg succeeded and latest.json names all four platforms.
   publish:
