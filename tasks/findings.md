@@ -26872,3 +26872,19 @@ Push review follow-up: the review-tests lens (REVISE) found that nothing committ
 * **Open question:** Which fallback keeps CI green during a mirror outage without silently testing against stale security-patched libraries?
 * **Proof:** `gh api repos/felixabeck/chessriddle-studio/actions/jobs/130631037525/logs` lines 15:51:39–15:57:01Z show the cache restore, `Need to get 2340 kB/63.7 MB`, the `Ign:` lines, the `Temporary failure resolving 'security.ubuntu.com'` errors and exit 100.
 * **Found by:** Claude Code drain session 225bdd69, push CI wait.
+
+---
+
+## 2026-11-16 — filed through the inbox spool
+
+### The Play-tab date tests changed TZ at runtime, so all four frontend-mutation CI jobs failed Stryker's initial run on 8d9bc1814
+
+* **ID:** f-20261116-01 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** b78c4543-e189-45a0-906e-78b305f41191
+* **Impact class:** tooling
+* **CI run:** 43878646803
+* **Where:** `src/components/boards/BoardGame.test.tsx` ("starting a game dates it by the local day …") and `src/utils/pgnDate.test.ts` (`pgnDateTags`), added for f-20261115-05 in `53da350cc`/`41173b9e8`.
+* **Defect:** the tests set `TZ` at runtime (`vi.stubEnv("TZ", …)`). Node applies that in Vitest's forks pool but ignores it in worker threads, which Stryker's initial run uses, so the BoardGame test saw the UTC date (`2026.11.14` instead of `2026.11.15`).
+* **Failure scenario:** CI run 43878646803 on `8d9bc1814`: frontend-mutation (workspace-storage, game-practice, annotate-comment, tree-path) all failed with "There were failed tests in the initial test run", which made the remote red and refused every later push. Reproduced locally with `pnpm vitest run --pool=threads src/utils/pgnDate.test.ts` (the New York case fails).
+* **Fix:** stub the local calendar and clock getters on a fixed instant instead of changing `TZ`, so the tests prove the local-versus-UTC split in any zone and pool.
+* **Found by:** Claude (drain orchestrator), post-push CI wait for f-20261115-05
