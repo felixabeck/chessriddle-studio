@@ -28,7 +28,12 @@ const NON_TREE_SESSION_KEYS = new Set([
     "expanded-directories",
 ]);
 const MAX_TREE_NODES = 100_000;
-const MAX_TREE_DEPTH = 512;
+// Plies from the root. 2,048 = 1,024 moves, about four times the longest tournament game
+// (538 plies). The ceiling is the recursive PGN writer and native JSON serialization
+// (measured: Chromium getPGN overflows between 4,096 and 5,000 plies), not this file,
+// whose walks are iterative.
+const MAX_TREE_DEPTH = 2_048;
+const MAX_TREE_MOVES = MAX_TREE_DEPTH / 2;
 const MAX_NODE_NAGS = 1_024;
 const MAX_SHAPE_BRUSH_LENGTH = 64;
 const MAX_NODE_SHAPES = 10_000;
@@ -40,6 +45,36 @@ const MAX_STORE_DESTINATION_LENGTH = 256;
 export const PGN_TEXT_MAX = 10 * 1024 * 1024;
 /** A game stamp is the lowercase hex SHA-256 of the game's exact bytes (`read_game`). */
 const STAMP_PATTERN = /^[a-f0-9]{64}$/;
+
+export type TreeStorageLimit = "depth" | "nodes";
+
+export class TreeStorageLimitError extends Error {
+    readonly limit: TreeStorageLimit;
+
+    constructor(limit: TreeStorageLimit, message: string) {
+        super(message);
+        this.name = "TreeStorageLimitError";
+        this.limit = limit;
+    }
+}
+
+function formatTreeLimitCount(value: number): string {
+    return value.toLocaleString("en-US");
+}
+
+function treeLimitAdmissionMessage(limit: TreeStorageLimit): string {
+    if (limit === "depth") {
+        return `This game is too long to open in a tab: a tab holds at most ${formatTreeLimitCount(MAX_TREE_MOVES)} moves (${formatTreeLimitCount(MAX_TREE_DEPTH)} half-moves).`;
+    }
+    return `This game is too large to open in a tab: a tab holds at most ${formatTreeLimitCount(MAX_TREE_NODES)} moves including variations.`;
+}
+
+function treeLimitFlushMessage(limit: TreeStorageLimit): string {
+    if (limit === "depth") {
+        return `Could not save this game: it is longer than ${formatTreeLimitCount(MAX_TREE_MOVES)} moves (${formatTreeLimitCount(MAX_TREE_DEPTH)} half-moves), the most a tab can hold.`;
+    }
+    return `Could not save this game: it has more than ${formatTreeLimitCount(MAX_TREE_NODES)} moves including variations, the most a tab can hold.`;
+}
 
 export function createTabIdSchema() {
     return z.string().uuid();
@@ -143,40 +178,11 @@ function createPersistedTreeSchema() {
             .optional(),
     });
 
-    type PersistedTreeNode = {
-        fen: string;
-        move:
-            | { from: number; to: number; promotion?: z.infer<typeof roleSchema> }
-            | { role: z.infer<typeof roleSchema>; to: number }
-            | null;
-        san: string | null;
-        children: PersistedTreeNode[];
-        score: {
-            value: { type: "cp"; value: number } | { type: "mate"; value: number };
-            wdl: [number, number, number] | null;
-        } | null;
-        depth: number | null;
-        halfMoves: number;
-        shapes: Array<{
-            orig: string;
-            dest?: string;
-            brush: string;
-            modifiers?: { lineWidth?: number; opacity?: number };
-        }>;
-        nags: number[];
-        comment: string;
-        commands?: string;
-        startingComment?: string;
-        clock?: number;
-        gameEnd?: { termination?: string };
-    };
-
-    const treeNodeSchema: z.ZodType<PersistedTreeNode> = z.lazy(() => treeNodeObjectSchema);
     const treeNodeObjectSchema = z.object({
         fen: boundedText,
         move: moveSchema.nullable(),
         san: boundedText.nullable(),
-        children: z.array(treeNodeSchema).max(MAX_TREE_NODES),
+        children: z.array(z.unknown()).max(MAX_TREE_NODES),
         score: scoreSchema.nullable(),
         depth: z.number().int().nonnegative().nullable(),
         halfMoves: z.number().int().nonnegative(),
@@ -191,45 +197,58 @@ function createPersistedTreeSchema() {
             .optional(),
     });
 
-    return z.object({
-        root: treeNodeSchema,
-        headers: headersSchema,
-        position: pathSchema,
-        dirty: z.boolean(),
-        sourceStamp: z.string().regex(STAMP_PATTERN).nullable(),
-        linkedSource: linkedGameLocatorSchema.nullable().optional(),
-        appendAttempted: z.boolean(),
-        storeAttempts: z
-            .array(z.string().min(1).max(MAX_STORE_DESTINATION_LENGTH))
-            .max(MAX_STORE_ATTEMPTS)
-            .optional(),
-        report: z.object({
-            inProgress: z.boolean(),
-            operationId: z.string().nullable().optional(),
+    return {
+        treeNodeObjectSchema,
+        stateSchema: z.object({
+            root: z.unknown(),
+            headers: headersSchema,
+            position: pathSchema,
+            dirty: z.boolean(),
+            sourceStamp: z.string().regex(STAMP_PATTERN).nullable(),
+            linkedSource: linkedGameLocatorSchema.nullable().optional(),
+            appendAttempted: z.boolean(),
+            storeAttempts: z
+                .array(z.string().min(1).max(MAX_STORE_DESTINATION_LENGTH))
+                .max(MAX_STORE_ATTEMPTS)
+                .optional(),
+            report: z.object({
+                inProgress: z.boolean(),
+                operationId: z.string().nullable().optional(),
+            }),
+            practicePath: pathSchema.nullable().optional(),
+            puzzleSession: puzzleSessionSchema.optional(),
         }),
-        practicePath: pathSchema.nullable().optional(),
-        puzzleSession: puzzleSessionSchema.optional(),
-    });
+    };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Fast preflight for untrusted storage before recursive Zod parsing. */
-export function isBoundedTreeForStorage(value: unknown): boolean {
+type TreeBoundInspection = "ok" | TreeStorageLimit | "invalid";
+
+function inspectTreeBounds(value: unknown): TreeBoundInspection {
+    if (!isRecord(value)) return "invalid";
     let nodes = 0;
-    const visit = (node: unknown, depth: number): boolean => {
-        if (!isRecord(node) || depth > MAX_TREE_DEPTH || ++nodes > MAX_TREE_NODES) return false;
-        // Zod owns structural validation. This preflight only bounds recursive work.
+    const stack: Array<{ node: unknown; depth: number }> = [{ node: value.root, depth: 0 }];
+    while (stack.length > 0) {
+        const { node, depth } = stack.pop()!;
+        if (!isRecord(node)) return "invalid";
+        if (depth > MAX_TREE_DEPTH) return "depth";
+        if (++nodes > MAX_TREE_NODES) return "nodes";
+        // Zod owns structural validation. This preflight only bounds walk work.
         if (Array.isArray(node.children)) {
-            for (const child of node.children) {
-                if (!visit(child, depth + 1)) return false;
+            for (let index = node.children.length - 1; index >= 0; index--) {
+                stack.push({ node: node.children[index], depth: depth + 1 });
             }
         }
-        return true;
-    };
-    return isRecord(value) && visit(value.root, 0);
+    }
+    return "ok";
+}
+
+/** Fast preflight for untrusted storage before the iterative Zod node parse. */
+export function isBoundedTreeForStorage(value: unknown): boolean {
+    return inspectTreeBounds(value) === "ok";
 }
 
 function migrateReport(report: unknown): { inProgress: boolean; operationId: string | null } {
@@ -248,47 +267,103 @@ function migrateReport(report: unknown): { inProgress: boolean; operationId: str
  * (c449fbb2), trees carried `[%…]` commands inside `comment` and no `commands` field.
  * Split those once. Current prose stays untouched, while opaque drawing commands can acquire
  * newly supported shapes. Consumed entries leave commands, making repeated reads idempotent.
- * Depth is bounded like the schema's recursion.
+ * Depth is bounded like the storage walk: nodes past MAX_TREE_DEPTH keep their stored identity.
  * Legacy glyph arrays become canonical NAG codes, preserving their order and multiplicity.
  * The empty glyph has lost its code already; invalid legacy glyphs remain unreadable.
  */
 function migrateLegacyNode(
-    node: unknown,
+    root: unknown,
     legacyAnnotationsSchema: ReturnType<typeof createLegacyAnnotationsSchema>,
-    depth = 0,
 ): unknown {
-    if (!isRecord(node) || depth > MAX_TREE_DEPTH) return node;
-    const migrated: Record<string, unknown> = { ...node };
-    if (!Object.prototype.hasOwnProperty.call(node, "nags") && Array.isArray(node.annotations)) {
-        const legacy = legacyAnnotationsSchema.safeParse(node.annotations);
-        if (legacy.success) {
-            migrated.nags = legacy.data
-                .filter((glyph) => glyph !== "")
-                .map((glyph) => ANNOTATION_INFO[glyph].nag);
-            delete migrated.annotations;
+    if (!isRecord(root)) return root;
+
+    type Frame = {
+        node: Record<string, unknown>;
+        migrated: Record<string, unknown>;
+        depth: number;
+        childInputs: unknown[] | null;
+        childOutputs: unknown[] | null;
+        nextChild: number;
+    };
+
+    const beginNode = (node: Record<string, unknown>): Record<string, unknown> => {
+        const migrated: Record<string, unknown> = { ...node };
+        if (
+            !Object.prototype.hasOwnProperty.call(node, "nags") &&
+            Array.isArray(node.annotations)
+        ) {
+            const legacy = legacyAnnotationsSchema.safeParse(node.annotations);
+            if (legacy.success) {
+                migrated.nags = legacy.data
+                    .filter((glyph) => glyph !== "")
+                    .map((glyph) => ANNOTATION_INFO[glyph].nag);
+                delete migrated.annotations;
+            }
         }
-    }
-    if (Array.isArray(node.children)) {
-        migrated.children = node.children.map((child) =>
-            migrateLegacyNode(child, legacyAnnotationsSchema, depth + 1),
-        );
-    }
-    if (
-        !Object.prototype.hasOwnProperty.call(node, "commands") &&
-        typeof node.comment === "string"
-    ) {
-        const { text, commands, shapes } = splitPgnComment(node.comment);
-        migrated.comment = text;
-        if (commands.length > 0) migrated.commands = commands;
-        retainHydratedDrawings(migrated, shapes);
-    } else if (typeof node.commands === "string") {
-        const { text, shapes } = extractPgnDrawings(node.commands);
-        if (shapes.length > 0) {
-            migrated.commands = text.trim();
+        return migrated;
+    };
+
+    const finishNode = (node: Record<string, unknown>, migrated: Record<string, unknown>) => {
+        if (
+            !Object.prototype.hasOwnProperty.call(node, "commands") &&
+            typeof node.comment === "string"
+        ) {
+            const { text, commands, shapes } = splitPgnComment(node.comment);
+            migrated.comment = text;
+            if (commands.length > 0) migrated.commands = commands;
             retainHydratedDrawings(migrated, shapes);
+        } else if (typeof node.commands === "string") {
+            const { text, shapes } = extractPgnDrawings(node.commands);
+            if (shapes.length > 0) {
+                migrated.commands = text.trim();
+                retainHydratedDrawings(migrated, shapes);
+            }
         }
+    };
+
+    const rootMigrated = beginNode(root);
+    const rootChildren = Array.isArray(root.children) ? root.children : null;
+    const stack: Frame[] = [
+        {
+            node: root,
+            migrated: rootMigrated,
+            depth: 0,
+            childInputs: rootChildren,
+            childOutputs: rootChildren ? new Array<unknown>(rootChildren.length) : null,
+            nextChild: 0,
+        },
+    ];
+
+    while (stack.length > 0) {
+        const frame = stack[stack.length - 1];
+        if (frame.childInputs && frame.nextChild < frame.childInputs.length) {
+            const child = frame.childInputs[frame.nextChild];
+            const childDepth = frame.depth + 1;
+            if (!isRecord(child) || childDepth > MAX_TREE_DEPTH) {
+                frame.childOutputs![frame.nextChild] = child;
+                frame.nextChild += 1;
+                continue;
+            }
+            const childMigrated = beginNode(child);
+            const grandchildren = Array.isArray(child.children) ? child.children : null;
+            frame.childOutputs![frame.nextChild] = childMigrated;
+            frame.nextChild += 1;
+            stack.push({
+                node: child,
+                migrated: childMigrated,
+                depth: childDepth,
+                childInputs: grandchildren,
+                childOutputs: grandchildren ? new Array<unknown>(grandchildren.length) : null,
+                nextChild: 0,
+            });
+            continue;
+        }
+        if (frame.childOutputs) frame.migrated.children = frame.childOutputs;
+        finishNode(frame.node, frame.migrated);
+        stack.pop();
     }
-    return migrated;
+
+    return rootMigrated;
 }
 
 /** Consume existing matches as a multiset, preserving deliberate duplicates in either source. */
@@ -337,7 +412,46 @@ export function migrateTreeForStorage(value: unknown): unknown {
 }
 
 type StoredTree = StorageValue<unknown>;
-type ValidatedStoredTree = StorageValue<z.infer<ReturnType<typeof createPersistedTreeSchema>>>;
+type PersistedTreeSchemas = ReturnType<typeof createPersistedTreeSchema>;
+type ParsedTreeNode = z.infer<PersistedTreeSchemas["treeNodeObjectSchema"]>;
+type PersistedTreeNode = Omit<ParsedTreeNode, "children"> & { children: PersistedTreeNode[] };
+type PersistedTreeState = Omit<z.infer<PersistedTreeSchemas["stateSchema"]>, "root"> & {
+    root: PersistedTreeNode;
+};
+type ValidatedStoredTree = StorageValue<PersistedTreeState>;
+
+type ParseTreeResult =
+    | { kind: "ok"; value: ValidatedStoredTree }
+    | { kind: "limit"; limit: TreeStorageLimit }
+    | { kind: "invalid" };
+
+function validatePersistedTree(
+    root: unknown,
+    treeNodeObjectSchema: PersistedTreeSchemas["treeNodeObjectSchema"],
+): PersistedTreeNode | null {
+    type Frame = {
+        input: unknown;
+        parent: PersistedTreeNode | null;
+        index: number;
+    };
+    let validatedRoot: PersistedTreeNode | null = null;
+    const stack: Frame[] = [{ input: root, parent: null, index: 0 }];
+    while (stack.length > 0) {
+        const frame = stack.pop()!;
+        const parsed = treeNodeObjectSchema.safeParse(frame.input);
+        if (!parsed.success) return null;
+        const node: PersistedTreeNode = {
+            ...parsed.data,
+            children: new Array<PersistedTreeNode>(parsed.data.children.length),
+        };
+        if (frame.parent) frame.parent.children[frame.index] = node;
+        else validatedRoot = node;
+        for (let index = parsed.data.children.length - 1; index >= 0; index--) {
+            stack.push({ input: parsed.data.children[index], parent: node, index });
+        }
+    }
+    return validatedRoot;
+}
 
 export type TabTreeStorageStatus =
     | { kind: "not-read" }
@@ -359,15 +473,20 @@ export type TabTreeCloneResult =
 
 const NOT_READ_STATUS: TabTreeStorageStatus = { kind: "not-read" };
 
-function parseTree(value: unknown): ValidatedStoredTree | null {
+function parseTreeResult(value: unknown): ParseTreeResult {
     const candidate = migrateTreeForStorage(value);
-    if (!isBoundedTreeForStorage(candidate)) return null;
-    const parsed = createPersistedTreeSchema().safeParse(candidate);
-    if (!parsed.success) return null;
+    const bounds = inspectTreeBounds(candidate);
+    if (bounds === "depth" || bounds === "nodes") return { kind: "limit", limit: bounds };
+    if (bounds === "invalid") return { kind: "invalid" };
+    const { stateSchema, treeNodeObjectSchema } = createPersistedTreeSchema();
+    const parsed = stateSchema.safeParse(candidate);
+    if (!parsed.success) return { kind: "invalid" };
+    const root = validatePersistedTree(parsed.data.root, treeNodeObjectSchema);
+    if (!root) return { kind: "invalid" };
 
     // A stored path is repaired against the tree it was stored with: the cursor and the drill path
     // clamp to their longest resolving prefix, and an unresolvable repertoire start is dropped.
-    const state = parsed.data;
+    const state: PersistedTreeState = { ...parsed.data, root };
     state.position = state.position.slice(0, getResolvedPathLength(state.root, state.position));
     const { start } = state.headers;
     if (start !== undefined && getResolvedPathLength(state.root, start) !== start.length) {
@@ -378,7 +497,26 @@ function parseTree(value: unknown): ValidatedStoredTree | null {
         state.practicePath = practicePath.slice(0, getResolvedPathLength(state.root, practicePath));
     }
 
-    return { version: TREE_STORAGE_VERSION, state };
+    return { kind: "ok", value: { version: TREE_STORAGE_VERSION, state } };
+}
+
+function parseTree(value: unknown): ValidatedStoredTree | null {
+    const result = parseTreeResult(value);
+    return result.kind === "ok" ? result.value : null;
+}
+
+function refuseAdmission(result: Exclude<ParseTreeResult, { kind: "ok" }>): never {
+    if (result.kind === "limit") {
+        throw new TreeStorageLimitError(result.limit, treeLimitAdmissionMessage(result.limit));
+    }
+    throw new Error("Cannot persist an invalid game tree.");
+}
+
+function refuseFlush(result: Exclude<ParseTreeResult, { kind: "ok" }>): never {
+    if (result.kind === "limit") {
+        throw new TreeStorageLimitError(result.limit, treeLimitFlushMessage(result.limit));
+    }
+    throw new Error("Could not save this game: it no longer fits tab storage.");
 }
 
 /** The read gate as a predicate: whether this tree state would rehydrate if it were stored. */
@@ -388,9 +526,9 @@ export function canRehydrate(state: unknown): boolean {
 
 /** Admission installs the same canonical paths and fields that a fresh reader will restore. */
 export function prepareTreeForStorage(state: unknown): TreeState {
-    const value = parseTree(state);
-    if (!value) throw new Error("Cannot persist an invalid game tree.");
-    return value.state as TreeState;
+    const result = parseTreeResult(state);
+    if (result.kind !== "ok") refuseAdmission(result);
+    return result.value.state as TreeState;
 }
 
 export function createTabStorageQuotaError(cause: unknown): Error {
@@ -435,6 +573,7 @@ export class TabStorageRepository {
     private readonly pending = new Map<string, StoredTree>();
     private readonly readStatuses = new Map<string, TabTreeStorageStatus>();
     private readonly statusListeners = new Map<string, Set<() => void>>();
+    private readonly notifiedLimitTabs = new Set<string>();
     private flushTimeout: ReturnType<typeof setTimeout> | null = null;
     private handlersBound = false;
 
@@ -577,6 +716,7 @@ export class TabStorageRepository {
             throw reported;
         }
         this.pending.delete(tabId);
+        this.notifiedLimitTabs.delete(tabId);
         this.setReadStatus(tabId, { kind: "absent" });
         return true;
     }
@@ -589,8 +729,9 @@ export class TabStorageRepository {
     }
 
     seed(tabId: string, state: unknown) {
-        const value = parseTree(state);
-        if (!value) throw new Error("Cannot persist an invalid game tree.");
+        const parsed = parseTreeResult(state);
+        if (parsed.kind !== "ok") refuseAdmission(parsed);
+        const value = parsed.value;
         const blocker = this.writeBlocker(tabId);
         if (blocker) {
             throw new Error(
@@ -602,6 +743,7 @@ export class TabStorageRepository {
             sessionStorage.setItem(tabId, serializeStorageValue(value));
             // This complete durable frame supersedes every older debounced frame for this key.
             this.pending.delete(tabId);
+            this.notifiedLimitTabs.delete(tabId);
             this.setReadStatus(tabId, { kind: "available" });
         } catch (error) {
             throw persistStorageWriteError(error);
@@ -699,6 +841,7 @@ export class TabStorageRepository {
 
     remove(tabId: string) {
         this.pending.delete(tabId);
+        this.notifiedLimitTabs.delete(tabId);
         sessionStorage.removeItem(tabId);
         this.setReadStatus(tabId, NOT_READ_STATUS);
     }
@@ -888,15 +1031,19 @@ export class TabStorageRepository {
             try {
                 // The read gate, applied before the write: a tree that would not rehydrate is
                 // never stored in place of the last one that does.
-                if (!canRehydrate(value.state)) {
-                    throw new Error("Could not save this game: it no longer fits tab storage.");
-                }
+                const parsed = parseTreeResult(value.state);
+                if (parsed.kind !== "ok") refuseFlush(parsed);
                 sessionStorage.setItem(tabId, serializeStorageValue(value));
                 this.pending.delete(tabId);
+                this.notifiedLimitTabs.delete(tabId);
                 this.setReadStatus(tabId, { kind: "available" });
             } catch (error) {
                 failedTabIds.push(tabId);
                 warnSafely(`Could not persist tree storage ${tabId}: ${String(error)}`);
+                if (!notify) continue;
+                const isLimit = error instanceof TreeStorageLimitError;
+                if (isLimit && this.notifiedLimitTabs.has(tabId)) continue;
+                if (isLimit) this.notifiedLimitTabs.add(tabId);
                 if (notifyError === undefined) notifyError = error;
             }
         }

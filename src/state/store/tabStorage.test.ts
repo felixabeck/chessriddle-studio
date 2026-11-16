@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { DrawShape } from "@lichess-org/chessground/draw";
-import { defaultTree, MAX_GAME_END_TERMINATION_LENGTH } from "@/utils/treeReducer";
+import { parseUci } from "chessops";
+import { createNode, defaultTree, MAX_GAME_END_TERMINATION_LENGTH } from "@/utils/treeReducer";
 import { emptyPuzzleSession } from "@/state/puzzleSession";
 import { deserializeStorageValue, serializeStorageValue } from "./debouncedStorage";
 import {
@@ -906,9 +907,10 @@ test("migrates legacy comments down to the depth bound and leaves deeper nodes a
     };
     delete template.commands;
     const leaf = { ...template, comment: "[%evp 0,34] deep" };
-    // 513 ancestors put the leaf at depth 513: one past MAX_TREE_DEPTH, so it is left as stored.
+    // 2,049 ancestors put the leaf at depth 2,049: one past MAX_TREE_DEPTH, so it is left as stored.
     let node: Record<string, unknown> = leaf;
-    for (let depth = 0; depth < 513; depth++) node = { ...template, children: [node], comment: "" };
+    for (let depth = 0; depth < 2049; depth++)
+        node = { ...template, children: [node], comment: "" };
     tree.root = node;
 
     const descend = (root: unknown, levels: number) => {
@@ -919,12 +921,12 @@ test("migrates legacy comments down to the depth bound and leaves deeper nodes a
         return current;
     };
     const deep = migrateTreeForStorage(tree) as Record<string, unknown>;
-    expect(descend(deep.root, 513)).toBe(leaf);
+    expect(descend(deep.root, 2049)).toBe(leaf);
 
-    // One ancestor fewer puts the same leaf at depth 512, which is migrated.
+    // One ancestor fewer puts the same leaf at depth 2,048, which is migrated.
     tree.root = (node.children as Record<string, unknown>[])[0];
     const bounded = migrateTreeForStorage(tree) as Record<string, unknown>;
-    expect(descend(bounded.root, 512)).toMatchObject({ comment: "deep", commands: "[%evp 0,34]" });
+    expect(descend(bounded.root, 2048)).toMatchObject({ comment: "deep", commands: "[%evp 0,34]" });
 });
 
 test("a legacy node without a comment string is passed through for the schema to judge", () => {
@@ -961,7 +963,7 @@ test("a flush refuses a tree that would not rehydrate and keeps the stored one",
 });
 
 test("rejects every persisted tree type, scalar, and structural boundary", () => {
-    expectSeedRejected(treeWith((tree) => (tree.position = Array(513).fill(0))));
+    expectSeedRejected(treeWith((tree) => (tree.position = Array(2049).fill(0))));
     expectSeedRejected(treeWith((tree) => (tree.root.move = { from: -1, to: 0 } as never)));
     expectSeedRejected(treeWith((tree) => (tree.root.move = { from: 0, to: 64 } as never)));
     expectSeedRejected(treeWith((tree) => (tree.root.move = { role: "queen", to: -1 } as never)));
@@ -1834,11 +1836,16 @@ test("unreadable workspace copy preserves replacement bytes when exact-byte read
     expect(storage.getStatus(targetId).kind).toBe("unavailable");
 });
 
-test("rejects excessive recursive nesting before schema hydration", () => {
+function treeOfDepth(maxDepth: number) {
     const tree = defaultTree();
     let root = tree.root;
-    for (let index = 0; index < 513; index++) root = { ...root, children: [root] };
+    for (let index = 0; index < maxDepth; index++) root = { ...root, children: [root] };
     tree.root = root;
+    return tree;
+}
+
+test("rejects excessive recursive nesting before schema hydration", () => {
+    const tree = treeOfDepth(2049);
     sessionStorage.setItem("too-deep", JSON.stringify(tree));
 
     expect(storage.read("too-deep")).toBeNull();
@@ -1847,12 +1854,112 @@ test("rejects excessive recursive nesting before schema hydration", () => {
 });
 
 test("accepts the maximum recursive depth and rejects its first overflow", () => {
-    const tree = defaultTree();
-    let root = tree.root;
-    for (let index = 0; index < 512; index++) root = { ...root, children: [root] };
-    tree.root = root;
-    storage.seed("depth-boundary", tree);
+    storage.seed("depth-boundary", treeOfDepth(2048));
     expect(storage.read("depth-boundary")).not.toBeNull();
+    expect(() => storage.seed("depth-overflow", treeOfDepth(2049))).toThrow(
+        "This game is too long to open in a tab: a tab holds at most 1,024 moves (2,048 half-moves).",
+    );
+});
+
+const KNIGHT_CYCLE = [
+    { uci: "g1f3", san: "Nf3" },
+    { uci: "g8f6", san: "Nf6" },
+    { uci: "f3g1", san: "Ng1" },
+    { uci: "f6g8", san: "Ng8" },
+] as const;
+
+function treeWithMainlinePlies(plies: number) {
+    const tree = defaultTree();
+    let current = tree.root;
+    for (let ply = 1; ply <= plies; ply++) {
+        const move = KNIGHT_CYCLE[(ply - 1) % KNIGHT_CYCLE.length];
+        const node = createNode({
+            fen: current.fen,
+            move: parseUci(move.uci)!,
+            san: move.san,
+            halfMoves: ply,
+        });
+        current.children.push(node);
+        current = node;
+    }
+    return tree;
+}
+
+test("a 538-ply mainline seeds, flushes, and reads back every ply", () => {
+    const tree = treeWithMainlinePlies(538);
+    storage.seed("nikolic-arsovic", tree);
+    expect(storage.flush()).toEqual([]);
+    const restored = storage.read<ReturnType<typeof defaultTree>>("nikolic-arsovic")!.state;
+    let node = restored.root;
+    let plies = 0;
+    while (node.children[0]) {
+        node = node.children[0];
+        plies += 1;
+        const expected = KNIGHT_CYCLE[(plies - 1) % KNIGHT_CYCLE.length];
+        expect(node.san).toBe(expected.san);
+        expect(node.move).toEqual(parseUci(expected.uci));
+        expect(node.halfMoves).toBe(plies);
+    }
+    expect(plies).toBe(538);
+});
+
+test("seed refuses a tree that exceeds the node-count bound", () => {
+    const tree = defaultTree();
+    tree.root.children = Array(100_000).fill({ ...tree.root, children: [] });
+    expect(() => storage.seed("too-many-nodes", tree)).toThrow(
+        "This game is too large to open in a tab: a tab holds at most 100,000 moves including variations.",
+    );
+});
+
+test("flush notifies a depth-limit refusal once per tab until a successful store or remove", () => {
+    const tabId = "limit-once";
+    storage.seed(tabId, treeOfDepth(2048));
+    const stored = sessionStorage.getItem(tabId);
+
+    storage.write(tabId, { version: 0, state: treeOfDepth(2049) });
+    expect(storage.flush({ notify: true })).toEqual([tabId]);
+    expect(sessionStorage.getItem(tabId)).toBe(stored);
+    expect(persistError.reportPersistError).toHaveBeenCalledOnce();
+    expect(persistError.reportPersistError).toHaveBeenCalledWith(
+        expect.objectContaining({
+            message:
+                "Could not save this game: it is longer than 1,024 moves (2,048 half-moves), the most a tab can hold.",
+        }),
+    );
+
+    const notified = persistError.reportPersistError.mock.calls.length;
+    storage.write(tabId, { version: 0, state: treeOfDepth(2050) });
+    expect(storage.flush({ notify: true })).toEqual([tabId]);
+    expect(persistError.reportPersistError).toHaveBeenCalledTimes(notified);
+
+    storage.write(tabId, { version: 0, state: treeOfDepth(2048) });
+    expect(storage.flush({ notify: true })).toEqual([]);
+    storage.write(tabId, { version: 0, state: treeOfDepth(2049) });
+    expect(storage.flush({ notify: true })).toEqual([tabId]);
+    expect(persistError.reportPersistError).toHaveBeenCalledTimes(notified + 1);
+
+    storage.remove(tabId);
+    storage.write(tabId, { version: 0, state: treeOfDepth(2049) });
+    expect(storage.flush({ notify: true })).toEqual([tabId]);
+    expect(persistError.reportPersistError).toHaveBeenCalledTimes(notified + 2);
+});
+
+test("a silent flush does not suppress the next notified depth-limit refusal", () => {
+    const tabId = "limit-silent-then-notify";
+    storage.seed(tabId, treeOfDepth(2048));
+    storage.write(tabId, { version: 0, state: treeOfDepth(2049) });
+    expect(storage.flush()).toEqual([tabId]);
+    expect(persistError.reportPersistError).not.toHaveBeenCalled();
+
+    storage.write(tabId, { version: 0, state: treeOfDepth(2049) });
+    expect(storage.flush({ notify: true })).toEqual([tabId]);
+    expect(persistError.reportPersistError).toHaveBeenCalledOnce();
+    expect(persistError.reportPersistError).toHaveBeenCalledWith(
+        expect.objectContaining({
+            message:
+                "Could not save this game: it is longer than 1,024 moves (2,048 half-moves), the most a tab can hold.",
+        }),
+    );
 });
 
 test("accepts exactly the maximum tree-node count", () => {
