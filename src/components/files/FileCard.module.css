@@ -1,8 +1,9 @@
-/* Stacked FileCard actions: the column is the card width so fullWidth wrap-buttons fill it. */
+/* Title and badge never shrink. */
 .header {
   flex-shrink: 0;
 }
 
+/* Stacked FileCard actions: the column is the card width so fullWidth wrap-buttons fill it. */
 .stacked {
   flex-shrink: 0;
   width: 100%;

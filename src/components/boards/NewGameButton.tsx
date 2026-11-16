@@ -33,6 +33,8 @@ export default function NewGameButton({
         {...libraryButtonProps}
         disabled={unavailable}
         fullWidth={fullWidth}
+        // A stretched button also takes wrap-button so its label keeps word-wrapping padding at
+        // full width (see src/styles/global.css .wrap-button); wrappingButton alone does not.
         className={fullWidth ? "wrap-button" : undefined}
         leftSection={<Plus size="1rem" />}
         onClick={() =>

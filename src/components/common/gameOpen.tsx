@@ -76,6 +76,8 @@ export function OpenGameButton({
       miw={0}
       maw="100%"
       fullWidth={fullWidth}
+      // A stretched button also takes wrap-button so its label keeps word-wrapping padding at
+      // full width (see src/styles/global.css .wrap-button); wrappingButton alone does not.
       className={fullWidth ? "wrap-button" : undefined}
       styles={{
         ...wrappingButton,
