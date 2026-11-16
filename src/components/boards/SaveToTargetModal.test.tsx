@@ -347,9 +347,10 @@ test("a files-only library can save to a file", async () => {
 });
 
 test("a databases-only library keeps saving to a database", async () => {
+  mockFiles([]);
   mockDatabases([standaloneDatabase]);
   vi.mocked(saveToDatabase).mockResolvedValue("saved");
-  await renderModal();
+  await renderModal(vi.fn(), workspace);
   expect(noTargetsAlert()).toBeUndefined();
   await chooseOption("Standalone");
   await act(async () => saveButton().click());

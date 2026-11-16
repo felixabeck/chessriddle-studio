@@ -15,16 +15,21 @@ export function collectionFiles(entries: readonly Entry[]): FileMetadata[] {
     );
 }
 
-export function joinLibraryCollections(
-    entries: readonly Entry[],
-    collections: readonly CollectionDescriptor[],
-) {
-    const files = collectionFiles(entries);
+export function collectionsByFile(collections: readonly CollectionDescriptor[]) {
     const byFile = new Map<string, CollectionDescriptor>();
     for (const collection of collections) {
         const key = fileWorkspaceKey(collection.file);
         if (collection.status !== "retired" && !byFile.has(key)) byFile.set(key, collection);
     }
+    return byFile;
+}
+
+export function joinLibraryCollections(
+    entries: readonly Entry[],
+    collections: readonly CollectionDescriptor[],
+) {
+    const files = collectionFiles(entries);
+    const byFile = collectionsByFile(collections);
     const missing = collections.filter(
         (collection) =>
             !["trashed", "retired", "preservedOriginal", "ready"].includes(collection.status) &&
