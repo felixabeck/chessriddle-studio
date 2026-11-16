@@ -29,9 +29,12 @@ const config = {
     related: true,
   },
   coverageAnalysis: "perTest",
-  // CI's complete cold initial suite exhausted five minutes. This allowance is separate
-  // from individual test limits and per-mutant timeout settings.
-  dryRunTimeoutMinutes: 10,
+  // Bounds the whole initial (dry) test run as a stall detector, separate from
+  // per-test and per-mutant timeout settings. Sized from hosted idle tree-path
+  // (7027 tests in 8m13s) and local tree-path under shared-machine load (timed
+  // out at 10 minutes three of three times on 2026-11-15). Revisit when a hosted
+  // initial run exceeds half the bound (d-20261116-01).
+  dryRunTimeoutMinutes: 30,
   // Each worker receives the measured runner allowance after charging one Stryker parent to budget.
   concurrency: workerCount({
     perWorkerBytes: STRYKER_RUNNER_BYTES,
