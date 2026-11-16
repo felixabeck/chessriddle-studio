@@ -158,6 +158,18 @@ test("release.yml never lets a macOS bundle out that is not a notarized Develope
     );
     expect(build).toContain('codesign --verify --strict --verbose=2 "$dmg"');
     // Tauri only signs the disk image; the workflow notarizes it and Gatekeeper has to agree.
+    // The step carries the key id and issuer itself, on the macOS legs only.
+    expect(build).toContain(
+        [
+            "      - name: Verify signature and notarization (macOS only)",
+            "        if: runner.os == 'macOS'",
+            "        shell: bash",
+            "        env:",
+            "          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}",
+            "          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}",
+            "        run: |",
+        ].join("\n"),
+    );
     expect(build).toContain(
         'xcrun notarytool submit "$dmg" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --wait\n',
     );
