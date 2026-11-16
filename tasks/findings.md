@@ -26847,7 +26847,7 @@ Push review follow-up: the review-tests lens (REVISE) found that nothing committ
 
 ### macOS CI: bound_sqlite FIFO-SHM repository witness fails with "attempt to write a readonly database"
 
-* **ID:** f-20261112-96 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261112-96 · **Status:** handled · **Area:** db-search · **Root:** - · **Entry:** build · **Blocked:** none
 * **Filed from:** fe1647a8-84a0-4716-ace7-396690a4bf5d
 * **Impact class:** tooling
 * **Spotted outside diff:** Test run 43239229290 (job 131254785925, `rust-macos-test`) on pushed master `12d2654ce`. The pushed diff touched only `src-tauri/src/{lexer,pgn}.rs` and renderer files, with no `src-tauri/src/db/**` change. The five previous master Test runs (`f5ed52932`, `7085efff0`, `9d7502ee7`, `bb77b38ce`, `e01e8dfc4`) were green.
@@ -26858,6 +26858,11 @@ Push review follow-up: the review-tests lens (REVISE) found that nothing committ
 * **Fix:** Reproduce on macOS (`cargo test --bins -- db::repository::bound_sqlite_witnesses::bound_sqlite_fifo_shm_repository_failures_and_regular_fallback_recovery` in a loop). Determine whether the fallback reopen reuses a read-only handle or SQLite's shm state, or whether the test lacks a wait/ordering guarantee. Then fix the production fallback, or the test's ordering, at its cause. A one-off `gh run rerun --failed` was started for this run and its outcome is recorded in the closing note of the run that filed this entry.
 * **Proof:** `gh api repos/felixabeck/chessriddle-studio/actions/jobs/131254785925/logs`: `panicked at src/db/repository.rs:11724:132: called Result::unwrap() on an Err value: DatabaseError(Unknown, "attempt to write a readonly database")`, `test result: FAILED. 0 passed; 1 failed`.
 * **Found by:** Claude Code (Opus 5.5), drain session fe1647a8, next-finding f-20261111-77 push CI wait, 2026-11-12.
+* **Closed 2026-11-16 (drain, build route with adopted plan `tasks/plans/2026-11-16-fifo-shm-witness-pool-retry-race.md`):** The open question is answered: a test ordering race, not a production defect (d-20261116-04). The witness's failed FIFO-`-shm` pool survived step (1), because a non-Conflict error does not retire the entry, and r2d2 kept retrying the establish about once a second. A retry that landed in the read-only regular-`-shm` window opened the database on SQLite's per-inode read-only shared-memory node, and the step-(3) write then failed with "attempt to write a readonly database". A disposable probe reproduced the exact CI panic on Linux by widening that window with a 2.5 s sleep.
+  * Fix (test-only): `53a11d4f2` retires the failed entry through `retire_replaced` and asserts its absence in `state.entries` before `-shm` is replaced. `d8db999cd` (review-tests r1 follow-up) re-asserts that absence just before `-shm` turns writable.
+  * Proof: 20/20 undelayed exact runs; `db::repository::` 174 passed; widened window green with the retirement (4.51 s) and red at `:11725:132` with the CI signature without it; final Rust push gates green; `Test` run 43929311396 on d8db999cd fully green, `rust-macos-test` job 133517158384 ran the witness `... ok`.
+  * Rejected: production retire-on-open-failure, refusing read-only-`-shm` connections in `on_acquire`, and a fresh repository for the later steps (reasons in d-20261116-04). A committed widened delay was rejected too (2.5 s suite cost, it proves only the fixture).
+<!-- ledger-meta {"command":"close","effect_lines":4,"effect_sha256":"2009751021e9b9e3cddf30db191dba7fb61675c48769f3eba97926fa94c26896","header_sha256":"840a3d6c4ac8c484f6338fe23476ce58355f6ba2624532c7c5ebb76669dcb70b","header_status":"handled","input_sha256":"23f046607be77239bede8b397b431016f8e0647034eb0066cc1e0675049aa732","kind":"mutation-receipt","operation":"946be5ff755d90834a24263fc9277432c96732ecda256add29af620ca8dfe16c","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-96"],"target":"f-20261112-96","v":1} -->
 
 ### Linux desktop-deps install fails outright when mirrors are unreachable and only a few freshly updated packages are missing from the apt cache
 
