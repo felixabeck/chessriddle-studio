@@ -1887,6 +1887,49 @@ test("accepts the maximum recursive depth and rejects its first overflow", () =>
     expect((thrown as Error).name).toBe("TreeStorageLimitError");
 });
 
+function treeOverNodeLimit() {
+    const tree = defaultTree();
+    tree.root.children = Array(100_000).fill({ ...tree.root, children: [] });
+    return tree;
+}
+
+test("over-limit trees fail canRehydrate, prepareTreeForStorage, and decodeLegacyOrCompressed", () => {
+    expect(canRehydrate(treeOfDepth(2048))).toBe(true);
+    expect(canRehydrate(treeOfDepth(2049))).toBe(false);
+    expect(canRehydrate(treeOverNodeLimit())).toBe(false);
+
+    let depthThrown: unknown;
+    try {
+        prepareTreeForStorage(treeOfDepth(2049));
+    } catch (error) {
+        depthThrown = error;
+    }
+    expect(depthThrown).toBeInstanceOf(TreeStorageLimitError);
+    expect(depthThrown).toMatchObject({
+        limit: "depth",
+        message:
+            "This game is too long to open in a tab: a tab holds at most 1,024 moves (2,048 half-moves).",
+    });
+
+    let nodesThrown: unknown;
+    try {
+        prepareTreeForStorage(treeOverNodeLimit());
+    } catch (error) {
+        nodesThrown = error;
+    }
+    expect(nodesThrown).toBeInstanceOf(TreeStorageLimitError);
+    expect(nodesThrown).toMatchObject({
+        limit: "nodes",
+        message:
+            "This game is too large to open in a tab: a tab holds at most 100,000 positions including variations.",
+    });
+
+    expect(
+        decodeLegacyOrCompressed(serializeStorageValue({ version: 1, state: treeOfDepth(2049) })),
+    ).toBeNull();
+    expect(decodeLegacyOrCompressed(JSON.stringify(treeOfDepth(2049)))).toBeNull();
+});
+
 const KNIGHT_CYCLE = [
     { uci: "g1f3", san: "Nf3" },
     { uci: "g8f6", san: "Nf6" },
@@ -1930,8 +1973,7 @@ test("a 538-ply mainline seeds, flushes, and reads back every ply", () => {
 });
 
 test("seed refuses a tree that exceeds the node-count bound", () => {
-    const tree = defaultTree();
-    tree.root.children = Array(100_000).fill({ ...tree.root, children: [] });
+    const tree = treeOverNodeLimit();
     let thrown: unknown;
     try {
         storage.seed("too-many-nodes", tree);
